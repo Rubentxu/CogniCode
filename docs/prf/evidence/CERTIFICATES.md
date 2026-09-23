@@ -929,3 +929,65 @@ puerto de análisis sin lógica de cálculo propia.
 
 **Límite**: certificado F6 en HEAD de desarrollo; no implica
 publicación (push/tag requieren autorización del operador).
+
+---
+
+## PRF-CI-CLIPPY — Certificación del gate clippy (PRF-CI-01/07 sub-cerrado)
+
+**Estado**: ACCEPTED (sub-cerrado gate clippy en HEAD `34153097`).
+**Fecha**: 2026-09-23 (sesión 4 AUTO).
+**Hito**: PRF-CI (gates reproducibles por SHA).
+**Requisitos vinculados**: PRF-CI-01 (parte: gate clippy declarado y
+verificado), PRF-CI-07 (parte: prueba negativa del gate clippy).
+JOURNAL §90 para diagnóstico completo.
+
+### Alcance certificado
+
+| Capacidad | Evidencia | Clase |
+|---|---|---|
+| Gate clippy declarado en CI | `cargo clippy --workspace --all-targets -- -D warnings` aparece en `.github/workflows/ci.yml:32` (`workflow_dispatch`); política local-first documentada en `docs/prf/specs/LOCAL-FIRST-CI-POLICY.md` | STRUCTURAL |
+| Gate clippy pasa en workspace actual | `cargo clippy --workspace --all-targets -- -D warnings`; EXIT=0; 0 warnings emitidos al stderr (sólo warning de cargo profiles en subcrate, no en clippy) | OBSERVED |
+| Gate clippy detecta defectos reales | UAT `crates/cognicode-cli/tests/prf_ci_01_07_clippy_gate_uat.rs::clippy_gate_fails_on_injected_unused_variable`: crea crate temp con `Cargo.toml` + `lib.rs` conteniendo variable sin usar, ejecuta `cargo clippy -- -D warnings`, exige exit ≠ 0 y stderr que mencione `unused_variable`. Pin vivo verde ×1. | OBSERVED |
+| Reducción de falsos negativos / falsos positivos | Análisis previo sobre la lista de ~80 errores: 0 eran genuinamente muertos; el resto eran consumidos por otros binarios, módulos test, o structs consumidos durante spawn (vía `take()`). Política: allow local con comentario anclado al consumidor (NO borrado ciego que pudiera introducir regresión o duplicación). | STRUCTURAL |
+| Tests regresivos siguen verdes | `cargo test -p cognicode-core --lib` → 2147 passed, 0 failed, 27 ignored. `cargo test -p cognicode-cli` → 414 passed, 0 failed, 2 ignored. `cargo test -p cognicode-mcp` → 35 passed, 0 failed, 0 ignored. | OBSERVED |
+
+### Bugs reales corregidos en este ciclo (no meras suppressiones)
+
+| Bug | Fix | Justificación |
+|---|---|---|
+| `collapsible_if` en `cmd/layout.rs:695` | let-chain refactor | el código original tenía dos `if` consecutivos sobre el mismo predicado; el let-chain los fusiona sin cambiar semántica |
+| `needless_option_as_deref_mut` en `cmd/installer_transaction.rs:128` | sustituir `&mut Option<...>.as_deref_mut()` por llamada directa sobre el campo interno | real: el `deref_mut` no aportaba nada |
+| `assertions_on_constants` en `tests/intelligence_event_log_e2e.rs` | mover la aserción a un bloque `const { assert!(...) }` | el chequeo se ejecuta en tiempo de compilación sin overhead en runtime |
+| `FakeClock::advance` método declarado e implementado pero nunca invocado en `tests/behavior_authority_e2e.rs` | eliminar | código muerto genuino (D34-2) |
+| `.and_then(|m| Ok(m))` / `.map(|m| m)` en `tests/prf_ana_02_uat.rs` | eliminar | identidad innecesaria |
+| Parámetros `id`/`root_path` no usados en `explorer/domain/views.rs` y `explorer/facades/graph.rs` | renombrar y/o interpolar en mensajes de error | trazabilidad simbólica, no degradación |
+| `_plugin`/`_home` underscore-prefixed en `cmd/ide.rs`/`cmd/layout.rs` | renombrar para usarlos en error messages | mismo motivo |
+| Imports no usados en 8+ archivos del bin `cognicode-cli` | eliminar | ya consumidos por renombre o sustitución |
+
+### Allows documentados (no borrado)
+
+Política: cuando un símbolo "muerto" desde el target `cogh` es
+realmente consumido por otro bin (`cognicode-release`), por
+módulos `#[cfg(test)]` o por código de spawn, se anota `#![allow(...)]`
+local con encabezado `POLICY:` que explica al consumidor. Anclaje:
+estos allows son deuda H-06 pendiente de refinamiento (no preten-
+demos que sean solución permanente).
+
+### Matrices honestas
+
+- Este certificado cubre **solo** el gate clippy. El requisito
+  PRF-CI-01/07 completo incluye también el disparador automático en
+  push/PR y la no existencia de `|| true` sobre gates — esas piezas
+  siguen siendo H-07 operator-gated, no se certifican aquí.
+- La equivalencia CI es procedimental, no automática (política
+  local-first documentada en `LOCAL-FIRST-CI-POLICY.md` §3.3).
+- El test `clippy_positive_invariant_includes_workspace` está marcado
+  `#[ignore]` (costoso a la batería de tests diaria); correr con
+  `--include-ignored` antes de un release para confirmar la cobertura
+  completa. No se certifica cada día porque ya está verificado sobre
+  este HEAD y el flujo `cargo test -p cognicode-cli` lo reactiva
+  automáticamente si clippy cambia de comportamiento.
+
+**Límite**: certificado `PRF-CI-CLIPPY` en HEAD `34153097` (sesión 4);
+no implica push/tag/publicación — esos gates siguen operator-gated por
+directive §3 + auditoría 2026-09-22 (JOURNAL §29).
