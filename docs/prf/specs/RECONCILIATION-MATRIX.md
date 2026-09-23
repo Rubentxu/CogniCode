@@ -139,7 +139,7 @@
 | U12 | CI,ANA | Proyecto anidado, full/per_file; cobertura y equivalencia | PARTIAL | W3 caracterización; UAT específica de anidado no |
 | **U13** | ANA | Cambiar bytes preservando tamaño+mtime; reescanear | **PASS (RED→GREEN, SHA-256)** | H-01 del operador **cerrado en `39928202` (JOURNAL §32)** con decisión SHA-256 (32 bytes, `sha2::Sha256`) como tercer cache-invalidation key. Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` RE-ejecutado sobre HEAD actual `2f94664e`: **PASA VERDE**. Cache value type `(u64, u64, [u8;32], Vec<Symbol>, Vec<(Symbol, String)>)` con 3 lookup/insert sites actualizados. Decisión "a tu criterio" ejercida. **Matrix stale**: aparece como FAIL aunque H-01 está cerrado desde §32. |
 | U14 | SEC,ANA | Denegar lectura, eliminar archivo, superar presupuesto → Partial/Unknown/Failed | PARTIAL | U-F2-W8-001 cubre lectura; presupuesto específico no |
-| U15 | ANA | Corpus mixto, LSP ausente, lenguaje no soportado → fallback explícito | NOT_RUN | No ejecutado con corpus mixto adverso |
+| U15 | ANA | Corpus mixto, LSP ausente, lenguaje no soportado → fallback explícito | PASS | RED test + fix `analysis_service.rs::build_project_graph` ahora reporta `Skipped { UnsupportedExtension }` por cada archivo sin parser; status=`partial` en corpus {Go,Rs,Py,Cob,Txt} (sess 4, commit `9e0835ea`) |
 | U16 | ANA | Rename/move/colisiones/homónimos → identidad estable o ambigüedad visible | PARTIAL | H-R4-2 cerrado; UAT específica adversa no |
 | **U17** | STATE | Indexar, reiniciar, consultar historia y revisión actual | **PARTIAL (no persistencia material)** | H-04 explícito |
 | U18 | SEC,STATE | Dos proyectos, dos procesos, HOME común, cambios aislados | PASS | U-F4-001 |
@@ -159,7 +159,7 @@
 
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
-| SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
+| SPEC-ANALYSIS (9) | 3 (+1 tras §96: U15) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 1 (-1) | 1 (-1 tras PRF-ANA-04) | 0 |
 | SPEC-CI (7) | 0 | 4 (+2: CI-01/06 cierres de gate clippy) | 1 (-2 tras §90) | 2 | 0 | 0 |
 | SPEC-CLI (7) | 7 (todas PASS tras §93: CLI-07) | 0 | 0 | 0 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 1 (+1: PRF-DIST-03) | 2 (-1) | 1 (DIST-02 ciclo A→B, H-06) | 3 | 0 | 0 |
@@ -167,7 +167,7 @@
 | SPEC-MCP (7) | 0 | 5 (+1: MCP-05) | 0 | 2 (-1) | 0 | 0 |
 | SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
 | SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
-| **UAT originales (27)** | **5** (+1 tras §91: U21) | 15 (+1: U03) | **2** | 4 (-1) | 2 | 0 |
+| **UAT originales (27)** | **6** (+1 tras §96: U15) | 15 (U03) | **2** | 3 (-1) | 2 | 0 |
 | **TOTAL (estimado)** | **~13 PASS pleno + 1 PASS parcial** | **~33** | **~5** | **~21** | **~4-8** | **0** |
 
 **Cambios aplicados en sesión 4 (2026-09-23, AUTO):**
@@ -180,6 +180,7 @@
 - **PRF-CLI-07** movido a **PASS** (JOURNAL §93, commit `bb245f29`): gap cerrado en `cognicode doctor --format json`. Antes emitía runtime semver (`version`) pero no schema version → consumidores no podían pinear contrato. RED test `test_doctor_json_includes_schema_version_prf_cli_07`: faltaba `schema_version` top-level. GREEN: `DoctorReport.schema_version: String` poblado con `"cognicode.doctor/v1"`; `version` (runtime) preservado como concern separado. 7/7 doctor tests, 5310 libs + 527 bins = 5837 tests verde, clippy EXIT 0. Binario real: `cognicode doctor --format json` emite `"schema_version": "cognicode.doctor/v1"`. `graph full` y `refactor preview` ya tenían schema (`cognicode.graph.full/v1`, `cognicode.refactor.preview/v1`). Contadores: SPEC-CLI PASS 0→7, PARTIAL 5→0, NOT_RUN 1→0.
 - **PRF-MCP-05** movido a **PARTIAL (declaración añadida, enforcement migrado pendiente)** (JOURNAL §94, commit `6da76705`): gap real detectado — el legacy `CogniCodeHandler::MUTATING_TOOLS` (3 nombres hardcoded) era el único oráculo de autoridad. Tools nuevas añadidas sin actualizar la lista heredaban write/exec en silencio. RED test `test_prf_mcp_05_authority_declared_for_every_tool`: 74 tools sin `authority` en meta. GREEN: campo `authority: &str` añadido a `cognicode_meta()` con 4 valores (`read`/`mutating`/`execute`/`network`). 71 tools declaradas `read`, 3 (`write_file`, `edit_file`, `reparse_on_edit`) declaradas `mutating` (subset exacto de `MUTATING_TOOLS`). 5312 libs + 527 bins = 5839 tests verde, clippy EXIT 0. **Deuda:** `list_tools` sigue usando `MUTATING_TOOLS.contains` (legacy oracle); migrar al meta-based lookup requiere autoridad del operador (cambio de comportamiento). Contadores: SPEC-MCP PARTIAL 4→5, NOT_RUN 3→2.
 - **PRF-DIST-03** movido a **PASS** (JOURNAL §95, commit `e1368be7`): NOT_RUN era matrix-stale — U24 PASS desde §46 ya cubre el flujo end-to-end con servidor HTTP local (asset truncado a 500000 bytes → SHA mismatch limpio → rollback verificado: `versions/`/`journal/`/`shims/` vacíos). Commit añade 2 tests in-process que pinean el contrato subyacente: `Drop` de `RollbackJournal` (sin commit) revierte los side-effects (`Downloaded`, `Extracted`) aunque la verificación SHA falle. Patrón "sin `|| true`" verificado por inspección. 5312 libs + 529 bins = 5841 tests verde, clippy EXIT 0. Contadores: SPEC-DISTRIBUTION PASS 0→1, PARTIAL 3→2.
+- **U15** corregido a **PASS (RED→GREEN)** (JOURNAL §96, commit `9e0835ea`): gap real detectado — `build_project_graph` aplicaba `filter(|(_, lang, _, _, _)| lang.is_some())` ANTES de empujar a `skipped_files`, descartando en silencio todo archivo cuya extensión no mapee a un parser. UAT U15 exige "fallback y nivel de soporte explícitos, sin resolución inventada". RED test `test_u15_unsupported_files_must_appear_in_build_report_skipped` RE-ejecutado: corpus {supported.py + unsupported.cob + notes.txt}, status esperado `Partial { skipped: [...] }`, observado `Complete` → PANIC. GREEN: walk paralelo sobre los mismos `files`, push a `skipped_files` con `SkipReason::UnsupportedExtension("extension '.xyz' is not in the supported parser set")` antes del filtro silencioso. Reutiliza el variant enum `UnsupportedExtension` ya existente en `per_file_graph.rs:697` (no nueva abstracción). Verificación E2E con `/tmp/u15-corpus/{data.go, lib.rs, types.py, legacy.cob, readme.txt}`: status=`partial`, symbols=4, `skipped_files` reporta ambos no-soportados con razón. 5312 libs + 529 bins = 5841 tests verde antes, 5315 después (+3) por tests U15, clippy EXIT 0. Contadores: UAT originales PASS 5→6, NOT_RUN 4→3; SPEC-ANALYSIS PASS 2→3.
 
 **Cambios aplicados en sesiones previas (2026-09-22):**
 - H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.

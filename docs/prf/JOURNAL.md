@@ -3749,7 +3749,6 @@ SPEC-DISTRIBUTION PASS 0→1, PARTIAL 3→2.
 
 **Próximo trabajo del backlog.**
 
-- U15 (#9): corpus mixto LSP ausente.
 - PRF-ANA-01 (#10): verticales del motor genérico.
 - H-06 (#11): allow refactor anclando a follow-up.
 - **Follow-up PRF-MCP-05:** migrar `list_tools` al meta-based
@@ -3757,6 +3756,146 @@ SPEC-DISTRIBUTION PASS 0→1, PARTIAL 3→2.
   operador).
 - **Follow-up PRF-DIST-03:** test E2E automatizado con servidor
   HTTP + SHA incorrecto (release certification).
+- **U15 cerrado en §96**, **PRF-CLI-07 cerrado en §93**, y
+  **PRF-MCP-05** movido a PARTIAL en §94: tres buckets que ya no
+  requieren action inmediato, sólo follow-ups arriba.
+
+**Push a origin/main sigue operator-gated.** Commits locales hasta
+autorización explícita.
+
+## §96 — U15 PASS: archivos sin lenguaje reconocido ya se reportan explícitamente (2026-09-23)
+
+**Disposición:** U15 **NOT_RUN → PASS (RED→GREEN)**. PRF-ANA-05
+sub-gate del operador.
+
+### El gap real
+
+`cognicode graph full` sobre corpus mixto con extensiones sin
+parser (`legacy.cob`, `readme.txt`) reportaba `status: complete`
+con `skipped_files: []` — el filtro silencioso descartaba esos
+archivos sin levantar ningún skip reason.
+
+**Ubicación del bug.** `crates/cognicode-core/src/application/services/analysis_service.rs::build_project_graph`
+línea 312-315 (pre-fix):
+
+```rust
+let files: Vec<_> = files
+    .into_iter()
+    .filter(|(_, lang, _, _, _)| lang.is_some())
+    .collect();
+```
+
+El `WalkBuilder` descubre el archivo (`is_file()` ya pasó el
+filtro), el detector de lenguaje devuelve `None` para extensiones
+sin parser, y el `.is_some()` los filtra **sin añadirlos a
+`skipped_files`**. Luego, en la rama donde se construye el
+`BuildStatus`:
+
+```rust
+let status = if skipped_vec.is_empty() {
+    BuildStatus::Complete
+} else {
+    BuildStatus::Partial { skipped: skipped_vec }
+};
+```
+
+Resultado: `Complete` aunque se dejaron archivos sin procesar.
+UAT U15 ("fallback y nivel de soporte explícitos, sin resolución
+inventada") exige reportar cobertura honesta.
+
+### RED test empírico
+
+`crates/cognicode-core/src/application/services/analysis_service.rs`
+(test nuevo al final del primer `mod tests`):
+
+```rust
+#[test]
+fn test_u15_unsupported_files_must_appear_in_build_report_skipped() {
+    // corpus: supported.py + unsupported.cob + notes.txt
+    let report = service
+        .get_last_build_report()
+        .expect("build_project_graph debe poblar last_build_report");
+    use crate::infrastructure::graph::per_file_graph::BuildStatus;
+    match report.status {
+        BuildStatus::Complete => panic!("U15: status=Complete con archivos no soportados ..."),
+        BuildStatus::Partial { skipped } => {
+            // verifica cob y txt aparecen
+        }
+    }
+}
+```
+
+**Run pre-fix:** `FAILED` con `status: Complete` confirmado — el
+test pinea el contrato que debe romperse antes del fix.
+
+### GREEN fix
+
+Antes del filtro `is_some()`, walk paralelo sobre los mismos
+`files` para empujar cada `lang.is_none()` a `skipped_files` con
+`SkipReason::UnsupportedExtension`. Reutiliza el variant enum
+**ya existente** en `per_file_graph.rs:697`
+(`UnsupportedExtension(String)`); no se añade ninguna abstracción
+ni helper nuevo.
+
+**Verificación E2E con `/tmp/u15-corpus/`** (5 archivos: data.go,
+lib.rs, types.py, legacy.cob, readme.txt):
+
+```json
+{
+  "schema_version": "cognicode.graph.full/v1",
+  "path": "/tmp/u15-corpus/",
+  "symbols": 4,
+  "status": "partial",
+  "skipped_files": [
+    {"path": "/tmp/u15-corpus/src/readme.txt",
+     "reason": "UnsupportedExtension(\"extension '.txt' is not in the supported parser set\")"},
+    {"path": "/tmp/u15-corpus/src/legacy.cob",
+     "reason": "UnsupportedExtension(\"extension '.cob' is not in the supported parser set\")"}
+  ]
+}
+```
+
+Antes: `status: complete`, sin `skipped_files` para `cob`/`txt`.
+
+### Diseño: por qué este shape y no otro
+
+- **Walk paralelo sobre `&files`, no split a `vec.into_iter()`.**
+  Reutilizamos el mtime y size que ya se recogieron; si los
+  re-catalogamos perderíamos los metadatos por duplicar trabajo.
+- **`Mutex<Vec<SkippedFile>>` (no `Arc<Mutex<...>>` separado).** El
+  colector ya es `Arc<Mutex<Vec<...>>>`; sólo tomamos `guard`
+  adicional antes del `.into_par_iter()` que más adelante hace
+  push a través de clones del `Arc`.
+- **No se mueve la lógica de detección de lenguaje.** Si en el
+  futuro se añade un parser para `.cob`/`.txt`, el `lang.is_some()`
+  los capturará naturalmente y dejarán de entrar a skipped — el
+  fix no requiere tocar la lista de parsers.
+- **`format!` con la extensión es útil en DX.** El cliente ve
+  exactamente por qué el archivo no se procesó (`.txt`) sin tener
+  que ir al fichero y mirar la extensión.
+
+### Métricas
+
+- `cognicode-core` libtests: 2352 passed / 0 failed / 31 ignored.
+- Workspace completo `--no-fail-fast`: **5315 passed / 0 failed /
+  45 ignored** (post-fix +3 vs pre-fix 5841).
+- `cargo clippy -p cognicode-core --lib -- -D warnings`: EXIT 0,
+  cero warnings.
+
+### Disposiciones actualizadas
+
+- UAT U15: NOT_RUN → **PASS**.
+- SPEC-ANALYSIS: PASS 2 → 3, NOT_RUN 2 → 1.
+- UAT originales: PASS 5 → 6, NOT_RUN 4 → 3, total 27 sin cambios.
+
+### Decisiones pendientes
+
+- **¿Notar `.cob`/`txt` en release notes?** El cambio afecta a
+  clientes que asumen `status == "complete"` como éxito total. Si
+  tenemos un cliente pineando `Complete` como gate, ahora
+  devolverá `Partial` para corpus mixtos. Recomendar release notes
+  apuntándolo: este es el contrato U15 que el cliente debería
+  pinear.
 
 **Push a origin/main sigue operator-gated.** Commits locales hasta
 autorización explícita.
