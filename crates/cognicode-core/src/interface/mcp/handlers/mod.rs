@@ -917,11 +917,31 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
 }
 
 /// Checks whether any source file has changed since the manifest was saved.
-/// Uses mtime as a fast check (no hashing unless needed).
+///
+/// Staleness is decided on three independent signals, in order of cost:
+///
+/// 1. Filesystem walk to enumerate the current source tree.
+/// 2. `mtime` (millisecond precision) of each source file compared to
+///    the snapshot entry. A mismatch is conclusive evidence of change.
+/// 3. `content_hash` (SHA-256 over the file bytes) compared to the
+///    snapshot entry, **only when mtime coincides**. mtime alone is
+///    insufficient: a tool that overwrites the bytes while preserving
+///    the timestamp (a restore from backup, `touch -r`, a wrong writer)
+///    would otherwise be silently served as the cached graph while
+///    reporting `status: complete`. PRF-STATE-07.
+///
+/// A source file that cannot be read at all (permissions revoked,
+/// deleted mid-scan) is treated as a change: serving the cached graph
+/// would hide the loss of coverage behind a stale "complete" result.
+/// PRF-STATE-08.
+///
+/// New files not in the manifest and files in the manifest but absent
+/// from disk also invalidate the snapshot. PRF-STATE-09 / PRF-STATE-10.
 fn is_manifest_stale(
     manifest: &crate::domain::value_objects::file_manifest::FileManifest,
     project_dir: &Path,
 ) -> bool {
+    use sha2::{Digest, Sha256};
     use walkdir::WalkDir;
     let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
@@ -949,11 +969,22 @@ fn is_manifest_stale(
             .unwrap_or(0);
         match manifest.entries.get(rel) {
             Some(entry) if entry.mtime == mtime_ms => {
-                // PRF-ANA-02/STATE-04: a file whose content can no longer
-                // be read (e.g. permissions revoked after the snapshot)
+                // PRF-STATE-07: mtime alone is not sufficient. A tool
+                // can rewrite the file bytes while keeping the original
+                // timestamp (e.g. restoring a backup, partial restore,
+                // `touch -r`). Compare the on-disk content_hash against
+                // the stored one to detect that case.
+                //
+                // PRF-STATE-08: a file whose content can no longer be
+                // read (e.g. permissions revoked after the snapshot)
                 // invalidates the snapshot — serving it would hide the
                 // loss of coverage behind a stale "complete" result.
-                if std::fs::read(path).is_err() {
+                let bytes = match std::fs::read(path) {
+                    Ok(b) => b,
+                    Err(_) => return true,
+                };
+                let on_disk_hash = hex_digest(&Sha256::digest(&bytes));
+                if on_disk_hash != entry.content_hash {
                     return true;
                 }
                 continue; // unchanged
@@ -5707,6 +5738,235 @@ mod tests {
             assert!(
                 third.symbols_found > first.symbols_found,
                 "rebuilt graph must reflect the new symbol"
+            );
+        }
+
+        // PRF-STATE-07: when bytes change but mtime is preserved, the
+        // snapshot MUST be considered stale — content_hash comparison is
+        // the only thing that distinguishes "unchanged" from "preserved
+        // mtime but different content".
+        //
+        // Adversarial scenario: an editor / file-rotation script can
+        // write a file while keeping the original mtime (e.g. restoring
+        // a backup, fixing permissions, restoring a deleted file with
+        // `touch -r`). Without content_hash comparison, the server would
+        // silently serve a graph that no longer matches the source tree
+        // while reporting `status: complete`.
+        #[tokio::test]
+        async fn state07_modified_bytes_with_preserved_mtime_invalidates_snapshot() {
+            use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+            use sha2::{Digest, Sha256};
+            use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path();
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            let file = project.join("src").join("sample.rs");
+
+            // Pin mtime to a fixed timestamp and write the ORIGINAL
+            // bytes so the on-disk file actually carries that mtime
+            // (and not the current clock). We will rewrite the bytes
+            // later while preserving the same mtime.
+            let pinned = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+            std::fs::write(&file, b"fn alpha() {}\n").unwrap();
+            {
+                use std::fs::OpenOptions;
+                let f = OpenOptions::new().write(true).open(&file).unwrap();
+                f.set_modified(pinned).unwrap();
+            }
+            let pinned_millis = pinned.duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+
+            // Manually build a manifest with the pinned mtime and a
+            // content_hash matching the ORIGINAL bytes.
+            let mut manifest = FileManifest::new(project.to_path_buf());
+            let rel = std::path::PathBuf::from("src/sample.rs");
+            let original_hash = hex_digest(&Sha256::digest(b"fn alpha() {}\n"));
+            manifest.entries.insert(
+                rel.clone(),
+                FileEntry {
+                    content_hash: original_hash.clone(),
+                    mtime: pinned_millis,
+                    symbol_count: 0,
+                },
+            );
+
+            // Sanity: before rewriting, the snapshot must be considered
+            // FRESH (file content unchanged, mtime matches, hash matches).
+            assert!(
+                !is_manifest_stale(&manifest, project),
+                "baseline check: freshly-built manifest must NOT be stale \
+                 (mtime={}, file content matches manifest)",
+                pinned_millis
+            );
+
+            // Now mutate the file bytes while keeping the same mtime.
+            // This is the adversarial scenario: a partial restore, a
+            // wrong writer, or any tool that overwrites the bytes
+            // without bumping mtime.
+            std::fs::write(&file, b"fn alpha() {}\nfn beta() {}\n").unwrap();
+            {
+                use std::fs::OpenOptions;
+                let f = OpenOptions::new().write(true).open(&file).unwrap();
+                f.set_modified(pinned).unwrap();
+            }
+
+            // RED assertion: under the current (buggy) implementation,
+            // `is_manifest_stale` returns `false` here because the mtime
+            // still matches and the manifest's content_hash matches the
+            // OLD bytes (the handler never re-reads the file to check
+            // the actual bytes against the hash). After the fix it MUST
+            // return `true`.
+            assert!(
+                is_manifest_stale(&manifest, project),
+                "snapshot must be stale when on-disk content differs \
+                 from manifest content_hash, even if mtime matches"
+            );
+        }
+
+        // PRF-STATE-08: a manifest entry whose on-disk file can no
+        // longer be read (permissions revoked, file removed during
+        // scan, IO error) must invalidate the snapshot — serving it
+        // would hide the loss of coverage behind a stale "complete"
+        // result.
+        #[tokio::test]
+        async fn state08_unreadable_source_file_invalidates_snapshot() {
+            use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+            use sha2::{Digest, Sha256};
+
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path();
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            let file = project.join("src").join("locked.rs");
+            std::fs::write(&file, b"fn locked() {}\n").unwrap();
+
+            // Build a manifest matching the file as it stands.
+            let mut manifest = FileManifest::new(project.to_path_buf());
+            let rel = std::path::PathBuf::from("src/locked.rs");
+            let hash = hex_digest(&Sha256::digest(b"fn locked() {}\n"));
+            let mtime = std::fs::metadata(&file)
+                .unwrap()
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            manifest.entries.insert(
+                rel.clone(),
+                FileEntry {
+                    content_hash: hash,
+                    mtime,
+                    symbol_count: 0,
+                },
+            );
+
+            // Make the file unreadable. On Unix this is a chmod 000;
+            // we accept the platform-specific failure mode gracefully.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o000)).unwrap();
+                let stale = is_manifest_stale(&manifest, project);
+                // Restore so the tempdir cleanup works.
+                std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+                assert!(
+                    stale,
+                    "snapshot must be stale when a source file becomes unreadable"
+                );
+            }
+            #[cfg(not(unix))]
+            {
+                // Non-unix platforms: just exercise the read-error branch
+                // by deleting the file mid-snapshot. Coverage is best-effort.
+                std::fs::remove_file(&file).unwrap();
+                let stale = is_manifest_stale(&manifest, project);
+                assert!(
+                    stale,
+                    "snapshot must be stale when a source file is removed"
+                );
+            }
+        }
+
+        // PRF-STATE-09: a file ADDED to the project after the snapshot
+        // was taken must invalidate it (otherwise the new file is
+        // silently absent from analysis).
+        #[tokio::test]
+        async fn state09_new_file_added_to_project_invalidates_snapshot() {
+            use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+            use sha2::{Digest, Sha256};
+
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path();
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            std::fs::write(project.join("src").join("a.rs"), b"fn a() {}\n").unwrap();
+
+            let mut manifest = FileManifest::new(project.to_path_buf());
+            let rel_a = std::path::PathBuf::from("src/a.rs");
+            let hash_a = hex_digest(&Sha256::digest(b"fn a() {}\n"));
+            let mtime_a = std::fs::metadata(project.join("src").join("a.rs"))
+                .unwrap()
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            manifest.entries.insert(
+                rel_a,
+                FileEntry {
+                    content_hash: hash_a,
+                    mtime: mtime_a,
+                    symbol_count: 0,
+                },
+            );
+
+            // Add a new source file after the snapshot.
+            std::fs::write(project.join("src").join("b.rs"), b"fn b() {}\n").unwrap();
+
+            assert!(
+                is_manifest_stale(&manifest, project),
+                "snapshot must be stale when a new file appears"
+            );
+        }
+
+        // PRF-STATE-10: a file RENAMED in the project must invalidate
+        // the snapshot (old path no longer exists; new path is not in
+        // the manifest).
+        #[tokio::test]
+        async fn state10_renamed_file_invalidates_snapshot() {
+            use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+            use sha2::{Digest, Sha256};
+
+            let dir = tempfile::tempdir().unwrap();
+            let project = dir.path();
+            std::fs::create_dir_all(project.join("src")).unwrap();
+            let original = project.join("src").join("a.rs");
+            std::fs::write(&original, b"fn a() {}\n").unwrap();
+
+            let mut manifest = FileManifest::new(project.to_path_buf());
+            let rel = std::path::PathBuf::from("src/a.rs");
+            let hash = hex_digest(&Sha256::digest(b"fn a() {}\n"));
+            let mtime = std::fs::metadata(&original)
+                .unwrap()
+                .modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            manifest.entries.insert(
+                rel,
+                FileEntry {
+                    content_hash: hash,
+                    mtime,
+                    symbol_count: 0,
+                },
+            );
+
+            // Rename the file in place.
+            let renamed = project.join("src").join("renamed.rs");
+            std::fs::rename(&original, &renamed).unwrap();
+
+            assert!(
+                is_manifest_stale(&manifest, project),
+                "snapshot must be stale when a tracked file is renamed"
             );
         }
     }
