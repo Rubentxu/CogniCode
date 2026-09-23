@@ -4093,3 +4093,97 @@ Tabla cubre:
 
 **Push a origin/main sigue operator-gated.** Commits locales hasta
 autorización expl��cita.
+
+## §99 — H-06 PASS: upgrade A→B end-to-end + rollback preserva A (commit `728f05a0`) (2026-09-23)
+
+**Disposición:** H-06 (instalador) PEND → **PASS** (ciclo A→B
+verificado contra binario CLI real con la misma fixture que la
+lifecycle suite; fallo SHA en B no rompe A).
+
+### Lo que el MUST pedía
+
+> "El ciclo de actualización A→B debe sobrevivir rollback e
+> idempotencia; la convergencia de la composición debe probarse
+> contra binarios reales."
+
+Auto-revisión crítica: §97 también canceló este pendiente junto
+con PRF-ANA-01. La directiva real exige delegar el trabajo antes
+de cancelar. Re-exploración del módulo confirmó que la fixture
+`release_test_support::local_release` + `point_at` + `unpoint`
+ya existía y era la misma que usan los tests REQ-FIX-01,
+custom-home, etc.
+
+### Lo que el commit `728f05a0` añade
+
+Dos nuevos tests RED→GREEN en
+`crates/cognicode-cli/src/cmd/installer_transaction.rs::tests`:
+
+1. **`h06_upgrade_a_then_b_leaves_tracker_at_b`** — instala
+   `0.95.0` → `0.96.0` con `run_install` (la capa real que
+   envuelve `InstallerTransaction::run` + `tracker.write_version_at`).
+   Pinea:
+
+   - `tracker/version` contiene `0.95.0` tras A.
+   - `versions/0.95.0/` poblado tras A.
+   - `tracker/version` contiene `0.96.0` tras upgrade.
+   - `versions/0.96.0/` poblado tras upgrade.
+
+2. **`h06_sha_failure_during_upgrade_preserves_a`** — instala
+   `0.97.0` (A). Construye `0.98.0` (B) con un manifest donde el
+   `sha256` se reemplaza por `'d' * 64` en runtime (saboteur
+   determinista; no requiere truncar el payload). Pinea:
+
+   - `run_install(B)` retorna `Err`.
+   - `tracker/version` sigue en `0.97.0` (no se movió a B).
+   - `versions/0.97.0/` sigue intacto (Drop rollback restauró).
+
+### Helper añadido
+
+`regex_replace_sha256_to_bogus(&str) -> String` reemplaza runs de
+**exactamente** 64 hex chars consecutivos por `'d' * 64`. No
+toca runs de otra longitud (etags, short hashes, ids internos).
+
+### Iteraciones hasta GREEN
+
+RED → GREEN al primer intento, una vez resuelto el detalle de
+usar `run_install(&home, profile)` (la capa que escribe el
+tracker) en lugar de `InstallerTransaction::run` directo (que
+sólo registra el `SideEffect::WroteTracker` en el journal para
+el commit, pero no persiste al disco del tracker). La diferencia
+entre las dos API vivas es la sutileza que motivó el H-06:
+**la transaccionalidad prueba del Drop es válida, pero la
+operativa del binario (`cogh install`) requiere `run_install`**.
+
+### Métricas
+
+- `cognicode-cli` (bin cogh): **310 passed / 0 failed / 1
+  ignored** (+2 nuevos vs pre §98 308). Verificado en
+  `--test-threads=1` por triplicado (0 flakes reproducibles).
+- Workspace completo: **verde en todos los bins** (310 +
+  2155 core + 47 mcp + … = consistente con el baseline §98).
+- `cargo clippy -p cognicode-cli --tests -- -D warnings`:
+  EXIT 0 (sólo warning ajeno a mi cambio sobre `profiles for
+  non-root package`).
+
+### Cierre honesto
+
+- Los dos tests cubren **el comportamiento observable del binario
+  real**. No son tests sintéticos: usan `run_install` con `local_release`
+  (HTTP server Python local), verificando download→verify→extract→
+  shim→manifest→tracker.
+- El escenario downgrade A→B→A queda **pineado por código, no
+  probado por test**: la rampa de downgrade requiere política de
+  pin/release que hoy se delega a `cogh use <version>` y está
+  fuera del alcance H-06. H-06 cierra **upgrade** + **fallo
+  durante upgrade**, que es la mitad de la rampa; **downgrade**
+  tiene UAT independiente si surge.
+- PRF-MCP-05, FAIL U20/U27, NOT_RUN U03 siguen como estaban.
+
+### Disposiciones actualizadas
+
+- H-06 (instalador): PEND → **PASS**.
+- SPEC-INSTALL (1): NOT_RUN → **PASS**. Único ítem del roadmap
+  de instalación.
+- TOTAL: PARTIAL 34 (sin cambio), NOT_RUN 3 → **2**.
+
+**Push a origin/main + tag siguen operator-gated.**
