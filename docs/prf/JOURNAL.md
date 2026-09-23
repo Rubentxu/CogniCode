@@ -5823,3 +5823,110 @@ no especulativos (revisar deuda identificable restante).
 
 Conventional Commits estricto: `docs(prf): §120 — T5 release
 snapshot v2 against HEAD 60c8d53d`. Solo docs/.
+
+## §121 — Push autorizado: 237 commits a origin/main + tag v0.97.4 (2026-09-23)
+
+**Origen.** El operador autorizó push explícitamente con la
+directiva "sube" a las 14:29:58 UTC. Estado pre-push validado
+en §120: T0/T1/T2/T3/T5 todos verdes, 6 bins release v0.97.4
+construidos, SHA-256 capturados en SNAPSHOT.md.
+
+### Ejecución
+
+#### Pre-flight
+
+```text
+$ git status --short          # working tree clean
+$ git fetch origin main       # OK
+$ git rev-list --count origin/main..HEAD  # 237 commits ahead
+$ git merge-base --is-ancestor origin/main HEAD  # YES, fast-forward OK
+```
+
+Sin divergencia: local está estrictamente adelante de remoto.
+Push fast-forward limpio.
+
+#### Push branch
+
+```text
+$ git push origin main
+To github.com:Rubentxu/CogniCode.git
+   5b96db43..4129ae4a  main -> main
+```
+
+Branch `main` actualizado en remoto de `5b96db43` → `4129ae4a`.
+
+#### Crear tag anotado v0.97.4
+
+```text
+$ git tag -a v0.97.4 -m "..."
+$ git push origin v0.97.4
+To github.com:Rubentxu/CogniCode.git
+ * [new tag]           v0.97.4 -> v0.97.4
+```
+
+Tag anotado v0.97.4 creado (sha `2f8ed1b5fbb178e8a224e2e4f456982f06b793e8`)
+apuntando al commit `4129ae4a0cbb51ff2f4753b11cd994ff1eadd2ab`.
+
+### Verificación post-push
+
+```text
+$ git ls-remote origin main
+4129ae4a0cbb51ff2f4753b11cd994ff1eadd2ab refs/heads/main  ✓ local = remoto
+
+$ git ls-remote origin refs/tags/v0.97.4
+2f8ed1b5fbb178e8a224e2e4f456982f06b793e8 refs/tags/v0.97.4  ✓ tag existe
+
+$ git status --short  # clean
+$ git rev-list --count origin/main..HEAD  # 0 commits ahead
+```
+
+Push sincronizado correctamente.
+
+### SEMVER derivado del historial
+
+`v0.97.3` → `v0.97.4` = **PATCH** porque entre los 237 commits:
+- 0 commits `feat:` (no nuevas features).
+- 0 commits `BREAKING CHANGE` (sin breaking changes).
+- N commits `fix:` + `docs:` + `test:` + `chore:` + `refactor:`
+  (todos compatibles con PATCH bump según semver.org).
+
+### Estado de certificación post-push
+
+- F0 = ACCEPTED.
+- F1 = ACCEPTED.
+- F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2).
+- F3-F6 = ACCEPTED vía C3-C6.
+- **C7 = BLOQUEADO** (auditoría 2026-09-22 sin variación).
+  El push NO firma release — el código se pushea pero el
+  release factory R1-R9 en CI no se ejecuta hasta que C7
+  se desbloquee.
+
+### Próximos pasos (operator-gated)
+
+1. **CI release pipeline** (`release.yml` matrix) se activará
+   automáticamente si el push al tag `v0.97.4` dispara el
+   workflow. Verificar en GitHub Actions.
+2. **C7 firma** sigue BLOQUEADO. No se puede firmar release
+   legalmente sin desbloquear (auditoría 2026-09-22).
+3. **operator decide**:
+   - Si OK con C7 BLOQUEADO: no hacer nada más, dejar que CI
+     construya artefactos.
+   - Si quiere firmar release: sesión dedicada para desbloquear
+     C7 primero.
+
+### Cambios en este WU
+
+- `git push origin main` (237 commits).
+- `git tag -a v0.97.4 -m "..."` (tag anotado).
+- `git push origin v0.97.4` (tag).
+
+Conventional Commits: §121 es solo docs (journal + state).
+No se commitea código en push workflow; el push es publicación.
+
+### Artifacts
+
+- Branch `main` en `4129ae4a` (remoto sincronizado).
+- Tag `v0.97.4` en `2f8ed1b5` (anotado, apunta a `4129ae4a`).
+- 237 commits publicados con sus trees, blobs y SHAs.
+
+§121 cierra el ciclo de release v0.97.4 (código + tag).
