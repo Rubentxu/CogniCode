@@ -52,7 +52,14 @@ fn cogh_bin() -> std::path::PathBuf {
 }
 
 /// Run `cogh` with the given args, in a temp HOME.
+///
+/// Acquires `ENV_LOCK` to serialize against other test binaries that
+/// share the same env vars. `#[serial]` already serializes against
+/// tests in the same bin; `ENV_LOCK` extends that to **across bins**.
+/// Restores the previous `HOME` on every return path so subsequent
+/// tests in the same bin are unaffected.
 fn run_cogh(home: &Path, args: &[&str]) -> Result<std::process::Output> {
+    let _guard = ENV_LOCK.lock().expect("ENV_LOCK poisoned");
     let prev_home = std::env::var("HOME").ok();
     // SAFETY: tests in the same process can race on env vars; we set HOME
     // before each invocation and restore after.
@@ -81,8 +88,16 @@ fn run_cogh(home: &Path, args: &[&str]) -> Result<std::process::Output> {
     result
 }
 
+/// Process-wide lock to coordinate mutations of `HOME` / `COGNICODE_HOME`
+/// across parallel test binaries. `#[serial]` covers concurrency within
+/// one bin; this covers **across bins**, where each `cogh` subprocess
+/// spawned by one test inherits the env vars from the test runner
+/// process, racing with another bin's tests.
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// Set up a temp home with .cognicode + bundled plugins.
 fn setup_temp_home(tmp: &Path) -> Result<()> {
+    let _guard = ENV_LOCK.lock().expect("ENV_LOCK poisoned");
     let _ = std::fs::remove_dir_all(tmp);
     std::fs::create_dir_all(tmp)?;
 
