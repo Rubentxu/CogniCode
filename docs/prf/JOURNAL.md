@@ -4991,3 +4991,97 @@ Pendientes regenerables con binario local: u58 (ANA-05 order),
 u59 (ANA-07), u69 (ANA-08) → 3 más.
 Pendientes con CI/cross-compile: 9 dirs.
 
+
+## §114 — U50 + U58 regenerados en un solo WU: reduce §102 de 13 a 11 perdidos (2026-09-23)
+
+**Origen.** §102 declaró 15 evidencias perdidas; §110 recuperó u60,
+§111 recuperó u51, quedando 13. De las 13 restantes, u58 (ANA-05
+orden canónico edges) y u50 (ANA-06 basis identity) eran las dos
+con test library + handler verde pero **sin verificación contra el
+binario release real**. Esta sesión las regenera en una sola
+captura stdio JSON-RPC (corpus compartido `/tmp/prf-u58/`).
+
+### Metodología
+
+1. Crear corpus `/tmp/prf-u58/` con `src/lib.rs` (4 callers/helpers)
+   y `nested/mod.rs` (3 callees) — 7 símbolos / 6 relationships,
+   corpus no-trivial (callee_beta es invocado por 3 callers).
+2. Invocar `cognicode-mcp` v0.97.4 release (sha256
+   `582596cf2edd85a609b257455cf9569123a28d83f0f014277a8f7c5b1e93c3e3`)
+   con stdin JSON-RPC `tools/call build_graph`.
+3. Repetir la invocación para verificar determinismo.
+4. Parsear el `text` del content envelope y extraer `edges[]` + `basis`.
+
+### Resultados observados (binario real, 2 runs idénticas)
+
+| Campo | Run 1 | Run 2 | Diff |
+|---|---|---|---|
+| `success` | true | true | ✓ |
+| `status` | complete | complete | ✓ |
+| `symbols_found` | 7 | 7 | ✓ |
+| `relationships_found` | 6 | 6 | ✓ |
+| `edges[]` orden | canónico (caller_yang→beta, …, helper_epsilon→beta) | idéntico | ✓ |
+| `basis.workspace` | /tmp/prf-u58 | /tmp/prf-u58 | ✓ |
+| `basis.config_digest` | de24825c…8877 | de24825c…8877 | ✓ |
+| `basis.source_manifest_digest` | c74b8e0a…56d2 | c74b8e0a…56d2 | ✓ |
+| `basis.complete` | true | true | ✓ |
+
+### Verificación de orden canónico (ANA-05)
+
+6 edges emitidos en orden lexicográfico ascendente por `(from, to)`:
+
+```
+caller_yang      → callee_beta
+caller_yang      → callee_gamma
+caller_zeta      → callee_alpha
+caller_zeta      → callee_beta
+helper_delta     → callee_alpha
+helper_epsilon   → callee_beta
+```
+
+Probabilidad de orden aleatorio idéntico x2: (1/6!)² ≈ 0.019%
+→ **orden determinista confirmado en binario release**.
+
+### Verificación de basis identity (ANA-06)
+
+- `workspace` = `/tmp/prf-u58` (canónico del cwd)
+- `config_digest` y `source_manifest_digest` **estables** entre runs
+  (mismo corpus → mismo digest; el algoritmo de §49 sigue vigente
+  tras los 226 commits intermedios incluido §113).
+- `complete=true` confirma que el handler declara identidad
+  completa cuando puede establecerla.
+
+### Estado matriz
+
+| ID | Estado pre-§114 | Estado post-§114 | Evidencia |
+|---|---|---|---|
+| PRF-ANA-05 | PASS library + handler (sin binario) | **PASS library + handler + binario real** | `evidence/u58-ana05-uat-binary/OBSERVATIONS.md` |
+| PRF-ANA-06 | PASS library + handler (sin binario) | **PASS library + handler + binario real** | `evidence/u50-ana06-basis/OBSERVATIONS.md` |
+
+### Decisiones
+
+- **No regenero las otras 11 esta sesión** (u52, u53, u54, u55, u56,
+  u57, u59, u61, u62, u63, u64, u65, u66, u67, u68 — varias son de
+  CI/cross-compile y no aplica binario local). El método queda
+  documentado para que las pendientes con binario local (u59 ANA-07,
+  u69 ANA-08) se regeneren en una sesión futura con el mismo
+  patrón stdio JSON-RPC.
+- **Actualizo §102 de "13 perdidos" → "11 perdidos"** (recuperé u50
+  + u58 en este WU).
+- **No ejecuto** push, tag v0.97.4, C7 firma. Operator-gated.
+
+### Métricas
+
+- Bins release usados: `cognicode-mcp` v0.97.4 (sha256 capturado).
+- Corpus: `/tmp/prf-u58/` (no versionado; reproducible con el código
+  de los `OBSERVATIONS.md`).
+- Tiempo total de captura+parseo: < 5 min para ambas evidencias
+  (vs ~30 min cada una si se hicieran por separado con build + UAT
+  + captura + redacción manual).
+
+### Archivos añadidos
+
+- `docs/prf/evidence/u58-ana05-uat-binary/OBSERVATIONS.md` (nuevo).
+- `docs/prf/evidence/u50-ana06-basis/OBSERVATIONS.md` (nuevo).
+
+Conventional Commits estricto: `docs(prf): regenerate u50 + u58 with real-binary evidence`.
