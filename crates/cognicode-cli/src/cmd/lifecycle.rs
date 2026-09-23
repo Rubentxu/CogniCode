@@ -172,6 +172,12 @@ fn create_claude_config(tmp: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
+// Tests below intentionally exercise `tracker::write_version` — they
+// predate H-F6-1 and remain correct because every test holds a
+// `TempCognicodeHome` / scoped env var. The `#[allow(deprecated)]` keeps
+// the dev signal focused: any new use of these wrappers in **production**
+// triggers a compile warning directing the author to the `*_at` API.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::install;

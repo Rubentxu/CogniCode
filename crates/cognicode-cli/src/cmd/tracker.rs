@@ -75,6 +75,10 @@ pub fn read_version_optional_at(tracker_path: &Path) -> Option<String> {
 /// Env-resolved convenience wrappers. Production code holding a
 /// `CognicodeHome` must use the `*_at` variants with
 /// `home.tracker_version()` (H-F6-1).
+#[deprecated(
+    since = "0.97.4",
+    note = "env-only resolution; ignored `--home`. Use `write_version_at(home.tracker_version(), v)` instead (H-F6-1)."
+)]
 pub fn write_version(version: &str) -> Result<()> {
     write_version_at(&default_tracker_path(), version)
 }
@@ -83,6 +87,10 @@ pub fn read_version() -> Result<String> {
     read_version_at(&default_tracker_path())
 }
 
+#[deprecated(
+    since = "0.97.4",
+    note = "env-only resolution; ignored `--home`. Use `read_version_optional_at(&home.tracker_version())` instead (H-F6-1)."
+)]
 pub fn read_version_optional() -> Option<String> {
     read_version_optional_at(&default_tracker_path())
 }

@@ -1137,6 +1137,14 @@ fn download_to_string(url: &str) -> std::result::Result<String, String> {
 }
 
 #[cfg(test)]
+// Tests below intentionally exercise the env-only `tracker::write_version` /
+// `tracker::read_version_optional` convenience wrappers — they predate
+// H-F6-1 and remain correct because every test holds a
+// `TempCognicodeHome`, so the env var and the tracker path coincide. The
+// `#[allow(deprecated)]` keeps the dev build signal focused: any new use
+// of these wrappers in **production** code triggers a compile warning
+// directing the author to the `*_at` API.
+#[allow(deprecated)]
 mod tests {
     use super::*;
     use crate::bundle_manifest::Platform;
