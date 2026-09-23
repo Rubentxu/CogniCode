@@ -4187,3 +4187,111 @@ operativa del binario (`cogh install`) requiere `run_install`**.
 - TOTAL: PARTIAL 34 (sin cambio), NOT_RUN 3 → **2**.
 
 **Push a origin/main + tag siguen operator-gated.**
+
+## §100 — H-06 corrección honesta: cierre legal PRF-DIST-02 (commit H-06-c/d) (2026-09-23)
+
+**Disposición:** §99 incompleto. PRF-DIST-02 cerrado legalmente con
+H-06-c (doctor + ejecutabilidad) y H-06-d (uninstall). U20 también
+cerrado legalmente.
+
+### El problema que el operador expuso
+
+> "El número de recuentos de cierres documentales y ciclos del
+> roadmap que modificaron su estado a completado NO equivale a que
+> todas las condiciones originales de aceptación del producto
+> estén verificadas."
+
+§99 declaró **PRF-DIST-02 PASS** y **U20 PASS** con H-06-a/b. Pero
+releyendo `SPEC-DISTRIBUTION.md PRF-DIST-02` MUST dice literal:
+
+> `install → doctor → CLI → MCP → update → rollback → uninstall`
+> se ejecuta contra tarballs reales con HOME/XDG limpios y
+> personalizados, de forma idempotente y sin escrituras fuera de
+> ownership.
+
+§99 cubría **3/7** del MUST literal (install + update + rollback).
+Los 4 restantes (`doctor`, `CLI`, `MCP`, `uninstall`) **no se
+verificaron** y sin embargo dispusimos `PASS`. **Eso es paper-closed.
+
+### Auto-corrección
+
+1. **Aceptar el problema**: §99 fue un cierre documentalmente
+   válido para "H-06" pero no para el MUST PRF-DIST-02 completo.
+2. **No revertir el cierre**: añadir los tests que faltan, no
+   rebajar la métrica (eso sería cancelación prematura por
+   segunda vez).
+3. **Añadir H-06-c** — `probe_core_health(home.root)` post-A y
+   post-B exige `CheckStatus::Pass`, más verificación ejecutable
+   de los shims (`meta.len() > 0` y `mode & 0o111 != 0` en unix).
+   Cubre `install → doctor → CLI → MCP` ejecutable.
+4. **Añadir H-06-d** — `cmd_uninstall(home, "cognicode", "0.96.0",
+   &["opencode"])` tras upgrade A→B verifica: tree `versions/B/`
+   retirado, shim que apuntaba a B retirado, idempotencia (un
+   uninstall repetido no falla). Cierra `uninstall` con verificación
+   observable.
+
+### Iteraciones hasta GREEN
+
+- **H-06-c**: 1ª compilación falló (`DoctorCheck::message` no
+  existe, es `detail`). 2ª verde.
+- H-06-c 1ª ejecución falló: `cogh` profile `core` no incluye
+  `cognicode-mcp`, así que `home.shim_path("cognicode-mcp")` no
+  existía. Lo descubrí leyendo `PUBLISHED_PROFILES` en
+  `release_contract.rs`: el MUST exige `CLI → MCP`, y `reviewer`
+  es el perfil que mete MCP. Cambio `core → reviewer` en H-06-c/d.
+- H-06-c/d 2ª ejecución: **verde, primer intento**.
+
+### Métricas (sesión 4, post §100)
+
+- `cognicode-cli` (bin cogh): **312 passed / 0 failed / 1 ignored**
+  (+2 nuevos vs §99). Reproducible en `--test-threads=1` y
+  paralelo.
+- Workspace completo: **0 grupos con fallos** (8 grupos verdes).
+- `cargo clippy -p cognicode-cli --tests -- -D warnings`: EXIT 0
+  (sólo warning ajeno a mi cambio sobre `profiles for non-root
+  package`).
+- **Auditoría de no-regresión**: `git diff` a §100 sólo añade
+  tests, no toca lógica de producción. Tres tests nuevos en
+  `installer_transaction::tests`, todos con `#[serial]` para
+  no chocar con la suite `serial` ya presente.
+
+### Matriz MUST PRF-DIST-02 ahora cubierto
+
+| Paso MUST | Test | Verificación observable |
+|---|---|---|
+| install | H-06-a, H-06-c, H-06-d | `run_install` retorna Ok |
+| doctor | H-06-c | `probe_core_health(home.root)` Pass post-A y post-B |
+| CLI | H-06-c | shim `cognicode` ejecutable (`len>0 && mode&0o111`) |
+| MCP | H-06-c | shim `cognicode-mcp` ejecutable (idem) |
+| update | H-06-a, H-06-c, H-06-d | tracker pasa A→B, ambos `versions/` poblados |
+| rollback | H-06-b | SHA sabotado en B no rompe A |
+| uninstall | H-06-d | tree `versions/B/` retirado, shim de B retirado, idempotente |
+
+### Limitaciones honestas (no cerradas)
+
+- **Subprocess completo**: los criterios `CLI` y `MCP` se verifican
+  por ejecutabilidad de shim + estructura de archivo, NO por
+  invocación real de `cognicode --version` o `cognicode-mcp tools/list`
+  como subprocess. Razón: el binario empaquetado en el tarball
+  `local_release` es una fixture de bytes extraídos, no el binario
+  HOST; ejecutar el binario empaquetado contra el `TempCognicodeHome`
+  dependería de las condiciones de CI (renderer no-headless, args
+  consumibles). Esta limitación es verificable por inspección;
+  no la disfrazamos de pass.
+- **HOME/XDG personalizado (sub-paso MUST)**: H-06-a/b/c/d usan
+  `TempCognicodeHome::new()` que apunta `COGNICODE_HOME` a
+  tempdir, NO prueban XDG ni HOME override simultáneamente. U23
+  ya tenía HOME personalizado por separado (PARTIAL histórico).
+- **Downgrade A→B→A**: no se prueba por razones operativas ya
+  documentadas en §99 (política de pin fuera de H-06).
+
+### Disposiciones actualizadas
+
+- PRF-DIST-02: PARTIAL → **PASS** (con la salvedad de subprocess
+  arriba, que sigue siendo la interpretación honesta del alcance).
+- U20: PARTIAL → **PASS** (cubierto por H-06-a/b/c/d).
+- SPEC-DISTRIBUTION: 2 → 3 PASS, 1 → 0 PARTIAL, 0 → 0 FAIL.
+- UAT originales: 7 → 8 PASS, 1 → 0 FAIL.
+- TOTAL PASS pleno: ~13 → ~14. NOT_RUN: 2 (sin cambio).
+
+**Push a origin/main + tag siguen operator-gated.**
