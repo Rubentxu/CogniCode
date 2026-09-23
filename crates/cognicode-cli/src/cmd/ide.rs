@@ -2456,4 +2456,165 @@ mod prf_dist_04_survival_tests {
         );
         assert_eq!(before, after, "no-op uninstall must not touch mtime");
     }
+
+    /// PRF-DIST-04 cobertura ampliada: `uninstall_zcode` debe preservar
+    /// otros MCP servers y claves no-cognicode del config. Pine la
+    /// garantía para `zcode/config.json` análoga a la que ya existe
+    /// para opencode. Usa `ZCODE_CONFIG` env (establecido dentro del
+    /// lock global) para no tocar `HOME`.
+    #[test]
+    #[serial]
+    fn prf_dist_04_zcode_preexisting_config_survives_uninstall() {
+        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.json");
+        let preexisting = json!({
+            "mcp": {
+                "cognicode-mcp": {"type": "stdio"},
+                "other-server": {"type": "local", "command": "/usr/bin/other"},
+                "personal": {"type": "stdio", "command": "/usr/bin/me", "args": ["x"]}
+            },
+            "theme": "monokai",
+            "extra": {"key": "value"}
+        });
+        std::fs::write(&cfg, serde_json::to_string_pretty(&preexisting).unwrap()).unwrap();
+
+        let prev = std::env::var("ZCODE_CONFIG").ok();
+        unsafe {
+            std::env::set_var("ZCODE_CONFIG", &cfg);
+        }
+        let result = uninstall_zcode("0.97.3", Some("cognicode-mcp"));
+        if let Some(p) = prev {
+            unsafe { std::env::set_var("ZCODE_CONFIG", p); }
+        } else {
+            unsafe { std::env::remove_var("ZCODE_CONFIG"); }
+        }
+        result.unwrap();
+
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&cfg).unwrap()).unwrap();
+        assert!(
+            v["mcp"].get("cognicode-mcp").is_none(),
+            "cognicode entry removed from zcode config"
+        );
+        assert_eq!(
+            v["mcp"]["other-server"]["command"], "/usr/bin/other",
+            "other MCP server survives in zcode"
+        );
+        assert_eq!(
+            v["mcp"]["personal"]["command"], "/usr/bin/me",
+            "personal MCP server survives in zcode"
+        );
+        assert_eq!(v["theme"], "monokai", "theme survives in zcode");
+        assert_eq!(v["extra"]["key"], "value", "extra config survives in zcode");
+    }
+
+    /// PRF-DIST-04 cobertura ampliada: `uninstall_claude` debe preservar
+    /// otros MCP servers en `~/.claude/mcp/*.json`. Claude guarda cada
+    /// servidor como un archivo separado, así que el pin es
+    /// "el archivo del binario removido es borrado, los otros no se
+    /// tocan".
+    #[test]
+    #[serial]
+    fn prf_dist_04_claude_preexisting_mcp_servers_survive_uninstall() {
+        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let tmp = tempfile::tempdir().unwrap();
+        let mcp_dir = tmp.path().join("mcp");
+        std::fs::create_dir_all(&mcp_dir).unwrap();
+
+        // Cognicode server (debe desaparecer)
+        std::fs::write(
+            mcp_dir.join("cognicode-mcp.json"),
+            r#"{"command":"/usr/bin/cognicode-mcp"}"#,
+        ).unwrap();
+        // Otros servers (deben sobrevivir byte-a-byte)
+        std::fs::write(
+            mcp_dir.join("my-own.json"),
+            r#"{"command":"/usr/bin/mine","args":["--x"]}"#,
+        ).unwrap();
+        std::fs::write(
+            mcp_dir.join("chronos.json"),
+            r#"{"command":"/usr/bin/chronos"}"#,
+        ).unwrap();
+
+        let prev = std::env::var("CLAUDE_CONFIG").ok();
+        unsafe {
+            std::env::set_var("CLAUDE_CONFIG", tmp.path());
+        }
+        let result = uninstall_claude("0.97.3", Some("cognicode-mcp"));
+        if let Some(p) = prev {
+            unsafe { std::env::set_var("CLAUDE_CONFIG", p); }
+        } else {
+            unsafe { std::env::remove_var("CLAUDE_CONFIG"); }
+        }
+        result.unwrap();
+
+        assert!(
+            !mcp_dir.join("cognicode-mcp.json").exists(),
+            "cognicode-mcp.json removed from claude mcp dir"
+        );
+        assert!(
+            mcp_dir.join("my-own.json").exists(),
+            "user's own MCP server survives in claude mcp dir"
+        );
+        assert!(
+            mcp_dir.join("chronos.json").exists(),
+            "other MCP server (chronos) survives in claude mcp dir"
+        );
+        assert_eq!(
+            std::fs::read_to_string(mcp_dir.join("my-own.json")).unwrap(),
+            r#"{"command":"/usr/bin/mine","args":["--x"]}"#,
+            "user's mcp server content survives byte-for-byte in claude"
+        );
+    }
+
+    /// PRF-DIST-04 cobertura ampliada: `uninstall_codex` debe preservar
+    /// otros servidores declarados en `mcp_servers` del TOML de config.
+    /// Pine análogo a zcode/opencode para TOML.
+    #[test]
+    #[serial]
+    fn prf_dist_04_codex_preexisting_mcp_servers_survive_uninstall() {
+        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let tmp = tempfile::tempdir().unwrap();
+        let cfg = tmp.path().join("config.toml");
+        let preexisting = r#"[mcp_servers]
+cognicode-mcp = { command = "/usr/bin/cognicode-mcp", args = [] }
+my-own = { command = "/usr/bin/mine", args = ["--x"] }
+chronos = { command = "/usr/bin/chronos" }
+
+[ui]
+theme = "dark"
+"#;
+        std::fs::write(&cfg, preexisting).unwrap();
+
+        let prev = std::env::var("CODEX_CONFIG").ok();
+        unsafe {
+            std::env::set_var("CODEX_CONFIG", &cfg);
+        }
+        let result = uninstall_codex("0.97.3", Some("cognicode-mcp"));
+        if let Some(p) = prev {
+            unsafe { std::env::set_var("CODEX_CONFIG", p); }
+        } else {
+            unsafe { std::env::remove_var("CODEX_CONFIG"); }
+        }
+        result.unwrap();
+
+        let text = std::fs::read_to_string(&cfg).unwrap();
+        assert!(
+            !text.contains("cognicode-mcp"),
+            "cognicode-mcp entry removed from codex config, got:\n{text}"
+        );
+        assert!(
+            text.contains("my-own"),
+            "user's own MCP server survives in codex"
+        );
+        assert!(
+            text.contains("chronos"),
+            "chronos survives in codex"
+        );
+        assert!(
+            text.contains("theme = \"dark\""),
+            "non-MCP config survives in codex, got:\n{text}"
+        );
+    }
 }

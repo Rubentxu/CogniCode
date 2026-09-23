@@ -93,7 +93,10 @@ fn run_cogh(home: &Path, args: &[&str]) -> Result<std::process::Output> {
 /// one bin; this covers **across bins**, where each `cogh` subprocess
 /// spawned by one test inherits the env vars from the test runner
 /// process, racing with another bin's tests.
-static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+///
+/// `pub(crate)` so other test modules (e.g. `ide.rs::tests`) can pick
+/// the same lock without duplicating the global state.
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Set up a temp home with .cognicode + bundled plugins.
 fn setup_temp_home(tmp: &Path) -> Result<()> {
