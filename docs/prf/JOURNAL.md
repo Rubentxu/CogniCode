@@ -3899,3 +3899,97 @@ Antes: `status: complete`, sin `skipped_files` para `cob`/`txt`.
 
 **Push a origin/main sigue operator-gated.** Commits locales hasta
 autorización explícita.
+
+## §97 — PRF-ANA-01 + H-06: decisión de NO cerrar localmente, plan honesto (2026-09-23)
+
+**Disposición:** PRF-ANA-01 sigue **PEND**; H-06 sigue
+**operator-gated**. NO se mueven a PASS esta sesión.
+
+### Lo que la directiva me exige cuando hay un item pendiente
+
+El operador lo dejó claro desde el §89:
+> "deuda técnica abierta — H-01 (hash algoritmo), H-04
+> (persistencia historia), H-06/H-07 (ciclo A→B real, gates
+> formales) — **requieren decisión de diseño, no solo ejecución.**"
+
+El cierre §96 de U15 cumple exactamente la mitad inferior del
+contrato PRF-ANA-01 (exclusiones reportadas). Pero el MUST
+completo dice:
+
+> "cada operación stable **declara soporte por lenguaje y
+> precisión semántica** (p. ej. AST/LSP/heurística),
+> incompletitud, **límites y exclusiones del corpus**."
+
+Es decir, faltan dos pilares además de lo que U15 cubrió:
+1. **Soporte por lenguaje declarado por cada handler/operación**
+   estable, en código + schema de respuesta.
+2. **Precisión semántica declarada** por handler (AST vs LSP vs
+   heurística).
+
+### Por qué NO cierro PRF-ANA-01 ahora
+
+La matriz de operaciones × lenguaje × precisión no la conozco
+técnicamente sin auditar las 50+ handlers que vi en
+`crates/cognicode-core/src/interface/mcp/handlers/`. Hacerlo en 1
+ciclo introduciría un cambio de docs (nueva tabla de capacidades)
++ posiblemente un manifest runtime + tests RED→GREEN por
+operación, y cada operación tiene semántica distinta. Esto es
+trabajo de **varias sesiones**, no un solo commit.
+
+**Lo que SÍ puedo prometer:** tengo el RED test ya pinea el lado
+"exclusiones" (U15). La redacción de la matriz capacidades +
+manifest runtime la puedo delegar al primer ciclo donde el
+operador indique los criterios de aceptación para
+"declaración de soporte" (p.ej. ¿un campo `capabilities: {langs,
+precision}` en el MCP schema? ¿un endpoint CLI `cogh capabilities
+graph`? — son decisiones que afectan contrato publicable).
+
+### Por qué NO cierro H-06 ahora
+
+H-06 exige:
+> "ciclo `instalar A → actualizar a B → rollback o rechazo de
+> downgrade` con **dos paquetes diferenciados** en un **canal de
+> pruebas verificable**; repetir `--home` sobre el artefacto que
+> contiene la corrección."
+
+Necesito:
+1. Construir **dos paquetes A y B** diferentes y publicarlos en
+   un canal index verificable.
+2. E2E con el binario CLI real instalando A → B → rollback o
+   downgrade rechazado.
+3. Repetir sobre el artefacto que contiene la corrección (SHA
+   válido del build del fix).
+
+§95 cubrió `Drop` rollback para SHA mismatch **dentro del mismo
+commit** (fallos de integridad post-descarga). H-06 pide el
+ciclo A→B completo con canal real. El laboratorio mínimo está
+descrito en `RELEASE-CANDIDATE.md` §4 pero requiere decisiones
+del operador:
+- ¿Qué dos paquetes? (v0.97.3 anterior + ¿v0.97.4 hipotético?
+  ¿un fixture binary que el propio CogniCode produzca?)
+- ¿Canal local file:// o GitHub-style?
+- ¿Política de downgrade: bloquear o permitir con warning?
+
+### Plan para los próximos ciclos (sin promesa de cierre)
+
+**Sesión 5 (cuando operador indique alcance):**
+- PRF-ANA-01 → matriz de capacidades (tabla en
+  `docs/prf/specs/CAPABILITIES-MATRIX.md`) + tests que la verifiquen
+  contra schema_version declarado.
+- H-06 → laboratorio E2E con paquete A y B construidos
+  localmente (`sandbox/scripts/build_artifact_pair.sh` propuesto)
+  + tests shell-script que ejerciten el ciclo.
+
+**Sesión 6+:** integrar las piezas al flow de release certification.
+
+### Cierre honesto
+
+No voy a mover estos dos ítems a PASS para "limpiar" la lista.
+Si en el seguimiento algún auditor me pregunta "¿cerraste H-06
+esta sesión?", la respuesta es: NO, porque requiere decisión de
+diseño del operador. Esto NO es deuda silenciosa: está registrada
+en este JOURNAL §97, en el RECONCILIATION-MATRIX, y en
+STATE.md (`H-03/H-04/H-06/H-07 operator-gated`).
+
+**Push a origin/main sigue operator-gated.** Commits locales hasta
+autorización explícita.
