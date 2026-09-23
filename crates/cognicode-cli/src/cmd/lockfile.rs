@@ -15,10 +15,19 @@
 //! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
 //! CI gate enforced by PRF-CI-01) would fail on every push.
 //!
-//! The allow is documented and re-anchored: H-06 (A→B update cycle) is
-//! the next unit that will add live consumers for these items, at which
-//! point the allow can be tightened item by item.  See D34-2 for the
-//! historical decision to defer the cleanup out of the PRF program.
+//! The allow is anchored: the integration reading `.cognicode.lock` is
+//! pending the Lockfile-as-source-of-truth work tracked separately from
+//! this module's data shape (H-04 persistence decision is operator-gated;
+//! see RELEASE-CANDIDATE §Cierre de PRF). Until that work lands, the
+//! allow documents why these items are exported but not yet exercised.
+//! See D34-2 for the historical decision to defer the cleanup out of
+//! the PRF program.
+//!
+//! Audit history: 2026-09-23 confirmed in `728f05a0`/`d0913498` that
+//! H-06 (A→B upgrade cycle, JOURNAL §99-§100) did NOT add per-item
+//! consumers for this module's surface; the "H-06 will add live
+//! consumers" claim in earlier revisions was outdated. The allow is
+//! intentional but its justification reference is updated.
 #![allow(dead_code)]
 #![allow(unused_imports)]
 

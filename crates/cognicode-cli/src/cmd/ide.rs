@@ -22,10 +22,17 @@
 //! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
 //! CI gate enforced by PRF-CI-01) would fail on every push.
 //!
-//! The allow is documented and re-anchored: H-06 (A→B update cycle) is
-//! the next unit that will add live consumers for these items, at which
-//! point the allow can be tightened item by item.  See D34-2 for the
-//! historical decision to defer the cleanup out of the PRF program.
+//! The allow is anchored: the consumers for these items arrive
+//! incrementally as H-03/H-04/H-06 land. Until that work lands,
+//! the allow documents why these items are exported but not yet
+//! fully exercised on every bin. See D34-2 for the historical
+//! decision to defer the cleanup out of the PRF program.
+//!
+//! Audit history: 2026-09-23 confirmed in `728f05a0`/`d0913498` that
+//! H-06 (A→B upgrade cycle, JOURNAL §99-§100) did NOT close this
+//! allow per-item; the previous "H-06 will add live consumers" claim
+//! was outdated. The allow is intentional but its justification
+//! reference is updated.
 #![allow(dead_code)]
 #![allow(unused_imports)]
 

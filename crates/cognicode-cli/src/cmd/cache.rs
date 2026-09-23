@@ -6,10 +6,14 @@
 //!
 //! `partial_download_cleanup` is part of the public `cogh::cache` API
 //! surface; it is exercised by the unit test below and is expected to be
-//! called by the install startup path once the U20 A→B update cycle
-//! reaches `cmd_install` integration (H-06).  The `#[allow(dead_code)]`
-//! silences the false-positive when this module is compiled into bin
-//! targets (e.g. `cogh`) where the function is not yet called.
+//! called by the install startup path.  H-06 (JOURNAL §99/§100,
+//! commits `728f05a0`/`d0913498`) exercised the install path
+//! end-to-end against a payload fixture; a future PRF-DIST cycle will
+//! wire `partial_download_cleanup` into `cmd_install` startup as
+//! part of the H-04 persistence decision (operator-gated). Until
+//! then, the `#[allow(dead_code)]` silences the false-positive when
+//! this module is compiled into bin targets (e.g. `cogh`) where the
+//! function is not yet called.
 
 use std::path::Path;
 
