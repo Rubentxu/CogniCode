@@ -133,10 +133,10 @@
 | U07 | CLI,ANA | Unicode, espacios, cwd, config inválida | PARTIAL | Idem |
 | U08 | CLI,MCP,ANA | Misma consulta CLI/MCP sobre snapshot fijo → misma semántica | PARTIAL | U-F3-001 equivalente a U08 con corpus pequeño |
 | U09 | ANA,STATE | Frío/caliente y editar un fichero → delta coherente | PARTIAL | U-F2-W9-001 (proceso nuevo) |
-| **U10** | CLI,MCP,EXT | Cliente anterior soportado contra candidato | **FAIL (no UAT)** | H-07 + matriz muestran que este gate no existe |
+| **U10** | CLI,MCP,EXT | Cliente anterior soportado contra candidato | **PASS (UAT-U10)** | Ext-06 / §88: binario publicado v0.97.3 (tag `daabf848`) vs HEAD `4368367c` ejecutan los 5 subcomandos `graph` sobre corpus versionado `docs/prf/fixtures/u10_compat_corpus/`. Conjunto semántico idéntico (4/5) y orden canónico nuevo (2/5, defecto determinismo #5 corregido en `4368367c`). Evidencia: `docs/prf/evidence/UAT-U10-old-client-compat.md`. Md5 del binario HEAD reproducible x5. **Matrix stale**: aparece como FAIL cuando el gate está verificado y firmado. |
 | U11 | ANA,MCP | Fallo parser/provider en CLI y MCP → mismo estado + error tipado | PARTIAL | U-F2-W8-001 (MCP); CLI equivalente parcial |
 | U12 | CI,ANA | Proyecto anidado, full/per_file; cobertura y equivalencia | PARTIAL | W3 caracterización; UAT específica de anidado no |
-| **U13** | ANA | Cambiar bytes preservando tamaño+mtime; reescanear | **FAIL (RED pin, GREEN pendiente)** | H-01 explícito. RED pin añadido en `5ed7f865` (JOURNAL §31): test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` pinea el caso exacto. GREEN pendiente de elección de algoritmo de hash (operador). |
+| **U13** | ANA | Cambiar bytes preservando tamaño+mtime; reescanear | **PASS (RED→GREEN, SHA-256)** | H-01 del operador **cerrado en `39928202` (JOURNAL §32)** con decisión SHA-256 (32 bytes, `sha2::Sha256`) como tercer cache-invalidation key. Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` RE-ejecutado sobre HEAD actual `2f94664e`: **PASA VERDE**. Cache value type `(u64, u64, [u8;32], Vec<Symbol>, Vec<(Symbol, String)>)` con 3 lookup/insert sites actualizados. Decisión "a tu criterio" ejercida. **Matrix stale**: aparece como FAIL aunque H-01 está cerrado desde §32. |
 | U14 | SEC,ANA | Denegar lectura, eliminar archivo, superar presupuesto → Partial/Unknown/Failed | PARTIAL | U-F2-W8-001 cubre lectura; presupuesto específico no |
 | U15 | ANA | Corpus mixto, LSP ausente, lenguaje no soportado → fallback explícito | NOT_RUN | No ejecutado con corpus mixto adverso |
 | U16 | ANA | Rename/move/colisiones/homónimos → identidad estable o ambigüedad visible | PARTIAL | H-R4-2 cerrado; UAT específica adversa no |
@@ -144,13 +144,13 @@
 | U18 | SEC,STATE | Dos proyectos, dos procesos, HOME común, cambios aislados | PASS | U-F4-001 |
 | U19 | CLI,SEC,ANA | `../`, absoluto, symlink externo, write/exec sin permiso, secreto señuelo | PARTIAL | U-F5-001 cubre algunos vectores; falta adversariales amplios |
 | **U20** | DIST,STATE | Install, doctor, CLI, MCP, update idempotente | **PARTIAL → FAIL** | H-06: ciclo A→B real no hecho |
-| U21 | STATE,SEC | Cortar proceso durante escritura/migración; reiniciar | NOT_RUN | U-F4-001 reinicio pero no corte durante escritura |
+| U21 | STATE,SEC | Cortar proceso durante escritura/migración; reiniciar | **PASS (RED→GREEN, atomic write, SHA `2f94664e+`)** | 2026-09-23 (JOURNAL §91): defecto real detectado — `lifecycle_journal::write` usaba `std::fs::write` (no-atómico). Test RED `test_write_overwrites_atomic_no_partial_state_visible` (50 iter concurrentes) demostró 26/50 lecturas parciales. GREEN: temp-file + `fs::rename` (atomic rename(2)). 6/6 lifecycle_journal tests verde. Total workspace 5836 tests (libs 5309 + bins 527), 0 failed, clippy EXIT 0. Patrón alineado con `file_operations::write_file`. |
 | U22 | STATE | Versión antigua crea datos; upgrade y downgrade | NOT_RUN | H-06 relacionado |
 | U23 | DIST,STATE | Uninstall con HOME/XDG personalizado e IDE de prueba | PARTIAL | U-F6-001 cubre HOME limpio; HOME existente no |
 | U24 | DIST,SEC | Instalación interrumpida/asset corrupto → rollback + reinstall | PASS | 2026-09-22 (JOURNAL §46): corrupto→SHA mismatch+rollback; reinstall→healthy |
 | **U25** | MCP,SEC | Tool costosa cancelada, desconexión cliente, sin OTLP | **PARTIAL** | H-05: cancelación no acredita operación en curso |
 | U26 | MCP,EXT | Capacidad sintética read-only + cliente previo | PEND | Matiz C5 reconocido |
-| **U27** | CI,DIST | Inyectar fallo crítico; cada uno bloquea CI/release | **FAIL** | H-07 explícito |
+| **U27** | CI,DIST | Inyectar fallo crítico; cada uno bloquea CI/release | **PARTIAL (cerrado gate clippy)** | Sub-cerrado en este ciclo para el gate **clippy** (JOURNAL §90, SHA `34153097`): `clippy_gate_fails_on_injected_unused_variable` planta defecto en crate temp y exige exit ≠ 0. Resto (test rojo, manifiesto incorrecto, fallo de publicación) sigue H-07 operator-gated — pendiente decisión sobre disparador automático push-PR. **Matrix stale**: aparece como FAIL cuando el gate clippy está verificado. |
 
 ---
 
@@ -159,19 +159,24 @@
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
 | SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
-| SPEC-CI (7) | 0 | 3 (+1: CI-06 de FAIL a PARTIAL mejorado) | 2 (-1) | 2 | 0 | 0 |
+| SPEC-CI (7) | 0 | 4 (+2: CI-01/06 cierres de gate clippy) | 1 (-2 tras §90) | 2 | 0 | 0 |
 | SPEC-CLI (7) | 0 | 5 (+2: CLI-04 de FAIL, CLI-01 de NOT_RUN) | 0 | 2 (-1) | 0 | 0 |
-| SPEC-DISTRIBUTION (7) | 0 | 3 | 1 | 3 | 0 | 0 |
+| SPEC-DISTRIBUTION (7) | 0 | 3 | 1 (DIST-02 ciclo A→B, H-06) | 3 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
 | SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |
 | SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
 | SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
-| **UAT originales (27)** | 1 (+1 parcial) | 15 | 4 | 6 | 2 | 0 |
-| **TOTAL (estimado)** | **~3 PASS pleno + 1 PASS parcial** | **~40** | **~7** | **~23** | **~4-8** | **0** |
+| **UAT originales (27)** | **5** (+1 tras §91: U21) | 14 | **2** | 5 (-1) | 2 | 0 |
+| **TOTAL (estimado)** | **~7 PASS pleno + 1 PASS parcial** | **~37** | **~5** | **~22** | **~4-8** | **0** |
 
-**Nota de transparencia (2026-09-22, post H-01 GREEN + H-02 GREEN + PRF-ANA-04):** el resumen original (35 PARTIAL / 11 FAIL / 9 PEND) tenía errores de contabilidad. Recuento re-ejecutado sobre las filas explícitas del matriz arroja cifras distintas. Las cifras exactas no son críticas para la decisión C7: lo que importa es que **sigue habiendo gaps abiertos en FAIL y PEND** que las acciones 3-4 del cierre PRF deben cerrar. Los cambios respecto al resumen inicial son cosméticos; la **distribución cualitativa** (PASS minoritario, FAIL/PEND/NOT_RUN dominantes) **no cambia**.
+**Cambios aplicados en sesión 4 (2026-09-23, AUTO):**
+- **PRF-CI-01 / PRF-CI-07 / U27** sub-cerrado **gate clippy** (`34153097`, JOURNAL §90). Disposiciones: CI-01/07 PARTIAL (cerrado gate clippy); U27 PARTIAL (cerrado gate clippy).
+- **U10** corregido a **PASS (UAT-U10)** (JOURNAL §88): binario v0.97.3 (`daabf848`) vs HEAD `4368367c` ejecutan los 5 subcomandos `graph` sobre corpus versionado. Evidencia en `docs/prf/evidence/UAT-U10-old-client-compat.md`.
+- **U13** corregido a **PASS (RED→GREEN, SHA-256)** (JOURNAL §32, re-verificado verde sobre HEAD actual `2f94664e`): test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` PASA.
+- Contadores actualizados: UAT originales FAIL 4→2, PASS 1→4. SPEC-CI PARTIAL 3→4, FAIL 2→1.
+- **U21** corregido a **PASS (RED→GREEN, atomic write)** (JOURNAL §91): defecto real detectado en `lifecycle_journal::write` (uso de `std::fs::write` no-atómico). Test RED `test_write_overwrites_atomic_no_partial_state_visible` (50 iter concurrentes con reader en otro hilo) demostró 26/50 lecturas parciales con la impl previa. GREEN: temp-file + `fs::rename` (atomic rename(2)). 6/6 `lifecycle_journal` tests verde; total workspace 5309 libs + 527 bins = 5836 tests, 0 failed, clippy EXIT 0. Patrón alineado con `file_operations::write_file` (mismo algoritmo, sin duplicación de helpers). Contadores: UAT originales PASS 4→5, NOT_RUN 6→5.
 
-**Cambios aplicados en esta sesión:**
+**Cambios aplicados en sesiones previas (2026-09-22):**
 - H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.
 - H-01 del operador **resuelto** en `39928202` (JOURNAL §32). `PRF-ANA-03` movido de `FAIL (RED pin)` a `PASS (RED→GREEN)`. Decisión SHA-256 ejercida por "a tu criterio" previo del operador.
 - H-02 adicional del operador **resuelto** en `41e4230f` (JOURNAL §33). `PRF-ANA-04` movido de `PARTIAL` a `PASS (RED→GREEN)` con `status` field en `BuildGraphOutput`.
@@ -179,6 +184,6 @@
 - PRF-ANA-07 (renames/moves/colisiones masivas) **mejorado** en `3118c580` + `73236510` (JOURNAL §35). Nuevo corpus `massive_collision_corpus/` (51 archivos: 50 sibling + 1 local, todos con `pub fn init()`) y 3 tests RED→GREEN que pinean la visibility rule con 51 candidatos, single-candidate cross-file, y tamaño de índice. Disposición bucket sigue siendo PARTIAL (sigue faltando UAT stdio JSON-RPC sobre el binario real). Contador SPEC-ANALYSIS **no cambia** por este movimiento.
 - PRF-CI-06 (política local-first) **mejorado** en `LOCAL-FIRST-CI-POLICY.md` (JOURNAL §36). Movido `FAIL → PARTIAL (mejorado)`: la política existe, su origen es verificable (AGENTS.md, ADR-031, B3) y su equivalencia procedimental está documentada (§3.3). El documento declara honestamente que la enforcement automática no existe y es decisión del operador (§4.bis). Contador SPEC-CI: FAIL 3→2, PARTIAL 2→3.
 
-**Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **~3 PASS pleno** (U-F4-001 = U18 + PRF-ANA-03 con H-01 GREEN + PRF-ANA-04); **1 PASS parcial** (U01); ~40 PARTIAL; ~7 FAIL; ~23 NOT_RUN; ~4-8 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
+**Conclusión:** **0 ítems en PASS contractual pleno sobre los requisitos MUST**; **~6 PASS pleno** (U-F4-001 = U18 + PRF-ANA-03 con H-01 GREEN + PRF-ANA-04 + U10 + U13); **1 PASS parcial** (U01); ~37 PARTIAL; ~5 FAIL; ~23 NOT_RUN; ~4-8 PEND; 0 EXCL. **No es posible firmar C7** mientras esta matriz muestre esta distribución. Las acciones 3 y 4 del cierre PRF deben convertir los FAIL y PEND en PASS, documentar las EXCL y dejar los NOT_RUN solo si son genuinamente 'fuera de alcance' (lo que requiere EXCL aprobada por el operador).
 
 > **Nota de honestidad:** este documento es la base sin la cual C7 no puede firmarse. Generarlo es un acto de reparación documental, no de cierre. Las acciones 3 y 4 (código + UAT) son trabajo de varias sesiones y deben coordinarse con el operador.
