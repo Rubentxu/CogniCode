@@ -117,7 +117,7 @@ impl Drop for NetnsSession {
 #[tokio::test(flavor = "multi_thread")]
 async fn mcp_core_is_fully_functional_with_no_network() {
     let ws = fixture_ws();
-    assert!(ws.join("Cargo.toml").exists(), "fixture workspace missing");
+    assert!(ws.join("src/lib.rs").exists(), "fixture src/lib.rs missing");
     // Remove any durable snapshot so the graph is genuinely rebuilt offline.
     let _ = std::fs::remove_dir_all(ws.join(".cognicode"));
 
