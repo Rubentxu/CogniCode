@@ -23,7 +23,7 @@
 
 | Requisito | Disposición | Evidencia / Notas |
 |---|---|---|
-| PRF-ANA-01 (verticals `full`/`per_file` con `lightweight`) | PEND | Auditable en código pero no hay UAT específica del SPEC-ANALYSIS como UAT-Nxx en `UAT.md`. Coverable por U08, U12, U15. |
+| **PRF-ANA-01** (verticals `full`/`per_file` con `lightweight`) | **PARTIAL (capabilities declaradas por tool en código)** | 59 tools estables + 27 experimentales/gated/infra declaran `langs` + `precision` (`AST` / `LSP+AST` / `heuristic` / `compuesto` / `n/a`). Nuevo módulo `crates/cognicode-core/src/interface/mcp/capabilities.rs::list_tool_capabilities()` con 4 tests RED→GREEN pineando invariantes (sess 4, commits `d2862663` + `0d96e93a`). Tabla canónica en `docs/prf/specs/CAPABILITIES-MATRIX.md`. Las herramientas siguen descritas por **categoría estable**; la pieza vertical `full`/`per_file`/`lightweight` sigue PEND (require UAT contra binario real con tres estrategias y equivalencia probada). |
 | **PRF-ANA-02** (errores lectura/parseo no se descartan silenciosamente) | **PASS** | §63: los 6 call-sites restantes de `find_all_symbols_with_path`/`find_call_relationships` ya no usan `unwrap_or_default()`: full → `SkippedFile` clasificado; filtered/async → exclusión de cobertura parsed + `warn!`. UAT binario real (`prf_ana_02_uat`): `locked/secret.rs` chmod-000 → `status=partial` + `skipped_files` con reason_kind=read. Regresión: core 2145/0, graph 401/0, MCP e2e verde. `evidence/u63-ana02/`. |
 | **PRF-ANA-03** (cambio de bytes con tamaño+mtime preservados no genera `Unchanged` falso) | **PASS (RED→GREEN)** | H-01 del operador **cerrado en `39928202` (JOURNAL §32)**: SHA-256 (32 bytes) añadido como tercer cache-invalidation key. Test `h01_byte_change_with_same_mtime_and_same_size_must_invalidate_cache` (pinea cambio de bytes preservando TANTO mtime COMO size) ahora pasa — cobertura permanente del invariante. Cache value type extendido a `(u64, u64, [u8; 32], Vec<Symbol>, Vec<(Symbol, String)>)`. 3 lookup sites + 3 insert sites actualizados. Decisión de diseño ejercida por "a tu criterio" previo del operador. Suite 2129/0/27 lib; clippy `-D warnings` clean. |
 | PRF-ANA-04 (consulta con archivo/provider faltante = `Partial/Unknown/Failed` con causa/cobertura) | **PASS (RED→GREEN)** | H-02 adicional del operador **resuelto en `41e4230f` (JOURNAL §33)**: handler MCP `build_graph` ahora expone campo `status: String` con valores `"complete"` (walk sin drops), `"partial"` (walk con ≥1 drop), `"unknown"` (cache hit, sin walk). El `BuildReport` se traduce a `status` antes de devolver, con `skipped_files` existente preservado. 3 nuevos tests RED→GREEN (`prf_ana_04_status_field_tests`); suite 2132/0/27 lib; clippy `-D warnings` clean. Backward-compatible: success, symbols_found, relationships_found, edges, message, skipped_files no cambian. |
@@ -159,7 +159,7 @@
 
 | Categoría | PASS | PARTIAL | FAIL | NOT_RUN | PEND | EXCL |
 |---|---|---|---|---|---|---|
-| SPEC-ANALYSIS (9) | 3 (+1 tras §96: U15) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 1 (-1) | 1 (-1 tras PRF-ANA-04) | 0 |
+| SPEC-ANALYSIS (9) | 3 (+1 tras §96: U15) | 5 (+1 tras §98: PRF-ANA-01 capabilities declaradas) | 0 (-1 tras H-01) | 1 (-1) | 0 (-1 tras PRF-ANA-01) | 0 |
 | SPEC-CI (7) | 0 | 4 (+2: CI-01/06 cierres de gate clippy) | 1 (-2 tras §90) | 2 | 0 | 0 |
 | SPEC-CLI (7) | 7 (todas PASS tras §93: CLI-07) | 0 | 0 | 0 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 1 (+1: PRF-DIST-03) | 2 (-1) | 1 (DIST-02 ciclo A→B, H-06) | 3 | 0 | 0 |

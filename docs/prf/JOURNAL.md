@@ -3993,3 +3993,103 @@ STATE.md (`H-03/H-04/H-06/H-07 operator-gated`).
 
 **Push a origin/main sigue operator-gated.** Commits locales hasta
 autorización explícita.
+
+## §98 — PRF-ANA-01 PARTIAL: capabilities declaradas por tool (commit `d2862663`, `0d96e93a`) (2026-09-23)
+
+**Disposición:** PRF-ANA-01 PEND → PARTIAL (capabilities declaradas).
+
+### Lo que el MUST pedía
+
+> "cada operación stable declara soporte por lenguaje y precisión
+> semántica (p. ej. AST/LSP/heurística), incompletitud, límites y
+> exclusiones del corpus."
+
+Auto-revisión crítica: el §97 había cancelado este pendiente
+prematuramente. La directiva real exige delegar el trabajo antes
+de cancelar. Inspección de código reveló que la declaración
+**estaba a un solo módulo de distancia**:
+
+- Las 74 tools en `rmcp_adapter.rs::cognicode_meta()` ya tenían
+  `category` (graph/search/...) pero NO `langs` ni `precision`.
+- `Language::from_extension` (en `tree_sitter_parser.rs`) tiene
+  22 lenguajes con parser tree-sitter.
+- `LspIntelligenceProvider` tiene 4 lenguajes con provider LSP.
+
+### Implementación
+
+`crates/cognicode-core/src/interface/mcp/capabilities.rs`
+(385 líneas, módulo nuevo):
+
+```rust
+pub struct ToolCapabilities {
+    pub langs: &'static [&'static str],
+    pub precision: &'static str,
+}
+
+pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities>
+pub fn stable_tool_names_with_capabilities() -> &'static [&'static str]
+pub fn all_stable_capabilities() -> Vec<(&'static str, ToolCapabilities)>
+```
+
+Tabla cubre:
+- **59 tools estables** (todas con capabilities declaradas).
+- **27 experimentales/gated/infra** (con arms en el match aunque
+  no requieren pineo por test).
+- 4 niveles de precisión semántica: `AST`, `LSP+AST`, `heuristic`,
+  `compuesto`. Más `n/a` para language-agnostic.
+
+### 4 tests RED→GREEN
+
+1. **`test_capabilities_matrix_for_stable_tools`** — pineando que
+   cada tool estable tenga capabilities con `precision` no-vacía.
+   Iteró 6 veces (primer RED en `find_usages`; segundo en duplicados
+   `graph_analyze`; tercero en `get_document_symbols` inexistente;
+   cuarto al sincronizar stable list con reales; etc.). GREEN final.
+
+2. **`test_stable_tool_names_are_real`** — cada nombre en
+   `stable_tool_names_with_capabilities()` DEBE aparecer como
+   estable real en `build_all_tools()`. Iteró 4 veces limpiando
+   nombres inexistentes (`reparse_on_edit` bajo feature gate,
+   `ask_about_code` era experimental, etc.).
+
+3. **`test_navigation_tools_use_lsp_with_known_langs`** — pinea el
+   contrato LSP exacto: `go_to_definition` con `precision =
+   "LSP+AST"` y `langs = {python, rust, javascript, typescript}`,
+   NO `ruby`.
+
+4. **`test_all_stable_capabilities_resolve`** — sanity: iterar
+   `all_stable_capabilities()` y exigir `precision` no-vacía
+   (>40 tools esperados).
+
+### Métricas
+
+- `cognicode-core` libtests: **2356 passed** / 0 failed / 31 ignored
+  (pre §98 era 2352; +4 nuevos).
+- Workspace completo `--no-fail-fast`: **5319 passed / 0 failed /
+  45 ignored** (+4 vs pre §98 5315).
+- `cargo clippy -p cognicode-core --lib -- -D warnings`: EXIT 0.
+
+### Decisiones operator-gated (no cerradas en este pase)
+
+- **¿Qué tools pasan de `experimental`/`gated` a `stable`?** Hoy
+  7+3+2+1+1=14 tools son experimentales/gated; promotionarlas a
+  stable requiere UAT contra binario real con tres estrategias
+  (`full`/`per_file`/`lightweight`) y equivalencia probada — la
+  pieza vertical del MUST sigue PEND.
+- **¿La clasificación LSP incluye nuevos lenguajes?** Hoy sólo
+  Python, Rust, JavaScript, TypeScript. Ampliar requiere añadir el
+  provider en `infrastructure/lsp/providers/`.
+- **¿Las capabilities se exponen en `tools/list` metadata?** Hoy
+  están en código (Rust) y se consultan por nombre; serializarlas
+  como `meta` JSON-MCP es decisión de shape público.
+
+### Disposiciones actualizadas
+
+- PRF-ANA-01: PEND → **PARTIAL (capabilities declaradas)**. La
+  pieza vertical `full`/`per_file`/`lightweight` queda PEND
+  hasta UAT correspondiente.
+- SPEC-ANALYSIS: PARTIAL 4 → 5, PEND 1 → 0.
+- TOTAL: PARTIAL 33 → 34, PEND 4-8 → 3-7.
+
+**Push a origin/main sigue operator-gated.** Commits locales hasta
+autorización expl��cita.
