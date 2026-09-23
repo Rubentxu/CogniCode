@@ -6068,3 +6068,105 @@ CI también está fallando. El programa no puede declararse
 - C7 firma: BLOQUEADO, sin variación.
 
 Conventional Commits: §122 es solo docs (diagnóstico sin fix).
+
+## §123 — Corrección §122: el fallo CI es path mismatch, NO R9 aarch64 (2026-09-23)
+
+**Origen.** Operador reporta el log exacto del job fallido
+(`job/107234372410`). El error real:
+
+```
+Error: missing artifact `cogh-0.97.4-x86_64-unknown-linux-gnu.tar.gz`:
+component `cogh` is published but was not produced for platform `linux-x86-64`
+```
+
+Esto es **diferente** de lo que diagnostiqué en §122. Mi §122
+dijo "R9 missing aarch64". El operador tiene razón: los dos lanes
+SÍ generaron todos los paquetes. El problema es path mismatch.
+
+### Causa raíz real
+
+`upload-artifact@v4` con `path: dist/*.tar.gz` (línea 175-179 de
+`.github/workflows/release.yml`) preserva el path relativo `dist/`.
+
+`download-artifact@v4` con `path: staging, merge-multiple: true`
+(línea 183-187) **no aplana** los paths. Resultado: el staging
+tiene los archivos bajo `staging/dist/foo.tar.gz` y
+`staging/payloads-linux-x86_64/dist/foo.tar.gz`.
+
+`cognicode-release generate --staging staging`
+(`crates/cognicode-cli/src/cmd/release_factory.rs:170`) busca
+`staging.join(&artifact.filename)` — busca `staging/foo.tar.gz`
+**directamente en la raíz**.
+
+**El bug**: el contrato de paths entre upload/download/generate
+está **roto en el workflow**, no en el binario. El binario
+asume staging plano; el workflow provee staging anidado.
+
+### Corrección necesaria
+
+El workflow debe producir un staging plano. Opciones:
+
+- **(1) Subir archivos sin path**: en el lane, después de crear
+  `dist/foo.tar.gz`, copiarlos a un dir `staging-flat/` y subir
+  eso. El download deja `staging/staging-flat/foo.tar.gz`.
+  Todavía anidado.
+
+- **(2) Usar `actions/upload-artifact` con path absoluto**: cada
+  `dist/foo.tar.gz` se sube individualmente con un nombre que
+  preserve el filename. El download queda como `staging/foo.tar.gz`
+  (raíz). Más complejo.
+
+- **(3) Cambiar `cognicode-release generate` para buscar recursivo**:
+  que recorra `staging/**` y agrupe por nombre. Cambia contrato
+  del binario, requiere auditoría.
+
+- **(4) Stagear archivos en el release job**: después de download,
+  hacer `find staging -name "*.tar.gz" -exec cp {} staging/ \;`
+  antes del `generate`. Más simple pero añade un step.
+
+Recomendación: **(4)** — bash script entre download y generate
+que aplane los tarballs a la raíz de staging. Mínimo cambio,
+no rompe contrato.
+
+### Corrección de §122 (autocrítica)
+
+Mi §122 fue **diagnóstico incorrecto**. La causa no era R9
+faltando aarch64; era path mismatch entre upload/download/generate.
+El operador lo identificó correctamente leyendo el log. **No
+debo repetir este tipo de diagnóstico especulativo sin evidencia
+del fallo real**.
+
+### Estado del programa (revisión honesta)
+
+El operador tiene razón: **"93% completado" no es conformidad**.
+Hay 5 problemas técnicos identificados (A–E) que requieren:
+
+- **A (Alta)**: Frescura de snapshot no valida contenido si mtime
+  coincide. Test RED: editar contenido preservando mtime, segundo
+  MCP debe detectar cambio.
+- **B (Alta)**: Atomicidad y concurrencia no probadas con 2
+  escritores reales. Test RED: 2 procesos compitiendo, validar
+  recovery.
+- **C (Alta)**: `handle_build_graph` retorna `status: complete`
+  cuando no hay `BuildReport` válido. Test RED: forzar rama
+  sin informe.
+- **D (Media-alta)**: Persistencia acoplada al adaptador MCP.
+  Refactor a servicio de aplicación compartido.
+- **E (Media)**: Fixtures no aislados; estado puede persistir
+  entre runs. Usar TempDir.
+
+**Plan**: abordar A-E antes de fix workflow. El workflow es
+trabajo de CI no verificable localmente; los técnicos son
+verificables con tests locales.
+
+C7 firma BLOQUEADO se mantiene. No hay release publicada.
+El push de v0.97.4 es código pero no release.
+
+### No ejecuta
+
+- Fix workflow paths (esperando fix A-E primero).
+- Fix A-E (esperando confirmación operador del orden).
+- Push adicional (solo docs §123).
+- C7 firma: BLOQUEADO.
+
+Conventional Commits: §123 es solo docs (corrección de §122).
