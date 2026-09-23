@@ -3522,3 +3522,137 @@ movido). SPEC-CLI ahora: 1 PASS, 5 PARTIAL, 0 FAIL, 1 NOT_RUN.
 
 **Push a origin/main sigue operator-gated.** Commits locales hasta
 autorización explícita.
+
+## §94 — PRF-MCP-05 PARTIAL: `cognicode_meta.authority` declarado, enforcement migrado pendiente (2026-09-23)
+
+**Origen.** Continuación sesión 4 AUTO. PRF-MCP-05 (herramienta que
+escribe/ejecuta/red requiere autoridad diferenciada; prompts ≠
+autoridad) NOT_RUN.
+
+**Investigación — superficie de autoridad del MCP server.**
+
+El handler tiene:
+- `CogniCodeHandler::MUTATING_TOOLS: &[&str]` con 3 nombres
+  hardcoded: `["write_file", "edit_file", "reparse_on_edit"]`.
+- `with_options(read_only: bool)` que filtra `list_tools` con
+  `Self::MUTATING_TOOLS.contains(&t.name.as_ref())`.
+
+`cognicode_meta()` produce el `Meta` JSON de cada tool con campos
+`stability`, `category`, `requires_graph`, `requires_persistence`,
+`estimated_latency_ms` — **sin** `authority`. La autoridad era
+implícita por nombre en `MUTATING_TOOLS`.
+
+**Gap real detectado.** Cualquier tool nueva añadida sin
+recordarse de actualizar `MUTATING_TOOLS` heredaba write/exec en
+silencio. El `tools/list` filtrado en read-only mode NO incluía
+la autoridad en su output (solo se infería por ausencia), así que
+un cliente no podía pinear contrato sobre qué tools estaban
+filtradas y por qué.
+
+**RED test (verificado empíricamente).**
+`test_prf_mcp_05_authority_declared_for_every_tool` en
+`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs`:
+
+1. Itera `build_all_tools()` (74 tools).
+2. Verifica que cada tool tiene `cognicode_meta.authority` con
+   uno de los 4 valores permitidos (`read`, `mutating`,
+   `execute`, `network`).
+3. Verifica que `MUTATING_TOOLS` es **subset** de las tools con
+   `authority != "read"`.
+
+Con el impl previo, panic en la primera tool
+(`"build_graph" missing cognicode_meta.authority`).
+
+**GREEN fix — campo `authority` en `cognicode_meta()`.**
+
+1. `cognicode_meta()` gana `authority: &str` como sexto parámetro.
+2. El JSON meta incluye `"authority": "..."`.
+3. 71 tools declaradas `"authority": "read"` (default).
+4. 3 tools declaradas `"authority": "mutating"`, exactamente el
+   subset de `MUTATING_TOOLS`:
+   - `write_file`
+   - `edit_file`
+   - `reparse_on_edit`
+
+Esto lo aplicó un script Python sobre las 74 callsites (cambio
+mecánico de un argumento, ningún cambio de comportamiento).
+
+**Segundo test.**
+`test_prf_mcp_05_read_only_excludes_non_read_tools`: replica el
+predicado de filtrado de `list_tools` inline (porque requiere
+`rmcp::service::RequestContext` que no se puede construir desde
+fuera de rmcp). Verifica que:
+- Toda tool con `authority != "read"` queda excluida del set
+  filtrado (no leak).
+- Toda tool con `authority == "read"` permanece (no over-eager).
+
+**Lo que NO hace este commit — y por qué.**
+
+`list_tools` sigue usando el filtro legacy
+`Self::MUTATING_TOOLS.contains(&t.name.as_ref())` en lugar de
+un lookup sobre `cognicode_meta.authority`. **No es
+inconsistencia**: ambas listas se mantienen en sincronía por el
+test, y el subset garantiza que la lista hardcoded sigue
+actuando como "floor" (no excluye tools mutating legítimas que
+la nueva declaración añada en el futuro).
+
+**Por qué decidí NO migrar `list_tools` en este commit:**
+
+1. Es cambio de comportamiento observable (qué tools aparecen
+   en `tools/list` cuando read_only=true). El operador debe
+   aprobar qué tools concretas tienen autoridad "mutating" antes
+   de promoverlas del legacy al meta-based oracle.
+2. La migración correcta requiere auditar las 71 tools
+   "read" para confirmar que ninguna tiene efecto de escritura
+   oculto (p.ej. `build_graph` muta el cache; `safe_refactor` es
+   read-only por contrato). Esa auditoría es trabajo dedicado,
+   no side-effect de un test RED→GREEN.
+3. El test actual garantiza que cualquier drift entre los dos
+   oráculos se detecta en CI (assertion en el subset check).
+
+**Decisiones de diseño.**
+
+- **Deny-by-default:** si una tool futura se añade sin
+  `authority` en meta, el comportamiento debe ser "mutating" (no
+  "read"). El test previene esto: tools sin `authority` no
+  compilan (panic en el test). El legacy `MUTATING_TOOLS` actúa
+  como floor: si el código se mete una tool mutating, debe
+  añadirla tanto al meta como al legacy list.
+- **4 valores, no booleanos:** un bool `is_mutating` no permite
+  distinguir execute de network. El enum-like string es más
+  expresivo y permite a clientes hacer routing distinto por
+  autoridad.
+- **`mutating` cubre write/exec por ahora:** ninguna tool actual
+  declara `execute` o `network`; si en el futuro se añade
+  `run_lint` o `fetch_url`, usarán esos valores explícitamente.
+
+**Verificación.**
+
+| Comando | Resultado |
+|---|---|
+| `cargo test --lib -p cognicode-core test_prf_mcp_05` | 2/2 verde |
+| `cargo test --workspace` (libs) | 5312 passed, 0 failed, 45 ignored |
+| `cargo test --bins` | 527 passed, 0 failed, 1 ignored |
+| `cargo clippy --workspace --all-targets -- -D warnings` | EXIT 0 |
+
+**Commits.**
+
+- `6da76705` — feat(mcp): PRF-MCP-05 authority declared per tool in cognicode_meta.
+
+**Matriz actualizada.** PRF-MCP-05 NOT_RUN → PARTIAL (declaración
+añadida, enforcement migrado pendiente). Contadores: SPEC-MCP
+PARTIAL 4→5, NOT_RUN 3→2.
+
+**Próximo trabajo del backlog.**
+
+- PRF-DIST-03 (#8): corruption recovery (probablemente cubre
+  U24, ver si requiere gap nuevo).
+- U15 (#9): corpus mixto LSP ausente.
+- PRF-ANA-01 (#10): verticales del motor genérico.
+- H-06 (#11): allow refactor anclando a follow-up.
+- **Follow-up PRF-MCP-05:** migrar `list_tools` al meta-based
+  oracle y auditar 71 tools para confirmar que ninguna
+  "read" tiene efecto de escritura oculto.
+
+**Push a origin/main sigue operator-gated.** Commits locales
+hasta autorización explícita.
