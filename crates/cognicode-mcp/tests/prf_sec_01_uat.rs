@@ -4,19 +4,13 @@
 //! workspace root itself is allowed.
 
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-fn binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .join("target/release/cognicode-mcp")
-}
+mod common;
+use common::binary_path;
 
 async fn probe(workspace: &Path, directory: &str) -> Result<String, String> {
     let mut cmd = Command::new(binary_path());

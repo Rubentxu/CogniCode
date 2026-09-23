@@ -9,7 +9,38 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
+/// Resolve the absolute path to the `cognicode-mcp` binary under test.
+///
+/// Resolution order (first match wins):
+///
+/// 1. `CARGO_BIN_EXE_cognicode-mcp` — set by Cargo when an integration test in
+///    the same crate as the binary is run; always correct, no filesystem
+///    traversal required. Falls back gracefully when unset (e.g. when running
+///    the binary tests from outside Cargo).
+/// 2. `CARGO_TARGET_DIR/release/cognicode-mcp` — honors the user's cargo
+///    target-dir override (e.g. `~/.cargo/config.toml` redirecting
+///    `target-dir` away from the workspace `target/`).
+/// 3. `<workspace_root>/target/release/cognicode-mcp` — historical fallback
+///    (works when cargo and the workspace agree on `target/`).
+///
+/// Resolution is delegated to `resolve_binary_path` so the precedence list is
+/// the single source of truth across every test that needs the binary.
 pub fn binary_path() -> PathBuf {
+    resolve_binary_path()
+}
+
+fn resolve_binary_path() -> PathBuf {
+    if let Some(p) = option_env!("CARGO_BIN_EXE_cognicode-mcp") {
+        return PathBuf::from(p);
+    }
+
+    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
+        let candidate = PathBuf::from(target).join("release").join("cognicode-mcp");
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -97,5 +128,50 @@ impl McpSession {
         let _ = self.stdin.shutdown().await;
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `binary_path` must return an absolute, well-formed path that ends with
+    /// the binary's filename. The actual existence check is environment
+    /// dependent (CARGO_BIN_EXE_* may or may not be set, the workspace target
+    /// may or may not be built); this test only pins the path shape so a
+    /// refactor that, say, dropped the file name is caught immediately.
+    #[test]
+    fn binary_path_resolves_to_cognicode_mcp_filename() {
+        let path = binary_path();
+        assert!(
+            path.is_absolute() || path.starts_with("/"),
+            "binary path must be absolute, got: {}",
+            path.display()
+        );
+        assert_eq!(
+            path.file_name().and_then(|s| s.to_str()),
+            Some("cognicode-mcp"),
+            "binary path must end with the binary name, got: {}",
+            path.display()
+        );
+    }
+
+    /// When `CARGO_BIN_EXE_cognicode-mcp` is set at compile time, the path
+    /// returned must point at that env var. The env var is set by Cargo for
+    /// integration tests in the same crate as the binary; without it the
+    /// resolution falls through to the other branches.
+    #[test]
+    fn binary_path_prefers_cargo_bin_exe_env_var_when_set() {
+        if let Some(expected) = option_env!("CARGO_BIN_EXE_cognicode-mcp") {
+            let path = binary_path();
+            assert_eq!(
+                path.to_str(),
+                Some(expected),
+                "binary_path must return CARGO_BIN_EXE_cognicode-mcp when set at compile time"
+            );
+        }
+        // If the env var is unset at compile time, the test is a no-op:
+        // `binary_path` falls back to the other resolution branches, which
+        // are environment dependent and not worth pinning here.
     }
 }

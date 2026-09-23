@@ -25,19 +25,12 @@ use tokio::process::{Child, Command};
 // the workspace uses (see crates/cognicode-sandbox/src/main.rs).
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 
-// Where the binary lives. We resolve relative to CARGO_MANIFEST_DIR so the
-// test works whether you run it from the workspace root or from the crate
-// directory.
-fn binary_path() -> PathBuf {
-    // tests live in `crates/cognicode-mcp/tests/`, so CARGO_MANIFEST_DIR is
-    // `crates/cognicode-mcp/` and the binary lives at the repo root.
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent() // crates/
-        .expect("workspace root")
-        .parent() // repo root
-        .expect("repo root")
-        .join("target/release/cognicode-mcp")
-}
+// Where the binary lives. `common::binary_path()` resolves the path with
+// the right precedence (CARGO_BIN_EXE_cognicode-mcp > CARGO_TARGET_DIR >
+// workspace fallback); the harness import keeps the test working whether
+// you run it from the workspace root or from the crate directory.
+mod common;
+use common::binary_path;
 
 /// Result of a chain traversal.
 #[derive(Debug)]

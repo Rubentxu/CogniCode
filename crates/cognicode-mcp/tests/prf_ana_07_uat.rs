@@ -16,14 +16,8 @@ use tokio::process::{Child, Command};
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 
-fn binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .join("target/release/cognicode-mcp")
-}
+mod common;
+use common::binary_path;
 
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
