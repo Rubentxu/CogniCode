@@ -4901,3 +4901,42 @@ regenerar las otras 14 en una sesión dedicada antes del push.
 - Pendientes que requieren CI/runners nativos:
   u52, u54, u55, u56, u61, u62, u63, u65, u66.
 
+
+## §111 — U51 regenerado: reduce §102 de 14 a 13 perdidos (2026-09-23)
+
+**Origen.** Continuación §110 (metodología probada para regenerar
+evidencias §102). Ataco u51-cli02-stdio-split (PRF-CLI-02).
+
+### Resultado
+
+5/5 PASS sobre binario real HEAD (`9bb461dc`):
+- step 1: `graph full --format json .` → stdout SOLO JSON con
+  `schema_version: cognicode.graph.full/v1`, stderr SOLO logs.
+- step 2: `graph full .` (modo texto) → intacto.
+- step 3: `graph full --format json /nonexistent_dir` → status
+  complete symbols=0 (consistente con analyze/build_graph MCP).
+- step 4: `doctor --format json` → schema_version=v1 presente.
+- step 5: `graph --help` → exit 0.
+
+### Hallazgo honesto
+
+Step 3 (`/nonexistent_dir` con `--format json`) devuelve
+`status: complete, symbols: 0` **sin exit != 0**. Esto NO viola
+PRF-CLI-02 (cuyo MUST es split stdout/stderr, no validación de path),
+pero queda como nota de visibilidad en el OBSERVATIONS.md porque
+un consumidor estricto podría preferir error explícito.
+
+### Limitación honesta
+
+NO se ejecuta la suite in-process del §50 original (no accesible
+desde este bin). La regeneración es a nivel binario ejecutable.
+
+### Archivos
+
+- `docs/prf/evidence/u51-cli02-stdio-split-regen/OBSERVATIONS.md`
+
+### Contadores
+
+- §102: 14 → **13** perdidos (u51 recuperado).
+- Regenerables con binario local HEAD pendientes: u58 (ANA-05),
+  u59 (ANA-07), u69 (ANA-08) → 3 más si la sesión continúa.

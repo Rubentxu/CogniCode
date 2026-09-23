@@ -265,3 +265,26 @@ Esta evidencia:
 * Reduce §102 en 1 (de 15 directorios perdidos a 14 pendientes).
 * Demuestra metodología para regenerar las 13 evidencias restantes
   antes del push a `origin/main`.
+
+
+## Evidencias regeneradas ciclo 4 — `docs/prf/evidence/u51-cli02-stdio-split-regen/`
+
+**Total**: 1 archivo markdown.
+**Origen**: regeneración de §50 PRF-CLI-02 contra HEAD `9bb461dc`.
+**Descripción**: ver `docs/prf/evidence/u51-cli02-stdio-split-regen/OBSERVATIONS.md`.
+
+| Archivo | SHA-256 | Categoría |
+|---|---|---|
+| `OBSERVATIONS.md` | (regenerado contra HEAD actual) | U51 regen evidence |
+
+Esta evidencia:
+* Captura 5 escenarios CLI-02 sobre binario real:
+  - graph full --format json . (split stdout/stderr)
+  - graph full . (text mode intacto)
+  - graph full --format json /nonexistent_dir (control negativo)
+  - doctor --format json (schema_version v1)
+  - graph --help (regresión no-json)
+* Reduce §102: 14 → 13 perdidos.
+* Documenta hallazgo honesto step 3: path vacío → status=complete,
+  no exit != 0 (consistente con analyze/build_graph MCP).
+
