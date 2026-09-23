@@ -210,6 +210,24 @@ jobs:
                    || python3 -c "import re,sys; src=open('crates/cognicode-cli/src/cmd/release_contract.rs').read(); ids=re.findall(r'SkillBundleSpec\s*\{\s*id:\s*\"([^\"]+)\",\s*profiles:[^\n]*\n\s*published:\s*true',src); print('\n'.join(ids))")
           ls -la staging
 
+      - name: Flatten per-lane payload directories to the staging root
+        run: |
+          set -euo pipefail
+          # The build lanes upload `dist/*.tar.gz` via upload-artifact@v4,
+          # which preserves the `dist/` prefix. download-artifact@v4 with
+          # merge-multiple does not flatten, leaving the payloads at
+          # `staging/payloads-<platform>/dist/<component>-<ver>-<plat>.tar.gz`.
+          # `cognicode-release generate` scans `staging/` flat (see
+          # release_factory.rs: build_inventory uses `std::fs::read_dir(staging)`),
+          # so without this step the generate fails with
+          # "missing artifact cogh-..." for every platform (the exact
+          # failure of run 35874781973).
+          # The flatten script enforces the canonical payload set, rejects
+          # duplicates, refuses unknown files at the staging root, and
+          # fails loudly on missing components.
+          bash scripts/ci/stage-platform-payloads.sh staging
+          ls -la staging
+
       - name: Resolve version and tag
         id: v
         run: |
