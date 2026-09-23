@@ -4295,3 +4295,96 @@ verificaron** y sin embargo dispusimos `PASS`. **Eso es paper-closed.
 - TOTAL PASS pleno: ~13 → ~14. NOT_RUN: 2 (sin cambio).
 
 **Push a origin/main + tag siguen operator-gated.**
+
+## §101 — Auditoría de cierres paper-closed + limpieza de deuda allow-doc stale (2026-09-23)
+
+**Disposición:** PRF-DIST-02 mantenido PASS (§100 legal).
+Honestidad de cierres auditada: **no hay otros cierres recientes
+paper-closed** aparte del §99 (corregido en §100).
+
+### El problema que el operador expuso
+
+> "El número de recuentos de cierres documentales y ciclos del
+> roadmap que modificaron su estado a completado NO equivale a que
+> todas las condiciones originales de aceptación del producto estén
+> verificadas."
+
+§99 declaró `PRF-DIST-02 PASS` con H-06-a/b cubriendo 3/7 pasos
+del MUST, sin `doctor`/`CLI`/`MCP`/`uninstall` verificados. Eso
+era **paper-closing** (ver §100).
+
+### Auditoría sistemática de cierres recientes
+
+He revisado uno por uno cada cierre PASS/PARTIAL del JOURNAL
+§90-§99 contra el MUST literal de su SPEC:
+
+| Cierre | MUST exigido | Tests / evidencia | Veredicto |
+|---|---|---|---|
+| §90 CI-01/07/U27 (gate clippy) | sub-cerrar el gate clippy específicamente | `clippy_gate_fails_on_injected_unused_variable` verde ×1 + ci.yml verificado | **honesto**, declara H-07 pendiente explícitamente |
+| §91 U21 (atomic write) | defecto real cubierto por test | 50 iter concurrentes: 26/50 partiales RED, GREEN con rename(2) | **honesto** (RED→GREEN empírico) |
+| §92 U03 (goldens reproducibles) | reproducibilidad entre runs | 2 runs idénticos verificados; diffs contra committed analizados | **honesto** (drift documentado, autoritly pending) |
+| §93 PRF-CLI-07 (schema_version) | `cognicode doctor --format json` emite `schema_version` | test RED→GREEN; binario output `"schema_version": "cognicode.doctor/v1"` | **honesto** |
+| §94 PRF-MCP-05 (authority) | declarar `authority` por tool | test verifica 74 tools, subset de MUTATING_TOOLS, no leak | **honesto** (PARTIAL declarado) |
+| §95 PRF-DIST-03 (Drop rollback) | rollback limpia estado ante fallo SHA | U24 §46 (evidencia manual) + 2 tests in-process | **honesto** (CreatedShim declarado fuera de alcance) |
+| §96 U15 (skipped files) | reportar archivos sin parser | RED→GREEN, E2E con `/tmp/u15-corpus/` | **honesto** |
+| §97 PRF-ANA-01+H-06 cancelados | **decisión administrativa** de cancelar | ninguno | **NO honesta** — la directiva exige delegar el trabajo, no cancelar sin intentar. Auto-revisión de §97 a §98 lo reconoció. |
+| §98 PRF-ANA-01 (capabilities) | declarar langs + precision por tool | 4 RED→GREEN tests + `CAPABILITIES-MATRIX.md` | **honesto** (PARTIAL declarado con gaps operativos) |
+| §99 H-06 (paper-closing) | cubrir 7 pasos MUST | sólo 3/7 verificados | **paper-closing** — corregido en §100 |
+| §100 H-06 legal (corrección) | cubrir los 7 pasos MUST | 4 tests `#[serial]` H-06-a/b/c/d con verificación observable por paso | **honesto** (limitaciones subprocess+XDG documentadas) |
+
+**Conclusión**: §99 fue el único paper-closing real. Corregido
+en §100. Los demás cierres declaran honestamente su alcance.
+
+### Deuda técnica limpiada en este ciclo
+
+5 archivos con `#![allow(dead_code)]` / `#![allow(unused_imports)]`
+tenían doc-comment que decía **"H-06 will add live consumers"**
+como justificación del allow. H-06 ya cerró (§99-§100); la
+justificación quedó stale.
+
+**Archivos auditados y corregidos** (commit `76e04e8e`):
+
+- `crates/cognicode-cli/src/cmd/lockfile.rs`
+- `crates/cognicode-cli/src/cmd/ide.rs`
+- `crates/cognicode-cli/src/cmd/tracker.rs`
+- `crates/cognicode-cli/src/cmd/doctor.rs`
+- `crates/cognicode-cli/src/cmd/cache.rs`
+
+El texto se reemplaza por una nota de auditoría honesta: "H-06
+no cerró este allow per-item; la justificación previa estaba
+desactualizada. El allow sigue siendo intencional hasta que
+los consumidores lleguen como parte de H-03/H-04 (operator-gated)."
+
+**No** removí los `#![allow(...)]` porque compilando sin ellos no
+aparecen warnings nuevos (los items referenciados están siendo
+usados vía `mod lockfile;`/`mod ide;`/`mod tracker;`/`mod doctor;`
+en el bin `cogh`). Es decir, los allows son **innecesarios** hoy
+en estos 5 archivos pero los dejé (la directiva dice "cuidado con
+regresiones y código duplicado", y removerlos abre una caja de
+Pandora: ¿es necesario el módulo entero? ¿quién lo usa? mejor
+dejarlo para una sesión dedicada).
+
+### Métricas
+
+- `cognicode-cli`: **312 passed / 0 failed / 1 ignored**
+  (re-ejecutado tras los cambios de doc — sin regresión).
+- `cargo clippy -p cognicode-cli --all-targets -- -D warnings`:
+  EXIT 0 (sólo warning ajeno sobre `profiles for non-root package`).
+- Workspace completo: **verde en todos los bins**.
+
+### Verificación de no-regresión
+
+`git diff crates/cognicode-cli/src/cmd/{cache,doctor,ide,lockfile,tracker}.rs`
+solo afecta a comentarios `//!`. Sin cambios en lógica,
+sin cambios en API, sin adición de código nuevo. Suite completa
+verificada antes y después de cada commit.
+
+### Disposiciones actualizadas
+
+- Ningún cambio de bucket. La auditoría encontró lo que se
+  sospechaba (paper-closing en §99) y lo corrigió en §100.
+- Sigue siendo: SPEC-DISTRIBUTION 3 PASS / 0 PARTIAL / 0 FAIL / 4
+  NOT_RUN; UAT originales 8 PASS / 0 FAIL; H-06 cerrado; PRF-DIST-02
+  PASS legal.
+- Push a origin/main + tag siguen operator-gated (directive §3).
+
