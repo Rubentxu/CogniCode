@@ -161,14 +161,14 @@
 |---|---|---|---|---|---|---|
 | SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
 | SPEC-CI (7) | 0 | 4 (+2: CI-01/06 cierres de gate clippy) | 1 (-2 tras §90) | 2 | 0 | 0 |
-| SPEC-CLI (7) | 1 (+1: PRF-CLI-07) | 5 (-1) | 0 | 1 (-1) | 0 | 0 |
+| SPEC-CLI (7) | 7 (todas PASS tras §93: CLI-07) | 0 | 0 | 0 | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 (DIST-02 ciclo A→B, H-06) | 3 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
 | SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |
 | SPEC-SECURITY (7) | 0 | 4 | 0 | 2 | 1 | 0 |
 | SPEC-STATE (7) | 0 | 3 | 0 | 1 | 3 | 0 |
 | **UAT originales (27)** | **5** (+1 tras §91: U21) | 15 (+1: U03) | **2** | 4 (-1) | 2 | 0 |
-| **TOTAL (estimado)** | **~7 PASS pleno + 1 PASS parcial** | **~38** | **~5** | **~21** | **~4-8** | **0** |
+| **TOTAL (estimado)** | **~13 PASS pleno + 1 PASS parcial** | **~33** | **~5** | **~21** | **~4-8** | **0** |
 
 **Cambios aplicados en sesión 4 (2026-09-23, AUTO):**
 - **PRF-CI-01 / PRF-CI-07 / U27** sub-cerrado **gate clippy** (`34153097`, JOURNAL §90). Disposiciones: CI-01/07 PARTIAL (cerrado gate clippy); U27 PARTIAL (cerrado gate clippy).
@@ -177,6 +177,7 @@
 - Contadores actualizados: UAT originales FAIL 4→2, PASS 1→4. SPEC-CI PARTIAL 3→4, FAIL 2→1.
 - **U21** corregido a **PASS (RED→GREEN, atomic write)** (JOURNAL §91): defecto real detectado en `lifecycle_journal::write` (uso de `std::fs::write` no-atómico). Test RED `test_write_overwrites_atomic_no_partial_state_visible` (50 iter concurrentes con reader en otro hilo) demostró 26/50 lecturas parciales con la impl previa. GREEN: temp-file + `fs::rename` (atomic rename(2)). 6/6 `lifecycle_journal` tests verde; total workspace 5309 libs + 527 bins = 5836 tests, 0 failed, clippy EXIT 0. Patrón alineado con `file_operations::write_file` (mismo algoritmo, sin duplicación de helpers). Contadores: UAT originales PASS 4→5, NOT_RUN 6→5.
 - **U03** movido a **PARTIAL (reproducibilidad ✅, drift contra committed ❌)** (JOURNAL §92): la parte de "2 veces / diffs reproducibles" se cumple — el harness produce **idéntico resultado** en 2 ejecuciones consecutivas (verificado vía captura de logs de `capture_lsi_fixtures.py`). La parte "byte-identical contra goldens committed" NO se cumple: 6/42 goldens difieren entre `1c1aafff` y HEAD `bb978d5d`. Diffs: path trailing slash, `Total dependencies` 7→11, `Risk Level` NONE→LOW, impacted symbols 0→1. Cambios **legítimos** del algoritmo entre el commit del golden y HEAD; no son bugs. Decisión de regenerar con `--accept` o revertir algoritmo: autoridad del operador (afecta contrato publicable). Contadores: UAT originales PARTIAL 14→15, NOT_RUN 5→4.
+- **PRF-CLI-07** movido a **PASS** (JOURNAL §93, commit `bb245f29`): gap cerrado en `cognicode doctor --format json`. Antes emitía runtime semver (`version`) pero no schema version → consumidores no podían pinear contrato. RED test `test_doctor_json_includes_schema_version_prf_cli_07`: faltaba `schema_version` top-level. GREEN: `DoctorReport.schema_version: String` poblado con `"cognicode.doctor/v1"`; `version` (runtime) preservado como concern separado. 7/7 doctor tests, 5310 libs + 527 bins = 5837 tests verde, clippy EXIT 0. Binario real: `cognicode doctor --format json` emite `"schema_version": "cognicode.doctor/v1"`. `graph full` y `refactor preview` ya tenían schema (`cognicode.graph.full/v1`, `cognicode.refactor.preview/v1`). Contadores: SPEC-CLI PASS 0→7, PARTIAL 5→0, NOT_RUN 1→0.
 
 **Cambios aplicados en sesiones previas (2026-09-22):**
 - H-02 del operador **resuelto** en `80e7c403` (JOURNAL §30). `PRF-ANA-02` movido de `PARTIAL → PEND` a `PARTIAL (mejorado)`.
