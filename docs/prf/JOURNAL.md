@@ -4388,3 +4388,180 @@ verificada antes y después de cada commit.
   PASS legal.
 - Push a origin/main + tag siguen operator-gated (directive §3).
 
+
+## §102 — Hallazgo: evidencia cruda u50-u69 citada en JOURNAL pero NO materializada (2026-09-23)
+
+**Contexto.** §101 auditó cierres §90-§99 contra el MUST literal de
+los PRF; solo §99 era paper-closing. Este §102 extiende la auditoría
+a otro vector: **la existencia material de la evidencia citada**.
+
+### El hallazgo
+
+El JOURNAL (sesiones 2 y 3) cita directorios de evidencia que no
+existen en `docs/prf/evidence/`:
+
+```bash
+$ ls docs/prf/evidence/
+CERTIFICATES.md  MANIFEST.md
+F0-W1-inventory.md  H10-correction.md
+F0-W2-runs/  F0-W3-runs/
+perf-baseline/  u05-mcp-external-client/  u24-dist-rollback/
+UAT-U10-old-client-compat.md
+```
+
+**Faltan los directorios citados en JOURNAL para cierres PASS**:
+`u50-ana06-basis/`, `u51-cli02-stdio-split/`, `u52-cli05-mutation-auth/`,
+`u54-ci03-coverage/`, `u55-ci05-advisories-sbom/`, `u56-ci02-feature-matrix/`,
+`u58-ana05-uat-binary/`, `u59-ana07-uat-binary/`, `u60-cli01-exhaustive/`,
+`u61-cli03-workspace/`, `u62-cli06-determinism/`, `u63-ana02/`,
+`u65-mcp02/`, `u66-sec01/`, `u69-ana08/`.
+
+El MANIFEST es de **2026-09-21** (F0.W3). Cubre F0-W2-runs/ y
+F0-W3-runs/, pero NO incluye los archivos `u50-*` … `u69-*` que
+el JOURNAL cita como evidencia "UAT binario real".
+
+Esto NO invalida los cierres automáticamente — el código de los
+tests sigue en el workspace, los commits existen, y los binarios
+se construyen hoy. Pero **la promesa de "evidencia versionada
+externamente" es falsa para estos 15 cierres**, así que la
+auditoría externa (un tercero sin acceso a mi sesión) no puede
+verificar "UAT binario real 5/5 PASS" sin ejecutar la UAT por su
+cuenta.
+
+### Política del repo
+
+`MANIFEST.md` (2026-09-21) declara:
+
+> - **Versionado en Git** (sí entra al repo): documentos `.md` del
+>   programa PRF (STATE, JOURNAL, ROADMAP, CERTIFICATION, UAT,
+>   TEST-PLAN, README, TRACEABILITY, evidence/CERTIFICATES).
+> - **No versionado en Git** (queda solo local): evidencia cruda
+>   en `docs/prf/evidence/F0-W2-runs/` y `docs/prf/evidence/F0-W3-runs/`.
+> - **Reproducibilidad**: cada evidencia tiene el comando que la
+>   generó documentado en el markdown correspondiente.
+
+El JOURNAL violó la política del MANIFEST al citar directorios
+`u50-*` … `u69-*` que **no están en Git** Y **no están en local**.
+
+### Diagnóstico
+
+La causa más probable: el operador que escribió §50-§84 (sesión 2)
+**asumió implícitamente** que las UAT binarios quedaban en
+`docs/prf/evidence/uxx/` "como en F0.W2/W3", pero no las materializó
+en disco. La promesa de evidencia externalizable era, por tanto,
+una **creencia** del operador — no un hecho verificable hoy.
+
+### Lo que sí es reproducible hoy
+
+| Cierre | Evidencia reproducible hoy | Lo que falta |
+|---|---|---|
+| §32 U21 (atomic write) | in-process tests (2100/0/27); no requiere UAT externa | UAT sigkill externa ya en `u21-sigkill-recovery/OBSERVATIONS.md` (sí existe) ✅ |
+| §46 U24 (corrupto/rollback) | `evidence/u24-dist-rollback/OBSERVATIONS.md` ✅ | nada |
+| §88 UAT-U10 (old client) | `evidence/UAT-U10-old-client-compat.md` ✅ | corpus versionado en `fixtures/u10_compat_corpus/` ✅ |
+| §93 PRF-CLI-07 (schema_version) | test en código + binario observable: `cognicode doctor --format json` emite `"schema_version": "cognicode.doctor/v1"` ✅ | nada |
+| §95 PRF-DIST-03 | tests in-process + §46 | nada |
+| §98 PRF-ANA-01 (capabilities) | tests in-process + `CAPABILITIES-MATRIX.md` ✅ | nada |
+| §100 H-06 (H-06-a/b/c/d) | tests `#[serial]` in-process ✅ | nada |
+| §50–§84 (varios) | código de tests sí, pero **sin traza externa reproducible** | 15 directorios `u50*`..`u69*` ❌ |
+
+Para los 15 directorios perdidos, **o se regeneran** (con coste
+de ~30 min por evidencia: build binario fresh, ejecutar UAT,
+capturar stdout/stderr/sha256, escribir markdown con reproducer)
+**o se cierra como PARTIAL honesto** admitiendo "evidencia
+externa perdida; tests en código pasan; verificación pendiente
+de regenerar".
+
+### Decisión A): regenerar UNA evidencia de muestra (E2E reproducible)
+
+Regenero **UAT-F3-001** (equivalencia CLI ↔ MCP), que ya está
+bien documentada en este mismo JOURNAL §73-like. La reproduzco
+contra HEAD para demostrar que la metodología funciona, antes de
+plantear regenerar los 15.
+
+### Decisión B): no pretender que los cierres §50-§84 son PASS plenos
+
+Para los 15 cierres con evidencia perdida:
+- **Mantengo** la disposición actual PASS en la matriz (los tests
+  en código pasan hoy).
+- **Actualizo** la nota de evidencia de cada uno para marcar
+  "evidencia externa pendiente de regenerar" (esto es ya una
+  admisión honesta, no paper-closing).
+- Cierro este §102 con plan concreto: cuando se autorice el
+  push a origin/main, regenerar las 15 evidencias con sha256
+  pre-push (T4 obligatoria para release certification).
+
+
+## §103 — Regeneración de muestra UAT-F3-001: valida metodología (commit `b72f17e1` posterior) (2026-09-23)
+
+**Origen.** §102 encontró 15 directorios de evidencia `u50*`..`u69*`
+citados en JOURNAL pero no materializados en disco. Política del
+repo (`MANIFEST.md`): "evidencia cruda = local, manifestada con
+SHA-256, regenerable con el comando". Para validar que la metodología
+funciona y para entregar al menos UNA evidencia reproducible
+contra HEAD como muestra, regeneré **UAT-F3-001** (equivalencia
+CLI ↔ MCP), bien documentada en este mismo JOURNAL/UAT §F3.
+
+### Cambios sobre la UAT-F3 original (2026-09-21, JOURNAL §73-like)
+
+| Aspecto | UAT-F3 original | UAT-F3 regenerada |
+|---|---|---|
+| Backend CLI | `FullGraphStrategy` directo | `AnalysisService::build_full_graph` (§64) |
+| Backend MCP | `AnalysisService::build_project_graph` | `AnalysisService::build_project_graph` (sin cambio) |
+| Conteo símbolos | 2 | 2 (idéntico) |
+| Conteo dependencias | 1 | 1 (idéntico) |
+| Status en salida textual | exit 0 (sin status field) | exit 0 (status interno; CLI no lo expone en modo texto) |
+| Status en JSON-RPC | `success:true` | `success:true, status:"complete"` (campo `status` añadido por PRF-ANA-04) |
+
+**Diferencia clave**: la UAT original cubría "CLI usa estrategia
+distinta del MCP". §64 (H-03 / PRF-EXT-02) cerró ese gap: CLI
+y MCP ahora **comparten** `AnalysisService::build_full_graph`.
+Esto no es regresión — es **convergencia arquitectural** que la
+UAT-F3 original detectó como deuda y §64 cerró.
+
+### Decisiones
+
+- **No regenero las otras 14 evidencias en este ciclo**: cada una
+  requeriría ~30 min mínimo entre build + UAT + captura +
+  redacción del markdown. Para una sesión de tamaño razonable,
+  demuestro que la metodología funciona con una muestra; las
+  otras se regenerarán en una sesión dedicada antes del push
+  a origin/main (T4 pre-release, operator-gated).
+- **La tabla de equivalencia en UAT.md no se actualiza aquí**:
+  el cambio arquitectural ya está documentado en §64 +
+  `CAPABILITIES-MATRIX.md`; actualizar UAT.md para reflejar "CLI
+  y MCP ahora comparten AnalysisService::build_full_graph"
+  pertenece al mismo T4 pre-release.
+- **El corpus `/tmp/prf-uat-f3-regen/` se elimina al terminar**:
+  no es artefacto versionado. La regeneración es trivial
+  (5 líneas en 2 archivos).
+
+### Métricas
+
+- CLI stdout sha256: `673ef8a89335c89fcb601b806bef91636ca8e0c5a06a492e0c1f2d7c7302a6a0`
+- CLI stderr sha256: `cc972ac99805aca083c1a1e4118518443daddb98214d73eabad28a2de96c84a8`
+- MCP JSON sha256: `d7d5817de1fc6df3046a9c3d1fec38360d3f3ba3b5c78bc90d78ac87365e27b9`
+- MCP stderr sha256: `bd173b45b2581aadd4e7770d21a7a7f5b292fc689aa4a6db27932d2d24b48517`
+
+(Estos SHA son válidos solo para HEAD `b72f17e1` y binarios
+construidos desde ese HEAD; contra otro binario, el método se
+mantiene, los hashes varían.)
+
+### Archivos añadidos
+
+- `docs/prf/evidence/u58-f3-equivalence-regen/OBSERVATIONS.md`
+  (nuevo, no versionado por la política — pero el path se
+  documenta en `MANIFEST.md`).
+- `docs/prf/evidence/MANIFEST.md` (apéndice añadido con reproducer
+  literal de esta evidencia; reemplaza el `MANIFEST.md` original).
+
+### Disposiciones actualizadas
+
+- Ninguna nueva en la matriz (no tocamos cierres específicos; esto
+  es regenerar evidencia ya existente).
+- Decisión para T4 pre-release: cuando se autorice el push,
+  regenerar las 14 evidencias restantes con sha256 consistente
+  con binarios HEAD del momento.
+
+**Push sigue operator-gated** (directive §3 + auditoría §29 sin
+variación).
+

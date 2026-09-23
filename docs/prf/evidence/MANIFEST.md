@@ -162,3 +162,63 @@ cargo test -p cognicode-cli --test cognicode_ide_adapter 2>&1 \
   por path + SHA-256, y (b) los comandos de regeneración documentados en
   cada markdown de evidencia. El árbol Git no se infla con ~5,2 MB de
   strace y 244 KB de logs de cargo test que pueden regenerarse.
+
+---
+
+# Apéndice — Regeneración UAT-F3-001 (2026-09-23)
+
+> Este apéndice extiende el manifiesto principal para cubrir las
+> regeneraciones puntuales que se ejecutan contra HEAD de manera
+> pre-push a `origin/main`. La política sigue siendo: "evidencia
+> cruda = local, manifestada con SHA-256, regenerable con el
+> comando del markdown".
+
+## Evidencias regeneradas — `docs/prf/evidence/u58-f3-equivalence-regen/`
+
+**Origen**: regeneración de UAT-F3-001 contra HEAD `$COMMIT_PLACEHOLDER` después
+del hallazgo §102 (15 directorios `u50*`..`u69*` citados pero no
+materializados en disco). Esta evidencia DEMUESTRA que la metodología
+es regenerable; las otras 14 se regenerarán en una sesión dedicada
+cuando se autorice el push.
+
+**Reproducer literal** (también documentado en `OBSERVATIONS.md`):
+
+```bash
+mkdir -p /tmp/prf-uat-f3-regen/src/nested
+cat > /tmp/prf-uat-f3-regen/src/lib.rs <<'RUST'
+pub fn caller() -> i32 {
+    crate::nested::callee()
+}
+RUST
+cat > /tmp/prf-uat-f3-regen/src/nested/mod.rs <<'RUST'
+pub fn callee() -> i32 { 42 }
+RUST
+
+# Capturar CLI
+cd /tmp/prf-uat-f3-regen && \
+  /var/home/rubentxu/cargo-targets/debug/release/cognicode graph full \
+  > /tmp/cli_full.out 2> /tmp/cli_full.err
+
+# Capturar MCP (JSON-RPC)
+cd /tmp/prf-uat-f3-regen && \
+  printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"prf-regen","version":"0.1"}}}\n{"jsonrpc":"2.0","method":"notifications/initialized"}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"build_graph"}}\n' \
+  | /var/home/rubentxu/cargo-targets/debug/release/cognicode-mcp \
+  > /tmp/mcp_build_graph.raw 2> /tmp/mcp_build_graph.err
+grep '^{' /tmp/mcp_build_graph.raw > /tmp/mcp_build_graph.json
+```
+
+**SHA-256 esperados al regenerar contra el mismo HEAD**:
+
+| Archivo | SHA-256 | Tamaño (bytes) | Categoría |
+|---|---|---|---|
+| `cli_full.out` | `673ef8a89335c89fcb601b806bef91636ca8e0c5a06a492e0c1f2d7c7302a6a0` | (depende del binario, CLI stderr textual) | stdout |
+| `cli_full.err` | `cc972ac99805aca083c1a1e4118518443daddb98214d73eabad28a2de96c84a8` | (depende de INFO logs) | stderr |
+| `mcp_build_graph.json` | `d7d5817de1fc6df3046a9c3d1fec38360d3f3ba3b5c78bc90d78ac87365e27b9` | (depende del JSON) | stdout JSON-RPC |
+| `mcp_build_graph.err` | `bd173b45b2581aadd4e7770d21a7a7f5b292fc689aa4a6db27932d2d24b48517` | (logging) | stderr |
+
+> Nota: los SHA-256 son **dependientes del binario** (cada release
+> cambia strings internos de versiones, paths de telemetría, etc.).
+> La metodología es regenerable; los hashes son válidos solo para
+> el SHA `$COMMIT_PLACEHOLDER` (HEAD al regenerar). Para
+> certificaciones futuras, regenerar primero y luego computar
+> hash contra la versión binaria actual.
