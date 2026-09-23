@@ -5191,3 +5191,84 @@ aplazará a una sesión dedicada** post-push (operator-gated).
 
 Conventional Commits estricto: `docs(prf): regenerate u59 with
 fresh release binary (§115)`.
+
+## §116 — U69 regenerado: cierra el último pendiente local de §102 (2026-09-23)
+
+**Origen.** §115 cerró u59; quedaba u69 (PRF-ANA-08 search budget
+bounded). Esta sesión la regenera siguiendo el mismo patrón
+post-§115 (binario release v0.97.4 sincronizado).
+
+### Metodología
+
+1. Confirmar sha256 de `target/release/cognicode-mcp` =
+   `582596cf…` (post-§115 sync).
+2. Ejecutar `cargo test -p cognicode-mcp --test prf_ana_08_uat`
+   — 1/1 verde.
+3. Reproducir invocación stdio JSON-RPC manual:
+   - `build_graph` (warm-up).
+   - `find_usages compute` (camino feliz, debe completar
+     en <2s con output <5MiB).
+   - `find_usages definitely_not_here_42` (camino "no
+     encontrado", debe producir typed error o payload
+     explícito, no hang).
+
+### Resultados observados (binario real)
+
+| Verificación | Esperado | Observado |
+|---|---|---|
+| `find_usages compute` usos | 2 (1 call + 1 def) | **2** ✓ |
+| `find_usages compute` content len | <5MiB | **495 bytes** ✓ |
+| `find_usages compute` isError | false | **false** ✓ |
+| `find_usages compute` latencia | <500ms+slack 1.5s | **~5ms** ✓ |
+| `find_usages definitely_not_here_42` | typed error o payload explícito | **`{total:0, usages:[]}`** ✓ |
+| Wall time total (init+build+2 find_usages) | <2s | **21ms** ✓ |
+
+### Verificación cruzada
+
+```bash
+$ cargo test -p cognicode-mcp --test prf_ana_08_uat
+running 1 test
+test search_budget_bounded_output_over_homonym_corpus ... ok
+test result: ok. 1 passed; 0 failed
+```
+
+### Estado matriz
+
+| ID | Estado pre-§116 | Estado post-§116 | Evidencia |
+|---|---|---|---|
+| PRF-ANA-08 | PASS (test library) | **PASS test integración + binario release fresco** | `evidence/u69-ana08-uat-binary/OBSERVATIONS.md` |
+
+### §102 actualización — cierre de regenerables locales
+
+- Pre-§116: 10 perdidos (post-§115).
+- Post-§116: **9 perdidos**.
+- **0 pendientes regenerables con binario local HEAD** (u50, u51,
+  u58, u59, u60, u69 todos regenerados).
+- Pendientes con CI/cross-compile: **9 dirs** (atención §115:
+  pueden arrastrar paper-closing residual por binarios stale
+  similar al detectado; auditoría dedicada post-push).
+
+### Implicación
+
+§102 cerró su capítulo "regenerables con binario local" en
+esta sesión (§110 u60, §111 u51, §114 u50+u58, §115 u59,
+§116 u69). El resto son 9 dirs que requieren CI/cross-compile
+y salen del scope de una sesión local sin red/act.
+
+### Decisiones
+
+- **No regenero los 9 dirs CI/cross-compile** en esta sesión
+  (requieren `act` o push, ambos operator-gated).
+- **Documento el systemic risk** en `OBSERVATIONS.md` y STATE:
+  antes de cualquier CI run, sustituir bins stale en
+  `target/release/` con bins frescos de
+  `CARGO_TARGET_DIR/release/release/`.
+- **No ejecuta** push, tag v0.97.4, C7 firma. Operator-gated.
+
+### Archivos añadidos
+
+- `docs/prf/evidence/u69-ana08-uat-binary/OBSERVATIONS.md`
+  (nuevo).
+
+Conventional Commits estricto: `docs(prf): regenerate u69 with
+fresh release binary (§116)`.
