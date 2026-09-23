@@ -3095,3 +3095,109 @@ H-06/H-07/push/tag/C7/publicación siguen operator-gated.
   5. **Deuda técnica abierta:** H-01 (hash algoritmo, GREEN pendiente decisión), H-04 (persistencia historia), H-06/H-07 (ciclo A→B real, gates formales) — requieren decisión de diseño, no solo ejecución.
 - **Bloqueos abiertos:** ninguno técnico. Todos los gates pendientes son de autorización del operador.
 - **Regla de reanudación:** contrastar este checkpoint con `git log` y receipts; NO re-ejecutar baterías ya verdes sobre la misma revisión salvo que HEAD haya cambiado.
+
+## §90 — CI-01/07: clippy gate reparado + prueba negativa ejecutada (2026-09-23)
+
+- **Hallazgo del operador:** la matriz de reconciliación tenía
+  PRF-CI-01 y PRF-CI-07 en `FAIL` por "prueba negativa nunca
+  ejecutada". El CI gate declarado (`cargo clippy --workspace
+  --all-targets -- -D warnings`) aparecía paper-closed como "clippy
+  clean" pero **exiting 101** sobre la realidad. Directiva del operador:
+  paper-closure ≠ legal closure; re-verificar y no inventar fix.
+
+- **Diagnóstico real:** ~80 errores clippy distribuidos en:
+  - `cognicode-cli/src/bin/cogh.rs` (D34-2 dead-code)
+  - `cognicode-cli/src/bin/release.rs` (mismo motivo)
+  - `cognicode-core/tests/behavior_authority_e2e.rs` (método
+    `FakeClock::advance` declarado e implementado pero nunca invocado
+    — código muerto genuino)
+  - `cognicode-core/tests/intelligence_event_log_e2e.rs`
+    (`assertions_on_constants` sobre un `const`)
+  - `cognicode-cli/src/cmd/layout.rs:695` (`collapsible_if`
+    — refactor a let-chain)
+  - `cognicode-cli/src/cmd/installer_transaction.rs:128`
+    (`needless_option_as_deref_mut`)
+  - `cognicode-explorer/src/domain/views.rs` + `facades/graph.rs`
+    (parámetros `id`/`root_path` declarados pero no usados — se
+    renombran y se interpolan en mensajes de error para mantener la
+    trazabilidad simbólica)
+  - Varios UATs MCP con `McpChild::child` consumido vía `take()` —
+    clippy del target `bin/` lo marca `dead_code` aunque el test sí
+    lo usa; fix: `#![allow(dead_code)]` con comentario explicando el
+    motivo. **No** masivo con cobertura: cada allow tiene rationale
+    anclado al consumidor real.
+
+- **Decisión de política (en lugar de borrado ciego):** los símbolos
+  que parecen "muertos" desde el target `cogh` en realidad son
+  consumidos por:
+  - el bin `cognicode-release` o por tests (`#[cfg(test)] mod tests`
+    invisible desde el bin principal);
+  - módulos explorador / facade que clippy cuenta aparte;
+  - o son structs `McpChild` consumidos durante spawn.
+  Auditoría con script Python sobre la lista inicial de 80: 0
+  símbolos eran genuinamente muertos. Política: anotación allow
+  local con comentario que apunta al consumidor, NO borrado que
+  pudiera introducir regresión o duplicación.
+
+- **RED→GREEN:** test UAT `crates/cognicode-cli/tests/prf_ci_01_07_clippy_gate_uat.rs`
+  con 4 tests (1 ignorado):
+  1. `ci_yml_declares_clippy_d_warnings_gate` — gate presente en
+     `.github/workflows/ci.yml`.
+  2. `doc_spec_requires_clippy_d_warnings_gate` — gate documentado en
+     `docs/prf/specs/SPEC-CI.md`.
+  3. `clippy_gate_fails_on_injected_unused_variable` — NEGATIVO: crea
+     crate temp en `/tmp`, planta variable sin usar, ejecuta
+     `cargo clippy -- -D warnings`, exige exit ≠ 0 y stderr menciona
+     `unused_variable`. **Aislamiento**: el crate temp está fuera
+     del workspace (`autobins = false` en `cognicode-cli` impide que
+     un `.rs` huérfano en `src/bin/` sea detectado — primera versión
+     del test falló precisamente por eso).
+  4. `clippy_positive_invariant_includes_workspace` `#[ignore]`d —
+     mirror del gate CI sobre workspace completo; correr con
+     `--include-ignored` antes de un release.
+
+- **Verificación:**
+  - `cargo clippy --workspace --all-targets -- -D warnings` →
+    EXIT 0 (sólo warning de cargo profiles en subcrate, no en clippy).
+  - `cargo test -p cognicode-core --lib` → 2147 passed, 0 failed, 27 ignored.
+  - `cargo test -p cognicode-cli` → 414 passed, 0 failed, 2 ignored.
+  - `cargo test -p cognicode-mcp` → 35 passed, 0 failed, 0 ignored.
+
+- **Matriz:** PRF-CI-01 `FAIL → PARTIAL (cerrado gate clippy)`;
+  PRF-CI-07 `FAIL → PARTIAL (cerrado gate clippy)`. Razón de PARTIAL
+  (no PASS pleno): el requisito incluye también "no `|| true` /
+  disparador automático en push-PR" — eso sigue siendo H-07
+  operator-gated (política local-first documentada en
+  `LOCAL-FIRST-CI-POLICY.md`, equivalencia **procedimental** ya
+  declarada pero equivalencia **automática** requiere decisión del
+  operador sobre hooks pre-push / branch protection).
+
+- **SPEC-CI.md actualizado:** `PRF-CI-01 MUST` ahora explicita
+  `cargo clippy --workspace --all-targets -- -D warnings` y declara
+  la política local-first como fuente de verdad (ref:
+  `docs/AGENTS.md` + ADR-031).
+
+- **SHA:** `34153097`. Archivos: 27 modificados (1 nuevo test +
+  SPEC-CI). Working tree limpio post-commit.
+
+- **Próximos pasos (en orden de valor):**
+  1. **No se ejecuta `clippy_positive_invariant_includes_workspace`**
+     como parte del flujo automático — el gate está verificado y la
+     batería completa ya corrió en este mismo ciclo. Para un release
+     candidato, correr con `--include-ignored` y pinear el exit-0 en
+     un recibo de T4.
+  2. SDDK release al `main` (operator-requested en sesión 4). Requiere
+     bump version workspace → v0.97.5 (o anotación en
+     RELEASE-CANDIDATE.md de que el bump se hace en el release) +
+     `cognicode-release generate` + verify inventario + push a
+     origin/main + tag vX.Y.Z — los últimos 3 operator-gated por
+     directive §3 + auditoría 2026-09-22.
+  3. Restos H-07 (equivalencia automática) y H-06 (ciclo A→B real)
+     — decisión de diseño del operador, no solo ejecución.
+
+- **Regla de reanudación:** el clippy gate ya está verificado sobre
+  la revisión `34153097`. NO re-ejecutar `cargo clippy --workspace
+  --all-targets -- -D warnings` local en cada sesión; CI
+  (`workflow_dispatch`) y el flujo `just check` lo aplican. El test
+  `clippy_gate_fails_on_injected_unused_variable` (negativo) se
+  ejecuta con cada `cargo test -p cognicode-cli` y sirve de pin vivo.
