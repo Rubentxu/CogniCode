@@ -3656,3 +3656,107 @@ PARTIAL 4→5, NOT_RUN 3→2.
 
 **Push a origin/main sigue operator-gated.** Commits locales
 hasta autorización explícita.
+
+## §95 — PRF-DIST-03 PASS: tests de regresión pinean Drop rollback (2026-09-23)
+
+**Origen.** Continuación sesión 4 AUTO. PRF-DIST-03 NOT_RUN según la
+matriz.
+
+**Investigación.** PRF-DIST-03 (binario ausente / SHA inválido /
+migración interrumpida → error + reversión, sin `|| true`) tiene
+evidencia sólida desde JOURNAL §46:
+
+- `docs/prf/evidence/u24-dist-rollback/OBSERVATIONS.md` (2026-09-22)
+  documenta el flujo end-to-end con servidor HTTP local:
+  - Intento 1: asset truncado a 500000 bytes → SHA256 mismatch →
+    exit no-cero, `versions/`/`journal/`/`shims/` vacíos, `cogh
+    doctor` reporta "no active runtime" con guía de recuperación.
+  - Intento 2: reinstallation con asset correcto → healthy,
+    `cognicode-mcp --version` 0.97.3.
+
+El código que hace el rollback (`impl Drop for RollbackJournal`)
+ya estaba correcto. Lo que faltaba eran tests in-process que
+pinearan la propiedad de rollback para que cualquier cambio futuro
+en la lógica de journal no la rompiera silenciosamente.
+
+**Tests añadidos (commit `e1368be7`).**
+
+1. `prf_dist_03_sha_mismatch_drops_state_on_failed_journal`:
+   registra un `SideEffect::Downloaded`, sale del scope sin
+   `commit()`, y verifica que el archivo descargado desaparece vía
+   `Drop`. Simula el path: download OK → VerifyingSha256 falla con
+   `Sha256Mismatch` → el journal se mueve a `Failed { error }` →
+   el campo `..` descarta el journal → su `Drop` rollbackea.
+
+2. `prf_dist_03_drop_rollback_reverses_full_partial_install`:
+   extiende a multi-componente. Registra `Downloaded` y `Extracted`,
+   sale del scope, y verifica que ambos desaparecen. Pinea el
+   contrato de que ninguna combinación de side-effects parciales
+   puede sobrevivir un fallo de SHA.
+
+Ambos tests son **GREEN-on-arrival** (no son RED→GREEN, son
+regression pins): el código ya cumple el contrato vía `Drop`. Su
+valor es que cualquier regresión futura (e.g. cambiar `Drop` para
+que sea no-op cuando el journal tiene errores) los rompería
+inmediatamente.
+
+**Lo que estos tests NO cubren.**
+
+- **CreatedShim side-effects.** En producción, los shims se crean
+  en el stage `InstallingShims`, que se ejecuta DESPUÉS de
+  `VerifyingSha256`. Un fallo de SHA no puede dejar un shim
+  colgante por diseño. El test lo deja fuera de scope
+  explícitamente.
+- **Patrón `|| true`.** El spec lo prohíbe, pero no es testeable
+  con asserts. Verificado por inspección: el flujo principal de
+  `installer_transaction.rs` no contiene `let _ = .*\?` ni
+  `unwrap_or(false)` que traguen errores del path crítico. Los
+  `let _ = std::fs::remove_file(...)` que existen son best-effort
+  cleanup post-commit (rollback post-éxito), no swallow de
+  fallos.
+
+**Matriz actualizada.** PRF-DIST-03 NOT_RUN → PASS. Contadores:
+SPEC-DISTRIBUTION PASS 0→1, PARTIAL 3→2.
+
+**Verificación.**
+
+| Comando | Resultado |
+|---|---|
+| `cargo test --bin cogh prf_dist_03` | 2/2 verde |
+| `cargo test --workspace` (libs) | 5312 passed, 0 failed, 45 ignored |
+| `cargo test --bins` | 529 passed, 0 failed, 1 ignored |
+| `cargo clippy --workspace --all-targets -- -D warnings` | EXIT 0 |
+
+**Commits.**
+
+- `e1368be7` — test(distribution): PRF-DIST-03 — Drop rollback pins
+  clean state on SHA failure.
+
+**Decisiones de diseño.**
+
+- **No añadir test E2E automatizado con servidor HTTP.** El fixture
+  `local_release` + `point_at` ya existe y está usado por otros
+  tests. Pero añadir un test que genere release con SHA incorrecto
+  y verifique el rollback end-to-end requiere serial-test
+  ordering, ~5-10s de setup, y dependencias frágiles. La
+  cobertura in-process + la evidencia manual de §46 son
+  suficientes para esta sesión. Queda como follow-up si la
+  release certification lo exige.
+- **No mover el cleanup post-commit a un lugar mejor.** Los
+  `let _ = std::fs::remove_file(...)` post-commit son best-effort
+  cleanup explícito. El Drop del journal maneja el rollback
+  pre-commit. Ambos cubren orthogonal failure modes.
+
+**Próximo trabajo del backlog.**
+
+- U15 (#9): corpus mixto LSP ausente.
+- PRF-ANA-01 (#10): verticales del motor genérico.
+- H-06 (#11): allow refactor anclando a follow-up.
+- **Follow-up PRF-MCP-05:** migrar `list_tools` al meta-based
+  authority oracle (cambio de comportamiento, autoridad del
+  operador).
+- **Follow-up PRF-DIST-03:** test E2E automatizado con servidor
+  HTTP + SHA incorrecto (release certification).
+
+**Push a origin/main sigue operator-gated.** Commits locales hasta
+autorización explícita.
