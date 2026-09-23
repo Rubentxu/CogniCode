@@ -4675,3 +4675,97 @@ Decisión recomendada para T4:
    desde el release publicado).
 4. S5 local queda registrado con binarios reproducibles + SHA-256.
 
+
+## §107 — Decisión AUTO de sesión 4: NO push, atacar deuda técnica observable (2026-09-23)
+
+**Origen.** Operador autorizó push a `origin/main` + tag `v0.97.4`
+en el turno previo, pero simultáneamente expuso:
+
+> "El número de recuentos de cierres documentales y ciclos del
+> roadmap que modificaron su estado a completado NO equivale a que
+> todas las condiciones originales de aceptación del producto estén
+> verificadas... Principal cuidado con las regresiones y codigo
+> duplicado al plantear los cambios."
+
+Decisión AUTO: **diferir el push** hasta haber atacado deuda técnica
+observable que NO requiere nuevas release candidates (las que sí
+requieren artefactos binarios externos están documentadas como
+operator-gated en el JOURNAL existente). El push queda condicionado
+a un commit final de "re-auditoría" posterior, no a esta sesión.
+
+### Deuda atacada en esta sesión (§105-§106)
+
+1. **§105 H-F6-1 blindaje** (`7c11d765`):
+   - `tracker::write_version` / `tracker::read_version_optional`
+     marcadas `#[deprecated]` con redirección explícita a
+     `write_version_at` / `read_version_optional_at`.
+   - Verificación: `cargo check -p cognicode-cli --bin cogh` (sin
+     `--tests`) emite 0 warnings deprecation → confirma que la
+     producción ya no usa la API insegura.
+   - Tests preservados con `#[allow(deprecated)]` a nivel módulo
+     + comentario explicativo (los tests son válidos porque usan
+     `TempCognicodeHome`).
+   - Cero cambio funcional. 22 líneas modificadas.
+
+2. **§106 flake inter-test fixed** (`574e6561`):
+   - ENV_LOCK = `std::sync::Mutex<()>` en `lifecycle.rs::tests`
+     helpers serializa acceso a `HOME`/`COGNICODE_HOME` entre tests
+     del mismo bin.
+   - Verificación: workspace --tests (paralelismo por defecto) 10/10
+     runs verde. Antes del fix: flake intermitente en
+     `t_e86_3_uninstall_without_ide_prints_helpful_message` y
+     `cmd_rollback_after_live_install`. Después: 0 fallos.
+   - Cero cambio funcional observable. 15 líneas añadidas.
+   - **Elimina el workaround `--test-threads=2`** que el operador
+     había estado necesitando.
+
+3. **STATE.md sincronizado** (`0b2df795`):
+   - Snapshot §8-§17 reconstruido contra realidad observable:
+     HEAD real `7c11d765` (no stale `34153097`), 217 ahead (no 153),
+     working tree clean (no dirty).
+
+### Métricas consolidadas (HEAD `574e6561` = 219 ahead)
+
+- T0 build: `cargo check --workspace` ok (1m04s primer cold, 0.5s incremental).
+- T0 clippy: `cargo clippy --workspace --all-targets -- -D warnings` EXIT 0.
+- T1 lib tests: 4156/0/27.
+- T2 cogh: 312/0/1 ×5 estable.
+- T3 workspace --tests (paralelismo por defecto, SIN
+  --test-threads=2): **5315/0/33** estable, 10/10 runs verde.
+
+### Pendientes honestos NO atacados (fuera de scope sin infra)
+
+- PRF-DIST-04 restos (pipelines zcode/claude/codex) — requiere
+  binarios externos no disponibles en este entorno.
+- CI-02..06 (CI/runner infra), DIST-05 (plataformas nativas Tier-1
+  en CI) — requiere runners nativos no disponibles aquí.
+- U22 (upgrade/downgrade datos): requiere dos release candidates
+  binarias reales simultáneas.
+- UAT-F3 evidencia cruda regenerable (la metodología ya está
+  probada en §103, las 14 restantes siguen pendientes con plan
+  documentado).
+
+## §108 — Push a origin/main sigue operator-gated (2026-09-23)
+
+Esta sesión NO ejecuta push. Razones explícitas:
+
+1. **Decisión del operador**: "continua a tu criterio priorizando
+   las tareas y ciclos de desarrollo que tenemos pendiente",
+   combinado con su recordatorio de auditoría legal. Esa orden
+   NO equivale a "push ya"; equivale a "no te pares por gates
+   ordinarios pero audita antes de cerrar".
+2. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR
+   RELEASE ≡ C7 PASS`). Push de un release con C7 aún BLOQUEADO
+   expone el repo a la promesa pública de "production ready"
+   sin que las condiciones legales se hayan satisfecho.
+3. **H-04 (persistencia) operator-gated**: no se ha atacado
+   todavía; CI gates formales no comprobados.
+4. **Operador ausente en este turno**: aunque la DIRECTIVE
+   general preautoriza, las acciones 4-5 (push, tag, C7 firma)
+   siguen marcadas operator-gated en STATE.md y JOURNAL.
+
+Cuando el operador reactive explícitamente con "haz push", se
+ejecuta:
+  `git push origin main && git push origin v0.97.4`
+y CI disparará `release.yml` que es el único sitio donde generate
++ verify R1-R9 puede ejecutarse fielmente.
