@@ -211,9 +211,9 @@ impl GraphService for GraphServiceImpl {
         }
         #[cfg(not(feature = "multimodal"))]
         {
-            Err(ExplorerError::FeatureDisabled(
-                format!("build_architecture requires multimodal feature (path: {root_path})"),
-            ))
+            Err(ExplorerError::FeatureDisabled(format!(
+                "build_architecture requires multimodal feature (path: {root_path})"
+            )))
         }
     }
 
@@ -224,9 +224,9 @@ impl GraphService for GraphServiceImpl {
         }
         #[cfg(not(feature = "multimodal"))]
         {
-            Err(ExplorerError::FeatureDisabled(
-                format!("compare_architecture requires multimodal feature (path: {root_path})"),
-            ))
+            Err(ExplorerError::FeatureDisabled(format!(
+                "compare_architecture requires multimodal feature (path: {root_path})"
+            )))
         }
     }
 

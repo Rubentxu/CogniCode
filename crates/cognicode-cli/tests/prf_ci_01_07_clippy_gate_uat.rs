@@ -148,8 +148,7 @@ pub fn prf_ci_07_injected_defect() -> u32 {
     );
     // Sanity: the lint message should mention the planted symbol.
     assert!(
-        stderr.contains("unused_variable")
-            || stderr.contains("prf_ci_07_injected_defect"),
+        stderr.contains("unused_variable") || stderr.contains("prf_ci_07_injected_defect"),
         "clippy output should reference the planted defect; got:\n{}",
         &stderr[..stderr.len().min(2000)]
     );

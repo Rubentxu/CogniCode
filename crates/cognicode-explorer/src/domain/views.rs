@@ -4542,9 +4542,9 @@ impl ViewExecutor for DecisionGraphExecutor {
                 #[cfg(not(feature = "multimodal"))]
                 {
                     let _ = ctx;
-                    Err(crate::error::ExplorerError::FeatureDisabled(
-                        format!("DecisionGraph requires multimodal feature (decision: {id})"),
-                    ))
+                    Err(crate::error::ExplorerError::FeatureDisabled(format!(
+                        "DecisionGraph requires multimodal feature (decision: {id})"
+                    )))
                 }
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
@@ -4966,9 +4966,9 @@ impl ViewExecutor for DecisionTraceExecutor {
                 #[cfg(not(feature = "multimodal"))]
                 {
                     let _ = ctx;
-                    Err(crate::error::ExplorerError::FeatureDisabled(
-                        format!("DecisionTrace requires multimodal feature (decision: {id})"),
-                    ))
+                    Err(crate::error::ExplorerError::FeatureDisabled(format!(
+                        "DecisionTrace requires multimodal feature (decision: {id})"
+                    )))
                 }
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
@@ -5069,9 +5069,9 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                 #[cfg(not(feature = "multimodal"))]
                 {
                     let _ = ctx;
-                    Err(crate::error::ExplorerError::FeatureDisabled(
-                        format!("DecisionSupportPack requires multimodal feature (decision: {id})"),
-                    ))
+                    Err(crate::error::ExplorerError::FeatureDisabled(format!(
+                        "DecisionSupportPack requires multimodal feature (decision: {id})"
+                    )))
                 }
             }
             _ => Err(crate::error::ExplorerError::ViewNotAvailable {
