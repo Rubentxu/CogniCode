@@ -309,6 +309,32 @@ impl AnalysisService {
             );
         }
 
+        // U15 (PRF_ANA_05 corpus mixto LSP-ausente): archivos sin
+        // lenguaje reconocido deben aparecer EXPLÍCITAMENTE en
+        // BuildReport.skipped, no filtrarse silenciosamente. Sin este
+        // paso, un cliente que ejecute `cognicode graph full` sobre
+        // corpus mixto recibiría status=Complete aunque el WalkBuilder
+        // descubrió archivos que nunca se procesaron.
+        {
+            let mut guard = skipped_files.lock().unwrap();
+            for (path, language, file_path, _mtime, _size) in &files {
+                if language.is_none() {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("<no extension>");
+                    guard.push(
+                        crate::infrastructure::graph::per_file_graph::SkippedFile {
+                            path: file_path.clone(),
+                            reason: crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
+                                format!("extension '.{}' is not in the supported parser set", ext),
+                            ),
+                        },
+                    );
+                }
+            }
+        }
+
         let files: Vec<_> = files
             .into_iter()
             .filter(|(_, lang, _, _, _)| lang.is_some())
@@ -3554,6 +3580,80 @@ def b():
                 "build #2 must NOT contain normal_function (it was renamed \
                  at the same size and same mtime)"
             );
+        }
+    }
+
+    // ============================================================================
+    // U15 — corpus mixto LSP-ausente: archivos sin lenguaje reconocido
+    // deben aparecer EXPLICITAMENTE en BuildReport.skipped. El filtro silencioso
+    // (filter is_some() en línea ~312 antes de añadirlos a skipped) hace que
+    // status=Complete sin reportar el soporte. Contrato: "fallback y nivel de
+    // soporte explícitos, sin resolución inventada".
+    // ============================================================================
+    #[test]
+    fn test_u15_unsupported_files_must_appear_in_build_report_skipped() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = temp_dir.path();
+
+        // 1 archivo soportado (Python)
+        std::fs::write(
+            temp_path.join("supported.py"),
+            "def a():\n    pass\n",
+        )
+        .unwrap();
+
+        // 2 archivos NO soportados (extensiones sin parser asignado)
+        std::fs::write(
+            temp_path.join("unsupported.cob"),
+            "       IDENTIFICATION DIVISION.\n       PROGRAM-ID. HELLO.\n",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_path.join("notes.txt"),
+            "this file has no parser at all\n",
+        )
+        .unwrap();
+
+        let service = AnalysisService::new();
+        service.build_project_graph(temp_path).unwrap();
+
+        let report = service
+            .get_last_build_report()
+            .expect("build_project_graph debe poblar last_build_report");
+
+        use crate::infrastructure::graph::per_file_graph::BuildStatus;
+        match report.status {
+            BuildStatus::Complete => {
+                panic!(
+                    "U15: status=Complete con archivos no soportados (cob/txt) \
+                     implica soporte silencioso. Report.skipped_files_objs debe \
+                     incluirlos para reportar cobertura honesta. BuildReport: {:?}",
+                    report
+                );
+            }
+            BuildStatus::Partial { skipped } => {
+                let reported = skipped
+                    .iter()
+                    .map(|s| {
+                        std::path::Path::new(&s.path)
+                            .file_name()
+                            .unwrap()
+                            .to_str()
+                            .unwrap()
+                            .to_string()
+                    })
+                    .collect::<Vec<_>>();
+                assert!(
+                    reported.iter().any(|n| n == "unsupported.cob"),
+                    "U15: 'unsupported.cob' debe aparecer en skipped. Reported: {:?}",
+                    reported
+                );
+                assert!(
+                    reported.iter().any(|n| n == "notes.txt"),
+                    "U15: 'notes.txt' debe aparecer en skipped. Reported: {:?}",
+                    reported
+                );
+            }
         }
     }
 }
