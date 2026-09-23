@@ -55,7 +55,7 @@
 | PRF-CLI-04 (mismo caso de uso entre CLI y MCP, transporte aislado) | **PASS** | §37 in-process (sets) + §75 dos procesos reales (`prf_cli_04_two_process_uat.rs`): binario CLI argv/stdout vs binario MCP stdio JSON-RPC, mismos conteos y status, guards anti-vacuidad. |
 | PRF-CLI-05 (mutación con autorización separada; read-only por defecto) | **PASS (RED→GREEN + UAT binario real)** | RED real: refactor crasheaba en toda invocación (clap: posicional opcional antes de requerido). Fix argv + `--apply` como autorización separada que se RECHAZA hasta existir rollback; default preview-only sin escritura (SHA verificado). Test de regresión + UAT 4/4 — `evidence/u52-cli05-mutation-auth/` (JOURNAL §51). Deuda: apply con rollback es trabajo futuro. |
 | PRF-CLI-06 (Unicode, espacios, cwd, permisos determinista; sin secretos por verbose) | **PASS** | `prf_cli_06_determinism_uat` 4/4 sobre binario real: unicode+espacios, cwd-independencia del reporte, permiso 000 sin crash, verbose sin fuga de secretos (§62). `evidence/u62-cli06-determinism/`. |
-| PRF-CLI-07 (JSON legible por máquina, semver esquema) | NOT_RUN | No exigido retroactivamente. |
+| PRF-CLI-07 (JSON legible por máquina, semver esquema) | **PASS** | 2026-09-23 (JOURNAL §93): gap cerrado en `doctor --format json`. Antes: emitía runtime semver como `version` pero sin schema version → consumidores no podían pinear contrato sobre la forma del documento. RED test `test_doctor_json_includes_schema_version_prf_cli_07` (commit `bb245f29`): faltaba `schema_version` top-level. GREEN: `DoctorReport.schema_version: String` poblado con `"cognicode.doctor/v1"`; `version` (runtime semver) preservado como concern separado. Verificación: 7/7 doctor tests, 5310 libs + 527 bins = 5837 tests verde, clippy EXIT 0. Binario real: `cognicode doctor --format json` emite `"schema_version": "cognicode.doctor/v1"`. `graph full --format json` y `refactor preview --format json` ya tenían schema (`cognicode.graph.full/v1`, `cognicode.refactor.preview/v1`). |
 
 ## Sección D — `SPEC-DISTRIBUTION.md` (`PRF-DIST-*`)
 
@@ -161,7 +161,7 @@
 |---|---|---|---|---|---|---|
 | SPEC-ANALYSIS (9) | 2 (+1 tras PRF-ANA-04) | 4 (+1 tras H-02) | 0 (-1 tras H-01) | 2 | 1 (-1 tras PRF-ANA-04) | 0 |
 | SPEC-CI (7) | 0 | 4 (+2: CI-01/06 cierres de gate clippy) | 1 (-2 tras §90) | 2 | 0 | 0 |
-| SPEC-CLI (7) | 0 | 5 (+2: CLI-04 de FAIL, CLI-01 de NOT_RUN) | 0 | 2 (-1) | 0 | 0 |
+| SPEC-CLI (7) | 1 (+1: PRF-CLI-07) | 5 (-1) | 0 | 1 (-1) | 0 | 0 |
 | SPEC-DISTRIBUTION (7) | 0 | 3 | 1 (DIST-02 ciclo A→B, H-06) | 3 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 0 | 4 | 0 | 1 | 1 | 0 |
 | SPEC-MCP (7) | 0 | 4 | 0 | 3 | 0 | 0 |

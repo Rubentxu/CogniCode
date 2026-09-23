@@ -3418,3 +3418,107 @@ python3 sandbox/scripts/capture_lsi_fixtures.py | grep -E "RESULT|DIFF"
 **Push a origin/main sigue operator-gated** (directive §3 +
 auditoría 2026-09-22). Los commits de este ciclo son locales hasta
 que el operador lo autorice.
+
+## §93 — PRF-CLI-07 PASS: `doctor --format json` declara `schema_version` (2026-09-23)
+
+**Origen.** Continuación sesión 4 AUTO. PRF-CLI-07 (JSON legible por
+máquina con semver de esquema cuando se declare estable) NOT_RUN.
+
+**Investigación — superficie JSON del CLI.** Inventario de
+subcomandos con `--format json`:
+
+| Subcomando | `schema_version` | Disposición antes |
+|---|---|---|
+| `graph full --format json` | `cognicode.graph.full/v1` | PASS (PRF-CLI-02 §50) |
+| `refactor preview --format json` | `cognicode.refactor.preview/v1` | PASS (PRF-CLI-05 §51) |
+| `doctor --format json` | **ausente** | **gap real** |
+| `graph mermaid --format` | `svg`/`png`/`txt` (no JSON) | no aplica |
+
+**Gap real detectado.** `doctor --format json` emitía
+`{"version": "0.97.4", ...}` — la versión del binario (runtime
+semver) — pero NO tenía `schema_version` que describiera la forma
+del documento. Consecuencia: cualquier breaking change en la forma
+del JSON se envía silenciosamente a los consumidores.
+
+**RED test (verificado empíricamente).**
+`test_doctor_json_includes_schema_version_prf_cli_07` en
+`crates/cognicode-core/src/interface/cli/doctor.rs`:
+
+1. Construye un `DoctorReport` real con `run_doctor_checks(None)`.
+2. Lo serializa con `format_doctor_json`.
+3. Parsea con `serde_json::from_str`.
+4. Verifica que existe `schema_version`, empieza con
+   `"cognicode.doctor/v"`, y que su major parsea como `u32`.
+5. Verifica que `version` (runtime semver) sigue presente y es
+   distinto de `schema_version`.
+
+Con el impl previo, el test fallaba con panic en
+`"doctor JSON missing schema_version"`.
+
+**GREEN fix.**
+
+1. `DoctorReport` gana el campo
+   `pub schema_version: String` (con doc-comment explicando
+   contrato, formato `cognicode.doctor/vMAJOR`, e independencia
+   del runtime `version`).
+2. `run_doctor_checks` lo popula con `"cognicode.doctor/v1"`.
+3. El campo `version` (runtime semver) se preserva intacto.
+
+**Decisiones de diseño.**
+
+- **`schema_version` mayor-only.** El spec PRF-CLI-07 habla de
+  "semver de esquema". Hoy el contrato es solo mayor; minor/patch
+  se reservan para el futuro cuando se decida qué cuenta como
+  breaking. Documentado en el doc-comment del campo.
+- **No tocar el JSON de `graph full` o `refactor preview`.** Ambos
+  ya tienen `schema_version` correcto; rehacerlos sería
+  regresión sin valor. El gap era exclusivamente doctor.
+- **No introducir una constante global de "schema versions".**
+  Sería over-engineering para un caso. Cada subcomando con JSON
+  declara su propio prefijo (`cognicode.doctor/v1`,
+  `cognicode.graph.full/v1`, etc.) en línea. Si en el futuro se
+  quieren centralizar, se hace con un PR dedicado, no como
+  side-effect de este fix.
+- **No bump de la versión del bin (`0.97.4`).** El fix es
+  additive: un consumidor que ignoraba `schema_version` sigue
+  funcionando; uno que lo lee ahora lo obtiene. Cero breaking.
+
+**Verificación.**
+
+| Comando | Resultado |
+|---|---|
+| `cargo test --lib -p cognicode-core doctor` | 7/7 verde |
+| `cargo test --workspace` (libs) | 5310 passed, 0 failed, 45 ignored |
+| `cargo test --bins` | 527 passed, 0 failed, 1 ignored |
+| `cargo clippy --workspace --all-targets -- -D warnings` | EXIT 0 |
+| `cognicode doctor --format json` (binario real) | emite `"schema_version": "cognicode.doctor/v1"` |
+
+**Commit:** `bb245f29` — feat(cli): PRF-CLI-07 doctor --format json
+declares schema_version.
+
+**Matriz actualizada.** PRF-CLI-07 NOT_RUN → PASS. Contadores:
+SPEC-CLI PASS 0→1, PARTIAL 5→4 (CLI-07 movido), NOT_RUN 1→0 (CLI-07
+movido). SPEC-CLI ahora: 1 PASS, 5 PARTIAL, 0 FAIL, 1 NOT_RUN.
+
+**Lo que PRF-CLI-07 NO exige (no over-engineering).**
+
+- No requiere extender `--format json` a otros subcomandos de
+  `graph` (impact, hierarchy, trace-path, etc.). Eso es trabajo
+  futuro si la matriz de cobertura así lo pide; no es gap
+  contractual.
+- No requiere un endpoint `/schema` que devuelva el JSON Schema
+  del documento. El contrato binario (campo `schema_version`)
+  es suficiente para que los consumidores pineen. Documentar el
+  shape exacto sigue siendo trabajo de `docs/` por release.
+
+**Próximo trabajo del backlog.**
+
+- PRF-MCP-05 (todo #7): authority declaration del MCP server.
+- PRF-DIST-03 (todo #8): corruption recovery (parcialmente cubierto
+  por U24; ver si requiere gap nuevo).
+- U15 (todo #9): corpus mixto LSP ausente.
+- PRF-ANA-01 (todo #10): verticales del motor genérico.
+- H-06 (todo #11): allow refactor anclando a follow-up.
+
+**Push a origin/main sigue operator-gated.** Commits locales hasta
+autorización explícita.
