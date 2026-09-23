@@ -5085,3 +5085,109 @@ Probabilidad de orden aleatorio idéntico x2: (1/6!)² ≈ 0.019%
 - `docs/prf/evidence/u50-ana06-basis/OBSERVATIONS.md` (nuevo).
 
 Conventional Commits estricto: `docs(prf): regenerate u50 + u58 with real-binary evidence`.
+
+## §115 — U59 regenerado + paper-closing residual detectado (2026-09-23)
+
+**Origen.** §102 enumeró u59 (PRF-ANA-07) como pendiente. §114
+regeneró u50 + u58; quedaba u59 + u69. Esta sesión ataca u59
+(la más interesante de las dos porque su §59 original fue
+"GREEN sin fix" — típico candidato a paper-closing residual).
+
+### Hallazgo honesto: binario stale en `target/release/cognicode-mcp`
+
+Mientras preparaba la regeneración observé que el binario en
+`target/release/cognicode-mcp` tenía **sha256 `4de983cd…` del
+01:22** (12h de drift), mientras el release fresco construido
+post-§113 estaba en
+`/var/home/rubentxu/cargo-targets/release/release/cognicode-mcp`
+con **sha256 `582596cf…` del 14:46**.
+
+**Implicación**: el test `prf_ana_07_uat` (y por extensión
+todos los tests de `cognicode-mcp/tests/prf_*_uat.rs`) corren
+contra un binario **desactualizado**, no contra HEAD actual.
+Esto es exactamente el patrón de "paper-closing residual" que
+el operador ha marcado como foco de auditoría.
+
+**Acción**: sustituir `target/release/cognicode-mcp` con la
+copia fresca antes de correr el test. La metodología es
+trivial y replicable.
+
+```bash
+cp /var/home/rubentxu/cargo-targets/release/release/cognicode-mcp \
+   target/release/cognicode-mcp
+sha256sum target/release/cognicode-mcp
+# 582596cf2edd85a609b257455cf9569123a28d83f0f014277a8f7c5b1e93c3e3
+```
+
+### Metodología de regeneración u59
+
+1. Verificar binario fresco (sha256 captured arriba).
+2. Ejecutar `cargo test -p cognicode-mcp --test prf_ana_07_uat`
+   — 1/1 verde contra binario release sincronizado con HEAD.
+3. Reproducir invocación stdio JSON-RPC manual contra el
+   corpus `massive_collision_corpus/` (52 archivos `.rs`):
+   - `tools/call build_graph` → 53 symbols / 2 relationships.
+   - `tools/call get_call_hierarchy caller_in_lib outgoing depth=1`
+     → `compute` resuelve a `sibling_unique_compute.rs`,
+     `init` resuelve a `lib.rs:71`.
+
+### Resultados observados (binario real)
+
+| Verificación | Esperado | Observado |
+|---|---|---|
+| `edges.len()` | 2 | **2** (caller_in_lib → compute, init) |
+| `init` resuelve a | `src/lib.rs` | **`src/lib.rs:71`** (visibility rule) |
+| `compute` resuelve a | `src/sibling_unique_compute.rs` | **`src/sibling_unique_compute.rs`** (single-candidate) |
+| confidence ambos | 1.0 | **1.0** ambos |
+| fan-out a 50 siblings | NO | **NO** (edges ≤ 2) |
+| symbols_found | 53 | **53** (1 lib + 1 caller + 1 compute + 50 sibling `init`) |
+
+### Verificación cruzada
+
+```bash
+$ cargo test -p cognicode-mcp --test prf_ana_07_uat
+running 1 test
+test massive_collision_resolution_over_real_binary ... ok
+test result: ok. 1 passed; 0 failed
+```
+
+### Estado matriz
+
+| ID | Estado pre-§115 | Estado post-§115 | Evidencia |
+|---|---|---|---|
+| PRF-ANA-07 | PASS (test library) | **PASS test integración + binario release fresco sincronizado con HEAD** | `evidence/u59-ana07-uat-binary/OBSERVATIONS.md` |
+
+### §102 actualización
+
+- Pre-§115: 11 perdidos (post-§114).
+- Post-§115: **10 perdidos** (u59 recuperado).
+- Pendientes regenerables con binario local HEAD: u69 (ANA-08).
+- Pendientes con CI/cross-compile: 9 dirs.
+
+### Implicación para el resto del §102
+
+Si los 9 dirs de CI/cross-compile tienen tests que asumen
+binarios sincronizados, es probable que también arrastren
+paper-closing residual por el mismo mecanismo. El método
+para detectarlos: comparar sha256 de `target/release/*` vs
+los bins de `CARGO_TARGET_DIR=.../release/`. Si difieren,
+sustituir antes de correr el test. **Esta auditoría se
+aplazará a una sesión dedicada** post-push (operator-gated).
+
+### Decisiones
+
+- **Sustituyo binario stale** por binario fresco en
+  `target/release/cognicode-mcp` (no destructivo: la copia
+  va al path canónico que el test ya consume).
+- **No regenero u69** en esta sesión (ANA-08 search budget
+  bounded; mismo patrón, ~5 min más; lo dejo para el siguiente
+  WU si la sesión continúa).
+- **No ejecuta** push, tag v0.97.4, C7 firma. Operator-gated.
+
+### Archivos añadidos
+
+- `docs/prf/evidence/u59-ana07-uat-binary/OBSERVATIONS.md`
+  (nuevo).
+
+Conventional Commits estricto: `docs(prf): regenerate u59 with
+fresh release binary (§115)`.
