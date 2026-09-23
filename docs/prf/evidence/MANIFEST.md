@@ -247,3 +247,21 @@ Esta evidencia documenta:
   del ciclo H-06.
 * Evidencia `u58-f3-equivalence-regen/` regenerada en §99 contra HEAD
   `ed1ed09c` con SHA-256 reproducible.
+
+## Evidencias regeneradas ciclo 4 — `docs/prf/evidence/u60-cli01-exhaustive-regen/`
+
+**Total**: 1 archivo markdown.
+**Origen**: regeneración de §60 PRF-CLI-01 contra HEAD `2c846dab`.
+**Descripción**: ver `docs/prf/evidence/u60-cli01-exhaustive-regen/OBSERVATIONS.md`.
+
+| Archivo | SHA-256 | Categoría |
+|---|---|---|
+| `OBSERVATIONS.md` | (regenerado contra HEAD actual) | U60 regen evidence |
+
+Esta evidencia:
+* Recompila el binario `cognicode` (debug) desde HEAD actual.
+* Ejecuta 8 comandos CLI contra un corpus mínimo (`add`, `mul`).
+* Captura stdout/stderr por comando, computa SHA-256 por archivo.
+* Reduce §102 en 1 (de 15 directorios perdidos a 14 pendientes).
+* Demuestra metodología para regenerar las 13 evidencias restantes
+  antes del push a `origin/main`.

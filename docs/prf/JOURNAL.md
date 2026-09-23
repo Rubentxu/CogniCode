@@ -4837,3 +4837,67 @@ supervivencia para 4 IDEs ahora está pineada por tests.
   actualmente llama a `uninstall_opencode`/`_zcode`/etc., así que la
   supervivencia está cubierta transitivamente. Pendiente verificación
   explícita con un UAT post-update podría ser otro WU.
+
+## §110 — U60 regenerado: reduce §102 de 15 a 14 perdidos (2026-09-23)
+
+**Origen.** Continuación de sesión 4 AUTO. §102 detectó 15 directorios
+de evidencia `u50*`..`u69*` citados en JOURNAL pero no materializados.
+§103 demostró la metodología regenerando `u58-f3-equivalence-regen`.
+Este §110 aplica esa metodología al cierre **u60-cli01-exhaustive**
+(§60: PRF-CLI-01 barrido exhaustivo de comandos stable).
+
+### Investigación
+
+PRF-CLI-01 cierra PASS con `prf_cli_01_exhaustive_uat` 7/7 sobre
+binario real contra corpus versionado. El §60 no dejó
+materializado el directorio `evidence/u60-cli01-exhaustive/`.
+
+### Regeneración
+
+Binario `cognicode` recompilado (`cargo build -p cognicode`) sobre
+HEAD `2c846dab`. Corpus `/tmp/prf-cli01-uat/src_lib.rs` con `add` y
+`mul` (2 símbolos, 0 dependencias — mínima superficie útil para los
+comandos disponibles en este bin).
+
+**8 pasos ejecutados** (7 originales + 1 control negativo):
+
+| # | Comando | Esperado (§60) | Observado | Pasa |
+|---|---|---|---|---|
+| 1 | `--version` | exit 0, "0.97.4" | exit 0, "0.97.4" | ✅ |
+| 2 | `--help` | exit 0, enumera subcomandos | exit 0, 10+ entries | ✅ |
+| 3 | `analyze .` | exit 0 sobre dir válido | exit 0 | ✅ |
+| 4 | `analyze /nonexistent` | exit ≠ 0, mensaje honesto | exit 1, "File not found" | ✅ |
+| 5 | `graph per-file src_lib.rs` | exit 0 | exit 0 | ✅ |
+| 6 | `graph full .` | exit 0 | exit 0 | ✅ |
+| 7 | `doctor` | exit 0/1 con informe | exit 1 + informe | ✅ |
+| 8 | `unknown-cmd` | exit ≠ 0 sin panic | exit 2, clap error | ✅ |
+
+**Captura completa** con SHA-256 por archivo (`step1.out` a
+`step8.out/err`). Reproducer literal en OBSERVATIONS.
+
+### Limitación honesta
+
+NO se ejecuta la suite in-process `prf_cli_01_exhaustive_uat` (§60
+la tenía en código con RED→GREEN); la regeneración es a nivel
+**binario ejecutable**, no aserción interna del bin. Más débil que
+el original, suficiente como red de seguridad externa.
+
+No incrementa PRF-CLI-01 PASS en la matriz (ya estaba PASS en §60).
+El valor de §110 es **materializar la promesa** de evidencia que
+§60 hizo sin cumplir. La metodología queda disponible para
+regenerar las otras 14 en una sesión dedicada antes del push.
+
+### Archivos añadidos
+
+- `docs/prf/evidence/u60-cli01-exhaustive-regen/OBSERVATIONS.md`
+  (nuevo, force-added por la política gitignore `docs/`).
+- `docs/prf/evidence/MANIFEST.md` extendido con la sección.
+
+### Contadores
+
+- §102: 15 → **14** perdidos (u60 recuperado).
+- Pendientes regenerables con binario local HEAD: u51, u58, u59,
+  u60 (recuperado), u69.
+- Pendientes que requieren CI/runners nativos:
+  u52, u54, u55, u56, u61, u62, u63, u65, u66.
+
