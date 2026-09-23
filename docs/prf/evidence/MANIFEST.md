@@ -288,3 +288,26 @@ Esta evidencia:
 * Documenta hallazgo honesto step 3: path vacío → status=complete,
   no exit != 0 (consistente con analyze/build_graph MCP).
 
+## T5 release snapshot — `docs/prf/evidence/u112-t5-release-snapshot/`
+
+**Total**: 1 archivo markdown.
+**Origen**: snapshot del release profile HEAD `018f50f8` para T5 (2026-09-23).
+**Descripción**: ver `docs/prf/evidence/u112-t5-release-snapshot/SNAPSHOT.md`.
+
+| Archivo | Categoría |
+|---|---|
+| `SNAPSHOT.md` | T5 release-profile snapshot (5 bins @ 0.97.4 con SHA-256) |
+
+Esta evidencia lista los binarios release con su SHA-256 (post
+stripping), tamaño, y versión. Reproducible con
+`CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets/release cargo build --release --workspace`.
+
+Nota: `cognicode-mcp` en PATH del operador (shim) muestra 0.97.4;
+el binario de release para CI es `cognicode-mcp-server` (mismo SHA-256
+source, distinto nombre binario por convención Cargo). Ambos listados.
+
+**Próximo paso (regla #5 SDDK release)**: si el operador ejecuta
+literalmente "haz push", se dispara release.yml en CI que ejecuta
+cognicode-release generate+verify R1-R9 con staging cross-compile
+para `linux-aarch64` (no fabricable localmente).
+

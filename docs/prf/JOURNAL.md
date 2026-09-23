@@ -4940,3 +4940,54 @@ desde este bin). La regeneración es a nivel binario ejecutable.
 - §102: 14 → **13** perdidos (u51 recuperado).
 - Regenerables con binario local HEAD pendientes: u58 (ANA-05),
   u59 (ANA-07), u69 (ANA-08) → 3 más si la sesión continúa.
+
+## §113 — Refactor de anclajes obsoletos H-06 en 4 módulos CLI (2026-09-23)
+
+**Origen.** El operador (en el turno de las 12:31) reforzó regla #4
+CC estricto y regla #2 cerrarreal. La auditoría detecta 4 archivos
+de `cognicode-cli/src/cmd/` con comentarios idénticos que anclan el
+`#[allow(dead_code)]` a H-03/H-04/H-06 forward-looking cuando H-06
+cerró en JOURNAL §99-§100 (2026-09-22).
+
+### Cambios
+
+Refactor de solo-comentarios en:
+- `crates/cognicode-cli/src/cmd/lockfile.rs`
+- `crates/cognicode-cli/src/cmd/ide.rs`
+- `crates/cognicode-cli/src/cmd/tracker.rs`
+- `crates/cognicode-cli/src/cmd/doctor.rs`
+
+Cada archivo declara ahora el **structural reason** vivo (no forward-
+looking) que justifica el `#[allow]`:
+
+| Archivo | Justificación viva |
+|---|---|
+| lockfile.rs | Data shape presente, reader gated on H-04 (operator-gated) |
+| ide.rs | Cross-IDE dispatcher gated on H-03 (vertical); bins leen 1-2 paths |
+| tracker.rs | Env-resolved wrappers son `#[deprecated]` (§105); bin usa `*_at` (H-F6-1); tests preservan env-path bajo `#[allow(deprecated)]` en mod tests |
+| doctor.rs | Probes Windows/macOS/Linux; cross-compile future-proofing; hard rule (auto-enable prohibido) |
+
+Adicionalmente, la `Audit history` (snapshot estático de 728f05a0 /
+d0913498 cuando H-06 estaba recién cerrado) se reemplaza por una
+`Historical note` que reconoce que el anclaje a H-06 está en git
+history (canónico) pero la dependencia viva actual es otra.
+
+### Verificación (quirúrgica sobre los 4 archivos)
+
+- `cargo clippy --workspace --all-targets -- -D warnings` EXIT 0.
+- `cargo test -p cognicode-cli --bin cogh -- lockfile:: ide:: tracker:: doctor::`
+  → 75/0 (sin cambios vs baseline; el refactor no toca API).
+
+### Cero impacto
+
+- Sin cambios de código, sin cambios de tests, sin nuevos warnings.
+- 61 líneas modificadas, todas en comentarios de documentación.
+- Conventional Commits estricto: `docs(cli): replace stale H-06 anchors...`
+
+### Estado de deuda
+
+§102 (15 evidencias §50..§84 perdidas): 13 (post §110-§111).
+Pendientes regenerables con binario local: u58 (ANA-05 order),
+u59 (ANA-07), u69 (ANA-08) → 3 más.
+Pendientes con CI/cross-compile: 9 dirs.
+
