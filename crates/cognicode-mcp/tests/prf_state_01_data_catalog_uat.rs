@@ -122,7 +122,7 @@ async fn derived_data_is_rebuildable_and_follows_canonical() {
         );
     }
 
-    let _ = std::fs::remove_dir_all(&ws.parent().unwrap());
+    let _ = std::fs::remove_dir_all(ws.parent().unwrap());
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -158,5 +158,5 @@ async fn transient_state_does_not_leak_across_processes() {
         g1["symbols_found"].as_u64().unwrap(),
         "fresh session must agree with the canonical inventory"
     );
-    let _ = std::fs::remove_dir_all(&ws.parent().unwrap());
+    let _ = std::fs::remove_dir_all(ws.parent().unwrap());
 }

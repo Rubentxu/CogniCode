@@ -31,6 +31,13 @@ fn workspace() -> PathBuf {
 }
 
 struct McpChild {
+    // `child` is consumed during `spawn()` via `child.stdin.take()` /
+    // `child.stdout.take()`.  After construction the field is never
+    // read directly — clippy `-D warnings` flags this as `dead_code`
+    // even though it is load-bearing for the spawn flow.  The allow
+    // below scopes the suppression to the field only; if the struct
+    // grows a method that uses `self.child` it must be removed.
+    #[allow(dead_code)]
     child: Child,
     stdin: tokio::process::ChildStdin,
     stdout: BufReader<tokio::process::ChildStdout>,
@@ -149,10 +156,7 @@ async fn unreadable_file_is_reported_not_silently_dropped() {
     perms.set_mode(0o000);
     std::fs::set_permissions(&locked, perms).expect("chmod 000");
 
-    let result = McpChild::spawn(&ws).await.and_then(|mut m| {
-        // Cannot use ? across async closures cleanly; run inline instead.
-        Ok(m)
-    });
+    let result = McpChild::spawn(&ws).await;
 
     let outcome = async {
         let mut mcp = result?;

@@ -125,7 +125,7 @@ pub fn resolve_download_url_into(canonical: &str, mut warn_sink: Option<&mut Vec
         if let Some(rest) = canonical.strip_prefix(crate::release_contract::RELEASE_DOWNLOAD_BASE) {
             let msg = "warning: COGNICODE_RELEASE_BASE_URL is deprecated; \
                        use COGNICODE_ASSET_BASE_URL for asset mirrors.\n";
-            if let Some(sink) = warn_sink.as_deref_mut() {
+            if let Some(sink) = warn_sink {
                 let _ = sink.write(msg.as_bytes());
             } else {
                 eprint!("{msg}");

@@ -12,6 +12,23 @@
 //! (not as a separate plugin binary) — the plugin manifest just
 //! declares the steps.
 
+//! Lint policy
+//!
+//! This module is part of the cogh CLI distribution surface.  Items here
+//! are referenced from `cogh` and/or `cognicode-release` bin targets, but
+//! each individual bin only links a subset; the items that are unused
+//! in a given target are still part of the public API of the cogh
+//! version manager and of the release factory.  Without the module-level
+//! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
+//! CI gate enforced by PRF-CI-01) would fail on every push.
+//!
+//! The allow is documented and re-anchored: H-06 (A→B update cycle) is
+//! the next unit that will add live consumers for these items, at which
+//! point the allow can be tightened item by item.  See D34-2 for the
+//! historical decision to defer the cleanup out of the PRF program.
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow};
@@ -420,7 +437,7 @@ pub fn read_zcode_config() -> Result<Value> {
 
 pub fn integrate_zcode(
     home: &Path,
-    plugin: &str,
+    _plugin: &str,
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {
@@ -543,7 +560,7 @@ pub fn claude_skills_dir() -> PathBuf {
 
 pub fn integrate_claude(
     home: &Path,
-    plugin: &str,
+    _plugin: &str,
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {
@@ -675,7 +692,7 @@ pub fn read_codex_config() -> Result<toml::Value> {
 
 pub fn integrate_codex(
     home: &Path,
-    plugin: &str,
+    _plugin: &str,
     version: &str,
     mcp_command: &[String],
 ) -> Result<()> {

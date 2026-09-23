@@ -32,6 +32,13 @@ fn corpus_dir() -> PathBuf {
 }
 
 struct McpChild {
+    // `child` is consumed during `spawn()` via `child.stdin.take()` /
+    // `child.stdout.take()`.  After construction the field is never
+    // read directly — clippy `-D warnings` flags this as `dead_code`
+    // even though it is load-bearing for the spawn flow.  The allow
+    // below scopes the suppression to the field only; if the struct
+    // grows a method that uses `self.child` it must be removed.
+    #[allow(dead_code)]
     child: Child,
     stdin: tokio::process::ChildStdin,
     stdout: BufReader<tokio::process::ChildStdout>,

@@ -692,11 +692,11 @@ pub fn cmd_rollback(
     // Disambiguate before touching the journal so the "no journal for
     // current" branch stays reserved for the genuine "nothing to roll
     // back" case (no --to supplied).
-    if let Some(target) = &to {
-        if target == &current_version {
-            println!("rollback: already at {target}; nothing to do");
-            return Ok(());
-        }
+    if let Some(target) = &to
+        && target == &current_version
+    {
+        println!("rollback: already at {target}; nothing to do");
+        return Ok(());
     }
 
     let path = home.journal_version(&current_version);
@@ -933,7 +933,7 @@ pub fn cmd_plugin_add(home: &CognicodeHome, plugin: &str, from_url: Option<&str>
     Ok(())
 }
 
-pub fn cmd_plugin_remove(home: &CognicodeHome, plugin: &str) -> Result<()> {
+pub fn cmd_plugin_remove(_home: &CognicodeHome, plugin: &str) -> Result<()> {
     println!(
         "Plugin removal not yet implemented: {} (plugins are read-only in this version)",
         plugin
@@ -963,7 +963,7 @@ pub fn cmd_plugin_list(home: &CognicodeHome) -> Result<()> {
     Ok(())
 }
 
-pub fn cmd_plugin_update(home: &CognicodeHome, plugin: &str) -> Result<()> {
+pub fn cmd_plugin_update(_home: &CognicodeHome, plugin: &str) -> Result<()> {
     println!(
         "Plugin update not yet implemented: {} (git pull for --from-url plugins not yet supported)",
         plugin

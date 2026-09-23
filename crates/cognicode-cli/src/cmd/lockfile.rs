@@ -5,6 +5,23 @@
 //!
 // Format: JSON with shape `{ "plugins": { "<plugin>": "<version>", ... } }`.
 
+//! Lint policy
+//!
+//! This module is part of the cogh CLI distribution surface.  Items here
+//! are referenced from `cogh` and/or `cognicode-release` bin targets, but
+//! each individual bin only links a subset; the items that are unused
+//! in a given target are still part of the public API of the cogh
+//! version manager and of the release factory.  Without the module-level
+//! allow, `cargo clippy --workspace --all-targets -- -D warnings` (the
+//! CI gate enforced by PRF-CI-01) would fail on every push.
+//!
+//! The allow is documented and re-anchored: H-06 (A→B update cycle) is
+//! the next unit that will add live consumers for these items, at which
+//! point the allow can be tightened item by item.  See D34-2 for the
+//! historical decision to defer the cleanup out of the PRF program.
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use std::path::Path;
 
 use anyhow::{Context, Result};

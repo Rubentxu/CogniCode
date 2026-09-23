@@ -1,14 +1,26 @@
 //! `cogh::lifecycle` — End-to-end lifecycle integration tests (E32-H).
 //!
-// Spec: `openspec/specs/cognicode-lifecycle/spec.md`.
+//! Spec: `openspec/specs/cognicode-lifecycle/spec.md`.
 //!
-// These tests exercise the full `cogh` binary lifecycle by:
+//! These tests exercise the full `cogh` binary lifecycle by:
 //! 1. Setting up a temporary COGNICODE_HOME + temp IDE configs
 //! 2. Invoking `cogh` as a subprocess via `std::process::Command`
 //! 3. Verifying the resulting filesystem state
 //!
-// The test binary is built at `target/debug/cogh` (built by E32-A).
-// We assume the test runs from the repo root (cargo handles this).
+//! The test binary is built at `target/debug/cogh` (built by E32-A).
+//! We assume the test runs from the repo root (cargo handles this).
+//!
+//! ## Lint policy
+//!
+//! This module is the integration surface for the cogh lifecycle tests.
+//! Helpers like `cogh_bin`, `run_cogh`, `setup_temp_home`,
+//! `plant_version_tree`, `create_*_config` and the IDE-detection imports
+//! are only consumed when the file is included into the `cogh` *test*
+//! target; the production `cogh` binary itself does not link them.
+//! Module-level allow avoids lint false-positives in `--bin cogh` while
+//! keeping the test target happy.  See D34-2 + the H-06 follow-up.
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 use std::path::Path;
 use std::process::Command;

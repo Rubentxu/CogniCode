@@ -89,10 +89,11 @@ fn provenance() -> ProvenanceRecord {
 /// The facts of one batch. `FACT` is inside it, so the analysis has something
 /// real to be grounded in.
 fn fact_batch() -> Vec<Fact> {
-    assert!(
-        FACT <= BATCH_SIZE,
-        "the fixture's fact must belong to the committed batch"
-    );
+    // Compile-time invariant: `FACT` must be within `BATCH_SIZE` so the
+    // fixture exercises a batch that actually contains the target fact.
+    // Lifted to a `const` block so the check runs at compile time; a
+    // plain `assert!` here trips `clippy::assertions_on_constants`.
+    const { assert!(FACT <= BATCH_SIZE, "the fixture's fact must belong to the committed batch") };
     (1..=BATCH_SIZE)
         .map(|i| {
             Fact::new(

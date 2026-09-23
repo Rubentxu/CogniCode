@@ -9,7 +9,11 @@
 //! comunicando por su transporte real (argv/stdout y JSON-RPC/stdio).
 
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+// (BTreeSet was used in an earlier draft of this UAT for cross-process
+//  set comparison; replaced by the count+status guards.  Kept as a
+//  comment so future readers know the symbol was removed intentionally,
+//  not by accident.)
+// use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 

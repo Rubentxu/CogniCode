@@ -21,6 +21,26 @@
 //!
 //! No network access and no publication. The release tool must be runnable
 //! locally against a staging directory, with no GitHub Release in existence.
+//!
+//! ## Lint policy
+//!
+//! Items here are part of the public release contract; some are
+//! referenced only by the `cognicode-release` bin while others are part
+//! of the in-tree surface consumed by `bundle_manifest`, `release_test_support`,
+//! `release_factory` and `lifecycle_resolver`.  The module-level
+//! `#[allow(dead_code)]` (and `#[allow(unused_imports)]` for the
+//! import-only surface) suppresses false-positives from individual bin
+//! targets (`cogh`, `cognicode`) where a given consumer does not link.
+//! Removing the allow without wiring all consumers first would force the
+//! CI clippy gate (PRF-CI-01) to fail.  See D34-2 for the original
+//! scope decision and the H-06 (A→B update cycle) follow-up that
+//! re-anchors the surface.
+
+// Module-level lint allow: every item below is library surface.  We could
+// narrow this to per-item `#[allow]` but the verbose allow list would
+// hide the contract intent.  See module-level docs above.
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -91,6 +111,12 @@ pub fn parse_platform(raw: &str) -> Option<Platform> {
 // ---------------------------------------------------------------------------
 
 /// Which ownership layer an artifact belongs to.
+#[allow(clippy::enum_variant_names)]
+// `Layer0Boot` / `Layer1Runtime` are the canonical names from the e84
+// contract; the `Layer` prefix is part of the contract vocabulary, not
+// accidental repetition.  Renaming would break wire-format compatibility
+// (serde `rename_all = "kebab-case"` → "layer0-boot"/"layer1-runtime")
+// and external consumers keyed on those strings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Layer {

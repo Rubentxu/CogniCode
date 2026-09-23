@@ -73,12 +73,6 @@ struct FakeClock {
     millis: AtomicU64,
 }
 
-impl FakeClock {
-    fn advance(&self, ms: u64) {
-        self.millis.fetch_add(ms, Ordering::SeqCst);
-    }
-}
-
 impl Clock for FakeClock {
     fn now_millis(&self) -> u64 {
         self.millis.load(Ordering::SeqCst)

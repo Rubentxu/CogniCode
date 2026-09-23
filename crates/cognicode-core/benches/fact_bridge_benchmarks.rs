@@ -15,6 +15,12 @@
 //! bench target compiles to an empty binary so the default bench sweep is
 //! unaffected.
 
+// `criterion_group!` / `criterion_main!` are macros consumed at the
+// bottom of this file under `#[cfg(feature = "evidence-kernel")]`.  When
+// that feature is OFF (the default), the imports would otherwise be
+// unused and trip `-D warnings`.  The `#[allow(unused_imports)]` is
+// attached directly to the `use` to scope the lint suppression tightly.
+#[allow(unused_imports)]
 use criterion::{criterion_group, criterion_main};
 
 #[cfg(feature = "evidence-kernel")]

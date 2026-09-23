@@ -5,7 +5,7 @@
 mod common;
 use common::McpSession;
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Un proceso MCP completo: spawn + build_graph + cierre total.
 async fn one_session(ws: &Path) -> Value {

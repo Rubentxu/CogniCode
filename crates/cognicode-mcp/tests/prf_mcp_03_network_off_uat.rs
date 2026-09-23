@@ -34,6 +34,12 @@ struct NetnsSession {
 }
 
 impl NetnsSession {
+    // `&PathBuf` is intentional: the function lives inside an integration
+    // test that creates `PathBuf` values and immediately passes them by
+    // reference.  Clippy suggests `&Path` for fewer indirections, but
+    // that would force callers to write `.as_path()` at every call site
+    // and the perf delta is irrelevant in a test-only path.
+    #[allow(clippy::ptr_arg)]
     async fn spawn(ws: &PathBuf) -> Self {
         let mut cmd = Command::new("unshare");
         cmd.args([

@@ -4543,7 +4543,7 @@ impl ViewExecutor for DecisionGraphExecutor {
                 {
                     let _ = ctx;
                     Err(crate::error::ExplorerError::FeatureDisabled(
-                        "DecisionGraph requires multimodal feature".into(),
+                        format!("DecisionGraph requires multimodal feature (decision: {id})"),
                     ))
                 }
             }
@@ -4967,7 +4967,7 @@ impl ViewExecutor for DecisionTraceExecutor {
                 {
                     let _ = ctx;
                     Err(crate::error::ExplorerError::FeatureDisabled(
-                        "DecisionTrace requires multimodal feature".into(),
+                        format!("DecisionTrace requires multimodal feature (decision: {id})"),
                     ))
                 }
             }
@@ -5070,7 +5070,7 @@ impl ViewExecutor for DecisionSupportPackExecutor {
                 {
                     let _ = ctx;
                     Err(crate::error::ExplorerError::FeatureDisabled(
-                        "DecisionSupportPack requires multimodal feature".into(),
+                        format!("DecisionSupportPack requires multimodal feature (decision: {id})"),
                     ))
                 }
             }
