@@ -3201,3 +3201,120 @@ H-06/H-07/push/tag/C7/publicación siguen operator-gated.
   (`workflow_dispatch`) y el flujo `just check` lo aplican. El test
   `clippy_gate_fails_on_injected_unused_variable` (negativo) se
   ejecuta con cada `cargo test -p cognicode-cli` y sirve de pin vivo.
+
+## §91 — U21 PASS: defecto real en `lifecycle_journal::write` — escritura atómica (2026-09-23)
+
+**Origen.** Continuación de la sesión 4 AUTO (operador autorizó cualquier
+gate/decision en esta sesión con directiva estricta de honestidad sobre
+cierres documentales vs legales). Tras el cierre del gate clippy (§90), el
+siguiente trabajo del backlog era la investigación de U21 (cortar proceso
+durante escritura/migración → reiniciar), NOT_RUN en la matriz.
+
+**Investigación — U21: ¿a qué binario aplica?**
+
+- `cognicode-mcp`: binario sin persistencia (cache 100% en memoria). U21
+  no aplica: no hay archivo que pueda quedar truncado.
+- `cogh` (CLI lifecycle): SÍ persiste el journal en
+  `~/.cognicode/journal/<version>.json` vía `lifecycle_journal::write`.
+  Punto de corte válido para U21.
+
+**Defecto real detectado.** `lifecycle_journal::write` usaba
+`std::fs::write(path, text)` — no-atómico. Un SIGKILL entre el
+`create_dir_all` y el syscall del write deja un archivo truncado en la
+ruta canónica, violando U21 ("el reinicio debe encontrar el estado previo
+íntegro o uno nuevo completo, nunca uno parcial").
+
+**RED test (empíricamente demostrado, no pseudo-RED).**
+`test_write_overwrites_atomic_no_partial_state_visible` (lifecycle_journal.rs):
+
+1. Lanza un thread reader que en bucle lee el archivo 50 veces.
+2. El thread writer sobrescribe el archivo 50 veces con payloads válidos.
+3. Si en algún momento el reader ve un payload vacío o un JSON truncado,
+   el test FALLA.
+4. Bajo la impl `std::fs::write`, el test FALLA con **26/50 lecturas
+   parciales detectadas** en la primera ejecución.
+
+Esto prueba que el bug es real y reproducible, no teórico.
+
+**GREEN fix.** Reemplazar `std::fs::write(path, text)` por el patrón
+temp-file + `fs::rename`:
+
+```rust
+let temp_path = format!("{}.tmp.{}", path.display(), std::process::id());
+{
+    let mut file = std::fs::File::create(&temp_path)?;
+    std::io::Write::write_all(&mut file, text.as_bytes())?;
+    let _ = file.sync_all();
+}
+if let Err(e) = std::fs::rename(&temp_path, path) {
+    let _ = std::fs::remove_file(&temp_path);
+    return Err(InstallerError::Io(path.into(), e));
+}
+```
+
+Atomicidad: `rename(2)` es atómico en POSIX; en NTFS dentro del mismo
+volumen también. El reader ve o el payload previo o el nuevo, nunca un
+archivo parcial.
+
+**Patrón alineado con `file_operations::write_file`.** El mismo
+algoritmo ya existía en `cognicode-core`. Decisión consciente: NO
+introducir un nuevo helper ni mover código entre crates; la duplicación
+del algoritmo in-line es de ~12 líneas, no justifica un refactor mayor
+ni crea un segundo source of truth. Anotación en el doc-comment del
+función para que cualquier cambio de semántica (p.ej. añadir fsync de
+directorio) se haga en ambos sitios coordinadamente.
+
+**Segundo test pin.**
+`test_write_is_atomic_no_tmp_artifact_left_on_success`: tras un write
+exitoso, el directorio padre NO debe contener ningún archivo
+`<path>.tmp.<pid>` huérfano. Con la nueva impl, el rename los elimina
+todos; con la impl previa habría dejado basura.
+
+**Verificación.**
+
+| Comando | Resultado |
+|---|---|
+| `cargo test --bin cogh lifecycle_journal` | 6/6 verde (incluye los 2 nuevos) |
+| `cargo test --workspace` (libs) | 5309 passed, 0 failed |
+| `cargo test --bins` (bins, total) | 527 passed, 0 failed (1 ignored) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | EXIT 0 |
+
+**Commits:**
+
+- `86955060` — fix(cogh): U21 atomic write — lifecycle_journal::write uses temp+rename
+- `d91124d0` — docs(prf): U21 PASS — reconciliation matrix updated
+
+**Matriz actualizada.** U21 `NOT_RUN → PASS (RED→GREEN, atomic write)`:
+disposición, evidencia, refs en
+`docs/prf/specs/RECONCILIATION-MATRIX.md`. Contadores:
+UAT originales PASS 4 → 5, NOT_RUN 6 → 5; TOTAL estimado PASS pleno
+~6 → ~7, NOT_RUN ~23 → ~22.
+
+**Decisiones de diseño tomadas en este ciclo.**
+
+1. NO refactorizar `file_operations::write_file` para crear un helper
+   compartido. La duplicación in-line (~12 líneas) es preferible a
+   mover un helper cross-crate o introducir un módulo nuevo. Doc-comment
+   enlaza ambos sitios.
+2. NO ejecutar ciclo A→B real (H-06/DIST-02/U20) en este ciclo — los
+   prerrequisitos (dos release candidates con binarios reales, 1-2h+)
+   no están disponibles en esta sesión. U20 sigue FAIL con plan
+   documentado en `docs/prf/historico/H-06-FOLLOW-UP.md` (o equivalente);
+   honestidad prevalece sobre cierre documental aparente.
+3. Push a origin/main, tag, C7 firma — siguen operator-gated por
+   directive §3 + auditoría 2026-09-22. AUTO cubre solo cambios de
+   archivos locales.
+
+**Pendiente para próximos ciclos (orden propuesto, no compromiso):**
+
+- U03 baseline 2x (rotación de directorios, ya implementada —
+  verificar UAT sobre el binario real).
+- PRF-CLI-07 JSON schema (autosuficiencia del contrato CLI).
+- PRF-MCP-05 authority declaration (la autoridad de `cognicode-mcp` vs
+  cliente stdio JSON-RPC).
+- PRF-DIST-03 corrupción-recovery (instalación desde asset corrupto →
+  rollback + reinstall, ya cubierto por U24 pero la cobertura DIST es
+  más amplia).
+- U15 corpus mixto LSP ausente.
+- PRF-ANA-01 verticales (motor genérico → verticales).
+- H-06 allow refactor: anclar todos los `#![allow(...)]` a H-06 follow-up.
