@@ -5696,3 +5696,130 @@ Conventional Commits estricto: §119 es **2 commits atómicos**:
    (Cargo.toml borrado + 2 tests con comentarios explicativos).
 
 §119 deja 231 → 233 commits ahead (2 nuevos commits al cierre).
+
+## §120 — T5 release snapshot v2: 6 bins release v0.97.4 verificados (2026-09-23)
+
+**Origen.** §112 (JOURNAL §113) construyó release profile para
+R1-R9 release factory. §119 dejó el workspace-wide
+`--test-threads=2` verde tras fix raíz. Esta sesión ejecuta
+los **pasos finales de SDDK release** (regla 5) **previos al
+push**: T4 + T5 pre-release integral.
+
+### T4 pre-release verde
+
+```text
+T0 clippy --workspace --all-targets -- -D warnings: EXIT 0
+T1 cargo test -p cognicode-core --lib: 2155/0/27
+T2 cargo test -p cognicode-cli --bin cogh: 315/0/1
+T3 cargo test --workspace --tests -- --test-threads=2:
+  104 test bins verde, cero failures
+```
+
+### T5.0 release build
+
+```text
+$ cargo build --release --workspace --exclude cognicode-graph-wasm
+    Finished `release` profile [optimized] target(s) in 6m 51s
+```
+
+6 bins release construidos contra HEAD `60c8d53d`. SHA-256
+capturados en `evidence/u112-t5-release-snapshot/SNAPSHOT.md`:
+
+| Bin | SHA-256 (16) | Size |
+|---|---|---|
+| `cogh` | `46a56d1f1230e73c` | 6.7 MiB |
+| `cognicode` | `365d04e85f0bfbe2` | 91 MiB |
+| `cognicode-mcp` | `1957c5ad59318fb5` | 99 MiB |
+| `cognicode-mcp-server` | `5eac0d4b5f39e752` | 101 MiB |
+| `cognicode-release` | `9bc80233f80cb6c9` | 1.4 MiB |
+| `mcp-client` | `37573547ebf8000d` | 3.4 MiB |
+
+### T5.1 Tier-1 platforms
+
+```text
+$ cognicode-release platforms
+x86_64-unknown-linux-gnu
+```
+
+`aarch64-unknown-linux-gnu` declarado en `release.yml` matrix
+pero no construido (requeriría toolchain cross-compile).
+
+### Sync a target/release/
+
+Los 6 bins se copiaron a `target/release/` para mantener el
+path canónico que usan los tests integración. Post-sync: 6/6
+synchronized con HEAD.
+
+### Smoke test bins release
+
+```text
+$ for bin in cognicode cogh cognicode-mcp cognicode-mcp-server cognicode-release mcp-client; do
+    $bin --version
+  done
+cognicode 0.97.4
+cogh 0.97.4
+cognicode-mcp 0.97.4
+cognicode-mcp-server 0.97.4
+cognicode-release 0.97.4
+mcp-client 0.97.4
+```
+
+Los 6 bins responden correctamente con v0.97.4.
+
+### Evidencia actualizada
+
+`evidence/u112-t5-release-snapshot/SNAPSHOT.md` reescrito con:
+- Source-commit = `60c8d53da6fbf768efc1291b6371a3054a1986c9`.
+- 6 bins (vs 5 del snapshot anterior).
+- Validación T0/T1/T2/T3 completa post-§119.
+- Smoke test `--version` v0.97.4 OK en los 6.
+
+### Estado pre-push
+
+| Gate | Estado |
+|---|---|
+| T0 clippy EXIT 0 | ✓ |
+| T1 lib 2155/0/27 | ✓ |
+| T2 cogh 315/0/1 | ✓ |
+| T3 workspace --test-threads=2 verde | ✓ |
+| T5.0 6 bins release construidos | ✓ |
+| T5.1 Tier-1 platform declarada | ✓ |
+| §102 capítulo "regenerables locales" cerrado | ✓ |
+| §117 bins sincronizados | ✓ |
+| §119 workspace-wide verde | ✓ |
+| C7 firma | ❌ BLOQUEADO |
+| Push + tag v0.97.4 | ⏸ operator-gated |
+
+### Decisiones
+
+- **Ejecuto T5 release snapshot** porque la regla 5 SDDK
+  ("release completo") requiere T4+T5 verde **previos al push**.
+  Estos son pasos de **verificación**, no de liberación. El
+  push sigue operator-gated.
+- **Snapshot reescrito** (no append) porque el contenido del
+  v1 estaba contra `018f50f8` (anterior); el v2 está contra
+  `60c8d53d` (HEAD actual) con 6 bins.
+- **6 bins release** construidos (vs 5 del snapshot anterior).
+  El bin adicional es `mcp-client` que estaba implícito pero
+  sin SHA capturado.
+- **No ejecuta** push, tag v0.97.4, C7 firma. Operator-gated.
+
+### Archivos modificados
+
+- `docs/prf/evidence/u112-t5-release-snapshot/SNAPSHOT.md`
+  (reescrito, contenido v1 → v2).
+
+### Próximo WU
+
+**Si el operador autoriza push** en próximo turno:
+1. `git push origin main`
+2. `git push origin v0.97.4` (tag SEMVER PATCH derivado del
+   historial)
+3. CI remoto ejecuta `release.yml` matrix (linux-x86_64 +
+   linux-aarch64) → R1-R9 → tag remoto verificado.
+
+**Si no hay push** en próximo turno: continuar con WU locales
+no especulativos (revisar deuda identificable restante).
+
+Conventional Commits estricto: `docs(prf): §120 — T5 release
+snapshot v2 against HEAD 60c8d53d`. Solo docs/.
