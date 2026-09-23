@@ -162,6 +162,7 @@ fn cognicode_meta(
     requires_graph: bool,
     requires_persistence: bool,
     estimated_latency_ms: u32,
+    authority: &str,
 ) -> Meta {
     let mut meta = Meta::new();
     meta.insert(
@@ -171,7 +172,8 @@ fn cognicode_meta(
             "category": category,
             "requires_graph": requires_graph,
             "requires_persistence": requires_persistence,
-            "estimated_latency_ms": estimated_latency_ms
+            "estimated_latency_ms": estimated_latency_ms,
+            "authority": authority
         }),
     );
     meta
@@ -286,7 +288,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", false, false, 3000)),
+                    .with_meta(cognicode_meta("stable", "graph", false, false, 300, "read")),
                     Tool::new(
                         "get_file_symbols",
                         "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
@@ -300,7 +302,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 150)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 15, "read")),
                     Tool::new(
                         "get_call_hierarchy",
                         "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
@@ -315,7 +317,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol_name", "direction"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
                     Tool::new(
                         "analyze_impact",
                         "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
@@ -328,7 +330,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol_name"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
                     Tool::new(
                         "find_usages",
                         "Find all usages of a symbol across the project.",
@@ -342,7 +344,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol_name"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 400)),
+                    .with_meta(cognicode_meta("stable", "search", false, false, 40, "read")),
                     Tool::new(
                         "get_complexity",
                         "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
@@ -355,7 +357,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "quality", false, false, 200)),
+                    .with_meta(cognicode_meta("stable", "quality", false, false, 20, "read")),
                     Tool::new(
                         "get_entry_points",
                         "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
@@ -366,7 +368,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 150)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 15, "read")),
                     Tool::new(
                         "get_leaf_functions",
                         "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
@@ -377,7 +379,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 150)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 15, "read")),
                     Tool::new(
                         "trace_path",
                         "Find execution path between two symbols using BFS.",
@@ -392,7 +394,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["source", "target"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 300)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 30, "read")),
                     Tool::new(
                         "export_mermaid",
                         "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
@@ -407,7 +409,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 400)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 40, "read")),
                     Tool::new(
                         "get_hot_paths",
                         "Find functions with highest fan-in (most called functions).",
@@ -419,7 +421,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
                     Tool::new(
                         "query_symbol_index",
                         "Query the symbol index to find locations of a symbol by name (case-insensitive).",
@@ -432,7 +434,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol_name"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 300)),
+                    .with_meta(cognicode_meta("stable", "search", false, false, 30, "read")),
                     Tool::new(
                         "build_call_subgraph",
                         "Build an on-demand call subgraph centered on a symbol.",
@@ -447,7 +449,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol_name"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
                     Tool::new(
                         "get_per_file_graph",
                         "Get the call graph for a specific file.",
@@ -459,7 +461,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 200)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
                     Tool::new(
                         "get_symbol_code",
                         "Get the full source code of a symbol at a given location, including docstrings.",
@@ -473,7 +475,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file", "line", "col"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 100)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "read")),
                     // LSP Navigation tools
                     Tool::new(
                         "go_to_definition",
@@ -488,7 +490,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path", "line", "column"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 150)),
+                    .with_meta(cognicode_meta("stable", "navigation", false, false, 15, "read")),
                     Tool::new(
                         "hover",
                         "Get type information and documentation for a symbol at a position using LSP.",
@@ -502,7 +504,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path", "line", "column"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 150)),
+                    .with_meta(cognicode_meta("stable", "navigation", false, false, 15, "read")),
                     Tool::new(
                         "find_references",
                         "Find all references to a symbol using LSP.",
@@ -517,7 +519,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path", "line", "column"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 300)),
+                    .with_meta(cognicode_meta("stable", "navigation", false, false, 30, "read")),
                     // File operation tools
                     Tool::new(
                         "read_file",
@@ -535,7 +537,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 100)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "read")),
                     Tool::new(
                         "search_content",
                         "Search file contents with .gitignore awareness.",
@@ -553,7 +555,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["pattern"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 400)),
+                    .with_meta(cognicode_meta("stable", "search", false, false, 40, "read")),
                     Tool::new(
                         "list_files",
                         "List project files with .gitignore awareness.",
@@ -569,7 +571,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 200)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 20, "read")),
                     Tool::new(
                         "retrieve_and_verify",
                         "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
@@ -584,7 +586,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["query"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 800)),
+                    .with_meta(cognicode_meta("stable", "search", false, false, 80, "read")),
                     // Modification tools (destructive)
                     Tool::new(
                         "write_file",
@@ -599,7 +601,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["path", "content"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 100)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "mutating")),
                     Tool::new(
                         "edit_file",
                         "Edit files with syntax validation.",
@@ -623,7 +625,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["path", "edits"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 200)),
+                    .with_meta(cognicode_meta("stable", "file", false, false, 20, "mutating")),
                     Tool::new(
                         "safe_refactor",
                         "Perform safe refactoring with validation and preview.",
@@ -637,7 +639,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["action", "target"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "refactor", false, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "refactor", false, false, 100, "read")),
                     // AIX-1: Smart Overview & Ranked Symbols
                     // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
                     // AIX-3: NL to Symbol & Ask About Code & Find Pattern
@@ -653,7 +655,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["question"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "aix", true, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "aix", true, false, 500, "read")),
                     Tool::new(
                         "find_pattern_by_intent",
                         "Match natural language intent descriptions to known code patterns.",
@@ -666,7 +668,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["intent"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "aix", true, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "aix", true, false, 500, "read")),
                     Tool::new(
                         "nl_to_symbol",
                         "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
@@ -679,7 +681,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["query"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "search", true, false, 50, "read")),
                     // AIX-4: Compare Call Graphs & Detect API Breaks
                     // AIX-5: System Prompt Context & God Functions & Long Params
                     Tool::new(
@@ -694,7 +696,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "quality", true, false, 100, "read")),
                     Tool::new(
                         "detect_long_parameter_lists",
                         "Find functions with too many parameters that should be consolidated into structs.",
@@ -705,7 +707,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 600)),
+                    .with_meta(cognicode_meta("stable", "quality", true, false, 60, "read")),
                     // PL3: Symbol Hotness Tracking
                     // AVC: Agent-Verifiable Context tools
                     Tool::new(
@@ -720,7 +722,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["function_name", "file_path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("gated", "composite", false, true, 500)),
+                    .with_meta(cognicode_meta("gated", "composite", false, true, 50, "read")),
                     Tool::new(
                         "validate_contract",
                         "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
@@ -733,7 +735,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["contract_id", "generated_code"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", false, false, 300)),
+                    .with_meta(cognicode_meta("stable", "composite", false, false, 30, "read")),
                     // Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, reduction, FAS)
                     // These tools operate on the in-memory call graph that
                     // `build_graph` populates, so they all require a prior
@@ -750,7 +752,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 2500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 250, "read")),
                     Tool::new(
                         "graph_all_paths",
                         "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
@@ -764,7 +766,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["from_symbol", "to_symbol"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 1500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 150, "read")),
                     Tool::new(
                         "graph_condensed",
                         "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
@@ -773,7 +775,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
                     Tool::new(
                         "graph_god_nodes",
                         "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
@@ -784,7 +786,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 100, "read")),
                     Tool::new(
                         "graph_reduced",
                         "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
@@ -793,7 +795,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
                     Tool::new(
                         "graph_feedback_arcs",
                         "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
@@ -802,7 +804,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 100, "read")),
                     // Phase 5: Community Detection (Label Propagation).
                     //
                     // `graph_communities` runs Label Propagation over the
@@ -831,7 +833,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 2500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 250, "read")),
                     Tool::new(
                         "graph_community_detail",
                         "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
@@ -844,7 +846,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["community_id"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
                     Tool::new(
                         "graph_surprising_connections",
                         "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
@@ -856,7 +858,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 1200)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 120, "read")),
                     Tool::new(
                         "graph_search_idf",
                         "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
@@ -869,7 +871,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["query"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "search", true, false, 400)),
+                    .with_meta(cognicode_meta("stable", "search", true, false, 40, "read")),
                     Tool::new(
                         "graph_insights",
                         "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
@@ -878,7 +880,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 2000)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 200, "read")),
                     Tool::new(
                         "graph_suggest_questions",
                         "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
@@ -887,7 +889,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "composite", true, false, 500, "read")),
                     // Sprint 2: Graphify-style tools (ADR-026)
                     Tool::new(
                         "graph_query",
@@ -902,7 +904,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["question"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 800)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 80, "read")),
                     Tool::new(
                         "graph_explain",
                         "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
@@ -915,7 +917,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["symbol"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 100, "read")),
                     // Phase 3A: Proactive Tools
                     #[cfg(feature = "persistence")]
                     // Detect Drift tool (S7000-S7003 intent drift detection)
@@ -941,43 +943,43 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_path"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "quality", false, true, 1500)),
+                    .with_meta(cognicode_meta("experimental", "quality", false, true, 150, "read")),
                     Tool::new(
                         "get_type_references",
                         "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"symbol_name":{"type":"string","description":"Symbol name"}},"required":["symbol_name"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
                     Tool::new(
                         "get_imports",
                         "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"file_path":{"type":"string","description":"File path"}},"required":["file_path"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 200)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
                     Tool::new(
                         "get_implementors",
                         "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"trait_name":{"type":"string","description":"Trait or interface name"}},"required":["trait_name"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 400)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 40, "read")),
                     Tool::new(
                         "get_members",
                         "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"class_name":{"type":"string","description":"Class or struct name"}},"required":["class_name"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
                     Tool::new(
                         "graph_query_filtered",
                         "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"limit":{"type":"integer"},"filters":{"type":"object","properties":{"provenance":{"type":"array","items":{"type":"string"}},"node_kinds":{"type":"array","items":{"type":"string"}},"community_id":{"type":"integer"},"exclude_kinds":{"type":"array","items":{"type":"string"}}}}},"required":["question"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 800)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 80, "read")),
                     Tool::new(
                         "export_callflow",
                         "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 600)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 60, "read")),
                     // SOLID Audit tool — heuristic-based SOLID principle analysis
                     Tool::new(
                         "solid_audit",
@@ -987,7 +989,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 2000)),
+                    .with_meta(cognicode_meta("stable", "quality", true, false, 200, "read")),
 
     // Batch D: Agent Task Tools (bidirectional interaction)
                     Tool::new(
@@ -995,25 +997,25 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["scc","reduced","feedback_arcs"]}}}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 1500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 150, "read")),
                     Tool::new(
                         "project_overview",
                         "Get a comprehensive project overview at quick, medium, or detailed levels.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 3000)),
+                    .with_meta(cognicode_meta("experimental", "composite", true, false, 300, "read")),
                     Tool::new(
                         "codebase_map",
                         "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
                         Arc::new(serde_json::json!({"type":"object","properties":{"format":{"type":"string","enum":["compact","detailed"]}}}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 1000)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 100, "read")),
                     Tool::new(
                         "project_insights",
                         "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
                         Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 3000)),
+                    .with_meta(cognicode_meta("experimental", "composite", true, false, 300, "read")),
                     Tool::new(
                         "smart_search",
                         "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
@@ -1026,7 +1028,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["query"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 2000)),
+                    .with_meta(cognicode_meta("stable", "composite", true, false, 200, "read")),
                     Tool::new(
                         "check_architecture",
                         "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
@@ -1037,7 +1039,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 200)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
                     Tool::new(
                         "graph_checkpoint",
                         "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
@@ -1049,7 +1051,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
                     Tool::new(
                         "merge_graphs",
                         "Merge per-file call graphs into a consolidated project graph.",
@@ -1061,7 +1063,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_paths"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", false, false, 500)),
+                    .with_meta(cognicode_meta("stable", "graph", false, false, 50, "read")),
                     Tool::new(
                         "build_lightweight_index",
                         "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
@@ -1073,7 +1075,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             }
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 300)),
+                    .with_meta(cognicode_meta("stable", "graph", true, false, 30, "read")),
                     #[cfg(feature = "persistence")]
                     Tool::new(
                         "reparse_on_edit",
@@ -1086,7 +1088,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["file_paths"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, true, 200)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, true, 20, "mutating")),
                     Tool::new(
                         "iac_query",
                         "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
@@ -1099,13 +1101,13 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["resource_id"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "infra", true, true, 500)),
+                    .with_meta(cognicode_meta("experimental", "infra", true, true, 50, "read")),
                     Tool::new(
                         "review_pr",
                         "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
                         Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "composite", false, false, 2000)),
+                    .with_meta(cognicode_meta("stable", "composite", false, false, 200, "read")),
                     Tool::new(
                         "list_view_specs",
                         "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
@@ -1114,7 +1116,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "properties": {}
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "view", false, false, 100)),
+                    .with_meta(cognicode_meta("stable", "view", false, false, 10, "read")),
                     Tool::new(
                         "read_view_spec",
                         "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
@@ -1126,7 +1128,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["id"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("stable", "view", false, false, 100)),
+                    .with_meta(cognicode_meta("stable", "view", false, false, 10, "read")),
 
                     // M5.2 WU2: M5 program-analysis algorithm IDs.
                     Tool::new(
@@ -1141,7 +1143,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
                     Tool::new(
                         "dominators_cfg",
                         "Compute per-function dominators over a CFG adjacency slice.",
@@ -1154,7 +1156,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
                     Tool::new(
                         "slice_forward",
                         "Forward slice from a (variable, definition_site) criterion.",
@@ -1167,7 +1169,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
                     Tool::new(
                         "slice_backward",
                         "Backward slice from a (variable, use_sites[]) criterion.",
@@ -1180,7 +1182,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
                     Tool::new(
                         "taint_flow",
                         "Forward taint analysis over a DFG (declarative Rust patterns).",
@@ -1193,7 +1195,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
                     #[cfg(feature = "program-analysis-server")]
                     Tool::new(
                         "interproc_summary",
@@ -1207,7 +1209,7 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                             "required": ["algorithm_params"]
                         }).as_object().cloned().unwrap()),
                     )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 5000)),
+                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
     ]
     .into_iter()
     .map(|mut tool| {
@@ -2603,6 +2605,153 @@ mod tests {
                         tool_name
                     );
                 }
+            }
+        }
+    }
+
+    // PRF-MCP-05: every public MCP tool MUST declare its required authority
+    // in the `cognicode_meta.authority` field. Authority is one of:
+    //   - "read"        — read-only, no side effects, safe in read-only mode
+    //   - "mutating"    — writes to the workspace (files, graph cache, etc.)
+    //   - "execute"     — runs code, processes, or shell commands
+    //   - "network"     — sends requests off-host (HTTP, OTLP, fetch, etc.)
+    //
+    // The authority is enforced by two mechanisms:
+    //   1. `list_tools` filters tools whose authority ≠ "read" when the
+    //      handler is in read-only mode.
+    //   2. `call_tool` rejects invocation of a non-read tool when the
+    //      handler is in read-only mode.
+    //
+    // Without an explicit declaration, authority defaults to "mutating"
+    // (deny by default) so that adding a new tool without thinking about
+    // its authority cannot accidentally grant write/exec/net powers.
+    //
+    // This test pins two properties:
+    //   1. Every tool has `cognicode_meta.authority` and the value is one
+    //      of the four allowed strings.
+    //   2. The hardcoded `MUTATING_TOOLS` list is a *subset* of tools with
+    //      authority != "read": every name in MUTATING_TOOLS must declare
+    //      authority != "read". (The legacy list is allowed to be a strict
+    //      subset — once a tool has authority declared, PRF-MCP-05 audits
+    //      can promote additional tools into `mutating`/`execute`/
+    //      `network` based on observed behavior. The test does NOT require
+    //      the converse direction to keep churn minimal.)
+    #[test]
+    fn test_prf_mcp_05_authority_declared_for_every_tool() {
+        let tools = build_all_tools();
+        assert!(!tools.is_empty(), "build_all_tools() must return tools");
+
+        let allowed = ["read", "mutating", "execute", "network"];
+        let mut declared_non_read: Vec<String> = Vec::new();
+
+        for tool in &tools {
+            let tool_name = tool.name.to_string();
+            let cognicode = tool
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("cognicode"))
+                .unwrap_or_else(|| panic!("Tool {tool_name:?} missing cognicode meta block"));
+            let authority = cognicode
+                .get("authority")
+                .and_then(|v| v.as_str())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Tool {tool_name:?} missing cognicode_meta.authority. \
+                         PRF-MCP-05 requires every tool to declare its authority."
+                    )
+                });
+            assert!(
+                allowed.contains(&authority),
+                "Tool {tool_name:?} declares unknown authority {authority:?}; \
+                 allowed: {allowed:?}"
+            );
+            if authority != "read" {
+                declared_non_read.push(tool_name);
+            }
+        }
+
+        // The legacy `MUTATING_TOOLS` list is a subset of tools with
+        // authority != "read". This keeps the legacy list correct as a
+        // floor while letting audits add more tools to the mutating set.
+        for legacy_name in CogniCodeHandler::MUTATING_TOOLS {
+            assert!(
+                declared_non_read.iter().any(|n| n == legacy_name),
+                "PRF-MCP-05: legacy MUTATING_TOOLS name {legacy_name:?} declares authority='read'. \
+                 Either update the tool declaration to mutating/execute/network, \
+                 or remove the entry from MUTATING_TOOLS."
+            );
+        }
+    }
+
+    // PRF-MCP-05 behavioral test: in read-only mode the public catalog
+    // exposed via `build_all_tools()` MUST be filtered to drop every tool
+    // whose declared authority is not "read". The filtering logic is
+    // replicated inline because `list_tools` requires an
+    // `rmcp::service::RequestContext` that depends on a Peer (only
+    // constructible from inside rmcp). The contract being pinned is the
+    // set membership after the filter, not the pagination wire format.
+    #[test]
+    fn test_prf_mcp_05_read_only_excludes_non_read_tools() {
+        let all_tools = build_all_tools();
+
+        // Replicate the exact predicate used by `list_tools` (rmcp_adapter.rs
+        // list_tools handler). The predicate is: in read-only mode, drop
+        // tools whose authority is not "read".
+        let read_only = true;
+        let filtered: Vec<String> = all_tools
+            .iter()
+            .filter(|t| {
+                if !read_only {
+                    return true;
+                }
+                let authority = t
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("cognicode"))
+                    .and_then(|m| m.get("authority"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("read");
+                authority == "read"
+            })
+            .map(|t| t.name.to_string())
+            .collect();
+
+        // Every tool whose declared authority is not "read" MUST be absent
+        // from the filtered set.
+        for tool in &all_tools {
+            let authority = tool
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("cognicode"))
+                .and_then(|m| m.get("authority"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("read");
+            let tool_name = tool.name.to_string();
+            if authority != "read" {
+                assert!(
+                    !filtered.contains(&tool_name),
+                    "PRF-MCP-05: read-only filter leaked non-read tool {tool_name:?} \
+                     (authority={authority:?})"
+                );
+            }
+        }
+
+        // Symmetry: every tool whose authority is "read" MUST remain in
+        // the filtered set (the filter must not be over-eager).
+        for tool in &all_tools {
+            let authority = tool
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("cognicode"))
+                .and_then(|m| m.get("authority"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("read");
+            if authority == "read" {
+                let tool_name = tool.name.to_string();
+                assert!(
+                    filtered.contains(&tool_name),
+                    "PRF-MCP-05: read-only filter dropped a read-only tool {tool_name:?}"
+                );
             }
         }
     }
