@@ -5930,3 +5930,141 @@ No se commitea código en push workflow; el push es publicación.
 - 237 commits publicados con sus trees, blobs y SHAs.
 
 §121 cierra el ciclo de release v0.97.4 (código + tag).
+
+## §122 — Diagnóstico workflow release CI: fallo por R9 missing aarch64 (2026-09-23)
+
+**Origen.** Operador reporta (15:12 UTC): "el workflow de publicación
+asociado al tag terminó en failure. Además, GitHub todavía no muestra
+una release publicada para v0.97.4. Hay un fallo real del proceso
+de distribución que debe resolverse antes de cerrar el programa."
+
+El operador tiene razón: push código + tag NO equivale a release
+publicada. El estado del programa NO es 93% completo si el workflow
+de release falla.
+
+### Hallazgo crítico #1: R9 (platform completeness) bloquea release monoplataforma
+
+El binario `cognicode-release` v0.97.4 enforces R9: si el `generate`
+no recibe `--platform`, requiere artifacts de TODAS las Tier-1
+declaradas (`platforms` subcommand):
+
+```text
+$ cognicode-release platforms
+x86_64-unknown-linux-gnu
+aarch64-unknown-linux-gnu
+```
+
+Si solo hay artifacts para x86_64, el `generate` falla:
+
+```text
+Error: missing artifact `cogh-0.97.4-aarch64-unknown-linux-gnu.tar.gz`:
+component `cogh` is published but was not produced for platform `linux-aarch64`
+```
+
+**Esto es comportamiento correcto del binario** según contrato R9
+(Platform ↔ target token is total). El bug está en el workflow.
+
+### Hallazgo crítico #2: workflow `release.yml` no pasa `--platform`
+
+El job `release.assemble-and-publish` (líneas 247-280 de
+`.github/workflows/release.yml`) llama a `generate` SIN
+`--platform`:
+
+```yaml
+- name: Generate BundleManifest v2, ReleaseInventory and SHA256SUMS
+  run: |
+    set -euo pipefail
+    ./target/release/cognicode-release generate \
+      --staging staging \
+      --out release \
+      --version "${{ steps.v.outputs.version }}" \
+      --tag "${{ steps.v.outputs.tag }}" \
+      --source-commit "$GITHUB_SHA"
+```
+
+El binario asume Tier-1 completa por defecto. Si el lane
+`build-linux-aarch64` falla (por toolchain, cyclonedx, etc.),
+los artifacts aarch64 no se suben, y el `generate` falla
+porque faltan.
+
+### Validación local: release monoplataforma x86_64 funciona end-to-end
+
+He reproducido el flujo crítico del workflow localmente con
+release monoplataforma x86_64:
+
+```text
+$ cognicode-release generate \
+    --staging /tmp/release-staging \
+    --out /tmp/release-monoplat \
+    --version 0.97.4 --tag v0.97.4 \
+    --source-commit deadbeef... \
+    --platform x86_64-unknown-linux-gnu
+generate: OK  version=0.97.4 tag=v0.97.4 payloads=5 manifests=1 sha256sums_entries=7
+
+$ cognicode-release verify \
+    --staging /tmp/release-monoplat \
+    --version 0.97.4 --tag v0.97.4 \
+    --platform x86_64-unknown-linux-gnu
+release-verify: OK  version=0.97.4 tag=v0.97.4
+  platforms : x86_64-unknown-linux-gnu
+  payloads  : 5
+  check     : R8 tag equals v{version}
+  check     : R9 platform set complete (1)
+  ... (todas las R1-R9 PASS)
+
+$ bash scripts/ci/release-install-smoke.sh 0.97.4 /tmp/release-monoplat/
+  ... (install/update/reshim/uninstall flow completo)
+PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+```
+
+**El binario + smoke test funcionan correctamente** con release
+monoplataforma. El flujo del workflow es sólido conceptualmente.
+
+### Causa raíz del fallo CI (más probable)
+
+El job `build` matrix corre 2 lanes:
+- `build-linux-x86-64` en `ubuntu-latest` (debería OK).
+- `build-linux-aarch64` en `ubuntu-24.04-arm` (runner ARM64
+  nativo, podría fallar por toolchain/cyclonedx).
+
+Si **ambos lanes OK**, los artifacts se suben, el job `release`
+descarga y procesa. R9 pasa porque tiene ambos.
+
+Si **aarch64 falla**, el job `release` recibe solo artifacts
+x86_64, y el `generate` falla por R9. Esto explica el síntoma
+"workflow terminó en failure" + "no release publicada".
+
+### Decisiones
+
+**No he modificado el workflow todavía** porque requiere decisión
+estratégica:
+
+- **(A) Fix workflow para release monoplataforma x86_64**: rápido,
+  pero deja Tier-1 incompleto (aarch64 no se publica). Cambio
+  mínimo: añadir `--platform x86_64-unknown-linux-gnu` al
+  `generate` y `verify`.
+
+- **(B) Fix build aarch64**: requiere diagnosticar por qué falla
+  el lane aarch64 (toolchain, cyclonedx, deny). Más lento pero
+  completo.
+
+- **(C) Hacer workflow resiliente**: si aarch64 falla, continuar
+  con release x86_64-only. Pero esto cambia contrato del release
+  factory y requiere auditoría del invariante R9.
+
+**Recomendación**: aplicar (A) como hotfix mínimo para que
+v0.97.4 se publique con x86_64, y abrir WU dedicada para (B).
+
+### Estado de certificación actualizado
+
+C7 firma sigue BLOQUEADO, **pero además** el workflow release
+CI también está fallando. El programa no puede declararse
+"production-ready" hasta que se publique la release.
+
+### No ejecuta
+
+- Modificación del workflow: requiere decisión operador (A/B/C).
+- Push adicional: solo docs en esta sesión.
+- C7 firma: BLOQUEADO, sin variación.
+
+Conventional Commits: §122 es solo docs (diagnóstico sin fix).
