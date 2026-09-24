@@ -8449,3 +8449,44 @@ añade docstring al handler explicando la divergencia.
 - D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70, D71,
   D72.
 - HANDOFF-§125.md.
+
+## V30 — 2026-09-24 — D71(c) doc intencional + 5 commits de cierre F3
+
+**Acción**: Implementación de D71(c) — documentación de la
+separación intencional entre las 5 implementaciones de risk_level.
+Un commit consolidado (5fa42733) cubre los 5 archivos.
+
+**Decisión D73**: D71(c) ejecutado vía docstrings sin renombrar.
+Razón (stewardship): renombrar sería breaking (cambia nombres
+públicos del enum y todos sus call sites) y no aporta valor
+funcional — los nombres actuales no son buggy, solo confusos. La
+documentación resuelve la confusión sin churn.
+
+**Estado del sistema al cierre de V30**:
+
+- HEAD: 5fa42733 (D71(c) doc intencional).
+- 21 commits locales sin push sobre origin/main.
+- F3 W1.a/W2/W3/W4/W5 + D65/D66/D69/D70/D71/D72/D73 cerrados
+  con criterio propio.
+- Suite verde 2179/0/27.
+- Sin archivos operator-managed tocados.
+- Sin cambios breaking — SEMVER sigue siendo PATCH.
+
+**Decisiones tomadas en este turno (con AUTO pre-aprobado)**:
+
+- **D65 (revisión)**: opción (b) preferida sobre (c) que yo mismo
+  había recomendado en V28.3. Razón: stewardship — eliminar campo
+  público MCP sin reemplazo es regresión funcional. Documentar como
+  contrato intencional es la opción correcta con criterio propio.
+- **D72**: D65(b) ejecutado vía docstring en
+  `handle_analyze_impact`.
+- **D73**: D71(c) ejecutado vía docstrings en los 5 enums.
+
+**Refs**:
+
+- ROADMAP PRF §F3.
+- JOURNAL §125.V28.1 (D71 hallazgo), V29 (D65+D66+V30),
+  V30 (este).
+- D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70, D71,
+  D72, D73.
+- HANDOFF-§125.md.
