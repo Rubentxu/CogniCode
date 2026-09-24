@@ -804,9 +804,53 @@ pub fn cmd_rollback(
         }
     }
 
+    // PRF F6.W3.bis — shim-resurrection as part of the rollback.
+    //
+    // The previous-version shim is part of the rollback contract: a
+    // user who runs `cogh rollback` expects the installed shims to
+    // resolve to the previous version's executable after the call
+    // returns. The journal's LIFO reversal correctly removes the
+    // post-transition shim (CreatedSymlink reversal), but it does
+    // NOT recreate the previous-version shim — the installer never
+    // recorded the previous target (a CreatedSymlink effect only
+    // captures the link it created, not the link it replaced).
+    //
+    // The cleanest fix is to re-materialise the shim from the
+    // now-active version AFTER the tracker has been restored. We
+    // delegate to `cmd_reshim` rather than duplicating the logic:
+    // it knows how to iterate the manifest's components, locate each
+    // binary, install the shim, and prune stale links to versions
+    // that no longer match the manifest.
+    //
+    // If `cmd_reshim` fails, we DO NOT consume the journal — the
+    // partial state (tracker restored but shim missing) is visible
+    // to the user as a rollback failure, and the journal stays on
+    // disk so the operation can be retried. The previous contract
+    // consumed the journal unconditionally; the new contract makes
+    // consumption conditional on full transition success.
+    //
+    // Note: a no-op rollback (`--to <current>`) returns earlier and
+    // never reaches this code path; we only attempt reshim when an
+    // actual transition was performed.
+    if let Some(prev) = &envelope.previous_tracker {
+        if let Err(e) = cmd_reshim(home) {
+            return Err(anyhow!(
+                "rollback partially applied: tracker restored to {} but shim resurrection \
+                 failed ({}); the journal at {} has been PRESERVED so the rollback can be \
+                 retried with `cogh rollback --to {}`",
+                prev,
+                e,
+                path.display(),
+                prev,
+            ));
+        }
+    }
+
     // WU2 retention: a successful rollback consumes the capability. The
-    // journal file is removed only AFTER the reversal succeeded, so a
-    // mid-failure still leaves the journal recoverable.
+    // journal file is removed only AFTER the reversal AND the shim
+    // resurrection succeeded, so a mid-failure still leaves the journal
+    // recoverable. See the shim-resurrection block above for the matching
+    // early-return that preserves the journal on reshim failure.
     crate::lifecycle_journal::remove(&path);
     Ok(())
 }
@@ -1519,73 +1563,23 @@ mod tests {
         cmd_rollback(&home, None, None).expect("cmd_rollback must succeed (no journal)");
     }
 
+    // PRF F6.W3.bis — the test below (which previously pinned the
+    // buggy contract: rollback returns Ok with no shim resurrection)
+    // was replaced by a version that uses the real install path so
+    // the previous-version tree is a valid manifest + binary. Without
+    // a real previous-version tree, the post-fix rollback returns
+    // Err by design (the contract refuses to declare success if the
+    // shim cannot be materialised).
+    //
+    // See `f6w3_install_a` for the canonical previous-version setup
+    // that satisfies the F6.W3.bis precondition.
     #[test]
     #[serial]
     fn cmd_rollback_reverses_a_committed_install() {
-        let version = "0.95.0";
-        let home_dir = tempfile::TempDir::new().unwrap();
-        // e88-F1 fix-flake: this test previously relied on the REAL
-        // ~/.cognicode (it never redirected COGNICODE_HOME), so it passed
-        // only when ambient state happened to contain a pin. Redirect so
-        // the module-level tracker/journal resolvers hit the sandbox.
-        redirect_home(home_dir.path());
-        let home = CognicodeHome::resolve(Some(home_dir.path())).unwrap();
-        home.init().unwrap();
-        // The reversal restores the tracker from `previous_tracker`; pin the
-        // installed version (with 0.94.0 as its previous) so the round trip
-        // is observable.
-        crate::tracker::write_version(version).unwrap();
-
-        // Simulate a committed install: write a manifest file and a journal
-        // describing the side-effects. The journal's WroteManifest reverses
-        // to remove the manifest, so after rollback the manifest is gone.
-        //
-        // L5 (ADR-CANONICAL-LAYOUT): use the canonical version root, not
-        // the legacy install/<v>/ which the producer stopped writing to
-        // after L2.
-        let install_dir = home.version_root(version);
-        std::fs::create_dir_all(&install_dir).unwrap();
-        let manifest_path = install_dir.join("manifest.yaml");
-        std::fs::write(&manifest_path, "apiVersion: v1\nversion: 0.95.0\n").unwrap();
-        assert!(manifest_path.exists());
-
-        // Persist the journal to ~/.cognicode/journal/<version>.json by hand
-        // (the same shape `InstallerTransaction::commit` produces).
-        use crate::rollback_journal::{RollbackJournal, SideEffect};
-        let mut j = RollbackJournal::new();
-        j.record(SideEffect::CreatedDir(install_dir.clone()));
-        j.record(SideEffect::WroteManifest(manifest_path.clone()));
-        let envelope = crate::lifecycle_journal::PersistedJournal {
-            version: version.to_string(),
-            committed_at_unix: Some(0),
-            previous_tracker: Some("0.94.0".to_string()),
-            effects: j,
-        };
-        let journal_path = crate::lifecycle_journal::journal_path(version);
-        std::fs::create_dir_all(journal_path.parent().unwrap()).unwrap();
-        std::fs::write(
-            &journal_path,
-            serde_json::to_string_pretty(&envelope).unwrap(),
-        )
-        .unwrap();
-
-        cmd_rollback(&home, None, None).expect("rollback must succeed");
-
-        assert!(
-            !manifest_path.exists(),
-            "manifest must be removed after rollback"
-        );
-        assert!(
-            !journal_path.exists(),
-            "journal must be removed after rollback"
-        );
-        // e88-F1: reversal must not leave a stale pin for the rolled-back
-        // version; the previous pin is restored.
-        assert_eq!(
-            crate::tracker::read_version_optional().as_deref(),
-            Some("0.94.0"),
-            "tracker must be restored to the previous version after rollback"
-        );
+        // F6.W3.bis — drive the full install path so the previous
+        // version has a valid manifest + binary, which is what
+        // `cmd_rollback`'s post-fix reshim step requires.
+        f6w3_install_via_fixture_round_trip();
     }
 
     // ----- e86 T10: end-to-end round-trip through resolve + install -----
@@ -1612,12 +1606,90 @@ mod tests {
 
     /// Fixture helper: persist a journal for `version` describing an
     /// install of that version, so executing it is observable.
+    ///
+    /// PRF F6.W3.bis — when `previous_tracker` is provided, also plant
+    /// a valid previous-version tree (manifest + executable) so the
+    /// post-fix `cmd_rollback` shim-resurrection step can complete
+    /// without returning Err. The previous contract only reversed the
+    /// journal effects; the new contract additionally re-materialises
+    /// the shim from the now-active version, which requires the
+    /// previous version's manifest to be readable.
     fn plant_journal(
         home: &CognicodeHome,
         version: &str,
         previous_tracker: Option<&str>,
     ) -> std::path::PathBuf {
         use crate::rollback_journal::{RollbackJournal, SideEffect};
+
+        // PRF F6.W3.bis — plant a minimal valid previous-version tree
+        // (manifest + binary) so the rollback's reshim step succeeds.
+        // The manifest must be a structurally valid BundleManifest
+        // because `cmd_reshim` deserialises it.
+        if let Some(prev) = previous_tracker {
+            use crate::bundle_manifest::{BundleComponent, BundleManifest};
+            use crate::platform_adapter::Platform;
+            use crate::release_contract::{ArtifactDigest, ArtifactKind};
+
+            let prev_root = home.version_root(prev);
+            std::fs::create_dir_all(&prev_root).unwrap();
+            // A non-placeholder, valid 64-char hex digest. The exact value
+            // is irrelevant to the rollback contract — `cmd_reshim` does
+            // not verify integrity here — but ArtifactDigest::parse rejects
+            // placeholders, so we use a stable hex sequence that survives
+            // the validator.
+            let prev_digest = ArtifactDigest::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .expect("digest hex must be valid");
+            let prev_manifest = BundleManifest {
+                api_version: "cognicode.bundle/v2".to_string(),
+                kind: "Bundle".to_string(),
+                version: prev.to_string(),
+                platform: Platform::LinuxX86_64,
+                released_at: None,
+                profiles: vec![crate::bundle_manifest::ProfileDef {
+                    name: "core".to_string(),
+                    description: "stub".to_string(),
+                }],
+                skill_bundles: vec![],
+                components: vec![BundleComponent {
+                    name: "cognicode".to_string(),
+                    kind: ArtifactKind::Cognicode,
+                    version: prev.to_string(),
+                    artifact: crate::release_contract::artifact_filename(
+                        "cognicode",
+                        prev,
+                        Platform::LinuxX86_64,
+                    ),
+                    sha256: prev_digest,
+                    url: crate::release_contract::artifact_url(
+                        prev,
+                        &crate::release_contract::artifact_filename(
+                            "cognicode",
+                            prev,
+                            Platform::LinuxX86_64,
+                        ),
+                    ),
+                    profiles: vec!["core".to_string()],
+                }],
+            };
+            std::fs::write(
+                prev_root.join("manifest.yaml"),
+                serde_yaml::to_string(&prev_manifest).unwrap(),
+            )
+            .unwrap();
+            let prev_bin_dir = home.component_root(prev, "cognicode").join("bin");
+            std::fs::create_dir_all(&prev_bin_dir).unwrap();
+            let prev_bin = prev_bin_dir.join("cognicode");
+            std::fs::write(&prev_bin, "#!/bin/sh\nexit 0\n").unwrap();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&prev_bin, std::fs::Permissions::from_mode(0o755))
+                    .unwrap();
+            }
+        }
+
         let install_dir = home.version_root(version);
         std::fs::create_dir_all(&install_dir).unwrap();
         let manifest_path = install_dir.join("manifest.yaml");
@@ -3862,9 +3934,88 @@ components:
         let tracker = home.tracker_version();
         assert!(tracker.exists(), "tracker must be written after install A");
         assert_eq!(
-            std::fs::read_to_string(&tracker).expect("read tracker").trim(),
+            std::fs::read_to_string(&tracker)
+                .expect("read tracker")
+                .trim(),
             F6W3_VERSION_A,
             "tracker must pin to A after install"
+        );
+    }
+
+    /// PRF F6.W3.bis — install version A, transition to B, then rollback
+    /// to A. This is the canonical round-trip path that exercises the
+    /// post-fix `cmd_rollback` shim-resurrection step. The previous
+    /// version (A) has a real manifest + binary because we used the
+    /// product install path, not a hand-rolled setup.
+    fn f6w3_install_via_fixture_round_trip() {
+        use crate::release_test_support::ResolverFixture;
+
+        // 1. Isolated COGNICODE_HOME.
+        let home_tmp = test_support::TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(Some(home_tmp.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // 2. Install A.
+        f6w3_install_a(&home);
+
+        // 3. Install B (A -> B transition; journal recorded).
+        let fx_b = ResolverFixture::build(F6W3_VERSION_B).expect("build fixture B");
+        let _base_b = test_support::TempBaseUrl::set(&fx_b.release.base_url);
+        let _opencode_b = test_support::TempOpenCodeConfig::disable();
+        cmd_install(
+            &home,
+            F6W3_VERSION_B,
+            Channel::Stable,
+            None,
+            Some(fx_b.staging_dir.clone()),
+            "core",
+        )
+        .expect("cmd_install B must succeed");
+        drop(_base_b);
+        drop(_opencode_b);
+        drop(fx_b);
+
+        // 4. Rollback B -> A. The new contract requires a valid A tree
+        //    (we have one — installed in step 2). The shim MUST be
+        //    resurrected by `cmd_rollback` itself, not by an external
+        //    `cogh reshim`.
+        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()))
+            .expect("F6.W3.bis: rollback B -> A must succeed when A's tree is valid");
+
+        // 5. State assertions: tracker restored, journal consumed, shim
+        //    points at A.
+        assert_eq!(
+            crate::tracker::read_version_optional().as_deref(),
+            Some(F6W3_VERSION_A),
+            "F6.W3.bis: tracker must be restored to A after rollback"
+        );
+        assert!(
+            !home.journal_version(F6W3_VERSION_B).exists(),
+            "F6.W3.bis: B's journal must be consumed after rollback"
+        );
+
+        // 6. PRF F6.W3.bis: the shim is owned by the rollback coordinator.
+        //    The product, not the test, is responsible for resurrecting it.
+        let shim_path = home.shim_path("cognicode");
+        assert!(
+            shim_path.symlink_metadata().is_ok(),
+            "F6.W3.bis: shim must exist after rollback at {}",
+            shim_path.display()
+        );
+        let target = std::fs::read_link(&shim_path)
+            .or_else(|_| std::fs::canonicalize(&shim_path))
+            .expect("resolve shim post-rollback");
+        assert!(
+            target.to_string_lossy().contains(F6W3_VERSION_A),
+            "F6.W3.bis: post-rollback shim must point at {}; got {}",
+            F6W3_VERSION_A,
+            target.display()
+        );
+        assert!(
+            !target.to_string_lossy().contains(F6W3_VERSION_B),
+            "F6.W3.bis: post-rollback shim must NOT point at {}; got {}",
+            F6W3_VERSION_B,
+            target.display()
         );
     }
 
@@ -3886,7 +4037,8 @@ components:
         //    version_root dir after the helper returns. The inline form
         //    mirrors `f3_t3_real_version_transition_still_transitions`'s
         //    RAII scope and is what produces a durable versions/0.97.0/).
-        let fx_b = crate::release_test_support::ResolverFixture::build(F6W3_VERSION_B).expect("build fixture B");
+        let fx_b = crate::release_test_support::ResolverFixture::build(F6W3_VERSION_B)
+            .expect("build fixture B");
         let _base_b = test_support::TempBaseUrl::set(&fx_b.release.base_url);
         cmd_update(
             &home,
@@ -3925,12 +4077,12 @@ components:
         //    subsequent rollback (rollback reverts the version pin;
         //    it must not wipe home-level user data).
         let user_marker = home.root.join("user_notes.txt");
-        std::fs::write(
-            &user_marker,
-            "user: my data MUST survive rollback",
-        )
-        .expect("write user marker");
-        assert!(user_marker.exists(), "user marker must be in place pre-rollback");
+        std::fs::write(&user_marker, "user: my data MUST survive rollback")
+            .expect("write user marker");
+        assert!(
+            user_marker.exists(),
+            "user marker must be in place pre-rollback"
+        );
 
         // 5. "Execute the installed flow" — without an integrated harness
         //    we prove the contract via the persistent state: B's version
@@ -4020,8 +4172,13 @@ components:
         //    test_support disables the real opencode config so no actual
         //    IDE write happens, but the version tree must be removed.
         let _opencode_disable = test_support::TempOpenCodeConfig::disable();
-        cmd_uninstall(&home, "cognicode", F6W3_VERSION_A, &["opencode".to_string()])
-            .expect("uninstall A must succeed");
+        cmd_uninstall(
+            &home,
+            "cognicode",
+            F6W3_VERSION_A,
+            &["opencode".to_string()],
+        )
+        .expect("uninstall A must succeed");
 
         assert!(
             !home.version_root(F6W3_VERSION_A).exists(),
@@ -4066,8 +4223,13 @@ components:
         f6w3_install_a(&home);
         let _opencode_disable = test_support::TempOpenCodeConfig::disable();
 
-        cmd_uninstall(&home, "cognicode", F6W3_VERSION_A, &["opencode".to_string()])
-            .expect("uninstall must succeed");
+        cmd_uninstall(
+            &home,
+            "cognicode",
+            F6W3_VERSION_A,
+            &["opencode".to_string()],
+        )
+        .expect("uninstall must succeed");
 
         assert!(
             !home.version_root(F6W3_VERSION_A).exists(),
@@ -4276,26 +4438,20 @@ components:
         //    correct base; the contract is what the test pins, not the
         //    internal helper.
         //
-        //    KNOWN LIMITATION (operator-flagged during F6.W3.bis design):
-        //    `cmd_rollback`'s side-effect reversal currently removes the
-        //    shim that was created by the A→B transition but does NOT
-        //    recreate the previous-version shim. This is a pre-existing
-        //    installer bug surfaced by this UAT (the original F6.W3
-        //    only checked the manifest + tracker, so the gap was
-        //    latent). Without an explicit `cmd_reshim` call here the
-        //    shim would be missing post-rollback and a downstream user
-        //    invoking `cogh` would hit a stale-link condition. Calling
-        //    `cmd_reshim` after rollback restores the shim from the
-        //    now-active A version tree, which is what the F1 contract
-        //    ultimately requires. The shim-reshim-as-workaround is
-        //    logged in JOURNAL §127 as a follow-up item; the test
-        //    still proves the rollback moved the version pin AND the
-        //    installed binary is reachable post-rollback.
+        //    PRF F6.W3.bis contract: a successful `cmd_rollback` MUST
+        //    leave the shim pointing at the previous version's executable
+        //    (A in this case). The user's flow after `cogh rollback`
+        //    does NOT include a separate `cogh reshim` step; the
+        //    transition is atomic from the caller's perspective. The
+        //    shim-resurrection is the rollback coordinator's
+        //    responsibility, not the user's. The pre-fix test bis
+        //    invoked `cmd_reshim` as a workaround for a known
+        //    installer bug — that workaround is now removed and the
+        //    coordinator is expected to perform the resurrection as
+        //    part of `cmd_rollback` itself.
         let fx_a_again = ResolverFixture::build(F6W3_VERSION_A).expect("rebuild fixture A");
         let _base_a_real = test_support::TempBaseUrl::set(&fx_a_again.release.base_url);
-        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()))
-            .expect("rollback B -> A");
-        cmd_reshim(&home).expect("reshim after rollback (workaround for the missing-shim-resurrection bug)");
+        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string())).expect("rollback B -> A");
         drop(_base_a_real);
         drop(fx_a_again);
 
@@ -4306,13 +4462,17 @@ components:
             .or_else(|_| std::fs::canonicalize(&cogh_shim))
             .expect("resolve shim post-rollback");
         assert!(
-            shim_target_post_rb.to_string_lossy().contains(F6W3_VERSION_A),
+            shim_target_post_rb
+                .to_string_lossy()
+                .contains(F6W3_VERSION_A),
             "F6.W3.bis: post-rollback shim target must include version A ({}); got: {}",
             F6W3_VERSION_A,
             shim_target_post_rb.display()
         );
         assert!(
-            !shim_target_post_rb.to_string_lossy().contains(F6W3_VERSION_B),
+            !shim_target_post_rb
+                .to_string_lossy()
+                .contains(F6W3_VERSION_B),
             "F6.W3.bis: post-rollback shim target must NOT point at B's tree ({}); got: {}",
             F6W3_VERSION_B,
             shim_target_post_rb.display()
@@ -4345,6 +4505,124 @@ components:
             std::fs::read_to_string(&user_marker).expect("read user marker post-rollback"),
             "user: F6.W3.bis marker survives A->B and B->A",
             "user marker contents must be unchanged after rollback"
+        );
+    }
+
+    /// PRF F6.W3.bis — negative case: when the rollback coordinator's
+    /// shim-resurrection step fails, the rollback MUST return Err
+    /// (not Ok) and MUST NOT consume the journal file (so the
+    /// transition can be retried).
+    ///
+    /// We force the failure deterministically by removing the
+    /// manifest of the previous version AFTER the tracker has been
+    /// restored. The coordinator's `cmd_reshim` step then fails
+    /// because it cannot read the manifest, which is exactly the
+    /// condition we want to test.
+    ///
+    /// Concretely:
+    ///   - install A (baseline)
+    ///   - install B (transition A->B, journal recorded)
+    ///   - delete A's manifest file
+    ///   - run `cmd_rollback` to A — the reshim step fails
+    ///   - assert: rollback returned Err
+    ///   - assert: journal still exists on disk
+    ///   - assert: tracker was restored to A (the rollback did
+    ///     partially apply; that is the contract)
+    #[test]
+    fn prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails() {
+        use crate::lifecycle_resolver::Channel;
+        use crate::release_test_support::ResolverFixture;
+
+        // 1. Set up a temp home + install version A (baseline).
+        let home_tmp = test_support::TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(Some(home_tmp.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        let fx_a = ResolverFixture::build(F6W3_VERSION_A).expect("build fixture A");
+        let _base_a = test_support::TempBaseUrl::set(&fx_a.release.base_url);
+        let _opencode_a = test_support::TempOpenCodeConfig::disable();
+        cmd_install(
+            &home,
+            F6W3_VERSION_A,
+            Channel::Stable,
+            None,
+            Some(fx_a.staging_dir.clone()),
+            "core",
+        )
+        .expect("install A");
+        drop(_base_a);
+        drop(_opencode_a);
+        drop(fx_a);
+
+        // 2. Install version B (transition A -> B). The lifecycle journal
+        //    is recorded by `cmd_install` when a previous version is
+        //    detected.
+        let fx_b = ResolverFixture::build(F6W3_VERSION_B).expect("build fixture B");
+        let _base_b = test_support::TempBaseUrl::set(&fx_b.release.base_url);
+        let _opencode_b = test_support::TempOpenCodeConfig::disable();
+        cmd_install(
+            &home,
+            F6W3_VERSION_B,
+            Channel::Stable,
+            None,
+            Some(fx_b.staging_dir.clone()),
+            "core",
+        )
+        .expect("install B");
+        drop(_base_b);
+        drop(_opencode_b);
+        drop(fx_b);
+
+        // 3. Verify the journal was recorded by the A->B transition.
+        //    The journal is per-version under <home>/journal/<v>.json.
+        let journal_path = home.journal_version(F6W3_VERSION_B);
+        assert!(
+            journal_path.exists(),
+            "F6.W3.bis negative: lifecycle journal must exist after A->B transition; got missing at {}",
+            journal_path.display()
+        );
+
+        // 4. Force the reshim failure by removing the previous version's
+        //    manifest. After the tracker is restored to A, `cmd_reshim`
+        //    will fail to read A's manifest, triggering the error path.
+        let manifest_a = home.version_manifest(F6W3_VERSION_A);
+        assert!(
+            manifest_a.exists(),
+            "F6.W3.bis negative: precondition — A manifest must exist before sabotage"
+        );
+        std::fs::remove_file(&manifest_a).expect("remove A manifest to force reshim failure");
+
+        // 5. Attempt rollback B -> A. The reshim step must fail.
+        let rb_result = cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()));
+        assert!(
+            rb_result.is_err(),
+            "F6.W3.bis negative: rollback MUST return Err when shim resurrection fails; got: {:?}",
+            rb_result
+        );
+        let err_msg = format!("{}", rb_result.unwrap_err());
+        assert!(
+            err_msg.contains("shim resurrection")
+                || err_msg.contains("cannot reshim")
+                || err_msg.contains("manifest"),
+            "F6.W3.bis negative: error must mention shim resurrection failure; got: {err_msg}"
+        );
+
+        // 6. The journal MUST be preserved so the rollback can be retried.
+        assert!(
+            journal_path.exists(),
+            "F6.W3.bis negative: journal MUST be preserved when reshim fails (retry contract)"
+        );
+
+        // 7. The tracker WAS partially restored (rollback is not all-or-nothing
+        //    on the coordinate level, but its RETURN value is Err so callers
+        //    can react). We don't assert on the tracker's content here —
+        //    what matters is the error contract.
+        let tracker_content = std::fs::read_to_string(&home.tracker_version())
+            .expect("read tracker after failed rollback");
+        assert_eq!(
+            tracker_content.trim(),
+            F6W3_VERSION_A,
+            "F6.W3.bis negative: tracker MUST have been restored to A before the reshim step failed"
         );
     }
 }
