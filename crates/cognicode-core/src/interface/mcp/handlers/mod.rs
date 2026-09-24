@@ -6569,6 +6569,189 @@ mod tests {
         }
     }
 
+    /// PRF-F3-W4: `analyze_impact` MCP wrapper contract.
+    ///
+    /// Pinned characterization for the public MCP tool
+    /// `handle_analyze_impact`. Unlike W1.a/W2/W3, there is no
+    /// external CLI binary that exposes `analyze_impact` — the
+    /// `cognicode` binary in this repo is a plugin manager
+    /// (Install/Uninstall/List/Current/Latest/Update) and has no
+    /// `IndexCommand::Impact` variant. The "CLI" path used in W1-
+    /// W3 was always a direct core API call (e.g.,
+    /// `LightweightStrategy`); the same convention is used here:
+    /// `analysis_service.build_project_graph` + `ImpactAnalyzer::calculate_impact`.
+    ///
+    /// However, an equivalence assertion against the core is
+    /// **not** meaningful for this tool: the core's
+    /// `ImpactAnalyzer::determine_impact_level` uses a five-bucket
+    /// function (`Minimal|Low|Medium|High|Critical`) gated by
+    /// direct + adjusted-transitive counts with a 2x multiplier for
+    /// type definitions, whereas the MCP wrapper
+    /// `handle_analyze_impact` derives `risk_level` from a
+    /// four-bucket function (`Low|Medium|High|Critical`) gated only
+    /// by the count of impacted symbols (`>2 / >5 / >10`). These
+    /// are intentionally different risk models, not a bug; the
+    /// surface that IS shared between core and MCP is the set of
+    /// `(impacted_files, impacted_symbols)`, which both derive
+    /// from the same `graph.find_all_dependents(...)` traversal.
+    ///
+    /// This module pins the shared surface only:
+    ///
+    /// - `corpus_produces_non_empty_impacted_set`: the corpus must
+    ///   produce at least one dependent in `impacted_symbols` and
+    ///   at least two files in `impacted_files` (3-file corpus:
+    ///   lib.rs + direct.rs + transitive.rs).
+    /// - `impacted_files_contain_caller_modules`: basenames
+    ///   `direct.rs` and `transitive.rs` appear in
+    ///   `impacted_files` (using basenames because the working_dir
+    ///   may be a tempdir whose absolute path differs from the
+    ///   fixture path).
+    /// - `impacted_symbols_contain_direct_and_transitive_callers`:
+    ///   `impact_direct_caller` and `impact_transitive_caller`
+    ///   appear in `impacted_symbols` (proves the transitive walk
+    ///   works).
+    ///
+    /// The corpus lives at
+    /// `docs/prf/fixtures/analyze_impact_equivalence/` with 3 files
+    /// (`lib.rs`, `direct.rs`, `transitive.rs`) that establish a
+    /// dependency chain: `transitive.rs` calls `direct.rs` which
+    /// calls `impact_target` (in `lib.rs`). All symbol names carry
+    /// the `impact_*` prefix to avoid collisions with other
+    /// corpora.
+    ///
+    /// D64: surface limited to `(impacted_files, impacted_symbols)`,
+    /// both sets compared as basenames / exact names. The
+    /// `risk_level` divergence is documented as finding D65
+    /// (see JOURNAL §125.V27) rather than pinned as a contract
+    /// — it requires an architectural decision the operator must
+    /// make.
+    mod prf_f3_w4_analyze_impact_equivalence_tests {
+        use super::*;
+        use std::collections::BTreeSet;
+        use std::path::{Path, PathBuf};
+
+        fn corpus_src() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("docs/prf/fixtures/analyze_impact_equivalence/src")
+        }
+
+        /// Copy the corpus into a tempdir so the graph builder sees
+        /// a fresh workspace and the absolute paths in
+        /// `impacted_files` are the tempdir (the basename
+        /// comparison sidesteps the absolute-path divergence).
+        fn stage_corpus() -> tempfile::TempDir {
+            let temp = tempfile::tempdir().expect("tempdir");
+            for entry in std::fs::read_dir(corpus_src()).expect("read corpus dir") {
+                let entry = entry.expect("dir entry");
+                std::fs::copy(entry.path(), temp.path().join(entry.file_name()))
+                    .expect("copy corpus file");
+            }
+            temp
+        }
+
+        /// Run `handle_analyze_impact` over the corpus and return
+        /// the result. The handler auto-builds the graph from the
+        /// working dir.
+        async fn run_analyze_impact(corpus_dir: &Path) -> AnalyzeImpactOutput {
+            let ctx = HandlerContext::builder()
+                .with_working_dir(corpus_dir.to_path_buf())
+                .build();
+            let input = AnalyzeImpactInput {
+                symbol_name: "impact_target".to_string(),
+                compressed: false,
+            };
+            handle_analyze_impact(&ctx, input)
+                .await
+                .expect("analyze_impact must succeed on staged corpus")
+        }
+
+        /// PRF-F3-W4.a: non-vacuity guard. If the corpus produces
+        /// zero dependents, the wrapper has nothing to characterize
+        /// and the test would pass trivially. Assert at least one
+        /// dependent symbol and at least two impacted files (the
+        /// corpus has 3 files; impact_target itself lives in
+        /// lib.rs, so dependents must include direct.rs and
+        /// transitive.rs).
+        #[tokio::test]
+        async fn corpus_produces_non_empty_impacted_set() {
+            let temp = stage_corpus();
+            let result = run_analyze_impact(temp.path()).await;
+
+            assert!(
+                !result.impacted_symbols.is_empty(),
+                "impacted_symbols must be non-empty for corpus with transitive callers; got: {:?}",
+                result.impacted_symbols
+            );
+            assert!(
+                result.impacted_files.len() >= 2,
+                "impacted_files must include at least direct.rs and transitive.rs; got: {:?}",
+                result.impacted_files
+            );
+        }
+
+        /// PRF-F3-W4.b: file surface — the impacted files set must
+        /// contain both caller files (basename comparison because
+        /// the absolute path inside the tempdir differs from the
+        /// fixture source path).
+        #[tokio::test]
+        async fn impacted_files_contain_caller_modules() {
+            let temp = stage_corpus();
+            let result = run_analyze_impact(temp.path()).await;
+
+            let basenames: BTreeSet<String> = result
+                .impacted_files
+                .iter()
+                .map(|p| {
+                    std::path::Path::new(p)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| p.clone())
+                })
+                .collect();
+
+            assert!(
+                basenames.contains("direct.rs"),
+                "impacted_files must contain direct.rs; got basenames: {:?}",
+                basenames
+            );
+            assert!(
+                basenames.contains("transitive.rs"),
+                "impacted_files must contain transitive.rs; got basenames: {:?}",
+                basenames
+            );
+        }
+
+        /// PRF-F3-W4.c: symbol surface — the impacted symbols set
+        /// must contain both direct and transitive callers (exact
+        /// name match, no normalization needed).
+        #[tokio::test]
+        async fn impacted_symbols_contain_direct_and_transitive_callers() {
+            let temp = stage_corpus();
+            let result = run_analyze_impact(temp.path()).await;
+
+            let names: BTreeSet<&str> = result
+                .impacted_symbols
+                .iter()
+                .map(|s| s.as_str())
+                .collect();
+
+            assert!(
+                names.contains("impact_direct_caller"),
+                "impacted_symbols must contain impact_direct_caller; got: {:?}",
+                result.impacted_symbols
+            );
+            assert!(
+                names.contains("impact_transitive_caller"),
+                "impacted_symbols must contain impact_transitive_caller; got: {:?}",
+                result.impacted_symbols
+            );
+        }
+    }
+
     /// PRF-STATE-07: derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler

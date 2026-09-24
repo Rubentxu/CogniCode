@@ -8013,3 +8013,108 @@ Nuevo módulo `prf_f3_w3_get_outline_equivalence_tests` con 2 tests
 - JOURNAL §125.V24 (F3.W1.a precedente), V25 (F3.W2 precedente).
 - D55, D58, D61, D62.
 - HANDOFF-§125.md (operator-approved gate).
+
+## V27 — 2026-09-24 — F3.W4 analyze_impact MCP contract + finding D65
+
+**Acción**: Caracterización del contrato observable del wrapper
+MCP `handle_analyze_impact`. Nuevo módulo
+`prf_f3_w4_analyze_impact_equivalence_tests` con 3 tests
+`cargo test -p cognicode-core --lib prf_f3_w4` (3/3 PASS). Corpus
+`docs/prf/fixtures/analyze_impact_equivalence/` con 3 archivos
+(`lib.rs`, `direct.rs`, `transitive.rs`) que establecen una cadena
+de dependencias.
+
+**Hallazgo arquitectónico D65**: el contrato "CLI↔MCP equivalence"
+para `analyze_impact` no es pinneable como test porque el core y el
+MCP usan **dos funciones de risk_level intencionalmente distintas**:
+
+- `core::ImpactAnalyzer::determine_impact_level` (en
+  `crates/cognicode-core/src/domain/services/impact_analyzer.rs`):
+  cinco categorías (`Minimal|Low|Medium|High|Critical`),
+  basadas en `direct_dependents` Y `adjusted_transitive` (con
+  multiplicador 2x para type definitions).
+- `mcp::handle_analyze_impact` (en
+  `crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1825-1841`):
+  cuatro categorías (`Low|Medium|High|Critical`), basadas
+  únicamente en `symbols_count` (impacted_symbols.len()) con
+  umbrales `>2 / >5 / >10`.
+
+No es un bug: el core es una biblioteca reutilizable con semántica
+de impacto refinada (incluye multiplicador para type defs); el
+MCP es un wrapper de cara al usuario con una heurística simple
+orientada a tamaño de blast radius. Pero **el operador debe
+decidir**:
+
+- (a) ¿El MCP debe llamar al core `ImpactAnalyzer` para
+  garantizar consistencia semántica?
+- (b) ¿La divergencia es intencional y debe documentarse como
+  parte del contrato del wrapper?
+- (c) ¿El campo `risk_level` debe eliminarse del output MCP y
+  quedar solo en core?
+
+Decisión pendiente — operator-gated.
+
+**Tests añadidos** (W4.a/b/c):
+
+- `corpus_produces_non_empty_impacted_set` — non-vacuity guard.
+- `impacted_files_contain_caller_modules` — `direct.rs` y
+  `transitive.rs` aparecen en `impacted_files` (basename match).
+- `impacted_symbols_contain_direct_and_transitive_callers` —
+  `impact_direct_caller` y `impact_transitive_caller` aparecen
+  en `impacted_symbols`.
+
+**RED/GREEN manual verificado**: al eliminar `use crate::impact_target;`
+en `direct.rs`, los 3 tests fallaron (output `impacted_symbols: []`).
+Tras restaurar, 3/3 PASS. El corpus ejercita el transitive walk
+realmente, no es vacuous.
+
+**Surface pinned (D64)**: solo `(impacted_files, impacted_symbols)`
+porque son el contrato observable común entre core y MCP. Líneas,
+columnas, kinds y risk_level no se pinean (los primeros por
+asimetrías D58/D61/D62; risk_level por D65).
+
+**Refinamiento del alcance F3 (D66)**: el término "CLI↔MCP
+equivalence" en W1-W4 es engañoso — el binario `cognicode` (CLI
+expuesta al usuario) NO tiene wrappers para tools de análisis
+(`analyze_impact`, `get_outline`, `query_symbol_index`,
+`get_call_hierarchy`); solo expone Install/Uninstall/List/Current/
+Latest/Update (gestión de plugins). Lo que W1-W4 llaman "CLI" es
+siempre el core API directo (`LightweightStrategy`,
+`build_outline`, etc.). El nombre correcto debería ser
+"MCP wrapper ↔ core API equivalence". Refinamiento propuesto al
+operador: renombrar el módulo de W1-W4 o documentar la
+convención.
+
+**Suite post-cambio**:
+
+- cognicode-core: 2173 → 2176/0/27 (+3 tests).
+- cognicode-cli: sin cambios.
+- cognicode-mcp: sin cambios.
+- cognicode-graph-wasm: sin cambios.
+- clippy -p cognicode-core --lib --no-deps: 0 warnings.
+
+**Estado del sistema al cierre de V27**:
+
+- HEAD: nuevo commit atómico (F3.W4).
+- 11 commits locales sin push sobre origin/main.
+- F3.W4 ✅ + finding D65 documentado.
+- Próximo: F3.W5 TBD si se autoriza refinamiento de naming
+  (D66), o cierre F3 → operator-gated.
+- C7 firma: BLOQUEADO.
+- Push acumulado: BLOQUEADO.
+
+**Decisiones tomadas**:
+
+- **D64**: surface limitada a `(impacted_files, impacted_symbols)`.
+- **D65**: finding arquitectónico — divergencia risk_level
+  core↔MCP. Operator-gated (decisión (a)/(b)/(c) arriba).
+- **D66**: refinamiento de naming — "CLI↔MCP" es engañoso
+  porque el binario CLI no expone tools de análisis. Propuesta
+  al operador.
+
+**Refs**:
+
+- ROADMAP PRF §F3.
+- JOURNAL §125.V24 (F3.W1.a), V25 (F3.W2), V26 (F3.W3).
+- D55, D58, D61, D62, D64, D65, D66.
+- HANDOFF-§125.md (operator-approved gate).
