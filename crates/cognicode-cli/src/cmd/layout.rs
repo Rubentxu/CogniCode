@@ -688,14 +688,89 @@ pub fn cmd_rollback(
         return Ok(());
     };
 
-    // e86.4 REQ-RB-04: `cogh rollback --to <current>` is a clean no-op.
-    // Disambiguate before touching the journal so the "no journal for
-    // current" branch stays reserved for the genuine "nothing to roll
-    // back" case (no --to supplied).
+    // e86.4 REQ-RB-04: `cogh rollback --to <current>` is a clean no-op
+    // — BUT only when there is no pending journal whose reversal would
+    // restore this version. A pending journal can live at any path of
+    // the form `<home>/journal/<X>.json` where X is the version that
+    // was installed (the "from" version) and whose `previous_tracker`
+    // equals <current>. After a partial rollback, the tracker was
+    // already restored but the journal was not consumed (because shim
+    // resurrection failed). The user's `cogh rollback --to <current>`
+    // is then a request to RESUME the pending rollback: reshim from
+    // <current>'s manifest, then consume the journal. We do not leave
+    // the system stuck with a missing shim just because the tracker
+    // matches the target.
     if let Some(target) = &to
         && target == &current_version
     {
-        println!("rollback: already at {target}; nothing to do");
+        // Look for the journal that recorded the install that brought
+        // us to a different version. The journal at <home>/journal/<X>.json
+        // is the one for X (the from version). After a partial rollback
+        // the tracker is already <current> = <target>, but the journal
+        // for X (the previous from) is still on disk. We scan the
+        // journal directory for any envelope whose `previous_tracker`
+        // equals <target>. There should be at most one such envelope:
+        // the journal for the most recent install whose "from" was
+        // <target>.
+        let journal_dir = home.root.join("journal");
+        let mut pending_journal_path: Option<std::path::PathBuf> = None;
+        if journal_dir.is_dir() {
+            let entries = std::fs::read_dir(&journal_dir).ok();
+            if let Some(entries) = entries {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|s| s.to_str()) != Some("json") {
+                        continue;
+                    }
+                    // Inspect metadata only — do NOT load the full envelope.
+                    // `load_envelope` constructs a `RollbackJournal` whose
+                    // Drop, if not committed, would REVERSE the side-effects
+                    // recorded in the journal (e.g. wiping the manifest of an
+                    // unrelated version). Inspection is metadata-only here;
+                    // we re-load the chosen envelope below, in the resume
+                    // branch, with an explicit commit on success and removal
+                    // on reshim success.
+                    let is_pending = match crate::lifecycle_journal::peek_envelope_metadata(&p) {
+                        Ok(meta) => {
+                            meta.previous_tracker.as_deref() == Some(target.as_str())
+                        }
+                        // A malformed journal cannot be the pending one,
+                        // and we do not want to fail the rollback because
+                        // someone (perhaps a prior crashed installer) left
+                        // a corrupt file in the journal dir.
+                        Err(_) => false,
+                    };
+                    if is_pending {
+                        pending_journal_path = Some(p);
+                        break;
+                    }
+                }
+            }
+        }
+        let Some(path) = pending_journal_path else {
+            println!("rollback: already at {target}; nothing to do");
+            return Ok(());
+        };
+        // Pin the loaded journal as committed so its Drop never replays
+        // the reversal (the side-effects already applied).
+        let envelope = crate::lifecycle_journal::load_envelope(&path)
+            .map_err(|e| anyhow!("load journal {}: {e}", path.display()))?;
+        let mut safe = envelope.effects;
+        safe.commit();
+        drop(safe);
+        // Reshim from the current version's manifest (which is the
+        // manifest for <target>, since that is what the tracker pins).
+        cmd_reshim(home).map_err(|e| {
+            anyhow!(
+                "resume pending rollback for {current_version}: \
+                 shim resurrection failed ({e}); journal at {} preserved \
+                 for another retry (restore the underlying manifest of \
+                 {current_version} and re-run `cogh rollback --to {current_version}`)",
+                path.display()
+            )
+        })?;
+        crate::lifecycle_journal::remove(&path);
+        println!("resumed pending rollback: shim restored for {current_version}");
         return Ok(());
     }
 
@@ -4528,6 +4603,13 @@ components:
     ///   - assert: journal still exists on disk
     ///   - assert: tracker was restored to A (the rollback did
     ///     partially apply; that is the contract)
+    ///   - assert: shim state is consistent with the partial state —
+    ///     the B shim was removed by the reversal, the A shim is
+    ///     missing because the reshim failed; the user sees a missing
+    ///     shim, NOT a wrong shim.
+    ///   - repair A's manifest (simulate the operator fixing the cause)
+    ///   - re-run `cmd_rollback` — the second attempt succeeds
+    ///     (state coherent, shim points at A, journal consumed)
     #[test]
     fn prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails() {
         use crate::lifecycle_resolver::Channel;
@@ -4615,14 +4697,131 @@ components:
 
         // 7. The tracker WAS partially restored (rollback is not all-or-nothing
         //    on the coordinate level, but its RETURN value is Err so callers
-        //    can react). We don't assert on the tracker's content here —
-        //    what matters is the error contract.
+        //    can react). Pin the tracker's content as part of the contract.
         let tracker_content = std::fs::read_to_string(&home.tracker_version())
             .expect("read tracker after failed rollback");
         assert_eq!(
             tracker_content.trim(),
             F6W3_VERSION_A,
             "F6.W3.bis negative: tracker MUST have been restored to A before the reshim step failed"
+        );
+
+        // 8. Shim state after the partial rollback. The reversal removed the
+        //    B shim (CreatedSymlink reversal is the LAST step of the journal
+        //    LIFO, so it has already happened by the time reshim fails). The
+        //    A shim must NOT exist because the reshim step is the one that
+        //    creates it, and it errored out.
+        //
+        //    State on disk:
+        //      - shims/cognicode -> absent (B removed by reversal, A not
+        //        recreated because reshim failed)
+        //      - tracker -> A
+        //      - journal/B.json -> present (retry contract)
+        //
+        //    The user sees: no shim, tracker says A, journal says "rollback
+        //    pending". That is the **correct, observable** recoverable
+        //    state. They fix the underlying cause (restore A's manifest)
+        //    and retry. A wrong shim pointing at B after a failed rollback
+        //    would be much worse.
+        let cogh_shim = home.shim_path("cognicode");
+        assert!(
+            !cogh_shim.symlink_metadata().is_ok(),
+            "F6.W3.bis negative: shim MUST NOT exist after failed rollback \
+             (reversal removed B, reshim failed to recreate A); a wrong shim \
+             here would be a much worse bug than a missing one. Got shim at: {}",
+            cogh_shim.display()
+        );
+
+        // 9. Recovery path: restore A's manifest (structurally valid
+        //    BundleManifest because `cmd_reshim` deserialises it),
+        //    retry `cmd_rollback`. The journal is still on disk; the
+        //    second attempt MUST succeed because the reshim step can
+        //    now read A's manifest. The final state must be coherent:
+        //    tracker=A, shim points at A, journal consumed.
+        //
+        //    The user does NOT need to invoke any external `cogh reshim` —
+        //    the rollback coordinator handles resurrection itself. The
+        //    only intervention required is restoring the underlying
+        //    manifest, which is exactly the cause of the original failure.
+        let recovered_manifest_a = home.version_manifest(F6W3_VERSION_A);
+        {
+            use crate::bundle_manifest::{BundleComponent, BundleManifest};
+            use crate::platform_adapter::Platform;
+            use crate::release_contract::{ArtifactDigest, ArtifactKind};
+            let prev_digest = ArtifactDigest::parse(
+                "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            )
+            .expect("digest hex must be valid");
+            let manifest = BundleManifest {
+                api_version: "cognicode.bundle/v2".to_string(),
+                kind: "Bundle".to_string(),
+                version: F6W3_VERSION_A.to_string(),
+                platform: Platform::LinuxX86_64,
+                released_at: None,
+                profiles: vec![crate::bundle_manifest::ProfileDef {
+                    name: "core".to_string(),
+                    description: "recovered".to_string(),
+                }],
+                skill_bundles: vec![],
+                components: vec![BundleComponent {
+                    name: "cognicode".to_string(),
+                    kind: ArtifactKind::Cognicode,
+                    version: F6W3_VERSION_A.to_string(),
+                    artifact: crate::release_contract::artifact_filename(
+                        "cognicode",
+                        F6W3_VERSION_A,
+                        Platform::LinuxX86_64,
+                    ),
+                    sha256: prev_digest,
+                    url: crate::release_contract::artifact_url(
+                        F6W3_VERSION_A,
+                        &crate::release_contract::artifact_filename(
+                            "cognicode",
+                            F6W3_VERSION_A,
+                            Platform::LinuxX86_64,
+                        ),
+                    ),
+                    profiles: vec!["core".to_string()],
+                }],
+            };
+            std::fs::write(
+                &recovered_manifest_a,
+                serde_yaml::to_string(&manifest).unwrap(),
+            )
+            .expect("restore A manifest for retry");
+        }
+
+        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()))
+            .expect("F6.W3.bis negative: second rollback attempt MUST succeed after manifest restoration");
+
+        // 10. Final state is coherent.
+        assert_eq!(
+            std::fs::read_to_string(&home.tracker_version())
+                .expect("read tracker post-recovery")
+                .trim(),
+            F6W3_VERSION_A,
+            "F6.W3.bis negative: tracker must remain A after successful retry"
+        );
+        assert!(
+            !journal_path.exists(),
+            "F6.W3.bis negative: journal MUST be consumed after the successful retry"
+        );
+        assert!(
+            cogh_shim.symlink_metadata().is_ok(),
+            "F6.W3.bis negative: A shim MUST exist after successful retry"
+        );
+        let shim_target = std::fs::read_link(&cogh_shim)
+            .or_else(|_| std::fs::canonicalize(&cogh_shim))
+            .expect("resolve A shim post-recovery");
+        assert!(
+            shim_target.to_string_lossy().contains(F6W3_VERSION_A),
+            "F6.W3.bis negative: A shim MUST point at A; got {}",
+            shim_target.display()
+        );
+        assert!(
+            !shim_target.to_string_lossy().contains(F6W3_VERSION_B),
+            "F6.W3.bis negative: A shim MUST NOT point at B; got {}",
+            shim_target.display()
         );
     }
 }

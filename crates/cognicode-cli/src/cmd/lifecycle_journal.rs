@@ -103,12 +103,10 @@ pub fn write(
     // directory.
     let temp_path = format!("{}.tmp.{}", path.display(), std::process::id());
     {
-        let mut file = std::fs::File::create(&temp_path).map_err(|e| {
-            InstallerError::Io(std::path::PathBuf::from(&temp_path), e)
-        })?;
-        std::io::Write::write_all(&mut file, text.as_bytes()).map_err(|e| {
-            InstallerError::Io(std::path::PathBuf::from(&temp_path), e)
-        })?;
+        let mut file = std::fs::File::create(&temp_path)
+            .map_err(|e| InstallerError::Io(std::path::PathBuf::from(&temp_path), e))?;
+        std::io::Write::write_all(&mut file, text.as_bytes())
+            .map_err(|e| InstallerError::Io(std::path::PathBuf::from(&temp_path), e))?;
         let _ = file.sync_all();
     }
     if let Err(e) = std::fs::rename(&temp_path, path) {
@@ -140,6 +138,29 @@ pub fn load_envelope(path: &Path) -> Result<PersistedJournal, InstallerError> {
     let text = std::fs::read_to_string(path).map_err(|e| InstallerError::Io(path.into(), e))?;
     serde_json::from_str(&text)
         .map_err(|e| InstallerError::Serialize(format!("journal `{}`: {}", path.display(), e)))
+}
+
+/// Minimal envelope metadata for inspection: only `version` and
+/// `previous_tracker`. **Crucially, this does NOT construct a
+/// `RollbackJournal`, so it has NO destructive Drop side-effects.**
+///
+/// Use this when you only need to decide which envelope is the pending
+/// rollback (by looking at `previous_tracker`) or to display the
+/// install version. Do NOT use this when you actually want to replay
+/// the reversal — for that, use [`load_envelope`] or [`load`] and
+/// commit/cancel explicitly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvelopeMetadata {
+    pub version: String,
+    #[serde(default)]
+    pub previous_tracker: Option<String>,
+}
+
+pub fn peek_envelope_metadata(path: &Path) -> Result<EnvelopeMetadata, InstallerError> {
+    let text = std::fs::read_to_string(path).map_err(|e| InstallerError::Io(path.into(), e))?;
+    serde_json::from_str(&text).map_err(|e| {
+        InstallerError::Serialize(format!("journal `{}`: {}", path.display(), e))
+    })
 }
 
 /// Remove a journal after a successful rollback. Best-effort; failures
@@ -336,7 +357,10 @@ components:
              siblings were: {siblings:?}"
         );
         // Sanity: the canonical payload exists.
-        assert!(path.exists(), "canonical journal path must exist after write");
+        assert!(
+            path.exists(),
+            "canonical journal path must exist after write"
+        );
         assert!(
             load_envelope(&path).is_ok(),
             "canonical payload must be a parseable envelope (no truncation)"
