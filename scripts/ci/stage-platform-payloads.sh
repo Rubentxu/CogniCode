@@ -53,8 +53,18 @@ if [[ ! -d "${STAGING}" ]]; then
   exit 1
 fi
 
-# Canonical contract for Tier-1 release factory.
-TIER1_PLATFORMS=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
+# Canonical contract for Tier-1 release factory. The `*_TRIPLE` is the
+# Rust target triple that appears in canonical tarball and SBOM names
+# (matches `platform_token(Platform)` in crates/cognicode-cli/src/cmd/
+# release_contract.rs:84). The `SHORT_*` value is the lane directory
+# suffix produced by both `release.yml` and `release-validate.yml`
+# (`payloads-${{ matrix.platform }}`, where `matrix.platform` is the
+# short identifier like `linux-x86-64`).
+declare -A PLATFORM_SHORT_TO_TRIPLE=(
+  ["linux-x86-64"]="x86_64-unknown-linux-gnu"
+  ["linux-aarch64"]="aarch64-unknown-linux-gnu"
+)
+TIER1_TRIPLES=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
 COMPONENTS=(cogh cognicode cognicode-mcp)
 
 # Reject any file at the staging root other than the lane dirs and
@@ -91,8 +101,8 @@ done
 if (( ${#LANES[@]} == 0 )); then
   echo "::error::no payloads-* lane directories found in ${STAGING}" >&2
   echo "       expected at least one of:" >&2
-  for p in "${TIER1_PLATFORMS[@]}"; do
-    echo "         ${STAGING}/payloads-${p}/" >&2
+  for p in "${TIER1_TRIPLES[@]}"; do
+    echo "         ${STAGING}/payloads-${p}/  (or its short alias payloads-linux-<arch>64/)" >&2
   done
   exit 1
 fi
@@ -102,6 +112,9 @@ fi
 # and we refuse silently picking either.
 declare -A SEEN_PAYLOADS=()
 declare -A SEEN_SBOMS=()
+# Track which lane directory maps to which target triple so we can
+# reject two different alias dirs claiming the same platform.
+declare -A TRIPLE_OWNED_BY=()
 
 copy_unique() {
   local kind="$1" src="$2" dest_name="$3"
@@ -123,12 +136,49 @@ copy_unique() {
 # Walk each lane and copy the canonical payloads + SBOMs.
 for lane in "${LANES[@]}"; do
   lane_name="$(basename "${lane}")"
-  # lane_name == payloads-<platform>
-  platform="${lane_name#payloads-}"
-  if [[ "${platform}" == "${lane_name}" ]]; then
-    echo "::error::lane dir does not match payloads-<platform> pattern: ${lane_name}" >&2
+  # lane_name == payloads-<suffix>. The suffix may be either the short
+  # platform identifier (linux-x86-64 / linux-aarch64) that the
+  # workflows upload, or the canonical target triple as an explicit
+  # alias for tests/fixtures that build the layout by hand. Anything
+  # else is rejected so unknown platforms never reach the release
+  # factory.
+  suffix="${lane_name#payloads-}"
+  if [[ "${suffix}" == "${lane_name}" ]]; then
+    echo "::error::lane dir does not match payloads-<suffix> pattern: ${lane_name}" >&2
     exit 1
   fi
+  if [[ -n "${PLATFORM_SHORT_TO_TRIPLE[$suffix]+x}" ]]; then
+    platform="${PLATFORM_SHORT_TO_TRIPLE[$suffix]}"
+    lane_alias_kind="short"
+  elif [[ " ${TIER1_TRIPLES[*]} " == *" ${suffix} "* ]]; then
+    platform="${suffix}"
+    lane_alias_kind="triple"
+  else
+    echo "::error::lane ${lane_name} uses unknown platform suffix '${suffix}'" >&2
+    echo "       accepted short identifiers:" >&2
+    for s in "${!PLATFORM_SHORT_TO_TRIPLE[@]}"; do
+      echo "         payloads-${s}" >&2
+    done
+    echo "       accepted target-triple aliases:" >&2
+    for t in "${TIER1_TRIPLES[@]}"; do
+      echo "         payloads-${t}" >&2
+    done
+    exit 1
+  fi
+
+  # Reject two lanes claiming the same target triple. Either two
+  # short-form lanes (e.g. both `payloads-linux-x86-64`) or a short
+  # lane plus its triple alias (e.g. `payloads-linux-x86-64` and
+  # `payloads-x86_64-unknown-linux-gnu`) is forbidden — the result
+  # would be ambiguous regardless of which one we kept.
+  if [[ -n "${TRIPLE_OWNED_BY[$platform]+x}" ]]; then
+    echo "::error::two lane directories claim the same platform ${platform}:" >&2
+    echo "       previous: ${TRIPLE_OWNED_BY[$platform]} (${lane_alias_kind})" >&2
+    echo "       new     : ${lane_name} (${lane_alias_kind})" >&2
+    exit 1
+  fi
+  TRIPLE_OWNED_BY[$platform]="${lane_name}"
+
   dist_dir="${lane}/dist"
   crates_dir="${lane}/crates"
   if [[ ! -d "${dist_dir}" ]]; then
@@ -136,19 +186,28 @@ for lane in "${LANES[@]}"; do
     exit 1
   fi
 
-  # Require every component for the platform.
+  # Require every component for the platform. Tarballs are named with
+  # the canonical target triple (matches `cognicode-release name
+  # --platform <short> --version <v>` output in release_contract.rs).
   for comp in "${COMPONENTS[@]}"; do
-    # The script does not own the version; it just looks for the
-    # single .tar.gz file under dist/ that begins with the component
-    # stem and platform triple. The build lanes name them canonically
-    # as <comp>-<ver>-<plat>.tar.gz.
     found_payload="$(find "${dist_dir}" -mindepth 1 -maxdepth 1 \
       -name "${comp}-*-${platform}.tar.gz" -print -quit || true)"
     if [[ -z "${found_payload}" ]]; then
-      echo "::error::lane ${lane_name} missing payload for component ${comp} on ${platform}" >&2
+      echo "::error::lane ${lane_name} (platform ${platform}) missing payload for component ${comp}" >&2
+      echo "       expected: ${dist_dir}/${comp}-*-${platform}.tar.gz" >&2
       exit 1
     fi
     payload_basename="$(basename "${found_payload}")"
+    # Defensive: the tarball's embedded triple must agree with the
+    # resolved lane platform. A lane named `payloads-linux-x86-64`
+    # cannot ship an `aarch64-...` tarball. The find above already
+    # restricts the glob to `${platform}` so the basename is bounded
+    # by construction; this regex is a belt-and-suspenders check
+    # against accidental wildcards or symbolic links.
+    if ! [[ "${payload_basename}" =~ ^${comp}-.+-${platform}\.tar\.gz$ ]]; then
+      echo "::error::lane ${lane_name} (platform ${platform}) ships payload '${payload_basename}' whose embedded triple does not match the lane platform" >&2
+      exit 1
+    fi
     copy_unique payload "${found_payload}" "${payload_basename}"
 
     sbom_name="${comp}-${platform}.cdx.json"
@@ -161,11 +220,16 @@ for lane in "${LANES[@]}"; do
   done
 done
 
-# Final sanity: every expected (component, platform) pair must be
-# represented at the staging root. We rely on the released components
-# enumeration being the same set as COMPONENTS above; if the contract
-# diverges, the release_factory's build_inventory will fail loudly.
-for platform in "${TIER1_PLATFORMS[@]}"; do
+# Final sanity: every Tier-1 platform must be represented at the
+# staging root (not just any non-zero number of lanes). This catches
+# the case where only one lane was uploaded and the other was
+# silently skipped.
+for platform in "${TIER1_TRIPLES[@]}"; do
+  if [[ -z "${TRIPLE_OWNED_BY[$platform]+x}" ]]; then
+    echo "::error::after flatten, no lane claimed Tier-1 platform ${platform}" >&2
+    echo "       present lanes owned: ${!TRIPLE_OWNED_BY[*]:-(none)}" >&2
+    exit 1
+  fi
   for comp in "${COMPONENTS[@]}"; do
     if ! compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz" > /dev/null; then
       echo "::error::after flatten, missing ${comp}-*-${platform}.tar.gz at staging root" >&2
@@ -174,4 +238,4 @@ for platform in "${TIER1_PLATFORMS[@]}"; do
   done
 done
 
-echo "stage-platform-payloads: OK  lanes=${#LANES[@]} platforms=${TIER1_PLATFORMS[*]} components=${COMPONENTS[*]}"
+echo "stage-platform-payloads: OK  lanes=${#LANES[@]} platforms=${TIER1_TRIPLES[*]} components=${COMPONENTS[*]}"

@@ -203,7 +203,10 @@ jobs:
       - name: Upload lane artifacts (workflow-internal, NOT a GitHub Release)
         uses: actions/upload-artifact@v4
         with:
-          name: validate-payloads-${{ matrix.platform }}
+          # Contract shared with release.yml: lane directories use the
+          # short `matrix.platform` identifier (linux-x86-64 / linux-aarch64).
+          # The flatten script maps short → target triple explicitly.
+          name: payloads-${{ matrix.platform }}
           path: |
             dist/*.tar.gz
             crates/*.cdx.json
@@ -255,7 +258,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: staging
-          pattern: validate-payloads-*
+          # Contract shared with release.yml: download `payloads-*` so
+          # the staging tree matches what the production workflow
+          # produces. The flatten script consumes this layout.
+          pattern: payloads-*
           merge-multiple: false
 
       - name: Stage declared skill bundle payloads (DEBT-2)
