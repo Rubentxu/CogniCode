@@ -6227,13 +6227,18 @@ mod tests {
     /// file produces the same observable symbol inventory and the
     /// same dependency inventory.
     ///
-    /// **Naming convention (D66)**: the "CLI path" in this test is
-    /// the `PerFileStrategy` core API invoked directly, NOT the
-    /// `cognicode` binary. The binary does not expose `graph per-file`
-    /// (the `cognicode` CLI is a plugin manager, not an analysis
-    /// tool). The "MCP path" is `handle_get_per_file_graph` invoked
-    /// through a real `HandlerContext`. This convention is shared
-    /// across PRF-F3-W1.a/W2/W3/W4/W5.
+    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// in this test is BOTH the `PerFileStrategy` core API invoked
+    /// directly AND the `cognicode` binary subcommand
+    /// `cognicode graph per-file <file>`. The `cognicode` binary
+    /// lives at `crates/cognicode-cli/src/main.rs` and DOES expose
+    /// analysis subcommands (`analyze`, `graph`, `index`); the
+    /// `cogh` binary (`crates/cognicode-cli/src/bin/cogh.rs`) is
+    /// the plugin manager and does NOT. The "MCP path" is
+    /// `handle_get_per_file_graph` invoked through a real
+    /// `HandlerContext`. The D66 note added in commit 5dbb3bcd
+    /// was based on incomplete investigation (D75); this commit
+    /// corrects it.
     ///
     /// Comparison surface: the MCP handler `handle_get_per_file_graph`
     /// exposes only `(file, line, column, symbol_kind)` per symbol —
@@ -6347,11 +6352,14 @@ mod tests {
     /// `SymbolIndex::find_symbol` after `set_symbol_index`) produce
     /// the same set of `(file_basename, line, column)` tuples.
     ///
-    /// **Naming convention (D66)**: the "CLI path" in this test is
-    /// the `LightweightStrategy` core API invoked directly, NOT the
-    /// `cognicode` binary. The binary does not expose `index query`.
-    /// The "MCP path" is `handle_query_symbol_index` invoked through
-    /// a real `HandlerContext`.
+    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// in this test is BOTH the `LightweightStrategy` core API
+    /// invoked directly AND the `cognicode` binary subcommand
+    /// `cognicode index query <symbol>`. The `cognicode` binary
+    /// DOES expose `index query` (see crates/cognicode-cli/src/main.rs);
+    /// only `cogh` does not. The "MCP path" is
+    /// `handle_query_symbol_index` invoked through a real
+    /// `HandlerContext`.
     ///
     /// Comparison surface: `(file_basename, line, column)`. The
     /// `file` field in the CLI `SymbolLocation` and the MCP
@@ -6491,10 +6499,12 @@ mod tests {
     /// MCP: returns `OutlineOutput.nodes[]` JSON) produce the same
     /// `(name, kind)` set when the same flags are used.
     ///
-    /// **Naming convention (D66)**: the "CLI path" in this test is
-    /// the `build_outline` core API invoked directly, NOT the
-    /// `cognicode` binary. The binary does not expose `index outline`.
-    /// The "MCP path" is `handle_get_outline` invoked through a real
+    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// in this test is BOTH the `build_outline` core API invoked
+    /// directly AND the `cognicode` binary subcommand
+    /// `cognicode index outline <file>`. The `cognicode` binary
+    /// DOES expose `index outline`; only `cogh` does not. The
+    /// "MCP path" is `handle_get_outline` invoked through a real
     /// `HandlerContext`.
     ///
     /// **Comparison surface** is intentionally narrow: `(name, kind)`.
@@ -6607,12 +6617,13 @@ mod tests {
 
     /// PRF-F3-W4: `analyze_impact` MCP wrapper contract.
     ///
-    /// **Naming convention (D66)**: the "CLI path" in this test is
-    /// the `analysis_service.build_project_graph` core API invoked
-    /// directly, NOT the `cognicode` binary. The binary does not
-    /// expose `analyze_impact`. The "MCP path" is
-    /// `handle_analyze_impact` invoked through a real
-    /// `HandlerContext`.
+    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// in this test is BOTH the `analysis_service.build_project_graph`
+    /// core API invoked directly AND the `cognicode` binary
+    /// subcommand `cognicode graph impact <symbol>`. The
+    /// `cognicode` binary DOES expose `graph impact`; only `cogh`
+    /// does not. The "MCP path" is `handle_analyze_impact` invoked
+    /// through a real `HandlerContext`.
     ///
     /// Pinned characterization for the public MCP tool
     /// `handle_analyze_impact`. Unlike W1.a/W2/W3, there is no
@@ -6797,12 +6808,13 @@ mod tests {
 
     /// PRF-F3-W5: `get_call_hierarchy` MCP wrapper contract.
     ///
-    /// **Naming convention (D66)**: the "CLI path" in this test is
-    /// the `analysis_service.build_project_graph` core API invoked
-    /// directly, NOT the `cognicode` binary. The binary does not
-    /// expose `get_call_hierarchy`. The "MCP path" is
-    /// `handle_get_call_hierarchy` invoked through a real
-    /// `HandlerContext`.
+    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// in this test is BOTH the `analysis_service.build_project_graph`
+    /// core API invoked directly AND the `cognicode` binary
+    /// subcommand `cognicode graph hierarchy <symbol>`. The
+    /// `cognicode` binary DOES expose `graph hierarchy`; only
+    /// `cogh` does not. The "MCP path" is `handle_get_call_hierarchy`
+    /// invoked through a real `HandlerContext`.
     ///
     /// Pinned characterization for the public MCP tool
     /// `handle_get_call_hierarchy` (direction=outgoing). Reuses the
