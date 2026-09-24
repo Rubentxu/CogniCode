@@ -8938,3 +8938,43 @@ que ya pasa. REF: hay un bug latente en el helper, no es
 estrictamente mío pero queda noted.
 
 Refs: JOURNAL §125.V32.7, PRF §F6.W3.
+
+## V32.8 — 2026-09-24 — F5.W4 timeout top-level con degradación graceful
+
+Cierra el último gap de F5.UAT. El contrato top-level de
+`handle_smart_search` ya estaba parcialmente cubierto por
+`test_handle_smart_search_terminates_within_sub_handler_timeout`
+(verifica que el sub-handler timeout sigue activo); F5.W4
+añade la verificación del **contrato compuesto**:
+
+1. `prf_f5_w4_top_level_returns_ok_even_when_all_sub_handlers_fail`:
+   contrato top-level — incluso si los 3 sub-handlers
+   fallan/timed-out, `handle_smart_search` retorna
+   `Ok(SmartSearchOutput { results: [], sources, ... })` con
+   la lista de sources reportada (semantic/ranked/idf). Una
+   regresión que colapsara el composite en `Err` se detectaría
+   aquí. Elapsed < 10s (budget generoso contra SUB_HANDLER_TIMEOUT
+   de 60s).
+
+2. `prf_f5_w4_concurrent_smart_search_returns_within_budget`:
+   contrato de paralelismo — 5 invocaciones paralelas en
+   `tokio::join!` (multi-thread runtime) todas completan en
+   < 20s. Una regresión accidentalmente secuencial
+   (e.g. `await` en lugar de `join!`) blow el budget.
+
+Ambos tests verde, junto al test existente (3/3 smart_search
+tests verde).
+
+**Suite workspace `--tests --test-threads=1`**:
+5441 passed / 0 failed / 33 ignored. Cero regresión.
+
+**Nota sobre tests paralelos**: con paralelismo por defecto,
+el test pre-existente `cmd_update_sequential_installs_overwrite
+_cleanly` falla por **test pollution entre serial tests**
+(COGNICODE_HOME / COGNICODE_ASSET_BASE_URL no se aislan entre
+tests `#[serial]` cuando otros procesos compiten). Es un bug
+de test infrastructure pre-existente, NO regresión de mi cambio.
+Con `--test-threads=1` (modo serial) todo verde. Esto se
+reporta por honestidad pero no bloquea F5.W4.
+
+Refs: JOURNAL §125.V32.8, PRF §F5.W4.

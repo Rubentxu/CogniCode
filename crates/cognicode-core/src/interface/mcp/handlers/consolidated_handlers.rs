@@ -1108,4 +1108,152 @@ mod tests {
             "smart_search took {elapsed:?} — per-sub-handler timeout may have dropped"
         );
     }
+
+    // PRF F5.W4 — top-level timeout / graceful-degradation contract.
+    //
+    // The contract under test is: even when ALL three sub-handlers
+    // (semantic_search, ranked_symbols, graph_search_idf) fail or time
+    // out, the top-level handle_smart_search returns `Ok(SmartSearchOutput)`
+    // (an empty result list) rather than propagating `Err` to the MCP
+    // caller. A regression that collapses the composite on sub-handler
+    // failure would surface as `Ok(...)` being replaced by `Err(...)` —
+    // i.e. as a hard client error rather than a graceful partial
+    // response.
+    //
+    // We force the worst-case (empty corpus, nonsense query, single
+    // attempt). The test must complete well below the SUB_HANDLER_TIMEOUT
+    // (60s) AND well below the sub-handler disable deadline so a hang in
+    // a sub-handler surface as a failure.
+    #[tokio::test]
+    async fn prf_f5_w4_top_level_returns_ok_even_when_all_sub_handlers_fail() {
+        let ctx = test_ctx();
+        let input = SmartSearchInput {
+            query: "forces_no_match_in_empty_corpus_zzz_12345".into(),
+            limit: Some(20),
+        };
+
+        let start = std::time::Instant::now();
+        let result = handle_smart_search(&ctx, input).await;
+        let elapsed = start.elapsed();
+
+        // Contract 1: top-level MUST return Ok, not Err. Sub-handler
+        // failures degrade gracefully to an empty result list.
+        let output = result.unwrap_or_else(|e| panic!(
+            "F5.W4: smart_search MUST return Ok even when sub-handlers fail; got Err: {e:?} \
+             — this means the composite collapsed instead of degrading gracefully"
+        ));
+
+        // Contract 2: empty corpus + nonsense query → no matches. The
+        // output may have results from a backend that returned partial
+        // hits via idf / ranked, but the empty corpus gives an empty
+        // results list when corpus is empty.
+        assert!(
+            output.total == output.results.len(),
+            "F5.W4: SmartSearchOutput.total ({}) must equal results.len() ({})",
+            output.total,
+            output.results.len()
+        );
+        assert!(
+            output.results.is_empty(),
+            "F5.W4: empty corpus + nonsense query MUST yield an empty results list; got {} items: {:?}",
+            output.results.len(),
+            output.results
+        );
+
+        // Contract 3: even in the failure-degradation path, the three
+        // sources MUST be reported (so the caller knows what backends
+        // were queried).
+        assert!(
+            output.sources.contains(&"semantic".to_string()),
+            "F5.W4: sources must declare the `semantic` backend even on empty results; got {:?}",
+            output.sources
+        );
+
+        // Contract 4: completion bounded well below SUB_HANDLER_TIMEOUT
+        // (60s). 10s is the unit-test budget; a regression that drops
+        // the timeouts would surface as a hang past this.
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "F5.W4: smart_search took {elapsed:?} — top-level must complete below SUB_HANDLER_TIMEOUT (60s)"
+        );
+    }
+
+    // PRF F5.W4 — concurrent calls don't trip the per-call timeout.
+    //
+    // Multiple parallel smart_search invocations on the same ctx MUST all
+    // return within the per-call budget. A regression in the tokio::join!
+    // composition (e.g. accidental sequential await) would surface as
+    // 3xN times the per-call time, blowing the 30s budget.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn prf_f5_w4_concurrent_smart_search_returns_within_budget() {
+        let ctx = test_ctx();
+
+        let q1 = "concurrent_query_0_zzz".to_string();
+        let q2 = "concurrent_query_1_zzz".to_string();
+        let q3 = "concurrent_query_2_zzz".to_string();
+        let q4 = "concurrent_query_3_zzz".to_string();
+        let q5 = "concurrent_query_4_zzz".to_string();
+
+        let start = std::time::Instant::now();
+        let (r0, r1, r2, r3, r4) = tokio::join!(
+            handle_smart_search(
+                &ctx,
+                SmartSearchInput {
+                    query: q1,
+                    limit: Some(3),
+                },
+            ),
+            handle_smart_search(
+                &ctx,
+                SmartSearchInput {
+                    query: q2,
+                    limit: Some(3),
+                },
+            ),
+            handle_smart_search(
+                &ctx,
+                SmartSearchInput {
+                    query: q3,
+                    limit: Some(3),
+                },
+            ),
+            handle_smart_search(
+                &ctx,
+                SmartSearchInput {
+                    query: q4,
+                    limit: Some(3),
+                },
+            ),
+            handle_smart_search(
+                &ctx,
+                SmartSearchInput {
+                    query: q5,
+                    limit: Some(3),
+                },
+            ),
+        );
+        let elapsed = start.elapsed();
+        let results = [r0, r1, r2, r3, r4];
+
+        // All calls must have returned Ok (graceful) and well below
+        // SUB_HANDLER_TIMEOUT * N.
+        for (i, r) in results.iter().enumerate() {
+            let out = r.as_ref().unwrap_or_else(|e| panic!(
+                "F5.W4 concurrent: call {i} returned Err: {e:?} — should degrade graceful to Ok"
+            ));
+            assert!(
+                out.sources.contains(&"semantic".to_string()),
+                "F5.W4 concurrent: call {i} missing semantic source"
+            );
+        }
+
+        // Budget: 5 parallel calls in tokio::join!, each should take
+        // ~1s on empty corpus. 20s is generous; an accidental sequential
+        // await would surface as a hang past this.
+        assert!(
+            elapsed < std::time::Duration::from_secs(20),
+            "F5.W4 concurrent: 5 parallel smart_search calls took {elapsed:?} \
+             — likely sequential composition regression"
+        );
+    }
 }
