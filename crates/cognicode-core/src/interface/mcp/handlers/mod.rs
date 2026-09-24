@@ -4376,6 +4376,336 @@ mod tests {
         );
     }
 
+    /// PRF-STATE-12 (operator-validation 6): a read-only parent dir must
+    /// not turn a save into a torn cache, must propagate the IO error,
+    /// and must not leave a leftover tmp file under any name. We chmod
+    /// the parent to 0o555 and verify a single save fails predictably
+    /// with PermissionDenied and leaves no `.tmp.*` artifact behind.
+    ///
+    /// Skipped under root because root bypasses DAC permission checks
+    /// on Linux and would silently succeed. We probe via a test write
+    /// instead of importing libc to avoid adding a dependency.
+    #[test]
+    fn state12_rofs_save_returns_error_without_leftover_tmp() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+        let parent = db.parent().unwrap();
+
+        // Pre-condition: dir is writable.
+        let mut perms = std::fs::metadata(parent).unwrap().permissions();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(parent, perms.clone()).unwrap();
+
+        // Probe whether chmod 0o555 actually denies writes. Under root
+        // (euid 0) DAC permission checks are bypassed on Linux, so a
+        // test write would succeed and we should skip the rest.
+        let probe = parent.join(".ro_probe");
+        let probe_result = std::fs::write(&probe, b"x");
+        let _ = std::fs::remove_file(&probe);
+        // Restore perms first so TempDir cleanup can rm-rf the dir.
+        let mut writable = std::fs::metadata(parent).unwrap().permissions();
+        writable.set_mode(0o755);
+        std::fs::set_permissions(parent, writable).unwrap();
+
+        if probe_result.is_ok() {
+            eprintln!("SKIP: chmod 0o555 has no effect (likely running as root)");
+            return;
+        }
+
+        // Re-apply read-only for the actual save attempt.
+        let mut perms2 = std::fs::metadata(parent).unwrap().permissions();
+        perms2.set_mode(0o555);
+        std::fs::set_permissions(parent, perms2).unwrap();
+
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        let result = save_durable_snapshot(&db, &graph, &manifest);
+
+        // Restore perms so TempDir cleanup can rm-rf the dir.
+        let mut writable = std::fs::metadata(parent).unwrap().permissions();
+        writable.set_mode(0o755);
+        std::fs::set_permissions(parent, writable).unwrap();
+
+        assert!(
+            result.is_err(),
+            "save to read-only dir must return Err, got {:?}",
+            result
+        );
+        let err = result.unwrap_err();
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::PermissionDenied,
+            "expected PermissionDenied, got {:?}: {}",
+            err.kind(),
+            err
+        );
+
+        // No leftover tmp files of any kind under the read-only dir.
+        let leftovers: Vec<_> = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.contains(".tmp.") || name.ends_with(".tmp")
+            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no tmp leftover after failed save, found: {leftovers:?}"
+        );
+
+        // The cache slot itself must not have been created either.
+        assert!(
+            !db.exists(),
+            "cache slot must not exist when save fails on read-only dir"
+        );
+    }
+
+    /// PRF-STATE-12 (operator-validation 6): concurrent writers to a
+    /// read-only parent dir must all fail predictably, must NOT corrupt
+    /// a pre-existing valid cache, and must NOT leave orphan tmp files
+    /// after the dust settles. This pins the invariant that the §124
+    /// fix (unique per-call tmp names) is safe under the most
+    /// adversarial filesystem state.
+    #[test]
+    fn state12_rofs_concurrent_writers_preserve_existing_snapshot() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::Arc;
+        use std::thread;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+        let parent = db.parent().unwrap();
+
+        // Plant a valid v1 snapshot under a writable dir.
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+            dir.path().to_path_buf(),
+        );
+        save_durable_snapshot(&db, &graph, &manifest).unwrap();
+        let original_bytes = std::fs::read(&db).unwrap();
+        assert!(
+            load_durable_snapshot(&db).is_some(),
+            "pre-condition: valid v1 snapshot must exist before making dir read-only"
+        );
+
+        // Flip parent to read-only and probe.
+        let mut perms = std::fs::metadata(parent).unwrap().permissions();
+        perms.set_mode(0o555);
+        std::fs::set_permissions(parent, perms.clone()).unwrap();
+
+        let probe = parent.join(".ro_probe");
+        let probe_result = std::fs::write(&probe, b"x");
+        let _ = std::fs::remove_file(&probe);
+        let mut writable = std::fs::metadata(parent).unwrap().permissions();
+        writable.set_mode(0o755);
+        std::fs::set_permissions(parent, writable).unwrap();
+
+        if probe_result.is_ok() {
+            eprintln!("SKIP: chmod 0o555 has no effect (likely running as root)");
+            return;
+        }
+
+        // Re-apply read-only for the actual concurrent attempt.
+        let mut perms2 = std::fs::metadata(parent).unwrap().permissions();
+        perms2.set_mode(0o555);
+        std::fs::set_permissions(parent, perms2).unwrap();
+
+        let db_arc = Arc::new(db.clone());
+        let n = 4usize;
+        let handles: Vec<_> = (0..n)
+            .map(|_| {
+                let db = Arc::clone(&db_arc);
+                thread::spawn(move || {
+                    let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+                    let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
+                        db.parent().unwrap().to_path_buf(),
+                    );
+                    save_durable_snapshot(&db, &graph, &manifest)
+                })
+            })
+            .collect();
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        for (i, r) in results.iter().enumerate() {
+            assert!(
+                r.is_err(),
+                "writer {i} must fail under read-only dir, got {:?}",
+                r
+            );
+        }
+
+        // Restore perms for assertions + TempDir cleanup.
+        let mut writable = std::fs::metadata(parent).unwrap().permissions();
+        writable.set_mode(0o755);
+        std::fs::set_permissions(parent, writable).unwrap();
+
+        // The pre-existing snapshot is byte-identical: not even a single
+        // byte of corruption from any concurrent failing writer.
+        let bytes_after = std::fs::read(&db).unwrap();
+        assert_eq!(
+            original_bytes, bytes_after,
+            "existing snapshot must be byte-identical after failed concurrent writes"
+        );
+        assert!(
+            load_durable_snapshot(&db).is_some(),
+            "existing snapshot must still decode as a valid v1 cache"
+        );
+
+        // No orphan tmp files left by the failed concurrent writers.
+        let leftovers: Vec<_> = std::fs::read_dir(parent)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.contains(".tmp.") || name.ends_with(".tmp")
+            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no orphan tmp after concurrent failing writes, found: {leftovers:?}"
+        );
+    }
+
+    /// PRF-STATE-14 (operator-validation 9): a large `FileManifest`
+    /// (10k entries, ~2.5 MB serialized) must round-trip correctly
+    /// through `save_durable_snapshot`/`load_durable_snapshot` with no
+    /// torn writes, no orphan tmp files, and a bounded wall-clock
+    /// budget. This pins the invariant that the §124 fix scales to
+    /// realistic large-codebase workloads (Linux kernel ≈ 80k files;
+    /// typical project ≈ 1k; 10k is already very large).
+    #[test]
+    fn state14_large_manifest_roundtrip_is_byte_exact_and_fast() {
+        use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
+        use std::time::Instant;
+
+        const N: usize = 10_000;
+        const TIME_BUDGET_MS: u128 = 5_000;
+
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("graph.cache");
+
+        // Build a manifest with 10k entries. Each entry has a
+        // realistic path, a 64-char hex hash, mtime, and symbol_count.
+        let mut manifest = FileManifest::new(dir.path().to_path_buf());
+        for i in 0..N {
+            let rel = PathBuf::from(format!("src/module_{i:05}/file.rs"));
+            // 64-char hex hash (32 bytes hex-encoded, Blake3 output style).
+            let hash = format!("{:064x}", i as u64);
+            manifest.entries.insert(
+                rel,
+                FileEntry {
+                    content_hash: hash,
+                    mtime: 1_700_000_000_000 + i as u64,
+                    symbol_count: i % 200,
+                },
+            );
+        }
+        assert_eq!(
+            manifest.entries.len(),
+            N,
+            "pre-condition: N entries present"
+        );
+
+        // Save and time it.
+        let graph = crate::domain::aggregates::call_graph::CallGraph::new();
+        let t0 = Instant::now();
+        save_durable_snapshot(&db, &graph, &manifest).expect("save must succeed");
+        let save_ms = t0.elapsed().as_millis();
+
+        // Load and time it.
+        let t1 = Instant::now();
+        let (loaded_graph, loaded_manifest) =
+            load_durable_snapshot(&db).expect("load must succeed");
+        let load_ms = t1.elapsed().as_millis();
+
+        // Wall-clock budgets: 10k entries × ~250 bytes = ~2.5 MB.
+        // bincode serialization should easily fit in 5s on any modern CI.
+        assert!(
+            save_ms < TIME_BUDGET_MS,
+            "save took {save_ms}ms, exceeds budget {TIME_BUDGET_MS}ms"
+        );
+        assert!(
+            load_ms < TIME_BUDGET_MS,
+            "load took {load_ms}ms, exceeds budget {TIME_BUDGET_MS}ms"
+        );
+
+        // Round-trip integrity: every entry survives byte-exactly.
+        assert_eq!(
+            loaded_manifest.entries.len(),
+            N,
+            "all {N} entries must survive round-trip"
+        );
+        for i in 0..N {
+            let rel = PathBuf::from(format!("src/module_{i:05}/file.rs"));
+            let orig = manifest.entries.get(&rel).expect("orig present");
+            let back = loaded_manifest.entries.get(&rel).expect("loaded present");
+            assert_eq!(
+                orig.content_hash, back.content_hash,
+                "hash mismatch at entry {i}"
+            );
+            assert_eq!(orig.mtime, back.mtime, "mtime mismatch at entry {i}");
+            assert_eq!(
+                orig.symbol_count, back.symbol_count,
+                "symbol_count mismatch at entry {i}"
+            );
+            // Spot-check on a few entries; full N iteration is O(N)
+            // and would dominate test time. Already covered by length
+            // + sample verification + final structural asserts below.
+            if i % 1000 == 0 {
+                assert_eq!(
+                    orig, back,
+                    "full entry mismatch at sample {i}: {:?} vs {:?}",
+                    orig, back
+                );
+            }
+        }
+        assert_eq!(
+            manifest.project_root, loaded_manifest.project_root,
+            "project_root must round-trip exactly"
+        );
+
+        // No orphan tmp files.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                name.contains(".tmp.") || name.ends_with(".tmp")
+            })
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "no tmp leftover after large save, found: {leftovers:?}"
+        );
+
+        // Final size sanity: a serialized 10k-entry manifest must be at
+        // least 1 MB and at most 32 MB. (Lower bound catches
+        // truncation bugs; upper bound catches accidental 10x bloat.)
+        let bytes = std::fs::metadata(&db).unwrap().len();
+        assert!(
+            bytes >= 1_000_000,
+            "snapshot must be at least 1 MB for 10k entries, got {bytes}"
+        );
+        assert!(
+            bytes <= 32_000_000,
+            "snapshot must be at most 32 MB for 10k entries, got {bytes}"
+        );
+
+        eprintln!(
+            "V13 large-manifest round-trip: N={N} save={save_ms}ms load={load_ms}ms size={bytes} bytes"
+        );
+        // Drop unused warning for loaded_graph (we don't compare graph contents).
+        let _ = loaded_graph;
+    }
+
     #[tokio::test]
     async fn test_handle_build_lightweight_index_invalid_directory() {
         let ctx = HandlerContext::builder()
