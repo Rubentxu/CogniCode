@@ -12179,3 +12179,99 @@ Ciclo ejecutado en `/tmp/prf-v098-dist/home3/`:
 - JOURNAL §144 (B1), §145 (B2), §146 (B3), §147 (B4 Admission Expediente), §148 (este)
 - Admission Expediente §147: opciones A/B/C, recomendación B ejecutada
 
+
+## §149 — V43 — Integración final v0.98.1 (2026-09-24)
+
+**Plan operador:** "crea release e integra" (2026-09-24T22:10:11Z). La release v0.98.1
+ya estaba creada y publicada en el ciclo §148. Esta entrada cierra la integración con:
+(a) enriquecimiento del release body, (b) confirmación de coherencia local↔origin↔release, (c) registro en STATE.
+
+### Trabajo realizado
+
+#### 1. Verificación del estado de la release v0.98.1
+
+```
+$ gh release view v0.98.1 --repo Rubentxu/CogniCode --json tagName,name,publishedAt,isDraft,isPrerelease,targetCommitish,url
+{
+  "tagName": "v0.98.1",
+  "name": "CogniCode v0.98.1",
+  "publishedAt": "2026-09-24T21:58:31Z",
+  "isDraft": false,
+  "isPrerelease": false,
+  "targetCommitish": "main",
+  "url": "https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1"
+}
+```
+
+- `isLatest: true` (única release Latest en el repo — `gh release list` muestra v0.98.1 como Latest; v0.98.0 y v0.97.3 siguen publicadas pero sin marca Latest).
+- `isDraft: false`, `isPrerelease: false`.
+- `targetCommitish: main` (tag apunta a main, no a rama fija).
+- 12 assets publicados con SHA256 cada uno.
+
+#### 2. Enriquecimiento del release body
+
+El body generado por `release.yml` era mínimo ("Changes since v0.98.0" + título pegado). Se reemplazó con un body completo de 92 líneas que documenta:
+- Versión, fecha, tag, commit exactos
+- Features nuevas (PRF-MCP-05 enforcement + PRF-SEC-07 adversarial campaign)
+- Documentación actualizada (RECONCILIATION-MATRIX, STATE, Admission Expediente)
+- Tabla de runs CI (release-validate #36062820528 + release #36063804784)
+- Tag/workspace coherence (pass)
+- Binarios --version
+- Probe MCP JSON-RPC real (protocolVersion + serverInfo + lista de 20 tools)
+- Procedencia (release-inventory + attestations)
+- Honest disclosures (bug rollback parcial cogh, linux-aarch64 no smokeado en este host, ~/.cognicode del operador en v0.97.3, cogh install vs init)
+- Items operator-gated (C7 firma, PRF-CI-07, 0.97.x retirement)
+- Refs
+
+```
+$ gh release edit v0.98.1 --repo Rubentxu/CogniCode --notes-file /tmp/v0981-body.md
+```
+
+#### 3. Coherencia workspace↔origin↔release↔tag
+
+```
+$ git rev-parse HEAD
+b67c9deb4020a531d54f9ddaf27a4346e1768c2f
+$ git rev-parse origin/main
+b67c9deb4020a531d54f9ddaf27a4346e1768c2f
+```
+
+Local y origin/main en el mismo commit `b67c9deb`. Tag `v0.98.1` → `a21fccda` → `e4ab6c8e8d06…` (el commit de bump). Release publicada por GitHub Actions run #36063804784 desde ese commit. Cadena verificable 1:1.
+
+#### 4. SBOMs (CycloneDX)
+
+Los SBOMs por binario se generan durante el job `build-linux-{x86_64,aarch64}` y se suben como artifacts del workflow run (no como release assets). Esto es por diseño: el release.yml trata los SBOMs como `actions/attest-build-provenance` (firmados, verificables via `gh attestation verify`) en lugar de subirlos al release como archivos sueltos. La release URL tiene los SBOMs firmados verificables por cualquier consumidor externo.
+
+Verificación:
+- Run #36063804784 step "Attest build provenance" aplicó attestations a 4 subject patterns: `release/*.tar.gz`, `release/bundle-*.yaml`, `release/release-inventory-*.json`, `release/SHA256SUMS`.
+- Step "Verify the attestations as a consumer would" corrió `gh attestation verify` sobre cada `.tar.gz` y sobre `SHA256SUMS`.
+
+#### 5. STATE self-roll + RECONCILIATION-MATRIX (ya commiteados en §148)
+
+- STATE.md HEAD row → `e4ab6c8e` (bump v0.98.0→v0.98.1).
+- Release attempts: 4 runs documentados (#36033099039 FAIL, #36034410448 SUCCESS v0.98.0, #36062820528 SUCCESS release-validate, #36063804784 SUCCESS v0.98.1).
+- Bloqueos conocidos: C7 firma contractual operator-gated sobre v0.98.1.
+- RECONCILIATION-MATRIX: PRF-DIST-02/03, PRF-MCP-05, PRF-SEC-07 PASS contra v0.98.1.
+
+### Estado final verificable
+
+```
+HEAD local:    b67c9deb4020a531d54f9ddaf27a4346e1768c2f
+HEAD origin:   b67c9deb4020a531d54f9ddaf27a4346e1768c2f
+Tag v0.98.1:   a21fccda → e4ab6c8e8d06b598ce55880d965d785c6710c777
+Release URL:   https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+Assets:        12 (todos con SHA256 en SHA256SUMS)
+Attestations:  Sí (actions/attest-build-provenance@v2)
+C7 firma:      operator-gated (NO automática)
+Working tree:  clean
+Branch:        main, sin feature abierta
+```
+
+### Refs
+
+- Release v0.98.1: https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+- release.yml run: https://github.com/Rubentxu/CogniCode/actions/runs/36063804784
+- release-validate run: https://github.com/Rubentxu/CogniCode/actions/runs/36062820528
+- JOURNAL §144, §145, §146, §147, §148, §149
+- /tmp/prf-v098-dist/dist0981/ (evidencia cruda B3 sobre v0.98.1)
+
