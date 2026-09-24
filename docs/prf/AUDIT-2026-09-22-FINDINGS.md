@@ -158,10 +158,11 @@
 - **Trabajo realizado esta sesión**:
   - `c2b2924d`: recovered §135+§136 narrative that `d40e61b2` revertió silenciosamente.
   - `e2bbd86a`: STATE snapshot para §137 cerrado.
+  - `3316f445` (JOURNAL §140): `docs/prf/TRACEABILITY.md` H-F3-1 marcado **RESUELTO delegación** (ciclo SDDK `prf-h-f3-1` CLOSED seq 12 sobre commits `49224b2a` + `0124befb`, verificado vía 4/4 PASS de tests R1.1–R1.4 en `analysis_service::find_symbol_usages_tests`). Deuda separada pendiente dentro de la misma fila: CLI equivalente al tool MCP `find_usages`.
   - `RELEASE-CANDIDATE.md` mantiene freeze `178f8a5b` knowingly stale — el operador decide si lo actualiza al SHA post-publicación (`e2bbd86a`).
 - **Pendiente (operator-gated)**:
   - Decisión sobre `RELEASE-CANDIDATE.md` (parte del H01, no duplicar).
-  - `TRACEABILITY.md` mantiene deuda de `find_usages` inline que los handlers actuales resuelven vía `AnalysisService` — esto es coherente con el Issue J (V14+V15), pero `TRACEABILITY.md` no se actualizó.
+  - CLI equivalente al tool MCP `find_usages` en `cognicode-cli` — OPEN (sub-categoría del H-F3-1, separado del cierre de delegación). Implementar `cognicode find-usages <name>` reusando `AnalysisService::find_symbol_usages` requiere definir scope, signatura, y tests.
 - **Refs**: `docs/prf/STATE.md` (HEAD row), JOURNAL §135-§137.
 
 ## H12 — Distribución validada tiene alcance menor que el producto descrito (MEDIA-ALTA)
@@ -185,7 +186,7 @@
 | Orden sugerido (de menor a mayor esfuerzo) | Hallazgos |
 |---|---|
 | **Trivial** (decisión 1-párrafo) | H10 ya cerrado; H13 ya diferido. |
-| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE), H11 (TRACEABILITY), H12 (DISTRIBUTION-SCOPE WIP vía §139). |
+| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE), H11 (H-F3-1 delegación cerrada §140; queda CLI equivalente), H12 (DISTRIBUTION-SCOPE WIP vía §139). |
 | **Medio esfuerzo** (CI policy) | H02 (branch protection), H08 (gate de cobertura `continue-on-error: false` si se decide el umbral). |
 | **Alto esfuerzo** (refactor) | H03 (hexagonal), H04 (rutas de grafo), H05 (módulos grandes), H09 (perf benchmark). |
 | **Crítico esfuerzo** (seguridad) | H06 (autoridad MCP), H07 (campaña adversarial PRF-SEC-07). |

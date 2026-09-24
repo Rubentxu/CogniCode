@@ -11359,3 +11359,85 @@ Y `skills/` listado real: `cognicode/`, `cognicode-developer/`,
 - `crates/cognicode-cli/src/cmd/release_contract.rs:262-278`
 - `.github/workflows/release.yml:15, 49-60`
 - JOURNAL §105, §112 v2, §135
+
+## §140 — V34 — H11 cierre documental: TRACEABILITY H-F3-1 RESUELTO (2026-09-24)
+
+**Commit:** `3316f445` — `docs(prf): TRACEABILITY H-F3-1 RESUELTO
+(delegación via 49224b2a + 0124befb)`.
+
+**Avance H11.** H11 era "Punteros y matrices desactualizados respecto
+al HEAD remoto". Tenía DOS pendientes documentales al inicio de
+esta sesión:
+
+1. (a) `RELEASE-CANDIDATE.md` mantiene freeze `178f8a5b` knowingly
+   stale — **operator-gated vía H01**, NO se toca sin decisión.
+2. (b) `TRACEABILITY.md` mantiene la fila H-F3-1 describiendo
+   "walk+parser inline en el handler" como OPEN, pero el código
+   actual NO hace eso desde el ciclo SDDK `prf-h-f3-1` (CLOSED
+   seq 12, JOURNAL 2026-09-21).
+
+Este commit cierra (b) honesta y quirúrgicamente. El (a) sigue
+operator-gated — no se avanza sin campaña C7 + decisión.
+
+**Investigación previa al edit (no aceptación memorizada):**
+
+- `handle_find_usages` en `crates/cognicode-core/src/interface/mcp/
+  handlers/mod.rs:1738-1762` — verificado por `read` línea por
+  línea: **delega** en `ctx.analysis_service.find_symbol_usages(
+  UsageSearchParams {...})`. NO hay walk+parser inline.
+- `AnalysisService::find_symbol_usages` — `crates/cognicode-core/src/
+  application/services/analysis_service.rs:1663` — método público
+  con signatura `(UsageSearchParams) -> AppResult<Vec<UsageResult>>`.
+- Tests R1.1–R1.4 — `mod find_symbol_usages_tests` en
+  `analysis_service.rs:3661-3799`.
+
+**Surgical testing aplicado (regla 1, AGENTS.md):**
+
+- `cargo test --lib find_symbol_usages_tests::r1` =
+  **4/4 PASS** (r1_1, r1_2, r1_3, r1_4 — 0 failed, 0 ignored).
+- `cargo check --lib` para `cognicode-core` =
+  **Finished** `dev` profile en 29.38s (compila limpio,
+  1 warning preexistente no relacionado — unused import en
+  handlers/mod.rs:7408).
+- NO se lanza la batería completa de la crate. NO se re-corre
+  la validación `cognicode-core --lib 2126/0` del JOURNAL 2026-09-21
+  (sería re-ejecución de evidencia anterior ya validada — la regla
+  AUDIT-F6 dice que esa evidencia permanece válida sobre el mismo
+  SHA, y la verificación focal R1.1–R1.4 cubre el contrato
+  citado en TRACEABILITY).
+
+**Lo que se actualizó en TRACEABILITY.md:**
+
+- Columna **Descripción**: pasa del "implementa walk+parser inline
+  en el handler" a "originalmente implementaba...; Handler actual
+  `handle_find_usages`... ya NO hace walk+parser".
+- Columna **Acción**: de "Refactor de delegación" a descripción
+  completa del fix con los 2 commits (`49224b2a`, `0124befb`) +
+  ubicación exacta del método + resultado de verificación.
+- Columna **Estado**: de "OPEN (no bloquea F3)" a "RESUELTO
+  (delegación) / OPEN (CLI equivalente)" — split honesto: lo
+  que históricamente era el H-F3-1 está cerrado; la ausencia de
+  CLI equivalente al tool MCP, que ya era una observación lateral
+  de baja severidad dentro de la misma fila, queda como deuda
+  abierta separada para no perderla.
+
+**Lo que NO se hizo (regla 3, cierre real):**
+
+- NO se clasificó la CLI equivalente como CLOSED — no se ha
+  implementado (verificado: `grep find_symbol_usages
+  crates/cognicode-cli/` = vacío).
+- NO se firmó contractualmente ningún hallazgo. Esto es cierre
+  **documental** (el patrón aceptado por H10 y H-F6-1 en la misma
+  tabla), NO contractual.
+- NO se abrió automáticamente un WU de implementación para la CLI
+  equivalente (ese es operator-gated — toca scope y tests de CLI).
+- NO se tocó `RELEASE-CANDIDATE.md` (parte del H01 + H11.a
+  pendiente, operator-gated).
+
+**Refs:**
+- `crates/cognicode-core/src/interface/mcp/handlers/mod.rs:1738-1762`
+- `crates/cognicode-core/src/application/services/analysis_service.rs:1663`
+- `crates/cognicode-core/src/application/services/analysis_service.rs:3661`
+- `docs/prf/TRACEABILITY.md` (fila 69, post-edit)
+- AUDIT-2026-09-22-FINDINGS.md H11 (cierre parcial — pendiente el
+  lado H01 RELEASE-CANDIDATE)
