@@ -1776,6 +1776,22 @@ pub async fn handle_structural_search(
 }
 
 /// Handler for analyze_impact tool
+///
+/// **Risk level divergence (D65, D71)**: this handler derives
+/// `risk_level` from `symbols_count` with thresholds `>2 / >5 / >10`
+/// (yielding `Low | Medium | High | Critical`). This is intentionally
+/// different from the core `ImpactAnalyzer::determine_impact_level`
+/// (which uses 5 buckets `Minimal | Low | Medium | High | Critical`
+/// with a 2x multiplier for type definitions). The MCP wrapper
+/// prioritizes a simple blast-radius heuristic over the core's
+/// type-aware semantics; see JOURNAL §125.V27 + V28.1 for the full
+/// rationale and the five distinct `RiskLevel`/`ImpactLevel`
+/// implementations documented as D71.
+///
+/// This is **not** a bug. It is a documented contract: the MCP
+/// output is a simplified view tailored for tool consumers (AI
+/// agents), while the core API exposes the refined semantic for
+/// library callers.
 #[cognicode_macros::aix_tool(
     name = "analyze_impact",
     description = "Analyze the impact of changing a symbol. Returns impacted files and risk level.",

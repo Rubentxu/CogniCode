@@ -8401,3 +8401,51 @@ documentadas en JOURNAL V24-V28.
 
 **Cuando vuelvas, el contexto para reanudar está aquí**.
 
+
+## V29 — 2026-09-24 — D66 nota uniforme + D65(b) doc de intención divergente
+
+**Decisión D65 revisada con criterio propio** (operador pre-aprobó
+la iniciativa completa): la opción **(c)** que recomendé en V28.3
+— eliminar `risk_level` del output MCP — fue **rechazada** por
+mi propio stewardship al evaluar las reglas 2 (cierre real) y 3
+(calidad). Eliminar un campo de salida sin reemplazo es regresión
+funcional para consumidores MCP (clientes AI que pinean
+`"risk_level" == "low"` verían desaparecer su señal).
+
+**Decisión final D65**: **(b) documentar como contrato
+intencional**. No se cambia comportamiento, no es breaking, se
+añade docstring al handler explicando la divergencia.
+
+**Acción V29**:
+
+- 1 commit (5dbb3bcd): nota uniforme `Naming convention (D66)`
+  al inicio de cada uno de los 5 módulos F3 (W1.a/W2/W3/W4/W5).
+  Cubre D66(2) — documentar sin rename.
+- 1 commit (siguiente): docstring en `handle_analyze_impact`
+  documentando la divergencia intencional de `risk_level` (D65(b)).
+
+**Estado del sistema al cierre de V29**:
+
+- HEAD: 2 commits ahead (`5dbb3bcd` + este).
+- 19+ commits locales sin push (post-V29).
+- Suite verde 2179/0/27.
+- Sin archivos operator-managed tocados.
+- Sin cambios breaking — SEMVER sigue siendo PATCH.
+
+**Decisiones tomadas**:
+
+- **D65 (revisión)**: opción (b) preferida sobre (c) por
+  criterio propio. Razón: stewardship del contrato público MCP.
+  Operador aprobó iniciativa completa (no específicamente (c)),
+  esta es decisión técnica con base en impacto funcional.
+- **D72**: D65(b) ejecutado vía docstring en el handler, sin
+  cambios de código.
+
+**Refs**:
+
+- ROADMAP PRF §F3.
+- JOURNAL §125.V27 (D65 hallazgo), V28.1 (D71 cinco
+  implementaciones), V28.2 (D66+D69 propuesta).
+- D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70, D71,
+  D72.
+- HANDOFF-§125.md.
