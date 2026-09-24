@@ -8587,3 +8587,50 @@ W1.b pasa. Test real.
 - JOURNAL §125.V22-V31 (sesión previa).
 - D55-D74 (incl. D74 nuevo).
 - HANDOFF-§125.md.
+
+## V32.1 — 2026-09-24 — D75 corrección D66: el binario cognicode SÍ expone tools de análisis
+
+**Descubrimiento crítico durante F4.W2**: el binario
+`cognicode` (`crates/cognicode-cli/src/main.rs`) **sí expone**
+los subcomandos `index query`, `index outline`, `graph per-file`,
+`graph full`, `graph impact`, `graph hierarchy` — exactamente
+las tools que los tests F3 W1.a-W5 asumían "no expuestas por
+el binario".
+
+**Error D66**: en V22-V28 investigué solo `cogh` (subcommand
+list: Install/Uninstall/List/Current/Latest/Update — gestión de
+plugins) y concluí que "el binario cognicode no expone tools de
+análisis". **Incorrecto**. Hay **dos binarios distintos** en
+`crates/cognicode-cli`:
+
+- `cogh` (en `src/bin/cogh.rs`): plugin manager.
+- `cognicode` (en `src/main.rs`): LSP server + CLI de análisis.
+
+**Impacto en D66**: las notas D66 que añadí a los 5 módulos F3
+son engañosas. El "CLI path" en los tests W1.a-W5 SÍ es
+invocable por el binario real (`cognicode index query ...`,
+`cognicode graph per-file ...`, etc.).
+
+**Decisión D75**: corregir D66 + extender F3 con tests que
+comparan el binario real con el MCP wrapper. Esto era el
+contrato original de F3 ("CLI y un UAT en MCP que produzcan
+el mismo resultado observable sobre el mismo corpus").
+
+**Acciones**:
+
+1. Corregir el docstring de los 5 módulos F3 (quitar la
+   afirmación "the binary does not expose `index query`" etc.).
+2. Caracterizar el binario↔MCP para al menos W2 (`index
+   query`) y W3 (`index outline`) en este turno, ya que el
+   binario soporta estos subcomandos.
+
+**Estado del sistema**: la suite 2182/0/27 sigue verde; los
+tests F3 existentes siguen pasando (el core API directo sigue
+siendo el ground truth, lo que cambia es el comentario D66).
+
+**Refs**:
+
+- ROADMAP PRF §F3 (contrato original CLI + MCP).
+- JOURNAL §125.V22-V32.
+- D66 (error), D75 (corrección).
+- HANDOFF-§125.md.
