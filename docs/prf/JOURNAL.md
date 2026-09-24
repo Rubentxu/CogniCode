@@ -8336,3 +8336,68 @@ CLI**. El alcance natural está agotado. Propongo:
 - F6 (Operación & Observability) — bloqueado por F5.
 
 **Refs**: JOURNAL §125.V24-V28 (5 verticales + hallazgos).
+
+## V28.3 — 2026-09-24 — Resumen ejecutivo para handoff al operador
+
+**Estado de la sesión AUTO 2026-09-24**: cerrada en cobertura,
+pendiente de decisiones del operador para proseguir.
+
+**Logros de la sesión (todos verificados con suite verde)**:
+
+| ID | Concepto | Commits | Tests añadidos |
+|---|---|---|---|
+| V22 | Materialización commits pendientes | `d5ca08fa` | (Issue J + V12+V13) |
+| V23 | H-07 cierre vía docs | (RELEASE-CANDIDATE.md edit) | — |
+| V24 | F3.W1.a per_file_equivalence | `f3adb2ea` | 2 |
+| V25 | F3.W2 query_symbol_index_equivalence | `d1f99137` | 3 |
+| V26 | F3.W3 get_outline_equivalence | `98768030` | 2 |
+| V27 | F3.W4 analyze_impact + D65 hallazgo | `2a4e7437` | 3 |
+| V28 | F3.W5 get_call_hierarchy + D69 cierre natural | `27d272c5` | 3 |
+| V28.1 | D71 cinco implementaciones risk_level | `499e76aa` | (path evidence) |
+| V28.2 | D66 nota + D69 propuesta | `6d90c751` | (docs) |
+| +3 | STATE updates | `70f402b9`, `90ace55a`, `c70f12b7` | — |
+
+**Total**: 17 commits locales sin push. 13 tests nuevos F3
+(2+3+2+3+3). Suite: `cognicode-core` 2159/0/27 → 2179/0/27
+(+20 tests en la sesión: 13 F3 + otros 7 atribuibles a
+materialización previa).
+
+**Decisiones tomadas (D55-D71)**: 17 entradas, todas
+documentadas en JOURNAL V24-V28.
+
+**Hallazgos operator-gated (resumen)**:
+
+- **D65**: divergencia `risk_level` core (5 vars) ↔ MCP (4 vars).
+- **D66**: naming "CLI↔MCP" engañoso; el binario no expone
+  tools de análisis.
+- **D69**: F3.W5 = última caracterización con fundamento.
+- **D71**: 5 implementaciones distintas de risk_level
+  (no 2 como D65 decía).
+
+**Recomendación integrada para operador**:
+
+- D65: **(c)** eliminar `risk_level` del output MCP (la
+  heurística de 4 vars basada en `symbols_count` es trivial
+  comparada con `ImpactLevel` core, y el campo genera
+  confusión).
+- D66: **(2)** documentar como comentario (recomendado).
+- D69: **(sí)** cerrar F3 aquí.
+- D71: **(b)** renombrar las 5 implementaciones para evitar
+  colisión de nombres (`ImpactLevel`, `FindingRisk`,
+  `SafetyRisk`, `ImpactScoreBand`, `RiskLevel` MCP).
+
+**Acciones operator-gated, en orden sugerido**:
+
+1. Decidir D65/D66/D69/D71 (puede ser un solo mensaje).
+2. Implementar las decisiones (si son "renombrar" o
+   "eliminar", son cambios de código que ejecutaré en AUTO
+   una vez aprobado el plan).
+3. Push acumulado de 17 commits (1 comando).
+4. Tag SEMVER derivado: **v0.97.5** PATCH (los 5 verticales
+   son tests, no breaking).
+5. H-05 (read-only adversarial) + H-06 (ciclo A→B rollback).
+6. C7 firma — verificar si la auditoría 2026-09-22 aplica a
+   los nuevos commits.
+
+**Cuando vuelvas, el contexto para reanudar está aquí**.
+
