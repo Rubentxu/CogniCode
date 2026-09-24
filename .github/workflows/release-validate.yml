@@ -431,7 +431,7 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           # actions/download-artifact@v4 with `path: release` and a
-          # `name: release-validate-output-${{ tag }}` artifact places the
+          # `name: release-validate-output-<tag>` artifact places the
           # contents under release/release-validate-output-<tag>/, NOT
           # directly under release/. Discover the subdir dynamically so
           # the test survives any future rename of the artifact.
