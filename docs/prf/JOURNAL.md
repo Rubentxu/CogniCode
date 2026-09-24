@@ -11298,3 +11298,64 @@ Próximo commit. Sin cambios en código, workflows, ni tags. Solo docs PRF (audi
 - Acuse original: JOURNAL §134.
 - Evidencia patrón: `evidence/H10-correction.md`.
 
+
+## §139 — V33g — H12 WIP: docs/prf/DISTRIBUTION-SCOPE.md v0.98.0 inventory (2026-09-24)
+
+**Commit:** `89ea4baf` — `docs(prf): add DISTRIBUTION-SCOPE v0.98.0 H12 data-point inventory`.
+
+**Avance H12 (OPEN → WIP).** Documento único y autoritativo sobre qué
+publica y valida v0.98.0, frente a la auditoría "alcance menor que el
+producto descrito".
+
+**Síntesis ejecutada (no cierre del hallazgo).** Fuente principal:
+`release.yml` matrix real + `SKILL_BUNDLES` table real + run verdicts
+reales (no inferidos).
+
+**Corrección:** la sección inicial de borrador afirmaba `cognicode-explorer-
+catalog` como bundle con `published: false`. Falso. Verificado en
+`crates/cognicode-cli/src/cmd/release_contract.rs:262-278`:
+
+```
+pub const SKILL_BUNDLES: &[SkillBundleSpec] = &[
+    SkillBundleSpec { id: "cognicode",         profiles: &["core", "reviewer"], published: true,  },
+    SkillBundleSpec { id: "cognicode-mcp",     profiles: &["reviewer"],        published: true,  },
+    SkillBundleSpec { id: "cognicode-developer", profiles: &[],                published: false, },
+];
+```
+
+Y `skills/` listado real: `cognicode/`, `cognicode-developer/`,
+`cognicode-mcp/`, `cognicode-recommended/` (este último sin
+`SkillBundleSpec` — huérfano de staging).
+
+**Facts validados contra código real (no inventados):**
+
+- Tier-1: linux-x86-64 + linux-aarch64 GNU — confirmado en
+  `.github/workflows/release.yml:53-60` matrix + comment header línea 15.
+- Tier-2 (no publicado): linux-musl, darwin-{x86-64,aarch64},
+  windows-{x86-64,aarch64}. Adapter seams presentes en
+  `cognicode-release` + `cognicode-core/src/release_contract.rs`,
+  published=false.
+- Tier-3 (excluido por contrato): bloque comment header de `release.yml`.
+- Skill bundles publicadas: 2 de 3 (`cognicode`, `cognicode-mcp`).
+  Las otras 2 (`cognicode-developer` con `published:false` y
+  `cognicode-recommended/` huérfano) están fuera de v0.98.0.
+- Runs cross-checked: `#36034410448` (release.yml SUCCESS v0.98.0),
+  `#36038178581` (release-validate SUCCESS positive),
+  `#36026057157` (release-validate SUCCESS 5/5 verde ciclo previo),
+  `#36039255746` (release-validate FAILURE gate atrapó mismatch esperado),
+  `#36033099039` (release.yml FAILURE inicial post-fixes).
+
+**Lo que NO cierra el doc (regla SDDK, regla anti-autofirm):**
+
+- H12 NO se cierra. Sólo se avanza de OPEN a WIP con datos autoritativos.
+- Las 4 restantes (H11/H12 y los "parciales" de PRF-DIST-05/07) requieren
+  decision del operator antes de cerrar.
+- operator-gated: ningún cambio de `published: false → true` se ejecuta.
+  Si en el futuro operator decide, eso requeriría también smoke completo
+  (install + doctor + reshim) en plataforma Tier-1 antes de uplift.
+
+**Refs:**
+- AUDIT-2026-09-22-FINDINGS.md H12
+- `crates/cognicode-cli/src/cmd/release_contract.rs:262-278`
+- `.github/workflows/release.yml:15, 49-60`
+- JOURNAL §105, §112 v2, §135

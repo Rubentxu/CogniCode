@@ -35,7 +35,7 @@
 | Campo | Valor |
 |---|---|
 | Release publicada | `CogniCode v0.98.0` (GitHub release #36034410448, success) |
-| HEAD actual | `e2bbd86a` (post-F6.W3.quarter, JOURNAL §137) |
+| HEAD actual | `89ea4baf` (§139 H12 WIP DISTRIBUTION-SCOPE inventory) sobre `03158085` (JOURNAL §138) |
 | Tag pushed | `v0.98.0` (annotated, tag-object `d99d3911…`) |
 | C7 firma | **BLOQUEADO** (la auditoría es justo la razón) |
 | Cobertura cognicode-core | 74,15% (informativo, no gate, §134 H08) |
@@ -167,7 +167,7 @@
 ## H12 — Distribución validada tiene alcance menor que el producto descrito (MEDIA-ALTA)
 
 - **Severidad**: media-alta.
-- **Estado actual**: **OPEN** para alcance, **CLOSED** para Linux x86_64+aarch64 (5/5 verde).
+- **Estado actual**: **WIP** para alcance contractual; **CLOSED** para Linux x86_64+aarch64 (5/5 verde). Alcanza WIP vía `docs/prf/DISTRIBUTION-SCOPE.md` (JOURNAL §139, commit `89ea4baf`).
 - **Descripción**: 5/5 cubre Linux x86_64 + aarch64; `PRF-DIST-05` y `PRF-DIST-07` parciales para otras plataformas y `explorer-*`.
 - **Acción necesaria (operator-gated)**:
   - Decisión: ¿agregar macOS/Windows/MUSL?
@@ -185,7 +185,7 @@
 | Orden sugerido (de menor a mayor esfuerzo) | Hallazgos |
 |---|---|
 | **Trivial** (decisión 1-párrafo) | H10 ya cerrado; H13 ya diferido. |
-| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE), H11 (TRACEABILITY), H12 (alcance distribución documentado). |
+| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE), H11 (TRACEABILITY), H12 (DISTRIBUTION-SCOPE WIP vía §139). |
 | **Medio esfuerzo** (CI policy) | H02 (branch protection), H08 (gate de cobertura `continue-on-error: false` si se decide el umbral). |
 | **Alto esfuerzo** (refactor) | H03 (hexagonal), H04 (rutas de grafo), H05 (módulos grandes), H09 (perf benchmark). |
 | **Crítico esfuerzo** (seguridad) | H06 (autoridad MCP), H07 (campaña adversarial PRF-SEC-07). |
