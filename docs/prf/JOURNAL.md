@@ -12541,3 +12541,78 @@ Operador-gated pendiente (NO bloquea):
 - release-validate run: https://github.com/Rubentxu/CogniCode/actions/runs/36062820528
 - JOURNAL §144, §145, §146, §147, §148, §149, §150, §151
 
+
+## §152 — V46 — Cierre de sesión + handoff (2026-09-24T22:51:32Z)
+
+**Plan operador:** "cerramos sesion persiste todo el contexto del trabajo actual para mañana"
+(`2026-09-24T22:51:32Z` UTC).
+
+### Trabajo realizado
+
+#### 1. Verificación del estado al cierre
+
+```
+$ git status --short --branch
+## main...origin/main             (clean, synced)
+
+$ git rev-parse HEAD
+94cb44fae66d98406d47d918958b2b2b8a7ab46b
+$ git rev-parse origin/main
+94cb44fae66d98406d47d918958b2b2b8a7ab46b
+
+$ ls /tmp/prf-v098-dist/SHA256SUMS
+/tmp/prf-v098-dist/SHA256SUMS      (evidencia cruda preservada)
+```
+
+#### 2. Redacción del handoff completo
+
+`docs/prf/HANDOFF-§152.md` (288 líneas, 12 secciones) generado como punto
+de reanudación para la sesión del 2026-09-25. Estructura:
+
+1. Estado verificable al cierre (SHAs, tags, releases, tests, C7 firma).
+2. SHAs críticos a verificar al reanudar (con comandos exactos).
+3. Documentos canónicos del programa PRF (tabla con propósito + líneas + última edición).
+4. Trazabilidad del cierre B1→B5→firma C7 (tabla §/commit/resultado).
+5. Evidencia cruda preservada en /tmp/prf-v098-dist/.
+6. Items operator-gated pendientes (mejora incremental fuera del cierre contractual).
+7. Decisiones tomadas por el operador durante esta sesión (timestamps UTC + comandos + efectos).
+8. Acciones de reanudación para 2026-09-25 (verificación de invariantes + opciones).
+9. Lo que NO debe hacer la sesión del 2026-09-25 sin orden explícita.
+10. Reglas operativas recordatorias (path, isolation guard, commits atómicos, etc.).
+11. Identidad y permisos (operador, git verificada, capacidades del agente).
+12. Resumen ejecutivo TL;DR.
+
+#### 3. Estado final verificable
+
+```
+HEAD local:       94cb44fae66d98406d47d918958b2b2b8a7ab46b
+HEAD origin:      94cb44fae66d98406d47d918958b2b2b8a7ab46b  (synced)
+Working tree:     clean (esperando commit §152 + self-roll)
+Tag v0.98.1:      a21fccda → e4ab6c8e8d06…
+Release URL:      https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+C7 firma:         PASS (2026-09-24T22:41:33Z UTC, operador "firmo")
+Programa PRF:     CERRADO — C7 firmado
+Handoff:          docs/prf/HANDOFF-§152.md (288 líneas)
+```
+
+#### 4. Persistencia del contexto
+
+- **Versionado en git** (resiliente a reboot, durable): todos los docs/prf/*
+  incluyendo HANDOFF-§152.md, F7-C7-EXPEDIENTE.md, RECONCILIATION-MATRIX.md,
+  RELEASE-CANDIDATE.md, STATE.md, CURRENT.md, JOURNAL.md, INSTALL-ORDER.md,
+  COGH-ISSUES.md.
+- **Local-only** (volátil a reboot): /tmp/prf-v098-dist/ (~12 MB con binarios
+  descargados, homes de prueba, probes JSON-RPC, SHA256SUMS). Riesgo
+  documentado en HANDOFF §5.
+- **Remoto** (durabilidad máxima): origin/main con 24 commits ahead of
+  v0.98.0 base. PRF cerrado queda persistido en git reflog + GitHub history.
+
+### Refs
+
+- Handoff: `docs/prf/HANDOFF-§152.md` (288 líneas, 12 secciones)
+- Estado verificable: §1 del handoff
+- Acciones de reanudación 2026-09-25: §8 del handoff
+- Decisiones del operador en esta sesión: §7 del handoff
+- Items operator-gated pendientes: §6 del handoff
+- JOURNAL §144, §145, §146, §147, §148, §149, §150, §151, §152
+
