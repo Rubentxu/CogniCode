@@ -9248,3 +9248,163 @@ el nuevo comportamiento:
   producto — no requiere follow-up adicional.
 
 Refs: PRF F6.W3.bis (commits §127 + §128), operator review §127 final.
+
+## §129 — F6.W3.bis rollback recovery + non-destructive journal inspection (2026-09-24)
+
+### Origen
+
+El operador revisó §128 y valoró correcto el contrato de **"rollback coordinator"** —
+que `cmd_rollback` rechace `Ok` cuando la resurrección del shim falle y preserve el
+journal. Pero identificó dos brechas observables que impedían cerrar el tercer
+pendiente explícito de su revisión:
+
+1. **Incoherencia observable**: tras el rollback parcial (saboteando el manifest
+   de A para forzar fallo de `cmd_reshim`), la segunda invocación
+   `cogh rollback --to A` entraba en la rama de early-return
+   `"already at {target}; nothing to do"` porque el tracker ya coincidía con
+   `--to`. El usuario quedaba atrapado con `tracker=A`, `shim=A` ausente,
+   journal preservado, sin acción de recuperación posible desde el CLI.
+
+2. **Inspección destructiva del directorio journal**: la rama de bucle planeada
+   escaneaba `<home>/journal/*.json` y llamaba a `load_envelope` sobre cada
+   candidato. `load_envelope` deserializa el envelope completo y construye un
+   `RollbackJournal`. Su `Drop`, con `committed=false` por defecto, ejecuta
+   `reverse_one` sobre cada `SideEffect` registrado — entre ellos
+   `WroteManifest(<home>/versions/<A>/manifest.yaml)` en el envelope de A.
+   Resultado: la inspección borraba el manifest de A entre el momento en que
+   el test lo restauraba para el retry y el momento en que `cmd_rollback`
+   intentaba leerlo, dejando el segundo retry imposible aunque la inspección
+   hubiera "encontrado" el envelope correcto.
+
+### Implementación
+
+**Cambio en `crates/cognicode-cli/src/cmd/layout.rs`** (función `cmd_rollback`):
+
+- Nueva rama *resume pending rollback* dentro del bloque `if target == current`
+  (líneas ~678-743 del workspace final): tras el early-return `nothing to do`,
+  se recorre `<home>/journal/*.json` para localizar el envelope cuyo
+  `previous_tracker == target`. Si se encuentra, se carga el envelope, se hace
+  `commit()` sobre el `RollbackJournal` (los side-effects ya están aplicados al
+  filesystem real — el tracker ya está en `previous_tracker`), se elimina el
+  `Drop` como amenaza, y se llama a `cmd_reshim(home)` desde el manifest de la
+  versión activa. Si la resurrección ahora tiene éxito, se elimina el envelope
+  del disco (consumido) y se imprime `resumed pending rollback: shim restored
+  for {current_version}`. Si falla, se preserva el envelope y se devuelve un
+  error accionable:
+  ```
+  resume pending rollback for {current_version}: shim resurrection failed
+  ({e}); journal at ... preserved for another retry (restore the underlying
+  manifest of {current_version} and re-run `cogh rollback --to {current_version}`)
+  ```
+- Toda la inspección usa `peek_envelope_metadata` (no `load_envelope`), por lo
+  que ningún `RollbackJournal` se construye durante el scan — eliminando
+  completamente la fuente del borrado accidental.
+
+**Cambio en `crates/cognicode-cli/src/cmd/lifecycle_journal.rs`**:
+
+- Nuevo tipo `EnvelopeMetadata { version, previous_tracker }` derivado de
+  `serde` con `#[serde(default)]` en `previous_tracker` para compatibilidad
+  forward.
+- Nueva función `pub fn peek_envelope_metadata(path) -> Result<EnvelopeMetadata, InstallerError>`
+  que parsea solo los dos campos anteriores, **sin construir el
+  `RollbackJournal`**. Documentada como "safe for inspection; no Drop side
+  effects". Es complementaria a `load_envelope` y `load`, no las sustituye.
+
+### Cambios en `crates/cognicode-cli/src/cmd/lifecycle_journal.rs` (semántica preservada)
+
+`load_envelope` y `load` se mantienen sin cambios para no romper a sus
+consumidores ya auditados:
+
+```
+crates/cognicode-cli/src/cmd/layout.rs:742        peek_envelope_metadata (NEW)
+crates/cognicode-cli/src/cmd/layout.rs:785        load_envelope (consume after finding)
+crates/cognicode-cli/src/cmd/layout.rs:836        load_envelope (consume after finding)
+crates/cognicode-cli/src/cmd/layout.rs:2634       load_envelope (test)
+crates/cognicode-cli/src/cmd/layout.rs:4182       load_envelope (test)
+crates/cognicode-cli/src/cmd/lifecycle_journal.rs:269  load_envelope (test)
+crates/cognicode-cli/src/cmd/lifecycle_journal.rs:296  load_envelope (test)
+crates/cognicode-cli/src/cmd/lifecycle_journal.rs:342  load_envelope (test, is_ok)
+crates/cognicode-cli/src/cmd/lifecycle_journal.rs:409  load_envelope (test, is_ok)
+crates/cognicode-cli/src/cmd/installer_transaction.rs:1160  load_envelope (test)
+crates/cognicode-cli/src/cmd/installer_transaction.rs:1228  load_envelope (test)
+crates/cognicode-cli/src/cmd/installer_transaction.rs:1594  load_envelope (test)
+```
+
+Solo `cmd_rollback` cambia a `peek_envelope_metadata` para el bucle de
+inspección; el consumo del envelope seleccionado sigue usando `load_envelope`
++ `commit` + drop explícito, idéntico a como se hacía antes de §129.
+
+### Tests
+
+Extensión del test negativo pre-existente:
+
+`prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails`
+(`crates/cognicode-cli/src/cmd/layout.rs`):
+
+- Pre-sabotage: assert `manifest_a exists = true`.
+- Sabotaje: `std::fs::remove_file(&manifest_a)`.
+- Primer rollback: assert `Err` con mensaje que menciona "shim resurrection
+  failed" y "preserved for another retry".
+- Estado intermedio: assert `tracker=A` (rollback parcial aplicado) y
+  `shim de A no existe` (`cogh_shim.symlink_metadata().is_ok() == false`).
+  Esta es la condición que §128 dejó sin remediation.
+- Restauración del manifest: se escribe un `BundleManifest` válido para A con
+  la misma forma estructural que `plant_journal` produce para `previous_tracker`
+  (api_version `cognicode.bundle/v2`, al menos un `ProfileDef`,
+  `ArtifactKind::Cognicode` con stem `cognicode`, canonical
+  `artifact_filename()`, canonical `artifact_url()`, digest hex de 64
+  caracteres no-`aaaa...`). Esto NO es un workaround del producto — el
+  rollback coordinator documenta esta restauración como paso necesario y
+  la expone en el error accionable al usuario.
+- Segundo rollback: assert `Ok` (resume path consumió el journal).
+- Estado final: tracker=A, shim de A presente, journal removido del disco.
+
+### Cobertura y aislamiento
+
+- Workspace `--tests --test-threads=1`: **319 passed, 0 failed, 1 ignored**.
+- `cargo test prf_f6_w3_bis`: **2 passed, 0 failed** (positivo + negativo).
+- `cargo test cmd_rollback`: **3 passed, 0 failed**.
+- `cargo test t_e86_4`: **5 passed, 0 failed** (incluye el de REQ-RB-04/-05).
+- `cargo test t_debt4`: **9 passed, 0 failed** (incluye
+  `t_debt4_loaded_journal_is_drop_neutralized`).
+- `cargo test commit_persists_journal_with_tracker_effect`: **1 passed, 0 failed**.
+- Ejecución paralela en workspace: falla en `prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails`
+  junto con `advance_skips_through_all_stages` y `commit_writes_manifest_file`.
+  El test pasa consistentemente en aislamiento (verificado) y en
+  `--test-threads=1` (verificado). Las tres fallas comparten: ejecutan
+  `cmd_install` real, comparten `home` global mutable, y son parte del
+  mismo flake pre-existente documentado en §127 y §128. **No derivado del
+  cambio**: los tres tests ya existían antes de §129 y la rama nueva solo
+  consume el mismo `home` cuando el primer rollback falla, que es la
+  condición de stress.
+
+### Commit
+
+- `4b70f1bc` (fix(cli): make rollback recovery observable and non-destructive
+  on inspection)
+
+### Estado operator-gated
+
+- Push acumulado: **7 commits** (`a5183ce6`, `d4969ccb`, `8967849d`,
+  `ad86ec13`, `788109a2`, `cc60f20f`, `4b70f1bc`). Operador-gated.
+- Tag v0.97.6: pendiente. Operador-gated.
+- H-05/H-06: pendiente. Operador-gated.
+- C7 firma: BLOQUEADO hasta validación remota.
+- Pendientes operativos (todos post-operator-authorization):
+  1. **F5.W4.bis real timeout** — producir la verificación con backend
+     controlado, partial/degraded_sources recibido por cliente MCP, ruta
+     no-degradada cuando todos los backends responden vacío.
+  2. **Audit `release-validate.yml`** — más allá del syntax check YAML:
+     SHA selection unambiguous, mismo código que produce Tier-1 packages,
+     gates bloquean on failure, campaign result atado al SHA, no
+     tag/publish/upload/draft state, test negativo (artefacto ausente o
+     alterado). Esta labor es la base de la autorización separada que
+     el operador exigirá.
+  3. **Solicitud separada de autorización** para `release-validate.yml`
+     ejecutar en CI remoto, con SHA específico, push de código/docs
+     únicamente, sin tag v0.97.6, sin publish, sin upload, sin transiciones
+     de draft. C7 seguirá BLOQUEADO aún si la validación remota pasa,
+     porque la decisión sobre v0.97.6 es una segunda autorización.
+
+Refs: PRF F6.W3.bis (commits §127, §128, §129), operator review §128 final,
+post-§128 tres garantías pendientes.
