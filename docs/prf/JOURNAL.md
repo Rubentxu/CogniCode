@@ -11224,3 +11224,77 @@ Commit forthcoming. Solo añade los 2 scripts nuevos; ningún workflow tocado; n
 - Guard script: `scripts/ci/pre-commit-docs-isolation.sh`.
 - Pattern de hooks globales: `~/.git-hooks/{commit-msg, pre-push, identity-guard.sh}` (pre-existente, del operador).
 
+
+## §138 — V33f — F6.W3.fifth: AUDIT-2026-09-22-FINDINGS.md tracker (2026-09-24)
+
+### Contexto
+
+La auditoría externa H01-H13 (recibida en §134, sobre SHA `93b7a9a3`) sigue OPEN como inputs sin work-units asociados. Cada hallazgo tiene su propio riesgo y esfuerzo, y la decisión de CLOSE/DEFER es operator-gated. Pero hasta ahora los 13 viven dispersos entre `STATE.md`, `JOURNAL.md` (varios §), `RELEASE-CANDIDATE.md`, y las refs de código — sin un único documento que el operador pueda escanear para decidir el orden de remediación.
+
+### Acción
+
+Creación de un contenedor **sin decisiones contractuales**:
+
+**`docs/prf/AUDIT-2026-09-22-FINDINGS.md`** (218 líneas). Estructura cada hallazgo con:
+  - Severidad (de la auditoría original)
+  - Estado actual (OPEN, WIP, CLOSED, DEFERRED — con convenciones explícitas)
+  - Descripción técnica (para qué el operador entienda sin re-leer §134)
+  - Acción necesaria (qué requiere decisión operator-gated)
+  - Refs (código, docs, JOURNAL §N relevantes)
+
+Estados asignados en este commit (todos los que tienen algo coherente con el estado del repo):
+
+  - H01 RELEASE-CANDIDATE: WIP
+  - H02 ci.yml sin required checks: OPEN
+  - H03 hexagonal: OPEN
+  - H04 dual graph: WIP (Issue J V14+V15 remediation completed but not yet design-consolidated)
+  - H05 módulos grandes: OPEN
+  - H06 autoridad MCP dual: OPEN
+  - H07 campaña seguridad: WIP (cierre documental previo §125.V23; campaña real = pendiente)
+  - H08 cobertura 74.15%: OPEN
+  - H09 perf no certificado: OPEN
+  - H10 cadena suministro: CLOSED-BY-DOCUMENTATION (evidence/H10-correction.md v3)
+  - H11 punteros stale: WIP (en curso por esta sesión vía §135-§137, pero `RELEASE-CANDIDATE.md` aún requiere decisión operator)
+  - H12 distribución alcance: OPEN para nuevas plataformas, CLOSED para Linux x86_64+aarch64
+  - H13 CP1.0 deferido: DEFERRED-BY-DESIGN
+
+El tracker también incluye:
+  - Tabla de "orden sugerido de menor a mayor esfuerzo"
+  - Política explícita de "lo que la sesión autónoma NO decidió"
+  - Política de cierre futuro con append-only JOURNAL
+  - Política de "bajo ningún concepto firma contractual autónoma" para H01/H07/C7
+
+### Por qué esta acción era autonomous-legítima
+
+Los 13 hallazgos son CONTRACTUALES (decisión sobre qué cerrar / cuándo / cómo) o TÉCNICOS (refactor / docs / tests). La sesión autónoma NO toma decisiones contractuales. PERO puede:
+  1. Inventariar el estado actual (lectura).
+  2. Crear un contenedor trazable (escritura PRF-style, mismo patrón que `evidence/H10-correction.md`).
+  3. Proporcionar una matriz esfuerzo/severidad que el operador puede usar para priorizar.
+
+NO se decide cerrar nada. NO se decide roadmap. NO se firman hallazgos. La autonomía termina en la línea "abrir contenedor + etiquetar estado actual".
+
+### Justificación ética
+
+La regla SDDK dice: "no cierres iter para aparentar progreso". Aplicada a auditorías: **NO marcar hallazgos como CLOSED para aparentar remediación**. El tracker deja CLOSED-BY-DOCUMENTATION sólo H10, donde la documentación ya existía — no se inventa cierre donde no lo hay.
+
+### Por qué NO autoejecuté P0.1-P2 ni los 13 hallazgos
+
+Cada hallazgo excede esta sesión en su mayor parte:
+  - H01 RELEASE-CANDIDATE: la actualización contractual del freeze requires campaña C7 — eso es el gate final, no un doc edit.
+  - H03 hexagonal: refactor arquitectónico con riesgo de regresión en producción.
+  - H07 adversarial: requiere presupuesto y escenarios antes que fix.
+  - H08 cobertura: el número 74.15% es informativo, decidir si es aceptable es governance.
+
+Todas estas decisiones son operator-gated por diseño.
+
+### Implementación
+
+Próximo commit. Sin cambios en código, workflows, ni tags. Solo docs PRF (audit tracker + JOURNAL §138 + STATE snapshot).
+
+### Refs
+
+- Tracker: `docs/prf/AUDIT-2026-09-22-FINDINGS.md` (218 lines).
+- Source audit: `docs/analysis/release-1.0.0-state-audit.md` (input de la auditoría).
+- Acuse original: JOURNAL §134.
+- Evidencia patrón: `evidence/H10-correction.md`.
+
