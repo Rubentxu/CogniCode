@@ -10676,3 +10676,128 @@ path estaba roto desde antes). iter 5 los desbloquea.
 - Job missing: 107715337806
 - Commit anterior (iter 4 fix): `dcdf59786f39755b66bb4301ba882cf842c1d03b`
 - Docs: actions/download-artifact@v4 layout behavior
+
+## §133 — Iter 5 ejecutó `release-validate.yml`: 5/5 SUCCESS, run verde completo
+
+**Fecha**: 2026-09-24
+**Run ID**: #36026057157
+**Commit probado**: `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
+**Trigger**: `workflow_dispatch` con `expected_sha=93b7a9a3...`
+**Resultado**: **SUCCESS, 5/5 jobs**
+
+### Jobs y resultado
+
+| Job | Conclusion | Notas |
+|---|---|---|
+| `build-linux-x86-64` | success | cargo-deny + SBOM + build + smoke + upload lane artifacts |
+| `build-linux-aarch64` | success | idem |
+| `assemble-and-verify-local` | success | flatten + generate + release-verify R1-R9 + install-smoke |
+| `verify-rejects-missing-artifact` | **success** | primer verde de este job en la historia del workflow |
+| `verify-rejects-altered-artifact` | **success** | primer verde de este job en la historia del workflow |
+
+### Cadena de runs en este ciclo (5 runs, 4 FAILURES antes del verde)
+
+```
+#35998814863  FAILURE  flatten step "duplicate payload from two lanes"
+                          (root cause: find pattern over-match, fixed in dcdf5978)
+#36002666254  CANCELLED  incidente de seguridad, blast radius 0
+#36022824029  FAILURE  3/5 SUCCESS, 2/5 negative-test jobs failed in setup
+                          (root cause: artifact subdir layout, fixed in 08d83129)
+#36025488128  FAILURE  workflow file issue: literal ${{ tag }} in bash comment
+                          (root cause: GitHub Actions parser strictness,
+                           fixed in 93b7a9a3)
+#36025858033  FAILURE  Bind to expected_sha rejected my SHA (transcripción mía)
+                          (gate funcionó: detected mismatch, refused to validate)
+#36026057157  SUCCESS  5/5 jobs green, end-to-end
+```
+
+**Cada iter descubrió un bug DIFERENTE en un lugar DIFERENTE** (excepto
+#36025858033 que fue error de transcripción mío, no del sistema).
+Patrón de 4 runs fallidos antes del verde consistente con la regla
+PRF de "investiga cada fallo antes de continuar".
+
+### El fix de iter 5 (commit `08d83129`)
+
+Modifica `.github/workflows/release-validate.yml` en 2 lugares
+(`negative-test-missing`, `negative-test-altered`): reemplaza el glob
+directo `archives=(release/*.tar.gz)` por descubrimiento dinámico del
+subdir donde `actions/download-artifact@v4` deposita los archivos:
+
+```bash
+subdirs=(release/release-validate-output-*/)
+if [ "${#subdirs[@]}" -lt 1 ]; then
+  echo "::error::no validate-produced artifact directory under release/; ..."
+  exit 1
+fi
+staging="${subdirs[0]}"
+archives=("$staging"*.tar.gz)
+...
+./target/release/cognicode-release verify --staging "$staging" ...
+```
+
+### El fix adicional de iter 5 (commit `93b7a9a3`)
+
+Reemplaza el literal `${{ tag }}` (dentro de un comentario bash) por
+`<tag>` en uno de los comentarios de `negative-test-missing`. El
+parser de GitHub Actions evalúa `${{ ... }}` **incluso dentro de
+comentarios `#` de un bloque `run:` embebido**, y al no existir el
+input `tag`, el workflow entero falla al parsear con
+`Unrecognized named-value: 'tag'`.
+
+Este bug fue detectado por el run automático #36025488128 que GitHub
+Actions disparó al pushear el cambio del workflow file
+(comportamiento documentado de GitHub: modifica un workflow file →
+se ejecuta como lint/preview para validar que parsea correctamente).
+El run #36026057157 es el dispatch real con `expected_sha` correcto.
+
+### Logs verbatim del run verde (los 2 jobs críticos)
+
+**verify-rejects-missing-artifact** step 8:
+```
+removing release/release-validate-output-v0.97.5/cogh-0.97.5-aarch64-unknown-linux-gnu.tar.gz to simulate corruption
+release-verify correctly failed with rc=1 on the missing-artifact shape
+```
+
+**verify-rejects-altered-artifact** step 8:
+```
+altering release/release-validate-output-v0.97.5/cogh-0.97.5-aarch64-unknown-linux-gnu.tar.gz by flipping the last byte of its payload
+release-verify correctly failed with rc=1 on the altered-artifact shape
+```
+
+Ambos jobs terminan con exit 0 (success) **porque `release-verify`
+correctamente rechazó el staging set manipulado**, que es exactamente
+lo que un gate de seguridad debe hacer. Si `release-verify` hubiera
+retornado rc=0 contra el staging corrupto, el job habría emitido
+`::error::release-verify returned 0 against a tampered staging set —
+the gate is a no-op` y fallado.
+
+### Estado actual tras iter 5
+
+- HEAD: `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
+- `origin/main == local HEAD` ✓
+- Working tree: 2 entradas sin commit (docs/prf/JOURNAL.md §133,
+  docs/prf/STATE.md snapshot — operator-gated para push)
+- Workflow `release-validate.yml` end-to-end **VERDE**
+- C7 firma: sigue BLOQUEADO por auditoría 2026-09-22
+- Tag v0.97.5/v0.97.6: pendiente de autorización separada
+- H-05 + H-06: pendiente de autorización separada
+
+### Lo que NO se hizo (y por qué)
+
+- **Push acumulado de docs (JOURNAL + STATE)**: siguen gitignored,
+  requieren orden explícita para `git add -f` + push. Esta sesión
+  sigue el patrón "docs locales en working tree, push solo bajo
+  orden explícita".
+- **Tag v0.97.5/v0.97.6**: hard rule "no push, no tag, no publish
+  sin autorización". El operador debe decidir versión y autorizar.
+- **C7 firma**: hard rule "auditoría 2026-09-22 revocó READY FOR
+  RELEASE ≡ C7 PASS". C7 se firma solo cuando se cumplan los gates
+  contractuales, no por un verde de validate.
+
+### Refs
+
+- Run verde: https://github.com/Rubentxu/CogniCode/actions/runs/36026057157
+- Job missing: 107725543468
+- Job altered: 107725543523
+- HEAD actual: `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
+- Commits previos en este ciclo: `dcdf5978` (iter 4), `08d83129` (iter 5 layout), `93b7a9a3` (iter 5 parser escape)
