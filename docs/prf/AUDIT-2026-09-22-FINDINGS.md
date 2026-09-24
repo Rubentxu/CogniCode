@@ -35,7 +35,7 @@
 | Campo | Valor |
 |---|---|
 | Release publicada | `CogniCode v0.98.0` (GitHub release #36034410448, success) |
-| HEAD actual | `89ea4baf` (§139 H12 WIP DISTRIBUTION-SCOPE inventory) sobre `03158085` (JOURNAL §138) |
+| HEAD actual | `e8d52e96` (§139 H12 WIP cierre de docs) sobre `89ea4baf` (DISTRIBUTION-SCOPE inventory) sobre `03158085` (JOURNAL §138) |
 | Tag pushed | `v0.98.0` (annotated, tag-object `d99d3911…`) |
 | C7 firma | **BLOQUEADO** (la auditoría es justo la razón) |
 | Cobertura cognicode-core | 74,15% (informativo, no gate, §134 H08) |
