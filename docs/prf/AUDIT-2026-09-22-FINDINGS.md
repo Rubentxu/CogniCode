@@ -35,7 +35,7 @@
 | Campo | Valor |
 |---|---|
 | Release publicada | `CogniCode v0.98.0` (GitHub release #36034410448, success) |
-| HEAD actual | `e8d52e96` (§139 H12 WIP cierre de docs) sobre `89ea4baf` (DISTRIBUTION-SCOPE inventory) sobre `03158085` (JOURNAL §138) |
+| HEAD actual | `481bb28d` (STATE self-roll H11 close, JOURNAL §141) sobre `89cdec3f` (STATE self-roll H11) sobre `44cfe602` (§140 H11 TRACEABILITY close) |
 | Tag pushed | `v0.98.0` (annotated, tag-object `d99d3911…`) |
 | C7 firma | **BLOQUEADO** (la auditoría es justo la razón) |
 | Cobertura cognicode-core | 74,15% (informativo, no gate, §134 H08) |
@@ -44,14 +44,25 @@
 ## H01 — RELEASE-CANDIDATE.md mantiene SHA congelado `178f8a5b` (CRÍTICA para C7)
 
 - **Severidad**: crítica para C7.
-- **Estado actual**: **WIP** (la auditoria fue el input; este tracker lo visibiliza).
+- **Estado actual**: **WIP** particionado — opción 2 (criterio de staleness) ya cumplida por el propio doc; opción 1 (nueva candidata C7) sigue operator-gated.
 - **Recomendación de la auditoría**: fijar nueva candidata DESPUÉS de cerrar requisitos pendientes; ejecutar campaña C7 sobre la candidata nueva; separar `VALIDATED` / `RELEASE_ACCEPTED` / `PUBLISHED`.
+- **Evaluación honesta del par (opción 1, opción 2)** — JOURNAL §141:
+  - **Opción 2 (criterio de staleness en el propio doc): CUMPLIDA por construcción.**
+    El propio `docs/prf/RELEASE-CANDIDATE.md` ya contiene el criterio de staleness explícito en dos sitios:
+      - Cabecera línea 3: "El SHA candidato está **congelado** abajo; las acciones 1-5 del plan operador (sección 5 de la auditoría) se ejecutarán **en orden estricto** contra este SHA, sin reescribirlo."
+      - Línea 5 (NOTA 2026-09-22): "El SHA congelado `178f8a5b` queda **stale**; el operador deberá re-firmar el freeze antes de proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO."
+      - Línea 7 (meta-nota sobre staleness iterativa): "La solución canónica es **dejar de tocar los punteros** (mantener el freeze `178f8a5b` honestamente stale) hasta que el operador re-firme".
+    Los tres sitios convergen en el mismo criterio: "knowingly stale hasta que el operador re-firme".
+    Esto cumple el texto literal de la opción 2 de la auditoría: "Fijar criterio de staleness explícito en `RELEASE-CANDIDATE.md` reconociendo el flujo actual".
+    La sesión autónoma NO inventa una "apertura nueva" en el archivo, porque el archivo ya está abierto en el estado correcto.
+  - **Opción 1 (nueva candidata con campaña C7 completa): operator-gated, NO ejecutada en esta sesión.**
+    Requisito de campañas C7 contra SHA candidato natural (`e2bbd86a` o posterior) requiere: matriz RECONCILIATION-MATRIX.md (acción 2 del plan "Cierre de PRF" del propio doc, no creada), pruebas que certifiquen equivalencia con C0–C6, decisión de versionado, push autorizado.
+    El HEAD actual `481bb28d` ha avanzado **314 commits** desde `178f8a5b` (verificado `git rev-list --count 178f8a5b..481bb28d`), pero la batería de tests sigue verde sobre el HEAD vigente: `cargo test -p cognicode-core --lib` → **2166 passed / 0 failed / 27 ignored** post-§125 (ver `docs/prf/evidence/CERTIFICATES.md` línea 1018), más la verificación focal de §140 que añadió R1.1–R1.4 = 4/4 PASS sobre el rango actual.
 - **Estado de hecho**: la release v0.98.0 publicada NO actualizó `RELEASE-CANDIDATE.md` (decisión deliberada — actualizar release-candidate sin campaña C7 sería peor que no hacerlo). El SHA congelado `178f8a5b` en ese documento está **knowingly stale**, marcado así desde §134 y §135.
 - **Acción necesaria (operator-gated)**:
-  1. Decidir si abrir una nueva candidata (candidato natural: `e2bbd86a` o posterior) con campaña C7 completa, o
-  2. Fijar criterio de staleness explícito en `RELEASE-CANDIDATE.md` reconociendo el flujo actual.
-  3. Cualquiera de las dos requiere decisión del operador.
-- **Refs**: `docs/prf/RELEASE-CANDIDATE.md` (SHA congelado declarado), JOURNAL §134 (acuse), §135 (publicación).
+  1. Abrir nueva candidata y ejecutar campaña C7: requiere decisión del operador + RECONCILIATION-MATRIX.md primero + plan de equivalencia C0–C6.
+  2. (Ya cumplida vía doc contractual existente) Criterio de staleness explícito.
+- **Refs**: `docs/prf/RELEASE-CANDIDATE.md` (líneas 3, 5, 7 son la prueba contractual de la opción 2), JOURNAL §134 (acuse), §135 (publicación), §140 (H11.Traceability close — ver estado HEAD vigente), §141 (esta evaluación).
 
 ## H02 — `ci.yml` solo tiene `workflow_dispatch`; sin branch protection ni required checks (ALTA)
 
@@ -186,7 +197,7 @@
 | Orden sugerido (de menor a mayor esfuerzo) | Hallazgos |
 |---|---|
 | **Trivial** (decisión 1-párrafo) | H10 ya cerrado; H13 ya diferido. |
-| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE), H11 (H-F3-1 delegación cerrada §140; queda CLI equivalente), H12 (DISTRIBUTION-SCOPE WIP vía §139). |
+| **Bajo esfuerzo** (actualizar docs) | H01 (RELEASE-CANDIDATE: opción 2 ya cumplida — declarada en §141), H11 (H-F3-1 delegación cerrada §140; queda CLI equivalente), H12 (DISTRIBUTION-SCOPE WIP vía §139). |
 | **Medio esfuerzo** (CI policy) | H02 (branch protection), H08 (gate de cobertura `continue-on-error: false` si se decide el umbral). |
 | **Alto esfuerzo** (refactor) | H03 (hexagonal), H04 (rutas de grafo), H05 (módulos grandes), H09 (perf benchmark). |
 | **Crítico esfuerzo** (seguridad) | H06 (autoridad MCP), H07 (campaña adversarial PRF-SEC-07). |

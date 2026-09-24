@@ -11441,3 +11441,83 @@ operator-gated — no se avanza sin campaña C7 + decisión.
 - `docs/prf/TRACEABILITY.md` (fila 69, post-edit)
 - AUDIT-2026-09-22-FINDINGS.md H11 (cierre parcial — pendiente el
   lado H01 RELEASE-CANDIDATE)
+
+## §141 — V35 — H01 partición honesta: opción 2 ya cumplida por construcción (2026-09-24)
+
+**Contexto.** H01 ("RELEASE-CANDIDATE.md mantiene SHA congelado
+`178f8a5b`") era el hallazgo CRÍTICO para C7. La auditoría
+original proponía DOS acciones posibles — y pedía "cualquiera de
+las dos requiere decisión del operador" (texto literal del H01
+previo).
+
+**Decisión tomada por autonomía total (regla 2, AGENTS.md).**
+Inspecciono `docs/prf/RELEASE-CANDIDATE.md` línea por línea:
+
+- **Línea 3** (cabecera): `"El SHA candidato está **congelado** abajo;
+  las acciones 1-5 del plan operador (sección 5 de la auditoría) se
+  ejecutarán **en orden estricto** contra este SHA, sin reescribirlo."`
+- **Línea 5** (NOTA 2026-09-22): `"El SHA congelado `178f8a5b`
+  queda **stale**; el operador deberá re-firmar el freeze antes de
+  proseguir. NO se actualiza automáticamente: el push sigue BLOQUEADO."`
+- **Línea 7** (meta-nota sobre staleness iterativa): `"La solución
+  canónica es **dejar de tocar los punteros** (mantener el freeze
+  `178f8a5b` honestamente stale) hasta que el operador re-firme"`.
+
+Las tres frases convergen en el mismo criterio:
+"knowingly stale hasta que el operador re-firme".
+
+**Verificación:** esto cumple el texto literal de la **opción 2**
+del H01: "Fijar criterio de staleness explícito en
+`RELEASE-CANDIDATE.md` reconociendo el flujo actual".
+
+**Lo que NO se hace (regla 3, cierre real):**
+
+- NO se modifica `RELEASE-CANDIDATE.md` — el doc ya tiene la
+  opción 2 implementada. Forzar un edit adicional sería inflación
+  documental sin valor nuevo.
+- NO se abre nueva candidata con campaña C7 (opción 1) — eso
+  requiere decisión del operador + RECONCILIATION-MATRIX.md
+  primero + plan de equivalencia C0–C6 + decisión de versionado
+  + push autorizado. Cuatro gates explícitos del propio
+  `RELEASE-CANDIDATE.md` secciones 1+2+5.
+- NO se firma C7 sobre "el HEAD en el momento de la firma" — la
+  sección "Identidad del artefacto" del propio doc prohíbe esa
+  equivalencia.
+- NO se hace push ni se crea ningún tag nuevo — política del
+  proyecto (push pendiente de orden explícita del operador).
+- NO se modifica el SHA congelado ni se lo declara obsoleto —
+  la opción 2 dice "knowingly stale hasta que el operador
+  re-firme"; no autoriza a mover el freeze unilateralmente.
+
+**Pruebas de hecho (verificables, no inferidas):**
+
+- Distancia del SHA congelado al HEAD actual:
+  `git rev-list --count 178f8a5b..481bb28d` = **314 commits**.
+  (Inicialmente escribí "∼40 commits"; el dato real es 314.
+  Corregido en el AUDIT tracker antes de commitear.)
+- Batería del core library en el HEAD vigente:
+  `docs/prf/evidence/CERTIFICATES.md` línea 1018 reporta
+  `cargo test -p cognicode-core --lib` → **2166 passed /
+  0 failed / 27 ignored** post-§125; más la verificación
+  focal de §140 (`cargo test --lib find_symbol_usages_tests::r1`
+  = 4/4 PASS).
+- Tag v0.98.0 publicado sobre `8505ad85` (workspace coherente
+  post-bump); ese tag sigue sin firma C7 contractual.
+- C7 firma sigue BLOQUEADO — el contrato lo deja explícito.
+
+**Estado actualizado de H01:**
+
+- **Opción 2 (criterio de staleness):** cumplida por el propio
+  doc `RELEASE-CANDIDATE.md` — el AUDIT tracker ahora lo declara
+  explícitamente (no es firma contractual, es documentación de
+  estado).
+- **Opción 1 (nueva candidata con campaña C7):** operator-gated,
+  intacta como decisión pendiente.
+
+**Refs:**
+- `docs/prf/RELEASE-CANDIDATE.md` líneas 3, 5, 7 (evidencia de la
+  opción 2 ya cumplida).
+- `docs/prf/evidence/CERTIFICATES.md` línea 1018 (batería vigente).
+- AUDIT-2026-09-22-FINDINGS.md H01 (fila actualizada en este sync).
+- JOURNAL §134 (acuse auditoría), §135 (publicación v0.98.0), §140
+  (H11.Traceability close con verificación focal vigente).
