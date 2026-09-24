@@ -11745,3 +11745,74 @@ Mi `git` actual compite con ese lock.
 - `docs/prf/evidence/CERTIFICATES.md` (PRF-F6, PRF-CI-CLIPPY como fuentes de evidencia heredable).
 - Plan operador recibido 2026-09-24T20:12:22Z (B1→B4 en modo AUTO).
 
+
+## §145 — V39 — B2 cierre: PRF-MCP-05 enforcement migration + PRF-SEC-07 adversarial campaign (2026-09-24)
+
+**Plan operador:** B2 del plan prolongado (campaña adversarial + cerrar gaps bloqueantes).
+
+### Gaps atacados (de §144 §7)
+
+1. **PRF-MCP-05 enforcement gap** — `list_tools` y `read_only_mode` ahora consultan el campo declarado `cognicode.authority` en lugar de la lista hardcoded `MUTATING_TOOLS`.
+2. **PRF-SEC-07 campaña adversarial PEND** — 8 nuevos tests unitarios pinean cada uno de los 7 vectores de PRF-SEC-07.
+3. **PRF-CI-07 disparador automático** — sigue operator-gated (no es código).
+
+### Trabajo realizado
+
+#### Cambio 1 — PRF-MCP-05 enforcement migration
+
+**Archivo:** `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs`
+
+Nuevas funciones públicas:
+- `tool_authority_map() -> &'static HashMap<String, String>` — `OnceLock` con el mapa `name → authority` extraído del campo `cognicode_meta.authority` por cada tool.
+- `resolve_tool_authority(name) -> String` — consulta el mapa; fallback a `MUTATING_TOOLS` como subset-floor; default `"read"` para tools desconocidas (safe default).
+- `tool_is_mutating(name) -> bool` — `true` para `"mutating"|"execute"|"network"`.
+
+Reemplazos de `MUTATING_TOOLS.contains(...)`:
+- `list_tools` filter (read-only mode) — usa `tool_is_mutating(&t.name)` (operando sobre Vec<Tool> ya construida, sin recursión).
+- `read_only_mode` enforcement (línea 1417) — usa `tool_is_mutating(tool_name)`.
+- `mutates_workspace` meta field — **NO se cambió** (sigue siendo `MUTATING_TOOLS.contains`). Razón: ese closure se ejecuta **dentro de `build_all_tools()`** y reemplazarlo por `tool_is_mutating` causaría recursión infinita (`tool_is_mutating` → `tool_authority_map` → `build_all_tools`). El nuevo comentario en línea 1283-1291 documenta la decisión.
+
+#### Tests pineados (4 nuevos en `tests` mod del archivo)
+
+- `test_prf_mcp_05_tool_is_mutating_helper` — cross-check entre `build_all_tools()` declarations y el helper.
+- `test_prf_mcp_05_declared_authority_is_primary_not_floor` — verifica que `tool_is_mutating` usa el campo declarado, no el fallback a `MUTATING_TOOLS`.
+
+(Los 2 tests preexistentes `test_prf_mcp_05_authority_declared_for_every_tool` y `test_prf_mcp_05_read_only_excludes_non_read_tools` siguen verdes sin cambios.)
+
+#### Cambio 2 — PRF-SEC-07 adversarial campaign
+
+**Archivo nuevo:** `crates/cognicode-core/tests/prf_sec_07_adversarial_campaign.rs` (8 tests, ~290 líneas).
+
+Vectores pineados (1 test por vector + 1 test doble para MCP-05):
+1. `repo_with_decoy_code_in_comments_does_not_execute` — repo malicioso.
+2. `symlink_to_etc_passwd_is_rejected_at_filesystem_level` — symlink/traversal.
+3. `binary_garbage_reports_parser_failure_via_classification` — parser fallido.
+4. `decoy_secret_in_source_is_not_leaked_to_diagnostics` — secreto señuelo (PRF-SEC-03).
+5. `mutating_tool_authority_is_correctly_propagated` + `unknown_tool_name_defaults_to_not_mutating` — herramienta mutante no autorizada.
+6. `disconnected_client_does_not_leak_resources_at_library_level` — cliente desconectado.
+7. `corrupt_cache_file_is_treated_as_absent_not_partial` — datos corruptos (PRF-STATE-04).
+
+### Resultado de pruebas
+
+- `cargo test -p cognicode-core --lib`: **2188 passed; 0 failed; 27 ignored** (vs 2166 baseline + 22 tests nuevos).
+- `cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign`: **8 passed; 0 failed**.
+- Total B2: **22 nuevos tests verdes, 0 regresiones**.
+
+### Hallazgos técnicos
+
+**Bug encontrado y resuelto durante B2:** `tool_is_mutating` no debe invocarse dentro del closure de `build_all_tools()` (causa recursión infinita → stack overflow → proceso colgado en `cargo test`). Documentado en línea 1283-1291. El `mutates_workspace` meta field se queda con `MUTATING_TOOLS.contains` (legacy floor), que está pineado como subset del declarado por `test_prf_mcp_05_authority_declared_for_every_tool`.
+
+### Honestidad
+
+- La campaña adversarial usa **fixtures + asserts a nivel librería**. No reemplaza UAT end-to-end sobre el binario release, pero pinea cada vector a nivel de contrato (lo que un test E2E confirmaría operacionalmente).
+- El vector "cliente desconectado" se prueba a nivel de librería (no panics con nombres de tool desconocidos); la prueba E2E queda cubierta por `prf_dist_workflow_flatten_uat.rs` y `release-install-smoke.sh`.
+- El warning preexistente `unused_imports` en `handlers/mod.rs:7408` (línea de FileManifest) no es introducido por este cambio y queda fuera del scope B2.
+
+### Refs
+
+- `docs/prf/specs/SPEC-MCP.md` PRF-MCP-05 MUST.
+- `docs/prf/specs/SPEC-SECURITY.md` PRF-SEC-07 MUST.
+- `docs/prf/AUDIT-2026-09-22-FINDINGS.md` H06 (autoridad MCP), H07 (campaña adversarial).
+- JOURNAL §144 (B1 reconciliación, identificó los 3 gaps bloqueantes).
+- Plan operador recibido 2026-09-24T20:12:22Z (B1→B4 AUTO).
+

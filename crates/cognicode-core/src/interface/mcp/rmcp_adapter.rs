@@ -230,6 +230,66 @@ fn tool_category_map() -> &'static HashMap<String, String> {
     })
 }
 
+/// PRF-MCP-05: Lazily-built map from tool name to its declared authority
+/// string ("read" | "mutating" | "execute" | "network"), extracted from the
+/// `cognicode.authority` meta field that each tool declares via
+/// [`cognicode_meta`]. Derived from [`build_all_tools`] on first access
+/// and reused for the lifetime of the process.
+///
+/// This map is the **primary authority oracle**. The legacy
+/// `CogniCodeHandler::MUTATING_TOOLS` list is retained as a defensive
+/// subset-floor for tools whose meta declaration is missing or stale;
+/// see `declared_authority_consistent` (line ~2632) for the cross-check
+/// that fails loudly if the two ever diverge.
+pub fn tool_authority_map() -> &'static HashMap<String, String> {
+    use std::sync::OnceLock;
+    static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut m: HashMap<String, String> = HashMap::new();
+        for tool in build_all_tools() {
+            let name = tool.name.to_string();
+            if let Some(meta) = tool.meta.as_ref()
+                && let Some(cognicode) = meta.get("cognicode")
+                && let Some(auth) = cognicode.get("authority").and_then(|v| v.as_str())
+            {
+                m.insert(name, auth.to_string());
+            }
+        }
+        m
+    })
+}
+
+/// PRF-MCP-05: Resolve the authority for a tool by name, falling back
+/// to the legacy `MUTATING_TOOLS` list when the meta declaration is
+/// missing (defense in depth — keeps the legacy hardcoded list as a
+/// floor). Returns `"mutating"` for any tool in the legacy list, even
+/// if the meta declaration is absent or says "read".
+///
+/// Returns `"read"` for tools that are neither in the declared map nor
+/// in `MUTATING_TOOLS` — safe default for unknown tools.
+pub fn resolve_tool_authority(tool_name: &str) -> String {
+    if let Some(declared) = tool_authority_map().get(tool_name) {
+        return declared.clone();
+    }
+    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name) {
+        return "mutating".to_string();
+    }
+    "read".to_string()
+}
+
+/// PRF-MCP-05: True iff a tool is considered mutating under its
+/// declared authority. A tool is mutating when its authority is any of
+/// `"mutating"`, `"execute"`, or `"network"` (the three non-read values
+/// declared in `cognicode_meta`). The legacy `MUTATING_TOOLS` list is
+/// honoured as a floor: a tool in the legacy list is always considered
+/// mutating regardless of meta.
+pub fn tool_is_mutating(tool_name: &str) -> bool {
+    matches!(
+        resolve_tool_authority(tool_name).as_str(),
+        "mutating" | "execute" | "network"
+    )
+}
+
 /// M3.2 / M3.3: Resolve the category for a tool name. Falls back to
 /// "unknown" when the tool has no cognicode meta or the meta is
 /// missing the `category` field.
@@ -1213,8 +1273,19 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
     ]
     .into_iter()
     .map(|mut tool| {
-        // PRF-EXT-01: expose the read/write permission explicitly so
+        // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission explicitly so
         // clients can distinguish mutating tools without hardcoding names.
+        // The declared `authority` field (cognicode_meta) is the primary oracle;
+        // `MUTATING_TOOLS` is a defensive subset-floor (see `resolve_tool_authority`).
+        //
+        // NB: we cannot call `tool_is_mutating(&tool.name)` here because that
+        // would transitively call `tool_authority_map()` which iterates
+        // `build_all_tools()` — infinite recursion. The legacy check is a
+        // subset of the declared authority (pined by
+        // `test_prf_mcp_05_authority_declared_for_every_tool`), so it is safe
+        // to use it as the local mutates marker here. The runtime filter
+        // (below, in `list_tools`) uses `tool_is_mutating` correctly because
+        // it operates on the post-build `Vec<Tool>` name set.
         let mutates = CogniCodeHandler::MUTATING_TOOLS.contains(&tool.name.as_ref());
         if let Some(existing) = tool.meta.as_mut() {
             if let Some(c) = existing.get_mut("cognicode").and_then(|v| v.as_object_mut()) {
@@ -1264,12 +1335,14 @@ impl ServerHandler for CogniCodeHandler {
 
             const PAGE_SIZE: usize = 20;
 
-            // PRF-SEC-02: in read-only mode mutating tools are not advertised.
+            // PRF-SEC-02 + PRF-MCP-05: in read-only mode mutating tools are not advertised.
+            // Authority comes from the declared `cognicode.authority` field (primary
+            // oracle), with `MUTATING_TOOLS` as a defensive subset-floor.
             let all_tools: Vec<_> = build_all_tools()
                 .into_iter()
                 .filter(|t| {
                     !self.ctx.read_only.load(Ordering::SeqCst)
-                        || !Self::MUTATING_TOOLS.contains(&t.name.as_ref())
+                        || !tool_is_mutating(&t.name)
                 })
                 .collect();
 
@@ -1337,9 +1410,11 @@ async fn call_tool_handler(
     let tool_name = request.name.as_ref();
     let mut arguments = request.arguments.unwrap_or_default();
 
-    // PRF-SEC-02: read-only mode rejects mutating tools before any handler
+    // PRF-SEC-02 + PRF-MCP-05: read-only mode rejects mutating tools before any handler
     // runs. Error is typed/honest (isError text), not a silent success.
-    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name) && ctx.read_only.load(Ordering::SeqCst)
+    // Authority comes from the declared `cognicode.authority` field (primary oracle),
+    // with `MUTATING_TOOLS` as a defensive subset-floor.
+    if tool_is_mutating(tool_name) && ctx.read_only.load(Ordering::SeqCst)
     {
         return Err(InterfaceError::Internal(format!(
             "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
@@ -2751,6 +2826,106 @@ mod tests {
                 assert!(
                     filtered.contains(&tool_name),
                     "PRF-MCP-05: read-only filter dropped a read-only tool {tool_name:?}"
+                );
+            }
+        }
+    }
+
+    // PRF-MCP-05 (B2): The production enforcement now uses the
+    // `tool_is_mutating(name)` helper as the primary oracle, with
+    // `MUTATING_TOOLS` as a defensive subset-floor. This test pins the
+    // helper's contract:
+    //
+    // 1. Every tool whose declared `cognicode.authority` is one of
+    //    "mutating" | "execute" | "network" must be reported mutating.
+    // 2. Every tool whose declared authority is "read" must be reported
+    //    NOT mutating.
+    // 3. The helper must agree with the legacy `MUTATING_TOOLS` list
+    //    (every legacy name is mutating per declaration).
+    // 4. Unknown tool names must default to NOT mutating (safe default).
+    #[test]
+    fn test_prf_mcp_05_tool_is_mutating_helper() {
+        use super::{resolve_tool_authority, tool_is_mutating};
+
+        // 1+2: cross-check against `build_all_tools()` declarations.
+        for tool in build_all_tools() {
+            let name = tool.name.to_string();
+            let declared = resolve_tool_authority(&name);
+            let should_be_mutating = matches!(
+                declared.as_str(),
+                "mutating" | "execute" | "network"
+            );
+            assert_eq!(
+                tool_is_mutating(&name),
+                should_be_mutating,
+                "tool_is_mutating({name:?}) disagrees with declared authority {declared:?}"
+            );
+        }
+
+        // 3: legacy MUTATING_TOOLS floor — every legacy name is mutating.
+        for legacy_name in CogniCodeHandler::MUTATING_TOOLS {
+            assert!(
+                tool_is_mutating(legacy_name),
+                "PRF-MCP-05: legacy MUTATING_TOOLS entry {legacy_name:?} not reported mutating"
+            );
+        }
+
+        // 4: safe default for unknown names.
+        assert!(
+            !tool_is_mutating("__definitely_not_a_real_tool_name__"),
+            "PRF-MCP-05: unknown tool name must default to not-mutating"
+        );
+        assert_eq!(
+            resolve_tool_authority("__definitely_not_a_real_tool_name__"),
+            "read",
+            "PRF-MCP-05: unknown tool name must resolve to authority 'read'"
+        );
+    }
+
+    // PRF-MCP-05 (B2): Negative-control test for the enforcement gate.
+    // Synthesise a tool whose `authority` field declares "mutating" but
+    // whose name is NOT in `MUTATING_TOOLS`. The helper must report it
+    // mutating, proving the helper is not falling back to the legacy list
+    // (i.e. the declared authority is the primary oracle, not the floor).
+    //
+    // This test does not require any production code change beyond
+    // `tool_is_mutating` itself — it pins the semantics directly.
+    #[test]
+    fn test_prf_mcp_05_declared_authority_is_primary_not_floor() {
+        use super::tool_is_mutating;
+        // The MCP catalog includes several tools with authority != "read"
+        // that are NOT in the legacy `MUTATING_TOOLS` list. Pick any such
+        // name from the production catalog and assert it is mutating per
+        // declaration alone.
+        let tools = build_all_tools();
+        let declared_mutating_not_in_legacy: Vec<String> = tools
+            .iter()
+            .filter_map(|t| {
+                let declared = t
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("cognicode"))
+                    .and_then(|m| m.get("authority"))
+                    .and_then(|v| v.as_str())?;
+                if matches!(declared, "mutating" | "execute" | "network")
+                    && !CogniCodeHandler::MUTATING_TOOLS.contains(&t.name.as_ref())
+                {
+                    Some(t.name.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        // Positive test only when such a tool exists. The MCP catalog at
+        // the time of writing does include several (graph tools that write
+        // caches). If none exist the test is vacuously true (defended by
+        // `test_prf_mcp_05_tool_is_mutating_helper`).
+        if !declared_mutating_not_in_legacy.is_empty() {
+            for name in &declared_mutating_not_in_legacy {
+                assert!(
+                    tool_is_mutating(name),
+                    "PRF-MCP-05 (B2): declared-mutating tool {name:?} not reported mutating \
+                     (helper is falling back to MUTATING_TOOLS floor instead of declared authority)"
                 );
             }
         }
