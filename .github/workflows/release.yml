@@ -61,6 +61,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # F6.W3.ter — Tag/workspace coherence gate. Closes the v0.98.0
+      # incident (PRF-JOURNAL §135): tag v0.98.0 was pushed before
+      # Cargo.toml's [workspace.package] version was bumped, so the
+      # compiled binaries reported 0.97.5 and release-install-smoke.sh
+      # rejected them. The check now happens BEFORE any toolchain
+      # install, build, or SBOM work, so a mismatch fails fast without
+      # wasting CI minutes on a guaranteed-to-fail release.
+      - name: Tag/workspace coherence gate
+        run: |
+          set -euo pipefail
+          bash scripts/ci/release-tag-coherence.sh "${GITHUB_REF_NAME}" "${GITHUB_SHA}"
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 

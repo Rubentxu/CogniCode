@@ -317,6 +317,25 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "validate-only mode: NOT creating tag $TAG; NOT publishing any release"
 
+      # F6.W3.ter — Tag/workspace coherence gate. Same check as release.yml,
+      # but in validate mode (the operator may pre-validate a prospective tag
+      # without having pushed it yet, so the workspace at GITHUB_SHA must match
+      # either inputs.version OR the workspace's own Cargo.toml version).
+      - name: Tag/workspace coherence gate (validate mode)
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.version }}" ]; then
+            bash scripts/ci/release-tag-coherence.sh \
+              --from-version "${{ inputs.version }}" "$GITHUB_SHA"
+          else
+            # No explicit inputs.version — fall back to the workspace's own
+            # value (i.e. validate that the workspace at GITHUB_SHA is
+            # self-consistent, regardless of any tag).
+            WORKSPACE_VERSION="$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')"
+            bash scripts/ci/release-tag-coherence.sh \
+              --from-version "$WORKSPACE_VERSION" "$GITHUB_SHA"
+          fi
+
       - name: Generate BundleManifest v2, ReleaseInventory and SHA256SUMS
         run: |
           set -euo pipefail
