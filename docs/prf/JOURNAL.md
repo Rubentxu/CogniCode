@@ -8118,3 +8118,93 @@ convención.
 - JOURNAL §125.V24 (F3.W1.a), V25 (F3.W2), V26 (F3.W3).
 - D55, D58, D61, D62, D64, D65, D66.
 - HANDOFF-§125.md (operator-approved gate).
+
+## V28 — 2026-09-24 — F3.W5 get_call_hierarchy MCP contract + D70/D69
+
+**Acción**: Caracterización del contrato observable del wrapper
+MCP `handle_get_call_hierarchy` (direction=outgoing). Nuevo
+módulo `prf_f3_w5_get_call_hierarchy_equivalence_tests` con 3
+tests `cargo test -p cognicode-core --lib prf_f3_w5` (3/3 PASS).
+Reuso el corpus W4 `analyze_impact_equivalence/` extendiendo
+`lib.rs` para que `impact_target` tenga callees.
+
+**Decisión D69**: F3.W5 es la **última caracterización planificada**
+de F3 antes de pedir decisión del operador sobre D65/D66. Más
+wrappers (`find_usages`, `get_complexity`, etc.) repetirían el
+patrón sin nueva superficie de contrato. F3 cierra aquí pending
+operator direction on architectural findings.
+
+**Tests añadidos** (W5.a/b/c):
+
+- `outgoing_calls_are_non_empty_for_target_with_callees` —
+  non-vacuity guard.
+- `outgoing_calls_contain_callee_a` — `impact_callee_a` aparece
+  en `calls` (symbol exact match, file basename match).
+- `outgoing_direction_excludes_incoming_caller` —
+  `impact_direct_caller` NO aparece en `calls` con
+  `direction=outgoing` (es caller de target, no callee).
+
+**Decisión D70 (error conceptual corregido en curso)**: mi
+primer draft de W5.b esperaba `impact_direct_caller` en
+`calls` — eso era conceptualmente incorrecto. `impact_direct_caller`
+es un CALLER de `impact_target`, no un CALLEE. El test falló
+correctamente con `got symbols: {impact_callee_a, impact_callee_b}`,
+lo que me permitió detectar y corregir el error. El módulo
+incluye una nota D70 explícita sobre este discovery.
+
+**Modificación de corpus**: `lib.rs` del corpus W4
+originalmente era `pub fn impact_target() -> u32 { 42 }` (sin
+callees). Para W5 se extendió a delegar a `impact_callee_a()` y
+`impact_callee_b()`. W4 sigue verde con el corpus modificado
+porque `impact_target` sigue siendo llamado por `direct.rs` y
+`transitive.rs`. **El corpus ahora es compartido entre W4 y W5**
+para minimizar la superficie de fixtures.
+
+**RED/GREEN manual verificado**: al eliminar las llamadas a
+`impact_callee_a()` e `impact_callee_b()` en `lib.rs`, 2 tests
+(W5.a y W5.b) fallaron con mensajes específicos; W5.c pasó
+porque el corpus roto sí cumple su contrato (no incluir el
+caller en outgoing). Tras restaurar, 3/3 PASS.
+
+**Surface pinned (D67)**: `(symbol, file_basename)` solamente.
+Líneas/columnas excluidas (asimetrías D58/D62); `confidence`
+hardcoded por el handler (no interesante pinear).
+
+**Hallazgos D65/D66/D69 pendientes de operador**:
+
+- D65: divergencia `risk_level` core↔MCP (V27).
+- D66: refinamiento de naming "CLI↔MCP" → "MCP wrapper ↔ core API".
+- D69: cierre natural de F3 aquí.
+
+**Suite post-cambio**:
+
+- cognicode-core: 2176 → 2179/0/27 (+3 tests).
+- cognicode-cli: sin cambios.
+- cognicode-mcp: sin cambios.
+- cognicode-graph-wasm: sin cambios.
+- clippy -p cognicode-core --lib --no-deps: 0 warnings.
+
+**Estado del sistema al cierre de V28**:
+
+- HEAD: nuevo commit atómico (F3.W5 + corpus modificado).
+- 13 commits locales sin push sobre origin/main.
+- F3.W5 ✅ + findings D65/D66/D69 documentados.
+- Próximo: cierre F3 + decisión operador (D65/D66/D69) o F4+.
+- C7 firma: BLOQUEADO.
+- Push acumulado: BLOQUEADO.
+
+**Decisiones tomadas**:
+
+- **D67**: surface limitada a `(symbol, file_basename)`.
+- **D68**: D66 aplica a W5 idénticamente.
+- **D69**: F3.W5 = última caracterización planeada antes de
+  decisión operador.
+- **D70**: error conceptual en W5.b detectado por RED real
+  (`impact_direct_caller` no es callee); corregido.
+
+**Refs**:
+
+- ROADMAP PRF §F3.
+- JOURNAL §125.V24 (W1.a), V25 (W2), V26 (W3), V27 (W4).
+- D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70.
+- HANDOFF-§125.md (operator-approved gate).

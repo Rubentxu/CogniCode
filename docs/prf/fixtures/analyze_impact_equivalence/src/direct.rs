@@ -1,4 +1,6 @@
-// F3.W4: direct caller of impact_target.
+// F3.W4 + F3.W5 corpus: callers of impact_target.
+// F3.W4 needs direct dependents; F3.W5 needs callers that the
+// transitive.rs further transitively calls.
 
 use crate::impact_target;
 

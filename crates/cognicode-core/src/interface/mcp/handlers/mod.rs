@@ -6752,6 +6752,180 @@ mod tests {
         }
     }
 
+    /// PRF-F3-W5: `get_call_hierarchy` MCP wrapper contract.
+    ///
+    /// Pinned characterization for the public MCP tool
+    /// `handle_get_call_hierarchy` (direction=outgoing). Reuses the
+    /// F3.W4 corpus (`analyze_impact_equivalence/src/`) because the
+    /// dependency shape overlaps:
+    ///
+    /// - F3.W4 analyzes dependents of `impact_target` (callers).
+    /// - F3.W5 analyzes callees of `impact_target` (what it calls).
+    ///
+    /// `lib.rs` defines `impact_target` which delegates to two
+    /// helpers `impact_callee_a` and `impact_callee_b`. Outgoing
+    /// direction at depth=1 must surface both helpers.
+    ///
+    /// `direct.rs` defines `impact_direct_caller` (a caller of
+    /// `impact_target`, NOT a callee); this symbol must NOT
+    /// appear in `calls` when direction=outgoing — it is
+    /// incoming, not outgoing. This pins the direction semantic:
+    /// if a future change accidentally inverts the direction,
+    /// this test flags it.
+    ///
+    /// D70 (correcting the W5 draft I committed earlier): I
+    /// initially wrote the test expecting `impact_direct_caller`
+    /// in `calls`. That was wrong — `impact_direct_caller` is a
+    /// caller of `impact_target`, not a callee. The correct
+    /// expectation for outgoing is `impact_callee_a` and
+    /// `impact_callee_b`. W5.b was a concept error caught by
+    /// running the test against the corpus (the test failed with
+    /// `got symbols: {impact_callee_a, impact_callee_b}`).
+    ///
+    /// This module pins:
+    ///
+    /// - `outgoing_calls_are_non_empty_for_target_with_callees`:
+    ///   non-vacuity guard — corpus produces ≥1 direct callee.
+    /// - `outgoing_calls_contain_callee_a`: `impact_callee_a`
+    ///   appears in `calls` (symbol exact match, file basename
+    ///   match because absolute path is a tempdir).
+    /// - `outgoing_direction_excludes_incoming_caller`:
+    ///   `impact_direct_caller` does NOT appear in `calls`
+    ///   when direction=outgoing (it is a caller of target,
+    ///   not a callee). Pins the direction semantic.
+    ///
+    /// D67: surface limited to `calls` set compared by
+    /// `(symbol, file_basename)`. Line/column excluded — they
+    /// depend on parser positioning and are not part of the
+    /// shared contract surface (D58/D62 precedent). The
+    /// `confidence: 1.0` field is hardcoded by the handler and
+    /// therefore not interesting to pin.
+    ///
+    /// D68: D66 (refinamiento de naming) applies identically — the
+    /// 'CLI' label is misleading because `cognicode` binary does
+    /// not expose this tool. This module follows the same
+    /// 'MCP wrapper ↔ core API' convention as W1-W4.
+    ///
+    /// D69: F3.W5 is the last planned wrapper characterization
+    /// before D65/D66 require operator decision. Adding more
+    /// wrappers (`find_usages`, `get_complexity`, etc.) would
+    /// repeat the same pattern without surfacing new contract
+    /// surface; F3 closes here pending operator direction on the
+    /// architectural findings.
+    mod prf_f3_w5_get_call_hierarchy_equivalence_tests {
+        use super::*;
+        use crate::interface::mcp::schemas::CallDirection;
+        use std::collections::BTreeSet;
+        use std::path::{Path, PathBuf};
+
+        fn corpus_src() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("docs/prf/fixtures/analyze_impact_equivalence/src")
+        }
+
+        /// Copy the W4 corpus into a tempdir; reused because the
+        /// dependency shape matches what `get_call_hierarchy` needs.
+        fn stage_corpus() -> tempfile::TempDir {
+            let temp = tempfile::tempdir().expect("tempdir");
+            for entry in std::fs::read_dir(corpus_src()).expect("read corpus dir") {
+                let entry = entry.expect("dir entry");
+                std::fs::copy(entry.path(), temp.path().join(entry.file_name()))
+                    .expect("copy corpus file");
+            }
+            temp
+        }
+
+        async fn run_get_call_hierarchy_outgoing(corpus_dir: &Path) -> GetCallHierarchyOutput {
+            let ctx = HandlerContext::builder()
+                .with_working_dir(corpus_dir.to_path_buf())
+                .build();
+            let input = GetCallHierarchyInput {
+                symbol_name: "impact_target".to_string(),
+                direction: CallDirection::Outgoing,
+                depth: 1,
+                include_external: false,
+                compressed: false,
+            };
+            handle_get_call_hierarchy(&ctx, input)
+                .await
+                .expect("get_call_hierarchy must succeed on staged corpus")
+        }
+
+        /// PRF-F3-W5.a: non-vacuity guard. With `impact_target`
+        /// defined and a direct caller (`impact_direct_caller`),
+        /// outgoing direction at depth=1 must produce ≥1 call.
+        #[tokio::test]
+        async fn outgoing_calls_are_non_empty_for_target_with_callees() {
+            let temp = stage_corpus();
+            let result = run_get_call_hierarchy_outgoing(temp.path()).await;
+
+            assert!(
+                !result.calls.is_empty(),
+                "calls must be non-empty for impact_target with direct callees; got: {:?}",
+                result.calls
+            );
+        }
+
+        /// PRF-F3-W5.b: contract — `impact_callee_a` is one of the
+        /// direct callees of `impact_target`, so it must appear
+        /// in `calls` (symbol exact match, file basename match
+        /// because absolute path is a tempdir).
+        #[tokio::test]
+        async fn outgoing_calls_contain_callee_a() {
+            let temp = stage_corpus();
+            let result = run_get_call_hierarchy_outgoing(temp.path()).await;
+
+            let symbols: BTreeSet<&str> =
+                result.calls.iter().map(|c| c.symbol.as_str()).collect();
+            let file_basenames: BTreeSet<String> = result
+                .calls
+                .iter()
+                .map(|c| {
+                    std::path::Path::new(&c.file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| c.file.clone())
+                })
+                .collect();
+
+            assert!(
+                symbols.contains("impact_callee_a"),
+                "calls must contain impact_callee_a; got symbols: {:?}",
+                symbols
+            );
+            assert!(
+                file_basenames.contains("lib.rs"),
+                "calls must reference lib.rs as the file of impact_callee_a; got basenames: {:?}",
+                file_basenames
+            );
+        }
+
+        /// PRF-F3-W5.c: contract — with direction=outgoing, the
+        /// incoming caller (`impact_direct_caller`) must NOT
+        /// appear, because outgoing returns callees of target,
+        /// not callers. This pins the direction semantic: if a
+        /// future change accidentally inverts the direction, this
+        /// test flags it.
+        #[tokio::test]
+        async fn outgoing_direction_excludes_incoming_caller() {
+            let temp = stage_corpus();
+            let result = run_get_call_hierarchy_outgoing(temp.path()).await;
+
+            let symbols: BTreeSet<&str> =
+                result.calls.iter().map(|c| c.symbol.as_str()).collect();
+
+            assert!(
+                !symbols.contains("impact_direct_caller"),
+                "calls must NOT contain impact_direct_caller with direction=outgoing (it's a caller, not a callee); got symbols: {:?}",
+                symbols
+            );
+        }
+    }
+
     /// PRF-STATE-07: derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler
