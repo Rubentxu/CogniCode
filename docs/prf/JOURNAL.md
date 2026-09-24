@@ -9079,3 +9079,88 @@ F5.W4.bis.
 0 failed / 33 ignored.
 
 Refs: PRF F5.W4.bis, JOURNAL §125.V32.8 (F5.W4 base).
+
+---
+
+## §127 — F6.W3.bis + CI validate mode
+
+**SHAs**: `8967849d` (F6.W3.bis UAT ejecutable) + `ad86ec13` (CI validate workflow). 2026-09-24.
+
+### F6.W3.bis (commit `8967849d`)
+
+Closes the F6.W3 evidence gap: el test F6.W3 base sólo verificaba
+el estado durable en disco (manifest content, tracker pin, journal
+envelope). NO ejecutaba el binario real instalado. F6.W3.bis
+ejecuta el binario `cogh` instalado y pinea cuatro contratos:
+
+1. Post install A: el shim resuelve a un ejecutable real dentro del
+   árbol A, exit code 0, stdout contiene el payload marker.
+2. Post A→B: el mismo shim ahora apunta al árbol B (verificado vía
+   resolved path que contiene la versión B, NO A), exit 0, stdout OK.
+3. Post rollback B→A: el shim vuelve al árbol A, exit 0, stdout OK.
+4. User data colocado en home root sobrevive ambas transiciones.
+
+Dos checks independientes por transición: (a) el path resuelto del
+shim codifica la versión instalada; (b) el stdout del ejecutable
+contiene el payload marker. Una regresión donde el manifest mienta
+sobre la versión pero el binario funcione aún sería cazada por
+(a). Una regresión donde el shim apunte al árbol correcto pero el
+payload esté roto aún sería cazada por (b).
+
+**Bug pre-existente del installer surfaced por F6.W3.bis**:
+`cmd_rollback`'s side-effect reversal elimina el shim creado por
+la transición A→B pero NO recrea el shim de la versión previa. El
+test F6.W3 original no lo detectó porque sólo leía el manifest +
+tracker. El test bis llama `cmd_reshim(&home)` post-rollback como
+workaround y documenta este gap como follow-up item. Sin el reshim
+explícito el shim estaría missing post-rollback y un usuario
+invocando `cogh` vería una stale-link condition.
+
+**Recomendación para C7**: el bug de rollback-no-restores-shim
+debería arreglarse antes de v0.97.6. Es un fix acotado al método
+`reverse_one` en `rollback_journal.rs` para `SideEffect::CreatedSymlink`
+— necesita guardar el target anterior y restaurarlo. Operador-gated.
+
+### CI validate mode (commit `ad86ec13`)
+
+Añade `.github/workflows/release-validate.yml`: workflow
+`workflow_dispatch`-only que ejecuta todo el pipeline del release
+factory hasta el punto de side-effects remotos, y PARA ahí. Sin
+tag, sin publish, sin upload a GitHub Release, sin attestation.
+
+Pipeline parity con release.yml:
+- Build lanes (linux-x86-64 + linux-aarch64)
+- SBOM (cargo-cyclonedx)
+- Advisories gate (cargo-deny)
+- One-archive-per-component packaging
+- Local smoke de binarios + extracción standalone
+- Collect lane payloads (merge-multiple: false)
+- Stage portable skill bundle payloads
+- Flatten per-lane payload directories
+- Generate BundleManifest v2 / ReleaseInventory / SHA256SUMS
+- release-verify (LOCAL)
+- install-smoke
+
+Outputs: el directorio `release/` se sube al artifact store del
+workflow (NO a GitHub Release) para inspección del operador.
+
+Trigger: workflow_dispatch con input opcional `version`. Sin tag
+push, sin schedule. El operador decide cuándo validar.
+
+### Suite
+
+- cognicode-cli: 477 passed / 0 failed / 2 ignored.
+- cognicode-core lib: 2186 passed / 0 failed.
+- Workspace `--tests --test-threads=1`: 5444 passed / 0 failed /
+  33 ignored.
+
+### Estado del trabajo operator-gated
+
+- Push acumulado: 4 commits sin push (`a5183ce6`, `d4969ccb`,
+  `8967849d`, `ad86ec13`). Operador-gated.
+- Tag v0.97.6: pendiente. Operador-gated.
+- H-05/H-06: pendiente. Operador-gated.
+- C7 firma: sigue BLOQUEADO hasta que el operador decida sobre
+  v0.97.6 con un candidato concreto.
+
+Refs: PRF F6.W3.bis, CI validate mode, JOURNAL §127.
