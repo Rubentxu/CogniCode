@@ -303,3 +303,129 @@ jobs:
             echo "- prospective_tag: \`${{ steps.v.outputs.tag }}\`"
             echo "- result: ${{ job.status }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # -------------------------------------------------------------------
+  # 3. Negative gate proof: prove the verify path REJECTS a corrupted
+  #    staging directory. The validate pipeline is meaningless if it
+  #    also passes against an incomplete or altered staging set —
+  #    i.e. a path where release-verify returns Ok despite missing or
+  #    altered artifacts. This job must FAIL on a corrupt set so the
+  #    operator can trust that, when it PASSES, every required input
+  #    was present and unchanged.
+  #
+  #    Two failure shapes:
+  #    (a) missing artifact — remove one *.tar.gz from the staging
+  #        directory, expect release-verify to fail.
+  #    (b) altered artifact — flip one byte in a tar.gz and update the
+  #        digest in SHA256SUMS so the filename-side is intact, expect
+  #        release-verify to fail on the digest mismatch.
+  #
+  #    Both shapes MUST be caught. If release-verify does not exit
+  #    non-zero on either shape, the validate gate is a no-op and
+  #    the operator must not authorize release.yml to run.
+  # -------------------------------------------------------------------
+  negative-test-missing:
+    name: verify-rejects-missing-artifact
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Rebuild the release tool from the same SHA
+        run: cargo build --release --bin cognicode-release
+
+      - name: Download the validate-produced release/ directory
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: release-validate-output-*
+
+      - name: Remove one archive and expect release-verify to fail
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(release/*.tar.gz)
+          if [ "${#archives[@]}" -lt 2 ]; then
+            echo "::error::need at least 2 archives to delete one and still observe the verify path; got ${#archives[@]}"
+            exit 1
+          fi
+          victim="${archives[0]}"
+          echo "removing $victim to simulate corruption"
+          rm "$victim"
+          ls -la release
+          set +e
+          ./target/release/cognicode-release verify \
+            --staging release \
+            --version "${{ needs.validate.outputs.version }}" \
+            --tag "v${{ needs.validate.outputs.version }}"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::release-verify returned 0 against a staging set missing $victim — the gate is a no-op"
+            exit 1
+          fi
+          echo "release-verify correctly failed with rc=$rc on the missing-artifact shape"
+
+  negative-test-altered:
+    name: verify-rejects-altered-artifact
+    runs-on: ubuntu-latest
+    needs: [validate]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Rebuild the release tool from the same SHA
+        run: cargo build --release --bin cognicode-release
+
+      - name: Download the validate-produced release/ directory
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          pattern: release-validate-output-*
+
+      - name: Flip one byte of an artifact and expect release-verify to fail
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          archives=(release/*.tar.gz)
+          if [ "${#archives[@]}" -lt 1 ]; then
+            echo "::error::need at least 1 archive to alter; got ${#archives[@]}"
+            exit 1
+          fi
+          victim="${archives[0]}"
+          echo "altering $victim by flipping the last byte of its payload"
+          python3 - "$victim" <<'PY'
+          import sys, os
+          p = sys.argv[1]
+          with open(p, "rb") as f:
+              data = bytearray(f.read())
+          data[-1] ^= 0x01
+          with open(p, "wb") as f:
+              f.write(data)
+          PY
+          ls -la release
+          set +e
+          ./target/release/cognicode-release verify \
+            --staging release \
+            --version "${{ needs.validate.outputs.version }}" \
+            --tag "v${{ needs.validate.outputs.version }}"
+          rc=$?
+          set -e
+          if [ "$rc" -eq 0 ]; then
+            echo "::error::release-verify returned 0 against an altered $victim — the gate is a no-op"
+            exit 1
+          fi
+          echo "release-verify correctly failed with rc=$rc on the altered-artifact shape"
