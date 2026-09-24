@@ -430,7 +430,18 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          archives=(release/*.tar.gz)
+          # actions/download-artifact@v4 with `path: release` and a
+          # `name: release-validate-output-${{ tag }}` artifact places the
+          # contents under release/release-validate-output-<tag>/, NOT
+          # directly under release/. Discover the subdir dynamically so
+          # the test survives any future rename of the artifact.
+          subdirs=(release/release-validate-output-*/)
+          if [ "${#subdirs[@]}" -lt 1 ]; then
+            echo "::error::no validate-produced artifact directory under release/; got subdirs: ${subdirs[*]:-<none>}"
+            exit 1
+          fi
+          staging="${subdirs[0]}"
+          archives=("$staging"*.tar.gz)
           if [ "${#archives[@]}" -lt 2 ]; then
             echo "::error::need at least 2 archives to delete one and still observe the verify path; got ${#archives[@]}"
             exit 1
@@ -438,10 +449,10 @@ jobs:
           victim="${archives[0]}"
           echo "removing $victim to simulate corruption"
           rm "$victim"
-          ls -la release
+          ls -la "$staging"
           set +e
           ./target/release/cognicode-release verify \
-            --staging release \
+            --staging "$staging" \
             --version "${{ needs.validate.outputs.version }}" \
             --tag "v${{ needs.validate.outputs.version }}"
           rc=$?
@@ -494,7 +505,17 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          archives=(release/*.tar.gz)
+          # See note in negative-test-missing: actions/download-artifact@v4
+          # nests the contents under release/release-validate-output-<tag>/.
+          # Discover the subdir dynamically so the test survives future
+          # renames of the artifact.
+          subdirs=(release/release-validate-output-*/)
+          if [ "${#subdirs[@]}" -lt 1 ]; then
+            echo "::error::no validate-produced artifact directory under release/; got subdirs: ${subdirs[*]:-<none>}"
+            exit 1
+          fi
+          staging="${subdirs[0]}"
+          archives=("$staging"*.tar.gz)
           if [ "${#archives[@]}" -lt 1 ]; then
             echo "::error::need at least 1 archive to alter; got ${#archives[@]}"
             exit 1
@@ -510,10 +531,10 @@ jobs:
           with open(p, "wb") as f:
               f.write(data)
           PY
-          ls -la release
+          ls -la "$staging"
           set +e
           ./target/release/cognicode-release verify \
-            --staging release \
+            --staging "$staging" \
             --version "${{ needs.validate.outputs.version }}" \
             --tag "v${{ needs.validate.outputs.version }}"
           rc=$?

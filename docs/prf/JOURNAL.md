@@ -10504,3 +10504,175 @@ siendo seguro de ejecutar.
 **Implicación para el operador**: si quieres que `ci.yml` también pase
 con mis cambios en CI remoto, eso requiere una **sesión separada** para
 investigar y arreglar los race conditions. No es blocker para iter 4.
+
+## §132 — Iter 4 ejecutó `release-validate.yml`: flatten fixed, 2 jobs negativos fallan por layout del artifact
+
+**Fecha**: 2026-09-24
+**Run ID**: #36022824029
+**Commit probado**: `dcdf59786f39755b66bb4301ba882cf842c1d03b`
+**Trigger**: `workflow_dispatch` con `expected_sha=dcdf5978`
+**Resultado**: FAILURE del workflow completo, 3/5 jobs SUCCESS, 2/5 jobs FAILURE
+
+### Jobs y resultado
+
+| Job | Conclusion | Crítico |
+|---|---|---|
+| `build-linux-x86-64` | success | sí |
+| `build-linux-aarch64` | success | sí |
+| `assemble-and-verify-local` | success | sí |
+| `verify-rejects-altered-artifact` | **failure** | sí (gate de seguridad) |
+| `verify-rejects-missing-artifact` | **failure** | sí (gate de seguridad) |
+
+### Lo que funcionó (3 jobs críticos, 14 steps cada uno)
+
+- `cargo-deny` (advisories gate) en ambos lanes
+- `SBOM (cargo-cyclonedx, per published binary, canonical layout)` (nuestro
+  cambio de iter 2)
+- Build nativo + build del release tool
+- `Flatten per-lane payload directories to the staging root` (el bug que
+  arregló iter 4) — **success**
+- `Generate BundleManifest v2, ReleaseInventory and SHA256SUMS`
+- `release-verify (LOCAL, no remote side-effects)` — R1-R9 PASS
+- `Verify the actual packaged CLI, MCP and portable skills (install-smoke)`
+- `Upload the produced release/ directory for operator inspection`
+  — 12 archivos subidos correctamente
+
+### Lo que falló (2 jobs negativos)
+
+Ambos jobs descargan el artifact `release-validate-output-v0.97.5` con
+`actions/download-artifact@v4` `path: release`. GitHub Actions crea un
+subdirectorio con el **nombre del artifact**, no preserva el path directo.
+Resultado en el runner:
+
+```
+$HOME/release/release-validate-output-v0.97.5/*.tar.gz   ← donde están los archivos
+$HOME/release/*.tar.gz                                    ← no hay nada aquí
+```
+
+Los scripts bash de los 2 jobs usaban:
+
+```bash
+archives=(release/*.tar.gz)        # → 0 matches (nullglob)
+```
+
+Por lo tanto el script aborta con:
+
+```
+::error::need at least 1 archive to alter; got 0
+::error::need at least 2 archives to delete one and still observe the verify path; got 0
+```
+
+…y nunca llega a invocar `release-verify`. El test nunca se ejecuta; el
+job falla por **setup**, no por detección de corrupción/missing.
+
+### Verificación de que el binario SÍ detecta alteración/missing
+
+Descargué el artifact de iter 4 con `gh run download` y lo manipulé:
+
+```
+$ ./target/release/cognicode-release verify --staging iter4-output ...      # exit 0
+$ flip 1 byte en cogh-0.97.5-aarch64-unknown-linux-gnu.tar.gz
+$ ./target/release/cognicode-release verify --staging iter4-altered ...    # exit 1
+  Error: SHA256SUMS digest mismatch for `cogh-0.97.5-...`: file ..., sums ...
+$ rm cogh-0.97.5-aarch64-unknown-linux-gnu.tar.gz
+$ ./target/release/cognicode-release verify --staging iter4-missing ...    # exit 1
+  Error: missing artifact `cogh-0.97.5-...`: component `cogh` is published
+  but was not produced for platform `linux-aarch64`
+```
+
+El gate "real" **funciona** — solo el **path** del workflow estaba mal.
+Por lo tanto el fix es legítimo: desbloquea los tests negativos que ya
+existían y ya probaban el comportamiento correcto del binario.
+
+### Fix aplicado (iter 5 candidato, mismo archivo)
+
+En `.github/workflows/release-validate.yml`, ambos jobs negativos
+(`negative-test-missing`, `negative-test-altered`) ahora descubren el
+subdir dinámicamente en lugar de asumir el path directo:
+
+```bash
+# Antes:
+archives=(release/*.tar.gz)
+...
+./target/release/cognicode-release verify --staging release ...
+
+# Después:
+subdirs=(release/release-validate-output-*/)
+if [ "${#subdirs[@]}" -lt 1 ]; then
+  echo "::error::no validate-produced artifact directory under release/; ..."
+  exit 1
+fi
+staging="${subdirs[0]}"
+archives=("$staging"*.tar.gz)
+...
+./target/release/cognicode-release verify --staging "$staging" ...
+```
+
+Esta solución sobrevive a renombrados del artifact (cualquier nombre que
+empiece por `release-validate-output-` es aceptado) y a múltiples
+subdirs (toma el primero; en este workflow solo hay uno).
+
+### Validación local (verbatim del step del workflow)
+
+Extraje el bloque `run:` del job `negative-test-altered` y lo ejecuté
+contra un layout que simula exactamente la salida de
+`download-artifact@v4`:
+
+```
+$ bash test-altered.sh
+altering release/release-validate-output-v0.97.5/cogh-0.97.5-aarch64...tar.gz
+... ls -la ...
+release-verify correctly failed with rc=1 on the altered-artifact shape
+EXIT SUCCESS (job negative-test-altered passes)
+Final exit: 0
+```
+
+Idéntico resultado para `negative-test-missing`:
+
+```
+$ bash test-missing.sh
+removing release/release-validate-output-v0.97.5/cogh-0.97.5-aarch64...tar.gz
+... ls -la ...
+release-verify correctly failed with rc=1 on the missing-artifact shape
+EXIT SUCCESS (job negative-test-missing passes)
+Final exit: 0
+```
+
+Ambos paths de error (`SHA256SUMS digest mismatch` y `missing artifact`)
+se ejercitan y propagan el rc=1 al step del workflow, que termina con
+success cuando el binario **rechaza** la manipulación.
+
+### Cadencia de descubrimiento de bugs (cuarto bug pre-existente)
+
+Patrón confirmado en este run:
+
+| iter | bug encontrado | lugar |
+|---|---|---|
+| 1 | flatten no se ejecuta | flatten step no existía en la matriz |
+| 2 | SBOM path no canónico | `build-sboms-for-lane.sh` |
+| 3 | flatten duplicate payload | `find -name` glob over-match |
+| 4 | **tests negativos nunca corren** | `release/*.tar.gz` glob mal |
+
+Cada iter encuentra un bug **diferente** en un lugar **diferente**. El
+fix de iter 4 (`dcdf5978`) desbloqueó el camino feliz completo hasta
+`install-smoke`, pero quedaron dos tests de seguridad negativos
+**existentes** que nunca habían sido ejecutados con éxito (porque el
+path estaba roto desde antes). iter 5 los desbloquea.
+
+### Estado actual
+
+- Cambios staged (no committed): `release-validate.yml` (+28 líneas en
+  2 lugares)
+- Validación local: ALTERED PASS, MISSING PASS, YAML válido
+- Próximo paso: commit + push + nuevo run para confirmar CI verde
+  end-to-end. Esta autorización es **separada** de iter 4 (regla
+  "Un workflow fallido no autoriza automáticamente un segundo
+  intento"). El operador ya pre-aprobó iter 5 bajo autonomía total.
+
+### Refs
+
+- Run: https://github.com/Rubentxu/CogniCode/actions/runs/36022824029
+- Job alterado: 107715337781
+- Job missing: 107715337806
+- Commit anterior (iter 4 fix): `dcdf59786f39755b66bb4301ba882cf842c1d03b`
+- Docs: actions/download-artifact@v4 layout behavior
