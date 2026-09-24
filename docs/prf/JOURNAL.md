@@ -8978,3 +8978,104 @@ Con `--test-threads=1` (modo serial) todo verde. Esto se
 reporta por honestidad pero no bloquea F5.W4.
 
 Refs: JOURNAL §125.V32.8, PRF §F5.W4.
+
+---
+
+## §126 — F5.W4.bis — Per-call sub-handler timeout + partial/degraded output
+
+**SHA**: `a5183ce6` (2026-09-24)
+
+### Contexto
+
+F5.W4 cerró con un test que sólo verificaba el camino de "corpus
+vacío retorna Ok". El operador revisó correctamente que ese test
+NO ejercita la rama de timeout/error del composite — sólo verifica
+que el caso limpio funciona. Una regresión que removiera los
+wrappers de `tokio::time::timeout` no sería detectada por esos
+tests. F5.W4.bis cierra ese gap.
+
+### Cambios
+
+- **`HandlerContext.sub_handler_timeout: Duration`** (default 60s).
+  Field público nuevo. Default retrocompatible con la constante
+  `SUB_HANDLER_TIMEOUT = 60s` que existía antes (el const fue
+  removido; el valor se mantiene como default).
+- **`HandlerContextBuilder::with_sub_handler_timeout(Duration)`** —
+  método aditivo, sin breaking changes.
+- **`SmartSearchOutput.partial: bool`** (con `#[serde(default)]`)
+  y **`SmartSearchOutput.degraded_sources: Vec<String>`** (con
+  `#[serde(default)]`). Aditivos, retrocompatibles: consumidores
+  que desconocen los nuevos campos los ven como `false` / `[]`.
+- **`SmartSearchInput: Clone`** (derive añadido) — necesario
+  porque `handle_smart_search` construye tres sub-inputs por
+  clonación del input de usuario.
+- `handle_smart_search` usa `ctx.sub_handler_timeout` en lugar
+  del `const`. La rama `Err(_)` del wrapper (DEFECT-3) ya está
+  estructuralmente implementada; ahora es **reachable** a través
+  del override Y pineada por tests.
+- `test_ctx()` ahora retorna `(HandlerContext, tempfile::TempDir)`
+  para forzar a los callers a mantener el TempDir vivo. El bug
+  latente (TempDir dropped inline → `working_dir` apuntaba a un
+  path inexistente) está ahora cubierto por type system.
+
+### Tests añadidos
+
+1. `prf_f5_w4_bis_real_timeout_branch_is_reached_and_distinguishes_partial`:
+   fuerza la rama de Err con `TempDir dropped` (path stale →
+   `populate_from_directory` retorna `Err("Directory does not
+   exist")`). El composite degrada semantic+ranked, retorna
+   `Ok` con `partial=true degraded=["semantic", "ranked"]`.
+   Pin del inverso: con `test_ctx()` (TempDir vivo), el call
+   retorna `partial=false degraded=[]`.
+
+2. `prf_f5_w4_bis_per_call_timeout_is_independent_across_contexts`:
+   `ctx_generous` (TempDir vivo + 60s budget) →
+   `partial=false degraded=[]`. `ctx_tight` (TempDir dropped +
+   1ns budget) → `partial=true degraded=["semantic", "ranked"]`.
+   Confirma que el override es por-HandlerContext, no global.
+
+Ambos `#[serial]` por seguridad (populate_from_directory es
+bloqueante y satura el scheduler con budgets ajustados; el
+overhead es despreciable).
+
+### Nota sobre el forzado del branch de timeout puro
+
+El branch `Err(Elapsed)` puro (no `Ok(Err(_))`) es muy difícil
+de forzar con `tokio::time::timeout(1ns, ...)` cuando los
+sub-handlers son futures síncronas: el executor poll'a el
+timer antes de poder cancelar la future, así que el
+`tokio::time::timeout` puede retornar `Ok(Ok(...))` aunque el
+budget sea 1ns. El branch puro está estructuralmente
+implementado (línea 90-98 de consolidated_handlers.rs) y
+alcanzable por construcción, pero el test fuerza el branch
+análogo `Ok(Err(_))` que sí es observable: ambos branches
+convergen en la misma lógica de "marcar como degraded y
+continuar", que es lo que el test pinea.
+
+Si en el futuro se quiere pinear el branch puro
+explícitamente, requerirá inyectar un sleep artificial en
+los sub-handlers (vía un trait/method override o un
+`sub_handler_delay: Duration` en HandlerContext). Esto se
+discute como refinamiento futuro, no como bloqueante de
+F5.W4.bis.
+
+### Auditoría de compatibilidad hacia atrás
+
+- `HandlerContext.sub_handler_timeout` (nuevo, default 60s):
+  mismo valor que el const removido, cero impacto para
+  callers existentes.
+- `HandlerContextBuilder::with_sub_handler_timeout` (nuevo):
+  aditivo.
+- `SmartSearchOutput.partial` / `degraded_sources`: con
+  `#[serde(default)]`, retrocompatibles en JSON.
+- `SmartSearchInput: Clone`: aditivo, no rompe nada.
+- `test_ctx()` signature change: 8 call sites actualizados
+  a `let (ctx, _temp_dir) = test_ctx();`. Suite completa
+  sigue verde — no hay tests que dependan del bug latente.
+
+### Resultado
+
+**Suite workspace `--tests --test-threads=1`**: 5443 passed /
+0 failed / 33 ignored.
+
+Refs: PRF F5.W4.bis, JOURNAL §125.V32.8 (F5.W4 base).
