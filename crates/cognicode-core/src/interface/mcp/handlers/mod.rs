@@ -6203,6 +6203,117 @@ mod tests {
         }
     }
 
+    /// PRF-F3-W1.a: CLI `cognicode graph per-file <file>` and MCP
+    /// `get_per_file_graph(file_path)` must execute the **same use
+    /// case** against the canonical per-file corpus. Both paths go
+    /// through `PerFileStrategy::new().build_local_graph(&path)`; this
+    /// test pins the contract that the same call against the same
+    /// file produces the same observable symbol inventory and the
+    /// same dependency inventory.
+    ///
+    /// Comparison surface: the MCP handler `handle_get_per_file_graph`
+    /// exposes only `(file, line, column, symbol_kind)` per symbol —
+    /// `name` is not part of the public output schema. The CLI path
+    /// (`commands.rs::execute_graph(PerFile)`) prints only counts
+    /// (`Symbols: N, Dependencies: M`). The narrowest observable
+    /// contract shared by both paths is therefore the **count of
+    /// symbols** and the **count of (caller, callee) dependency
+    /// pairs** over the canonical corpus.
+    ///
+    /// The corpus (`docs/prf/fixtures/per_file_correctness/src/lib.rs`)
+    /// is the F2.W1 determinism corpus: 3 symbols (`top_level`,
+    /// `mid_level`, `leaf`) in 3 nested files.
+    ///
+    /// Non-vacuity guard: the per-file strategy must produce >0 symbols
+    /// and >0 dependencies over this corpus (lib.rs has one
+    /// intra-module dependency `top_level -> mid_level`); if it
+    /// produces 0, the test is vacuous and the assertion below proves
+    /// nothing.
+    mod prf_f3_w1_per_file_equivalence_tests {
+        use super::*;
+        use crate::infrastructure::graph::PerFileStrategy;
+        use std::path::PathBuf;
+
+        fn corpus_file() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("docs/prf/fixtures/per_file_equivalence/src/lib.rs")
+        }
+
+        fn cli_per_file_graph(p: &PathBuf) -> (usize, Vec<(String, String)>) {
+            let strategy = PerFileStrategy::new();
+            let graph = strategy.build_local_graph(p).expect("build_local_graph must succeed");
+            let symbol_count = graph.symbols().count();
+            let deps: Vec<(String, String)> = graph
+                .all_dependencies()
+                .filter_map(|(src_id, tgt_id, _)| {
+                    let src = graph.get_symbol(src_id)?;
+                    let tgt = graph.get_symbol(tgt_id)?;
+                    Some((src.name().to_string(), tgt.name().to_string()))
+                })
+                .collect();
+            (symbol_count, deps)
+        }
+
+        async fn mcp_get_per_file_graph(p: &PathBuf) -> (usize, Vec<(String, String)>) {
+            let ctx = HandlerContext::builder().with_working_dir(p.parent().unwrap()).build();
+            let input = GetPerFileGraphInput {
+                file_path: p.to_string_lossy().to_string(),
+            };
+            let output =
+                handle_get_per_file_graph(&ctx, input).await.expect("handler must succeed");
+            let symbol_count = output.symbols.len();
+            let deps: Vec<(String, String)> = output
+                .dependencies
+                .iter()
+                .map(|d| (d.caller.clone(), d.callee.clone()))
+                .collect();
+            (symbol_count, deps)
+        }
+
+        #[tokio::test]
+        async fn cli_per_file_and_mcp_get_per_file_graph_agree_on_symbol_count() {
+            let p = corpus_file();
+            let (cli_count, _) = cli_per_file_graph(&p);
+            let (mcp_count, _) = mcp_get_per_file_graph(&p).await;
+
+            // Non-vacuity: both must produce >0 symbols.
+            assert!(cli_count > 0, "CLI per-file produced 0 symbols; test would be vacuous");
+            assert!(mcp_count > 0, "MCP per-file produced 0 symbols; test would be vacuous");
+
+            assert_eq!(
+                cli_count, mcp_count,
+                "symbol count differs between CLI and MCP per-file paths: cli={} mcp={}",
+                cli_count, mcp_count
+            );
+        }
+
+        #[tokio::test]
+        async fn cli_per_file_and_mcp_get_per_file_graph_agree_on_dependency_set() {
+            let p = corpus_file();
+            let (_, cli_deps) = cli_per_file_graph(&p);
+            let (_, mcp_deps) = mcp_get_per_file_graph(&p).await;
+
+            // Non-vacuity: corpus must produce at least one dependency
+            // (lib.rs has `top_level -> mid_level`); else vacuous.
+            assert!(!cli_deps.is_empty(), "CLI per-file produced 0 deps; test would be vacuous");
+
+            // Sorted multiset comparison: caller/callee pairs are
+            // unordered in both outputs; the comparison surface is
+            // identical between CLI and MCP.
+            use std::collections::BTreeSet;
+            let cli_set: BTreeSet<(String, String)> = cli_deps.into_iter().collect();
+            let mcp_set: BTreeSet<(String, String)> = mcp_deps.into_iter().collect();
+            assert_eq!(
+                cli_set, mcp_set,
+                "dependency inventory differs between CLI and MCP per-file paths"
+            );
+        }
+    }
+
     /// PRF-STATE-07: derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler
