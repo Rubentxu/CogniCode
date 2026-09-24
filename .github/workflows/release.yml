@@ -77,11 +77,23 @@ jobs:
           cargo deny check advisories
 
       # PRF-CI-05: SBOM (CycloneDX) per workspace crate, uploaded with the
-      # lane payloads for provenance.
-      - name: SBOM (cargo-cyclonedx)
+      # lane payloads for provenance. The actual generation is delegated
+      # to scripts/ci/build-sboms-for-lane.sh so the validate workflow
+      # and release.yml produce an identical artifact set (per published
+      # binary, named with the rust target triple, never the per-crate
+      # default that conflates multiple bins).
+      - name: SBOM (cargo-cyclonedx, per published binary, canonical layout)
         run: |
-          cargo install cargo-cyclonedx --locked || true
-          cargo cyclonedx --format json
+          set -euo pipefail
+          bash scripts/ci/build-sboms-for-lane.sh "${{ matrix.rust_target }}"
+          for comp in cogh cognicode cognicode-mcp; do
+            expected="crates/${comp}-${{ matrix.rust_target }}.cdx.json"
+            test -f "${expected}" || {
+              echo "::error::missing canonical SBOM: ${expected}"
+              exit 1
+            }
+            echo "OK ${expected} ($(wc -c < "${expected}") bytes)"
+          done
 
       - name: Build the publishable binaries natively
         run: |
@@ -160,7 +172,9 @@ jobs:
           name: payloads-${{ matrix.platform }}
           path: |
             dist/*.tar.gz
-            crates/*.cdx.json
+            crates/cogh-${{ matrix.rust_target }}.cdx.json
+            crates/cognicode-${{ matrix.rust_target }}.cdx.json
+            crates/cognicode-mcp-${{ matrix.rust_target }}.cdx.json
           if-no-files-found: error
 
   # -------------------------------------------------------------------
