@@ -11597,3 +11597,71 @@ AUDIT H11 como item operator-gated del bloque "Pendiente".
 - `docs/prf/CURRENT.md` (último sync `b72f17e1`).
 - `docs/prf/STATE.md` (ya documenta HEAD `253b4b5f` con §141).
 - JOURNAL §134 (acuse auditoría original), §141 (H01 §141).
+
+## §143 — V37 — CURRENT.md archivado (SNAPSHOT BLOQUEADO por lockfile ajeno) (2026-09-24)
+
+**Cambio planeado.** Continuando el trabajo del bloque "Bajo
+esfuerzo" del AUDIT tracker H11 (§142), archivé `CURRENT.md`
+como **snapshot histórico** de la sesión 4 AUTO (2026-09-23) en
+lugar de re-sincronizarlo al HEAD actual. La edición incluye:
+
+- Cabecera warning declarando CURRENT.md NO puntero vivo.
+- STATE.md como único puntero operativo.
+- "Razón del archivado (resumen §142)" — auditoría externa.
+- Decisión deliberada en 3 puntos numerados.
+- "Snapshot histórico: sesión 4 AUTO, 2026-09-23, post §101"
+  — contenido literal previo, sólo cabecera modificada.
+- "Cómo seguir desde aquí (sesión 6, 2026-09-24)" —
+  redirección a STATE.md.
+
+Esto es un archivado consciente con cabecera warning — no
+un sync mecánico. La decisión final sobre el rol de
+CURRENT.md (¿archivar definitivamente vs absorber en
+STATE.md) queda operator-gated como H11-b en AUDIT.
+
+**BLOQUEO NO-TÉCNICO durante commit.** Al hacer `git add` +
+`git commit`, encontré el `.git/index.lock` creado por un
+**proceso git ajeno**:
+
+```
+PID 3383777 PPID 20486 STAT=S elapsed=04:11:16
+CMD: bash -c "... git commit --author='cognicode-prf
+<cognicode-prf@local>' -m 'fix(ci/stage): prevent
+cognicode/cognicode-mcp prefix over-match in flatten...' 2>&1"
+```
+
+Esta NO es mi sesión. Mi autor es `Ruben
+<rubentxu@cognicode.dev>`. El proceso lleva 4h11m en
+"sleeping" — probablemente esperando input del operador
+(editor de commit, passphrase GPG, etc.) que nunca llegó.
+Mi `git` actual compite con ese lock.
+
+**Acción quirúrgica tomada:**
+
+1. Detecté el lockfile stale (creado por proceso ajeno con
+   autor distinto). NO lo borré (regla de honestidad: no
+   interferir con sesión de terceros).
+2. Revertí la edición de CURRENT.md en disco (`git restore`)
+   para no dejar cambios stale sin registrar.
+3. Documento este bloqueo en JOURNAL §143 (este entry),
+   para que el operador sepa que el cambio está **listo**
+   pero esperando que la sesión externa termine o se
+   desestime.
+
+**Reversión documentada:**
+
+- `CURRENT.md` editado y guardado (87 líneas con cabecera
+  warning).
+- Edición revertida por `git restore`.
+- Resultado actual: working tree sin cambios en CURRENT.md;
+  snapshot archivado en este JOURNAL como evidencia textual
+  del trabajo que se completará cuando se desbloquee.
+
+**Refs:**
+- AUDIT-2026-09-22-FINDINGS.md H11 (deuda H11-b, contrato
+  CURRENT.md).
+- docs/prf/STATE.md (HEAD row, puntero vivo).
+- docs/prf/JOURNAL.md §142 (deuda documentada).
+- PID 3383777 (proceso bloqueante, autor `cognicode-prf`).
+- CAMBIO LISTO: edición archivada de CURRENT.md (87 líneas).
+- `git restore` aplicado.
