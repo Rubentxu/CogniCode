@@ -8680,3 +8680,46 @@ en lib vs bin target).
 - JOURNAL §125.V32.1, V32.2.
 - D75, HANDOFF-§125.md.
 - commit `dca87b7e` (D75).
+
+## V32.3 — 2026-09-24 — F4.W3 corrupt cache recovery
+
+**F4.W3 nuevo integration test**:
+`crates/cognicode-mcp/tests/prf_f4_w3_corrupt_cache_recovery.rs`
+con 4 tests que verifican recovery del snapshot durable:
+
+- `prf_f4_w3_corrupt_random_bytes_triggers_rebuild`: snapshot
+  reemplazado con bytes deterministas arbitrarios → siguiente
+  build reconstruye, snapshot rebuilt ≡ original en tamaño.
+- `prf_f4_w3_corrupt_empty_file_triggers_rebuild`: snapshot
+  vacío (0 bytes) → siguiente build reconstruye.
+- `prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild`:
+  header `cognicode.graph.cache/v999` (válido por estructura
+  bincode pero versión incorrecta) → siguiente build
+  reconstruye.
+- `prf_f4_w3_intact_cache_loads_from_snapshot`: control
+  positivo — cache intacto → siguiente build carga del
+  snapshot (no rebuild). Sin este control, los otros 3 tests
+  podrían pasar trivialmente si el loader siempre rebuilda.
+
+**Comparison surface estrecha**: `build_graph` tool's `message`
+field. Después de corrupción, message debe decir "loaded from
+built" / "rebuilt" (no "durable snapshot").
+
+**Non-vacuity guards**:
+- primer build debe persistir snapshot > 50 bytes
+- corrupto debe diferir del original
+- rebuilt ≡ original en tamaño (faithful rebuild, not stub)
+
+**RED/GREEN verified manually**: el test ya existente
+`durable_snapshot_loads_on_restart_and_corruption_rebuilds`
+(prf_state_03_04_uat) cubre 1 caso (truncado). W3 amplía a 4
+casos con control positivo.
+
+**Suite workspace**: 5433/0/45 verde (+6 desde 5427 = +4 F4.W3
++ 2 common helpers).
+
+**Refs**:
+
+- ROADMAP PRF §F4 ("no corrompe datos").
+- JOURNAL §125.V32.3.
+- commit nuevo F4.W3.
