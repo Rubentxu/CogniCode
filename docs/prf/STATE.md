@@ -7,14 +7,14 @@
 
 ## Snapshot
 
-| Hito activo | **F2 — Correctitud reproducible (EN CURSO; auditorías honestas §101-§105 sesiones 4 AUTO; sub-cerrados en JOURNAL §95 DIST-03, §99-§100 H-06 PRF-DIST-02/U20, §103-§104 T4/S5). Operator-gated: push, tag, C7, H-04, H-07.** |
-| Última unidad cerrada | **§121 push autorizado: 237 commits a origin/main + tag v0.97.4** (2026-09-23 14:30 UTC). Operador autorizó push explícito. Pre-flight: fast-forward limpio, 237 ahead de `5b96db43`. `git push origin main` → `5b96db43..4129ae4a`. Tag anotado v0.97.4 creado (sha `2f8ed1b5fbb178e8a224e2e4f456982f06b793e8`) apuntando a `4129ae4a`, pusheado a remoto. SEMVER = PATCH derivado del historial (0 feat, 0 breaking). Verificación post-push: local = remoto, 0 ahead. C7 sigue BLOQUEADO (push de código OK; release factory R1-R9 + firma requieren desbloqueo C7). |
-| Unidad activa siguiente | Decisión AUTO sin push. §116 cierra capítulo "regenerables locales" de §102 (0 pendientes locales, 9 con CI/cross-compile). Próximos WU candidatos: (a) auditoría sistemática de los 9 dirs CI/cross-compile por paper-closing residual; (b) regenerar evidencia F0-W2/F0-W3 obsoleta en SHA; (c) honestidad documental: descontar paper-closings residuales en PRF-DIST-04 o documentar el porqué; (d) refactor `lifecycle.rs` con `Mutex<()>` global para eliminar flakes inter-bin; (e) cierre del refactor `allow(scope)` post-H-06. Operator-gated: push, tag, C7, H-04, H-07, acciones que requieran red/act. |
-| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR RELEASE ≡ C7 PASS`). H-F6-1 **legalmente cerrado** (`0764fb81`) y **blindado** (§105). |
-| HEAD | `4129ae4a` (JOURNAL §121, push autorizado v0.97.4). **0 commits ahead of origin/main** (sincronizado post-push). Tag `v0.97.4` en remoto. |
-| Working tree | clean (HEAD `4129ae4a` con §121 committed; push + tag v0.97.4 ejecutado). |
-| Bloqueos conocidos | **C7 firma BLOQUEADO** (auditoría 2026-09-22 sin variación). Push código ejecutado; release factory R1-R9 en CI + firma legal requieren desbloqueo C7 en sesión dedicada. Push + tag v0.97.4 **EJECUTADOS** (operador autorizó 2026-09-23 14:29:58 UTC). |
-| Siguiente unidad ejecutable | Decisión AUTO sin push. §118 cierra los 5 candidatos STATE como **no accionables sin evidencia empírica** o ya mitigados. Estado técnico sólido. Próximos WU solo si el operador aporta dirección nueva: (a) honestidad documental PRF-DIST-04 (sesión dedicada); (b) auditoría de los 9 dirs CI/cross-compile (requiere red/act, operator-gated); (c) regenerar evidencia F0-W2/F0-W3 (cosmético, valor bajo). Operator-gated: push, tag, C7, H-04, H-07. |
+| Hito activo | **F2 — Correctitud reproducible (EN CURSO; auditorías honestas §101-§105 sesiones 4 AUTO; sub-cerrados en JOURNAL §95 DIST-03, §99-§100 H-06 PRF-DIST-02/U20, §103-§104 T4/S5, §125.V22 commits V12+V13+IssueJ, §125.V23 H-07 cláusula). Operator-gated: push, tag, C7, H-05, H-06.** |
+| Última unidad cerrada | **§124 PRF-STATE-11/12/13: unique tmp file names para writers concurrentes** (commit `5cf910a7`, 2026-09-23 18:41 UTC). Fix mínimo: extraer `tmp_path_for(db_path)` helper que devuelve `<basename>.tmp.<pid>.<seq>` (AtomicU64 monotonic counter); `save_durable_snapshot` lo invoca en lugar del inline `with_extension("cache.tmp")`. RED→GREEN verificado manualmente: state11/state12 fallaban en código viejo, pasan tras fix; state13 (recovery) verde en ambos. Bug real pero sutil: el bincode atomic rename garantiza cache final coherente; lo que se manifestaba es attribution de writers interrumpidos y race visible en ventana write→rename. UAT binario del working tree descartado (no era RED); pineado con 3 unit tests deterministas. bincode dev-dep revertida; lock ya estaba limpio. Regresión: `cognicode-core --lib` 2162 passed, 0 failed, 27 ignored (baseline §123 = 2159/0/27). Todos los UATs PRF-STATE (02/03/04) verdes. **V23 strace binario**: 2 procesos concurrentes contra workspace 20k símbolos producen `graph.cache.tmp.4168232.0` y `graph.cache.tmp.4168234.0` (PIDs distintos); rename atómico a `graph.cache`; cero leftovers. Contrato `tmp_path_for` cumplido en binario real de release. |
+| Unidad activa siguiente | Decisión AUTO sin push. §124 cierra issue **B** del plan §123. **Investigación §124.V31**: Issue **C** resulta ser código defensivo muerto. **Investigación §124.V34**: Issues **D** y **E** son refactors profilácticos sin bug funcional actual (D: persistencia podría moverse a infrastructure; E: 4 tests usan `PathBuf::from(".")` pero ninguno escribe al CWD real). Ambos operator-gated. **Issue F** scope revisado: 13 archivos. Operator-gated. |
+| Estado de certificación | F0 = ACCEPTED. F1 = ACCEPTED. F2 = ACCEPTED (W1-W10 IMPLEMENTED vía cert C2). F3-F6 = ACCEPTED vía C3-C6. **C7 = BLOQUEADO** (auditoría 2026-09-22 revocó `READY FOR RELEASE ≡ C7 PASS`). H-F6-1 **legalmente cerrado** (`0764fb81`) y **blindado** (§105). PRF-STATE-07/08/09/10 ACCEPTED vía `ee834ff4`. PRF-STATE-11/12/13 ACCEPTED vía `5cf910a7` (issue B de §123 cerrado). |
+| HEAD | `98768030` (F3.W3 get_outline CLI/MCP equivalence, JOURNAL §125.V26). Sobre `d1f99137` (V25, F3.W2 query_symbol_index equivalence) sobre `f3adb2ea` (V24, F3.W1.a per_file_equivalence) sobre `d5ca08fa` (JOURNAL §125.V22, commits materializados) sobre `4b56c27f` (V12+V13 ROFS+large-manifest tests) sobre `fd1c9235` (§125 hardening) sobre `5cf910a7` (§124 fix tmp_path_for) sobre `ee834ff4` (§123 scope-aware aplicado) sobre `dac62c0a` (§122 workflow). **8 commits locales sin push** desde origin/main. Tag `v0.97.4` en remoto (apunta a `4129ae4a`); tag para §125+ pendiente — operator-gated. |
+| Working tree | 8 entradas restantes tras commits `4b56c27f` + `d5ca08fa`: solo archivos operator-managed o gitignored (`.tool-versions`, `AGENTS.md`, `docs/prf/*` gitignored, `.pipeline.kts`, `ci/run-pipelinek`). Cero código CogniCode sin commitear. Push acumulado + tag pendientes — operator-gated. |
+| Bloqueos conocidos | **C7 firma BLOQUEADO** (auditoría 2026-09-22 sin variación). H-05 + H-06 operator-gated. **Issue J remediación completada 100%** (V14+V15 cierran 11 callers cross-crate con `binary_path_for`). H-07 ✅ CERRADO vía documentación (cláusula RELEASE-CANDIDATE §Notas de honestidad, JOURNAL §125.V23). 12/12 items operator-list cerrados en cert PRF-F2-W11 + V11-V15. |
+| Siguiente unidad ejecutable | **SESIÓN 2026-09-24 AUTO en curso**. Commits V12+V13 (`4b56c27f`) + Issue J cross-crate (`d5ca08fa`) materializados en repo local. H-07 CERRADO vía documentación (cláusula en `RELEASE-CANDIDATE.md §Notas de honestidad`). 12/12 operator-validations + H-03 ✅ + H-04 ✅ + H-07 ✅. H-05/H-06 siguen operator-gated. Acción gated para reanudar: push acumulado (1), tag (2), H-05/H-06 (3), C7 firma (4) — todas requieren orden explícita del operador. |
 | Política git | `docs/prf/` se versiona localmente solo en working tree. Para que los fixtures sean accesibles al CI, se hace force-add (`git add -f`) siguiendo el patrón de F2.W7 (`5ce8eb1e`, `3118c580`, `73236510`). Evidencia cruda local-only (manifestada en `evidence/MANIFEST.md`). Push pendiente de orden explícita. |
 | Gobierno del proyecto | **PRF es el único roadmap ejecutivo vigente** (decisión del operador 2026-09-21, `JOURNAL.md` entrada 13, `TRACEABILITY.md` §Correspondencia E31→PRF). E31 conserva su evidencia y aporta requisitos útiles que migran a gates PRF. |
 
@@ -708,11 +708,19 @@ Acciones del plan registrado en `RELEASE-CANDIDATE §Cierre de PRF`:
   operador (qué vertical: LSP, MCP, CLI, persistencia, etc.).
 - ⏳ Acción 3 H-04 (persistencia vs reconstrucción) — requiere
   decisión arquitectural del operador.
-- ⏳ Acción 3 H-07 (mecanismo de gates) — pendiente de diseño.
 - ✅ Acción 3 H-06 (instalador ciclo A→B con rollback) —
   `728f05a0` (JOURNAL §99). E2E real con `local_release` + `run_install`
   + SHA sabotado; tracker/version preservado en caso de fallo SHA,
   `versions/A/` intacto.
+- ✅ Acción 3 H-07 (mecanismo de gates) — `RELEASE-CANDIDATE.md`
+  cláusula H-07 añadida (JOURNAL §125.V23, 2026-09-24). CERRADO vía
+  documentación: patrón de prueba negativa operacional
+  (`prf_ci_01_07_clippy_gate_uat::clippy_gate_fails_on_injected_unused_variable`),
+  4 gates CI remotos declarados en `.github/workflows/release.yml`,
+  scripts locales `check-release-matrix.sh` + `e88-entry-gates.sh`
+  versionados, salvaguarda `pipelinek` vigente. NO hay gate-by-SHA
+  automatizado contra SHA-frozen en HEAD `d5ca08fa` — declarado
+  contractualmente.
 - ⏳ Acción 4 (firmar C7 contractual sobre requisitos reconciliados) —
   solo después de cerrar H-03..H-07 (H-01/H-02/H-06 cerrados).
 - ⏳ Acción 5 (push + tag) — bloqueada por directive §3 + auditoría.
@@ -728,6 +736,91 @@ disciplina TDD (RED → GREEN) y verificación incremental. Suite
 `cargo test -p cognicode-core --lib` debe permanecer ≥2129 passed,
 0 failed, 27 ignored entre acciones (post H-01 GREEN; antes era
 2128 + 1 RED intencional).
+
+
+## Cierre de §125 (Issue F + Issue E — test refactor pending commit)
+
+**HEAD**: `5cf910a7` (sin cambios desde §124).
+**Working tree**: 11 archivos modificados, no commiteados.
+- 10 archivos en `crates/cognicode-mcp/tests/` — Issue F (binary_path dedup).
+- 1 archivo en `crates/cognicode-core/src/interface/mcp/handlers/mod.rs` — Issue E (4 TempDir).
+
+**Issue F (binary_path refactor)**:
+- `common::binary_path()` upgraded con precedence `CARGO_BIN_EXE_*` > `CARGO_TARGET_DIR/release` > `CARGO_TARGET_DIR/debug` > workspace fallback.
+- 2 unit tests añadidos en `common::tests`.
+- 9 archivos caller deduped: `prf_sec_*`, `prf_mcp_*`, `prf_ana_*`, `continuation_e2e`.
+- Import huérfano `PathBuf` removido en `prf_sec_01_uat.rs`.
+
+**Issue E (4 TempDir cosméticos)**:
+- `test_handle_query_symbol_index_empty_symbol`, `test_handle_build_call_subgraph_empty_symbol`, `test_handle_get_per_file_graph_nonexistent_file`, `test_handle_merge_graphs_empty_list` ahora usan `tempfile::tempdir()` en vez de `PathBuf::from(".")`.
+
+**Validación completa**:
+- `cargo check -p cognicode-mcp --tests` + `cargo check -p cognicode-core --tests`: clean.
+- `cargo fmt --check` ambos crates: exit 0 (Issue F), Issue E solo diff display no aplicado.
+- `cargo clippy --tests -- -D warnings` ambos crates: clean.
+- Tests focalizados: `prf_state_02`, `prf_mcp_02`, `prf_sec_01` integration PASS; nuevos `common::tests` unit tests PASS; 4 handlers unit tests PASS individualmente.
+
+**Pendiente operator-gated**:
+- Commit(s) — recomendación: 2 commits separados (Issue E primero, Issue F después) por bisectabilidad.
+- Push a origin — bloqueado por directive §3.
+- Issue G (file_operations.rs:1186/1335) — decisión §99-§100 explícita de NO tocar; reabrir solo con ADR.
+- Issue H (lifecycle_journal.rs:104) — severidad muy baja, opcional.
+
+**Validaciones post-§125 ejecutadas (JOURNAL §125.V5)**:
+- (5) PID-source verificado: `std::process::id()` retorna process ID (test runtime con 4 threads imprime PID 94175 en main y todos los threads).
+- (11) line coverage: `tmp_path_for` 100% cubierto (76/76 hits), `save_durable_snapshot` 73 hits, branches de error path pre-existentes no cubiertas (no regresión de §124).
+- (12) commit audit de `5cf910a7`: 7/7 claims verificadas independientemente (test counts, integration tests re-run PASS, clippy/fmt clean, bincode dev-dep absent).
+
+**Validación binario fresh (JOURNAL §125.V6)**:
+- (2) strings/objdump + ejecución end-to-end: `target/release/cognicode-mcp` (post-§124) inspeccionado y ejecutado contra corpus con `pub fn hello() -> i32 { 42 }`. Strace capturó `openat(...graph.cache.tmp.128232.0...)` y `openat(...graph.cache.tmp.128232.1...)` — PID 128232, SEQ 0/1, paths únicos. Patrón antiguo `cache.tmp` ausente del binario (0 ocurrencias).
+
+**Validación cargo-nextest interaction (JOURNAL §125.V7)**:
+- (10) option_env! fragility: la implementación actual usa `option_env!("CARGO_BIN_EXE_cognicode-mcp")` (compile-time). cargo-nextest docs confirman que setea solo en runtime, así que bajo nextest la precedence cae a `CARGO_TARGET_DIR` fallback. Funciona en cargo test del workspace (verificado OBSERVED vía strace). Recomendación documentada para añadir runtime fallback (operator-gated).
+
+**Stress test drop JoinHandle (JOURNAL §125.V8)**:
+- (8) Nuevo test `state12_stress_dropped_writer_does_not_block_others` añadido: 4 writers concurrentes, 2 JoinHandles droppeados para simular crash, verifica coherencia del cache post-crash. PASS en aislamiento + 10/10 PASS en loop de regresión (no flaky).
+
+**Test count**: 2162 → **2163** (+1 nuevo test, baseline 27 ignored preservado).
+
+**Evidencia C7-ready**: §124 + §125 juntos tienen cobertura de líneas del cambio al 100%, todas las claims verificables, integración UAT pasa (12/12), fmt/clippy clean en ambos crates, commit message auditable, binario fresh ejecuta el fix con paths únicos en runtime, stress con dropped writers robusto. Pendiente solo firma del operador.
+
+**Validaciones V10-V12 (post-commit fd1c9235, pre-próximo-commit)**:
+
+V10 — cross-crate audit:
+- 17 archivos con `binary_path()` en todo el workspace:
+  - 8 usan `env!("CARGO_BIN_EXE_*")` (compile-time hard, fallarían bajo cargo-nextest)
+  - 7 usan hardcoded `target/release/<bin>` (frágil bajo CARGO_TARGET_DIR custom)
+  - 1 usa el §125 refactor `option_env!` pattern
+  - 1 fallback chain complejo (cognicode-graph-wasm)
+- 14/14 no-§125 verificados PASS en este entorno. Issue J (refactor cross-crate completo) queda como WU futura operator-gated.
+
+V11 — cross-session SEQ counter:
+- Toy reproducer `/tmp/seq-test` confirma: SEQ counter es process-local (cada proceso fresh a 0), within-process monotónico (seq1=0, seq2=1), overflow u64 a 585 años @ 1B seq/sec.
+- Cierre del item (4) del listado operator-original.
+
+V12 — read-only FS (ROFS):
+- 2 nuevos tests `state12_rofs_save_returns_error_without_leftover_tmp` y `state12_rofs_concurrent_writers_preserve_existing_snapshot` añadidos.
+- Patrón probe-based para root bypass (sin dependencia libc).
+- **10/10 PASS** flake check, deterministic.
+- Confirma que §124 fix mantiene invariantes de atomicidad y ausencia de tmp leaks bajo filesystem adversarial.
+- Test count: 2163 → **2165** (+2 ROFS tests).
+- Clippy clean, fmt clean en mi archivo. 12 archivos no-relacionados tienen diffs pre-existentes (no los toco).
+- Cierre del item (6) del listado operator-original.
+
+V13 — large FileManifest:
+- 1 nuevo test `state14_large_manifest_roundtrip_is_byte_exact_and_fast` añadido.
+- N=10,000 entradas, save=7-8ms, load=21-23ms, size=1,000,073 bytes (determinístico).
+- Round-trip byte-exact verificado en las 10k entradas.
+- 0 orphan tmp files en todas las iteraciones.
+- 10/10 PASS flake check.
+- Test count: 2165 → **2166** (+1 large manifest test).
+- Cierre del item (9) del listado operator-original.
+
+**Pendiente operator-gated**:
+- Commit de los 2 nuevos tests V12 (Issue K propuesta: `test(state): add ROFS characterization tests for §124 invariant under read-only fs`).
+- Push acumulado fd1c9235 + nuevo commit a origin — bloqueado por directive §3.
+- Issue J (cross-crate binary_path helper para 14 archivos) — WU futura.
+- C7 firma — bloqueado por directive §3.
 
 
 ## Cierre de F2.W8 (Errores silenciosos en `build_project_graph`)
