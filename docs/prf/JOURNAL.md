@@ -10801,3 +10801,155 @@ the gate is a no-op` y fallado.
 - Job altered: 107725543523
 - HEAD actual: `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
 - Commits previos en este ciclo: `dcdf5978` (iter 4), `08d83129` (iter 5 layout), `93b7a9a3` (iter 5 parser escape)
+
+## §134 — Auditoría técnica integral externa sobre `93b7a9a3` (acuse de recibo)
+
+**Fecha**: 2026-09-24
+**Auditoría**: solo lectura, scope `main` @ `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
+**Resultado**: 13 hallazgos (H01–H13), severidades de "crítica para C7" a "media", roadmap de continuación (P0.1–P2)
+
+### Lo que la auditoría confirma que mi narrativa local ya dice
+
+- 5/5 SUCCESS en run #36026057157 sobre `93b7a9a3` (validación remota
+  de distribución).
+- C7 sigue BLOQUEADO por gates contractuales, no por falta de un
+  verde. La auditoría distingue explícitamente "validación superada"
+  de "release certificada".
+- Tag v0.97.5/v0.97.6, H-05, H-06 son operator-gated.
+- LSI tiene cierre de alcance declarado (M10 packs diferido por
+  decisión deliberada); no es nueve fallos de PRF.
+- RPC y Control Plane son evoluciones posteriores, no parte del
+  cierre PRF.
+- Mi incidente de seguridad #36002666254 está documentado
+  honestamente con blast radius cero verificado.
+
+### Lo que la auditoría añade a mi narrativa local
+
+**H01 (crítica para C7)**: `RELEASE-CANDIDATE.md` mantiene SHA
+congelado `178f8a5b…` mientras `main` está en `93b7a9a3…`. La
+campaña de validación terminó satisfactoria pero sobre un SHA
+distinto al congelado. Recomendación: fijar nueva candidata después
+de cerrar requisitos pendientes, ejecutar campaña exigida por C7
+sobre esa candidata, separar `VALIDATED` / `RELEASE_ACCEPTED` /
+`PUBLISHED`.
+
+**H02 (alta)**: `ci.yml` solo tiene `workflow_dispatch`; no hay
+branch protection ni required checks en `main`. Política local-first
+reconocida pero sin enforcement equivalente. Mi trabajo F6.W3.bis
+resuelve esto parcialmente para `release-validate.yml` (que sí
+tiene gate `Bind to expected_sha`), pero NO para el CI general.
+
+**H03 (media-alta)**: Dependencias inversas a la arquitectura
+hexagonal. `FileOperationsService` importa `InputValidator` de MCP
+directamente; `WorkspaceSession` construye implementaciones
+concretas de caché, LSP, verificador, validador MCP;
+`AnalysisService` depende de implementaciones de grafo/parser de
+infraestructura. Recomendación: puertos neutrales, inyección desde
+raíz de composición, seams respaldados por consumidores.
+
+**H04 (media-alta)**: Dos rutas de construcción del grafo
+(`AnalysisService::build_full_graph` vs `FullGraphStrategy`/
+`PerFileStrategy`). F2.W7 ya documentó que las estrategias
+modificadas por F2.W5 no eran invocadas por el binario real.
+Riesgo de connascence semántica: cambiar reglas en una ruta y
+olvidar la otra. Recomendación: un único propietario de reglas,
+pruebas de equivalencia sobre el mismo corpus, consolidar solo
+cuando las pruebas demuestren que la separación no aporta valor.
+
+**H05 (media)**: Módulos de gran tamaño. `handlers/mod.rs` ~7.552
+líneas, `workspace_session.rs` ~4.532, `file_operations.rs`
+~3.944, `analysis_service.rs` ~3.809, `cognicode-explorer/src/
+domain/views.rs` >9.000. Tamaños observados, no equivalen a
+complejidad ciclomática pero sí amplían radio de cambio.
+Adicionalmente `views.rs` usa `QualityGraphRepository` desde
+`adapters` — frontera adicional.
+
+**H06 (alta por permisos)**: Doble representación de autoridad MCP.
+Las herramientas declaran `authority` en metadatos, pero
+`list_tools` filtra con `MUTATING_TOOLS` heredada. `PRF-MCP-05`
+parcial. Recomendación: una sola fuente ejecutable, prueba
+negativa con herramienta sintética con permisos elevados en modo
+solo lectura.
+
+**H07 (alta para certificación)**: Campaña de seguridad
+incompleta. `PRF-SEC-07` adversarial integrado pendiente. Faltan
+presupuestos CPU/memoria/tiempo, cancelación durante operación
+costosa, cobertura exhaustiva TOCTOU.
+
+**H08 (media)**: Cobertura 74,15% lines en `cognicode-core --lib`
+es **informativa**, no gate. `continue-on-error: true` en CI. Falla
+de regresión podría pasar inadvertida en CLI/MCP/Explorer.
+
+**H09 (media)**: Rendimiento medido pero no certificado como
+regresión controlada. `PRF-CI-04` falta comparación automatizada
+en entorno estable.
+
+**H10 (media-alta)**: Cadena de suministro con excepciones
+documentadas en `deny.toml`; `PRF-CI-05` parcial por gate de
+licencias.
+
+**H11 (media) — la que más me toca**: Punteros y matrices
+desactualizados respecto al HEAD remoto. Mi commit `084c1649`
+(local, ahead=1) actualiza STATE a 5/5 verde y añade §133, pero
+`origin/main` sigue en `93b7a9a3` con STATE mostrando "iter 4
+cerrado". `RELEASE-CANDIDATE.md` mantiene SHA `178f8a5b` stale
+(H01). `TRACEABILITY.md` mantiene deuda de `find_usages` inline
+que los handlers actuales resuelven vía `AnalysisService`.
+
+**H12 (media-alta)**: Distribución validada tiene alcance menor
+que el producto descrito. 5/5 cubre Linux x86_64 + aarch64;
+`PRF-DIST-05` y `PRF-DIST-07` parciales para otras plataformas y
+`explorer-*`.
+
+**H13 (media)**: CP1.0 tiene endpoint HTTP de lectura pero no
+flujo de valor completo (admisión de restricciones no demostrada).
+Decisión correcta: mantener CP diferido durante cierre PRF.
+
+### Lo que NO hago bajo autonomía
+
+Por hard rule del operador ("no push sin autorización",
+"auditoría ≠ orden de cambios"), **no ejecuto P0.1–P2 ni
+ninguno de los 13 hallazgos directamente**. Cada hallazgo tiene
+su propia decisión que excede el ámbito de esta sesión:
+
+- **P0.1** (reconciliar punteros contra `93b7a9a3`): requiere
+  push acumulado de docs, que es operator-gated.
+- **P0.2** (cerrar `PARTIAL/PEND/NOT_RUN` para C7): requiere
+  nuevo trabajo de código + suite completa + UAT para cada
+  requisito.
+- **P0.3** (gate integral por SHA): requiere ejecución
+  coordinada de suite completa + contratos CLI/MCP + cobertura
+  + seguridad dependencias.
+- **P0.4** (fijar nueva candidata): requiere decisión de versión
+  (v0.97.5/v0.97.6/otro) y ejecución del canal de distribución
+  sobre artefactos reales.
+- **P0.5** (decisión C7): firma contractual, requiere que los
+  P0.1–P0.4 estén verdes primero.
+- **P1.1–P1.3** (refactors arquitectura hexagonal, consolidación
+  grafo, cobertura/rendimiento): trabajo sustantivo con riesgo
+  de regresión.
+- **P2** (LSI/CP/RPC): evoluciones posteriores, no parte del
+  cierre PRF.
+
+### Estado tras esta sesión
+
+- **Producto**: workflow `release-validate.yml` 5/5 verde en
+  `93b7a9a3`. Cierre administrativo pendiente de autorización
+  separada (push acumulado docs, tag, C7, H-05, H-06).
+- **Auditoría**: recibida, reconocida, no autoejecutada. Las
+  acciones priorizadas quedan registradas en este §134 para
+  cuando el operador decida el orden.
+- **Tensión identificada**: la auditoría refuerza la distinción
+  que el operador ha mantenido todo el ciclo — "verde ≠ release
+  certificada" — pero añade una lista concreta de qué falta para
+  C7 (P0.1–P0.5). El siguiente paso natural es que el operador
+  revise P0.1 (reconciliación documental, bajo esfuerzo) como
+  base para P0.2–P0.4.
+
+### Refs
+
+- Run verde auditado: https://github.com/Rubentxu/CogniCode/actions/runs/36026057157
+- SHA auditado: `93b7a9a3fccd12b05554534c50cdd926d3f8fe4b`
+- H01 release candidata stale: `docs/prf/RELEASE-CANDIDATE.md` (SHA `178f8a5b`)
+- H11 punteros desactualizados: este mismo §134 + commit local `084c1649` (no pushed)
+- Commits de este ciclo F6.W3.bis: `dcdf5978`, `08d83129`, `93b7a9a3`, `084c1649` (local)
