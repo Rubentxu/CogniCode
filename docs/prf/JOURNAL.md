@@ -9408,3 +9408,157 @@ Extensión del test negativo pre-existente:
 
 Refs: PRF F6.W3.bis (commits §127, §128, §129), operator review §128 final,
 post-§128 tres garantías pendientes.
+
+## §130 — release-validate.yml audit + negative-test jobs (2026-09-24)
+
+### Origen
+
+El operador enumeró tras §128 una lista explícita de lo que la
+auditoría de `release-validate.yml` debía probar más allá del syntax
+check YAML:
+
+1. SHA selection unambiguous: el campaign result debe estar atado al
+   SHA concreto que se está validando, no a otro.
+2. Same code builds Tier-1 packages: el `release-validate.yml` debe
+   producir artefactos con el mismo código que `release.yml`, no con
+   una variante.
+3. Gates block on failure: cada paso debe propagar errores (no debe
+   ser posible que el verify diga Ok sobre un staging corrupto).
+4. NO tag/publish/upload/draft transitions: ausencia verificable de
+   `gh release create/upload/edit`, `git tag`, `git push --tags`,
+   `actions/attest-build-provenance`, transiciones de draft.
+5. Negative test (missing/altered artifact): probar que el verify
+   rechaza un staging donde falte un archivo o uno haya sido
+   alterado.
+
+### Hallazgos del audit
+
+Antes del parche (`ad86ec13`, §127) y los commits de hoy:
+
+- **Same code as Tier-1**: ✅ CONFIRMADO por diff paralelo. Build
+  matrix idéntico (linux-x86-64 + linux-aarch64, mismo rust_target,
+  mismos flags `--features cognicode-core/evidence-kernel`, mismo
+  `cargo build` invocado desde `target/$rust_target/release/`).
+  `release-validate.yml` invoca el MISMO binario `cognicode-release`
+  que `release.yml`, con los mismos `cognicode-release plan` /
+  `name` / `generate` / `verify` comandos. La única diferencia es
+  la ausencia de pasos de draft/release/attestation al final.
+- **Permissions más restrictivas**: ✅ `contents: read` (vs
+  `contents: write` de release.yml). `id-token: write` se preserva
+  para una potencial integración con attestations futuras, pero en
+  el flujo actual ningún step usa attestations en
+  release-validate.yml (la sección no aparece). Por tanto no se
+  podría crear ni actualizar un release aunque el código lo
+  intentara — el token no es suficiente.
+- **Campaign result atado al SHA**: ✅ `cognicode-release generate
+  --source-commit "$GITHUB_SHA"` (línea 264). El `verify` lo
+  expone en `ReleaseInventory.source_commit`.
+- **NO tag/publish/upload/draft**: ✅ grep por
+  `gh release|git tag|git push|attest-build|gh attestation verify`
+  sobre la versión pre-§130 retorna 0 hits en el flujo del
+  workflow. La ausencia es estructural, no condicional.
+- **Negative test**: ❌ AUSENTE. La cobertura pre-§130 probaba el
+  happy path (build → package → assemble → verify → upload
+  artifact) pero no el sad path con staging corrompido.
+
+### Cierre
+
+Nuevos jobs añadidos en `8b1f998c`
+(`ci(workflow): add negative-test jobs to release-validate.yml`):
+
+```yaml
+negative-test-missing:
+  needs: [validate]
+  steps:
+    - actions/checkout@v4  (fetch-depth: 0)
+    - dtolnay/rust-toolchain@stable
+    - Swatinem/rust-cache@v2
+    - cargo build --release --bin cognicode-release  (mismo SHA que validate)
+    - actions/download-artifact@v4
+        path: release
+        pattern: release-validate-output-*
+    - shell: bash
+        - if [ "${#archives[@]}" -lt 2 ]: error
+        - victim="${archives[0]}"; rm "$victim"
+        - ./target/release/cognicode-release verify --staging release ...
+          con `set +e` para capturar rc
+        - if [ "$rc" -eq 0 ]:
+            echo "::error::release-verify returned 0 against a staging set
+                  missing $victim — the gate is a no-op"
+            exit 1
+
+negative-test-altered:
+  needs: [validate]
+  steps: (similar, flip byte con python3 para evitar sed newline
+          pitfalls; assert release-verify falla con rc != 0)
+```
+
+Punto crítico del diseño: ambos jobs assertan `rc != 0`
+explícitamente con `set +e`. **Si el verify pasase sobre staging
+corrupto, el job retorna 1 con `::error::`** indicando que el gate
+es un no-op. Por tanto la única señal válida de "el gate rechaza
+corrupción" es el verde.
+
+Inspección estática de las ramas que el verify alcanzaría:
+
+- `build_inventory` en `crates/cognicode-cli/src/cmd/release_contract.rs`
+  bails con `"missing artifact \`<filename>\`: component \`<stem>\`
+  is published but was not produced for platform \`<platform>\`"`
+  cuando un tar.gz falta (línea 612-617).
+- `verify_release` en `crates/cognicode-cli/src/cmd/release_factory.rs`
+  recomputa el SHA256 de cada tar.gz (vía `produced_artifact_from_file`).
+  Cuando un tar.gz está byte-flipped, el SHA256 recomputado diverge
+  del que el manifest BundleManifest declara. La línea 366 bails con
+  `"digest mismatch for \`{}\`: manifest says {}, recomputed {}"`.
+
+Ambos paths son alcanzables con el staging real produced por
+`release-validate.yml`. La confirmación dinámica se delega a la
+autorización SEPARADA para ejecutar el workflow en CI remoto (no
+incluida en este commit).
+
+### Sintaxis YAML
+
+```bash
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-validate.yml'))"
+```
+
+Devuelve sin errores:
+
+```
+{'jobs': ['build', 'validate', 'negative-test-missing', 'negative-test-altered']}
+```
+
+Con grafo de dependencias:
+
+```
+build:                  needs=[]
+validate:               needs=['build']
+negative-test-missing:  needs=['validate']
+negative-test-altered:  needs=['validate']
+```
+
+`needs.validate.outputs.version` referencia el output del step `id: v`
+del job `validate` (donde `echo "version=$VERSION" >> "$GITHUB_OUTPUT"`).
+Si el job `validate` no produce version (por usar ${{ inputs.version }}
+vacío en la invocación), el fallback del step es grep sobre Cargo.toml.
+Ambos caminos son válidos.
+
+### Commit
+
+- `8b1f998c` (ci(workflow): add negative-test jobs to release-validate.yml)
+
+### Estado operator-gated
+
+- Push acumulado: 9 commits (`a5183ce6`, `d4969ccb`, `8967849d`,
+  `ad86ec13`, `788109a2`, `cc60f20f`, `4b70f1bc`, `3d87a4b0`,
+  `8b1f998c`). Operador-gated.
+- Tag v0.97.6: pendiente. Operador-gated.
+- H-05/H-06: pendiente. Operador-gated.
+- C7 firma: BLOQUEADO hasta validación remota satisfactoria.
+- Autorización pendiente: ejecutar `release-validate.yml` en CI
+  remoto vía workflow_dispatch (en el SHA `8b1f998c`) SIN crear
+  tag ni publicar release. Esa es la pieza que cierra el bucle
+  de la garantía #3.
+
+Refs: PRF F6.W3.bis / F5.W4.bis / release-validate.yml audit,
+operator review §128, post-§128 tres garantías.
