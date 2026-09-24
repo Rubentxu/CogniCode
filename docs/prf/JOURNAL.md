@@ -8208,3 +8208,67 @@ hardcoded por el handler (no interesante pinear).
 - JOURNAL §125.V24 (W1.a), V25 (W2), V26 (W3), V27 (W4).
 - D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70.
 - HANDOFF-§125.md (operator-approved gate).
+
+## V28.1 — 2026-09-24 — D71: cinco implementaciones de "risk level" en cognicode-core
+
+**Acción**: Investigación en profundidad de D65 (divergencia
+`risk_level` core↔MCP). El alcance es mayor de lo que V27
+documentó: existen **cinco implementaciones distintas** del
+concepto "risk level" en `cognicode-core`, sin relación
+funcional entre ellas.
+
+**Inventario**:
+
+| # | Path | Tipo | Variantes | Función de cálculo |
+|---|------|------|-----------|---------------------|
+| 1 | `domain::services::impact_analyzer::ImpactLevel` | enum | `Minimal\|Low\|Medium\|High\|Critical` (5) | `direct_dependents` + `adjusted_transitive` con multiplicador 2x para type definitions |
+| 2 | `application::dto::common::RiskLevel` | enum | `Low\|Medium\|High\|Critical` (4) | MCP wrapper `handle_analyze_impact`: `symbols_count` con umbrales `>2/>5/>10` |
+| 3 | `application::dto::impact_dto::ImpactDto::new` | `String` | `"low"/"medium"/"high"/"critical"` (4) | Constructor del DTO: `score: u8` con rangos `0..=3/4..=6/7..=9/_` |
+| 4 | `domain::findings::finding::RiskLevel` | enum | `Low\|Medium\|High\|Critical` (4) | Findings flow (`grounded_finding_flow`): seteado manualmente, sin función de cálculo |
+| 5 | `infrastructure::safety::RiskLevel` | enum | `None\|Low\|Medium\|High\|Critical` (5, con `#[default] None`) | Safety module: usado para clasificar operaciones según permisos/peligrosidad |
+
+**No son aliases ni conversiones entre sí**. Cada uno tiene
+su propia lógica, su propio dominio, sus propios tests.
+`grep "RiskLevel"` muestra que `schemas.rs` re-exporta el
+`dto::common::RiskLevel` para uso del MCP, pero el resto son
+módulos aislados.
+
+**Decisión D71**: hallazgo arquitectónico que **amplía D65**.
+El operador debe conocer el alcance completo antes de decidir
+sobre D65. Opciones revisadas:
+
+- **D65 (a)**: unificar todas las implementaciones en una sola.
+  Esto requiere decisión sobre cuál es la canónica. `ImpactLevel`
+  (5 variantes, semántica refinada) es la más completa, pero
+  el campo `risk_level` del output MCP solo tiene 4 valores
+  según el schema JSON actual.
+- **D65 (b)**: documentar la divergencia como contrato
+  intencional. Cada módulo usa "risk level" en su sentido
+  específico (impact blast radius, finding severity, safety
+  classification, score mapping). Esto es válido pero requiere
+  renombrar para evitar la confusión (e.g., `ImpactLevel`,
+  `FindingSeverity`, `SafetyRisk`, `RiskScoreBand`).
+- **D65 (c)**: eliminar `risk_level` de donde no aporta
+  (e.g., del output MCP si la heurística de 4 variantes es
+  trivial comparada con `ImpactLevel` core).
+
+**Tests existentes** que pinean estos enums:
+
+- `domain/services/impact_analyzer.rs:283` →
+  `assert_eq!(report.impact_level, ImpactLevel::Minimal)`.
+- `application/dto/impact_dto.rs:312-331` → 4 tests sobre el
+  constructor `ImpactDto::new(score) → risk_level`.
+- `interface/mcp/mcp_roundtrip_tests.rs:573-576` → 4 tests
+  sobre la serialización JSON del `RiskLevel` MCP.
+- `application/services/analysis_service.rs:1959, 2169` → tests
+  sobre `impact_level <= ImpactLevel::Medium` (safety check).
+
+**Sin tests** que pineen equivalencia entre implementaciones.
+La relación entre `ImpactLevel` (core) y `RiskLevel` (MCP) es
+**implícita por nombre**, no contractualmente verificada.
+
+**Refs**:
+
+- JOURNAL §125.V27 (D65 original).
+- D65, D71.
+- Path evidence: `crates/cognicode-core/src/{domain/services/impact_analyzer.rs, application/dto/{common.rs,impact_dto.rs}, domain/findings/finding.rs, infrastructure/safety/mod.rs, interface/mcp/{handlers/mod.rs,mcp_roundtrip_tests.rs,schemas.rs}}`.
