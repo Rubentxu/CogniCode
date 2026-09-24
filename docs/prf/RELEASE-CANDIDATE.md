@@ -95,13 +95,11 @@
   marked as Latest en GitHub Releases.
 - [x] **Desarrollo de capacidades F0–F6** — ejecutado y documentado en
   `evidence/CERTIFICATES.md`.
-- [ ] **C7 = NO certificado automáticamente** — la auditoría 2026-09-22 del
-  operador (sección ‘Hallazgos que impiden dar por completo el contrato
-  original’) demostró que los certificados C0–C6 actuales son declarativos
-  respecto a los criterios del programa PRF original, pero no
-  contractualmente equivalentes a sus requisitos. La firma C7 sigue siendo
-  operator-gated: el operador debe ratificar el addendum sobre v0.98.1 con
-  la matriz `RECONCILIATION-MATRIX.md` como evidencia contractual base.
+- [x] **C7 = PASS** — firmado contractualmente por el operador
+  (`Ruben <rubentxu@cognicode.dev>`) el **2026-09-24T22:41:33Z** (UTC)
+  con la cadena "**firmo**". Expediente completo en
+  `docs/prf/F7-C7-EXPEDIENTE.md` (268 líneas) con 5 excepciones
+  aprobadas (E-C7-001 a E-C7-005).
 - [x] **P0.1 RELEASE-CANDIDATE freshen** — cerrado en este ciclo §150: SHA
   congelado actualizado a `e4ab6c8e` (release v0.98.1).
 
@@ -137,11 +135,12 @@ Origen: auditoría operador 2026-09-22 (sección ‘Cómo cerraría PRF sin crea
 - **C5 ejecutada parcialmente** (release-validate #36062820528 success sobre
   v0.98.1). Faltan pruebas equivalentes sobre linux-aarch64 nativas
   (limitación honesta del entorno actual).
-- **Decisión C7**: queda operator-gated. Material técnico en su lugar:
-  release v0.98.1 publicada, SHA256 reproduce, MCP probe OK
+- **Decisión C7**: ✅ **PASS** firmado por el operador
+  (`Ruben <rubentxu@cognicode.dev>`) el **2026-09-24T22:41:33Z** (UTC).
+  Expediente completo: `docs/prf/F7-C7-EXPEDIENTE.md`. Material técnico
+  verificado: release v0.98.1 publicada, SHA256 reproduce, MCP probe OK
   (20/20 tools authority=`read`), attestations, body de release con
-  92 líneas de verificación. El operador debe ratificar el addendum
-  sobre v0.98.1 con `RECONCILIATION-MATRIX.md` como base contractual.
+  92 líneas de verificación. 5 excepciones aprobadas (E-C7-001 a E-C7-005).
 
 ## Notas de honestidad
 

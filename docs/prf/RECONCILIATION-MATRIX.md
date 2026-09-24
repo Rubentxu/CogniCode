@@ -288,3 +288,30 @@ El plan B2 ataca directamente los 3 gaps bloqueantes identificados en §7:
 | PRF-CI-07 disparador automático | (operator-gated) Si operador activa branch protection; sino, documentar el gap en RELEASE-CANDIDATE §Honestidad y proceder con gate manual. | PRF-CI-07 → PASS contractual o EXCL documentada. |
 
 B2 entrega: campaña adversarial ejecutada, resultados reproducibles, fallos corregidos con RED → GREEN, compat CLI/MCP comprobada, matriz C5 actualizada.
+
+---
+
+## 12. Ratificación C7 sobre v0.98.1 (2026-09-24T22:41:33Z)
+
+El operador firmó **C7 = PASS** sobre v0.98.1 con la cadena "**firmo**"
+(`2026-09-24T22:41:33Z` UTC). El material técnico verificado contra el binario
+publicado v0.98.1 (release-validate #36062820528 + release.yml #36063804784,
+ambos SUCCESS, SHA256 reproduce, MCP probe 20/20 tools authority=`read`)
+más la matriz de este documento como evidencia contractual base
+sostienen la firma.
+
+**Tabla de cierre contractual**:
+
+| Categoría | Cuenta | Notas |
+|---|---|---|
+| PASS | 37 | Requisitos cumplidos con tests verdes y/o evidencia observable en HEAD `422f9514` |
+| PARTIAL | 11 | Requisitos cumplidos con salvedades documentadas en §7 |
+| NOT_RUN | 3 | Requisitos fuera de alcance del programa PRF (operator-gated) |
+| **Bloqueantes contractuales pre-firma** | **2 cerrados + 1 EXCL** | PRF-MCP-05 ✅ cerrado (`ea34ff7d`), PRF-SEC-07 ✅ cerrado (`ea34ff7d`), PRF-CI-07 EXCL E-C7-001 (gate tag/workspace cumple contrato equivalente) |
+
+**Decisión**: C7 firma con **5 excepciones aprobadas** (E-C7-001 a E-C7-005),
+documentadas en `docs/prf/F7-C7-EXPEDIENTE.md` §5.1.
+
+**Refs**: `docs/prf/F7-C7-EXPEDIENTE.md` (expediente completo, 268 líneas),
+`docs/prf/RELEASE-CANDIDATE.md` (SHA congelado `e4ab6c8e` ratificado),
+`docs/prf/JOURNAL.md` §151 (entrada de firma), `docs/prf/STATE.md` (snapshot C7 PASS).

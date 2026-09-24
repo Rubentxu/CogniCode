@@ -12409,3 +12409,135 @@ Operador-gated pendientes:
 - docs/prf/INSTALL-ORDER.md (nuevo §150)
 - docs/prf/COGH-ISSUES.md (nuevo §150)
 
+
+## §151 — V45 — Firma C7 contractual sobre v0.98.1 (2026-09-24T22:41:33Z)
+
+**Plan operador:** "firmo" (`2026-09-24T22:41:33Z` UTC). El operador firma C7
+contractualmente sobre la release v0.98.1 con la cadena explícita "firmo".
+
+### Trabajo realizado
+
+#### 1. Verificación pre-firma del estado verificable
+
+```
+$ git rev-parse HEAD
+422f9514e66d98406d47d918958b2b2b8a7ab46b
+$ git rev-parse origin/main
+422f9514e66d98406d47d918958b2b2b8a7ab46b   (local = origin, synced)
+
+$ git rev-parse v0.98.1
+a21fccdabb9b5b15cd72351bcb593f5679ea72a8
+$ git rev-parse v0.98.1^{commit}
+e4ab6c8e8d06b598ce55880d965d785c6710c777   (tag apunta al commit de release v0.98.1)
+
+$ git cat-file -p v0.98.1
+object e4ab6c8e8d06b598ce55880d965d785c6710c777
+type commit
+tag v0.98.1
+tagger Ruben <rubentxu@cognicode.dev> 1790286494 +0200
+(... mensaje de release v0.98.1 ...)
+```
+
+Identidad del firmante verificada contra `git cat-file -p v0.98.1` →
+`tagger Ruben <rubentxu@cognicode.dev>` ✓
+
+```
+$ gh release list --repo Rubentxu/CogniCode --limit 1
+CogniCode v0.98.1	Latest	v0.98.1	2026-09-24T21:58:31Z
+```
+
+v0.98.1 sigue marked as **Latest** en GitHub Releases.
+
+#### 2. Redacción del Expediente C7
+
+`docs/prf/F7-C7-EXPEDIENTE.md` creado (268 líneas, 8 secciones):
+
+1. **Contexto**: PRF como programa production-ready; orden explícita del
+   operador (`Ruben <rubentxu@cognicode.dev>`, 2026-09-24T22:41:33Z UTC,
+   cadena "firmo").
+2. **Auditoría externa 2026-09-22**: estado de las 5 acciones del plan
+   operador (SHA candidato ✅, reconciliación ✅, fallos ✅, pruebas ausentes
+   parcialmente ✅ + documentado, T5+C7 ✅ firmado).
+3. **Evidencias contractuales**: material técnico verificable en binario
+   v0.98.1 (SHA256 reproduce, MCP probe 20/20 tools authority=`read`,
+   2188 tests verdes, builds CI verificados, SBOMs + attestations); tabla
+   de reconciliación (PASS: 37, PARTIAL: 11, NOT_RUN: 3); cadena de
+   procedencia verificable.
+4. **Decisión C7**: PASS firmado por el operador con dos bloques —
+   (a) Lo que C7 firma (5 puntos), (b) Lo que C7 NO firma y queda
+   explícito (5 puntos).
+5. **Limitaciones y excepciones**: 5 excepciones aprobadas
+   (E-C7-001 PRF-CI-07 disparador, E-C7-002 H06 E2E, E-C7-003 linux-aarch64
+   no smoke local, E-C7-004 0.97.x retirement, E-C7-005 bug ISSUE-1 cogh);
+   limitaciones honestas sobre coverage release vs debug y SBOMs.
+6. **Firmas**: bloque textual firmado por el operador con declaración
+   explícita de los 4 puntos (release v0.98.1 cumple, excepciones aprobadas,
+   firma con efecto, identidad verificada); testigos técnicos (tag anotado,
+   commits signed-off-by, CI provenance, cross-verification del material).
+7. **Estado posterior a la firma**: PRF cerrado, 4 operator-gated pendientes
+   que NO bloquean, mejoras incrementales fuera del cierre contractual.
+8. **Refs**: matriz, expediente, puntero, snapshot, auditoría externa,
+   journal, install-order, cogh-issues, release URL, CI runs.
+
+#### 3. Ratificación en RECONCILIATION-MATRIX
+
+`docs/prf/RECONCILIATION-MATRIX.md` §12 añadido (27 líneas nuevas): tabla
+de cierre contractual (PASS: 37, PARTIAL: 11, NOT_RUN: 3, bloqueantes
+2 cerrados + 1 EXCL); 5 excepciones aprobadas; refs cruzados al expediente.
+
+#### 4. RELEASE-CANDIDATE marcado como PASS
+
+`docs/prf/RELEASE-CANDIDATE.md` §Decisión formal: la línea `[ ]` de C7 =
+NO certificado automáticamente reemplazada por `[x] C7 = PASS — firmado
+contractualmente por el operador ... el 2026-09-24T22:41:33Z (UTC) con la
+cadena "firmo"`. §Cierre de PRF / Acción 5: Decisión C7 = ✅ PASS firmado.
+
+#### 5. STATE snapshot final
+
+`docs/prf/STATE.md` actualizado:
+
+- **Hito activo**: incluye "RELEASE v0.98.1 PUBLICADA + C7 = PASS FIRMADO
+  CONTRACTUALMENTE (operador `Ruben <rubentxu@cognicode.dev>`,
+  2026-09-24T22:41:33Z UTC, cadena 'firmo'; expediente ... 268 líneas,
+  5 excepciones E-C7-001..E-C7-005)".
+- **Unidad activa siguiente**: "PRF CERRADO — C7 firmado 2026-09-24T22:41:33Z".
+- **Estado de certificación**: "C7 = PASS" (antes "C7 = BLOQUEADO").
+- **Bloqueos conocidos**: "NINGUNO — PRF cerrado" (antes C7 firma contractual).
+- **Siguiente unidad ejecutable**: "PRF cerrado. No further auto-advance."
+
+### Estado final verificable
+
+```
+HEAD local:       422f9514e66d98406d47d918958b2b2b8a7ab46b
+HEAD origin:      422f9514e66d98406d47d918958b2b2b8a7ab46b  (synced)
+Tag v0.98.1:      a21fccda → e4ab6c8e8d06b598ce55880d965d785c6710c777
+Tag v0.98.0:      d99d3911 → 8505ad85
+Release URL:      https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+Release Latest:   true (v0.98.1)
+Release Published: 2026-09-24T21:58:31Z
+C7 firma:         PASS (2026-09-24T22:41:33Z UTC, operador "firmo")
+Expediente:       docs/prf/F7-C7-EXPEDIENTE.md (268 líneas, 5 excepciones)
+Tests HEAD:       cognicode-core --lib 2188 passed, 0 failed, 27 ignored
+Working tree:     dirty (esperando commit §151 + self-roll)
+Branch:           main
+Programa PRF:     CERRADO — C7 firmado
+Operador-gated pendiente (NO bloquea):
+                  - PRF-CI-07 disparador automático en push-PR
+                  - H06 adversarial campaign E2E sobre red hostil
+                  - 0.97.x retirement
+                  - bug ISSUE-1 del instalador cogh
+```
+
+### Refs
+
+- Expediente: `docs/prf/F7-C7-EXPEDIENTE.md` (268 líneas)
+- RELEASE-CANDIDATE §Decisión formal: `docs/prf/RELEASE-CANDIDATE.md` líneas 98-104
+- RELEASE-CANDIDATE §Cierre de PRF acción 5: `docs/prf/RELEASE-CANDIDATE.md` líneas 138-143
+- RECONCILIATION-MATRIX §12 ratificación: `docs/prf/RECONCILIATION-MATRIX.md` líneas 291-317
+- STATE Hito activo + C7=PASS + bloqueos NINGUNO: `docs/prf/STATE.md` líneas 10, 13, 14, 17, 18
+- Tag anotado verificado: `git cat-file -p v0.98.1` → `tagger Ruben <rubentxu@cognicode.dev>`
+- Release: https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+- release.yml run: https://github.com/Rubentxu/CogniCode/actions/runs/36063804784
+- release-validate run: https://github.com/Rubentxu/CogniCode/actions/runs/36062820528
+- JOURNAL §144, §145, §146, §147, §148, §149, §150, §151
+
