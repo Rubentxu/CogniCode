@@ -1,0 +1,305 @@
+name: Release Validate
+
+# Operator-gated validation mode for the release factory.
+#
+# Runs every step of the release pipeline UP TO the point where remote
+# side-effects would happen, and STOPS THERE. The intent is to answer
+# "would this release succeed if I pushed the tag?" without creating
+# any tag, publishing any asset, modifying any GitHub Release, or
+# touching any draft state.
+#
+# Pipeline parity with .github/workflows/release.yml (e85):
+#
+#   1. Native build lanes (linux-x86-64 + linux-aarch64).
+#   2. SBOM (cargo-cyclonedx).
+#   3. Advisories gate (cargo-deny).
+#   4. One-archive-per-component packaging.
+#   5. Local smoke of binaries + extracted archives.
+#   6. Collect every lane's payloads (merge-multiple: false).
+#   7. Stage declared portable skill bundle payloads.
+#   8. Flatten per-lane payload directories.
+#   9. Generate BundleManifest v2 / ReleaseInventory / SHA256SUMS.
+#  10. release-verify (LOCAL).
+#  11. Verify the actual packaged CLI / MCP / portable skills.
+#
+# What this workflow DOES NOT do (the operator's hard rule):
+#
+#   - No `git tag` is created.
+#   - No `git push` of any tag is performed.
+#   - No `gh release create`, `upload`, or `edit` is called.
+#   - No `actions/attest-build-provenance` runs.
+#   - No `gh attestation verify` is performed (no attestations exist
+#     to verify on the validate path).
+#   - No draft is moved to published.
+#
+# All artifacts produced stay in the workflow's working directory and
+# can be inspected via the `actions/upload-artifact` step at the end
+# (this upload is to the workflow's own artifacts store, NOT to a
+# GitHub Release).
+#
+# Trigger:
+#
+#   workflow_dispatch only. No tag push, no schedule. The operator
+#   decides when to validate.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: >-
+          Workspace version (no leading `v`) to validate against.
+          Example: `0.97.6`. Used by `cognicode-release` to compute
+          derived artifact names. Falls back to the workspace's
+          `version` field when empty.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: release-validate-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # -------------------------------------------------------------------
+  # 1. Native build lanes. Same matrix as release.yml.
+  # -------------------------------------------------------------------
+  build:
+    name: build-${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x86-64
+            runner: ubuntu-latest
+            rust_target: x86_64-unknown-linux-gnu
+          - platform: linux-aarch64
+            runner: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ${{ matrix.rust_target }}
+
+      - name: Advisories gate (cargo-deny)
+        run: |
+          cargo install cargo-deny --locked || true
+          cargo deny check advisories
+
+      - name: SBOM (cargo-cyclonedx)
+        run: |
+          cargo install cargo-cyclonedx --locked || true
+          cargo cyclonedx --format json
+
+      - name: Build the publishable binaries natively
+        run: |
+          set -euo pipefail
+          cargo build --release --target ${{ matrix.rust_target }} \
+            -p cognicode-cli --bin cogh --bin cognicode \
+            --features cognicode-core/evidence-kernel
+          cargo build --release --target ${{ matrix.rust_target }} \
+            -p cognicode-mcp --bin cognicode-mcp
+
+      - name: Build the release tool
+        run: cargo build --release --bin cognicode-release
+
+      - name: Package one archive per component
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"]["workspace_members"][0])' \
+              || true)
+            VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          fi
+          echo "validating against version=$VERSION"
+          RELEASE=target/release/cognicode-release
+          mkdir -p dist
+          for filename in $("$RELEASE" plan --platform ${{ matrix.platform }} --version "$VERSION"); do
+            component="${filename%-$VERSION-*}"
+            filename=$("$RELEASE" name --component "$component" \
+                       --platform ${{ matrix.platform }} --version "$VERSION")
+            stage=$(mktemp -d)
+            mkdir -p "$stage/bin"
+            cp "target/${{ matrix.rust_target }}/release/$component" "$stage/bin/$component"
+            tar -czf "dist/$filename" -C "$stage" bin
+            echo "packaged $filename"
+          done
+          ls -la dist
+
+      - name: Smoke the produced binaries on a clean HOME
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$(mktemp -d)"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          export XDG_DATA_HOME="$HOME/.local/share"
+          export COGNICODE_HOME="$HOME/.cognicode"
+          RELEASE_DIR="target/${{ matrix.rust_target }}/release"
+          "$RELEASE_DIR/cogh" --version
+          "$RELEASE_DIR/cogh" --help | head -5
+          "$RELEASE_DIR/cognicode" --version
+          "$RELEASE_DIR/cognicode-mcp" --version
+
+      - name: Verify the archives extract and run standalone
+        shell: bash
+        run: |
+          set -euo pipefail
+          export HOME="$(mktemp -d)"
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          fi
+          mkdir -p extracted
+          for archive in dist/*.tar.gz; do
+            tar -xzf "$archive" -C extracted
+          done
+          test -x extracted/bin/cogh
+          extracted/bin/cogh --version
+          test -x extracted/bin/cognicode
+          extracted/bin/cognicode --version
+
+      - name: Upload lane artifacts (workflow-internal, NOT a GitHub Release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: validate-payloads-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            crates/*.cdx.json
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------
+  # 2. Local assembly + verify.
+  #
+  # Runs the same flatten / generate / verify / install-smoke pipeline
+  # as release.yml. STOPS at the boundary BEFORE any remote side-effect:
+  # no `gh release create`, no `gh release upload`, no attestations,
+  # no draft edit. The final step uploads the produced `release/`
+  # directory to the workflow's own artifact store so the operator can
+  # inspect what would have been published.
+  # -------------------------------------------------------------------
+  validate:
+    name: assemble-and-verify-local
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Collect every lane's payloads
+        uses: actions/download-artifact@v4
+        with:
+          path: staging
+          pattern: validate-payloads-*
+          merge-multiple: false
+
+      - name: Stage declared skill bundle payloads (DEBT-2)
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          fi
+          echo "staging skill bundles for version=$VERSION"
+          while IFS= read -r id; do
+            if [ ! -f "skills/$id/manifest.yaml" ]; then
+              echo "::error::published skill bundle `$id` has no skills/$id/manifest.yaml"
+              exit 1
+            fi
+            tar -czf "staging/${id}-${VERSION}.tar.gz" -C "skills/$id" .
+            echo "staged ${id}-${VERSION}.tar.gz"
+          done < <(./target/release/cognicode-release skills --published 2>/dev/null \
+                   || python3 -c "import re,sys; src=open('crates/cognicode-cli/src/cmd/release_contract.rs').read(); ids=re.findall(r'SkillBundleSpec\s*\{\s*id:\s*\"([^\"]+)\",\s*profiles:[^\n]*\n\s*published:\s*true',src); print('\n'.join(ids))")
+          ls -la staging
+
+      - name: Flatten per-lane payload directories to the staging root
+        run: |
+          set -euo pipefail
+          bash scripts/ci/stage-platform-payloads.sh staging
+          ls -la staging
+
+      - name: Build the release tool
+        run: cargo build --release --bin cognicode-release
+
+      - name: Resolve validate version and prospective tag
+        id: v
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version *= *"([^"]+)"/\1/')
+          fi
+          TAG="v${VERSION}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "validate-only mode: NOT creating tag $TAG; NOT publishing any release"
+
+      - name: Generate BundleManifest v2, ReleaseInventory and SHA256SUMS
+        run: |
+          set -euo pipefail
+          ./target/release/cognicode-release generate \
+            --staging staging \
+            --out release \
+            --version "${{ steps.v.outputs.version }}" \
+            --tag "${{ steps.v.outputs.tag }}" \
+            --source-commit "$GITHUB_SHA"
+
+      - name: release-verify (LOCAL, no remote side-effects)
+        run: |
+          set -euo pipefail
+          ./target/release/cognicode-release verify \
+            --staging release \
+            --version "${{ steps.v.outputs.version }}" \
+            --tag "${{ steps.v.outputs.tag }}"
+
+      - name: Verify the actual packaged CLI, MCP and portable skills (install-smoke)
+        run: |
+          set -euo pipefail
+          bash scripts/ci/release-install-smoke.sh "${{ steps.v.outputs.version }}" release
+
+      # Hard boundary. After this point release.yml would do:
+      #   gh release create / upload / attestation / publish. This workflow
+      #   DOES NOT do those. The produced release/ directory is uploaded to
+      #   the workflow's own artifact store for operator inspection.
+      - name: Upload the produced release/ directory for operator inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-validate-output-${{ steps.v.outputs.tag }}
+          path: |
+            release/*.tar.gz
+            release/bundle-*.yaml
+            release/release-inventory-*.json
+            release/SHA256SUMS
+          if-no-files-found: error
+
+      - name: Validate-mode gate report
+        if: always()
+        run: |
+          {
+            echo "## Release Validate report"
+            echo
+            echo "- mode: validate-only (no tag, no publish, no draft)"
+            echo "- source_commit: \`$GITHUB_SHA\`"
+            echo "- prospective_version: \`${{ steps.v.outputs.version }}\`"
+            echo "- prospective_tag: \`${{ steps.v.outputs.tag }}\`"
+            echo "- result: ${{ job.status }}"
+          } >> "$GITHUB_STEP_SUMMARY"
