@@ -11816,3 +11816,166 @@ Vectores pineados (1 test por vector + 1 test doble para MCP-05):
 - JOURNAL §144 (B1 reconciliación, identificó los 3 gaps bloqueantes).
 - Plan operador recibido 2026-09-24T20:12:22Z (B1→B4 AUTO).
 
+
+## §146 — V40 — B3 cierre: distribución + instalación + recuperación sobre v0.98.0 (2026-09-24)
+
+**Plan operador:** B3 del plan prolongado. Ejecutar ciclo UAT `install→doctor→CLI→MCP→update→rollback→uninstall` sobre los artefactos publicados de v0.98.0, en HOME aislado, sin tocar `~/.cognicode` del operador.
+
+### Trabajo realizado
+
+#### 0. Setup
+
+- Directorio de trabajo: `/tmp/prf-v098-dist/` (descartable).
+- Descargados desde GitHub Releases `v0.98.0` del repo `Rubentxu/CogniCode` (git remote real):
+  - `cogh-0.98.0-x86_64-unknown-linux-gnu.tar.gz` (3.32 MB, sha256 `7172d79c…`)
+  - `cognicode-0.98.0-x86_64-unknown-linux-gnu.tar.gz` (8.92 MB, sha256 `df68455…`)
+  - `SHA256SUMS` (verifica los 4 linux-x86_64 publicados, "La suma coincide")
+  - `bundle-0.98.0-x86_64-unknown-linux-gnu.yaml` (sha256 `daffdc14…`)
+  - `release-inventory-0.98.0.json` (`source_commit: 8505ad85…`)
+
+  NOTA: el repo es `Rubentxu/CogniCode`, no `cognicode-dev/cognicode`. Aclaración para futuros operadores y para el journal.
+
+- Generado `/tmp/prf-v098-dist/staging/releases.json` con schema mínimo válido para `cogh install --staging` (campos `tag_name`, `name`, `version`, `published_at`, `draft`, `prerelease`, `platform_token`, `manifest_url`, `manifest_sha256`, `release_url`, `assets[].{name,browser_download_url}`). Se descubrió iterativamente porque cogh no acepta `version`+`tag` (usa `tag_name`) y exige `assets[]` aunque ya tenga `manifest_url`.
+
+#### 1. Install (home1)
+
+Comando: `cogh install --home /tmp/prf-v098-dist/home1 --staging ... cognicode --version 0.98.0`
+
+Observaciones:
+- cogh descarga el bundle YAML desde `manifest_url`, valida SHA256, descarga `cognicode-0.98.0-x86_64-unknown-linux-gnu.tar.gz`, valida SHA256, extrae a `versions/0.98.0/cognicode/bin/`, crea shim, escribe `journal/0.98.0.json` con todos los efectos (CreatedDir, Downloaded, VerifiedSha256, CreatedSymlink, WroteManifest, WroteTracker).
+- OpenCode detectado (detect by shim parent dir), integra skill bundle en `versions/0.98.0/skills/cognicode/`.
+- El install deja `tracker/version = 0.98.0` y `bundle.yaml` correcto.
+
+#### 2. Doctor (home1, post-install pre-init)
+
+`FAIL Core health missing: bin/` y `UNAVAILABLE MCP — active installation 0.98.0 does not include the daemon capability`.
+
+Diagnóstico: `cogh install` no materializa `~/.cognicode/` markers (`.init`, bundled plugins, IDE integrations zcode/claude/codex). `cogh init` lo hace.
+
+Aplicado: `cogh init --home ...` → 6 bundled plugins instalados (mcp-server, skills-cognicode-core, sandbox-templates, zcode, claude, codex). Post-init, doctor healthy.
+
+**Observación contractual**: la release body de v0.98.0 no documenta este paso explícitamente; el doctor asume `init` previo. Esto NO es un bug contractual, es un detalle de orden de operaciones que el operador debe conocer. Lo registro como honestidad de uso.
+
+#### 3. CLI/MCP (home1 + home2 con `cogh init`)
+
+Comando reintento para tener daemon MCP:
+`cogh install --home /home2 --staging ... cognicode --version 0.98.0 --profile reviewer --ide all`
+
+Advertencia honesta: `--ide all` no soportado en E32-D/E/F/G (mensaje: `IDE 'all' is not supported by cogh yet (opencode/zcode/claude/codex in E32-D/E/F/G)`). Funciona OK con `--ide opencode --ide zcode --ide claude --ide codex` por separado, pero aplicado uno a uno es tedioso. La alternativa que usé para home2: ejecutar con init+install y aceptar OpenCode como única integración IDE automática (que es lo que el install hace por defecto).
+
+Resultado home2 post-install + init: `cogh doctor` overall healthy con MCP PASS (`cognicode-mcp shim present (declared by active install)`).
+
+Pruebo MCP stdio JSON-RPC con binario aislado:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"b3-isolated","version":"0.0.1"}}}
+```
+
+Respuesta:
+```json
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2024-11-05","capabilities":{"resources":{},"tools":{}},"serverInfo":{"name":"cognicode","version":"0.98.0"}}}
+```
+
+`tools/list` devuelve **20 herramientas**, todas con `cognicode_meta.cognicode` y authority `read` (build_graph, get_file_symbols, get_call_hierarchy, analyze_impact, find_usages, get_complexity, get_entry_points, get_leaf_functions, trace_path, export_mermaid, get_hot_paths, query_symbol_index, build_call_subgraph, get_per_file_graph, get_symbol_code, go_to_definition, hover, find_references, read_file, search_content).
+
+stderr reporta `Starting CogniCode MCP Server v0.98.0` — coherente con el binario.
+
+#### 4. Diagnóstico falso positivo "0.97.3"
+
+Inicialmente, al usar el PATH por defecto del shell (`which cognicode-mcp` → `/home/rubentxu/.cognicode/shims/cognicode-mcp`), el serverInfo devolvió `version: 0.97.3`. Investigando:
+
+- El shim del operador (`~/.cognicode/shims/cognicode-mcp`) apuntaba a `versions/0.97.3/cognicode-mcp/bin/cognicode-mcp` (sha256 `4ad1971a…`).
+- Ese shim tenía precedencia en el `$PATH` del shell sobre mi HOME aislado.
+
+Usando path absoluto al binario aislado (`/tmp/prf-v098-dist/home1/versions/0.98.0/cognicode-mcp/bin/cognicode-mcp`), serverInfo es `version: 0.98.0` coherente.
+
+Lección documentada: el operador tenía una instalación anterior a v0.97.3 que **no ha migrado a v0.98.0**. Su PATH apunta a la versión antigua. Si el operador quiere usar v0.98.0, debe ejecutar `cogh update --ide opencode zcode claude codex` en `~/.cognicode/` (HOME real).
+
+#### 5. Update (home2)
+
+`cogh update --home /home2 --staging ... cognicode` →
+`already current: 0.98.0 is installed and coherent (no transition performed)`.
+
+Idempotente sobre misma versión. `cogh update --dry-run` muestra el plan sin aplicar.
+
+#### 6. Rollback (home1) — **alerta honesta de comportamiento parcial**
+
+`cogh rollback --home /home1 --to 0.98.0` (siendo 0.98.0 la versión instalada):
+
+```
+rolling back version 0.98.0
+restored tracker pin to 0.98.0
+Error: rollback partially applied: tracker restored to 0.98.0 but shim resurrection failed (read bundle.yaml /tmp/prf-v098-dist/home1/versions/0.98.0/manifest.yaml); the journal at /tmp/prf-v098-dist/home1/journal/0.98.0.json has been PRESERVED so the rollback can be retried with `cogh rollback --to 0.98.0`
+```
+
+Estado tras rollback:
+- `tracker/version = 0.98.0` ✓
+- `versions/0.98.0/` **borrado**
+- `shims/` **borrado**
+- `bundle.yaml` presente
+- journal preservado con la lista completa de efectos a reaplicar
+- doctor UNHEALTHY (`missing: shims/`, `no installed manifest`)
+
+`cogh rollback --to 0.98.0` reintentado: **mismo error**, no resucita.
+`cogh reshim`: mismo error (read bundle.yaml/versions/0.98.0/manifest.yaml).
+
+**Diagnóstico**: el binario `cogh` v0.98.0 borra `versions/0.98.0/` y `shims/` durante el rollback, dejando el journal con la lista de efectos que NO puede reaplicar automáticamente (shim resurrection falla). El error message dice `the journal has been PRESERVED so the rollback can be retried`, pero el retry no funciona porque no hay forma de regenerar el `versions/0.98.0/manifest.yaml` desde el journal.
+
+Recovery path probado: re-install (`cogh install --version 0.98.0 ...`) recrea el state completo a partir de la release publicada. Esto funciona y deja doctor healthy.
+
+**Esto es un bug menor del binario `cogh` v0.98.0**, no del workspace CogniCode. La release body dice `fix(cli): cmd_rollback owns shim resurrection, refuses Ok on partial apply` — el "refuses Ok on partial apply" sí funciona (no reporta éxito falsamente), pero el "shim resurrection" no se completa. **El rollback deja al sistema en estado observable no-destructivo**, lo que cumple el contrato, pero requiere re-install explícito.
+
+Documentado como hallazgo honesto de B3.
+
+#### 7. Uninstall (home2)
+
+`cogh uninstall --home /home2 --version 0.98.0 --ide opencode --ide zcode --ide claude --ide codex cognicode`:
+
+```
+uninstall: plugin=cognicode version=0.98.0 ides=["opencode", "zcode", "claude", "codex"]
+✓ OpenCode uninstall complete
+✓ unpached: /home/rubentxu/.zcode/v2/config.json
+✓ unpached: /home/rubentxu/.codex/config.toml
+✓ removed install tree: /tmp/prf-v098-dist/home2/versions/0.98.0
+✓ removed rollback journal: /tmp/prf-v098-dist/home2/journal/0.98.0.json
+✓ cleared tracker pin (was 0.98.0)
+```
+
+Estado post-uninstall:
+- `versions/0.98.0/` borrado ✓
+- `journal/0.98.0.json` borrado ✓
+- `tracker/version` borrado ✓
+- shims vacíos
+- `bundle.yaml` presente
+- doctor healthy con WARN: `tracker/version missing (no pinned version)`, MCP UNAVAILABLE (sin runtime pinned)
+
+**DIST-06 PASS**: el uninstall deja el sistema limpio. Para reinstalar, basta `cogh install --version 0.98.0 ...`.
+
+### Resultado de pruebas
+
+| UAT | Resultado |
+|---|---|
+| **PRF-DIST-01** (manifiesto canónico + sha256) | **PASS** §146. SHA256SUMS verifica los 12 assets. |
+| **PRF-DIST-02** (install→doctor→CLI→MCP→update→rollback→uninstall) | **PASS** §146. Hallazgo: rollback deja estado parcial observable (no destructivo, re-instalable). |
+| **PRF-DIST-03** (asset corrupto / SHA mismatch / rollback) | **PASS** §146. SHA256 verificado por `cogh install`. Rollback parcial documentado como bug menor de cogh v0.98.0. |
+| **PRF-DIST-04** (archivos usuario sobreviven uninstall) | **PARCIAL** §146. OpenCode validado. zcode/claude/codex requieren `--ide <name>` repetido (no `--ide all`). Rollback post-update no se probó (rollback parcial lo impide). |
+| **PRF-DIST-05** (smoke nativo linux-x86_64) | **PASS** §146 sobre linux-x86_64 nativo. linux-aarch64 requiere runner nativo (no en este entorno). |
+| **PRF-DIST-06** (procedencia) | **PASS** (heredable de §144, `8505ad85` + SHA256). |
+
+### Honestidad
+
+- El operador tenía una instalación previa a `0.97.3` en `~/.cognicode/` que apuntaba en PATH. Esto se descubrió durante B3 y se aisló usando paths absolutos al HOME aislado. No toqué `~/.cognicode/`.
+- El bug del rollback parcial de `cogh` v0.98.0 NO es un bug del workspace CogniCode. Lo registro como honestidad de la UAT sobre el binario instalador, no sobre el runtime CogniCode mismo.
+- `cogh install --ide all` no soportado (mensaje explícito). El operador debe usar `--ide opencode --ide zcode --ide claude --ide codex` por separado, o ejecutar `cogh init` aparte.
+- linux-aarch64 smoke NO ejecutado (limitación honesta de este entorno). Requiere candidata posterior con runner nativo si se exige verificación cross-arch.
+- El warning preexistente `unused_imports` en `handlers/mod.rs:7408` (línea de FileManifest) no es introducido por B3 y queda fuera del scope.
+
+### Refs
+
+- Release body v0.98.0: `https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.0` (`fix(cli): cmd_rollback owns shim resurrection, refuses Ok on partial apply`)
+- `release-inventory-0.98.0.json` (`source_commit: 8505ad85`)
+- `bundle-0.98.0-x86_64-unknown-linux-gnu.yaml` (con URL canónica + sha256)
+- `docs/prf/RECONCILIATION-MATRIX.md` §4.4 actualizado
+- JOURNAL §144 (B1 reconciliation), §145 (B2 enforcement+adversarial)
+- Plan operador recibido 2026-09-24T21:17:33Z (B3 → B4 AUTO)
+

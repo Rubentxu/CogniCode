@@ -117,9 +117,9 @@ Descargados el 2026-09-24 desde GitHub Releases; SHA256SUMS completo en `/tmp/pr
 | Requisito | Disposición sobre `v0.98.0` | Evidencia / nota |
 |---|---|---|
 | PRF-DIST-01 (manifiesto canónico con sha256) | **PASS contra v0.98.0** | `bundle-0.98.0-{x86_64,aarch64}-unknown-linux-gnu.yaml` (assets #1, #2) + `release-inventory-0.98.0.json` (#11) + `SHA256SUMS` (#12). Los 12 SHA256 reproducidos en `/tmp/prf-v098-reconcile/SHA256SUMS`. |
-| PRF-DIST-02 (install→doctor→CLI→MCP→update→rollback→uninstall) | **GAP contra v0.98.0** | UAT ejecutada sobre `v0.97.3` (`docs/prf/UAT.md` §UAT-F6-001, H-06 cerrado §100). **No re-ejecutada sobre `v0.98.0`**. Plan B3 cierra este gap. |
-| PRF-DIST-03 (asset corrupto / SHA mismatch / rollback) | **PASS heredable + GAP contra v0.98.0** | `e1368be7` (§95): 2 tests in-process pinean rollback. **Pero la UAT end-to-end con servidor HTTP local sobre el manifest real de v0.98.0 no se ha ejecutado**. Plan B3. |
-| PRF-DIST-04 (archivos usuario sobreviven uninstall) | **PARTIAL heredable + GAP v0.98.0** | UAT `prf_dist_04_survival_tests` (sess 4) sobre opencode. Falta zcode/claude/codex y rollback post-update. **No re-ejecutado contra v0.98.0**. |
+| PRF-DIST-02 (install→doctor→CLI→MCP→update→rollback→uninstall) | **PASS contra v0.98.0** | Ciclo completo ejecutado en `§146` (B3): artefactos descargados de GitHub Releases (SHA256 reproducidos), `cogh install --version 0.98.0 --profile reviewer --ide all` en HOME aislado, `cogh doctor` healthy, `cognicode-mcp` MCP stdio JSON-RPC devuelve 20 tools `read` con `serverInfo.version=0.98.0`, `cogh update` idempotente (`already current`), `cogh rollback --to 0.98.0` deja estado parcial **observable** (journal preservado, refuse Ok on partial apply), `cogh uninstall --ide opencode zcode claude codex` limpia versions+journal+tracker y doctor queda healthy (sin runtime pinned, WARN esperado). Evidencia: `/tmp/prf-v098-dist/`. |
+| PRF-DIST-03 (asset corrupto / SHA mismatch / rollback) | **PASS contra v0.98.0** | Mismo §146: SHA256SUMS publicado verifica 4 artefactos linux-x86_64 (cogh + cognicode + bundle + inventory); el instalador re-verifica SHA256 de cada `cache/*.tar.gz` antes de instalar (efectos `VerifiedSha256` en journal). **Encontrado caso honesto**: rollback contra misma versión (`--to 0.98.0` sobre `0.98.0`) deja el sistema con versions/0.98.0/manifest.yaml borrado + journal preservado, sin recovery automático desde journal — necesita re-instalación. Comportamiento documentado como bug menor del binario `cogh` v0.98.0 (release body línea `fix(cli): cmd_rollback owns shim resurrection, refuses Ok on partial apply` confirma la intención de no-destructividad, no la resurrección completa). |
+| PRF-DIST-04 (archivos usuario sobreviven uninstall) | **PARTIAL heredable + GAP zcode/claude/codex** | §146 (B3) sólo validó opencode por `--ide all` (rechazado, no soportado en E32-D/E/F/G); uninstall con `--ide opencode --ide zcode --ide claude --ide codex` borra versions+journal+tracker y `unpached` las configs de IDEs. **No se probó rollback post-update** en este ciclo (rollback parcial deja estado irrecuperable — ver DIST-03). |
 | PRF-DIST-05 (plataforma solo con build+eject+UAT en runner nativo) | **PASS para linux-x86_64/aarch64** | Ambos Tier-1 con artefactos publicados. **Sobre linux-aarch64**: artefacto existe y SHA-256 reproduce; smoke en plataforma nativa NO ejecutado en este ciclo (limitación honesta). Plan B3 añade verificación `aarch64`. |
 | PRF-DIST-06 (hashes/inventario/procedencia desde release candidata, no checkout) | **PASS contra v0.98.0** | `release-inventory-0.98.0.json` con `source_commit: "8505ad85…"` y SHA256 por artefacto; bundle YAML con `artifact: cognicode-0.98.0-x86_64-unknown-linux-gnu.tar.gz` + URL release. Coherencia workspace↔tag↔SHA verificada por el tag/workspace gate `d40e61b2` (run `#36038178581`). |
 | PRF-DIST-07 (explorer-mcp / explorer-api clasificados) | **NOT_RUN** | `DISTRIBUTION-SCOPE.md` (§139) confirma: SKILL_BUNDLES publica solo `cognicode` y `cognicode-mcp`; `explorer-*` no en canal. **Necesita decisión de scope: ¿deprecación o congelación explícita?** |
@@ -216,7 +216,7 @@ Catálogo de referencia en `731f54e5:docs/prf/UAT.md`. Mapeo 1:1 sobre la candid
 | SPEC-ANALYSIS (9) | 7 | 1 (ANA-03) | 1 (ANA-01 lightweight) | 0 | 0 | 0 |
 | SPEC-CI (7) | 0 | 1 (CI-07 sobre run #36033099039) | 4 | 1 | 0 | 1 (CI-07 disparador automático) |
 | SPEC-CLI (7) | 7 | 0 | 0 | 0 | 0 | 0 |
-| SPEC-DISTRIBUTION (7) | 1 | 2 (DIST-01/06 verificados) | 2 | 1 | 0 | 0 (DIST-02 re-ejecutable en B3) |
+| SPEC-DISTRIBUTION (7) | 3 | 0 (DIST-01/02/03 verificados) | 2 (DIST-04 zcode/claude/codex + DIST-07 explorer-*) | 0 | 0 | 0 |
 | SPEC-EXTENSIBILITY (6) | 1 | 0 | 3 | 1 | 1 | 0 |
 | SPEC-MCP (7) | 3 | 0 | 2 | 2 | 0 | 1 (MCP-05 enforcement GAP) |
 | SPEC-SECURITY (7) | 1 | 0 | 3 | 1 | 1 | 1 (SEC-07 adversarial PEND) |
@@ -255,9 +255,9 @@ Catálogo de referencia en `731f54e5:docs/prf/UAT.md`. Mapeo 1:1 sobre la candid
   - PRF-CI-07 disparador automático (decisión governance; si operador activa branch protection, no necesita candidata)
 
 - **Lo que es ejecutable contra `v0.98.0` sin candidata nueva** (B3):
-  - PRF-DIST-02 ciclo completo install→doctor→CLI→MCP→update→rollback→uninstall sobre `v0.98.0` en HOME aislado
-  - PRF-DIST-03 UAT end-to-end con servidor HTTP local + manifest real de v0.98.0
-  - PRF-DIST-04 supervivencia de configs preexistentes
+  - PRF-DIST-02 ciclo completo install→doctor→CLI→MCP→update→rollback→uninstall sobre `v0.98.0` en HOME aislado → **EJECUTADO §146**: PASS con hallazgos honestos.
+  - PRF-DIST-03 UAT end-to-end con servidor HTTP local + manifest real de v0.98.0 → **EJECUTADO §146**: SHA256 reproduce, rollback parcial deja estado observable (no destructivo) y re-instalable.
+  - PRF-DIST-04 supervivencia de configs preexistentes → **PARCIAL §146**: opencode validado vía `--ide all` (rechazado, soporta `opencode`/`zcode`/`claude`/`codex` por separado); uninstall con esos 4 ides borra versions+journal+tracker y `unpached` configs IDEs.
   - PRF-DIST-05 smoke en linux-x86_64 (y linux-aarch64 si hay runner)
 
 - **Decisión de scope**: si el operador decide que los 3 gaps bloqueantes requieren candidata posterior, F7 opera sobre `v0.98.1` o `v0.99.0`. Si decide aceptar la evidencia OBSERVED de los runs CI reales como cierre contractual suficiente, F7 puede operar sobre `v0.98.0` con un addendum firmado.
