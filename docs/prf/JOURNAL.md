@@ -8634,3 +8634,49 @@ siendo el ground truth, lo que cambia es el comentario D66).
 - JOURNAL §125.V22-V32.
 - D66 (error), D75 (corrección).
 - HANDOFF-§125.md.
+
+## V32.2 — 2026-09-24 — D75 + F4.W2 bit-a-bit determinism (commit `dca87b7e` + nuevo)
+
+**D75 correcciones de D66** en los 5 módulos F3 (commit
+`dca87b7e`, pushed). El docstring de cada test (W1.a/W2/W3/W4/W5)
+ahora dice que el "CLI path" es BOTH el core API directo AND el
+subcomando del binario `cognicode` (`index query`, `graph
+per-file`, `graph impact`, `graph hierarchy`, etc.). El error
+D66 fue investigación incompleta: solo vi `cogh` (plugin
+manager) y concluí que el binario no exponía tools de análisis.
+
+**F4.W2 nuevo integration test**:
+`crates/cognicode-cli/tests/prf_f4_w2_binary_restart.rs` con 3
+tests que invocan el binario real:
+
+- `prf_f4_w2_index_query_bit_a_bit_equal_across_restarts`:
+  ejecuta `cognicode index query <sym> <corpus>` dos veces,
+  compara stdout byte-a-byte.
+- `prf_f4_w2_graph_per_file_bit_a_bit_equal_across_restarts`:
+  ejecuta `cognicode graph per-file <file>` dos veces, compara
+  stdout byte-a-byte.
+- `prf_f4_w2_restart_in_a_does_not_contaminate_b`: ejecuta
+  binario contra workspace A, luego contra B; verifica que el
+  output de A no contiene símbolos de B y viceversa.
+
+**Comparison surface estrecha**: stdout del binario, stderr
+descartado (timestamps, thread-pool init varían). Non-vacuity
+guards: cada test asserta `Found 1 location` o `Symbols: 2` para
+garantizar que el corpus produce resultados reales antes de
+comparar igualdad.
+
+**RED/GREEN verified manually**:
+- corpus sin modificar → stdout byte-equal entre runs.
+- corpus modificado → stdout cambia → assert_eq falla.
+- corpus restaurado → stdout vuelve a match.
+
+**Suite workspace**: 5427/0/45 verde (5430 = 5420 baseline + 3
+F4.W2 + 4 common helpers; -2 por sum doble de tests duplicados
+en lib vs bin target).
+
+**Refs**:
+
+- ROADMAP PRF §F4.W2.
+- JOURNAL §125.V32.1, V32.2.
+- D75, HANDOFF-§125.md.
+- commit `dca87b7e` (D75).
