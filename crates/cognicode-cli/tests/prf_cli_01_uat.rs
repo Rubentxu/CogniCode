@@ -10,11 +10,19 @@
 //! `CARGO_BIN_EXE_cognicode`) so the assertion covers the actual
 //! process exit code, not an in-process approximation.
 
-use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Command, Output};
 
-fn cognicode_bin() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_cognicode"))
+mod common;
+
+/// Path to the `cognicode` binary.
+///
+/// `common::binary_path` resolves with the right precedence
+/// (`CARGO_BIN_EXE_cognicode` > runtime env > `CARGO_TARGET_DIR` > workspace
+/// fallback). The harness keeps the test working whether you run it
+/// under `cargo test`, `cargo-nextest`, or with a custom `CARGO_TARGET_DIR`.
+fn cognicode_bin() -> PathBuf {
+    common::binary_path("cognicode")
 }
 
 fn run(args: &[&str]) -> Output {
@@ -110,10 +118,9 @@ fn cli05_refactor_is_preview_only_and_refuses_apply() {
     std::fs::write(&src, "pub fn original_name() -> u32 { 42 }\n").unwrap();
     let before = std::fs::read(&src).unwrap();
 
-    let bin = env!("CARGO_BIN_EXE_cognicode");
-
+    let bin = common::binary_path("cognicode");
     // 1. Default preview must run without crashing and must not write.
-    let out = std::process::Command::new(bin)
+    let out = std::process::Command::new(&bin)
         .args(["refactor", "original_name", "renamed_thing"])
         .current_dir(tmp.path())
         .output()
@@ -126,7 +133,7 @@ fn cli05_refactor_is_preview_only_and_refuses_apply() {
     );
 
     // 2. --apply must be refused with a non-zero exit and a clear reason.
-    let out = std::process::Command::new(bin)
+    let out = std::process::Command::new(&bin)
         .args(["refactor", "original_name", "renamed_thing", "--apply"])
         .current_dir(tmp.path())
         .output()

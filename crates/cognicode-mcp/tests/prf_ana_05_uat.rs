@@ -9,15 +9,19 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
+mod common;
+
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 
+/// Path to the `cognicode-mcp` binary.
+///
+/// Delegates to `common::binary_path()` which resolves with the right
+/// precedence (`CARGO_BIN_EXE_cognicode-mcp` > runtime env >
+/// `CARGO_TARGET_DIR` > workspace fallback). Keeps the test working
+/// whether you run it under `cargo test`, `cargo-nextest`, or with a
+/// custom `CARGO_TARGET_DIR`.
 fn binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .join("target/release/cognicode-mcp")
+    common::binary_path()
 }
 
 fn corpus_dir() -> PathBuf {

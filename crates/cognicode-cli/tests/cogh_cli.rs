@@ -14,16 +14,19 @@
 //!
 //! TDD contract: every test is RED before this commit, GREEN after.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// Path to the `cogh` binary injected by Cargo at build time.
+mod common;
+
+/// Path to the `cogh` binary.
 ///
-/// `env!` resolves at compile time; if `CARGO_BIN_EXE_cogh` is not
-/// defined (e.g. when this test is built outside Cargo's test harness),
-/// the build fails loudly rather than silently picking a wrong path.
-fn cogh() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_cogh"))
+/// `common::binary_path` resolves the path with the right precedence
+/// (`CARGO_BIN_EXE_cogh` > runtime env > `CARGO_TARGET_DIR` > workspace
+/// fallback). The harness keeps the test working whether you run it
+/// under `cargo test`, `cargo-nextest`, or with a custom `CARGO_TARGET_DIR`.
+fn cogh() -> PathBuf {
+    common::binary_path("cogh")
 }
 
 /// Run `cogh --home <home> <args>` and capture the result.

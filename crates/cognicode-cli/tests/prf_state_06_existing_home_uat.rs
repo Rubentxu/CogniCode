@@ -10,8 +10,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn cogh() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_cogh"))
+mod common;
+
+/// Path to the `cogh` binary.
+///
+/// `common::binary_path` resolves with the right precedence
+/// (`CARGO_BIN_EXE_cogh` > runtime env > `CARGO_TARGET_DIR` > workspace
+/// fallback). The harness keeps the test working whether you run it
+/// under `cargo test`, `cargo-nextest`, or with a custom `CARGO_TARGET_DIR`.
+fn cogh() -> PathBuf {
+    common::binary_path("cogh")
 }
 
 fn stdout(out: &Output) -> String {

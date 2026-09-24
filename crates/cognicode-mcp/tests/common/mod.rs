@@ -11,42 +11,88 @@ use tokio::process::{Child, Command};
 
 /// Resolve the absolute path to the `cognicode-mcp` binary under test.
 ///
-/// Resolution order (first match wins):
-///
-/// 1. `CARGO_BIN_EXE_cognicode-mcp` — set by Cargo when an integration test in
-///    the same crate as the binary is run; always correct, no filesystem
-///    traversal required. Falls back gracefully when unset (e.g. when running
-///    the binary tests from outside Cargo).
-/// 2. `CARGO_TARGET_DIR/release/cognicode-mcp` — honors the user's cargo
-///    target-dir override (e.g. `~/.cargo/config.toml` redirecting
-///    `target-dir` away from the workspace `target/`).
-/// 3. `<workspace_root>/target/release/cognicode-mcp` — historical fallback
-///    (works when cargo and the workspace agree on `target/`).
-///
-/// Resolution is delegated to `resolve_binary_path` so the precedence list is
-/// the single source of truth across every test that needs the binary.
+/// Convenience wrapper for `binary_path_for("cognicode-mcp")`. Existing
+/// callers that don't care about the binary name (the mcp crate only
+/// has one binary, `cognicode-mcp`) can keep using this form unchanged.
 pub fn binary_path() -> PathBuf {
-    resolve_binary_path()
+    binary_path_for("cognicode-mcp")
 }
 
-fn resolve_binary_path() -> PathBuf {
-    if let Some(p) = option_env!("CARGO_BIN_EXE_cognicode-mcp") {
+/// Resolve the absolute path to the named binary under test.
+///
+/// Resolution order (first match wins):
+///
+/// 1. `CARGO_BIN_EXE_<name>` — set by Cargo when an integration test in
+///    the same crate as the binary is run; always correct, no filesystem
+///    traversal required. Falls back gracefully when unset.
+/// 2. `CARGO_BIN_EXE_<name>` at **runtime** — set by `cargo-nextest` and
+///    by wrappers that invoke cargo manually. This branch is the
+///    difference between "tests run under cargo-nextest" and "tests
+///    fail with confusing build error under cargo-nextest" (§125.V7).
+/// 3. `CARGO_TARGET_DIR/release/<name>` — honors the user's cargo
+///    target-dir override (e.g. `~/.cargo/config.toml` redirecting
+///    `target-dir` away from the workspace `target/`).
+/// 4. `<workspace_root>/target/release/<name>` — historical fallback
+///    (works when cargo and the workspace agree on `target/`).
+///
+/// Resolution is delegated to `resolve_binary_path_for` so the
+/// precedence list is the single source of truth across every test
+/// that needs the binary.
+pub fn binary_path_for(name: &str) -> PathBuf {
+    resolve_binary_path_for(name)
+}
+
+fn resolve_binary_path_for(name: &str) -> PathBuf {
+    // 1. Compile-time env var.
+    if let Some(p) = compile_time_bin_exe(name) {
         return PathBuf::from(p);
     }
 
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        let candidate = PathBuf::from(target).join("release").join("cognicode-mcp");
-        if candidate.exists() {
-            return candidate;
+    // 2. Runtime env var (cargo-nextest).
+    if let Some(p) = runtime_bin_exe(name) {
+        let p = PathBuf::from(p);
+        if p.exists() {
+            return p;
         }
     }
 
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    // 3. CARGO_TARGET_DIR override (release profile).
+    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
+        let release = PathBuf::from(&target).join("release").join(name);
+        if release.exists() {
+            return release;
+        }
+        let debug = PathBuf::from(&target).join("debug").join(name);
+        if debug.exists() {
+            return debug;
+        }
+    }
+
+    // 4. Workspace-relative fallback.
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .parent()
         .unwrap()
-        .join("target/release/cognicode-mcp")
+        .to_path_buf();
+    let release = workspace_root.join("target").join("release").join(name);
+    if release.exists() {
+        return release;
+    }
+    workspace_root.join("target").join("debug").join(name)
+}
+
+fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
+    // env! requires a literal string. Match on the known names.
+    match name {
+        "cognicode-mcp" => option_env!("CARGO_BIN_EXE_cognicode-mcp"),
+        _ => None,
+    }
+}
+
+fn runtime_bin_exe(name: &str) -> Option<std::ffi::OsString> {
+    let var = format!("CARGO_BIN_EXE_{name}");
+    std::env::var_os(var)
 }
 
 pub struct McpSession {

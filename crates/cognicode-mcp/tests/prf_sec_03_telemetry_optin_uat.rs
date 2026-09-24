@@ -9,13 +9,17 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
+mod common;
+
+/// Path to the `cognicode-mcp` binary.
+///
+/// Delegates to `common::binary_path()` which resolves with the right
+/// precedence (`CARGO_BIN_EXE_cognicode-mcp` > runtime env >
+/// `CARGO_TARGET_DIR` > workspace fallback). Keeps the test working
+/// whether you run it under `cargo test`, `cargo-nextest`, or with a
+/// custom `CARGO_TARGET_DIR`.
 fn binary_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("target/release/cognicode-mcp")
+    common::binary_path()
 }
 
 fn fixture_ws() -> PathBuf {

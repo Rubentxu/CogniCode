@@ -11,13 +11,21 @@
 //! stderr. The same sweep is applied to `graph full` and `index`
 //! paths — the commands most likely to touch source content.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 const SENTINEL: &str = "SK-SECRET-PRFSEC03-SENTINEL-7f3a";
 
-fn cognicode_bin() -> &'static Path {
-    Path::new(env!("CARGO_BIN_EXE_cognicode"))
+mod common;
+
+/// Path to the `cognicode` binary.
+///
+/// `common::binary_path` resolves with the right precedence
+/// (`CARGO_BIN_EXE_cognicode` > runtime env > `CARGO_TARGET_DIR` > workspace
+/// fallback). The harness keeps the test working whether you run it
+/// under `cargo test`, `cargo-nextest`, or with a custom `CARGO_TARGET_DIR`.
+fn cognicode_bin() -> PathBuf {
+    common::binary_path("cognicode")
 }
 
 fn make_corpus() -> tempfile::TempDir {
