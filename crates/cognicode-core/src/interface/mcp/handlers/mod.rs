@@ -6453,6 +6453,122 @@ mod tests {
         }
     }
 
+    /// PRF-F3-W3: CLI `cognicode index outline <file>` and MCP
+    /// `get_outline(file_path)` must execute the same use case against
+    /// the same file. Both paths terminate in `build_outline` from
+    /// `crate::infrastructure::semantic::outline`; this test pins the
+    /// contract that the wrappers (CLI: prints a tree via stdout;
+    /// MCP: returns `OutlineOutput.nodes[]` JSON) produce the same
+    /// `(name, kind)` set when the same flags are used.
+    ///
+    /// **Comparison surface** is intentionally narrow: `(name, kind)`.
+    /// The CLI does NOT print line/column numbers in its outline tree
+    /// (only `name (kind)` per node); the MCP DTO includes line and
+    /// column. Comparing only `(name, kind)` matches what the CLI
+    /// user actually sees. `kind` is normalized to lowercase on both
+    /// sides because the CLI uses `{:?}` Debug format (PascalCase,
+    /// e.g. `Function`) while the MCP `convert_outline_node`
+    /// lowercases it (`function`). The test normalizes both to
+    /// lowercase before comparison.
+    ///
+    /// Important: the CLI defaults to `include_private=false,
+    /// include_tests=true`; the MCP defaults to `include_private=true,
+    /// include_tests=true`. **The test pins both sides to
+    /// `(false, true)` explicitly** to verify equivalence at a
+    /// specific flag configuration, not by accident of differing
+    /// defaults.
+    ///
+    /// Non-vacuity guard: at least 1 top-level symbol must appear in
+    /// both paths.
+    mod prf_f3_w3_get_outline_equivalence_tests {
+        use super::*;
+        use crate::infrastructure::parser::Language;
+        use crate::infrastructure::semantic::{build_outline, OutlineNode};
+        use std::collections::BTreeSet;
+        use std::path::PathBuf;
+
+        fn corpus_file() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("docs/prf/fixtures/outline_equivalence/src/lib.rs")
+        }
+
+        /// CLI path: read source, build outline with same flags as
+        /// `IndexCommand::Outline` defaults, extract top-level
+        /// `(name, kind)` normalized to lowercase.
+        fn cli_outline(file: &std::path::Path) -> BTreeSet<(String, String)> {
+            let source = std::fs::read_to_string(file).expect("read source");
+            let tree: Vec<OutlineNode> = build_outline(
+                &source,
+                &file.to_string_lossy(),
+                Language::Rust,
+                false, // include_private (CLI default)
+                true,  // include_tests  (CLI default)
+            );
+            tree.into_iter()
+                .map(|n| (n.name.clone(), format!("{:?}", n.kind).to_lowercase()))
+                .collect()
+        }
+
+        /// MCP path: `handle_get_outline` with explicit flags.
+        async fn mcp_outline(file: &std::path::Path) -> BTreeSet<(String, String)> {
+            let ctx = HandlerContext::builder().with_working_dir(file.parent().unwrap()).build();
+            let input = OutlineInput {
+                file_path: file.to_string_lossy().to_string(),
+                include_private: false,
+                include_tests: true,
+            };
+            let output = handle_get_outline(&ctx, input)
+                .await
+                .expect("get_outline must succeed");
+            output
+                .nodes
+                .into_iter()
+                .map(|n| (n.name, n.kind))
+                .collect()
+        }
+
+        #[tokio::test]
+        async fn cli_and_mcp_get_outline_agree_on_top_level_symbols() {
+            let file = corpus_file();
+            let cli_set = cli_outline(&file);
+            let mcp_set = mcp_outline(&file).await;
+
+            assert!(
+                !cli_set.is_empty(),
+                "CLI outline returned empty top-level set; corpus may have changed"
+            );
+            assert!(
+                !mcp_set.is_empty(),
+                "MCP outline returned empty top-level set; corpus may have changed"
+            );
+
+            assert_eq!(
+                cli_set, mcp_set,
+                "top-level outline (name,kind) differs between CLI and MCP paths (include_private=false, include_tests=true)"
+            );
+        }
+
+        #[tokio::test]
+        async fn cli_and_mcp_get_outline_exclude_private_when_flag_false() {
+            let file = corpus_file();
+            let cli_set = cli_outline(&file);
+            let mcp_set = mcp_outline(&file).await;
+
+            // `_outline_private` must NOT appear in either side when
+            // include_private=false.
+            for (name, _) in cli_set.iter().chain(mcp_set.iter()) {
+                assert!(
+                    !name.starts_with('_'),
+                    "private symbol `{name}` leaked into outline when include_private=false"
+                );
+            }
+        }
+    }
+
     /// PRF-STATE-07: derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler
