@@ -11521,3 +11521,79 @@ del H01: "Fijar criterio de staleness explícito en
 - AUDIT-2026-09-22-FINDINGS.md H01 (fila actualizada en este sync).
 - JOURNAL §134 (acuse auditoría), §135 (publicación v0.98.0), §140
   (H11.Traceability close con verificación focal vigente).
+
+## §142 — V36 — Auditoría externa sobre `93b7a9a3` recibida; H11 ampliado (2026-09-24)
+
+**Contexto.** El operador entrega en este turno la auditoría
+técnica integral externa sobre `93b7a9a3` (commit del 22-sep
+ya referenciado en §134 como acuse de recibo). Esta auditoría
+es la fuente externa cuya salida estructura `AUDIT-2026-09-22-
+FINDINGS.md`. Su texto confirma los hallazgos H01–H13 ya
+mapeados y aporta una observación no incorporada
+previamente.
+
+**Observación nueva incorporada a H11.**
+
+H11 de la auditoría externa señala que `docs/prf/CURRENT.md` está
+**stale** — el último sync fue `b72f17e1` (2026-09-23) y dejó
+HEAD apuntando a `76e04e8e`. Sesiones posteriores (incluyendo
+esta) NO actualizaron `CURRENT.md`. HEAD actual es `253b4b5f`,
+lo que equivale a **81 commits** de drift en punteros
+operativos.
+
+Verificación 1:1:
+- `git log -1 --format='%h %s' docs/prf/CURRENT.md` = `b72f17e1`.
+- `git rev-list --count 76e04e8e..253b4b5f -- docs/prf/` = 81.
+- Contenido de CURRENT.md (leído íntegro) confirma:
+  - "HEAD": `76e04e8e`
+  - "Próximo trabajo ejecutable" lista "auditoría similar a
+    §101 sobre PRE-§90" y "PRF-ANA-05 reproducibilidad",
+    ambos items ya parcialmente cubiertos o re-priorizados
+    en sesiones posteriores no reflejadas.
+  - "SHA congelado stale": `178f8a5b` pero HEAD aún `76e04e8e`
+    — el último drift conocido en CURRENT es de hace 2 días.
+
+**Acción tomada.** El AUDIT tracker H11 ahora documenta:
+
+1. `088752a2` (§141): H01 partición honesta.
+2. La observación de CURRENT.md stale añadida al "Trabajo
+   realizado esta sesión" y al "Pendiente (operator-gated)"
+   con la salvedad explícita "Esta sesión autónoma documenta
+   la observación pero NO edita CURRENT — alinear primero el
+   contrato interno sobre su rol".
+
+**Decisión deliberada de NO editar CURRENT.md en esta sesión.**
+
+La auditoría externa menciona que "STATE y CURRENT describen
+distintos cortes temporales" como uno de los 4 mecanismos
+raíz. Antes de re-sincronizar CURRENT, hace falta resolver
+**una decisión de contrato interno** sobre el rol de cada
+archivo:
+- ¿`CURRENT.md` debe seguir siendo el "puntero operativo de
+  sesión activa" (rol histórico)?
+- ¿O `STATE.md` ya lo absorbe y CURRENT.md se archiva?
+
+Re-sincronizar sin definir esto es inflación documental.
+Esta sesión NO ejecuta la decisión; la deja explícita en
+AUDIT H11 como item operator-gated del bloque "Pendiente".
+
+**Lo que NO se hace (regla 3, cierre real):**
+
+- NO se actualiza `CURRENT.md` en este ciclo (sin contrato
+  interno resuelto).
+- NO se firma CURRENT.md como "válido" de nuevo — la
+  observación de stale es real.
+- NO se reabre la auditoría externa en detalle: la sesión
+  usa la observación nueva sobre CURRENT.md pero respeta la
+  demás taxonomía H01–H13 que ya tengo en mi AUDIT tracker.
+- NO se modifica `STATE.md` para remediar la duplicidad con
+  CURRENT — eso es decisión que el operador debe tomar antes.
+- NO se hace push — política del proyecto (push pendiente de
+  orden explícita del operador).
+
+**Refs:**
+- Auditoría externa sobre `93b7a9a3` (recibida en este turno).
+- AUDIT-2026-09-22-FINDINGS.md H11 (fila ampliada en este sync).
+- `docs/prf/CURRENT.md` (último sync `b72f17e1`).
+- `docs/prf/STATE.md` (ya documenta HEAD `253b4b5f` con §141).
+- JOURNAL §134 (acuse auditoría original), §141 (H01 §141).

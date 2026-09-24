@@ -170,10 +170,13 @@
   - `c2b2924d`: recovered §135+§136 narrative that `d40e61b2` revertió silenciosamente.
   - `e2bbd86a`: STATE snapshot para §137 cerrado.
   - `3316f445` (JOURNAL §140): `docs/prf/TRACEABILITY.md` H-F3-1 marcado **RESUELTO delegación** (ciclo SDDK `prf-h-f3-1` CLOSED seq 12 sobre commits `49224b2a` + `0124befb`, verificado vía 4/4 PASS de tests R1.1–R1.4 en `analysis_service::find_symbol_usages_tests`). Deuda separada pendiente dentro de la misma fila: CLI equivalente al tool MCP `find_usages`.
+  - `088752a2` (JOURNAL §141): H01 partición honesta en AUDIT tracker — opción 2 ya cumplida declarada 1:1.
+  - Auditaría externa 2026-09-24 (recibida en este turno, sobre `93b7a9a3`): amplifica H11 identificando **`CURRENT.md` también stale** — último commit `b72f17e1` (2026-09-23) sincronizó CURRENT a `76e04e8e`, pero HEAD actual es `253b4b5f` (**81 commits después**). El puntero de CURRENT no se ha actualizado en esta sesión ni en la anterior. Hallazgo documentado en este mismo H11; pendiente de cierre en próximo ciclo si el operador lo autoriza.
   - `RELEASE-CANDIDATE.md` mantiene freeze `178f8a5b` knowingly stale — el operador decide si lo actualiza al SHA post-publicación (`e2bbd86a`).
 - **Pendiente (operator-gated)**:
   - Decisión sobre `RELEASE-CANDIDATE.md` (parte del H01, no duplicar).
   - CLI equivalente al tool MCP `find_usages` en `cognicode-cli` — OPEN (sub-categoría del H-F3-1, separado del cierre de delegación). Implementar `cognicode find-usages <name>` reusando `AnalysisService::find_symbol_usages` requiere definir scope, signatura, y tests.
+  - **`CURRENT.md` refresh**: el último sync fue `b72f17e1` (2026-09-23, a `76e04e8e`); HEAD actual `253b4b5f` (81 commits después). Actualizar el puntero requiere definir si `CURRENT.md` sigue siendo el archivo canónico de "trabajo siguiente" o si STATE.md lo absorbe (la auditoría externa lo señala como ambiguo). Esta sesión autónoma documenta la observación pero NO edita CURRENT — alinear primero el contrato interno sobre su rol.
 - **Refs**: `docs/prf/STATE.md` (HEAD row), JOURNAL §135-§137.
 
 ## H12 — Distribución validada tiene alcance menor que el producto descrito (MEDIA-ALTA)
