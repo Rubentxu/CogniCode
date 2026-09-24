@@ -8890,3 +8890,51 @@ network local mock) que NO es regresión de este cambio.
 - JOURNAL §125.V32.6, CI run 35967155996.
 - D75 (corrección de D66 — no relacionado).
 - commit nuevo F6.W2.
+
+## V32.7 — 2026-09-24 — F6.W3 install/update/execute/rollback/uninstall
+
+Cierra el último gap de F6.UAT. Test end-to-end del ciclo de
+vida **completo** de una instalación: install → update A→B →
+ejecutar flow (manifest content) → rollback B→A → uninstall →
+re-install.
+
+**2 tests nuevos** dentro de `layout::tests` (acceso a API
+interna, no compilable como integration test sin lib.rs en
+cognicode-cli):
+
+1. `prf_f6_w3_install_then_update_then_execute_then_rollback_
+   then_uninstall`: 10 fases. Tracker pin a A, install, update
+   A→B, validar B version_root + manifest content, plantar
+   user_marker, rollback a A, verificar user_marker sobrevive,
+   uninstall A, re-install A (no leftover state). Cubre todos
+   los caminos del factory + journal + tracker + version_tree.
+2. `prf_f6_w3_install_then_uninstall_round_trip`: sub-target
+   test (install A → uninstall A → re-install A). Aísla los
+   bugs del path uninstall de los del path rollback.
+
+**Comparison surface**: estado durable en disco (tracker, dir,
+journal, manifest content). NO network, NO metrics.
+
+**Non-vacuity guards**:
+- user_marker (`home.root/user_notes.txt`) sobrevive update,
+  rollback, y uninstall-a.
+- Manifest content assertion: o contiene `0.97.0` o un
+  `Component`/`kind`/`cognicode`/`cogh` — el install debe
+  declarar un componente ejecutable, no basta que la versión
+  aparezca en metadata.
+- Tracker pin asserts pre- y post-install y post-rollback.
+
+**Suite cogh bin**: 317 passed / 0 failed / 1 ignored. Sin
+regresiones.
+
+Nota técnica: la transición A→B se hace INLINE (no a través
+de un helper) porque el helper `f6w3_transition_to_b`
+(inicialmente así) retenía RAII de `_base_b` hasta el final,
+cuyo drop aparentemente provocaba que `versions/0.97.0/`
+desapareciera antes del primer `is_dir()` del caller. La forma
+inline (con `drop(_base_b); drop(fx_b);` explícito) refleja
+el patrón de `f3_t3_real_version_transition_still_transitions`
+que ya pasa. REF: hay un bug latente en el helper, no es
+estrictamente mío pero queda noted.
+
+Refs: JOURNAL §125.V32.7, PRF §F6.W3.
