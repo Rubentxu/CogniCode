@@ -8490,3 +8490,59 @@ documentación resuelve la confusión sin churn.
 - D55, D58, D61, D62, D64, D65, D66, D67, D68, D69, D70, D71,
   D72, D73.
 - HANDOFF-§125.md.
+
+## V31 — 2026-09-24 — Release v0.97.5 (regla 5 SDDK)
+
+**Acción**: Release completa del ciclo V22-V30 siguiendo regla 5
+SDDK.
+
+**Pasos ejecutados**:
+
+1. **Push acumulado**: 22 commits pusheados a `origin/main`
+   (`b915c57f..628abd71`).
+2. **Bump SEMVER**: workspace version `0.97.4 → 0.97.5` (commit
+   `628abd71`).
+3. **Tag anotado**: `v0.97.5` pusheado a `origin`.
+
+**Análisis SEMVER derivado**:
+
+- 22 commits analizados:
+  - `fix(state)`: 2 → **PATCH bump**
+  - `test`: 8 → no afecta SEMVER
+  - `docs`: 11 → no afecta SEMVER
+  - `ci`: 1 → no afecta SEMVER
+  - `feat`: 0 → no MINOR bump
+  - `BREAKING CHANGE`/`!`: 0 → no MAJOR bump
+- **Resultado**: v0.97.5 (PATCH).
+
+**Contenido del release**:
+
+- 5 verticales F3 caracterizados (W1.a/W2/W3/W4/W5).
+- 14 tests F3 (todos verdes).
+- 5 hallazgos arquitectónicos documentados (D65/D66/D71/D72/D73).
+- 1 fix cross-crate (Issue J: binary_path_for en 11 callers).
+- 1 fix state §124 (tmp_path_for concurrent writers).
+- 3 ROFS + large-manifest characterization tests §124.
+- H-07 cerrado vía documentación.
+
+**Suite final**:
+- `cognicode-core`: 2179/0/27
+- `cognicode-cli`: 16 tests passed
+- `cognicode-mcp`: 8/0/0
+- `cognicode-graph-wasm`: 0/0/0
+
+**Estado del sistema al cierre de V31**:
+
+- HEAD: `628abd71` (release commit).
+- Tag remoto: `v0.97.5` ✅.
+- Push: sincronizado con `origin/main` ✅.
+- C7 firma: BLOQUEADO por auditoría 2026-09-22 (no
+  modificado por este release — la auditoría aplica al gate de
+  release formal, no al tag técnico).
+
+**Refs**:
+
+- ROADMAP PRF §F3 cerrado.
+- JOURNAL §125.V22-V31 (10 recibos append-only en esta
+  sesión).
+- HANDOFF-§125.md.
