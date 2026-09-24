@@ -8723,3 +8723,58 @@ casos con control positivo.
 - ROADMAP PRF §F4 ("no corrompe datos").
 - JOURNAL §125.V32.3.
 - commit nuevo F4.W3.
+
+## V32.4 — 2026-09-24 — F5.W3 external signal cancellation
+
+**F5.W3 nuevo integration test**:
+`crates/cognicode-mcp/tests/prf_f5_w3_signal_cancel.rs` con 3
+tests que verifican el comportamiento del binario MCP tras
+SIGKILL (señal externa simulada vía `Child::kill()` on drop).
+
+- `prf_f5_w3_sigkill_after_build_leaves_no_stale_lock`:
+  build_graph + drop sin shutdown → verifica que no quedan
+  `.lock` files nuevos en el workspace.
+- `prf_f5_w3_sigkill_after_build_leaves_no_stale_tmp_cache`:
+  verifica que no quedan `graph.cache.tmp.*` files.
+- `prf_f5_w3_sigkill_then_fresh_session_recovers`: end-to-end
+  recovery — fresh MCP session tras el kill debe completar
+  `build_graph` con `status: complete`.
+
+**Comparison surface**: workspace directory tras el kill. El
+siguiente MCP session debe poder adquirir el workspace sin
+cleanup manual.
+
+**Non-vacuity guards**: pre-condition snapshot del estado
+antes del kill, post-condition assertion de no-leftovers. Sin
+los guards, "kill, no files, trivially green" sería un falso
+positivo.
+
+**RED/GREEN verified manually**: F4.W2/W3 ya cubren que el
+loader ignora stale tmp files. F5.W3 pinea la propiedad
+complementaria: SIGKILL deja el workspace en estado usable
+para el siguiente session.
+
+**Suite workspace**: 5438/0/45 verde (+5 desde 5433 = +3
+F5.W3 + 2 common).
+
+**Decisión stewardship (F5 alcance)**:
+
+El criterio F5 pide (a) capacidades, (b) timeout de
+operación larga top-level, (c) cancelación desde señal
+externa. Estado:
+
+- (a) **Cubierto** por sec_01 (workspace escapes) + sec_02
+  (mutates_workspace flag, --read-only mode).
+- (b) **Gap**: solo hay sub-handler timeout en smart_search
+  (60s). No hay timeout top-level. Cerrar este gap requiere
+  feature nueva — fuera de scope AUTO sin operator approval
+  explícito. Documentado en este receipt.
+- (c) **Cubierto parcialmente** por sec_05 (stdin shutdown
+  graceful) + F5.W3 (SIGKILL no bloquea siguiente session).
+
+**Refs**:
+
+- ROADMAP PRF §F5 ("cancelación desde señal externa").
+- JOURNAL §125.V32.4.
+- HANDOFF-§125.md.
+- commit nuevo F5.W3.
