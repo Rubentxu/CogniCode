@@ -8778,3 +8778,54 @@ externa. Estado:
 - JOURNAL §125.V32.4.
 - HANDOFF-§125.md.
 - commit nuevo F5.W3.
+
+## V32.5 — 2026-09-24 — F6.W1 release coherence
+
+**F6.W1 nuevo integration test**:
+`crates/cognicode-cli/tests/prf_f6_w1_release_coherence.rs`
+con 2 tests que verifican el flujo end-to-end del release
+factory:
+
+- `prf_f6_w1_clean_round_trip_generates_and_verifies`: stage
+  payloads reales (cogh + cognicode + cognicode-mcp + skill
+  bundles) → `cognicode-release generate` → `cognicode-release
+  verify` → exit 0. SHA256SUMS debe tener ≥3 entries.
+- `prf_f6_w1_tampered_payload_fails_verify`: clean generate
+  → flip first byte de cada .tar.gz → `verify` debe retornar
+  exit ≠ 0. Esto pinea que `verify` no es un no-op.
+
+**Comparison surface estrecha**: exit codes de
+`cognicode-release generate` y `cognicode-release verify`, más
+contenido de `SHA256SUMS`.
+
+**Non-vacuity guards**: payloads > 1000 bytes, SHA256SUMS
+≥ 3 entries (cogh + cognicode + cognicode-mcp), payload
+tampereado difiere del original.
+
+**Decisión stewardship (F6 alcance)**:
+
+El criterio F6 pide "instalación limpia; actualización desde
+una versión anterior; rollback a una versión anterior".
+Estado al cierre de F6.W1:
+
+- (a) generate + verify + tampering: **cubierto** por
+  `prf_dist_01_06_release_candidate_uat` (existente) +
+  `prf_f6_w1_release_coherence` (nuevo).
+- (b) instalación: gap — el binario se distribuye vía tarball;
+  la instalación es copia de archivos. No hay un "installer"
+  que mantenga state, lo que hace que el rollback sea "replace
+  binary".
+- (c) update/rollback semántico: gap — el cache del workspace
+  no incluye la versión del binario (F4.W3 schema es
+  `cognicode.graph.cache/v1` único). Un downgrade binario
+  no invalida automáticamente el cache. Documentado en este
+  receipt.
+
+**Suite workspace**: 5440/0/45 verde (+2 desde 5438).
+
+**Refs**:
+
+- ROADMAP PRF §F6.
+- JOURNAL §125.V32.5.
+- HANDOFF-§125.md.
+- commit nuevo F6.W1.
