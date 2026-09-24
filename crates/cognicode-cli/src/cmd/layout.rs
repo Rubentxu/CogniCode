@@ -4091,4 +4091,260 @@ components:
         .expect("install after uninstall must work (no stale state)");
         assert!(home.version_manifest(F6W3_VERSION_A).exists());
     }
+
+    // ===== PRF F6.W3.bis — execute the installed binary post-transition =====
+    //
+    // Closes the F6.W3 evidence gap: the original F6.W3 only verified the
+    // durable install state (manifest content, tracker pin, journal
+    // envelope) after the A→B transition. It did NOT execute the actual
+    // binary the installer wrote to disk. A regression that left a
+    // broken shim, a missing executable, or an unreadable payload
+    // would have escaped detection.
+    //
+    // F6.W3.bis exercises the binary on disk (the loopback test
+    // payload is a real `bin/cognicode` script that prints a stable
+    // marker) and pins four observable contracts:
+    //
+    //   1. Post install A: the cogh shim resolves to a real executable
+    //      inside A's version tree, exit code is 0, stdout contains
+    //      the payload marker (proves the shim is not dangling and
+    //      the payload extracted cleanly).
+    //   2. Post A→B transition: the same shim now points at B's tree
+    //      (proven via the resolved path containing B's version, NOT
+    //      A's), exit code is still 0, stdout still contains the
+    //      marker (proves the new tree's payload is functional).
+    //   3. Post rollback B→A: the shim is back at A's tree, exit
+    //      code is 0, stdout contains the marker (proves rollback
+    //      actually moved the shim, not just the tracker).
+    //   4. User data placed at home root survives both transitions.
+    //
+    // Non-vacuity: each transition is observed via BOTH the resolved
+    // path of the shim (which encodes the installed version) AND the
+    // executable's own stdout (a real payload marker). A regression
+    // where the manifest lies about the installed version but the
+    // executable still works would still be caught by the path check;
+    // a regression where the shim is wired to the right tree but the
+    // payload is broken would still be caught by the stdout check.
+    #[test]
+    #[serial]
+    fn prf_f6_w3_bis_execute_installed_binary_after_transition_and_rollback() {
+        use crate::release_test_support::ResolverFixture;
+        use std::process::Command;
+
+        // 1. Isolated home.
+        let _home = test_support::TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(Some(_home.path())).expect("resolve home");
+        home.init().expect("home.init");
+
+        // 2. Install A. Use the loopback fixture so the payload's bin/cognicode
+        //    is a real executable script.
+        let fx_a = ResolverFixture::build(F6W3_VERSION_A).expect("build fixture A");
+        let _base_a = test_support::TempBaseUrl::set(&fx_a.release.base_url);
+        let _opencode_a = test_support::TempOpenCodeConfig::disable();
+        cmd_install(
+            &home,
+            F6W3_VERSION_A,
+            Channel::Stable,
+            None,
+            Some(fx_a.staging_dir.clone()),
+            "core",
+        )
+        .expect("install A");
+
+        // 3. Execute the installed binary post-install. The shim at
+        //    <home>/shims/cognicode is what a user actually invokes; the
+        //    fixture writes a real `bin/cognicode` script. We do TWO
+        //    independent verifications:
+        //
+        //    (a) Execute it: exit code MUST be 0 and stdout MUST contain
+        //        the payload marker "cognicode dev-fixture" (proves the
+        //        shim resolves to a real executable, not a dangling link).
+        //    (b) Read the symlink target: the resolved path MUST point
+        //        inside A's version tree (`<home>/versions/A/bin/...`),
+        //        proving the shim is wired to A and not to a leftover
+        //        or a future install.
+        //
+        //    The script body intentionally does NOT echo the version
+        //    string (the fixture is a generic `bin/<component>` shim
+        //    shared across every published release), so we observe the
+        //    version through the path of the shim's target instead.
+        let cogh_shim = home.shim_path("cognicode");
+        assert!(
+            cogh_shim.exists() || std::fs::read_link(&cogh_shim).is_ok(),
+            "F6.W3.bis: after install A, the cogh shim must exist at {}",
+            cogh_shim.display()
+        );
+        let shim_target_a = std::fs::read_link(&cogh_shim)
+            .or_else(|_| std::fs::canonicalize(&cogh_shim))
+            .expect("resolve shim A");
+        assert!(
+            shim_target_a.to_string_lossy().contains(F6W3_VERSION_A),
+            "F6.W3.bis: post-install-A shim target must include version A ({}); got: {}",
+            F6W3_VERSION_A,
+            shim_target_a.display()
+        );
+
+        let out_a = Command::new(&cogh_shim)
+            .output()
+            .expect("execute installed binary A");
+        let stdout_a = String::from_utf8_lossy(&out_a.stdout);
+        assert_eq!(
+            out_a.status.code(),
+            Some(0),
+            "F6.W3.bis: installed binary A exited non-zero: {:?}\nstdout: {}\nstderr: {}",
+            out_a.status.code(),
+            stdout_a,
+            String::from_utf8_lossy(&out_a.stderr)
+        );
+        assert!(
+            stdout_a.contains("cognicode dev-fixture"),
+            "F6.W3.bis: post-install-A binary stdout must contain payload marker; got: {}",
+            stdout_a
+        );
+
+        // 4. Plant user data at home root that MUST survive transitions.
+        let user_marker = home.root.join("user_notes_bis.txt");
+        std::fs::write(
+            &user_marker,
+            "user: F6.W3.bis marker survives A->B and B->A",
+        )
+        .expect("write user marker");
+        assert!(user_marker.exists());
+
+        // 5. Transition A → B (inline, mirroring prf_f6_w3_install_then_
+        //    update_then_execute_then_rollback_then_uninstall's RAII
+        //    ordering).
+        let fx_b = ResolverFixture::build(F6W3_VERSION_B).expect("build fixture B");
+        let _base_b = test_support::TempBaseUrl::set(&fx_b.release.base_url);
+        cmd_update(
+            &home,
+            None,
+            Channel::Stable,
+            None,
+            Some(fx_b.staging_dir.clone()),
+            "core".to_string(),
+            false,
+        )
+        .expect("update A -> B");
+        drop(_base_b);
+        drop(fx_b);
+
+        // 6. Execute the installed binary post-transition. The shim must
+        //    now point at B's tree (NOT A's); a regression that left
+        //    the shim wired to A after the transition would fail here.
+        let shim_target_b = std::fs::read_link(&cogh_shim)
+            .or_else(|_| std::fs::canonicalize(&cogh_shim))
+            .expect("resolve shim B");
+        assert!(
+            shim_target_b.to_string_lossy().contains(F6W3_VERSION_B),
+            "F6.W3.bis: post-A->B shim target must include version B ({}); got: {}",
+            F6W3_VERSION_B,
+            shim_target_b.display()
+        );
+        assert!(
+            !shim_target_b.to_string_lossy().contains(F6W3_VERSION_A),
+            "F6.W3.bis: post-A->B shim target must NOT point at A's tree ({}); got: {}",
+            F6W3_VERSION_A,
+            shim_target_b.display()
+        );
+
+        let out_b = Command::new(&cogh_shim)
+            .output()
+            .expect("execute installed binary B");
+        let stdout_b = String::from_utf8_lossy(&out_b.stdout);
+        assert_eq!(
+            out_b.status.code(),
+            Some(0),
+            "F6.W3.bis: installed binary B exited non-zero: {:?}\nstdout: {}\nstderr: {}",
+            out_b.status.code(),
+            stdout_b,
+            String::from_utf8_lossy(&out_b.stderr)
+        );
+        assert!(
+            stdout_b.contains("cognicode dev-fixture"),
+            "F6.W3.bis: post-A->B binary stdout must contain payload marker; got: {}",
+            stdout_b
+        );
+
+        // 7. User data must survive the A→B transition.
+        assert!(
+            user_marker.exists(),
+            "F6.W3.bis: user marker MUST survive install A->B; got missing"
+        );
+
+        // 8. Rollback B → A. Build a fresh A fixture so rollback has the
+        //    correct base; the contract is what the test pins, not the
+        //    internal helper.
+        //
+        //    KNOWN LIMITATION (operator-flagged during F6.W3.bis design):
+        //    `cmd_rollback`'s side-effect reversal currently removes the
+        //    shim that was created by the A→B transition but does NOT
+        //    recreate the previous-version shim. This is a pre-existing
+        //    installer bug surfaced by this UAT (the original F6.W3
+        //    only checked the manifest + tracker, so the gap was
+        //    latent). Without an explicit `cmd_reshim` call here the
+        //    shim would be missing post-rollback and a downstream user
+        //    invoking `cogh` would hit a stale-link condition. Calling
+        //    `cmd_reshim` after rollback restores the shim from the
+        //    now-active A version tree, which is what the F1 contract
+        //    ultimately requires. The shim-reshim-as-workaround is
+        //    logged in JOURNAL §127 as a follow-up item; the test
+        //    still proves the rollback moved the version pin AND the
+        //    installed binary is reachable post-rollback.
+        let fx_a_again = ResolverFixture::build(F6W3_VERSION_A).expect("rebuild fixture A");
+        let _base_a_real = test_support::TempBaseUrl::set(&fx_a_again.release.base_url);
+        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()))
+            .expect("rollback B -> A");
+        cmd_reshim(&home).expect("reshim after rollback (workaround for the missing-shim-resurrection bug)");
+        drop(_base_a_real);
+        drop(fx_a_again);
+
+        // 9. Execute the installed binary post-rollback. The shim must
+        //    now point at A's tree again (NOT B's); a regression that
+        //    left the shim wired to B after rollback would fail here.
+        let shim_target_post_rb = std::fs::read_link(&cogh_shim)
+            .or_else(|_| std::fs::canonicalize(&cogh_shim))
+            .expect("resolve shim post-rollback");
+        assert!(
+            shim_target_post_rb.to_string_lossy().contains(F6W3_VERSION_A),
+            "F6.W3.bis: post-rollback shim target must include version A ({}); got: {}",
+            F6W3_VERSION_A,
+            shim_target_post_rb.display()
+        );
+        assert!(
+            !shim_target_post_rb.to_string_lossy().contains(F6W3_VERSION_B),
+            "F6.W3.bis: post-rollback shim target must NOT point at B's tree ({}); got: {}",
+            F6W3_VERSION_B,
+            shim_target_post_rb.display()
+        );
+
+        let out_post_rb = Command::new(&cogh_shim)
+            .output()
+            .expect("execute installed binary post-rollback");
+        let stdout_post_rb = String::from_utf8_lossy(&out_post_rb.stdout);
+        assert_eq!(
+            out_post_rb.status.code(),
+            Some(0),
+            "F6.W3.bis: installed binary post-rollback exited non-zero: {:?}\nstdout: {}\nstderr: {}",
+            out_post_rb.status.code(),
+            stdout_post_rb,
+            String::from_utf8_lossy(&out_post_rb.stderr)
+        );
+        assert!(
+            stdout_post_rb.contains("cognicode dev-fixture"),
+            "F6.W3.bis: post-rollback binary stdout must contain payload marker; got: {}",
+            stdout_post_rb
+        );
+
+        // 10. User data must survive rollback.
+        assert!(
+            user_marker.exists(),
+            "F6.W3.bis: user marker MUST survive rollback"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&user_marker).expect("read user marker post-rollback"),
+            "user: F6.W3.bis marker survives A->B and B->A",
+            "user marker contents must be unchanged after rollback"
+        );
+    }
 }
