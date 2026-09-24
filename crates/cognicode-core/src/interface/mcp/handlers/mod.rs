@@ -6314,6 +6314,145 @@ mod tests {
         }
     }
 
+    /// PRF-F3-W2: CLI `cognicode index query <symbol>` and MCP
+    /// `query_symbol_index(symbol_name, directory)` must execute the
+    /// same use case against the same corpus. Both paths terminate
+    /// in `LightweightIndex::find_symbol`; this test pins the
+    /// contract that the wrapper layers (CLI path goes through
+    /// `LightweightStrategy::query_symbols`; MCP path goes through
+    /// `SymbolIndex::find_symbol` after `set_symbol_index`) produce
+    /// the same set of `(file_basename, line, column)` tuples.
+    ///
+    /// Comparison surface: `(file_basename, line, column)`. The
+    /// `file` field in the CLI `SymbolLocation` and the MCP
+    /// `SymbolLocationEntry` is an absolute path on both sides;
+    /// comparing basenames avoids false negatives from
+    /// absolute-vs-relative path divergences in the wrappers.
+    ///
+    /// The corpus (`docs/prf/fixtures/query_index_equivalence/src/lib.rs`)
+    /// has 3 symbols (`unique_alpha`, `unique_beta`,
+    /// `nested::unique_gamma`); the test queries each and asserts
+    /// equivalence.
+    ///
+    /// Non-vacuity guard: each query must produce ≥1 match in both
+    /// paths (otherwise the corpus doesn't exercise the resolver).
+    mod prf_f3_w2_query_index_equivalence_tests {
+        use super::*;
+        use crate::infrastructure::graph::LightweightStrategy;
+        use std::collections::BTreeSet;
+        use std::path::{Path, PathBuf};
+
+        fn corpus_src() -> PathBuf {
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .parent()
+                .unwrap()
+                .join("docs/prf/fixtures/query_index_equivalence/src")
+        }
+
+        /// CLI path: `LightweightStrategy::new().build_index(&dir).query_symbols(name)`
+        fn cli_query(dir: &Path, name: &str) -> BTreeSet<(String, u32, u32)> {
+            let mut s = LightweightStrategy::new();
+            s.build_index(dir).expect("build_index must succeed");
+            s.query_symbols(name)
+                .into_iter()
+                .map(|loc| {
+                    let basename = Path::new(&loc.file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| loc.file.clone());
+                    (basename, loc.line, loc.column)
+                })
+                .collect()
+        }
+
+        /// MCP path: `handle_query_symbol_index` over a tempdir copy of the
+        /// corpus, forcing cache miss (the corpus is a fresh `tempdir`
+        /// each test run, so `AnalysisService` has no prior index).
+        async fn mcp_query(dir: &Path, name: &str) -> BTreeSet<(String, u32, u32)> {
+            let ctx = HandlerContext::builder().with_working_dir(dir).build();
+            let input = QuerySymbolInput {
+                symbol_name: name.to_string(),
+                directory: Some(dir.to_string_lossy().to_string()),
+            };
+            let output = handle_query_symbol_index(&ctx, input)
+                .await
+                .expect("query_symbol_index must succeed");
+            output
+                .locations
+                .into_iter()
+                .map(|loc| {
+                    let basename = Path::new(&loc.file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_else(|| loc.file.clone());
+                    (basename, loc.line, loc.column)
+                })
+                .collect()
+        }
+
+        #[tokio::test]
+        async fn cli_and_mcp_query_index_agree_on_unique_alpha() {
+            let dir = corpus_src();
+            let cli_set = cli_query(&dir, "unique_alpha");
+            let mcp_set = mcp_query(&dir, "unique_alpha").await;
+
+            assert!(
+                !cli_set.is_empty(),
+                "CLI query for unique_alpha returned empty; corpus may have changed"
+            );
+            assert!(
+                !mcp_set.is_empty(),
+                "MCP query for unique_alpha returned empty; corpus may have changed"
+            );
+            assert_eq!(
+                cli_set, mcp_set,
+                "unique_alpha: CLI and MCP returned different (file,line,column) sets"
+            );
+        }
+
+        #[tokio::test]
+        async fn cli_and_mcp_query_index_agree_on_unique_beta() {
+            let dir = corpus_src();
+            let cli_set = cli_query(&dir, "unique_beta");
+            let mcp_set = mcp_query(&dir, "unique_beta").await;
+
+            assert!(
+                !cli_set.is_empty(),
+                "CLI query for unique_beta returned empty; corpus may have changed"
+            );
+            assert!(
+                !mcp_set.is_empty(),
+                "MCP query for unique_beta returned empty; corpus may have changed"
+            );
+            assert_eq!(
+                cli_set, mcp_set,
+                "unique_beta: CLI and MCP returned different (file,line,column) sets"
+            );
+        }
+
+        #[tokio::test]
+        async fn cli_and_mcp_query_index_agree_on_unique_gamma() {
+            let dir = corpus_src();
+            let cli_set = cli_query(&dir, "unique_gamma");
+            let mcp_set = mcp_query(&dir, "unique_gamma").await;
+
+            assert!(
+                !cli_set.is_empty(),
+                "CLI query for unique_gamma returned empty; corpus may have changed"
+            );
+            assert!(
+                !mcp_set.is_empty(),
+                "MCP query for unique_gamma returned empty; corpus may have changed"
+            );
+            assert_eq!(
+                cli_set, mcp_set,
+                "unique_gamma (nested): CLI and MCP returned different (file,line,column) sets"
+            );
+        }
+    }
+
     /// PRF-STATE-07: derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler
