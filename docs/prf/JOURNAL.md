@@ -8272,3 +8272,67 @@ La relación entre `ImpactLevel` (core) y `RiskLevel` (MCP) es
 - JOURNAL §125.V27 (D65 original).
 - D65, D71.
 - Path evidence: `crates/cognicode-core/src/{domain/services/impact_analyzer.rs, application/dto/{common.rs,impact_dto.rs}, domain/findings/finding.rs, infrastructure/safety/mod.rs, interface/mcp/{handlers/mod.rs,mcp_roundtrip_tests.rs,schemas.rs}}`.
+
+## V28.2 — 2026-09-24 — D66 nota explicativa + D69 propuesta cierre F3
+
+### D66: Nota explicativa preparada para refactor de naming
+
+El término "CLI↔MCP equivalence" en módulos `prf_f3_w1..w5` es
+**técnicamente engañoso** porque el binario `cognicode`
+(`crates/cognicode-cli/src/main.rs`) solo expone gestión de
+plugins (Install/Uninstall/List/Current/Latest/Update). Las
+tools de análisis (`analyze_impact`, `get_outline`,
+`query_symbol_index`, `get_call_hierarchy`) son **exclusivamente
+MCP**.
+
+El path "CLI" usado en los tests siempre fue el **core API
+directo**:
+- W1.a, W2: `LightweightStrategy::new().build_index().query_symbols()`.
+- W3: `build_outline()` del módulo `semantic`.
+- W4, W5: `analysis_service.build_project_graph()` + recorrido
+  del `CallGraph`.
+
+**Propuesta D66 (preparada, pendiente aprobación operador)**:
+
+- Opción 1 (renombrar): `prf_f3_w*_mcp_wrapper_*_contract_tests`.
+  Más honesto pero requiere edit en 5 módulos.
+- Opción 2 (documentar): añadir comentario de cabecera en cada
+  módulo W1-W5 explicando que el "CLI path" es en realidad
+  core API directo. No requiere rename, solo doc.
+
+**Recomiendo Opción 2** por mínima invasion (sin churn de
+nombres), máximo valor (cada test es autodescriptivo de su
+convención).
+
+### D69: Propuesta de cierre F3 preparada
+
+5 verticales caracterizados es cobertura razonable para una
+"vertical de análisis compartido CLI+MCP" **cuando no existe
+CLI**. El alcance natural está agotado. Propongo:
+
+**Cierre de F3 con los siguientes logros**:
+
+- W1.a (per-file): contrato pineado.
+- W2 (query_symbol_index): contrato pineado.
+- W3 (get_outline): contrato pineado.
+- W4 (analyze_impact): contrato pineado (parcial — D65/D71 sobre
+  `risk_level` requiere decisión operador).
+- W5 (get_call_hierarchy): contrato pineado.
+
+**Outputs**:
+
+- 5 módulos de tests, 14 tests totales, todos verdes.
+- 4 corpora (`per_file_equivalence/`, `query_index_equivalence/`,
+  `outline_equivalence/`, `analyze_impact_equivalence/`).
+- 11 decisiones documentadas (D55, D58, D61, D62, D64, D65,
+  D66, D67, D68, D69, D70, D71).
+- 3 hallazgos operator-gated (D65/D66/D69/D71).
+
+**Próximos F** (no F3+):
+
+- F4 (Certificación & UAT) — pendiente de operator decision
+  sobre los hallazgos.
+- F5 (Release) — bloqueado por push acumulado + tag + C7.
+- F6 (Operación & Observability) — bloqueado por F5.
+
+**Refs**: JOURNAL §125.V24-V28 (5 verticales + hallazgos).
