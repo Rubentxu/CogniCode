@@ -184,7 +184,15 @@ jobs:
         with:
           path: staging
           pattern: payloads-*
-          merge-multiple: true
+          # merge-multiple: false (NOT true). With merge-multiple: true,
+          # v4 strips the artifact-name prefix and dumps every file into
+          # a single staging/ tree — last writer wins on collision and the
+          # `payloads-<platform>/dist/<component>-...tar.gz` layout the
+          # flatten script depends on is destroyed. Keeping merge off
+          # preserves each lane as its own subdir under staging/, which is
+          # exactly what `stage-platform-payloads.sh` expects. Fix for
+          # CI run 35967155996 (`no payloads-* lane directories found`).
+          merge-multiple: false
 
       - name: Stage declared skill bundle payloads (DEBT-2)
         run: |

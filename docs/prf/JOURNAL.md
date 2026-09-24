@@ -8829,3 +8829,64 @@ Estado al cierre de F6.W1:
 - JOURNAL §125.V32.5.
 - HANDOFF-§125.md.
 - commit nuevo F6.W1.
+
+## V32.6 — 2026-09-24 — F6.W2 contrato real de staging (fix CI run 35967155996)
+
+**Diagnóstico** (cross-ref operator review + web docs research):
+
+CI run `35967155996` (v0.97.5 release) failed con
+`no payloads-* lane directories found` en
+`stage-platform-payloads.sh`. Causa raíz:
+
+- `actions/download-artifact@v4` con `merge-multiple: true`
+  **strippea el prefijo del artifact name** y deposita todos
+  los archivos en una sola estructura plana (last-writer-wins
+  en colisiones).
+- `stage-platform-payloads.sh` espera cada lane como un
+  subdir `staging/payloads-<platform>/dist/...`.
+
+**Fix** (alinear contratos, NO añadir capa de búsqueda):
+
+`.github/workflows/release.yml`: `merge-multiple: true` →
+`merge-multiple: false`. Esto preserva cada lane como su
+propio subdir, que es exactamente lo que `stage-platform-
+payloads.sh` consume.
+
+**F6.W2 nuevo integration test**:
+`crates/cognicode-cli/tests/prf_f6_w2_staging_contract.rs`
+con 5 tests que reproducen el layout exacto del CI con la
+nueva config:
+
+- `prf_f6_w2_full_pipeline_both_platforms_passes`: stage →
+  flatten → generate + verify para **ambas Tier-1
+  plataformas** (x86_64 + aarch64). Cada una genera 6
+  payloads + 6 SBOMs + 2 skill bundles.
+- `prf_f6_w2_per_payload_tampering_is_detected`: tamper de UN
+  solo payload a la vez; verifica que el SHA en el error
+  message corresponde al archivo alterado.
+- `prf_f6_w2_missing_payload_is_rejected`: borrar un payload
+  del output → verify debe fallar.
+- `prf_f6_w2_duplicate_payload_across_lanes_is_rejected`: dos
+  lanes claimando el mismo nombre → flatten debe fallar.
+- `prf_f6_w2_wrong_platform_payload_is_rejected`: payload
+  x86_64 en lane aarch64 → flatten debe fallar.
+
+**Comparison surface estrecha**: exit codes de flatten
+script + `cognicode-release generate` + `verify`, más set
+exacto de filenames en staging root.
+
+**Non-vacuity guards**: contenido sintético incluye markers
+`platform=` y `component=` para que un swap entre plataformas
+cambie el SHA; tests per-payload (no batch).
+
+**Suite workspace** (`--tests`): 5437/0/33 verde. El run
+completo (`--workspace`) tiene 1 fail pre-existente en el
+bin `cogh` (`cmd_update_live_install_against_fixture` con
+network local mock) que NO es regresión de este cambio.
+
+**Refs**:
+
+- ROADMAP PRF §F6.
+- JOURNAL §125.V32.6, CI run 35967155996.
+- D75 (corrección de D66 — no relacionado).
+- commit nuevo F6.W2.
