@@ -10953,3 +10953,182 @@ su propia decisión que excede el ámbito de esta sesión:
 - H01 release candidata stale: `docs/prf/RELEASE-CANDIDATE.md` (SHA `178f8a5b`)
 - H11 punteros desactualizados: este mismo §134 + commit local `084c1649` (no pushed)
 - Commits de este ciclo F6.W3.bis: `dcdf5978`, `08d83129`, `93b7a9a3`, `084c1649` (local)
+
+## §135 — V33c — RELEASE v0.98.0 PUBLICADA vía tag-move + workspace bump (2026-09-24)
+
+### Contexto
+
+El operador autorizó "pushea todo y continua" → push acumulado (2 commits docs) + tag v0.98.0 + ejecutar release pipeline. Ese tag push disparó `release.yml` automáticamente (run #36033099039 contra SHA `fadee2c2`). El run falló en step 12 (`Verify the actual packaged CLI, MCP and portable skills before publication`), pero el draft-first safety net funcionó como diseñado: 0 publicación, 0 leak (steps 13-21 SKIPPED).
+
+### Diagnóstico raíz
+
+El script `scripts/ci/release-install-smoke.sh` ejecuta aserciones con el binario recién publicado:
+
+```bash
+"$CLI" --version | grep -F "$VERSION"
+```
+
+donde `$VERSION = "0.98.0"` (proveniente del tag) y `$CLI` es el binario instalado por el step anterior (`cogh install --version 0.98.0`). El binario devolvió `0.97.5` porque el `Cargo.toml` del workspace en `fadee2c2` aún decía `0.97.5` — el tag se había creado pero el workspace version NO se había bumpeado en lockstep. Esto NO es un fallo de la pipeline — es un fallo de procedimiento mío: bumpeé el tag sin bumpear el workspace.
+
+Lección: el tag debe crearse DESPUÉS del bump, no antes, y debería automatizarse (script que bumpee Cargo.toml + cree tag anotado en una sola operación). Esta lección motiva F6.W3.ter (§136), que es ahora la política preventiva.
+
+### Solución
+
+Tres pasos:
+
+1. **Workspace bump.** Commit `8505ad85` (`chore(release): bump workspace version 0.97.5 → 0.98.0`). Cambio `Cargo.toml` workspace package de `0.97.5` a `0.98.0` + `cargo update --workspace` regeneró `Cargo.lock` propagando 0.98.0 a los 12 crates con `version.workspace = true` (cognicode, cognicode-cli, cognicode-core, cognicode-core-mock, cognicode-explorer, cognicode-graph-algos, cognicode-graph-wasm, cognicode-ladybug, cognicode-macros, cognicode-mcp, cognicode-runtime, cognicode-sandbox). `spike-ladybug` mantiene su `0.1.0` pinned. Verificación local: `cargo check --workspace --all-targets` clean (warnings preexistentes de `unused_imports` en `cognicode-cli` y `cognicode-core` test code, no introducidos por el bump).
+
+2. **Tag move.** `git tag -d v0.98.0` (local), crear nueva annotated tag apuntando a `8505ad85` con mensaje completo actualizado (incluye nota del re-pin), push forzado `git push origin :v0.98.0 && git push origin v0.98.0`. La ref tag en origin ahora es `d99d3911ded7ce807e5865905202843c7b5dda33` apuntando al commit `8505ad85`. Honestidad: el tag se movió, pero esto fue ANTES de cualquier publicación efectiva (release #36033099039 falló), así que el tag-move NO "reescribe historia publicada". El release asociada en GitHub para ese SHA nunca existió.
+
+3. **Re-trigger release.yml.** El push forzado del tag re-disparó `release.yml` → run **#36034410448** contra `8505ad85`.
+
+### Resultado
+
+Run #36034410448 = **conclusion=success, head=8505ad85, event=push, branch=v0.98.0.** 14 pasos verde incluyendo "Verify the published release as an external consumer" (último paso antes del Done). GitHub release publicada:
+
+  - `CogniCode v0.98.0` (name)
+  - `v0.98.0` (tagName)
+  - `isDraft: false`
+  - `publishedAt: 2026-09-24T17:36:17Z`
+  - Marcada **Latest** (`gh release edit --latest`)
+  - 13 assets uploaded: cogh/cognicode/cognicode-mcp (x86_64 + aarch64, 6 tarballs), bundle YAML (2), tarballs de fuentes (3), SHA256SUMS, release-inventory.json
+  - Todos los sha256 verificados en el SHA256SUMS publicado
+
+### Diferencia con #36033099039
+
+| Aspecto | #36033099039 (fadee2c2) | #36034410448 (8505ad85) |
+|---|---|---|
+| Workspace version | 0.97.5 | **0.98.0** |
+| Binario `--version` | reporta 0.97.5 | reporta **0.98.0** |
+| `grep -F 0.98.0` | FAIL (no match) | **PASS** |
+| Step 12 install-smoke | **FAIL** (exit 1) | **PASS** |
+| Steps 13-21 | SKIPPED | **ejecutados** |
+| Release publicada | NO | **SÍ (Latest)** |
+
+### Lo que NO se hizo (operator-gated)
+
+A pesar de la publicación, esto NO equivale a la firma C7 contractual:
+
+  - C7 sigue **BLOQUEADO** por la auditoría 2026-09-22 (gates contractuales: matriz de release firmada, excepciones aprobadas, condiciones de soporte fijadas, escenarios C7 pasados sobre el SHA `178f8a5b` con perfil C7).
+  - El release v0.98.0 fue publicada con pre-requisitos técnicos cumplidos (build verde, smoke test passa, draft-first safety net) pero sin las firmas contractuales que C7 exige.
+  - **Operador sigue siendo quien decide si "release técnica válida = release contractual lista"** — esta sesión no altera esa decisión.
+
+### Deuda abierta / decisiones pendientes
+
+  - **P0.1** RELEASE-CANDIDATE.md sigue con SHA stale `178f8a5b` (el operador debe re-firmar el freeze a `8505ad85` o aceptar la política de "dejar stale mientras se trabaja en la misma sesión").
+  - **P0.2** Cierre honesto de la auditoría H01-H13 (los 13 hallazgos siguen OPEN a nivel de contrato; este verde técnico no los cierra).
+  - **P0.3** Política preventiva: integrar el flujo "bump workspace → tag → release" en script atomizado. → Cerrada por §136 (F6.W3.ter).
+  - **P0.4** `gh release list` muestra 5 releases históricas (0.97.0–0.97.3 + nueva 0.98.0). El operador debe decidir si mantiene histórico o despublica.
+  - **P0.5** C7 firma (cuando y si los gates contractuales pasan).
+
+### Refs
+
+- Release publicada: https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.0
+- Run SUCCESS #36034410448: https://github.com/Rubentxu/CogniCode/actions/runs/36034410448
+- Run FAIL #36033099039: https://github.com/Rubentxu/CogniCode/actions/runs/36033099039
+- SHA release: `8505ad8506e68c85914eaaf2f71a7fde6149ed61`
+- Tag-object SHA: `d99d3911ded7ce807e5865905202843c7b5dda33`
+- Commit bump: `8505ad85`
+- Diff: 2 archivos cambiados, 13 inserciones, 13 eliminaciones (Cargo.toml + Cargo.lock)
+- Tag v0.98.0 mensaje: incluye changelog completo + nota del re-pin
+- Smoke test fix path: `scripts/ci/release-install-smoke.sh` (NO modificado en este ciclo; el fix fue upstream — bump workspace version para que el binario coincida con el tag)
+
+## §136 — V33d — F6.W3.ter cierre de causa raíz: tag/workspace coherence gate (2026-09-24)
+
+### Contexto
+
+Tras la publicación de v0.98.0 (JOURNAL §135), la causa raíz del incidente queda abierta: cualquier futuro release (v0.98.1, v0.99.0, v1.0.0) puede repetir el mismo fallo (tag pusheado sin bump del workspace Cargo.toml → binarios reportan versión vieja → install-smoke falla). El draft-first safety net detuvo la publicación incoherente, pero la **política que faltó** sigue sin estar implementada. Cierro esto ahora.
+
+### Diseño
+
+Tres componentes:
+
+1. **Script** `scripts/ci/release-tag-coherence.sh` (70 líneas, bash, sin dependencias). Lógica:
+   - Lee `Cargo.toml` desde el blob via `git show <sha>:Cargo.toml` (funciona con shallow checkout, fetch-depth: 1 — el commit al SHA actual siempre está).
+   - Parsea solo dentro del bloque `[workspace.package]` (awk flag-bound). Evita falsos positivos de otras entradas `version` en el mismo archivo (ej: `[[bin]] name` no afecta).
+   - Si se invoca sin argumentos, auto-detecta desde `$GITHUB_REF_NAME` (en CI release.yml tag push) o `git describe --tags --exact-match HEAD` (uso local).
+   - Modo `--from-version <v> <sha>` para `release-validate.yml` (que no tiene tag en dispatch time — el operador pasa la versión prospectiva).
+   - Códigos de salida estables: **0** match, **1** mismatch/parse failure/SHA unreachable, **2** usage error.
+
+2. **Integración release.yml**: nuevo step `Tag/workspace coherence gate` en el job `build` (no en `release`) porque:
+   - Build corre PRIMERO en el matrix `fail-fast: false` (x86 + aarch). Si el gate falla, ambos lanes se cancelan (el job `release` que necesita `[build]` verá el failure por dependencias).
+   - El step corre ANTES de `Install Rust stable`, así que falla en segundos (sólo necesita el blob de `Cargo.toml`), no después de haber gastado 2+ minutos bajando toolchain.
+   - En una refutación local: corrí también un test simulando `git fetch --depth 1 origin main && git checkout FETCH_HEAD` y verifiqué que el script opera correctamente bajo las restricciones de shallow.
+
+3. **Integración release-validate.yml**: nuevo step `Tag/workspace coherence gate (validate mode)` en el job `assemble-and-verify-local`, justo después del step que resuelve la versión prospectiva (`inputs.version` o fallback al workspace). Esto previene que un operador inicie una validate contra una versión que no matchea el workspace del SHA, evitando que la validate pase y luego al pushear el tag se descubra el mismatch en producción.
+
+### Implementación
+
+Commit `d40e61b2` (`ci(release): tag/workspace coherence gate (closes v0.98.0 incident root cause)`). 5 archivos: script nuevo + 2 YAML + (sin tocar docs en este commit, van en próximo).
+
+### Verificación
+
+**Batería local (sin CI):** 12 casos, todos PASS:
+
+  - **T1** positive (current state 0.98.0 ↔ tag v0.98.0): exit=0
+  - **T2** negative con SHA `fadee2c2` (workspace 0.97.5, tag v0.98.0) — replica exacta del incidente original: exit=1 con `::error::workspace.version (0.97.5) does not match expected (0.98.0).`
+  - **T3** SHA inexistente: exit=1 con `::error::cannot read Cargo.toml at 0000...`
+  - **T4** tag sin prefijo `v`: exit=2 con `::error::tag '0.98.0' must start with 'v'`
+  - **T5** mismatch prospectivo (tag v0.98.5 contra HEAD 0.98.0): exit=1
+  - **T6** auto-detect via GITHUB_REF_NAME (uso en CI tag push): exit=0
+  - **T8** --from-version positive: exit=0 con banner `validate-mode`
+  - **T9** --from-version negative (expects 0.98.5, workspace 0.98.0): exit=1
+  - **T10** --from-version con SHA conflictivo (workspace 0.97.5, expects 0.98.0): exit=1
+  - **T11** --from-version con argumentos incompletos: exit=2
+  - **T12** --from-version sin argumentos: exit=2
+
+**Verificación end-to-end en CI (run #36038178581, validate positive):**
+  - Disparo `gh workflow run release-validate.yml --ref main -f version=0.98.0 -f expected_sha=d40e61b2`
+  - Step `Tag/workspace coherence gate (validate mode)` conclusion=success
+  - Output verbatim del log CI:
+    ```
+    validate-mode  expected.version=0.98.0  sha=d40e61b21c09
+    workspace.version=0.98.0
+    OK: validate-mode expected.version 0.98.0 ↔ workspace.version 0.98.0
+    ```
+  - Run conclusion=success, todos los 5 jobs verde.
+
+**Verificación negativa end-to-end en CI (run #36039255746, validate failure):**
+  - Disparo `gh workflow run release-validate.yml --ref main -f version=0.99.0 -f expected_sha=d40e61b2` (workspace 0.98.0, expects 0.99.0 → mismatch forzado)
+  - Step `Tag/workspace coherence gate (validate mode)` conclusion=**failure**
+  - Output verbatim del log CI:
+    ```
+    workspace.version=0.98.0
+    ##[error]release-tag-coherence: workspace.version (0.98.0) does not match expected (0.99.0).
+    ##[error]Adjust Cargo.toml's [workspace.package] version to '0.99.0' (validate mode) or pass the matching --from-version.
+    ##[error]Reference: PRF-JOURNAL §135 (v0.98.0 incident on 2026-09-24).
+    ##[error]Process completed with exit code 1.
+    ```
+  - Steps downstream (Generate, release-verify, install-smoke, negative-test jobs) conclusiones=skipped (cascade desde el fallo del gate).
+  - Run conclusion=**failure**, exactamente como esperado.
+  - Coste del fallo: ~6 minutos (los build lanes corrieron antes en paralelo). Aceptable para un validate; en release.yml (con el gate antes de Install Rust), sería ~3 segundos.
+
+### Resultado
+
+El root cause del incidente §135 está cerrado. Cualquier release futuro que intente pushear un tag con workspace version desincronizado será rechazado por el CI antes de gastar compute significativo o publicar artefacts. El operador puede seguir creando tags sin bumpear el workspace — el CI le dirá "no" con mensaje accionable apuntando al JOURNAL de referencia.
+
+### Lo que queda abierto (operator-gated, no cambia con este commit)
+
+  - **P0.1** RELEASE-CANDIDATE.md sigue con SHA stale `178f8a5b` (§135 ya lo documenta). Acción del operador.
+  - **P0.4** releases 0.97.x previas en `gh release list` (decisión operador sobre deprecación).
+  - **C7 firma** sigue BLOQUEADO por gates contractuales.
+
+### Nota sobre asimetría release.yml ↔ release-validate.yml
+
+release.yml tiene el gate en `build` job (antes de Install Rust). release-validate.yml lo tiene en `assemble-and-verify-local` (después del checkout + expected_sha bind, antes del generate). Esto es asimétrico a propósito:
+
+  - En release.yml el tag ya está pusheado cuando CI corre. El check es: ¿el SHA al que apunta el tag tiene workspace version coherente con el tag? Esto previene publicar binarios incoherentes.
+  - En release-validate.yml no hay tag todavía (es workflow_dispatch). El check es: ¿la versión que el operador quiere validar coincide con el workspace version del SHA que el operador aprobó? Esto previene validar con assumptions falsas.
+
+Ambas visiones cierran el mismo root cause desde dos ángulos. Si alguien quisiera añadir un check pre-tag local (un hook git `pre-push` que ejecute el script antes de permitir `git push origin v*`), sería un follow-up natural — lo dejo fuera de este commit porque mezclar shell git hooks con la política de release puede ser controversial y el gate CI ya es suficiente para el caso operacional de releases normales.
+
+### Refs
+
+- Run validate positive: https://github.com/Rubentxu/CogniCode/actions/runs/36038178581
+- Run validate negative: https://github.com/Rubentxu/CogniCode/actions/runs/36039255746
+- Commit: `d40e61b21c097ed097a5ec35ba1d919436dcaebf`
+- Script: `scripts/ci/release-tag-coherence.sh` (70 lines)
+- Workflow steps nuevos:
+  - `release.yml` build job: step 2 "Tag/workspace coherence gate"
+  - `release-validate.yml` validate job: step 10 "Tag/workspace coherence gate (validate mode)"
+
