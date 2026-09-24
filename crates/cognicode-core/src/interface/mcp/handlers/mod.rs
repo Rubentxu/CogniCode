@@ -381,6 +381,14 @@ pub struct HandlerContext {
     /// existing behavior for the HTTP server; the stdio binary exposes
     /// `--read-only`.
     pub read_only: Arc<AtomicBool>,
+    /// PRF-F5.W4: per-sub-handler timeout for composite tools (e.g.
+    /// `handle_smart_search`). Default `Duration::from_secs(60)`
+    /// preserves the production behavior; tests can override it
+    /// via `HandlerContextBuilder::with_sub_handler_timeout` to force
+    /// timeout paths in seconds rather than minutes. The field is part
+    /// of the public HandlerContext API so production callers that build
+    /// a context can tighten the budget explicitly if needed.
+    pub sub_handler_timeout: std::time::Duration,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -514,6 +522,10 @@ pub struct HandlerContextBuilder {
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     read_only: Option<Arc<AtomicBool>>,
+    /// PRF-F5.W4: per-sub-handler timeout override. `None` means use
+    /// the production default (60s); tests can set a sub-second value
+    /// to force the timeout branch without sleeping 60s in CI.
+    sub_handler_timeout: Option<std::time::Duration>,
 }
 
 impl HandlerContextBuilder {
@@ -593,6 +605,19 @@ impl HandlerContextBuilder {
     /// Sets a custom cancellation token.
     pub fn with_cancellation_token(mut self, token: Arc<AtomicBool>) -> Self {
         self.cancellation_token = Some(token);
+        self
+    }
+
+    /// PRF-F5.W4: override the per-sub-handler timeout used by
+    /// composite tools (`handle_smart_search` and similar). Tests can
+    /// pass a small Duration (e.g. `Duration::from_millis(100)`) to
+    /// force the timeout branch quickly; production callers should
+    /// leave the default (60s) to preserve the existing behavior.
+    pub fn with_sub_handler_timeout(
+        mut self,
+        timeout: std::time::Duration,
+    ) -> Self {
+        self.sub_handler_timeout = Some(timeout);
         self
     }
 
@@ -724,6 +749,9 @@ impl HandlerContextBuilder {
             read_only: self
                 .read_only
                 .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
+            sub_handler_timeout: self
+                .sub_handler_timeout
+                .unwrap_or_else(|| std::time::Duration::from_secs(60)),
         }
     }
 }

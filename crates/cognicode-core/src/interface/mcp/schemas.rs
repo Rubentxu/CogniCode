@@ -2354,7 +2354,7 @@ pub struct SolidScores {
 // ============================================================================
 
 /// Input for smart_search tool
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmartSearchInput {
     /// Search query string
     pub query: String,
@@ -2373,6 +2373,25 @@ pub struct SmartSearchOutput {
     pub total: usize,
     /// Which sources contributed results
     pub sources: Vec<String>,
+    /// PRF-F5.W4: `true` when at least one sub-handler (semantic /
+    /// ranked / idf) was skipped due to a timeout or error and the
+    /// remaining backends could not fully cover the query. `false`
+    /// means either all backends answered cleanly or the corpus
+    /// genuinely had no matches for the query.
+    ///
+    /// `#[serde(default)]` keeps backward compatibility: existing
+    /// consumers that pre-date this field treat `partial` as `false`
+    /// (the optimistic default), and the new fields never appear in
+    /// older persisted payloads. New consumers can use `partial` +
+    /// `degraded_sources` to distinguish "no matches" from "backend
+    /// timed out — query was not fully answered".
+    #[serde(default)]
+    pub partial: bool,
+    /// PRF-F5.W4: names of sub-handlers that timed out or errored
+    /// during this call. Empty when all backends answered cleanly.
+    /// When non-empty, `partial` is `true`.
+    #[serde(default)]
+    pub degraded_sources: Vec<String>,
 }
 
 /// Single search result from the smart_search composite

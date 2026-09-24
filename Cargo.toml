@@ -183,6 +183,7 @@ toml = "0.8"
 # Dev deps
 tokio-test = "0.4"
 mockall = "0.11"
+serial_test = "3.0"
 
 # UUID v4 generation — CSPRNG-based, replaces hand-rolled implementation.
 uuid = { version = "1.10", features = ["v4", "serde"] }
