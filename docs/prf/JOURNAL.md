@@ -12275,3 +12275,137 @@ Branch:        main, sin feature abierta
 - JOURNAL §144, §145, §146, §147, §148, §149
 - /tmp/prf-v098-dist/dist0981/ (evidencia cruda B3 sobre v0.98.1)
 
+
+## §150 — V44 — Docs refresh + cierre de papeles (2026-09-24)
+
+**Plan operador:** "A tu criterio" — el agente selecciona y ejecuta items dentro de
+su autonomía. Esta entrada cierra papeles pendientes que la autorización del push
+y release v0.98.1 dejó abiertos:
+
+- **P0.1** RELEASE-CANDIDATE.md freshen del SHA congelado (H01 del AUDIT).
+- **Documentación operacional** del bug `cogh rollback --to <same>` y del orden
+  install/init (encontrados en §146 y §148 como deuda no documentada).
+- **H11 CURRENT.md stale** ampliado por §142, ahora subsanado en este ciclo.
+
+### Trabajo realizado
+
+#### 1. Verificación de tests verdes sobre HEAD actual
+
+```
+$ cargo test -p cognicode-core --lib --quiet
+... 2188 passed, 0 failed, 27 ignored, 0 measured; finished in 26.31s
+
+$ cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+test result: ok. 8 passed; 0 failed; 0 ignored; finished in 0.00s
+
+$ cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2211 filtered out; finished in 0.01s
+```
+
+2188/0/27 (vs baseline 2166 antes del B1→B5 = +22 tests: 4 PRF-MCP-05 + 8 adversarial + 10 pineos asociados).
+Batería PRF-SEC-07 adversarial 8/8 verde. Batería PRF-MCP-05 enforcement 4/4 verde.
+
+#### 2. CURRENT.md freshen — cierre H11 + registro estado real post-release
+
+CURRENT.md reflejaba estado a `76e04e8e` (sesión 4, pre-B1→B5). Reescrito para reflejar
+HEAD actual `0d6c575e`, las releases publicadas, los tests verdes y los operator-gated
+pendientes reales (P0.1–P0.5). Decisión: CURRENT sigue siendo "puntero operativo" y
+absorbe el STATE del cierre operacional; STATE.md se mantiene como "fuente de verdad"
+para el snapshot completo.
+
+`docs/prf/CURRENT.md` 68 líneas, commiteado con `-f` (gitignored).
+
+#### 3. RELEASE-CANDIDATE.md freshen — P0.1 CERRADO
+
+RELEASE-CANDIDATE.md congelaba SHA `178f8a5b` (sesión 4 pre-B1). El operador autorizó
+explícitamente el push y la release v0.98.1 (`2026-09-24T21:37:01Z`); por tanto el SHA
+candidato se re-firma al commit que produjo v0.98.1: `e4ab6c8e8d06…`. La matriz
+`RECONCILIATION-MATRIX.md` queda como evidencia contractual base para la firma C7
+(operator-gated).
+
+`docs/prf/RELEASE-CANDIDATE.md` 154 líneas, commiteado con `-f` (gitignored). Cambio
+incluye:
+- SHA congelado re-firmado a `e4ab6c8e8d06b598ce55880d965d785c6710c777`.
+- Versión = v0.98.1 (publicada, marked as Latest).
+- Cadena de procedencia actualizada al histórico B1→B5.
+- Frentes abiertos: PRF-CI-07 disparador y 0.97.x retirement siguen operator-gated.
+- Decisión formal: publicación ✓, C7 firma sigue operator-gated.
+- Cierre de PRF (5 acciones del plan operador): 1 cerrado, 2 cerrado, 3 cerrado
+  parcialmente, 4 trabajo parcial con documentación, 5 C5 parcial + C7 operator-gated.
+
+#### 4. INSTALL-ORDER.md — Documentación operacional
+
+Nuevo documento `docs/prf/INSTALL-ORDER.md` (83 líneas) que codifica el orden de
+operaciones verificado en §146 y §148 para llegar a un `cogh doctor` con `MCP: PASS`:
+
+```
+cogh install --home ~/.cognicode cognicode --version <v>
+cogh init   --home ~/.cognicode
+cogh install --home ~/.cognicode cognicode --version <v> --profile reviewer --ide opencode
+cogh doctor --home ~/.cognicode
+```
+
+Por qué dos `cogh install` separados: `cogh install` materializa el runtime
+(`tracker/version`, `versions/<v>/`, shims, journal, `bundle.yaml`); `cogh init`
+crea los bundled plugin markers (`~/.cognicode/plugins/{...}`, `bin/`). Sin
+`cogh init`, `cogh doctor` reporta `FAIL Core health missing: bin/`. Sin
+`--profile reviewer`, reporta `UNAVAILABLE MCP active installation does not include
+the daemon capability`.
+
+#### 5. COGH-ISSUES.md — Documentación de bugs del instalador
+
+Nuevo documento `docs/prf/COGH-ISSUES.md` (116 líneas) que documenta:
+
+**ISSUE-1** (severidad media): `cogh rollback --to <same-version>` deja estado parcial
+irrecuperable. Reproducción, estado del filesystem tras el fallo, reintento fallido,
+recovery path (limpiar manual + re-install desde red), análisis (cumple "refuses Ok
+on partial apply", pero "shim resurrection" incompleta).
+
+**ISSUE-2** (severidad baja, cosmetic): `cogh install --ide all` no soportado; hay que
+iterar `--ide opencode --ide zcode --ide claude --ide codex`.
+
+**ISSUE-3** (severidad baja, documentación): `cogh install` no inicializa `~/.cognicode/`
+markers; hace falta `cogh init` después. (Es la razón por la que INSTALL-ORDER.md
+existe.)
+
+Los 3 issues son del **binario instalador `cogh`**, NO del runtime CogniCode. Documentados
+para upstream + para evitar que otros agentes/automatizaciones pisen el mismo
+comportamiento en v0.98.1.
+
+#### 6. STATE self-roll — HEAD row actualizada a `0d6c575e`
+
+STATE.md HEAD row actualizada a `0d6c575e` (este self-roll). Refleja los commits de
+este ciclo §150.
+
+### Estado final verificable
+
+```
+HEAD local:    0d6c575ea2c21ab7e1f02f552c56c80dc209e094
+HEAD origin:   0d6c575ea2c21ab7e1f02f552c56c80dc209e094
+Tag v0.98.1:   a21fccda → e4ab6c8e8d06b598ce55880d965d785c6710c777
+Tag v0.98.0:   d99d3911 → 8505ad85
+Release URL:   https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+Tests HEAD:    cognicode-core --lib 2188 passed, 0 failed, 27 ignored
+Working tree:  clean (esperando commit §150 + self-roll)
+C7 firma:      operator-gated (NO automática)
+Bugs cogh:     3 issues documentados en COGH-ISSUES.md, recovery paths incluidos
+Install order: documentado en INSTALL-ORDER.md
+Operador-gated pendientes:
+                P0.2 H06 adversarial campaign E2E
+                P0.3 PRF-CI-07 disparador automático en push-PR
+                P0.4 0.97.x retirement
+                P0.5 C7 firma CONTRACTUAL sobre v0.98.1
+```
+
+### Refs
+
+- Release v0.98.1: https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.1
+- Release v0.98.0: https://github.com/Rubentxu/CogniCode/releases/tag/v0.98.0
+- /tmp/prf-v098-dist/dist0981/ (evidencia cruda B3 + B5 sobre v0.98.1)
+- /tmp/prf-v098-dist/dist0980/ (evidencia cruda B3 sobre v0.98.0)
+- JOURNAL §144, §145, §146, §147, §148, §149, §150
+- docs/prf/CURRENT.md (refresh §150)
+- docs/prf/RELEASE-CANDIDATE.md (refresh §150 — P0.1 cerrado)
+- docs/prf/INSTALL-ORDER.md (nuevo §150)
+- docs/prf/COGH-ISSUES.md (nuevo §150)
+
