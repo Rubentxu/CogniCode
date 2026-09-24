@@ -53,6 +53,18 @@ on:
           `version` field when empty.
         required: false
         default: ''
+      expected_sha:
+        description: >-
+          Optional. The SHA of the candidate commit that the operator
+          intends to validate. The validate job fails fast if
+          `github.sha` does not exactly match this input. This prevents
+          a branch advance between push and dispatch from validating a
+          different commit than the one the operator approved.
+          Example: `b354a632eafd91f394c3ab119561a626643e0db6`.
+          When empty, no SHA binding is enforced (the operator must then
+          verify `head_sha` of the run post-execution).
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -200,6 +212,25 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      # Fail-fast SHA binding. When the operator passes `expected_sha`,
+      # this step aborts the run immediately if the actual head SHA
+      # does not match. Prevents a branch advance between push and
+      # dispatch from validating a different commit than the one the
+      # operator approved. When `expected_sha` is empty, no binding is
+      # enforced and the operator MUST verify `head_sha` post-run.
+      - name: Bind to expected_sha (operator-specified)
+        if: ${{ inputs.expected_sha != '' }}
+        env:
+          EXPECTED: ${{ inputs.expected_sha }}
+          ACTUAL:   ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::github.sha ($ACTUAL) does not match operator-specified expected_sha ($EXPECTED). The branch advanced between push and dispatch; refusing to validate a different commit than the one approved."
+            exit 1
+          fi
+          echo "github.sha binds to operator-approved expected_sha: $ACTUAL"
 
       - uses: dtolnay/rust-toolchain@stable
 

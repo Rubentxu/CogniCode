@@ -17,7 +17,7 @@
 
 | Campo | Valor | Comando | Resultado |
 |---|---|---|---|
-| SHA candidato (full) | `b354a632eafd91f394c3ab119561a626643e0db6` | `git rev-parse HEAD` | `b354a632eafd91f394c3ab119561a626643e0db6` |
+| SHA candidato (full) | **`dc74a294c51362c35540f6caddb6657b70c544f8`** (`dc74f294...` corto; era `b354a632...` antes del §132 amend). HEAD actualmente. | `git rev-parse HEAD` | `dc74a294c51362c35540f6caddb6657b70c544f8` |
 | Rama destino | `main` | `git symbolic-ref HEAD` | `refs/heads/main` |
 | `origin/main` actual | `edf45fb81242cb1c6ad301fdc092f134f66ae90a` | `git rev-parse origin/main` | `edf45fb81242cb1c6ad301fdc092f134f66ae90a` |
 | Merge-base local↔origin | `edf45fb81242cb1c6ad301fdc092f134f66ae90a` | `git merge-base HEAD origin/main` | `edf45fb81242cb1c6ad301fdc092f134f66ae90a` |
@@ -240,13 +240,22 @@ vs `release.yml: contents: write`. Implicaciones:
 on:
   workflow_dispatch:
     inputs:
-      version: ...   # empty → fallback to Cargo.toml 'version'
+      version: ...       # empty → fallback to Cargo.toml 'version'
+      expected_sha: ...  # optional. If non-empty, the validate job fails
+                         # fast when github.sha != expected_sha. Prevents
+                         # a branch advance between push and dispatch
+                         # from validating a different commit than the
+                         # one approved. When empty, no SHA binding is
+                         # enforced (operator must verify head_sha).
 ```
 
-Único trigger: `workflow_dispatch`. No se dispara por `push`,
-`pull_request`, `schedule` ni por tag. El SHA es siempre el de la
-branch cuando se hace dispatch (operador debe especificar la rama
-y el SHA, pero GitHub Actions valida contra el SHA del push).
+Unico trigger: `workflow_dispatch`. No se dispara por `push`,
+`pull_request`, `schedule` ni por tag. **Importante:** `gh workflow run
+--ref` acepta el nombre de una rama o un tag, **no un SHA**. Tras el
+push a `main`, el dispatch debe usar `--ref main` y el SHA se pasa
+vía `-f expected_sha=dc74a...`. El job `validate` verifica que
+`github.sha` coincide con `expected_sha` y aborta con `::error::` +
+exit 1 si diverge (enmendado tras audit del operador, §132).
 
 ### D.3 — Jobs y grafo
 
@@ -274,6 +283,7 @@ negative-test-altered   (needs: [validate])
 | Step | Comando de fallo | Efecto |
 |---|---|---|
 | Build (rust test) | `set -euo pipefail` + `exit 1` | job failure |
+| **Bind to expected_sha** (validate job, step 1) | si `github.sha != expected_sha` → `::error:: + exit 1` | job failure (enmendado §132) |
 | Stage declared bundles | `::error:: + exit 1` si falta `manifest.yaml` | job failure |
 | `cognicode-release generate` | `set -e` (cualquier non-zero exit) | job failure |
 | `cognicode-release verify` | `set -e` | job failure |
@@ -282,7 +292,7 @@ negative-test-altered   (needs: [validate])
 | Negative-test-missing | `if rc = 0 → ::error:: + exit 1` | job failure |
 | Negative-test-altered | `if rc = 0 → ::error:: + exit 1` | job failure |
 
-**Total: 8 gates. Cada uno detiene el workflow.**
+**Total: 9 gates. Cada uno detiene el workflow.**
 
 ### D.6 — Sha-anchoring real
 
@@ -308,11 +318,11 @@ en el JSON del `release-inventory-*.json` descargable del artifact).
 
 ### E.1 — Pre-condiciones tras el push
 
-1. Push aceptado por GitHub: `git push origin b354a632:refs/heads/main`
-   (o push de los 12 commits como cadena fast-forward desde
+1. Push aceptado por GitHub: `git push origin dc74a294c51362c35540f6caddb6657b70c544f8:refs/heads/main`
+   (o push de los 13 commits como cadena fast-forward desde
    `origin/main = edf45fb8`).
 2. Verificar en GitHub UI: `https://github.com/{owner}/{repo}/commits/main`
-   muestra el SHA `b354a632eafd91f394c3ab119561a626643e0db6` como HEAD.
+   muestra el SHA `dc74a294c51362c35540f6caddb6657b70c544f8` como HEAD.
 3. Confirmar que `release-validate.yml` aparece en
    `https://github.com/{owner}/{repo}/blob/main/.github/workflows/release-validate.yml`.
 4. Confirmar que `.github/workflows/release.yml` aparece
@@ -322,13 +332,31 @@ en el JSON del `release-inventory-*.json` descargable del artifact).
 
 ```bash
 # Pre-requisito: gh CLI autenticada y con scope repo.
+
+# (1) El workflow se dispatcha contra una rama o tag (NO contra un SHA).
+#     Tras el push a main, la rama 'main' apunta a dc74a294... en ese
+#     momento. Si nadie pushea entre el push y el dispatch, el workflow
+#     se ejecuta contra el SHA correcto.
+
 gh workflow run release-validate.yml \
-  --ref b354a632eafd91f394c3ab119561a626643e0db6
+  --ref main \
+  -f expected_sha=dc74a294c51362c35540f6caddb6657b70c544f8
 ```
 
-> Si el operador prefiere especificar `version` input:
-> `gh workflow run release-validate.yml --ref b354a632... -f version=0.97.6`
-> (opcional; si se omite, el workflow usa `Cargo.toml` version field).
+> Si el operador prefiere especificar `version` input (opcional;
+> el workflow usa `Cargo.toml` `version` field si se omite):
+> `gh workflow run release-validate.yml --ref main \
+>    -f expected_sha=dc74a294... \
+>    -f version=0.97.6`
+
+> **¿Por qué `expected_sha` y no sólo `--ref main`?**
+> Sin `expected_sha`, si se pushea otro commit a `main` entre el
+> push del candidato y el dispatch, el workflow validaría ese
+> nuevo commit — no el aprobado. El input `expected_sha` hace
+> fail-fast en el primer step del job `validate` si
+> `github.sha != expected_sha`. El gate es enmendado en §132
+> tras audit del operador que señaló esta limitación de
+> `gh workflow run --ref`.
 
 ### E.3 — Recolección de evidencia de la ejecución
 
@@ -354,15 +382,19 @@ sha256sum release/*.tar.gz release/SHA256SUMS release/bundle-*.yaml
 
 1. Los 4 jobs (`build`, `validate`, `negative-test-missing`,
    `negative-test-altered`) terminan con `conclusion: success`.
-2. `headSha` de la run == `b354a632...` (verifica que no se ejecutó
-   sobre un SHA distinto).
+2. El primer step del job `validate` (`Bind to expected_sha`)
+   muestra `github.sha binds to operator-approved expected_sha` y
+   ambos coinciden con `dc74a294c51362c35540f6caddb6657b70c544f8`.
+   Como verificación independiente, `headSha` de la run vía
+   `gh run view <RUN_ID>` también debe coincidir con
+   `dc74a294c51362c35540f6caddb6657b70c544f8` (criterio de respaldo).
 3. El artifact `release-validate-output-v{VERSION}` se descarga y
    contiene al menos: `BundleManifest v2`, `ReleaseInventory.json`,
    `SHA256SUMS`, todos los `*.tar.gz` de bundles declarados.
 4. Step Summary muestra `mode: validate-only (no tag, no publish,
    no draft)` y `prospective_tag: v{VERSION}`.
 5. SHA256SUMS y los `bundle-*.yaml` muestran `source_commit:
-   b354a632...` (auto-consistencia).
+   dc74a294c51362c35540f6caddb6657b70c544f8` (auto-consistencia).
 
 Si cualquier criterio falla, **C7 sigue BLOQUEADO** y se requiere
 investigación antes de reintentar.
@@ -372,7 +404,11 @@ investigación antes de reintentar.
 - Cualquier job termina con `conclusion: failure`, `cancelled` o
   timed-out.
 - El artifact no se produce, o no contiene SHA256SUMS.
-- `headSha` no coincide con `b354a632...`.
+- El step `Bind to expected_sha` falla: `github.sha` no coincide
+  con `dc74a294c51362c35540f6caddb6657b70c544f8` (la rama `main`
+  avanzó entre el push y el dispatch).
+- Como verificación independiente: `headSha` de la run vía
+  `gh run view` no coincide con `dc74a294c51362c35540f6caddb6657b70c544f8`.
 - Se detecta que el workflow invocó `gh release` o `git tag`
   (verificable en los logs de la run).
 
@@ -443,8 +479,10 @@ abre ticket de investigación.
 
 Si la autorización se concede y el remote-validate se ejecuta:
 
-1. **Run-id y headSha observado:** número de run de GitHub Actions,
-   confirmación de que `headSha == b354a632...`.
+1. **Run-id y head_sha observado:** número de run de GitHub Actions,
+   confirmación de que el step `Bind to expected_sha` registra que
+   `github.sha == dc74a294c51362c35540f6caddb6657b70c544f8`, y de que
+   `head_sha` (vía `gh run view`) también coincide.
 2. **Resultados por job:** `build`, `validate`, `negative-test-missing`,
    `negative-test-altered` con `conclusion` de cada uno.
 3. **Hashes SHA-256 de los artefactos descargados:** del bundle
@@ -480,10 +518,10 @@ Para confirmar el estado actual sin verme:
 
 ```bash
 # SHA y ascendencia
-git rev-parse HEAD                                  # b354a632eafd91f394c3ab119561a626643e0db6
+git rev-parse HEAD                                  # dc74a294c51362c35540f6caddb6657b70c544f8
 git rev-parse origin/main                           # edf45fb81242cb1c6ad301fdc092f134f66ae90a
 git merge-base HEAD origin/main                     # edf45fb81242cb1c6ad301fdc092f134f66ae90a
-git rev-list --count origin/main..HEAD              # 12
+git rev-list --count origin/main..HEAD              # 13
 
 # Diff limpio de operator-managed
 git diff --name-only origin/main..HEAD | \
