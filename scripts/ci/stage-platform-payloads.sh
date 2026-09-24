@@ -189,23 +189,39 @@ for lane in "${LANES[@]}"; do
   # Require every component for the platform. Tarballs are named with
   # the canonical target triple (matches `cognicode-release name
   # --platform <short> --version <v>` output in release_contract.rs).
+  #
+  # The find pattern requires a digit right after `${comp}-` because
+  # semver versions always start with a digit. Without the digit
+  # anchor the glob is greedy in the wrong direction: searching for
+  # `cognicode-*-<platform>.tar.gz` ALSO matches
+  # `cognicode-mcp-<version>-<platform>.tar.gz`, since `cognicode-mcp`
+  # starts with the `cognicode` prefix. With `-print -quit` find then
+  # returns the wrong file (alphabetically first), the script treats
+  # it as `cognicode`'s payload, and the next loop iteration for
+  # `cognicode-mcp` hits the same file again → duplicate payload
+  # error. The `[0-9]` anchor prevents the over-match by demanding
+  # the version token (digits) immediately after the component stem.
   for comp in "${COMPONENTS[@]}"; do
     found_payload="$(find "${dist_dir}" -mindepth 1 -maxdepth 1 \
-      -name "${comp}-*-${platform}.tar.gz" -print -quit || true)"
+      -name "${comp}-[0-9]*-${platform}.tar.gz" -print -quit || true)"
     if [[ -z "${found_payload}" ]]; then
       echo "::error::lane ${lane_name} (platform ${platform}) missing payload for component ${comp}" >&2
-      echo "       expected: ${dist_dir}/${comp}-*-${platform}.tar.gz" >&2
+      echo "       expected: ${dist_dir}/${comp}-[0-9]*-${platform}.tar.gz" >&2
       exit 1
     fi
     payload_basename="$(basename "${found_payload}")"
     # Defensive: the tarball's embedded triple must agree with the
-    # resolved lane platform. A lane named `payloads-linux-x86-64`
-    # cannot ship an `aarch64-...` tarball. The find above already
-    # restricts the glob to `${platform}` so the basename is bounded
-    # by construction; this regex is a belt-and-suspenders check
-    # against accidental wildcards or symbolic links.
-    if ! [[ "${payload_basename}" =~ ^${comp}-.+-${platform}\.tar\.gz$ ]]; then
-      echo "::error::lane ${lane_name} (platform ${platform}) ships payload '${payload_basename}' whose embedded triple does not match the lane platform" >&2
+    # resolved lane platform, AND the component stem must be the
+    # exact component being iterated (no greedy match against
+    # sibling components whose names share a prefix). The find
+    # above already restricts the glob with `[0-9]` (the semver
+    # version always starts with a digit, so a sibling like
+    # `cognicode-mcp-` cannot satisfy `cognicode-[0-9]*-`); this
+    # regex is a belt-and-suspenders check against accidental
+    # wildcards, symbolic links, or future find implementations
+    # that lose the digit anchor.
+    if ! [[ "${payload_basename}" =~ ^${comp}-[0-9].*-${platform}\.tar\.gz$ ]]; then
+      echo "::error::lane ${lane_name} (platform ${platform}) ships payload '${payload_basename}' whose component stem or triple does not match the expected ${comp}/${platform}" >&2
       exit 1
     fi
     copy_unique payload "${found_payload}" "${payload_basename}"
@@ -231,8 +247,16 @@ for platform in "${TIER1_TRIPLES[@]}"; do
     exit 1
   fi
   for comp in "${COMPONENTS[@]}"; do
-    if ! compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz" > /dev/null; then
-      echo "::error::after flatten, missing ${comp}-*-${platform}.tar.gz at staging root" >&2
+    # The component stem must be anchored by the version token (a digit)
+    # for the same reason the find pattern above uses `[0-9]`: the glob
+    # `cognicode-*-...` greedily matches `cognicode-mcp-...` as well,
+    # which would make this sanity check return success even if the
+    # `cognicode` payload was missing (with `cognicode-mcp` falsely
+    # satisfying the pattern). Anchoring on `[0-9]` after the component
+    # stem prevents the over-match, so this check stays a true
+    # second line of defense.
+    if ! compgen -G "${STAGING}/${comp}-[0-9]*-${platform}.tar.gz" > /dev/null; then
+      echo "::error::after flatten, missing ${comp}-[0-9]*-${platform}.tar.gz at staging root" >&2
       exit 1
     fi
   done

@@ -641,3 +641,354 @@ fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
 
     let _ = fs::remove_dir_all(&tmp);
 }
+
+/// Component-name prefix over-match bug (Actions run #35998814863):
+/// when the find pattern is `${comp}-*-${platform}.tar.gz`, the glob
+/// `cognicode-*-x86_64-unknown-linux-gnu.tar.gz` matches BOTH
+/// `cognicode-0.97.5-...tar.gz` AND `cognicode-mcp-0.97.5-...tar.gz`
+/// because `cognicode-mcp` starts with the `cognicode` prefix. With
+/// `-print -quit` find then returns the alphabetically (or
+/// filesystem-order) first match; whichever it is, the script
+/// mis-attributes it to whichever component it is currently
+/// iterating. The next iteration for the OTHER component (e.g.
+/// `cognicode-mcp`) then either hits the same file again (duplicate
+/// error in CI run #3) or silently copies the wrong file as the
+/// right component's payload (a silent corruption that the
+/// duplicate path happened to surface in run #3).
+///
+/// The contract fix is to anchor the find pattern with `[0-9]`
+/// (semver always starts with a digit) so that `cognicode-mcp`
+/// cannot satisfy `cognicode-[0-9]*-`. This test pins the
+/// disambiguation by removing the conflicting sibling: a lane that
+/// ships `cognicode-mcp-...tar.gz` but NOT `cognicode-...tar.gz`
+/// must produce a "missing payload for cognicode" error from the
+/// flatten script. Before the fix the script silently accepted
+/// `cognicode-mcp-...tar.gz` as `cognicode`'s payload, which is a
+/// silent data corruption: the resulting `cognicode-0.97.5-...tar.gz`
+/// at the staging root is a copy of the MCP server binary.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!(
+        "prf-f6-w3bis-overmatch-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let version = env!("CARGO_PKG_VERSION");
+    // Build a single-lane staging tree that ships cogh and
+    // cognicode-mcp tarballs but NOT a plain cognicode tarball.
+    // After the fix the flatten script MUST report that
+    // cognicode's payload is missing; before the fix it silently
+    // consumed cognicode-mcp's tarball as cognicode's.
+    let lane = staging.join("payloads-linux-x86-64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    fs::create_dir_all(lane.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode-mcp"] {
+        fs::write(
+            lane.join("dist").join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp}\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+    // Add a valid aarch64 lane so the missing-platform check does
+    // not trip first.
+    let aarch = staging.join("payloads-linux-aarch64");
+    fs::create_dir_all(aarch.join("dist")).unwrap();
+    fs::create_dir_all(aarch.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode", "cognicode-mcp"] {
+        fs::write(
+            aarch.join("dist").join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp} aarch64\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject a lane whose `cognicode` payload is missing \
+         (it must NOT silently consume `cognicode-mcp-*.tar.gz` as the \
+         `cognicode` payload)"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("missing payload for component cognicode"),
+        "error must report that cognicode's payload is missing; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Companion test that pins the symmetric case: a lane that ships
+/// `cognicode-...tar.gz` but NOT `cognicode-mcp-...tar.gz` must also
+/// be rejected with a "missing payload for cognicode-mcp" error
+/// (the same over-match in the other direction). This guards
+/// against future regressions where a developer "fixes" the bug
+/// only for the cognicode side.
+#[test]
+fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
+    use std::fs;
+    let tmp = std::env::temp_dir().join(format!(
+        "prf-f6-w3bis-overmatch-rev-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    let staging = tmp.join("staging");
+    fs::create_dir_all(&staging).unwrap();
+
+    let version = env!("CARGO_PKG_VERSION");
+    let lane = staging.join("payloads-linux-x86-64");
+    fs::create_dir_all(lane.join("dist")).unwrap();
+    fs::create_dir_all(lane.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode"] {
+        fs::write(
+            lane.join("dist").join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp}\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+    let aarch = staging.join("payloads-linux-aarch64");
+    fs::create_dir_all(aarch.join("dist")).unwrap();
+    fs::create_dir_all(aarch.join("crates")).unwrap();
+    for comp in ["cogh", "cognicode", "cognicode-mcp"] {
+        fs::write(
+            aarch.join("dist").join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
+            format!("payload {comp} aarch64\n").as_bytes(),
+        )
+        .unwrap();
+        fs::write(
+            aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+        )
+        .unwrap();
+    }
+
+    let out = Command::new("bash")
+        .arg(flatten_script())
+        .arg(&staging)
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "flatten must reject a lane whose `cognicode-mcp` payload is missing"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("missing payload for component cognicode-mcp"),
+        "error must report that cognicode-mcp's payload is missing; got: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// Static guard: the flatten script's tarball discovery must NOT
+/// use the bare `${comp}-*-${platform}.tar.gz` glob in its `find`
+/// invocation, because that glob is greedy in the wrong direction
+/// and causes the cognicode-vs-cognicode-mcp over-match described
+/// above. The semver version always starts with a digit, so the
+/// find pattern must anchor with `[0-9]` right after the component
+/// stem.
+#[test]
+fn prf_f6_w3_bis_flatten_find_pattern_uses_digit_anchor() {
+    let text = std::fs::read_to_string(flatten_script())
+        .expect("read flatten script");
+    let needle = r#"-name "${comp}-[0-9]*-${platform}.tar.gz""#;
+    assert!(
+        text.contains(needle),
+        "flatten script must use a digit-anchored find pattern ({needle:?}) \
+         to prevent the cognicode-vs-cognicode-mcp prefix over-match \
+         that broke Actions run #35998814863"
+    );
+    // And it must NOT still carry the old buggy glob in any
+    // actual `find` invocation. Bare `${comp}-*-${platform}` is
+    // still acceptable in error messages (so users see what was
+    // looked for), but the find line itself must be digit-anchored.
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if !line.contains("find ") {
+            continue;
+        }
+        assert!(
+            !line.contains(r#"${comp}-*-"#),
+            "flatten script must not invoke `find` with the bare \
+             `${{comp}}-*-${{platform}}.tar.gz` glob (line: {line:?}); \
+             use `${{comp}}-[0-9]*-${{platform}}.tar.gz` instead"
+        );
+    }
+}
+
+/// Round-5 hardening: the **sanity check** at the end of the flatten
+/// script (line ~250, `compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz"`)
+/// has the same over-match bug as the find pattern had: `cognicode-*-X`
+/// matches `cognicode-mcp-X` too. In the normal flow the bug is masked
+/// by `copy_unique` having already copied both tarballs, but the sanity
+/// check is the **second line of defense** — if `copy_unique` ever
+/// regresses or a future refactor changes the population order, the
+/// sanity check must NOT silently green-light a staging set that is
+/// missing the `cognicode` payload. This test pins the compgen pattern
+/// to the digit anchor so any future regression is caught statically.
+#[test]
+fn prf_f6_w3_bis_flatten_compgen_sanity_check_uses_digit_anchor() {
+    let text = std::fs::read_to_string(flatten_script())
+        .expect("read flatten script");
+
+    // The fix: the compgen sanity check must use `[0-9]` after the
+    // component stem, just like the find pattern above.
+    let anchored_compgen = r#"compgen -G "${STAGING}/${comp}-[0-9]*-${platform}.tar.gz""#;
+    assert!(
+        text.contains(anchored_compgen),
+        "flatten script must use a digit-anchored compgen pattern in its \
+         final sanity check ({anchored_compgen:?}); the bare \
+         `${{comp}}-*-${{platform}}.tar.gz` glob over-matches `cognicode-mcp` \
+         for `cognicode` and silently returns success when the cognicode \
+         payload is missing"
+    );
+
+    // And the bare glob must NOT appear inside any compgen invocation.
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if !line.contains("compgen ") {
+            continue;
+        }
+        assert!(
+            !line.contains(r#"${comp}-*-"#),
+            "flatten script must not invoke `compgen` with the bare \
+             `${{comp}}-*-${{platform}}.tar.gz` glob (line: {line:?}); \
+             use `${{comp}}-[0-9]*-${{platform}}.tar.gz` instead"
+        );
+    }
+}
+
+/// Round-5 dynamic regression test: pin the bash `compgen -G` glob
+/// semantics so the assumption underlying the digit-anchor fix stays
+/// true.
+///
+/// The flatten script's final sanity check uses
+/// `compgen -G "${STAGING}/${comp}-*-${platform}.tar.gz"`. If bash's
+/// `compgen -G` semantics ever changed so that `cognicode-*-X.tar.gz`
+/// did NOT match `cognicode-mcp-0.97.5-X.tar.gz`, the digit-anchor fix
+/// would no longer be necessary. Conversely, if the semantics changed
+/// in a way that made even `cognicode-[0-9]*-X.tar.gz` over-match
+/// `cognicode-mcp-0.97.5-X.tar.gz`, the digit-anchor fix would stop
+/// working silently.
+///
+/// This test pins the **specific semantic property we depend on**:
+/// in this bash version, `cognicode-*-X.tar.gz` over-matches
+/// `cognicode-mcp-0.97.5-X.tar.gz` (false positive), AND
+/// `cognicode-[0-9]*-X.tar.gz` does NOT (true negative). If bash
+/// behavior ever diverges, the test fails and forces an explicit
+/// review of the fix.
+///
+/// We synthesize the post-copy-unique state directly: a staging root
+/// where only `cognicode-mcp-X-X.tar.gz` exists, plus both SBOMs. We
+/// cannot reach this state through the `stage-platform-payloads.sh`
+/// entry point because `copy_unique` would refuse it earlier, so we
+/// evaluate the compgen pattern against that root in isolation.
+#[test]
+fn prf_f6_w3_bis_flatten_compgen_pattern_rejects_cognicode_missing_with_mcp_present() {
+    use std::process::Command;
+
+    let staging = tempdir_in_target("compgen-false-positive");
+    // Stage the post-copy-unique state with cognicode TAR missing
+    // but cognicode-mcp TAR present. SBOMs are irrelevant for the
+    // compgen check (which targets `.tar.gz`), but include them so
+    // the layout looks like a real post-flatten staging root.
+    std::fs::write(
+        staging.join("cognicode-mcp-0.97.5-x86_64-unknown-linux-gnu.tar.gz"),
+        b"",
+    )
+    .unwrap();
+    std::fs::write(staging.join("cogh-0.97.5-x86_64-unknown-linux-gnu.tar.gz"), b"").unwrap();
+    std::fs::write(staging.join("cognicode-x86_64-unknown-linux-gnu.cdx.json"), b"{}").unwrap();
+    std::fs::write(
+        staging.join("cognicode-mcp-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
+    std::fs::write(staging.join("cogh-x86_64-unknown-linux-gnu.cdx.json"), b"{}").unwrap();
+
+    let staging_str = staging.display().to_string();
+    // Bare glob (the bug): `cognicode-*-X.tar.gz` matches
+    // `cognicode-mcp-0.97.5-X.tar.gz`, so compgen exits 0 falsely.
+    let buggy_status = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "compgen -G '{staging_str}/cognicode-*-x86_64-unknown-linux-gnu.tar.gz' \
+             '{staging_str}' > /dev/null"
+        ))
+        .status()
+        .expect("spawn bash for buggy compgen check");
+    assert!(
+        buggy_status.success(),
+        "this test is meaningful only if the BARE glob produces a false \
+         positive (i.e. matches cognicode-mcp). If bash's compgen semantics \
+         changed and it now returns failure, the digit-anchor fix in the \
+         flatten script may no longer be necessary — review the fix and \
+         decide whether to remove it."
+    );
+
+    // Anchored glob (the fix): `cognicode-[0-9]*-X.tar.gz` does NOT
+    // match `cognicode-mcp-0.97.5-X.tar.gz` (the digit anchor requires
+    // the version token to be right after the component stem, so a
+    // sibling component whose name shares a prefix cannot satisfy
+    // the pattern). compgen exits 1.
+    let fixed_status = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "compgen -G '{staging_str}/cognicode-[0-9]*-x86_64-unknown-linux-gnu.tar.gz' \
+             '{staging_str}' > /dev/null"
+        ))
+        .status()
+        .expect("spawn bash for fixed compgen check");
+    assert!(
+        !fixed_status.success(),
+        "the digit-anchored compgen glob MUST return failure when only \
+         `cognicode-mcp-X-X.tar.gz` is present; if it returns success the \
+         over-match is back, which means the fix no longer protects the \
+         sanity check"
+    );
+
+    std::fs::remove_dir_all(&staging).ok();
+}
+
+/// Helper: create a unique tempdir under `target/` (the workspace's
+/// cargo build dir, gitignored). Returns the absolute path.
+fn tempdir_in_target(label: &str) -> std::path::PathBuf {
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let dir = repo_root()
+        .join("target")
+        .join(format!("prf-f6-w3-bis-compgen-{label}-{stamp}"));
+    std::fs::create_dir_all(&dir).expect("create tempdir");
+    dir
+}
