@@ -8546,3 +8546,44 @@ SDDK.
 - JOURNAL §125.V22-V31 (10 recibos append-only en esta
   sesión).
 - HANDOFF-§125.md.
+
+## V32 — 2026-09-24 — F4.W1 workspace isolation characterization
+
+**Acción**: Caracterización del criterio F4 "dos workspaces
+independientes demuestran no compartir estado". Nuevo módulo
+`prf_f4_w1_workspace_isolation_tests` con 3 tests verdes.
+
+**Tests añadidos** (W1.a/b/c):
+
+- `isolated_workspaces_have_distinct_snapshot_paths` — pins que
+  dos workspaces producen snapshots en paths filesystem distintos.
+- `snapshot_in_workspace_a_unaffected_by_workspace_b_build` —
+  pins que el build en B no modifica los bytes del snapshot de A.
+- `simulated_restart_in_a_does_not_affect_b` — pins que un
+  restart simulado en A (nuevo `HandlerContext`) recarga el
+  snapshot de A sin tocar el de B.
+
+**Decisión D74**: la persistencia está aislada por construcción
+del filesystem (`graph_db_path` une `.cognicode` al workspace
+canonicalizado). El test no necesita verificar el filesystem
+en sí; solo verifica que el API público honra el contrato
+per-workspace.
+
+**RED/GREEN conceptual verificado por inspección**: si dos
+workspaces compartieran `db_path`, `build_once(ws_b)`
+sobrescribiría el snapshot de A y W1.b fallaría con
+`bytes_a_after != bytes_a_initial`. Como `graph_db_path`
+une `.cognicode` al workspace, los paths son distintos y
+W1.b pasa. Test real.
+
+**Suite post-cambio**:
+
+- cognicode-core: 2179 → 2182/0/27 (+3 tests).
+- clippy -p cognicode-core --lib --no-deps: 0 warnings.
+
+**Refs**:
+
+- ROADMAP PRF §F4.
+- JOURNAL §125.V22-V31 (sesión previa).
+- D55-D74 (incl. D74 nuevo).
+- HANDOFF-§125.md.

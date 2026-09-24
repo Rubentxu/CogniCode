@@ -7337,4 +7337,175 @@ mod tests {
             );
         }
     }
+
+    /// PRF-F4-W1: workspace isolation characterization.
+    ///
+    /// Pinned characterization for the F4 criterion: "two workspaces
+    /// independientes y demuestran que no comparten estado". The
+    /// persistence layer stores snapshots at
+    /// `<workspace>/.cognicode/graph.cache` (see `graph_db_path`), so
+    /// the filesystem layout is the primary isolation guarantee. This
+    /// module pins that contract:
+    ///
+    /// - `isolated_workspaces_have_distinct_snapshot_paths`: building
+    ///   the graph in workspace A creates a `.cognicode/graph.cache`
+    ///   file inside A, not anywhere accessible from B.
+    /// - `snapshot_in_workspace_a_unaffected_by_workspace_b_build`:
+    ///   a fresh build in B does not modify A's snapshot bytes
+    ///   (the snapshot is per-workspace, not global).
+    /// - `simulated_restart_in_a_does_not_affect_b`: a second
+    ///   `HandlerContext` pointing at A reloads A's snapshot
+    ///   successfully, while B's snapshot remains independent
+    ///   (byte-equal to its post-first-build state).
+    ///
+    /// D74: the persistence layer is filesystem-isolated by
+    /// construction (`graph_db_path` joins `.cognicode` to the
+    /// canonicalized working directory). This module does not need
+    /// to test the filesystem itself; it only pins that the public
+    /// API honors the per-workspace contract.
+    mod prf_f4_w1_workspace_isolation_tests {
+        use super::*;
+        use crate::domain::value_objects::file_manifest::FileManifest;
+        use std::path::{Path, PathBuf};
+
+        /// Run `handle_build_graph` once over a fresh workspace,
+        /// returning the resulting graph cache file path and the
+        /// byte-length of the snapshot after build.
+        async fn build_once(
+            workspace: &Path,
+        ) -> (PathBuf, usize) {
+            // Stage a minimal corpus so the build has something to
+            // parse and produce a non-empty graph.
+            let src_dir = workspace.join("src");
+            std::fs::create_dir_all(&src_dir).unwrap();
+            std::fs::write(
+                src_dir.join("lib.rs"),
+                b"pub fn impact_target() -> u32 { 42 }\n",
+            )
+            .unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(workspace.to_path_buf())
+                .build();
+            let input = BuildGraphInput { directory: None };
+            let result = handle_build_graph(&ctx, input).await.unwrap();
+            assert!(result.success, "build must succeed: {:?}", result.message);
+
+            let db_path = workspace
+                .canonicalize()
+                .unwrap_or_else(|_| workspace.to_path_buf())
+                .join(".cognicode")
+                .join("graph.cache");
+            let bytes = std::fs::read(&db_path)
+                .expect("snapshot must exist after successful build");
+            (db_path, bytes.len())
+        }
+
+        /// PRF-F4-W1.a: two independent workspaces produce snapshots
+        /// at distinct filesystem paths. This pins the per-workspace
+        /// contract at the path level.
+        #[tokio::test]
+        async fn isolated_workspaces_have_distinct_snapshot_paths() {
+            let ws_a = tempfile::tempdir().unwrap();
+            let ws_b = tempfile::tempdir().unwrap();
+            let (path_a, _) = build_once(ws_a.path()).await;
+            let (path_b, _) = build_once(ws_b.path()).await;
+
+            assert!(
+                path_a.exists(),
+                "workspace A snapshot must exist at {:?}",
+                path_a
+            );
+            assert!(
+                path_b.exists(),
+                "workspace B snapshot must exist at {:?}",
+                path_b
+            );
+            assert_ne!(
+                path_a, path_b,
+                "two independent workspaces must produce distinct snapshot paths"
+            );
+
+            // Non-vacuity guard: both snapshots must have non-zero
+            // size (a zero-byte snapshot would be a degenerate case
+            // that doesn't exercise the persistence layer).
+            assert!(
+                std::fs::metadata(&path_a).unwrap().len() > 0,
+                "workspace A snapshot must be non-empty"
+            );
+            assert!(
+                std::fs::metadata(&path_b).unwrap().len() > 0,
+                "workspace B snapshot must be non-empty"
+            );
+        }
+
+        /// PRF-F4-W1.b: a fresh build in workspace B does not
+        /// modify workspace A's snapshot bytes. This pins that the
+        /// persistence layer is per-workspace, not a global cache.
+        #[tokio::test]
+        async fn snapshot_in_workspace_a_unaffected_by_workspace_b_build() {
+            let ws_a = tempfile::tempdir().unwrap();
+            let ws_b = tempfile::tempdir().unwrap();
+
+            let (path_a, len_a_initial) = build_once(ws_a.path()).await;
+            let bytes_a_initial = std::fs::read(&path_a).unwrap();
+
+            // Build B (creates B's snapshot; should not touch A's).
+            let _ = build_once(ws_b.path()).await;
+
+            // A's snapshot must be byte-equal to its post-first-build
+            // state.
+            let bytes_a_after = std::fs::read(&path_a).unwrap();
+            assert_eq!(
+                bytes_a_initial.len(),
+                len_a_initial,
+                "workspace A snapshot length must match its initial state"
+            );
+            assert_eq!(
+                bytes_a_after, bytes_a_initial,
+                "workspace A snapshot bytes must be unchanged after building workspace B"
+            );
+        }
+
+        /// PRF-F4-W1.c: a simulated restart in workspace A (new
+        /// `HandlerContext`) reloads A's snapshot successfully,
+        /// while workspace B's snapshot remains independent. This
+        /// pins that each workspace can be restarted in isolation.
+        #[tokio::test]
+        async fn simulated_restart_in_a_does_not_affect_b() {
+            let ws_a = tempfile::tempdir().unwrap();
+            let ws_b = tempfile::tempdir().unwrap();
+
+            let (path_a, _) = build_once(ws_a.path()).await;
+            let (path_b, _) = build_once(ws_b.path()).await;
+
+            let bytes_b_before = std::fs::read(&path_b).unwrap();
+
+            // Simulate restart in A: new HandlerContext, fresh build.
+            let ctx_a_new = HandlerContext::builder()
+                .with_working_dir(ws_a.path().to_path_buf())
+                .build();
+            let result = handle_build_graph(
+                &ctx_a_new,
+                BuildGraphInput { directory: None },
+            )
+            .await
+            .unwrap();
+            assert!(result.success, "restarted build in A must succeed");
+
+            // A's snapshot must still exist after the restart.
+            assert!(
+                std::fs::metadata(&path_a).unwrap().len() > 0,
+                "workspace A snapshot must survive restart"
+            );
+
+            // B's snapshot must be byte-equal to its post-first-build
+            // state — the restart in A must not have touched B.
+            let bytes_b_after = std::fs::read(&path_b).unwrap();
+            assert_eq!(
+                bytes_b_after, bytes_b_before,
+                "workspace B snapshot must be unchanged after restart in A"
+            );
+        }
+    }
 }
