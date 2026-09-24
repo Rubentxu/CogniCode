@@ -11665,3 +11665,83 @@ Mi `git` actual compite con ese lock.
 - PID 3383777 (proceso bloqueante, autor `cognicode-prf`).
 - CAMBIO LISTO: edición archivada de CURRENT.md (87 líneas).
 - `git restore` aplicado.
+
+## §144 — V38 — B1 Reconciliación contractual exhaustiva sobre v0.98.0 (2026-09-24)
+
+**Commit:** (este JOURNAL + el `RECONCILIATION-MATRIX.md` en próximo commit; el lockfile estaba ausente durante este bloque y se pudo escribir).
+
+**Plan operativo:** plan de ejecución prolongada del operador (4 bloques B1→B4, modo AUTO), recibido 2026-09-24T20:12:22Z. **B1 = Reconciliación contractual exhaustiva**, ejecutado sin pausa.
+
+### Trabajo realizado
+
+1. **Recuperación AGENTS.md §1**: estado git confirmado (HEAD `01881f6b`, origin `03158085`, 14 ahead); `.git/index.lock` ausente (transitorio); PID 3383777 sigue durmiendo (5h35m elapsed) sin tocar el lock.
+
+2. **Inventario de source-of-truth** (read-only):
+   - `ROADMAP.md` §F3..F7/C3..C7 (programa PRF vigente)
+   - `UAT.md` (6 UAT ejecutadas: W8-001, W9-001, F3-001, F4-001, F5-001, F6-001)
+   - `RELEASE-CANDIDATE.md` (contrato de cierre con SHA congelado `178f8a5b` knowingly stale)
+   - `AUDIT-2026-09-22-FINDINGS.md` (13 hallazgos H01-H13)
+   - `docs/prf/specs/RECONCILIATION-MATRIX.md` (matriz base sobre `178f8a5b`, **NO modificada**)
+   - `docs/prf/evidence/CERTIFICATES.md` (cert PRF-F0..F6, PRF-C2, PRF-CI-CLIPPY)
+   - `TRACEABILITY.md` (filas F0..F6)
+   - 8 SPEC-* (ANALYSIS, CI, CLI, DISTRIBUTION, EXTENSIBILITY, MCP, SECURITY, STATE)
+
+3. **Descarga inmutable de artefactos publicados v0.98.0**:
+   - `gh release view v0.98.0` confirmó 12 assets con SHA256 inmutables
+   - Descargados a `/tmp/prf-v098-reconcile/`:
+     - `SHA256SUMS` (12 hashes, reproduce el publicado)
+     - `release-inventory-0.98.0.json` (source_commit `8505ad85…`)
+     - `bundle-0.98.0-x86_64-unknown-linux-gnu.yaml`
+   - Verificación `git cat-file -p v0.98.0`: tag anotado `d99d3911` → commit `8505ad85`, tagger `Ruben <rubentxu@cognicode.dev>`, NO firmado GPG.
+
+4. **Producción de matriz consolidada** `docs/prf/RECONCILIATION-MATRIX.md` (290 líneas):
+   - Identidad inmutable de la candidata `v0.98.0`
+   - Relación SHA congelado `178f8a5b` ↔ candidata `8505ad85` (333 commits intermedios; 20 commits post-candidata todos `docs/prf/*`)
+   - Inventario de 12 assets con SHA256 inmutable
+   - Reconciliación requisito por requisito (8 SPECs + 27 UAT) sobre `v0.98.0`
+   - Resumen ejecutivo: ~34 PASS heredable, ~7 PASS re-ejecutable, ~27 PARTIAL, ~8 NOT_RUN, ~4 PEND, **3 gaps bloqueantes para C7**
+   - Recomendación técnica: `v0.98.0` puede aportar evidencias reutilizables pero NO es firme como candidato F7 sin cerrar los 3 gaps bloqueantes.
+
+### Hallazgos clave
+
+**3 gaps bloqueantes para C7 sobre `v0.98.0`:**
+1. **PRF-MCP-05 enforcement gap** — `list_tools` usa `MUTATING_TOOLS` hardcoded; declaración `authority` en `cognicode_meta()` no se consulta.
+2. **PRF-SEC-07 campaña adversarial PEND** — reconocido por C5.
+3. **PRF-CI-07 disparador automático en push-PR** — política local-first sin equivalencia automática.
+
+**Evidencias reutilizables de `v0.98.0` sin re-ejecución:**
+- PRF-DIST-01 (manifiesto, sha256, bundle YAML, inventory JSON)
+- PRF-DIST-06 (procedencia verificada por `d40e61b2` y `#36038178581`)
+- PRF-CI-05 (parcial: SBOM + sha256 + smoke real en run `#36034410448`)
+- PRF-CI-07 (gate demostrado OBSERVED por `#36033099039`)
+- Pasivo de las garantías heredables listadas en §4-§5 del nuevo RECONCILIATION-MATRIX.
+
+**Lo que exige candidata posterior (`v0.98.1`/`v0.99.0`):**
+- PRF-MCP-05 enforcement migration (commit de comportamiento)
+- PRF-SEC-07 campaña adversarial (commits + UAT nuevos)
+- PRF-CI-07 disparador automático (decisión governance)
+
+**Lo que es ejecutable contra `v0.98.0` sin candidata nueva (B3):**
+- PRF-DIST-02 ciclo install→doctor→CLI→MCP→update→rollback→uninstall
+- PRF-DIST-03 UAT end-to-end con servidor HTTP local + manifest real v0.98.0
+- PRF-DIST-04 supervivencia configs preexistentes
+- PRF-DIST-05 smoke linux-x86_64 (y linux-aarch64 si hay runner)
+
+### Decisión técnica (no firma)
+
+`v0.98.0` puede aportar **evidencias reutilizables** (DIST-01, DIST-06, CI-05, CI-07 OBSERVED), pero **NO es firme como candidato F7** sin antes cerrar los 3 gaps bloqueantes identificados. B2 (campaña adversarial + MCP-05 enforcement) los cierra. B3 (distribución real sobre v0.98.0) cierra los gaps DIST-02/03/04/05 re-ejecutables.
+
+### Honestidad
+
+- 333 commits separan el SHA congelado `178f8a5b` de la candidata `8505ad85`. La matriz base en `docs/prf/specs/RECONCILIATION-MATRIX.md` queda **knowingly outdated**; este nuevo documento es su re-evaluación honesta.
+- 27 UAT originales: ~10 PASS heredables, ~10 PARTIAL, ~2 NOT_RUN, ~2 PEND; ~3 re-ejecutables en B3.
+- Esta matriz **no firma C7**. Es la base sin la que C7 no puede firmarse contractualmente.
+
+### Refs
+
+- `docs/prf/RELEASE-CANDIDATE.md` (acción 2 del plan operador: "matriz RECONCILIATION-MATRIX.md primero").
+- `docs/prf/AUDIT-2026-09-22-FINDINGS.md` (H01, H06, H07 relevantes).
+- `docs/prf/specs/RECONCILIATION-MATRIX.md` (matriz base sobre `178f8a5b`, intacta).
+- `docs/prf/evidence/CERTIFICATES.md` (PRF-F6, PRF-CI-CLIPPY como fuentes de evidencia heredable).
+- Plan operador recibido 2026-09-24T20:12:22Z (B1→B4 en modo AUTO).
+
