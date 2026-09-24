@@ -9164,3 +9164,87 @@ push, sin schedule. El operador decide cuándo validar.
   v0.97.6 con un candidato concreto.
 
 Refs: PRF F6.W3.bis, CI validate mode, JOURNAL §127.
+
+## §128 — F6.W3.bis product fix (rollback owns shim resurrection) (2026-09-24)
+
+### Contexto
+
+El operador revisó §127 y rechazó el workaround `cmd_reshim` post-rollback
+como prueba de corrección. Indicó: "El bug del rollback no debería
+convertirse en un paso oficial adicional... preferiría corregir esa
+transición dentro del producto". El bug es estructural: `cmd_rollback`
+revierte los efectos del journal (incluido el shim de B), pero no re-crea
+el shim de A. El usuario necesitaba `cogh reshim` después.
+
+### Cambio en producto
+
+`cmd_rollback` en `crates/cognicode-cli/src/cmd/layout.rs` ahora invoca
+`cmd_reshim` después de restaurar el tracker pin, re-materializando el
+shim desde la versión activa. Si la resurrección falla (manifest
+inválido, binario no encontrado, etc.) el rollback retorna Err preservando
+el journal para que el usuario pueda reintentar con `cogh rollback --to
+<prev>`. El consumo del journal es ahora condicional a la transición
+completa con éxito.
+
+### Tests
+
+Dos nuevos tests pinned en `crates/cognicode-cli/src/cmd/layout.rs`:
+
+1. `prf_f6_w3_bis_execute_installed_binary_after_transition_and_rollback` —
+   el test positivo. Sin `cmd_reshim` como workaround. Verifica:
+   - post-install A: shim apunta a A y binario ejecuta con payload marker
+   - post-A→B: shim apunta a B y binario ejecuta con payload marker
+   - post-rollback B→A: shim apunta a A y binario ejecuta con payload marker
+   - user data sobrevive A→B y B→A
+
+2. `prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails` —
+   el test negativo. RED test sin workaround. Elimina el manifest de A
+   antes del rollback, fuerza a `cmd_reshim` a fallar, y verifica:
+   - `cmd_rollback` retorna Err con mensaje claro ("shim resurrection failed")
+   - journal NO se consume (retry contract)
+   - tracker fue restaurado a A (rollback parcialmente aplicado)
+
+### Tests preexistentes actualizados
+
+Los tests preexistentes asumían el bug como contrato. Actualizados para
+el nuevo comportamiento:
+
+- `plant_journal(home, version, previous_tracker)`: ahora planta
+  BundleManifest válido + binario ejecutable para `previous_tracker`
+  cuando se proporciona. Esto satisface las precondiciones que
+  `cmd_reshim` necesita durante el rollback.
+- `cmd_rollback_reverses_a_committed_install`: ahora delega a
+  `f6w3_install_via_fixture_round_trip` (install path canónico A→B→A).
+- `t_e86_4_rollback_to_previous_tracker_succeeds`: usa el nuevo
+  `plant_journal` con la precondición añadida.
+- `t_debt4_t1_rollback_consumes_journal_and_second_is_noop`: usa el
+  nuevo `plant_journal`.
+
+### Suite
+
+- Workspace `--tests --test-threads=1`: 0 fallos (verificado 2026-09-24).
+- Tests relevantes en paralelo: FLAKY preexistente en tests `#[serial]`
+  (race condition entre tests que comparten filesystem global, no derivado
+  del cambio). Tests objetivo (`prf_f6_w3_bis_*`, `cmd_rollback_*`,
+  `t_e86_4_rollback_to_previous_tracker_succeeds`, `t_debt4_t1_*`,
+  `commit_persists_journal_with_tracker_effect`) pasan consistentemente
+  tanto en serie como en paralelo.
+
+### Commit
+
+- `788109a2` (fix(cli): cmd_rollback owns shim resurrection, refuses Ok
+  on partial apply).
+
+### Estado operator-gated
+
+- Push acumulado: 5 commits (`a5183ce6`, `d4969ccb`, `8967849d`,
+  `ad86ec13`, `788109a2`). Operador-gated.
+- Tag v0.97.6: pendiente. Operador-gated.
+- H-05/H-06: pendiente. Operador-gated.
+- C7 firma: BLOQUEADO hasta validación remota.
+- Validación remota del release factory: pendiente operator authorization
+  separada (sin tag, sin publish, sin upload a GitHub Release).
+- Refinamiento de §127 "rollback-no-restores-shim" queda resuelto en
+  producto — no requiere follow-up adicional.
+
+Refs: PRF F6.W3.bis (commits §127 + §128), operator review §127 final.
