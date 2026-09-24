@@ -11979,3 +11979,70 @@ Estado post-uninstall:
 - JOURNAL §144 (B1 reconciliation), §145 (B2 enforcement+adversarial)
 - Plan operador recibido 2026-09-24T21:17:33Z (B3 → B4 AUTO)
 
+
+## §147 — V41 — B4 cierre: Admission Expediente F7/C7 (STOP hasta decisión operador) (2026-09-24)
+
+**Plan operador:** B4 del plan prolongado. Preparación del expediente para decisión sobre firma F7/C7; **NO incluye push, tag, firma, ni release** (operator-gated por contrato).
+
+### Trabajo realizado
+
+#### Producto 1 — `docs/prf/ADMISSION-EXPEDIENTE-F7-C7-v0.98.0.md` (285 líneas)
+
+Estructura del expediente:
+- §1 Contexto de v0.98.0 publicada (procedencia verificada via `gh release view` + `gh run list`).
+- §2 Estado de los 3 gaps bloqueantes B1 (PRF-MCP-05, PRF-SEC-07, PRF-CI-07) con su cierre en HEAD `92ec698a` y la pregunta "¿cierra F7/C7 sobre v0.98.0?".
+- §3 Evidencias reutilizables (procedencia, garantías heredables, B3 end-to-end).
+- §4 Hallazgos honestos del ciclo (rollback parcial cogh, ~/.cognicode/ v0.97.3, cogh install vs init, linux-aarch64 no ejecutado).
+- §5 Tres opciones A/B/C para firma F7/C7 (con pros, contras, riesgo contractual).
+- §6 Recomendación primaria del agente: **Opción B** (candidata v0.98.1).
+- §7 Plan de validación `--validate` con comandos exactos (preparados, no ejecutados).
+- §8 Decisiones que necesito del operador (6 preguntas concretas).
+- §9 Estado actual verificable (HEAD local/remoto, tag, runs, working tree).
+- §10 Refs cruzados a JOURNAL/RECONCILIATION-MATRIX/AUDIT/STATE.
+
+#### Producto 2 — Comando `release-validate` preparado (no ejecutado)
+
+```bash
+gh workflow run release-validate.yml --repo Rubentxu/CogniCode --ref <branch>
+```
+
+Sin tag, sin publish. El operador puede invocarlo manualmente sin compromiso.
+
+### Hallazgos durante B4
+
+1. **Releases API devuelve `isDraft: false, isPrerelease: false`** para v0.98.0; la release está públicamente visible.
+2. **Run CI history observado**:
+   - `#36034410448` (5/5 SUCCESS, release publicada)
+   - `#36038178581` (release-validate SUCCESS sobre `d40e61b2`)
+   - `#36039255746` (release-validate FAILURE: **gate atrapó mismatch workspace 0.99.0 vs release 0.98.0** → evidencia OBSERVED de que el gate funciona).
+   - 6+ runs anteriores en failure, todos relacionados con configuración de jobs (regression de artifact discovery, sha-binding en workflow, etc.), todos resueltos pre-v0.98.0.
+3. **No hay tag `v0.99.0`** en `git tag -l`, lo que confirma que el "0.99.0" del run #36039255746 era ruido en la lógica del gate (probablemente un test de regresión), no una release real.
+
+### Recomendación final del agente (NO es firma)
+
+**Opción B**: candidata v0.98.1 con B2 incluidos. Razones:
+- Mínimo costo de pipeline (~1h) sobre trabajo B2 ya hecho.
+- Coherencia workspace↔binario↔firma.
+- Cierra el 100% de los gaps B2 en binario, no solo en código.
+- Hace obsoleto el addendum sobre v0.98.0 y reduce deuda documental.
+- La auditoría externa (2026-09-22) queda coherente con la firma.
+
+### STOP
+
+B4 entrega el expediente y el plan de validación, pero **NO ejecuta** ninguna acción que cambie el estado remoto:
+- ✗ No push de los 20 commits ahead of origin/main.
+- ✗ No bump workspace 0.98.0→0.98.1.
+- ✗ No release-validate run.
+- ✗ No tag v0.98.1.
+- ✗ No publish v0.98.1.
+- ✗ No firma F7/C7.
+- ✓ Commit del expediente en working tree local (versionado en `docs/prf/` con force-add).
+
+### Refs
+
+- `docs/prf/ADMISSION-EXPEDIENTE-F7-C7-v0.98.0.md` (producto de B4).
+- `gh release view v0.98.0 --repo Rubentxu/CogniCode`.
+- `gh run list --workflow release-validate.yml --limit 10`.
+- JOURNAL §146 (B3 cierre), §145 (B2 cierre), §144 (B1 cierre).
+- Plan operador recibido 2026-09-24T21:17:33Z (B1→B4 AUTO).
+
