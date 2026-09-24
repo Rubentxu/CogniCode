@@ -138,6 +138,15 @@ impl ImpactReport {
 }
 
 /// Level of impact
+///
+/// **D71(c) — intentional separation**: this is one of five
+/// `RiskLevel`/`ImpactLevel` enums in `cognicode-core`. This one is
+/// the canonical **core domain model** for impact analysis (5 buckets
+/// `Minimal | Low | Medium | High | Critical`, with a 2x multiplier
+/// for type definitions). It is the source of truth for library
+/// callers that need refined impact semantics. NOT interchangeable
+/// with the MCP wrapper's `RiskLevel` (which is a simpler blast-radius
+/// heuristic — see `interface::mcp::handlers::handle_analyze_impact`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ImpactLevel {
     /// No dependents, safe to change

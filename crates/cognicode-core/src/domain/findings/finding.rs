@@ -97,6 +97,14 @@ impl fmt::Display for FindingSeverity {
 }
 
 /// Evaluated risk of acting on the finding.
+///
+/// **D71(c) — intentional separation**: this is the **findings-flow**
+/// `RiskLevel` (4 buckets `Low | Medium | High | Critical`, snake_case
+/// JSON serialization). It is distinct from the core `ImpactLevel`
+/// (5 buckets), the MCP `RiskLevel`, the impact DTO string field, and
+/// the safety `RiskLevel` (which has an extra `None` bucket). NOT
+/// interchangeable with any of them. Used exclusively by the
+/// `grounded_finding_flow` pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RiskLevel {

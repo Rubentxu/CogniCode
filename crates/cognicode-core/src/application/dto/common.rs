@@ -123,6 +123,15 @@ pub struct AnalysisMetadata {
 /// Risk level for impact analysis
 ///
 /// Uses lowercase serialization for MCP protocol compatibility.
+///
+/// **D71(c) — intentional separation**: this is the MCP-facing
+/// `RiskLevel` (4 buckets `Low | Medium | High | Critical`). It is a
+/// simplified blast-radius heuristic derived from `symbols_count` in
+/// `interface::mcp::handlers::handle_analyze_impact`. NOT
+/// interchangeable with the core `ImpactLevel` (5 buckets with type
+/// multiplier) or any of the other four `RiskLevel`/`ImpactLevel`
+/// enums in this crate. See `domain::services::ImpactLevel` for the
+/// canonical core model.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {

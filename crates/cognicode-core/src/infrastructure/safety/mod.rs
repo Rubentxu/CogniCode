@@ -252,6 +252,16 @@ pub enum ViolationCode {
 ///
 /// Note: This enum uses explicit ordinal values but comparisons should
 /// use RiskThreshold::is_above() to avoid ordinal assumptions.
+///
+/// **D71(c) — intentional separation**: this is the **safety**
+/// `RiskLevel` (5 ordinal buckets `None | Low | Medium | High |
+/// Critical`, where `None` is the default and ordinal 0). It is the
+/// only one with a `None` bucket because safety classification of
+/// operations may be undefined. Distinct from the core `ImpactLevel`
+/// (which has no `None`), the MCP `RiskLevel` (4 buckets), the impact
+/// DTO string field, and the findings `RiskLevel`. NOT interchangeable
+/// with any of them. Used by the safety module to gate operations by
+/// permission/danger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum RiskLevel {
     #[default]

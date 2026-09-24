@@ -4,6 +4,15 @@ use crate::domain::aggregates::call_graph::SymbolId;
 use serde::{Deserialize, Serialize};
 
 /// DTO for impact analysis result
+///
+/// **D71(c) — intentional separation**: the `risk_level: String` field
+/// here is a fourth risk encoding (4 buckets derived from
+/// `score: u8` ranges `0..=3 / 4..=6 / 7..=9 / _`). It is distinct
+/// from the core `ImpactLevel`, the MCP `RiskLevel`, the findings
+/// `RiskLevel`, and the safety `RiskLevel`. NOT interchangeable with
+/// any of them. The string form (`"low"`/`"medium"`/`"high"`/
+/// `"critical"`) is chosen because this DTO is consumed by code that
+/// expects a textual risk band without the overhead of an enum match.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImpactDto {
     /// Symbol that was analyzed
