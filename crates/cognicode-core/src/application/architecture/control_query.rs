@@ -207,6 +207,58 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
     }
 }
 
+/// Build a `ControlQueryService` pre-loaded with the **canonical
+/// CogniCode architecture constraints** (`architecture.domain_no_infrastructure`,
+/// `architecture.domain_no_application`,
+/// `architecture.evidence_kernel_no_presentation`).
+///
+/// This is the E2.W1 CP1 first-consumer wiring helper: it turns the
+/// previously-empty production registry into a real one with three
+/// promoted constraints admitted by `human:cognicode-architecture-wg`.
+///
+/// ## Why this lives here
+///
+/// * The constraints themselves live in [`crate::application::architecture::canonical_constraints`]
+///   as a single source of truth (shared with the self-hosting E2E
+///   test).
+/// * The admission flow lives in [`ArchitectureAdmissionService`].
+/// * The wiring step that combines them — which the **production
+///   binary** (not just the test fixture) needs to call at startup —
+///   lives next to the `ControlQueryService` constructor because
+///   that's the only thing that consumes the registry.
+///
+/// ## Failure mode
+///
+/// If a candidate is rejected (e.g. someone removed the `expect` from
+/// the static id parsing in `canonical_constraints`), this function
+/// panics. That is intentional: a deployment that boots without the
+/// canonical rule set must crash loudly, not silently serve an empty
+/// registry that returns `status: "incomplete"` for every query. The
+/// fail-closed contract is the load-bearing property — see
+/// `crates/cognicode-explorer/src/api.rs::control_plane_architecture`.
+pub fn wire_canonical_control_query() -> ControlQueryService {
+    use crate::application::architecture::admission::ArchitectureAdmissionService;
+    use crate::application::architecture::evaluator::ArchitectureEvaluator;
+    use crate::application::architecture::{
+        SystemArchitectureClock, canonical_constraints, canonical_promoted_admitter,
+    };
+
+    let mut admission = ArchitectureAdmissionService::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = SystemArchitectureClock;
+    for candidate in canonical_constraints() {
+        let outcome = admission.admit(candidate, &admitter, &clock);
+        outcome
+            .result
+            .expect("canonical constraint admission must succeed");
+    }
+    let registry = ArchitectureRegistry {
+        admission,
+        evaluator: ArchitectureEvaluator::new(),
+    };
+    ControlQueryService::new(registry)
+}
+
 /// Build an [`ArchitectureSource`] by scanning the Rust source files of
 /// a workspace source root. `module_path` is derived from the path
 /// relative to the root (`src/domain/service.rs` -> `domain::service`),

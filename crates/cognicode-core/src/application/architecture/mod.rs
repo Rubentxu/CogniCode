@@ -10,6 +10,7 @@
 //! map.
 
 pub mod admission;
+pub mod canonical_constraints;
 pub mod control_query;
 pub mod evaluator;
 pub mod grounding;
@@ -19,6 +20,7 @@ pub use admission::{
     AdmissionError, AdmissionOutcome, ArchitectureAdmissionService, ArchitectureClock,
     SystemArchitectureClock,
 };
+pub use canonical_constraints::{canonical_constraints, canonical_promoted_admitter};
 pub use control_query::{
     ArchitectureReadModel, ConstraintRef, ControlQueryService, EvaluationStatus, ViolationRef,
 };

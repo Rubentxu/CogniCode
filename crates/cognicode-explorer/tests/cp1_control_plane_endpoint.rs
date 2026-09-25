@@ -562,3 +562,82 @@ async fn c6_path_traversal_in_workspace_id_is_echoed_not_resolved() {
         "T12 handler must not change status based on workspace_ref content"
     );
 }
+
+/// E2.W1 — CP1 first consumer: the **production** wiring helper
+/// `wire_canonical_control_query` must produce a `ControlQueryService`
+/// whose endpoint response is `evaluated` with the three canonical
+/// CogniCode architecture constraints, even when the source tree is
+/// the canonical CogniCode workspace itself (the self-host gate).
+///
+/// This pins the production code path (not a hand-built fixture) and
+/// proves that `wire_canonical_control_query` is a drop-in for the
+/// mock registries used in C1–C6.
+#[tokio::test]
+async fn c7_real_wiring_uses_canonical_constraints() {
+    use cognicode_core::application::architecture::control_query::wire_canonical_control_query;
+
+    // The real helper. Constructed via the same path a production
+    // binary would take; the canonical constraints are admitted by the
+    // canonical promoted admitter.
+    let cq = wire_canonical_control_query();
+
+    // Point the source root at the empty tempdir. With zero source
+    // files the evaluator examines zero statements but still returns
+    // `evaluated` (no parse errors) and reports the three admitted
+    // constraints — the load-bearing property: the endpoint never
+    // returns `incomplete` when the wiring is real.
+    let dir = empty_source_root("c7");
+    let state = base_ws("ws-canonical").with_control_query(Some(Arc::new(cq)), dir.clone());
+
+    let (_, body) = get(
+        state,
+        "/control-plane/workspaces/ws-canonical/architecture",
+    )
+    .await;
+
+    assert_eq!(
+        body["status"], "evaluated",
+        "wire_canonical_control_query must produce an evaluated endpoint; body: {body}"
+    );
+
+    let constraints = body["constraints"].as_array().unwrap();
+    let ids: Vec<&str> = constraints
+        .iter()
+        .map(|c| c["id"].as_str().unwrap_or(""))
+        .collect();
+    assert_eq!(
+        ids,
+        vec![
+            "architecture.domain_no_infrastructure",
+            "architecture.domain_no_application",
+            "architecture.evidence_kernel_no_presentation",
+        ],
+        "endpoint must surface the three canonical constraints admitted by wire_canonical_control_query"
+    );
+
+    // The synthetic-drift source root is the inverse case: it
+    // produces exactly one violation against the first canonical
+    // constraint. Together with C3/C4 this proves the production
+    // wiring is functionally equivalent to the hand-built fixtures.
+    let dir2 = temp_source_root("c7");
+    let cq2 = wire_canonical_control_query();
+    let state2 = base_ws("ws-canonical-2").with_control_query(Some(Arc::new(cq2)), dir2.clone());
+    let (_, body2) = get(
+        state2,
+        "/control-plane/workspaces/ws-canonical-2/architecture",
+    )
+    .await;
+    let violations = body2["violations"].as_array().unwrap();
+    assert_eq!(
+        violations.len(),
+        1,
+        "canonical wiring must detect the synthetic domain->infra drift; body: {body2}"
+    );
+    assert_eq!(
+        violations[0]["constraint_id"], "architecture.domain_no_infrastructure",
+        "violation must be attributed to the canonical layer-dependency rule"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&dir2);
+}

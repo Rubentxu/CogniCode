@@ -28,12 +28,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cognicode_core::application::architecture::{
-    ArchitectureRegistry, ArchitectureSource, SourceFile,
+    ArchitectureRegistry, ArchitectureSource, SourceFile, canonical_constraints,
+    canonical_promoted_admitter,
 };
-use cognicode_core::domain::architecture::{
-    Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
-    LayerDependencyRule, LayerId, NamespaceBoundaryRule,
-};
+use cognicode_core::domain::architecture::{Admitter, AdmitterRole};
 use cognicode_core::domain::findings::{EvidenceClass, FindingGate, RiskLevel};
 
 const CORE_SRC_ROOT: &str = "src";
@@ -82,51 +80,6 @@ fn module_path_for(rel: &Path) -> Option<String> {
         None
     } else {
         Some(parts.join("::"))
-    }
-}
-
-/// Build the canonical CogniCode architecture constraints declared in
-/// the ownership map.
-fn canonical_constraints() -> Vec<cognicode_core::domain::architecture::ConstraintCandidate> {
-    vec![
-        cognicode_core::domain::architecture::ConstraintCandidate {
-            id: ArchitectureConstraintId::new("architecture.domain_no_infrastructure").unwrap(),
-            kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
-                from_layer: LayerId::Domain,
-                forbidden_targets: vec![LayerId::Infrastructure],
-                rationale: "domain has no I/O and must not import infrastructure".into(),
-            }),
-            adr_ref: Some("ADR-046".into()),
-            proposed_by: "human:cognicode-architecture-wg".into(),
-        },
-        cognicode_core::domain::architecture::ConstraintCandidate {
-            id: ArchitectureConstraintId::new("architecture.domain_no_application").unwrap(),
-            kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
-                from_layer: LayerId::Domain,
-                forbidden_targets: vec![LayerId::Application],
-                rationale: "domain must not depend on orchestration".into(),
-            }),
-            adr_ref: Some("ADR-046".into()),
-            proposed_by: "human:cognicode-architecture-wg".into(),
-        },
-        cognicode_core::domain::architecture::ConstraintCandidate {
-            id: ArchitectureConstraintId::new("architecture.evidence_kernel_no_presentation")
-                .unwrap(),
-            kind: ArchitectureConstraintKind::NamespaceBoundary(NamespaceBoundaryRule {
-                caller_namespace: "domain::evidence_kernel".into(),
-                forbidden_targets: vec!["presentation".into(), "apps".into()],
-                rationale: "evidence_kernel must not drive UI".into(),
-            }),
-            adr_ref: Some("ADR-046".into()),
-            proposed_by: "human:cognicode-architecture-wg".into(),
-        },
-    ]
-}
-
-fn promoted_admitter() -> Admitter {
-    Admitter {
-        id: "human:cognicode-architecture-wg".into(),
-        role: AdmitterRole::HumanPromoter,
     }
 }
 
@@ -203,7 +156,7 @@ fn self_host_evaluator_finds_zero_drift_on_clean_source() {
     assert!(!source.files.is_empty(), "no source files collected");
 
     let mut registry = ArchitectureRegistry::new();
-    let admitter = promoted_admitter();
+    let admitter = canonical_promoted_admitter();
     let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
     for candidate in canonical_constraints() {
         let out = registry.admission.admit(candidate, &admitter, &clock);
