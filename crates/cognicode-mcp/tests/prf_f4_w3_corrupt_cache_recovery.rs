@@ -92,10 +92,7 @@ fn assert_loaded_from_snapshot(payload: &Value, ctx: &str) {
 /// rebuild, not a stub).
 #[tokio::test]
 async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
-    let ws = std::env::temp_dir().join(format!(
-        "prf-f4-w3-random-{}",
-        std::process::id()
-    ));
+    let ws = std::env::temp_dir().join(format!("prf-f4-w3-random-{}", std::process::id()));
     write_corpus(&ws);
 
     let _p1 = build(&ws).await;
@@ -138,27 +135,23 @@ async fn prf_f4_w3_corrupt_random_bytes_triggers_rebuild() {
 /// build must rebuild and persist a valid snapshot.
 #[tokio::test]
 async fn prf_f4_w3_corrupt_empty_file_triggers_rebuild() {
-    let ws = std::env::temp_dir().join(format!(
-        "prf-f4-w3-empty-{}",
-        std::process::id()
-    ));
+    let ws = std::env::temp_dir().join(format!("prf-f4-w3-empty-{}", std::process::id()));
     write_corpus(&ws);
 
     let _p1 = build(&ws).await;
     assert!(snapshot_path(&ws).exists(), "first build must persist");
-    let orig_len = std::fs::metadata(snapshot_path(&ws))
-        .unwrap()
-        .len();
-    assert!(orig_len > 0, "non-vacuity: original snapshot must be non-empty");
+    let orig_len = std::fs::metadata(snapshot_path(&ws)).unwrap().len();
+    assert!(
+        orig_len > 0,
+        "non-vacuity: original snapshot must be non-empty"
+    );
 
     std::fs::write(snapshot_path(&ws), b"").unwrap();
 
     let p2 = build(&ws).await;
     assert_built_from_source(&p2, "empty file");
 
-    let rebuilt_len = std::fs::metadata(snapshot_path(&ws))
-        .unwrap()
-        .len();
+    let rebuilt_len = std::fs::metadata(snapshot_path(&ws)).unwrap().len();
     assert_eq!(
         rebuilt_len, orig_len,
         "non-vacuity: rebuilt snapshot must match original size"
@@ -174,10 +167,7 @@ async fn prf_f4_w3_corrupt_empty_file_triggers_rebuild() {
 /// known-bad version string and confirm rebuild.
 #[tokio::test]
 async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
-    let ws = std::env::temp_dir().join(format!(
-        "prf-f4-w3-version-{}",
-        std::process::id()
-    ));
+    let ws = std::env::temp_dir().join(format!("prf-f4-w3-version-{}", std::process::id()));
     write_corpus(&ws);
 
     let _p1 = build(&ws).await;
@@ -222,10 +212,7 @@ async fn prf_f4_w3_corrupt_wrong_schema_version_triggers_rebuild() {
 /// trivially if the loader always rebuilt.
 #[tokio::test]
 async fn prf_f4_w3_intact_cache_loads_from_snapshot() {
-    let ws = std::env::temp_dir().join(format!(
-        "prf-f4-w3-intact-{}",
-        std::process::id()
-    ));
+    let ws = std::env::temp_dir().join(format!("prf-f4-w3-intact-{}", std::process::id()));
     write_corpus(&ws);
 
     let _p1 = build(&ws).await;

@@ -84,8 +84,7 @@ fn run_sbom_script(target: &str) -> (bool, String) {
         .expect("build-sboms-for-lane.sh must run");
     (
         out.status.success(),
-        String::from_utf8_lossy(&out.stdout).to_string()
-            + &String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr),
     )
 }
 
@@ -96,9 +95,7 @@ fn remove_canonical_sboms(target: &str) {
     // Clean any leftover _bin.cdx.json from prior runs.
     let _ = Command::new("bash")
         .arg("-c")
-        .arg(format!(
-            "rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true"
-        ))
+        .arg("rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true")
         .output();
 }
 
@@ -172,7 +169,11 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     if let Some(parent) = spurious.parent() {
         std::fs::create_dir_all(parent).unwrap();
     }
-    std::fs::write(&spurious, br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#).unwrap();
+    std::fs::write(
+        &spurious,
+        br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+    )
+    .unwrap();
     std::fs::write(
         repo_root().join("crates/cognicode-cli/cognicode-release_bin.cdx.json"),
         br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
@@ -180,10 +181,7 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     .unwrap();
 
     let (ok, out) = run_sbom_script(target);
-    assert!(
-        ok,
-        "script failed; output:\n{out}"
-    );
+    assert!(ok, "script failed; output:\n{out}");
 
     assert!(
         !spurious.exists(),
@@ -240,7 +238,8 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
             .as_str()
             .unwrap_or_else(|| panic!("{}: metadata.component.name missing", path.display()));
         assert_eq!(
-            comp_name, *comp,
+            comp_name,
+            *comp,
             "{}: metadata.component.name={comp_name} does not match published stem {comp}",
             path.display()
         );

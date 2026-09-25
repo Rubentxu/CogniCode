@@ -50,7 +50,10 @@ fn repo_root() -> PathBuf {
 
 fn release_bin() -> PathBuf {
     let p = repo_root().join("target/release/cognicode-release");
-    assert!(p.exists(), "cognicode-release binary missing; build release first");
+    assert!(
+        p.exists(),
+        "cognicode-release binary missing; build release first"
+    );
     p
 }
 
@@ -188,10 +191,7 @@ fn sha256_for(sums_path: &Path, name: &str) -> Option<String> {
 #[test]
 fn prf_f6_w2_full_pipeline_both_platforms_passes() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w2-both-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-both-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
 
@@ -250,10 +250,7 @@ fn prf_f6_w2_full_pipeline_both_platforms_passes() {
 #[test]
 fn prf_f6_w2_per_payload_tampering_is_detected() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w2-tamper-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-tamper-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
 
@@ -276,10 +273,7 @@ fn prf_f6_w2_per_payload_tampering_is_detected() {
         assert!(target.exists(), "{comp} payload missing from {out:?}");
 
         let original_sha = sha256_for(&sums, &format!("{comp}-{VERSION}-{plat}.tar.gz"));
-        assert!(
-            original_sha.is_some(),
-            "no SHA for {comp} in SHA256SUMS"
-        );
+        assert!(original_sha.is_some(), "no SHA for {comp} in SHA256SUMS");
         let original_sha = original_sha.unwrap();
 
         // Flip one byte and write back.
@@ -306,10 +300,7 @@ fn prf_f6_w2_per_payload_tampering_is_detected() {
         );
         // The verify error must reference the actual tampered
         // payload's hash, not just a generic failure.
-        let tampered_sha = format!(
-            "{:x}",
-            <sha2::Sha256 as sha2::Digest>::digest(&bytes)
-        );
+        let tampered_sha = format!("{:x}", <sha2::Sha256 as sha2::Digest>::digest(&bytes));
         assert!(
             stderr.contains(&tampered_sha) || stderr.contains(comp),
             "verify error should name the tampered payload {comp} (sha={tampered_sha}), \
@@ -337,10 +328,7 @@ fn prf_f6_w2_per_payload_tampering_is_detected() {
 #[test]
 fn prf_f6_w2_missing_payload_is_rejected() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w2-missing-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-missing-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
 
@@ -375,10 +363,7 @@ fn prf_f6_w2_missing_payload_is_rejected() {
 #[test]
 fn prf_f6_w2_duplicate_payload_across_lanes_is_rejected() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w2-dup-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-dup-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
 
@@ -416,10 +401,7 @@ fn prf_f6_w2_duplicate_payload_across_lanes_is_rejected() {
 #[test]
 fn prf_f6_w2_wrong_platform_payload_is_rejected() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w2-wrongplat-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w2-wrongplat-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
 

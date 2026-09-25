@@ -1173,10 +1173,12 @@ mod tests {
 
         // Contract 1: top-level MUST return Ok, not Err. Sub-handler
         // failures degrade gracefully to an empty result list.
-        let output = result.unwrap_or_else(|e| panic!(
-            "F5.W4: smart_search MUST return Ok even when sub-handlers fail; got Err: {e:?} \
+        let output = result.unwrap_or_else(|e| {
+            panic!(
+                "F5.W4: smart_search MUST return Ok even when sub-handlers fail; got Err: {e:?} \
              — this means the composite collapsed instead of degrading gracefully"
-        ));
+            )
+        });
 
         // Contract 2: empty corpus + nonsense query → no matches. The
         // output may have results from a backend that returned partial
@@ -1273,9 +1275,11 @@ mod tests {
         // All calls must have returned Ok (graceful) and well below
         // SUB_HANDLER_TIMEOUT * N.
         for (i, r) in results.iter().enumerate() {
-            let out = r.as_ref().unwrap_or_else(|e| panic!(
-                "F5.W4 concurrent: call {i} returned Err: {e:?} — should degrade graceful to Ok"
-            ));
+            let out = r.as_ref().unwrap_or_else(|e| {
+                panic!(
+                    "F5.W4 concurrent: call {i} returned Err: {e:?} — should degrade graceful to Ok"
+                )
+            });
             assert!(
                 out.sources.contains(&"semantic".to_string()),
                 "F5.W4 concurrent: call {i} missing semantic source"

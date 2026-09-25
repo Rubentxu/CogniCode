@@ -84,19 +84,19 @@ fn upload_names_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
     let mut in_target_upload = false;
     for line in text.lines() {
         let leading = line.len() - line.trim_start().len();
+        let bare = line.trim();
         // Job declarations are two-space-indented identifiers ending with ':'.
-        if leading == 2 {
-            let bare = line.trim();
-            if let Some(name) = bare.strip_suffix(':') {
-                if !name.contains(' ') && !name.starts_with('#') {
-                    current_job = Some(name.to_string());
-                }
-            }
+        if leading == 2
+            && let Some(name) = bare.strip_suffix(':')
+            && !name.contains(' ')
+            && !name.starts_with('#')
+        {
+            current_job = Some(name.to_string());
         }
         let trimmed = line.trim_start();
         let job_match = target_job
             .as_ref()
-            .map_or(true, |t| current_job.as_deref() == Some(t.as_str()));
+            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
 
         if trimmed.starts_with("uses: actions/upload-artifact") && job_match {
             in_target_upload = true;
@@ -143,18 +143,18 @@ fn download_patterns_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
     let mut in_target_download = false;
     for line in text.lines() {
         let leading = line.len() - line.trim_start().len();
-        if leading == 2 {
-            let bare = line.trim();
-            if let Some(name) = bare.strip_suffix(':') {
-                if !name.contains(' ') && !name.starts_with('#') {
-                    current_job = Some(name.to_string());
-                }
-            }
+        let bare = line.trim();
+        if leading == 2
+            && let Some(name) = bare.strip_suffix(':')
+            && !name.contains(' ')
+            && !name.starts_with('#')
+        {
+            current_job = Some(name.to_string());
         }
         let trimmed = line.trim_start();
         let job_match = target_job
             .as_ref()
-            .map_or(true, |t| current_job.as_deref() == Some(t.as_str()));
+            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
 
         if trimmed.starts_with("uses: actions/download-artifact") && job_match {
             in_target_download = true;
@@ -349,7 +349,10 @@ fn prf_f6_w3_bis_flatten_accepts_short_platform_ids_from_workflow() {
     // target triple, plus the 2 skill bundles.
     for triple in TIER1_TRIPLES {
         for comp in PLATFORM_COMPONENTS {
-            let payload = staging.join(format!("{comp}-{}-{triple}.tar.gz", env!("CARGO_PKG_VERSION")));
+            let payload = staging.join(format!(
+                "{comp}-{}-{triple}.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            ));
             assert!(
                 payload.exists(),
                 "flatten output missing canonical payload {}",
@@ -425,13 +428,15 @@ fn prf_f6_w3_bis_flatten_rejects_unknown_platform() {
     fs::create_dir_all(lane.join("dist")).unwrap();
     for comp in PLATFORM_COMPONENTS {
         fs::write(
-            lane.join("dist").join(format!("{comp}-0.0.0-riscv64gc-unknown-linux-gnu.tar.gz")),
+            lane.join("dist")
+                .join(format!("{comp}-0.0.0-riscv64gc-unknown-linux-gnu.tar.gz")),
             b"unrelated\n",
         )
         .unwrap();
         fs::create_dir_all(lane.join("crates")).unwrap();
         fs::write(
-            lane.join("crates").join(format!("{comp}-riscv64gc-unknown-linux-gnu.cdx.json")),
+            lane.join("crates")
+                .join(format!("{comp}-riscv64gc-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -472,13 +477,17 @@ fn prf_f6_w3_bis_flatten_rejects_missing_tier1_platform() {
     fs::create_dir_all(lane.join("dist")).unwrap();
     for comp in PLATFORM_COMPONENTS {
         fs::write(
-            lane.join("dist").join(format!("{comp}-{}-x86_64-unknown-linux-gnu.tar.gz", env!("CARGO_PKG_VERSION"))),
+            lane.join("dist").join(format!(
+                "{comp}-{}-x86_64-unknown-linux-gnu.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            )),
             b"x86_64\n",
         )
         .unwrap();
         fs::create_dir_all(lane.join("crates")).unwrap();
         fs::write(
-            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -526,12 +535,16 @@ fn prf_f6_w3_bis_flatten_rejects_short_and_triple_alias_collision() {
     for lane in [&short_x86, &triple_x86] {
         for comp in PLATFORM_COMPONENTS {
             fs::write(
-                lane.join("dist").join(format!("{comp}-{}-x86_64-unknown-linux-gnu.tar.gz", env!("CARGO_PKG_VERSION"))),
+                lane.join("dist").join(format!(
+                    "{comp}-{}-x86_64-unknown-linux-gnu.tar.gz",
+                    env!("CARGO_PKG_VERSION")
+                )),
                 b"x86_64 payload\n",
             )
             .unwrap();
             fs::write(
-                lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+                lane.join("crates")
+                    .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
                 br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
             )
             .unwrap();
@@ -539,12 +552,17 @@ fn prf_f6_w3_bis_flatten_rejects_short_and_triple_alias_collision() {
     }
     for comp in PLATFORM_COMPONENTS {
         fs::write(
-            short_aarch.join("dist").join(format!("{comp}-{}-aarch64-unknown-linux-gnu.tar.gz", env!("CARGO_PKG_VERSION"))),
+            short_aarch.join("dist").join(format!(
+                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            )),
             b"aarch64 payload\n",
         )
         .unwrap();
         fs::write(
-            short_aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            short_aarch
+                .join("crates")
+                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -595,13 +613,17 @@ fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
     fs::create_dir_all(lane.join("dist")).unwrap();
     for comp in PLATFORM_COMPONENTS {
         fs::write(
-            lane.join("dist").join(format!("{comp}-{}-aarch64-unknown-linux-gnu.tar.gz", env!("CARGO_PKG_VERSION"))),
+            lane.join("dist").join(format!(
+                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            )),
             b"swapped\n",
         )
         .unwrap();
         fs::create_dir_all(lane.join("crates")).unwrap();
         fs::write(
-            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -613,12 +635,17 @@ fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
     fs::create_dir_all(aarch.join("crates")).unwrap();
     for comp in PLATFORM_COMPONENTS {
         fs::write(
-            aarch.join("dist").join(format!("{comp}-{}-aarch64-unknown-linux-gnu.tar.gz", env!("CARGO_PKG_VERSION"))),
+            aarch.join("dist").join(format!(
+                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
+                env!("CARGO_PKG_VERSION")
+            )),
             b"real aarch64\n",
         )
         .unwrap();
         fs::write(
-            aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            aarch
+                .join("crates")
+                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -669,10 +696,7 @@ fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
 #[test]
 fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w3bis-overmatch-{}",
-        std::process::id()
-    ));
+    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-overmatch-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     let staging = tmp.join("staging");
     fs::create_dir_all(&staging).unwrap();
@@ -688,12 +712,14 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
     fs::create_dir_all(lane.join("crates")).unwrap();
     for comp in ["cogh", "cognicode-mcp"] {
         fs::write(
-            lane.join("dist").join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            lane.join("dist")
+                .join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
             format!("payload {comp}\n").as_bytes(),
         )
         .unwrap();
         fs::write(
-            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -705,12 +731,16 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
     fs::create_dir_all(aarch.join("crates")).unwrap();
     for comp in ["cogh", "cognicode", "cognicode-mcp"] {
         fs::write(
-            aarch.join("dist").join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
+            aarch
+                .join("dist")
+                .join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
             format!("payload {comp} aarch64\n").as_bytes(),
         )
         .unwrap();
         fs::write(
-            aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            aarch
+                .join("crates")
+                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -745,10 +775,8 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
 #[test]
 fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
     use std::fs;
-    let tmp = std::env::temp_dir().join(format!(
-        "prf-f6-w3bis-overmatch-rev-{}",
-        std::process::id()
-    ));
+    let tmp =
+        std::env::temp_dir().join(format!("prf-f6-w3bis-overmatch-rev-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     let staging = tmp.join("staging");
     fs::create_dir_all(&staging).unwrap();
@@ -759,12 +787,14 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
     fs::create_dir_all(lane.join("crates")).unwrap();
     for comp in ["cogh", "cognicode"] {
         fs::write(
-            lane.join("dist").join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
+            lane.join("dist")
+                .join(format!("{comp}-{version}-x86_64-unknown-linux-gnu.tar.gz")),
             format!("payload {comp}\n").as_bytes(),
         )
         .unwrap();
         fs::write(
-            lane.join("crates").join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
+            lane.join("crates")
+                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -774,12 +804,16 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
     fs::create_dir_all(aarch.join("crates")).unwrap();
     for comp in ["cogh", "cognicode", "cognicode-mcp"] {
         fs::write(
-            aarch.join("dist").join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
+            aarch
+                .join("dist")
+                .join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
             format!("payload {comp} aarch64\n").as_bytes(),
         )
         .unwrap();
         fs::write(
-            aarch.join("crates").join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
+            aarch
+                .join("crates")
+                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
             br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
         )
         .unwrap();
@@ -812,8 +846,7 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
 /// stem.
 #[test]
 fn prf_f6_w3_bis_flatten_find_pattern_uses_digit_anchor() {
-    let text = std::fs::read_to_string(flatten_script())
-        .expect("read flatten script");
+    let text = std::fs::read_to_string(flatten_script()).expect("read flatten script");
     let needle = r#"-name "${comp}-[0-9]*-${platform}.tar.gz""#;
     assert!(
         text.contains(needle),
@@ -854,8 +887,7 @@ fn prf_f6_w3_bis_flatten_find_pattern_uses_digit_anchor() {
 /// to the digit anchor so any future regression is caught statically.
 #[test]
 fn prf_f6_w3_bis_flatten_compgen_sanity_check_uses_digit_anchor() {
-    let text = std::fs::read_to_string(flatten_script())
-        .expect("read flatten script");
+    let text = std::fs::read_to_string(flatten_script()).expect("read flatten script");
 
     // The fix: the compgen sanity check must use `[0-9]` after the
     // component stem, just like the find pattern above.
@@ -926,14 +958,26 @@ fn prf_f6_w3_bis_flatten_compgen_pattern_rejects_cognicode_missing_with_mcp_pres
         b"",
     )
     .unwrap();
-    std::fs::write(staging.join("cogh-0.97.5-x86_64-unknown-linux-gnu.tar.gz"), b"").unwrap();
-    std::fs::write(staging.join("cognicode-x86_64-unknown-linux-gnu.cdx.json"), b"{}").unwrap();
+    std::fs::write(
+        staging.join("cogh-0.97.5-x86_64-unknown-linux-gnu.tar.gz"),
+        b"",
+    )
+    .unwrap();
+    std::fs::write(
+        staging.join("cognicode-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
     std::fs::write(
         staging.join("cognicode-mcp-x86_64-unknown-linux-gnu.cdx.json"),
         b"{}",
     )
     .unwrap();
-    std::fs::write(staging.join("cogh-x86_64-unknown-linux-gnu.cdx.json"), b"{}").unwrap();
+    std::fs::write(
+        staging.join("cogh-x86_64-unknown-linux-gnu.cdx.json"),
+        b"{}",
+    )
+    .unwrap();
 
     let staging_str = staging.display().to_string();
     // Bare glob (the bug): `cognicode-*-X.tar.gz` matches

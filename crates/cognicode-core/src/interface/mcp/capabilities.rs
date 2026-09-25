@@ -27,9 +27,28 @@ pub struct ToolCapabilities {
 /// Mantener sincronizada con
 /// `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs::from_extension`.
 pub const ALL_TREE_SITTER_LANGS: &[&str] = &[
-    "python", "rust", "javascript", "typescript", "jsx", "tsx", "go", "java",
-    "c", "cpp", "csharp", "hcl", "yaml", "ruby", "php", "swift", "scala",
-    "lua", "luau", "zig", "dart", "kotlin",
+    "python",
+    "rust",
+    "javascript",
+    "typescript",
+    "jsx",
+    "tsx",
+    "go",
+    "java",
+    "c",
+    "cpp",
+    "csharp",
+    "hcl",
+    "yaml",
+    "ruby",
+    "php",
+    "swift",
+    "scala",
+    "lua",
+    "luau",
+    "zig",
+    "dart",
+    "kotlin",
 ];
 
 /// Lenguajes con provider LSP nativo
@@ -81,9 +100,7 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // Graph checkpoint / export — AST call graph → serialización
         // ----------------------------------------------------------------
-        "graph_checkpoint"
-        | "export_mermaid"
-        | "export_callflow" => ToolCapabilities {
+        "graph_checkpoint" | "export_mermaid" | "export_callflow" => ToolCapabilities {
             langs: ALL_TREE_SITTER_LANGS,
             precision: "AST",
         },
@@ -117,17 +134,13 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // File / file_ops (tree-sitter AST directo)
         // ----------------------------------------------------------------
-        "get_file_symbols"
-        | "search_content"
-        | "get_symbol_code"
-        | "get_imports"
-        | "get_entry_points"
-        | "get_leaf_functions"
-        | "get_members"
-        | "get_complexity" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
-            precision: "AST",
-        },
+        "get_file_symbols" | "search_content" | "get_symbol_code" | "get_imports"
+        | "get_entry_points" | "get_leaf_functions" | "get_members" | "get_complexity" => {
+            ToolCapabilities {
+                langs: ALL_TREE_SITTER_LANGS,
+                precision: "AST",
+            }
+        }
 
         // ----------------------------------------------------------------
         // Search (heuristic ranking sobre call graph)
@@ -168,13 +181,8 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // Composite (combina varias tools subordinadas)
         // ----------------------------------------------------------------
-        "codebase_map"
-        | "project_overview"
-        | "project_insights"
-        | "iac_query"
-        | "solid_audit"
-        | "slice_backward"
-        | "slice_forward" => ToolCapabilities {
+        "codebase_map" | "project_overview" | "project_insights" | "iac_query" | "solid_audit"
+        | "slice_backward" | "slice_forward" => ToolCapabilities {
             langs: ALL_TREE_SITTER_LANGS,
             precision: "compuesto",
         },
@@ -190,19 +198,15 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         // ----------------------------------------------------------------
         // File ops (language-agnostic)
         // ----------------------------------------------------------------
-        "read_file" | "write_file" | "edit_file" | "list_files" => {
-            ToolCapabilities {
-                langs: &[],
-                precision: "n/a",
-            }
-        }
+        "read_file" | "write_file" | "edit_file" | "list_files" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
 
         // ----------------------------------------------------------------
         // Contract (composite sobre AST)
         // ----------------------------------------------------------------
-        "generate_contract"
-        | "validate_contract"
-        | "retrieve_and_verify" => ToolCapabilities {
+        "generate_contract" | "validate_contract" | "retrieve_and_verify" => ToolCapabilities {
             langs: ALL_TREE_SITTER_LANGS,
             precision: "compuesto",
         },
@@ -234,39 +238,74 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
     // script; cualquier cambio debe preservarse entre ejecuciones.
     &[
         // Graph stable (origen: rmcp_adapter.rs `cognicode_meta("stable", "...")`)
-        "build_graph", "build_call_subgraph", "build_lightweight_index",
-        "get_call_hierarchy", "analyze_impact", "check_architecture",
-        "merge_graphs", "graph_pagerank", "graph_all_paths", "graph_condensed",
-        "graph_god_nodes", "graph_reduced", "graph_feedback_arcs",
-        "graph_communities", "graph_community_detail",
-        "graph_surprising_connections", "graph_search_idf",
-        "graph_checkpoint", "graph_query", "graph_query_filtered",
-        "graph_analyze", "graph_explain", "graph_insights",
-        "export_mermaid", "export_callflow",
-        "get_per_file_graph", "find_usages",
+        "build_graph",
+        "build_call_subgraph",
+        "build_lightweight_index",
+        "get_call_hierarchy",
+        "analyze_impact",
+        "check_architecture",
+        "merge_graphs",
+        "graph_pagerank",
+        "graph_all_paths",
+        "graph_condensed",
+        "graph_god_nodes",
+        "graph_reduced",
+        "graph_feedback_arcs",
+        "graph_communities",
+        "graph_community_detail",
+        "graph_surprising_connections",
+        "graph_search_idf",
+        "graph_checkpoint",
+        "graph_query",
+        "graph_query_filtered",
+        "graph_analyze",
+        "graph_explain",
+        "graph_insights",
+        "export_mermaid",
+        "export_callflow",
+        "get_per_file_graph",
+        "find_usages",
         // Navigation stable
-        "go_to_definition", "hover", "find_references",
-        "get_implementors", "get_type_references", "trace_path",
+        "go_to_definition",
+        "hover",
+        "find_references",
+        "get_implementors",
+        "get_type_references",
+        "trace_path",
         // File stable
-        "get_file_symbols", "search_content", "get_symbol_code",
-        "get_imports", "get_entry_points",
-        "get_leaf_functions", "get_members", "get_complexity",
+        "get_file_symbols",
+        "search_content",
+        "get_symbol_code",
+        "get_imports",
+        "get_entry_points",
+        "get_leaf_functions",
+        "get_members",
+        "get_complexity",
         // Search stable
-        "smart_search", "nl_to_symbol", "review_pr",
+        "smart_search",
+        "nl_to_symbol",
+        "review_pr",
         "query_symbol_index",
         // Quality stable
-        "detect_god_functions", "detect_long_parameter_lists",
+        "detect_god_functions",
+        "detect_long_parameter_lists",
         "get_hot_paths",
         // Refactor stable
         "safe_refactor",
         // Composite stable
-        "codebase_map", "solid_audit",
+        "codebase_map",
+        "solid_audit",
         // View stable
-        "list_view_specs", "read_view_spec",
+        "list_view_specs",
+        "read_view_spec",
         // File ops stable
-        "read_file", "write_file", "edit_file", "list_files",
+        "read_file",
+        "write_file",
+        "edit_file",
+        "list_files",
         // Contract stable
-        "validate_contract", "retrieve_and_verify",
+        "validate_contract",
+        "retrieve_and_verify",
     ]
 }
 
@@ -375,10 +414,7 @@ mod tests {
             all.len()
         );
         for (name, caps) in all {
-            assert!(
-                !caps.precision.is_empty(),
-                "{name} tiene precision vacío"
-            );
+            assert!(!caps.precision.is_empty(), "{name} tiene precision vacío");
         }
     }
 }

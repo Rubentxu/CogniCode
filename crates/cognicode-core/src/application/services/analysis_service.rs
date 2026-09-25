@@ -3596,11 +3596,7 @@ def b():
         let temp_path = temp_dir.path();
 
         // 1 archivo soportado (Python)
-        std::fs::write(
-            temp_path.join("supported.py"),
-            "def a():\n    pass\n",
-        )
-        .unwrap();
+        std::fs::write(temp_path.join("supported.py"), "def a():\n    pass\n").unwrap();
 
         // 2 archivos NO soportados (extensiones sin parser asignado)
         std::fs::write(

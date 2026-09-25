@@ -101,6 +101,12 @@ jobs:
         with:
           name: cognicode-mcp-release
           path: ${{ github.workspace }}/target/release
+      # actions/download-artifact@v4 descomprime sin preservar permisos
+      # POSIX (x bit). Sin esto, ./target/release/cognicode-mcp baja
+      # como -rw-r--r-- y el test -x de abajo falla con
+      # "binario no ejecutable".
+      - name: Restaurar permisos de ejecución del binario
+        run: chmod +x ./target/release/cognicode-mcp
       - name: Verificar binario
         run: |
           test -x ./target/release/cognicode-mcp \
