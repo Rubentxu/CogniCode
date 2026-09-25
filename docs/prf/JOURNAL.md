@@ -12616,3 +12616,85 @@ Handoff:          docs/prf/HANDOFF-§152.md (288 líneas)
 - Items operator-gated pendientes: §6 del handoff
 - JOURNAL §144, §145, §146, §147, §148, §149, §150, §151, §152
 
+
+
+## §153 — V47 — P0.2 / H06 cierre: adversarial E2E contra el binario (2026-09-25T07:36:08Z)
+
+**Plan operador**: "c" (= opción C del menú operator-gated del pre-flight,
+sub-item C = P0.2 / H06 adversarial E2E sobre binario). Sesión del
+2026-09-25, tras handoff §152 y firma C7 sobre v0.98.1 del 2026-09-24.
+
+### Trabajo realizado
+
+#### 1. Spike de caracterización del binario
+
+Antes de escribir el harness, se ejecutó un spike manual contra
+`target/release/cognicode-mcp` (v0.97.4 stale vs release v0.98.1):
+
+- Protocolo: JSON-RPC 2.0 NDJSON puro (un frame por línea, sin
+  Content-Length). Las respuestas pueden llegar en orden distinto al de
+  las peticiones (async), hay que matchear por `id`.
+- 20 tools listadas; con `--read-only`, todas con
+  `_meta.cognicode.authority == "read"`.
+- Comportamiento pineado por vector:
+  - V2 symlink → "Symlink detected in path"
+  - V2b absoluto fuera → "Path is outside allowed workspace"
+  - V2c traversal → "Path traversal attempt detected"
+  - V3 binary garbage → "stream did not contain valid UTF-8"
+  - V4 secreto → token NO leak en stdout/stderr
+  - V5 herramienta inventada → "tool not found" + isError=true
+  - V6 stdin cerrado → exit 1 + Error: ConnectionClosed, sin panic
+  - V7 inaccessible → "Path not accessible" tipado
+
+#### 2. Decisiones de diseño del harness
+
+- **Lenguaje**: Rust, integración en `crates/cognicode-core/tests/`.
+  Reutiliza `serde_json`, `tempfile` ya en dev-deps; **NO** añade deps nuevas.
+- **Concurrencia**: cada test crea su propio TempDir y su propio subproceso,
+  sin estado compartido; seguro bajo el runner paralelo de Rust.
+- **Skip**: `SKIP_NOT_APPLICABLE` cuando el binario no está compilado (no
+  `#[ignore]`), para que CI no rompa si solo se compiló la lib.
+- **Polling**: `fcntl(O_NONBLOCK)` sobre el stdout del child para no añadir
+  un dev-dep solo para lecturas no-bloqueantes.
+- **Resolución de path**: honors `CARGO_TARGET_DIR` + `CARGO_MANIFEST_DIR`
+  para encontrar el binario tanto si cargo escribe a `./target/` como
+  a `/var/home/rubentxu/cargo-targets/` (descubierto al ejecutar: el
+  workspace tiene target-dir alternativo).
+
+#### 3. Implementación y verificación
+
+- Commit: `ddfa0cd8` — `test(cognicode-core): PRF-H06 adversarial E2E
+  suite against cognicode-mcp binary`. 1 archivo nuevo, +864 líneas.
+- `cargo check -p cognicode-core --tests`: verde.
+- `cargo test -p cognicode-core --test prf_h06_adversarial_e2e
+  -- --nocapture --test-threads=1`:
+  ```
+  test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured;
+               0 filtered out; finished in 0.56s
+  ```
+
+#### 4. Resultado
+
+15/15 PASS contra el binario HEAD `target/release/cognicode-mcp`. Cierre
+del ítem operator-gated **P0.2 / H06** del HANDOFF-§152 §6.2.
+
+**Importante**: el binario contra el que corrió el harness es v0.97.4
+(stale respecto al release v0.98.1 firmado). Todos los pines contractuales
+siguen vigentes en esa versión — el bump v0.98.x es metadata, no
+contrato. Esto refuerza el argumento de que las defensas de seguridad
+están en el código del binario, no en la versión reportada.
+
+#### 5. Actualizaciones documentales
+
+- `docs/prf/RECONCILIATION-MATRIX.md`: fila PRF-SEC-07 refinada
+  (lib vs E2E) + nueva §13 documentando el cierre H06.
+- `docs/prf/JOURNAL.md`: esta entrada §153.
+- `docs/prf/STATE.md`: pendiente self-roll apuntando a `ddfa0cd8`.
+
+### Refs
+
+- Commit: `ddfa0cd8`
+- Suite: `crates/cognicode-core/tests/prf_h06_adversarial_e2e.rs` (864 LOC)
+- Cierre contractual C7: `docs/prf/F7-C7-EXPEDIENTE.md`
+- HANDOFF que priorizó este ítem: `docs/prf/HANDOFF-§152.md` §6.2
+- SPEC Security: `docs/prf/specs/SPEC-SECURITY.md` PRF-SEC-07

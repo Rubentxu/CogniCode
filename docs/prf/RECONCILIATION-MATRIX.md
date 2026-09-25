@@ -157,7 +157,8 @@ Descargados el 2026-09-24 desde GitHub Releases; SHA256SUMS completo en `/tmp/pr
 | PRF-SEC-04 (presupuestos CPU/mem/tiempo/fanout) | **PARTIAL** | Timeouts por categoría existen; presupuesto cuantitativo por perfil GAP. |
 | PRF-SEC-05 (cancelación/shutdown libera recursos) | **PASS estructural** | Ver PRF-MCP-06. |
 | PRF-SEC-06 (sin vuln CRITICAL/HIGH sin mitigar) | **NOT_RUN contra v0.98.0** | Gate advisories sobre candidata específica no ejecutado (es H-08 operator-gated). Plan B2. |
-| PRF-SEC-07 (campaña adversarial PRF-SEC-07 MUST) | **PASS contra v0.98.1** | Cierre B2 (commit `ea34ff7d`): 8 nuevos tests en `crates/cognicode-core/tests/prf_sec_07_adversarial_campaign.rs` pinean 7 vectores MUST (repo malicioso, symlink/traversal, parser fallido, secreto señuelo, autoridad mutante, cliente desconectado, datos corruptos). Cobertura pineada en código HEAD que se compila en el binario v0.98.1 publicado. |
+| PRF-SEC-07 (campaña adversarial PRF-SEC-07 MUST, nivel librería) | **PASS contra v0.98.1** | Cierre B2 (commit `ea34ff7d`): 8 tests en `crates/cognicode-core/tests/prf_sec_07_adversarial_campaign.rs` pinean 7 vectores MUST (repo malicioso, symlink/traversal, parser fallido, secreto señuelo, autoridad mutante, cliente desconectado, datos corruptos). Cobertura pineada en código HEAD que se compila en el binario v0.98.1 publicado. |
+| PRF-SEC-07 E2E (campaña adversarial sobre binario, nivel proceso) | **PASS contra binario HEAD** | Cierre §153 (commit `ddfa0cd8`): 15 tests en `crates/cognicode-core/tests/prf_h06_adversarial_e2e.rs` ejercitan los mismos 7 vectores MUST + 3 capabilities PRF-SEC-02/-MCP-05 contra el binario `target/release/cognicode-mcp` por subproceso y JSON-RPC stdio. Cierra el ítem operator-gated P0.2 / H06 del HANDOFF §152 §6.2. |
 
 ### 4.8 SECCIÓN H — `SPEC-STATE.md`
 
@@ -315,3 +316,51 @@ documentadas en `docs/prf/F7-C7-EXPEDIENTE.md` §5.1.
 **Refs**: `docs/prf/F7-C7-EXPEDIENTE.md` (expediente completo, 268 líneas),
 `docs/prf/RELEASE-CANDIDATE.md` (SHA congelado `e4ab6c8e` ratificado),
 `docs/prf/JOURNAL.md` §151 (entrada de firma), `docs/prf/STATE.md` (snapshot C7 PASS).
+
+---
+
+## 13. Cierre post-firma §153 — H06 adversarial E2E (2026-09-25T07:36:08Z)
+
+Tras la firma C7 sobre v0.98.1 (2026-09-24T22:41:33Z UTC), el operador abrió
+el ítem operator-gated **P0.2 / H06** (HANDOFF-§152 §6.2): "campaña
+adversarial E2E sobre binario en red hostil". Esta subsección documenta su
+cierre técnico, que NO reabre C7 (la firma contractual sigue vigente) y NO
+modifica el tag anotado `v0.98.1`.
+
+**Acción**: añadir la suite `prf_h06_adversarial_e2e` (commit `ddfa0cd8`)
+que ejercita los 7 vectores MUST de PRF-SEC-07 + 3 capabilities contra el
+binario `target/release/cognicode-mcp` por subproceso con JSON-RPC stdio.
+
+**Vectores pineados (15/15 PASS, 0.56s)**:
+
+| id   | contrato observable                                                                          |
+|------|----------------------------------------------------------------------------------------------|
+| V1   | repo con comando hostil en docstring → binario parsea, no ejecuta nada, no crea archivos     |
+| V2   | symlink evil_link → /etc/passwd → "Symlink detected in path"                                  |
+| V2b  | file_path="/etc/passwd" → "Path is outside allowed workspace"                                 |
+| V2c  | file_path="../../etc/passwd" → "Path traversal attempt detected"                              |
+| V3   | bytes no-UTF8 en garbage.rs → "stream did not contain valid UTF-8"                            |
+| V4   | AKIA-FOO-BAR-DECOY-SECRET-DO-NOT-LOG en secret.rs → token NO aparece en stdout/stderr/response |
+| V5   | tools/call name="__adversarial_synthetic_evil_tool__" → "tool not found" + isError=true        |
+| V5b  | tools/list en --read-only → todas las tools con authority="read"                              |
+| V6   | stdin cerrado antes de initialize → exit ∈ {0,1}, sin panic en stderr                         |
+| V6b  | header JSON-RPC parcial + stdin cerrado → mismo contrato                                      |
+| V7   | archivo en TempDir chmod 000 → error de seguridad tipado                                      |
+| V7b  | archivo inexistente → isError=true                                                            |
+| C1   | --read-only expone cero tools con authority ∈ {mutating,execute,network}                      |
+| C2   | tools/call write_file en --read-only → rechazado                                              |
+| C3   | cada test usa su propio TempDir; no quedan tempdirs huérfanos                                 |
+
+**Política de skip**: si el binario no está compilado, los tests son
+SKIP_NOT_APPLICABLE (no #[ignore) y no fallan CI). El harness resuelve
+`CARGO_TARGET_DIR` + `CARGO_MANIFEST_DIR` para encontrar el binario tanto
+si cargo escribe a `./target/` como a `/var/home/.../cargo-targets/`.
+
+**Impacto en release v0.98.1**: NINGUNO. El binario release no cambia;
+lo que se añade es un test E2E pineable en CI que correrá contra futuras
+versiones. La firma C7 sigue vigente; este cierre se reporta como
+mejora incremental operator-gated ya completada.
+
+**Refs**: commit `ddfa0cd8`,
+`docs/prf/JOURNAL.md` §153 (entrada de cierre), `docs/prf/STATE.md`
+(snapshot post-§153).

@@ -1,21 +1,16 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-24 post-release v0.98.1, sesión 5 AUTO + operador-gated)
-- **HEAD**: `0d6c575e` (STATE self-roll — §149 V43 integración final v0.98.1)
-  sobre `b67c9deb` (§148 V42 — release v0.98.1 publicada) sobre
-  `e4ab6c8e` (chore(release): bump workspace version 0.98.0 → 0.98.1)
-  sobre `a83ea210` (STATE self-roll — §147 B4) sobre `4feb5456` (§147
-  B4 Admission Expediente) sobre `92ec698a` (STATE self-roll — §146 B3)
-  sobre `bb0f2edb` (§146 V40 B3 cierre — distribución + instalación +
-  recuperación sobre v0.98.0).
-- **Local = origin = `0d6c575e`**. Push completo. Sin commits ahead.
-- **Tags**: `v0.98.0` (`d99d3911`) y `v0.98.1` (`a21fccda`) ambos en repo.
-- **Releases publicadas**: `v0.98.0` (#36034410448 success) y `v0.98.1`
-  (#36063804784 success, marked as Latest, 12 assets con SHA256).
-- **Tests verdes sobre HEAD actual `0d6c575e`**:
+## Estado (2026-09-25 post-§153 H06 cierre, sesión 6 operator-gated)
+- **HEAD funcional**: `4c45ef06` (último self-roll §152 V46 — cierre de sesión + handoff)
+- **Código más reciente**: `ddfa0cd8` (§153 V47 — PRF-H06 adversarial E2E suite, 864 LOC)
+- **Local = origin = `4c45ef06`**. Sin commits ahead del origin.
+- **Releases vigentes**: `v0.98.1` (production-ready contractual, firmada C7 2026-09-24T22:41:33Z), antecedente `v0.98.0`.
+- **C7 firma**: PASS contractualmente por el operador `Ruben <rubentxu@cognicode.dev>` el 2026-09-24T22:41:33Z UTC con la cadena "firmo".
+- **Tests verdes sobre HEAD actual**:
   - `cargo test -p cognicode-core --lib` → **2188 passed, 0 failed, 27 ignored**.
-  - `cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign` → **8/8 verde** (PRF-SEC-07).
-  - `cargo test -p cognicode-core --lib prf_mcp_05` → **4/4 verde** (PRF-MCP-05 enforcement).
+  - `cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign` → **8/8 verde** (PRF-SEC-07 nivel lib).
+  - `cargo test -p cognicode-core --lib prf_mcp_05` → **4/4 verde** (PRF-MCP-05).
+  - **`cargo test -p cognicode-core --test prf_h06_adversarial_e2e` → 15/15 verde** (PRF-SEC-07 nivel binario, nuevo en §153).
 - **B1+B2+B3 del plan prolongado B1→B4**: cerrados.
 - **Trabajo de este ciclo (B5 final §149)**:
   - Push de los 22 commits ahead of origin/main.
