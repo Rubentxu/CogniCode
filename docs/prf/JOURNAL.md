@@ -12698,3 +12698,94 @@ están en el código del binario, no en la versión reportada.
 - Cierre contractual C7: `docs/prf/F7-C7-EXPEDIENTE.md`
 - HANDOFF que priorizó este ítem: `docs/prf/HANDOFF-§152.md` §6.2
 - SPEC Security: `docs/prf/specs/SPEC-SECURITY.md` PRF-SEC-07
+
+
+## §154 — V48 — Push de §153 + cierre operator-gated P0.3 / PRF-CI-07 (2026-09-25T07:56:35Z)
+
+**Plan operador**: "ok completa lo que no esta hecho" (sesión del
+2026-09-25 tras §153). Sesión AUTO.
+
+### Trabajo realizado
+
+#### 1. Push de los 2 commits ahead del §153
+
+```
+git push origin main
+4c45ef06..b4fa4ae3  main -> main
+```
+
+Tras el push, HEAD = origin/main = `b4fa4ae3` y working tree clean.
+La release v0.98.1 sigue siendo **Latest** (publicada 2026-09-24T21:58:31Z).
+El push NO disparó ningún workflow (correcto: `release.yml` y
+`release-validate.yml` solo se activan con tag).
+
+Esto confirmó observacionalmente el gap de P0.3: un push a main pasa
+sin gate alguno. La activación correcta de un gate remoto requiere un
+trigger `pull_request`, que es exactamente lo que PRF-CI-07 introduce.
+
+#### 2. Diseño y entrega de P0.3 / PRF-CI-07
+
+Workflow nuevo: `.github/workflows/pr-ci.yml` (116 LOC).
+
+**Trigger**: `pull_request` contra `main` + `workflow_dispatch` manual.
+NO se dispara con push directo (preservando la política "release gate
+solo en tags" de ADR-031).
+
+**Jobs**:
+
+| job           | qué hace                                                                                |
+|---------------|-----------------------------------------------------------------------------------------|
+| check         | `cargo fmt --all -- --check` + `cargo clippy --workspace --all-targets -- -D warnings`  |
+| build-binary  | `cargo build --release -p cognicode-mcp` + upload como artifact                          |
+| test-pr       | `cargo test -p cognicode-core --lib` + las 3 suites pineadas (lib + MCP-05 + E2E §153) |
+
+Tiempo objetivo: <10 min. Cache de cargo vía `Swatinem/rust-cache@v2`.
+
+**Política respetada**:
+
+- `ci.yml` sigue siendo LOCAL-ONLY (act / just ci-local).
+- `release.yml` + `release-validate.yml` siguen siendo el gate de tag.
+- Solo este workflow introduce un trigger push-PR, que era la pieza
+  que faltaba para tener governance completo.
+
+#### 3. Validación local con `act`
+
+```
+act -W .github/workflows/pr-ci.yml -l
+Stage  Job ID        Job name                       Events
+0      check         fmt + clippy                   pull_request, workflow_dispatch
+0      build-binary  build cognicode-mcp (release)  pull_request, workflow_dispatch
+1      test-pr       test pineado (lib + E2E)       pull_request, workflow_dispatch
+
+act --dryrun -j check
+✅  Success - Main rustc + --version
+✅  Success - Main dtolnay/rust-toolchain@stable
+✅  Success - Main Cache cargo
+✅  Success - Main rustfmt --check
+✅  Success - Main clippy -D warnings
+```
+
+Estructuralmente correcto. El push remoto NO dispara el workflow
+(verificado con `gh run list`); solo se disparará cuando alguien
+abra un PR contra main.
+
+#### 4. Resultado
+
+- Cierre del ítem operator-gated **P0.3 / PRF-CI-07** del HANDOFF-§152 §6.1.
+- Governance cerrado: ahora todo push-PR tiene gate remoto;
+  `ci.yml` sigue para local-con-act; `release*.yml` para tags.
+- 3 commits ahead of origin, todos pushed.
+
+#### 5. Items operator-gated que quedan
+
+- **P0.4** — 0.97.x retirement (decisión de scope, no ingeniería).
+- **ISSUE-1** — fix upstream `cogh rollback --to <same>`.
+- Mejoras incrementales: H-clippy-cli-residual, moldql panic
+  preexistente, find_usages CLI equivalente al MCP tool.
+
+### Refs
+
+- Commits: `b4fa4ae3` (self-roll §153), `4d988409` (workflow PR-CI).
+- Workflow: `.github/workflows/pr-ci.yml` (116 LOC, dryrun OK).
+- Push: `git log origin/main..HEAD` → 3 commits ahead.
+- HANDOFF previo: `docs/prf/HANDOFF-§152.md` §6.1 (P0.3 listado).

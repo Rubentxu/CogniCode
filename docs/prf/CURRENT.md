@@ -1,16 +1,19 @@
 # CURRENT — Puntero operativo PRF
 
-## Estado (2026-09-25 post-§153 H06 cierre, sesión 6 operator-gated)
-- **HEAD funcional**: `4c45ef06` (último self-roll §152 V46 — cierre de sesión + handoff)
-- **Código más reciente**: `ddfa0cd8` (§153 V47 — PRF-H06 adversarial E2E suite, 864 LOC)
-- **Local = origin = `4c45ef06`**. Sin commits ahead del origin.
+## Estado (2026-09-25 post-§154 push + PR-CI, sesión 6 operator-gated)
+- **HEAD funcional**: `4d988409` (ci(github): PR-CI gate — §154 V48 cierre P0.3/PRF-CI-07)
+- **Commits ahead of origin**: 0 (todos los commits pushed: `ddfa0cd8`, `b4fa4ae3`, `4d988409`)
 - **Releases vigentes**: `v0.98.1` (production-ready contractual, firmada C7 2026-09-24T22:41:33Z), antecedente `v0.98.0`.
 - **C7 firma**: PASS contractualmente por el operador `Ruben <rubentxu@cognicode.dev>` el 2026-09-24T22:41:33Z UTC con la cadena "firmo".
 - **Tests verdes sobre HEAD actual**:
   - `cargo test -p cognicode-core --lib` → **2188 passed, 0 failed, 27 ignored**.
   - `cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign` → **8/8 verde** (PRF-SEC-07 nivel lib).
   - `cargo test -p cognicode-core --lib prf_mcp_05` → **4/4 verde** (PRF-MCP-05).
-  - **`cargo test -p cognicode-core --test prf_h06_adversarial_e2e` → 15/15 verde** (PRF-SEC-07 nivel binario, nuevo en §153).
+  - **`cargo test -p cognicode-core --test prf_h06_adversarial_e2e` → 15/15 verde** (PRF-SEC-07 nivel binario, §153).
+- **CI governance**:
+  - **PR-CI** (`pr-ci.yml`) — gate automático en pull_request contra main: 3 jobs (check, build-binary, test-pr). Cierra P0.3.
+  - **CI local** (`ci.yml`) — LOCAL-ONLY con `act` / `just ci-local`.
+  - **Release gate** (`release.yml` + `release-validate.yml`) — solo en tags.
 - **B1+B2+B3 del plan prolongado B1→B4**: cerrados.
 - **Trabajo de este ciclo (B5 final §149)**:
   - Push de los 22 commits ahead of origin/main.
