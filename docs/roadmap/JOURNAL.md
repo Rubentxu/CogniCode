@@ -1366,3 +1366,144 @@ Decisión autónoma del agente principal:
     tests verde + clippy verde + binario funcional es un punto de
     auditoría reproducible. Si el operador decide no firmar, el
     expediente queda como "release-driven" y no se pierde progreso.
+
+## Entry 9 — fix release+ci: bin source tracking + GHA needs parser
+
+**Fecha**: 2026-09-25, post-C8.
+**Trigger**: búsqueda activa de próxima tarea de valor real (operador
+"A tu criterio"). El roadmap ejecutivo está cerrado (G0+M0+E0+E1+E2+
+F0.1 CERRADOS, C8 técnico cerrado); C2.W3 (integrar control plane en
+cognicode-mcp) y E3 están NOT_TRIGGERED por falta de consumer.
+Trabajo encontrado: un workflow CI llevaba 17+ pushes fallando con
+"0 jobs" — bug silencioso.
+
+### Diagnóstico en dos pasos
+
+#### Bug 1 — GHA parser `needs.$job.result`
+
+**Síntoma**: `gh run list --workflow=pr-ci.yml` listaba runs
+`completed/failure` con `total_count: 0` jobs. Branch protection
+`merge-gate` quedaba rojo crónicamente sin que ningún job corriese.
+
+**Causa**: workflow `merge-gate` step "Verificar que los jobs fan-out
+pasaron" usaba `${{ needs.$job.result }}` en bash. GitHub Actions NO
+expande `$job` dentro de `${{ }}`; produce parse error `Line: 151,
+Col: 14: Unexpected symbol: '$job'`.
+
+**Fix**: `env: NEEDS_JSON: ${{ toJSON(needs) }}` + `jq` para resolver
+el nombre del job en bash. Mismo comportamiento observable, sin shell
+injection.
+
+**Commit**: `8f768a07 fix(ci): merge-gate needs.$job.result was
+unparseable by GHA` (3 del + 14 ins).
+
+#### Bug 2 — E2.W2 bin source NO commiteado
+
+**Síntoma** (subsidiario del fix 1, una vez que GHA podía parsear el
+workflow): `fmt + clippy` job fallaba en el `rustfmt --check` step con
+`Error: file 'control_plane.rs' does not exist`.
+
+**Causa raíz**: `.gitignore` raíz tiene una regla blanket para
+ignorar `bin/` (mecanismo anti-build-output), con negación SOLO para
+`!crates/cognicode-cli/src/bin/`. El commit E2.W2 (`4138eab7`)
+declaró el bin `cognicode-control-plane` en
+`cognicode-explorer/Cargo.toml` + `api.rs` + tests, pero el source
+file `crates/cognicode-explorer/src/bin/control_plane.rs` quedó
+ignorado por `.gitignore` y NUNCA se añadió al index. `git log
+4138eab7 -- crates/cognicode-explorer/src/bin/control_plane.rs`
+devuelve vacío. **Una clone fresca del repo no tendría el bin**.
+
+**Severidad**: ALTA. El bin funcionaba localmente porque mi checkout
+tenía los archivos en disco, pero desde CI / otros developers / clone
+nuevo, el bin no existe. Inadvertidamente, esto habría sido detectado
+al primer PR real que necesitase el bin en CI — pero por estar en
+`main` directo (sin PR), el bug pasó inadvertido.
+
+**Fix**:
+1. `.gitignore`: añadir `!crates/cognicode-explorer/src/bin/`
+   (mirror de la cli exemption) con comentario explicando el
+   contexto E2.W2.
+2. `git add -f crates/cognicode-explorer/src/bin/control_plane.rs`
+   para forzar el tracking inicial.
+
+**Commit**: `4737173c fix(release): track E2.W2 bin source + exempt
+src/bin in .gitignore` (130 ins: 7 gitignore + 123 control_plane.rs).
+
+#### Bonus — fmt drift
+
+`cargo fmt --all -- --check` detectó 19 líneas de drift en 8 archivos
+distintos (varios son míos: canonical_constraints, control_plane.rs,
+cp1_control_plane_endpoint, runtime/lib.rs). Aplico fmt y commitea
+como `fbaed1c3 chore(fmt): apply rustfmt over 8 drifted files`.
+
+### Validación final en CI
+
+Run `36166853123` tras push con los 3 fixes:
+
+| Job | Conclusión | Tiempo |
+|---|---|---|
+| build cognicode-mcp (release) | success | 17:24:11Z → 17:26:52Z |
+| fmt + clippy | success | 17:24:11Z → 17:27:20Z |
+| test pineado (lib + E2E) | success | 17:26:55Z → 17:29:06Z |
+| merge-gate | success | 17:29:09Z → 17:31:24Z |
+
+`merge-gate` rojo durante 17 pushes consecutivos → verde. Primer
+run success desde la creación del workflow.
+
+### Estado
+
+- Roadmap ejecutivo sin cambios (ya cerrado).
+- pr-ci.yml: primer run verde real.
+- E2.W2 ahora es real para CI / clones frescos.
+- Sin regresiones locales: `cargo test --workspace` 5542 / 0 / 45
+  (un flaky aislado pre-existente en `t_debt4_uat_install_*`
+  reproducía 1/5 antes del fmt-fix; ya analizado en E2.W2 L02).
+
+### Pendiente / ABIERTAS para decisión operador
+
+- C8 firma humana sigue PENDIENTE (3 opciones en C8 §7).
+- E3 sigue NOT_TRIGGERED.
+- E2.W3 (integrar control_plane_router en cognicode-mcp) — especulativo.
+
+### Lecciones añadidas (a las 40 anteriores)
+
+41. **`git add -f` no es trampa**: cuando un archivo en disco está
+    bloqueado por `.gitignore` y constituye una parte funcional del
+    release (bin source, datos críticos), `git add -f` es la acción
+    correcta. Verificar primero que el `.gitignore` es coherente
+    con la adición, y commitear ambos cambios en un solo commit
+    atómico (`fix(release): ...` aquí).
+
+42. **Verificar el árbol git DESPUÉS del commit**: en el ciclo E2.W2,
+    hice `git show --stat 4138eab7` pero me centré en los archivos
+    modificados; no escaneé explícitamente los archivos NUEVOS que
+    el commit declara como referenciados. La regla operativa nueva:
+    cuando un commit declara `[[bin]] path = "src/bin/..."` o
+    similar, ejecutar `git ls-tree <sha> <path>` post-commit para
+    confirmar que el archivo fue añadido al index, no solo
+    modificado junto.
+
+43. **El log "0 jobs" de GitHub Actions es engañoso**: indica que el
+    workflow no se pudo parsear (run failed at parse time), no que
+    haya "0 jobs en verde". El primer instinto es "0 jobs == nada
+    que hacer == skip", pero es exactamente lo contrario. La
+    herramienta de diagnóstico correcta es `gh api
+    repos/<owner>/<repo>/actions/workflows/<id>/dispatches` para
+    ver el parse error 422, o `gh workflow view <file> --yaml` para
+    validar la sintaxis localmente.
+
+44. **El .gitignore blanket `bin/` necesita excepciones por crate,
+    no por bin**: cambiar el patrón a `**/target/bin/` o similar
+    sería más seguro, pero rompería el contrato existente del que
+    dependen otros crates. Política: al AÑADIR un nuevo `[[bin]]`
+    en un crate, verificar primero que `.gitignore` exenta el
+    `src/bin/` de ese crate. Sin esto, el bin se compila local pero
+    no llega al repo.
+
+45. **`rustfmt` standalone necesita `--edition 2024`**: por defecto
+    asume 2015 y rechaza `async fn` en `main`. El atajo correcto es
+    `cargo fmt --all` (que sí respeta el edition del workspace),
+    pero ese comando no procesa archivos `src/bin/` que estén bajo
+    `[[bin]] path = ...` (limitación de cargo fmt histórica). Para
+    bins, usar `rustfmt --edition 2024 <file>` explícitamente.
+
