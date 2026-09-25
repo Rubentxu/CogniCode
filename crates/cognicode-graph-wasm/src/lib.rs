@@ -166,10 +166,11 @@ pub fn communities(
     let (in_neighbors, _, out_neighbors) = graph.build_adjacency();
     let n = graph.nodes.len();
 
-    let raw = inner_communities(&in_neighbors, &out_neighbors, n, options.max_iterations);
+    let (raw_communities, _meta) =
+        inner_communities(&in_neighbors, &out_neighbors, n, options.max_iterations);
 
     // Translate usize indices to node IDs.
-    let communities: Vec<Community> = raw
+    let communities: Vec<Community> = raw_communities
         .into_iter()
         .map(|community| {
             let node_ids: Vec<String> = community

@@ -96,7 +96,12 @@ impl CommunityDetector {
         }
 
         // Run Label Propagation via cognicode-graph-algos.
-        let raw_communities = cognicode_graph_algos::communities(
+        // The returned `meta` carries the actual iteration count and
+        // convergence flag from the run, replacing the previous
+        // hardcoded `iterations = max_iterations.min(100); converged =
+        // true` that made the MCP `graph_communities` response lie
+        // about the algorithm's execution (see e91.W1).
+        let (raw_communities, lp_meta) = cognicode_graph_algos::communities(
             &in_neighbors,
             &out_neighbors,
             bound,
@@ -204,9 +209,13 @@ impl CommunityDetector {
             .flat_map(|c| c.nodes.iter().map(move |n| (n.to_string(), c.id)))
             .collect();
 
-        // Iterations and converged from the delegated algorithm (hardcoded to match original).
-        let iterations = max_iterations.min(100); // approximation for now
-        let converged = true; // algorithm always converges within max_iterations
+        // Iterations and converged come from the actual Label
+        // Propagation run (lp_meta), replacing the previous
+        // hardcoded `iterations = max_iterations.min(100); converged
+        // = true` that hid the algorithm's real behaviour from the
+        // MCP `graph_communities` consumer (see e91.W1).
+        let iterations = lp_meta.iterations;
+        let converged = lp_meta.converged;
 
         CommunityResult {
             communities,
@@ -428,13 +437,25 @@ mod tests {
     #[test]
     fn test_two_disconnected_groups_form_two_communities() {
         // Group 1: a→b, Group 2: c→d (no connections between groups).
+        // Each isolated pair is a 2-cycle under undirected Label
+        // Propagation, so the algorithm oscillates (does NOT converge)
+        // but still partitions the graph into 2 communities at the
+        // final state (see `disconnected_pairs` test in
+        // cognicode-graph-algos/src/algorithms/communities.rs).
         let mut graph = CallGraph::new();
         add_edge(&mut graph, "a", "mod1.rs", "b", "mod1.rs");
         add_edge(&mut graph, "c", "mod2.rs", "d", "mod2.rs");
 
         let result = CommunityDetector::detect(&graph, 100);
         assert!(result.communities.len() >= 1);
-        assert!(result.converged);
+        // Oscillating 2-cycles do not converge; the algorithm
+        // exhausts max_iterations. Updated to pin the honest
+        // behaviour (see e91.W1).
+        assert!(
+            !result.converged,
+            "two disconnected 2-pairs oscillate under LP, expected converged=false"
+        );
+        assert_eq!(result.iterations, 100);
     }
 
     #[test]
@@ -451,15 +472,80 @@ mod tests {
     }
 
     #[test]
-    fn test_convergence_within_max_iterations() {
+    fn test_chain_iterations_bounded_by_max() {
+        // Build a chain: a→b→c→d→e. The chain oscillates under LP
+        // (proven by standalone simulation), so iterations == max.
+        // The test still pins the upper bound (iterations <= max).
         let mut graph = CallGraph::new();
-        // Build a chain: a→b→c→d→e.
         for pair in [("a", "b"), ("b", "c"), ("c", "d"), ("d", "e")] {
             add_edge(&mut graph, pair.0, "chain.rs", pair.1, "chain.rs");
         }
         let result = CommunityDetector::detect(&graph, 100);
-        assert!(result.converged);
         assert!(result.iterations <= 100);
+    }
+
+    // RED: e91.W1 reconciliation. The previous implementation
+    // hardcoded `iterations = max_iterations.min(100)` and
+    // `converged = true`, which makes the values exposed via the
+    // MCP `graph_communities` response (`iterations_used`,
+    // `converged` in `graph_handlers.rs:310-311`) lie about the
+    // actual algorithm execution. These two tests pin the contract
+    // that the returned values reflect the real algorithm state.
+    //
+    // Both graphs are **oscillating** under Label Propagation
+    // (proven by the standalone simulation in e91 work notes and
+    // by the `disconnected_pairs` test in
+    // `cognicode-graph-algos/src/algorithms/communities.rs:200`).
+    // A chain a→b→c→d→e with undirected LP oscillates between
+    // [0,1,0,1,0] and [1,0,1,0,1] due to the symmetric tie-break
+    // by lowest node id; a single 2-cycle oscillates the same way.
+    // Previously the code reported `converged=true, iterations=100`
+    // for these, which is false.
+    #[test]
+    fn test_detect_reports_real_iterations_chain() {
+        // Linear chain a→b→c→d→e: oscillates under LP (see note
+        // above). The previous implementation incorrectly reported
+        // `converged=true` and `iterations=100` (the hardcoded
+        // approximation); the corrected implementation must report
+        // the actual behaviour: did not converge in max_iterations.
+        let mut graph = CallGraph::new();
+        for pair in [("a", "b"), ("b", "c"), ("c", "d"), ("d", "e")] {
+            add_edge(&mut graph, pair.0, "chain.rs", pair.1, "chain.rs");
+        }
+        let result = CommunityDetector::detect(&graph, 100);
+        assert!(
+            !result.converged,
+            "chain does NOT converge under LP within max_iter=100 (proven by simulation), got converged=true iterations={}",
+            result.iterations
+        );
+        assert_eq!(
+            result.iterations, 100,
+            "must report actual iterations consumed (100), got {}",
+            result.iterations
+        );
+    }
+
+    #[test]
+    fn test_detect_reports_non_convergence_on_oscillating_2cycle() {
+        // 2-cycle a↔b oscillates forever under Label Propagation
+        // (proven by `disconnected_pairs` test in
+        // cognicode-graph-algos/src/algorithms/communities.rs:147).
+        // With max_iter=100 (even), the algorithm does not converge
+        // and the actual run consumed all 100 iterations.
+        let mut graph = CallGraph::new();
+        add_edge(&mut graph, "a", "m.rs", "b", "m.rs");
+        add_edge(&mut graph, "b", "m.rs", "a", "m.rs");
+        let result = CommunityDetector::detect(&graph, 100);
+        assert!(
+            !result.converged,
+            "2-cycle must NOT converge under max_iter=100, got converged=true iterations={}",
+            result.iterations
+        );
+        assert_eq!(
+            result.iterations, 100,
+            "must report actual iterations consumed (100), got {}",
+            result.iterations
+        );
     }
 
     #[test]
