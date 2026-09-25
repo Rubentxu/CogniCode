@@ -417,4 +417,103 @@ mod tests {
             assert!(!caps.precision.is_empty(), "{name} tiene precision vacío");
         }
     }
+
+    /// L1.1.W1 — Simetría entre las DOS fuentes de capabilities.
+    ///
+    /// Estado actual (Post-PRF): existen dos autoridades paralelas para
+    /// la lista de tools con capabilities declaradas:
+    ///
+    ///   1. `list_tool_capabilities(name)` — declaración (qué langs /
+    ///      precision tiene CADA tool nombrada).
+    ///   2. `stable_tool_names_with_capabilities()` — enumeración
+    ///      estática del subset pineado.
+    ///
+    /// El test `test_capabilities_matrix_for_stable_tools` cruza (1) con
+    /// la realidad MCP (`build_all_tools`). El test
+    /// `test_stable_tool_names_are_real` cruza (2) con la realidad MCP.
+    ///
+    /// PERO nadie cruza (1) con (2): una tool declarada en (1) podría
+    /// NO aparecer en (2) y nadie se entera; una tool en (2) podría
+    /// NO tener arms en (1) (y fallaría `unwrap_or_else(panic)`).
+    ///
+    /// Este test cierra el hueco: el universo de tools en (2) debe
+    /// coincidir exactamente con el conjunto de tools en (1) cuyo
+    /// precision es no-vacía. Si difieren, hay drift entre las dos
+    /// autoridades y la pineo de capabilities queda inconsistente.
+    #[test]
+    fn test_capabilities_declarations_match_pineo() {
+        use std::collections::HashSet;
+
+        // Universo (2): nombres pineados.
+        let pineados: HashSet<&str> = stable_tool_names_with_capabilities()
+            .iter()
+            .copied()
+            .collect();
+
+        // Universo (1): nombres que list_tool_capabilities reconoce
+        // con precision no-vacía.
+        //
+        // No usamos `all_stable_capabilities()` porque ese YA cruza
+        // (1)∪(2) y enmascara el drift. Hacemos el cruce a mano.
+        let declarados: HashSet<String> = {
+            let mut s = HashSet::new();
+            // El universo de candidatos viene de la propia tabla (1),
+            // enumerando los arms del match. Truco: derivar de
+            // `all_stable_capabilities` con panics relajados.
+            //
+            // PERO `all_stable_capabilities` usa (2) como filtro, y
+            // queremos el opuesto: declarar (1) y ver qué NO está en (2).
+            //
+            // Solución: tomar todos los tools de `build_all_tools()`
+            // que tengan stability == "stable" y ver cuáles resuelven
+            // `list_tool_capabilities(...) == Some` con precision
+            // no-vacía. Esos son los "declarados (1) reales".
+            for tool in crate::interface::mcp::rmcp_adapter::build_all_tools() {
+                let name = tool.name.to_string();
+                let stability = tool
+                    .meta
+                    .as_ref()
+                    .and_then(|m| m.get("cognicode"))
+                    .and_then(|v| v.get("stability"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if stability != "stable" {
+                    continue;
+                }
+                if let Some(caps) = list_tool_capabilities(&name)
+                    && !caps.precision.is_empty()
+                {
+                    s.insert(name);
+                }
+            }
+            s
+        };
+
+        // Tools declarados (1) que NO están pineados (2): deriva.
+        let declarados_no_pineados: Vec<&String> = declarados
+            .iter()
+            .filter(|n| !pineados.contains(n.as_str()))
+            .collect();
+
+        // Tools pineados (2) que NO están declarados (1): deriva.
+        let pineados_no_declarados: Vec<&&str> = pineados
+            .iter()
+            .filter(|n| !declarados.contains(**n))
+            .collect();
+
+        assert!(
+            declarados_no_pineados.is_empty(),
+            "PRF-ANA-01 / L1.1.W1: tools con capabilities declaradas pero \
+             AUSENTES del pineo estable: {declarados_no_pineados:?}. \
+             Añádelos a stable_tool_names_with_capabilities() o quítalos \
+             de list_tool_capabilities()."
+        );
+        assert!(
+            pineados_no_declarados.is_empty(),
+            "PRF-ANA-01 / L1.1.W1: tools en pineo estable pero SIN \
+             capabilities declaradas: {pineados_no_declarados:?}. \
+             Añade una entrada en list_tool_capabilities() con precision \
+             no-vacía para cada uno."
+        );
+    }
 }
