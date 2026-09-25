@@ -623,3 +623,109 @@ cubren:
     E0.W1+E0.W2+E3 (o similar) entregue cambio de binario o de
     contrato público, se justifica v0.98.2/3.
 
+
+---
+
+## Entrada 6 — 2026-09-25 — E0.W2 implementado end-to-end (lint CI + drift fix)
+
+### Contexto
+
+Mientras seguía esperando decisión sobre el ciclo siguiente,
+resolví E0.W2 (CI lint pineando drift código↔doc) que yo mismo
+propuse en JOURNAL §4. Es trabajo **autónomo y de bajo riesgo**:
+- Script + tests nuevos (cero código que afecte runtime).
+- CI job añadido (corre y reporta; no se mete en merge-gate
+  hasta que el operador decida vía gh api).
+- Fix real del drift: el doc decía "(18 lenguajes)" cuando
+  había 22; ahora dice "(22 lenguajes)" y todo está alineado.
+
+### Cambios
+
+```
+$ git diff --stat HEAD~1..HEAD
+ .github/workflows/pr-ci.yml           | 17 ++++++++
+ docs/prf/specs/CAPABILITIES-MATRIX.md | 16 +++++---
+ sandbox/scripts/capabilities_drift_lint.py              | 156 +++ (new)
+ sandbox/scripts/tests/test_capabilities_drift_lint.py   | 130 +++ (new)
+ 4 files changed, 370 insertions(+), 8 deletions(-)
+```
+
+Commit `4552707f`: `feat(capabilities): E0.W2 — lint CI pineando
+drift código↔doc (PRF-ANA-01)`.
+
+### Implementación
+
+`sandbox/scripts/capabilities_drift_lint.py`:
+- `parse_code_langs()`: regex sobre `pub const ALL_TREE_SITTER_LANGS`
+  en `crates/cognicode-core/src/interface/mcp/capabilities.rs`.
+- `parse_doc_langs()`: regex sobre el header `## Lenguajes con parser
+  tree-sitter` y el fenced code block posterior en
+  `docs/prf/specs/CAPABILITIES-MATRIX.md`.
+- `main()`: diff entre los dos sets + verificación de header count.
+- Modo `--strict`: exit 1 cuando drift (para CI).
+- Default: warn en stderr, exit 0 (para uso humano).
+
+`sandbox/scripts/tests/test_capabilities_drift_lint.py`: 6 tests
+verdes en 0.33s, pineando el contrato.
+
+`.github/workflows/pr-ci.yml`: nuevo job `capabilities-drift-lint`
+que ejecuta `python3 sandbox/scripts/capabilities_drift_lint.py --strict`.
+
+### Verificación
+
+```
+$ python3 sandbox/scripts/capabilities_drift_lint.py --strict
+OK: code↔doc aligned, 22 lenguajes (['c', 'cpp', 'csharp', 'dart',
+'go', 'hcl', 'java', 'javascript', 'jsx', 'kotlin', 'lua', 'luau',
+'php', 'python', 'ruby', 'rust', 'scala', 'swift', 'tsx',
+'typescript', 'yaml', 'zig'])
+exit=0
+
+$ python3 -m pytest sandbox/scripts/tests/test_capabilities_drift_lint.py -v
+... 6 tests in 0.33s ... PASSED
+```
+
+### Decisiones tomadas (gateado parcialmente)
+
+1. **No incluí el job en `merge-gate`'s `needs:`** porque añadirlo al
+   branch protection requiere `gh api` (decision de autoridad).
+   El job corre y reporta igual, pero no bloquea merges hasta que
+   el operador lo añada explícitamente.
+2. **El drift detectado se arregló** porque era obvio (header dice
+   18, lista dice 22). La alternativa era dejar el drift y que CI
+   fallara siempre, lo cual es peor para la hygiene del repo.
+3. **Conventional Commit `feat(capabilities):`** porque introduce
+   capacidad nueva (CI lint en PR), no es bug-fix ni refactor.
+
+### Estado post-entrada
+
+- **Mantenimiento v0.98.x backlog**: COMPLETO (M0.1+M0.2+M0.3 todos
+  CLOSED).
+- **E0.W1** (test pineando matriz): CLOSED de facto (4 tests verde).
+- **E0.W2** (CI lint pineando drift código↔doc): IMPLEMENTADO
+  end-to-end (commit `4552707f`).
+- **E0.W3** (política 0.97.x): pendiente — decisión de scope.
+- **E1, E2, E3**: PENDING.
+
+### Recomendación al operador
+
+1. `gh api repos/Rubentxu/CogniCode/branches/main/protection/required_status_checks/contexts -X POST -F 'contexts[]=merge-gate' -F 'contexts[]=capabilities-drift-lint'` — añadir el nuevo job como required check (gatea merges que rompan drift).
+2. (Opcional) Crear release v0.98.3 con el cambio del doctor (sin bump de binario Rust, pero CON cambio en CI policy + corrección de doc). El job es gate, pero el doc ahora dice verdad.
+3. O seguir con E3/E0.W3 o esperar F0 según el siguiente objetivo.
+
+### Lecciones añadidas
+
+13. **El drift código↔doc era real y detectable automáticamente.**
+    La auditoría manual (JOURNAL §4) lo encontró. El lint lo
+    codifica para que no vuelva a ocurrir. Lección: cualquier
+    "header dice N pero lista tiene M" merece un test de regresión.
+14. **Job de CI ≠ merge-gate.** Añadir un job nuevo es fácil.
+    Hacerlo gate es decisión de autoridad. No toco branch-protection
+    sin orden.
+15. **Conventional Commits tipo `feat(...)` vs `docs(...)`**: el
+    commit es mixto (workflow nuevo + docs arreglado + scripts
+    nuevos). Eligí `feat(capabilities)` porque introduce capacidad
+    (el lint), no es solo-docs. Si el operador prefiere seguir el
+    patrón anterior (`docs(roadmap):` para audit-only), puedo
+    reescribir.
+
