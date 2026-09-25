@@ -3586,7 +3586,11 @@ components:
         // Run a real install so the canonical tree exists.
         let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
             .expect("stage a local release");
-        crate::release_test_support::point_at(&release);
+        // AssetPoint (RAII) restores COGNICODE_ASSET_BASE_URL /
+        // COGNICODE_BUNDLE_MANIFEST on drop. The previous hand-rolled
+        // point_at(&release) (no unpoint) leaked env state to the next
+        // #[serial] test; fixed together with the 0.98.1 -> 0.99.0 bump.
+        let _point = crate::release_test_support::AssetPoint::new(&release);
         crate::installer_transaction::InstallerTransaction::run(&home, "core")
             .expect("install must succeed");
 
@@ -4609,6 +4613,7 @@ components:
     ///   - re-run `cmd_rollback` — the second attempt succeeds
     ///     (state coherent, shim points at A, journal consumed)
     #[test]
+    #[serial_test::serial]
     fn prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails() {
         use crate::lifecycle_resolver::Channel;
         use crate::release_test_support::ResolverFixture;

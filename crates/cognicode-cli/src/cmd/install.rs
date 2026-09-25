@@ -163,7 +163,8 @@ mod tests {
         // the path is now derived from the manifest declaration).
         let release = crate::release_test_support::local_release(env!("CARGO_PKG_VERSION"))
             .expect("stage a local release");
-        crate::release_test_support::point_at(&release);
+        // AssetPoint (RAII) — see advance_skips_through_all_stages.
+        let _point = crate::release_test_support::AssetPoint::new(&release);
 
         let result = run_install(&home, "core");
         assert!(result.is_ok(), "L4: install must succeed; got {result:?}");

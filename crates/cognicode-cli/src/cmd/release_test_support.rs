@@ -224,6 +224,15 @@ fn wait_for_server(base_url: &str) {
 /// canonical github.com component URLs onto this loopback. The resolver-side
 /// (`COGNICODE_API_BASE_URL`) is intentionally left untouched because
 /// `point_at` is only used by the installer pipeline, not the resolver.
+///
+/// **Prefer [`AssetPoint`] over this raw function.** `point_at` mutates
+/// process-global env state and has no cleanup; a test that calls it and
+/// then panics (or simply forgets to call [`unpoint`]) will leak
+/// `COGNICODE_ASSET_BASE_URL` / `COGNICODE_BUNDLE_MANIFEST` to the next
+/// `#[serial]` test in the same process. [`AssetPoint`] is the RAII wrapper
+/// that restores the prior env values on drop. `point_at` / `unpoint` are
+/// retained for tests that genuinely need manual control and accept the
+/// state-leak risk.
 pub fn point_at(release: &LocalRelease) {
     // SAFETY: tests using this are `#[serial]`.
     unsafe {
@@ -232,11 +241,59 @@ pub fn point_at(release: &LocalRelease) {
     }
 }
 
-/// Clear the release-related environment.
+/// Clear the release-related environment. Prefer [`AssetPoint`] for new code.
 pub fn unpoint() {
     unsafe {
         std::env::remove_var(ENV_BUNDLE_MANIFEST);
         std::env::remove_var(ENV_ASSET_BASE_URL);
+    }
+}
+
+/// RAII guard that mirrors [`point_at`] / [`unpoint`] but cleans up on drop.
+///
+/// Holds the previous values of `COGNICODE_ASSET_BASE_URL` and
+/// `COGNICODE_BUNDLE_MANIFEST`; on drop, restores them (or removes the
+/// variable if it was unset before). This is the safe replacement for
+/// `point_at` in `#[serial]` tests so a panic or early return cannot leak
+/// the loopback `127.0.0.1` base URL to a later test that expects the
+/// canonical github.com URL.
+pub struct AssetPoint {
+    prev_asset: Option<std::ffi::OsString>,
+    prev_manifest: Option<std::ffi::OsString>,
+}
+
+impl AssetPoint {
+    /// Set the asset mirror + bundle manifest env vars for `release`,
+    /// capturing the prior values so [`Drop`] can restore them.
+    pub fn new(release: &LocalRelease) -> Self {
+        let prev_asset = std::env::var_os(ENV_ASSET_BASE_URL);
+        let prev_manifest = std::env::var_os(ENV_BUNDLE_MANIFEST);
+        // SAFETY: tests using this are `#[serial]`.
+        unsafe {
+            std::env::set_var(ENV_BUNDLE_MANIFEST, &release.manifest_path);
+            std::env::set_var(ENV_ASSET_BASE_URL, &release.base_url);
+        }
+        Self {
+            prev_asset,
+            prev_manifest,
+        }
+    }
+}
+
+impl Drop for AssetPoint {
+    fn drop(&mut self) {
+        // SAFETY: tests using this are `#[serial]`; Drop runs on the same
+        // thread that constructed the guard.
+        unsafe {
+            match self.prev_asset.as_ref() {
+                Some(v) => std::env::set_var(ENV_ASSET_BASE_URL, v),
+                None => std::env::remove_var(ENV_ASSET_BASE_URL),
+            }
+            match self.prev_manifest.as_ref() {
+                Some(v) => std::env::set_var(ENV_BUNDLE_MANIFEST, v),
+                None => std::env::remove_var(ENV_BUNDLE_MANIFEST),
+            }
+        }
     }
 }
 
@@ -459,6 +516,159 @@ mod tests {
                 );
             }
             other => panic!("expected ResolveFailed for draft-only list, got {other:?}"),
+        }
+    }
+
+    // ----- e86 followup: AssetPoint RAII guard -----
+    //
+    // The 0.98.1 -> 0.99.0 SemVer bump (commit `d4a2e33e`) surfaced a
+    // latent env-leak bug: several `#[serial]` tests called
+    // `point_at(&release)` and forgot to call `unpoint()`. The next
+    // serial test then inherited a `COGNICODE_ASSET_BASE_URL` pointing
+    // at the previous test's loopback server, which had already been
+    // dropped, causing a 404 on what should be a valid install. These
+    // tests pin the AssetPoint RAII contract so a regression of the
+    // same shape is caught at unit-test time, not at CI gate time.
+
+    /// After `AssetPoint::new`, both env vars point at the release's
+    /// loopback. This is the happy-path contract callers depend on.
+    #[test]
+    #[serial_test::serial]
+    fn asset_point_sets_env_vars_for_release() {
+        let release = local_release(env!("CARGO_PKG_VERSION")).expect("stage a local release");
+        let prev_asset = std::env::var_os(ENV_ASSET_BASE_URL);
+        let prev_manifest = std::env::var_os(ENV_BUNDLE_MANIFEST);
+        let _guard = AssetPoint::new(&release);
+        assert_eq!(
+            std::env::var_os(ENV_ASSET_BASE_URL).map(|s| s.into_string().unwrap_or_default()),
+            Some(release.base_url.clone()),
+            "AssetPoint must set COGNICODE_ASSET_BASE_URL to the loopback base URL"
+        );
+        assert_eq!(
+            std::env::var_os(ENV_BUNDLE_MANIFEST).map(|s| s.into_string().unwrap_or_default()),
+            Some(release.manifest_path.to_string_lossy().to_string()),
+            "AssetPoint must set COGNICODE_BUNDLE_MANIFEST to the staged manifest path"
+        );
+        // Restore for the next test (Drop does this; this is just a
+        // sanity belt-and-braces).
+        drop(_guard);
+        assert_eq!(
+            std::env::var_os(ENV_ASSET_BASE_URL),
+            prev_asset,
+            "Drop must restore the prior COGNICODE_ASSET_BASE_URL"
+        );
+        assert_eq!(
+            std::env::var_os(ENV_BUNDLE_MANIFEST),
+            prev_manifest,
+            "Drop must restore the prior COGNICODE_BUNDLE_MANIFEST"
+        );
+    }
+
+    /// `AssetPoint` must clean up env vars on drop even when the
+    /// guarded code PANICS. This is the regression the guard was
+    /// introduced to prevent.
+    #[test]
+    #[serial_test::serial]
+    fn asset_point_restores_env_on_panic() {
+        let release = local_release(env!("CARGO_PKG_VERSION")).expect("stage a local release");
+        let prev_asset = std::env::var_os(ENV_ASSET_BASE_URL);
+        let prev_manifest = std::env::var_os(ENV_BUNDLE_MANIFEST);
+
+        let result = std::panic::catch_unwind(|| {
+            let _guard = AssetPoint::new(&release);
+            assert_eq!(
+                std::env::var_os(ENV_ASSET_BASE_URL).map(|s| s.into_string().unwrap_or_default()),
+                Some(release.base_url.clone()),
+                "guard must have set COGNICODE_ASSET_BASE_URL"
+            );
+            panic!("simulated assertion failure inside the guard");
+        });
+        assert!(result.is_err(), "inner panic must propagate");
+
+        // After the unwind + Drop, env must be exactly as it was before.
+        assert_eq!(
+            std::env::var_os(ENV_ASSET_BASE_URL),
+            prev_asset,
+            "Drop must restore COGNICODE_ASSET_BASE_URL even after a panic"
+        );
+        assert_eq!(
+            std::env::var_os(ENV_BUNDLE_MANIFEST),
+            prev_manifest,
+            "Drop must restore COGNICODE_BUNDLE_MANIFEST even after a panic"
+        );
+    }
+
+    /// When the env vars are UNSET before `AssetPoint::new`, Drop must
+    /// REMOVE them (not restore a stale value).
+    #[test]
+    #[serial_test::serial]
+    fn asset_point_removes_unset_env_vars_on_drop() {
+        // SAFETY: tests using this are `#[serial]`.
+        unsafe {
+            std::env::remove_var(ENV_ASSET_BASE_URL);
+            std::env::remove_var(ENV_BUNDLE_MANIFEST);
+        }
+        let release = local_release(env!("CARGO_PKG_VERSION")).expect("stage a local release");
+        {
+            let _guard = AssetPoint::new(&release);
+            assert!(
+                std::env::var_os(ENV_ASSET_BASE_URL).is_some(),
+                "guard must set the env var"
+            );
+        }
+        assert!(
+            std::env::var_os(ENV_ASSET_BASE_URL).is_none(),
+            "Drop must REMOVE the env var (not set it to empty) when it was unset before"
+        );
+        assert!(
+            std::env::var_os(ENV_BUNDLE_MANIFEST).is_none(),
+            "Drop must REMOVE COGNICODE_BUNDLE_MANIFEST when it was unset before"
+        );
+    }
+
+    /// `point_at` / `unpoint` still work (legacy tests rely on them),
+    /// and a manual `unpoint()` after `AssetPoint::new` does not corrupt
+    /// state on Drop (Drop should see the env vars as cleared and treat
+    /// them as "was unset" → do nothing on Drop).
+    #[test]
+    #[serial_test::serial]
+    fn point_at_unpoint_pair_works_legacy_seam() {
+        let release = local_release(env!("CARGO_PKG_VERSION")).expect("stage a local release");
+        let prev_asset = std::env::var_os(ENV_ASSET_BASE_URL);
+        let prev_manifest = std::env::var_os(ENV_BUNDLE_MANIFEST);
+
+        point_at(&release);
+        assert_eq!(
+            std::env::var_os(ENV_ASSET_BASE_URL).map(|s| s.into_string().unwrap_or_default()),
+            Some(release.base_url.clone()),
+            "point_at must set the env var"
+        );
+
+        unpoint();
+        assert!(
+            std::env::var_os(ENV_ASSET_BASE_URL).is_none(),
+            "unpoint must remove the env var"
+        );
+        assert!(
+            std::env::var_os(ENV_BUNDLE_MANIFEST).is_none(),
+            "unpoint must remove COGNICODE_BUNDLE_MANIFEST"
+        );
+
+        // Calling point_at / unpoint again must not panic. The
+        // previously-set env vars are None now, so subsequent
+        // AssetPoint::new would correctly treat them as "was unset".
+        point_at(&release);
+        unpoint();
+
+        // Restore the originals (in case the test runner captures them).
+        // SAFETY: tests using this are `#[serial]`.
+        unsafe {
+            if let Some(v) = prev_asset {
+                std::env::set_var(ENV_ASSET_BASE_URL, v);
+            }
+            if let Some(v) = prev_manifest {
+                std::env::set_var(ENV_BUNDLE_MANIFEST, v);
+            }
         }
     }
 }

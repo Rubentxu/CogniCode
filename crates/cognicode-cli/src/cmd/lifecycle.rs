@@ -790,12 +790,11 @@ components:
         let version = env!("CARGO_PKG_VERSION");
         let release =
             crate::release_test_support::local_release(version).expect("stage a local release");
-        crate::release_test_support::point_at(&release);
+        // AssetPoint (RAII) replaces point_at(&release) + unpoint().
+        let _point = crate::release_test_support::AssetPoint::new(&release);
 
         let home = CognicodeHome::resolve(None).unwrap();
         let result = install::run_install(&home, "core");
-
-        crate::release_test_support::unpoint();
 
         let manifest_path = result.expect("install from a generated local release must succeed");
         assert!(manifest_path.exists(), "install manifest missing");
