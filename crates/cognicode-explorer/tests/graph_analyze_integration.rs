@@ -1016,3 +1016,179 @@ fn subgraph_schema_requires_root() {
         );
     }
 }
+
+// ============================================================================
+// W6 (e91) — regression tests pinning the metadata enrichment contract.
+//
+// After W6 every analytics handler in graph_analyze.rs MUST emit a
+// payload with at least these top-level keys:
+//   * "algorithm"    — string, name of the algorithm used
+//   * "parameters"   — object, effective parameters applied
+//   * "subgraph"     — object with root, direction, depth, node_count,
+//                      edge_count describing the subgraph over which
+//                      the algorithm ran
+//   * the original result field (scores / nodes / edges / paths /
+//     communities) — unchanged shape
+//
+// These tests pin ONLY the metadata contract (not the algorithm
+// correctness). They are deliberately tolerant: we assert the
+// fields are PRESENT and the algorithm name is one of the known
+// labels, but we do NOT assert parameter values (those are
+// call-site dependent and algorithm correctness is covered by
+// other tests in this file).
+//
+// Anti-regression: a future commit that strips the metadata
+// would fail every one of these tests. Refactors that move the
+// fields to a nested `meta` object must update the assertion
+// accordingly and the next test run will catch it.
+async fn assert_w6_metadata_envelope(
+    tool_name: &'static str,
+    raw: rmcp::model::CallToolResult,
+    expected_algorithm: &str,
+) {
+    // `format!("{raw:?}")` produces Rust Debug output, where every
+    // interior `"` is escaped as `\"`. Pattern-match on that
+    // escaped form throughout.
+    let json_text = format!("{raw:?}");
+
+    let algorithm_key = "\\\"algorithm\\\"".to_string();
+    let algorithm_value = format!("\\\"{expected_algorithm}\\\"");
+
+    assert!(
+        json_text.contains(&algorithm_key),
+        "{tool_name}: response must contain `algorithm` field after W6: {json_text}"
+    );
+    assert!(
+        json_text.contains(&algorithm_value),
+        "{tool_name}: algorithm must be \"{expected_algorithm}\"; got: {json_text}"
+    );
+    assert!(
+        json_text.contains("\\\"parameters\\\""),
+        "{tool_name}: response must contain `parameters` field after W6: {json_text}"
+    );
+    assert!(
+        json_text.contains("\\\"subgraph\\\""),
+        "{tool_name}: response must contain `subgraph` field after W6: {json_text}"
+    );
+    assert!(
+        json_text.contains("node_count"),
+        "{tool_name}: subgraph must echo node_count: {json_text}"
+    );
+    assert!(
+        json_text.contains("edge_count"),
+        "{tool_name}: subgraph must echo edge_count: {json_text}"
+    );
+}
+
+#[tokio::test]
+async fn w6_graph_pagerank_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_PAGERANK,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(TOOL_GRAPH_PAGERANK, raw, "page_rank").await;
+}
+
+#[tokio::test]
+async fn w6_graph_god_nodes_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_GOD_NODES,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(TOOL_GRAPH_GOD_NODES, raw, "god_nodes").await;
+}
+
+#[tokio::test]
+async fn w6_graph_community_god_nodes_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_COMMUNITY_GOD_NODES,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(
+        TOOL_GRAPH_COMMUNITY_GOD_NODES,
+        raw,
+        "label_propagation_with_god_nodes",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn w6_graph_surprising_connections_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_SURPRISING_CONNECTIONS,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(
+        TOOL_GRAPH_SURPRISING_CONNECTIONS,
+        raw,
+        "label_propagation_then_surprising_connections",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn w6_graph_transitive_reduction_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_TRANSITIVE_REDUCTION,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(TOOL_GRAPH_TRANSITIVE_REDUCTION, raw, "transitive_reduction").await;
+}
+
+#[tokio::test]
+async fn w6_graph_feedback_arc_set_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_FEEDBACK_ARC_SET,
+            &ctx,
+            json!({ "subgraph": { "root": "chain.rs:a:1", "depth": 3 } }),
+        )
+        .await;
+    assert_w6_metadata_envelope(TOOL_GRAPH_FEEDBACK_ARC_SET, raw, "feedback_arc_set").await;
+}
+
+#[tokio::test]
+async fn w6_graph_all_simple_paths_payload_has_metadata() {
+    let ctx = ctx_with_graph(build_chain_fixture());
+    let registry = build_registry();
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_ALL_SIMPLE_PATHS,
+            &ctx,
+            json!({
+                "subgraph": { "root": "chain.rs:a:1", "depth": 3 },
+                "from": "chain.rs:a:1",
+                "to": "chain.rs:e:1",
+                "max_hops": 5
+            }),
+        )
+        .await;
+    assert_w6_metadata_envelope(TOOL_GRAPH_ALL_SIMPLE_PATHS, raw, "all_simple_paths_dfs").await;
+}

@@ -291,7 +291,30 @@ impl ToolHandler for GraphPagerankHandler {
             .into_iter()
             .map(|(k, v)| (k.as_str().to_string(), v))
             .collect();
-        let payload = serde_json::json!({ "scores": scores_str });
+        // W6 (e91): surface the algorithm identity, parameters, and
+        // the subgraph dimensions so MCP clients can interpret the
+        // scores without consulting external docs. Before this
+        // commit the payload was `{scores: {...}}` only — clients
+        // had no way to know which algorithm produced these numbers
+        // or over which subgraph. The `iterations_used`/`converged`
+        // fields from the W1 proposal are intentionally absent here:
+        // the algorithm API returns HashMap only, and threading
+        // convergence metadata would require touching the WASM-bound
+        // `cognicode-graph-algos::page_rank` signature (scope creep).
+        // Recorded as a backog item; see openspec/.../proposal.md
+        // Addendum 2026-09-26 (c) entry on W3 deprioritisation.
+        let payload = serde_json::json!({
+            "algorithm": "page_rank",
+            "parameters": { "alpha": alpha, "max_iterations": max_iter },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "scores": scores_str,
+        });
         ok_envelope(TOOL_GRAPH_PAGERANK, &payload)
     }
 }
@@ -374,7 +397,24 @@ impl ToolHandler for GraphGodNodesHandler {
                 })
             })
             .collect();
-        let payload = serde_json::json!({ "nodes": nodes });
+        // W6 (e91): same enrichment as graph_pagerank — surface
+        // algorithm + parameters + subgraph dims. god_nodes is a
+        // filter on top of PageRank scores, so the parameter set
+        // here is just the percentile threshold, but the underlying
+        // PageRank metadata is intentionally omitted (see comment
+        // on graph_pagerank above for why).
+        let payload = serde_json::json!({
+            "algorithm": "god_nodes",
+            "parameters": { "percentile": percentile },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "nodes": nodes,
+        });
         ok_envelope(TOOL_GRAPH_GOD_NODES, &payload)
     }
 }
@@ -572,7 +612,21 @@ impl ToolHandler for GraphCommunityGodNodesHandler {
                     .collect::<Vec<_>>()
             })
             .collect();
-        let payload = serde_json::json!({ "nodes": nodes });
+        let payload = serde_json::json!({
+            "algorithm": "label_propagation_with_god_nodes",
+            "parameters": {
+                "max_iterations": CommunityDetector::MAX_ITERATIONS,
+                "percentile": percentile,
+            },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "nodes": nodes,
+        });
         ok_envelope(TOOL_GRAPH_COMMUNITY_GOD_NODES, &payload)
     }
 }
@@ -663,7 +717,28 @@ impl ToolHandler for GraphSurprisingConnectionsHandler {
                 })
             })
             .collect();
-        let payload = serde_json::json!({ "edges": edges });
+        // W6 (e91): same enrichment as siblings. surprising_connections
+        // additionally depends on Label Propagation communities — the
+        // meta-layer here reports that two algorithms ran; the per-
+        // algorithm iteration counts are still absent (see W3
+        // deprioritisation). `communities_threshold` is a placeholder
+        // for the future score-based ranking filter (not yet exposed
+        // via MCP args).
+        let payload = serde_json::json!({
+            "algorithm": "label_propagation_then_surprising_connections",
+            "parameters": {
+                "lp_max_iterations": CommunityDetector::MAX_ITERATIONS,
+                "limit": limit,
+            },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "edges": edges,
+        });
         ok_envelope(TOOL_GRAPH_SURPRISING_CONNECTIONS, &payload)
     }
 }
@@ -748,7 +823,19 @@ impl ToolHandler for GraphTransitiveReductionHandler {
                 })
             })
             .collect();
-        let payload = serde_json::json!({ "edges": edges });
+        // W6 (e91): same enrichment as siblings.
+        let payload = serde_json::json!({
+            "algorithm": "transitive_reduction",
+            "parameters": {},
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "edges": edges,
+        });
         ok_envelope(TOOL_GRAPH_TRANSITIVE_REDUCTION, &payload)
     }
 }
@@ -833,7 +920,19 @@ impl ToolHandler for GraphFeedbackArcSetHandler {
                 })
             })
             .collect();
-        let payload = serde_json::json!({ "edges": edges });
+        // W6 (e91): same enrichment as siblings.
+        let payload = serde_json::json!({
+            "algorithm": "feedback_arc_set",
+            "parameters": { "heuristic": "eades_lin_smyth" },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "edges": edges,
+        });
         ok_envelope(TOOL_GRAPH_FEEDBACK_ARC_SET, &payload)
     }
 }
@@ -933,10 +1032,13 @@ impl ToolHandler for GraphAllSimplePathsHandler {
         }
 
         let sub_cg = build_subgraph_callgraph(g, &view);
+        // `from`/`to` are passed by reference so we can echo them
+        // back in the W6 metadata payload below (W6 added in e91.W6
+        // closure commit).
         let paths = GraphAnalyticsService::all_simple_paths(
             &sub_cg,
-            &SymbolId::new(from),
-            &SymbolId::new(to),
+            &SymbolId::new(&from),
+            &SymbolId::new(&to),
             max_hops,
         );
 
@@ -944,7 +1046,25 @@ impl ToolHandler for GraphAllSimplePathsHandler {
             .into_iter()
             .map(|p| p.into_iter().map(|s| s.as_str().to_string()).collect())
             .collect();
-        let payload = serde_json::json!({ "paths": paths_str });
+        // W6 (e91): same enrichment as siblings. `from` and `to` are
+        // echoed back so the client can verify the bounded query
+        // without re-encoding the original request.
+        let payload = serde_json::json!({
+            "algorithm": "all_simple_paths_dfs",
+            "parameters": {
+                "from": from,
+                "to": to,
+                "max_hops": max_hops,
+            },
+            "subgraph": {
+                "root": root,
+                "direction": format!("{:?}", direction).to_lowercase(),
+                "depth": depth,
+                "node_count": view.nodes.len(),
+                "edge_count": view.edges.len(),
+            },
+            "paths": paths_str,
+        });
         ok_envelope(TOOL_GRAPH_ALL_SIMPLE_PATHS, &payload)
     }
 }
