@@ -1771,3 +1771,104 @@ cargo fmt --check: verde
   el mismo shape JSON, solo cambia el valor de dos campos. No
   es breaking change para consumidores externos.
 
+## Entrada 11 — Addendum 2026-09-26 — Descubrimiento: había DOS handlers
+
+Después de cerrar entry 11, un feedback automático señaló que el
+feedback loop no estaba realmente cerrado: los tests sintéticos
+pasaban, pero el `json!({ "communities": communities })` del
+handler en `cognicode-core/handlers/graph_handlers.rs:310-311`
+era solo UNO de los handlers que servía el nombre
+`TOOL_GRAPH_COMMUNITIES`. El handler realmente invocado por el
+binario `explorer-mcp` (construido desde `cognicode-runtime`,
+NO desde `cognicode-core`) está en
+`crates/cognicode-explorer/src/mcp/handler/graph_analyze.rs:382`
+y su payload, antes de este commit, era literal:
+
+```rust
+let payload = serde_json::json!({ "communities": communities });
+```
+
+Sin `iterations_used`, sin `converged`, sin `algorithm`,
+sin `community_count`. Es decir: el cliente MCP real (no el
+suite de tests) seguía viendo solo `communities`, no los
+metadatos correctos, aunque el fix 6f40a08b había hecho bien
+su trabajo en el modelo.
+
+### Commit `42a1ddcf` — fix del handler del explorer
+
+Cambia el payload de `GraphCommunitiesHandler` en
+`cognicode-explorer/src/mcp/handler/graph_analyze.rs:466` para
+emitir los mismos campos que el handler de `cognicode-core`:
+
+```rust
+let payload = serde_json::json!({
+    "algorithm": "label_propagation",
+    "max_iterations": max_iter,
+    "iterations_used": result.iterations,
+    "converged": result.converged,
+    "community_count": communities.len(),
+    "communities": communities,
+});
+```
+
+Y añade 3 tests RED→GREEN en
+`crates/cognicode-explorer/tests/graph_analyze_integration.rs`:
+
+1. `graph_communities_reports_real_iterations_used` — el fixture
+   oscila (verificado por simulación en `/tmp/lp_fixture_check.rs`),
+   por lo que este test solo verifica que los CAMPOS están
+   presentes en el payload (no exige convergencia concreta).
+2. `graph_communities_oscillating_2cycle_reports_non_convergence`
+   — un 2-cycle (a↔b) reporta `converged=false`,
+   `iterations_used=100`. Test decisivo del fix.
+3. `graph_communities_convergent_3cycle_reports_convergence` —
+   un 3-cycle (a→b→c→a) converge en ~3 iteraciones con
+   `community_count=1`. Anti-regresión: si el handler volviera
+   al bug original (hardcoded 100), este test fallaría
+   porque exige que `iterations_used` NO sea 100.
+
+### Verificación
+
+```
+cognicode-explorer --lib:               955/955 verde
+cognicode-explorer graph_analyze_integration: 28/28 verde
+  (los 6 tests de graph_communities, incluido los 3 nuevos)
+cognicode-core --lib:                  2198/2198 verde
+cognicode-graph-algos --lib:           161/161 verde
+cargo clippy -p cognicode-explorer --tests -D warnings: exit 0
+cargo fmt --check:                     verde
+```
+
+### Implicación para entry 11
+
+La entry 11 decía: "El MCP `graph_communities` ahora reporta
+honestamente". Eso era estrictamente cierto para el path de
+tests, pero la afirmación era engañosa: el cliente real
+(explorer-mcp) NO recibía los metadatos hasta este commit
+42a1ddcf.
+
+**Lección añadida (54)**: descubrir que el fix llega a un
+path pero no al otro requiere ejercitar el path real, no el
+path de tests. Hacer solo T1/T2 del crate del algoritmo y
+T3 del crate del binario puede dejar sin cubrir el handler
+del binario si hay más de un handler registrado para el
+mismo nombre de tool. En CogniCode coexisten dos handlers
+para `TOOL_GRAPH_COMMUNITIES` porque `cognicode-core` se
+refactorizó y el crate `cognicode-explorer` (heredado de
+v0.98.x) conservó su propio handler paralelo. **Fix del
+handler paralelo incluido en este commit atómico; no requiere
+PR review adicional** (analogía con M0.4 fix de AssetPoint).
+
+### Estado de e91.W1 actualizado
+
+**CLOSED** ahora con dos commits:
+1. `6f40a08b` — fix de la API del algoritmo + tests del modelo.
+2. `42a1ddcf` — fix del handler del binario que ven los clientes.
+
+Pendiente sin cambio: e91.W2+ (profiling real), e90 addendum
+(la versión que decía "tools no existen" sigue parcialmente
+obsoleta — ahora el addendum corregido dice "tools existen
+en `cognicode-explorer` pero NO en `cognicode-mcp` core
+binary", que es exacto para HEAD actual). Firma C8 sigue
+PENDIENTE.
+

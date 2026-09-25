@@ -52,6 +52,41 @@ not to a hypothetical v1.0.0-rc. The e91 work remains valid; the
 fix path is the same (algorithmic optimization on the same hot
 paths identified below).
 
+## Addendum 2026-09-26 (b) — Second commit ships the fix to the real MCP path
+
+Commit `6f40a08b` fixed the algorithm API (`CommunitiesMeta`) and
+propagated it into `CommunityResult`, but only ONE of the two
+MCP handlers for `TOOL_GRAPH_COMMUNITIES` was emitting the new
+fields. The handler described in the addendum above
+(`cognicode-core/src/interface/mcp/handlers/graph_handlers.rs:310-311`)
+is registered through `cognicode-core`'s own tool registry; the
+bin produced by `cognicode-runtime` (the `explorer-mcp` binary,
+which is what end-users actually run) registers a parallel
+handler in
+`crates/cognicode-explorer/src/mcp/handler/graph_analyze.rs:382`
+that emitted only `{"communities": [...]}`, dropping the new
+metadata before it reached MCP clients.
+
+Commit `42a1ddcf` corrects the parallel handler to emit
+`algorithm`, `max_iterations`, `iterations_used`, `converged`,
+`community_count` alongside `communities`, so both MCP paths
+now expose the honest execution state. Three new integration
+tests in `crates/cognicode-explorer/tests/graph_analyze_integration.rs`
+pin the contract:
+
+  * `graph_communities_reports_real_iterations_used`
+  * `graph_communities_oscillating_2cycle_reports_non_convergence`
+  * `graph_communities_convergent_3cycle_reports_convergence`
+
+All six `graph_communities` tests now pass (28/28 in the
+`graph_analyze_integration` suite). See JOURNAL §11 Addendum
+2026-09-26 for the discovery narrative and lesson (54).
+
+With both commits in place, W1 (honest metadata) is fully
+closed at the user-visible level. W2+ (profiling real
+fixtures + algorithmic optimization) remain open per the
+original WU2..WU5 plans below.
+
 ## Problem
 
 The v1.0.0 scorecard G5 ("Latency Budget by Tool Family") is RED:
