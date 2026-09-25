@@ -1044,3 +1044,112 @@ El bump SemVer 0.98.1 → 0.99.0 (commit `d4a2e33e`, "L5 F0.* release") introduj
 29. **Los `#[serial]` tests que mutan env global sin RAII son bombas de tiempo.** El bug llevaba meses latente; el SemVer bump no lo creó, lo destapó porque cambió el orden de los tests o el patrón de acceso al env. Cualquier test que llame `std::env::set_var` en un `#[serial]` debe tener un Drop que restaure — el patrón `let _point = AssetPoint::new(&release)` es explícito y verificable por inspección.
 30. **El modo paralelo del test runner es el detector real de state pollution entre #[serial] tests.** Correr `--test-threads=1` (sequential) enmascara races que `--test-threads=N` (default) expone. Diagnóstico correcto: reproducir con el modo que falla, no con el que "parece" funcionar.
 31. **No añadir `#[serial]` retroactivamente sin revisar los call sites.** En este caso el test ya usaba `TempBaseUrl` (que requiere serial), así que añadir el atributo era seguro. En general: si un test usa un guard con `#[serial]` en su doc-comment, no compilar ni ejecutar sin el atributo es un foot-gun esperando.
+
+---
+
+## Entrada 6 — 2026-09-25 (E2.W1: wire_canonical_control_query — primer consumer real CP1)
+
+### Contexto
+
+El `ArchitectureRegistry` en `cognicode-core` llevaba meses como
+infraestructura huérfana: la admission service, el evaluator y el
+`ControlQueryService` existían y estaban cubiertos por tests (incluido
+el self-host E2E que ya verificaba zero drift en cognicode-core), pero
+el binario nunca arrancaba con `control_query` wireado. El endpoint
+`GET /control-plane/workspaces/:workspace_id/architecture` siempre
+devolvía `status: "incomplete"` con `reason: control_query_service_not_wired`.
+
+### Hechos
+
+- **Identificación del consumer**: el endpoint CP1.0 WU4
+  (`control_plane_architecture` en `cognicode-explorer/src/api.rs:1257`)
+  ya está implementado y operativo, pero espera un `ControlQueryService`
+  con constraints admitidas. Los tests C1–C6 mockean ese wiring
+  localmente con `admitted_registry("arch.no_infra_in_domain")` (línea
+  345 de `cp1_control_plane_endpoint.rs`), así que el consumer real es
+  la propia API CP1, no un cliente externo.
+- **Fuente de datos**: el self-host E2E
+  (`crates/cognicode-core/tests/architecture_self_host_e2e.rs`) ya
+  tiene 60 líneas con los 3 `canonical_constraints()` y el
+  `promoted_admitter()` inlined. E2.W1 los extrae a un módulo
+  compartido para que producción y tests lean el mismo dato.
+- **Diseño** (commit `14cf3d1b`):
+  - Nuevo módulo
+    `crates/cognicode-core/src/application/architecture/canonical_constraints.rs`
+    con dos funciones públicas: `canonical_constraints() ->
+    Vec<ConstraintCandidate>` y `canonical_promoted_admitter() ->
+    Admitter`. 1 inline test pin id list y rol promoted.
+  - Re-exports en `mod.rs` (líneas 13 y 23).
+  - Nuevo wiring helper
+    `pub fn wire_canonical_control_query() -> ControlQueryService`
+    en `control_query.rs:239`. Admite los 3 constraints con el canonical
+    promoted admitter y `SystemArchitectureClock`. **Pánico loud** en
+    admission rejection (fail-closed at boot, no silencioso).
+  - Self-host E2E migrado a usar el módulo compartido (neto -55 LOC).
+  - Nuevo integration test `e2_w1_canonical_control_query.rs` (3 tests):
+    admits-three-constraints, self-host-zero-drift (production
+    equivalent of the E2E), synthetic-drift-detection.
+  - Test `c7_real_wiring_uses_canonical_constraints` añadido a
+    `cp1_control_plane_endpoint.rs` (líneas 566-643): usa el helper
+    real (no mock) y prueba que el endpoint responde `evaluated` con
+    las 3 constraints canónicas cuando el wiring es real, y que
+    detecta el synthetic drift como 1 violación.
+
+### Decisiones técnicas
+
+- **Helper adyacente al consumer**: `wire_canonical_control_query()`
+  vive en `control_query.rs` (donde está `ControlQueryService`), no
+  en `canonical_constraints.rs`. Razón: el módulo de datos describe
+  *qué* se admite; el wiring describe *cómo* se construye el
+  `ControlQueryService` que los consume. Separarlos permite que un
+  test o un binario futuro construya su propio admitter (humano vs CI)
+  reusando `canonical_constraints()` pero no el wiring.
+- **Pánico en boot vs error retornado**: el helper podría devolver
+  `Result<ControlQueryService, AdmissionError>` y dejar al caller
+  decidir. Se eligió panic porque el caller es el wiring de un
+  binario que arranca — un registry vacío en producción es exactamente
+  el bug que E2.W1 cierra, y silenciar el error restauraría el bug.
+  El `assert!` en línea 252 del wiring es la garantía fail-closed.
+- **Migración del self-host E2E en el mismo commit**: NO en commit
+  separado. Razón: el módulo `canonical_constraints` es código nuevo
+  sin callers antes del E2.W1. Si el commit E2.W1 añadiera el módulo
+  y dejara el test viejo con su `canonical_constraints` local,
+  tendríamos dos fuentes de verdad (mismo problema que E1.W1 con
+  `Evidence`/`KnowledgeEvidence`). El refactor de 1 llamada + 60 LOC
+  borradas cabe en el mismo commit.
+- **`c7` como test, no C8**: el rango C1–C6 está reservado a la
+  semántica de los mocks (fail-closed, evaluated, violations,
+  read-only, path-safety). C7 es semánticamente distinto: prueba
+  que **el wiring de producción** es funcionalmente equivalente.
+  Mezclarlo con C1–C6 diluiría el contrato de la serie.
+
+### Métricas
+
+- 1 commit: `14cf3d1b`.
+- 463 insertions, 51 deletions.
+- 2 archivos nuevos (`canonical_constraints.rs`, `e2_w1_canonical_control_query.rs`).
+- 4 archivos modificados (`control_query.rs`, `mod.rs`,
+  `architecture_self_host_e2e.rs`, `cp1_control_plane_endpoint.rs`).
+- 7 tests CP1 verde (C1–C7), 3 tests E2.W1 verde, 3 tests self-host
+  E2E verde, 1 inline test canonical_constraints verde.
+
+### Estado
+
+- E2: PENDING → IN_PROGRESS (E2.W1 cerrado).
+- E2.W2 (pendiente): wirear `wire_canonical_control_query()` en el
+  binario que arranca `ApiState` (probablemente un nuevo server bin o
+  integración con `cognicode-mcp`). Hasta que eso pase, el helper es
+  accesible vía lib pero no se ejecuta en producción. **Esto es
+  intencional** — el alcance de E2.W1 es cerrar el registry vacío en
+  el módulo; el wiring a un binario es E2.W2 con su propio ADR.
+
+### Pendiente
+
+- E2.W2: wiring binario (server MCP / standalone).
+- E3: NOT_TRIGGERED.
+
+### Lecciones añadidas (a las 31 anteriores)
+
+32. **Una infra completa sin caller real es exactamente la situación que un ROADMAP `PENDING` no detecta.** El `ArchitectureRegistry` tenía tests E2E pasando, doc-comments, ADR de ownership map, fail-closed contract — pero el binario que la consume nunca se construyó. La señal correcta es: `grep -rn "wire_canonical_control_query\|ControlQueryService::new" crates/` y verificar que el caller es **producción**, no solo tests. Antes de E2.W1 ese grep hubiera mostrado solo tests; ahora muestra el helper también.
+33. **Fail-closed en boot (panic) vs fail-closed en query (Incomplete): opciones distintas para problemas distintos.** El endpoint CP1 ya tiene fail-closed en query (`status: incomplete` cuando no hay wiring). El wiring helper debe ser fail-closed en boot (panic si admission falla) porque si el caller decide silenciar el error, vuelve el bug que cerramos. La regla es: la frontera donde el bug "registry vacío" se manifiesta es el wiring; silenciarla es exactamente reintroducir el bug.
+34. **Extraer datos compartidos en el mismo commit que introduce el módulo.** El refactor del self-host E2E para usar `canonical_constraints()` se incluyó en `14cf3d1b`, no en un commit posterior. Si se hubiera hecho después, durante el intervalo el test E2E leería de su copia local inlined y el módulo nuevo estaría sin callers — exactamente el patrón que la regla §32 ataca.
