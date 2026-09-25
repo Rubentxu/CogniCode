@@ -95,9 +95,7 @@ fn remove_canonical_sboms(target: &str) {
     // Clean any leftover _bin.cdx.json from prior runs.
     let _ = Command::new("bash")
         .arg("-c")
-        .arg(format!(
-            "rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true"
-        ))
+        .arg("rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true")
         .output();
 }
 

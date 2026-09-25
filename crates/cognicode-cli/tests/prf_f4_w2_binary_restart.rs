@@ -91,7 +91,7 @@ fn run_cognicode(args: &[&str], cwd: &Path) -> String {
 #[test]
 fn prf_f4_w2_index_query_bit_a_bit_equal_across_restarts() {
     let corpus = make_corpus("query");
-    let query_sym = format!("unique_query_alpha");
+    let query_sym = "unique_query_alpha".to_string();
 
     // Cold invocation
     let out_a = run_cognicode(

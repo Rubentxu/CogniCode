@@ -84,19 +84,19 @@ fn upload_names_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
     let mut in_target_upload = false;
     for line in text.lines() {
         let leading = line.len() - line.trim_start().len();
+        let bare = line.trim();
         // Job declarations are two-space-indented identifiers ending with ':'.
-        if leading == 2 {
-            let bare = line.trim();
-            if let Some(name) = bare.strip_suffix(':') {
-                if !name.contains(' ') && !name.starts_with('#') {
-                    current_job = Some(name.to_string());
-                }
-            }
+        if leading == 2
+            && let Some(name) = bare.strip_suffix(':')
+            && !name.contains(' ')
+            && !name.starts_with('#')
+        {
+            current_job = Some(name.to_string());
         }
         let trimmed = line.trim_start();
         let job_match = target_job
             .as_ref()
-            .map_or(true, |t| current_job.as_deref() == Some(t.as_str()));
+            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
 
         if trimmed.starts_with("uses: actions/upload-artifact") && job_match {
             in_target_upload = true;
@@ -143,18 +143,18 @@ fn download_patterns_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
     let mut in_target_download = false;
     for line in text.lines() {
         let leading = line.len() - line.trim_start().len();
-        if leading == 2 {
-            let bare = line.trim();
-            if let Some(name) = bare.strip_suffix(':') {
-                if !name.contains(' ') && !name.starts_with('#') {
-                    current_job = Some(name.to_string());
-                }
-            }
+        let bare = line.trim();
+        if leading == 2
+            && let Some(name) = bare.strip_suffix(':')
+            && !name.contains(' ')
+            && !name.starts_with('#')
+        {
+            current_job = Some(name.to_string());
         }
         let trimmed = line.trim_start();
         let job_match = target_job
             .as_ref()
-            .map_or(true, |t| current_job.as_deref() == Some(t.as_str()));
+            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
 
         if trimmed.starts_with("uses: actions/download-artifact") && job_match {
             in_target_download = true;

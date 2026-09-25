@@ -905,18 +905,18 @@ pub fn cmd_rollback(
     // Note: a no-op rollback (`--to <current>`) returns earlier and
     // never reaches this code path; we only attempt reshim when an
     // actual transition was performed.
-    if let Some(prev) = &envelope.previous_tracker {
-        if let Err(e) = cmd_reshim(home) {
-            return Err(anyhow!(
-                "rollback partially applied: tracker restored to {} but shim resurrection \
-                 failed ({}); the journal at {} has been PRESERVED so the rollback can be \
-                 retried with `cogh rollback --to {}`",
-                prev,
-                e,
-                path.display(),
-                prev,
-            ));
-        }
+    if let Some(prev) = &envelope.previous_tracker
+        && let Err(e) = cmd_reshim(home)
+    {
+        return Err(anyhow!(
+            "rollback partially applied: tracker restored to {} but shim resurrection \
+             failed ({}); the journal at {} has been PRESERVED so the rollback can be \
+             retried with `cogh rollback --to {}`",
+            prev,
+            e,
+            path.display(),
+            prev,
+        ));
     }
 
     // WU2 retention: a successful rollback consumes the capability. The
@@ -4178,11 +4178,11 @@ components:
         } else if let Ok(rd) = std::fs::read_dir(&version_root_b) {
             for entry in rd.flatten() {
                 let p = entry.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("yaml") {
-                    if let Ok(t) = std::fs::read_to_string(&p) {
-                        manifest_text = t;
-                        break;
-                    }
+                if p.extension().and_then(|s| s.to_str()) == Some("yaml")
+                    && let Ok(t) = std::fs::read_to_string(&p)
+                {
+                    manifest_text = t;
+                    break;
                 }
             }
         }
@@ -4696,7 +4696,7 @@ components:
         // 7. The tracker WAS partially restored (rollback is not all-or-nothing
         //    on the coordinate level, but its RETURN value is Err so callers
         //    can react). Pin the tracker's content as part of the contract.
-        let tracker_content = std::fs::read_to_string(&home.tracker_version())
+        let tracker_content = std::fs::read_to_string(home.tracker_version())
             .expect("read tracker after failed rollback");
         assert_eq!(
             tracker_content.trim(),
@@ -4723,7 +4723,7 @@ components:
         //    would be much worse.
         let cogh_shim = home.shim_path("cognicode");
         assert!(
-            !cogh_shim.symlink_metadata().is_ok(),
+            cogh_shim.symlink_metadata().is_err(),
             "F6.W3.bis negative: shim MUST NOT exist after failed rollback \
              (reversal removed B, reshim failed to recreate A); a wrong shim \
              here would be a much worse bug than a missing one. Got shim at: {}",
@@ -4795,7 +4795,7 @@ components:
 
         // 10. Final state is coherent.
         assert_eq!(
-            std::fs::read_to_string(&home.tracker_version())
+            std::fs::read_to_string(home.tracker_version())
                 .expect("read tracker post-recovery")
                 .trim(),
             F6W3_VERSION_A,

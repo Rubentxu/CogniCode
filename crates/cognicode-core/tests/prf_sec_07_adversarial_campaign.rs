@@ -8,7 +8,7 @@
 //! 3. Parser fallido        → `binary_garbage_reports_parser_failure`
 //! 4. Secreto señuelo       → `decoy_secret_in_comments_not_leaked`
 //! 5. Herramienta mutante   → `mutating_tool_authority_propagated` +
-//!                            `unknown_tool_name_defaults_to_not_mutating`
+//!    `unknown_tool_name_defaults_to_not_mutating`
 //! 6. Cliente desconectado  → `disconnected_client_releases_resources`
 //! 7. Datos corruptos       → `corrupt_cache_file_is_rejected_not_partial`
 //!
