@@ -39,6 +39,7 @@ Estos principios ya están en `AGENTS.md` y se mantienen **para todo CogniCode**
 | **E2** | Constraint → Evidence → Architecture decision real — cerrar `ArchitectureRegistry` vacío | **CLOSED** (commits `14cf3d1b` E2.W1 + `4138eab7` E2.W2: `canonical_constraints` module + `wire_canonical_control_query` helper + `ControlPlaneState` minimal HTTP state + `cognicode-control-plane` bin + 3 integration tests E2.W2 con TCP real + C7 endpoint test; `ArchitectureRegistry` wireado con 3 constraints, endpoint real responde `status:evaluated` con zero violations en self-host) | 2026-09-25 |
 | **E3** | RPC mínima Post-PRF (lectura, condicionada a un segundo cliente real que requiera proceso separado / concurrencia / reutilización que MCP local no resuelva). | **NOT_TRIGGERED** (2026-09-25; sin segundo consumidor real identificado; no abrir) | No aplicable mientras no aparezca trigger |
 | **F0.1** | `find_usages` CLI wrapper sobre la MCP tool existente. Feature Post-PRF, **NO mantenimiento v0.98.x**. Reasignada desde M0.3.b tras reconciliación L0 (2026-09-25). Consumer proof del contrato E0. | **CLOSED 2026-09-25** (commits `3cb07f90` + `881c0072`; 14 tests + 4 E2E; ADR-PRF-008 architectural review). Pendiente: bump SemVer (F0.* serie, no v0.98.x patch). | 2026-09-25 |
+| **C8** | Certificación Post-PRF GA — cobertura técnica del conjunto de la iniciativa (G0 + M0 + E0 + E1 + E2 + F0.1) sobre SHA congelado con batería completa, clippy limpio, binarios legendados y bin `cognicode-control-plane` arrancable. | **CERRADO TÉCNICAMENTE 2026-09-25** (SHA `3954b8b7` sobre `origin/main`: 5542 / 0 / 45 verde; clippy `-D warnings` exit 0; `cognicode --version` = 0.99.0; `cognicode-control-plane` arranca y responde CP1 con 0 violations en self-host + 404 limpio fuera de scope). **Firma humana del operador: PENDIENTE** (analogía con C7). Ver `docs/roadmap/certifications/C8-POST-PRF-GA.md` con 3 opciones para la decisión final. | 2026-09-25 |
 
 ## 3. Criterios de cierre (modelo)
 
@@ -68,6 +69,7 @@ Cada unidad se cierra SOLO si:
 - La deuda de mantenimiento (`M0.*`) está gestionada.
 - No quedan `BLOCKED` sin responsable.
 - Estado, journal y roadmap son coherentes.
+- **Certificación de cobertura (modelo `C#`)** firmada: la iniciativa Post-PRF emite la certificación `C8 Post-PRF GA` (ver `docs/roadmap/certifications/C8-POST-PRF-GA.md`), análoga al expediente C7 firmado por el operador el 2026-09-24. El roadmap pasa a `COMPLETED` cuando C8 queda **firmada** (decisión del operador entre las 3 opciones del expediente §7), NO solo cuando su cierre técnico está verificado.
 
 ## 6. Anti-patrones prohibidos
 

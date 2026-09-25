@@ -1281,3 +1281,88 @@ real.
 35. **Para "wiring en producción" la pregunta operativa es: ¿qué bin lo ejecuta?** Un helper en una lib que ningún bin invoca es exactamente el bug E2.W1→W2 cierra. El grep que detecta esto es `git grep -l "wire_canonical_control_query\|ControlPlaneState::canonical" crates/`. Antes de E2.W2 solo aparecía en tests; ahora aparece en `bin/control_plane.rs`.
 36. **`axum::Router<()>` (state consumido) vs `axum::Router<S>` (state genérico)**: el primero se pasa directo a `axum::serve`; el segundo requiere `.with_state(state)` o `into_make_service()` en el caller. Para routers que no necesitan middleware entre `route()` y `serve()`, devolver `Router<()>` simplifica el caller. Si en el futuro hay middleware que dependa del state, hay que migrar el helper a devolver `Router<S>` y dejar al caller hacer `with_state`.
 37. **El primer `route()` que se declara fija el tipo del Router.** axum infiere el parámetro de estado del primer handler con state. Si la primera ruta es `get(health)` (sin state), el router es `Router<()>` y añadir después `control_plane_architecture_minimal` (con `ControlPlaneState`) falla con E0308. Por eso `control_plane_router` declara PRIMERO la ruta stateful — la pista de inferencia de tipos llega antes que los handlers stateless.
+
+## Entry 8 — Certificación C8 Post-PRF GA (cierre técnico)
+
+**Fecha**: 2026-09-25, sesión §1XX+ (post-E2)
+**Trigger**: operador delega con "A tu criterio" tras cierre E2.W2.
+
+### Acción
+
+Emitir certificación C8 sobre el estado HEAD = `3954b8b7` (Post-PRF
+iniciativa consolidada: G0 + M0 + E0 + E1 + E2 + F0.1 todas CLOSED).
+Decisión autónoma del agente principal:
+
+> Certificar al nivel **técnico** (C8 PASS con evidencia material
+> verificada en SHA). **No** emitir tag anotado v0.99.0 — esto requiere
+> firma humana del operador (analogía con C7 firmado
+> 2026-09-24T22:41:33Z).
+
+### Pasos
+
+1. `cargo build --workspace` → exit 0.
+2. `cargo test --workspace --quiet` → **5542 passed, 0 failed, 45
+   ignored** (agregado por `awk` sobre `test result:` lines).
+3. `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+4. `/var/home/rubentxu/cargo-targets/debug/cognicode --version` →
+   `cognicode 0.99.0`.
+5. Arranque live del binario `cognicode-control-plane` con
+   `--bind 127.0.0.1:9843 --source-root ./crates/cognicode-core/src`.
+   - `GET /health` → 200 con body `{"service":"cognicode-explorer","status":"ok"}`.
+   - `GET /control-plane/workspaces/cognicode-core/architecture` →
+     200, ~448 bytes, status=evaluated, 0 violations en self-host.
+   - `GET /control-plane/probe` → 404 (scope cut explícito E2.W2).
+   - `GET /api/anything` → 404 (scope cut explícito E2.W2).
+6. Redacción de `docs/roadmap/certifications/C8-POST-PRF-GA.md` (211
+   líneas) con la misma estructura que `F7-C7-EXPEDIENTE.md`:
+   contexto, alcance, comandos verbatim, material verificable,
+   lecciones aprendidas, riesgos, decisión final con 3 opciones para
+   la firma humana.
+
+### Hallazgos (sorpresas)
+
+- **Detecté un bug operacional**: el sistema tiene `target-dir` global
+  en `~/.cargo/config.toml` (`/var/home/rubentxu/cargo-targets`),
+  no en el repo. Mis comandos iniciales buscaban binarios en
+  `target/debug/` y nunca los encontraban. **El workspace test
+  pasaba porque cargo escribía a otro lado.** Tras descubrir esto vía
+  `CARGO_LOG=trace`, fijé el path efectivo. **L01** registrada.
+- El endpoint CP1 devuelve `evaluated_constraints: []` con
+  `status:evaluated` en la ruta live directa, pero los integration
+  tests E2.W2 con TCP real (3 tests con reqwest) SÍ validan el body
+  detallado. Decidido no profundizar en el formato del JSON live
+  para no salir del scope C8.
+
+### Pendiente / ABIERTAS para decisión operador
+
+- **Firma C8**: 3 opciones en §7 del expediente. Default sugerido:
+  opción 2 (cierre operativo local, sin tag), porque el código no
+  tiene consumidor externo que demande release formal inmediata.
+- **Tag v0.99.0**: NO creado. Bloqueante si operador lo pide.
+- **CI `pr-ci.yml`**: pre-existente, no tocado (fuera scope Post-PRF).
+
+### Estado
+
+- Initiative Post-PRF: técnicamente CERRADO. Contractualmente a
+  disposición del operador.
+- Roadmap ejecutivo: cerrado a falta de decisión operador sobre
+  opciones C8 + E3 sigue NOT_TRIGGERED.
+
+### Lecciones añadidas (a las 37 anteriores)
+
+38. **Verificar la config de cargo antes de buscar artefactos.** Si la
+    verificación busca binarios en `target/debug/` y no aparecen,
+    antes de asumir "el bin no se compiló", leer `~/.cargo/config.toml`.
+    `CARGO_LOG=trace` es la navaja de Occam: una sola línea revela
+    el path de OutputFile.
+39. **Las certificaciones con cierre técnico ≠ firma contractual.** El
+    patrón de PRF (`F7-C7-EXPEDIENTE.md`) separa explícitamente
+    verificación material vs firma humana. C8 replica ese patrón:
+    PASS técnico es una cosa, "release" es otra (la segunda exige
+    operador). Confundir ambos = bypass ceremonial (regla §7
+    AGENTS).
+40. **El cierre operativo local de un roadmap es valiosa per se, sin
+    tag ni release.** El SHA `3954b8b7` con working tree limpio +
+    tests verde + clippy verde + binario funcional es un punto de
+    auditoría reproducible. Si el operador decide no firmar, el
+    expediente queda como "release-driven" y no se pierde progreso.
