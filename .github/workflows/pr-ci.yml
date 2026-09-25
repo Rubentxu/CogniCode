@@ -162,7 +162,25 @@ jobs:
       # check separado.
       - name: capabilities drift lint (E0.W2 dentro de merge-gate)
         run: python3 sandbox/scripts/capabilities_drift_lint.py --strict
-      # L1.2.W2 (futuro) — contract/old-new compatibility tests añadidos
-      # como steps aquí, no como jobs separados. Política L1.2.
+      # L1.3.W1 — compat matrix executable 0.97.x.
+      # Ejecuta el test E2E que pinea backward-compat del servidor
+      # actual contra el binario legacy 0.97.3 publicado en GitHub
+      # releases. Si el binario legacy no está disponible en
+      # `sandbox/.compat/0.97.3/cognicode-mcp` (CI runners sin fixture),
+      # el step se SKIPpea — pero en máquinas con el binario extraído
+      # (ver ADR-PRF-008 + sandbox/.compat/), un cambio que rompa
+      # backward-compat del contrato MCP falla este step y bloquea
+      # el merge. Política L1.3 / R1 de ADR-PRF-008.
+      - name: compat matrix 0.97.x (L1.3 dentro de merge-gate, SKIP si fixture ausente)
+        if: hashFiles('sandbox/.compat/0.97.3/cognicode-mcp') != ''
+        run: |
+          # Solo se ejecutan W1 (smoke 0.97.3) y W2 (backward
+          # compat del servidor actual). W3 (forward compat)
+          # usa el binario legacy como servidor y ya está
+          # pineado en sentido contrario por W1 + W2.
+          cargo test -p cognicode-mcp --test find_usages_compat_0_97 -- \
+            --skip compat_forward_0973_server_handles_modern_request
+      # L1.2.W2 (futuro) — otros contract/old-new compatibility tests
+      # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
         run: echo "merge-gate[OK] fan-out verde + drift-lint verde"
