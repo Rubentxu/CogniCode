@@ -641,3 +641,145 @@ async fn c7_real_wiring_uses_canonical_constraints() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_dir_all(&dir2);
 }
+
+// ============================================================================
+// E2.W2 — `control_plane_router` boots and serves real HTTP requests
+// ============================================================================
+//
+// The previous CP1 tests use `axum::Router::oneshot`, which exercises
+// the router without binding a port. E2.W2 promotes that to a real
+// TCP listener bound to port 0 (OS-assigned), sends an HTTP request,
+// and asserts on the response status and body. This is the closest
+// we can get to running `cognicode-control-plane` from inside a test
+// without spawning a child process.
+
+use cognicode_explorer::api::{ControlPlaneState, control_plane_router};
+
+/// Bind the control-plane router to a random port and run a single
+/// request against it. Returns the HTTP status and parsed JSON body.
+async fn control_plane_request(
+    state: ControlPlaneState,
+    path: &str,
+) -> (StatusCode, serde_json::Value) {
+    let app = control_plane_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind ephemeral port");
+    let addr = listener.local_addr().expect("local_addr");
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("axum serve");
+    });
+
+    let url = format!("http://{addr}{path}");
+    let resp = reqwest::get(&url).await.expect("http get");
+    let status = resp.status();
+    let body = resp
+        .json::<serde_json::Value>()
+        .await
+        .expect("parse json body");
+
+    server.abort();
+    let _ = server.await;
+    (status, body)
+}
+
+#[tokio::test]
+async fn e2_w2_control_plane_router_serves_real_http_request() {
+    // Empty source root → no source files, but the registry still
+    // carries 3 admitted constraints; the evaluator examines 0
+    // statements and reports `evaluated` (no parse errors).
+    let dir = empty_source_root("e2w2-real");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (status, body) = control_plane_request(
+        state,
+        "/control-plane/workspaces/e2-w2-workspace/architecture",
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "control_plane_router must respond 200 over real TCP; body: {body}"
+    );
+    assert_eq!(body["status"], "evaluated");
+    let constraints = body["constraints"].as_array().unwrap();
+    assert_eq!(
+        constraints.len(),
+        3,
+        "all 3 canonical constraints must be in the response"
+    );
+    assert!(body["violations"].as_array().unwrap().is_empty());
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn e2_w2_control_plane_router_detects_synthetic_drift() {
+    // Source root with a `domain::*` module that imports
+    // `infrastructure::*` → one violation against
+    // `architecture.domain_no_infrastructure`. Same synthetic drift
+    // as `temp_source_root` (used by C4), but exercised over a real
+    // TCP listener rather than `oneshot`.
+    let dir = temp_source_root("e2w2-drift");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let (status, body) = control_plane_request(
+        state,
+        "/control-plane/workspaces/drift-workspace/architecture",
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "evaluated");
+    let violations = body["violations"].as_array().unwrap();
+    assert_eq!(
+        violations.len(),
+        1,
+        "real HTTP listener must detect the synthetic domain→infra drift; body: {body}"
+    );
+    assert_eq!(
+        violations[0]["constraint_id"], "architecture.domain_no_infrastructure",
+        "violation must be attributed to the canonical layer-dependency rule"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn e2_w2_control_plane_router_404_for_non_cp_routes() {
+    // `/api/...` and `/control-plane/probe` are not mounted on the
+    // CP1-only router. A real HTTP request must return 404 with an
+    // empty body — never a panic, never a 500.
+    let dir = empty_source_root("e2w2-404");
+    let state = ControlPlaneState::canonical(dir.clone());
+
+    let app = control_plane_router(state);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let addr = listener.local_addr().expect("local_addr");
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("axum serve");
+    });
+
+    for path in [
+        "/api/workspaces/foo/landing",
+        "/api/workspaces/foo/architecture",
+        "/control-plane/probe",
+        "/totally/unknown",
+    ] {
+        let url = format!("http://{addr}{path}");
+        let resp = reqwest::get(&url).await.expect("http get");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "non-CP route {path} must return 404; got {}",
+            resp.status()
+        );
+    }
+
+    server.abort();
+    let _ = server.await;
+    let _ = std::fs::remove_dir_all(&dir);
+}

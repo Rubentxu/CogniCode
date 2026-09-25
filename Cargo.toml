@@ -168,7 +168,7 @@ prometheus = "0.13"
 mermaid-rs-renderer = { version = "0.2", default-features = false }
 
 # CLI
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.4", features = ["derive", "env"] }
 
 # MCP
 rmcp = { version = "1.7", features = ["server", "transport-io", "client", "transport-child-process", "transport-streamable-http-server", "transport-streamable-http-server-session", "which-command"] }

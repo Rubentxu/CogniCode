@@ -72,6 +72,10 @@ oas3.workspace = true
 hex.workspace = true
 sha2.workspace = true
 
+[[bin]]
+name = "cognicode-control-plane"
+path = "src/bin/control_plane.rs"
+
 [dev-dependencies]
 tokio-test.workspace = true
 async-trait.workspace = true
@@ -79,3 +83,7 @@ tempfile = "3.27"
 tower.workspace = true
 uuid = { version = "1.11", features = ["v4"] }
 regex = "1"
+# E2.W2 integration tests spawn the control-plane router over a real
+# TCP listener and call it via reqwest. `json` is required to parse
+# the response body; default-features=false keeps the dep tree lean.
+reqwest = { workspace = true }

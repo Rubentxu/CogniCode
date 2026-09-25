@@ -1293,6 +1293,124 @@ async fn control_plane_architecture(
     }))
 }
 
+/// Minimal HTTP state for the Control Plane endpoints.
+///
+/// `ApiState` carries the full surface area (workspace, search, view,
+/// persistence, moldql, graph — six services plus optional
+/// investigation, snapshot, analytics). For binaries that only want
+/// to expose the Control Plane read question, building all six
+/// services is ceremony without value — the CP1 endpoint never
+/// touches them.
+///
+/// `ControlPlaneState` is the contract for **CP1-only binaries**:
+/// the binary wires `wire_canonical_control_query()` and a source
+/// root, and serves the same `GET
+/// /control-plane/workspaces/:workspace_id/architecture` route the
+/// full `ApiState` exposes. The fail-closed contract (`status:
+/// "incomplete"` with `reason: control_query_service_not_wired`) does
+/// not apply: this state always carries a wired query service, by
+/// construction. Adding more fields here is **breaking** — each new
+/// CP endpoint must opt in explicitly.
+#[derive(Clone)]
+pub struct ControlPlaneState {
+    pub control_query: Arc<cognicode_core::application::architecture::ControlQueryService>,
+    pub control_source_root: std::path::PathBuf,
+}
+
+impl ControlPlaneState {
+    /// Build a `ControlPlaneState` with the **canonical CogniCode
+    /// architecture constraints** admitted (see E2.W1).
+    ///
+    /// This is the entry point the E2.W2 control-plane server uses
+    /// at boot. `source_root` is the directory whose `.rs` files the
+    /// evaluator will parse; in production this is the workspace
+    /// root (e.g. `/path/to/CogniCode`), in tests it is a tempdir.
+    pub fn canonical(source_root: std::path::PathBuf) -> Self {
+        use cognicode_core::application::architecture::control_query::wire_canonical_control_query;
+        Self {
+            control_query: Arc::new(wire_canonical_control_query()),
+            control_source_root: source_root,
+        }
+    }
+}
+
+/// Handler for `GET /control-plane/workspaces/:workspace_id/architecture`
+/// when wired via [`ControlPlaneState`].
+///
+/// E2.W2 — same contract as the legacy `control_plane_architecture`
+/// (CP1.0 WU4), but without the `ApiState` ceremony. Returns:
+/// * `status: "evaluated"` if the registry has admitted constraints
+///   and the evaluator finishes cleanly;
+/// * `status: "incomplete"` with `reason` if any admitted constraint
+///   errors during evaluation (mirrors [`ControlQueryService::query_architecture`]).
+///
+/// Unlike the legacy handler, this one cannot return
+/// `control_query_service_not_wired`: the state is built without an
+/// `Option<ControlQueryService>`; the wiring is mandatory.
+pub async fn control_plane_architecture_minimal(
+    State(state): State<ControlPlaneState>,
+    Path(workspace_id): Path<String>,
+) -> Json<serde_json::Value> {
+    use cognicode_core::application::architecture::control_query;
+
+    let source = control_query::source_from_source_root(&state.control_source_root);
+    let model = state
+        .control_query
+        .query_architecture(&workspace_id, None, &source);
+    let status = match model.status {
+        control_query::EvaluationStatus::Evaluated => "evaluated",
+        control_query::EvaluationStatus::Incomplete => "incomplete",
+    };
+    Json(serde_json::json!({
+        "workspace_ref": model.workspace_ref,
+        "snapshot_ref": model.snapshot_ref,
+        "status": status,
+        "constraints": model.constraints,
+        "violations": model.violations,
+        "statements_examined": model.statements_examined,
+        "unevaluated_constraints": model.unevaluated_constraints,
+    }))
+}
+
+/// Build a router exposing only Control Plane endpoints, mounted on
+/// top of [`ControlPlaneState`]. The 5 non-CP services are NOT
+/// reachable from this router; calling any other URL returns 404.
+///
+/// `/control-plane/probe` is **not** mounted here because the legacy
+/// `control_plane_probe` handler reads `ApiState.workspace` for
+/// symbol/relation counts, and `ControlPlaneState` does not carry a
+/// workspace service. A CP1-only binary that needs the probe must
+/// mount a separate probe handler against its own state. This is
+/// documented as a deliberate scope cut (E2.W2): the E2.W2 binary
+/// serves the architecture read question only.
+///
+/// The returned router is `axum::Router<()>` (state consumed via
+/// `with_state(state)`), so it can be passed directly to
+/// `axum::serve(listener, router)` without further wrapping. This is
+/// the shape `cognicode-mcp` already uses for its full
+/// `ApiState`-backed router — see `cognicode-mcp/src/server.rs:338`.
+///
+/// Pair with [`ControlPlaneState::canonical`] for the production
+/// server (`crates/cognicode-explorer/src/bin/control_plane.rs`) and
+/// with hand-built state for integration tests.
+pub fn control_plane_router(state: ControlPlaneState) -> axum::Router {
+    use axum::routing::get;
+    // The router state is `ControlPlaneState`; we attach it via
+    // `with_state(state)` so the returned router is `Router<()>`,
+    // ready for `axum::serve`. axum infers the intermediate router
+    // type from the first stateful route, so we lead with
+    // `control_plane_architecture_minimal` (which uses
+    // `ControlPlaneState`); `/health` is stateless and is layered
+    // afterwards.
+    axum::Router::new()
+        .route(
+            "/control-plane/workspaces/:workspace_id/architecture",
+            get(control_plane_architecture_minimal),
+        )
+        .route("/health", get(health))
+        .with_state(state)
+}
+
 /// Handler for `GET /api/workspaces/:workspace_id/landing`.
 ///
 /// Returns a `LandingPayload` with workspace summary, graph nodes/edges,
