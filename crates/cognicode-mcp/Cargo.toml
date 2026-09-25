@@ -65,3 +65,8 @@ subtle.workspace = true
 
 # H4.4: dev-deps for the continuation chain e2e harness.
 sha2.workspace = true
+
+[dev-dependencies]
+# L1.3 compat tests (find_usages_compat_0_97): workspace tempdir para
+# construir fixtures ad-hoc. tempfile ya está en el workspace root.
+tempfile.workspace = true

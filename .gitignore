@@ -190,3 +190,7 @@ uat-guided-v1.0.0-current.html
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
 *.cdx.xml
+
+# Compat matrix binaries (Post-PRF L1.3): binarios legacy para tests
+# de compat (extraídos de releases publicados, no commiteados).
+sandbox/.compat/
