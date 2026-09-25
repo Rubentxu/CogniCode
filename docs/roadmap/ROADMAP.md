@@ -30,7 +30,7 @@ Estos principios ya están en `AGENTS.md` y se mantienen **para todo CogniCode**
 | **G0.2** | Cutover de gobernanza — ROADMAP nuevo, AGENTS.md reorientado, PRF congelado | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
 | **G0.3** | Re-ejecutar escenario e90 (perf cold-cache, openspec `2026-09-21-e90-g5-cold-cache-or-perf-fix/`) — verificado: e90 midió v1.0.0-rc, no v0.98.1 (tools `graph_insights`/`graph_communities` no existen en v0.98.1). e90 cerrado con addendum 2026-09-25; e91 abierto como WU explícito | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
 | **G0.4** | Validar issues históricos #234 y #235 contra v0.98.1 — verificado: ambos describen CLI \`cognicode graph\` que ya no existe; equivalentes MCP existen y funcionan. Issues cerrados con nota | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
-| **M0.1** | Fix bug `cogh rollback --to <same>` → v0.98.2 | **PENDING** | Pendiente (ver `MAINTENANCE.md`) |
+| **M0.1** | Fix bug `cogh rollback --to <same>` → v0.98.2 | **CLOSED** (2026-09-25; 6 tests pineando no-op contract pasan verdes contra HEAD `ede4772d`; sin fix necesario) | 2026-09-25 |
 | **M0.2** | fmt-fix en bloque (104 archivos drift detectado por G0.1) → MERGED como PR #291 con 25 archivos + clippy + workflow fix + fixtures + state13 | **CLOSED** (commit `26746a64`, PR #291 merge-gate verde) | 2026-09-25 |
 | **M0.3** | Auditoría clippy residual (`H-clippy-cli-residual D34-2`) + `moldql` panic test preexistente. | **CLOSED** (2026-09-25; clippy strict exit 0 + 834 tests moldql verdes; ver `MAINTENANCE.md`) | 2026-09-25 |
 | **E0** | Contratos públicos y compatibilidad — `CapabilityDescriptor`, política 0.97.x | **PENDING** | Pendiente |

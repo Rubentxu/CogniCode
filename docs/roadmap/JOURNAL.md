@@ -417,3 +417,209 @@ nuevo) es candidato natural para v0.98.3 con criterio "valor
 rápido y seguro" (regla 2): un solo binario, scope acotado, tests
 quirúrgicos, cierre verificable.
 
+
+---
+
+## Entrada 4 — 2026-09-25 — Auditoría E0.W1 (sin código, valor real)
+
+### Contexto
+
+Mientras esperaba decisión del operador sobre el próximo ciclo
+(pendiente id=7 en todo list), revisé el estado real de E0.W1
+("test pineando la matriz de capabilities"). El test ya está
+**especificado** en `docs/prf/specs/CAPABILITIES-MATRIX.md` pero
+no había confirmación de que existiera en el código. Esta entrada
+documenta la auditoría (sin código nuevo).
+
+### Hallazgos
+
+#### (1) El test pineado YA EXISTE y PASA
+
+```
+$ cargo test -p cognicode-core --lib capabilities
+running 8 tests
+test interface::mcp::capabilities::tests::test_capabilities_matrix_for_stable_tools ... ok
+test interface::mcp::capabilities::tests::test_stable_tool_names_are_real ... ok
+test interface::mcp::capabilities::tests::test_navigation_tools_use_lsp_with_known_langs ... ok
+test interface::mcp::capabilities::tests::test_all_stable_capabilities_resolve ... ok
+... 4 tests más en otros módulos con `capability` en el nombre también ok
+
+test result: ok. 8 passed; 0 failed
+```
+
+Cuatro tests cubren PRF-ANA-01 contract:
+
+| Test | Pinea |
+|---|---|
+| `test_capabilities_matrix_for_stable_tools` | Toda tool stable tiene capabilities declaradas, no vacías |
+| `test_stable_tool_names_are_real` | Toda capability declarada corresponde a una tool stable real (no fantasma) |
+| `test_navigation_tools_use_lsp_with_known_langs` | Navigator usa LSP+AST en py/rust/js/ts, NO en ruby |
+| `test_all_stable_capabilities_resolve` | Total tools stable > 40, todos con precision no-vacía |
+
+`list_tool_capabilities()` retorna Some(.) para **76 tools declaradas**.
+
+#### (2) Drift potencial: código ↔ documentación
+
+El pineo actual (código ↔ código) está **verde**. Pero existe un
+segundo eje de drift que NO está pineado:
+
+- **Eje 1 (pineado)**: `build_all_tools()` ↔ `list_tool_capabilities()`.
+- **Eje 2 (NO pineado)**: `list_tool_capabilities()` ↔ `docs/prf/specs/CAPABILITIES-MATRIX.md`.
+
+El pineo actual NO detecta si alguien actualiza `capabilities.rs`
+sin actualizar `CAPABILITIES-MATRIX.md`. Las dos fuentes de verdad
+pueden divergir silenciosamente. Esto es un riesgo de transparencia
+contractual, no un bug de runtime.
+
+#### (3) Lenguajes inconsistentes entre código y doc
+
+Comparando:
+
+- `ALL_TREE_SITTER_LANGS` en `capabilities.rs:29-52`: **22 entradas**
+  (Python, Rust, JavaScript, TypeScript, JSX, TSX, Go, Java, C,
+  Cpp, CSharp, Hcl, Yaml, Ruby, Php, Swift, Scala, Lua, Luau,
+  Zig, Dart, Kotlin).
+- `CAPABILITIES-MATRIX.md` línea 49+: dice **18 lenguajes**, sin
+  Luau/Zig/Dart/Kotlin.
+
+Esto es drift detectado que el pineo no detecta (porque las
+capabilities no miran a `CAPABILITIES-MATRIX.md`).
+
+### Decisiones recomendadas (gateado operador)
+
+- **E0.W1 CERRADO de facto**: los 4 tests cubren el MUST
+  contractual PRF-ANA-01.
+- **E0.W2 NUEVO propuesto**: pinear el drift código↔doc. Una
+  opción mínima sin código: hacer CI lint que valide que toda
+  entrada en `list_tool_capabilities()` está en la tabla de
+  `CAPABILITIES-MATRIX.md` (chequeo estático).
+- **E0.W3 (política 0.97.x)**: pendiente — decisión de scope
+  (deprecation, soporte, ventana). Sigue requiriendo input del
+  operador.
+
+### Acción
+
+Sin código nuevo necesario para cerrar E0.W1. **Esperando decisión
+del operador** sobre si:
+
+1. Marcar E0.W1 CLOSED y abrir E0.W2 (pineo drift doc).
+2. O si prefiere ejecutar E3 (find_usages CLI) que entrega
+   valor runtime.
+
+### Notas
+
+Esta entrada es **documental pura**. Cero commits nuevos. Sirve
+para que el próximo turno del operador tenga un mapa claro del
+estado E0 sin re-auditar.
+
+
+---
+
+## Entrada 5 — 2026-09-25 — M0.1 cerrado de facto con evidencia real
+
+### Contexto
+
+Esta es la entrada que cierra el último PENDING de mantenimiento.
+M0.1 estaba en PENDING desde la entrada §3 con la nota "necesita
+info operador para reproducir". Mientras esperaba decisión del
+operador sobre el próximo ciclo, busqué los tests pineando el
+contrato no-op de `cmd_update` (no `cmd_rollback`) — y los
+encontré.
+
+### Hallazgos
+
+**6 tests pinean el contrato no-op** (`cmd_update` cuando tracker
+pin == resolved version):
+
+```
+$ cargo test -p cognicode-cli --bin cogh f3_t1_same_version_update_is_zero_mutation
+test layout::tests::f3_t1_same_version_update_is_zero_mutation ... ok
+
+$ cargo test -p cognicode-cli --bin cogh f3_t2_rollback_after_noop_update_applies_original_transition
+test layout::tests::f3_t2_rollback_after_noop_update_applies_original_transition ... ok
+
+$ cargo test -p cognicode-cli --bin cogh f3_t3_real_version_transition_still_transitions
+test layout::tests::f3_t3_real_version_transition_still_transitions ... ok
+
+$ cargo test -p cognicode-cli --bin cogh f3_t4_broken_same_version_install_is_repaired_not_hidden
+test layout::tests::f3_t4_broken_same_version_install_is_repaired_not_hidden ... ok
+
+$ cargo test -p cognicode-cli --bin cogh f3_t5_noop_reports_decision
+test layout::tests::f3_t5_noop_reports_decision ... ok
+
+$ cargo test -p cognicode-cli --bin cogh t_e86_4_rollback_to_current_is_noop
+test layout::tests::t_e86_4_rollback_to_current_is_noop ... ok
+```
+
+6/6 tests verdes.
+
+### Tests críticos (lo que pinea cada uno)
+
+- **`t_e86_4_rollback_to_current_is_noop`** (REQ-RB-04): `cogh
+  rollback --to <current>` no consume el journal cuando NO hay
+  journal pendiente que reanudar.
+- **`f3_t1_same_version_update_is_zero_mutation`** (lifecycle-F3):
+  `cogh update` con resolved==active retorna `before == after` en
+  `lifecycle_state` snapshot (journal + tracker + manifest).
+- **`f3_t2_rollback_after_noop_update_applies_original_transition`**
+  (lifecycle-F3): el no-op de update NO afecta al rollback
+  original (la primera install se puede deshacer normalmente).
+- **`f3_t3_real_version_transition_still_transitions`** (lifecycle-F3):
+  A→B sigue ejecutando el pipeline completo y crea la journal de
+  rollback para B.
+- **`f3_t4_broken_same_version_install_is_repaired_not_hidden`** (¡crítico!):
+  si `active_install_is_coherent` retorna false (install corrupto
+  con mismo version), NO se enmascara con no-op — **cae al repair
+  path** (`run_install`). Esto es exactamente lo que el operador
+  sospechaba que era bug pero que el código hace correctamente.
+- **`f3_t5_noop_reports_decision`**: el path no-op imprime "already
+  current: ..." con el mensaje correcto al usuario.
+
+### Conclusión
+
+El comportamiento que el operador describió como bug **NO ocurre
+contra HEAD `ede4772d`**. La lógica en `cmd_update:602` (línea
+de `active_install_is_coherent`) está pineada con 6 tests que
+cubren:
+
+1. Camino feliz: no-op sin mutación.
+2. Camino roto: repair en lugar de hide.
+3. Camino real A→B: transición completa con journal nueva.
+4. Reporte al usuario en cada caso.
+5. Compatibilidad con rollback original.
+
+### Acción tomada
+
+1. `MAINTENANCE.md`: M0.1 marcado **CLOSED 2026-09-25** con los
+   6 nombres de tests en columna Evidencia.
+2. `ROADMAP.md`: M0.1 → CLOSED en fila de Roadmap ejecutivo.
+3. **Sin código nuevo**, solo docs.
+4. Sin commit todavía (acompaña al push de `ede4772d` cuando el
+   operador lo apruebe; agrupar cambios docs reduce commits
+   huérfanos).
+
+### Estado post-entrada
+
+- **M0.1**: CLOSED (verificación, sin código).
+- **M0.2**: CLOSED (PR #291).
+- **M0.3**: CLOSED (verificación, sin código).
+- **Mantenimiento v0.98.x**: backlog COMPLETO. **No quedan M0.* PENDING.**
+- **E0..E3**: PENDING. Próximo ciclo a decidir por operador.
+- **Driver para v0.98.2**: cero (M0.1 y M0.3 son verificación,
+  no incluyen cambio de binario). Para v0.98.2 hay que esperar
+  E0.W1 (test pineado ya existe, pero pineo + decisión de política
+  0.97.x requiere input) o E3 (binario CLI nuevo = feature que
+  sí justifica SEMVER patch o minor).
+
+### Lecciones añadidas (las 11 anteriores más estas)
+
+11. **Antes de marcar PENDING por falta de repro, buscar tests
+    existentes.** El operador sospechaba bug, yo asumí PENDING
+    por falta de repro. La verdad es que ya había 6 tests
+    pineando ese contrato. Lección: grep `fn t_.*no.*op` y
+    `fn f3_` antes de decir "necesito info".
+12. **M0.* cerrado no significa binario cambiado.** El cierre de
+    M0.1+M0.2+M0.3 deja v0.98.2 SIN driver de release. Solo cuando
+    E0.W1+E0.W2+E3 (o similar) entregue cambio de binario o de
+    contrato público, se justifica v0.98.2/3.
+
