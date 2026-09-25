@@ -27,9 +27,9 @@ Estos principios ya están en `AGENTS.md` y se mantienen **para todo CogniCode**
 | ID | Nombre | Estado a 2026-09-25 | Cierre |
 |---|---|---|---|
 | **G0.1** | Post-PRF Governance Cutover — enforcement real PR-CI | **CLOSED** (commit `07f989c9` workflow `merge-gate` + API branch protection `strict:true, contexts:[merge-gate]`; PR #290 prueba negativa OK) | 2026-09-25 |
-| **G0.2** | Cutover de gobernanza — ROADMAP nuevo, AGENTS.md reorientado, PRF congelado | **EN CURSO** | Este ciclo §154.H.G0.2 |
-| **G0.3** | Re-ejecutar escenario e90 (perf cold-cache, openspec `2026-09-21-e90-g5-cold-cache-or-perf-fix/`) | **PENDING** | Pendiente |
-| **G0.4** | Validar issues históricos #234 y #235 contra v0.98.1 | **PENDING** | Pendiente |
+| **G0.2** | Cutover de gobernanza — ROADMAP nuevo, AGENTS.md reorientado, PRF congelado | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
+| **G0.3** | Re-ejecutar escenario e90 (perf cold-cache, openspec `2026-09-21-e90-g5-cold-cache-or-perf-fix/`) — verificado: e90 midió v1.0.0-rc, no v0.98.1 (tools `graph_insights`/`graph_communities` no existen en v0.98.1). e90 cerrado con addendum 2026-09-25; e91 abierto como WU explícito | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
+| **G0.4** | Validar issues históricos #234 y #235 contra v0.98.1 — verificado: ambos describen CLI \`cognicode graph\` que ya no existe; equivalentes MCP existen y funcionan. Issues cerrados con nota | **CLOSED** (commit `3a42d95d`) | 2026-09-25 |
 | **M0.1** | Fix bug `cogh rollback --to <same>` → v0.98.2 | **PENDING** | Pendiente (ver `MAINTENANCE.md`) |
 | **M0.2** | fmt-fix en bloque (104 archivos drift detectado por G0.1) | **PENDING** | Pendiente (ver `MAINTENANCE.md`) |
 | **M0.3** | Auditoría clippy residual + `moldql` panic test + `find_usages` CLI | **PENDING** | Pendiente (ver `MAINTENANCE.md`) |
