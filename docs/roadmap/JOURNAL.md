@@ -987,3 +987,60 @@ por `LadybugStore::new` raw + DDL separado), self-hosting (opt-in E1.W4).
 26. **`pub(crate)` sobre `pub` cuando una función es punto de integración interno.** `render_evidence_rows_json` la llaman CLI y MCP, pero no es parte de la API pública — `pub(crate)` evita que un consumidor externo empiece a depender de su shape, manteniendo libertad para refactor.
 27. **`evidence-cli-ladybug` como feature opt-in en core es el patrón correcto para mantener el core lbug-free.** La CLI lo activa solo cuando `--features ladybug`. Default build (sin features) sigue compilando sin lbug.
 28. **El E1.W4 (writer port) queda fuera del scope por consumidor ausente.** ADR-009 explícito. Cuando llegue el consumer, será un WU nuevo con su propio ADR — no se reabre E1.
+
+---
+
+## Entrada 5 — 2026-09-25 (M0.4 closeout: AssetPoint RAII guard)
+
+### Contexto
+
+El bump SemVer 0.98.1 → 0.99.0 (commit `d4a2e33e`, "L5 F0.* release") introdujo una regresión en el test suite CLI: 3 tests #[serial] empezaron a fallar (eran 2 que ya fallaban antes del bump, ahora son 3). El test runner no pudo evidenciar esto localmente porque `cargo test --test-threads=1` (sequential) los pasaba; el fallo aparecía solo en modo paralelo (`cargo test`, default).
+
+### Hechos
+
+- **Identificación**: con v0.98.1 revertido, 2 tests fallan (`commit_persists_journal_with_tracker_effect` y `prf_f6_w3_bis_rollback_reports_*`). Con v0.99.0, 3 tests fallan (`advance_skips_through_all_stages` adicional). El bump añadió regresión en 1 test, arregló otro, neto +1.
+- **Causa raíz**: `release_test_support::point_at(&release)` setea `COGNICODE_ASSET_BASE_URL` y `COGNICODE_BUNDLE_MANIFEST` en process env. La función complementaria `unpoint()` solo la llamaban 2 tests (de los 6 que usaban `point_at`). Los otros 4 dejaban las env vars contaminadas para el siguiente test #[serial], apuntando a un loopback HTTP server ya dropped.
+- **Por qué el bump lo destapó**: con v0.99.0, el primer test que corre (uno de los afectados) ejecuta el flujo de download en su última etapa y construye una URL que requiere el base URL del test anterior. Antes con v0.98.1 el flujo de download lo resolvía antes y nunca llegaba al "404 esperado".
+- **Fix** (commit `f76a4b03`):
+  - Nuevo `AssetPoint` RAII guard en `release_test_support.rs` líneas 252-298. Captura los valores previos de `COGNICODE_ASSET_BASE_URL` y `COGNICODE_BUNDLE_MANIFEST` en `new()`, los restaura (o `remove_var` si estaban unset) en `Drop`. Panic-safe (Drop corre durante unwind).
+  - 6 tests migrados a `let _point = AssetPoint::new(&release)`: `install.rs:166`, `installer_transaction.rs` (4: `custom_home_reviewer`, `advance_skips`, `t_l2_extracting`, `t_l2_commit`), `layout.rs:3589` (`t_l3_cmd_uninstall_round_trip`), `lifecycle.rs:793`.
+  - `point_at` / `unpoint` retenidos (legacy seam) pero documentados como footgun-prone; tests que ya los usaban con `unpoint()` también migrados por consistencia.
+  - `prf_f6_w3_bis_rollback_reports_failure_when_shim_resurrection_fails` marcado `#[serial_test::serial]` (faltaba el atributo; su hermano `prf_f6_w3_bis_execute_installed_binary_after_transition_and_rollback` ya lo tenía).
+  - 4 nuevos tests pinean el contrato del guard:
+    - `asset_point_sets_env_vars_for_release` — happy path
+    - `asset_point_restores_env_on_panic` — `catch_unwind` + assert restore
+    - `asset_point_removes_unset_env_vars_on_drop` — Drop con prev=None
+    - `point_at_unpoint_pair_works_legacy_seam` — backwards compat
+- **Verificación**:
+  - `cargo test --workspace --no-fail-fast`: 0 FAILED (era 3 antes del fix).
+  - `cargo clippy -p cognicode-cli --features ladybug --all-targets -- -D warnings`: verde.
+  - Binario reporta `cognicode 0.99.0`.
+
+### Decisiones técnicas
+
+- **RAII sobre manual cleanup** para env vars de process. La regla es: si un test setea env global, debe usar un guard con Drop. `TempBaseUrl` (líneas 1154-1189 de `layout.rs`) ya seguía este patrón; lo extendemos.
+- **`point_at`/`unpoint` se mantienen** porque hay tests históricos que los usan y refactorizarlos todos sería fuera de scope de M0.4. Documentado en doc-comment que el nuevo path es `AssetPoint`.
+- **`#[serial_test::serial]` añadido retroactivamente** a un test que ya usaba `TempBaseUrl` (que requiere `#[serial]`). El test compite por env vars con sus vecinos serializados; sin el atributo, races en test runner paralelo.
+
+### Métricas
+
+- 4 commits en la cadena: 1 fix (`f76a4b03`) + 1 docs (ROADMAP/JOURNAL).
+- 237 insertions / 11 deletions en el commit de código.
+- 4 tests nuevos (AssetPoint RAII contract).
+
+### Estado
+
+- M0.4: PENDING → CLOSED.
+- v0.99.0 confirmado binario reports correcto.
+- Workspace tests verde.
+
+### Pendiente
+
+- Ninguno en M0.4. El próximo bloque (E2 / CP1) sigue PENDING a decisión de operador.
+- CI `pr-ci.yml` "0 jobs" issue sigue ortogonal. No bloquea local.
+
+### Lecciones añadidas (a las 28 anteriores)
+
+29. **Los `#[serial]` tests que mutan env global sin RAII son bombas de tiempo.** El bug llevaba meses latente; el SemVer bump no lo creó, lo destapó porque cambió el orden de los tests o el patrón de acceso al env. Cualquier test que llame `std::env::set_var` en un `#[serial]` debe tener un Drop que restaure — el patrón `let _point = AssetPoint::new(&release)` es explícito y verificable por inspección.
+30. **El modo paralelo del test runner es el detector real de state pollution entre #[serial] tests.** Correr `--test-threads=1` (sequential) enmascara races que `--test-threads=N` (default) expone. Diagnóstico correcto: reproducir con el modo que falla, no con el que "parece" funcionar.
+31. **No añadir `#[serial]` retroactivamente sin revisar los call sites.** En este caso el test ya usaba `TempBaseUrl` (que requiere serial), así que añadir el atributo era seguro. En general: si un test usa un guard con `#[serial]` en su doc-comment, no compilar ni ejecutar sin el atributo es un foot-gun esperando.
