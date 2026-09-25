@@ -187,6 +187,13 @@ uat-guided-v1.0.0-current.html
 # passed and CI failed with "can't find bin". A repository-level negation wins
 # over core.excludesFile, so declare the layout here.
 !crates/cognicode-cli/src/bin/
+# Same protection for cognicode-explorer/src/bin/ (E2.W2 introduced
+# `cognicode-control-plane` there on 2026-09-25). The bin itself was
+# designed and tested locally, but committed without the source file
+# because this blanket ignore was not negated for explorer. Bug
+# detected on first pr-ci.yml run after E2.W2 (workflow could not
+# find the bin source file). Mirror the cli exemption.
+!crates/cognicode-explorer/src/bin/
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
 *.cdx.xml
