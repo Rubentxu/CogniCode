@@ -405,6 +405,43 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
                         }).as_object().cloned().unwrap()),
                     )
                     .with_meta(cognicode_meta("stable", "search", false, false, 40, "read")),
+                    // E1.W3 — EvidenceStore tools (mirror `cognicode evidence list|search`).
+                    // Gated behind `evidence-cli-ladybug` because the
+                    // backend lookup goes through the same registry as
+                    // the CLI subcommand. Default build compiles to a
+                    // no-op (the tool is omitted from `tools/list`).
+                    #[cfg(feature = "evidence-cli-ladybug")]
+                    Tool::new(
+                        "list_evidence",
+                        "List evidence rows for a workspace, optionally filtered by kind. \
+                         Mirrors the `cognicode evidence list` CLI subcommand; see \
+                         `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs` for the \
+                         JSON equivalence contract.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "workspace": { "type": "string", "description": "Workspace identifier (default: \"\")" },
+                                "kind": { "type": "string", "description": "Filter by kind: log | trace | measurement | external (optional)" }
+                            }
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "evidence", true, false, 30, "read")),
+                    #[cfg(feature = "evidence-cli-ladybug")]
+                    Tool::new(
+                        "search_evidence",
+                        "Full-text search across evidence titles and excerpts. \
+                         Mirrors the `cognicode evidence search` CLI subcommand.",
+                        Arc::new(serde_json::json!({
+                            "type": "object",
+                            "properties": {
+                                "workspace": { "type": "string", "description": "Workspace identifier (default: \"\")" },
+                                "query": { "type": "string", "description": "Substring query against title + excerpt" },
+                                "limit": { "type": "integer", "description": "Max rows returned (default: 25)" }
+                            },
+                            "required": ["query"]
+                        }).as_object().cloned().unwrap()),
+                    )
+                    .with_meta(cognicode_meta("stable", "evidence", true, false, 30, "read")),
                     Tool::new(
                         "get_complexity",
                         "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
@@ -1566,6 +1603,81 @@ async fn call_tool_handler(
                 let output =
                     crate::interface::mcp::handlers::handle_find_usages(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
+            }
+            // E1.W3 — EvidenceStore MCP tools. Mirror `cognicode evidence
+            // list|search` so the equivalence test pins the same JSON
+            // schema on both surfaces. See `cognicode-cli/tests/
+            // evidence_cli_mcp_equivalence.rs`.
+            #[cfg(feature = "evidence-cli-ladybug")]
+            "list_evidence" => {
+                use crate::domain::ports::evidence_store::EvidenceKind;
+                use crate::interface::cli::evidence_backend;
+
+                let workspace = arguments
+                    .get("workspace")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let kind = match arguments.get("kind").and_then(|v| v.as_str()) {
+                    None | Some("") => None,
+                    Some("log") => Some(EvidenceKind::Log),
+                    Some("trace") => Some(EvidenceKind::Trace),
+                    Some("measurement") => Some(EvidenceKind::Measurement),
+                    Some("external") => Some(EvidenceKind::External),
+                    Some(other) => {
+                        return Err(InterfaceError::InvalidInput(format!(
+                            "unknown evidence kind: {other} (expected one of \
+                             log | trace | measurement | external)"
+                        )));
+                    }
+                };
+
+                let factory = evidence_backend::evidence_backend_factory().ok_or_else(|| {
+                    InterfaceError::Internal(
+                        "evidence backend not registered; the MCP server build does not \
+                         have the `evidence-cli-ladybug` feature enabled, or the runtime \
+                         adapter did not register a factory at startup."
+                            .to_string(),
+                    )
+                })?;
+                let backend = factory(None).map_err(InterfaceError::Internal)?;
+                let rows = backend.list(workspace, kind).map_err(InterfaceError::Internal)?;
+                Ok(crate::interface::cli::commands::render_evidence_rows_json(rows))
+            }
+            #[cfg(feature = "evidence-cli-ladybug")]
+            "search_evidence" => {
+                use crate::interface::cli::evidence_backend;
+
+                let workspace = arguments
+                    .get("workspace")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let query = arguments
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        InterfaceError::InvalidInput(
+                            "missing required parameter `query`".to_string(),
+                        )
+                    })?;
+                let limit = arguments
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize)
+                    .unwrap_or(25);
+
+                let factory = evidence_backend::evidence_backend_factory().ok_or_else(|| {
+                    InterfaceError::Internal(
+                        "evidence backend not registered; the MCP server build does not \
+                         have the `evidence-cli-ladybug` feature enabled, or the runtime \
+                         adapter did not register a factory at startup."
+                            .to_string(),
+                    )
+                })?;
+                let backend = factory(None).map_err(InterfaceError::Internal)?;
+                let rows = backend
+                    .search(workspace, query, limit)
+                    .map_err(InterfaceError::Internal)?;
+                Ok(crate::interface::cli::commands::render_evidence_rows_json(rows))
             }
             "get_complexity" => {
                 let input: crate::interface::mcp::schemas::GetComplexityInput =

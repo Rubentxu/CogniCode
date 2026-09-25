@@ -7,6 +7,12 @@ use cognicode_core::{Cli, CommandExecutor};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
 
+// E1.W3 — Evidence CLI adapter for the LadybugDB-backed
+// `EvidenceStore`. Compiled only under `--features ladybug`; the
+// default build skips this module entirely.
+#[cfg(feature = "ladybug")]
+mod evidence_cmd;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse command line arguments
@@ -34,6 +40,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     info!("Starting CogniCode CLI v{}", env!("CARGO_PKG_VERSION"));
+
+    // E1.W3 — Register the Ladybug-backed evidence backend factory
+    // so `cognicode evidence list|search` can resolve to the real
+    // implementation. When the CLI is built without `--features ladybug`
+    // (the default), this branch compiles to a no-op.
+    #[cfg(feature = "ladybug")]
+    {
+        if let Err(e) = evidence_cmd::register() {
+            eprintln!("warning: failed to register evidence backend: {e}");
+        }
+    }
 
     // Initialize Rayon global thread pool with 8 MB stack size
     match ThreadPoolBuilder::new()

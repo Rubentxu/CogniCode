@@ -20,6 +20,7 @@ path = "src/bin/release.rs"
 
 [dependencies]
 cognicode-core.workspace = true
+cognicode-ladybug = { path = "../cognicode-ladybug", optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -39,7 +40,19 @@ dirs = "5"
 rayon.workspace = true
 ureq = "2.9"
 
+[features]
+# E1.W3 — Surface `cognicode evidence list|search` over the LadybugDB
+# evidence store. Optional because the Ladybug store pulls its own
+# native deps (lbug 0.19); a slim CLI build can stay without it.
+ladybug = [
+    "cognicode-ladybug",
+    "cognicode-ladybug/multimodal-9ports",
+    "cognicode-core/evidence-cli-ladybug",
+]
+default = []
+
 [dev-dependencies]
 tempfile = "3"
 serial_test = "3"
 filetime = "0.2"
+serde_json.workspace = true

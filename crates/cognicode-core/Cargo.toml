@@ -43,6 +43,12 @@ program-analysis-server = []
 # for the library itself). Currently gates `MockClock`.
 # Off by default.
 test-support = []
+# `evidence-cli-ladybug` activates the `cognicode evidence list|search`
+# subcommand on the core CLI side and binds it to the LadybugDB-backed
+# `EvidenceStore` implementation. It is opt-in so the default CLI build
+# stays free of the lbug native dependency. Activated by the `ladybug`
+# feature in `cognicode-cli`.
+evidence-cli-ladybug = []
 
 [dependencies]
 # Proc macros for tool definitions

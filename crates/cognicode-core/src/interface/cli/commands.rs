@@ -161,6 +161,80 @@ pub enum CliCommand {
         #[arg(short = 'q', long)]
         quiet: bool,
     },
+
+    /// E1.W3 — Query the LadybugDB-backed EvidenceStore. Mirrors the
+    /// `list_evidence` / `search_evidence` MCP tool family so the CLI
+    /// and the MCP surface stay in lockstep (see equivalence test in
+    /// `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`).
+    ///
+    /// Activated only when the `evidence-cli-ladybug` feature is on
+    /// (which is in turn activated by `cognicode-cli`'s `--features
+    /// ladybug`). The default build (no features) does NOT compile
+    /// this variant — keeping the lbug native dep opt-in.
+    #[cfg(feature = "evidence-cli-ladybug")]
+    #[command(name = "evidence", subcommand)]
+    Evidence(EvidenceCommand),
+}
+
+/// E1.W3 — `cognicode evidence <list|search>`.
+///
+/// Subcommand surface mirrors the MCP `list_evidence` / `search_evidence`
+/// tools 1:1 so the equivalence test can compare CLI JSON vs MCP JSON on
+/// identical inputs. Output formats are `text` (human) and `json`
+/// (machine) — both stable contracts.
+///
+/// Compiled only under `feature = "evidence-cli-ladybug"`. The enum lives
+/// in core because the CLI variant `CliCommand::Evidence` references it;
+/// moving it into the cli crate would split the clap derive across two
+/// files and force a re-export dance for no benefit.
+#[cfg(feature = "evidence-cli-ladybug")]
+#[derive(Debug, Subcommand)]
+pub enum EvidenceCommand {
+    /// List evidence rows for a workspace, optionally filtered by kind.
+    #[command(name = "list")]
+    List {
+        /// Workspace identifier (matches the per-workspace scope used
+        /// by the LadybugDB tables; defaults to `.` resolved against
+        /// the CWD).
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        /// Filter by evidence kind: log | trace | measurement | external.
+        #[arg(short = 'k', long, value_parser = ["log", "trace", "measurement", "external"])]
+        kind: Option<String>,
+
+        /// LadybugDB file path. Defaults to `<cwd>/.cognicode/evidence.lbdb`
+        /// (created on first run if absent — the schema is idempotent).
+        #[arg(long)]
+        db_path: Option<String>,
+
+        /// Output format: text | json.
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+    },
+
+    /// Full-text search across evidence titles and excerpts.
+    #[command(name = "search")]
+    Search {
+        /// Query string (substring match against title + excerpt).
+        query: String,
+
+        /// Workspace identifier (see `list`).
+        #[arg(short = 'w', long, default_value = ".")]
+        workspace: String,
+
+        /// Maximum rows returned (default 25).
+        #[arg(short = 'l', long, default_value_t = 25)]
+        limit: usize,
+
+        /// LadybugDB file path (see `list`).
+        #[arg(long)]
+        db_path: Option<String>,
+
+        /// Output format: text | json.
+        #[arg(short = 'f', long, default_value = "text")]
+        format: String,
+    },
 }
 
 /// Index subcommands
@@ -484,6 +558,12 @@ impl CommandExecutor {
             }) => {
                 if let Err(e) = Self::execute_issues_ingest(owner, repo, *include_git_log).await {
                     eprintln!("issues-ingest command failed: {}", e);
+                }
+            }
+            #[cfg(feature = "evidence-cli-ladybug")]
+            Some(CliCommand::Evidence(cmd)) => {
+                if let Err(e) = Self::execute_evidence(cmd).await {
+                    eprintln!("evidence command failed: {}", e);
                 }
             }
             None => {
@@ -1867,6 +1947,187 @@ impl CommandExecutor {
         }
 
         Ok(())
+    }
+
+    /// E1.W3 — Drive `cognicode evidence <list|search>`.
+    ///
+    /// Flow:
+    ///   1. Look up the registered `EvidenceBackend` (set at CLI
+    ///      startup by the `--features ladybug` adapter). If absent,
+    ///      return a clear "backend not registered" error.
+    ///   2. Dispatch `list` / `search` to the backend.
+    ///   3. Render results as text (human) or json (machine) using
+    ///      a stable schema — the same schema the MCP `list_evidence`
+    ///      tool emits, so the equivalence test in
+    ///      `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`
+    ///      can byte-compare JSON outputs.
+    #[cfg(feature = "evidence-cli-ladybug")]
+    async fn execute_evidence(
+        cmd: &EvidenceCommand,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::domain::ports::evidence_store::EvidenceKind;
+        use crate::interface::cli::evidence_backend;
+        use std::path::PathBuf;
+
+        // Pull the per-invocation `--db-path` (if any) so the factory
+        // can open the right file.
+        let db_path: Option<PathBuf> = match cmd {
+            EvidenceCommand::List { db_path, .. } => db_path
+                .as_deref()
+                .map(PathBuf::from)
+                .or_else(|| Some(default_evidence_db_path())),
+            EvidenceCommand::Search { db_path, .. } => db_path
+                .as_deref()
+                .map(PathBuf::from)
+                .or_else(|| Some(default_evidence_db_path())),
+        };
+
+        let factory = evidence_backend::evidence_backend_factory().ok_or(
+            "evidence backend not registered: this CLI build does not have the \
+             `ladybug` feature enabled, or the backend registration step was \
+             skipped at startup. Recompile with `--features ladybug`.",
+        )?;
+        let backend = factory(db_path.as_ref())
+            .map_err(|e| format!("opening evidence backend: {e}"))?;
+
+        let (rows, format) = match cmd {
+            EvidenceCommand::List {
+                workspace,
+                kind,
+                format,
+                ..
+            } => {
+                // Parse the kind string eagerly so a typo errors out
+                // before we touch the backend.
+                let kind = match kind.as_deref() {
+                    None => None,
+                    Some("log") => Some(EvidenceKind::Log),
+                    Some("trace") => Some(EvidenceKind::Trace),
+                    Some("measurement") => Some(EvidenceKind::Measurement),
+                    Some("external") => Some(EvidenceKind::External),
+                    Some(other) => {
+                        return Err(format!(
+                            "unknown evidence kind: {other} (expected one of \
+                             log | trace | measurement | external)"
+                        )
+                        .into());
+                    }
+                };
+                let rows = backend
+                    .list(workspace, kind)
+                    .map_err(|e| format!("list_evidence: {e}"))?;
+                (rows, format.as_str())
+            }
+            EvidenceCommand::Search {
+                query,
+                workspace,
+                limit,
+                format,
+                ..
+            } => {
+                let rows = backend
+                    .search(workspace, query, *limit)
+                    .map_err(|e| format!("search_evidence: {e}"))?;
+                (rows, format.as_str())
+            }
+        };
+
+        render_evidence_rows(rows, format);
+        Ok(())
+    }
+}
+
+/// E1.W3 — Default LadybugDB location for the CLI.
+///
+/// Matches the policy documented in the `EvidenceCommand` clap help:
+/// `<cwd>/.cognicode/evidence.lbdb`. Created on first run by the
+/// adapter via `LadybugStore::open` (which initializes the schema
+/// idempotently).
+#[cfg(feature = "evidence-cli-ladybug")]
+fn default_evidence_db_path() -> std::path::PathBuf {
+    let mut p = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+    p.push(".cognicode");
+    let _ = std::fs::create_dir_all(&p);
+    p.push("evidence.lbdb");
+    p
+}
+
+/// E1.W3 — Stable JSON schema for `cognicode evidence` output AND the
+/// `list_evidence` / `search_evidence` MCP tools.
+///
+/// Same field names and types on both surfaces, so the equivalence
+/// test in `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`
+/// can byte-compare the two outputs (CLI JSON vs MCP tool result).
+///
+/// Made `pub(crate)` so the MCP adapter can call it without leaking
+/// it on the public surface. The shape is the contract — adding a
+/// field here MUST also be reflected on the MCP tool definition
+/// (and vice-versa) to keep the equivalence test green.
+#[cfg(feature = "evidence-cli-ladybug")]
+pub(crate) fn render_evidence_rows_json(
+    rows: Vec<crate::domain::ports::evidence_store::EvidenceSummary>,
+) -> String {
+    use crate::domain::ports::evidence_store::EvidenceKind;
+
+    let payload: Vec<serde_json::Value> = rows
+        .into_iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "title": r.title,
+                "kind": match r.kind {
+                    EvidenceKind::Log => "log",
+                    EvidenceKind::Trace => "trace",
+                    EvidenceKind::Measurement => "measurement",
+                    EvidenceKind::External => "external",
+                },
+                "source_path": r.source_path,
+                "excerpt": r.excerpt,
+                "confidence": r.confidence,
+            })
+        })
+        .collect();
+    // Pretty for human readability, but stable. `serde_json::to_string_pretty`
+    // sorts object keys alphabetically, which is the contract we
+    // pin in the equivalence test.
+    serde_json::to_string_pretty(&payload)
+        .unwrap_or_else(|e| format!("failed to serialize evidence rows: {e}"))
+}
+
+/// E1.W3 — Text (human) renderer for `cognicode evidence`.
+#[cfg(feature = "evidence-cli-ladybug")]
+fn render_evidence_rows(
+    rows: Vec<crate::domain::ports::evidence_store::EvidenceSummary>,
+    format: &str,
+) {
+    use crate::domain::ports::evidence_store::EvidenceKind;
+
+    if format == "json" {
+        println!("{}", render_evidence_rows_json(rows));
+        return;
+    }
+    if rows.is_empty() {
+        println!("(no evidence rows match the query)");
+        return;
+    }
+    println!(
+        "{:<60}  {:<12}  {:<7}  TITLE",
+        "ID", "KIND", "CONF"
+    );
+    for r in rows {
+        let kind = match r.kind {
+            EvidenceKind::Log => "log",
+            EvidenceKind::Trace => "trace",
+            EvidenceKind::Measurement => "measurement",
+            EvidenceKind::External => "external",
+        };
+        println!(
+            "{:<60}  {:<12}  {:<7.2}  {}",
+            r.id,
+            kind,
+            r.confidence,
+            r.title
+        );
     }
 }
 

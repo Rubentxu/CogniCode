@@ -488,6 +488,7 @@ dependencies = [
  "chrono",
  "clap",
  "cognicode-core",
+ "cognicode-ladybug",
  "dirs",
  "filetime",
  "flate2",
