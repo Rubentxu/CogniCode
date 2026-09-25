@@ -114,3 +114,31 @@ jobs:
         run: cargo test -p cognicode-core --lib prf_mcp_05 --quiet
       - name: Adversarial E2E (PRF-SEC-07 nivel binario, §153)
         run: cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+
+  # -----------------------------------------------------------------------
+  # merge-gate — un solo check exigido por la branch protection.
+  # GitHub requiere un check único y estable por job; este agregador
+  # depende de los 3 anteriores y se publica como `merge-gate` para que
+  # el required_status_checks apunte aquí.
+  # -----------------------------------------------------------------------
+  merge-gate:
+    name: merge-gate
+    needs: [check, build-binary, test-pr]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar que los tres jobs previos pasaron
+        run: |
+          if [ "${{ needs.check.result }}" != "success" ]; then
+            echo "::error::check job did not succeed (${{ needs.check.result }})"
+            exit 1
+          fi
+          if [ "${{ needs.build-binary.result }}" != "success" ]; then
+            echo "::error::build-binary job did not succeed (${{ needs.build-binary.result }})"
+            exit 1
+          fi
+          if [ "${{ needs.test-pr.result }}" != "success" ]; then
+            echo "::error::test-pr job did not succeed (${{ needs.test-pr.result }})"
+            exit 1
+          fi
+          echo "merge-gate: OK (check=${{ needs.check.result }}, build-binary=${{ needs.build-binary.result }}, test-pr=${{ needs.test-pr.result }})"
