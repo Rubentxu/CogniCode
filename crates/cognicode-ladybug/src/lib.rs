@@ -505,6 +505,10 @@ impl LadybugStore {
         store.init_quality_schema()?;
         // e14-c2: narrative view schema for the NarrativeStore port.
         store.init_narrative_view_schema()?;
+        // E1.W1: evidence schema for the EvidenceStore port (read-only
+        // adapter). Idempotent (IF NOT EXISTS); the writer side is a
+        // future port (ladybug-evidence-writer) out of scope here.
+        store.init_evidence_schema()?;
         Ok(store)
     }
 
@@ -1547,6 +1551,21 @@ impl LadybugStore {
             .connection()
             .map_err(|e| Error::Lbug(format!("init_narrative_view_schema: {e}")))?;
         init_schema::init_narrative_view_schema(&conn)
+    }
+
+    /// E1.W1: apply the [`Evidence`] node table DDL backing the
+    /// [`EvidenceStore`] port.
+    ///
+    /// Idempotent — every statement uses `IF NOT EXISTS`. Called
+    /// automatically by [`LadybugStore::open`]; the raw sharing
+    /// constructor [`LadybugStore::new`] does NOT apply it so tests can
+    /// exercise the graceful-degradation contract on a schema-less db
+    /// (see `evidence_store::tests::test_load_on_missing_table`).
+    pub fn init_evidence_schema(&self) -> Result<(), Error> {
+        let conn = self
+            .connection()
+            .map_err(|e| Error::Lbug(format!("init_evidence_schema: {e}")))?;
+        init_schema::init_evidence_schema(&conn)
     }
 }
 
