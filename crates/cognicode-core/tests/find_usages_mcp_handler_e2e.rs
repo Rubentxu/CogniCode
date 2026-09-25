@@ -85,13 +85,14 @@ async fn handler_include_declaration_returns_definition_plus_call_sites() {
     );
 
     let defs = out.usages.iter().filter(|u| u.is_definition).count();
-    assert_eq!(defs, 1, "exactamente 1 definición (first_only_definition=true)");
+    assert_eq!(
+        defs, 1,
+        "exactamente 1 definición (first_only_definition=true)"
+    );
 
     // Solo src/lib.rs debe aparecer (target/ está en USAGE_SKIP_DIRS).
     assert!(
-        out.usages
-            .iter()
-            .all(|u| u.file.ends_with("src/lib.rs")),
+        out.usages.iter().all(|u| u.file.ends_with("src/lib.rs")),
         "todas las usages deben venir de src/lib.rs, no de target/: {:?}",
         out.usages
     );
@@ -179,8 +180,5 @@ async fn handler_empty_symbol_returns_empty_results() {
         out.total, 0,
         "símbolo vacío debe devolver 0 results (no hay coincidencias para '')"
     );
-    assert!(
-        out.usages.is_empty(),
-        "símbolo vacío no debe tener usages"
-    );
+    assert!(out.usages.is_empty(), "símbolo vacío no debe tener usages");
 }
