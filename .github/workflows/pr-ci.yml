@@ -62,6 +62,23 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
   # -----------------------------------------------------------------------
+  # capabilities-drift-lint — E0.W2: PRF-ANA-01 code↔doc sync
+  #
+  # Verifica que la lista de lenguajes del código
+  # (ALL_TREE_SITTER_LANGS en capabilities.rs) coincide con la lista del
+  # doc contractual (docs/prf/specs/CAPABILITIES-MATRIX.md), incluyendo
+  # el contador del header. Sin este job, alguien podría actualizar el
+  # código sin actualizar el doc, creando divergencia silenciosa.
+  # -----------------------------------------------------------------------
+  capabilities-drift-lint:
+    name: capabilities drift lint (E0.W2)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run drift lint (--strict)
+        run: python3 sandbox/scripts/capabilities_drift_lint.py --strict
+
+  # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E
   # -----------------------------------------------------------------------
   build-binary:
