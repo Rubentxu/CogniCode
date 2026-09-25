@@ -21,7 +21,7 @@
 
 use cognicode_core::domain::ports::evidence_store::{EvidenceKind, EvidenceSummary};
 use cognicode_core::interface::cli::evidence_backend::{
-    register_evidence_backend, EvidenceBackend, EvidenceBackendFactory,
+    EvidenceBackend, EvidenceBackendFactory, register_evidence_backend,
 };
 use cognicode_ladybug::LadybugStore;
 use std::path::PathBuf;
@@ -89,20 +89,22 @@ impl EvidenceBackend for LadybugEvidenceBackend {
 /// path, so the fallback here is only for direct consumers of the
 /// factory (e.g. integration tests).
 pub fn factory() -> EvidenceBackendFactory {
-    Arc::new(|maybe_path: Option<&PathBuf>| -> Result<Arc<dyn EvidenceBackend>, String> {
-        let path = match maybe_path {
-            Some(p) => p.clone(),
-            None => {
-                let mut p = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-                p.push(".cognicode");
-                let _ = std::fs::create_dir_all(&p);
-                p.push("evidence.lbdb");
-                p
-            }
-        };
-        let backend = LadybugEvidenceBackend::open(path)?;
-        Ok(Arc::new(backend))
-    })
+    Arc::new(
+        |maybe_path: Option<&PathBuf>| -> Result<Arc<dyn EvidenceBackend>, String> {
+            let path = match maybe_path {
+                Some(p) => p.clone(),
+                None => {
+                    let mut p = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+                    p.push(".cognicode");
+                    let _ = std::fs::create_dir_all(&p);
+                    p.push("evidence.lbdb");
+                    p
+                }
+            };
+            let backend = LadybugEvidenceBackend::open(path)?;
+            Ok(Arc::new(backend))
+        },
+    )
 }
 
 /// Convenience: register the Ladybug-backed factory with the global

@@ -42,8 +42,8 @@
 //! CI gate rules). Renames must go through ADR-011.
 
 use crate::domain::architecture::{
-    Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind, ConstraintCandidate,
-    LayerDependencyRule, LayerId, NamespaceBoundaryRule,
+    Admitter, AdmitterRole, ArchitectureConstraintId, ArchitectureConstraintKind,
+    ConstraintCandidate, LayerDependencyRule, LayerId, NamespaceBoundaryRule,
 };
 
 /// Build the canonical CogniCode architecture constraints.
@@ -125,10 +125,7 @@ mod tests {
         );
 
         let promoted = canonical_promoted_admitter();
-        assert!(
-            promoted.may_admit(),
-            "canonical admitter must be promoted"
-        );
+        assert!(promoted.may_admit(), "canonical admitter must be promoted");
         assert_eq!(promoted.id, "human:cognicode-architecture-wg");
     }
 }

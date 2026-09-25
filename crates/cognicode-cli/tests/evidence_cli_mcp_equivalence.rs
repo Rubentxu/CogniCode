@@ -82,7 +82,14 @@ fn assert_evidence_schema(value: &Value) {
         let obj = row
             .as_object()
             .unwrap_or_else(|| panic!("row {i} must be a JSON object, got {row:?}"));
-        let expected_fields = ["confidence", "excerpt", "id", "kind", "source_path", "title"];
+        let expected_fields = [
+            "confidence",
+            "excerpt",
+            "id",
+            "kind",
+            "source_path",
+            "title",
+        ];
         let actual_fields: Vec<&str> = obj.keys().map(String::as_str).collect();
         let mut sorted_actual = actual_fields.clone();
         sorted_actual.sort_unstable();
@@ -169,14 +176,7 @@ fn cli_search_empty_json_matches_schema() {
 fn cli_list_filter_kind_empty_json_matches_schema() {
     let db_path = fresh_db_path("empty-filter");
     let cli_output = run_cli(
-        &[
-            "evidence",
-            "list",
-            "--workspace",
-            "w1",
-            "--kind",
-            "log",
-        ],
+        &["evidence", "list", "--workspace", "w1", "--kind", "log"],
         &db_path,
     );
     let parsed: Value = serde_json::from_str(&cli_output)

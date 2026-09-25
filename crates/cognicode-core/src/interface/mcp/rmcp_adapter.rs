@@ -1640,8 +1640,12 @@ async fn call_tool_handler(
                     )
                 })?;
                 let backend = factory(None).map_err(InterfaceError::Internal)?;
-                let rows = backend.list(workspace, kind).map_err(InterfaceError::Internal)?;
-                Ok(crate::interface::cli::commands::render_evidence_rows_json(rows))
+                let rows = backend
+                    .list(workspace, kind)
+                    .map_err(InterfaceError::Internal)?;
+                Ok(crate::interface::cli::commands::render_evidence_rows_json(
+                    rows,
+                ))
             }
             #[cfg(feature = "evidence-cli-ladybug")]
             "search_evidence" => {
@@ -1677,7 +1681,9 @@ async fn call_tool_handler(
                 let rows = backend
                     .search(workspace, query, limit)
                     .map_err(InterfaceError::Internal)?;
-                Ok(crate::interface::cli::commands::render_evidence_rows_json(rows))
+                Ok(crate::interface::cli::commands::render_evidence_rows_json(
+                    rows,
+                ))
             }
             "get_complexity" => {
                 let input: crate::interface::mcp::schemas::GetComplexityInput =

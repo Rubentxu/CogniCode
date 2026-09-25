@@ -304,9 +304,7 @@ pub fn bootstrap_ladybug(
         ),
         // E1.W2: LadybugStore implements the EvidenceStore port (E1.W1).
         // Cast and wire the same Arc<LadybugStore> as a read-only EvidenceStore.
-        evidence_store: Some(
-            store.clone() as Arc<dyn cognicode_core::domain::ports::EvidenceStore>
-        ),
+        evidence_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::EvidenceStore>),
         #[cfg(feature = "multimodal")]
         federation_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::ports::FederationStore>
@@ -406,23 +404,22 @@ impl Runtime {
                 cognicode_explorer::adapters::InMemoryGraphRepository::new(vec![], vec![]),
             ));
 
-        let search: Arc<dyn cognicode_explorer::facades::SearchService> =
-            Arc::new(
-                cognicode_explorer::facades::search::SearchServiceImpl::new(
-                    self.symbol_repo.clone(),
-                    None, // search_repo
-                    Arc::new(cognicode_explorer::registry::ViewRegistry::new(None)),
-                    None, // view_spec_store
-                    quality.clone(),
-                    Some(persistence.clone()),
-                    investigation.clone(),
-                    graph_repo.clone(),
-                )
-                // E1.W2: wire the evidence store (read-only knowledge layer
-                // port) so the Spotter hits `evidence` family returns real
-                // rows from LadybugDB instead of an empty list.
-                .with_evidence_store(self.evidence_store.clone()),
-            );
+        let search: Arc<dyn cognicode_explorer::facades::SearchService> = Arc::new(
+            cognicode_explorer::facades::search::SearchServiceImpl::new(
+                self.symbol_repo.clone(),
+                None, // search_repo
+                Arc::new(cognicode_explorer::registry::ViewRegistry::new(None)),
+                None, // view_spec_store
+                quality.clone(),
+                Some(persistence.clone()),
+                investigation.clone(),
+                graph_repo.clone(),
+            )
+            // E1.W2: wire the evidence store (read-only knowledge layer
+            // port) so the Spotter hits `evidence` family returns real
+            // rows from LadybugDB instead of an empty list.
+            .with_evidence_store(self.evidence_store.clone()),
+        );
 
         // View facade.
         let view_impl: Arc<cognicode_explorer::facades::view::ViewServiceImpl> =

@@ -29,11 +29,8 @@ fn fresh_db_path(tag: &str) -> std::path::PathBuf {
 #[tokio::test(flavor = "multi_thread")]
 async fn bootstrap_ladybug_wires_evidence_store() {
     let db_path = fresh_db_path("wires");
-    let runtime = cognicode_runtime::bootstrap_ladybug(
-        std::env::temp_dir(),
-        db_path.clone(),
-    )
-    .expect("bootstrap_ladybug must succeed");
+    let runtime = cognicode_runtime::bootstrap_ladybug(std::env::temp_dir(), db_path.clone())
+        .expect("bootstrap_ladybug must succeed");
 
     // The port must be Some (E1.W1 impl is real).
     let evidence_store = runtime
@@ -73,11 +70,8 @@ async fn evidence_store_persists_across_runtimes() {
     // evidence_store port. We need a writer-side path; since the
     // writer port is out of E1.W1 scope, this test focuses on
     // the read contract: empty DB → empty list, no error.
-    let runtime = cognicode_runtime::bootstrap_ladybug(
-        std::env::temp_dir(),
-        db_path.clone(),
-    )
-    .expect("first bootstrap must succeed");
+    let runtime = cognicode_runtime::bootstrap_ladybug(std::env::temp_dir(), db_path.clone())
+        .expect("first bootstrap must succeed");
 
     let list = runtime
         .evidence_store
@@ -93,11 +87,8 @@ async fn evidence_store_persists_across_runtimes() {
     // Second bootstrap against the same path: must yield the same
     // empty result (the schema is idempotent, no surprise tables
     // appear).
-    let runtime2 = cognicode_runtime::bootstrap_ladybug(
-        std::env::temp_dir(),
-        db_path.clone(),
-    )
-    .expect("second bootstrap must succeed");
+    let runtime2 = cognicode_runtime::bootstrap_ladybug(std::env::temp_dir(), db_path.clone())
+        .expect("second bootstrap must succeed");
 
     let list2 = runtime2
         .evidence_store

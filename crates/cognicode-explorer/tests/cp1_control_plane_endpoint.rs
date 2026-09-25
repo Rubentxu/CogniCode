@@ -589,11 +589,7 @@ async fn c7_real_wiring_uses_canonical_constraints() {
     let dir = empty_source_root("c7");
     let state = base_ws("ws-canonical").with_control_query(Some(Arc::new(cq)), dir.clone());
 
-    let (_, body) = get(
-        state,
-        "/control-plane/workspaces/ws-canonical/architecture",
-    )
-    .await;
+    let (_, body) = get(state, "/control-plane/workspaces/ws-canonical/architecture").await;
 
     assert_eq!(
         body["status"], "evaluated",

@@ -1962,9 +1962,7 @@ impl CommandExecutor {
     ///      `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs`
     ///      can byte-compare JSON outputs.
     #[cfg(feature = "evidence-cli-ladybug")]
-    async fn execute_evidence(
-        cmd: &EvidenceCommand,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_evidence(cmd: &EvidenceCommand) -> Result<(), Box<dyn std::error::Error>> {
         use crate::domain::ports::evidence_store::EvidenceKind;
         use crate::interface::cli::evidence_backend;
         use std::path::PathBuf;
@@ -1987,8 +1985,8 @@ impl CommandExecutor {
              `ladybug` feature enabled, or the backend registration step was \
              skipped at startup. Recompile with `--features ladybug`.",
         )?;
-        let backend = factory(db_path.as_ref())
-            .map_err(|e| format!("opening evidence backend: {e}"))?;
+        let backend =
+            factory(db_path.as_ref()).map_err(|e| format!("opening evidence backend: {e}"))?;
 
         let (rows, format) = match cmd {
             EvidenceCommand::List {
@@ -2110,10 +2108,7 @@ fn render_evidence_rows(
         println!("(no evidence rows match the query)");
         return;
     }
-    println!(
-        "{:<60}  {:<12}  {:<7}  TITLE",
-        "ID", "KIND", "CONF"
-    );
+    println!("{:<60}  {:<12}  {:<7}  TITLE", "ID", "KIND", "CONF");
     for r in rows {
         let kind = match r.kind {
             EvidenceKind::Log => "log",
@@ -2123,10 +2118,7 @@ fn render_evidence_rows(
         };
         println!(
             "{:<60}  {:<12}  {:<7.2}  {}",
-            r.id,
-            kind,
-            r.confidence,
-            r.title
+            r.id, kind, r.confidence, r.title
         );
     }
 }
