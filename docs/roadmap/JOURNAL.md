@@ -1153,3 +1153,131 @@ devolvía `status: "incomplete"` con `reason: control_query_service_not_wired`.
 32. **Una infra completa sin caller real es exactamente la situación que un ROADMAP `PENDING` no detecta.** El `ArchitectureRegistry` tenía tests E2E pasando, doc-comments, ADR de ownership map, fail-closed contract — pero el binario que la consume nunca se construyó. La señal correcta es: `grep -rn "wire_canonical_control_query\|ControlQueryService::new" crates/` y verificar que el caller es **producción**, no solo tests. Antes de E2.W1 ese grep hubiera mostrado solo tests; ahora muestra el helper también.
 33. **Fail-closed en boot (panic) vs fail-closed en query (Incomplete): opciones distintas para problemas distintos.** El endpoint CP1 ya tiene fail-closed en query (`status: incomplete` cuando no hay wiring). El wiring helper debe ser fail-closed en boot (panic si admission falla) porque si el caller decide silenciar el error, vuelve el bug que cerramos. La regla es: la frontera donde el bug "registry vacío" se manifiesta es el wiring; silenciarla es exactamente reintroducir el bug.
 34. **Extraer datos compartidos en el mismo commit que introduce el módulo.** El refactor del self-host E2E para usar `canonical_constraints()` se incluyó en `14cf3d1b`, no en un commit posterior. Si se hubiera hecho después, durante el intervalo el test E2E leería de su copia local inlined y el módulo nuevo estaría sin callers — exactamente el patrón que la regla §32 ataca.
+
+---
+
+## Entrada 7 — 2026-09-25 (E2.W2: cognicode-control-plane — wirear el helper en un binario real)
+
+### Contexto
+
+E2.W1 cerró el módulo (`canonical_constraints`) y el helper
+(`wire_canonical_control_query`) pero el helper no se ejecutaba en
+ningún binario real: `cognicode-explorer` es lib-only y
+`cognicode-mcp` no invoca el wiring de control plane. E2.W2
+promueve el helper a un bin standalone que arranca y responde HTTP
+real.
+
+### Hechos
+
+- **Diseño** (commit `4138eab7`):
+  - Nuevo `pub struct ControlPlaneState` en `cognicode-explorer::api`
+    con solo dos campos: `Arc<ControlQueryService>` y
+    `PathBuf`. Reemplaza la necesidad de construir el `ApiState`
+    completo (6 services + 3 opcionales) para el endpoint CP1.
+  - `ControlPlaneState::canonical(source_root)` constructor que
+    invoca `wire_canonical_control_query()` (fail-closed at boot).
+  - `pub async fn control_plane_architecture_minimal` handler
+    paralelo al viejo `control_plane_architecture` (línea 1257 de
+    `api.rs`), pero sin la rama `Option<ControlQueryService>::None`
+    (wiring es obligatorio, no opcional).
+  - `pub fn control_plane_router(state) -> axum::Router<()>` monta
+    solo `/health` + `/control-plane/workspaces/:id/architecture`.
+    `with_state(state)` consume el state → `Router<()>` listo para
+    `axum::serve(listener, app)`. Documenta explícitamente que
+    `/control-plane/probe` y `/api/*` NO se montan (requieren
+    ApiState.workspace).
+  - Nuevo bin `crates/cognicode-explorer/src/bin/control_plane.rs`:
+    `#[tokio::main]` con `--bind` (default `127.0.0.1:9842`,
+    env `COGNICODE_CP_BIND`) y `--source-root` (default
+    `./crates/cognicode-core/src`, env `COGNICODE_CP_SOURCE_ROOT`).
+    tracing-subscriber a stderr; logs estructurados con `info!`
+    en startup y error.
+  - Workspace clap: añadida feature `env` (compatible con el resto
+    de crates que usan `clap`).
+  - dev-dependency `reqwest = { workspace = true }` en
+    cognicode-explorer para los 3 tests E2.W2 que llaman al
+    router via HTTP real.
+- **Tests E2.W2** (en `cp1_control_plane_endpoint.rs`):
+  - `e2_w2_control_plane_router_serves_real_http_request`:
+    arranca el router en `127.0.0.1:0` (puerto efímero), GET al
+    endpoint, verifica 200 + `status: evaluated` + 3 constraints.
+  - `e2_w2_control_plane_router_detects_synthetic_drift`:
+    misma idea pero con una fixture que tiene drift; verifica
+    exactamente 1 violation con el `constraint_id` correcto.
+  - `e2_w2_control_plane_router_404_for_non_cp_routes`: itera
+    `/api/...`, `/control-plane/probe`, `/totally/unknown` y
+    verifica 404 limpio en cada uno (no panic, no 500).
+
+### Decisiones técnicas
+
+- **Bin separado vs integración con cognicode-mcp**: el bin
+  `cognicode-mcp` está construido alrededor del flujo MCP
+  (stdio transport, JSON-RPC, herramientas). Enredar el wiring
+  CP1 allí habría requerido arrancar `ApiState` con 6 services
+  solo para exponer 1 endpoint. Un bin standalone es hexagonal:
+  `cognicode-explorer` define el puerto (router + state), el bin
+  es el adapter (axum serve). Si `cognicode-mcp` quiere exponer
+  CP1 en el futuro, importa `cognicode_explorer::api::control_plane_router`
+  y le pasa un state construido con un subset de sus services —
+  sin cambios en `cognicode-explorer`.
+- **`Router<()>` vs `Router<ControlPlaneState>` como return de
+  `control_plane_router`**: el caller necesita pasar el router a
+  `axum::serve(listener, app)`, que solo acepta `Router<()>`. Hacer
+  el helper devolver `Router<()>` (con `with_state(state)` adentro)
+  simplifica el bin a una línea de wiring. Trade-off: el helper
+  consume el state, así que un caller que quiera añadir middleware
+  antes de `with_state` tiene que usar el patrón `control_plane_router_state_only`
+  (que NO está expuesto). Esto es aceptable para E2.W2 porque el
+  router minimal no necesita middleware.
+- **Scope cuts documentados**: `/control-plane/probe`, `/api/*`, y
+  `/control-plane/architecture/mermaid` devuelven 404 en el bin
+  E2.W2 porque requieren `ApiState.workspace`. El docstring de
+  `control_plane_router` lo dice explícitamente para que el lector
+  no se pregunte por qué faltan. Si surge consumer para esas rutas,
+  se monta un bin `--full` o se añade `WorkspaceService` al state
+  (cambio no trivial — `WorkspaceServiceImpl` requiere
+  `Arc<dyn SymbolRepository>`).
+- **Tests con TCP real vs `Router::oneshot`**: los tests CP1
+  pre-existentes (C1-C7) usan `oneshot` que evita bind. Los E2.W2
+  tests sí bindan a `127.0.0.1:0`. Esto prueba que el router
+  funciona end-to-end sobre el stack TCP de producción, no solo
+  sobre la abstracción de axum. El coste es ~5ms por test (bind +
+  abort + await) — aceptable.
+
+### Métricas
+
+- 1 commit: `4138eab7`.
+- 270 insertions, 1 deletion (5 files modified).
+- 1 nuevo bin (`cognicode-control-plane`), 1 nuevo state
+  (`ControlPlaneState`), 1 nuevo router helper
+  (`control_plane_router`), 1 nuevo handler
+  (`control_plane_architecture_minimal`).
+- 3 nuevos tests E2.W2 (10/10 verde en cp1_control_plane_endpoint).
+- 4 nuevos endpoints HTTP posibles (`/health`, `/control-plane/...`)
+  pero solo 2 montados (scope cuts).
+- Verificación live manual: curl al bin devuelve el JSON correcto
+  con 9303 statements_examined en self-host.
+
+### Estado
+
+- E2: IN_PROGRESS → **CLOSED**.
+- Roadmap ejecutivo cerrado a falta de E3 (NOT_TRIGGERED).
+
+### Pendiente
+
+- Ninguno en E2.
+- Próximo bloque roadmap si operador lo pide: ninguno — todas las
+  unidades de capacidad (G0, M0, E0, E1, E2, F0.1) están CLOSED.
+  E3 sigue NOT_TRIGGERED.
+- Posibles work items futuros (no en roadmap actual):
+  - E2.W3: integrar `control_plane_router` con `cognicode-mcp`
+    cuando aparezca el consumer MCP-side.
+  - E2.W4: añadir Constraint admisión dinámica (constraints en
+    fichero config, no hardcoded en código).
+  - Release tag v0.99.0 con todo E2 cerrado.
+
+### Lecciones añadidas (a las 34 anteriores)
+
+35. **Para "wiring en producción" la pregunta operativa es: ¿qué bin lo ejecuta?** Un helper en una lib que ningún bin invoca es exactamente el bug E2.W1→W2 cierra. El grep que detecta esto es `git grep -l "wire_canonical_control_query\|ControlPlaneState::canonical" crates/`. Antes de E2.W2 solo aparecía en tests; ahora aparece en `bin/control_plane.rs`.
+36. **`axum::Router<()>` (state consumido) vs `axum::Router<S>` (state genérico)**: el primero se pasa directo a `axum::serve`; el segundo requiere `.with_state(state)` o `into_make_service()` en el caller. Para routers que no necesitan middleware entre `route()` y `serve()`, devolver `Router<()>` simplifica el caller. Si en el futuro hay middleware que dependa del state, hay que migrar el helper a devolver `Router<S>` y dejar al caller hacer `with_state`.
+37. **El primer `route()` que se declara fija el tipo del Router.** axum infiere el parámetro de estado del primer handler con state. Si la primera ruta es `get(health)` (sin state), el router es `Router<()>` y añadir después `control_plane_architecture_minimal` (con `ControlPlaneState`) falla con E0308. Por eso `control_plane_router` declara PRIMERO la ruta stateful — la pista de inferencia de tipos llega antes que los handlers stateless.
