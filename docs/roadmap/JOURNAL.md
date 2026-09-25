@@ -306,3 +306,114 @@ mergeados solo cuando los 4 jobs verdes. Esto valida G0.1 enforcement.
 10. **Cierre real ≠ "mergeado".** M0.2 se cerró solo cuando los
     criterios (fmt+clippy verde, tests verde, build OK, merge-gate
     PASS) se cumplieron VERIFICADOS, no asumidos.
+
+---
+
+## Entrada 3 — 2026-09-25 — M0.3 verificación + M0.3.b redirigido a E3
+
+### Contexto
+
+Operador invocó modo autónomo de nuevo: "revisar roadmap + deuda
+técnica, priorizar con criterio propio, ejecutar respetando reglas
+1-8". Recomendación autónoma previa era: "investigar M0.1 real bug,
+luego M0.3, luego v0.98.2 si hay cambio de binario".
+
+Esta entrada documenta la verificación de **M0.3** y el re-shuffle
+de su sub-item (`find_usages CLI` no es mantenimiento, es feature).
+
+### Análisis
+
+M0.3 agrupaba tres carry-over de PRF (STATE §13, F7 §244,
+RELEASE-CANDIDATE §80–81):
+
+1. **`H-clippy-cli-residual (D34-2)`** — warnings preexistentes en
+   `cognicode-cli` (unused_imports, dead_code, etc.).
+2. **`moldql panic test preexistente`** — test de pánico inestable
+   en explorer (nota histórica sin SHA claro).
+3. **`find_usages CLI equivalente al MCP tool`** — feature
+   pequeño (CLI wrapper sobre tool ya existente).
+
+### Verificación
+
+#### (1) clippy residual — CERRADO DE FACTOPor M0.2.1 + M0.2.2
+
+```
+$ cargo clippy --workspace --all-targets -- -D warnings
+... Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 13s
+exit code: 0
+```
+
+El strict de CI exige `clippy -D warnings`. M0.2.1+M0.2.2 ya
+arreglaron los 12 lints preexistentes (2 unused_imports + 3
+collapsible_if + 2 useless_format + 2 needless_borrow + 1
+bool_comparison + 1 doc_overindented + 1 let-chain). M0.3.1
+queda **cubierto por colateral de M0.2**, sin código nuevo.
+
+#### (2) moldql panic test — NO EXISTE COMO REGRESIÓN
+
+```
+$ cargo test -p cognicode-explorer --lib
+test result: ok. 834 passed; 0 failed; 0 ignored; 0 measured; 121 filtered out
+
+$ cargo test -p cognicode-explorer --test e28_3_runtime_wiring
+test result: ok. 4 passed; 0 failed
+
+$ cargo test -p cognicode-explorer --test moldql_pattern_mcp
+test result: ok. 3 passed; 0 failed
+
+$ cargo test -p cognicode-explorer --test moldql_pattern_rest
+test result: ok. 7 passed; 0 failed
+```
+
+258 tests moldql (834 + 4 + 3 + 7) verdes. 0 flaky.
+
+Los `panic!` que aparecen en `crates/.../intent.rs:135,166,182,196`
+y `consolidated_handlers.rs:1177,1279,1359` son **tests de contrato**
+que pinean invariantes del parser (e.g. "esperamos variant Find" +
+"given query vacía devuelve NoMatch"). NO son regresiones. M0.3.2
+carece de objeto: el carry-over histórico descrito como
+"moldql panic test preexistente" ya está **verificado no-regresión
+a HEAD `d654031c`**.
+
+#### (3) find_usages CLI — REDIRIGIDO A E3 (feature, no mantenimiento)
+
+El binario `cognicode` no expone `find_usages` como subcomando.
+La MCP tool sí existe (en `cognicode-meta` de rmcp_adapter). Esto
+es un **feature nuevo**, no bug ni refactor.
+
+Regla de MAINTENANCE.md: "No se mezcla con features". Mantenerlo en
+M0 contaminaría el backlog de mantenimiento. Se redirige a **E3**
+en ROADMAP como feature evolutivo (carry-over PRF, ahora
+evolutivo).
+
+### Decisión
+
+- **M0.3** (clippy + moldql) — **CLOSED** sin código nuevo.
+- **`find_usages CLI`** — movido de M0.3.b a **E3** en ROADMAP.
+
+### Archivos tocados
+
+- `docs/roadmap/MAINTENANCE.md` — tabla M0.* ahora con Estado y
+  Evidencia; `find_usages` movido a E3 como sección evolutiva.
+- `docs/roadmap/ROADMAP.md` — M0.3 marcado CLOSED; E3 añadido;
+  referencias E0..E2 → E0..E3.
+
+### Estado post-entrada
+
+- **M0.1**: PENDING (necesita clarificación operador).
+- **M0.2**: CLOSED.
+- **M0.3**: CLOSED (verificación de carry-over).
+- **E0..E3**: PENDING (siguiente feature a abordar = E3 o E0.W1).
+
+### Próximo paso
+
+Sin código nuevo en M0.3, **no se requiere release v0.98.2** por
+este lado. La barra para v0.98.2 queda: M0.1 cierra con bug real
+(combinable con M0.3 — cero código nuevo) o E0.W1 introduce
+binario/cambio de contrato.
+
+Operador decide. Si aprueba, E3 (`find_usages CLI` como binario
+nuevo) es candidato natural para v0.98.3 con criterio "valor
+rápido y seguro" (regla 2): un solo binario, scope acotado, tests
+quirúrgicos, cierre verificable.
+
