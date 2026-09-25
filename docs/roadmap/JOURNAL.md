@@ -2010,3 +2010,123 @@ advertía el proposal: sin fixture, W2+ sería
 especulación. Ahora confirmado: el PageRank
 recomputation no es la causa. La búsqueda de la causa
 real es W4-W5, no W3.
+
+## Entrada 13 — 2026-09-26 — e91.W6 CLOSED: 7 handlers emiten metadatos honestos
+
+### Contexto
+
+W6 estaba registrado en JOURNAL §11 entry 11 desde el cierre
+de e91.W1 como work unit futura sin abordar: "tras cerrar
+e91.W1, conté 6 handlers vecinos con el mismo patrón
+minimalista". Con la caracterización W2 (entry 12) cerrando
+el debate sobre PageRank recomputation, W6 quedaba como el
+siguiente bloque con valor claro y scope acotado.
+
+### Hechos
+
+Commit `c1618e84` extiende el patrón del fix W1 a los 7
+handlers hermanos en `graph_analyze.rs`:
+
+| Handler                     | algorithm (string)              | parameters                |
+|-----------------------------|----------------------------------|---------------------------|
+| graph_pagerank              | `page_rank`                      | α, max_iterations         |
+| graph_god_nodes             | `god_nodes`                      | percentile                |
+| graph_community_god_nodes   | `label_propagation_with_god_nodes` | LP max_iter, percentile  |
+| graph_surprising_connections| `label_propagation_then_surprising_connections` | LP max_iter, limit |
+| graph_transitive_reduction  | `transitive_reduction`           | (vacío: no args propios)  |
+| graph_feedback_arc_set      | `feedback_arc_set`               | heuristic name            |
+| graph_all_simple_paths      | `all_simple_paths_dfs`           | from, to, max_hops        |
+
+Cada payload añade tres bloques:
+
+```json
+{
+  "algorithm": "<name>",
+  "parameters": { ... },
+  "subgraph": { "root": "...", "direction": "...",
+                "depth": N, "node_count": N', "edge_count": N'' },
+  <camino_original_inalterado>
+}
+```
+
+### Por qué no se añadió `iterations_used` / `converged` aquí
+
+El fix W1 sí los expone para `graph_communities` porque
+`cognicode_graph_algos::communities` retorna
+`(Vec<Vec<usize>>, CommunitiesMeta)` — un struct que ya
+incluye esos campos tras el commit 6f40a08b. Para
+los demás algoritmos (`page_rank`, `god_nodes`, etc.)
+la API retorna `HashMap` plano: extenderla requiriría
+tocar la interfaz WASM-bound de
+`cognicode_graph-algos::page_rank`, lo cual es scope
+creep. La caracterización W2 (entry 12) además mostró
+que tales campos no moverían la latencia perceptible.
+
+W3 (cache/compartir PageRank) sigue deprioritizado por
+las mismas razones de entry 12 — queda como mejora de
+limpieza arquitectónica en el backlog.
+
+### Verificación
+
+```
+cargo test -p cognicode-explorer --test graph_analyze_integration:
+  35/35 verde (28 pre-existentes + 7 nuevos W6)
+clippy -p cognicode-explorer --tests -D warnings: exit 0
+fmt --check:                                    verde
+```
+
+Los 7 tests W6 son RED→GREEN por construcción: si un
+futuro commit elimina cualquiera de los campos del W6
+envelope, los 7 tests fallan en `assert_w6_metadata_
+envelope`.
+
+### Compatibilidad hacia atrás
+
+Aditiva estricta: las claves originales (`scores`,
+`nodes`, `edges`, `paths`, `communities`) mantienen su
+shape y posición. Un cliente que ignore las nuevas claves
+sigue funcionando. No es breaking change.
+
+### Decisión sobre W3 (consecuencia)
+
+W3 (cache de PageRank entre handlers) ahora tiene DOS
+razones para reabrirse si llegara a hacer falta:
+
+1. La razón arquitectónica (una sola fuente de verdad para
+   scores por subgrafo): sigue válida pero de baja
+   prioridad.
+2. La razón de latencia (W2 descartada): NO se reabre por
+   perf a estos tamaños; el cuello de botella del
+   scorecard G5 está en otra parte.
+
+### Lecciones añadidas
+
+57. **Patrones de enrich-minimalista escalan mejor
+    como contratos que como perf opts**. Cada handler
+    recibe `algorithm` + `parameters` + `subgraph dims`
+    a coste cero (no se llama a ningún algoritmo extra).
+    Cualquier futura propuesta de "W3 perf" tiene ahora
+    un baseline reproducible encima del cual comparar.
+
+58. **No extender APIs WASM-bound para enriquecimientos
+    de metadata**. `cognicode-graph-algos` sirve a la
+    build WASM además de al bin de runtime; añadir
+    retornos a `page_rank` (Devolvería `(HashMap, PageRankMeta)`)
+    rompería el shim. Patrón correcto: enriquecer en el
+    handler, no en el algoritmo.
+
+### Estado del roadmap tras W6
+
+* e91.W1 CLOSED (commits 6f40a08b + 42a1ddcf, docs
+  5da43a49 + 3086e1a9 + cecb7b3a).
+* e91.W2 CLOSED como caracterización + decisión de
+  governance (commit 8b4bbe85, docs 6b2738f3).
+* e91.W6 CLOSED con metadata enrichment (commit
+  c1618e84, este entry).
+* e91.W3-W5 siguen abiertos pero sin fecha clara —
+  dependen de un fixture Tier-2/3 real para reproducir
+  el p95=367s del scorecard G5 original.
+
+Firma C8 sigue PENDIENTE — toda la evidencia de
+e91.W1+2+6 debería agregarse al dosier si llega a
+firmarse.
