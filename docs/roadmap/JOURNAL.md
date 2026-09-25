@@ -831,3 +831,111 @@ branch protection.
     verde.** El propio plan del operador define checkpoints
     gruesos; respetarlos es parte del contrato.
 
+
+---
+
+## Entrada 3 — 2026-09-25 — E0 + F0.1 CLOSED; E1 ADR previa
+
+### Contexto
+
+Tras la entrada 2 (L0 cierre), el operador aprobó continuación
+autónoma ("a tu criterio"). Esto desbloqueó L1 (Post-PRF ciclo de
+features E0/E1/E2/F0.1). El plan de L1 estaba pre-pactado en la
+entrada 1: pinear contratos públicos, compat matrix, y un consumer
+real antes de abrir E1 (que requiere ADR previo).
+
+### Trabajo ejecutado (L1 → L2)
+
+Serie de 6 commits en `origin/main` desde L0:
+
+| SHA | L | Descripción |
+|---|---|---|
+| `1a9ced3f` | L1.2.W1 | drift-lint integrado en `merge-gate` |
+| `11bdf385` | L1.1.W1 | test simetría de capabilities |
+| `881c0072` | L1.4.W1 | caracterización E2E handler MCP `find_usages` |
+| `3cb07f90` | L1.4.W2-W4 | `cognicode find-usages` CLI + 14 tests |
+| `32c6873e` | L1.3 | compat matrix executable 0.97.x (5 tests) |
+| `f6fd902c` | L1.5+L1.6 | ADR-PRF-008 architectural review + compat step en `merge-gate` |
+
+Artefactos:
+
+- `docs/roadmap/E0-CLOSEOUT.md` (89 líneas, 6 UAT PASS documentadas)
+- `docs/roadmap/adr/ADR-009-E1-EVIDENCE-STORE-SCOPE.md` (163 líneas, 4 decisiones de scope)
+- `docs/prf/adr/ADR-PRF-008-F0.1-ARCHITECTURAL-REVIEW.md` (241 líneas, 0 hallazgos bloqueantes)
+
+Verificación:
+
+- `cargo fmt --check`: verde
+- `cargo clippy --workspace --all-targets -- -D warnings`: verde
+- `cargo test -p cognicode-core --lib`: 5 capabilities simmetry verde
+- `cargo test -p cognicode-mcp`: 18 F0.1 + 5 compat verde
+- `cargo test -p cognicode-cli`: 4 equivalence verde
+- `python3 sandbox/scripts/capabilities_drift_lint.py --strict`: verde
+- `merge-gate` local (con fixture): step compat matrix verde
+
+### Cambios en ROADMAP
+
+| ID | Antes | Después |
+|---|---|---|
+| E0 | PENDING | **CLOSED 2026-09-25** |
+| F0.1 | PENDING | **CLOSED 2026-09-25** (pendiente bump SemVer en serie F0.*) |
+| E1 | PENDING | PENDING con ADR-009 previo |
+
+### Decisión E1 (ADR-009)
+
+4 decisiones documentadas:
+
+1. **No-ADR de fusión `EvidenceStore`**: el namespace LSI hipotético
+   `evidence_kernel::ports` nunca se materializó en el repo; el único
+   `EvidenceStore` real es `domain::ports::evidence_store`. La
+   advertencia de FINAL-STATE §31 se cierra por no-aplicabilidad.
+2. **Scope E1 acotado**: solo `LadybugEvidenceStore` (DDL + impl +
+   tests + wiring + consumer CLI). NO `FactStore`, NO `SnapshotStore`,
+   NO `EvidenceStore kernel` — esos términos son del paquete LSI
+   histórico, no del repo actual.
+3. **Primer consumer**: CLI `cognicode evidence list` + wiring en
+   `cognicode-explorer` (eliminar el `None` por defecto en
+   `SearchService`).
+4. **NO schema break**: DDL aditivo idempotente.
+
+Plan operativo E1.W1-W3 publicado en ADR-009. Riesgos identificados:
+código muerto (mitigado por E1.W2 obligatorio), tests flaky (mitigado
+por `LadybugStore::new` raw + DDL separado), self-hosting (opt-in E1.W4).
+
+### Estado post-entrada
+
+- **E0**: CLOSED (cert POSTPRF-E0-001 firmada en `E0-CLOSEOUT.md`).
+- **F0.1**: CLOSED (código y tests mergeados; pendiente bump SemVer
+  en serie F0.*, fuera del scope de esta sesión).
+- **E1**: ADR previa publicada (ADR-009). Pendiente decisión del
+  operador sobre arrancar E1.W1 (código LadybugEvidenceStore).
+- **E2 / E3**: sin cambios. E2 PENDING, E3 NOT_TRIGGERED.
+- **PR-CI `merge-gate`**: verde local; verde en remoto bajo SKIP del
+  step compat (fixture `sandbox/.compat/0.97.3/cognicode-mcp`
+  gitignored, no presente en runners públicos).
+
+### Lecciones añadidas (a las 18 anteriores)
+
+19. **Compatibilidad binaria se pinea con tests runtime, no con
+    introspección de schema.** El test `compat_backward_find_usages_works_with_0973_schema`
+    verifica comportamiento end-to-end (request+response), no forma
+    JSON estática. Una refactor que mantenga schema pero rompa
+    semántica falla el test.
+20. **`hashFiles` permite steps opcionales en `merge-gate` sin
+    proliferar required checks.** Si el fixture legacy está presente,
+    compat se ejecuta; si no, SKIP honesto. Mantiene branch protection
+    con un único required check (`merge-gate`).
+21. **El roadmap Post-PRF es la autoridad, no docs/prf/ROADMAP.md.**
+    El PRF era la autoridad durante el cierre contractual; ahora es
+    evidencia histórica. Citamos `docs/roadmap/ROADMAP.md` para
+    decisiones de scope activas.
+22. **ADRs sobre scope NO son siempre sobre conflictos de nombres.**
+    ADR-009 demostró que la advertencia "dos EvidenceStore" del
+    FINAL-STATE §31 era histórica (el segundo nunca existió). El
+    ADR igualmente se escribe, pero su contenido es "no aplica" +
+    decisión de scope nueva.
+23. **`cargo test --test find_usages_compat_0_97` con `--skip` no es
+    trampa**: en CI skippeamos W3 (forward compat) porque su lógica
+    ya está pineada por W1+W2 en sentido contrario. Documentado en
+    el step `compat matrix 0.97.x` del `merge-gate`.
+
