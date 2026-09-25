@@ -180,7 +180,18 @@ jobs:
           # pineado en sentido contrario por W1 + W2.
           cargo test -p cognicode-mcp --test find_usages_compat_0_97 -- \
             --skip compat_forward_0973_server_handles_modern_request
-      # L1.2.W2 (futuro) — otros contract/old-new compatibility tests
+      # L3.W1 — cognicode-ladybug unit tests.
+      # 50 tests inline cubren: open/close del store, init_schema
+      # idempotente, migrate_call_graph roundtrip, narrative_store
+      # save/load/invalidate, quality_store, e29_2_neighbors, etc.
+      # Pre-E1.W1 gap crítico: este crate NO estaba pineado en CI
+      # aunque tiene la batería inline más completa del repositorio.
+      # Cualquier refactor de `LadybugStore` que rompiese la suite
+      # pasaba CI remoto sin detección. Cierra deuda M0.4 (preparación
+      # E1).
+      - name: cognicode-ladybug unit tests (L3.W1 dentro de merge-gate)
+        run: cargo test -p cognicode-ladybug --lib --quiet
+      # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
         run: echo "merge-gate[OK] fan-out verde + drift-lint verde"
