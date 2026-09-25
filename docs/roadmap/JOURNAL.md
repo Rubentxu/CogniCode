@@ -939,3 +939,51 @@ por `LadybugStore::new` raw + DDL separado), self-hosting (opt-in E1.W4).
     ya está pineada por W1+W2 en sentido contrario. Documentado en
     el step `compat matrix 0.97.x` del `merge-gate`.
 
+
+---
+
+## Entrada 4 — 2026-09-25 (cierre E1 / L4 completo)
+
+### Hechos
+
+- **E1.W1** `LadybugEvidenceStore` impl real (ladybug) — commit `7611a589`. 12 tests inline `#[serial]` en `cognicode-ladybug/src/evidence_store.rs` pinean schema, idempotencia, list/search, kind filter, search vacío.
+- **E1.W2** runtime wiring — commit `425b0fb3`. `Runtime.evidence_store: Option<Arc<dyn EvidenceStore>>` + `bootstrap_ladybug` propaga `Some(store.clone())` + `into_api_state` invoca `SearchServiceImpl::with_evidence_store(...)`. 2 tests `evidence_store_wiring_smoke.rs` multi-thread tokio verde.
+- **E1.W3** CLI `cognicode evidence list|search` + MCP tools `list_evidence|search_evidence` — commit `b7026475`. Patrón hexagonal: core define `EvidenceBackend` trait + factory registry; cli provee `LadybugEvidenceBackend` adapter; ambos lados llaman al mismo `render_evidence_rows_json` (`pub(crate)`). 9 tests `evidence_cli_mcp_equivalence.rs` verde pineando JSON shape contract.
+- **E1 cierre** ADR-010 namespace split — commit `ffb85b6b`. Cierra el colgajo que E1.W1 dejó explícito en `init_schema.rs` líneas 65-68: tabla backing del `EvidenceStore` se llama `KnowledgeEvidence` (NO `Evidence`) porque `RunLineageStore` ya posee una tabla `Evidence` con esquema incompatible (provenance vs snapshot). Cumple FINAL-STATE §31 preventivamente.
+- **E1 closeout** — commit (siguiente). `docs/roadmap/E1-CLOSEOUT.md` (128 líneas, 8 secciones). ROADMAP.md actualizado: E1 PENDING → CLOSED.
+
+### Decisiones técnicas
+
+- **Factory pattern en CLI** (no `Arc<Backend>` directo): el subcomando CLI permite `--db-path` por invocación, así que el registry expone una factory `Arc<dyn Fn(Option<&PathBuf>) -> ...>` en lugar de un backend singleton.
+- **`EvidenceBackend` trait separado del dominio `EvidenceStore`**: el core no conoce lbug; el adapter hace el forward 1:1.
+- **`render_evidence_rows_json` `pub(crate)`**: única fuente de verdad para el shape JSON; el MCP handler la llama directamente, evitando duplicación de Cypher o de serde derives.
+- **`Value::Null(LogicalType)` tuple variant**: API lbug 0.19. Pineado en tests.
+- **DDL single-line**: lbug 0.19 silencia multi-line con `\` continuation como no-op. Pineado en `init_schema.rs`.
+
+### Métricas
+
+- 23 tests verde pineando E1: 12 (ladybug) + 2 (runtime wiring) + 9 (CLI/MCP equivalencia).
+- 4 commits shipped: `7611a589`, `425b0fb3`, `b7026475`, `ffb85b6b` (+ el closeout).
+- ~1500 líneas nuevas (código + tests + docs inline + ADRs).
+- API pública sin cambios breaking: el `EvidenceStore` trait ya existía; el adapter es aditivo y gated por feature.
+
+### Estado
+
+- E1: PENDING → CLOSED.
+- F0.1: sigue CLOSED con pendiente bump SemVer F0.* (no v0.98.x patch).
+- E2: PENDING (CP1 primer consumer).
+- E3: NOT_TRIGGERED.
+
+### Pendiente
+
+- **Bump SemVer F0.* → v0.99.0**: ADR pendiente. Decisión sobre si el bump viene con E1 cerrado (F0.* incluye F0.1 + E1) o se espera a un release aggregate mayor.
+- **Tests CLI pre-existentes fallando**: 3 tests ortogonales a E1. Backlog de mantenimiento (`MAINTENANCE.md`).
+- **CI workflow file issue**: ortogonal a E1. Bloqueante externo desde hace 2+ horas. No bloquea avance local (código compila, tests verde local).
+
+### Lecciones añadidas (a las 23 anteriores)
+
+24. **Patrón hexagonal funciona cuando el core define el puerto y el adapter hace el forward 1:1.** El nuevo `EvidenceBackend` trait vive en core (sin lbug), el adapter en cli (con lbug). El MCP y la CLI comparten el trait sin coupling cruzado. Reutilizable para futuros adapters (e.g. `postgres-evidence`, `sqlite-evidence`) si aparece el caso.
+25. **Tablas con `MATCH (n:Evidence)` no se fusionan con tablas con `MATCH (n:Evidence)` aunque ambas sean reales.** PK incompatible (SERIAL vs STRING), semántica incompatible (provenance vs snapshot), API incompatible (RunLineageStore vs EvidenceStore). El ADR-010 lo formaliza y `KnowledgeEvidence` cierra el conflicto por nombre.
+26. **`pub(crate)` sobre `pub` cuando una función es punto de integración interno.** `render_evidence_rows_json` la llaman CLI y MCP, pero no es parte de la API pública — `pub(crate)` evita que un consumidor externo empiece a depender de su shape, manteniendo libertad para refactor.
+27. **`evidence-cli-ladybug` como feature opt-in en core es el patrón correcto para mantener el core lbug-free.** La CLI lo activa solo cuando `--features ladybug`. Default build (sin features) sigue compilando sin lbug.
+28. **El E1.W4 (writer port) queda fuera del scope por consumidor ausente.** ADR-009 explícito. Cuando llegue el consumer, será un WU nuevo con su propio ADR — no se reabre E1.
