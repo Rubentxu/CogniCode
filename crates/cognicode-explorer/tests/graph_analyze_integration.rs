@@ -333,6 +333,170 @@ async fn graph_communities_respects_max_iterations() {
     );
 }
 
+// RED regression for e91.W1: before the fix, `iterations_used` and
+// `converged` were hardcoded (`max_iterations.min(100)` and `true`).
+// These tests verify that the real MCP handler now reports the actual
+// Label Propagation execution state observable by clients.
+#[tokio::test]
+async fn graph_communities_reports_real_iterations_used() {
+    // The fixture (4 nodes: x1→x2, y1→y2, x2→y1 cross-edge) oscillates
+    // under LP with the symmetric tie-break (verified by standalone
+    // simulation in /tmp/lp_fixture_check.rs — never converges).
+    // The handler MUST report the honest values, not hardcoded ones.
+    let g = build_communities_fixture();
+    let ctx = ctx_with_graph(g);
+    let registry = build_registry();
+
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_COMMUNITIES,
+            &ctx,
+            json!({
+                "subgraph": { "root": "c1.rs:x1:1", "depth": 5 },
+                "max_iterations": 100
+            }),
+        )
+        .await;
+    let json_text = format!("{raw:?}");
+
+    // The fields must be present in the response payload (they were
+    // absent before this fix — only "communities" was emitted).
+    // JSON pretty-prints with newlines + spaces, so we look for the
+    // field names (not full key:value patterns, since values vary).
+    assert!(
+        json_text.contains("iterations_used"),
+        "response must contain iterations_used field: {json_text}"
+    );
+    assert!(
+        json_text.contains("converged"),
+        "response must contain converged field: {json_text}"
+    );
+    assert!(
+        json_text.contains("max_iterations"),
+        "response must echo max_iterations: {json_text}"
+    );
+    assert!(
+        json_text.contains("label_propagation"),
+        "response must declare algorithm: {json_text}"
+    );
+}
+
+#[tokio::test]
+async fn graph_communities_oscillating_2cycle_reports_non_convergence() {
+    // A 2-cycle (a↔b) oscillates under Label Propagation. Before
+    // the fix, the handler reported `converged=true` regardless.
+    // After the fix, it must report `converged=false` and
+    // `iterations_used=100`.
+    use cognicode_core::domain::aggregates::{CallGraph, Symbol};
+    use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+    let mut g = CallGraph::new();
+    let a = g.add_symbol(Symbol::new(
+        "a",
+        SymbolKind::Function,
+        Location::new("cycle.rs", 1, 0),
+    ));
+    let b = g.add_symbol(Symbol::new(
+        "b",
+        SymbolKind::Function,
+        Location::new("cycle.rs", 2, 0),
+    ));
+    g.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+    g.add_dependency(&b, &a, DependencyType::Calls).unwrap();
+
+    let ctx = ctx_with_graph(g);
+    let registry = build_registry();
+
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_COMMUNITIES,
+            &ctx,
+            json!({
+                "subgraph": { "root": "cycle.rs:a:1", "depth": 5 },
+                "max_iterations": 100
+            }),
+        )
+        .await;
+    let json_text = format!("{raw:?}");
+
+    // The 2-cycle exhausts max_iterations without converging.
+    // `format!("{raw:?}")` produces Rust Debug output, which escapes
+    // every `"` inside strings as `\"`. So a JSON key `converged`
+    // shows up as `\"converged\"` in the debug text. Match on the
+    // full key:value pattern including the escape.
+    assert!(
+        json_text.contains("\\\"converged\\\": false"),
+        "2-cycle must report converged=false (was hardcoded true before e91.W1): {json_text}"
+    );
+    assert!(
+        json_text.contains("\\\"iterations_used\\\": 100"),
+        "2-cycle must report iterations_used=100 (exhausted max_iter): {json_text}"
+    );
+}
+
+#[tokio::test]
+async fn graph_communities_convergent_3cycle_reports_convergence() {
+    // A 3-cycle (a→b→c→a) collapses to a single community under LP
+    // (verified by the algorithm tests in cognicode-graph-algos).
+    // The handler must report `converged=true` and a real iteration
+    // count (well below 100 — typically 1-3).
+    use cognicode_core::domain::aggregates::{CallGraph, Symbol};
+    use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+    let mut g = CallGraph::new();
+    let a = g.add_symbol(Symbol::new(
+        "a",
+        SymbolKind::Function,
+        Location::new("three.rs", 1, 0),
+    ));
+    let b = g.add_symbol(Symbol::new(
+        "b",
+        SymbolKind::Function,
+        Location::new("three.rs", 2, 0),
+    ));
+    let c = g.add_symbol(Symbol::new(
+        "c",
+        SymbolKind::Function,
+        Location::new("three.rs", 3, 0),
+    ));
+    g.add_dependency(&a, &b, DependencyType::Calls).unwrap();
+    g.add_dependency(&b, &c, DependencyType::Calls).unwrap();
+    g.add_dependency(&c, &a, DependencyType::Calls).unwrap();
+
+    let ctx = ctx_with_graph(g);
+    let registry = build_registry();
+
+    let raw = registry
+        .dispatch(
+            TOOL_GRAPH_COMMUNITIES,
+            &ctx,
+            json!({
+                "subgraph": { "root": "three.rs:a:1", "depth": 5 },
+                "max_iterations": 100
+            }),
+        )
+        .await;
+    let json_text = format!("{raw:?}");
+
+    // 3-cycle converges; community_count should be 1 and
+    // iterations_used should be < 100. `format!("{raw:?}")` renders
+    // interior `"` as `\"`, so the JSON key `converged` appears
+    // escaped in the debug text.
+    assert!(
+        json_text.contains("\\\"converged\\\": true"),
+        "3-cycle must converge: {json_text}"
+    );
+    assert!(
+        json_text.contains("\\\"community_count\\\": 1"),
+        "3-cycle should be one community: {json_text}"
+    );
+    // Anti-regression: iterations_used must NOT be the hardcoded
+    // `max_iterations.min(100) = 100`. The fix propagates the real
+    // count which for a 3-cycle is 1-3.
+    assert!(
+        !json_text.contains("\\\"iterations_used\\\": 100"),
+        "3-cycle must NOT report iterations_used=100 (would mean hardcoded): {json_text}"
+    );
+}
+
 // ============================================================================
 // graph_community_god_nodes tests
 // ============================================================================

@@ -463,7 +463,20 @@ impl ToolHandler for GraphCommunitiesHandler {
                     .collect()
             })
             .collect();
-        let payload = serde_json::json!({ "communities": communities });
+        // Expose the real Label Propagation execution state alongside
+        // the communities. Before e91.W1, `iterations_used` and
+        // `converged` were hardcoded by the underlying algorithm
+        // (committed 6f40a08b fix). This handler propagates those
+        // honest values so MCP clients (the explorer-mcp binary)
+        // see the real algorithm state, not approximations.
+        let payload = serde_json::json!({
+            "algorithm": "label_propagation",
+            "max_iterations": max_iter,
+            "iterations_used": result.iterations,
+            "converged": result.converged,
+            "community_count": communities.len(),
+            "communities": communities,
+        });
         ok_envelope(TOOL_GRAPH_COMMUNITIES, &payload)
     }
 }
