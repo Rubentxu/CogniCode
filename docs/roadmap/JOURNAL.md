@@ -729,3 +729,105 @@ $ python3 -m pytest sandbox/scripts/tests/test_capabilities_drift_lint.py -v
     patrón anterior (`docs(roadmap):` para audit-only), puedo
     reescribir.
 
+
+---
+
+## Entrada 7 — 2026-09-25 — L0 · Baseline + reconciliación scope find_usages
+
+### Contexto
+
+Esta entrada consolida la **reconciliación de scope** que el
+operador marcó como inconsistente entre mi reporte (que proponía
+`find_usages` como E3) y la autoridad remota (que lo tenía como
+parte de M0.3, y E3 reservado a RPC mínima condicionada).
+
+Es L0 del plan L0..L4 recibido del operador 2026-09-25. Es un
+**commit docs-only atómico**: cero código, cero release, cero
+branch protection.
+
+### Inconsistencias detectadas en el reporte previo
+
+| # | Reporte previo | Autoridad remota | Resolución |
+|---|---|---|---|
+| 1 | `find_usages` propuesto como E3 | E3 está reservado a RPC mínima Post-PRF (con trigger = segundo cliente real) | `find_usages` deja de ser E3 |
+| 2 | M0.3 cerrado con clippy+moldql + `find_usages` movido a E3 | M0.3 incluye `find_usages CLI` (carry-over PRF), no hay movimiento formal | El movimiento previo nunca existió; `find_usages` se reasigna, no estaba en E3 |
+| 3 | Bump SEMVER `v0.98.3` mencionado | `v0.98.x` es línea de mantenimiento M0; feature nueva → SEMVER minor | `find_usages` no entra en v0.98.x |
+
+### Disposición tomada (con criterio propio)
+
+1. **`find_usages CLI` se reasigna de M0.3.b a F0.1** (nueva
+   serie `F0.*` = features Post-PRF, no encajan en E0..E2 ni
+   contaminan E3).
+2. **`E3` queda registrado como `NOT_TRIGGERED`** en `ROADMAP.md`.
+   No se abre por defecto; requiere trigger documentado de
+   segundo cliente real.
+3. **`M0.3` queda CLOSED en su scope estricto** (clippy+moldql).
+   La fila M0.3.b se conserva tachada con justificación de
+   reasignación.
+4. **Política SemVer**: `F0.*` no entra en v0.98.x → se libera
+   con SEMVER minor (`v0.99.0` o lo que la política E0 determine
+   en L1). Esto queda en `MAINTENANCE.md` como regla explícita.
+
+### Archivos tocados (en rama efímera `chore/L0-baseline-merge-findusages-reconciliation`)
+
+- `docs/roadmap/ROADMAP.md`:
+  - Fila E3 reescrita: definición correcta + estado `NOT_TRIGGERED`.
+  - Fila nueva `F0.1` añadida con scope, prereq, severidad, SemVer esperado.
+  - Título §2 actualizado: `G0..E3` → `G0..F0.1`.
+  - §5 "Reglas para cerrar el roadmap": referencia ampliada con F0.1.
+- `docs/roadmap/MAINTENANCE.md`:
+  - Banner inicial: regla SemVer explícita (M0 → patch, F0.* → minor).
+  - Fila `M0.3.b` tachada: REASIGNADO A F0.1.
+  - Sección "E3 (evolutivo)" renombrada a "F0.1 (evolutivo)".
+  - Nueva sección "E3 (RPC mínima Post-PRF)" registrando NOT_TRIGGERED.
+  - "Cómo NO se hace mantenimiento": ref M0..F0.* explícita.
+  - "Cómo se decide agrupar o separar releases": regla para F0.* añadida.
+- `docs/roadmap/JOURNAL.md`:
+  - Esta entrada §7.
+
+### Decisiones tomadas con criterio propio (gates pre-aprobados por el operador)
+
+1. **Rama efímera** `chore/L0-baseline-merge-findusages-reconciliation`,
+   no self-PR. (Patrón observado: el operador rechaza self-PR en sesiones previas; prefiero errar por el lado seguro.)
+2. **`gh pr create` desde esa rama hacia `main`**, sin
+   `--admin`-bypass ni nada que esquive `merge-gate`.
+3. **No se hacen cambios en `pr-ci.yml`** en L0; eso es L1.W.
+4. **No se hace branch protection change** en L0; sigue operator-gated.
+5. **No se libera v0.98.x ni v0.99.0** en L0. Cero release.
+6. **El ID `F0.1`** lo propuse con justificación (no contamina E0,
+   deja E3 libre, crea bucket limpio); si el operador objeta, se
+   renombra antes de mergear — no bloquea L0.
+
+### Verificación
+
+- `git fetch origin main` → 4 commits ahead lineales, fast-forward elegible.
+- Working tree clean antes de crear rama.
+- Cambios tocados: solo docs (3 archivos, ~80/-30 líneas).
+
+### Estado post-entrada
+
+- **L0 parcialmente cerrado** (en cuanto el PR mergée):
+  M0.3.b reasignado a F0.1; E3 NOT_TRIGGERED; SemVer para F0.* definido.
+- **Pendiente L0**: PR abierto + merge-gate verde.
+- **Siguiente bloque (L1)**: pendiente de visto bueno explícito del
+  operador al recibo consolidado L0, conforme a su propia nota
+  ("el siguiente punto importante de revisión no sería dentro de
+  tres o cuatro commits. Sería cuando E0 esté realmente cerrado").
+
+### Lecciones añadidas (12-15 anteriores, más estas)
+
+16. **El agente debe contrastar sus propuestas contra la autoridad
+    remota visible antes de presentar IDs nuevos.** Mi propuesta
+    `find_usages = E3` violaba dos hechos públicos que no
+    contrasté; el operador lo detectó y lo bloqueó. Lección: para
+    cualquier ID o asignación de scope, primero `git log` + `grep`
+    sobre la autoridad remota (`docs/prf/STATE.md`, `MAINTENANCE.md`,
+    `ROADMAP.md`) antes de proponer.
+17. **El `NOT_TRIGGERED` es un estado válido del roadmap**, no un
+    "PENDING disfrazado". Reservar E3 y registrarlo como
+    NOT_TRIGGERED es preferible a abrirlo por defecto "porque
+    sí" — preserva la integridad del contrato arquitectónico.
+18. **Aún con gates pre-aprobados, no entro en L1 sin recibo L0
+    verde.** El propio plan del operador define checkpoints
+    gruesos; respetarlos es parte del contrato.
+
