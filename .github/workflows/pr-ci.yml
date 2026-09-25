@@ -79,13 +79,29 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      - name: Build release binario
+      - name: Build release binario (cognicode-mcp)
         run: cargo build --release -p cognicode-mcp
-      - name: Upload binario
+      # L1.2.W2 — cognicode-control-plane (E2.W2, 2026-09-25) tambien
+      # se compila aqui. El PR anterior lo añadio a Cargo.toml + bin
+      # pero no incluyo su build en CI: una regresion especifica del
+      # bin (p.ej. un cambio en api.rs o control_plane.rs) pasaba
+      # CI sin deteccion. Lo pineamos aqui para que el merge-gate
+      # cubra ambos bins del workspace.
+      - name: Build release binario (cognicode-control-plane)
+        # IMPORTANTE: --bin, NO -p. cognicode-control-plane es un bin
+        # declarado en crates/cognicode-explorer/Cargo.toml bajo el
+        # [[bin]] name="..."  block, no un package. cargo build -p
+        # FALLA con 'package ID specification ... did not match any
+        # packages'. workspace member = cognicode-explorer; bin =
+        # cognicode-control-plane.
+        run: cargo build --release --bin cognicode-control-plane
+      - name: Upload binarios
         uses: actions/upload-artifact@v4
         with:
-          name: cognicode-mcp-release
-          path: target/release/cognicode-mcp
+          name: cognicode-bins-release
+          path: |
+            target/release/cognicode-mcp
+            target/release/cognicode-control-plane
           retention-days: 1
           if-no-files-found: error
 
@@ -103,22 +119,26 @@ jobs:
         uses: Swatinem/rust-cache@v2
       # Necesario para resolver el path al binario desde el directorio
       # del test runner (el helper honra CARGO_MANIFEST_DIR + target/).
-      - name: Descargar binario release
+      - name: Descargar binarios release
         uses: actions/download-artifact@v4
         with:
-          name: cognicode-mcp-release
+          name: cognicode-bins-release
           path: ${{ github.workspace }}/target/release
       # actions/download-artifact@v4 descomprime sin preservar permisos
-      # POSIX (x bit). Sin esto, ./target/release/cognicode-mcp baja
-      # como -rw-r--r-- y el test -x de abajo falla con
-      # "binario no ejecutable".
-      - name: Restaurar permisos de ejecución del binario
-        run: chmod +x ./target/release/cognicode-mcp
-      - name: Verificar binario
+      # POSIX (x bit). Sin esto, los bins bajan como -rw-r--r-- y el
+      # test -x de abajo falla con "binario no ejecutable".
+      - name: Restaurar permisos de ejecución de los binarios
+        run: |
+          chmod +x ./target/release/cognicode-mcp
+          chmod +x ./target/release/cognicode-control-plane
+      - name: Verificar binarios
         run: |
           test -x ./target/release/cognicode-mcp \
-            || (echo "binario no ejecutable"; exit 1)
+            || (echo "cognicode-mcp no ejecutable"; exit 1)
+          test -x ./target/release/cognicode-control-plane \
+            || (echo "cognicode-control-plane no ejecutable"; exit 1)
           ./target/release/cognicode-mcp --version
+          ./target/release/cognicode-control-plane --help | head -5
       - name: Tests lib (cognicode-core)
         run: cargo test -p cognicode-core --lib --quiet
       - name: Adversarial lib (PRF-SEC-07 nivel librería)
