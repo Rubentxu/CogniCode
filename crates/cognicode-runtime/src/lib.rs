@@ -62,6 +62,12 @@ pub struct Runtime {
     /// Multimodal ingest commit port (atomic 3-stage commit).
     #[cfg(feature = "multimodal")]
     pub ingest_commit_port: Option<Arc<dyn cognicode_core::domain::ports::IngestCommitPort>>,
+    /// E1.W2: Evidence store (read-only, knowledge layer) — wired
+    /// from `LadybugStore` when the runtime is built with the ladybug
+    /// backend. Optional so non-ladybug entry points keep working.
+    /// Surfaced on `Runtime` so the `SearchService` can hook it via
+    /// `.with_evidence_store(...)`.
+    pub evidence_store: Option<Arc<dyn cognicode_core::domain::ports::EvidenceStore>>,
 }
 
 // ============================================================================
@@ -115,6 +121,12 @@ pub struct RuntimePorts {
     /// Multimodal ingest commit port (atomic 3-stage commit).
     #[cfg(feature = "multimodal")]
     pub ingest_commit_port: Option<Arc<dyn cognicode_core::domain::ports::IngestCommitPort>>,
+    /// E1.W2: Evidence store (read-only, knowledge layer) — wired
+    /// from `LadybugStore` when the runtime is built with the ladybug
+    /// backend. Optional so non-ladybug entry points keep working.
+    /// Surfaced on `Runtime` so the `SearchService` can hook it via
+    /// `.with_evidence_store(...)`.
+    pub evidence_store: Option<Arc<dyn cognicode_core::domain::ports::EvidenceStore>>,
 }
 
 /// Build a Runtime from a [`RuntimePorts`] DTO. The canonical entry
@@ -168,6 +180,7 @@ pub async fn bootstrap_with_backend(
     let session_store = ports.session_store;
     let report_store = ports.report_store;
     let narrative_store = ports.narrative_store;
+    let evidence_store = ports.evidence_store;
     #[cfg(feature = "multimodal")]
     let federation_store = ports.federation_store;
     #[cfg(feature = "multimodal")]
@@ -203,6 +216,7 @@ pub async fn bootstrap_with_backend(
         federation_store,
         #[cfg(feature = "multimodal")]
         ingest_commit_port,
+        evidence_store,
     })
 }
 
@@ -251,6 +265,7 @@ pub async fn bootstrap(cwd: std::path::PathBuf) -> Result<Runtime, anyhow::Error
         federation_store: None,
         #[cfg(feature = "multimodal")]
         ingest_commit_port: None,
+        evidence_store: None,
     })
 }
 
@@ -286,6 +301,11 @@ pub fn bootstrap_ladybug(
         report_store: Some(store.clone() as Arc<dyn cognicode_core::domain::ports::ReportStore>),
         narrative_store: Some(
             store.clone() as Arc<dyn cognicode_core::domain::ports::NarrativeStore>
+        ),
+        // E1.W2: LadybugStore implements the EvidenceStore port (E1.W1).
+        // Cast and wire the same Arc<LadybugStore> as a read-only EvidenceStore.
+        evidence_store: Some(
+            store.clone() as Arc<dyn cognicode_core::domain::ports::EvidenceStore>
         ),
         #[cfg(feature = "multimodal")]
         federation_store: Some(
@@ -387,16 +407,22 @@ impl Runtime {
             ));
 
         let search: Arc<dyn cognicode_explorer::facades::SearchService> =
-            Arc::new(cognicode_explorer::facades::search::SearchServiceImpl::new(
-                self.symbol_repo.clone(),
-                None, // search_repo
-                Arc::new(cognicode_explorer::registry::ViewRegistry::new(None)),
-                None, // view_spec_store
-                quality.clone(),
-                Some(persistence.clone()),
-                investigation.clone(),
-                graph_repo.clone(),
-            ));
+            Arc::new(
+                cognicode_explorer::facades::search::SearchServiceImpl::new(
+                    self.symbol_repo.clone(),
+                    None, // search_repo
+                    Arc::new(cognicode_explorer::registry::ViewRegistry::new(None)),
+                    None, // view_spec_store
+                    quality.clone(),
+                    Some(persistence.clone()),
+                    investigation.clone(),
+                    graph_repo.clone(),
+                )
+                // E1.W2: wire the evidence store (read-only knowledge layer
+                // port) so the Spotter hits `evidence` family returns real
+                // rows from LadybugDB instead of an empty list.
+                .with_evidence_store(self.evidence_store.clone()),
+            );
 
         // View facade.
         let view_impl: Arc<cognicode_explorer::facades::view::ViewServiceImpl> =
@@ -699,6 +725,7 @@ mod tests {
             session_store: None,
             report_store: None,
             narrative_store: None,
+            evidence_store: None,
         };
 
         let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)

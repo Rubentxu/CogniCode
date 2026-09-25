@@ -236,6 +236,7 @@ async fn r3_r5_ports_populated_from_runtime_ports_with_identity() {
         session_store: None,
         report_store: None,
         narrative_store: None,
+        evidence_store: None,
     };
 
     let runtime = bootstrap_with_backend(std::env::temp_dir(), ports)
