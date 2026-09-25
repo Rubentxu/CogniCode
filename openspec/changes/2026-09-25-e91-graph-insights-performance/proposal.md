@@ -194,3 +194,42 @@ When ALL of the following hold:
 
 Then e91 transitions to ACCEPTED, the change is archived, and the
 scorecard streak can resume.
+
+## Addendum 2026-09-26 (c) — Evidence-based deprioritisation of W3
+
+Commit `8b4bbe85` adds a PageRank recomputation cost
+characterisation (`cognicode-graph-algos/tests/
+w2_pagerank_recomp_profile.rs`). The measurements on this
+release build runner:
+
+```
+n=10000  fanout=4  warm=  790µs  wasted=  619µs  (43.9% potential savings)
+n=25000  fanout=4  warm= 1779µs  wasted= 1583µs  (47.1% potential savings)
+n=50000  fanout=6  warm= 3937µs  wasted= 3336µs  (45.9% potential savings)
+```
+
+Conclusion: while the duplicated PageRank pattern exists
+(god_nodes:197, community_god_nodes:288,
+surprising_connections:369), its cost is sub-millisecond at
+Tier-2 sizes and sub-4ms even at the densest Tier-3 fixture.
+The potential saving is 0.01-0.07% of the analytics family
+budget (5000ms p95 per the scorecard G5 budget).
+
+Therefore: **W3 is NOT a perf optimisation.** It would
+rightfully deserve implementation for **architectural
+cleanliness** (one source of truth for PageRank scores per
+subgraph), but the commit messages and the scorecard line
+item should NOT claim perf gains.
+
+The "doble PageRank" diagnosis logged in JOURNAL §11's
+"Lo más probable" paragraph is therefore **partially
+incorrect**: it identified a real code smell but the magnitude
+is irrelevant to the user-visible p95=367s reported in the
+original proposal. The true cause of the p95 regression lives
+elsewhere — W4-W5 work units (real Tier-3 fixture +
+algorithmic optimisation of the actual hot path) remain open
+and unchanged in scope.
+
+This addendum becomes an input to the C8 evidence package
+when C8 is signed off: it formalises the empirical basis on
+which W3 is deferred.

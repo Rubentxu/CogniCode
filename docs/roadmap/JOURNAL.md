@@ -1885,3 +1885,128 @@ en `cognicode-explorer` pero NO en `cognicode-mcp` core
 binary", que es exacto para HEAD actual). Firma C8 sigue
 PENDIENTE.
 
+
+## Entrada 12 — 2026-09-26 — e91.W2: evidencia de que PageRank NO es el cuello de botella
+
+### Contexto
+
+Tras cerrar e91.W1, el siguiente paso natural era W3 (perf
+optimization). El JOURNAL §11 ya senalaba "lo más probable: el
+doble cálculo de PageRank que vi en `community_god_nodes:279` +
+`surprising_connections:360`". W3 iba a consistir en aceptar
+`Option<&HashMap<SymbolId, f64>>` como parámetro precomputado
+en tres handlers de `graph_analyze.rs` para que compartieran
+el resultado. Antes de tocar código de producción, era
+obligatorio medir.
+
+### Hechos
+
+Commit `8b4bbe85` añade `crates/cognicode-graph-algos/
+tests/w2_pagerank_recomp_profile.rs` con tres tests de
+caracterización:
+
+1. `profile_pagerank_recomputation_cost` ejecuta PageRank
+   dos veces sobre dense cycle graphs en n=10K/25K/50K, midiendo
+   `as_micros()` y reportando `wasted_pct` (fracción que la
+   segunda llamada cuesta — el ahorro potencial del fix de
+   W3).
+2. `profile_pagerank_dense_cycle_at_tier2_sizes` es un gate
+   de seguridad: a 10K nodos dense-cycle, PageRank debe
+   caber en < 5s (presupuesto analytics family). Si falla,
+   el algoritmo regresó; no es flake de runner frío.
+3. `profile_pagerank_is_deterministic` pina que múltiples
+   invocaciones devuelven `HashMap`s idénticos y sin NaN/Inf
+   — precondición para que el cache de W3 sea seguro.
+
+### Mediciones (release build, este commit)
+
+```
+W2 profile: PageRank recomputation cost (alpha=0.85, max_iter=100, dense-cycle)
+  n=10000  fanout=4  warm=  790µs  wasted=  619µs  (43.9% savings if shared)
+  n=25000  fanout=4  warm= 1779µs  wasted= 1583µs  (47.1% savings if shared)
+  n=50000  fanout=6  warm= 3937µs  wasted= 3336µs  (45.9% savings if shared)
+tier-2 dense cycle (n=10000) single PageRank: < 1ms (< ms granularidad)
+```
+
+### Implicación
+
+El wasted_pct ronda **45% constante** — lo cual confirma que
+el código recomputa (es decir, el bug latente existe). Pero
+el coste absoluto es **trascendentalmente bajo**:
+
+  * 10K nodos  → 0.8ms (ahorro: 0.6ms)
+  * 25K nodos → 1.8ms (ahorro: 1.6ms)
+  * 50K nodos → 3.9ms (ahorro: 3.3ms)
+
+Compárese con el budget `analytics` family del scorecard
+G5: 5000ms p95. **El ahorro potencial de W3 es 0.01-0.07%
+del budget**. No es perceptible para el usuario.
+
+### Decisión tomada con criterio propio
+
+**NO abordar W3 como perf optimization**. El fix del doble
+PageRank merece hacerse por **limpieza arquitectónica**
+(una fuente de verdad para scores), pero NO debe venderse
+como fix de rendimiento — sería venta de píldora azul.
+
+**W3 se mantiene en el backlog como mejora de coherencia del
+modelo, no como mejora de latencia**, y se reabre solo si:
+
+  * El scorecard G5 muestra otra regresión de latencia (no
+    explicada por el doble PageRank).
+  * Una futura expansión (e.g. Personalized PageRank, escala
+    Tier-3+ masivo) hace el coste relevante de nuevo.
+  * Otro handler que recomputa PageRank aparece y el
+    nuevo total acumulado cruza el umbral del 5% del
+    budget analytics.
+
+### Verificación
+
+```
+cargo test -p cognicode-graph-algos --release: 161 (existentes) + 3 (nuevos) + 1 (doctest) + 2 (taint) = 167/167 verde
+cargo clippy -p cognicode-graph-algos --tests -D warnings: exit 0
+cargo fmt -p cognicode-graph-algos -- --check: verde
+```
+
+### Lección añadida
+
+55. **Medir antes de optimizar, incluso cuando "se ve
+    evidente"**. El doble PageRank era un code smell
+    incuestionable, pero la magnitud del problema era
+    sub-milisegundo. Sin la caracterización previa, W3
+    habría sido un commit ceremonial con un mensaje
+    exagerado. Con la evidencia, se evita el bump y se
+    reorienta el esfuerzo a verdaderas fuentes de
+    latencia (W4-W5).
+56. **Synthetic graph topology matters**. El primer
+    intento de profiler usó "hub + tail" (varios hubs
+    con muchas aristas a cola) y dio 0ms a 1K nodos:
+    PageRank converge en 3-5 iteraciones en ese tipo de
+    grafo, no ejercita `max_iter=100`. Cambiar a dense
+    cycle (cada nodo apunta a `k` vecinos toroidales)
+    produjo el peor caso realista y reveló el coste.
+    **Lección**: para algoritmos iterativos (LP,
+    PageRank, gradient descent), el fixture sintético
+    debe elegir topologías que resistan la convergencia
+    prematura, o la medición será inutil.
+
+### Impacto en ROADMAP y C8
+
+**e91.W2 efectivo**: tests de regresión + decisión
+documentada con datos. W3 re-priorizado. W4-W5 sin
+cambio.
+
+**C8 firma humana**: sigue PENDIENTE. Este hallazgo no
+afecta al scope de C8 (que es la auditoría formal del
+work unit e91), pero debería mencionarse en el addendum
+de C8 si se llega a firmar.
+
+**Scorecard G5**: el síntoma "p95=367s" reportado en
+e91/proposal.md NO puede explicarse solo por doble
+PageRank. La causa real está en otra parte (W2-W5
+requieren perfilado real con un fixture Tier-3, que
+todavía no tenemos). Esto es consistente con lo que ya
+advertía el proposal: sin fixture, W2+ sería
+especulación. Ahora confirmado: el PageRank
+recomputation no es la causa. La búsqueda de la causa
+real es W4-W5, no W3.
