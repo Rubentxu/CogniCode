@@ -21,7 +21,7 @@ el operador).
 ## Lenguajes con parser tree-sitter
 
 Lista oficial inferida de `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs::from_extension`
-(18 lenguajes):
+(22 lenguajes):
 
 ```
 Python, Rust, JavaScript, TypeScript, JSX, TSX, Go, Java,
@@ -49,14 +49,14 @@ Python, Rust, JavaScript, TypeScript (4 lenguajes)
 
 | Tool category        | Stability        | # tools | Lenguajes efectivos          | Precisión por defecto | Override LSP si disponible |
 |----------------------|------------------|---------|------------------------------|-----------------------|----------------------------|
-| `graph`              | `stable` (29)    | 29      | Todos los del parser (18)    | AST (call graph)      | n/a (graph no usa LSP)     |
-| `graph`              | `experimental` (7) | 7     | Mismos 18                    | AST (call graph)      | n/a                        |
+| `graph`              | `stable` (29)    | 29      | Todos los del parser (22)    | AST (call graph)      | n/a (graph no usa LSP)     |
+| `graph`              | `experimental` (7) | 7     | Mismos 22                    | AST (call graph)      | n/a                        |
 | `navigation`         | `stable` (3)     | 3       | Solo con LSP: Python, Rust, JS, TypeScript | LSP + AST fallback | Sí (LSP si server, AST si no) |
-| `search`             | `stable` (6)     | 6       | Mismos 18 (sobre call graph) | Heuristic ranking     | n/a (heuristic sobre AST)  |
-| `file`               | `stable` (6)     | 6       | Mismos 18                    | AST (tree-sitter)     | No                         |
-| `quality`            | `stable` (4)     | 4       | Mismos 18                    | AST (métricas)        | No                         |
-| `quality`            | `experimental` (1) | 1     | Mismos 18                    | AST                   | No                         |
-| `refactor`           | `stable` (1)     | 1       | Mismos 18                    | AST (rename)          | No                         |
+| `search`             | `stable` (6)     | 6       | Mismos 22 (sobre call graph) | Heuristic ranking     | n/a (heuristic sobre AST)  |
+| `file`               | `stable` (6)     | 6       | Mismos 22                    | AST (tree-sitter)     | No                         |
+| `quality`            | `stable` (4)     | 4       | Mismos 22                    | AST (métricas)        | No                         |
+| `quality`            | `experimental` (1) | 1     | Mismos 22                    | AST                   | No                         |
+| `refactor`           | `stable` (1)     | 1       | Mismos 22                    | AST (rename)          | No                         |
 | `view`               | `stable` (2)     | 2       | language-agnostic (lee modelo) | n/a (no es parser) | n/a                        |
 | `composite`          | `stable` (8)     | 8       | Hereda de las tools subordinadas | Compuesto          | Hereda                     |
 | `composite`          | `experimental` (3) | 3     | Hereda                       | Compuesto             | Hereda                     |
