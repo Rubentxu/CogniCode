@@ -1,5 +1,20 @@
 # Production-Ready Foundation (PRF) — ROADMAP
 
+> **⚠ ESTADO (2026-09-25) — PROGRAMA CERRADO**
+>
+> Este documento es **evidencia histórica** del programa PRF, que fue **cerrado
+> contractualmente** con C7 firmado por el operador el 2026-09-24T22:41:33Z UTC
+> sobre la release v0.98.1. NO es la agenda activa del proyecto.
+>
+> **Agenda activa Post-PRF**: [`docs/roadmap/ROADMAP.md`](../../roadmap/ROADMAP.md).
+> **Mantenimiento v0.98.x**: [`docs/roadmap/MAINTENANCE.md`](../../roadmap/MAINTENANCE.md).
+> **Cierre del programa**: [`docs/prf/FINAL-STATE.md`](../FINAL-STATE.md).
+>
+> El contenido inferior se preserva intacto a partir del commit de la release
+> firmada (`e4ab6c8e`). NO se modifican los textos originales.
+
+---
+
 > **Programa vigente**: F0–F7 con certificaciones C0–C7 (directiva
 > del operador 2026-09-21). Las fases F0, F1 y F2 quedaron definidas
 > al inicio del programa; F3–F7 se desarrollan **al cierre de cada
