@@ -148,14 +148,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verificar que los jobs fan-out pasaron
+        # L1.2: patron seguro contra shell injection. GitHub Actions
+        # no soporta `${{ needs.$job.result }}` (no expande $job dentro
+        # de la expresion; producia el bug "0 jobs" en runs push
+        # antiguos). Solucion canonica: pasar el mapa `needs` a env
+        # via `toJSON()`, y resolver el job en bash con jq.
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           for job in check build-binary test-pr; do
-            if [ "${{ needs.$job.result }}" != "success" ]; then
-              echo "::error::$job job did not succeed (${{ needs.$job.result }})"
+            result=$(echo "$NEEDS_JSON" | jq -r ".\"$job\".result")
+            if [ "$result" != "success" ]; then
+              echo "::error::$job job did not succeed ($result)"
               exit 1
             fi
           done
-          echo "fan-out: OK (check=${{ needs.check.result }}, build-binary=${{ needs.build-binary.result }}, test-pr=${{ needs.test-pr.result }})"
+          check=$(echo "$NEEDS_JSON" | jq -r '.check.result')
+          build_binary=$(echo "$NEEDS_JSON" | jq -r '."build-binary".result')
+          test_pr=$(echo "$NEEDS_JSON" | jq -r '."test-pr".result')
+          echo "fan-out: OK (check=$check, build-binary=$build_binary, test-pr=$test_pr)"
       # L1.2.W1 — capabilities drift lint.
       # Si el doc contractual y el código divergen, este step falla y
       # el PR deja de ser mergeable. Parte del agregador, NO un required
