@@ -103,7 +103,6 @@ fn reproduce_ci_layout(staging: &Path) {
 /// are not always present in a flatten-only test).
 fn assert_canonical_flat(staging: &Path, expected_extra: &[&str], require_skills: bool) {
     use std::collections::BTreeSet;
-    use std::fs;
 
     let mut required: BTreeSet<String> = BTreeSet::new();
     for plat in TIER1_PLATFORMS {

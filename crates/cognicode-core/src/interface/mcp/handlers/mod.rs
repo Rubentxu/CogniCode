@@ -7409,7 +7409,6 @@ mod tests {
     /// API honors the per-workspace contract.
     mod prf_f4_w1_workspace_isolation_tests {
         use super::*;
-        use crate::domain::value_objects::file_manifest::FileManifest;
         use std::path::{Path, PathBuf};
 
         /// Run `handle_build_graph` once over a fresh workspace,

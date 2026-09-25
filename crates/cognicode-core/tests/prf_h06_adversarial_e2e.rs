@@ -182,13 +182,12 @@ fn rpc_recv_by_id(child: &mut Child, expected_id: i64, timeout_ms: u64) -> (Opti
                     if line.is_empty() {
                         continue;
                     }
-                    if matched.is_none() {
-                        if let Ok(v) = serde_json::from_str::<Value>(line) {
-                            if v.get("id").and_then(|x| x.as_i64()) == Some(expected_id) {
-                                matched = Some(v);
-                                continue;
-                            }
-                        }
+                    if matched.is_none()
+                        && let Ok(v) = serde_json::from_str::<Value>(line)
+                        && v.get("id").and_then(|x| x.as_i64()) == Some(expected_id)
+                    {
+                        matched = Some(v);
+                        continue;
                     }
                     // Either we already matched, or this line wasn't our id.
                     // Either way, leave it in buf for the leftover.
