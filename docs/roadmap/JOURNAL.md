@@ -1729,6 +1729,19 @@ cargo fmt --check: verde
 - **e91.W2+ (algorithmic optimization)**: requiere fixture real
   multi-repo para perfilar. No tengo uno en main; sin eso, W2 sería
   especulación.
+- **W6 (extensión siblings — pendiente de scope)**: tras cerrar
+  e91.W1, conté 6 handlers vecinos con el mismo patrón
+  minimalista (`pagerank`, `god_nodes`, `community_god_nodes`,
+  `surprising_connections`, `transitive_reduction`,
+  `feedback_arc_set`, `all_simple_paths`); todos ejecutan
+  algoritmos iterativos pero solo emiten el resultado final, sin
+  exponer `algorithm`/`parameters`/`iterations`/`converged`.
+  PageRank en particular ya itera con criterio de tolerancia
+  y se sale sin reportar convergencia. Decisión: NO se aborda
+  en este ciclo porque extenderlo sin un caso de aceptación
+  concreto es especulación. Se registra en
+  `openspec/changes/2026-09-25-e91-graph-insights-performance`
+  como work unit futura con su propio gate.
 
 ### Lecciones añadidas
 
