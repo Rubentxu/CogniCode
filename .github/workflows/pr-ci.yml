@@ -1,0 +1,116 @@
+# PR-CI — gate de merge sobre pull_request a main
+#
+# PRF-CI-07: dispara automáticamente una batería mínima pero suficiente en
+# cada PR contra `main`. NO es la batería completa de `ci.yml` (LOCAL-ONLY
+# con `act`); es el gate que un PR debe pasar para ser mergeable.
+#
+# Política (PRF §152 / HANDOFF §6.1 + ADR-031):
+# - Antes del cierre contractual v0.98.1 (2026-09-24), los triggers remotos
+#   estaban deshabilitados para ahorrar minutos de CI en PRs revisados
+#   manualmente. Tras la firma C7, la suite adversarial es robusta y el
+#   retorno de inversión de un gate remoto es positivo: un PR que pase este
+#   workflow puede mergearse con confianza; uno que falle no.
+# - La batería completa (`ci.yml`) sigue siendo LOCAL-ONLY: solo corre
+#   bajo `act` o `just ci-local`. El release gate sigue siendo `release.yml`
+#   + `release-validate.yml` en tags.
+#
+# Jobs:
+#   - check       : fmt + clippy con -D warnings (falla el PR si hay warn)
+#   - build-binary: compila target/release/cognicode-mcp (necesario para
+#                   el test adversarial E2E)
+#   - test-pr     : batería mínima exigible para merge:
+#                   * cognicode-core --lib
+#                   * prf_sec_07_adversarial_campaign (nivel lib)
+#                   * prf_mcp_05 enforcement (nivel lib)
+#                   * prf_h06_adversarial_e2e (nivel binario, §153)
+#
+# Si un PR añade una suite nueva al catálogo pineado, el responsable debe
+# añadirla a `test-pr` mediante PR subsiguiente (mantener este gate
+# alineado con el pineo de C0..C7 es política, no se autoextiende).
+name: PR-CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancela runs redundantes en pushes subsiguientes al mismo PR.
+concurrency:
+  group: pr-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # check — formato + lints
+  # -----------------------------------------------------------------------
+  check:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: rustfmt --check
+        run: cargo fmt --all -- --check
+      - name: clippy -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # -----------------------------------------------------------------------
+  # build-binary — produce el binario para el E2E
+  # -----------------------------------------------------------------------
+  build-binary:
+    name: build cognicode-mcp (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Build release binario
+        run: cargo build --release -p cognicode-mcp
+      - name: Upload binario
+        uses: actions/upload-artifact@v4
+        with:
+          name: cognicode-mcp-release
+          path: target/release/cognicode-mcp
+          retention-days: 1
+          if-no-files-found: error
+
+  # -----------------------------------------------------------------------
+  # test-pr — batería exigible para merge
+  # -----------------------------------------------------------------------
+  test-pr:
+    name: test pineado (lib + E2E)
+    needs: build-binary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      # Necesario para resolver el path al binario desde el directorio
+      # del test runner (el helper honra CARGO_MANIFEST_DIR + target/).
+      - name: Descargar binario release
+        uses: actions/download-artifact@v4
+        with:
+          name: cognicode-mcp-release
+          path: ${{ github.workspace }}/target/release
+      - name: Verificar binario
+        run: |
+          test -x ./target/release/cognicode-mcp \
+            || (echo "binario no ejecutable"; exit 1)
+          ./target/release/cognicode-mcp --version
+      - name: Tests lib (cognicode-core)
+        run: cargo test -p cognicode-core --lib --quiet
+      - name: Adversarial lib (PRF-SEC-07 nivel librería)
+        run: cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+      - name: MCP enforcement (PRF-MCP-05)
+        run: cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+      - name: Adversarial E2E (PRF-SEC-07 nivel binario, §153)
+        run: cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
