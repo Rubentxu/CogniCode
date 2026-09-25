@@ -30,7 +30,10 @@ fn repo_root() -> PathBuf {
 
 fn release_bin() -> PathBuf {
     let p = repo_root().join("target/release/cognicode-release");
-    assert!(p.exists(), "cognicode-release binary missing; build release first");
+    assert!(
+        p.exists(),
+        "cognicode-release binary missing; build release first"
+    );
     p
 }
 
@@ -340,7 +343,9 @@ fn dist_workflow_flatten_rejects_unknown_files_and_duplicates() {
     let dup_dir = staging.join("payloads-aarch64-unknown-linux-gnu-extra");
     fs::create_dir_all(dup_dir.join("dist")).unwrap();
     fs::write(
-        dup_dir.join("dist").join(format!("cogh-{VERSION}-x86_64-unknown-linux-gnu.tar.gz")),
+        dup_dir
+            .join("dist")
+            .join(format!("cogh-{VERSION}-x86_64-unknown-linux-gnu.tar.gz")),
         b"different content with same name\n",
     )
     .unwrap();

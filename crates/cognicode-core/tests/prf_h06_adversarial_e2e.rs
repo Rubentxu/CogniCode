@@ -49,7 +49,7 @@
 
 #![allow(clippy::needless_raw_string_hashes)]
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 use std::io::{Read, Write};
 use std::os::unix::fs::{PermissionsExt, symlink};
@@ -253,9 +253,7 @@ fn make_fixture_repo(label: &str) -> TempDir {
     let pkg = format!("decoy_{}", label);
     fs::write(
         tmp.path().join("Cargo.toml"),
-        format!(
-            "[package]\nname = \"{pkg}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"
-        ),
+        format!("[package]\nname = \"{pkg}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n"),
     )
     .expect("write Cargo.toml");
     fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
@@ -706,8 +704,7 @@ fn v7_inaccessible_file_returns_typed_security_error() {
     let forbidden = TempDir::new().expect("forbidden tempdir");
     let target = forbidden.path().join("secret.rs");
     fs::write(&target, "pub fn x() {}\n").expect("write target");
-    fs::set_permissions(forbidden.path(), fs::Permissions::from_mode(0o000))
-        .expect("chmod 000");
+    fs::set_permissions(forbidden.path(), fs::Permissions::from_mode(0o000)).expect("chmod 000");
 
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
     initialize(&mut child).expect("initialize");
@@ -855,7 +852,10 @@ fn c3_each_test_uses_an_isolated_workspace() {
     // therefore is isolated. We assert here that the unique-name pattern
     // works.
     let pkg = format!("decoy_v1_{}", std::process::id());
-    assert!(pkg.starts_with("decoy_v1_"), "C3: unique package name pattern broken");
+    assert!(
+        pkg.starts_with("decoy_v1_"),
+        "C3: unique package name pattern broken"
+    );
     // No stray files dropped in cwd by V1's exec check.
     assert!(
         !Path::new("evil.sh").exists() && !Path::new("curl").exists(),

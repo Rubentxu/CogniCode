@@ -731,9 +731,7 @@ pub fn cmd_rollback(
                     // branch, with an explicit commit on success and removal
                     // on reshim success.
                     let is_pending = match crate::lifecycle_journal::peek_envelope_metadata(&p) {
-                        Ok(meta) => {
-                            meta.previous_tracker.as_deref() == Some(target.as_str())
-                        }
+                        Ok(meta) => meta.previous_tracker.as_deref() == Some(target.as_str()),
                         // A malformed journal cannot be the pending one,
                         // and we do not want to fail the rollback because
                         // someone (perhaps a prior crashed installer) left
@@ -4791,8 +4789,9 @@ components:
             .expect("restore A manifest for retry");
         }
 
-        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string()))
-            .expect("F6.W3.bis negative: second rollback attempt MUST succeed after manifest restoration");
+        cmd_rollback(&home, None, Some(F6W3_VERSION_A.to_string())).expect(
+            "F6.W3.bis negative: second rollback attempt MUST succeed after manifest restoration",
+        );
 
         // 10. Final state is coherent.
         assert_eq!(

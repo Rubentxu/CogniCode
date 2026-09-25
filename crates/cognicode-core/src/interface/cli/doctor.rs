@@ -588,7 +588,10 @@ mod tests {
             .strip_prefix("cognicode.doctor/v")
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or_else(|| panic!("schema_version major must parse as u32: {schema_version}"));
-        assert_eq!(major, 1, "PRF-CLI-07 pins schema_version to v1 for the doctor shape");
+        assert_eq!(
+            major, 1,
+            "PRF-CLI-07 pins schema_version to v1 for the doctor shape"
+        );
 
         // 2. The runtime version is preserved (separate concern).
         assert!(

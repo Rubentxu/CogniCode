@@ -1341,8 +1341,7 @@ impl ServerHandler for CogniCodeHandler {
             let all_tools: Vec<_> = build_all_tools()
                 .into_iter()
                 .filter(|t| {
-                    !self.ctx.read_only.load(Ordering::SeqCst)
-                        || !tool_is_mutating(&t.name)
+                    !self.ctx.read_only.load(Ordering::SeqCst) || !tool_is_mutating(&t.name)
                 })
                 .collect();
 
@@ -1414,8 +1413,7 @@ async fn call_tool_handler(
     // runs. Error is typed/honest (isError text), not a silent success.
     // Authority comes from the declared `cognicode.authority` field (primary oracle),
     // with `MUTATING_TOOLS` as a defensive subset-floor.
-    if tool_is_mutating(tool_name) && ctx.read_only.load(Ordering::SeqCst)
-    {
+    if tool_is_mutating(tool_name) && ctx.read_only.load(Ordering::SeqCst) {
         return Err(InterfaceError::Internal(format!(
             "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
         )));
@@ -2851,10 +2849,8 @@ mod tests {
         for tool in build_all_tools() {
             let name = tool.name.to_string();
             let declared = resolve_tool_authority(&name);
-            let should_be_mutating = matches!(
-                declared.as_str(),
-                "mutating" | "execute" | "network"
-            );
+            let should_be_mutating =
+                matches!(declared.as_str(), "mutating" | "execute" | "network");
             assert_eq!(
                 tool_is_mutating(&name),
                 should_be_mutating,

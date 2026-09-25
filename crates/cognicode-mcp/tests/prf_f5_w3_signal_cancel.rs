@@ -62,10 +62,7 @@ async fn spawn_run_kill(ws: &Path, tool: &str, args: serde_json::Value) -> PathB
 #[tokio::test(flavor = "multi_thread")]
 async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_lock() {
     let ws = fixture_ws();
-    let ws_copy = std::env::temp_dir().join(format!(
-        "prf-f5-w3-lock-{}",
-        std::process::id()
-    ));
+    let ws_copy = std::env::temp_dir().join(format!("prf-f5-w3-lock-{}", std::process::id()));
     copy_dir(&ws, &ws_copy);
 
     // Pre-condition: workspace has no lock file before we start.
@@ -117,10 +114,7 @@ async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_lock() {
 #[tokio::test(flavor = "multi_thread")]
 async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_tmp_cache() {
     let ws = fixture_ws();
-    let ws_copy = std::env::temp_dir().join(format!(
-        "prf-f5-w3-tmp-{}",
-        std::process::id()
-    ));
+    let ws_copy = std::env::temp_dir().join(format!("prf-f5-w3-tmp-{}", std::process::id()));
     copy_dir(&ws, &ws_copy);
 
     let _ = spawn_run_kill(
@@ -155,10 +149,7 @@ async fn prf_f5_w3_sigkill_after_build_leaves_no_stale_tmp_cache() {
 #[tokio::test(flavor = "multi_thread")]
 async fn prf_f5_w3_sigkill_then_fresh_session_recovers() {
     let ws = fixture_ws();
-    let ws_copy = std::env::temp_dir().join(format!(
-        "prf-f5-w3-recover-{}",
-        std::process::id()
-    ));
+    let ws_copy = std::env::temp_dir().join(format!("prf-f5-w3-recover-{}", std::process::id()));
     copy_dir(&ws, &ws_copy);
 
     // First session: build, then SIGKILL.

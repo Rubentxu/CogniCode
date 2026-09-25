@@ -158,9 +158,8 @@ pub struct EnvelopeMetadata {
 
 pub fn peek_envelope_metadata(path: &Path) -> Result<EnvelopeMetadata, InstallerError> {
     let text = std::fs::read_to_string(path).map_err(|e| InstallerError::Io(path.into(), e))?;
-    serde_json::from_str(&text).map_err(|e| {
-        InstallerError::Serialize(format!("journal `{}`: {}", path.display(), e))
-    })
+    serde_json::from_str(&text)
+        .map_err(|e| InstallerError::Serialize(format!("journal `{}`: {}", path.display(), e)))
 }
 
 /// Remove a journal after a successful rollback. Best-effort; failures

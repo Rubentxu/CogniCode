@@ -125,11 +125,8 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
     let stem = "0.97.4";
     let platform = "x86_64-unknown-linux-gnu";
     let stage = stage_payloads(tag);
-    let generated = std::env::temp_dir().join(format!(
-        "prf-f6-w1-gen-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let generated =
+        std::env::temp_dir().join(format!("prf-f6-w1-gen-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&generated);
 
     // Generate
@@ -205,11 +202,8 @@ fn prf_f6_w1_tampered_payload_fails_verify() {
     let stem = "0.97.4";
     let platform = "x86_64-unknown-linux-gnu";
     let stage = stage_payloads(tag);
-    let generated = std::env::temp_dir().join(format!(
-        "prf-f6-w1-gen-tam-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let generated =
+        std::env::temp_dir().join(format!("prf-f6-w1-gen-tam-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&generated);
 
     // Generate clean candidate.
@@ -237,11 +231,8 @@ fn prf_f6_w1_tampered_payload_fails_verify() {
     // payload archive (every one — bit-flip one is enough but
     // we flip all to maximize the chance of catching a future
     // regression in any single payload's digest computation).
-    let tampered = std::env::temp_dir().join(format!(
-        "prf-f6-w1-tam-{}-{}",
-        tag,
-        std::process::id()
-    ));
+    let tampered =
+        std::env::temp_dir().join(format!("prf-f6-w1-tam-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&tampered);
     std::fs::create_dir_all(&tampered).unwrap();
 

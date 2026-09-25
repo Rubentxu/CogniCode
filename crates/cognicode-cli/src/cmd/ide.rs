@@ -2470,7 +2470,9 @@ mod prf_dist_04_survival_tests {
     #[test]
     #[serial]
     fn prf_dist_04_zcode_preexisting_config_survives_uninstall() {
-        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let _lock = crate::lifecycle::ENV_LOCK
+            .lock()
+            .expect("ENV_LOCK poisoned");
         let tmp = tempfile::tempdir().unwrap();
         let cfg = tmp.path().join("config.json");
         let preexisting = json!({
@@ -2490,9 +2492,13 @@ mod prf_dist_04_survival_tests {
         }
         let result = uninstall_zcode("0.97.3", Some("cognicode-mcp"));
         if let Some(p) = prev {
-            unsafe { std::env::set_var("ZCODE_CONFIG", p); }
+            unsafe {
+                std::env::set_var("ZCODE_CONFIG", p);
+            }
         } else {
-            unsafe { std::env::remove_var("ZCODE_CONFIG"); }
+            unsafe {
+                std::env::remove_var("ZCODE_CONFIG");
+            }
         }
         result.unwrap();
 
@@ -2522,7 +2528,9 @@ mod prf_dist_04_survival_tests {
     #[test]
     #[serial]
     fn prf_dist_04_claude_preexisting_mcp_servers_survive_uninstall() {
-        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let _lock = crate::lifecycle::ENV_LOCK
+            .lock()
+            .expect("ENV_LOCK poisoned");
         let tmp = tempfile::tempdir().unwrap();
         let mcp_dir = tmp.path().join("mcp");
         std::fs::create_dir_all(&mcp_dir).unwrap();
@@ -2531,16 +2539,19 @@ mod prf_dist_04_survival_tests {
         std::fs::write(
             mcp_dir.join("cognicode-mcp.json"),
             r#"{"command":"/usr/bin/cognicode-mcp"}"#,
-        ).unwrap();
+        )
+        .unwrap();
         // Otros servers (deben sobrevivir byte-a-byte)
         std::fs::write(
             mcp_dir.join("my-own.json"),
             r#"{"command":"/usr/bin/mine","args":["--x"]}"#,
-        ).unwrap();
+        )
+        .unwrap();
         std::fs::write(
             mcp_dir.join("chronos.json"),
             r#"{"command":"/usr/bin/chronos"}"#,
-        ).unwrap();
+        )
+        .unwrap();
 
         let prev = std::env::var("CLAUDE_CONFIG").ok();
         unsafe {
@@ -2548,9 +2559,13 @@ mod prf_dist_04_survival_tests {
         }
         let result = uninstall_claude("0.97.3", Some("cognicode-mcp"));
         if let Some(p) = prev {
-            unsafe { std::env::set_var("CLAUDE_CONFIG", p); }
+            unsafe {
+                std::env::set_var("CLAUDE_CONFIG", p);
+            }
         } else {
-            unsafe { std::env::remove_var("CLAUDE_CONFIG"); }
+            unsafe {
+                std::env::remove_var("CLAUDE_CONFIG");
+            }
         }
         result.unwrap();
 
@@ -2579,7 +2594,9 @@ mod prf_dist_04_survival_tests {
     #[test]
     #[serial]
     fn prf_dist_04_codex_preexisting_mcp_servers_survive_uninstall() {
-        let _lock = crate::lifecycle::ENV_LOCK.lock().expect("ENV_LOCK poisoned");
+        let _lock = crate::lifecycle::ENV_LOCK
+            .lock()
+            .expect("ENV_LOCK poisoned");
         let tmp = tempfile::tempdir().unwrap();
         let cfg = tmp.path().join("config.toml");
         let preexisting = r#"[mcp_servers]
@@ -2598,9 +2615,13 @@ theme = "dark"
         }
         let result = uninstall_codex("0.97.3", Some("cognicode-mcp"));
         if let Some(p) = prev {
-            unsafe { std::env::set_var("CODEX_CONFIG", p); }
+            unsafe {
+                std::env::set_var("CODEX_CONFIG", p);
+            }
         } else {
-            unsafe { std::env::remove_var("CODEX_CONFIG"); }
+            unsafe {
+                std::env::remove_var("CODEX_CONFIG");
+            }
         }
         result.unwrap();
 
@@ -2613,10 +2634,7 @@ theme = "dark"
             text.contains("my-own"),
             "user's own MCP server survives in codex"
         );
-        assert!(
-            text.contains("chronos"),
-            "chronos survives in codex"
-        );
+        assert!(text.contains("chronos"), "chronos survives in codex");
         assert!(
             text.contains("theme = \"dark\""),
             "non-MCP config survives in codex, got:\n{text}"

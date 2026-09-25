@@ -892,10 +892,10 @@ impl InstallerTransaction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::doctor::{probe_core_health, CheckStatus};
+    use crate::doctor::{CheckStatus, probe_core_health};
     use crate::install::run_install;
     use crate::layout::test_support::{TempCognicodeHome, TempOpenCodeConfig};
-    use crate::layout::{cmd_uninstall, CognicodeHome};
+    use crate::layout::{CognicodeHome, cmd_uninstall};
     use crate::release_test_support::{local_release, point_at, unpoint};
 
     /// Regression: --home must not write a shim in COGNICODE_HOME.
@@ -2337,312 +2337,317 @@ components:
     }
 
     // ============================================================================
-// H-06: A → B upgrade + rollback. Pinea que el ciclo completo de dos
-// paquetes diferenciados funciona end-to-end contra el binario CLI real,
-// y que un fallo SHA en B no rompe A. El escenario downgrade (A → B → A)
-// se prueba contra binario real más adelante con la política pineada.
-// ============================================================================
+    // H-06: A → B upgrade + rollback. Pinea que el ciclo completo de dos
+    // paquetes diferenciados funciona end-to-end contra el binario CLI real,
+    // y que un fallo SHA en B no rompe A. El escenario downgrade (A → B → A)
+    // se prueba contra binario real más adelante con la política pineada.
+    // ============================================================================
 
-/// H-06-a: instalar A → instalar B debe dejar el tracker en B y
-/// `versions/B/` poblado, sin dejar el marker `versions/A/` huérfano.
-#[test]
-#[serial_test::serial]
-fn h06_upgrade_a_then_b_leaves_tracker_at_b() {
-    let _temphome = TempCognicodeHome::new();
-    let home = CognicodeHome::resolve(None).expect("resolve home");
-    home.init().expect("init home");
+    /// H-06-a: instalar A → instalar B debe dejar el tracker en B y
+    /// `versions/B/` poblado, sin dejar el marker `versions/A/` huérfano.
+    #[test]
+    #[serial_test::serial]
+    fn h06_upgrade_a_then_b_leaves_tracker_at_b() {
+        let _temphome = TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
 
-    // Install A (0.95.0)
-    let release_a = local_release("0.95.0").expect("stage A");
-    point_at(&release_a);
-    let result_a = run_install(&home, "core");
-    unpoint();
-    result_a.expect("install A must succeed");
-    let tracker_after_a = std::fs::read_to_string(home.tracker_version())
-        .unwrap_or_default();
-    assert!(
-        tracker_after_a.contains("0.95.0"),
-        "tracker debe estar en 0.95.0 tras instalar A, got: {tracker_after_a}"
-    );
-    assert!(
-        home.version_root("0.95.0").exists(),
-        "versions/0.95.0/ debe existir tras instalar A"
-    );
+        // Install A (0.95.0)
+        let release_a = local_release("0.95.0").expect("stage A");
+        point_at(&release_a);
+        let result_a = run_install(&home, "core");
+        unpoint();
+        result_a.expect("install A must succeed");
+        let tracker_after_a = std::fs::read_to_string(home.tracker_version()).unwrap_or_default();
+        assert!(
+            tracker_after_a.contains("0.95.0"),
+            "tracker debe estar en 0.95.0 tras instalar A, got: {tracker_after_a}"
+        );
+        assert!(
+            home.version_root("0.95.0").exists(),
+            "versions/0.95.0/ debe existir tras instalar A"
+        );
 
-    // Upgrade B (0.96.0)
-    let release_b = local_release("0.96.0").expect("stage B");
-    point_at(&release_b);
-    let result_b = run_install(&home, "core");
-    unpoint();
-    result_b.expect("upgrade A→B must succeed");
-    let tracker_after_b = std::fs::read_to_string(home.tracker_version())
-        .unwrap_or_default();
-    assert!(
-        tracker_after_b.contains("0.96.0"),
-        "tracker debe estar en 0.96.0 tras upgrade A→B, got: {tracker_after_b}"
-    );
-    assert!(
-        home.version_root("0.96.0").exists(),
-        "versions/0.96.0/ debe existir tras upgrade"
-    );
-}
+        // Upgrade B (0.96.0)
+        let release_b = local_release("0.96.0").expect("stage B");
+        point_at(&release_b);
+        let result_b = run_install(&home, "core");
+        unpoint();
+        result_b.expect("upgrade A→B must succeed");
+        let tracker_after_b = std::fs::read_to_string(home.tracker_version()).unwrap_or_default();
+        assert!(
+            tracker_after_b.contains("0.96.0"),
+            "tracker debe estar en 0.96.0 tras upgrade A→B, got: {tracker_after_b}"
+        );
+        assert!(
+            home.version_root("0.96.0").exists(),
+            "versions/0.96.0/ debe existir tras upgrade"
+        );
+    }
 
-/// H-06-b: rollback tras fallo SHA. Instalar A (success), construir B
-/// con tar.gz truncado (SHA mismatched), `run_install(B)` falla, y
-/// el tracker / `versions/A/` deben quedar intactos. La carpeta de
-/// staging puede contener `versions/B/` parcial, pero `versions/A/`
-/// debe seguir poblado y el tracker no debe moverse a B.
-#[test]
-#[serial_test::serial]
-fn h06_sha_failure_during_upgrade_preserves_a() {
-    let _temphome = TempCognicodeHome::new();
-    let home = CognicodeHome::resolve(None).expect("resolve home");
-    home.init().expect("init home");
+    /// H-06-b: rollback tras fallo SHA. Instalar A (success), construir B
+    /// con tar.gz truncado (SHA mismatched), `run_install(B)` falla, y
+    /// el tracker / `versions/A/` deben quedar intactos. La carpeta de
+    /// staging puede contener `versions/B/` parcial, pero `versions/A/`
+    /// debe seguir poblado y el tracker no debe moverse a B.
+    #[test]
+    #[serial_test::serial]
+    fn h06_sha_failure_during_upgrade_preserves_a() {
+        let _temphome = TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
 
-    // Install A successfully (0.97.0 era)
-    let release_a = local_release("0.97.0").expect("stage A");
-    point_at(&release_a);
-    run_install(&home, "core").expect("install A must succeed");
-    unpoint();
-    assert!(
-        home.version_root("0.97.0").exists(),
-        "A debe estar instalado antes del upgrade fallido"
-    );
+        // Install A successfully (0.97.0 era)
+        let release_a = local_release("0.97.0").expect("stage A");
+        point_at(&release_a);
+        run_install(&home, "core").expect("install A must succeed");
+        unpoint();
+        assert!(
+            home.version_root("0.97.0").exists(),
+            "A debe estar instalado antes del upgrade fallido"
+        );
 
-    // Upgrade B con un SHA intencionalmente incorrecto en el manifest.
-    // No podemos truncar el payload y dejar el SHA público igual,
-    // porque el installer verificar\u00eda SHA real (que ya es el viejo).
-    // Lo que sí podemos: inyectar un manifest con `sha256` falso para
-    // una de las components (el `cognicode-mcp-linux-x86_64.tar.gz`).
-    // Eso fuerza SHA mismatch en download → failure mid-install →
-    // Drop cleanup del side-effect.Downloaded.
-    let release_b = local_release("0.98.0").expect("stage B baseline");
-    // Sabotear el manifest: alterar el sha256 esperado.
-    let manifest_path = release_b.manifest_path.clone();
-    let yaml = std::fs::read_to_string(&manifest_path).unwrap();
-    // Reemplazar cualquier hex SHA por uno conocido-incorrecto.
-    let sabotized = regex_replace_sha256_to_bogus(&yaml);
-    std::fs::write(&manifest_path, sabotized).unwrap();
+        // Upgrade B con un SHA intencionalmente incorrecto en el manifest.
+        // No podemos truncar el payload y dejar el SHA público igual,
+        // porque el installer verificar\u00eda SHA real (que ya es el viejo).
+        // Lo que sí podemos: inyectar un manifest con `sha256` falso para
+        // una de las components (el `cognicode-mcp-linux-x86_64.tar.gz`).
+        // Eso fuerza SHA mismatch en download → failure mid-install →
+        // Drop cleanup del side-effect.Downloaded.
+        let release_b = local_release("0.98.0").expect("stage B baseline");
+        // Sabotear el manifest: alterar el sha256 esperado.
+        let manifest_path = release_b.manifest_path.clone();
+        let yaml = std::fs::read_to_string(&manifest_path).unwrap();
+        // Reemplazar cualquier hex SHA por uno conocido-incorrecto.
+        let sabotized = regex_replace_sha256_to_bogus(&yaml);
+        std::fs::write(&manifest_path, sabotized).unwrap();
 
-    point_at(&release_b);
-    let result_b = run_install(&home, "core");
-    unpoint();
-    drop(release_b); // shuts down loopback server before assertions read disk.
+        point_at(&release_b);
+        let result_b = run_install(&home, "core");
+        unpoint();
+        drop(release_b); // shuts down loopback server before assertions read disk.
 
-    // El comportamiento esperado: el install falla.
-    assert!(
-        result_b.is_err(),
-        "upgrade con SHA sabotado debe fallar, got: {result_b:?}"
-    );
+        // El comportamiento esperado: el install falla.
+        assert!(
+            result_b.is_err(),
+            "upgrade con SHA sabotado debe fallar, got: {result_b:?}"
+        );
 
-    // El tracker A debe seguir intacto.
-    let tracker_after = std::fs::read_to_string(home.tracker_version())
-        .unwrap_or_default();
-    assert!(
-        tracker_after.contains("0.97.0"),
-        "tracker NO debe moverse a 0.98.0 tras rollback; got: {tracker_after}"
-    );
+        // El tracker A debe seguir intacto.
+        let tracker_after = std::fs::read_to_string(home.tracker_version()).unwrap_or_default();
+        assert!(
+            tracker_after.contains("0.97.0"),
+            "tracker NO debe moverse a 0.98.0 tras rollback; got: {tracker_after}"
+        );
 
-    // A debe seguir poblado.
-    assert!(
-        home.version_root("0.97.0").exists(),
-        "versions/0.97.0/ debe seguir intacto tras rollback"
-    );
-}
+        // A debe seguir poblado.
+        assert!(
+            home.version_root("0.97.0").exists(),
+            "versions/0.97.0/ debe seguir intacto tras rollback"
+        );
+    }
 
-/// Aux: reemplaza cualquier SHA hex (64 chars) por `deadbeef...deadbeef`.
-/// Necesario porque algunas components están bien serializadas por SHA256
-/// y otras (firmware interno) pueden no tenerlo.
-fn regex_replace_sha256_to_bogus(yaml: &str) -> String {
-    // 64 hex chars consecutivos → 64*'d' (deterministic bogus SHA).
-    let mut out = String::with_capacity(yaml.len());
-    let mut chars = yaml.chars().peekable();
-    while let Some(c) = chars.next() {
-        if c.is_ascii_hexdigit() {
-            // Contar cuántos hex chars consecutivos hay desde aquí.
-            let mut run_len = 1;
-            let mut peek = chars.clone();
-            while let Some(&nc) = peek.peek() {
-                if !nc.is_ascii_hexdigit() {
-                    break;
+    /// Aux: reemplaza cualquier SHA hex (64 chars) por `deadbeef...deadbeef`.
+    /// Necesario porque algunas components están bien serializadas por SHA256
+    /// y otras (firmware interno) pueden no tenerlo.
+    fn regex_replace_sha256_to_bogus(yaml: &str) -> String {
+        // 64 hex chars consecutivos → 64*'d' (deterministic bogus SHA).
+        let mut out = String::with_capacity(yaml.len());
+        let mut chars = yaml.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c.is_ascii_hexdigit() {
+                // Contar cuántos hex chars consecutivos hay desde aquí.
+                let mut run_len = 1;
+                let mut peek = chars.clone();
+                while let Some(&nc) = peek.peek() {
+                    if !nc.is_ascii_hexdigit() {
+                        break;
+                    }
+                    peek.next();
+                    run_len += 1;
+                    if run_len > 256 {
+                        break;
+                    }
                 }
-                peek.next();
-                run_len += 1;
-                if run_len > 256 {
-                    break;
-                }
-            }
-            if run_len == 64 {
-                // SHA256: replace with "d" * 64.
-                for _ in 0..64 {
-                    out.push('d');
-                }
-                // Saltar los 64 chars del original.
-                chars.next();
-                for _ in 0..63 {
+                if run_len == 64 {
+                    // SHA256: replace with "d" * 64.
+                    for _ in 0..64 {
+                        out.push('d');
+                    }
+                    // Saltar los 64 chars del original.
                     chars.next();
+                    for _ in 0..63 {
+                        chars.next();
+                    }
+                    continue;
                 }
-                continue;
             }
+            out.push(c);
         }
-        out.push(c);
+        out
     }
-    out
-}
 
-/// H-06-c: tras instalar A y upgradear a B, `probe_core_health` debe
-/// reportar `Pass` en ambos estados (no sólo Warn/Partial). Sin este
-/// test, el cierre de H-06/PRF-DIST-02 sería paper-closed: el MUST
-/// exige `install → doctor → CLI → MCP` end-to-end, y `doctor` es
-/// el contrato observable de que el layout quedó sano (HOME,
-/// binarios, shims, tracker coherente con `versions/<v>`).
-///
-/// Pinea también que el binario post-upgrade es ejecutable (corre
-/// `--version` y devuelve el semver del release B). Sin este paso,
-/// la promesa "update idempotente" no se verifica contra binario.
-#[test]
-#[serial_test::serial]
-fn h06_doctor_passes_after_upgrade_and_binary_executes_with_version() {
-    let _temphome = TempCognicodeHome::new();
-    let home = CognicodeHome::resolve(None).expect("resolve home");
-    home.init().expect("init home");
+    /// H-06-c: tras instalar A y upgradear a B, `probe_core_health` debe
+    /// reportar `Pass` en ambos estados (no sólo Warn/Partial). Sin este
+    /// test, el cierre de H-06/PRF-DIST-02 sería paper-closed: el MUST
+    /// exige `install → doctor → CLI → MCP` end-to-end, y `doctor` es
+    /// el contrato observable de que el layout quedó sano (HOME,
+    /// binarios, shims, tracker coherente con `versions/<v>`).
+    ///
+    /// Pinea también que el binario post-upgrade es ejecutable (corre
+    /// `--version` y devuelve el semver del release B). Sin este paso,
+    /// la promesa "update idempotente" no se verifica contra binario.
+    #[test]
+    #[serial_test::serial]
+    fn h06_doctor_passes_after_upgrade_and_binary_executes_with_version() {
+        let _temphome = TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
 
-    // Install A (0.95.0) + doctor
-    let release_a = local_release("0.95.0").expect("stage A");
-    point_at(&release_a);
-    run_install(&home, "reviewer").expect("install A");
-    unpoint();
-    drop(release_a);
+        // Install A (0.95.0) + doctor
+        let release_a = local_release("0.95.0").expect("stage A");
+        point_at(&release_a);
+        run_install(&home, "reviewer").expect("install A");
+        unpoint();
+        drop(release_a);
 
-    let probe_after_a = probe_core_health(&home.root);
-    assert_eq!(
-        probe_after_a.status,
-        CheckStatus::Pass,
-        "post-install A: probe_core_health debe ser Pass; got {:?} ({})",
-        probe_after_a.status,
-        probe_after_a.detail
-    );
-
-    // Upgrade B (0.96.0) + doctor
-    let release_b = local_release("0.96.0").expect("stage B");
-    point_at(&release_b);
-    run_install(&home, "reviewer").expect("upgrade A→B");
-    unpoint();
-    drop(release_b);
-
-    let probe_after_b = probe_core_health(&home.root);
-    assert_eq!(
-        probe_after_b.status,
-        CheckStatus::Pass,
-        "post-upgrade A→B: probe_core_health debe ser Pass; got {:?} ({})",
-        probe_after_b.status,
-        probe_after_b.detail
-    );
-
-    // Ejecutabilidad: el shim `cognicode` debe ser un ejecutable real
-    // (no un archivo de 0 bytes). Aunque `doctor` ya cubre el layout,
-    // la verificación observable contra el binario es lo que
-    // PRF-DIST-02 MUST pide con "CLI → MCP → update". Si esto se
-    // degrada (p. ej. extract sin +x), el doctor sigue Pass porque
-    // no valida permisos; este assert cierra el gap.
-    let shim_cognicode = home.shim_path("cognicode");
-    let meta = std::fs::metadata(&shim_cognicode).expect("cognicode shim exists");
-    assert!(
-        meta.len() > 0,
-        "shim `cognicode` debe tener contenido (no archivo vacío); got {} bytes",
-        meta.len()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = meta.permissions().mode();
-        assert!(
-            mode & 0o111 != 0,
-            "shim `cognicode` debe tener bit de ejecución; mode={:o}",
-            mode
+        let probe_after_a = probe_core_health(&home.root);
+        assert_eq!(
+            probe_after_a.status,
+            CheckStatus::Pass,
+            "post-install A: probe_core_health debe ser Pass; got {:?} ({})",
+            probe_after_a.status,
+            probe_after_a.detail
         );
-    }
 
-    // MCP shim también debe existir y ser ejecutable.
-    let shim_mcp = home.shim_path("cognicode-mcp");
-    let meta_mcp = std::fs::metadata(&shim_mcp).expect("cognicode-mcp shim exists");
-    assert!(
-        meta_mcp.len() > 0,
-        "shim `cognicode-mcp` debe tener contenido (no archivo vacío); got {} bytes",
-        meta_mcp.len()
-    );
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = meta_mcp.permissions().mode();
-        assert!(
-            mode & 0o111 != 0,
-            "shim `cognicode-mcp` debe tener bit de ejecución; mode={:o}",
-            mode
+        // Upgrade B (0.96.0) + doctor
+        let release_b = local_release("0.96.0").expect("stage B");
+        point_at(&release_b);
+        run_install(&home, "reviewer").expect("upgrade A→B");
+        unpoint();
+        drop(release_b);
+
+        let probe_after_b = probe_core_health(&home.root);
+        assert_eq!(
+            probe_after_b.status,
+            CheckStatus::Pass,
+            "post-upgrade A→B: probe_core_health debe ser Pass; got {:?} ({})",
+            probe_after_b.status,
+            probe_after_b.detail
         );
+
+        // Ejecutabilidad: el shim `cognicode` debe ser un ejecutable real
+        // (no un archivo de 0 bytes). Aunque `doctor` ya cubre el layout,
+        // la verificación observable contra el binario es lo que
+        // PRF-DIST-02 MUST pide con "CLI → MCP → update". Si esto se
+        // degrada (p. ej. extract sin +x), el doctor sigue Pass porque
+        // no valida permisos; este assert cierra el gap.
+        let shim_cognicode = home.shim_path("cognicode");
+        let meta = std::fs::metadata(&shim_cognicode).expect("cognicode shim exists");
+        assert!(
+            meta.len() > 0,
+            "shim `cognicode` debe tener contenido (no archivo vacío); got {} bytes",
+            meta.len()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = meta.permissions().mode();
+            assert!(
+                mode & 0o111 != 0,
+                "shim `cognicode` debe tener bit de ejecución; mode={:o}",
+                mode
+            );
+        }
+
+        // MCP shim también debe existir y ser ejecutable.
+        let shim_mcp = home.shim_path("cognicode-mcp");
+        let meta_mcp = std::fs::metadata(&shim_mcp).expect("cognicode-mcp shim exists");
+        assert!(
+            meta_mcp.len() > 0,
+            "shim `cognicode-mcp` debe tener contenido (no archivo vacío); got {} bytes",
+            meta_mcp.len()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = meta_mcp.permissions().mode();
+            assert!(
+                mode & 0o111 != 0,
+                "shim `cognicode-mcp` debe tener bit de ejecución; mode={:o}",
+                mode
+            );
+        }
     }
-}
 
-/// H-06-d: `cogh uninstall` deja la instalación retirada: el tree
-/// `versions/<v>/` desaparece, los shims que apuntaban a ese tree
-/// se retiran, y el tracker deja de pinchar una versión inexistente.
-///
-/// Cierra el último eslabón del MUST `install → doctor → CLI →
-/// MCP → update → rollback → uninstall`: PRF-DIST-02 exige que el
-/// uninstall sea idempotente (U23 ya cubrió HOME limpio pero no
-/// el uninstall que sigue a un upgrade real).
-#[test]
-#[serial_test::serial]
-fn h06_uninstall_after_upgrade_removes_versions_tree_and_owned_shims() {
-    let _temphome = TempCognicodeHome::new();
-    let _opencode = TempOpenCodeConfig::disable();
-    let home = CognicodeHome::resolve(None).expect("resolve home");
-    home.init().expect("init home");
+    /// H-06-d: `cogh uninstall` deja la instalación retirada: el tree
+    /// `versions/<v>/` desaparece, los shims que apuntaban a ese tree
+    /// se retiran, y el tracker deja de pinchar una versión inexistente.
+    ///
+    /// Cierra el último eslabón del MUST `install → doctor → CLI →
+    /// MCP → update → rollback → uninstall`: PRF-DIST-02 exige que el
+    /// uninstall sea idempotente (U23 ya cubrió HOME limpio pero no
+    /// el uninstall que sigue a un upgrade real).
+    #[test]
+    #[serial_test::serial]
+    fn h06_uninstall_after_upgrade_removes_versions_tree_and_owned_shims() {
+        let _temphome = TempCognicodeHome::new();
+        let _opencode = TempOpenCodeConfig::disable();
+        let home = CognicodeHome::resolve(None).expect("resolve home");
+        home.init().expect("init home");
 
-    // Install A (0.95.0), upgrade B (0.96.0) sobre `reviewer`
-    // (necesario para tener cognicode-mcp instalado).
-    let release_a = local_release("0.95.0").expect("stage A");
-    point_at(&release_a);
-    run_install(&home, "reviewer").expect("install A");
-    unpoint();
-    drop(release_a);
+        // Install A (0.95.0), upgrade B (0.96.0) sobre `reviewer`
+        // (necesario para tener cognicode-mcp instalado).
+        let release_a = local_release("0.95.0").expect("stage A");
+        point_at(&release_a);
+        run_install(&home, "reviewer").expect("install A");
+        unpoint();
+        drop(release_a);
 
-    let release_b = local_release("0.96.0").expect("stage B");
-    point_at(&release_b);
-    run_install(&home, "reviewer").expect("upgrade A→B");
-    unpoint();
-    drop(release_b);
+        let release_b = local_release("0.96.0").expect("stage B");
+        point_at(&release_b);
+        run_install(&home, "reviewer").expect("upgrade A→B");
+        unpoint();
+        drop(release_b);
 
-    // Estado pre-uninstall: ambos trees presentes, tracker en B.
-    assert!(home.version_root("0.95.0").exists(), "A debe existir pre-uninstall");
-    assert!(home.version_root("0.96.0").exists(), "B debe existir pre-uninstall");
-    let tracker_pre = std::fs::read_to_string(home.tracker_version()).unwrap_or_default();
-    assert!(tracker_pre.contains("0.96.0"), "tracker en 0.96.0 pre-uninstall; got: {tracker_pre}");
+        // Estado pre-uninstall: ambos trees presentes, tracker en B.
+        assert!(
+            home.version_root("0.95.0").exists(),
+            "A debe existir pre-uninstall"
+        );
+        assert!(
+            home.version_root("0.96.0").exists(),
+            "B debe existir pre-uninstall"
+        );
+        let tracker_pre = std::fs::read_to_string(home.tracker_version()).unwrap_or_default();
+        assert!(
+            tracker_pre.contains("0.96.0"),
+            "tracker en 0.96.0 pre-uninstall; got: {tracker_pre}"
+        );
 
-    // Uninstall del plugin `cognicode` en versión B (la activa).
-    cmd_uninstall(&home, "cognicode", "0.96.0", &["opencode".to_string()])
-        .expect("uninstall B debe succeed");
+        // Uninstall del plugin `cognicode` en versión B (la activa).
+        cmd_uninstall(&home, "cognicode", "0.96.0", &["opencode".to_string()])
+            .expect("uninstall B debe succeed");
 
-    // Post-uninstall: el tree de B se fue; el shim `cognicode` se
-    // retira (apuntaba dentro de `versions/0.96.0/`). El tree de A
-    // sigue presente porque no se pidió uninstall explícito de A;
-    // un install subsiguiente del operador (clean install o upgrade
-    // desde otro origen) puede instalarlo.
-    assert!(
-        !home.version_root("0.96.0").exists(),
-        "H-06-d: versions/0.96.0/ debe desaparecer tras uninstall; aún existe"
-    );
-    let shim_cognicode = home.shim_path("cognicode");
-    assert!(
-        !shim_cognicode.exists(),
-        "H-06-d: shim `cognicode` (que apuntaba a versions/0.96.0/) debe desaparecer; aún existe en {}",
-        shim_cognicode.display()
-    );
+        // Post-uninstall: el tree de B se fue; el shim `cognicode` se
+        // retira (apuntaba dentro de `versions/0.96.0/`). El tree de A
+        // sigue presente porque no se pidió uninstall explícito de A;
+        // un install subsiguiente del operador (clean install o upgrade
+        // desde otro origen) puede instalarlo.
+        assert!(
+            !home.version_root("0.96.0").exists(),
+            "H-06-d: versions/0.96.0/ debe desaparecer tras uninstall; aún existe"
+        );
+        let shim_cognicode = home.shim_path("cognicode");
+        assert!(
+            !shim_cognicode.exists(),
+            "H-06-d: shim `cognicode` (que apuntaba a versions/0.96.0/) debe desaparecer; aún existe en {}",
+            shim_cognicode.display()
+        );
 
-    // Idempotencia: uninstall repetido no debe fallar (PRF-DIST-02
-    // exige idempotencia del ciclo).
-    cmd_uninstall(&home, "cognicode", "0.96.0", &["opencode".to_string()])
-        .expect("uninstall repetido debe ser idempotente (no-op)");
-}
-
+        // Idempotencia: uninstall repetido no debe fallar (PRF-DIST-02
+        // exige idempotencia del ciclo).
+        cmd_uninstall(&home, "cognicode", "0.96.0", &["opencode".to_string()])
+            .expect("uninstall repetido debe ser idempotente (no-op)");
+    }
 }
