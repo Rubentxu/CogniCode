@@ -1507,3 +1507,130 @@ run success desde la creación del workflow.
     `[[bin]] path = ...` (limitación de cargo fmt histórica). Para
     bins, usar `rustfmt --edition 2024 <file>` explícitamente.
 
+
+## Entry 10 — feat(ci): pinear build de cognicode-control-plane en PR-CI
+
+**Fecha**: 2026-09-25, post-entry-9.
+**Trigger**: tras diagnosticar los dos bugs del ciclo anterior, queda
+en evidencia que el bin E2.W2 tampoco estaba pineado en el build step
+de CI: solo `cognicode-mcp` se compilaba allí. Una regresión
+específica del bin control-plane (p.ej. api.rs incompatible) pasaba
+CI sin detección. **Gap real de cobertura**, no especulación.
+
+### Pasos
+
+1. Editar `.github/workflows/pr-ci.yml`:
+   - `build-binary`: añadido step "Build release binario
+     (cognicode-control-plane)" con `cargo build --release --bin
+     cognicode-control-plane` (NO `-p`, porque es bin declarado
+     en cognicode-explorer, no package — `cargo build -p ...`
+     falla con "package ID specification ... did not match any
+     packages"; verificado localmente).
+   - artifact upload name: `cognicode-mcp-release` →
+     `cognicode-bins-release` (plural, paths multi-bin via YAML
+     literal block).
+   - `test-pr`: download step, chmod step, "Verificar binarios"
+     step —todos renombrados en plural y cubriendo ambos bins.
+
+2. Validación YAML local: `python3 -c "import yaml; yaml.safe_load(...)"`
+   parsea OK. Estructura de jobs intacta (4 jobs: check,
+   build-binary, test-pr, merge-gate).
+
+3. Tests focales pre-push (regla 1 testing quirúrgico):
+   - `cargo test -p cognicode-explorer --test
+     cp1_control_plane_endpoint` → 10/10 verde (los 3 E2.W2 + 7 C)
+   - `cargo build --release --bin cognicode-control-plane` →
+     materializa el bin correctamente.
+
+### Decisión de scope
+
+Considerado: extender el trigger policy para que PR-CI corra
+también en push a main (no solo pull_request). **Rechazado**:
+PRF-CI-07 explícitamente diseñó el workflow como gate de PR,
+no gate de push. Cambiar la política no entra en este ciclo.
+El comando `gh workflow run pr-ci.yml --ref main` ya permite
+verificación ad-hoc cuando se quiera.
+
+### Validación en CI
+
+Run `36170787224` contra SHA `2047162b` (PR-CI workflow_dispatch):
+
+| Job | Conclusión | Tiempo |
+|---|---|---|
+| fmt + clippy | success | 18:01:35 → 18:03:00 |
+| build cognicode-mcp (release) | success | 18:01:35 → 18:06:18 (+2m vs prev por build control-plane) |
+| test pineado (lib + E2E) | success | 18:06:22 → 18:08:08 |
+| merge-gate | success | 18:08:11 → 18:10:35 |
+
+Los **nuevos steps** dentro de los jobs:
+- `Build release binario (cognicode-control-plane)` — success
+- `Restaurar permisos de ejecución de los binarios` (plural) —
+  success
+- `Verificar binarios` (verifica ambos bins con `--help`) — success
+
+4/4 jobs verde. Cobertura de pineo CI ahora incluye ambos bins del
+workspace.
+
+### Estado
+
+- Roadmap ejecutivo sin cambios.
+- pr-ci.yml ahora pinea bins `cognicode-mcp` + `cognicode-control-plane`.
+- Sin regresiones: `cargo test -p cognicode-explorer --test
+  cp1_control_plane_endpoint` 10/10 verde. El job dura ~6 min total
+  (vs ~5 min antes), incremento aceptable para cobertura completa.
+- C8 firma humana sigue pendiente.
+
+### Pendiente / ABIERTAS para decisión operador
+
+- C8 firma humana sigue PENDIENTE (3 opciones en C8 §7).
+- E3 sigue NOT_TRIGGERED.
+- e91 (openspec/e91-graph-insights-performance) sigue PROPOSAL —
+  no se ha tocado (carry-forward de e90, scope v1.0.0-rc, fuera de
+  Post-PRF).
+- E2.W3 (integrar control_plane_router en cognicode-mcp) sigue
+  especulativo, sigue sin consumer MCP-side identificado.
+
+### Lecciones añadidas (a las 45 anteriores)
+
+46. **`cargo build -p X` ≠ `cargo build --bin X`**. `[[bin]]` declaran
+    bins que son TARGETS del crate, no packages. `-p` busca por
+    package ID (= crate name = workspace member), `--bin` busca por
+    target name (= nombre declarado en [[bin]]). Para bins extras
+    declarados en un crate, `--bin` es el flag correcto. Localmente
+    se manifiesta como 'package ID specification ... did not match
+    any packages'.
+
+47. **El bin source está tracked ≠ el bin se compila en CI**. El
+    fix del ciclo anterior (entry 9) rastreó el source file del
+    bin, pero **no** pineó su compilación. Cualquier bin declarado
+    en `[[bin]]` debería aparecer como step en el job `build-binary`
+    de PR-CI, o queda como bug latente: rompe local sin enterarse
+    remoto. Regla operativa nueva: cada `[[bin]]` en un crate
+    requiere un step correspondiente en el workflow de build del
+    CI, o documentar la omisión en línea.
+
+48. **El artifact upload de GitHub Actions puede listar múltiples
+    paths** vía literal block (`path: |\n  a\n  b`). El path de
+    upload es la convención de nombrado multi-archivo; el `name` es
+    la key para descargar después. Cambiar el `name` requiere
+    sincronizar download en test-pr (este fix renombró
+    `cognicode-mcp-release` → `cognicode-bins-release` y
+    actualizó el download).
+
+49. **El test step "Verificar binarios" es barato y captura
+    regresiones semánticas**. `--help | head` falla si el binario
+    está corrupto o no imprime el usage esperado (e.g. clap
+    schema desincronizado). Es un smoke test mínimo que añade ~0.5s
+    al workflow pero detecta binarios rotos. Política L1.2
+    mantenida: es un step dentro del job agregador `merge-gate`,
+    NO un required check separado.
+
+50. **`rustfmt --check` puede pinar el formatter pero NO la
+    compilación de bins**. El bug "bin no commited" del entry 9
+    hubiera pasado rustfmt (que sí detectaba el bin tras mi último
+    commit) pero NO el workflow `build-binary` (que no compilaba el
+    bin). Lesson: fmt+lint es un primer filtro barato; build+test
+    es el filtro real. Una regresión de compilación específica de
+    un bin solo se detecta cuando un build step explícito lo
+    compila en CI.
+
