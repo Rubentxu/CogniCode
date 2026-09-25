@@ -3,10 +3,54 @@
 ## Status
 
 **Type**: feature (performance fix)
-**Date**: 2026-09-25
-**Author**: jcode-orchestrator (G0.3 revalidation)
-**Status**: PROPOSAL — NOT STARTED
+**Date**: 2026-09-25 (created), 2026-09-26 (W1 closed)
+**Author**: jcode-orchestrator (G0.3 revalidation); W1 fix: jcode-orchestrator (post-C8 cleanup)
+**Status**: W1 CLOSED, W2-W5 PENDING
 **Predecessor**: `2026-09-21-e90-g5-cold-cache-or-perf-fix/`
+
+## Addendum 2026-09-26 (e91.W1 closed)
+
+The W1 unit as originally scoped in the proposal below has been
+**reinterpreted**: instead of profiling, W1 became "honest
+metadata" — the previous implementation in
+`CommunityDetector::detect_from_projection` hardcoded
+`iterations = max_iterations.min(100)` and `converged = true`,
+exposing fake values via the MCP `graph_communities` handler
+(`graph_handlers.rs:310-311`). The fix ships in commit `6f40a08b`
+and is documented in JOURNAL §11. Key changes:
+
+1. `cognicode_graph_algos::communities` now returns
+   `(Vec<Vec<usize>>, CommunitiesMeta)` carrying the real iteration
+   count and a `converged` flag (true only when no label changed in
+   the final iteration).
+2. `CommunityDetector::detect_from_projection` propagates the real
+   meta into `CommunityResult`.
+3. Two pre-existing tests were pinning the bug (asserted
+   `converged=true` on graphs that oscillate); they are updated to
+   pin the honest behaviour.
+4. Two new tests pin the contract (`test_detect_reports_real_iterations_chain`,
+   `test_detect_reports_non_convergence_on_oscillating_2cycle`).
+5. WASM shim (`cognicode-graph-wasm`) destructures the new tuple,
+   discarding the meta (it never exposed it to the browser).
+
+### Important correction to the original problem statement
+
+The original addendum (e90 → 2026-09-25) stated that
+`graph_insights`/`graph_communities` "do not exist in v0.98.1".
+**This statement is obsolete for the current `main` HEAD**
+(see JOURNAL §11). The tools are registered in
+`crates/cognicode-explorer/src/mcp/explorer.rs:128-129`,
+implemented in
+`crates/cognicode-core/src/infrastructure/graph/analytics/community_detector.rs`
++ `application/services/graph_insights.rs`, and exposed via the
+handler at
+`crates/cognicode-core/src/interface/mcp/handlers/graph_handlers.rs:290,519`.
+
+This means the perf regression described in the proposal (p95=367s
+on a multi-repo Tier-2/3 fixture) **does apply to `main` HEAD** —
+not to a hypothetical v1.0.0-rc. The e91 work remains valid; the
+fix path is the same (algorithmic optimization on the same hot
+paths identified below).
 
 ## Problem
 
@@ -25,16 +69,13 @@ This blocks Gate 2 of the v1.0.0 pre-cut checklist (scorecard streak 0/3).
 The investigation in e90 identified two hot paths in
 `crates/cognicode-core/src/application/services/graph_insights.rs`:
 
-1. `CommunityDetector::detect(graph, 100)` — Louvain-like modularity
-   maximisation with up to 100 iterations on the full call graph.
+1. `CommunityDetector::detect(graph, 100)` — Label Propagation with
+   up to 100 iterations on the full call graph. (Note: the
+   original proposal said "Louvain-like modularity maximisation" —
+   that is **incorrect** for the current `main` code, which uses
+   Label Propagation via `cognicode-graph-algos::communities`.)
 2. `CommunityDetector::surprising_connections(graph, &community_result, 20)` —
    cross-community edge enumeration, O(n²) in dense multi-repo graphs.
-
-The release v0.98.1 (production-ready contractual, C7 firmado) does
-**not contain** the `graph_insights` or `graph_communities` tools that
-e90 measured — those tools belong to a separate **v1.0.0-rc** binary.
-See e90 addendum `2026-09-25` for verification of the tool inventory
-mismatch between v0.98.1 and the e90 scorecard run.
 
 ## Out of scope
 
@@ -45,13 +86,13 @@ mismatch between v0.98.1 and the e90 scorecard run.
 
 ## Work units (inherited from e90 proposal §"Recommended next cycle")
 
-| WU | Description | Acceptance |
+| WU | Description | Status |
 |---|---|---|
-| **WU1** | Profile `graph_insights` on a captured multi-repo fixture (`zod_realrepo_graph_insights`) to identify the dominant cost. | Profiling artifact saved under `openspec/changes/2026-09-25-e91-graph-insights-performance/profiles/`; verdict on whether cost is `modularity compute` or `cross-community enumerate`. |
-| **WU2** | Implement the lowest-risk algorithmic optimization (likely Option A sub-step 1: bounded iteration count + early termination on modularity delta in `CommunityDetector::detect`). | Code change with unit tests; semantic equivalence preserved (same community assignments on `fixture-petclinic-single-repo` fixture). |
-| **WU3** | Add a regression test `graph_insights_multi_repo_under_budget` that asserts a known Tier-2 fixture completes within a budget (target: 30s p95; current: 367s). | Test fails before WU2, passes after. |
-| **WU4** | Re-run the scorecard; expect G5 GREEN. | Scorecard run captured under `sandbox/results/scorecard_run.json` with timestamp after WU2 merge; G5 status = GREEN. |
-| **WU5** | Document the budget choice in `openspec/specs/cognicode-analytics/spec.md`. | Spec updated with budget rationale; linked from e91 verify-report. |
+| **WU1** | Profile `graph_insights` on a captured multi-repo fixture (`zod_realrepo_graph_insights`) to identify the dominant cost. | **REINTERPRETED** (commit `6f40a08b`): instead of profiling, W1 became "honest metadata" — fix the fake `iterations`/`converged` exposed to MCP clients. The profiling step is still needed before W2 and is rolled into the W2 entry condition. |
+| **WU2** | Implement the lowest-risk algorithmic optimization (likely Option A sub-step 1: bounded iteration count + early termination on modularity delta in `CommunityDetector::detect`). | **PENDING**. Requires WU1 profiling artifact. |
+| **WU3** | Add a regression test `graph_insights_multi_repo_under_budget` that asserts a known Tier-2 fixture completes within a budget (target: 30s p95; current: 367s). | PENDING |
+| **WU4** | Re-run the scorecard; expect G5 GREEN. | PENDING |
+| **WU5** | Document the budget choice in `openspec/specs/cognicode-analytics/spec.md`. | PENDING |
 
 ## Candidate solutions (carried from e90)
 
@@ -102,7 +143,7 @@ After WU1 (profiling), choose between A/B/C based on where the cost is:
 ## Carry-forward and dependencies
 
 - Predecessor: `2026-09-21-e90-g5-cold-cache-or-perf-fix/` (closed with
-  addendum dated 2026-09-25).
+  addendum dated 2026-09-25; **addendum partially obsolete**, see addendum 2026-09-26 above).
 - Consumer of e91: v1.0.0 pre-cut checklist Gate 2.
 - This cycle does NOT touch v0.98.x.
 

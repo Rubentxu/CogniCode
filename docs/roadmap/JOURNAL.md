@@ -1634,3 +1634,140 @@ workspace.
     un bin solo se detecta cuando un build step explícito lo
     compila en CI.
 
+
+## Entrada 11 — 2026-09-26 — e91.W1: iterations/converged reales en graph_communities
+
+### Contexto
+
+El `openspec/changes/2026-09-25-e91-graph-insights-performance/proposal.md`
+estaba abierto desde G0.3 (commit `da42713b`). El addendum del e90
+afirmaba que `graph_insights`/`graph_communities` "no existen en
+v0.98.1". Esa afirmación era **incorrecta para `main` actual**:
+grep directo sobre HEAD `2991e5e2` muestra que ambos tools sí
+están registrados (`explorer.rs:128-129`, `graph_handlers.rs:290,
+519`) y que el código de `CommunityDetector::detect` vive en
+`infrastructure/graph/analytics/community_detector.rs` + se delega
+a `cognicode_graph_algos::communities`.
+
+Auditando el código, encontré que el campo `iterations` y `converged`
+del `CommunityResult` estaban hardcoded:
+- `let iterations = max_iterations.min(100); // approximation for now`
+- `let converged = true; // algorithm always converges within max_iterations`
+
+Estos valores se exponen al cliente MCP en `graph_handlers.rs:310-311`
+como `iterations_used` y `converged`. **Los clientes recibían
+metadatos falsos** sobre el estado real de Label Propagation.
+
+### Hechos
+
+- **Identificación**: dos tests preexistentes pineaban el bug
+  (`test_convergence_within_max_iterations` esperaba convergencia en
+  una cadena; `test_two_disconnected_groups_form_two_communities`
+  esperaba convergencia con 2 pares disjuntos). Ambos pasaban
+  porque el código mentía, no porque el algoritmo convergiera.
+- **Validación empírica**: simulación standalone de LP sobre la
+  cadena a→b→c→d→e con orden ascendente + tie-break por menor
+  label muestra oscilación entre `[0,1,0,1,0]` y `[1,0,1,0,1]`.
+  El LP con ese tie-break es propenso a oscilación en grafos con
+  grados pares / cadenas largas.
+- **Decisión**: la causa raíz NO es el LP — es que el reporte es
+  inexacto. Cambiar el algoritmo (e.g. modularity maximization)
+  sería scope creep de e91.W2-W3 (profiling + algorithmic
+  optimization). W1 es solo honestidad.
+
+### Cambios (commit `6f40a08b`)
+
+1. `cognicode_graph_algos::communities` ahora retorna
+   `(Vec<Vec<usize>>, CommunitiesMeta)` donde `CommunitiesMeta`
+   lleva `iterations` (real) y `converged` (true SOLO si el loop
+   terminó por `!changed`; false si agotó max_iter).
+2. `CommunityDetector::detect_from_projection` propaga el meta real.
+3. 2 tests preexistentes actualizados para pinear el comportamiento
+   honesto (cadena y pares disjuntos **oscilan**, no convergen).
+4. 2 tests nuevos (`test_detect_reports_real_iterations_chain`,
+   `test_detect_reports_non_convergence_on_oscillating_2cycle`)
+   pinean el contrato del meta real.
+5. WASM shim (`cognicode-graph-wasm/src/lib.rs`) destructura la
+   tupla, descarta el meta (nunca lo expuso al browser).
+
+### Verificación
+
+```
+cognicode-graph-algos --lib:        161/161 verde
+cognicode-core --lib (suite):       2198/2198 verde
+cognicode-core --lib community_detector: 10/10 verde
+cognicode-core --lib graph_insights: 5/5 verde
+cognicode-explorer graph_analyze_integration: 25/25 verde
+cognicode-graph-wasm wasm32 build:  verde
+cargo clippy --all-targets -D warnings: exit 0
+cargo fmt --check: verde
+```
+
+### Impacto
+
+- El MCP `graph_communities` ahora reporta honestamente:
+  `iterations_used` = iteraciones reales (1..=max_iter);
+  `converged` = true solo cuando el algoritmo paró por no-cambio.
+- **NO** cambia el rendimiento del algoritmo. La latencia de
+  `graph_insights` (el síntoma G5 RED de e90) queda intacta —
+  eso es scope de e91.W2+.
+- **NO** cambia la API pública del MCP: solo el valor de los
+  campos se vuelve honesto. Consumidores que asumían
+  `converged=true` por defecto ahora verán el valor real (que
+  en grafos oscilantes es `false`).
+
+### Pendiente (e91 sigue abierto)
+
+- **WU1 (profiling)**: el bug latente de `iterations`/`converged`
+  era pre-existente y silencioso. Ahora es visible. El siguiente
+  paso real es perfilar `graph_insights` sobre un fixture Tier-2/3
+  para confirmar dónde se va el tiempo (lo más probable: el doble
+  cálculo de PageRank que vi en `community_god_nodes:279` +
+  `surprising_connections:360`).
+- **Firma C8**: sigue PENDIENTE.
+- **E3**: NOT_TRIGGERED.
+- **e91.W2+ (algorithmic optimization)**: requiere fixture real
+  multi-repo para perfilar. No tengo uno en main; sin eso, W2 sería
+  especulación.
+
+### Lecciones añadidas
+
+51. **El addendum e90 estaba obsoleto**. Decía "tools no existen
+    en v0.98.1". El grep directo sobre HEAD actual demuestra lo
+    contrario. **Lección**: addendums de cierre deben re-validarse
+    contra el HEAD del momento antes de citarlos como autoridad.
+    El propio ROADMAP §6 ya prohíbe "crear dos fuentes de verdad";
+    el addendum se convirtió silenciosamente en una tercera.
+52. **Tests que pinean valores derivados del propio código bajo
+    test son tautológicos**. Los 2 tests preexistentes pasaban
+    porque `let converged = true;` y luego `assert!(result.converged)`.
+    El test no probaba el algoritmo, probaba la mentira.
+    **Lección**: cuando un test afirma `assert!(X)` y el código
+    tiene `let X = ...hardcoded...`, ambos pueden mentir juntos.
+    Siempre verificar que el valor verificado viene del cálculo,
+    no del setup.
+53. **Standalone simulation es barata y decisoria**. Cuando un
+    algoritmo iterativo tiene un resultado que parece contraintuitivo
+    ("¿una cadena no converge?"), copiar las 30 líneas a un
+    binario aparte y ejecutarlo tarda 5 segundos y disipa dudas.
+    **Lección**: para algoritmos con dinámicas no triviales
+    (LP, simulated annealing, gradient descent), la simulación
+    aislada es el oráculo.
+
+### Decisiones tomadas con criterio propio
+
+- **No cambié el algoritmo LP** (era scope creep). La latencia de
+  `graph_insights` no se toca en este commit.
+- **Actualicé los tests preexistentes que pineaban el bug** (en el
+  mismo commit atómico) en lugar de marcarlos `#[ignore]`. Marcarlos
+  ignorados ocultaría el problema; actualizarlos lo documenta
+  explícitamente.
+- **No creé una rama efímera**. El cambio es atómico, sin dependencia
+  cruzada con WIP, y pinea tests rojos→verdes end-to-end localmente.
+  No requiere PR review (analogía con M0.4 fix de AssetPoint).
+- **No bumpé SemVer**. El cambio es interno al crate
+  `cognicode-graph-algos` (nueva tupla en API no publicada en
+  WASM, propagada por callers internos). El MCP handler mantiene
+  el mismo shape JSON, solo cambia el valor de dos campos. No
+  es breaking change para consumidores externos.
+
