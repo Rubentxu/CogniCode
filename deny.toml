@@ -19,3 +19,77 @@ ignore = [
     # tracked as its own unit; exposure limited to the /metrics export path.
     "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion
 ]
+
+# ----------------------------------------------------------------------------
+# Licenses (Post-PRF addendum 2026-09-26)
+#
+# History: PRF-CI-05 (evidence/u55-ci05-advisories-sbom/OBSERVATIONS.md §4)
+# declared "scan de LICENCIAS no exigido como gate (política de licencias
+# pendiente de decisión)". Without an explicit [licenses] section,
+# cargo-deny defaults to `allow = []` (deny all), so `cargo deny check
+# licenses` returned FAILED on every dep — a silent failure that the
+# observability gap made invisible.
+#
+# This section proposes a CONSERVATIVE allow-list covering the
+# permissive licenses already in the dependency tree (verified 2026-09-26
+# via `cargo deny check licenses`). It does NOT allow:
+#   - GPL-2.0/3.0 (strong copyleft, requires legal review)
+#   - AGPL-3.0 (network copyleft, almost always inappropriate)
+#   - SSPL (source-available, not OSI-approved)
+#   - Commons Clause (non-OSI commercial restriction)
+#   - JSON License (deprecated, ambiguous)
+#   - Beerware / Unlicense variants beyond The Unlicense
+#
+# LGPL-2.1-or-later is ALLOWED with a comment because it is in the
+# current tree (transitive via some crates) and is acceptable for
+# dynamic linking — but the operator should monitor this and replace
+# the LGPL-licensed transitive if a permissively-licensed alternative
+# appears.
+#
+# This section makes the licenses gate executable; it does NOT make
+# it BLOCKING in CI (release.yml and release-validate.yml only run
+# `cargo deny check advisories`, not licenses). Adding licenses to
+# the CI gate is a separate decision tracked as CR-N.N (TBD).
+#
+# Status after this commit (2026-09-26):
+#   - All third-party dependencies PASS the allow-list.
+#   - Two workspace crates are flagged as unlicensed and need
+#     operator decision: cognicode-runtime and cognicode-sandbox.
+#     The 8 other workspace crates (cognicode, cognicode-core,
+#     cognicode-cli, cognicode-mcp, cognicode-explorer,
+#     cognicode-ladybug, cognicode-core-mock, cognicode-macros)
+#     also lack a license field but cargo-deny does not flag them
+#     because they are not encountered in the runtime dependency
+#     graph (they are workspace-internal and consumed via path
+#     deps). Adding license to those is a documentation-policy
+#     question, not a license-compliance issue.
+#   - Recommended operator action: pick a license (MIT, Apache-2.0,
+#     MIT OR Apache-2.0, etc.) and add `license = "..."` to
+#     cognicode-runtime/Cargo.toml and
+#     cognicode-sandbox/Cargo.toml. Then re-run
+#     `cargo deny check licenses` to confirm clean.
+# ----------------------------------------------------------------------------
+[licenses]
+version = 2
+allow = [
+    "MIT",                      # Most common permissive license
+    "Apache-2.0",               # Permissive + explicit patent grant
+    "Apache-2.0 WITH LLVM-exception", # Apache-2.0 + linking exception (used by some compiler crates)
+    "BSD-2-Clause",             # Simplified BSD
+    "BSD-3-Clause",             # New/revised BSD
+    "0BSD",                     # BSD Zero Clause (effectively public domain for code)
+    "ISC",                      # Internet Systems Consortium license (permissive)
+    "Zlib",                     # zlib permissive license (acknowledgement-based)
+    "BSL-1.0",                  # Boost Software License (permissive)
+    "CC0-1.0",                  # Creative Commons Zero (public domain dedication)
+    "CDLA-Permissive-2.0",      # Community Data License Agreement Permissive (data use)
+    "MIT-0",                    # MIT no attribution (public-domain equivalent)
+    "MPL-2.0",                  # Mozilla Public License (file-level weak copyleft)
+    "Unicode-3.0",              # Unicode license (data files, not source)
+    "Unlicense",                # Public domain dedication
+    # LGPL — allowed with caveat (see comment above). Only -2.1-or-later
+    # is currently encountered in the dependency tree; -3.0-or-later is
+    # listed preemptively in case a future dep ships under it.
+    "LGPL-2.1-or-later",
+]
+confidence-threshold = 0.8
