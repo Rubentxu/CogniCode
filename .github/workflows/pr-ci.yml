@@ -380,6 +380,16 @@ jobs:
       # bajo el budget).
       - name: CR-05 e91.W7 regression budget gate (L3.W5 dentro de merge-gate)
         run: cargo test -p cognicode-core --test e91_w7_regression_budget --quiet
+      # L3.W6 — CR-03 / e91.W8 per-stage profile breakdown.
+      # Reports wall-clock time of each public stage of
+      # `GraphInsightsService::analyze` and asserts no stage
+      # exceeds 5 s on Tier-2 fixture. Catches single-stage
+      # regressions that the aggregate budget (W7) cannot detect.
+      # Empirical dev baseline @ HEAD: projection 12ms, scc 1ms,
+      # god_nodes 21ms, feedback_arc_set 309ms, community_detect
+      # 332ms (slowest), analyze_full 629ms.
+      - name: CR-03 e91.W8 per-stage profile gate (L3.W6 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w8_stage_profile --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
