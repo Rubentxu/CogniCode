@@ -2776,3 +2776,81 @@ lo que lesson 60 prohíbe.
 * Backlog automatizable: VACÍO
 * Pendiente único (operador): C8 firma humana
 
+
+## Entrada 22 — 2026-09-26 — Cierre de sesión: persistencia completa para mañana
+
+### Estado final verificable
+
+* HEAD: `8505c80a` (23 commits sobre `origin/main`).
+* Working tree: clean.
+* Tests workspace: 5557 passed / 0 failed / 45 ignored.
+* Clippy `--workspace --all-targets -- -D warnings`: exit 0.
+* Versión workspace: `v0.99.0`.
+
+### Trabajo entregado en esta sesión (resumen)
+
+1. **e91.W1**: fix bug latente `iterations_used`/`converged` hardcoded.
+   Commits `6f40a08b`, `42a1ddcf`, `3086e1a9`, `5da43a49`.
+2. **e91.W2**: caracterización PageRank warm = no bottleneck.
+   Commits `8b4bbe85`, `6b2738f3`.
+3. **e91.W6**: metadata envelope en 7 sibling handlers.
+   Commits `c1618e84`, `df8002f5`.
+4. **SBOM hygiene**: WorkspaceSbomGuard + SpuriousFile cierran
+   panic window. Commits `a553fbd6`, `90123021`.
+5. **SBOM race**: `#[serial]` cierra parallel-test race.
+   Commit `e107e34d`.
+6. **Cierre honesto W3, W4, W5**: con caracterización/estimación
+   derivada, JOURNAL entries 17 y 19.
+7. **Documentación sincronizada**:
+   * `docs/roadmap/CURRENT.md` — nuevo, post-PRF.
+   * `docs/roadmap/ROADMAP.md` — fila e91 actualizada.
+   * `docs/roadmap/certifications/C8-POST-PRF-GA.md` —
+     addendum §8 y §9.
+   * `docs/roadmap/HANDOFF-C8.md` — entry point único para
+     firma humana (85 líneas).
+   * `openspec/changes/2026-09-25-e91-graph-insights-performance/proposal.md`
+     — addendum W2-W6 closure.
+
+### Bloqueante para próxima sesión
+
+**C8 firma humana** — el operador debe decidir entre las 3
+opciones documentadas en `docs/roadmap/HANDOFF-C8.md`:
+1. Firmar C8 contractualmente sobre `v0.99.0`.
+2. Cierre operativo local sin release formal.
+3. Pedir más evidencia antes de firmar.
+
+Tras la firma, opcional:
+- Emitir `ADMISSION-EXPEDIENTE-F7-C8-v0.99.0.md`.
+- Tag anotado `v0.99.0` apuntando al SHA certificado.
+
+### Lecciones capturadas (sesión)
+
+* 54-60: ya existentes.
+* 61: comprobar dev-deps antes de añadir crates.
+* 62: honesty en baselines estadísticas.
+* 64: confirmar bug latente con test efímero antes de declararlo.
+* 65: cerrar bloques especulativos (no limbo).
+* 66: dosieres de certificación llevan addendums post-firma.
+* 67: caracterización derivada > asunción vacía.
+* 68: cierre honesto de sesión es trabajo valioso.
+* 69: handoff documents deben evitar hardcodear SHA de HEAD.
+
+### Comando de recuperación para mañana
+
+```bash
+cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
+git status --short --branch
+git rev-parse HEAD    # debería ser 8505c80a
+git log -3 --oneline
+
+# Validar estado actual
+cargo test --workspace --quiet 2>&1 | tail -3
+# Esperado: passed=5557 failed=0 ignored=45
+cargo clippy --workspace --all-targets -- -D warnings
+# Esperado: exit 0
+
+# Leer HANDOFF primero (entry point único)
+cat docs/roadmap/HANDOFF-C8.md
+```
+
+*Fin de sesión. Próxima sesión: leer HANDOFF-C8.md primero.*
