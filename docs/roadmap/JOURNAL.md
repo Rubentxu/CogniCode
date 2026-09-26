@@ -2781,7 +2781,7 @@ lo que lesson 60 prohíbe.
 
 ### Estado final verificable
 
-* HEAD: `56a9bf7f` (24 commits del agente sobre `origin/main`).
+* HEAD: ver `git rev-parse HEAD` (este entry se versiona junto al workspace, no a sí mismo).
 * Working tree: clean.
 * Tests workspace: 5557 passed / 0 failed / 45 ignored.
 * Clippy `--workspace --all-targets -- -D warnings`: exit 0.
@@ -2840,7 +2840,7 @@ Tras la firma, opcional:
 ```bash
 cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
 git status --short --branch
-git rev-parse HEAD    # debería ser 56a9bf7f
+git rev-parse HEAD    # ver SHA actual
 git log -3 --oneline
 
 # Validar estado actual
