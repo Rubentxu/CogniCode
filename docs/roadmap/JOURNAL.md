@@ -3481,3 +3481,38 @@ contractual (expediente F8, addendum §11, sync de CURRENT/MAINTENANCE)
 pero sin el peso de un release. Si el operador decide más adelante
 que quiere release formal, sigue el camino CR-01 → C8-R →
 firma contractual.
+
+---
+
+## Entrada N+1 — 2026-09-26 — Re-arranque autónomo
+
+### Estado del roadmap tras CR-06
+
+* HEAD: `5dbd7467` sobre `f774b89f`, en `arch/cr-06-application-fitness-functions`
+  (PR #298 abierto pendiente de revisión operador).
+* SDDK state: 3 WorkItems `draft` en horizonte `unknown`:
+  - `075f7bc1` CR-06 — formalmente no terminal todavía (workunit no se
+    cerró en SDDK tras el push).
+  - `08ed5bd6` QW-02 — drift documental.
+  - `7187a0ee` QW-03 — `.gitignore` guard.
+* MAINTENANCE.md: M0.5 cerrado, M0.6 (PHP/Swift) BLOQUEADO pendiente
+  decisión operador.
+* Plan ejecutivo (EXECUTION-PLAN.md): QW-01 ya materializado (C8 +
+  C8-R expedientes existen en `docs/roadmap/certifications/`).
+
+### Decisión de pre-flight
+
+`Readiness: READY`. Avanzo con QW-03 porque:
+1. Tiene script `scripts/ci/check-bin-tracking.sh` ya escrito pero
+   **NO integrado en `pr-ci.yml`** — el contrato está half-shipped.
+2. CR-08 (selector determinista de suites) lo necesita como dep para
+   tener sentido (PR-CI sensible a paths).
+3. Es P0 en EXECUTION-PLAN.md y desbloquea QW-04.
+4. Scope bounded: añadir un step al job `check` o nuevo job
+   `merge-gate` que invoque el script.
+
+### Bloqueos / unknowns
+
+* El script ya existe — verifico que su contrato está vigente
+  (127 líneas, `set -euo pipefail`, parsing perl). Si está bien, lo
+  integro.
