@@ -112,7 +112,7 @@ jobs:
           echo "github.sha binds to operator-approved expected_sha: $ACTUAL"
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+        uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
         with:
@@ -260,7 +260,7 @@ jobs:
           fi
           echo "github.sha binds to operator-approved expected_sha: $ACTUAL"
 
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Collect every lane's payloads
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
@@ -427,7 +427,7 @@ jobs:
           fi
           echo "github.sha binds to operator-approved expected_sha: $ACTUAL"
 
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Rebuild the release tool from the same SHA
         run: cargo build --release --bin cognicode-release
@@ -500,7 +500,7 @@ jobs:
           fi
           echo "github.sha binds to operator-approved expected_sha: $ACTUAL"
 
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Rebuild the release tool from the same SHA
         run: cargo build --release --bin cognicode-release

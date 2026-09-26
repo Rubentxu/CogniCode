@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
         with:
           components: rustfmt, clippy
       - name: Cache cargo
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Build release binario (cognicode-mcp)
@@ -181,7 +181,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Descargar binarios release
