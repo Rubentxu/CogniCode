@@ -9,9 +9,10 @@
 * **HEAD funcional**: ver `git rev-parse HEAD` (este doc se versiona junto al workspace, no a sí mismo).
 * **Commits del agente sobre `origin/main`**: ver `git log --author=jcode-bot --oneline | wc -l`.
 * **Tests workspace**: `cargo test --workspace` →
-  **passed=5557 failed=0 ignored=45**.
+  **passed=5565 failed=0 ignored=37**.
 * **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
 * **Working tree**: clean.
+* **Versión binario**: `cognicode 0.99.1` (bump SEMVER patch por M0.5).
 
 ## Capacidades certificadas (Post-PRF)
 
@@ -51,18 +52,23 @@ Todos los work units e91 cerrados:
 
 ## Próximo trabajo ejecutable en AUTO
 
-No quedan work units automatizables en el backlog post-PRF inmediato. Opciones:
+El backlog automatizable está probablemente vacío tras el cierre de M0.5.
+Opciones:
 
 1. **Refinamientos sobre C8** — el operador puede pedir más evidencia
    antes de firmar (campaña adversarial Post-PRF, UAT cross-crate E2E).
 2. **Nuevas work units** — el operador puede autorizar trabajo nuevo
    (no hay nada en `docs/roadmap/ROADMAP.md` que esté desbloqueado y
    sin acción pendiente).
-3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista issues
-   abiertos sobre v0.98.x; no son bloqueantes de C8.
+3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista M0.* cerrados
+   y posibles nuevas auditorías (e.g. otros `#[ignore]` con flake pendiente).
+4. **Auditoría dirigida** — repetir la búsqueda de tests `#[ignore]` con
+   motivo "Flaky" para detectar otros bugs latentes del estilo M0.5.
+   (Lección 70.)
 
 ---
 
 *Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-26
-tras cierre de e91.W4/W5. Próxima actualización: tras firma humana
-de C8 o nueva work unit autorizada.*
+tras cierre de M0.5 (flake rustc contention fixed, +8 tests al count).
+Próxima actualización: tras firma humana de C8 o nueva work unit
+autorizada.*
