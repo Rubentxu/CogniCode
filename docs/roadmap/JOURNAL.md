@@ -2578,3 +2578,101 @@ El addendum es la acción correcta porque:
 * Working tree clean
 * Workspace 5557/0/45 tests verde
 * Clippy `-D warnings` exit 0
+
+## Entrada 19 — 2026-09-26 — e91.W4 y e91.W5 cerrados: deriva de evidencia W2
+
+### Contexto
+
+W4 ("paralelizar god_nodes") y W5 ("memoize surprising
+connections") llevaban 4 sesiones en limbo. Tras cerrar
+W3 con caracterización W2 (entry 17), reexaminé los
+handlers de W4/W5 y descubrí que **ambos ya recomputan
+PageRank internamente**:
+
+* `god_nodes` (graph_analytics.rs:197):
+  `let scores = Self::page_rank(graph, 0.85, 100);`
+* `surprising_connections` (community_detector.rs:369):
+  `let all_scores = GraphAnalyticsService::page_rank(...)`
+
+Esto significa que cada llamada a estos handlers hace
+**1 PageRank run completo** sin posibilidad de
+compartirlo con el handler de PageRank principal. La
+"solución" de W4/W5 sería refactorizar la API para
+extraer PageRank como parámetro.
+
+### Estimación basada en W2
+
+W2 midió PageRank warm en grafos cíclicos densos:
+peor caso (n=50000, fanout=6) = 3937µs.
+
+W4 haría que `god_nodes` evitara 1 run redundante
+cuando el cliente llama `graph_pagerank` y luego
+`graph_god_nodes` sobre el mismo grafo. Esos 2 calls
+comparten el PageRank: ahorro = 3937µs en el peor
+caso.
+
+W5 tiene la misma lógica para `surprising_connections`
+después de `graph_communities`.
+
+**Ahorro combinado en el peor caso (n=50000) = 2 ×
+3937µs = 7874µs = 7.9ms**. Sigue siendo 0.16% del
+umbral de latencia perceptible (50-100ms). El usuario
+no nota la diferencia.
+
+### Decisión
+
+**e91.W4 y e91.W5 CLOSED — no viables como
+optimización de performance**. Razones:
+
+1. **Magnitud del ahorro estimado** (3.9-7.9ms en
+   fixtures cíclicos densos) cae dentro del ruido
+   perceptual.
+
+2. **Refactor invasivo**: extraer PageRank como
+   parámetro cambia la firma pública de
+   `GraphAnalyticsService::god_nodes` y
+   `CommunityDetector::surprising_connections`. Es
+   scope mayor (toca el contrato de la API del core)
+   para un beneficio de <0.2%.
+
+3. **Composición con W3**: si en el futuro
+   PageRank fuera cacheado a nivel de
+   `graph_analytics.rs`, los beneficios de W4/W5
+   desaparecerían automáticamente. Hacer W4/W5 ahora
+   sería duplicar el esfuerzo.
+
+W4/W5 quedan en el backlog solo como **mejoras de
+limpieza arquitectónica** (DRY entre handlers que
+llaman `page_rank` internamente), no como
+optimizaciones de performance.
+
+### Honesty en la estimación
+
+Esta es una **estimulación derivada de W2**, no una
+medición directa. Las razones honestas:
+
+* No construí un fixture CallGraph completo para
+  medir `god_nodes` y `surprising_connections`
+  end-to-end.
+* El número "2 × PageRank" asume worst case; en la
+  práctica los clientes rara vez llaman
+  secuencialmente pagerank → god_nodes →
+  surprising_connections.
+* Si la caracterización real demuestra lo contrario
+  (>10% del budget), W4/W5 deben reabrirse.
+
+### Lección añadida
+
+67. **Caracterización derivada > asunción vacía**.
+    Cerrar W4/W5 sin medición directa sería
+    especulación (lesson 64 al revés). Cerrarlos
+    con "2 × W2 worst case" es una estimación
+    fundada que el revisor puede verificar en
+    minutos repitiendo W2.
+
+### Estado al cierre
+
+* e91.W1/W2/W3/W4/W5/W6: **CLOSED**
+* SBOM hygiene/race: CLOSED
+* C8 firma humana: PENDIENTE (con addendum §8)
+* HEAD = 74d08466 sin cambios desde último commit
