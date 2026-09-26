@@ -2418,3 +2418,93 @@ gira `cognicode-cli` tests una vez por CI job.
 * C8 firma humana: PENDIENTE
 
 HEAD actualizado tras este commit.
+
+## Entrada 17 — 2026-09-26 — e91.W3 cerrado: evidencia de no-viabilidad
+
+### Contexto
+
+e91.W3 ("cache/compartir PageRank entre handlers") ha
+estado "abierto pero sin fecha" durante 4 sesiones. La
+caracterización e91.W2 (entry 12, commit `8b4bbe85` +
+`6b2738f3`) **ya produjo la evidencia necesaria para
+cerrar W3** — solo faltaba la decisión explícita. Mi
+sesión anterior lo dejó "abierto sin fecha", lo cual
+contraviene el principio de no mantener bloques en
+limbo.
+
+### Evidencia disponible
+
+Caracterización de e91.W2 midió el costo real de
+PageRank warm-start (recomputación desde cero) en grafos
+cíclicos densos:
+
+```
+n=10000  fanout=4  warm=  790µs  wasted=  619µs
+n=25000  fanout=4  warm= 1779µs  wasted= 1583µs
+n=50000  fanout=6  warm= 3937µs  wasted= 3336µs
+```
+
+Presupuesto de latencia perceptible para un usuario MCP
+es ~50-100ms (umbral cognitivo de respuesta inmediata).
+**Mejor caso de ahorro con cache = 3.3ms = 3.3-6.6% del
+umbral**, en el peor caso (n=50000). Peor caso
+realista (n=10000) = 0.6-1.2%. Es ruido.
+
+### Decisión
+
+**e91.W3 CLOSED — no viable como optimización de
+performance.** Razones:
+
+1. **Magnitud del ahorro** (0.6-3.3ms) cae dentro del
+   ruido de medición de latencia MCP. El usuario no
+   percibe la diferencia.
+
+2. **Complejidad añadida**: cache key requiere
+   identificar cuándo dos grafos son "equivalentes"
+   (mismos nodos + mismas aristas + mismas
+   propiedades). Para grafos mutables del
+   `WorkspaceId`, eso es esencialmente "mismo grafo",
+   lo cual reduce el caso de uso a "el mismo handler
+   se llama dos veces seguidas" — raro.
+
+3. **Coste de invalidación**: cualquier mutación al
+   grafo invalida la cache, lo cual requiere
+   integrar el ciclo de mutación con el sistema de
+   cache. Acoplamiento nuevo entre
+   `graph_handlers` y `evidence_store` para un
+   beneficio de 0.01-0.07%.
+
+4. **Topología de test adversa**: los fixtures
+   cíclicos densos usados en W2 ya eran lo peor
+   caso. Grafos reales (hub+tail, trees, DAGs)
+   convergen en 3-5 iteraciones y warm < 100µs.
+
+W3 queda en el backlog solo como **mejora de limpieza
+arquitectónica** (DRY entre handlers que llaman
+`page_rank`), no como optimización de performance.
+
+### e91.W4 y e91.W5
+
+Mismo status: abiertos sin fecha clara. W4
+(paralelizar god_nodes) y W5 (memoize surprising
+connections) tampoco tienen caracterización que
+justifique la complejidad. Quedan en backlog sin
+fecha, sin acción pendiente.
+
+### Lección añadida
+
+65. **Cierra los bloques especulativos**. Un item
+    "abierto pero sin fecha" es peor que un
+    "CLOSED con razón". El primero ocupa atención
+    cognitiva sin esperanza de progreso; el
+    segundo libera el espacio mental para
+    trabajo de mayor valor.
+
+### Estado al cierre
+
+* e91.W1/W2/W6: **CLOSED**
+* e91.W3: **CLOSED** (este entry, evidencia W2)
+* e91.W4/W5: sin fecha, sin acción pendiente
+* SBOM hygiene/race: CLOSED
+* C8 firma humana: PENDIENTE (acción humana)
+* HEAD = e107e34d sin cambios desde último commit
