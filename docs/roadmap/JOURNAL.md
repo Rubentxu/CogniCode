@@ -2317,3 +2317,104 @@ sesión con más tiempo podría:
 * Workspace 100% verde en cargo test
 
 Checkpont durable intacto para el siguiente turno.
+
+## Entrada 16 — 2026-09-26 — SBOM race condition CLOSED: #[serial] en 5 tests
+
+### Contexto
+
+Compromiso del entry 14 (commit `90123021`) dejó
+explícito que el RAII guard `WorkspaceSbomGuard`
+solo cierra la ventana de **panic-induced** state
+pollution. El **race** entre tests paralelos
+que escriben al mismo `crates/<component>-<target>.cdx.json`
+estaba fuera de scope. Era el item #11/13 del todo
+governance pendiente. Lo retomo.
+
+### Red → Green methodology
+
+`serial_test = "3"` ya estaba en workspace
+declarado (línea 186 de `Cargo.toml` raíz),
+ya listado en `[dev-dependencies]` de
+`cognicode-cli` (línea 56 de su Cargo.toml),
+y **nadie lo usaba en el crate**. Sin cambios
+de manifest — solo imports y atributos.
+
+#### Reproducción pre-fix (sin #[serial])
+
+10 ejecuciones consecutivas de
+`cargo test -p cognicode-cli --test prf_f6_w3_bis_sbom_contract`:
+
+```
+R1..R5: 5/5 verde
+R6:     4/5 FAILED (1 test rojo)
+R7..R10: 5/5 verde
+```
+
+**Flake rate observado: 1/10 = 10%**.
+
+Confirmado: los 5 tests del archivo escriben
+SBOMs reales al workspace (`crates/<component>-<target>.cdx.json`),
+y al correr en paralelo en CI con `cargo test`
+default, compiten por esos paths. Los `WorkspaceSbomGuard`
+de entry 14 solo protegen el cleanup entre panic
+y drop, no el race de escritura durante la
+ejecución paralela.
+
+#### Green post-fix
+
+20 ejecuciones consecutivas del mismo comando
+con `#[serial]` aplicado a los 5 tests:
+
+```
+R1..R20: 5/5 verde, 0 fallos
+```
+
+Tiempo por run: ~9s (test 1..5 en serie,
+vs ~4s en paralelo). Coste: ~5s adicionales
+por CI run. Aceptable: una release candidate
+gira `cognicode-cli` tests una vez por CI job.
+
+#### Side effects verificados
+
+* `cargo fmt --check -p cognicode-cli`: limpio.
+* `cargo clippy -p cognicode-cli --tests -- -D warnings`: limpio.
+* `cargo test -p cognicode-cli`: 100% verde.
+* `serial_test` ya estaba como dep — añadido
+  al Cargo.toml? **No**, ya estaba. Solo
+  import + 5 atributos #[serial]. 7 líneas.
+
+### Cambios
+
+* `crates/cognicode-cli/tests/prf_f6_w3_bis_sbom_contract.rs`:
+  * `use serial_test::serial;` (+2 líneas)
+  * 5× `#[serial]` antes de cada `fn prf_f6_w3_bis_*`
+  * Total: +7 líneas, 0 cambios funcionales.
+
+### Lección añadida
+
+61. **Comprueba las dev-deps antes de añadir
+    crates nuevos**. `serial_test = "3"` ya
+    estaba en el workspace desde antes; lo
+    busqué en `Cargo.toml` raíz y en el del
+    crate antes de añadir nada. Esto convierte
+    un fix "potencialmente 5-30 min con
+    PR-review" en un fix de **7 líneas
+    surgical** sin manifest changes.
+
+62. **Honesty en baselines estadísticas**. El
+    10% flake rate sale de N=10, que es
+    estadísticamente débil (IC95% ≈ 0-30%). No
+    lo presento como "el race era frecuente".
+    Lo presento como "el race existía, se
+    reprodujo al menos 1 vez, el fix elimina
+    fallos en 20 runs". Quien revise decida.
+
+### Estado al cierre
+
+* SBOM race: **CLOSED** (commit de este entry)
+* SBOM panic: CLOSED (entry 14, 90123021)
+* e91.W1/W2/W6: CLOSED
+* e91.W3-W5: sin fecha
+* C8 firma humana: PENDIENTE
+
+HEAD actualizado tras este commit.

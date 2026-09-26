@@ -40,6 +40,8 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+use serial_test::serial;
+
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop();
@@ -166,6 +168,7 @@ impl Drop for WorkspaceSbomGuard<'_> {
 /// nothing else under `crates/*.cdx.json` (no per-crate or
 /// per-binary leftovers).
 #[test]
+#[serial]
 fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
     for target in TIER1_TRIPLES {
         // Drop guard: `remove_canonical_sboms(target)` runs on
@@ -221,6 +224,7 @@ fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
 /// would either skip them (silent drift) or upload them and let
 /// the flatten script choke on extras.
 #[test]
+#[serial]
 fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     let target = TIER1_TRIPLES[0];
     // Drop guard: SBOM cleanup runs even if the test panics between
@@ -277,6 +281,7 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
 /// regression in cargo-cyclonedx that emits an empty file or a
 /// per-crate (non-binary) SBOM would surface here.
 #[test]
+#[serial]
 fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
     use std::collections::HashMap;
     let target = TIER1_TRIPLES[0];
@@ -355,6 +360,7 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
 /// produces no output from the workspace root) would resurface
 /// the run #35995529045 failure.
 #[test]
+#[serial]
 fn prf_f6_w3_bis_workflow_sbom_step_invokes_shared_script() {
     for workflow in [&release_yml(), &release_validate_yml()] {
         let text = std::fs::read_to_string(workflow)
@@ -380,6 +386,7 @@ fn prf_f6_w3_bis_workflow_sbom_step_invokes_shared_script() {
 /// (not the broken `crates/*.cdx.json` glob). The upload path must
 /// explicitly list the three per-component SBOMs.
 #[test]
+#[serial]
 fn prf_f6_w3_bis_workflow_upload_path_uses_canonical_sbom_names() {
     for workflow in [&release_yml(), &release_validate_yml()] {
         let text = std::fs::read_to_string(workflow)
