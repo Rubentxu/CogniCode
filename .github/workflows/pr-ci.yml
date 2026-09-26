@@ -242,6 +242,16 @@ jobs:
       # en CI antes de que el guard pierda su semántica.
       - name: QW-03 bin-tracking contractual test (L3.W2.2 dentro de merge-gate)
         run: cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
+      # L3.W3 — QW-04 preflight contractual test (Rust side).
+      # El test `qw04_preflight_contract` cubre las tres
+      # invariantes baratas del preflight: (a) el script existe y
+      # tiene +x, (b) el esquema JSON del recibo declara todos los
+      # campos requeridos, (c) el script neutraliza
+      # GIT_CONFIG_GLOBAL=/dev/null. (d) plus require_tool
+      # dispara fail() con un mensaje claro. El preflight caro
+      # (clone real + workspace tests) vive en release.yml.
+      - name: QW-04 preflight contractual test (L3.W3 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw04_preflight_contract --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
