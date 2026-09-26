@@ -9,69 +9,22 @@
 //! current HEAD), and the artifacts verify from the release candidate
 //! directory itself, not a checkout. Tampering is rejected.
 
-use std::path::PathBuf;
+mod common;
+
 use std::process::Command;
 
-fn release_bin() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/release/cognicode-release");
-    assert!(
-        p.exists(),
-        "cognicode-release binary missing; build release first"
-    );
-    p
-}
+use common::{release_bin_path, repo_root, workspace_tag, workspace_version};
 
 const PLATFORM: &str = "x86_64-unknown-linux-gnu";
 
-// Hermeticity (CR-00c): version and tag are derived from the workspace
-// `Cargo.toml` instead of being hardcoded to a historical value. This makes
-// the test invariant to version bumps and removes the dependency on a
-// pre-existing `dist/` populated by a previous release run.
-fn workspace_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn workspace_version() -> String {
-    let manifest = std::fs::read_to_string(workspace_root().join("Cargo.toml"))
-        .expect("workspace Cargo.toml must be readable from the clone");
-    // Find the [workspace.package] version line. The crate version may also
-    // live under a bare [workspace] (older layouts), so we accept both.
-    let mut section: Option<&str> = None;
-    for line in manifest.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            section = Some(trimmed);
-            continue;
-        }
-        let in_workspace = matches!(
-            section,
-            Some("[workspace]") | Some("[workspace.package]")
-        );
-        if in_workspace {
-            if let Some(rest) = trimmed.strip_prefix("version") {
-                let rest = rest.trim_start().strip_prefix('=').unwrap_or(rest);
-                let rest = rest.trim();
-                let stripped = rest.trim_matches('"');
-                if !stripped.is_empty() {
-                    return stripped.to_string();
-                }
-            }
-        }
-    }
-    panic!("could not find workspace version in Cargo.toml");
-}
-
-fn workspace_tag() -> String {
-    format!("v{}", workspace_version())
-}
+// Hermeticity (CR-00c): version and tag come from the shared
+// `tests/common` helpers, which derive them from the workspace
+// `Cargo.toml` instead of baking a historical value into the test.
+// This keeps the test invariant to version bumps and removes the
+// dependency on a pre-existing `dist/` populated by a previous release
+// run. Skill bundles are generated inside `stage/` directly from
+// `skills/<name>/` (which IS versioned), so the test no longer reads
+// from `dist/` (which is build output, not a Git artefact).
 
 fn head_commit() -> String {
     let out = Command::new("git")
@@ -92,7 +45,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     //   reads from `dist/` (which is build output, not a Git artefact).
     // - All temporary state is created under std::env::temp_dir() and
     //   cleaned up at the end of the test.
-    let root = workspace_root();
+    let root = repo_root();
     let version = workspace_version();
     let tag = workspace_tag();
 
@@ -143,7 +96,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     }
 
     // 3. Generate the release candidate from those bytes.
-    let out = Command::new(release_bin())
+    let out = Command::new(release_bin_path())
         .args([
             "generate",
             "--staging",
@@ -182,7 +135,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     //    version the `cognicode-release` binary was compiled with; this
     //    keeps the test hermetic even if the local `target/release/`
     //    contains a stale binary from a prior workspace version.
-    let ok = Command::new(release_bin())
+    let ok = Command::new(release_bin_path())
         .args([
             "verify",
             "--staging",
@@ -216,7 +169,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     bytes.extend_from_slice(b"tampered");
     std::fs::write(&victim, &bytes).unwrap();
 
-    let bad = Command::new(release_bin())
+    let bad = Command::new(release_bin_path())
         .args([
             "verify",
             "--staging",

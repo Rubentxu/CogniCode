@@ -13,7 +13,7 @@
 //! - `generate` rejects a tampered/missing payload.
 //!
 //! This test exists because the production CI run #35874781973 failed
-//! with `missing artifact cogh-0.97.4-x86_64-unknown-linux-gnu.tar.gz`
+//! with `missing artifact cogh-{ver}-x86_64-unknown-linux-gnu.tar.gz`
 //! while the file was actually present under `staging/dist/`. The flatten
 //! step in the workflow is what makes the staging tree the release
 //! factory expects.
@@ -21,24 +21,27 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn repo_root() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p
-}
+mod common;
+
+use common::{release_bin_path, repo_root, workspace_tag, workspace_version};
 
 fn release_bin() -> PathBuf {
-    let p = repo_root().join("target/release/cognicode-release");
-    assert!(
-        p.exists(),
-        "cognicode-release binary missing; build release first"
-    );
-    p
+    // CR-00c: delegate to the shared helper so the path resolution is
+    // robust against `CARGO_TARGET_DIR` overrides and stale `target/`
+    // directories. Kept as a thin wrapper to minimise diff in this file.
+    release_bin_path()
 }
 
-const VERSION: &str = "0.97.4";
-const TAG: &str = "v0.97.4";
+// CR-00c: version and tag are derived from the workspace `Cargo.toml`
+// via the shared `tests/common` helpers, NOT hardcoded to a historical
+// value. Tests read them through `version()`/`tag()` at call time so
+// the test is invariant to version bumps.
+fn version() -> String {
+    workspace_version()
+}
+fn tag() -> String {
+    workspace_tag()
+}
 
 const TIER1_PLATFORMS: &[&str] = &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"];
 const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
@@ -51,6 +54,7 @@ const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
 /// download and the generate step.
 fn reproduce_ci_layout(staging: &Path) {
     use std::fs;
+    let ver = version();
     fs::create_dir_all(staging).unwrap();
     for plat in TIER1_PLATFORMS {
         let lane_dir = staging.join(format!("payloads-{plat}"));
@@ -61,13 +65,13 @@ fn reproduce_ci_layout(staging: &Path) {
             // synthesise a deterministic payload per (component, platform)
             // so the flattening step has to find them inside the lane
             // subdir, not at the staging root.
-            let payload_name = format!("{comp}-{VERSION}-{plat}.tar.gz");
+            let payload_name = format!("{comp}-{ver}-{plat}.tar.gz");
             let payload_path = lane_dir.join("dist").join(&payload_name);
             let mut content = Vec::new();
             content.extend_from_slice(b"# synth payload for CI layout test\n");
             content.extend_from_slice(format!("component={comp}\n").as_bytes());
             content.extend_from_slice(format!("platform={plat}\n").as_bytes());
-            content.extend_from_slice(format!("version={VERSION}\n").as_bytes());
+            content.extend_from_slice(format!("version={ver}\n").as_bytes());
             fs::write(&payload_path, &content).unwrap();
 
             // CycloneDX SBOM sits next to the payload (the workflow
@@ -86,11 +90,11 @@ fn reproduce_ci_layout(staging: &Path) {
     // already be present when generate runs, so the test stages them
     // upfront at the staging root.
     for b in SKILL_BUNDLES {
-        let name = format!("{b}-{VERSION}.tar.gz");
+        let name = format!("{b}-{ver}.tar.gz");
         let mut content = Vec::new();
         content.extend_from_slice(b"# synth skill bundle for CI layout test\n");
         content.extend_from_slice(format!("id={b}\n").as_bytes());
-        content.extend_from_slice(format!("version={VERSION}\n").as_bytes());
+        content.extend_from_slice(format!("version={ver}\n").as_bytes());
         fs::write(staging.join(&name), &content).unwrap();
     }
 }
@@ -103,17 +107,18 @@ fn reproduce_ci_layout(staging: &Path) {
 /// are not always present in a flatten-only test).
 fn assert_canonical_flat(staging: &Path, expected_extra: &[&str], require_skills: bool) {
     use std::collections::BTreeSet;
+    let ver = version();
 
     let mut required: BTreeSet<String> = BTreeSet::new();
     for plat in TIER1_PLATFORMS {
         for comp in PLATFORM_COMPONENTS {
-            required.insert(format!("{comp}-{VERSION}-{plat}.tar.gz"));
+            required.insert(format!("{comp}-{ver}-{plat}.tar.gz"));
             required.insert(format!("{comp}-{plat}.cdx.json"));
         }
     }
     if require_skills {
         for b in SKILL_BUNDLES {
-            required.insert(format!("{b}-{VERSION}.tar.gz"));
+            required.insert(format!("{b}-{ver}.tar.gz"));
         }
     }
     for e in expected_extra {
@@ -166,9 +171,9 @@ fn dist_workflow_unflattened_layout_is_rejected() {
             "--out",
             tmp.join("out").to_str().unwrap(),
             "--version",
-            VERSION,
+            &version(),
             "--tag",
-            TAG,
+            &tag(),
             "--source-commit",
             "deadbeef",
             "--platform",
@@ -224,7 +229,7 @@ fn dist_workflow_flattened_layout_passes_generate_and_verify() {
 
     // After flattening, the staging root must hold the platform
     // payloads + SBOMs produced by the script. Portable skill bundle
-    // tarballs (`cognicode-0.97.4.tar.gz`, `cognicode-mcp-0.97.4.tar.gz`)
+    // tarballs (`cognicode-{ver}.tar.gz`, `cognicode-mcp-{ver}.tar.gz`)
     // are produced by the workflow's separate `bundle-skills` step AFTER
     // this flatten script runs; the flatten script must not assume their
     // presence.
@@ -243,9 +248,9 @@ fn dist_workflow_flattened_layout_passes_generate_and_verify() {
             "--out",
             out.to_str().unwrap(),
             "--version",
-            VERSION,
+            &version(),
             "--tag",
-            TAG,
+            &tag(),
             "--source-commit",
             "deadbeef",
             "--platform",
@@ -259,14 +264,18 @@ fn dist_workflow_flattened_layout_passes_generate_and_verify() {
         String::from_utf8_lossy(&gen_output.stderr)
     );
 
-    // Verify must also pass on the output.
+    // Verify must also pass on the output. We pass --version explicitly
+    // for the same hermeticity reason documented in
+    // `prf_dist_01_06_release_candidate_uat`.
     let verify = Command::new(release_bin())
         .args([
             "verify",
             "--staging",
             out.to_str().unwrap(),
+            "--version",
+            &version(),
             "--tag",
-            TAG,
+            &tag(),
             "--platform",
             TIER1_PLATFORMS[0],
         ])
@@ -278,7 +287,7 @@ fn dist_workflow_flattened_layout_passes_generate_and_verify() {
     );
 
     // Tamper one payload (flip a byte) → verify must reject it.
-    let target = out.join(format!("cogh-{VERSION}-{}.tar.gz", TIER1_PLATFORMS[0]));
+    let target = out.join(format!("cogh-{}-{}.tar.gz", version(), TIER1_PLATFORMS[0]));
     let mut bytes = fs::read(&target).unwrap();
     bytes[0] ^= 0xff;
     fs::write(&target, &bytes).unwrap();
@@ -287,8 +296,10 @@ fn dist_workflow_flattened_layout_passes_generate_and_verify() {
             "verify",
             "--staging",
             out.to_str().unwrap(),
+            "--version",
+            &version(),
             "--tag",
-            TAG,
+            &tag(),
             "--platform",
             TIER1_PLATFORMS[0],
         ])
@@ -344,7 +355,7 @@ fn dist_workflow_flatten_rejects_unknown_files_and_duplicates() {
     fs::write(
         dup_dir
             .join("dist")
-            .join(format!("cogh-{VERSION}-x86_64-unknown-linux-gnu.tar.gz")),
+            .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version())),
         b"different content with same name\n",
     )
     .unwrap();

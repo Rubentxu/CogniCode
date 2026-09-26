@@ -32,37 +32,40 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+
+use common::{release_bin_path, repo_root, workspace_tag, workspace_version};
+
+/// CR-00c: derive version/tag from the workspace `Cargo.toml`. The
+/// shared helpers are the single source of truth — no historical
+/// version is baked into the test.
+fn version() -> String {
+    workspace_version()
+}
+fn tag() -> String {
+    workspace_tag()
+}
+
 /// Resolve the `cognicode-release` binary. Must be built in
-/// release profile before this test runs.
+/// release profile before this test runs. CR-00c: delegate to the
+/// shared helper for robust path resolution.
 fn release_bin() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p.push("target/release/cognicode-release");
-    assert!(
-        p.exists(),
-        "cognicode-release binary missing at {}; build with `cargo build --release --bin cognicode-release`",
-        p.display()
-    );
-    p
+    release_bin_path()
 }
 
 /// Workspace root (3 levels up from this test file's crate).
-fn repo_root() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p
+fn repo_root_local() -> PathBuf {
+    repo_root()
 }
 
 /// Stage the three real payload archives (cogh, cognicode,
 /// cognicode-mcp) into a private temp staging dir. Returns the
 /// staging path.
 fn stage_payloads(tag: &str) -> PathBuf {
-    let root = repo_root();
+    let root = repo_root_local();
     let stem = tag.replace('v', "");
     // VERSION is encoded in the payload filenames (e.g.
-    // cognicode-0.97.5-x86_64-unknown-linux-gnu.tar.gz). We
+    // cognicode-{ver}-x86_64-unknown-linux-gnu.tar.gz). We
     // re-tar the binaries that are already in target/release.
     let stage = std::env::temp_dir().join(format!("prf-f6-w1-stage-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage);
@@ -92,17 +95,28 @@ fn stage_payloads(tag: &str) -> PathBuf {
         );
     }
 
-    // Skill bundle payloads (versioned, produced by `just bundle-skills`).
-    // The release factory requires these to be present in the staging
-    // directory alongside the binary payloads.
+    // CR-00c: skill bundle payloads are generated HERE directly from
+    // the versioned `skills/<name>/` source (which IS in Git) into the
+    // staging directory, so this test no longer depends on a pre-existing
+    // `dist/` populated by a prior `just bundle-skills` run.
     for bundle in ["cognicode", "cognicode-mcp"] {
-        let src = root.join(format!("dist/{bundle}-{stem}.tar.gz"));
+        let skill_dir = root.join("skills").join(bundle);
         assert!(
-            src.exists(),
-            "missing skill bundle {bundle}-{stem}.tar.gz at {}; run `just bundle-skills`",
-            src.display()
+            skill_dir.join("manifest.yaml").exists(),
+            "skill `{}` must have a versioned manifest.yaml at {}",
+            bundle,
+            skill_dir.display()
         );
-        std::fs::copy(&src, stage.join(src.file_name().unwrap())).unwrap();
+        let dst = stage.join(format!("{bundle}-{stem}.tar.gz"));
+        let st = Command::new("tar")
+            .arg("-czf")
+            .arg(&dst)
+            .arg("-C")
+            .arg(&skill_dir)
+            .arg(".")
+            .status()
+            .unwrap();
+        assert!(st.success(), "tar failed for skill bundle {bundle}");
     }
     stage
 }
@@ -121,10 +135,11 @@ fn head_commit() -> String {
 /// factory itself is broken.
 #[test]
 fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
-    let tag = "v0.97.4";
-    let stem = "0.97.4";
+    // CR-00c: derive tag/stem from the workspace version.
+    let tag = tag();
+    let stem = version();
     let platform = "x86_64-unknown-linux-gnu";
-    let stage = stage_payloads(tag);
+    let stage = stage_payloads(&tag);
     let generated =
         std::env::temp_dir().join(format!("prf-f6-w1-gen-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&generated);
@@ -138,9 +153,9 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
             "--out",
             generated.to_str().unwrap(),
             "--version",
-            stem,
+            stem.as_str(),
             "--tag",
-            tag,
+            &tag,
             "--source-commit",
             &head_commit(),
             "--platform",
@@ -175,7 +190,7 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
             "--staging",
             generated.to_str().unwrap(),
             "--tag",
-            tag,
+            &tag,
             "--platform",
             platform,
         ])
@@ -198,10 +213,11 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
 /// pins the integrity gate: verify MUST NOT be a no-op.
 #[test]
 fn prf_f6_w1_tampered_payload_fails_verify() {
-    let tag = "v0.97.4";
-    let stem = "0.97.4";
+    // CR-00c: derive tag/stem from the workspace version.
+    let tag = tag();
+    let stem = version();
     let platform = "x86_64-unknown-linux-gnu";
-    let stage = stage_payloads(tag);
+    let stage = stage_payloads(&tag);
     let generated =
         std::env::temp_dir().join(format!("prf-f6-w1-gen-tam-{}-{}", tag, std::process::id()));
     let _ = std::fs::remove_dir_all(&generated);
@@ -215,9 +231,9 @@ fn prf_f6_w1_tampered_payload_fails_verify() {
             "--out",
             generated.to_str().unwrap(),
             "--version",
-            stem,
+            stem.as_str(),
             "--tag",
-            tag,
+            &tag,
             "--source-commit",
             &head_commit(),
             "--platform",
@@ -270,7 +286,7 @@ fn prf_f6_w1_tampered_payload_fails_verify() {
             "--staging",
             tampered.to_str().unwrap(),
             "--tag",
-            tag,
+            &tag,
             "--platform",
             platform,
         ])

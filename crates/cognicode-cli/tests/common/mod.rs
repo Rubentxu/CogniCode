@@ -1,6 +1,7 @@
 //! Harness compartido para UATs de CLI (binarios reales).
 //! Helper centralizado para resolver la ruta de los binarios `cogh` y
-//! `cognicode` bajo test.
+//! `cognicode` bajo test, además de helpers de workspace (versión, tag,
+//! repo_root) compartidos entre los tests de release-flow.
 //!
 //! Cada archivo `tests/*.rs` es un test binary independiente (Cargo
 //! genera un binario por archivo), por lo que `tests/common/mod.rs`
@@ -94,6 +95,84 @@ fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
 fn runtime_bin_exe(name: &str) -> Option<std::ffi::OsString> {
     let var = format!("CARGO_BIN_EXE_{name}");
     std::env::var_os(var)
+}
+
+// ---------------------------------------------------------------------------
+// CR-00c: helpers de workspace para tests de release-flow.
+//
+// Antes, cada test (`prf_dist_01_06_release_candidate_uat`,
+// `prf_dist_workflow_flatten_uat`, `prf_f6_w2_staging_contract`,
+// `prf_f6_w1_release_coherence`) tenía su propio `repo_root()` calculado
+// y `const VERSION: &str = "0.97.4"` hardcoded. Esto los hacía
+// NO-herméticos en clean clone (la versión 0.97.4 no corresponde al
+// workspace actual, los payloads generados no satisfacían el check R8 del
+// binario `cognicode-release`). Los helpers aquí centralizan:
+//   - el cálculo del workspace root (reutilizable entre tests),
+//   - la lectura de la versión canónica del workspace desde
+//     `[workspace.package]` (acepta también `[workspace]` legacy),
+//   - el tag derivado (`v<version>`),
+//   - el path del binario `cognicode-release` con assert de existencia.
+// ---------------------------------------------------------------------------
+
+/// Absolute path to the workspace root (the directory that contains the
+/// top-level `Cargo.toml`).
+pub fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crate parent")
+        .parent()
+        .expect("workspace root")
+        .to_path_buf()
+}
+
+/// Canonical workspace version, derived from `[workspace.package]` (or
+/// the legacy `[workspace]` section) of the workspace `Cargo.toml`.
+/// Panics if not found — tests must NOT bake the version into the
+/// source as a constant.
+pub fn workspace_version() -> String {
+    let manifest = std::fs::read_to_string(repo_root().join("Cargo.toml"))
+        .expect("workspace Cargo.toml must be readable from the clone");
+    let mut section: Option<&str> = None;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            section = Some(trimmed);
+            continue;
+        }
+        let in_workspace = matches!(
+            section,
+            Some("[workspace]") | Some("[workspace.package]")
+        );
+        if in_workspace {
+            if let Some(rest) = trimmed.strip_prefix("version") {
+                let rest = rest.trim_start().strip_prefix('=').unwrap_or(rest);
+                let rest = rest.trim();
+                let stripped = rest.trim_matches('"');
+                if !stripped.is_empty() {
+                    return stripped.to_string();
+                }
+            }
+        }
+    }
+    panic!("could not find workspace version in Cargo.toml");
+}
+
+/// Git tag for the workspace version (`v<version>`).
+pub fn workspace_tag() -> String {
+    format!("v{}", workspace_version())
+}
+
+/// Path to the `cognicode-release` binary built by the preflight. Uses
+/// the same resolution chain as `binary_path` so it is robust under
+/// `CARGO_TARGET_DIR` overrides and stale `target/` directories.
+pub fn release_bin_path() -> PathBuf {
+    let p = binary_path("cognicode-release");
+    assert!(
+        p.exists(),
+        "cognicode-release binary missing at {}; build it first (`cargo build --release --bin cognicode-release`)",
+        p.display()
+    );
+    p
 }
 
 #[cfg(test)]

@@ -41,27 +41,24 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn repo_root() -> PathBuf {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.pop();
-    p
-}
+mod common;
+
+use common::{release_bin_path, repo_root, workspace_tag, workspace_version};
 
 fn release_bin() -> PathBuf {
-    let p = repo_root().join("target/release/cognicode-release");
-    assert!(
-        p.exists(),
-        "cognicode-release binary missing; build release first"
-    );
-    p
+    // CR-00c: delegate to the shared helper for robust path resolution.
+    release_bin_path()
 }
 
-const VERSION: &str = "0.97.4";
-const TAG: &str = "v0.97.4";
+// CR-00c: version and tag are derived from the workspace `Cargo.toml`
+// via the shared helpers, NOT hardcoded.
+fn version() -> String {
+    workspace_version()
+}
+fn tag() -> String {
+    workspace_tag()
+}
 
-/// Both Tier-1 platforms — this test exists specifically because a
-/// single-platform layout didn't catch the original failure.
 const TIER1_PLATFORMS: &[&str] = &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"];
 const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
@@ -75,12 +72,13 @@ const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
 /// `staging/<id>-<ver>.tar.gz` before the flatten script runs.
 fn reproduce_ci_layout(staging: &Path) {
     use std::fs;
+    let ver = version();
     fs::create_dir_all(staging).unwrap();
     for plat in TIER1_PLATFORMS {
         let lane_dir = staging.join(format!("payloads-{plat}"));
         fs::create_dir_all(lane_dir.join("dist")).unwrap();
         for comp in PLATFORM_COMPONENTS {
-            let payload_name = format!("{comp}-{VERSION}-{plat}.tar.gz");
+            let payload_name = format!("{comp}-{ver}-{plat}.tar.gz");
             let payload_path = lane_dir.join("dist").join(&payload_name);
             // Synth content is deterministic and includes platform +
             // component markers. If a future refactor swaps payloads
@@ -89,7 +87,7 @@ fn reproduce_ci_layout(staging: &Path) {
             content.extend_from_slice(b"# F6.W2 synth payload\n");
             content.extend_from_slice(format!("component={comp}\n").as_bytes());
             content.extend_from_slice(format!("platform={plat}\n").as_bytes());
-            content.extend_from_slice(format!("version={VERSION}\n").as_bytes());
+            content.extend_from_slice(format!("version={ver}\n").as_bytes());
             fs::write(&payload_path, &content).unwrap();
 
             // CycloneDX SBOM accompanies the payload.
@@ -105,11 +103,11 @@ fn reproduce_ci_layout(staging: &Path) {
     // Skill bundles are produced by `just bundle-skills` and staged
     // by the workflow before the flatten step runs.
     for b in SKILL_BUNDLES {
-        let name = format!("{b}-{VERSION}.tar.gz");
+        let name = format!("{b}-{ver}.tar.gz");
         let mut content = Vec::new();
         content.extend_from_slice(b"# F6.W2 synth skill bundle\n");
         content.extend_from_slice(format!("id={b}\n").as_bytes());
-        content.extend_from_slice(format!("version={VERSION}\n").as_bytes());
+        content.extend_from_slice(format!("version={ver}\n").as_bytes());
         fs::write(staging.join(&name), &content).unwrap();
     }
 }
@@ -146,9 +144,9 @@ fn generate_for(out: &Path, staging: &Path, plat: &str) -> std::process::ExitSta
         "--out",
         out.to_str().unwrap(),
         "--version",
-        VERSION,
+        &version(),
         "--tag",
-        TAG,
+        &tag(),
         "--source-commit",
         "deadbeef",
         "--platform",
@@ -164,8 +162,10 @@ fn verify_for(out: &Path, plat: &str) -> std::process::ExitStatus {
             "verify",
             "--staging",
             out.to_str().unwrap(),
+            "--version",
+            &version(),
             "--tag",
-            TAG,
+            &tag(),
             "--platform",
             plat,
         ])
@@ -203,14 +203,15 @@ fn prf_f6_w2_full_pipeline_both_platforms_passes() {
     // After flattening, all canonical payloads + SBOMs must be at
     // the staging root. Skill bundles were already there.
     let mut required: Vec<String> = Vec::new();
+    let ver = version();
     for plat in TIER1_PLATFORMS {
         for comp in PLATFORM_COMPONENTS {
-            required.push(format!("{comp}-{VERSION}-{plat}.tar.gz"));
+            required.push(format!("{comp}-{ver}-{plat}.tar.gz"));
             required.push(format!("{comp}-{plat}.cdx.json"));
         }
     }
     for b in SKILL_BUNDLES {
-        required.push(format!("{b}-{VERSION}.tar.gz"));
+        required.push(format!("{b}-{ver}.tar.gz"));
     }
     for r in &required {
         assert!(
@@ -268,11 +269,12 @@ fn prf_f6_w2_per_payload_tampering_is_detected() {
 
     // Tamper each component payload, one at a time, and confirm
     // verify rejects the candidate.
+    let ver = version();
     for comp in PLATFORM_COMPONENTS {
-        let target = out.join(format!("{comp}-{VERSION}-{plat}.tar.gz"));
+        let target = out.join(format!("{comp}-{ver}-{plat}.tar.gz"));
         assert!(target.exists(), "{comp} payload missing from {out:?}");
 
-        let original_sha = sha256_for(&sums, &format!("{comp}-{VERSION}-{plat}.tar.gz"));
+        let original_sha = sha256_for(&sums, &format!("{comp}-{ver}-{plat}.tar.gz"));
         assert!(original_sha.is_some(), "no SHA for {comp} in SHA256SUMS");
         let original_sha = original_sha.unwrap();
 
@@ -281,21 +283,23 @@ fn prf_f6_w2_per_payload_tampering_is_detected() {
         bytes[0] ^= 0xFF;
         fs::write(&target, &bytes).unwrap();
 
-        let ver = Command::new(release_bin())
+        let verify = Command::new(release_bin())
             .args([
                 "verify",
                 "--staging",
                 out.to_str().unwrap(),
+                "--version",
+                &ver,
                 "--tag",
-                TAG,
+                &tag(),
                 "--platform",
                 plat,
             ])
             .output()
             .unwrap();
-        let stderr = String::from_utf8_lossy(&ver.stderr);
+        let stderr = String::from_utf8_lossy(&verify.stderr);
         assert!(
-            !ver.status.success(),
+            !verify.status.success(),
             "verify must reject tampered {comp}; got success, stderr={stderr}"
         );
         // The verify error must reference the actual tampered
@@ -343,13 +347,13 @@ fn prf_f6_w2_missing_payload_is_rejected() {
 
     // Remove one payload from the OUTPUT directory (the candidate
     // that will be verified downstream).
-    let target = out.join(format!("cognicode-mcp-{VERSION}-{plat}.tar.gz"));
+    let target = out.join(format!("cognicode-mcp-{}-{plat}.tar.gz", version()));
     assert!(target.exists());
     fs::remove_file(&target).unwrap();
 
-    let ver = verify_for(&out, plat);
+    let ver_status = verify_for(&out, plat);
     assert!(
-        !ver.success(),
+        !ver_status.success(),
         "verify must reject candidate missing cognicode-mcp payload"
     );
 
@@ -376,7 +380,7 @@ fn prf_f6_w2_duplicate_payload_across_lanes_is_rejected() {
     fs::write(
         dup_lane
             .join("dist")
-            .join(format!("cogh-{VERSION}-x86_64-unknown-linux-gnu.tar.gz")),
+            .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version())),
         b"different content with same name\n",
     )
     .unwrap();
@@ -415,17 +419,17 @@ fn prf_f6_w2_wrong_platform_payload_is_rejected() {
     let x86_lane = staging.join("payloads-x86_64-unknown-linux-gnu");
     let bad_payload = x86_lane
         .join("dist")
-        .join(format!("cogh-{VERSION}-x86_64-unknown-linux-gnu.tar.gz"));
+        .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version()));
     let renamed = x86_lane
         .join("dist")
-        .join(format!("cogh-{VERSION}-aarch64-unknown-linux-gnu.tar.gz"));
+        .join(format!("cogh-{}-aarch64-unknown-linux-gnu.tar.gz", version()));
     fs::rename(&bad_payload, &renamed).unwrap();
 
     // Also drop the real aarch64 cogh to keep names unique.
     let aarc_real = staging
         .join("payloads-aarch64-unknown-linux-gnu")
         .join("dist")
-        .join(format!("cogh-{VERSION}-aarch64-unknown-linux-gnu.tar.gz"));
+        .join(format!("cogh-{}-aarch64-unknown-linux-gnu.tar.gz", version()));
     fs::remove_file(&aarc_real).unwrap();
 
     // The flatten script validates filename <-> lane agreement,
