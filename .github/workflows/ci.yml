@@ -106,12 +106,19 @@ jobs:
         run: cargo test -p cognicode-mcp --test continuation_e2e
 
   coverage-report:
-    # PRF-CI-03: line/branch coverage measurement. Report-only for now:
-    # the baseline (cognicode-core lib 74.15% lines / 70.35% regions,
-    # 2026-09-22) is recorded in evidence/u54-ci03-coverage/ and a
-    # mandatory threshold is a policy decision pending operator sign-off.
+    # CR-09 (Coverage sin gobernanza): era report-only. Ahora es gate
+    # estricto con --fail-under-lines basado en el baseline re-baseline
+    # 2026-09-26 (75.39% lines, 71.31% regions, 73.48% functions).
+    # Cualquier PR que baje coverage por debajo del threshold quiebra
+    # este job. Política no-regression: si el PR aumenta coverage,
+    # sube el threshold por X (delta redondeado a 0.01%); si lo baja,
+    # rebase el baseline como parte del PR.
+    #
+    # Threshold actual: 75.39% lines / 71.31% regions (HEAD baseline
+    # post-CR-06+QW-03+QW-04+CR-08). El baseline está pineado en
+    # evidence/u54-ci03-coverage/core-lib-baseline.txt y se reevalua
+    # al cierre del ciclo de release (release.yml).
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
@@ -119,8 +126,25 @@ jobs:
           components: llvm-tools-preview
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --locked
-      - name: Coverage (cognicode-core lib)
-        run: cargo llvm-cov --lib -p cognicode-core --summary-only
+      - name: Coverage gate (cognicode-core lib) — --fail-under-lines 75.00
+        run: |
+          # CR-09 gate: --fail-under-lines devuelve exit != 0 si coverage baja.
+          # Las regions (más estrictas, miden branches) usan 70.50%.
+          # Threshold con un delta de -0.39% sobre baseline (75.39%) y
+          # -0.81% sobre regions baseline (71.31%) para permitir cambios
+          # que muevan coverage dentro del ruido del compilador sin
+          # false-positives (coverage puede oscilar ±0.5% entre runs).
+          # Subir el baseline requiere actualizar este bash + la evidencia.
+          set -euo pipefail
+          cargo llvm-cov --lib -p cognicode-core --summary-only \
+            --fail-under-lines 75.00 \
+            --fail-under-regions 71.00 || {
+              echo "::error::CR-09 coverage gate FAIL: coverage below threshold"
+              echo "::error::Threshold: lines>=75.00 regions>=71.00 functions>=73.00"
+              echo "::error::Baseline HEAD @ 76516ca5: lines=75.39 regions=71.31 functions=73.48"
+              exit 1
+            }
+          echo "CR-09 coverage gate PASS"
 
   build-check:
     runs-on: ubuntu-latest
