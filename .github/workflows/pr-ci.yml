@@ -370,6 +370,16 @@ jobs:
       # la integración futura aterrice.
       - name: CR-08 suite selector contractual test (L3.W4 dentro de merge-gate)
         run: cargo test -p cognicode-cli --test qw08_crate_selector --quiet
+      # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
+      # Pinea que `GraphInsightsService::analyze` cumple el budget
+      # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step
+      # una regresión silenciosa en el hot path podría re-emerger
+      # el cold-cache p95=367s observado en e90. Ver
+      # `crates/cognicode-core/tests/e91_w7_regression_budget.rs`
+      # para el contrato y la base empírica (619ms @ HEAD dev, 50×
+      # bajo el budget).
+      - name: CR-05 e91.W7 regression budget gate (L3.W5 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w7_regression_budget --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
