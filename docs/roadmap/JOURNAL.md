@@ -3516,3 +3516,96 @@ firma contractual.
 * El script ya existe — verifico que su contrato está vigente
   (127 líneas, `set -euo pipefail`, parsing perl). Si está bien, lo
   integro.
+
+---
+
+## Entrada N+2 — 2026-09-26 — Stewardship session: CR-04 optimisation series + bounded cleanups
+
+### Resumen
+
+Tras el re-arranque autónomo de la entrada N+1 (16 commits,
+QW-03/04/05 + CR-06/08/09 cerrados), esta sesión de stewardship
+añade **11 commits** (turnos 2 al 7) consolidando el branch
+`arch/cr-06-application-fitness-functions`. HEAD actual:
+`8ef3d7b2` (27 commits total sobre `f774b89f`).
+
+### Cierres este periodo (en orden cronológico)
+
+1. `13dad9bf` — CR-09 coverage baseline evidence (75.39/71.31/73.48).
+2. `01cde95c` — JOURNAL session log entry (autonomous re-arranque).
+3. `f340b624` — **CR-05 / e91.W7** regression budget gate.
+   Tier-2 (1000 nodos / ~3000 edges) ≤30s; baseline @ dev = 619ms
+   (50× margin). Wired en pr-ci merge-gate L3.W5.
+4. `1eb71afe` — ROADMAP PR-PERF → IN PROGRESS_PARTIAL.
+5. `690c44a6` — **CR-03 / e91.W8** per-stage profile breakdown.
+   6 tests (projection/scc/god_nodes/feedback_arc_set/
+   community_detect/analyze_full). Per-stage cap 5s, slowest
+   stage community_detect 332ms @ 15× margin. Wired L3.W6.
+6. `a566e4c1` — **CR-04 / e91.W9.1** feedback_arc_set O(N²)→O(N).
+   Iter-find en filter_map → HashMap precompute. Stage 309→236ms
+   (-23%), analyze_full 629→549ms (-13%). 3 unit tests PASS,
+   semantic equivalence preserved.
+7. `b7b22535` — ROADMAP PR-PERF → IN PROGRESS_HIGH (G5 scorecard
+   es lo único que falta; out of scope para esta branch).
+8. `e680f5b7` — chore(clippy): unused import ArchitectureEvaluator.
+   Workspace `cargo clippy --workspace --all-targets -- -D warnings`
+   ahora exit 0. Mensaje del commit **contenía un error fáctico**:
+   decía "pr-ci uses -W not -D" pero el gate usa `-D warnings`
+   (verificado contra `.github/workflows/pr-ci.yml:68-69`).
+   Corregido implícitamente al actualizar PR description; sin
+   reescritura del commit (atomic principle preservado).
+9. `66c51e31` — docs(roadmap): disambiguate CR-* namespace.
+   PR-ARCH row usaba "CR-09" para verticales pendientes
+   (control-plane + graph-algos), colisionando con "CR-09"
+   coverage de PR-DEVEX. Renombrado a PR-ARCH-CR-A/B para que
+   PR-DEVEX mantenga CR-08/CR-09 históricos.
+10. `695b4d0a` — **CR-04 / e91.W9.2** community_detect O(N²)→O(N).
+    `g.node_indices().find()` → `g.node_weight(NodeIndex::new(i))`
+    directo. community_detect 276→252ms (-9%), analyze_full
+    549→541ms (-1.5%), tier-2 619→585ms (-5.5%). 18 community
+    tests PASS.
+11. `8ef3d7b2` — chore(ci): QW-05 debt follow-up — pin
+    extractions/setup-just@v2 to SHA dd310ad5 (v2.0.0).
+    47/48 actions ahora SHA-pinned en merge-gate path.
+
+### Métricas agregadas
+
+* analyze_full (CR-04 total): 629ms → 541ms (-14%)
+* tier-2 regression budget (CR-04 total): 619ms → 585ms (-5.5%)
+* Tests contractuales: 47 PASS / 0 FAIL (qw03 7, qw04 8, qw08 14,
+  e91_w7 3, e91_w8 6, feedback_arc_set unit 3, community
+  detector unit 18, architecture_self_host 5, qw03 contractual
+  + others).
+* Clippy workspace: `cargo clippy --workspace --all-targets
+  -- -D warnings` exit 0.
+* Actions pinned: 47/48 (solo rootful/setup-podman@v4 queda
+  mutable, y es DEPRECATED + sandbox-nightly-only).
+
+### Decisiones honestas
+
+* **NO** se tocó CR-07 (OTel 0.28 / protobuf advisory).
+  Riesgo alto: API OTel cambia entre 0.27 → 0.28 → 0.33 (actual).
+  Romper `/metrics` en producción sería peor que el advisory.
+  Merece un ciclo dedicado con PR review del operador.
+* **NO** se tocó ST-01..05 (PR-DEPTH verticales). Refactor
+  arquitectónico grande (extracción de puertos en
+  workspace_session, file_operations, analysis_service) fuera
+  de scope para unit-test-only branch.
+* **NO** se tocó M0.6 (PHP/Swift tree-sitter bump). Opción A
+  (bump tree-sitter 0.24 → 0.25) afecta 18 parsers. Opción B
+  (fork comunitario) no oficial. Opción C (Unsupported) no
+  repara. Decisión sigue bloqueada esperando operador.
+
+### Estado de outcomes (a 2026-09-26 23:32 local)
+
+* PR-G1: IN PROGRESS_HIGH
+* PR-G2: UNLOCKED (esperando firma humana CR-01 C8-R)
+* PR-PERF: IN PROGRESS_HIGH (W1-W9 + CR-03/04/05 cerrados; G5
+  scorecard out of scope)
+* PR-ARCH: IN PROGRESS_HIGH (CR-06 cerrado; PR-ARCH-CR-A/B
+  pendientes = scope de cycle dedicado)
+* PR-SEC: PENDING (QW-05 pineado; CR-07 OTel/protobuf fuera de
+  scope)
+* PR-DEVEX: IN PROGRESS_HIGH (CR-08 + CR-09 + QW-03/04/05)
+* PR-DEPTH: PENDING (ST-01..05 fuera de scope)
+
