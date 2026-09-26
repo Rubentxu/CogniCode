@@ -111,12 +111,12 @@ operativo del programa vive en:
 
 | Outcome | Descripción | Estado |
 |---------|-------------|--------|
-| **PR-G1** | Reproducible governance (QW-01..07) | **IN PROGRESS → IN PROGRESS_HALF** (QW-01..07 cerrados en commit `66fd4103`, QW-N aún pendientes si surgen) |
+| **PR-G1** | Reproducible governance (QW-01..07) | **IN PROGRESS_HIGH** (QW-01..07 conceptual `CLOSED 2026-09-26` en commit `66fd4103`; **QW-03** + **QW-04** con contrato+CI `CLOSED 2026-09-26` en branch `arch/cr-06-application-fitness-functions` (5 commits: `d781e846` QW-03 script→testable; `47085b0d` QW-03 merge-gate step; `8f58e314` QW-04 contractual test; `cc357018` QW-04 wire release.yml+pr-ci.yml). PR-G1 completo desde el lado enforcement. QW-N siguen PENDING si surgen.) |
 | **PR-G2** | C8-R (recertificación reproducible desde clean clone) | **UNLOCKED 2026-09-26** (C8 firmada operativa sobre `3954b8b7` abre la puerta a CR-01; ver dosier §11 + expediente F8) |
 | **PR-PERF** | e91 Graph Insights G5 GREEN + regression budget | PENDING |
-| **PR-ARCH** | Application boundary (fitness functions + primer vertical remediado) | PENDING |
+| **PR-ARCH** | Application boundary (fitness functions + primer vertical remediado) | **PENDING → IN PROGRESS_HIGH** (CR-06 `CLOSED 2026-09-26` con 5 constraints canónicos pineados en codegen Rust, tests RED-GREEN contractuales, e2e `architecture_self_host`, integrado en merge-gate y CI defense; 3 commits `5dbd7467`/`417f6c23`/`82c6d644` + 1 carryover `ccc226a2`). Vertical pendiente: cognicode-control-plane (CR-09) y/o graph-algos (CR-10); ambos dependen de CR-06 cerrado. |
 | **PR-SEC** | Supply-chain hardening (protobuf advisory + Actions pinneadas) | PENDING (parcialmente abordado en QW-05 con 46 pines SHA, falta protobuf advisory y migración OTel) |
-| **PR-DEVEX** | Adaptive CI & coverage governance | PENDING |
+| **PR-DEVEX** | Adaptive CI & coverage governance | **PENDING → IN PROGRESS_PARTIAL** (QW-03+QW-04 ya en CI; completitud full requiere CR-08 selector determinista de suites y CR-04 coverage contracts — ambos dependen de CR-06 cerrado, ya CLOSED) |
 | **PR-DEPTH** | Deep modules (ST-01..05) | PENDING |
 
 ### Bloqueos heredados al programa
