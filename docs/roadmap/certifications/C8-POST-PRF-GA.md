@@ -310,3 +310,83 @@ para que la decisión del operador sea informada.
 
 *Addendum emitido por el agente principal en modo AUTO el
 2026-09-26.*
+
+---
+
+## 9. Addendum — delta posterior al addendum §8 (HEAD `ec98c532`)
+
+### Contexto
+
+Tras emitir el addendum §8, el agente principal cerró e91.W4/W5
+con estimación derivada (JOURNAL entry 19) y emitió CURRENT.md
+post-PRF (commit `bca98d20`) + actualizó ROADMAP.md para reflejar
+e91 W1-W6 CLOSED (commit `ec98c532`). Estos son 4 commits
+adicionales a los 21 ya documentados en §8.
+
+### Delta adicional (4 commits: `528d9966`..`ec98c532`)
+
+```
+aed8b7d7 docs(roadmap): entry 19 — e91.W4 and W5 CLOSED with W2-derived estimate
+bca98d20 docs(roadmap): CURRENT.md post-PRF pointer replaces stale docs/prf/CURRENT.md
+ec98c532 docs(roadmap): ROADMAP.md e91 row reflects W1-W6 closure, not W1 only
+528d9966 docs(roadmap): entry 17 — e91.W3 CLOSED with non-viability evidence
+```
+
+### Naturaleza del delta
+
+* **528d9966** (`docs`): cierre de e91.W3 con razonamiento de
+  no-viabilidad (<0.07% budget). No cambia comportamiento de
+  código.
+* **aed8b7d7** (`docs`): cierre de e91.W4/W5 con estimación
+  derivada de W2 (2 × W2 worst-case = 0.16% budget). No cambia
+  comportamiento de código.
+* **bca98d20** (`docs`): nuevo archivo `docs/roadmap/CURRENT.md`
+  que reemplaza al stale `docs/prf/CURRENT.md`. Solo docs.
+* **ec98c532** (`docs`): actualización de 1 celda en
+  `docs/roadmap/ROADMAP.md` (e91 row). Solo docs.
+
+**Ningún commit introduce cambios de código, ni nuevos tests, ni
+modificaciones a contratos públicos.** Son 4 commits docs-only
+que consolidan el cierre de la saga e91 y sincronizan la
+documentación operativa.
+
+### Verificación re-ejecutada sobre HEAD `ec98c532`
+
+```
+$ git log 3954b8b7..HEAD --oneline | wc -l
+25
+
+$ cargo test --workspace 2>&1 | grep "test result" | awk '...'
+passed=5557 failed=0 ignored=45
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.50s
+(exit 0, no warnings, no errors)
+```
+
+### Comparación acumulada
+
+| Métrica | C8 base `3954b8b7` | §8 (HEAD `528d9966`) | §9 (HEAD `ec98c532`) |
+|---------|---------------------|----------------------|----------------------|
+| Tests passed | 5542 | 5557 | 5557 |
+| Tests failed | 0 | 0 | 0 |
+| Tests ignored | 45 | 45 | 45 |
+| Clippy `-D warnings` | exit 0 | exit 0 | exit 0 |
+| Commits post-C8 | 0 | 21 | 25 |
+| Naturaleza delta | — | código + tests + docs | solo docs |
+
+### Conclusión
+
+El delta de 4 commits adicionales (todos docs-only) **no introduce
+ningún cambio de comportamiento, código, tests ni contratos**. La
+batería sigue en 5557/0/45 verde sobre HEAD `ec98c532`.
+
+**El dosier C8 sigue siendo PASS** sobre `3954b8b7`. La firma
+humana, si ocurre, cubre ese SHA. Los 25 commits posteriores
+(21 de §8 + 4 de §9) son trazabilidad adicional que el operador
+puede consultar si quiere entender el estado actual.
+
+**Este addendum §9 NO reabre C8 ni §8.** Mantiene append-only.
+
+*Addendum emitido por el agente principal en modo AUTO el
+2026-09-26.*

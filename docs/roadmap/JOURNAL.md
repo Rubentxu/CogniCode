@@ -2676,3 +2676,34 @@ medición directa. Las razones honestas:
 * SBOM hygiene/race: CLOSED
 * C8 firma humana: PENDIENTE (con addendum §8)
 * HEAD = 74d08466 sin cambios desde último commit
+
+## Entrada 20 — 2026-09-26 — C8 addendum §9: 4 commits docs-only posteriores a §8
+
+### Contexto
+
+El addendum §8 del dosier C8 cubría 21 commits post-firma
+hasta `528d9966`. Tras emitir §8, ejecuté 4 commits docs-only
+más que consolidan el cierre de la saga e91 (W3, W4/W5,
+CURRENT.md post-PRF, ROADMAP.md actualizado). El dosier
+C8 quedaba stale respecto a HEAD `ec98c532`.
+
+### Acción tomada
+
+Addendum §9 al dosier C8, append-only (no reabre §8 ni C8).
+Documenta:
+* Lista de los 4 commits adicionales con su naturaleza
+  docs-only.
+* Verificación re-ejecutada: batería sigue 5557/0/45,
+  clippy exit 0, 25 commits post-`3954b8b7`.
+* Tabla comparativa C8 base vs §8 vs §9.
+* Conclusión: C8 sigue PASS sobre `3954b8b7`.
+
+### Estado al cierre
+
+* e91.W1-W6: CLOSED
+* SBOM hygiene/race: CLOSED
+* C8 dosier: PENDIENTE firma humana, con addendums
+  §8 y §9
+* CURRENT.md post-PRF y ROADMAP.md sincronizados con
+  HEAD `ec98c532`
+* HEAD = ec98c532 sin cambios desde último commit
