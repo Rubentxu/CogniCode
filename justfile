@@ -9,6 +9,8 @@
 #   just test             → Ejecuta todos los tests
 #   just e2e              → Tests end-to-end con Playwright
 #   just doc              → Abre la documentación
+#   just fmt-check        → CI gate check: cargo fmt --all --check (M0.7)
+#   just docs-check       → CI gate check: cargo doc --no-deps (M0.8 audit)
 #
 # ============================================================================
 
@@ -174,6 +176,20 @@ lint:
 fmt:
     @echo "📝 Formatting..."
     cargo fmt
+
+# Verify fmt does not drift (M0.7 audit gate)
+fmt-check:
+    @echo "🔎 Checking formatting..."
+    cargo fmt --all --check
+
+# Audit rustdoc warnings (M0.8 audit gate)
+docs-check:
+    @echo "🔎 Auditing rustdoc..."
+    @cargo doc --workspace --no-deps 2>&1 | tee /tmp/rustdoc.log > /dev/null
+    @echo "Total warnings:"
+    @grep -cE "^warning:" /tmp/rustdoc.log
+    @echo "Categories breakdown:"
+    @grep -oE "rustdoc::[a-z_]+" /tmp/rustdoc.log | sort | uniq -c | sort -rn
 
 # ─── Tests ────────────────────────────────────────────────────────────────────
 
