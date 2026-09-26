@@ -4,6 +4,7 @@ description = "CogniCode MCP Server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT OR Apache-2.0"
 
 [lib]
 # M3.5: expose `auth::check_bearer_token` as a library surface so the

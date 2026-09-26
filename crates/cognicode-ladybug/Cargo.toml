@@ -3,6 +3,7 @@ name = "cognicode-ladybug"
 version.workspace = true
 edition.workspace = true
 publish = false
+license = "MIT OR Apache-2.0"
 
 [features]
 default = ["default-7ports"]

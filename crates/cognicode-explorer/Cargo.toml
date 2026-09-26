@@ -4,6 +4,7 @@ description = "CogniCode Explorer — moldable code exploration API and MCP"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "cognicode_explorer"

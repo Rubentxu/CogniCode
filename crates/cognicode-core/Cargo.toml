@@ -4,6 +4,7 @@ description = "Code intelligence library for AI agents"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT OR Apache-2.0"
 
 [features]
 # Default is `["persistence"]`. The Graph Intelligence v2 cleanup removed

@@ -4,6 +4,7 @@ description = "Thin re-export crate for cognicode-core (for legacy integration t
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]

@@ -4,6 +4,7 @@ description = "CogniCode CLI"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
+license = "MIT OR Apache-2.0"
 autobins = false
 
 [[bin]]
