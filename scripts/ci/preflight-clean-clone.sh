@@ -48,9 +48,14 @@ RECEIPT_FILE="/tmp/preflight-receipt-${TARGET_SHA:0:12}.json"
 
 # Baseline de tests esperado (controlado por el operador).
 # Si cambia, requiere re-baseline explícito.
-BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5565}"
+# 5565 = workspace cargo test con debug bin.
+# 5572 = workspace cargo test con release bin (los 7 tests
+#        prf_cli_01_exhaustive_uat requieren bin release pre-existente).
+# Por defecto usamos el baseline más estricto (5572) porque el preflight
+# ejecuta cargo build --release antes de los tests.
+BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5572}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
-BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
+BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-30}"
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -147,6 +152,22 @@ if ! cargo check --workspace --all-targets --locked 2>>"$LOG_FILE"; then
   fail "cargo check falló"
 fi
 log "  → cargo check OK"
+
+# --- Stage 4b: cargo build --release --bins ---------------------------------
+# Algunos tests de integración (notablemente prf_cli_01_exhaustive_uat)
+# buscan binarios en `target/release/<name>` (no debug). Sin este
+# build, fallan con "No such file or directory" en clean clone.
+# El preflight debe ejecutar cargo build --release --bins antes de los
+# tests para que la batería completa sea reproducible desde Git.
+
+log "Stage 4b/7: cargo build --release --workspace --bins"
+
+if ! cargo build --release --workspace --bins --locked 2>>"$LOG_FILE"; then
+  log "  → tail del build output:"
+  tail -30 "$LOG_FILE"
+  fail "cargo build --release --bins falló"
+fi
+log "  → cargo build --release --bins OK"
 
 # --- Stage 5: cargo test (sin --include-ignored) -----------------------------
 
