@@ -2508,3 +2508,73 @@ fecha, sin acción pendiente.
 * SBOM hygiene/race: CLOSED
 * C8 firma humana: PENDIENTE (acción humana)
 * HEAD = e107e34d sin cambios desde último commit
+
+## Entrada 18 — 2026-09-26 — C8 addendum: 21 commits post-firma sin regresiones
+
+### Contexto
+
+El dosier C8 (`docs/roadmap/certifications/C8-POST-PRF-GA.md`)
+reportaba `passed=5542 failed=0` sobre SHA `3954b8b7`. Mi
+HEAD actual es `528d9966`, 21 commits posterior. Si el
+operador firma C8 sobre `3954b8b7`, firma el código
+certificado. Pero hay 21 commits con cambios reales (W1,
+W2, W3 close, W6, SBOM hygiene/race) que el dosier C8
+no cubre.
+
+### Acción tomada
+
+Addendum 8 al dosier C8 (`C8-POST-PRF-GA.md` § 8) que
+NO reabre C8, solo documenta el delta:
+
+* Lista los 21 commits posteriores.
+* Resume las capacidades modificadas.
+* Verificación reproducible sobre HEAD `528d9966`:
+  `cargo test --workspace` → 5557/0/45 (vs 5542/0/45 en C8).
+  `cargo clippy --workspace --all-targets -- -D warnings`
+  → exit 0.
+* Comparación tabular C8 base vs HEAD actual.
+* Conclusión: delta sin regresiones, sin flakiness, sin
+  debilitación de garantías C8.
+
+### Decisión tomada con criterio
+
+El addendum es la acción correcta porque:
+
+1. **AGENTS.md lo prescribe**: "Cambio que afecte
+   contratos OpenSpec se reconcilia con su requisito
+   vigente; no reescribir planes archivados ni cambiar
+   el estado de ciclos pasados para aparentar progreso."
+
+2. **El operador firma sobre lo que firma**: si firma
+   C8 sobre `3954b8b7`, firma exactamente eso. Si quiere
+   firmar también los 21 commits, debe emitir C8.1 (no
+   mi decisión). El addendum le da la información para
+   decidir.
+
+3. **No es ceremonial**: el addendum documenta una
+   batería reproducible (cargo test + clippy) sobre el
+   HEAD actual. Cualquier revisor puede verificar en
+   ~3 minutos.
+
+### Lección añadida
+
+66. **Los dosieres de certificación deben mantener
+    addendums post-firma**. Una certificación C#
+    certifica un SHA. El SHA no cambia, pero el HEAD
+    sí. La trazabilidad entre lo certificado y el
+    HEAD actual es responsabilidad del agente, no
+    del operador.
+
+### Estado al cierre
+
+* e91.W1/W2/W3/W6: CLOSED
+* SBOM hygiene/race: CLOSED
+* C8 dosier: PENDIENTE firma humana, ahora con
+  addendum §8 que documenta el delta post-firma
+* e91.W4/W5: backlog sin fecha
+
+* HEAD = 528d9966
+* 14 commits sobre origin/main
+* Working tree clean
+* Workspace 5557/0/45 tests verde
+* Clippy `-D warnings` exit 0
