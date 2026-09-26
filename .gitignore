@@ -173,6 +173,18 @@ docs/ROADMAP.md
 docs/adr/
 CONTEXT.md
 
+# Production-ready action plan package (Post-PRF stabilization program,
+# baseline `2991e5e2`). Tracked because it is the active roadmap
+# addendum governing CR-* and ST-* work units. See ROADMAP-ADDENDUM.md.
+!/docs/roadmap/production-ready/
+!/docs/roadmap/production-ready/**/
+
+# C8 recertification openspec change (Post-PRF stabilization).
+!/openspec/changes/2026-09-26-c8-recertification/
+!/openspec/changes/2026-09-26-c8-recertification/**/
+!/openspec/changes/2026-09-26-architecture-boundary-hardening/
+!/openspec/changes/2026-09-26-architecture-boundary-hardening/**/
+
 # LadybugDB runtime artifacts
 cognicode.lbug
 cognicode.lbug.wal
