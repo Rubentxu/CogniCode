@@ -3672,3 +3672,63 @@ sobre `cargo deny check licenses`, no sobre código fuente.
   deny.toml (16 permissive + LGPL-2.1).
 
 **Total branch:** 29 commits sobre `f774b89f`.
+
+## Entrada N+4 — bounded audit: rustfmt drift (M0.7, 2026-09-26)
+
+**Trigger:** operador en turno 9 emite directiva "continua con
+tareas roadmap y deuda tecnica a tu criterio, o auditoria si nada
+encaja". Tras 8 turnos previos donde la rama acumuló commits
+sustanciales (29 sobre `f774b89f`), me dispongo a auditar hygiene
+de la propia rama antes de empezar trabajo nuevo.
+
+**Hallazgo:**
+
+* `cargo fmt --all --check` retorna exit 1.
+* 6 sitios de drift distribuidos en 4 archivos:
+  * `cognicode-core/src/application/architecture/control_query.rs:304` (use-list reorder en test module)
+  * `cognicode-core/src/application/services/graph_analytics.rs:286` (closure_chain flatten)
+  * `crates/cognicode-core/tests/e91_w7_regression_budget.rs:175,196` (eprintln arg-list rewrap)
+  * `crates/cognicode-core/tests/e91_w8_stage_profile.rs:110,180` (eprintln arg-list rewrap)
+* Drift invisible localmente porque `pr-ci.yml` solo dispara
+  en `pull_request` a `main`; push a `arch/cr-06` no se gatea
+  con fmt check.
+* Hipótesis causal parcial: e91.W8 commit `690c44a6`
+  (closure_chain), e91.W7 commit `f340b624` (test asserts),
+  y rustfmt version drift entre local y CI runner.
+* PR #298 merge-gate verde no detecto el drift.
+
+**Acción (commit `b0fe4730`):**
+
+* `cargo fmt --all` aplicado.
+* `+17 / -13` net (solo whitespace).
+* Test regressions count: 0.
+* Sin cambios de signature ni de runtime.
+
+**Estado de outcomes (a 2026-09-26 23:55 local) — actualizado:**
+
+* PR-G1: IN PROGRESS_HIGH (sin cambio)
+* PR-G2: UNLOCKED (sin cambio)
+* PR-PERF: IN PROGRESS_HIGH (sin cambio)
+* PR-ARCH: IN PROGRESS_HIGH (sin cambio)
+* PR-SEC: PENDING (bounded partial — licenses f551311c; M0.7 cerrado)
+* PR-DEVEX: IN PROGRESS_HIGH (sin cambio)
+* PR-DEPTH: PENDING (sin cambio)
+
+**Mantenimiento status:**
+
+* M0.7: **CLOSED** (commit `b0fe4730`).
+
+**Commits del turno:**
+
+* `b0fe4730` — chore(fmt): M0.7 — apply cargo fmt --all to restore
+  CI gate invariant.
+
+**Total branch:** 30 commits sobre `f774b89f`.
+
+**Follow-ups operator-gated (acumulado de turnos previos):**
+
+* Decidir license para cognicode-runtime y cognicode-sandbox.
+* Decidir si promover licenses gate a CI-bloqueante (CR-N.N TBD).
+* Decidir política sobre pre-commit rustfmt hook para evitar
+  regresión futura de M0.7.
+* Decisión M0.6 (PHP/Swift tree-sitter bump) sigue BLOCKED.
