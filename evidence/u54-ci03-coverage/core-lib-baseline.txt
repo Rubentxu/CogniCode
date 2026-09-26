@@ -7,3 +7,4 @@ Date: 2026-09-22 · CARGO_TARGET_DIR=/home/rubentxu/cargo-targets
 TOTAL line: lines 74.15% (88464/119304), regions 70.35%, functions 72.16%
 CI: report-only job `coverage-report` added to ci.yml (continue-on-error);
 mandatory threshold = policy decision pending operator.
+HEAD_BASELINE_2026-09-26: lines=75.39% regions=71.31% functions=73.48%
