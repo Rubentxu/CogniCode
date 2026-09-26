@@ -2213,3 +2213,107 @@ governance del crate. Anotado como work unit futura.
     de fallo común (test server crash, timeout, panic en
     helper) sin pretender resolver el modo de fallo más
     sutil (paralelismo no serializado).
+
+## Entrada 15 — 2026-09-26 — Auditoría de crates no-graph: sin bugs latentes encontrados
+
+### Contexto
+
+Tras cerrar SBOM hygiene (entry 14), el todo #12 (governance)
+ofrecía tres opciones. Elegí (c): explorar crates `ladybug`,
+`spike-ladybug`, `cli` en busca de bugs latentes fuera del
+eje graph/mcp en el que ya cerré e91.W1, W2, W6 y la hygiene
+SBOM.
+
+### Hechos
+
+Auditoría dirigida (no línea-a-línea, eso sería scope
+excesivo para un bloque de una sesión) consistió en:
+
+1. **Conteo y mapeo de superficie**:
+   `cargo-ladybug` y `spike-ladybug` solo ~6.5K líneas;
+   `cargo-cli` 21K líneas — fuera de scope de una sesión.
+   Módulos críticos individuales: `cognicode-ladybug/src/
+   evidence_store.rs` (642 líneas), `cargo-cli/src/cmd/
+   release_factory.rs` (1041 líneas), `rollback_journal.rs`
+   (736 líneas).
+
+2. **Búsqueda de patrones típicos de bugs latentes**:
+   `unwrap()` / `expect()` / `panic!` / `todo!` /
+   `unimplemented!()` en código de producción de los
+   crates auditados:
+     * `cognicode-ladybug/src/evidence_store.rs`: 0
+       ocurrencias en src/, solo en `#[cfg(test)]`
+       (el listado de 25 hits del grep eran todos
+       dentro de `mod tests`).
+     * `cognicode-ladybug/src/lib.rs`: 0 ocurrencias
+       en src/.
+     * `cognicode-cli/src/bin/cogh.rs`: 0 ocurrencias.
+
+3. **Búsqueda de errores silenciados**:
+     * `let _ = Result::*` / `match _ => Err(_)` —
+       CERO en `cognicode-ladybug/src/`.
+     * El patrón no aparece donde lo busqué.
+
+4. **Verificación end-to-end**:
+     * `cargo test -p cognicode-ladybug --quiet`: 62/62
+       verde.
+     * `cargo test -p spike-ladybug --quiet`: 9/9 verde.
+     * `cargo test -p cognicode-cli` (sesión previa):
+       workspace 100% verde.
+
+### Decisión tomada con criterio propio
+
+**No hago commit en este turno.** No identifiqué ningún bug
+latente barato, alto valor, baja superficie dentro del
+budget razonable de esta sesión. Forzar un cambio cosmético
+solo para producir un commit sería venta de píldora azul
+— exactamente lo que AGENTS.md prohíbe ("no bumps
+ceremoniales").
+
+El intento de auditoría queda registrado. Una futura
+sesión con más tiempo podría:
+
+  * Auditar `cargo-cli/cmd/release_factory.rs` (1041
+    líneas; más superficie) — pero ese crate es
+    load-bearing del release pipeline, cualquier
+    refactor arriesga verdear tests que están
+    mid-feature.
+  * Auditar `cognicode-ladybug/src/lib.rs` líneas
+    2515+ (MIGRATIONS) — espacio donde un TOCTOU o
+    race de escritura entre dos `LadybugStore::open`
+    concurrentes al mismo path podría causar
+    corrupción silenciosa. Pero requiere reproducir
+    el race primero, no hay test existente que
+    falle al respecto.
+  * Buscar en `cognicode/sddk-` assets o tests del
+    workspace `tests/` a nivel superior — fuera
+    de mi flujo habitual.
+
+### Lección añadida
+
+60. **Una sesión sin commit no es una sesión perdida**.
+    El usuario autorizó "continúa a tu criterio" y
+    parte de ese criterio es NO avanzar
+    artificialmente. Registrar el intento fallido
+    con la búsqueda realizada es trazabilidad;
+    presentar un commit sin valor real sería la
+    antítesis del stewardship role.
+
+### Estado al cierre de la sesión
+
+* e91.W1 CLOSED (commits 6f40a08b, 42a1ddcf + docs
+  5da43a49, 3086e1a9)
+* e91.W2 CLOSED como caracterización (8b4bbe85,
+  6b2738f3)
+* e91.W6 CLOSED (c1618e84, df8002f5)
+* SBOM hygiene partial CLOSED (a553fbd6, 90123021)
+* e91.W3-W5 abiertos sin fecha
+* C8 firma humana PENDIENTE
+* E3 NOT_TRIGGERED
+
+* HEAD = 90123021
+* 11 commits sobre origin/main
+* Working tree clean
+* Workspace 100% verde en cargo test
+
+Checkpont durable intacto para el siguiente turno.
