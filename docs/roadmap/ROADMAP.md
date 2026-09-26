@@ -87,3 +87,70 @@ Cada unidad se cierra SOLO si:
 - Estado y matriz PRF: `docs/prf/STATE.md`, `docs/prf/RECONCILIATION-MATRIX.md`
 - Revisión operador 2026-09-25: rechazo del modelo "PRF como roadmap activo"; PRF cerrado, este documento nace.
 - Sesión actual: §154.H.G0.*
+
+## 8. Programa production-ready (Post-PRF stabilization, 2026-09-26)
+
+El 2026-09-26 el operador autoriza un nuevo programa de **estabilización
+production-ready** (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones,
+34-52 días-persona) sobre el estado consolidado Post-PRF. Este ROADMAP
+sigue siendo la **única autoridad de agenda activa**, pero el detalle
+operativo del programa vive en:
+
+* **`docs/roadmap/production-ready/ROADMAP-ADDENDUM.md`** — 7 outcomes
+  (PR-G1, PR-G2, PR-PERF, PR-ARCH, PR-SEC, PR-DEVEX, PR-DEPTH) con
+  criterios de completion.
+* **`docs/roadmap/production-ready/EXECUTION-PLAN.md`** — 21 acciones
+  QW-* / CR-* / ST-* con scope, prerequisites, evidencia y exit criteria.
+* **`docs/roadmap/production-ready/phases/PHASE-{1,2,3}-*.md`** —
+  detalle de cada fase (Quick Wins, Critical, Strategic).
+* **`openspec/changes/2026-09-26-c8-recertification/`** y
+  **`2026-09-26-architecture-boundary-hardening/`** — OpenSpec
+  changes del programa con tasks.md ejecutables.
+
+### Estado del programa (a 2026-09-26)
+
+| Outcome | Descripción | Estado |
+|---------|-------------|--------|
+| **PR-G1** | Reproducible governance (QW-01..07) | **IN PROGRESS** (entry 25 + pivot commit `3f2de0b9`) |
+| **PR-G2** | C8-R (recertificación reproducible desde clean clone) | PENDING |
+| **PR-PERF** | e91 Graph Insights G5 GREEN + regression budget | PENDING |
+| **PR-ARCH** | Application boundary (fitness functions + primer vertical remediado) | PENDING |
+| **PR-SEC** | Supply-chain hardening (protobuf advisory + Actions pinneadas) | PENDING |
+| **PR-DEVEX** | Adaptive CI & coverage governance | PENDING |
+| **PR-DEPTH** | Deep modules (ST-01..05) | PENDING |
+
+### Bloqueos heredados al programa
+
+* **C8 firma humana sobre v0.99.0** — SHA `3954b8b7` con addendum §8.
+  Bloquea la promesa production-ready contractual. Decisión del operador.
+* **M0.6 — PHP/Swift tree-sitter bump** — 3 opciones pendientes.
+  Puede resolverse como hotfix independiente fuera del programa
+  (CR-* y ST-* no dependen de M0.6).
+
+### Completion del programa (definición operativa)
+
+El programa se considera **COMPLETED** cuando (per ADDENDUM §Completion):
+
+* **PR-G2** (C8-R) closed con clean-clone certification PASS y firma
+  humana explícita.
+* **PR-PERF**, **PR-ARCH**, **PR-SEC**, **PR-DEVEX** cerrados (cada uno
+  con su exit criteria cumplida).
+* **PR-DEPTH** ha completado al menos los verticales ST-01, ST-02 y
+  ST-04; ST-03/ST-05 pueden continuar como evolución si sus contracts
+  están protegidos y no bloquean producción.
+
+Este roadmap vuelve a `COMPLETED` cuando PR-G2 queda firmada
+(analogía con C7 firmada el 2026-09-24T22:41:33Z), NO solo cuando
+su cierre técnico está verificado. Ver
+`docs/roadmap/certifications/C8-POST-PRF-GA.md` para el patrón.
+
+### Cómo NO se reabre este programa
+
+* No se reabre PRF como evidencia.
+* No se reabren certificaciones C# (C7) anteriores para "incluir"
+  trabajo nuevo.
+* Las C# del nuevo programa (C8-R, etc.) usan el patrón de la §5 pero
+  con prefijo distinto si así lo decide el operador.
+* Este §8 NO sustituye al `docs/roadmap/production-ready/` ni al
+  OpenSpec del programa: son artefactos vivos del programa, este §8
+  es solo el **puntero de agenda** dentro del ROADMAP vigente.
