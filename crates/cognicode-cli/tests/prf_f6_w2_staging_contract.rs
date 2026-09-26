@@ -378,9 +378,10 @@ fn prf_f6_w2_duplicate_payload_across_lanes_is_rejected() {
     let dup_lane = staging.join("payloads-duplicate-impostor");
     fs::create_dir_all(dup_lane.join("dist")).unwrap();
     fs::write(
-        dup_lane
-            .join("dist")
-            .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version())),
+        dup_lane.join("dist").join(format!(
+            "cogh-{}-x86_64-unknown-linux-gnu.tar.gz",
+            version()
+        )),
         b"different content with same name\n",
     )
     .unwrap();
@@ -417,19 +418,24 @@ fn prf_f6_w2_wrong_platform_payload_is_rejected() {
     // mismatch (the lane name says x86_64 but the file is named
     // for aarch64).
     let x86_lane = staging.join("payloads-x86_64-unknown-linux-gnu");
-    let bad_payload = x86_lane
-        .join("dist")
-        .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version()));
-    let renamed = x86_lane
-        .join("dist")
-        .join(format!("cogh-{}-aarch64-unknown-linux-gnu.tar.gz", version()));
+    let bad_payload = x86_lane.join("dist").join(format!(
+        "cogh-{}-x86_64-unknown-linux-gnu.tar.gz",
+        version()
+    ));
+    let renamed = x86_lane.join("dist").join(format!(
+        "cogh-{}-aarch64-unknown-linux-gnu.tar.gz",
+        version()
+    ));
     fs::rename(&bad_payload, &renamed).unwrap();
 
     // Also drop the real aarch64 cogh to keep names unique.
     let aarc_real = staging
         .join("payloads-aarch64-unknown-linux-gnu")
         .join("dist")
-        .join(format!("cogh-{}-aarch64-unknown-linux-gnu.tar.gz", version()));
+        .join(format!(
+            "cogh-{}-aarch64-unknown-linux-gnu.tar.gz",
+            version()
+        ));
     fs::remove_file(&aarc_real).unwrap();
 
     // The flatten script validates filename <-> lane agreement,

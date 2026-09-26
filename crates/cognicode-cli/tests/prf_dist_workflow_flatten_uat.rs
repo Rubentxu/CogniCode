@@ -353,9 +353,10 @@ fn dist_workflow_flatten_rejects_unknown_files_and_duplicates() {
     let dup_dir = staging.join("payloads-aarch64-unknown-linux-gnu-extra");
     fs::create_dir_all(dup_dir.join("dist")).unwrap();
     fs::write(
-        dup_dir
-            .join("dist")
-            .join(format!("cogh-{}-x86_64-unknown-linux-gnu.tar.gz", version())),
+        dup_dir.join("dist").join(format!(
+            "cogh-{}-x86_64-unknown-linux-gnu.tar.gz",
+            version()
+        )),
         b"different content with same name\n",
     )
     .unwrap();
