@@ -222,6 +222,26 @@ jobs:
       # E1).
       - name: cognicode-ladybug unit tests (L3.W1 dentro de merge-gate)
         run: cargo test -p cognicode-ladybug --lib --quiet
+      # L3.W2 — QW-03 bin-tracking guard.
+      # El script `scripts/ci/check-bin-tracking.sh` enumera cada
+      # crate que declara `[[bin]]` y comprueba que el source file
+      # correspondiente está tracked por git y NO está silenciado
+      # por `.gitignore`. Pinea el contrato contra la pérdida
+      # silenciosa del bin `cognicode-control-plane` (entry 9). El
+      # contrato vive en `crates/cognicode-cli/tests/qw03_bin_tracking_guard.rs`
+      # (3 tests: baseline + RED + recovery). Si este step falla,
+      # el merge-gate rojo y el PR deja de ser mergeable. Política
+      # L1.2.W* (paso step en merge-gate, no required check separado).
+      - name: QW-03 bin-tracking guard (L3.W2 dentro de merge-gate)
+        run: bash scripts/ci/check-bin-tracking.sh
+      # L3.W2.2 — QW-03 contractual test (Rust side).
+      # El test `qw03_bin_tracking_guard` cubre el contrato del
+      # guard desde el lado Rust: invoca el script sobre el repo
+      # real y sobre un tmp repo con drift plantado. Si el script
+      # cambia su contrato sin actualizar el test, este test rompe
+      # en CI antes de que el guard pierda su semántica.
+      - name: QW-03 bin-tracking contractual test (L3.W2.2 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
