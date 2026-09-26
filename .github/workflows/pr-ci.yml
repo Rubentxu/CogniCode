@@ -252,6 +252,21 @@ jobs:
       # (clone real + workspace tests) vive en release.yml.
       - name: QW-04 preflight contractual test (L3.W3 dentro de merge-gate)
         run: cargo test -p cognicode-cli --test qw04_preflight_contract --quiet
+      # L3.W4 — CR-08 selector determinista de suites (contract).
+      # El test `qw08_crate_selector` pinea el contrato JSON
+      # de scripts/ci/select-suites.sh: dado paths modificados,
+      # devuelve {strategy, reason, suites} con tres estrategias
+      # posibles (changed/fallback/noop). 14 tests cubren
+      # cada crate path, workflow/Cargo.toml fallbacks,
+      # sandbox/metadata noop, multi-path union y unknown
+      # pattern fallback. Tests corren en 0.01s (no compilan,
+      # no hacen git ls-files). El selector NO se ejecuta aún
+      # desde el job `test-pr` (eso requiere `dorny/paths-filter`
+      # como step previo); este test contractual garantiza que
+      # el contrato no se rompe silenciosamente antes de que
+      # la integración futura aterrice.
+      - name: CR-08 suite selector contractual test (L3.W4 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw08_crate_selector --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
