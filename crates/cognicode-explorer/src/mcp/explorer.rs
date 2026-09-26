@@ -1,7 +1,7 @@
 //! MCP server entry point for the Explorer.
 //!
 //! This module provides the top-level [`ExplorerMcpHandler`] which bridges
-//! the ISP-segregated [`ToolHandlerRegistry`](super::handler::ToolHandlerRegistry)
+//! the ISP-segregated [`ToolHandlerRegistry`]
 //! to the MCP JSON-RPC protocol.
 //!
 //! ## Tool constants
@@ -334,7 +334,7 @@ pub struct EnvelopeError {
 // McpHandlerPorts
 // ============================================================================
 
-/// Ports DTO for constructing an [`ExplorerMcpHandler`][super::ExplorerMcpHandler].
+/// Ports DTO for constructing an [`ExplorerMcpHandler`].
 ///
 /// Mirrors the [`RuntimePorts`] pattern from the runtime layer — bundles all
 /// infrastructure ports into a single struct so [`with_graph`] has a stable
@@ -537,7 +537,7 @@ impl ExplorerMcpHandler {
 
     /// Build the complete tool list for `tools/list`.
     ///
-    /// Returns all registered tools as RMCP [`Tool`](rmcp::model::Tool) objects.
+    /// Returns all registered tools as RMCP [`Tool`] objects.
     pub fn tools_list(&self) -> Vec<Tool> {
         use std::borrow::Cow;
         self.registry

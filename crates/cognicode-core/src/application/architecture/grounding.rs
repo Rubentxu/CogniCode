@@ -7,7 +7,7 @@
 //!
 //! The bridge does **not** touch the kernel stores. It is a
 //! pure-domain transformation: a violation is converted into a
-//! [`ProducedEvidence`](crate::domain::findings::outcome::ProducedEvidence)
+//! [`ProducedEvidence`]
 //! whose `grounding` is the violation's optional
 //! [`GroundingRef`]. The actual write step — `FactStore::get`,
 //! `EvidenceStore::append_batch` — is delegated to the existing

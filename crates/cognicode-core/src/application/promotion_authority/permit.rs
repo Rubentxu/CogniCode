@@ -1,13 +1,13 @@
 //! PromotionPermit (e73 WU2 — M9).
 //!
 //! A [`PromotionPermit`] is the authority to apply a
-//! [`ChangeProposal`](crate::application::change_proposal::proposal::ChangeProposal)
+//! [`ChangeProposal`]
 //! to the current world. It is **only** issued from a sealed
-//! [`PromotionAuthorization`](crate::application::promotion_authority::authorization::PromotionAuthorization),
+//! [`PromotionAuthorization`],
 //! which in turn is only granted over a `CleanPromotionReady`
-//! [`PromotionDryRun`](crate::application::promotion_authority::evaluation::PromotionDryRun)
+//! [`PromotionDryRun`]
 //! by
-//! [`PromotionAuthorizationPolicy`](crate::application::promotion_authority::authorization::PromotionAuthorizationPolicy).
+//! [`PromotionAuthorizationPolicy`].
 //!
 //! ## e80a: minting requires authority, not just cleanliness
 //!
@@ -39,7 +39,7 @@
 //! ## Audit trail
 //!
 //! Each `PromotionPermit` carries the full
-//! [`PromotionDryRun`](crate::application::promotion_authority::evaluation::PromotionDryRun)
+//! [`PromotionDryRun`]
 //! it was issued against. This means an auditor can reconstruct
 //! *why* the permit was issued: which proposal, which trial verdict,
 //! which base/candidate/current worlds, and whether C had diverged.
@@ -89,7 +89,7 @@ impl std::fmt::Display for PromotionPermitId {
 ///
 /// A permit is the only thing that grants apply power. It carries the sealed
 /// [`PromotionAuthorization`] that enabled its minting, plus the
-/// [`PromotionDryRun`](crate::application::promotion_authority::evaluation::PromotionDryRun)
+/// [`PromotionDryRun`]
 /// that justified it, so an auditor can reconstruct *why* the permit exists and
 /// *who* authorised it.
 ///

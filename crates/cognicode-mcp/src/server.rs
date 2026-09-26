@@ -4,7 +4,7 @@
 //! Designed for containerized deployment: PG + MCP in one image.
 //!
 //! Usage:
-//!   cognicode-mcp-server --listen 0.0.0.0:9847 [--postgres <URL>]
+//!   cognicode-mcp-server --listen 0.0.0.0:9847 [--postgres `<URL>`]
 //!
 //! OpenCode connects as remote MCP:
 //!   "cognicode": { "type": "remote", "url": "http://localhost:9847/mcp" }

@@ -1554,7 +1554,7 @@ pub fn parse_returned_edges(response: &Value) -> Vec<ReturnedEdge> {
     edges
 }
 
-/// Unwrap MCP content format: {"content": [{"text": "<JSON string>"}]}
+/// Unwrap MCP content format: {"content": [{"text": "`<JSON string>`"}]}
 /// Returns the inner JSON value, or the original if not MCP format.
 pub fn unwrap_response(response: &Value) -> Value {
     // Try content array first

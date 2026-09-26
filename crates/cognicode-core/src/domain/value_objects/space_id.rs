@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Three variants cover every validation failure path:
 ///
-/// - [`SpaceError::EmptyId`](super::space::SpaceError::EmptyId) is the
+/// - [`SpaceError::EmptyId`] is the
 ///   canonical "empty / whitespace-only" error. The
 ///   [`SpaceId`] thin newtype re-uses the upstream `SpaceError` enum
 ///   so consumers can match on a single type.

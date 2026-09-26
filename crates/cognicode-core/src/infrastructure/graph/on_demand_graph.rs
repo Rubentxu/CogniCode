@@ -199,7 +199,7 @@ impl TreeNode {
 /// This builder is designed for lazy evaluation - it only parses and builds
 /// the graph portions needed to answer a specific query.
 pub struct OnDemandGraphBuilder {
-    /// Index for fast symbol lookup (Arc<RwLock> so multiple builders can share with concurrent access)
+    /// Index for fast symbol lookup (`Arc<RwLock>` so multiple builders can share with concurrent access)
     index: Arc<RwLock<LightweightIndex>>,
     /// Cache of parsed files to avoid re-parsing
     file_cache: HashMap<String, (Vec<Symbol>, Vec<(Symbol, String)>)>, // (symbols, relationships)

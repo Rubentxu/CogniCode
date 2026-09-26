@@ -1,6 +1,6 @@
 //! PromotionEvaluation (e73 WU1 — M9).
 //!
-//! Given a [`ChangeProposal`](crate::application::change_proposal::proposal::ChangeProposal),
+//! Given a [`ChangeProposal`],
 //! the world that existed when the proposal was created (`base A`),
 //! the world after the trial (`candidate B`), and the world as it is
 //! right now (`current C`), produce a [`PromotionDryRun`] describing

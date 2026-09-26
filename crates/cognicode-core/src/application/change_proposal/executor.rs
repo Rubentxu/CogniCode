@@ -24,7 +24,7 @@
 //! ## Reusing e69 (no parallel verdict model)
 //!
 //! The executor evaluates the bundle via e69's
-//! [`evaluate`](crate::application::policy_gate::evaluate) function.
+//! [`evaluate`] function.
 //! It does NOT introduce a parallel verdict model. The
 //! [`PolicyDecision`] returned is exactly the one e69 produces.
 //!
@@ -58,7 +58,7 @@ use crate::application::policy_gate::{PolicySpec, evaluate};
 ///
 /// Implementations MUST NOT:
 /// - Synthesise a new verdict that bypasses
-///   [`evaluate`](crate::application::policy_gate::evaluate).
+///   [`evaluate`].
 /// - Add fields to the [`TrialEvidence`] envelope that the assembler
 ///   does not produce. The envelope shape is fixed by e72 WU2.
 pub trait TrialExecutor {

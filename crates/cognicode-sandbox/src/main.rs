@@ -422,7 +422,7 @@ fn read_source_target_path(scenario: &ExpandedScenario, workspace_path: &Path) -
 }
 
 /// Execute a single scenario and return the result along with captured call artifacts.
-/// Returns (ScenarioResult, Option<CapturedCall>)
+/// Returns (ScenarioResult, `Option<CapturedCall>`)
 fn execute_scenario(
     scenario: &ExpandedScenario,
     server_binary: &PathBuf,

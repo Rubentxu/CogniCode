@@ -1,7 +1,7 @@
 //! `Space` — the federation unit. A named, typed collection of
 //! graph data (a repo, a docs corpus, an issue tracker).
 //!
-//! Three values define a space: an opaque [`SpaceId`](super::space_id::SpaceId),
+//! Three values define a space: an opaque [`SpaceId`],
 //! a human-readable `name`, and a [`SpaceKind`] discriminator. The
 //! `source_path` and `config` fields are optional — a space can
 //! exist purely in memory (e.g. an ad-hoc docs collection), and the

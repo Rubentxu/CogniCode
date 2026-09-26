@@ -1,7 +1,7 @@
 //! Fact-derived generic graph adapter (E37 design D5).
 //!
 //! [`FactGenericGraphProjection`] implements the dual-gated
-//! [`GenericGraphProjectionPort`](crate::domain::ports::generic_graph_projection::GenericGraphProjectionPort)
+//! [`GenericGraphProjectionPort`]
 //! by reading the pinned snapshot's facts through the kernel [`FactStore`]
 //! port and mapping them onto the existing `GraphNode`/`GraphEdge` values —
 //! the output contains NO kernel types, so consumers stay FactStore-ignorant

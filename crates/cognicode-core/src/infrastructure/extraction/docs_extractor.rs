@@ -1,9 +1,9 @@
 //! `DocsExtractor` — turns Markdown / ADR files into
-//! [`ExtractedNode`](crate::domain::traits::source_extractor::ExtractedNode)
+//! [`ExtractedNode`]
 //! candidates for the Generic Graph Layer.
 //!
 //! The extractor is the first concrete implementation of the
-//! [`SourceExtractor`](crate::domain::traits::source_extractor::SourceExtractor)
+//! [`SourceExtractor`]
 //! port. It is split into two pieces that share the same module:
 //!
 //! 1. `parse_markdown(text, source_path, slug)` — a pure function
