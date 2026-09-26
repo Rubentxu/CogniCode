@@ -116,7 +116,7 @@ operativo del programa vive en:
 | **PR-PERF** | e91 Graph Insights G5 GREEN + regression budget | PENDING |
 | **PR-ARCH** | Application boundary (fitness functions + primer vertical remediado) | **PENDING → IN PROGRESS_HIGH** (CR-06 `CLOSED 2026-09-26` con 5 constraints canónicos pineados en codegen Rust, tests RED-GREEN contractuales, e2e `architecture_self_host`, integrado en merge-gate y CI defense; 3 commits `5dbd7467`/`417f6c23`/`82c6d644` + 1 carryover `ccc226a2`). Vertical pendiente: cognicode-control-plane (CR-09) y/o graph-algos (CR-10); ambos dependen de CR-06 cerrado. |
 | **PR-SEC** | Supply-chain hardening (protobuf advisory + Actions pinneadas) | PENDING (parcialmente abordado en QW-05 con 46 pines SHA, falta protobuf advisory y migración OTel) |
-| **PR-DEVEX** | Adaptive CI & coverage governance | **PENDING → IN PROGRESS_PARTIAL** (QW-03+QW-04 ya en CI; completitud full requiere CR-08 selector determinista de suites y CR-04 coverage contracts — ambos dependen de CR-06 cerrado, ya CLOSED) |
+| **PR-DEVEX** | Adaptive CI & coverage governance | **IN PROGRESS_HIGH** (QW-03+QW-04+QW-05+CR-08+CR-09 cerrados: selector determinista con dorny/paths-filter v3.0.4 SHA pinned; coverage-report job es gate estricto con `--fail-under-lines 75.00` / `--fail-under-regions 71.00` sobre baseline 75.39/71.31 head; dtolnay/rust-toolchain pineado @1.96.0; preflight contractual test 4 fixed from 17min to 0.02s). PR-DEVEX cerrado desde el enforcement side. |
 | **PR-DEPTH** | Deep modules (ST-01..05) | PENDING |
 
 ### Bloqueos heredados al programa
