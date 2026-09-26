@@ -1,10 +1,12 @@
 //! Canonical CogniCode architecture constraints.
 //!
-//! The three rules below are the **canonical CogniCode architecture
+//! The five rules below are the **canonical CogniCode architecture
 //! rules** declared in
-//! `docs/analysis/e77-architecture-ownership-map.md` and now wired into
-//! both the self-hosting E2E test and (from E2.W1) the production
-//! `ControlQueryService`.
+//! `docs/analysis/e77-architecture-ownership-map.md` (three rules, e77
+//! era) and extended by
+//! `docs/roadmap/production-ready/adr/ADR-PROPOSAL-APPLICATION-BOUNDARY.md`
+//! (two rules, CR-06 era). They are now wired into both the
+//! self-hosting E2E test and the production `ControlQueryService`.
 //!
 //! ## Why a single source of truth
 //!
@@ -25,12 +27,14 @@
 //!
 //! ## Rule families
 //!
-//! Two `LayerDependency` rules (domain must not reach infrastructure,
-//! domain must not reach application) plus one `NamespaceBoundary`
-//! rule (`domain::evidence_kernel` must not drive UI / apps). All
-//! three are admitted by a single `HumanPromoter`-class admitter;
-//! admission by a non-promoted admitter is rejected upstream, which
-//! is the load-bearing property of the admission flow (see
+//! Three `LayerDependency` rules (domain must not reach infrastructure,
+//! domain must not reach application, application must not reach
+//! infrastructure) plus one `LayerDependency` rule (`application` must
+//! not reach `interface`) plus one `NamespaceBoundary` rule
+//! (`domain::evidence_kernel` must not drive UI / apps). All five are
+//! admitted by a single `HumanPromoter`-class admitter; admission by a
+//! non-promoted admitter is rejected upstream, which is the
+//! load-bearing property of the admission flow (see
 //! [`ArchitectureAdmissionService::admit`]).
 //!
 //! ## Stability
@@ -75,6 +79,44 @@ pub fn canonical_constraints() -> Vec<ConstraintCandidate> {
             adr_ref: Some("ADR-046".into()),
             proposed_by: "human:cognicode-architecture-wg".into(),
         },
+        // CR-06: application must not reach infrastructure. Application
+        // composes use-cases; concrete I/O ports live behind traits in
+        // `domain::ports` (or its successors). The current source has
+        // ~27 violations; this rule surfaces them as a property of the
+        // build. Remediation is the ST-01..05 program (composition
+        // roots, ports extraction).
+        ConstraintCandidate {
+            id: ArchitectureConstraintId::new("architecture.application_no_infrastructure")
+                .expect("static id is well-formed"),
+            kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
+                from_layer: LayerId::Application,
+                forbidden_targets: vec![LayerId::Infrastructure],
+                rationale: "application composes use-cases and must not import infrastructure \
+                            adapters directly; reach concrete adapters through ports."
+                    .into(),
+            }),
+            adr_ref: Some("ADR-PROPOSAL-APPLICATION-BOUNDARY".into()),
+            proposed_by: "human:cognicode-architecture-wg".into(),
+        },
+        // CR-06: application must not reach interface::mcp. The MCP
+        // interface is a thin RPC layer that depends on application;
+        // the reverse dependency inverts ownership and makes the
+        // application surface captive to the RPC contract. Remediation
+        // moves MCP handlers to consume application via a port, not
+        // directly. See openspec/changes/2026-09-26-architecture-boundary-hardening.
+        ConstraintCandidate {
+            id: ArchitectureConstraintId::new("architecture.application_no_interface")
+                .expect("static id is well-formed"),
+            kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
+                from_layer: LayerId::Application,
+                forbidden_targets: vec![LayerId::Bin], // historical: `interface::mcp`
+                rationale: "application must not import the MCP/interface layer; RPC handlers \
+                            depend on application, not the reverse."
+                    .into(),
+            }),
+            adr_ref: Some("ADR-PROPOSAL-APPLICATION-BOUNDARY".into()),
+            proposed_by: "human:cognicode-architecture-wg".into(),
+        },
         ConstraintCandidate {
             id: ArchitectureConstraintId::new("architecture.evidence_kernel_no_presentation")
                 .expect("static id is well-formed"),
@@ -111,7 +153,7 @@ mod tests {
     #[test]
     fn canonical_constraints_have_expected_ids_and_kinds() {
         let cs = canonical_constraints();
-        assert_eq!(cs.len(), 3, "expected exactly 3 canonical constraints");
+        assert_eq!(cs.len(), 5, "expected exactly 5 canonical constraints");
 
         let ids: Vec<&str> = cs.iter().map(|c| c.id.as_str()).collect();
         assert_eq!(
@@ -119,6 +161,8 @@ mod tests {
             vec![
                 "architecture.domain_no_infrastructure",
                 "architecture.domain_no_application",
+                "architecture.application_no_infrastructure",
+                "architecture.application_no_interface",
                 "architecture.evidence_kernel_no_presentation",
             ],
             "constraint ids and order must not drift"
@@ -127,5 +171,57 @@ mod tests {
         let promoted = canonical_promoted_admitter();
         assert!(promoted.may_admit(), "canonical admitter must be promoted");
         assert_eq!(promoted.id, "human:cognicode-architecture-wg");
+    }
+
+    /// CR-06 T1: the application_no_infrastructure constraint is a
+    /// `LayerDependency` rule. This test pins the rule's shape so a
+    /// future rename of `LayerId` or `ArchitectureConstraintKind`
+    /// breaks loudly, instead of silently deactivating the gate.
+    #[test]
+    fn application_no_infrastructure_has_layer_dependency_shape() {
+        let cs = canonical_constraints();
+        let c = cs
+            .iter()
+            .find(|c| c.id.as_str() == "architecture.application_no_infrastructure")
+            .expect("application_no_infrastructure must be canonical");
+        match &c.kind {
+            ArchitectureConstraintKind::LayerDependency(rule) => {
+                assert_eq!(rule.from_layer, LayerId::Application);
+                assert!(
+                    rule.forbidden_targets.contains(&LayerId::Infrastructure),
+                    "application_no_infrastructure must forbid LayerId::Infrastructure"
+                );
+            }
+            other => panic!(
+                "expected LayerDependency rule, got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
+    }
+
+    /// CR-06 T2: the application_no_interface constraint is a
+    /// `LayerDependency` rule protecting application from reaching the
+    /// interface/MCP layer (currently classified as `LayerId::Bin`).
+    /// Pinning the shape prevents future silent rule re-shaping.
+    #[test]
+    fn application_no_interface_has_layer_dependency_shape() {
+        let cs = canonical_constraints();
+        let c = cs
+            .iter()
+            .find(|c| c.id.as_str() == "architecture.application_no_interface")
+            .expect("application_no_interface must be canonical");
+        match &c.kind {
+            ArchitectureConstraintKind::LayerDependency(rule) => {
+                assert_eq!(rule.from_layer, LayerId::Application);
+                assert!(
+                    !rule.forbidden_targets.is_empty(),
+                    "application_no_interface must forbid at least one target layer"
+                );
+            }
+            other => panic!(
+                "expected LayerDependency rule, got {:?}",
+                std::mem::discriminant(other)
+            ),
+        }
     }
 }

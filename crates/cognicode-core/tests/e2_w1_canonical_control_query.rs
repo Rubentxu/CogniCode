@@ -78,15 +78,17 @@ fn build_cognicode_core_source(crate_root: &Path) -> Option<ArchitectureSource> 
 }
 
 #[test]
-fn wire_canonical_control_query_admits_three_constraints() {
-    // The wiring helper must succeed and produce a registry with the
-    // three canonical constraints admitted.
+fn wire_canonical_control_query_admits_five_constraints() {
+    // CR-06: the wiring helper must succeed and produce a registry
+    // with the five canonical constraints admitted (three from e77,
+    // two added by CR-06 — application_no_infrastructure,
+    // application_no_interface).
     let cq = wire_canonical_control_query();
     let admitted = cq.registry().admission.admitted();
     assert_eq!(
         admitted.len(),
-        3,
-        "wire_canonical_control_query must admit exactly 3 canonical constraints; got {:?}",
+        5,
+        "wire_canonical_control_query must admit exactly 5 canonical constraints; got {:?}",
         admitted.iter().map(|c| c.id.as_str()).collect::<Vec<_>>()
     );
     let ids: Vec<&str> = admitted.iter().map(|c| c.id.as_str()).collect();
@@ -95,6 +97,8 @@ fn wire_canonical_control_query_admits_three_constraints() {
         vec![
             "architecture.domain_no_infrastructure",
             "architecture.domain_no_application",
+            "architecture.application_no_infrastructure",
+            "architecture.application_no_interface",
             "architecture.evidence_kernel_no_presentation",
         ],
         "constraint order must match canonical_constraints() output"
@@ -149,8 +153,8 @@ fn wire_canonical_control_query_evaluates_self_host_to_zero_drift() {
     }
     assert_eq!(
         model.constraints.len(),
-        3,
-        "read model must include the 3 canonical constraints"
+        5,
+        "read model must include the 5 canonical constraints (3 e77 + 2 CR-06)"
     );
     assert!(
         model.violations.is_empty(),
@@ -178,7 +182,10 @@ fn wire_canonical_control_query_evaluates_synthetic_drift() {
         "use crate::infrastructure::db::Db;\npub fn connect() -> Db { unimplemented!() }\n".into(),
     )]);
     let model = cq.query_architecture("synth", None, &source);
-    assert_eq!(model.constraints.len(), 3);
+    // CR-06: the read model includes all admitted canonical constraints
+    // (5 total: 3 e77 + 2 CR-06). The synthetic source only trips
+    // `domain_no_infrastructure`, so violations are still 1.
+    assert_eq!(model.constraints.len(), 5);
     assert_eq!(
         model.violations.len(),
         1,
