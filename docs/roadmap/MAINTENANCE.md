@@ -83,6 +83,23 @@ v0.98.x/v0.99.x:
 * **E3** (RPC mínima): sigue `NOT_TRIGGERED`. Sin consumidor real que
   lo justifique, no se ejecuta.
 
+### C8 firma operativa 2026-09-26T10:14:47Z
+
+El 2026-09-26T10:14:47Z el operador firma C8 al **nivel operativo**
+sobre SHA `3954b8b7` (cuerpo principal del dosier
+`docs/roadmap/certifications/C8-POST-PRF-GA.md`). Categoría:
+**OPERATIVO** (no contractual). Sin tag anotado ni release formal.
+
+* **Recertificación C8-R** queda abierta como **CR-01** dentro del
+  programa production-ready (outcome PR-G2).
+* **M0.6** sigue **BLOCKED** pero ya no es bloqueante para CR-01.
+* **Expediente**: `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
+* **Bloqueos activos restantes**:
+  * M0.6 PHP/Swift tree-sitter bump (decisión del operador entre
+    3 opciones: bump `tree-sitter` 0.24→0.25 afecta 18 parsers,
+    fork comunitario no oficial, o marcar como `Language::Unsupported`).
+  * CR-01 (recertificación C8-R desde clean clone).
+
 El nuevo programa (21 acciones en 3 fases) opera sobre los **outcomes
 de estabilización** (PR-G1..PR-DEPTH) y NO reabre el backlog M0.*.
 Las features Post-PRF que vivían en el roadmap viejo (E0, E1, E2, F0.1)

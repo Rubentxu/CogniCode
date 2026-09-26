@@ -42,7 +42,7 @@ Todos los work units e91 cerrados:
 
 | ID | Pendiente | Estado |
 |----|-----------|--------|
-| **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8 documentando delta) | PENDIENTE |
+| **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8-§10 documentando delta) | **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre `3954b8b7`. Ver `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md` y `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11. Recertificación C8-R → CR-01. |
 | e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
 | **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **BLOCKED 2026-09-26** |
 | **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **PENDIENTE** |
@@ -71,13 +71,8 @@ del operador). Detalle completo en
 
 ## Bloqueos abiertos
 
-* **C8 firma humana**: única acción bloqueante para declarar `v0.99.0`
-  production-ready contractual. Ver dosier + addendum §8.
-* **M0.6 fix**: PHP y Swift rotos en producción por incompatibilidad
-  tree-sitter parser (version 15) vs runtime (version 14). 4 tests
-  `#[ignore]` pinean el bug; el fix requiere bumpear `tree-sitter` a
-  0.25 o equivalente (alcance mayor, no automatizable unilateralmente).
-  Ver `docs/roadmap/MAINTENANCE.md` M0.6 con 3 opciones de fix.
+* **C8 firma humana**: **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre SHA `3954b8b7`. Ver dosier `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11 y expediente `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`. Recertificación C8-R queda abierta como **CR-01** dentro del programa production-ready.
+* **M0.6 fix**: PHP y Swift rotos en producción por incompatibilidad tree-sitter parser (version 15) vs runtime (version 14). 4 tests `#[ignore]` pinean el bug; el fix requiere bumpear `tree-sitter` a 0.25 o equivalente (alcance mayor, no automatizable unilateralmente). Ver `docs/roadmap/MAINTENANCE.md` M0.6 con 3 opciones de fix. **No bloqueante para CR-01.**
 
 ## Próximo trabajo ejecutable en AUTO
 
@@ -100,7 +95,7 @@ Opciones:
 ---
 
 *Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-26
-tras descubrimiento y registro de M0.6 (PHP/Swift rotos, BLOCKED
-esperando decisión del operador sobre tree-sitter bump).
-Próxima actualización: tras firma humana de C8, decisión sobre M0.6,
-o nueva work unit autorizada.*
+tras firma OPERATIVA de C8 (categoría OPERATIVO, no contractual;
+recertificación C8-R abierta como CR-01).
+Próxima actualización: tras arranque de CR-01, decisión sobre M0.6,
+o firma C8-R al nivel contractual.*

@@ -3368,3 +3368,116 @@ pivot, **NO editarlo antes de versionarlo**. Pasos correctos:
 Editar antes de versionar rompe la trazabilidad entre lo que el operador
 aportó y lo que queda en repo. El baseline del paquete (`2991e5e2`) debe
 ser referenciable desde git history para auditorías futuras.
+
+## Entrada 26 — 2026-09-26 — C8 firma OPERATIVA + addendum §10/§11
+
+### Contexto
+
+El operador firma C8 al nivel **OPERATIVO** (no contractual) sobre SHA
+`3954b8b7` el **2026-09-26T10:14:47Z`, eligiendo la opción 2 de las
+tres que el dosier C8 §6 ofrecía. Esto elimina el bloqueo de "fuente
+de verdad duplicada" antes de que CR-01 (recertificación desde clean
+clone) lo cree.
+
+### Hechos
+
+* **Dosier C8-POST-PRF-GA.md** extendido de 392 a 595 líneas:
+  * **§10 Addendum — delta posterior al §9** (HEAD `d2af7ae6`):
+    documenta los 19 commits desde `ec98c532` hasta HEAD. Naturaleza:
+    1 fix (M0.5) + 18 docs/chore. Sin cambios de contratos públicos.
+  * **§11 Decisión del operador — firma operativa**: registra SHA
+    firmado (`3954b8b7`), categoría (OPERATIVO), tag NO emitido,
+    release NO publicado, recertificación C8-R abierta como CR-01.
+* **Expediente F8** creado: `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
+  145 líneas. Sigue el patrón del C7 expediente pero con categoría
+  OPERATIVO (no CONTRACTUAL).
+* **CURRENT.md / MAINTENANCE.md** sincronizados: C8 firma cambia de
+  PENDIENTE a FIRMADO OPERATIVO.
+* **Batería workspace**: 5565/0/37 verde.
+* **Clippy**: exit 0.
+* **Binario**: `cognicode 0.99.1`.
+* **Control-plane**: arranca con 3 canonical constraints, listens en
+  `127.0.0.1:9842`.
+
+### Cadena de evidencia firmada
+
+| SHA | Descripción | Naturaleza |
+|-----|-------------|------------|
+| `3954b8b7` | **C8 base — SHA firmado operativo** | Cierre técnico del dosier C8 original |
+| `528d9966` | §8 addendum — 21 commits | código + tests + docs |
+| `ec98c532` | §9 addendum — 4 commits docs-only | docs-only |
+| `d2af7ae6` | §10 addendum — 19 commits | 1 fix (M0.5) + 18 docs/chore |
+
+### Bloqueos antes/después
+
+| Bloqueo | Antes | Después |
+|---------|-------|---------|
+| C8 firma humana | PENDIENTE | **FIRMADO OPERATIVO** (`3954b8b7`) |
+| M0.6 PHP/Swift tree-sitter | BLOCKED | BLOCKED con herencia (no bloqueante para CR-01) |
+| CR-01 recertificación C8-R | (no abierto) | **PENDING**, primer item de Fase 2 |
+
+### Decisiones tomadas
+
+* **NO** se emite tag anotado `v0.99.0`.
+* **NO** se publica release GitHub.
+* **NO** se reabre C7 (contractual sobre `v0.98.1`).
+* **NO** se reabre C8 base para incluir commits nuevos (cada delta
+  en su addendum).
+* **SÍ** se abre CR-01 como siguiente work unit del programa.
+
+### Evidencia
+
+* `git rev-parse 3954b8b7` = `3954b8b75b9e9fade8ead2dfeffde8aacfafe83a`.
+* `git tag -l 'v0.99.0*'` = vacío (tag diferido).
+* 3 commits resultantes de este cierre:
+  * dosier C8-POST-PRF-GA.md extendido (commit del fix al dosier).
+  * expediente F8 (nuevo archivo).
+  * sync CURRENT + MAINTENANCE.
+
+### Comando de recuperación para la próxima sesión
+
+```bash
+cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
+
+# Verificar la firma operativa
+git cat-file -p 3954b8b7 | head -3
+git log 3954b8b7 -1 --format='%H %s'
+# Esperado: 3954b8b75b9e9fade8ead2dfeffde8aacfafe83a docs(certification): C8 Post-PRF GA — cierre técnico
+
+# Validar que la firma operativa no se ha invalidado
+cargo test --workspace 2>&1 | grep "test result" | \
+  awk '{p+=$4; f+=$6; i+=$8} END {printf "passed=%d failed=%d ignored=%d\n", p, f, i}'
+# Esperado: passed=5565 failed=0 ignored=37
+
+# Próximo item: CR-01 (recertificación C8-R desde clean clone)
+cat openspec/changes/2026-09-26-c8-recertification/tasks.md
+cat docs/roadmap/production-ready/runbooks/C8-RECERTIFICATION-RUNBOOK.md
+```
+
+### Lección 78 — firma operativa vs firma contractual
+
+No todas las firmas de certificación tienen el mismo peso legal ni
+operacional. La distinción que C8 introduce:
+
+* **Firma CONTRACTUAL** (C7 sobre v0.98.1): cierra un programa de
+  release con tag, release GitHub, SLAs implícitos. Equivale a un
+  compromiso de soporte.
+* **Firma OPERATIVA** (C8 sobre v0.99.0): marca el cierre técnico
+  como checkpoint para auditorías futuras, pero sin tag ni release.
+  El verdadero "release" es C8-R, recertificación desde clean clone.
+
+Esta distinción importa porque:
+
+1. Evita ceremonias: si el operador no quiere release formal pero
+   quiere cerrar el ciclo, la firma operativa lo permite.
+2. Separa la evidencia: C8 base es el cierre de una iniciativa,
+   C8-R es la certificación del estado actual del repo.
+3. Mantiene coherencia con PRF: C7 sigue siendo la firma
+   contractual; C8 es una certificación Post-PRF operativa, no
+   un release contractual.
+
+La firma operativa queda registrada con la misma solemnidad que la
+contractual (expediente F8, addendum §11, sync de CURRENT/MAINTENANCE)
+pero sin el peso de un release. Si el operador decide más adelante
+que quiere release formal, sigue el camino CR-01 → C8-R →
+firma contractual.

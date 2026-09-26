@@ -111,21 +111,27 @@ operativo del programa vive en:
 
 | Outcome | Descripción | Estado |
 |---------|-------------|--------|
-| **PR-G1** | Reproducible governance (QW-01..07) | **IN PROGRESS** (entry 25 + pivot commit `3f2de0b9`) |
-| **PR-G2** | C8-R (recertificación reproducible desde clean clone) | PENDING |
+| **PR-G1** | Reproducible governance (QW-01..07) | **IN PROGRESS → IN PROGRESS_HALF** (QW-01..07 cerrados en commit `66fd4103`, QW-N aún pendientes si surgen) |
+| **PR-G2** | C8-R (recertificación reproducible desde clean clone) | **UNLOCKED 2026-09-26** (C8 firmada operativa sobre `3954b8b7` abre la puerta a CR-01; ver dosier §11 + expediente F8) |
 | **PR-PERF** | e91 Graph Insights G5 GREEN + regression budget | PENDING |
 | **PR-ARCH** | Application boundary (fitness functions + primer vertical remediado) | PENDING |
-| **PR-SEC** | Supply-chain hardening (protobuf advisory + Actions pinneadas) | PENDING |
+| **PR-SEC** | Supply-chain hardening (protobuf advisory + Actions pinneadas) | PENDING (parcialmente abordado en QW-05 con 46 pines SHA, falta protobuf advisory y migración OTel) |
 | **PR-DEVEX** | Adaptive CI & coverage governance | PENDING |
 | **PR-DEPTH** | Deep modules (ST-01..05) | PENDING |
 
 ### Bloqueos heredados al programa
 
-* **C8 firma humana sobre v0.99.0** — SHA `3954b8b7` con addendum §8.
-  Bloquea la promesa production-ready contractual. Decisión del operador.
+* **C8 firma humana sobre v0.99.0** — **FIRMADA OPERATIVA
+  2026-09-26T10:14:47Z** sobre SHA `3954b8b7` (categoría OPERATIVO,
+  no contractual). Ver `docs/roadmap/certifications/C8-POST-PRF-GA.md`
+  §11 y `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
+  Sin tag anotado, sin release GitHub. Recertificación C8-R queda
+  abierta como **CR-01** (PR-G2). El bloque se transforma de
+  pendiente a desbloqueado, pero la firma contractual sigue requiriendo
+  C8-R + decisión del operador.
 * **M0.6 — PHP/Swift tree-sitter bump** — 3 opciones pendientes.
   Puede resolverse como hotfix independiente fuera del programa
-  (CR-* y ST-* no dependen de M0.6).
+  (CR-* y ST-* no dependen de M0.6). NO bloqueante para CR-01.
 
 ### Completion del programa (definición operativa)
 
