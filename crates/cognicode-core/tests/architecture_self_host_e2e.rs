@@ -166,7 +166,8 @@ fn self_host_evaluator_finds_zero_drift_on_clean_source() {
     // The test is only meaningful if we actually have source files.
     assert!(!source.files.is_empty(), "no source files collected");
 
-    let mut registry = ArchitectureRegistry::new().with_temporary_exceptions(cr06_allowlist::exceptions());
+    let mut registry =
+        ArchitectureRegistry::new().with_temporary_exceptions(cr06_allowlist::exceptions());
     let admitter = canonical_promoted_admitter();
     let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
     for candidate in canonical_constraints() {
