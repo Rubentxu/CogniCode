@@ -2130,3 +2130,86 @@ razones para reabrirse si llegara a hacer falta:
 Firma C8 sigue PENDIENTE — toda la evidencia de
 e91.W1+2+6 debería agregarse al dosier si llega a
 firmarse.
+
+## Entrada 14 — 2026-09-26 — Test hygiene: RAII guards for SBOM cleanup
+
+### Contexto
+
+Durante la auditoría del workspace (entry 14 — previo paso
+de la decisión governance sobre los 4 candidatos pendientes)
+se detectó una fragilidad en los tests de SBOM contract
+(`crates/cognicode-cli/tests/prf_f6_w3_bis_sbom_contract.rs`):
+los 3 tests que invocan `build-sboms-for-lane.sh` dependían
+de limpieza best-effort manual (`remove_canonical_sboms` al
+final), vulnerable a panic entre el inicio y el final.
+
+### Hechos
+
+Commit `a553fbd6` introduce dos RAII guards:
+
+```rust
+struct WorkspaceSbomGuard<'a> { target: &'a str }
+impl Drop for WorkspaceSbomGuard<'_> {
+    fn drop(&mut self) { remove_canonical_sboms(self.target); }
+}
+
+struct SpuriousFile { path: PathBuf }
+impl Drop for SpuriousFile {
+    fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); }
+}
+```
+
+Aplicados en 3 tests (Layer 1: produce_canonical_layout,
+Layer 1: cleans_up_non_published_bin_sboms; Layer 2:
+generated_sboms_have_correct_metadata). El test
+cleans_up_non_published_bin_sboms usa AMBOS guards: uno para
+el cleanup canónico y dos `SpuriousFile` para los 2 archivos
+spurios plantados.
+
+### Honestidad sobre el alcance
+
+El commit **solo arregla el modo de fallo de panic**, no el
+modo de fallo de race condition entre tests paralelos. En
+ejecuciones con `--test-threads=1`, los 5 tests SBOM pasan
+100%. En paralelo (default), algunos fallan esporádicamente
+porque DOS tests invocan el script simultáneamente y escriben
+en el mismo workspace root — el `find ... -delete` interno
+del script puede ver spurios del otro thread que ya fueron
+borrados por el guard de ese thread, pero `find` retorna
+exit code != 0 si `-delete` falla sobre un archivo que
+desapareció.
+
+Esto **no era un bug pre-existente del código de
+producción** sino un modo de fallo nuevo introducido por el
+propio script de SBOM: el defensive cleanup de línea 156
+del script usa `rm -f --` (que NO falla), pero hay OTRO
+sitio dentro de `build-sboms-for-lane.sh` que usa `find
+... -delete` y ese sí falla. (El output del error dice
+"find: no se puede borrar" por eso.)
+
+### Verificación
+
+```
+cargo test -p cognicode-cli --test prf_f6_w3_bis_sbom_contract --test-threads=1
+  5/5 verde (incluyendo prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms)
+cargo clippy -p cognicode-cli --tests -D warnings: exit 0
+cargo fmt --check:                              verde
+```
+
+El fix del race paralelo (serial_test o single-threaded
+default en CI) está **fuera de alcance** de este commit:
+requeriría añadir dependencia `serial_test` o configurar
+Cargo para serializar por file, cambios que atraviesan
+governance del crate. Anotado como work unit futura.
+
+### Lección añadida
+
+59. **RAII guards nunca son la solución completa para
+    tests con recursos compartidos en el workspace**.
+    Resuelven el modo de fallo de panic (limpieza no-
+    skippable) pero NO el de race condition (concurrencia
+    de tests al mismo filesystem). Esto es aceptable: el
+    guard hace el código del test más robusto a un modo
+    de fallo común (test server crash, timeout, panic en
+    helper) sin pretender resolver el modo de fallo más
+    sutil (paralelismo no serializado).
