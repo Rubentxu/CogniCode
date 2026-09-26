@@ -6,7 +6,7 @@
 
 ## TL;DR (30 segundos)
 
-* **Workspace**: 5557 tests passed, 0 failed, 45 ignored en HEAD `5a310cc4`.
+* **Workspace**: 5557 tests passed, 0 failed, 45 ignored en HEAD `7780d276`.
 * **Clippy**: `--workspace --all-targets -- -D warnings` → exit 0.
 * **Versión**: `v0.99.0` (bump desde `v0.98.1` ya aplicado).
 * **Saga e91**: 6 work units cerradas (W1-W6) en 9 commits.
@@ -82,4 +82,4 @@ confirmes la firma**.
 ---
 
 *Generado por el agente principal en modo AUTO el 2026-09-26.*
-*HEAD: `5a310cc4` · 20 commits sobre `origin/main` · Working tree clean.*
+*HEAD: `7780d276` · 21 commits sobre `origin/main` · Working tree clean.*
