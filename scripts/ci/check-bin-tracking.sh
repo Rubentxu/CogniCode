@@ -26,7 +26,33 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-cd "$REPO_ROOT"
+
+# Allow --root <path> to override the working directory. This is the
+# flag used by the QW-03 contractual test (qw03_bin_tracking_guard):
+# the test creates a tmp git repo with a planted drift, then calls
+# the guard with `--root <tmp>` so the inspection happens against
+# the tmp repo and not against the real one. Without this flag the
+# test would touch the real repo's tracked-files state, which would
+# be both flaky and destructive.
+TARGET_ROOT="$REPO_ROOT"
+while (($#)); do
+  case "$1" in
+    --root)
+      TARGET_ROOT="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--root <path>]"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+cd "$TARGET_ROOT"
 
 # Crates a inspeccionar (los que tienen [[bin]] en este workspace).
 # Si añades un crate nuevo con bins declarados, añádelo aquí.
@@ -47,7 +73,7 @@ echo "  Crates inspeccionados: ${#CRATES[@]}"
 echo
 
 for crate in "${CRATES[@]}"; do
-  cargo_toml="$REPO_ROOT/$crate/Cargo.toml"
+  cargo_toml="$TARGET_ROOT/$crate/Cargo.toml"
   if [ ! -f "$cargo_toml" ]; then
     echo "WARN: $cargo_toml no existe (omitiendo)"
     continue
@@ -84,7 +110,9 @@ for crate in "${CRATES[@]}"; do
       fi
     fi
 
-    full_path="$crate/$bin_path"
+    full_path="$TARGET_ROOT/$crate/$bin_path"
+
+    rel_path="$crate/$bin_path"
 
     if [ ! -e "$full_path" ]; then
       echo "FAIL: bin '$bin_name' (crate $crate) declara path '$bin_path' pero el archivo NO EXISTE"
@@ -92,21 +120,21 @@ for crate in "${CRATES[@]}"; do
       continue
     fi
 
-    if ! git ls-files --error-unmatch -- "$full_path" >/dev/null 2>&1; then
-      echo "FAIL: bin '$bin_name' (crate $crate) — '$full_path' NO está tracked por git"
+    if ! git ls-files --error-unmatch -- "$rel_path" >/dev/null 2>&1; then
+      echo "FAIL: bin '$bin_name' (crate $crate) — '$rel_path' NO está tracked por git"
       errors=$((errors + 1))
       continue
     fi
 
     # Verificar también que el path NO está silenciado por .gitignore.
     # Si `git check-ignore` retorna 0, está siendo ignorado (peligro).
-    if git check-ignore -- "$full_path" >/dev/null 2>&1; then
-      echo "FAIL: bin '$bin_name' (crate $crate) — '$full_path' está en .gitignore (tracking frágil)"
+    if git check-ignore -- "$rel_path" >/dev/null 2>&1; then
+      echo "FAIL: bin '$bin_name' (crate $crate) — '$rel_path' está en .gitignore (tracking frágil)"
       errors=$((errors + 1))
       continue
     fi
 
-    echo "OK:   $bin_name ($full_path)"
+    echo "OK:   $bin_name ($rel_path)"
   done <<< "$bin_blocks"
 done
 
