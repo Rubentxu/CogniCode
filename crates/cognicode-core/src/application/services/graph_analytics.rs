@@ -286,10 +286,12 @@ impl GraphAnalyticsService {
         }
 
         raw.into_iter()
-            .filter_map(|(s, t)| match (index_to_symbol.get(&s), index_to_symbol.get(&t)) {
-                (Some(a), Some(b)) => Some((a.clone(), b.clone())),
-                _ => None,
-            })
+            .filter_map(
+                |(s, t)| match (index_to_symbol.get(&s), index_to_symbol.get(&t)) {
+                    (Some(a), Some(b)) => Some((a.clone(), b.clone())),
+                    _ => None,
+                },
+            )
             .collect()
     }
 }

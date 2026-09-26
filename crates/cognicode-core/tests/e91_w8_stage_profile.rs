@@ -110,7 +110,9 @@ fn build_tier2_fixture() -> CallGraph {
 }
 
 fn lcg_next(state: u64) -> u64 {
-    state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+    state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
 }
 
 /// Helper: measure one stage and assert against the per-stage budget.
@@ -180,7 +182,9 @@ fn w8_stage_analyze_full_aggregate() {
     let graph = build_tier2_fixture();
     let started = Instant::now();
     let report =
-        cognicode_core::application::services::graph_insights::GraphInsightsService::analyze(&graph);
+        cognicode_core::application::services::graph_insights::GraphInsightsService::analyze(
+            &graph,
+        );
     let _ = report.health_score;
     assert_stage("analyze_full", started.elapsed().as_millis());
 }

@@ -175,7 +175,9 @@ fn build_stochastic_dense_graph(spec: TierSpec, seed: u64) -> CallGraph {
 
 /// Linear congruential generator — deterministic, no external deps.
 fn lcg_next(state: u64) -> u64 {
-    state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407)
+    state
+        .wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
 }
 
 fn measure_analyze(spec: TierSpec) -> (u128, usize) {
@@ -196,11 +198,7 @@ fn w7_regression_budget_tier2() {
     let (elapsed_ms, edge_count) = measure_analyze(TIER_TIER2);
     eprintln!(
         "w7_regression_budget tier={} nodes={} edges={} elapsed_ms={} budget_ms={}",
-        TIER_TIER2.label,
-        TIER_TIER2.nodes,
-        edge_count,
-        elapsed_ms,
-        TIER_TIER2.budget_ms
+        TIER_TIER2.label, TIER_TIER2.nodes, edge_count, elapsed_ms, TIER_TIER2.budget_ms
     );
     assert!(
         elapsed_ms <= TIER_TIER2.budget_ms as u128,
