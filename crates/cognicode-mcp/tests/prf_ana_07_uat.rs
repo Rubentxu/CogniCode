@@ -166,9 +166,19 @@ async fn massive_collision_resolution_over_real_binary() {
         .call_tool_payload("build_graph", json!({}))
         .await
         .expect("build_graph");
-    assert_eq!(
-        build.get("status").and_then(|s| s.as_str()),
-        Some("complete")
+    // Accept either 'complete' or 'partial' here: this test asserts on
+    // edge correctness (the 2 real call relationships, with the 50 sibling
+    // 'init' declarations correctly filtered out), not on whether the
+    // walk-budget exhausted the full corpus. With per-call sub-handler
+    // timeouts introduced in F5.W4.bis (commit a5183ce6), the
+    // massive_collision_corpus may legitimately report 'partial'. The
+    // edge filter contract does not depend on the walk completing every
+    // single file - it depends on which files were classified as 'init'.
+    let status = build.get("status").and_then(|s| s.as_str());
+    assert!(
+        matches!(status, Some("complete") | Some("partial")),
+        "build_graph status must be 'complete' or 'partial' (post F5.W4.bis \
+         per-call sub-handler timeout); got: {status:?}"
     );
 
     // The graph must contain exactly the 2 real call relationships —
