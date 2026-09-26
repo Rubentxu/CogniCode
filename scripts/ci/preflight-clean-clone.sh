@@ -192,6 +192,36 @@ if ! cargo build --release --workspace --bins --locked 2>>"$LOG_FILE"; then
 fi
 log "  → cargo build --release --bins OK"
 
+# --- Stage 5b: bootstrap Tier-1 Rust fixture repos --------------------------
+# Tests h44_* (continuation_e2e.rs, 5 tests) require sandbox/repos/
+# with serde, ripgrep, anyhow, tokio, clap - .gitignore'd artifacts.
+# Network is permitted ONLY in this stage to clone specific pins.
+# After bootstrap, RUST_SANDBOX_BOOTSTRAP=1 is exported so the guard
+# require_sandbox_tier1() allows the 5 tests. Any SHA mismatch or
+# network failure aborts the preflight with FAIL (never skip).
+#
+# Out-of-bounds: the full 28-repo corpus is NOT cloned here (that's the
+# responsibility of `just sandbox-setup` in sandbox/justfile). This
+# stage is minimal: only Tier-1 Rust, sufficient for h44_*.
+#
+# Docs: see scripts/sandbox/bootstrap-tier1-rust.sh.
+
+log "Stage 5b/7: bootstrap Tier-1 Rust fixture repos (network-permitted)"
+
+if ! bash "$WORK_DIR/scripts/sandbox/bootstrap-tier1-rust.sh" \
+      "$WORK_DIR/sandbox/repos" 2>>"$LOG_FILE"; then
+  log "  → tail del bootstrap output:"
+  tail -30 "$LOG_FILE"
+  fail "tier-1 rust bootstrap failed (network/mismatch/SHA)"
+fi
+
+# Export flag so the 5 tests h44_* can pass their guard.
+# The guard require_sandbox_tier1() in continuation_e2e.rs verifies
+# the presence of the fixtures (defense in depth), not this flag,
+# but the flag is exported as an explicit preflight contract.
+export RUST_SANDBOX_BOOTSTRAP=1
+log "  → RUST_SANDBOX_BOOTSTRAP=1 exported; tier-1 fixtures verified"
+
 # --- Stage 5: cargo test (sin --include-ignored) -----------------------------
 
 log "Stage 5/7: cargo test --workspace (sin --include-ignored)"
