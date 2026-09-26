@@ -208,8 +208,8 @@ log "  → cargo build --release --bins OK"
 
 log "Stage 5b/7: bootstrap Tier-1 Rust fixture repos (network-permitted)"
 
-if ! bash "$WORK_DIR/scripts/sandbox/bootstrap-tier1-rust.sh" \
-      "$WORK_DIR/sandbox/repos" 2>>"$LOG_FILE"; then
+if ! bash "$WORK_DIR/clone/scripts/sandbox/bootstrap-tier1-rust.sh" \
+      "$WORK_DIR/clone/sandbox/repos" 2>>"$LOG_FILE"; then
   log "  → tail del bootstrap output:"
   tail -30 "$LOG_FILE"
   fail "tier-1 rust bootstrap failed (network/mismatch/SHA)"
