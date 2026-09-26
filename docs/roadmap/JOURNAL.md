@@ -3609,3 +3609,66 @@ añade **11 commits** (turnos 2 al 7) consolidando el branch
 * PR-DEVEX: IN PROGRESS_HIGH (CR-08 + CR-09 + QW-03/04/05)
 * PR-DEPTH: PENDING (ST-01..05 fuera de scope)
 
+
+## Entrada N+3 — bounded audit de cargo-deny licenses (2026-09-26)
+
+**Trigger:** operador emite directiva de auditoría en turno 8
+("una auditoria si nada de lo anteriormente te encaja") tras
+7 turnos de stewardship con 27 commits previos. El audit abre
+sobre `cargo deny check licenses`, no sobre código fuente.
+
+**Hallazgo:**
+
+* `deny.toml` solo tenía `[advisories]` (21 líneas). Sin
+  `[licenses]` declarada, cargo-deny aplica `allow = []`
+  (deny-all implícito).
+* `cargo deny check licenses` NO estaba en CI (release.yml y
+  release-validate.yml solo corren `advisories`).
+* PRF-CI-05 dokumentation declaraba: "scan de LICENCIAS no
+  exigido como gate (política de licencias pendiente de
+  decisión)".
+
+**Acción (commit `f551311c`):**
+
+* Sección `[licenses]` añadida con `version = 2`, allow-list de
+  16 licencias explícitas + LGPL-2.1-or-later (caveat), y
+  `confidence-threshold = 0.8`.
+* Permitido: permisivas (MIT, Apache-2.0, BSD-2/3, 0BSD, ISC,
+  Zlib, BSL-1.0, CC0-1.0, CDLA-Permissive-2.0, MIT-0, MPL-2.0,
+  Unicode-3.0, Unlicense, Apache-2.0 WITH LLVM-exception) + LGPL.
+* NO permitido: GPL/AGPL/SSPL/Commons Clause/JSON.
+* Decisión documentada: NO se promueve a gate CI-bloqueante
+  todavía (release.yml/release-validate.yml no se modifican).
+* NO se añadió `license = "..."` a los Cargo.toml del workspace
+  — esto es decisión política del operador.
+
+**Post-change state:**
+
+* ~150 deps de terceros PASS el allow-list.
+* 2 workspace crates flagged unlicensed:
+  cognicode-runtime, cognicode-sandbox.
+* 8 otros workspace crates sin license field NO flagged (no
+  aparecen en el runtime dep graph).
+
+**Follow-up operator-gated:**
+
+* Decidir license para cognicode-runtime y cognicode-sandbox.
+* Decidir si promote licenses gate a CI-bloqueante (CR-N.N TBD).
+
+**Estado de outcomes (a 2026-09-26 23:40 local) — actualizado:**
+
+* PR-G1: IN PROGRESS_HIGH (sin cambio)
+* PR-G2: UNLOCKED (sin cambio)
+* PR-PERF: IN PROGRESS_HIGH (sin cambio)
+* PR-ARCH: IN PROGRESS_HIGH (sin cambio)
+* PR-SEC: PENDING (bounded partial — licenses gate executable,
+  protobuf/OTel sigue fuera de scope por riesgo operacional)
+* PR-DEVEX: IN PROGRESS_HIGH (sin cambio)
+* PR-DEPTH: PENDING (sin cambio)
+
+**Commits del turno:**
+
+* `f551311c` — chore(audit): add [licenses] allow-list to
+  deny.toml (16 permissive + LGPL-2.1).
+
+**Total branch:** 29 commits sobre `f774b89f`.
