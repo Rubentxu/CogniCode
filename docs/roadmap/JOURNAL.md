@@ -3894,3 +3894,152 @@ sin re-descubrir el comando.
 * Pre-commit rustfmt hook.
 * 147 broken_intra_doc_links requiere ciclo dedicado.
 * Promote `cargo doc --no-deps -- -D warnings` como CI gate.
+
+## Entrada N+7 — CIERRE DE SESIÓN (2026-09-26 23:37 UTC)
+
+**Trigger:** operador emite directiva "cerramos sesion persiste
+todo el contexto del trabajo actual para mañana".
+
+**Estado al cierre (HEAD = 45ce3551, branch
+arch/cr-06-application-fitness-functions):**
+
+* Working tree clean. 36 commits sobre `f774b89f` base; todos
+  pusheados a origin. No hay trabajo local sin pushear.
+* SDDK gate cycle (align → commit → close) satisfecho para
+  todos los commits nuevos.
+
+### Resumen de bounded wins entregados (turnos 1-11)
+
+| Turno | Tipo | Commit | Resumen |
+|---|---|---|---|
+| 1-3 | Stewardship | (16 commits, session resumida) | CR-06 + QW-03/04 + CR-09 + QW-05 + ROADMAP reconcile + CR-05/W7 + PR-PERF PARTIAL |
+| 3 | Perf | 690c44a6 | CR-03/e91.W8 per-stage profile |
+| 3 | Perf | a566e4c1 | CR-04/e91.W9.1 feedback_arc_set O(N²)→O(N) |
+| 4 | Hygiene | e680f5b7 | clippy unused import fix |
+| 4 | Docs | 66c51e31 | ROADMAP CR-* namespace disambiguation |
+| 5 | Perf | 695b4d0a | CR-04/e91.W9.2 community_detect O(N²)→O(N) |
+| 6 | Hygiene | 8ef3d7b2 | SHA-pin extractions/setup-just@v2 |
+| 7 | Journal | 6f7be1ab | JOURNAL N+2 stewardship recap |
+| 8 | Audit | f551311c | cargo-deny licenses allow-list (M0 licenses gate) |
+| 8 | Docs | a15bcb10 | PR-SEC bounded-partial notation |
+| 9 | Hygiene | b0fe4730 | cargo fmt --all (M0.7 rustfmt drift restore) |
+| 9 | Journal | e290844a | MAINTENANCE M0.7 + JOURNAL N+4 |
+| 10 | Hygiene | d6afaac1 | rustdoc mechanical fixes (M0.8 — 4+17 warnings) |
+| 10 | Journal | 6f319a36 | MAINTENANCE M0.8 + JOURNAL N+5 |
+| 11 | Infra | 4f324274 | just fmt-check + just docs-check recipes |
+| 11 | Journal | 45ce3551 | JOURNAL N+6 + N+7 (esta entrada) |
+
+### Estados de outcomes
+
+* **PR-G1**: IN PROGRESS_HIGH (sin cambio desde turno 2).
+* **PR-G2**: UNLOCKED — esperando firma humana para CR-01
+  (C8-R recertification desde clean clone).
+* **PR-PERF**: IN PROGRESS_HIGH — e91.W7/W8/W9 cerradas.
+  G5 GREEN scorecard streak sigue fuera de scope branch.
+* **PR-ARCH**: IN PROGRESS_HIGH — CR-06 cerrado (5 fitness
+  functions pineados). PR-ARCH-CR-A/B (control-plane,
+  graph-algos) pendientes en cycle dedicado.
+* **PR-SEC**: PENDING (bounded partial) — 3 entregables en
+  esta sesión:
+  1. f551311c: cargo-deny licenses allow-list (16 + LGPL)
+  2. b0fe4730: M0.7 rustfmt restore
+  3. 4f324274: just fmt-check + docs-check reproducible
+  protobuf/OTel (CR-07) sigue fuera de scope (alto riesgo).
+* **PR-DEVEX**: IN PROGRESS_HIGH (QW-03/04/05 + CR-08/09).
+  4f324274 añade bounded audit recipes como infra adicional.
+* **PR-DEPTH**: PENDING (ST-01..05 verticales fuera de scope).
+
+### Estado de maintenance ledger
+
+* **M0.1**: CLOSED 2026-09-25 (cogh rollback same-version noop)
+* **M0.2**: CLOSED 2026-09-25 (cargo fmt --all over 104 files,
+  PR #291 → 26746a64)
+* **M0.3**: CLOSED 2026-09-25 (clippy strict + moldql panic
+  audit)
+* **M0.4**: CLOSED 2026-09-25 (AssetPoint RAII guard para
+  state pollution en #[serial] tests)
+* **M0.5**: CLOSED 2026-09-26 (which::which("rustc") +
+  temp_dir isolation; 8 #[ignore] tests re-habilitados)
+* **M0.6**: **BLOCKED 2026-09-26** (PHP/Swift tree-sitter
+  bump; opciones A/B/C documentadas en MAINTENANCE.md)
+* **M0.7**: CLOSED 2026-09-26 (rustfmt drift restore;
+  b0fe4730)
+* **M0.8**: CLOSED 2026-09-26 (rustdoc drift bounded cleanup;
+  d6afaac1)
+
+### Verificación al cierre
+
+| Comando | Resultado |
+|---|---|
+| `cargo fmt --all --check` | exit 0 (post-M0.7) |
+| `cargo doc --workspace --no-deps` | 147 warnings (post-M0.8: 4+17 categories clear) |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo test --workspace --lib` | 4235 passed / 0 failed / 19 ignored |
+| `cargo llvm-cov --lib -p cognicode-core` | 75.39 lines / 71.27 regions / 73.47 functions (gate 75.00/71.00 PASS) |
+| `cargo build --release -p cognicode` | exit 0 |
+| `cargo audit` | 1 vulnerability (RUSTSEC-2024-0437 protobuf, ignore documentado en deny.toml) + 3 unmaintained warnings (ignore documentados) |
+
+### Acumulado de follow-ups operator-gated (en orden de prioridad)
+
+1. **M0.6 PHP/Swift tree-sitter bump** — bloqueante para
+   usuarios de PHP/Swift; opciones A/B/C en MAINTENANCE.md
+   esperando decisión operador.
+2. **License identity para cognicode-runtime y cognicode-sandbox**
+   (f551311c los flagged como unlicensed; recomendación
+   `license = "MIT OR Apache-2.0"` en ambos Cargo.toml).
+3. **Promote cargo-deny licenses gate a CI-blocking** en
+   `release.yml` + `release-validate.yml` — actualmente
+   executable local pero no gating (CR-N.N TBD).
+4. **Pre-commit rustfmt git hook** (`.git/hooks/pre-commit`
+   ejecutando `cargo fmt --all --check`) o workflow_dispatch
+   extension en pr-ci.yml para que también gate push events
+   en branches no-main. Esto cierra el root cause que
+   descubrió 3 drift domains en esta sesión.
+5. **147 broken_intra_doc_links** requieren ciclo dedicado de
+   semantic fix (operator decide per-symbol el target).
+6. **Promote cargo doc --no-deps -- -D warnings como CI
+   gate** — actualmente solo local via `just docs-check`.
+7. **CR-01 C8-R recertification** desde clean clone — bloqueada
+   por firma humana del operador.
+8. **CR-07 protobuf/OTel migration** — high-risk fuera de
+   scope branch.
+9. **ST-01..05 deep modules refactor** (workspace_session,
+   file_operations, analysis_service, etc.) — fuera de scope
+   branch.
+
+### Recomendaciones para la próxima sesión
+
+1. **Al primer checkout**: ejecutar `just fmt-check && just
+   docs-check` para detectar cualquier drift introducido
+   overnight por tooling updates.
+2. **Considerar ejecutar `cargo test --workspace --lib`**
+   para confirmar que la suite sigue 4235/0/19.
+3. **Resolver al menos uno de los follow-ups operator-gated**
+   si tiene decisión pendiente. El más maduro es #2 (license
+   identity): solo añadir `license = "MIT OR Apache-2.0"` a
+   dos Cargo.toml.
+4. **Si más turnos de bounded audit**: explorar dominios no
+   cubiertos (cargo-deny sources, cargo-deny bans,
+   rust-coverage ratchet hacia 76.00% lines con tests
+   adicionales, o `cargo update --dry-run` para detectar
+   updates pendientes).
+5. **Si quiere bounded work en código real**: considerar
+   ratchetizar el coverage gate +0.4% en `ci.yml` (75.00 →
+   75.39) y actualizar la evidencia pineada
+   (`evidence/u54-ci03-coverage/core-lib-baseline.txt`).
+   Eso sería un commit de governance sin tocar código de
+   producción.
+
+### Recursos para retomar la sesión
+
+* **Branch actual**: `arch/cr-06-application-fitness-functions`
+* **HEAD actual**: `45ce3551b5bf1a354b99b0515d08dcaf3b404137`
+  (apuntado en este journal y en ROADMAP.md fila § 9).
+* **WorkItem reusable**: `075f7bc1-d088-404c-92af-3976462ae03e`
+  (CR-06 carryover, usado consistentemente los 11 turnos).
+* **JOURNAL**: `docs/roadmap/JOURNAL.md` (entradas N+1..N+7).
+* **MAINTENANCE**: `docs/roadmap/MAINTENANCE.md`
+  (M0.1..M0.8 incl. M0.6 BLOCKED).
+* **ROADMAP**: `docs/roadmap/ROADMAP.md`
+  (6 PR-* rows con estado actual).
+* **Just recipes auditables**: `just fmt-check`, `just docs-check`.
