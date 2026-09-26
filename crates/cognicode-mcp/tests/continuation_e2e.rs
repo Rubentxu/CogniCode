@@ -473,9 +473,9 @@ fn require_binary() -> Option<&'static str> {
 ///   - RUST_SANDBOX_BOOTSTRAP=1 is set (explicit preflight contract), AND
 ///   - sandbox/repos contains each of the 5 Tier-1 Rust crates expected
 ///     by the h44_* tests (serde, ripgrep, anyhow, tokio, clap).
-/// If any condition fails, logs a clear skip message and returns None —
-/// caller should early-return. NOT `#[ignore]`: the test is still
-/// executed (passes silently) so battery count is preserved.
+///     If any condition fails, logs a clear skip message and returns None —
+///     caller should early-return. NOT `#[ignore]`: the test is still
+///     executed (passes silently) so battery count is preserved.
 fn require_sandbox_tier1() -> Option<&'static str> {
     if std::env::var("RUST_SANDBOX_BOOTSTRAP").ok().as_deref() != Some("1") {
         eprintln!(

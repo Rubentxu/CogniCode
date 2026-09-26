@@ -139,18 +139,13 @@ pub fn workspace_version() -> String {
             section = Some(trimmed);
             continue;
         }
-        let in_workspace = matches!(
-            section,
-            Some("[workspace]") | Some("[workspace.package]")
-        );
-        if in_workspace {
-            if let Some(rest) = trimmed.strip_prefix("version") {
-                let rest = rest.trim_start().strip_prefix('=').unwrap_or(rest);
-                let rest = rest.trim();
-                let stripped = rest.trim_matches('"');
-                if !stripped.is_empty() {
-                    return stripped.to_string();
-                }
+        let in_workspace = matches!(section, Some("[workspace]") | Some("[workspace.package]"));
+        if in_workspace && let Some(rest) = trimmed.strip_prefix("version") {
+            let rest = rest.trim_start().strip_prefix('=').unwrap_or(rest);
+            let rest = rest.trim();
+            let stripped = rest.trim_matches('"');
+            if !stripped.is_empty() {
+                return stripped.to_string();
             }
         }
     }

@@ -11,9 +11,9 @@
 //!   - content >= 21 KB (the original test asserted a 21 KB+ reconstruction);
 //!   - the content contains the substring the ground-truth searches for
 //!     (`//! [![github]]`).
-//! The exact bytes do not matter for the scorer's behaviour; only the
-//! length threshold and the substring match do. This keeps the test
-//! reproducible from Git alone.
+//!     The exact bytes do not matter for the scorer's behaviour; only the
+//!     length threshold and the substring match do. This keeps the test
+//!     reproducible from Git alone.
 
 use cognicode_core::sandbox_core::ground_truth::GroundTruth;
 use cognicode_core::sandbox_core::scoring::{ExecutionMetadata, score_scenario};
@@ -33,10 +33,9 @@ fn synthetic_reconstructed_content() -> String {
     // SUBSTRING again (we want exactly one match, mirroring the
     // real reconstructed anyhow/src/lib.rs which had one docstring
     // banner and one body of declarations).
-    let header = format!(
-        "//! [![github]]\n//! crate-level documentation for the reconstructed fixture.\n\
+    let header = "//! [![github]]\n//! crate-level documentation for the reconstructed fixture.\n\
          //! this header is intentional: it is the substring the ground-truth looks for.\n\n"
-    );
+        .to_string();
     let body_needed = MIN_CONTENT_LEN.saturating_sub(header.len());
     // 'a'..'z' repeated. Note: no newline-collapse concerns; the substring
     // matcher operates on raw bytes.
