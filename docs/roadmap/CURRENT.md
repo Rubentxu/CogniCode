@@ -45,6 +45,29 @@ Todos los work units e91 cerrados:
 | **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8 documentando delta) | PENDIENTE |
 | e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
 | **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **BLOCKED 2026-09-26** |
+| **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **PENDIENTE** |
+
+## Programa production-ready (Post-PIVOT, no iniciado)
+
+Tras el pivot del 2026-09-26, el siguiente programa de estabilización
+queda versionado y listo para arrancar (no se ejecuta hasta decisión
+del operador). Detalle completo en
+`docs/roadmap/production-ready/EXECUTIVE-SUMMARY.md` y `EXECUTION-PLAN.md`.
+
+* **Outcomes**: PR-G1 (governance), PR-G2 (C8-R), PR-PERF (e91 G5),
+  PR-ARCH (boundary), PR-SEC (protobuf+Actions), PR-DEVEX (CI+coverage),
+  PR-DEPTH (deep modules).
+* **Fase 1 — Quick Wins**: QW-01..07 (3-5 días-persona).
+* **Fase 2 — Critical**: CR-01..09 (13-20 días-persona).
+* **Fase 3 — Strategic**: ST-01..05 (18-27 días-persona).
+* **Bloqueos heredados al programa** (no resueltos por el pivot):
+  C8 firma humana, M0.6 fix tree-sitter.
+* **Decisiones tomadas en pivot**:
+  * NO firmar C8 unilateralmente.
+  * NO bumpear tree-sitter unilateralmente.
+  * SÍ versionar el paquete (stewardship de bajo riesgo).
+  * NO fusionar `ROADMAP-ADDENDUM.md` con este `CURRENT.md` aquí;
+    queda como QW-01 del nuevo programa.
 
 ## Bloqueos abiertos
 

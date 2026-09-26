@@ -3253,3 +3253,118 @@ cargo test -p cognicode-core --lib infrastructure::parser::type_ref_walkers -- -
 # Si el operador autoriza fix (A) — bump tree-sitter — planificar
 # impacto en los 18 parsers antes de tocar Cargo.toml.
 ```
+
+## Entrada 25 — 2026-09-26 — PIVOT Post-PRF → production-ready stabilization program
+
+### Contexto
+
+El operador autoriza pivotar del programa Post-PRF vigente (G0/M0/E0-E3)
+a un nuevo programa de **estabilización production-ready** definido en el
+paquete `cognicode-production-ready-action-plan/`. Antes de pivotar, el
+operador pidió un inventario exhaustivo de pendientes (entries 11-19, 23,
+24 cubren la saga e91 y M0.5/M0.6). Este commit registra el pivot: el
+paquete se versiona en git, se fusiona con la agenda vigente sin perder
+trazabilidad de los bloqueos pre-existentes.
+
+### Hechos
+
+* **Paquete importado**: 25 archivos en
+  `docs/cognicode-production-ready-action-plan/` (ZIP local, baseline
+  `2991e5e227d9...`). Reubicado al layout declarado en `MANIFEST.sha256`:
+  * `docs/roadmap/production-ready/` — 14 docs raíz + 3 phases + 2 runbooks + 2 ADRs.
+  * `openspec/changes/2026-09-26-c8-recertification/` — QW-01..07.
+  * `openspec/changes/2026-09-26-architecture-boundary-hardening/` — CR-08, ST-01..05.
+  * `INSTALL.md` en raíz.
+* **Integridad verificada**: `sha256sum -c MANIFEST.sha256` → 24/24 OK
+  (1 archivo es el propio MANIFEST, no se autochequea). 0 warnings.
+* **HEAD al versionar**: `fc75cebf` (33 commits adelante del baseline del
+  paquete), con M0.5 CLOSED y M0.6 BLOCKED en JOURNAL entries 23-24.
+* **Cambio en `.gitignore`**: añadidas negaciones explícitas para
+  `docs/roadmap/production-ready/` y los 2 openspec changes nuevos. El
+  resto del blindaje de `docs/JOURNAL.md`, `docs/CURRENT.md`,
+  `docs/MAINTENANCE.md` queda como **QW-03** del nuevo programa
+  (governance de `.gitignore` como artefacto de primera clase).
+
+### Bloqueos pre-existentes (NO resueltos por este commit)
+
+* **C8 firma humana sobre v0.99.0** — SHA `3954b8b7` con addendum §8-§9.
+  El operador aún no firma el dosier. Pendiente decisión humana.
+* **M0.6 — PHP/Swift tree-sitter bump** — 3 opciones documentadas:
+  (A) bump `tree-sitter = "0.24"` → `"0.25"` afecta 18 parsers,
+  (B) fork comunitario no oficial,
+  (C) marcar PHP/Swift como `Language::Unsupported`.
+  El agente NO aplica ninguna unilateralmente (lesson 75: alcance >1 crate).
+
+### Programa nuevo (resumen ejecutivo)
+
+* **Fase 1 — Quick Wins (QW-01..07)**: 3-5 días-persona. Trazabilidad,
+  expediente C8 reproducible, clean-clone preflight, pin Actions,
+  Dependabot, hygiene `.env`, blindaje `.gitignore`.
+* **Fase 2 — Critical (CR-01..09)**: 13-20 días-persona. C8-R
+  reproducible, control-plane constraints completas, e91 G5 verde,
+  fitness functions arquitectónicas, OTel 0.27→0.28 (RUSTSEC-2024-0437),
+  CI adaptativa, cobertura con governance.
+* **Fase 3 — Strategic (ST-01..05)**: 18-27 días-persona. Extraer
+  `PathPolicy`, mover wiring a composition root, separar
+  `AnalysisService`, privatizar `HandlerContext`, unificar graph-build
+  semantics.
+* **Total**: 21 acciones, 34-52 días-persona, 6-8 semanas con 3 perfiles
+  en paralelo, 8-11 con un senior.
+* **Outcomes**: PR-G1 (governance), PR-G2 (C8-R), PR-PERF (e91 G5),
+  PR-ARCH (boundary), PR-SEC (protobuf+Actions), PR-DEVEX (CI+coverage),
+  PR-DEPTH (deep modules).
+
+### Decisiones tomadas
+
+* **NO firmar C8** unilateralmente — la firma es decisión de autoridad.
+* **NO bumpear tree-sitter** unilateralmente — 18 parsers, riesgo mayor.
+* **SÍ versionar el paquete** — stewardship de bajo riesgo, esperado por
+  QW-02 ("package del addendum como código, no como nota").
+* **NO fusionar `ROADMAP-ADDENDUM.md` con `docs/ROADMAP.md` en este
+  commit** — el merge se hace en QW-01 (primer quick win) para que
+  quede como artefacto del nuevo programa, no como decisión stealth del
+  pivot.
+
+### Evidencia
+
+* `git ls-tree -r HEAD --name-only | grep -E "production-ready|2026-09-26-"` → 23 archivos tracked (17 en `docs/roadmap/production-ready/` + 6 en `openspec/changes/2026-09-26-*/`).
+* `sha256sum -c docs/cognicode-production-ready-action-plan/MANIFEST.sha256` (antes de eliminar paquete temporal) → 24/24 OK.
+* Commit `3f2de0b9` con mensaje completo de pivot.
+* Paquete original `docs/cognicode-production-ready-action-plan/` eliminado tras copia verificada.
+
+### Comando de recuperación para la próxima sesión
+
+```bash
+cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
+git status --short --branch
+git rev-parse HEAD  # esperado: 3f2de0b9
+
+# Validar pivot
+git ls-tree -r HEAD --name-only | grep -E "production-ready|2026-09-26-|^INSTALL.md$" | wc -l
+# Esperado: 24 (17 en docs/roadmap/production-ready/ + 6 en openspec + INSTALL.md raíz)
+
+# Tests siguen verdes (pivot no toca código)
+cargo test --workspace 2>&1 | grep "test result" | \
+  awk '{p+=$4; f+=$6; i+=$8} END {printf "passed=%d failed=%d ignored=%d\n", p, f, i}'
+# Esperado: passed=5565 failed=0 ignored=37
+
+# Para arrancar QW-01 (primer quick win):
+cat docs/roadmap/production-ready/phases/PHASE-1-QUICK-WINS.md
+cat openspec/changes/2026-09-26-c8-recertification/tasks.md
+```
+
+### Lección 76 — stewardship de paquetes externos antes de pivotar
+
+Cuando un operador aporta un paquete (ZIP, repo, docset) como input de un
+pivot, **NO editarlo antes de versionarlo**. Pasos correctos:
+
+1. Verificar integridad (`sha256sum -c MANIFEST`).
+2. Reubicar al layout declarado por el propio paquete.
+3. Reverificar integridad tras mover.
+4. Stagear con `git add -f` si hay `.gitignore` que silencie.
+5. Commit atómico que declare baseline y bloqueos preexistentes.
+6. Recibo con referencia al MANIFEST, no al contenido.
+
+Editar antes de versionar rompe la trazabilidad entre lo que el operador
+aportó y lo que queda en repo. El baseline del paquete (`2991e5e2`) debe
+ser referenciable desde git history para auditorías futuras.

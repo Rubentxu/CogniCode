@@ -64,3 +64,30 @@ local no resuelva. Sin ese consumidor, no se abre.
 - M0.3 NO requiere release por sí mismo (clippy ya estaba strict, moldql ya estaba testeado). M0.3 es "verificación de carry-over", no código.
 - Las features F0.* (como F0.1 `find_usages` CLI) NO entran en la numeración v0.98.x. Se numeran aparte (`v0.99.0` minor o lo que la política E0 establezca).
 - Decisión la toma el operador en cada cierre.
+
+## PIVOT 2026-09-26 — fin del backlog M0.*
+
+El pivot al programa **production-ready stabilization** (ver
+`docs/roadmap/production-ready/EXECUTIVE-SUMMARY.md`) implica que el
+backlog M0.* queda **técnicamente cerrado** como fase de mantenimiento
+v0.98.x/v0.99.x:
+
+* **M0.1 a M0.5**: CLOSED (entries 11, 12, 13, 14, 23 del JOURNAL).
+* **M0.6**: **BLOCKED con herencia**. No se cierra sin decisión humana,
+  pero queda fuera del scope del nuevo programa (CR-* y ST-* no dependen
+  de M0.6; el fix de tree-sitter puede ejecutarse en cualquier momento
+  del programa o como hotfix independiente si el operador lo decide).
+* **F0.1** (find_usages CLI): sigue PENDING, L1 del Post-PRF. No se ha
+  priorizado dentro del nuevo programa (queda como carry-over si
+  reaparece como bloqueador E0.W consumer proof).
+* **E3** (RPC mínima): sigue `NOT_TRIGGERED`. Sin consumidor real que
+  lo justifique, no se ejecuta.
+
+El nuevo programa (21 acciones en 3 fases) opera sobre los **outcomes
+de estabilización** (PR-G1..PR-DEPTH) y NO reabre el backlog M0.*.
+Las features Post-PRF que vivían en el roadmap viejo (E0, E1, E2, F0.1)
+se re-evalúan dentro del programa bajo el paraguas PR-DEVEX / PR-PERF.
+
+Ver `docs/roadmap/JOURNAL.md` entry 25 y `docs/roadmap/CURRENT.md` §
+"Programa production-ready (Post-PIVOT, no iniciado)" para el
+contexto completo del pivot.
