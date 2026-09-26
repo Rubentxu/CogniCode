@@ -226,8 +226,10 @@ impl CodeVerifier for RustVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_verify_compilable_rust() {
         let verifier = RustVerifier::new();
         let temp_dir = TempDir::new().unwrap();
@@ -248,6 +250,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_verify_broken_rust() {
         let verifier = RustVerifier::new();
         let temp_dir = TempDir::new().unwrap();
@@ -286,6 +289,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_verify_with_timeout_success() {
         let verifier = RustVerifier::new();
         let temp_dir = TempDir::new().unwrap();
@@ -304,6 +308,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_verify_with_timeout_zero() {
         let verifier = RustVerifier::new();
         let temp_dir = TempDir::new().unwrap();

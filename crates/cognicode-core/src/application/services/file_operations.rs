@@ -2052,6 +2052,7 @@ mod tests {
     use super::*;
     use crate::application::dto::{FileEdit, ReadMode};
     use crate::infrastructure::verification::RustVerifier;
+    use serial_test::serial;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
@@ -3197,6 +3198,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_retrieve_and_verify_rust_file_verified() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("test.rs");
@@ -3244,6 +3246,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn test_retrieve_and_verify_rust_file_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("broken.rs");
@@ -3319,6 +3322,7 @@ mod tests {
     /// Test that rustc not found results in an error with the expected message.
     /// Saves and restores PATH around the async call to ensure rustc is not found.
     #[tokio::test]
+    #[serial]
     async fn test_retrieve_and_verify_rustc_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("test.rs");
