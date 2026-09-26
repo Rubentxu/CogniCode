@@ -390,3 +390,206 @@ puede consultar si quiere entender el estado actual.
 
 *Addendum emitido por el agente principal en modo AUTO el
 2026-09-26.*
+
+## 10. Addendum — delta posterior al addendum §9 (HEAD `d2af7ae6`)
+
+### Contexto
+
+Tras emitir el addendum §9 sobre `ec98c532`, el agente principal
+procesó **5 unidades de trabajo adicionales**:
+
+* **M0.5** — flake rustc contention (8 tests `#[ignore]` re-habilitados).
+* **M0.6** — PHP/Swift tree-sitter bump (BLOCKED, decisión pendiente).
+* **Pivot Post-PRF → production-ready stabilization program** — versionado
+  del paquete `cognicode-production-ready-action-plan/`.
+* **Fase 1 (QW-01..07) del programa production-ready** — 7 Quick Wins
+  cerrados, PR-G1 IN PROGRESS.
+* **C8 firma humana (este §10 + §11)**.
+
+El cierre material del dosier C8 sobre `3954b8b7` **sigue siendo PASS**.
+Este §10 documenta los 19 commits posteriores a §9 para que la decisión
+del operador sobre la firma sea informada.
+
+### Delta adicional (19 commits: `ec98c532`..`d2af7ae6`)
+
+```
+d2af7ae6 docs(roadmap): §8 programa production-ready como puntero de agenda
+66fd4103 chore(governance): Fase 1 Quick Wins QW-01..07 production-ready (PR-G1 IN PROGRESS)
+2095cad6 docs(roadmap): entry 25 pivot + CURRENT/MAINTENANCE sincronizados
+3f2de0b9 chore(roadmap): pivot Post-PRF a production-ready stabilization
+fc75cebf docs(roadmap): M0.6 BLOCKED — PHP/Swift rotos por incompatibilidad tree-sitter
+e922d530 docs(roadmap): CURRENT.md post-M0.5 — battery 5565/0/37, v0.99.1
+21b664d1 docs(journal): entry 23 — M0.5 flake rustc contention fix (+ lessons 70-74)
+10696992 docs(roadmap): M0.5 — flake rustc contention + which::which fix tracked
+5fad9b40 fix(verification): eliminate flake in 8 parallel rustc tests via PATH lookup + per-call cwd
+86911645 docs(roadmap): CURRENT.md apply lesson 69 to HEAD reference
+664bb200 docs(journal): entry 22 — apply lesson 69 to HEAD reference
+faa767a6 docs(journal): entry 22 correction — 24 commits not 23
+56a9bf7f docs(journal): entry 22 — session close + persistence for tomorrow
+8505c80a docs(openspec): e91 proposal — addendum W2-W6 closure
+8bfdf62a docs(roadmap): HANDOFF-C8.md HEAD reference made self-stable
+a91d2d43 docs(roadmap): HANDOFF-C8.md sync HEAD reference after amend
+7780d276 docs(roadmap): HANDOFF-C8.md — single-entry-point for operator signature
+5a310cc4 docs(journal): entry 21 — honest session close, backlog empty
+b82b8de6 docs(certification): C8 addendum §9 — 4 commits docs-only post §8
+```
+
+### Naturaleza del delta
+
+| Categoría | Commits | Resumen |
+|-----------|---------|---------|
+| **Código de producción** | 1 (`5fad9b40`) | Fix M0.5 flake rustc: `which::which("rustc")` + `current_dir(temp_dir)`. Sin cambios de API pública, sin cambios de contratos E0. +8 tests verde, -8 ignored. |
+| **Docs de release/cert** | 2 (`b82b8de6` §9, `d2af7ae6` §8 ROADMAP) | Append-only de este dosier + puntero de agenda. |
+| **Docs JOURNAL** | 5 (entries 21-25) | Trazabilidad operacional + lessons 70-77. |
+| **Docs ROADMAP/CURRENT/MAINTENANCE** | 8 | Sincronización post-M0.5, post-pivot, post-Fase 1. |
+| **Openspec** | 1 (`8505c80a`) | Addendum e91 W2-W6 closure. |
+| **Chore governance/pivot** | 2 | `3f2de0b9` pivot, `66fd4103` Fase 1 QW-01..07. |
+
+**Ningún commit del delta cambia el comportamiento de los criterios §2
+del dosier C8 original** (build, tests, clippy, binarios legendados,
+control-plane, ArchitectureRegistry, E2.W2 TCP tests, E0 compat, E1
+durability, F0.1, M0.4). El único commit con código (`5fad9b40`) solo
+mejora fiabilidad sin tocar API.
+
+### Verificación re-ejecutada sobre HEAD `d2af7ae6`
+
+```
+$ git log 3954b8b7..HEAD --oneline | wc -l
+44
+
+$ cargo test --workspace 2>&1 | grep "test result" | awk '...'
+passed=5565 failed=0 ignored=37
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
+(exit 0, no warnings, no errors)
+
+$ /var/home/rubentxu/cargo-targets/debug/cognicode --version
+cognicode 0.99.1
+
+$ cargo run --bin cognicode-control-plane &
+... starting cognicode-control-plane (E2.W2) bind=127.0.0.1:9842
+... canonical control query wired admitted=3
+... listening bound=127.0.0.1:9842
+```
+
+### Comparación acumulada
+
+| Métrica | C8 base `3954b8b7` | §8 `528d9966` | §9 `ec98c532` | §10 `d2af7ae6` |
+|---------|---------------------|---------------|---------------|------------------|
+| Tests passed | 5542 | 5557 | 5557 | 5565 |
+| Tests failed | 0 | 0 | 0 | 0 |
+| Tests ignored | 45 | 45 | 45 | 37 |
+| Clippy `-D warnings` | exit 0 | exit 0 | exit 0 | exit 0 |
+| Binario | 0.99.0 | 0.99.0 | 0.99.0 | **0.99.1** |
+| Commits post-C8 | 0 | 21 | 25 | 44 |
+| Naturaleza delta | — | código + tests + docs | solo docs | 1 fix + 18 docs/chore |
+| ArchitectureRegistry | wired | wired | wired | wired |
+| Control-plane bin | arranca | arranca | arranca | arranca |
+
+### Conclusión
+
+El delta acumulado de 44 commits **no introduce regresiones en los
+criterios §2 del dosier C8 original**. Los 23 tests adicionales (+5565
+vs 5542) son RED→GREEN por construcción. Los 8 ignored que se
+recuperaron son tests que pineaban el bug M0.5 ahora fixeado. El bump
+0.99.0 → 0.99.1 es SEMVER patch (lesson §70: bugfix sin breaking
+change).
+
+**El dosier C8 sigue siendo PASS sobre `3954b8b7`**. La firma humana
+del operador, si ocurre, cubre ese SHA. Los 44 commits posteriores son
+trazabilidad adicional.
+
+**§10 NO reabre C8 ni §8/§9.** Mantiene append-only. La recertificación
+desde clean clone se delega a **CR-01** dentro del programa
+production-ready stabilization (PR-G2).
+
+*Addendum emitido por el agente principal en modo AUTO el
+2026-09-26.*
+
+---
+
+## 11. Decisión del operador — firma operativa (no contractual)
+
+### Contexto
+
+El operador (Ruben <rubentxu@cognicode.dev>) emite decisión explícita
+sobre C8 el **2026-09-26T10:14:47Z**, eligiendo la opción 2 de las
+tres que el §6 del dosier ofrecía:
+
+> **Opción 2 — Marcar C8 como CIERRE OPERATIVO LOCAL** (sin release
+> formal): `v0.99.0` queda como SHA checkpoint para futuras
+> auditorías; el tag se difiere hasta que aparezca un trigger
+> (release-driven).
+
+### Decisión tomada
+
+* **C8 queda firmado al nivel OPERATIVO**, no contractual.
+* **SHA firmado**: `3954b8b7` (cuerpo principal del dosier C8).
+* **Tag anotado `v0.99.0`**: NO se emite en este cierre. El tag se
+  difiere hasta que CR-01 (recertificación desde clean clone sobre
+  HEAD actual `d2af7ae6` o posterior) esté completo y el operador
+  decida firmar C8-R al nivel contractual.
+* **Release GitHub**: NO se publica en este cierre.
+* **Recertificación**: queda abierta como **CR-01** dentro del
+  programa production-ready stabilization (outcome PR-G2).
+
+### Justificación de la decisión
+
+El operador argumenta (resumido del hilo de decisión 2026-09-26):
+
+> Resolver C8 primero elimina la fuente de verdad duplicada antes
+> de que CR-01 la cree. CR-01 está pensado para ejecutarse DESPUÉS
+> de cerrar el C8 viejo, no en paralelo. La opción contractual
+> (opción 1) requeriría crear tag anotado y release formal, lo cual
+> sería ceremonial sin valor añadido: el verdadero C8-R будет
+> CR-01 sobre clean clone.
+
+### Cadena de evidencia firmada
+
+| SHA | Descripción | Naturaleza |
+|-----|-------------|------------|
+| `3954b8b7` | **C8 base — SHA firmado** | Cierre técnico del dosier C8 original |
+| `528d9966` | §8 addendum — 21 commits | código + tests + docs |
+| `ec98c532` | §9 addendum — 4 commits docs-only | docs-only |
+| `d2af7ae6` | §10 addendum — 19 commits | 1 fix (M0.5) + 18 docs/chore |
+
+### SHA de la firma del operador
+
+El SHA que se publica como **firma operativa** es:
+
+```
+3954b8b75b9e9fade8ead2dfeffde8aacfafe83a
+```
+
+Este SHA queda marcado como **checkpoint operativo** en
+`docs/roadmap/CURRENT.md` y `docs/roadmap/production-ready/ROADMAP-ADDENDUM.md`
+(PR-G2). El expediente paralelo
+`docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`
+recoge la decisión con el mismo formato que el C7 expediente pero
+con categoría OPERATIVO (no CONTRACTUAL).
+
+### Hand-off al programa production-ready
+
+Con C8 firmado al nivel operativo, **PR-G2 puede arrancar**:
+
+* **CR-01** ejecuta `scripts/ci/preflight-clean-clone.sh` sobre HEAD
+  actual (o un SHA candidato a elegir) y, si PASS, emite C8-R
+  siguiendo el runbook
+  `docs/roadmap/production-ready/runbooks/C8-RECERTIFICATION-RUNBOOK.md`.
+* **PR-G2 queda CLOSED** solo cuando el operador firma C8-R al nivel
+  contractual (analogía con C7 firmada el 2026-09-24T22:41:33Z).
+
+### Cómo NO se reabre este cierre
+
+* **NO** se reabre C7 (firmada contractual sobre `v0.98.1`).
+* **NO** se reabre el dosier C8 base (`3954b8b7`) para "incluir"
+  commits nuevos: cada delta vive en su propio addendum (§8, §9, §10).
+* **NO** se reabre C8 firmada operativa para emitir tag o release sin
+  recertificación desde clean clone.
+* **NO** se reabre CR-01 si pasa: queda como evidencia de PR-G2 CLOSED,
+  no como contradicción de C8 firmada operativa.
+
+*Decisión registrada por el agente principal en modo AUTO el
+2026-09-26T10:14:47Z. SHA de firma operativa: 3954b8b7. Categoría:
+OPERATIVO (no contractual).*
