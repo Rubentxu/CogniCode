@@ -305,7 +305,7 @@ pub fn source_from_source_root(root: &std::path::Path) -> ArchitectureSource {
 mod tests {
     use super::*;
     use crate::application::architecture::admission::ArchitectureAdmissionService;
-    use crate::application::architecture::{ArchitectureEvaluator, SystemArchitectureClock};
+    use crate::application::architecture::SystemArchitectureClock;
     use crate::domain::architecture::{
         Admitter, AdmitterRole, ArchitectureConstraintId, ConstraintCandidate, LayerDependencyRule,
         LayerId,
