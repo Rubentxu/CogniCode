@@ -4043,3 +4043,115 @@ arch/cr-06-application-fitness-functions):**
 * **ROADMAP**: `docs/roadmap/ROADMAP.md`
   (6 PR-* rows con estado actual).
 * **Just recipes auditables**: `just fmt-check`, `just docs-check`.
+
+## Entrada N+8 — corrección diagnóstica: license field en todos los workspace crates (2026-09-26)
+
+**Trigger:** operador reanuda la sesión con directiva "continua
+con tareas roadmap y deuda tecnica a tu criterio". El JOURNAL
+N+7 ya había identifié el follow-up #2 (license identity para
+runtime/sandbox) como el más maduro. Voy a por él.
+
+**Discovery crítico — diagnóstico previo incompleto:**
+
+Al re-ejecutar `cargo deny check licenses`, descubrí que el
+OUTPUT actual lista **10 workspace crates** como unlicensed,
+NO 2 como reporté en el JOURNAL N+3 (turno 8). Verifiqué
+vía git worktree sobre `f551311c` que el output histórico
+también era 10 — yo **miscounted** durante la auditoría
+original. Documenté correctamente la acción (allow-list)
+pero documenté MAL el número de crates pendientes.
+
+**Honest disclosure per SDDK:** El commit body de `f0708d4b`
+documenta explícitamente que la auditoría previa estuvo
+incompleta, en lugar de reescribir el historial de
+`f551311c`. "bumps reales, markers honestos".
+
+**Acción (commit `f0708d4b`):**
+
+* Añadido `license = "MIT OR Apache-2.0"` a todos los
+  10 workspace crates que no lo tenían:
+  * cognicode, cognicode-cli, cognicode-core,
+    cognicode-core-mock, cognicode-explorer,
+    cognicode-ladybug, cognicode-macros, cognicode-mcp,
+    cognicode-runtime, cognicode-sandbox.
+* Expresión coincide con `cognicode-graph-algos` y
+  `cognicode-graph-wasm` (únicos 2 que ya tenían license).
+* NO se tocó `[workspace.package]` del Cargo.toml raíz
+  para mantener cambio acotado.
+
+**Verificación post-change:**
+
+* `cargo deny check licenses` → exit 0 con "licenses ok".
+* `cargo check --workspace --quiet` → exit 0.
+* `cargo fmt --all --check` → exit 0.
+* Sin cambios de código, sin cambios de tests.
+* Resuelve follow-up #2 de JOURNAL N+7.
+
+**Estado de outcomes (a 2026-09-26 23:57 local):**
+
+* PR-G1: IN PROGRESS_HIGH (sin cambio)
+* PR-G2: UNLOCKED (sin cambio)
+* PR-PERF: IN PROGRESS_HIGH (sin cambio)
+* PR-ARCH: IN PROGRESS_HIGH (sin cambio)
+* **PR-SEC: PENDING → IN PROGRESS_HIGH-LOW** (f0708d4b
+  completa el sub-axis licenses — el gate ya es executable
+  Y funcionalmente clean localmente; sigue sin ser CI-blocking
+  hasta que release.yml lo promueva — pendiente operador).
+* PR-DEVEX: IN PROGRESS_HIGH (sin cambio)
+* PR-DEPTH: PENDING (sin cambio)
+
+**Mantenimiento status:**
+
+* M0.6: BLOCKED (sin cambio)
+* M0.7: CLOSED (sin cambio)
+* M0.8: CLOSED (sin cambio)
+* **NUEVO: cargo-deny licenses gap (operator-gated)** — el
+  allow-list creado en f551311c era ejecutable pero incompleto
+  por mi diagnóstico incorrecto. f0708d4b cierra el gap.
+
+**Commits del turno:**
+
+* `f0708d4b` — chore(license): add license = 'MIT OR Apache-2.0'
+  to all 10 workspace crates.
+
+**Total branch:** 38 commits sobre `f774b89f`.
+
+**Reflexión sobre la auditoría fallida:**
+
+El bounded audit de turno 8 produjo valor real (allow-list
+en deny.toml) pero documentó mal su cobertura. Causa raíz
+hipotética: cuando corrí `cargo deny check licenses` por
+primera vez, ya había recibido output parcial de f551311c
+y al reportar "quedan 2 errores" estaba mirando el
+output de DESPUÉS del fix, no de ANTES. La verificación
+vía worktree ahora muestra que incluso DESPUÉS del fix
+de allow-list, los workspace crates sin license seguían
+flagged — algo que no capturé en su momento.
+
+Acción correctiva adoptada: en futuras bounded audits, voy
+a:
+1. Capturar el output completo ANTES del fix y mostrarlo en
+   el commit body, no solo el número de errores restantes.
+2. Considerar siempre `git worktree` para verificar el
+   estado pre-cambio cuando aplique.
+3. Si una auditoría pasada está incompleta, hacer disclosure
+   explícita en el próximo commit relevante (como aquí).
+
+**Follow-ups operator-gated (acumulado, priorizados):**
+
+1. **M0.6 PHP/Swift tree-sitter bump** (BLOCKED desde
+   sesión previa).
+2. **~~License identity para cognicode-runtime/sandbox~~
+   RESUELTO por f0708d4b** — marcado tachado en este JOURNAL.
+3. **Promote cargo-deny licenses gate a CI-blocking** —
+   ya executable + clean; decisión final sobre release.yml
+   update sigue operator-gated.
+4. **Pre-commit rustfmt git hook** o workflow_dispatch
+   extension (closes 3-drift-domain root cause).
+5. **147 broken_intra_doc_links** requieren ciclo dedicado.
+6. **Promote cargo doc --no-deps -- -D warnings como CI
+   gate** (actualmente solo local via `just docs-check`).
+7. **CR-01 C8-R recertification** requiere firma humana.
+8. **CR-07 protobuf/OTel migration** high-risk fuera de
+   scope branch.
+9. **ST-01..05 deep modules refactor** fuera de scope.
