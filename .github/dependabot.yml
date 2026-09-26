@@ -1,0 +1,74 @@
+# .github/dependabot.yml — QW-06 dependency updater
+#
+# Política QW-06: solo Cargo + GitHub Actions, con cadencia controlada.
+# Otros ecosistemas (npm, pip) se gestionan manualmente o vía PRs
+# específicos, no por Dependabot (reduce ruido y permite revisión
+# dirigida por mantenimiento o por QW-08+ cuando se active).
+#
+# Cadencia:
+#   - weekly: lunes 09:00 UTC (lunes-mañana Europa, ventana tranquila)
+#   - open-pull-requests-limit: 5 por ecosystem (evita avalanchas)
+#
+# Labels y reviewers se asignan automáticamente para facilitar triage.
+# Para ignorar updates específicas, usar `ignore` en cada ecosystem.
+
+version: 2
+
+updates:
+  # Cargo: solo deps de primer nivel (las transitivas se gestionan vía
+  # `cargo update` revisado en cada PR de mantenimiento).
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "cargo"
+      - "qw-06"
+    # Ignorar major bumps automáticos: requieren decisión humana
+    # (afectan API o compilación). Patch y minor sí se aceptan.
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    # Commit messages: conventional
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Group related updates
+    groups:
+      rust-toolchain:
+        dependency-type: "direct:production"
+        patterns:
+          - "rust-toolchain*"
+          - "tree-sitter*"
+          - "tokio*"
+
+  # GitHub Actions: pineadas por SHA en workflows (QW-05), pero Dependabot
+  # puede sugerir nuevos pines cuando hay updates upstream.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "qw-05"
+      - "qw-06"
+    commit-message:
+      prefix: "ci(actions)"
+      include: "scope"
+    groups:
+      first-party-actions:
+        patterns:
+          - "actions/*"
+      third-party-actions:
+        patterns:
+          - "*"

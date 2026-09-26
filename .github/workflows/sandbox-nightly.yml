@@ -36,8 +36,7 @@ jobs:
     #continue-on-error: true   # descomentar cuando se confirme que falla en hosted
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - name: Prepare host layout (quadlet bind path bridge)
         # Containers bind-mount %h/Proyectos/rust/CogniCode/sandbox/repos (local layout).
         # On hosted runners the workspace lives elsewhere — symlink the expected path.
@@ -46,7 +45,7 @@ jobs:
           ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
 
       - name: Setup Podman
-        uses: rootful/setup-podman@v4
+        uses: rootful/setup-podman@v4  # DEPRECATED: repo borrado en GitHub; pinear antes de Q4/2026 o migrar a fork
         with:
           podman-version: 5.2.0
 
@@ -62,7 +61,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.5.0 — pinned 2026-09-26 by QW-05
         with:
           name: smoke-results
           path: sandbox/results/
@@ -74,8 +73,7 @@ jobs:
     needs: sandbox-smoke
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - name: Prepare host layout (quadlet bind path bridge)
         # Containers bind-mount %h/Proyectos/rust/CogniCode/sandbox/repos (local layout).
         # On hosted runners the workspace lives elsewhere — symlink the expected path.
@@ -84,7 +82,7 @@ jobs:
           ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
 
       - name: Setup Podman
-        uses: rootful/setup-podman@v4
+        uses: rootful/setup-podman@v4  # DEPRECATED: repo borrado en GitHub; pinear antes de Q4/2026 o migrar a fork
         with:
           podman-version: 5.2.0
 
@@ -94,7 +92,7 @@ jobs:
 
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.5.0 — pinned 2026-09-26 by QW-05
         with:
           name: probe-results
           path: sandbox/results/probe/

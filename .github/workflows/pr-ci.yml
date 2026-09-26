@@ -57,12 +57,12 @@ jobs:
     name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
         with:
           components: rustfmt, clippy
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: rustfmt --check
         run: cargo fmt --all -- --check
       - name: clippy -D warnings
@@ -75,10 +75,10 @@ jobs:
     name: build cognicode-mcp (release)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Build release binario (cognicode-mcp)
         run: cargo build --release -p cognicode-mcp
       # L1.2.W2 — cognicode-control-plane (E2.W2, 2026-09-25) tambien
@@ -96,7 +96,7 @@ jobs:
         # cognicode-control-plane.
         run: cargo build --release --bin cognicode-control-plane
       - name: Upload binarios
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.5.0 — pinned 2026-09-26 by QW-05
         with:
           name: cognicode-bins-release
           path: |
@@ -113,14 +113,14 @@ jobs:
     needs: build-binary
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       # Necesario para resolver el path al binario desde el directorio
       # del test runner (el helper honra CARGO_MANIFEST_DIR + target/).
       - name: Descargar binarios release
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
         with:
           name: cognicode-bins-release
           path: ${{ github.workspace }}/target/release
@@ -166,7 +166,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - name: Verificar que los jobs fan-out pasaron
         # L1.2: patron seguro contra shell injection. GitHub Actions
         # no soporta `${{ needs.$job.result }}` (no expande $job dentro
