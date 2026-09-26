@@ -6,8 +6,8 @@
 
 ## HEAD y batería (a 2026-09-26)
 
-* **HEAD funcional**: `aed8b7d7` (commit de cierre de e91 saga, G0 cerrado).
-* **Commits sobre `origin/main`**: 16.
+* **HEAD funcional**: ver `git rev-parse HEAD` (este doc se versiona junto al workspace, no a sí mismo).
+* **Commits del agente sobre `origin/main`**: ver `git log --author=jcode-bot --oneline | wc -l`.
 * **Tests workspace**: `cargo test --workspace` →
   **passed=5557 failed=0 ignored=45**.
 * **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
