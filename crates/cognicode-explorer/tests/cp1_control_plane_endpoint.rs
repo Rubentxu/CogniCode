@@ -601,14 +601,21 @@ async fn c7_real_wiring_uses_canonical_constraints() {
         .iter()
         .map(|c| c["id"].as_str().unwrap_or(""))
         .collect();
+    // CR-06: wire_canonical_control_query now admits **five** canonical
+    // constraints (3 e77 + application_no_infrastructure +
+    // application_no_interface). The HTTP endpoint must surface them
+    // all in the order returned by `admission.admitted()`, which is
+    // the order produced by `canonical_constraints()`.
     assert_eq!(
         ids,
         vec![
             "architecture.domain_no_infrastructure",
             "architecture.domain_no_application",
+            "architecture.application_no_infrastructure",
+            "architecture.application_no_interface",
             "architecture.evidence_kernel_no_presentation",
         ],
-        "endpoint must surface the three canonical constraints admitted by wire_canonical_control_query"
+        "endpoint must surface the five canonical constraints admitted by wire_canonical_control_query"
     );
 
     // The synthetic-drift source root is the inverse case: it
@@ -700,10 +707,13 @@ async fn e2_w2_control_plane_router_serves_real_http_request() {
     );
     assert_eq!(body["status"], "evaluated");
     let constraints = body["constraints"].as_array().unwrap();
+    // CR-06: the wired canonical set now has **five** entries
+    // (3 e77 + 2 CR-06 application-boundary constraints). The router
+    // must surface them all in the response.
     assert_eq!(
         constraints.len(),
-        3,
-        "all 3 canonical constraints must be in the response"
+        5,
+        "all 5 canonical constraints must be in the response"
     );
     assert!(body["violations"].as_array().unwrap().is_empty());
 
