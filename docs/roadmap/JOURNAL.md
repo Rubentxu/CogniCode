@@ -3811,3 +3811,86 @@ Esto cerraría el gap de observability de raíz.
 * Pre-commit rustfmt hook para evitar regresión futura de M0.7.
 * 147 broken_intra_doc_links requieren ciclo dedicado.
 * Considerar promote `cargo doc --no-deps -- -D warnings` como CI gate.
+
+## Entrada N+6 — bounded improvement: justfile recipes for reproducibility (2026-09-26)
+
+**Trigger:** operador en turno 11 emite directiva "continua con
+tareas roadmap y deuda tecnica a tu criterio... o auditoria si
+nada encaja". Llevamos 3 turnos consecutivos de bounded audits
+(licenses, rustfmt, rustdoc). Diminishing returns de audits
+puros; en este turno hago **bounded improvement de la auditoria
+misma** — capturar el audit command sequence como recipe
+reproducible.
+
+**Observación:**
+
+* M0.7 (`b0fe4730`) y M0.8 (`d6afaac1`) descubrieron drift de
+  rustfmt y rustdoc respectivamente.
+* El comando que descubrió cada uno (`cargo fmt --all --check`,
+  `cargo doc --workspace --no-deps` + grep) NO estaba captado
+  como reproducible.
+* Próxima sesión que haga bounded audit tendría que
+  rediscoverir el comando → 2-3 minutos de búsqueda.
+
+**Acción (commit `4f324274`):**
+
+* Añadir 2 recipes al justfile (sección Check):
+  * `just fmt-check` → `cargo fmt --all --check`. Exit 0 = clean.
+  * `just docs-check` → `cargo doc --workspace --no-deps`,
+    captura output a `/tmp/rustdoc.log`, reporta:
+    - Total warnings count
+    - Categorías por rustdoc lint family
+* Header comments actualizados.
+
+**Verificación:**
+
+* `just fmt-check` → exit 0 (post-M0.7 invariant).
+* `just docs-check` →
+  ```
+  Total warnings: 147
+  Categories:
+        6 rustdoc::broken_intra_doc_links
+        2 rustdoc::private_intra_doc_links
+  ```
+* `just --list` → ambas recipes visibles.
+* Recipes existentes (lint, fmt, doc) sin cambios.
+
+**Estado de outcomes (a 2026-09-26 23:29 local):**
+
+* PR-G1: IN PROGRESS_HIGH (sin cambio — esto cuenta para
+  PR-DEVEX check tooling también)
+* PR-G2: UNLOCKED (sin cambio)
+* PR-PERF: IN PROGRESS_HIGH (sin cambio)
+* PR-ARCH: IN PROGRESS_HIGH (sin cambio)
+* PR-SEC: PENDING (bounded partial — licenses f551311c, M0.7, M0.8)
+* PR-DEVEX: IN PROGRESS_HIGH (nuevo bounded audit recipe disponible
+  bajo este outcome como parte del enforcement)
+* PR-DEPTH: PENDING (sin cambio)
+
+**Mantenimiento status:**
+
+* M0.7: CLOSED (b0fe4730) — ahora reproducible via `just fmt-check`
+* M0.8: CLOSED (d6afaac1) — ahora reproducible via `just docs-check`
+
+**Commits del turno:**
+
+* `4f324274` — chore(justfile): add 'fmt-check' and 'docs-check'
+  audit recipes.
+
+**Total branch:** 35 commits sobre `f774b89f`.
+
+**Reflexión: la productividad del bounded audit tiene
+diminishing returns después de 3 turnos consecutivos.** Sin
+embargo, convertir el audit en recipe reproducible captura el
+valor de los 3 turnos en una herramienta permanente. La próxima
+sesión que vea drift en fmt/doc puede detectarlo en segundos
+sin re-descubrir el comando.
+
+**Follow-ups operator-gated (acumulado, sin cambios):**
+
+* M0.6 PHP/Swift tree-sitter (BLOCKED).
+* License para cognicode-runtime/sandbox.
+* Promote licenses gate to CI-bloqueante (CR-N.N TBD).
+* Pre-commit rustfmt hook.
+* 147 broken_intra_doc_links requiere ciclo dedicado.
+* Promote `cargo doc --no-deps -- -D warnings` como CI gate.
