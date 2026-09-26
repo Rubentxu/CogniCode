@@ -24,9 +24,54 @@ fn release_bin() -> PathBuf {
     p
 }
 
-const VERSION: &str = "0.97.4";
-const TAG: &str = "v0.97.4";
 const PLATFORM: &str = "x86_64-unknown-linux-gnu";
+
+// Hermeticity (CR-00c): version and tag are derived from the workspace
+// `Cargo.toml` instead of being hardcoded to a historical value. This makes
+// the test invariant to version bumps and removes the dependency on a
+// pre-existing `dist/` populated by a previous release run.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+fn workspace_version() -> String {
+    let manifest = std::fs::read_to_string(workspace_root().join("Cargo.toml"))
+        .expect("workspace Cargo.toml must be readable from the clone");
+    // Find the [workspace.package] version line. The crate version may also
+    // live under a bare [workspace] (older layouts), so we accept both.
+    let mut section: Option<&str> = None;
+    for line in manifest.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            section = Some(trimmed);
+            continue;
+        }
+        let in_workspace = matches!(
+            section,
+            Some("[workspace]") | Some("[workspace.package]")
+        );
+        if in_workspace {
+            if let Some(rest) = trimmed.strip_prefix("version") {
+                let rest = rest.trim_start().strip_prefix('=').unwrap_or(rest);
+                let rest = rest.trim();
+                let stripped = rest.trim_matches('"');
+                if !stripped.is_empty() {
+                    return stripped.to_string();
+                }
+            }
+        }
+    }
+    panic!("could not find workspace version in Cargo.toml");
+}
+
+fn workspace_tag() -> String {
+    format!("v{}", workspace_version())
+}
 
 fn head_commit() -> String {
     let out = Command::new("git")
@@ -39,12 +84,18 @@ fn head_commit() -> String {
 
 #[test]
 fn dist_release_candidate_generates_verifies_and_detects_tampering() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf();
+    // CR-00c: hermeticity. The test must not depend on any artefact that
+    // lives outside the workspace root or that is not versioned in Git.
+    // - VERSION/TAG are derived from the workspace Cargo.toml.
+    // - Skill bundles are generated inside `stage/` directly from
+    //   `skills/<name>/` (which IS versioned), so the test no longer
+    //   reads from `dist/` (which is build output, not a Git artefact).
+    // - All temporary state is created under std::env::temp_dir() and
+    //   cleaned up at the end of the test.
+    let root = workspace_root();
+    let version = workspace_version();
+    let tag = workspace_tag();
+
     let stage = std::env::temp_dir().join(format!("prf-dist-uat-stage-{}", std::process::id()));
     let generated = std::env::temp_dir().join(format!("prf-dist-uat-gen-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage);
@@ -55,7 +106,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     for stem in ["cogh", "cognicode", "cognicode-mcp"] {
         let src = root.join(format!("target/release/{stem}"));
         assert!(src.exists(), "missing release binary {stem}");
-        let dst = stage.join(format!("{stem}-{VERSION}-{PLATFORM}.tar.gz"));
+        let dst = stage.join(format!("{stem}-{version}-{PLATFORM}.tar.gz"));
         let st = Command::new("tar")
             .arg("-czf")
             .arg(&dst)
@@ -66,18 +117,32 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
             .unwrap();
         assert!(st.success(), "tar failed for {stem}");
     }
-    // Skill bundle payloads (versioned, produced by `just bundle-skills`).
+    // 2. Skill bundle payloads. Generated here directly from `skills/<name>/`
+    //    into `stage/`, so the test is independent of any pre-existing
+    //    `dist/` directory and of any release flow having been run before.
+    //    The bundle contents must include `manifest.yaml` (mirrors
+    //    `just bundle-skills`).
     for bundle in ["cognicode", "cognicode-mcp"] {
-        let src = root.join(format!("dist/{bundle}-{VERSION}.tar.gz"));
+        let skill_dir = root.join("skills").join(bundle);
         assert!(
-            src.exists(),
-            "missing skill bundle {}; run `COGNICODE_VERSION=0.97.4 just bundle-skills`",
-            src.display()
+            skill_dir.join("manifest.yaml").exists(),
+            "skill `{}` must have a versioned manifest.yaml at {}",
+            bundle,
+            skill_dir.display()
         );
-        std::fs::copy(&src, stage.join(src.file_name().unwrap())).unwrap();
+        let dst = stage.join(format!("{bundle}-{version}.tar.gz"));
+        let st = Command::new("tar")
+            .arg("-czf")
+            .arg(&dst)
+            .arg("-C")
+            .arg(&skill_dir)
+            .arg(".")
+            .status()
+            .unwrap();
+        assert!(st.success(), "tar failed for skill bundle {bundle}");
     }
 
-    // 2. Generate the release candidate from those bytes.
+    // 3. Generate the release candidate from those bytes.
     let out = Command::new(release_bin())
         .args([
             "generate",
@@ -86,9 +151,9 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
             "--out",
             generated.to_str().unwrap(),
             "--version",
-            VERSION,
+            &version,
             "--tag",
-            TAG,
+            &tag,
             "--source-commit",
             &head_commit(),
             "--platform",
@@ -102,24 +167,30 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
         String::from_utf8_lossy(&out.stderr)
     );
 
-    // 3. DIST-06: inventory provenance matches current HEAD.
+    // 4. DIST-06: inventory provenance matches current HEAD.
     let inventory =
-        std::fs::read_to_string(generated.join(format!("release-inventory-{VERSION}.json")))
+        std::fs::read_to_string(generated.join(format!("release-inventory-{version}.json")))
             .unwrap();
     assert!(
         inventory.contains(&head_commit()),
         "inventory must record current HEAD as source_commit"
     );
 
-    // 4. DIST-01/06: verification from the release candidate dir passes
-    //    (hashes + manifest + composition agree).
+    // 5. DIST-01/06: verification from the release candidate dir passes
+    //    (hashes + manifest + composition agree). We pass `--version`
+    //    explicitly so the verify call is invariant to whatever default
+    //    version the `cognicode-release` binary was compiled with; this
+    //    keeps the test hermetic even if the local `target/release/`
+    //    contains a stale binary from a prior workspace version.
     let ok = Command::new(release_bin())
         .args([
             "verify",
             "--staging",
             generated.to_str().unwrap(),
+            "--version",
+            &version,
             "--tag",
-            TAG,
+            &tag,
             "--platform",
             PLATFORM,
         ])
@@ -127,7 +198,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
         .unwrap();
     assert!(ok.success(), "verify must PASS on the clean candidate");
 
-    // 5. DIST-06 negative case: a tampered payload is rejected (exit != 0).
+    // 6. DIST-06 negative case: a tampered payload is rejected (exit != 0).
     let tampered = std::env::temp_dir().join(format!("prf-dist-uat-tam-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tampered);
     std::fs::create_dir_all(&tampered).unwrap();
@@ -140,7 +211,7 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
             std::fs::copy(e.path(), &dst).unwrap();
         }
     }
-    let victim = tampered.join(format!("cognicode-{VERSION}-{PLATFORM}.tar.gz"));
+    let victim = tampered.join(format!("cognicode-{version}-{PLATFORM}.tar.gz"));
     let mut bytes = std::fs::read(&victim).unwrap();
     bytes.extend_from_slice(b"tampered");
     std::fs::write(&victim, &bytes).unwrap();
@@ -150,8 +221,10 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
             "verify",
             "--staging",
             tampered.to_str().unwrap(),
+            "--version",
+            &version,
             "--tag",
-            TAG,
+            &tag,
             "--platform",
             PLATFORM,
         ])

@@ -92,6 +92,20 @@ require_tool cargo
 require_tool perl
 require_tool python3
 
+# CR-00c: neutralizar el gitignore GLOBAL del operador para que ningún archivo
+# requerido por el gate pueda existir o desaparecer silenciosamente según
+# la configuración del usuario. Solo afecta a esta sesión (export, no se
+# persiste). Si el operador ha configurado `core.excludesfile` o un archivo
+# `~/.config/git/ignore`, el preflight lo ignora completamente.
+#
+# Verificación rápida: `git config --show-origin --get core.excludesfile`
+# apuntaría a un path del operador; aquí lo anulamos.
+if [ -n "${GIT_CONFIG_GLOBAL:-}" ] && [ "$GIT_CONFIG_GLOBAL" != "/dev/null" ]; then
+  log "AVISO: GIT_CONFIG_GLOBAL pre-existente no anulado ($GIT_CONFIG_GLOBAL); el gate puede estar sujeto a gitignore externo del operador"
+fi
+export GIT_CONFIG_GLOBAL=/dev/null
+log "GIT_CONFIG_GLOBAL=/dev/null (gitignore global del operador neutralizado)"
+
 log "Preflight clean-clone preflight (QW-04, 2026-09-26)"
 log "SHA a certificar: $TARGET_SHA"
 log "Baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE_IGNORED"
