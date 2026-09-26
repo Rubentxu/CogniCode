@@ -48,14 +48,18 @@ RECEIPT_FILE="/tmp/preflight-receipt-${TARGET_SHA:0:12}.json"
 
 # Baseline de tests esperado (controlado por el operador).
 # Si cambia, requiere re-baseline explícito.
-# 5565 = workspace cargo test con debug bin.
-# 5572 = workspace cargo test con release bin (los 7 tests
+# 5565 = workspace cargo test con debug bin (pre-M0.5).
+# 5572 = workspace cargo test con release bin (post-M0.5; los 7 tests
 #        prf_cli_01_exhaustive_uat requieren bin release pre-existente).
-# Por defecto usamos el baseline más estricto (5572) porque el preflight
+# 5579 = workspace cargo test con release bin + serial_test applied to 7
+#        rustc-subprocess tests (CR-00f, 2026-09-26). The 7 newly-counted
+#        tests are the exact 7 that received #[serial]: 3 in file_operations.rs
+#        + 4 in rust_verifier.rs. The +7 delta is reproducible and explained.
+# Por defecto usamos el baseline más estricto (5579) porque el preflight
 # ejecuta cargo build --release antes de los tests.
-BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5572}"
+BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5579}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
-BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-30}"
+BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
 
 # --- Helpers -----------------------------------------------------------------
 
