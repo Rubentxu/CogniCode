@@ -238,7 +238,6 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
 /// `crates/cognicode-explorer/src/api.rs::control_plane_architecture`.
 pub fn wire_canonical_control_query() -> ControlQueryService {
     use crate::application::architecture::admission::ArchitectureAdmissionService;
-    use crate::application::architecture::evaluator::ArchitectureEvaluator;
     use crate::application::architecture::{
         SystemArchitectureClock, canonical_constraints, canonical_promoted_admitter,
     };
@@ -252,10 +251,9 @@ pub fn wire_canonical_control_query() -> ControlQueryService {
             .result
             .expect("canonical constraint admission must succeed");
     }
-    let registry = ArchitectureRegistry {
-        admission,
-        evaluator: ArchitectureEvaluator::new(),
-    };
+    let registry = ArchitectureRegistry::new()
+        .with_admission(admission)
+        .with_temporary_exceptions(crate::application::architecture::cr06_allowlist::exceptions());
     ControlQueryService::new(registry)
 }
 
@@ -338,10 +336,7 @@ mod tests {
         let clock = SystemArchitectureClock;
         let outcome = admission.admit(candidate, &promoted_admitter(), &clock);
         assert!(outcome.result.is_ok(), "admission must succeed in fixture");
-        let registry = ArchitectureRegistry {
-            admission,
-            evaluator: ArchitectureEvaluator::new(),
-        };
+        let registry = ArchitectureRegistry::new().with_admission(admission);
         ControlQueryService::new(registry)
     }
 

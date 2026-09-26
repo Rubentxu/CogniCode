@@ -318,3 +318,218 @@ impl fmt::Display for ConstraintError {
 }
 
 impl std::error::Error for ConstraintError {}
+
+// ============================================================================
+// Temporary exceptions (CR-06 T4)
+// ============================================================================
+
+/// A time-bounded exception that suppresses a single, specific drift
+/// finding.
+///
+/// CR-06 introduces two new canonical constraints (`application_no_infrastructure`,
+/// `application_no_interface`) that surface ~63 historical drift
+/// findings in `cognicode-core`'s own source. Remediating them is the
+/// ST-01..05 program (composition roots + port extraction). Until the
+/// remediation closes, the build must remain green so the program can
+/// land incrementally. The mechanism for that is
+/// [`TemporaryException`]: every entry is a precise tuple
+/// `(constraint_id, file_path, dependency_path)` with an **owner**,
+/// a **rationale**, and a hard **expiry** date.
+///
+/// ## Why a tuple, not a regex
+///
+/// * Exact match is predictable: the same violation cannot accidentally
+///   match a broader exception.
+/// * It is greppable: `git grep` for the tuple finds the entire
+///   allowlist from the source, without scanning config files.
+/// * It is auditable: every entry is a single line in
+///   `temporary_exceptions.rs`, with the four fields visible together.
+///
+/// ## Why an expiry
+///
+/// The expiry is enforced at evaluation time. Once `today > expiry`,
+/// the exception stops suppressing and the drift becomes visible
+/// again. The point is to prevent silent lifetime extension: a stale
+/// allowlist is louder than a passing build.
+///
+/// ## Why an owner
+///
+/// The owner is the entity that takes responsibility for retiring the
+/// exception (i.e. refactoring the drift away). It must be a stable
+/// string (e.g. `human:dev@example`, `team:architecture-wg`,
+/// `tracker:ST-01`). The runtime does not validate ownership; the
+/// expectation is enforced by code review and by the visible
+/// `proposed_by`/`admitted_by` lineage in the rest of the architecture
+/// system.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TemporaryException {
+    /// Constraint id this exception applies to (e.g.
+    /// `"architecture.application_no_infrastructure"`). Must match the
+    /// `constraint_id` of a [`crate::domain::architecture::ArchitectureViolation`].
+    pub constraint_id: String,
+    /// Exact `file_path` of the drift. Must match
+    /// `ArchitectureViolation.file_path` byte-for-byte (relative to
+    /// the crate root used by the evaluator).
+    pub file_path: String,
+    /// Exact `dependency_path` of the drift. Must match
+    /// `ArchitectureViolation.dependency_path`.
+    pub dependency_path: String,
+    /// Who owns retiring this exception (e.g.
+    /// `"human:cognicode-architecture-wg"`,
+    /// `"team:st-01-composition-roots"`).
+    pub owner: String,
+    /// Free-form rationale (e.g. `"ST-01 remediation: FileOperations
+    /// will be ported to use crate::ports::PathPolicy"`).
+    pub rationale: String,
+    /// ISO-8601 date after which the exception stops suppressing
+    /// (e.g. `"2026-12-31"`). The runtime compares against the system
+    /// clock at evaluation time.
+    pub expiry: String,
+}
+
+impl TemporaryException {
+    /// Whether this exception applies to a specific violation.
+    ///
+    /// Match is exact on `constraint_id` and `file_path`. The
+    /// `dependency_path` field is matched by **prefix** because the
+    /// architecture evaluator reports the longest `use crate::...`
+    /// path it can parse, and a single source line may produce more
+    /// than one violation under the same prefix (e.g. a `use
+    /// crate::infrastructure::parser::{Language, TreeSitterParser};`
+    /// line emits two violations, one with path
+    /// `infrastructure::parser::Language` and another with
+    /// `infrastructure::parser::TreeSitterParser`). An allowlist entry
+    /// with `dependency_path = "infrastructure::parser::Language"`
+    /// will not match the second one; the allowlist entry should be
+    /// written as `infrastructure::parser::` (with trailing `::`) to
+    /// cover both. This is the only field that uses prefix match —
+    /// the others are exact to avoid accidental overlap.
+    pub fn matches(&self, violation: &crate::domain::architecture::ArchitectureViolation) -> bool {
+        if self.constraint_id != violation.constraint_id.as_str() {
+            return false;
+        }
+        if self.file_path != violation.file_path {
+            return false;
+        }
+        // Prefix match on dependency_path: the allowlist entry may
+        // cover a whole import group ("infrastructure::parser::")
+        // even though the evaluator reports each leaf separately.
+        violation.dependency_path.starts_with(&self.dependency_path)
+    }
+
+    /// Whether this exception has expired.
+    ///
+    /// Compares `self.expiry` against `today_iso` (ISO-8601 `YYYY-MM-DD`).
+    /// If `today_iso >= expiry`, the exception is expired.
+    ///
+    /// Lexical comparison on ISO-8601 dates is well-defined for the
+    /// `YYYY-MM-DD` subset — no DateTime parsing required.
+    pub fn is_expired(&self, today_iso: &str) -> bool {
+        self.expiry.as_str() <= today_iso
+    }
+}
+
+#[cfg(test)]
+mod temporary_exception_tests {
+    use super::*;
+    use crate::domain::architecture::ArchitectureViolation;
+    use crate::domain::findings::FindingKind;
+
+    fn sample_violation(
+        constraint_id: &str,
+        file_path: &str,
+        dependency_path: &str,
+    ) -> ArchitectureViolation {
+        ArchitectureViolation {
+            id: crate::domain::architecture::ViolationId::compute(
+                &ArchitectureConstraintId::new(constraint_id).unwrap(),
+                file_path,
+                1,
+                dependency_path,
+            ),
+            constraint_id: ArchitectureConstraintId::new(constraint_id).unwrap(),
+            finding_kind: FindingKind::new("architecture.layer_dependency").unwrap(),
+            file_path: file_path.into(),
+            module_path: None,
+            line: 1,
+            dependency_path: dependency_path.into(),
+            from_layer: LayerId::Application,
+            grounding: None,
+            rationale: "test".into(),
+        }
+    }
+
+    #[test]
+    fn exception_matches_exact_tuple() {
+        let ex = TemporaryException {
+            constraint_id: "architecture.application_no_infrastructure".into(),
+            file_path: "application/foo.rs".into(),
+            dependency_path: "infrastructure::parser::Language".into(),
+            owner: "team:st-01".into(),
+            rationale: "ST-01 remediation".into(),
+            expiry: "2026-12-31".into(),
+        };
+        let v = sample_violation(
+            "architecture.application_no_infrastructure",
+            "application/foo.rs",
+            "infrastructure::parser::Language",
+        );
+        assert!(ex.matches(&v));
+    }
+
+    #[test]
+    fn exception_does_not_match_partial_overlap() {
+        // Different file_path → no match (this field is exact, not prefix).
+        let ex = TemporaryException {
+            constraint_id: "architecture.application_no_infrastructure".into(),
+            file_path: "application/foo.rs".into(),
+            dependency_path: "infrastructure::parser::Language".into(),
+            owner: "team:st-01".into(),
+            rationale: "ST-01".into(),
+            expiry: "2026-12-31".into(),
+        };
+        let v = sample_violation(
+            "architecture.application_no_infrastructure",
+            "application/bar.rs",
+            "infrastructure::parser::Language",
+        );
+        assert!(!ex.matches(&v));
+    }
+
+    #[test]
+    fn exception_matches_prefix_on_dependency_path() {
+        // An allowlist entry with prefix `infrastructure::parser::`
+        // must match a violation whose path is a deeper leaf under
+        // that prefix (e.g. `infrastructure::parser::Language`).
+        let ex = TemporaryException {
+            constraint_id: "architecture.application_no_infrastructure".into(),
+            file_path: "application/foo.rs".into(),
+            dependency_path: "infrastructure::parser::".into(),
+            owner: "team:st-01".into(),
+            rationale: "ST-01".into(),
+            expiry: "2026-12-31".into(),
+        };
+        let v = sample_violation(
+            "architecture.application_no_infrastructure",
+            "application/foo.rs",
+            "infrastructure::parser::Language",
+        );
+        assert!(ex.matches(&v));
+    }
+
+    #[test]
+    fn exception_expiry_is_lexically_comparable() {
+        let ex = TemporaryException {
+            constraint_id: "x".into(),
+            file_path: "x".into(),
+            dependency_path: "x".into(),
+            owner: "x".into(),
+            rationale: "x".into(),
+            expiry: "2026-12-31".into(),
+        };
+        assert!(!ex.is_expired("2026-09-26"));
+        assert!(!ex.is_expired("2026-12-30"));
+        assert!(ex.is_expired("2026-12-31"));
+        assert!(ex.is_expired("2027-01-01"));
+    }
+}

@@ -29,9 +29,9 @@ use std::path::{Path, PathBuf};
 
 use cognicode_core::application::architecture::{
     ArchitectureRegistry, ArchitectureSource, SourceFile, canonical_constraints,
-    canonical_promoted_admitter,
+    canonical_promoted_admitter, cr06_allowlist,
 };
-use cognicode_core::domain::architecture::{Admitter, AdmitterRole};
+use cognicode_core::domain::architecture::{Admitter, AdmitterRole, LayerId};
 use cognicode_core::domain::findings::{EvidenceClass, FindingGate, RiskLevel};
 
 const CORE_SRC_ROOT: &str = "src";
@@ -100,8 +100,19 @@ fn build_self_host_source(crate_root: &Path) -> Option<ArchitectureSource> {
         let rel = path.strip_prefix(crate_root).ok()?;
         let source = fs::read_to_string(&path).ok()?;
         let module_path = module_path_for(rel);
+        // CR-06: emit file_path relative to `src/` so the value
+        // matches what the CR-06 allowlist (and any other
+        // architecture allowlist, in current or future constraints)
+        // records as `file_path`. The previous shape
+        // (`src/application/foo.rs`) was internal-relative; the
+        // module path (`application::foo`) is the canonical surface.
+        let file_path_rel = rel
+            .strip_prefix("src")
+            .unwrap_or(rel)
+            .to_string_lossy()
+            .to_string();
         files.push(SourceFile {
-            file_path: rel.to_string_lossy().to_string(),
+            file_path: file_path_rel,
             module_path,
             source,
         });
@@ -155,7 +166,7 @@ fn self_host_evaluator_finds_zero_drift_on_clean_source() {
     // The test is only meaningful if we actually have source files.
     assert!(!source.files.is_empty(), "no source files collected");
 
-    let mut registry = ArchitectureRegistry::new();
+    let mut registry = ArchitectureRegistry::new().with_temporary_exceptions(cr06_allowlist::exceptions());
     let admitter = canonical_promoted_admitter();
     let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
     for candidate in canonical_constraints() {
@@ -179,6 +190,12 @@ fn self_host_evaluator_finds_zero_drift_on_clean_source() {
             // only consulted by downstream assembly. We log all
             // violations so the self-host test still flags the
             // real drifts in `cognicode-core`'s source.
+            //
+            // CR-06: the registry filters via `cr06_allowlist`. A
+            // drift that appears here is *new* and must be added to
+            // the allowlist (with owner+rationale+expiry) or fixed
+            // in code. The two states are not equivalent: the
+            // allowlist is an inventory, not a permission slip.
             all_violations.push(format!(
                 "{} @ {}:{} -> {} (rationale: {})",
                 violation.finding_kind.as_str(),
@@ -274,4 +291,100 @@ fn self_host_admitted_constraints_are_promoted() {
     );
     assert!(out.result.is_err());
     assert!(!registry.is_admitted(&candidate));
+}
+
+/// CR-06 T7 (synthetic drift detector for application_no_infrastructure).
+///
+/// Pins the load-bearing property of the rule added in CR-06: when an
+/// `application/` module imports `crate::infrastructure::...`, the
+/// evaluator MUST emit a violation with `constraint_id =
+/// architecture.application_no_infrastructure`. If this test ever
+/// fails (no violation found), the rule is silently no-op — the gate
+/// has stopped working and must be repaired, not relaxed.
+#[test]
+fn cr06_synthetic_drift_application_to_infrastructure_is_detected() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.application_no_infrastructure")
+        .expect("CR-06: application_no_infrastructure must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    // Synthetic fixture: an application module importing
+    // `crate::infrastructure::parser::Language`. The shape of this
+    // string must not change casually — it is the contract of the
+    // gate.
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/application/example.rs".into(),
+            module_path: Some("application::example".into()),
+            source: "use crate::infrastructure::parser::Language;\n".into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "application_no_infrastructure must detect application→infrastructure drift; got 0"
+    );
+    let v = &report.violations[0];
+    assert_eq!(
+        v.constraint_id.as_str(),
+        "architecture.application_no_infrastructure"
+    );
+    assert_eq!(v.from_layer, LayerId::Application);
+}
+
+/// CR-06 T7 (synthetic drift detector for application_no_interface).
+///
+/// Pins the load-bearing property of the rule: when an
+/// `application/` module imports `crate::bin::...` (the layer used to
+/// represent `interface::mcp` per `LayerId::from_module_path`), the
+/// evaluator MUST emit a violation with `constraint_id =
+/// architecture.application_no_interface`. This test proves the gate
+/// is live and not a no-op.
+#[test]
+fn cr06_synthetic_drift_application_to_interface_is_detected() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.application_no_interface")
+        .expect("CR-06: application_no_interface must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    // Synthetic fixture: an application module importing
+    // `crate::bin::something_interface`. The gate must fire.
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/application/example.rs".into(),
+            module_path: Some("application::example".into()),
+            source: "use crate::bin::something_interface;\n".into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "application_no_interface must detect application→interface drift; got 0"
+    );
+    let v = &report.violations[0];
+    assert_eq!(
+        v.constraint_id.as_str(),
+        "architecture.application_no_interface"
+    );
+    assert_eq!(v.from_layer, LayerId::Application);
 }

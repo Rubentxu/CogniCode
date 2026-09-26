@@ -17,7 +17,9 @@ use crate::application::architecture::admission::ArchitectureAdmissionService;
 use crate::application::architecture::evaluator::{
     ArchitectureEvaluator, ArchitectureEvaluatorError, ArchitectureSource, EvaluationReport,
 };
-use crate::domain::architecture::{ArchitectureConstraint, ConstraintCandidate};
+use crate::domain::architecture::{
+    ArchitectureConstraint, ArchitectureViolation, ConstraintCandidate, TemporaryException,
+};
 
 /// Errors raised by the registry.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,6 +55,9 @@ impl From<ArchitectureEvaluatorError> for ArchitectureRegistryError {
 pub struct ArchitectureRegistry {
     pub admission: ArchitectureAdmissionService,
     pub evaluator: ArchitectureEvaluator,
+    /// Time-bounded exceptions that suppress specific drift findings.
+    /// See [`TemporaryException`] for the contract.
+    temporary_exceptions: Vec<TemporaryException>,
 }
 
 impl Default for ArchitectureRegistry {
@@ -66,7 +71,28 @@ impl ArchitectureRegistry {
         Self {
             admission: ArchitectureAdmissionService::new(),
             evaluator: ArchitectureEvaluator::new(),
+            temporary_exceptions: Vec::new(),
         }
+    }
+
+    /// Builder: install a pre-populated admission service. Used by
+    /// tests that admit candidate fixtures out-of-band and want to
+    /// re-use the populated set rather than re-admitting.
+    pub fn with_admission(mut self, admission: ArchitectureAdmissionService) -> Self {
+        self.admission = admission;
+        self
+    }
+
+    /// Builder: install a complete set of temporary exceptions,
+    /// replacing any that were previously installed.
+    pub fn with_temporary_exceptions(mut self, exceptions: Vec<TemporaryException>) -> Self {
+        self.temporary_exceptions = exceptions;
+        self
+    }
+
+    /// Borrow the registered temporary exceptions.
+    pub fn temporary_exceptions(&self) -> &[TemporaryException] {
+        &self.temporary_exceptions
     }
 
     /// Evaluate a candidate. **Always rejected** unless the candidate
@@ -98,6 +124,7 @@ impl ArchitectureRegistry {
         };
         self.evaluator
             .evaluate(&constraint, source)
+            .map(|r| self.filter_exceptions(r))
             .map_err(Into::into)
     }
 
@@ -107,7 +134,9 @@ impl ArchitectureRegistry {
         constraint: &ArchitectureConstraint,
         source: &ArchitectureSource,
     ) -> Result<EvaluationReport, ArchitectureEvaluatorError> {
-        self.evaluator.evaluate(constraint, source)
+        self.evaluator
+            .evaluate(constraint, source)
+            .map(|r| self.filter_exceptions(r))
     }
 
     /// Whether the candidate id is in the admission set.
@@ -117,6 +146,57 @@ impl ArchitectureRegistry {
             .iter()
             .any(|c| c.id.as_str() == candidate.id.as_str())
     }
+
+    /// Filter out violations that match a non-expired temporary
+    /// exception. The match delegates to
+    /// [`TemporaryException::matches`], which prefixes
+    /// `dependency_path` so that one allowlist entry can cover all
+    /// leaf imports under an import group (see the type's doc).
+    /// Expired exceptions are silently ignored — a stale allowlist is
+    /// louder than a passing build: the same violation that was
+    /// suppressed yesterday will be emitted today if the exception's
+    /// expiry has passed.
+    fn filter_exceptions(&self, mut report: EvaluationReport) -> EvaluationReport {
+        if self.temporary_exceptions.is_empty() {
+            return report;
+        }
+        let today = today_iso_date();
+        let active: Vec<&TemporaryException> = self
+            .temporary_exceptions
+            .iter()
+            .filter(|ex| !ex.is_expired(&today))
+            .collect();
+        report
+            .violations
+            .retain(|v: &ArchitectureViolation| !active.iter().any(|ex| ex.matches(v)));
+        report
+    }
+}
+
+/// Today's date in ISO-8601 `YYYY-MM-DD` form, computed from the
+/// system clock (`std::time::SystemTime`). Returns the empty string
+/// when the system clock is before the UNIX epoch (treated as "1970"
+/// for expiry comparison purposes — i.e. effectively every exception
+/// is expired, which is the safest default).
+fn today_iso_date() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Civil-from-days algorithm (Howard Hinnant). Days since 1970-01-01 → (Y, M, D).
+    let days = (secs / 86_400) as i64;
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = (yoe as i64) + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
 #[cfg(test)]

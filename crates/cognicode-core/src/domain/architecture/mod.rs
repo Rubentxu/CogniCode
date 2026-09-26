@@ -37,7 +37,7 @@ pub use constraint::{
     Admitter, AdmitterRole, ArchitectureConstraint, ArchitectureConstraintId,
     ArchitectureConstraintKind, ArchitectureEvidence, ConstraintAdmission,
     ConstraintAdmissionDisposition, ConstraintCandidate, ConstraintError, ForbiddenDependencyRule,
-    LayerDependencyRule, LayerId, NamespaceBoundaryRule,
+    LayerDependencyRule, LayerId, NamespaceBoundaryRule, TemporaryException,
 };
 pub use use_parser::{UseStatement, UseStatementError, parse_use_lines};
 pub use violation::{ArchitectureViolation, ViolationId};
