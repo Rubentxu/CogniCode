@@ -145,7 +145,16 @@ log "  → QW-03 guard OK"
 
 log "Stage 4/7: cargo check --workspace --all-targets"
 
-CARGO_TARGET_DIR="$WORK_DIR/target"
+# IMPORTANTE: este target_dir debe estar DENTRO del clon (`$WORK_DIR/clone/target`).
+# El test `prf_cli_01_exhaustive_uat` calcula el path del binario con
+# `parent().parent().join("target/release/cognicode")` desde `crates/cognicode-cli/`,
+# asumiendo el `target/` del repo_root del clon. Si redirigimos fuera del clon
+# (p.ej. `$WORK_DIR/target`), los 7 UAT fallan con `NotFound` aunque el
+# build sea OK. El `trap rm -rf "$WORK_DIR"` borra el clon al EXIT, así que
+# los artefactos no contaminan el sistema. Trade-off: ~2-3 min extra de cold
+# build si se re-ejecuta el preflight; aceptable a cambio de reproducibilidad
+# real del contrato de los tests.
+CARGO_TARGET_DIR="$WORK_DIR/clone/target"
 export CARGO_TARGET_DIR
 
 if ! cargo check --workspace --all-targets --locked 2>>"$LOG_FILE"; then
