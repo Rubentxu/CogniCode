@@ -265,22 +265,30 @@ impl GraphAnalyticsService {
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
         let raw = cognicode_graph_algos::feedback_arc_set(&in_neighbors, &out_neighbors, n);
+
+        // Precompute the inverse index `NodeIndex → SymbolId` ONCE instead
+        // of doing an O(N) linear scan inside the per-edge filter_map.
+        //
+        // Before this optimisation (CR-04), the lookup was
+        // `projection.symbol_index().iter().find(|(_, ni)| ni.index() == s)`,
+        // which is O(N) per call. For a Tier-2 fixture (1 000 nodes, ~3 000
+        // edges) and a FAS result of even 10 edges, that is 10 × 1 000 =
+        // 10 000 hashmap iterations + closures per `analyze()` invocation.
+        //
+        // The fix is a single O(N) precompute + O(1) HashMap lookups per
+        // edge. e91.W8 (per-stage profile) measured `feedback_arc_set`
+        // taking ~309 ms on Tier-2 before the fix; W7 (regression budget)
+        // is the contract that will catch any future regression here.
+        let mut index_to_symbol: HashMap<usize, SymbolId> =
+            HashMap::with_capacity(projection.symbol_index().len());
+        for (sid, ni) in projection.symbol_index() {
+            index_to_symbol.insert(ni.index(), sid.clone());
+        }
+
         raw.into_iter()
-            .filter_map(|(s, t)| {
-                let sid_s = projection
-                    .symbol_index()
-                    .iter()
-                    .find(|(_, ni)| ni.index() == s)
-                    .map(|(sid, _)| sid.clone());
-                let sid_t = projection
-                    .symbol_index()
-                    .iter()
-                    .find(|(_, ni)| ni.index() == t)
-                    .map(|(sid, _)| sid.clone());
-                match (sid_s, sid_t) {
-                    (Some(a), Some(b)) => Some((a, b)),
-                    _ => None,
-                }
+            .filter_map(|(s, t)| match (index_to_symbol.get(&s), index_to_symbol.get(&t)) {
+                (Some(a), Some(b)) => Some((a.clone(), b.clone())),
+                _ => None,
             })
             .collect()
     }

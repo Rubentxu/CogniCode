@@ -1,4 +1,16 @@
 [toolchain]
+# Pin a la toolchain EXACTA que el repositorio verifica contra.
+# Los workflows de GitHub Actions (dtolnay/rust-toolchain) usan este
+# fichero cuando está presente en la rama de trabajo; una copia en
+# CI evita depender del resolution a `stable` que cambia con el
+# tiempo y que era tech-debt documentada por QW-05
+# (todos los workflows referenciaban @stable sin pin).
+#
+# Subir esta versión requiere DOS pasos:
+#   1. actualizar `channel` y `rustfmt`/`clippy` (no requeridos,
+#      pero ayudan a CI a saltarse re-install).
+#   2. ejecutar el preflight (release.yml) sobre la nueva versión
+#      ANTES de cortar el tag.
 channel = "1.96.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

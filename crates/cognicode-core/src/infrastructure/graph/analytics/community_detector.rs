@@ -141,12 +141,23 @@ impl CommunityDetector {
             .collect();
 
         // Build communities with normalized labels.
+        //
+        // CR-04 / e91.W9.2 — O(N) lookup optimisation: the previous
+        // implementation called `g.node_indices().find(|ni| ni.index() == *node_idx)`
+        // inside the per-node loop, which is O(N) per node = O(N²) total. With
+        // Tier-2 (1000 nodes) that was 10⁶ hashmap iterations + closures.
+        //
+        // petgraph's `StableGraph::node_weight(NodeIndex::new(i))` is O(1)
+        // (it indexes the underlying `Vec<Node>` directly) and returns
+        // `None` if the slot was vacated by a node removal — the same
+        // safety contract as `node_indices().find(...)`. The semantic
+        // equivalence is documented in the e91.W8 per-stage profile
+        // (community_detect stage is the largest single stage after
+        // feedback_arc_set was optimised in W9.1).
         let mut community_nodes: HashMap<u32, Vec<SymbolId>> = HashMap::new();
         for (node_idx, &comm_idx) in &label_of_index {
             let new_label = old_to_new[&comm_idx];
-            if let Some(ni) = g.node_indices().find(|ni| ni.index() == *node_idx)
-                && let Some(symbol_id) = g.node_weight(ni)
-            {
+            if let Some(symbol_id) = g.node_weight(petgraph::graph::NodeIndex::new(*node_idx)) {
                 community_nodes
                     .entry(new_label)
                     .or_default()

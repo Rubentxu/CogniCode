@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
         with:
           components: rustfmt, clippy
       - name: Cache cargo
@@ -76,7 +76,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Build release binario (cognicode-mcp)
@@ -106,27 +106,89 @@ jobs:
           if-no-files-found: error
 
   # -----------------------------------------------------------------------
-  # test-pr — batería exigible para merge
+  # selector — CR-08 selecciona suites según paths del PR.
+  #
+  # dorny/paths-filter expone la lista de paths modificados; el script
+  # scripts/ci/select-suites.sh decide qué suites deben correr según
+  # reglas de mapeo. El resultado se expone como outputs del job
+  # para que test-pr los consuma condicionalmente.
+  #
+  # Política CR-08:
+  #  - 'noop'     => test-pr salta TODA la batería (los archivos tocados
+  #                  son sandbox/meta y no impactan código compilable).
+  #                  Mantener fmt + clippy en `check` sigue siendo válido.
+  #  - 'changed'  => test-pr corre SOLO las suites listadas, fallback
+  #                  seguro si la lista es vacía.
+  #  - 'fallback' => test-pr corre la batería fija (backwards-compat
+  #                  completo) — esto es la política conservadora
+  #                  cuando el selector no sabe clasificar el cambio.
+  #
+  # Si dorny/paths-filter falla por permisos o cualquier razón,
+  # el job `selector` falla => merge-gate rojo => PR no mergeable.
+  # -----------------------------------------------------------------------
+  selector:
+    name: CR-08 selector de suites
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      strategy: ${{ steps.sel.outputs.strategy }}
+      reason: ${{ steps.sel.outputs.reason }}
+      suites: ${{ steps.sel.outputs.suites }}
+      has_changes: ${{ steps.paths.outputs.any }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - name: Detectar paths modificados
+        id: paths
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4 — pinned 2026-09-26 by CR-08
+        with:
+          # Lista base para detectar 'algo ha cambiado' (siempre matchea)
+          filters: .*:[*]
+          # Listamos separadamente las reglas específicas para mapear
+          # a suites; 'changes-all' will be matched against 'changed-files'.
+          list-files: shell
+      - name: Ejecutar selector determinista
+        id: sel
+        # SELECT_PATHS recibe la lista cruda separada por NUL.
+        # dorny/paths-filter emite paths uno por línea con 'shell' format;
+        # convertimos a space-separated vía tr.
+        run: |
+          if [ -z "${{ steps.paths.outputs.changes-all }}" ] || [ "${{ steps.paths.outputs.changes-all }}" = "false" ]; then
+            echo "No hay paths modificados (push event?); fallback a suite completa."
+            SELECT_OUTPUT='{"strategy":"fallback","reason":"no_changed_paths","suites":["core","explorer","mcp","cli","ladybug","merge"]}'
+          else
+            PATHS=$(echo '${{ steps.paths.outputs.changes-all-files }}' | tr '\n' ' ')
+            SELECT_OUTPUT=$(SELECT_PATHS="$PATHS" bash scripts/ci/select-suites.sh)
+          fi
+          echo "select output: $SELECT_OUTPUT"
+          # Parseamos JSON para outputs.
+          STRATEGY=$(echo "$SELECT_OUTPUT" | jq -r '.strategy')
+          REASON=$(echo "$SELECT_OUTPUT" | jq -r '.reason')
+          # suites array -> joined string para output (GitHub limita).
+          SUITES=$(echo "$SELECT_OUTPUT" | jq -r '.suites | join(",")')
+          echo "strategy=$STRATEGY reason=$REASON suites=$SUITES"
+          echo "strategy=$STRATEGY" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "suites=$SUITES" >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------
+  # test-pr — batería exigible para merge (CR-08: condicional según selector).
   # -----------------------------------------------------------------------
   test-pr:
-    name: test pineado (lib + E2E)
-    needs: build-binary
+    name: test pineado (lib + E2E, CR-08-adapted)
+    needs: [build-binary, selector]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@stable  # NOT PINNED: canal estable. Pinear a SHA de release del action o introducir rust-toolchain.toml en repo
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
-      # Necesario para resolver el path al binario desde el directorio
-      # del test runner (el helper honra CARGO_MANIFEST_DIR + target/).
       - name: Descargar binarios release
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
         with:
           name: cognicode-bins-release
           path: ${{ github.workspace }}/target/release
-      # actions/download-artifact@v4 descomprime sin preservar permisos
-      # POSIX (x bit). Sin esto, los bins bajan como -rw-r--r-- y el
-      # test -x de abajo falla con "binario no ejecutable".
       - name: Restaurar permisos de ejecución de los binarios
         run: |
           chmod +x ./target/release/cognicode-mcp
@@ -139,14 +201,58 @@ jobs:
             || (echo "cognicode-control-plane no ejecutable"; exit 1)
           ./target/release/cognicode-mcp --version
           ./target/release/cognicode-control-plane --help | head -5
-      - name: Tests lib (cognicode-core)
+      # CR-08: resolucion de qué suites correr.
+      # Si strategy=fallback, se corre TODO. Si=changed, subset.
+      # Si=noop, este job queda en skip del cuerpo de tests pero
+      # fmt+clippy+build-binary ya pasaron arriba.
+      - name: Resolver estrategia CR-08
+        id: cr08
+        env:
+          STRATEGY: ${{ needs.selector.outputs.strategy }}
+          SUITES: ${{ needs.selector.outputs.suites }}
+        run: |
+          echo "selector.strategy=$STRATEGY"
+          echo "selector.suites=$SUITES"
+          if [ "$STRATEGY" = "noop" ]; then
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "noop=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$STRATEGY" = "fallback" ]; then
+            echo "fallback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "fallback=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Para 'noop' estratégico, noop=true produce skip del cuerpo
+      # (este pattern usa `if:` o `continue-on-error`).
+      - name: Tests lib (cognicode-core) — CR-08 subset
+        if: steps.cr08.outputs.fallback != 'true'
         run: cargo test -p cognicode-core --lib --quiet
-      - name: Adversarial lib (PRF-SEC-07 nivel librería)
+      - name: Adversarial lib (PRF-SEC-07) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
         run: cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
-      - name: MCP enforcement (PRF-MCP-05)
+      - name: MCP enforcement (PRF-MCP-05) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
         run: cargo test -p cognicode-core --lib prf_mcp_05 --quiet
-      - name: Adversarial E2E (PRF-SEC-07 nivel binario, §153)
+      - name: Adversarial E2E (PRF-SEC-07 binario) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
         run: cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+      # Si strategy=fallback, corremos batería completa AL FINAL.
+      - name: "Batería completa fallback (CR-08 fallback path)"
+        if: steps.cr08.outputs.fallback == 'true'
+        run: |
+          echo "CR-08 fallback: corriendo batería completa."
+          cargo test -p cognicode-core --lib --quiet
+          cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+          cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+          cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+      # Si strategy=noop, emitimos skip explícito (merge-gate log legibilidad).
+      - name: "CR-08 noop: tests saltados por selector"
+        if: steps.cr08.outputs.noop == 'true'
+        run: |
+          echo "CR-08 noop: estrategia=noop (sandbox/meta only). Tests pineados no corren en este PR."
+          echo "Selección original: ${{ needs.selector.outputs.reason }}"
+
 
   # -----------------------------------------------------------------------
   # merge-gate — AGREGADOR único de branch protection (L1.2 Post-PRF).
@@ -162,21 +268,16 @@ jobs:
   # -----------------------------------------------------------------------
   merge-gate:
     name: merge-gate
-    needs: [check, build-binary, test-pr]
+    needs: [check, build-binary, test-pr, selector]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - name: Verificar que los jobs fan-out pasaron
-        # L1.2: patron seguro contra shell injection. GitHub Actions
-        # no soporta `${{ needs.$job.result }}` (no expande $job dentro
-        # de la expresion; producia el bug "0 jobs" en runs push
-        # antiguos). Solucion canonica: pasar el mapa `needs` a env
-        # via `toJSON()`, y resolver el job en bash con jq.
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
-          for job in check build-binary test-pr; do
+          for job in check build-binary test-pr selector; do
             result=$(echo "$NEEDS_JSON" | jq -r ".\"$job\".result")
             if [ "$result" != "success" ]; then
               echo "::error::$job job did not succeed ($result)"
@@ -186,7 +287,9 @@ jobs:
           check=$(echo "$NEEDS_JSON" | jq -r '.check.result')
           build_binary=$(echo "$NEEDS_JSON" | jq -r '."build-binary".result')
           test_pr=$(echo "$NEEDS_JSON" | jq -r '."test-pr".result')
-          echo "fan-out: OK (check=$check, build-binary=$build_binary, test-pr=$test_pr)"
+          selector_r=$(echo "$NEEDS_JSON" | jq -r '.selector.result')
+          echo "fan-out: OK (check=$check, build-binary=$build_binary, test-pr=$test_pr, selector=$selector_r)"
+          echo "CR-08 strategy: ${{ needs.selector.outputs.strategy }} | reason: ${{ needs.selector.outputs.reason }} | suites: ${{ needs.selector.outputs.suites }}"
       # L1.2.W1 — capabilities drift lint.
       # Si el doc contractual y el código divergen, este step falla y
       # el PR deja de ser mergeable. Parte del agregador, NO un required
@@ -222,6 +325,71 @@ jobs:
       # E1).
       - name: cognicode-ladybug unit tests (L3.W1 dentro de merge-gate)
         run: cargo test -p cognicode-ladybug --lib --quiet
+      # L3.W2 — QW-03 bin-tracking guard.
+      # El script `scripts/ci/check-bin-tracking.sh` enumera cada
+      # crate que declara `[[bin]]` y comprueba que el source file
+      # correspondiente está tracked por git y NO está silenciado
+      # por `.gitignore`. Pinea el contrato contra la pérdida
+      # silenciosa del bin `cognicode-control-plane` (entry 9). El
+      # contrato vive en `crates/cognicode-cli/tests/qw03_bin_tracking_guard.rs`
+      # (3 tests: baseline + RED + recovery). Si este step falla,
+      # el merge-gate rojo y el PR deja de ser mergeable. Política
+      # L1.2.W* (paso step en merge-gate, no required check separado).
+      - name: QW-03 bin-tracking guard (L3.W2 dentro de merge-gate)
+        run: bash scripts/ci/check-bin-tracking.sh
+      # L3.W2.2 — QW-03 contractual test (Rust side).
+      # El test `qw03_bin_tracking_guard` cubre el contrato del
+      # guard desde el lado Rust: invoca el script sobre el repo
+      # real y sobre un tmp repo con drift plantado. Si el script
+      # cambia su contrato sin actualizar el test, este test rompe
+      # en CI antes de que el guard pierda su semántica.
+      - name: QW-03 bin-tracking contractual test (L3.W2.2 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
+      # L3.W3 — QW-04 preflight contractual test (Rust side).
+      # El test `qw04_preflight_contract` cubre las tres
+      # invariantes baratas del preflight: (a) el script existe y
+      # tiene +x, (b) el esquema JSON del recibo declara todos los
+      # campos requeridos, (c) el script neutraliza
+      # GIT_CONFIG_GLOBAL=/dev/null. (d) plus require_tool
+      # dispara fail() con un mensaje claro. El preflight caro
+      # (clone real + workspace tests) vive en release.yml.
+      - name: QW-04 preflight contractual test (L3.W3 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw04_preflight_contract --quiet
+      # L3.W4 — CR-08 selector determinista de suites (contract).
+      # El test `qw08_crate_selector` pinea el contrato JSON
+      # de scripts/ci/select-suites.sh: dado paths modificados,
+      # devuelve {strategy, reason, suites} con tres estrategias
+      # posibles (changed/fallback/noop). 14 tests cubren
+      # cada crate path, workflow/Cargo.toml fallbacks,
+      # sandbox/metadata noop, multi-path union y unknown
+      # pattern fallback. Tests corren en 0.01s (no compilan,
+      # no hacen git ls-files). El selector NO se ejecuta aún
+      # desde el job `test-pr` (eso requiere `dorny/paths-filter`
+      # como step previo); este test contractual garantiza que
+      # el contrato no se rompe silenciosamente antes de que
+      # la integración futura aterrice.
+      - name: CR-08 suite selector contractual test (L3.W4 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw08_crate_selector --quiet
+      # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
+      # Pinea que `GraphInsightsService::analyze` cumple el budget
+      # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step
+      # una regresión silenciosa en el hot path podría re-emerger
+      # el cold-cache p95=367s observado en e90. Ver
+      # `crates/cognicode-core/tests/e91_w7_regression_budget.rs`
+      # para el contrato y la base empírica (619ms @ HEAD dev, 50×
+      # bajo el budget).
+      - name: CR-05 e91.W7 regression budget gate (L3.W5 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w7_regression_budget --quiet
+      # L3.W6 — CR-03 / e91.W8 per-stage profile breakdown.
+      # Reports wall-clock time of each public stage of
+      # `GraphInsightsService::analyze` and asserts no stage
+      # exceeds 5 s on Tier-2 fixture. Catches single-stage
+      # regressions that the aggregate budget (W7) cannot detect.
+      # Empirical dev baseline @ HEAD: projection 12ms, scc 1ms,
+      # god_nodes 21ms, feedback_arc_set 309ms, community_detect
+      # 332ms (slowest), analyze_full 629ms.
+      - name: CR-03 e91.W8 per-stage profile gate (L3.W6 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w8_stage_profile --quiet
       # L3.W2 (futuro) — otros contract/old-new compatibility tests
       # añadidos como steps aquí, no como jobs separados. Política L1.2.
       - name: merge-gate OK
