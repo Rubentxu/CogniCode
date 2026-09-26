@@ -55,11 +55,23 @@ impl RustVerifier {
     /// Runs rustc asynchronously with kill_on_drop(true).
     ///
     /// When the returned future is dropped (e.g., on timeout), the child process is killed.
+    ///
+    /// `current_dir` is set to the parent dir of the temp file so output artifacts
+    /// (`*.rlib`) are written into the per-call temp dir and never collide between
+    /// parallel tests. See `verify_impl` for the full rationale and M0.5 reference.
     async fn run_rustc_async(
         temp_file: std::path::PathBuf,
     ) -> Result<std::process::Output, CodeVerifierError> {
+        let work_dir = temp_file
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+
         let mut cmd = tokio::process::Command::new("rustc");
-        cmd.args(RUSTC_ARGS).arg(&temp_file).kill_on_drop(true);
+        cmd.args(RUSTC_ARGS)
+            .arg(&temp_file)
+            .current_dir(&work_dir)
+            .kill_on_drop(true);
 
         cmd.output().await.map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -95,13 +107,27 @@ impl RustVerifier {
             .unwrap_or("lib.rs");
 
         // Set up temp file (file I/O)
-        let (_temp_dir, temp_file_path) = Self::setup_temp_file(&content, file_name)?;
+        let (temp_dir, temp_file_path) = Self::setup_temp_file(&content, file_name)?;
 
-        // Run rustc --edition 2021 --crate-type lib
+        // Run rustc --edition 2021 --crate-type lib.
+        //
+        // IMPORTANT: We set `current_dir` to the temp_dir so that the output
+        // artifacts (e.g. `libvalid.rlib` for an input file `valid.rs`) land in
+        // the per-test temp dir rather than in the workspace target directory.
+        // Without this, two tests running in parallel that both compile a file
+        // named `valid.rs` race on the same `libvalid.rlib` output path in CWD
+        // and one of them fails with "failed to open object file: No such file
+        // or directory (os error 2)" — see M0.5 in MAINTENANCE.md.
         let output = std::process::Command::new("rustc")
             .args(RUSTC_ARGS)
             .arg(&temp_file_path)
+            .current_dir(temp_dir.path())
             .output();
+
+        // Keep temp_dir alive until after rustc completes so the .rlib output
+        // has somewhere to live before cleanup. The function returns the result
+        // first, then `temp_dir` is dropped at the end of this scope.
+        drop(temp_dir);
 
         match output {
             Ok(output) if output.status.success() => {
@@ -202,7 +228,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     fn test_verify_compilable_rust() {
         let verifier = RustVerifier::new();
         let temp_dir = TempDir::new().unwrap();

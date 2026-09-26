@@ -1871,14 +1871,17 @@ impl FileOperationsService {
         }
 
         // Early check: verify rustc is available before doing any verification work
-        // This implements the spec requirement: "rustc not found → error 'rustc not found'"
-        if input.verify {
-            let rustc_check = std::process::Command::new("rustc")
-                .arg("--version")
-                .output();
-            if rustc_check.is_err() {
-                return Err(AppError::InvalidParameter("rustc not found".to_string()));
-            }
+        // This implements the spec requirement: "rustc not found → error 'rustc not found'".
+        //
+        // We use `which::which("rustc")` instead of spawning a `rustc --version` subprocess.
+        // The latter triggers fork()+exec on every call; under parallel test load this
+        // contends with other rustc invocations and the kernel can fail the fork with
+        // EAGAIN, which was misreported as "rustc not found" — see M0.5 in MAINTENANCE.md.
+        // `which` does only a PATH lookup (filesystem walk), so it is fork-free and
+        // safe under arbitrary concurrency. Same pattern as `mmdc` in
+        // cognicode-explorer/src/domain/snapshot.rs.
+        if input.verify && which::which("rustc").is_err() {
+            return Err(AppError::InvalidParameter("rustc not found".to_string()));
         }
 
         // Perform lexical search for .rs files matching the query
@@ -2993,7 +2996,6 @@ mod tests {
     // ========================================================================
 
     #[test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     fn test_verify_rust_file_compilable_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("valid.rs");
@@ -3015,7 +3017,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     fn test_verify_rust_file_broken_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("broken.rs");
@@ -3084,7 +3085,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     async fn test_retrieve_and_verify_no_matches() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.rs");
@@ -3143,7 +3143,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     async fn test_retrieve_and_verify_deterministic() {
         let temp_dir = TempDir::new().unwrap();
         // Create multiple files with different match counts
@@ -3198,7 +3197,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     async fn test_retrieve_and_verify_rust_file_verified() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("test.rs");
@@ -3246,7 +3244,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     async fn test_retrieve_and_verify_rust_file_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("broken.rs");
@@ -3292,7 +3289,6 @@ mod tests {
     /// Actually, we test with a file that exists and is valid, but verify the timeout path
     /// is exercised by using an impossibly short timeout (0s = immediate timeout).
     #[tokio::test]
-    #[ignore = "Flaky: passes individually, fails in parallel suite due to temp dir + rustc process contention"]
     async fn test_verify_rust_file_timeout_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("slow.rs");
