@@ -119,22 +119,51 @@ fn qw04_preflight_script_neutralizes_global_gitignore() {
 
 #[test]
 fn qw04_preflight_script_fails_when_required_tool_is_missing() {
-    // The script uses `require_tool` for git, cargo, perl, python3.
-    // We simulate a missing tool by prepending a sanitised PATH
-    // that excludes the directory containing `cargo` only. `bash`,
-    // `git`, and `perl` stay resolvable so the script can boot;
-    // `cargo` is the easiest to isolate (a single binary) and the
-    // most semantically loaded dependency (the whole preflight
-    // hinges on it).
-    //
-    // We do NOT need real network or workspace compile — the
-    // `require_tool` check fires BEFORE clone/checkout/build.
+    // El script usa `require_tool` para git, cargo, perl, python3.
+    // Simulamos tool ausente quitando el directorio de cargo del PATH
+    // del subproceso bash. Importante:
+    //   - Capturar cargo_dir ANTES de cualquier strip (necesitamos
+    //     resolver `which cargo` con el PATH del test runner completo).
+    //   - Limpiar env vars (CARGO_HOME, RUSTUP_HOME, RUSTUP_TOOLCHAIN,
+    //     CARGO) que podrían ofrecer un camino indirecto a cargo/rustc.
+    //   - NO quitar `bash`, `git`, `perl`, `python3` del PATH — esos
+    //     requieren resolverse para que `require_tool` los pase ANTES
+    //     de detectar la falta de cargo.
     let script = preflight_script();
 
-    // Empty PATH entry where `cargo` would have been. Keep the real
-    // PATH otherwise; `bash`, `git`, `perl`, `python3` still
-    // resolve from their system locations. We must NOT strip
-    // bash itself or Command::new("bash") would fail to spawn.
+    // 1. Capturar cargo_dir con el PATH del proceso actual (antes de strip).
+    //    Importante: usamos `which cargo` para resolver el cargo que ESTÉ
+    //    en el PATH real del test runner. rustup puede setear CARGO env
+    //    a un binario que NO está en el PATH; el script usa `command -v
+    //    cargo` que SOLO mira PATH, por lo que debemos strip'pear el cargo
+    //    del PATH, no el de rustup.
+    let cargo_path = std::env::var_os("PATH")
+        .and_then(|p| {
+            for component in std::env::split_paths(&p) {
+                let candidate = component.join("cargo");
+                if candidate.is_file() {
+                    // Found one in PATH. Prefer this over $CARGO env.
+                    return Some(candidate);
+                }
+            }
+            None
+        })
+        .or_else(|| {
+            Command::new("which")
+                .arg("cargo")
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))
+        })
+        .expect("locate cargo binary in PATH (test setup)");
+    let cargo_dir = cargo_path
+        .parent()
+        .expect("cargo's parent dir")
+        .to_path_buf();
+    eprintln!("qw04-debug: cargo at {cargo_path:?}, stripping {cargo_dir:?}");
+
+    // 2. Tmpdir vacío para prepender al PATH (vacío pero presente).
     let tmp = std::env::temp_dir().join(format!(
         "qw04-empty-path-{}-{}",
         std::process::id(),
@@ -145,30 +174,11 @@ fn qw04_preflight_script_fails_when_required_tool_is_missing() {
     ));
     fs::create_dir_all(&tmp).expect("mkdir tmp");
 
-    // Locate the parent directory of `cargo` so we can strip it.
-    let cargo_path = std::env::var_os("CARGO")
-        .map(PathBuf::from)
-        .or_else(|| {
-            Command::new("which")
-                .arg("cargo")
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| PathBuf::from(String::from_utf8_lossy(&o.stdout).trim()))
-        })
-        .expect("locate cargo binary");
-    let cargo_dir = cargo_path
-        .parent()
-        .expect("cargo's parent dir")
-        .to_path_buf();
-    eprintln!("qw04-debug: cargo at {cargo_path:?}, stripping {cargo_dir:?}");
-
-    // Build PATH = <everything except cargo_dir> + tmp (empty).
+    // 3. Construir PATH sin cargo_dir, prependiendo el tmp vacío.
     let real_path = std::env::var_os("PATH").unwrap_or_default();
     let mut stripped = std::ffi::OsString::new();
     for component in std::env::split_paths(&real_path) {
         if component == cargo_dir {
-            // Drop cargo's directory.
             continue;
         }
         if !stripped.is_empty() {
@@ -176,17 +186,19 @@ fn qw04_preflight_script_fails_when_required_tool_is_missing() {
         }
         stripped.push(component);
     }
-    // Append the empty tmp dir so `command -v cargo` still finds a
-    // binary path that exists, but resolves to "no" (since the dir
-    // is empty). PATH lookup iterates directories left-to-right.
     let mut path_minus_cargo = std::ffi::OsString::from(&tmp);
     path_minus_cargo.push(":");
     path_minus_cargo.push(&stripped);
 
+    // 4. Spawn bash con PATH sin cargo y env vars de toolchain limpias.
     let out = Command::new("bash")
         .arg(&script)
         .env("PATH", &path_minus_cargo)
         .env("RANDOM_GIT_COMMITTER_DISABLED", "1")
+        .env_remove("CARGO")
+        .env_remove("CARGO_HOME")
+        .env_remove("RUSTUP_HOME")
+        .env_remove("RUSTUP_TOOLCHAIN")
         .output()
         .expect("spawn preflight");
 
@@ -198,7 +210,6 @@ fn qw04_preflight_script_fails_when_required_tool_is_missing() {
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    // The script's require_tool writes a clear failure message.
     let combined = format!("{stdout}\n{stderr}");
     assert!(
         combined.contains("herramienta requerida no disponible") || combined.contains("cargo"),
