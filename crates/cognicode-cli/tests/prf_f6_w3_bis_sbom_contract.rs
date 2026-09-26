@@ -99,6 +99,64 @@ fn remove_canonical_sboms(target: &str) {
         .output();
 }
 
+/// RAII guard: registers a spurious per-bin SBOM file path that
+/// WILL be deleted when this guard drops, even if the test body
+/// panics or returns early. Without this, a panic between the
+/// `std::fs::write` of a spurius file and the final
+/// `remove_canonical_sboms` leaves a stale file that pollutes
+/// subsequent test runs in the same cargo invocation.
+///
+/// Usage:
+///   let _g = SpuriousFile::new(spurious_path);
+///   std::fs::write(&_g.path, ...);  // file is created; will be
+///                                   // deleted at end of scope.
+struct SpuriousFile {
+    path: PathBuf,
+}
+
+impl SpuriousFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+}
+
+impl Drop for SpuriousFile {
+    fn drop(&mut self) {
+        // `rm -f` semantics: silently ignore non-existent files.
+        // Same rationale as `remove_canonical_sboms` — the helper
+        // is invoked from many places, some of which may have
+        // already cleaned up.
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+/// RAII guard: registers a workspace cleanup action that WILL run
+/// when this guard drops, even if the test body panics. This is
+/// the file-system analogue of a Python `try/finally` block.
+///
+/// Why this exists: previously each test called
+/// `remove_canonical_sboms(target)` only at the start (to clean
+/// the slate) and again at the very end (best-effort). A test
+/// panic between those two points would leave the canonical
+/// `crates/<component>-<target>.cdx.json` files in the workspace,
+/// which then confuse the next test invocation. The Drop guard
+/// makes the cleanup non-skippable.
+struct WorkspaceSbomGuard<'a> {
+    target: &'a str,
+}
+
+impl<'a> WorkspaceSbomGuard<'a> {
+    fn new(target: &'a str) -> Self {
+        Self { target }
+    }
+}
+
+impl Drop for WorkspaceSbomGuard<'_> {
+    fn drop(&mut self) {
+        remove_canonical_sboms(self.target);
+    }
+}
+
 // -------------------------------------------------------------------
 // Layer 1: script execution
 // -------------------------------------------------------------------
@@ -110,6 +168,11 @@ fn remove_canonical_sboms(target: &str) {
 #[test]
 fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
     for target in TIER1_TRIPLES {
+        // Drop guard: `remove_canonical_sboms(target)` runs on
+        // every exit path (panic or success). Previously a panic
+        // mid-test left the canonical SBOMs in the workspace,
+        // confusing subsequent runs.
+        let _g = WorkspaceSbomGuard::new(target);
         remove_canonical_sboms(target);
 
         let (ok, out) = run_sbom_script(target);
@@ -160,22 +223,30 @@ fn prf_f6_w3_bis_sbom_script_produces_canonical_layout() {
 #[test]
 fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     let target = TIER1_TRIPLES[0];
+    // Drop guard: SBOM cleanup runs even if the test panics between
+    // writing the spurius files and the manual cleanup below.
+    let _g = WorkspaceSbomGuard::new(target);
     remove_canonical_sboms(target);
 
     // Plant a known spurious file to simulate a previous
     // `cargo cyclonedx --describe binaries` run that leaked the
-    // mcp-client SBOM into the workspace.
-    let spurious = repo_root().join("crates/cognicode-mcp/mcp-client_bin.cdx.json");
-    if let Some(parent) = spurious.parent() {
+    // mcp-client SBOM into the workspace. The Drop guard ensures
+    // these are deleted at scope end (panic or success).
+    let spurious_path = repo_root().join("crates/cognicode-mcp/mcp-client_bin.cdx.json");
+    if let Some(parent) = spurious_path.parent() {
         std::fs::create_dir_all(parent).unwrap();
     }
+    let _spurious_guard = SpuriousFile::new(spurious_path.clone());
     std::fs::write(
-        &spurious,
+        &spurious_path,
         br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
     )
     .unwrap();
+
+    let release_spurious = repo_root().join("crates/cognicode-cli/cognicode-release_bin.cdx.json");
+    let _release_guard = SpuriousFile::new(release_spurious.clone());
     std::fs::write(
-        repo_root().join("crates/cognicode-cli/cognicode-release_bin.cdx.json"),
+        &release_spurious,
         br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
     )
     .unwrap();
@@ -184,19 +255,17 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
     assert!(ok, "script failed; output:\n{out}");
 
     assert!(
-        !spurious.exists(),
+        !spurious_path.exists(),
         "stray {} not cleaned up; the script must delete per-bin SBOMs of non-published bins",
-        spurious.display()
+        spurious_path.display()
     );
     assert!(
-        !repo_root()
-            .join("crates/cognicode-cli/cognicode-release_bin.cdx.json")
-            .exists(),
+        !release_spurious.exists(),
         "stray per-bin SBOM of cognicode-release was not cleaned up"
     );
 
-    // Cleanup
-    remove_canonical_sboms(target);
+    // Drop guards also run the canonical SBOM cleanup. Explicit
+    // `remove_canonical_sboms(target)` removed here: redundant.
 }
 
 // -------------------------------------------------------------------
@@ -211,6 +280,10 @@ fn prf_f6_w3_bis_sbom_script_cleans_up_non_published_bin_sboms() {
 fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
     use std::collections::HashMap;
     let target = TIER1_TRIPLES[0];
+    // Drop guard: cleanup runs on every exit path. A panic in this
+    // test would leave 3 canonical SBOMs + the spurious bin files
+    // in the workspace; the guard ensures neither survives.
+    let _g = WorkspaceSbomGuard::new(target);
     remove_canonical_sboms(target);
     let (ok, out) = run_sbom_script(target);
     assert!(ok, "script failed; output:\n{out}");
@@ -268,7 +341,8 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
         );
     }
 
-    remove_canonical_sboms(target);
+    // Drop guard `let _g = ...` (line 286) cleans up the canonical
+    // SBOMs on every exit path; explicit cleanup removed: redundant.
 }
 
 // -------------------------------------------------------------------
