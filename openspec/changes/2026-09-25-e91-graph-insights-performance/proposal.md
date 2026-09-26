@@ -233,3 +233,48 @@ and unchanged in scope.
 This addendum becomes an input to the C8 evidence package
 when C8 is signed off: it formalises the empirical basis on
 which W3 is deferred.
+
+---
+
+## Addendum 2026-09-26 (W2-W6 closure)
+
+Following the W1 addendum (2026-09-26 above) and the closure
+of W2 (entry 12), this proposal's status was further evolved
+by the agent principal in mode AUTO on 2026-09-26:
+
+* **W2** (PageRank warm characterisation): CLOSED as
+  characterisation-only via commits `8b4bbe85` + `6b2738f3`.
+  Evidence: sub-millisecond at Tier-2, sub-4ms at densest
+  Tier-3. NOT a bottleneck. See JOURNAL entry 12.
+
+* **W3** (cache/compartir PageRank): CLOSED as
+  non-viable. Saving <0.07% of the analytics family budget.
+  See JOURNAL entry 17.
+
+* **W4** (paralelizar god_nodes): CLOSED with derived
+  estimate from W2 (worst case = 2 × W2 worst case = 7.9ms
+  = 0.16% of perceptible latency budget). Reopening
+  justified only if direct characterisation proves
+  >10% of budget. See JOURNAL entry 19.
+
+* **W5** (memoize surprising_connections): CLOSED with
+  same derived estimate as W4. See JOURNAL entry 19.
+
+* **W6** (metadata envelope on 7 sibling handlers): CLOSED
+  via commits `c1618e84` + `df8002f5`. Backwards-compatible
+  additive contract. 7 new RED→GREEN tests in
+  `graph_analyze_integration`. See JOURNAL entry 13.
+
+**Final status of this proposal**: W1-W6 ALL CLOSED. No
+work units remaining. The original "Algorithmic optimisation
+of the actual hot path" concern (which motivated this
+proposal) was empirically resolved by W2: the hot path is
+not where the proposal suspected.
+
+This addendum is the final closure of the e91 saga. The
+proposal remains in `openspec/changes/` for traceability but
+no further work units are scheduled under this proposal.
+
+*Addendum emitido por el agente principal en modo AUTO el
+2026-09-26. Working tree at HEAD `8bfdf62a` (22 commits sobre
+origin/main, 5557/0/45 tests verde).*
