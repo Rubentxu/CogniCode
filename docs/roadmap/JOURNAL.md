@@ -3732,3 +3732,82 @@ de la propia rama antes de empezar trabajo nuevo.
 * Decidir política sobre pre-commit rustfmt hook para evitar
   regresión futura de M0.7.
 * Decisión M0.6 (PHP/Swift tree-sitter bump) sigue BLOCKED.
+
+## Entrada N+5 — bounded audit: rustdoc drift (M0.8, 2026-09-26)
+
+**Trigger:** operador en turno 10 emite directiva "continua con
+tareas roadmap y deuda tecnica a tu criterio... o auditoria si
+nada encaja". Tras 9 turnos previos donde la rama acumuló
+32 commits con bounded wins, audito otra dimensión de hygiene
+no cubierta por CI: `cargo doc` no se ejecuta como gate en
+`pr-ci.yml` ni `ci.yml`.
+
+**Hallazgo:**
+
+* `cargo doc --workspace --no-deps` retorna 168 warnings.
+* 4 categorías de rustdoc lint presentes:
+  * `invalid_html_tags` 4 (URL, CapturedCall, RwLock, JSON) — bounded-fix-able con backticks
+  * `redundant_explicit_links` 17 ([\`X\`](path::to::X) → [\`X\`]) — bounded-fix-able stripping
+  * `broken_intra_doc_links` 147 (refs a symbols refactored) — requiere análisis semántico
+  * `private_intra_doc_links` 1 — requiere pub policy decision
+* Mismo patrón que M0.7: pr-ci.yml no se ejecuta para push-only
+  branches. Drift invisible localmente.
+
+**Acción (commit `d6afaac1`):**
+
+* Bounded cleanup de las 2 categorías mecánicamente corregibles.
+* 14 archivos, +23/-23 perfect-symmetria whitespace-only.
+* `invalid_html_tags` 4 → 0 (100% clear).
+* `redundant_explicit_links` 17 → 0 (100% clear).
+* `broken_intra_doc_links` 147 (sin tocar — operador policy).
+* `private_intra_doc_links` 1 (sin tocar — operador policy).
+
+**Post-change state:**
+
+* cargo test --workspace --lib: 4235/0/19 (sin regresión).
+* cargo clippy --workspace --all-targets -- -D warnings: exit 0.
+* cargo fmt --all --check: exit 0 (sigue post-M0.7).
+* cargo doc --workspace --no-deps: 147 warnings restantes.
+
+**Estado de outcomes (a 2026-09-26 23:15 local):**
+
+* PR-G1: IN PROGRESS_HIGH (sin cambio)
+* PR-G2: UNLOCKED (sin cambio)
+* PR-PERF: IN PROGRESS_HIGH (sin cambio)
+* PR-ARCH: IN PROGRESS_HIGH (sin cambio)
+* PR-SEC: PENDING (bounded partial — licenses f551311c, M0.8 cerrado)
+* PR-DEVEX: IN PROGRESS_HIGH (sin cambio)
+* PR-DEPTH: PENDING (sin cambio)
+
+**Mantenimiento status actualizado:**
+
+* M0.7: CLOSED (b0fe4730)
+* M0.8: CLOSED (d6afaac1)
+
+**Commits del turno:**
+
+* `d6afaac1` — docs(rustdoc): M0.8 — bound 21 mechanical rustdoc
+  warnings in 14 files.
+
+**Total branch:** 33 commits sobre `f774b89f`.
+
+**Observación estructural:** Esta sesión (10 turnos) ha
+descubierto 3 dominios de drift invisible por el mismo root cause
+(pr-ci.yml no gatea push-only branches):
+1. M0.7 — rustfmt drift
+2. M0.8 — rustdoc drift
+3. f551311c — cargo-deny licenses gate no estaba armado
+
+Recomendación operator-gated: considerar un pre-push git hook
+o promote pr-ci.yml para que también corra en push-event a
+branches no-main (workflow_dispatch + on-push-to-arch-branches).
+Esto cerraría el gap de observability de raíz.
+
+**Follow-ups operator-gated (acumulado de turnos previos):**
+
+* M0.6 PHP/Swift tree-sitter (BLOCKED desde turno previo).
+* License identity para cognicode-runtime y cognicode-sandbox.
+* Promote licenses gate a CI-bloqueante (CR-N.N TBD).
+* Pre-commit rustfmt hook para evitar regresión futura de M0.7.
+* 147 broken_intra_doc_links requieren ciclo dedicado.
+* Considerar promote `cargo doc --no-deps -- -D warnings` como CI gate.
