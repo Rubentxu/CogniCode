@@ -44,15 +44,22 @@ Todos los work units e91 cerrados:
 |----|-----------|--------|
 | **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8 documentando delta) | PENDIENTE |
 | e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
+| **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **BLOCKED 2026-09-26** |
 
 ## Bloqueos abiertos
 
 * **C8 firma humana**: única acción bloqueante para declarar `v0.99.0`
   production-ready contractual. Ver dosier + addendum §8.
+* **M0.6 fix**: PHP y Swift rotos en producción por incompatibilidad
+  tree-sitter parser (version 15) vs runtime (version 14). 4 tests
+  `#[ignore]` pinean el bug; el fix requiere bumpear `tree-sitter` a
+  0.25 o equivalente (alcance mayor, no automatizable unilateralmente).
+  Ver `docs/roadmap/MAINTENANCE.md` M0.6 con 3 opciones de fix.
 
 ## Próximo trabajo ejecutable en AUTO
 
 El backlog automatizable está probablemente vacío tras el cierre de M0.5.
+M0.6 es BLOCKED esperando decisión del operador (no automatizable).
 Opciones:
 
 1. **Refinamientos sobre C8** — el operador puede pedir más evidencia
@@ -63,12 +70,14 @@ Opciones:
 3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista M0.* cerrados
    y posibles nuevas auditorías (e.g. otros `#[ignore]` con flake pendiente).
 4. **Auditoría dirigida** — repetir la búsqueda de tests `#[ignore]` con
-   motivo "Flaky" para detectar otros bugs latentes del estilo M0.5.
-   (Lección 70.)
+   motivo "Flaky" o de incompatibilidad de versión para detectar otros
+   bugs latentes (lesson 70). Ya dio frutos en M0.5 (8 tests
+   re-habilitados) y M0.6 (PHP/Swift pineados).
 
 ---
 
 *Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-26
-tras cierre de M0.5 (flake rustc contention fixed, +8 tests al count).
-Próxima actualización: tras firma humana de C8 o nueva work unit
-autorizada.*
+tras descubrimiento y registro de M0.6 (PHP/Swift rotos, BLOCKED
+esperando decisión del operador sobre tree-sitter bump).
+Próxima actualización: tras firma humana de C8, decisión sobre M0.6,
+o nueva work unit autorizada.*

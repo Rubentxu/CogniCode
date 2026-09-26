@@ -3072,12 +3072,11 @@ convención de M0.*.
 * Binario: `cognicode 0.99.1`
 
 * M0.5 CLOSED 2026-09-26 (commits `5fad9b40` + `10696992`)
+* **M0.6 BLOCKED 2026-09-26** — PHP/Swift rotos en producción por incompatibilidad tree-sitter (parser version 15 vs runtime version 14). 4 tests `#[ignore]` pinean el bug. Decisión del operador necesaria: bumpear `tree-sitter = "0.24"` → `"0.25"` (afecta 18 parsers), downgrade a fork comunitario (no oficial), o marcar PHP/Swift como `Language::Unsupported` con mensaje al usuario. El agente NO aplica ninguna de las tres unilateralmente por alcance mayor del cambio.
 * e91 saga cerrada W1-W6 (carried from entry 22)
 * C8 firma humana: PENDIENTE (acción del operador, no del agente)
 * E3 NOT_TRIGGERED
-* Backlog automatizable: probablemente vacío de nuevo — futuras
-  sesiones pueden repetir la auditoría de `#[ignore]` para
-  verificar.
+* Backlog automatizable: vacío de nuevo (M0.5 cerrado limpio, M0.6 es BLOCKED esperando operador).
 
 ### Comando de recuperación para la próxima sesión
 
@@ -3096,4 +3095,161 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 cargo run --bin cognicode -- --version
 # Esperado: cognicode 0.99.1
+```
+
+
+## Entrada 24 — 2026-09-26 — M0.6 BLOCKED: PHP/Swift rotos por incompatibilidad tree-sitter
+
+### Contexto
+
+Continuación natural de la entry 23 (cierre M0.5): repetir la auditoría
+de `#[ignore]` flake sobre los tests restantes para detectar otros
+bugs latentes (lesson 70). Esta vez filtré por motivos que **no**
+fueran flake ni requerimiento externo.
+
+### Hallazgo
+
+4 tests `#[ignore]` con motivo idéntico en
+`cognicode-core/src/infrastructure/parser/type_ref_walkers.rs`:
+
+* líneas 1150, 1169 → `test_walk_php_type_refs_*`
+* líneas 1188, 1207 → `test_walk_swift_type_refs_*`
+
+Motivo: `tree-sitter-php parser compiled with LANGUAGE_VERSION=15
+(ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration.`
+
+Esto NO es flake. Es **incompatibilidad de versión** entre el parser
+generado (versión 15) y el runtime tree-sitter del workspace (versión
+14, LANGUAGE_VERSION=14 confirmado con `LANGUAGE_VERSION = 14` en
+binario de prueba).
+
+### Test RED confirmado
+
+```
+$ cargo test -p cognicode-core --lib infrastructure::parser::type_ref_walkers -- --include-ignored
+running 13 tests
+test ...::test_walk_php_type_refs_function ... FAILED (panicked: Err value: LanguageError { version: 15 })
+test ...::test_walk_php_type_refs_class ... FAILED (panicked: Err value: LanguageError { version: 15 })
+test ...::test_walk_swift_type_refs_function ... FAILED (panicked: Err value: LanguageError { version: 15 })
+test ...::test_walk_swift_type_refs_class ... FAILED (panicked: Err value: LanguageError { version: 15 })
+test result: FAILED. 9 passed; 4 failed; 0 ignored; 0 measured; 2212 filtered out
+```
+
+### Alcance real del bug
+
+NO es solo un test roto. El bug es **de producción**:
+
+* `crates/cognicode-core/src/infrastructure/parser/language_config.rs:456` —
+  `PHP_CONFIG` registrado con `ts_language: || tree_sitter_php::LANGUAGE_PHP.into()`.
+* `crates/cognicode-core/src/infrastructure/parser/language_config.rs:476` —
+  `SWIFT_CONFIG` registrado con `ts_language: || tree_sitter_swift::LANGUAGE.into()`.
+* `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs:126-127` —
+  `Language::Php` y `Language::Swift` mapeados a sus parsers.
+* `tree_sitter_parser.rs::TreeSitterParser::new()` línea 463-468 —
+  invoca `parser.set_language(&ts_language)` que retorna
+  `LanguageError { version: 15 }` y la función lo convierte a
+  `ParseError::ParseFailed("Failed to set language: LanguageError { version: 15 }")`.
+
+Resultado: cualquier usuario que intente parsear un archivo `.php` o
+`.swift` con CogniCode recibe un error en runtime. 2 lenguajes
+de los 30 soportados están completamente rotos en producción.
+
+### Causa raíz
+
+Verificado con `cat` sobre los Cargo.toml de los parsers:
+
+* `tree-sitter-php v0.24.2` — su `dev-dependencies.tree-sitter = "0.25"`.
+  El parser fue compilado con tree-sitter 0.25 (LANGUAGE_VERSION=15).
+* `tree-sitter-swift v0.7.3` — su `dev-dependencies.tree-sitter = "0.23.0"`.
+  El parser fue compilado con tree-sitter 0.23 (LANGUAGE_VERSION=13 o 14).
+* `Cargo.toml` workspace — `tree-sitter = "0.24"` (resuelto a 0.24.7,
+  LANGUAGE_VERSION=14).
+
+Versiones de parsers tree-sitter-* mantienen version numbers
+"propios" (0.24 para PHP, 0.7 para Swift) que NO corresponden a la
+versión de tree-sitter con que fueron compilados. Esto es un bug de
+empaquetado upstream.
+
+`cargo update -p tree-sitter` confirma: la versión instalada 0.24.7
+es la última del constraint `"0.24"`. Para subir a 0.25 hay que
+cambiar el constraint en `Cargo.toml` workspace.
+
+### Por qué no se fixea unilateralmente
+
+El fix natural sería bumpear `tree-sitter = "0.24"` → `"0.25"` o
+`"0.27"` en `Cargo.toml` workspace. Pero ese bump:
+
+1. Afecta a 18 parsers (todos los `tree-sitter-X` del workspace).
+2. Cada parser puede tener su propia incompatibilidad de versión
+   interna (mismo bug que tiene PHP/Swift).
+3. La API de tree-sitter cambió entre 0.24 y 0.27 (`set_language`,
+   `parse`, `TreeCursor`, `Node` accessors) — posible regresión
+   masiva.
+4. Requiere pruebas comprehensivas de TODOS los lenguajes, no solo
+   PHP/Swift.
+5. Alcance mayor al de M0.5 (5 archivos, 1 dep) — esto serían
+   `Cargo.toml` workspace + posiblemente 18 `Cargo.toml` de crates
+   + `tree_sitter_parser.rs` + tests para 18 lenguajes.
+
+Esto NO es stewardship de bajo riesgo. Es decisión de autoridad
+sobre upgrade mayor de dependencias. **Lo correcto es documentar
+y bloquear, no inventar fix**.
+
+### Decisión
+
+* **NO bumpeo tree-sitter unilateralmente**.
+* **NO downgrade a forks comunitarios** (riesgo de mantenimiento,
+  no oficial).
+* **NO marco PHP/Swift como `Language::Unsupported`** sin decisión
+  del operador — eso sería cambiar contrato público sin autoridad.
+* **SÍ registro M0.6 en MAINTENANCE.md** como `BLOCKED` con las
+  3 opciones de fix y su análisis.
+* **SÍ pineo el bug** en el JOURNAL entry 24 para que la próxima
+  sesión (o el operador) tenga el contexto completo.
+
+### Lección añadida
+
+75. **Bug latente no detectado en CI ≠ bug latente cerrado**. M0.5
+    era flake en tests paralelos (visible en CI). M0.6 es bug de
+    runtime que no se manifiesta en CI porque los tests están
+    `#[ignore]`. **Lección**: el estado "CI verde" no garantiza
+    "código correcto"; los `#[ignore]` pueden esconder bugs
+    bloqueantes. La auditoría periódica de motivos `#[ignore]`
+    es stewardship de salud real del proyecto.
+
+### Estado al cierre de la sesión
+
+* HEAD = mismo que fin de entry 23 (`e922d530`).
+* Working tree: dirty (solo cambios en docs: M0.6 en
+  MAINTENANCE.md + nota en JOURNAL entry 23).
+* Workspace: 5565 passed / 0 failed / 37 ignored (sin cambios; el
+  bug M0.6 está pineado pero no fixeado).
+* Binario: `cognicode 0.99.1` (sin cambios).
+
+* M0.5 CLOSED (carry-over).
+* **M0.6 BLOCKED** — pendiente decisión operador entre las 3 opciones
+  documentadas.
+* C8 firma humana: PENDIENTE (acción del operador, no del agente).
+* E3 NOT_TRIGGERED.
+* Backlog automatizable: vacío (M0.6 es BLOCKED, no automatizable
+  sin decisión externa).
+
+### Comando de recuperación para la próxima sesión
+
+```bash
+cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
+git status --short --branch
+git rev-parse HEAD
+
+# Validar estado actual
+cargo test --workspace 2>&1 | grep "test result" | \
+  awk '{p+=$4; f+=$6; i+=$8} END {printf "passed=%d failed=%d ignored=%d\n", p, f, i}'
+# Esperado: passed=5565 failed=0 ignored=37
+
+# Verificar M0.6 — bug pineado, suite con --include-ignored lo expone
+cargo test -p cognicode-core --lib infrastructure::parser::type_ref_walkers -- --include-ignored 2>&1 | tail -3
+# Esperado: 4 failed (PHP y Swift rotos en runtime)
+
+# Si el operador autoriza fix (A) — bump tree-sitter — planificar
+# impacto en los 18 parsers antes de tocar Cargo.toml.
 ```
