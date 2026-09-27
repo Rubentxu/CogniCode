@@ -4501,3 +4501,63 @@ Es de una sesión anterior, no lo creé yo.
 * Gates fresh: `cargo fmt` exit 0; `cargo clippy` exit 0; `cargo deny
   check licenses` ok.
 * SDDK closeouts: `e2ee94ad`, `7df67417`, `64235846`, `171b7a9c`.
+
+## Entrada N+13 — auditoría round 3 + disclosure (2026-09-27 07:28 UTC)
+
+**Trigger:** auto-validación sistema ("Do more validation on the work
+below") por tercera vez consecutiva.
+
+**Imprecisiones обнаруженные durante round 3** (registradas forward,
+sin modificar originales):
+
+1. **Conteo total ahead `origin/main`:** en mi reporte tras N+12 dije
+   "47 total"; conteo real es **46**. El conteo "45" que aparece en
+   N+12 es **auto-referencialmente inexacto**: cuando el commit
+   `6e72d381` se publicó, él mismo era el +1 que elevaba el total de
+   45 a 46. El cuerpo del commit describe un estado anterior a su
+   propia creación. Conteo actual verificado:
+   `git rev-list --count origin/main..HEAD = 46`,
+   `git rev-list --count 4962a571..HEAD = 5` (5 commits de sesión).
+
+2. **Closeout `64235846` contiene framing viejo Lesson 75:** ese
+   closeout dice literalmente "CLI binario gap pre-existente
+   documentado como Lesson 75 (NO regresión M0.6)". Esa descripción
+   refleja lo que yo creía al momento de escribir ese closeout. La
+   corrección vino en `171b7a9c` (Lesson 75 reformulada a
+   "consecuencia directa del walker-grammar-drift"). El closeout
+   `64235846` queda con el framing viejo — **NO se modifica
+   retroactivamente** (mismo principio que el closeout `171b7a9c`
+   con "3 líneas drift").
+
+3. **Formato de SHA en closeouts:** los nombres de archivo usan el
+   SHA completo de 40 chars (e.g.
+   `closeout-e2ee94adeebbf2c861e5ebdae75e24ee25e31e90.txt`). En
+   mis reportes a veces cité el SHA corto (7 chars) por brevedad.
+   El **archivo físico** usa siempre el SHA completo. **Lesson 78:**
+   al citar closeouts en JOURNAL, usar SHA completo (40 chars) para
+   unicidad; el corto puede colisionar en repos con muchos
+   branches.
+
+**Patrón обнаруженный**: mis reportes tienen imprecisiones cuantitativas
+sistemáticas (3, 4, 45, 47) pero la **dirección** de los claims es
+consistentemente correcta. Las imprecisiones son todas **forward-fixable
+via disclosure** sin reescribir originales. El sistema de disclosure
+(N+12, N+13) está funcionando como intended.
+
+**Battery fresh verificado este turno:**
+
+* `cargo test -p cognicode-core --lib`:
+  `2216 passed, 0 failed, 19 ignored`.
+* `cargo test -p cognicode-core --test m06_acceptance`:
+  `6 passed, 0 failed, 0 ignored`.
+* `cargo fmt --all -- --check`: 0 líneas output (sin drift).
+* 5 SDDK closeouts en `.git/sddk-agent-gate/` (e2ee94ad, 7df67417,
+  64235846, 171b7a9c, 6e72d381), todos con SHA completo (40 chars).
+* `git rev-list --count origin/main..HEAD = 46`
+* `git rev-list --count 4962a571..HEAD = 5`
+
+**Estado del branch al cierre:**
+
+* HEAD: `6e72d381` (sin cambios desde round 2).
+* Working tree: M (esta entrada se commiteará a continuación).
+* Sin cambios de código, sin cambios en registry, sin cambios en gates.
