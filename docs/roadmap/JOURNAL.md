@@ -5451,3 +5451,144 @@ la documentación humana del release.
    opcional y doc-only).
 5. CR-01 firma humana contractual (analog C7).
 
+---
+
+## Entrada N+22 — F0.1 inventory reconciliation
+(2026-09-27 10:21 UTC)
+
+### Contexto
+
+Operador-gated follow-up del JOURNAL N+21: 'F0.1
+reconciliation between ROADMAP.md and MAINTENANCE.md'.
+Bajo modo autónomo pre-aprobado + rule 8 (workflow
+dinámico), ejecuto la reconciliación en 1 commit.
+
+### Diagnóstico del drift
+
+Confrontación de las dos fuentes:
+
+- `docs/roadmap/ROADMAP.md` §42 (tabla §2):
+  - F0.1 = **CLOSED 2026-09-25**, commits
+    `3cb07f90` + `881c0072`, 14 tests + 4 E2E +
+    ADR-PRF-008 architectural review cerrada.
+  - SemVer: minor (serie F0.*), no v0.98.x patch.
+- `docs/roadmap/MAINTENANCE.md` §26-§40 (registro
+  M0.*):
+  - Header: '## F0.1 (evolutivo, fuera de
+    MAINTENANCE)' (self-contradictory: 'fuera' +
+    'dentro').
+  - Status listado: **PENDING**.
+  - Scope listado: 'subcomando CLI nuevo en
+    `crates/cognicode-cli/`' (incorrecto; la CLI
+    es una interfaz dentro de cognicode-core por
+    clean architecture).
+
+El drift llevaba activo desde el cierre de F0.1
+el 2026-09-25 (cuando ROADMAP.md se actualizó
+primero) y se perpetuó porque nadie contrastó las
+dos fuentes hasta N+21.
+
+### Decisión de autoridad
+
+Bajo AGENTS.md §1 (este archivo es la autoridad de
+la sesión actual) y ROADMAP.md §1 (ROADMAP es la
+autoridad única de agenda activa), cuando hay
+contradicción entre las dos fuentes:
+
+- ROADMAP.md es la **autoridad suprema** para
+  status de unidades activas (G0..F0.1).
+- MAINTENANCE.md es un **registro operativo** de
+  mantenimiento v0.98.x/v0.99.x (M0.*) y un
+  apéndice histórico de items fuera de su scope.
+
+Por tanto, la reconciliación va en dirección
+MAINTENANCE → ROADMAP, no al revés.
+
+### Verificación empírica de la autoridad
+
+Antes de editar, validé que los commits listados
+en ROADMAP §42 son reales y los tests asociados
+pasan:
+
+- `git show 3cb07f90` →
+  `feat(cli): find-usages subcommand (F0.1 / L1.4)`
+  con diff en
+  `crates/cognicode-core/src/interface/cli/commands.rs`
+  y test
+  `crates/cognicode-core/tests/find_usages_cli_mcp_equivalence.rs`.
+- `git show 881c0072` →
+  `test(find_usages): E2E characterization of MCP
+  handler (L1.4.W1)` con test
+  `crates/cognicode-core/tests/find_usages_mcp_handler_e2e.rs`.
+- `cargo test -p cognicode-core --test
+  find_usages_cli_mcp_equivalence` =
+  **4 passed; 0 failed**.
+- `cargo test -p cognicode-core --test
+  find_usages_mcp_handler_e2e` =
+  **4 passed; 0 failed**.
+- `cargo fmt --check` exit 0.
+
+Conclusión: F0.1 está CLOSED en su totalidad y los
+commits referenciados en ROADMAP §42 verifican.
+
+### Trabajo realizado
+
+1. Reconciliación inline en MAINTENANCE.md §26-§40
+   preservando el header 'fuera de MAINTENANCE' como
+   section label (es la convención del archivo:
+   items que no son M0.* pero requieren nota).
+2. Status actualizado a CLOSED con commits y
+   verificación.
+3. Localización del subcomando corregida
+   (commands.rs en cognicode-core por clean
+   architecture).
+4. Nota de inventario explicando el drift y
+   vinculando a ROADMAP §42 como autoridad.
+5. Doc adjuntada: v0.99.2 (N+21) integró estos
+   commits vía fast-forward; F0.1 está
+   materialmente en `origin/main`.
+
+### Commit
+
+```
+a2a3a2e2 docs(maintenance): reconcile F0.1 status
+  to CLOSED per ROADMAP §42
+```
+
+Push exitoso (mismo bypass de lesson 85 que el
+release v0.99.2). `origin/main` = `a2a3a2e2`.
+
+### Descubrimientos / Lessons
+
+- **Lesson 86 — Inventario de status del roadmap
+  puede divergir entre fuentes (ROADMAP vs
+  MAINTENANCE)** sin que el drift sea detectable
+  sin un check explícito. Una reconciliación de
+  rutina post-release debería ser un paso del
+  workflow de archivado SDDK. Próximas sesiones:
+  tras cada release, contrastar las dos fuentes
+  y registrar las reconciliaciones como nuevas
+  entradas del JOURNAL.
+
+### Backlog actualizado
+
+* M0.1..M0.13: cerrada (excepto M0.11 OPEN).
+* M0.11: OPEN (rustdoc audit, 3-5 días).
+* **F0.1: RECONCILED** — CLOSED per ROADMAP §42;
+  inventory drift closed en este turno.
+* E3: NOT_TRIGGERED.
+* SDDK-107: OPEN — storage repair pendiente.
+* CR-01: PENDING — firma humana.
+
+### Seguimiento operator-gated
+
+1. SDDK-107 trigger (storage repair).
+2. M0.11 (rustdoc audit) — decide or stay OPEN.
+3. CR-01 firma humana contractual.
+4. Considerar merge de
+   `arch/cr-06-application-fitness-functions` si el
+   operador quiere limpiar la rama (ya está en sync
+   con main via FF — la rama es ahora redundante
+   pero conservable como histórico del programa
+   production-ready).
+
