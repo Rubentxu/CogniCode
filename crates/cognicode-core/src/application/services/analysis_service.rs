@@ -2179,7 +2179,7 @@ def d():
     }
 
     #[test]
-    #[ignore = "integration: scans entire project via build_project_graph"]
+    #[ignore = "integration: scans entire project via build_project_graph (>5 min, not appropriate for normal suite). End-to-end path 'build_project_graph → graph → get_file_symbols' is bounded-covered by test_debug_call_relationships_in_real_code (single file, 0.1s) and test_lightweight_index_real_project_benchmark + test_on_demand_graph_real_project_benchmark (full cognicode-core scan, ≤15s). See M0.12 audit 2026-09-27."]
     fn test_real_code_analysis_workflow() {
         let service = AnalysisService::new();
         let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -2308,7 +2308,6 @@ def d():
     }
 
     #[test]
-    #[ignore = "integration: parses 1400+ line real source file"]
     fn test_debug_call_relationships_in_real_code() {
         use crate::domain::traits::DependencyRepository;
         use crate::infrastructure::parser::{Language, TreeSitterParser};
@@ -2378,15 +2377,27 @@ def d():
             );
         }
 
-        // This test passes if we find ANY relationships
+        // Re-enabled by M0.12 (#[ignore] audit 2026-09-27):
+        // this test parses analysis_service.rs (~3000+ lines) end-to-end
+        // and verifies call relationships + symbol store integration.
+        // Was #[ignore]d under "integration: parses 1400+ line real
+        // source file" — but it is bounded (single file, ~0.1s) and
+        // pins the contract that find_call_relationships + PetGraphStore
+        // work on real source. Lesson 79.
         assert!(
             !relationships.is_empty(),
-            "Should find at least some call relationships in real code"
+            "Should find at least some call relationships in real code (got {})",
+            relationships.len()
+        );
+        assert!(
+            !symbols_in_store.is_empty(),
+            "PetGraphStore should hold ≥1 symbol after adding relationships (got {})",
+            symbols_in_store.len()
         );
     }
 
     #[test]
-    #[ignore = "integration: scans entire project via build_project_graph"]
+    #[ignore = "integration: scans entire project via build_project_graph (>5 min). The enhanced features (entry_points, dead_code, hot_paths, etc.) are bounded-covered by other unit tests in this file; the full graph stats pin is in test_lightweight_index_real_project_benchmark (10708 symbols, 28337 locations). See M0.12 audit 2026-09-27."]
     fn test_enhanced_call_graph_features() {
         let service = AnalysisService::new();
         let project_root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
