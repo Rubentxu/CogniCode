@@ -24,7 +24,34 @@ The JSON Schema is `product/schemas/product-manifest.v1.schema.json`.
 
 ## Ownership boundaries
 
-- `public_surface.mcp.tool_catalog` points to the future generated tool catalog. Tool definitions remain authoritative in the runtime MCP registry until A-004 publishes `tools.json`.
+- `public_surface.mcp.tool_catalog` points to the generated `product/tools.json`. Tool definitions remain authoritative in the runtime MCP registry. A-004 publishes a normalized projection from a real `tools/list` capture and never duplicates the registry.
+- `product/tool-catalog-runtime.json` is the captured `tools/list` input used to generate the committed catalog. It is provenance input, not a second tool registry.
+- `product/tools.json` preserves runtime metadata, sorts by tool name, and represents undeclared output/cache/network fields as `null` with `requirements_status: "not_declared"`. Null is not a negative capability claim.
+- `public_profiles` is a deterministic product projection: stable core categories map to `core` and `reviewer`, other stable read tools to `reviewer`, mutating tools to `developer`, and experimental/gated tools to `experimental`.
 - Language entries currently prove parser presence only and are conservatively marked `experimental`. A-005 owns the evidence-backed support matrix.
 - Platforms are limited to Linux GNU release lanes that already have release evidence. macOS and Windows are intentionally absent.
 - Bundle and plugin manifests are separate installation contracts and are not replaced by this file.
+
+## Tool catalog
+
+Capture the runtime list with the HEAD-built MCP binaries, then regenerate:
+
+```bash
+/var/home/rubentxu/cargo-targets/debug/mcp-client \
+  --workspace "$PWD" \
+  --method tools/list \
+  --server-binary /var/home/rubentxu/cargo-targets/debug/cognicode-mcp \
+  > product/tool-catalog-runtime.json
+python3 scripts/product/generate_tool_catalog.py \
+  --input product/tool-catalog-runtime.json \
+  --output product/tools.json \
+  --source-commit "$(git rev-parse HEAD)"
+```
+
+Validate the committed projection with:
+
+```bash
+python3 scripts/product/test_product_tool_catalog.py
+```
+
+The catalog schema is `product/schemas/tools.v1.schema.json`. Output schemas remain `null` until the structured-output contract is implemented for the relevant public profile. No output contract is invented here.

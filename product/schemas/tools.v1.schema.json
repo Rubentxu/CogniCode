@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cognicode.rubentxu.dev/schemas/tools.v1.schema.json",
+  "title": "CogniCode public MCP tool catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product", "source_commit", "runtime_tool_count", "tools"],
+  "properties": {
+    "schema_version": {"const": "cognicode.tools/v1"},
+    "product": {"const": "cognicode"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "runtime_tool_count": {"type": "integer", "minimum": 1},
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/tool"}
+    }
+  },
+  "$defs": {
+    "schemaOrNull": {
+      "anyOf": [
+        {"type": "object"},
+        {"type": "null"}
+      ]
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name", "title", "description", "category", "authority", "stability",
+        "input_schema", "output_schema", "requirements", "requirements_status",
+        "estimated_latency_ms", "public_profiles", "runtime_metadata"
+      ],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "title": {"type": "string", "minLength": 1},
+        "description": {"type": "string"},
+        "category": {"type": "string", "minLength": 1},
+        "authority": {
+          "anyOf": [
+            {"enum": ["read", "mutating", "execute", "network"]},
+            {"type": "null"}
+          ]
+        },
+        "stability": {"enum": ["stable", "experimental", "gated"]},
+        "input_schema": {"type": "object"},
+        "output_schema": {"$ref": "#/$defs/schemaOrNull"},
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["graph", "persistence", "cache", "network"],
+          "properties": {
+            "graph": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+            "persistence": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+            "cache": {"anyOf": [{"type": "boolean"}, {"type": "null"}]},
+            "network": {"anyOf": [{"type": "boolean"}, {"type": "null"}]}
+          }
+        },
+        "requirements_status": {"enum": ["declared", "not_declared"]},
+        "estimated_latency_ms": {"type": "integer", "minimum": 0},
+        "public_profiles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["core", "reviewer", "developer", "experimental"]}
+        },
+        "runtime_metadata": {"type": "object"}
+      }
+    }
+  }
+}

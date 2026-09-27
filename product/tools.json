@@ -1,0 +1,3395 @@
+{
+  "schema_version": "cognicode.tools/v1",
+  "product": "cognicode",
+  "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
+  "runtime_tool_count": 73,
+  "tools": [
+    {
+      "name": "analyze_impact",
+      "title": "Analyze the impact of changing a symbol",
+      "description": "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "compressed": {
+            "description": "Return compressed summary",
+            "type": "boolean"
+          },
+          "symbol_name": {
+            "description": "Symbol to analyze",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 25,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "ask_about_code",
+      "title": "Answer questions about code flow by tracing execution paths between symbols",
+      "description": "Answer questions about code flow by tracing execution paths between symbols.",
+      "category": "aix",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "Maximum number of answers (default: 10)",
+            "type": "integer"
+          },
+          "question": {
+            "description": "Question about code flow",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "aix",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "build_call_subgraph",
+      "title": "Build an on-demand call subgraph centered on a symbol",
+      "description": "Build an on-demand call subgraph centered on a symbol.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "depth": {
+            "description": "Traversal depth (default: 3)",
+            "type": "integer"
+          },
+          "direction": {
+            "description": "Traversal direction (default: both)",
+            "enum": [
+              "in",
+              "out",
+              "both"
+            ],
+            "type": "string"
+          },
+          "directory": {
+            "description": "Directory to search in (default: current working directory)",
+            "type": "string"
+          },
+          "symbol_name": {
+            "description": "Symbol name to build subgraph around",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "build_graph",
+      "title": "Build the call graph for a project directory",
+      "description": "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "directory": {
+            "description": "Path to project directory to analyze (default: current working directory)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 300,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 300,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "build_lightweight_index",
+      "title": "Build a lightweight symbol index for fast lookups",
+      "description": "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "directory": {
+            "description": "Directory to index (default: cwd)",
+            "type": "string"
+          },
+          "strategy": {
+            "description": "Indexing strategy (default: lightweight)",
+            "enum": [
+              "lightweight",
+              "on_demand",
+              "per_file",
+              "full"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "cfg_per_function",
+      "title": "Build the CFG (control flow graph) for one function given adjacency, root, and exits",
+      "description": "Build the CFG (control flow graph) for one function given adjacency, root, and exits.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "algorithm_params": {
+            "description": "Per-tool parameters (see conformance corpus)",
+            "type": "object"
+          },
+          "limits": {
+            "description": "Optional PlanLimits override",
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm_params"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "check_architecture",
+      "title": "Detect cycles and architecture violations using Tarjan SCC algorithm",
+      "description": "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "scope": {
+            "description": "Optional scope to filter analysis (e.g., module name)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "codebase_map",
+      "title": "Generate a compact, LLM-optimized codebase map",
+      "description": "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "format": {
+            "enum": [
+              "compact",
+              "detailed"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "detect_drift",
+      "title": "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003)",
+      "description": "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
+      "category": "quality",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "Path to the source file to analyze (required)",
+            "type": "string"
+          },
+          "function_name": {
+            "description": "Optional function name to scope analysis to a single function",
+            "type": "string"
+          },
+          "threshold": {
+            "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included.",
+            "type": "number"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": true,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 150,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 150,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "detect_god_functions",
+      "title": "Find overly large or complex functions (god functions) that should be refactored",
+      "description": "Find overly large or complex functions (god functions) that should be refactored.",
+      "category": "quality",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "min_complexity": {
+            "description": "Minimum cyclomatic complexity threshold (default: 15)",
+            "type": "integer"
+          },
+          "min_fan_in": {
+            "description": "Minimum fan-in threshold (default: 5)",
+            "type": "integer"
+          },
+          "min_lines": {
+            "description": "Minimum lines of code threshold (default: 50)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "detect_long_parameter_lists",
+      "title": "Find functions with too many parameters that should be consolidated into structs",
+      "description": "Find functions with too many parameters that should be consolidated into structs.",
+      "category": "quality",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "max_params": {
+            "description": "Maximum number of parameters allowed (default: 5)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 60,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 60,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "dominators_cfg",
+      "title": "Compute per-function dominators over a CFG adjacency slice",
+      "description": "Compute per-function dominators over a CFG adjacency slice.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "algorithm_params": {
+            "type": "object"
+          },
+          "limits": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm_params"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "edit_file",
+      "title": "Edit files with syntax validation",
+      "description": "Edit files with syntax validation.",
+      "category": "file",
+      "authority": "mutating",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "edits": {
+            "description": "Edits to apply (required)",
+            "items": {
+              "properties": {
+                "newString": {
+                  "description": "The replacement text (required)",
+                  "type": "string"
+                },
+                "oldString": {
+                  "description": "The exact text to replace (required)",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "oldString",
+                "newString"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "path": {
+            "description": "Path to the file to edit (required)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "edits"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "developer"
+      ],
+      "runtime_metadata": {
+        "authority": "mutating",
+        "category": "file",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "export_callflow",
+      "title": "Export a community-level Mermaid architecture call-flow diagram",
+      "description": "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "format": {
+            "enum": [
+              "code"
+            ],
+            "type": "string"
+          },
+          "max_sections": {
+            "description": "Max architecture sections (default: 8)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 60,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 60,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "export_mermaid",
+      "title": "Export call graph or subgraph as Mermaid flowchart",
+      "description": "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "format": {
+            "description": "Output format",
+            "enum": [
+              "code",
+              "svg"
+            ],
+            "type": "string"
+          },
+          "include_external": {
+            "description": "Include external dependencies (default: false)",
+            "type": "boolean"
+          },
+          "max_depth": {
+            "description": "Maximum depth for traversal (default: 3)",
+            "type": "integer"
+          },
+          "root_symbol": {
+            "description": "Subgraph root symbol (optional - if not provided, exports entire graph)",
+            "type": "string"
+          },
+          "theme": {
+            "description": "Theme for SVG rendering",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 40,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "find_pattern_by_intent",
+      "title": "Match natural language intent descriptions to known code patterns",
+      "description": "Match natural language intent descriptions to known code patterns.",
+      "category": "aix",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "intent": {
+            "description": "Natural language intent description",
+            "type": "string"
+          },
+          "list_patterns": {
+            "description": "Whether to list all available patterns",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "intent"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "aix",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "find_references",
+      "title": "Find all references to a symbol using LSP",
+      "description": "Find all references to a symbol using LSP.",
+      "category": "navigation",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "column": {
+            "type": "integer"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "include_declaration": {
+            "default": true,
+            "type": "boolean"
+          },
+          "line": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_path",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "find_usages",
+      "title": "Find all usages of a symbol across the project",
+      "description": "Find all usages of a symbol across the project.",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "context_lines": {
+            "description": "Number of surrounding source lines to include per usage (default: none)",
+            "type": "integer"
+          },
+          "include_declaration": {
+            "description": "Include definition (default: true)",
+            "type": "boolean"
+          },
+          "symbol_name": {
+            "description": "Symbol to search",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 40,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "generate_contract",
+      "title": "Generate an AVC truth contract from an existing function",
+      "description": "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "gated",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "Path to the source file containing the function",
+            "type": "string"
+          },
+          "function_name": {
+            "description": "Name of the function to generate a contract for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "function_name",
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": true,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "gated",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_call_hierarchy",
+      "title": "Traverse call graph to find callers (incoming) or callees (outgoing)",
+      "description": "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "compressed": {
+            "description": "Return compressed summary",
+            "type": "boolean"
+          },
+          "depth": {
+            "description": "Traversal depth (default: 1)",
+            "type": "integer"
+          },
+          "direction": {
+            "description": "Traverse direction",
+            "enum": [
+              "incoming",
+              "outgoing"
+            ],
+            "type": "string"
+          },
+          "symbol_name": {
+            "description": "Fully qualified symbol name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name",
+          "direction"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 25,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_complexity",
+      "title": "Calculate code complexity metrics (cyclomatic, cognitive, nesting)",
+      "description": "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
+      "category": "quality",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "Path to source file",
+            "type": "string"
+          },
+          "function_name": {
+            "description": "Optional specific function",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_entry_points",
+      "title": "Find symbols with no incoming edges (entry points in the call graph)",
+      "description": "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "compressed": {
+            "description": "Return compressed natural language summary instead of JSON (default: false)",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 15,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_file_symbols",
+      "title": "Extract symbols (functions, classes, variables) from a source file",
+      "description": "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
+      "category": "file",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "compressed": {
+            "description": "Return compressed natural language summary instead of JSON (default: false)",
+            "type": "boolean"
+          },
+          "file_path": {
+            "description": "Path to the source file",
+            "type": "string"
+          },
+          "hierarchical": {
+            "description": "Group symbols by nesting (parent→children tree) (default: false)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 15,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "file",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_hot_paths",
+      "title": "Find functions with highest fan-in (most called functions)",
+      "description": "Find functions with highest fan-in (most called functions).",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "Number of hot paths to return (default: 10)",
+            "type": "integer"
+          },
+          "min_fan_in": {
+            "description": "Minimum fan-in threshold (default: 2)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 25,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_implementors",
+      "title": "Find all types that implement a given trait/interface",
+      "description": "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "trait_name": {
+            "description": "Trait or interface name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "trait_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 40,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_imports",
+      "title": "List all imports for a file",
+      "description": "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "File path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_leaf_functions",
+      "title": "Find symbols with no outgoing edges (leaf functions in the call graph)",
+      "description": "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "compressed": {
+            "description": "Return compressed natural language summary instead of JSON (default: false)",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 15,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_members",
+      "title": "List methods and fields of a class/struct",
+      "description": "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "class_name": {
+            "description": "Class or struct name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "class_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 25,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_per_file_graph",
+      "title": "Get the call graph for a specific file",
+      "description": "Get the call graph for a specific file.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "File path to get graph for",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file_path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_symbol_code",
+      "title": "Get the full source code of a symbol at a given location, including docstrings",
+      "description": "Get the full source code of a symbol at a given location, including docstrings.",
+      "category": "file",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "col": {
+            "description": "Column number (0-indexed)",
+            "type": "integer"
+          },
+          "file": {
+            "description": "Path to the source file",
+            "type": "string"
+          },
+          "line": {
+            "description": "Line number (1-indexed)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "col"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "file",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "get_type_references",
+      "title": "List type annotation references for a symbol (param types, return types, field types)",
+      "description": "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "symbol_name": {
+            "description": "Symbol name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 25,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 25,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "go_to_definition",
+      "title": "Navigate to the definition of a symbol using LSP",
+      "description": "Navigate to the definition of a symbol using LSP.",
+      "category": "navigation",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "column": {
+            "type": "integer"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_path",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 15,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_all_paths",
+      "title": "Find all simple paths between two symbols in the call graph",
+      "description": "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "from_symbol": {
+            "description": "Source symbol name (substring match, case-insensitive)",
+            "type": "string"
+          },
+          "max_hops": {
+            "description": "Maximum number of intermediate nodes (default: 5)",
+            "type": "integer"
+          },
+          "to_symbol": {
+            "description": "Target symbol name (substring match, case-insensitive)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from_symbol",
+          "to_symbol"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 150,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 150,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_analyze",
+      "title": "Run advanced graph algorithms: scc, reduced, or feedback_arcs",
+      "description": "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "scc",
+              "reduced",
+              "feedback_arcs"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 150,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 150,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_checkpoint",
+      "title": "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all)",
+      "description": "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "checkpoint_id": {
+            "description": "Checkpoint ID for restore operation",
+            "type": "integer"
+          },
+          "operation": {
+            "description": "Operation: create, current, restore, list (default: create)",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_communities",
+      "title": "Detect code communities using Label Propagation",
+      "description": "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "max_iterations": {
+            "description": "Max label propagation iterations (default: 100)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 250,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_community_detail",
+      "title": "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community)",
+      "description": "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "community_id": {
+            "description": "Sequential community id from graph_communities output",
+            "type": "integer"
+          },
+          "max_iterations": {
+            "description": "Max label propagation iterations used to re-detect communities (default: 100)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "community_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_condensed",
+      "title": "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG",
+      "description": "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_explain",
+      "title": "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity",
+      "description": "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "depth": {
+            "description": "Neighbor depth (default: 2)",
+            "type": "integer"
+          },
+          "symbol": {
+            "description": "Symbol name to explain",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_feedback_arcs",
+      "title": "Find a feedback arc set — edges whose removal would make the call graph acyclic",
+      "description": "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_god_nodes",
+      "title": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile)",
+      "description": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "percentile": {
+            "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned.",
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_insights",
+      "title": "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100)",
+      "description": "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 200,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_pagerank",
+      "title": "Compute PageRank importance scores for all symbols in the call graph",
+      "description": "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "alpha": {
+            "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0].",
+            "type": "number"
+          },
+          "max_iterations": {
+            "description": "Max fixed-point iterations (default: 100)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 250,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 250,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_query",
+      "title": "Natural language graph topology query",
+      "description": "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "budget": {
+            "description": "Maximum nodes to collect (default: 1500)",
+            "type": "integer"
+          },
+          "max_depth": {
+            "description": "Maximum BFS depth from seed nodes (default: 3)",
+            "type": "integer"
+          },
+          "question": {
+            "description": "Natural language question about the graph topology",
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 80,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 80,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_query_filtered",
+      "title": "Graph query with provenance, node kind, and community filters",
+      "description": "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "filters": {
+            "properties": {
+              "community_id": {
+                "type": "integer"
+              },
+              "exclude_kinds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "node_kinds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "provenance": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "question": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "question"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 80,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 80,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_reduced",
+      "title": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability",
+      "description": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_search_idf",
+      "title": "Search symbols ranked by IDF (Inverse Document Frequency) importance",
+      "description": "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "max_results": {
+            "description": "Max results (default: 20)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search query (symbol name or partial)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 40,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_suggest_questions",
+      "title": "Generate intelligent questions about the codebase architecture based on graph analysis",
+      "description": "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "graph_surprising_connections",
+      "title": "Find surprising cross-community connections",
+      "description": "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "max_iterations": {
+            "description": "Max label propagation iterations (default: 100)",
+            "type": "integer"
+          },
+          "top_n": {
+            "description": "Max connections to return (default: 20)",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 120,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 120,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "hover",
+      "title": "Get type information and documentation for a symbol at a position using LSP",
+      "description": "Get type information and documentation for a symbol at a position using LSP.",
+      "category": "navigation",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "column": {
+            "type": "integer"
+          },
+          "file_path": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "file_path",
+          "line",
+          "column"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 15,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "navigation",
+        "estimated_latency_ms": 15,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "iac_query",
+      "title": "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph",
+      "description": "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
+      "category": "infra",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Max traversal depth (default: 2)",
+            "type": "integer"
+          },
+          "resource_id": {
+            "description": "Resource ID: bare name (aws_instance.web) or canonical (tf:main.tf:aws_instance.web)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": true,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "infra",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "list_files",
+      "title": "List project files with",
+      "description": "List project files with .gitignore awareness.",
+      "category": "file",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "glob": {
+            "description": "Glob pattern to filter results (e.g., '**/*.rs')",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of results (default: 100)",
+            "type": "integer"
+          },
+          "max_depth": {
+            "description": "Maximum depth for recursive traversal",
+            "type": "integer"
+          },
+          "offset": {
+            "description": "Pagination offset (default: 0)",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to list (optional, defaults to workspace root)",
+            "type": "string"
+          },
+          "recursive": {
+            "description": "Whether to list files recursively (default: true)",
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "file",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "list_view_specs",
+      "title": "List all ViewSpecs visible to the current workspace (built-in + persisted runtime)",
+      "description": "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
+      "category": "view",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "view",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "merge_graphs",
+      "title": "Merge per-file call graphs into a consolidated project graph",
+      "description": "Merge per-file call graphs into a consolidated project graph.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "file_paths": {
+            "description": "List of source file paths to merge",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_paths"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "nl_to_symbol",
+      "title": "Convert natural language descriptions to symbol matches using keyword extraction and semantic search",
+      "description": "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "Maximum number of results (default: 20)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Natural language description of symbol to find",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "project_insights",
+      "title": "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths",
+      "description": "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 300,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 300,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "project_overview",
+      "title": "Get a comprehensive project overview at quick, medium, or detailed levels",
+      "description": "Get a comprehensive project overview at quick, medium, or detailed levels.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "detail": {
+            "enum": [
+              "quick",
+              "medium",
+              "detailed"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 300,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 300,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "query_symbol_index",
+      "title": "Query the symbol index to find locations of a symbol by name (case-insensitive)",
+      "description": "Query the symbol index to find locations of a symbol by name (case-insensitive).",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "directory": {
+            "description": "Directory to search in (default: current working directory)",
+            "type": "string"
+          },
+          "symbol_name": {
+            "description": "Symbol name to query (case-insensitive)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "symbol_name"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "read_file",
+      "title": "Smart file reader with semantic modes",
+      "description": "Smart file reader with semantic modes.",
+      "category": "file",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "chunk_size": {
+            "description": "Chunk size for streaming reads (optional)",
+            "type": "integer"
+          },
+          "continuation_token": {
+            "description": "Continuation token for pagination (optional)",
+            "type": "string"
+          },
+          "end_line": {
+            "description": "End line for partial read (1-indexed, default: last line)",
+            "type": "integer"
+          },
+          "mode": {
+            "description": "Read mode",
+            "enum": [
+              "raw",
+              "outline",
+              "symbols",
+              "compressed"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "Path to the file to read (required)",
+            "type": "string"
+          },
+          "start_line": {
+            "description": "Start line for partial read (1-indexed, default: 1)",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "file",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "read_view_spec",
+      "title": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID)",
+      "description": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
+      "category": "view",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "id": {
+            "description": "ViewSpec id (built-in kebab id or UUID)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "view",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "reparse_on_edit",
+      "title": "Incrementally reindex changed files without rebuilding the full graph",
+      "description": "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
+      "category": "graph",
+      "authority": "mutating",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "file_paths": {
+            "description": "List of changed file paths to reindex",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "file_paths"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": true,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 20,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "mutating",
+        "category": "graph",
+        "estimated_latency_ms": 20,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": true,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "retrieve_and_verify",
+      "title": "Search for code matching a query and verify Rust files via sandboxed rustc compilation",
+      "description": "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "language": {
+            "description": "Language filter (reserved for future use, defaults to 'rust')",
+            "type": "string"
+          },
+          "max_results": {
+            "description": "Maximum number of results to return (default: 20)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search query string (required)",
+            "type": "string"
+          },
+          "verify": {
+            "description": "Whether to verify Rust files via rustc compilation (default: true)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 80,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 80,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "review_pr",
+      "title": "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes",
+      "description": "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "files": {
+            "description": "Changed file paths",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 200,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "safe_refactor",
+      "title": "Perform safe refactoring with validation and preview",
+      "description": "Perform safe refactoring with validation and preview.",
+      "category": "refactor",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "action": {
+            "description": "Refactor action",
+            "enum": [
+              "rename",
+              "extract",
+              "inline",
+              "move",
+              "change_signature"
+            ],
+            "type": "string"
+          },
+          "params": {
+            "description": "Action-specific parameters",
+            "type": "object"
+          },
+          "target": {
+            "description": "Target symbol name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "action",
+          "target"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 100,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "refactor",
+        "estimated_latency_ms": 100,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "search_content",
+      "title": "Search file contents with",
+      "description": "Search file contents with .gitignore awareness.",
+      "category": "search",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "case_insensitive": {
+            "description": "Case insensitive search (default: false)",
+            "type": "boolean"
+          },
+          "context_lines": {
+            "description": "Number of context lines around matches (default: 2)",
+            "type": "integer"
+          },
+          "file_glob": {
+            "description": "Glob pattern to filter files (e.g., '*.rs')",
+            "type": "string"
+          },
+          "max_results": {
+            "description": "Maximum number of results to return (default: 50)",
+            "type": "integer"
+          },
+          "path": {
+            "description": "Path to search within (optional, defaults to workspace root)",
+            "type": "string"
+          },
+          "pattern": {
+            "description": "Search pattern (required)",
+            "type": "string"
+          },
+          "regex": {
+            "description": "Whether to treat pattern as regex (default: true)",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 40,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "search",
+        "estimated_latency_ms": 40,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "slice_backward",
+      "title": "Backward slice from a (variable, use_sites[]) criterion",
+      "description": "Backward slice from a (variable, use_sites[]) criterion.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "algorithm_params": {
+            "type": "object"
+          },
+          "limits": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm_params"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "slice_forward",
+      "title": "Forward slice from a (variable, definition_site) criterion",
+      "description": "Forward slice from a (variable, definition_site) criterion.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "algorithm_params": {
+            "type": "object"
+          },
+          "limits": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm_params"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "smart_search",
+      "title": "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication",
+      "description": "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "limit": {
+            "description": "Maximum number of results (default: 20)",
+            "type": "integer"
+          },
+          "query": {
+            "description": "Search query string",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 200,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "solid_audit",
+      "title": "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP)",
+      "description": "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
+      "category": "quality",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {},
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 200,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "quality",
+        "estimated_latency_ms": 200,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "taint_flow",
+      "title": "Forward taint analysis over a DFG (declarative Rust patterns)",
+      "description": "Forward taint analysis over a DFG (declarative Rust patterns).",
+      "category": "graph",
+      "authority": "read",
+      "stability": "experimental",
+      "input_schema": {
+        "properties": {
+          "algorithm_params": {
+            "type": "object"
+          },
+          "limits": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "algorithm_params"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 500,
+      "public_profiles": [
+        "experimental"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 500,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "experimental",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "trace_path",
+      "title": "Find execution path between two symbols using BFS",
+      "description": "Find execution path between two symbols using BFS.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "all": {
+            "description": "If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)",
+            "type": "boolean"
+          },
+          "max_depth": {
+            "description": "Maximum depth for path search (default: 10)",
+            "type": "integer"
+          },
+          "source": {
+            "description": "Source symbol name (function or method)",
+            "type": "string"
+          },
+          "target": {
+            "description": "Target symbol name (function or method)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "target"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": true,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": true,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "validate_contract",
+      "title": "Validate generated code against an AVC truth contract",
+      "description": "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
+      "category": "composite",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "contract_id": {
+            "description": "ID of the contract to validate against",
+            "type": "string"
+          },
+          "generated_code": {
+            "description": "The code to validate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "contract_id",
+          "generated_code"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "composite",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    },
+    {
+      "name": "write_file",
+      "title": "Create or overwrite files within the workspace",
+      "description": "Create or overwrite files within the workspace.",
+      "category": "file",
+      "authority": "mutating",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "content": {
+            "description": "Content to write (required)",
+            "type": "string"
+          },
+          "create_dirs": {
+            "description": "Whether to create parent directories if they don't exist (default: false)",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "Path to the file to write (required)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "developer"
+      ],
+      "runtime_metadata": {
+        "authority": "mutating",
+        "category": "file",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.99.2"
+      }
+    }
+  ]
+}
