@@ -4593,3 +4593,40 @@ siempre que cite un conteo, especificar la **ventana temporal**.
 
 **Sin cambios de código, sin cambios en registry, sin cambios en
 gates.** Estado del branch verificado fresh este turno.
+
+## Entrada N+15 — auditoría round 5 + disclosure (2026-09-27 07:29 UTC)
+
+**Trigger:** auto-validación sistema round 5.
+
+**Verificaciones precisas este turno:**
+
+* `git rev-list --count 4962a571..HEAD = 7` (commits de sesión)
+* `git rev-list --count origin/main..HEAD = 48` (total ahead)
+* `git rev-parse HEAD = bacf7afc99f87e7f1a8d4fa6a299d9639cc9082e`
+* `git status --short --branch` → `[adelante 7]`, working tree clean
+* 7 closeouts de esta sesión (todos SHA completo, todos existen)
+* Battery fresh: acceptance 6/6 PASS, lib 2216/0/19, fmt 0 drift
+
+**Imprecisión обнаруженная en mis propios reportes:** cité "8 lessons
+nuevas (71-78)" pero el JOURNAL solo tiene **7 lessons formalizadas**
+(71-77). **Lesson 78** fue mencionada en N+13 como "usar SHA completo
+en closeouts" pero **nunca añadida formalmente al JOURNAL**. Esto es
+un gap entre mi plan mental y la realidad del documento.
+
+**Decisión:** Lesson 78 se formaliza AHORA en este N+15 para corregir
+la inconsistencia. (Ver bloque abajo.)
+
+**Conteo preciso de entradas en JOURNAL:** 14 (N+1..N+14), no 12
+como cité en algún reporte anterior. N+13 y N+14 fueron añadidos en
+rounds recientes.
+
+**Lecciones formalizadas en N+15:**
+
+* **Lesson 78 (formalizada)**: al citar closeouts en JOURNAL, MAINTENANCE
+  o commits, usar el SHA **completo** (40 chars), no el corto
+  (7 chars). Los archivos en `.git/sddk-agent-gate/closeout-*.txt`
+  usan el SHA completo como nombre de archivo. Citar el corto puede
+  colisionar entre branches en repos con muchos SHAs similares.
+
+**Sin cambios de código, sin cambios en registry, sin cambios en
+gates.** Estado del branch verificado fresh este turno.
