@@ -194,8 +194,17 @@ impl Language {
             Language::Hcl => "block",
             Language::Yaml => "block_mapping",
             Language::Ruby => "method",
-            Language::Php => "method_declaration",
-            Language::Swift => "method_declaration",
+            // tree-sitter-php 0.24.2 emits `function_definition` for free
+            // functions (was previously mapped to `method_declaration`,
+            // which only appears for class methods). `method_declaration`
+            // is still extracted via the iterative DFS in
+            // `find_all_symbols_with_path`, so we are not losing any
+            // coverage; we are restoring it for free functions.
+            Language::Php => "function_definition",
+            // tree-sitter-swift 0.7.3 emits `function_declaration` for
+            // free functions. `method_declaration` only appears inside
+            // type bodies (class/struct/protocol/enum).
+            Language::Swift => "function_declaration",
             Language::Scala => "function_declaration",
             Language::Lua => "function_declaration",
             Language::Zig => "function_declaration",
@@ -645,11 +654,23 @@ impl TreeSitterParser {
     /// Searches for an identifier name in a node tree (two-phase iterative DFS)
     fn find_identifier_name(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
         // Phase 1: Check direct children first
+        //
+        // `name` covers languages whose grammar emits a generic `name`
+        // node for identifiers (e.g. tree-sitter-php 0.24.2 emits
+        // `class_declaration → name` rather than `identifier`).
+        // `identifier` covers Python, Ruby, etc.
+        // `type_identifier` covers Swift class names, TypeScript, Rust
+        // type aliases, Go, etc.
+        // `simple_identifier` covers Swift function/method names
+        // (tree-sitter-swift 0.7.3).
         {
             let cc = node.child_count();
             for i in 0..cc {
                 if let Some(child) = node.child(i)
-                    && (child.kind() == "identifier" || child.kind() == "type_identifier")
+                    && (child.kind() == "identifier"
+                        || child.kind() == "type_identifier"
+                        || child.kind() == "name"
+                        || child.kind() == "simple_identifier")
                 {
                     return Some(
                         child
@@ -672,7 +693,11 @@ impl TreeSitterParser {
             }
 
             while let Some(current) = stack.pop() {
-                if current.kind() == "identifier" || current.kind() == "type_identifier" {
+                if current.kind() == "identifier"
+                    || current.kind() == "type_identifier"
+                    || current.kind() == "name"
+                    || current.kind() == "simple_identifier"
+                {
                     return Some(
                         current
                             .utf8_text(source.as_bytes())
