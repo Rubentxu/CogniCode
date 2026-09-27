@@ -69,11 +69,40 @@ Specifically:
 - The license is now a published contract guarded by tests. Changing it requires superseding this ADR, not a silent edit.
 - **Copyright holder:** `Copyright 2025-2026 The CogniCode Authors`, chosen to match the existing `authors = ["CogniCode Team"]` declaration in `Cargo.toml` rather than invent a holder. A legal reviewer with a different preference supersedes this ADR; the test asserts the line is present and non-placeholder, not that this exact string is the only valid one.
 
-## CP1.7 — Discussions/community categories: `operator-gated`
+## CP1.7 — Discussions/community categories: partially applied, categories `operator-gated`
 
-`13-ROADMAP-COMMUNITY-PRODUCTIZATION.md` §CP1 item 7 asks for "Discussions/community categories". GitHub Discussions and their categories are **repository settings**, not files in the repository. They cannot be committed, cannot be asserted by a test, and therefore cannot be honestly marked complete by a code cycle.
+`13-ROADMAP-COMMUNITY-PRODUCTIZATION.md` §CP1 item 7 asks for "Discussions/community categories". GitHub Discussions are **repository settings**, not files in the repository. They cannot be committed and cannot be asserted by a test, so a code cycle must not claim them complete.
 
-**Status: `operator-gated`.** Enabling Discussions on the repository and creating the initial category set is an operator action in the GitHub settings. It is recorded here so it is visible and tracked rather than silently reported as done.
+**Status: Discussions enabled, category creation `operator-gated`.**
+
+### What was applied, and how it was verified
+
+Enabling Discussions turned out to be automatable after all, so it was not left as operator work. `UpdateRepositoryInput.hasDiscussionsEnabled` exists in the GraphQL schema, and the mutation succeeded:
+
+```
+mutation($id:ID!,$d:Boolean!){
+  updateRepository(input:{repositoryId:$id, hasDiscussionsEnabled:$d}){
+    repository{ hasDiscussionsEnabled }
+  }
+}
+```
+
+The result was then read back through an independent endpoint rather than trusting the mutation's own return value: `GET /repos/{owner}/{repo}` reports `has_discussions: true`. Before the mutation it reported `false`.
+
+### What remains operator-gated, and why
+
+Creating the **categories** has no API surface. The GraphQL `Mutation` type exposes `createDiscussion`, `updateDiscussion`, `deleteDiscussion`, `addDiscussionComment` and the comment/poll/answer mutations, and **no category mutation at all** — `createDiscussionCategory` does not exist and returns `undefinedField`. The REST route `GET /repos/{owner}/{repo}/discussions/categories` returns 404. Categories are created only from the repository settings UI.
+
+The intended initial set, so the operator action is unambiguous and does not require a design decision at that point:
+
+| Category | Purpose | Emoji |
+|---|---|---|
+| **Announcements** | Release notes, roadmap moves, changes affecting how you run CogniCode. | 📣 |
+| **Q&A** | Usage questions. Docs and existing discussions first. | 🙋 |
+| **Show and tell** | What people built with CogniCode and workflows worth sharing. | 🛠️ |
+| **Ideas** | Feature proposals and rough directions; worked use cases move fastest. | 💡 |
+
+Until those four exist, CP1.7 is **not** complete and the CP1 OSS gate stays open. `test_license_adr_records_decision_and_operator_gate` keeps requiring this section to say `operator-gated`, which is still true of the remaining work.
 
 ## Verification
 
