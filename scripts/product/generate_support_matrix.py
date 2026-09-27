@@ -11,6 +11,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# Loaded as a sibling module when this file runs as a script, and by path
+# when the test suite imports it through `importlib.util.spec_from_file_location`.
+# The second form does not put this directory on `sys.path`, so a bare
+# `import check_semantics` would work in CI and fail in the test suite. Resolve
+# the sibling explicitly so both paths behave the same.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_semantics import check_provenance, content_mismatch  # noqa: E402
+
 LANGUAGE_SCHEMA_VERSION = "cognicode.languages/v1"
 PLATFORM_SCHEMA_VERSION = "cognicode.platforms/v1"
 SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
@@ -329,10 +337,24 @@ def main() -> int:
         rendered_languages = render(languages)
         rendered_platforms = render(platforms)
         if args.check:
-            if languages_output.read_text(encoding="utf-8") != rendered_languages:
-                raise ValueError(f"generated languages differ from {languages_output}")
-            if platforms_output.read_text(encoding="utf-8") != rendered_platforms:
-                raise ValueError(f"generated platforms differ from {platforms_output}")
+            actual_languages = languages_output.read_text(encoding="utf-8")
+            actual_platforms = platforms_output.read_text(encoding="utf-8")
+            # Content is compared strictly; the `source_commit` stamp is
+            # provenance and is validated for shape only. Requiring it to
+            # equal HEAD made `--check` fail on every commit newer than the
+            # artefacts. See check_semantics for the reasoning.
+            for label, actual, rendered in (
+                ("languages", actual_languages, rendered_languages),
+                ("platforms", actual_platforms, rendered_platforms),
+            ):
+                if actual != rendered:
+                    mismatch = content_mismatch(actual, rendered)
+                    if mismatch:
+                        raise ValueError(
+                            f"generated {label} differ from the committed "
+                            f"document: {mismatch}"
+                        )
+                check_provenance(actual, label)
         else:
             languages_output.parent.mkdir(parents=True, exist_ok=True)
             platforms_output.parent.mkdir(parents=True, exist_ok=True)

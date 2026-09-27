@@ -117,6 +117,57 @@ def test_invalid_sha_and_drift_fail_without_overwriting() -> None:
     assert drift.returncode == 0, drift.stderr
 
 
+def test_check_tolerates_a_stale_provenance_stamp() -> None:
+    """A commit stamp from an older HEAD is not drift.
+
+    The committed artefact records the commit it was generated from, which
+    is necessarily not the current HEAD after any later commit. Comparing
+    whole documents made `--check` fail on every commit, so it could never
+    be relied on and had to be skipped. Content is the property that must
+    match; the stamp only has to be well-formed.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "profiles.json"
+        assert run("--output", str(output), "--source-commit", BASELINE).returncode == 0
+
+        # Re-check the same content while pretending HEAD has moved on.
+        stale = run("--output", str(output), "--check")
+        assert stale.returncode == 0, stale.stderr
+
+        # Content drift is still caught, and the message names the field so
+        # a reader knows where to look instead of diffing by hand.
+        document = json.loads(output.read_text(encoding="utf-8"))
+        document["profiles"] = document["profiles"][:-1]
+        output.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+        content_drift = run("--output", str(output), "--check")
+        assert content_drift.returncode != 0
+        assert "profiles" in content_drift.stderr, content_drift.stderr
+
+
+def test_check_rejects_a_malformed_or_missing_provenance_stamp() -> None:
+    """The stamp is validated for shape, not ignored entirely.
+
+    Loosening the comparison must not turn into not caring: a missing or
+    malformed stamp is the one thing `--check` can still verify about
+    provenance, so it verifies it.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        output = Path(directory) / "profiles.json"
+        assert run("--output", str(output), "--source-commit", BASELINE).returncode == 0
+        document = json.loads(output.read_text(encoding="utf-8"))
+
+        for label, stamp in (("malformed", "not-a-sha"), ("missing", None)):
+            mutated = dict(document)
+            if stamp is None:
+                mutated.pop("source_commit", None)
+            else:
+                mutated["source_commit"] = stamp
+            output.write_text(json.dumps(mutated, indent=2) + "\n", encoding="utf-8")
+            result = run("--output", str(output), "--check")
+            assert result.returncode != 0, f"{label} stamp was accepted"
+            assert "source_commit" in result.stderr, result.stderr
+
+
 def test_developer_and_experimental_are_not_installable() -> None:
     document = json.loads((ROOT / "product/profiles.json").read_text(encoding="utf-8"))
     by_id = {profile["id"]: profile for profile in document["profiles"]}

@@ -32,6 +32,12 @@ from build_release_contract import (
     load_skill_maturity_alphabet,
 )
 
+# See generate_support_matrix.py: the test suite loads this file by path,
+# which does not put this directory on `sys.path`, so the sibling import has
+# to be resolved explicitly to work in both contexts.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_semantics import check_provenance, content_mismatch  # noqa: E402
+
 SCHEMA_VERSION = "cognicode.profiles/v1"
 PRODUCT_NAME = "cognicode"
 
@@ -269,7 +275,17 @@ def main() -> int:
         if args.check:
             actual = output.read_text(encoding="utf-8")
             if actual != rendered:
-                raise ValueError(f"generated profiles differ from {output}")
+                # `source_commit` is provenance, not derived content, and it
+                # is stamped from HEAD. Requiring it to equal HEAD made
+                # `--check` fail on every commit newer than the artefact and
+                # report drift that did not exist. Content stays strict;
+                # provenance is validated for shape. See check_semantics.
+                mismatch = content_mismatch(actual, rendered)
+                if mismatch:
+                    raise ValueError(
+                        f"generated profiles differ from {output}: {mismatch}"
+                    )
+            check_provenance(actual, str(output))
         else:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(rendered, encoding="utf-8")
