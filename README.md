@@ -37,7 +37,7 @@ Built with **Domain-Driven Design** and **Clean Architecture**, it supports six 
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.96.0`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.99.2`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -45,7 +45,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@0.96.0`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.99.2`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -383,6 +383,18 @@ These are just 2 of 20 scenarios. The full guide covers **dead code detection,
 safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 👉 [Read the full Agent Prompt Guide →](docs/agent-prompts.md) · [Versión en español →](docs/agent-prompts-es.md)
+
+## Versioning
+
+- **Current release:** `v0.99.2` (2026-09-27).
+- **Binaries report:** `0.99.2` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.99.2`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.99.2).
+- **Tracking authority:** the `PRODUCT-1.0` row in [`docs/roadmap/ROADMAP.md` §2](docs/roadmap/ROADMAP.md).
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md).
+
+The product is in active community-productization phase. Releases are
+derived from `Cargo.toml` `[workspace.package] version` and gated by the
+tag/workspace coherence check in `.github/workflows/release.yml` (R8).
 
 ## License
 
