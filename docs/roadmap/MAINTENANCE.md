@@ -32,12 +32,41 @@ E0** dentro de L1 (E0.W consumer proof). No es mantenimiento y
 rompe la regla SemVer de v0.98.x como línea de patch, así que
 encaja en su propia serie `F0.*` y requiere release minor (no patch).
 
-- **Scope**: subcomando CLI nuevo en `crates/cognicode-cli/`.
+- **Scope**: subcomando CLI nuevo en
+  `crates/cognicode-core/src/interface/cli/commands.rs`
+  (clean-architecture: la CLI vive en `cognicode-core`
+  como interfaz; el bin dispatch está en `cognicode-cli`).
 - **Prereq**: contrato E0 estable (L1); reconciliación L0 hecha.
 - **Severidad**: baja (mejora UX, valor real).
 - **Trigger**: carry-over PRF convertido en feature Post-PRF.
-- **Estado actual en ROADMAP**: F0.1 PENDING, L1.
-- **SemVer esperado**: minor (`v0.99.0` o lo que la política E0 establezca al cierre) — NO patch.
+- **Estado actual en ROADMAP**: **CLOSED 2026-09-25** (cf.
+  `docs/roadmap/ROADMAP.md` §42). Commits:
+  - `3cb07f90 feat(cli): find-usages subcommand (F0.1 / L1.4)`
+  - `881c0072 test(find_usages): E2E characterization of
+    MCP handler (L1.4.W1)`
+  - 14 tests verde en limpio + 4 E2E adicionales en
+    `find_usages_mcp_handler_e2e.rs` y
+    `find_usages_cli_mcp_equivalence.rs` (verificados
+    en este turno N+22 con
+    `cargo test -p cognicode-core --test
+    find_usages_cli_mcp_equivalence` = 4/0/0 y
+    `cargo test -p cognicode-core --test
+    find_usages_mcp_handler_e2e` = 4/0/0).
+  - ADR-PRF-008 architectural review cerrada.
+- **Nota de inventario (N+22, 2026-09-27)**: MAINTENANCE.md §26-§40
+  contenía un estatus previo que describía F0.1 como PENDING y
+  como 'fuera de MAINTENANCE' (inversión contradictoria). Esta
+  nota reconcilia a la autoridad de `ROADMAP.md` §42 — F0.1 está
+  CLOSED y esta entrada se conserva solo como rastro del registro
+  evolutivo original (para que un lector que consulta
+  MAINTENANCE entienda por qué F0.1 NO aparece en la tabla de
+  pendientes M0.*).
+- **SemVer esperado en su release**: minor (serie `F0.*`), no patch.
+  El release v0.99.2 (2026-09-27, JOURNAL N+21) integró la
+  rama que contiene los commits `3cb07f90` + `881c0072` dentro
+  de su fast-forward (vía `arch/cr-06-application-fitness-functions`
+  → main). Los commits F0.1 están materialmente en `origin/main`
+  como parte de v0.99.2.
 
 ## E3 (RPC mínima Post-PRF)
 
