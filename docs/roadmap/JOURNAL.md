@@ -5006,3 +5006,156 @@ Ordenados por entrega de valor vs costo:
 * M0.11 (broken_intra_doc_links): **REGISTRADO** en este turno,
   pendiente decisión operador
 
+
+## Entrada N+19 — M0.12 #[ignore] audit (2026-09-27 09:15 UTC)
+
+**Trigger:** inventario de N+18 identificó "auditoría dirigida
+#[ignore]" como candidato a próximo bloque sustancial (lesson 70/79/80).
+Backlog M0.* agotado, modo autónomo, criterio propio.
+
+**SDDK PRE-FLIGHT:**
+- Mismo workitem `075f7bc1` (agotado desde N+16).
+- 13 commits ahead origin/main (807d74af).
+- Batería fresh: cognicode-core 2220/0/15, workspace 5651/0/33.
+
+**Auditoría ejecutada:**
+
+Grep de todos los `#[ignore]` tests en workspace (`crates/`)
+encontró **27 ocurrencias** distribuidas en 5 categorías:
+
+| Categoría | # tests | Remediables |
+|-----------|---------|-------------|
+| `integration: scans entire project` (análisis real) | 4 | 3 sí, 1 limitado |
+| `requires rmcp internals` (RequestContext/NotificationContext) | 10 | NO (API interna no expuesta) |
+| `requires rust-analyzer/pyright binary` | 4 | NO (binarios externos no funcionales en sandbox) |
+| `requires bundle version...` | 1 | NO (feature check deliberado) |
+| `PRF-CI-01 POSITIVE: full workspace clippy gate` | 1 | NO (clippy positive UAT deliberado) |
+| Comentario histórico sobre `#[ignore]` ya quitado | 1 | N/A |
+| `#[ignore]` en módulos de tests/architecture_self_host_e2e.rs | 1 | N/A (es un comentario, no un `#[ignore]` real) |
+
+**Tests re-habilitados (3 bounded + pineando contrato real):**
+
+1. `test_lightweight_index_real_project_benchmark`
+   (`crates/cognicode-core/src/infrastructure/graph/lightweight_index.rs`)
+   — pin que `build_index` indexa >100 symbols en cognicode-core
+   (medido: 10708 symbols, 28337 locations) y que
+   `find_symbol('build_project_graph')` retorna ≥1 location.
+   Tiempo: 5s. Era `#[ignore = "integration: scans entire
+   project via build_index"]`. **Commit b482a4ff**.
+
+2. `test_on_demand_graph_real_project_benchmark`
+   (`crates/cognicode-core/src/infrastructure/graph/on_demand_graph.rs`)
+   — pin que `set_index` + `build_for_symbol` retorna un grafo
+   queryable (callees O callers non-empty para `'new'`). Tiempo:
+   10s. Era `#[ignore = "integration: scans entire project via
+   set_index"]`. **Commit b482a4ff**.
+
+3. `test_debug_call_relationships_in_real_code`
+   (`crates/cognicode-core/src/application/services/analysis_service.rs`)
+   — pin que `find_call_relationships` + `PetGraphStore`
+   integración funciona sobre analysis_service.rs real.
+   Tiempo: 0.1s. Era `#[ignore = "integration: parses 1400+
+   line real source file"]`. **Commit 0132e260**.
+
+**Tests `#[ignore]` messages actualizados (Lesson 79):**
+
+Los 2 tests que **no** se re-habilitaron por duración (>5 min)
+pero pinean contratos importantes ahora documentan el camino
+end-to-end silenciado con cross-references a los tests
+bounded que sí corren:
+
+- `test_real_code_analysis_workflow` — mensaje actualizado
+  para apuntar a `test_debug_call_relationships_in_real_code`
+  + `test_lightweight_index_real_project_benchmark` +
+  `test_on_demand_graph_real_project_benchmark` como
+  evidencia de que el path funciona.
+
+- `test_enhanced_call_graph_features` — mensaje actualizado
+  para apuntar a `test_lightweight_index_real_project_benchmark`
+  (10708 symbols, 28337 locations) como pin de stats
+  completos, y nota que las "enhanced features"
+  (entry_points, dead_code, hot_paths) están cubiertas por
+  otros unit tests en el mismo archivo.
+
+**Commit 0132e260.**
+
+**Descubrimiento adicional — target-dir mismatch (M0.13):**
+
+Durante la auditoría, ejecutar `cargo test --workspace`
+reveló 7 FAILED en `prf_cli_01_exhaustive_uat.rs`. Debugging
+encontró que la causa raíz NO era regresión de mis cambios
+sino una **config mismatch**:
+
+- `~/.cargo/config.toml` (global) tiene
+  `target-dir = "/var/home/rubentxu/cargo-targets"`.
+- `cargo build --release --bin cognicode` pone el binario
+  en `/var/home/rubentxu/cargo-targets/release/cognicode`.
+- El test UAT `prf_cli_01_exhaustive_uat.rs:14-21` pinea
+  path absoluto `target/release/cognicode` (relativo a
+  la raíz del repo).
+- El binario no existía en `target/release/` porque Cargo
+  no escribe ahí por la config global.
+
+**Esto es pre-existente**: el `target/` pineado por el
+test UAT es el default de Cargo (sin override), pero
+`~/.cargo/config.toml` lo override globalmente. El test
+solo pasaba antes porque alguien había corrido
+`cargo build` sin la override (poco probable) o el
+binario stale de un estado anterior del repo vivía ahí.
+
+**Fix transitorio** (este turno): copié el binario de
+`/var/home/rubentxu/cargo-targets/release/cognicode` a
+`target/release/cognicode`. Esto NO escala — cada build
+regenerará en el path de la config global.
+
+**M0.13 registrado** para fix durable: hacer que el test
+UAT respete la config (`env!("CARGO_TARGET_DIR")` o
+`CARGO_BIN_EXE_cognicode` env var que Cargo expone).
+
+**Evidencia del cierre M0.12:**
+
+| Métrica | Pre-M0.12 | Post-M0.12 |
+|---------|-----------|------------|
+| `cognicode-core --lib` | 2220/0/15 | **2223/0/12** (+3 tests, -3 ignored exactos) |
+| `cargo test --workspace` | 5651/0/33* | 5650/0/30 (0 failed con bin restaurado) |
+| `cargo fmt + clippy -D warnings` | exit 0 | exit 0 |
+| UAT tests `prf_cli_01_exhaustive_uat.rs` | 7 failed (target-dir) | 7 passed (con bin restaurado; fix real = M0.13) |
+
+\* El conteo 5651/0/33 del cierre anterior no incluía los
+7 UAT tests que ahora corren y pasan con el binario restaurado.
+El conteo post-M0.12 5650/0/30 es el real (cargo test workspace
+corre UAT tests también).
+
+**Lessons nuevas:**
+
+- **Lesson 82 — `cargo test --workspace` puede abortar
+  silenciosamente al primer fail.** El conteo manual previo
+  (5651/0/33) no incluía los UAT tests fallando; ahora
+  con `--no-fail-fast`-style counts veo que el número real
+  siempre fue menor. **Implicación**: cuando se reporta
+  "workspace verde", especificar si el conteo es
+  pre-fail-fast o post-fail-fast.
+
+- **Lesson 83 — `#[ignore]` audit debe distinguir bounded
+  de unbounded.** Los 4 tests "integration" parecían todos
+  iguales pero 3 son bounded (≤10s) y 1 es unbounded
+  (>5min). Pinear ambos como "integration" impide ver la
+  diferencia y mantener los bounded en CI normal.
+
+- **Lesson 84 — Tests UAT que pinean paths absolutos son
+  frágiles.** El test pinea `target/release/cognicode`
+  hard-coded, sin usar `env!("CARGO_BIN_EXE_cognicode")`
+  que Cargo expone automáticamente. La config global
+  override del target-dir rompió el contrato.
+
+**Estado del backlog actualizado:**
+
+* M0.1..M0.10: CLOSED
+* M0.11: OPEN (rustdoc audit, 3-5 días)
+* **M0.12: CLOSED** (3 tests re-habilitados, 2 ignore msgs
+  documentados, 0 regresiones)
+* **M0.13: OPEN** registrado (target-dir UAT mismatch, fix
+  durable en `prf_cli_01_exhaustive_uat.rs`)
+* F0.1: PENDING (carry-over)
+* E3: NOT_TRIGGERED
+
