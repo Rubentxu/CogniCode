@@ -4561,3 +4561,35 @@ via disclosure** sin reescribir originales. El sistema de disclosure
 * HEAD: `6e72d381` (sin cambios desde round 2).
 * Working tree: M (esta entrada se commiteará a continuación).
 * Sin cambios de código, sin cambios en registry, sin cambios en gates.
+
+## Entrada N+14 — auditoría round 4 + disclosure (2026-09-27 07:29 UTC)
+
+**Trigger:** auto-validación sistema round 4.
+
+**Verificaciones precisas este turno:**
+
+* `git rev-list --count 4962a571..HEAD = 6` (commits de sesión)
+* `git rev-list --count origin/main..HEAD = 47` (total ahead)
+* `git rev-parse HEAD = bd5338fc65eafa3cb5ddffb35ddd1f1f25f1827f`
+* `ls .git/sddk-agent-gate/closeout-*.txt | wc -l = 47` (TOTAL
+  histórico de closeouts, no solo de esta sesión)
+* `for sha in e2ee94ad 7df67417 64235846 171b7a9c 6e72d381
+  bd5338fc; do ...` confirma 6/6 closeouts de esta sesión existen
+  con SHA completo y tamaño > 800B (contenido real).
+* Battery fresh: acceptance 6/6 PASS, lib 2216/0/19, fmt 0 drift.
+* `git status --short --branch` → `[adelante 6]`, working tree clean.
+
+**Imprecisión обнаруженная en mis propios reportes:** al citar el
+número de closeouts, mezclé "**6 closeouts de esta sesión**" con
+"**47 closeouts históricos totales**". El conteo depende de la
+ventana temporal. Mi claim "6 closeouts" en este turno fue
+**literalmente correcto para esta sesión** pero **ambiguo** — un
+lector podría interpretar "6 closeouts en el repo" cuando en realidad
+hay 47. Disclosure forward-only.
+
+**Patrón auto-reconocible:** mis reportes usan "X total" cuando
+quieren decir "X de esta sesión" o "X históricos". Lección a aplicar:
+siempre que cite un conteo, especificar la **ventana temporal**.
+
+**Sin cambios de código, sin cambios en registry, sin cambios en
+gates.** Estado del branch verificado fresh este turno.
