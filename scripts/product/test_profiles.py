@@ -130,8 +130,11 @@ def test_check_tolerates_a_stale_provenance_stamp() -> None:
         output = Path(directory) / "profiles.json"
         assert run("--output", str(output), "--source-commit", BASELINE).returncode == 0
 
-        # Re-check the same content while pretending HEAD has moved on.
-        stale = run("--output", str(output), "--check")
+        # Re-check the same content while pretending HEAD has moved on. The
+        # stamp is passed explicitly rather than left to `git rev-parse`, so
+        # the test asserts the check's behaviour and not that a git
+        # repository happens to exist around it.
+        stale = run("--output", str(output), "--source-commit", BASELINE, "--check")
         assert stale.returncode == 0, stale.stderr
 
         # Content drift is still caught, and the message names the field so
@@ -139,7 +142,7 @@ def test_check_tolerates_a_stale_provenance_stamp() -> None:
         document = json.loads(output.read_text(encoding="utf-8"))
         document["profiles"] = document["profiles"][:-1]
         output.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
-        content_drift = run("--output", str(output), "--check")
+        content_drift = run("--output", str(output), "--source-commit", BASELINE, "--check")
         assert content_drift.returncode != 0
         assert "profiles" in content_drift.stderr, content_drift.stderr
 
@@ -163,7 +166,7 @@ def test_check_rejects_a_malformed_or_missing_provenance_stamp() -> None:
             else:
                 mutated["source_commit"] = stamp
             output.write_text(json.dumps(mutated, indent=2) + "\n", encoding="utf-8")
-            result = run("--output", str(output), "--check")
+            result = run("--output", str(output), "--source-commit", BASELINE, "--check")
             assert result.returncode != 0, f"{label} stamp was accepted"
             assert "source_commit" in result.stderr, result.stderr
 
