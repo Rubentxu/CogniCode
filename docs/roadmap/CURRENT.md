@@ -4,15 +4,15 @@
 > 50 commits stale, congelado como histórico). Esta es la fuente de verdad
 > operativa para CogniCode post-PRF.
 
-## HEAD y batería (a 2026-09-26)
+## HEAD y batería (a 2026-09-27)
 
 * **HEAD funcional**: ver `git rev-parse HEAD` (este doc se versiona junto al workspace, no a sí mismo).
 * **Commits del agente sobre `origin/main`**: ver `git log --author=jcode-bot --oneline | wc -l`.
 * **Tests workspace**: `cargo test --workspace` →
-  **passed=5565 failed=0 ignored=37**.
+  **passed=5651 failed=0 ignored=33**.
 * **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
-* **Working tree**: clean.
-* **Versión binario**: `cognicode 0.99.1` (bump SEMVER patch por M0.5).
+* **Working tree**: clean (pendiente commit docs M0.10 closeout).
+* **Versión binario**: `cognicode 0.99.1` (bump SEMVER patch pendiente decisión operador post-M0.6; M0.10 puede mover a v0.99.2).
 
 ## Capacidades certificadas (Post-PRF)
 
@@ -44,7 +44,8 @@ Todos los work units e91 cerrados:
 |----|-----------|--------|
 | **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8-§10 documentando delta) | **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre `3954b8b7`. Ver `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md` y `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11. Recertificación C8-R → CR-01. |
 | e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
-| **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **BLOCKED 2026-09-26** |
+| **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **CLOSED 2026-09-27** (commit `e2ee94ad` + cierre oficial en `7df67417` + acceptance en `64235846` + correcciones en `171b7a9c`). Bump `tree-sitter = "0.24" → "0.27"` aplicado; `LanguageError { version: 15 }` REPARADO; 6 acceptance tests pineando API pública pasan; clippy/fmt clean. |
+| **M0.10 walker-grammar-drift** | PHP/Swift walkers pinean nombres de nodo del grammar tree-sitter-php 0.23 / tree-sitter-swift 0.7.3 que el grammar actualizado ya no emite. Síntoma: `cognicode analyze` sobre proyecto `.php`/`.swift` reporta `Languages: {}` y `parsed_files=0`. Detectado post-M0.6 cierre. | **CLOSED 2026-09-27** (commits `2becec6a` parser core + `4eacab93` walker + `a47cf419` acceptance). Causa raíz en 2 capas: parser central (`function_node_type` y `find_identifier_name`) + walker layer (6 grammar-drift points). Validado con `cargo test --workspace` 5651/0/33 (vs 5565/0/37 pre-M0.10 = +86 tests, -4 ignored) y `cargo test -p cognicode-core --test m10_acceptance` 6/0/0. |
 | **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **PENDIENTE** |
 
 ## Programa production-ready (Post-PIVOT, no iniciado)
@@ -72,30 +73,38 @@ del operador). Detalle completo en
 ## Bloqueos abiertos
 
 * **C8 firma humana**: **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre SHA `3954b8b7`. Ver dosier `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11 y expediente `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`. Recertificación C8-R queda abierta como **CR-01** dentro del programa production-ready.
-* **M0.6 fix**: PHP y Swift rotos en producción por incompatibilidad tree-sitter parser (version 15) vs runtime (version 14). 4 tests `#[ignore]` pinean el bug; el fix requiere bumpear `tree-sitter` a 0.25 o equivalente (alcance mayor, no automatizable unilateralmente). Ver `docs/roadmap/MAINTENANCE.md` M0.6 con 3 opciones de fix. **No bloqueante para CR-01.**
+* **M0.6 fix**: **CLOSED 2026-09-27**. `LanguageError { version: 15 }` reparado; PHP/Swift parses sin error runtime. Deuda residual M0.10 (walker-grammar-drift) **también cerrada** 2026-09-27 — el path de extracción de symbols para PHP/Swift queda funcional end-to-end.
 
 ## Próximo trabajo ejecutable en AUTO
 
-El backlog automatizable está probablemente vacío tras el cierre de M0.5.
-M0.6 es BLOCKED esperando decisión del operador (no automatizable).
+El backlog automatizable M0.* está agotado tras el cierre de
+M0.10 (M0.1..M0.10 todos CLOSED). F0.1 (carry-over) y E3
+(NOT_TRIGGERED) siguen abiertos pero requieren decisión
+operador (F0.1 es feature, E3 es evento condicional).
+
 Opciones:
 
-1. **Refinamientos sobre C8** — el operador puede pedir más evidencia
-   antes de firmar (campaña adversarial Post-PRF, UAT cross-crate E2E).
-2. **Nuevas work units** — el operador puede autorizar trabajo nuevo
-   (no hay nada en `docs/roadmap/ROADMAP.md` que esté desbloqueado y
-   sin acción pendiente).
-3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista M0.* cerrados
-   y posibles nuevas auditorías (e.g. otros `#[ignore]` con flake pendiente).
-4. **Auditoría dirigida** — repetir la búsqueda de tests `#[ignore]` con
-   motivo "Flaky" o de incompatibilidad de versión para detectar otros
-   bugs latentes (lesson 70). Ya dio frutos en M0.5 (8 tests
-   re-habilitados) y M0.6 (PHP/Swift pineados).
+1. **Refinamientos sobre C8** — el operador puede pedir más
+   evidencia antes de firmar al nivel contractual (campaña
+   adversarial Post-PRF, UAT cross-crate E2E).
+2. **Nuevas work units** — el operador puede autorizar trabajo
+   nuevo (no hay nada en `docs/roadmap/ROADMAP.md` que esté
+   desbloqueado y sin acción pendiente).
+3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista M0.*
+   cerrados y posibles nuevas auditorías (e.g. otros `#[ignore]`
+   con flake pendiente, drift de rustdoc en los 147
+   `broken_intra_doc_links` que M0.8 dejó abiertos, o reauditoría
+   de `Cargo.toml` workspace metadata).
+4. **Auditoría dirigida** — repetir la búsqueda de tests
+   `#[ignore]` con motivo "Flaky" o de incompatibilidad de
+   versión para detectar otros bugs latentes (lesson 70, lesson
+   79). Ya dio frutos en M0.5 (8 tests re-habilitados), M0.6
+   (PHP/Swift pineados) y M0.10 (grammar-drift PHP/Swift).
 
 ---
 
-*Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-26
-tras firma OPERATIVA de C8 (categoría OPERATIVO, no contractual;
-recertificación C8-R abierta como CR-01).
-Próxima actualización: tras arranque de CR-01, decisión sobre M0.6,
-o firma C8-R al nivel contractual.*
+*Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-27
+tras cierre de M0.10 (commits 2becec6a + 4eacab93 + a47cf419).
+Próxima actualización: tras firma C8-R al nivel contractual,
+SemVer bump v0.99.1→v0.99.2, o apertura de nuevo work unit
+evolutivo.*

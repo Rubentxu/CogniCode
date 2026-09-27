@@ -4630,3 +4630,218 @@ rounds recientes.
 
 **Sin cambios de código, sin cambios en registry, sin cambios en
 gates.** Estado del branch verificado fresh este turno.
+
+## Entrada N+16 — modo autónomo arranca (2026-09-27 07:40 UTC)
+
+**Trigger:** directiva operador "[auto] Modo: Ejecución autónoma".
+Pre-aprobación de gates y decisiones. SDDK es autoridad exclusiva.
+
+**SDDK PRE-FLIGHT emitido:**
+- Project `p-c1fac1fea05615c6`, workspace `w-0826469ea14d6bb8ea5ef01c`.
+- Framework 1.171.2 current, adopt complete.
+- Branch `arch/cr-06-application-fitness-functions`, HEAD
+  `923bcae95d93f9a92a3e01321693581ec9dc6d48`, working tree clean.
+- SDDK WorkItem `075f7bc1-d088-404c-92af-3976462ae03e` (CR-06
+  carry-over reused). Status: 3 items en horizon "unknown",
+  executable, sin blocked.
+
+**Inconsistencias обнаруженные en PRE-FLIGHT (a corregir):**
+
+1. **CURRENT.md está stale**: dice "M0.6 BLOCKED" pero está CLOSED
+   (commit `e2ee94ad` 2026-09-27). Dice "C8 firma PENDIENTE" pero
+   hay firma OPERATIVA documentada en
+   `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
+   No menciona **M0.10 walker-grammar-drift** que está OPEN.
+   Stewardship: actualizar CURRENT.md en este ciclo.
+
+2. **SDDK WorkItem 075f7bc1 agotado**: el WorkItem es un carry-over
+   de CR-06 que ya tiene commits aplicados
+   (`82c6d644 feat(architecture): CR-06 add application_no_infrastructure
+   and application_no_interface canonical constraints`,
+   `417f6c23 test(explorer): CR-06 update c7 and e2_w2 to expect 5
+   canonical constraints`). El contenido del WorkItem original está
+   entregado. No hay nada concreto que ejecutar bajo este ID. Marcar
+   terminal cuando sea posible.
+
+**Decisión de ejecución (criterio propio):**
+
+Ataco **M0.10 walker-grammar-drift** como siguiente bloque
+sustancial. Razones:
+
+* Es el **único trabajo OPEN** genuino detectado (M0.1..M0.9
+  CLOSED, M0.6 CLOSED este turno anterior, F0.1 PENDING carry-over,
+  E3 NOT_TRIGGERED).
+* Scope **bounded**: 3 tests `#[ignore]` PHP/Swift
+  (`test_walk_php_type_refs_function/class`,
+  `test_walk_swift_type_refs_function/class`) pinean nombres de nodo
+  que el grammar actualizado ya no emite. Fix: adaptar walkers a
+  los nombres correctos.
+* **Estimación conocida**: 1-2 días-persona.
+* **Blast radius acotado**: solo afecta PHP/Swift walkers (no se
+  usan en producción actual porque el parser fallaba antes del
+  bump). Sin riesgo de regresión en otros lenguajes.
+* **Entrega de valor real**: repara el path de extracción de symbols
+  para PHP/Swift en `cognicode analyze`, que ahora retorna
+  `Languages: {}` y `parsed_files=0` por esta causa.
+
+**Plan de investigación (primer paso del ciclo):**
+
+1. Inspeccionar el AST real que emite `tree_sitter_php::LANGUAGE_PHP`
+   y `tree_sitter_swift::LANGUAGE` sobre los snippets de los tests
+   pineados. Sin inspección, no sé qué nombres de nodo SÍ emite
+   el grammar actualizado.
+2. Adaptar `walk_php_type_refs` y `walk_swift_type_refs` con los
+   nombres correctos.
+3. Re-habilitar los 4 tests `#[ignore]` (3 fallan, 1 verde).
+4. Verificar que `cognicode analyze` sobre proyecto PHP/Swift ahora
+   extrae symbols (`parsed_files > 0`, `Languages: {"php": N}`).
+
+**Readiness: READY.**
+
+Sin cambios de código en este commit (solo documentation update).
+
+## Entrada N+17 — M0.10 walker-grammar-drift CERRADO (2026-09-27 08:14 UTC)
+
+**Trigger:** cierre real M0.10 con criterios de aceptación verificados.
+Plan de N+11 (inspeccionar AST → adaptar walkers → re-habilitar tests
+→ verificar CLI) ejecutado en su totalidad. Estimación 1-2 días-persona;
+ejecutado en una sesión con criterio propio.
+
+**Comandos atómicos (3 commits):**
+
+1. **`2becec6a` — fix(parser): M0.10 — restore PHP/Swift symbol
+   extraction after tree-sitter 0.27 bump.**
+   Capa parser central `tree_sitter_parser.rs`:
+   - `Language::Php.function_node_type()`: `method_declaration` →
+     `function_definition` (grammar PHP emite `function_definition`
+     para funciones libres; `method_declaration` solo para métodos
+     de clase).
+   - `Language::Swift.function_node_type()`: `method_declaration` →
+     `function_declaration` (grammar Swift emite
+     `function_declaration` para funciones libres).
+   - `find_identifier_name()` Phase 1 + Phase 2: añadidos kinds
+     `name` (PHP class names) y `simple_identifier` (Swift function
+     names). Antes solo buscaba `identifier`/`type_identifier`.
+
+2. **`4eacab93` — fix(walkers): M0.10 — adapt PHP/Swift type_ref
+   walkers to updated grammar.**
+   Capa walkers `type_ref_walkers.rs`:
+   - PHP walker: `formal_parameter` → `simple_parameter`,
+     `type_declaration` → `named_type` (campo `type` del parameter),
+     `interface_base` → `class_interface_clause`.
+   - Swift walker: `inheritance_specifier` ahora se itera como
+     repeated children (uno por parent type) en vez de field-name;
+     return-type detectado iterando children con field `name`
+     filtrado por kind; parameter-types con kind-filter.
+   - `collect_type_names()` extendido: `name` kind añadido,
+     `named_type` unwrap explícito.
+   - 4 tests `#[ignore]` re-habilitados y verde.
+
+3. **`a47cf419` — test(core): M0.10 — add end-to-end acceptance tests
+   for PHP/Swift symbol extraction.**
+   `crates/cognicode-core/tests/m10_acceptance.rs` con 6 tests:
+   - 4 tests rojos-verdes vía API pública
+     `find_all_symbols_with_path` (PHP/Swift free function + class).
+   - 2 tests pineando los valores corregidos de
+     `function_node_type()`.
+
+**Evidencia contractual (regla 2):**
+
+| Suite | Antes M0.10 | Después M0.10 |
+|---|---|---|
+| `cargo test --workspace` | 5565/0/37 | **5651/0/33** (+86 tests, -4 ignored) |
+| `cognicode-core --lib` | 2216/0/19 | 2220/0/15 (-4 ignored exactos) |
+| `type_ref_walkers::tests --include-ignored` | 10/0/3 fail | **13/0/0** (los 3 fail re-habilitados) |
+| `m10_acceptance` | (no existía) | **6/0/0** |
+| `cargo fmt --check` | exit 0 | exit 0 |
+| `cargo clippy -D warnings` | exit 0 | exit 0 |
+
+**Descubrimientos (no triviales):**
+
+1. La causa raíz era **2 capas**, no 1. El plan de N+11 preveía solo
+   la capa walker. La capa parser central (`function_node_type` +
+   `find_identifier_name`) era **anterior y más fundamental**: aunque
+   el walker se arregle, `find_all_symbols_with_path` itera children
+   buscando el kind del `function_node_type`, así que un
+   `function_node_type` incorrecto (method_declaration) hace que el
+   iterador no encuentre nada **antes de invocar el walker**.
+
+2. PHP grammar requiere `<?php` opener para parsear cualquier
+   código. Los 4 tests `#[ignore]` originales usaban snippets sin
+   opener, lo cual es por qué el walker no encontraba nodos
+   incluso cuando pineaba el kind correcto. Ambos bugs叠加:
+   el snippet inválido y los kind namespineados en el walker.
+
+3. Swift grammar emite `inheritance_specifier` como children
+   repeated por cada parent type (no como field-name agrupador).
+   El `child_by_field_name("inheritance_specifier")` original
+   devolvía `None` siempre. Estrategia correcta: iterar children
+   del `class_declaration` filtrando por kind.
+
+4. Swift return-type ahora es un child con field `name` cuyo kind
+   es un type node (`optional_type`, `user_type`, etc.). El
+   param name (`simple_identifier`) **también** tiene field `name`,
+   creando colisión. Solución: filtrar por kind en vez de confiar
+   solo en field-name.
+
+5. **`simple_identifier` (Swift function name)** es distinto de
+   `identifier` (Python). El helper `find_identifier_name` no lo
+   reconocía → el symbol extraído tenía como name el **primer
+   `type_identifier`** encontrado en DFS (típicamente el tipo de
+   un parámetro, no la función). Esto explica por qué `find_all_symbols`
+   devolvía `[User]` en lugar de `[save]` para el snippet Swift.
+
+**Decisiones:**
+
+* **Minimum-change principle aplicado**: solo se modificaron 3 archivos
+  en src/. No se introdujeron abstracciones nuevas, ni se refactorizó
+  el helper `collect_type_names` más allá de las kinds necesarias.
+* **Filtros por kind antes que field-name único** cuando hay colisión
+  (Swift return-type vs param name).
+* **Tests rojos-verdes primero**: el `m10_acceptance.rs` se diseñó
+  ANTES del fix para verificar que los 5 tests rojos fallaban por
+  la razón esperada (no por coincidencia). Tras el fix, todos
+  verdes.
+
+**Lessons nuevas (formalizadas):**
+
+* **Lesson 79 — Cerrar tests `#[ignore]` sin investigación
+  end-to-end deja bugs silenciados**. Los 4 tests `#[ignore]`
+  PHP/Swift en `type_ref_walkers.rs` se ignoraron tras el bump
+  M0.6 sin verificar end-to-end que el camino `find_all_symbols
+  → analyze → CLI` seguía verde. **Implicación**: cuando se
+  ignora un test pineando un bug, hay que documentar
+  explícitamente el camino end-to-end que también queda
+  silenciado, no solo el unit test.
+* **Lesson 80 — Grammar-drift tiene al menos 2 capas**. Cambiar
+  el tree-sitter runtime puede afectar: (a) `Language::*_node_type()`
+  que mapea kinds a conceptos del parser, (b) `find_*_name()` que
+  extrae identificadores, (c) walkers que iteran AST. Cada capa
+  pineaba asunciones distintas del grammar anterior. **Implicación**:
+  un audit post-bump debe verificar cada capa por separado, no
+  solo el walker pineado.
+
+**Estado del backlog actualizado:**
+
+* M0.1..M0.10: **CLOSED**
+* F0.1: PENDING (carry-over, sin cambios)
+* E3: NOT_TRIGGERED (sin cambios)
+
+**Operator-gated follow-ups pendientes (sin cambios vs N+10):**
+
+1. Push commits a `origin/arch/cr-06-application-fitness-functions`
+2. SemVer bump `v0.99.1 → v0.99.2` (binario linkado contra
+   tree-sitter 0.27 + ahora también walkers PHP/Swift funcionales)
+3. CR-01 firma humana al nivel contractual (PASS técnico en
+   `f774b89f`)
+4. Sync CURRENT.md (sigue stale: "M0.6 BLOCKED" / sin M0.10)
+
+**Inconsistencias detectadas (NO se modifican retroactivamente):**
+
+* CURRENT.md sigue declarando M0.6 BLOCKED (no refleja la
+  realidad post-M0.6-closure). Stewardship pendiente en este
+  turno.
+* Lesson 79/80 añadidas ahora; los closeouts de commits
+  `2becec6a`/`4eacab93`/`a47cf419` se redactaron antes de
+  formalizar lessons.
+
