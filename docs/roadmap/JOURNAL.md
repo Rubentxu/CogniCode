@@ -5159,3 +5159,158 @@ corre UAT tests también).
 * F0.1: PENDING (carry-over)
 * E3: NOT_TRIGGERED
 
+---
+
+## Entrada N+20 — M0.13 target-dir UAT mismatch CERRADO (2026-09-27 09:54 UTC)
+
+### Contexto
+
+El operador envió `3` al final del turno previo (entrada
+N+19). Bajo modo autónomo pre-aprobado, lo interpreté como
+trigger del siguiente bloque sustancial del inventario
+N+18, reordenado por boundedness: M0.13 (target-dir fix,
+30 min estimado, descubierto durante M0.12) > M0.11 (rustdoc
+audit, 3-5 días) > F0.1 (find_usages wrapper, 1-2 días).
+
+M0.13 está bounded, valor inmediato, sin dependencia upstream.
+Cerrarlo antes de cualquier push/release deja la suite
+workspace robusta.
+
+### Trabajo previo que reveló el fix no era puntual
+
+La entrada N+19 registró M0.13 como un fix puntual en
+`prf_cli_01_exhaustive_uat.rs` (un solo archivo). Esta
+auditoría con `grep -rln "target/release" crates/*/tests/`
+reveló que el bug era **7 archivos en 2 crates** (4 CLI UAT
+files + 2 CLI release-flow tests + 1 MCP two-process test).
+Aún peor: el helper `common::binary_path()` ya existía
+(CR-00c), pero los 7 archivos reimplementaban la misma
+función localmente. Código duplicado + fragil exactamente
+como Lesson 84 había predicho.
+
+### Diagnóstico del bug raíz
+
+1. `~/.cargo/config.toml` tiene `target-dir =
+   "/var/home/rubentxu/cargo-targets"` configurado
+   globalmente.
+2. `cargo build --release --bin cognicode` envía el binario
+   a `/var/home/rubentxu/cargo-targets/release/cognicode`,
+   NO a `<repo>/target/release/cognicode`.
+3. Los 7 tests pineaban `<repo>/target/release/{name}`
+   hard-coded, así que fallaban al no encontrar el binario.
+4. En N+19 el workaround era copiar el binario manualmente
+   a `<repo>/target/release/` para que la suite pasara.
+   Solución frágil, invisible al lector futuro.
+
+### Decisiones de diseño
+
+**Commit 1** (`555ed54c`): refactorizar los 4 archivos CLI
+UAT simples (`prf_cli_01_exhaustive_uat`,
+`prf_cli_03_workspace_uat`, `prf_cli_06_determinism_uat`,
+`prf_ext_02_partial_uat`) para usar el helper ya existente
+`common::binary_path()`. Sin cambio de API del common —
+simplemente eliminar duplicación.
+
+**Commit 2** (`89fffd58`): añadir un helper nuevo
+`release_dir()` a `common/mod.rs` (de CLI y de MCP) que
+resuelve el directorio donde viven los binarios release.
+Por qué no fue trivial: `Cargo` NO exporta la variable
+`CARGO_TARGET_DIR` a los subprocesses de integration tests
+— sólo setea `CARGO_BIN_EXE_<name>` para el crate propio
+del binario. Confirmado con un probe test
+(`PROBE: CARGO_TARGET_DIR = None` dentro del integration
+test) antes de aplicar la solución.
+
+La estrategia del helper es derivar `release_dir()` del
+binary_path() ya resuelto, no del env var:
+
+  1. parent.ends_with("release") → return parent
+  2. parent.ends_with("debug") → sibling `release/`
+     (sólo si existe realmente)
+  3. `<repo_root>/target/release` → workspace fallback
+
+El probe output lo verificó end-to-end:
+
+  PROBE: binary_path("cognicode") =
+    "/var/home/rubentxu/cargo-targets/debug/cognicode"
+  PROBE: release_dir() =
+    "/var/home/rubentxu/cargo-targets/release"
+
+Los 4 archivos consumidores (CLI:
+`prf_dist_01_06_release_candidate_uat`,
+`prf_f6_w1_release_coherence`; MCP:
+`prf_cli_04_two_process_uat`) cambian sus tar()-calls
+de `root.join("target/release")` a `release_dir()`.
+
+Bonus: `prf_cli_04_two_process_uat.rs` también elimina
+su `repo_root()` local duplicado y usa `common::repo_root()`
+(`pub` ahora, antes privado).
+
+### Trabajo realizado (commits atómicos)
+
+```
+555ed54c test(cli): M0.13 — replace local cognicode_bin() with common::binary_path
+89fffd58 test(release): M0.13 — release_dir() helper honours resolved target-dir
+```
+
+### Archivos modificados (9 totales)
+
+| Archivo | Cambio |
+|---|---|
+| `crates/cognicode-cli/tests/common/mod.rs` | helper `release_dir()` añadido |
+| `crates/cognicode-mcp/tests/common/mod.rs` | helpers `release_dir()` y `repo_root()` añadidos (MCP) |
+| `crates/cognicode-cli/tests/prf_cli_01_exhaustive_uat.rs` | usa `common::binary_path()` |
+| `crates/cognicode-cli/tests/prf_cli_03_workspace_uat.rs` | usa `common::binary_path()` |
+| `crates/cognicode-cli/tests/prf_cli_06_determinism_uat.rs` | usa `common::binary_path()` |
+| `crates/cognicode-cli/tests/prf_ext_02_partial_uat.rs` | usa `common::binary_path()` |
+| `crates/cognicode-cli/tests/prf_dist_01_06_release_candidate_uat.rs` | usa `release_dir()` |
+| `crates/cognicode-cli/tests/prf_f6_w1_release_coherence.rs` | usa `release_dir()` |
+| `crates/cognicode-mcp/tests/prf_cli_04_two_process_uat.rs` | usa `release_dir()` + `common::repo_root()` |
+
+### Validación
+
+* `cargo test --workspace` →
+  `test result: ok. 5668 passed; 0 failed; 30 ignored`
+  (era `5650/0/30` antes del fix; los +18 son tests del
+  módulo `common::tests` que se incluyen al cargar `mod
+  common;`)
+* `cargo fmt --check` → exit 0
+* `cargo clippy --workspace --all-targets -- -D warnings`
+  → exit 0
+* Validación dura: borrado el binario stale
+  `target/release/cognicode` que la suite previamente
+  necesitaba; la suite pasa sin él.
+* Probe output verificó que `release_dir()`
+  detecta correctamente
+  `/var/home/rubentxu/cargo-targets/release` como sibling
+  de `/var/home/rubentxu/cargo-targets/debug/`.
+
+### Backlog actualizado
+
+* M0.1..M0.10: CLOSED
+* M0.11: OPEN (rustdoc audit, 3-5 días)
+* M0.12: CLOSED
+* **M0.13: CLOSED** (9 archivos modificados, helper
+  `release_dir()` añadido a CLI + MCP common, 7 duplicaciones
+  eliminadas, batería workspace robusta sin workarounds
+  manuales)
+* F0.1: PENDING (carry-over)
+* E3: NOT_TRIGGERED
+
+### Cambios sin commitear / descubrimientos
+
+* El workaround manual de N+19 (`cp binario a
+  target/release/`) ya NO es necesario y NO debe volver
+  a aplicarse.
+
+### Seguimiento operator-gated pendiente (sin cambios)
+
+1. Push 19 commits ahead origin/main
+   (M0.13 cycles + M0.10 fixes + docs).
+2. SemVer bump v0.99.1 → v0.99.2 PATCH (5 fix commits
+   this cycle + el fix puntual pendiente M0.11).
+3. CR-01 firma humana contractual sobre SHA base.
+4. Decisión sobre M0.11 (3-5 días) o F0.1 (1-2 días).
+5. Decisión sobre `M0.6 e2ee94ad` commutativity audit
+   (carry-over desde N+19).
+
