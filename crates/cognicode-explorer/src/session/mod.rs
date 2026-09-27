@@ -6,8 +6,8 @@
 //! session owns a `BrainSessionService` that holds:
 //!
 //! - the per-session state ([`state::BrainSessionState`]),
-//! - ISP-segregated service facades ([`SearchService`],
-//!   [`ViewService`], [`WorkspaceService`]),
+//! - ISP-segregated service facades (`SearchService`,
+//!   `ViewService`, `WorkspaceService`),
 //! - the optional call graph (used by follow-up asks).
 //!
 //! Lock protocol: `SessionRegistry` holds a `Mutex<HashMap<_, _>>` only
