@@ -614,18 +614,18 @@ pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
             if let Some(params) = node.child_by_field_name("parameters") {
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
-                    if child.kind() == "formal_parameter" {
-                        // formal_parameter: `$user: Type` → type_declaration is the type
-                        for j in 0..child.child_count() {
-                            let param_child = child.child(j).unwrap();
-                            if param_child.kind() == "type_declaration" {
-                                collect_type_names(
-                                    &param_child,
-                                    source,
-                                    TypeRefContext::ParamType,
-                                    &mut refs,
-                                );
-                            }
+                    // tree-sitter-php 0.24.2 emits `simple_parameter` (the previous
+                    // `formal_parameter` kind is no longer emitted).
+                    if child.kind() == "simple_parameter" {
+                        // simple_parameter: `$user: Type` → type is the
+                        // `named_type` field on the parameter.
+                        if let Some(type_node) = child.child_by_field_name("type") {
+                            collect_type_names(
+                                &type_node,
+                                source,
+                                TypeRefContext::ParamType,
+                                &mut refs,
+                            );
                         }
                     }
                 }
@@ -638,11 +638,14 @@ pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
         }
 
         "class_declaration" | "interface_declaration" | "trait_declaration" => {
-            // PHP extends/implements: `extends` and `implements` clauses
+            // PHP extends/implements: `extends` and `implements` clauses.
+            // tree-sitter-php 0.24.2 emits `base_clause` for `extends Foo` and
+            // `class_interface_clause` for `implements Bar` (the previous
+            // `interface_base` kind is no longer emitted).
             for i in 0..node.child_count() {
                 let child = node.child(i).unwrap();
                 let kind = child.kind();
-                if kind == "base_clause" || kind == "interface_base" {
+                if kind == "base_clause" || kind == "class_interface_clause" {
                     for j in 0..child.child_count() {
                         let base = child.child(j).unwrap();
                         if base.is_named() && base.kind() != "named_type" {
@@ -689,22 +692,54 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
             if let Some(params) = node.child_by_field_name("parameters") {
                 for i in 0..params.child_count() {
                     let child = params.child(i).unwrap();
-                    if child.kind() == "parameter"
-                        && let Some(type_node) = child.child_by_field_name("type")
-                    {
-                        collect_type_names(
-                            &type_node,
-                            source,
-                            TypeRefContext::ParamType,
-                            &mut refs,
-                        );
+                    if child.kind() == "parameter" {
+                        // tree-sitter-swift 0.7.3 emits the parameter's type
+                        // as a child `user_type` / `array_type` / `dictionary_type`
+                        // with field `name` (note: also `simple_identifier` has
+                        // field `name`, but it's a different kind — we filter
+                        // for type kinds).
+                        for j in 0..child.child_count() {
+                            let param_child = child.child(j).unwrap();
+                            let k = param_child.kind();
+                            if k == "user_type"
+                                || k == "array_type"
+                                || k == "dictionary_type"
+                                || k == "optional_type"
+                                || k == "tuple_type"
+                            {
+                                collect_type_names(
+                                    &param_child,
+                                    source,
+                                    TypeRefContext::ParamType,
+                                    &mut refs,
+                                );
+                            }
+                        }
                     }
                 }
             }
 
-            // Return type: `return_type` field
-            if let Some(ret) = node.child_by_field_name("return_type") {
-                collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
+            // Return type: in tree-sitter-swift 0.7.3 the return type is
+            // a child with field `name` whose kind is a type node
+            // (`optional_type`, `user_type`, `array_type`, ...). The
+            // parameter name (`simple_identifier`) also has field `name`,
+            // so we filter by kind.
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                let field_name = node.field_name_for_child(i);
+                if field_name == Some("name")
+                    && matches!(
+                        child.kind(),
+                        "user_type"
+                            | "array_type"
+                            | "dictionary_type"
+                            | "optional_type"
+                            | "tuple_type"
+                            | "function_type"
+                    )
+                {
+                    collect_type_names(&child, source, TypeRefContext::ReturnType, &mut refs);
+                }
             }
         }
 
@@ -712,19 +747,32 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
         | "struct_declaration"
         | "protocol_declaration"
         | "enum_declaration" => {
-            // Swift inheritance: `inheritance_specifier` or `type_inheritance_clause`
-            if let Some(inheritance) = node.child_by_field_name("inheritance_specifier") {
-                // inheritance_specifier contains comma-separated type identifiers
-                for i in 0..inheritance.child_count() {
-                    let child = inheritance.child(i).unwrap();
-                    if child.kind() == "type_identifier" {
-                        let name = node_text(&child, source);
-                        if !is_primitive(&name) && !name.is_empty() {
-                            refs.push(TypeRef {
-                                target_name: name,
-                                context: TypeRefContext::TraitBound,
-                                line: child.start_position().row as u32 + 1,
-                            });
+            // Swift inheritance: tree-sitter-swift 0.7.3 emits one
+            // `inheritance_specifier` child per parent type. The previous
+            // `child_by_field_name("inheritance_specifier")` API call
+            // returned None because these are repeated children, not a
+            // single named field.
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.kind() == "inheritance_specifier" {
+                    // inheritance_specifier contains a single `user_type`
+                    // child whose text IS the parent type name. The
+                    // `user_type` node has no `inherits_from` field name
+                    // (the field `inherits_from` is *on the user_type's
+                    // position relative to inheritance_specifier*; the
+                    // type_identifier inside has no field). We use the
+                    // text of the `user_type` directly.
+                    for j in 0..child.child_count() {
+                        let base = child.child(j).unwrap();
+                        if base.kind() == "user_type" {
+                            let name = node_text(&base, source);
+                            if !is_primitive(&name) && !name.is_empty() {
+                                refs.push(TypeRef {
+                                    target_name: name,
+                                    context: TypeRefContext::TraitBound,
+                                    line: child.start_position().row as u32 + 1,
+                                });
+                            }
                         }
                     }
                 }
@@ -759,7 +807,11 @@ fn collect_type_names(
 ) {
     let kind = node.kind();
     match kind {
-        "type_identifier" => {
+        "type_identifier" | "name" => {
+            // `name` covers languages whose grammar emits a generic
+            // `name` node for type references (e.g. tree-sitter-php
+            // 0.24.2: `named_type → name`). `type_identifier` covers
+            // most other languages (Rust, Swift, TypeScript, ...).
             let name = node_text(node, source);
             if !is_primitive(&name) && !name.is_empty() {
                 out.push(TypeRef {
@@ -767,6 +819,16 @@ fn collect_type_names(
                     context,
                     line: node.start_position().row as u32 + 1,
                 });
+            }
+        }
+        "named_type" => {
+            // tree-sitter-php 0.24.2 emits `named_type → name` for type
+            // references inside parameters. Unwrap to find the `name`.
+            for i in 0..node.child_count() {
+                let child = node.child(i).unwrap();
+                if child.is_named() {
+                    collect_type_names(&child, source, context, out);
+                }
             }
         }
         "scoped_type_identifier" => {
@@ -1147,9 +1209,12 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "PHP walker pines node names (function_definition) that tree-sitter-php 0.24.2 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump (commit fixes LanguageError version mismatch). Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_php_type_refs_function() {
-        let source = "function save(User $user, Repository $repo): void { }";
+        // PHP source must include `<?php` opener — tree-sitter-php 0.24.2
+        // parses anything before `<?php` as plain text, so the walker would
+        // see `(program (text))` and find no nodes. Discovered during
+        // walker-grammar-drift resolution (2026-09-27).
+        let source = "<?php\nfunction save(User $user, Repository $repo): void { }";
         test_walker(
             source,
             walk_php_type_refs,
@@ -1166,9 +1231,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "PHP walker pines node names (class_declaration) that tree-sitter-php 0.24.2 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_php_type_refs_class() {
-        let source = "class User extends Model implements Serializable {}";
+        // PHP source must include `<?php` opener — see comment above.
+        let source = "<?php\nclass User extends Model implements Serializable {}";
         test_walker(
             source,
             walk_php_type_refs,
@@ -1185,7 +1250,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Swift walker pines node names (function_declaration) that tree-sitter-swift 0.7.3 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_swift_type_refs_function() {
         let source = "func save(user: User, repo: Repository) -> Error? { return nil }";
         test_walker(
@@ -1204,7 +1268,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Swift walker pines node names (class_declaration) that tree-sitter-swift 0.7.3 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_swift_type_refs_class() {
         let source = "class User: Model, Serializable { }";
         test_walker(
