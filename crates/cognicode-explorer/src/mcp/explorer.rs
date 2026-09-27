@@ -336,8 +336,8 @@ pub struct EnvelopeError {
 
 /// Ports DTO for constructing an [`ExplorerMcpHandler`].
 ///
-/// Mirrors the [`RuntimePorts`] pattern from the runtime layer — bundles all
-/// infrastructure ports into a single struct so [`with_graph`] has a stable
+/// Mirrors the `RuntimePorts` pattern from the runtime layer — bundles all
+/// infrastructure ports into a single struct so [`ExplorerMcpHandler::with_graph`] has a stable
 /// typed contract instead of 12 individual parameters.
 ///
 /// Created in `Runtime::into_mcp_handler()` and passed directly to
@@ -356,8 +356,9 @@ pub struct McpHandlerPorts {
     /// Optional call graph (None when no graph is loaded).
     pub graph: Option<Arc<cognicode_core::domain::aggregates::CallGraph>>,
     /// Quality store for search and view services.
+    /// Write-capable quality store (may be same as the read-capable one).
     pub quality_store: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
-    /// Write-capable quality store (may be same as [`quality_store`]).
+    /// Write-capable quality store (may be same as the read-capable `quality_store` field).
     pub quality_write: Option<Arc<dyn cognicode_core::domain::ports::QualityStore>>,
     /// Revision tracker incremented after each ingest.
     pub revision_tracker: Arc<std::sync::atomic::AtomicU64>,
