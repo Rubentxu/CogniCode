@@ -223,7 +223,7 @@ impl FactBatchBuilder {
     /// S1→Inferred, S0→Ambiguous) with `tier=<T> provider=<id>` appended to
     /// its detail; a tier-less extraction record stays `Extracted` with its
     /// detail untouched. Exhausted-query records taken with
-    /// [`take_unresolved`] are NOT part of the fact set.
+    /// [`FactBatchBuilder::take_unresolved`] are NOT part of the fact set.
     pub fn finish(self) -> Vec<Fact> {
         let snapshot = self.snapshot;
         let mut records = self.records;
