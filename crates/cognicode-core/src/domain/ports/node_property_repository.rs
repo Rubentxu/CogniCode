@@ -5,7 +5,8 @@
 //!
 //! # Why a separate port?
 //!
-//! [`GraphQueryPort::node_properties`] is a sync trait method. Implementing it
+//! [`GraphQueryPort::node_properties`](crate::domain::traits::graph_query_port::GraphQueryPort::node_properties)
+//! is a sync trait method. Implementing it
 //! asynchronously from inside a Tokio runtime requires `Handle::current().block_on()`,
 //! which has deadlock risk and is not idiomatic. Instead, we expose node properties
 //! via this dedicated async port and let executors that have it available use it

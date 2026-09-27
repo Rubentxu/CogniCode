@@ -253,7 +253,8 @@ pub enum LocalVerticalError {
 ///    conservative fallback: `Unknown` still executes to produce
 ///    evidence, since `Unknown` is not `Unaffected`).
 /// 3. The executor's [`ProducerOutput`]s are translated into a
-///    per-work [`EvidenceBundle`].
+///    per-work
+///    [`EvidenceBundle`](crate::application::evidence_bundle::EvidenceBundle).
 /// 4. The gate evaluates the bundle against the spec; the decision
 ///    is added to the report.
 pub fn run_local_vertical(

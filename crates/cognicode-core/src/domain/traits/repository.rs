@@ -2,7 +2,8 @@
 //!
 //! This trait is the structural seam for the
 //! canonical implementation that lands in a follow-up slice. It is intentionally
-//! **standalone** — it does NOT inherit from [`GraphStore`] — so the
+//! **standalone** — it does NOT inherit from
+//! [`GraphStore`](crate::domain::traits::graph_store::GraphStore) — so the
 //! write-path (synchronous save/load of bincode blobs) and the
 //! read-path (async, query-shaped) remain independent seams. A future
 //! struct can implement both traits side by side.
@@ -98,7 +99,7 @@ pub trait CallGraphStore: Send + Sync {
 
     /// Return every call-graph edge whose `callee_id` matches
     /// `callee_id`. Same empty-result contract as
-    /// [`Repository::find_edges_by_caller`].
+    /// [`CallGraphStore::find_edges_by_caller`].
     async fn find_edges_by_callee(
         &self,
         callee_id: &str,

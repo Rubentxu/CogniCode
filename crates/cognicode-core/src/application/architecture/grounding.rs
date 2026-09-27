@@ -9,10 +9,12 @@
 //! pure-domain transformation: a violation is converted into a
 //! [`ProducedEvidence`]
 //! whose `grounding` is the violation's optional
-//! [`GroundingRef`]. The actual write step — `FactStore::get`,
-//! `EvidenceStore::append_batch` — is delegated to the existing
-//! [`crate::application::findings::kernel_bridge::CanonicalEvidenceWriter`],
-//! which is the only writer that touches the kernel.
+//! [`GroundingRef`](crate::domain::findings::grounding::GroundingRef). The actual
+//! write step — `FactStore::get`, `EvidenceStore::append_batch` — is delegated
+//! to `application::findings::kernel_bridge::CanonicalEvidenceWriter`, which is
+//! the only writer that touches the kernel. That module is behind
+//! `#[cfg(feature = "evidence-kernel")]`, so the link to it cannot resolve in the
+//! default build that rustdoc reads; the path is named as text instead.
 //!
 //! ## Invariants
 //!
@@ -54,8 +56,10 @@ impl ArchitectureGroundingBridge {
     /// Convert a slice of violations into a vector of
     /// `ProducedEvidence` items, one per violation, in order.
     ///
-    /// The resulting `ProducedEvidence` items are ready to be fed
-    /// to [`crate::application::findings::kernel_bridge::CanonicalEvidenceWriter::persist`].
+    /// The resulting `ProducedEvidence` items are ready to be fed to
+    /// `CanonicalEvidenceWriter::persist` (see
+    /// `application::findings::kernel_bridge`, gated on the `evidence-kernel`
+    /// feature and therefore not linkable from the default build).
     /// Items with `grounding = None` will be persisted as
     /// `EvidenceBinding::ungrounded(NoFact)` and cannot gate.
     pub fn to_produced_evidence(

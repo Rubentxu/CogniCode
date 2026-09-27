@@ -1,4 +1,5 @@
-//! Adapters: bridge concrete graph types to the [`GraphBuilder`] trait.
+//! Adapters: bridge concrete graph types to the
+//! [`GraphBuilder`](crate::graph_builder::GraphBuilder) trait.
 
 pub mod json_graph;
 

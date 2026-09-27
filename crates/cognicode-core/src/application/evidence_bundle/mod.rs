@@ -13,7 +13,7 @@
 //! - Derived operational decisions are not Facts — the bundle is
 //!   derived.
 //! - Unknown/incomplete never becomes "safe" — see the
-//!   [`ready_for_gate`] helper, which is **advisory only**: the gate is
+//!   `ready_for_gate` helper, which is **advisory only**: the gate is
 //!   the only authority that may pass.
 //!
 //! ## Ordering

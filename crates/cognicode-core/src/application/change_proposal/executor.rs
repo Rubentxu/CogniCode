@@ -1,20 +1,20 @@
 //! TrialExecutor (e72 WU3 — M9).
 //!
 //! A `TrialExecutor` runs the policy-gate evaluation step of a
-//! trial: it takes a [`TrialInput`](crate::application::change_proposal::trial::TrialInput) with an [`EvidenceBundle`](crate::application::evidence_bundle::EvidenceBundle), evaluates
-//! that bundle against a configured [`PolicySpec`](crate::application::policy_gate::PolicySpec), and assembles a
-//! [`TrialEvidence`](crate::application::change_proposal::trial::TrialEvidence) with the resulting [`PolicyDecision`](crate::application::policy_gate::PolicyDecision).
+//! trial: it takes a `TrialInput` with an `EvidenceBundle`, evaluates
+//! that bundle against a configured `PolicySpec`, and assembles a
+//! `TrialEvidence` with the resulting `PolicyDecision`.
 //!
 //! ## `TrialExecutor` ≠ `WorkExecutor`
 //!
 //! These are deliberately separate traits:
 //!
-//! - [`WorkExecutor`](crate::application::local_ci::InMemoryWorkExecutor)
+//! - `WorkExecutor`
 //!   (e70) runs a piece of logical work; its output is a
-//!   [`PerWorkReport`](crate::application::local_ci::PerWorkReport).
+//!   `PerWorkReport`.
 //! - `TrialExecutor` (this module) assembles the trial envelope
 //!   from pre-computed evidence, evaluating the policy gate; its
-//!   output is a [`TrialEvidence`](crate::application::change_proposal::trial::TrialEvidence).
+//!   output is a `TrialEvidence`.
 //!
 //! The two may compose (a future impl may invoke a `WorkExecutor`
 //! inside `run_trial`), but they are not the same trait. The envelope
@@ -24,9 +24,9 @@
 //! ## Reusing e69 (no parallel verdict model)
 //!
 //! The executor evaluates the bundle via e69's
-//! [`evaluate`](crate::application::policy_gate::evaluate) function.
+//! `evaluate` function.
 //! It does NOT introduce a parallel verdict model. The
-//! [`PolicyDecision`](crate::application::policy_gate::PolicyDecision) returned is exactly the one e69 produces.
+//! `PolicyDecision` returned is exactly the one e69 produces.
 //!
 //! ## Pure / deterministic / no I/O
 //!
@@ -47,10 +47,10 @@ use crate::application::change_proposal::trial::{
 use crate::application::policy_gate::{PolicySpec, evaluate};
 
 /// A type that runs the policy-gate step of a trial and assembles the
-/// resulting [`TrialEvidence`](crate::application::change_proposal::trial::TrialEvidence).
+/// resulting `TrialEvidence`.
 ///
 /// Implementations are responsible for:
-/// 1. Receiving a [`TrialInput`](crate::application::change_proposal::trial::TrialInput) with an [`EvidenceBundle`](crate::application::evidence_bundle::EvidenceBundle) and any
+/// 1. Receiving a `TrialInput` with an `EvidenceBundle` and any
 ///    other pre-computed artefacts.
 /// 2. Evaluating the bundle against their configured policy.
 /// 3. Producing a [`TrialEvidence`] via

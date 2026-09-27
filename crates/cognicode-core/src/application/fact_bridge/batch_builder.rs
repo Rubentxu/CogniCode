@@ -63,7 +63,8 @@ fn producer_rank(producer: ProducerKind) -> u8 {
 ///
 /// Uncertainty is recorded IN MEMORY next to the batch — the bridge never
 /// persists it (no new predicate, no new kernel artifact): consumers read
-/// it with [`FactBatchBuilder::take_unresolved`] before [`finish`]
+/// it with [`FactBatchBuilder::take_unresolved`] before
+/// [`FactBatchBuilder::finish`]
 /// consumes the builder. An exhausted query contributes NO fact and never
 /// fabricates a subject or target identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -151,7 +152,7 @@ impl FactBatchBuilder {
     /// callers derive it with [`PrecisionTier::provenance_class`]. A class
     /// contradicting the declared tier fails batch construction with
     /// [`FactBridgeError::TierProvenanceContradiction`] (no silent accept);
-    /// the stored fact's class is re-derived from `tier` in [`finish`].
+    /// the stored fact's class is re-derived from `tier` in [`Self::finish`].
     ///
     /// `provider_id` is the serving provider's stable identity; `finish`
     /// appends `tier=<T> provider=<id>` to the provenance detail.
@@ -204,7 +205,7 @@ impl FactBatchBuilder {
 
     /// Takes the exhausted-query records collected so far (design D5).
     ///
-    /// Call BEFORE [`finish`] consumes the builder: `finish` drops any
+    /// Call BEFORE [`Self::finish`] consumes the builder: `finish` drops any
     /// records not taken, because uncertainty is deliberately not part of
     /// the persisted fact set.
     pub fn take_unresolved(&mut self) -> Vec<UnresolvedRecord> {

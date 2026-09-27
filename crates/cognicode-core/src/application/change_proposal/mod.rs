@@ -13,7 +13,8 @@
 //!
 //! **Creation is not authority.** A `ChangeProposal` does not contain
 //! any field that grants apply power. The promotion path is reserved
-//! for e73's [`PromotionPermit`](crate::application::promotion_authority::PromotionPermit).
+//! for e73's `PromotionPermit` (`promotion_authority::permit`, gated on the
+//! `evidence-kernel` feature).
 //!
 //! [`proposal`]: crate::application::change_proposal::proposal
 //! [`trial`]: crate::application::change_proposal::trial

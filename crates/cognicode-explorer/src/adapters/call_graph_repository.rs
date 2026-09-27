@@ -40,9 +40,8 @@ impl CallGraphRepository {
     ///
     /// Used by Phase 2+ explorer consumers that need to surface edge
     /// trust information (provenance, confidence) in the API. The
-    /// existing [`SymbolRepository::callees`] returns plain
-    /// `RelationTarget` and intentionally omits metadata to keep that
-    /// trait surface stable.
+    /// existing `SymbolRepository::callees` returns plain `RelationTarget`
+    /// and intentionally omits metadata to keep that trait surface stable.
     pub fn callees_with_metadata(
         &self,
         id: &SymbolId,

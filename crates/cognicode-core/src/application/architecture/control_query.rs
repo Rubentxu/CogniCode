@@ -221,7 +221,8 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
 /// * The constraints themselves live in [`crate::application::architecture::canonical_constraints`]
 ///   as a single source of truth (shared with the self-hosting E2E
 ///   test).
-/// * The admission flow lives in [`ArchitectureAdmissionService`].
+/// * The admission flow lives in
+///   [`ArchitectureAdmissionService`](super::admission::ArchitectureAdmissionService).
 /// * The wiring step that combines them — which the **production
 ///   binary** (not just the test fixture) needs to call at startup —
 ///   lives next to the `ControlQueryService` constructor because

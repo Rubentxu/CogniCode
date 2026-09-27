@@ -1553,8 +1553,9 @@ impl LadybugStore {
         init_schema::init_narrative_view_schema(&conn)
     }
 
-    /// E1.W1: apply the [`Evidence`] node table DDL backing the
-    /// [`EvidenceStore`] port.
+    /// E1.W1: apply the `KnowledgeEvidence` node table DDL backing the
+    /// canonical `cognicode_core::domain::ports::evidence_store::EvidenceStore`
+    /// port.
     ///
     /// Idempotent — every statement uses `IF NOT EXISTS`. Called
     /// automatically by [`LadybugStore::open`]; the raw sharing

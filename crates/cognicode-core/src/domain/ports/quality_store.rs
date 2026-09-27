@@ -110,7 +110,8 @@ pub struct IssueFilter {
 ///
 /// Read methods do not return errors in graceful mode (they return
 /// empty results on missing DB); only write operations surface
-/// [`Store`] / [`Conflict`].
+/// [`Store`](QualityError::Store) /
+/// [`Conflict`](QualityError::Conflict).
 #[derive(Debug, Error)]
 pub enum QualityError {
     #[error("quality store error: {0}")]

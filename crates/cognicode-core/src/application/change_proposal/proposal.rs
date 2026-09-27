@@ -131,7 +131,8 @@ impl RequestedBy {
 /// The proposal does **not** grant authority to apply the change. The
 /// shape is intentionally minimal: id, target world, the change
 /// itself, and the author class. Authority is granted separately by
-/// e73's [`PromotionPermit`](crate::application::promotion_authority::PromotionPermit).
+/// e73's `PromotionPermit` (`promotion_authority::permit`, gated on the
+/// `evidence-kernel` feature).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ChangeProposal {
     /// Stable identifier of this proposal.

@@ -30,7 +30,8 @@ impl AdmissionSource {
     /// Whether this source is *eligible* to be trusted to gate.
     ///
     /// Eligibility alone never grants authority: a promotion still needs an
-    /// [`ApprovalVerifier`] to accept it.
+    /// [`ApprovalVerifier`](crate::domain::findings::admission::ApprovalVerifier)
+    /// to accept it.
     pub fn is_trusted_to_gate(self) -> bool {
         matches!(self, Self::Builtin | Self::HumanCurated)
     }

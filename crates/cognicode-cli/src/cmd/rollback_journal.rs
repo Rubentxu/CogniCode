@@ -225,9 +225,9 @@ impl RollbackJournal {
     /// an operation; only an explicit `rollback()` call may reverse
     /// effects, and only after the caller has validated applicability.
     /// Drop-neutralization happens at the source (this constructor and
-    /// [`lifecycle_journal::load`]) so no consumer can re-introduce the
-    /// hazard: dropping a loaded journal in any early-return path must
-    /// never silently replay a reversal.
+    /// [`lifecycle_journal::load`](super::lifecycle_journal::load)) so no
+    /// consumer can re-introduce the hazard: dropping a loaded journal in any
+    /// early-return path must never silently replay a reversal.
     pub fn from_json(s: &str) -> Result<Self, InstallerError> {
         let mut journal: RollbackJournal =
             serde_json::from_str(s).map_err(|e| InstallerError::Serialize(e.to_string()))?;

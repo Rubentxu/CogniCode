@@ -4,7 +4,8 @@
 //! **application**-layer adapter on purpose:
 //!
 //! - the kernel stores are async, and the domain must not `block_on`;
-//! - the domain declares what it needs through the sync [`EvidenceSink`] and
+//! - the domain declares what it needs through the sync
+//!   [`EvidenceSink`](crate::domain::findings::ports::EvidenceSink) and
 //!   [`EvidenceLookup`] ports, and this module implements them over the kernel.
 //!
 //! ```text

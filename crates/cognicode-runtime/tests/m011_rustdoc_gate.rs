@@ -10,11 +10,13 @@
 //! cargo test -p cognicode-runtime --test m011_rustdoc_gate
 //! ```
 //!
-//! It is deliberately excluded from the default test profile: `cargo doc` over
-//! the whole workspace is expensive, and pinning a doc-warning count to every
-//! `cargo test` invocation would tax every developer's inner loop for a
-//! maintenance gate that only matters at release time. The gate is run
-//! explicitly, in CI, and at cycle close.
+//! It runs on every `cargo test` rather than being excluded. Cargo discovers
+//! integration tests by target name, so opting this one out would need an
+//! explicit `[[test]]` override, and a `required-features` gate would make it
+//! silently *skip* instead of run — the worst outcome for a gate, because a
+//! skipped gate looks exactly like a green one. The cost is real (~100s) but it
+//! is a full `cargo doc` that the release gate has to run anyway, and it buys
+//! warning-free documentation on every push instead of at audit time.
 //!
 //! It parses `cargo metadata` with `serde_json`, which the workspace already
 //! depends on from ten crates, so this costs no new build-time dependency in

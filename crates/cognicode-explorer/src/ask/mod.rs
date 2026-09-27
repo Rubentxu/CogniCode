@@ -3,9 +3,9 @@
 //! Pure-function [`AskRouter::classify`] parses a free-form question,
 //! selects one of 8 priority-ordered patterns, and returns a
 //! [`ClassifiedQuestion`]. A thin async dispatch layer in
-//! [`dispatch`] calls `ExplorerService` and `ImpactAnalysisService`
-//! directly (no MCP chaining) and wraps the result in the standard
-//! [`McpResultEnvelope`].
+//! [`dispatch`] calls the explorer facades directly (no MCP chaining) and
+//! wraps the result in the standard
+//! [`McpResultEnvelope`](crate::mcp::McpResultEnvelope).
 //!
 //! Submodules:
 //! - [`patterns`] — `QuestionCategory` enum, `QuestionPattern` struct,

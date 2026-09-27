@@ -29,6 +29,23 @@
 //! (`domain::aggregates::Symbol`) and the fact path, and the canonical
 //! grammar must be centralized, not duplicated per feature gate.
 
+// Every module in the map above except `symbol_fqn` is behind
+// `#[cfg(feature = "evidence-kernel")]`, which is off in the default build.
+// rustdoc reads the default build, so it cannot see them and reports every
+// link above as unresolved — at doc-build time only. The links are correct
+// for the feature-enabled build that actually consumes them.
+//
+// The allow is scoped to this one module and this one lint, and it is
+// conditional on the feature being off: with the feature on, the links
+// resolve and the lint stays armed. Deleting the map would remove the only
+// index of the kernel's contents; dropping the links would hide the paths
+// consumers need. A crate-wide allow is not warranted — every other broken
+// link in this crate is a real defect.
+#![cfg_attr(
+    not(feature = "evidence-kernel"),
+    allow(rustdoc::broken_intra_doc_links)
+)]
+
 #[cfg(feature = "evidence-kernel")]
 pub mod bootstrap;
 #[cfg(feature = "evidence-kernel")]

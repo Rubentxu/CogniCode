@@ -16,7 +16,8 @@ use serde::{Deserialize, Serialize};
 use crate::domain::federation::federated_node::FederatedNode;
 
 /// A heuristic suggestion that two nodes might be the same
-/// real-world entity. Constructed by the [`MergeDetector`].
+/// real-world entity. Constructed by the
+/// [`MergeDetector`](super::merge_detector::MergeDetector).
 ///
 /// The pair is unordered in the abstract, but the detector
 /// produces candidates in a deterministic order (by the

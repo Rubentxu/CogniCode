@@ -140,8 +140,8 @@ impl SessionRegistry {
         }
     }
 
-    /// Async version of [`resolve_session`]. The closure returns a future that
-    /// is awaited before this method returns.
+    /// Async version of [`Self::resolve_session`]. The closure returns a future
+    /// that is awaited before this method returns.
     pub async fn resolve_session_async<F, Fut>(
         &self,
         tool_name: &str,
@@ -193,8 +193,8 @@ impl SessionRegistry {
         }
     }
 
-    /// Async version of [`resolve_session_attached`]. The closure returns a future
-    /// that is awaited before this method returns.
+    /// Async version of [`Self::resolve_session_attached`]. The closure returns a
+    /// future that is awaited before this method returns.
     pub async fn resolve_session_attached_async<F, Fut>(
         &self,
         tool_name: &str,

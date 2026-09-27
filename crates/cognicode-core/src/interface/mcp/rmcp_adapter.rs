@@ -233,7 +233,7 @@ fn tool_category_map() -> &'static HashMap<String, String> {
 /// PRF-MCP-05: Lazily-built map from tool name to its declared authority
 /// string ("read" | "mutating" | "execute" | "network"), extracted from the
 /// `cognicode.authority` meta field that each tool declares via
-/// [`cognicode_meta`]. Derived from [`build_all_tools`] on first access
+/// `cognicode_meta`. Derived from `build_all_tools` on first access
 /// and reused for the lifetime of the process.
 ///
 /// This map is the **primary authority oracle**. The legacy

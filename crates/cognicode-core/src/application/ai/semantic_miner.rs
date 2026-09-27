@@ -10,8 +10,9 @@
 //! - `Suggestion(Hypothesis)` — a free-form advisory observation.
 //! - `ConstraintCandidate` — a proposed architecture constraint that
 //!   the admission gate (e77) may admit later. The miner NEVER
-//!   produces an admitted [`ArchitectureConstraint`]; admission is
-//!   the only path to authority (e77 design).
+//!   produces an admitted
+//!   [`ArchitectureConstraint`](crate::domain::architecture::constraint::ArchitectureConstraint);
+//!   admission is the only path to authority (e77 design).
 //! - `DetectorCandidate { id, summary }` — a free-form detector idea
 //!   the platform may register later via the detector admission flow.
 //!

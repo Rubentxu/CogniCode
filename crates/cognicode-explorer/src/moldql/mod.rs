@@ -32,13 +32,13 @@
 //!   types callers interact with
 //! - [`parser::parse`] — entry point for `&str → MoldQLQuery`
 //! - [`ParseError`] — diagnostic with line + column
-//! - [`MoldQLExecutor`] — drives an [`crate::service::ExplorerService`]
-//!   against a parsed query
+//! - [`MoldQLExecutor`] — drives the query against a parsed
+//!   [`crate::facades::MoldQLService`]
 //! - [`compile`] — AST → target-specific plan (Postgres or petgraph)
 //!
 //! Most callers should go through
-//! [`crate::service::ExplorerService::execute_query`] — it combines
-//! parse + execute into a single call.
+//! [`MoldQLService::execute_query`](crate::facades::MoldQLService::execute_query)
+//! — it combines parse + execute into a single call.
 
 pub mod ast;
 pub mod compile;

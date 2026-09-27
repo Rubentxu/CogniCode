@@ -39,8 +39,11 @@
 //! ## Composition, not duplication
 //!
 //! e81 owns historical replay; e82 composes it. The replay engine is reused
-//! unchanged through [`HistoricalReplayPlan::run_role`], and both analyzer sides
-//! reuse the single [`HistoricalPredictor`] contract. `Current` vs `Candidate`
+//! unchanged through
+//! [`HistoricalReplayPlan::run_role`](crate::application::historical_replay::plan::HistoricalReplayPlan::run_role),
+//! and both analyzer sides reuse the single
+//! [`HistoricalPredictor`](crate::application::historical_replay::replay::HistoricalPredictor)
+//! contract. `Current` vs `Candidate`
 //! is an evaluation **role**, not a different analyzer type.
 //!
 //! ## Future-proofing for e83

@@ -81,9 +81,9 @@ pub struct TrialInput {
     /// candidate.
     pub work_results: Vec<PerWorkReport>,
     /// Evidence bundle assembled during the trial. The
-    /// [`TrialExecutor`](super::executor::TrialExecutor) will evaluate
+    /// `TrialExecutor` will evaluate
     /// this bundle against its configured [`crate::application::policy_gate::PolicySpec`] to produce
-    /// the [`PolicyDecision`](crate::application::policy_gate::PolicyDecision) (the verdict).
+    /// the `PolicyDecision` (the verdict).
     pub evidence_bundle: EvidenceBundle,
 }
 

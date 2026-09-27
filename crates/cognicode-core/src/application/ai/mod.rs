@@ -18,7 +18,7 @@
 //!   detector, no `PromotionPermit`, no `PromotionAuthorization`).
 //! - applies patches, writes source, or runs Git operations.
 //!
-//! e80b adds [`fix_agent`]: the `FixAgent` orchestrator turns a bounded frame
+//! e80b adds the `fix_agent` module: the `FixAgent` orchestrator turns a bounded frame
 //! into a validated patch artifact and a `ChangeProposal` whose author is
 //! stamped `RequestedBy::LlmAgent` from configuration. Producing a proposal is
 //! the terminal effect — no trial, no evaluation, no authorization, no apply.

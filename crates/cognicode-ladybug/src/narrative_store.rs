@@ -1,6 +1,7 @@
 //! `NarrativeStore` adapter implementation for LadybugDB.
 //!
-//! Mirrors the [`QualityStore`] pattern: synthetic `id`, read-then-conditional-write
+//! Mirrors the [`QualityStore`](cognicode_core::domain::ports::quality_store::QualityStore)
+//! pattern: synthetic `id`, read-then-conditional-write
 //! for upserts, and graceful degradation on missing tables.
 
 #[cfg(test)]

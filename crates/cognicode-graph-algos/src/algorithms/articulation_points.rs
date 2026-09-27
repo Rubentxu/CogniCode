@@ -7,7 +7,7 @@
 //! `cut_vertices_count` = number of components after removal.
 //!
 //! For root: cut if it has 2+ DFS children.
-//! For non-root: cut if it has a child v with low[v] >= disc[v].
+//! For non-root: cut if it has a child `v` with `low[v] >= disc[v]`.
 
 /// Run articulation points on an undirected adjacency structure.
 ///

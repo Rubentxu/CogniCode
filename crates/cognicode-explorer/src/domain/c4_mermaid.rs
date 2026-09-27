@@ -1,8 +1,8 @@
 //! C4-level Mermaid diagram renderer.
 //!
-//! Converts a [`SubgraphResponse`] (nodes + edges) into a Mermaid C4Context,
-//! C4Container, or C4Component diagram string. Pure function — no I/O,
-//! deterministic output.
+//! Converts a [`SubgraphResponse`](crate::dto::SubgraphResponse) (nodes + edges)
+//! into a Mermaid C4Context, C4Container, or C4Component diagram string.
+//! Pure function — no I/O, deterministic output.
 //!
 //! ## C4 Model Overview
 //!
@@ -80,7 +80,8 @@ pub use super::mermaid_util::{deduplicate_ids, sanitize_id};
 
 /// Render a C4 diagram as a Mermaid string.
 ///
-/// `nodes` and `edges` come from [`GraphService::build_architecture`].
+/// `nodes` and `edges` come from
+/// [`GraphService::build_architecture`](crate::facades::GraphService::build_architecture).
 /// `level` selects the Mermaid diagram type (C4Context / C4Container / C4Component).
 ///
 /// ## Behaviour

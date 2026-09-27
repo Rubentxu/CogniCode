@@ -9,7 +9,7 @@
 //! - [`context`]  — [`McpContext`] — shared execution context passed to handlers
 //! - [`error`]    — [`ToolError`] — structured error types for handler failures
 //! - [`handler`]  — [`ToolHandler`] trait + [`ToolHandlerRegistry`]
-//! - [`handler::sessions`] — session-family handlers (9 tools)
+//! - [`handler::register_session_handlers`] — session-family handlers (9 tools)
 
 pub mod context;
 pub mod envelope;

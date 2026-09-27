@@ -3,7 +3,8 @@
 //! score in `[0.0, 1.0]`.
 //!
 //! The 4-tier rule table is fixed by the spec; the [`Provenance`]
-//! tag in [`EdgeKind`] is also derived from the tier so the
+//! tag in [`EdgeKind`](crate::domain::value_objects::edge_kind::EdgeKind)
+//! is also derived from the tier so the
 //! persistence layer can filter ambiguous edges out of the
 //! canonical graph. The full table:
 //!

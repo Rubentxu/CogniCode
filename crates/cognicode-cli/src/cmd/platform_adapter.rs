@@ -28,14 +28,14 @@
 //!
 //! Minimum capability surface needed by the existing call sites:
 //!
-//! - [`PlatformAdapter::current_platform`]: which target triple we are.
+//! - `current_platform`: which target triple we are.
 //! - [`PlatformAdapter::install_shim`]: create an executable link/copy
 //!   to the installed binary under the shims directory. Unix-like OS
 //!   use symlinks; Windows copies (matching the existing `cfg(unix)`
 //!   behavior in [`crate::installer_transaction`] and [`crate::ide`]).
 //! - [`PlatformAdapter::user_home_dir`]: process-wide home directory
 //!   used as the default `COGNICODE_HOME` anchor on first install.
-//! - [`PlatformAdapter::record_side_effect`]: the journaled side-effect
+//! - `record_side_effect`: the journaled side-effect
 //!   the caller must record so the rollback machinery can undo it.
 //!
 //! New capabilities will be added per WU as needed (config dir,

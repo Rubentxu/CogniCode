@@ -2,7 +2,8 @@
 //!
 //! # Architecture
 //!
-//! The registry follows the same trait-object pattern as [`LensRegistry`].
+//! The registry follows the same trait-object pattern as
+//! [`LensRegistry`](crate::domain::lens::LensRegistry).
 //! Built-in views register through `inventory::submit!` which provides
 //! compile-time collection on stable Rust (linkme/distributed-slice
 //! deferred to v1.1 per the design).

@@ -145,7 +145,7 @@ impl SnapshotService {
     ///
     /// Returns `SnapshotError` if:
     /// - `mermaid_text` is empty
-    /// - `mermaid_text` exceeds [`MAX_MERMAID_SIZE`]
+    /// - `mermaid_text` exceeds [`Self::MAX_MERMAID_SIZE`]
     /// - `mmdc` is not installed
     /// - rendering fails or times out
     pub async fn render(

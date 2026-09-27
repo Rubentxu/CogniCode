@@ -30,7 +30,8 @@ impl SymbolKindDetail {
 
     /// Decodes a provenance detail onto a [`SymbolKind`].
     ///
-    /// Returns `None` when the detail does not start with [`PREFIX`] or the
+    /// Returns `None` when the detail does not start with the `PREFIX`
+    /// constant or the
     /// remaining name is not a known serde name — callers decide loudly how
     /// to treat an undecodable detail (no silent `Unknown` here).
     pub fn decode(detail: &str) -> Option<SymbolKind> {

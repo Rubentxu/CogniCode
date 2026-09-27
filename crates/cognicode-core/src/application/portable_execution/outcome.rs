@@ -18,7 +18,8 @@
 //! The outcome is an envelope: it carries the small set of variant
 //! plus identity pins from M7.2 (`AnalysisScope`, `ActorRef`,
 //! `CorrelationId`) and bounded stdout/stderr references. The
-//! translation to [`ProducerOutput`]
+//! translation to
+//! [`ProducerOutput`](crate::application::evidence_bundle::producer::ProducerOutput)
 //! (in [`super::evidence_translate`]) keeps the
 //! `EvidenceBundle` invariants and the gate unchanged.
 //!

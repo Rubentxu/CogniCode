@@ -4,7 +4,7 @@
 //! tests inject canned data without network I/O. Production
 //! builds use [`OctocrabClient`](super::octocrab_client) (gated
 //! behind `multimodal`); test builds use
-//! [`MockGitHubClient`](super::mock_client).
+//! `MockGitHubClient` (`super::mock_client`, `#[cfg(test)]`-only).
 //!
 //! The trait exposes the minimum data the extractor needs — a
 //! flat [`RawIssue`] struct that shields the domain from
