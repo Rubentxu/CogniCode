@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -143,6 +144,9 @@ def test_manifest_derives_profiles_from_profiles_json() -> None:
 
 
 if __name__ == "__main__":
-    import pytest
+    # Standalone entry point; see scripts/run_contract_tests.py for why
+    # this must not depend on pytest being installed.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from run_contract_tests import main as run_main
 
-    raise SystemExit(pytest.main([__file__, "-q"]))
+    raise SystemExit(run_main([__file__]))

@@ -18,10 +18,9 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import tomllib
 from pathlib import Path
-
-import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -54,9 +53,13 @@ def cargo_metadata() -> dict:
             check=False,
         )
     except FileNotFoundError as exc:  # pragma: no cover - environment dependent
-        pytest.fail(f"cargo toolchain unavailable, cannot verify the license of record: {exc}")
+        raise AssertionError(
+            f"cargo toolchain unavailable, cannot verify the license of record: {exc}"
+        ) from exc
     if result.returncode != 0:
-        pytest.fail(f"cargo metadata failed (exit {result.returncode}): {result.stderr.strip()[:400]}")
+        raise AssertionError(
+            f"cargo metadata failed (exit {result.returncode}): {result.stderr.strip()[:400]}"
+        )
     return json.loads(result.stdout)
 
 
@@ -280,4 +283,12 @@ def test_license_adr_records_decision_and_operator_gate() -> None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(pytest.main([__file__, "-q"]))
+    # Standalone entry point. PR-CI cannot use pytest: the ubuntu-latest
+    # runner does not ship it, and a merge gate that only runs where the
+    # maintainer happens to have pytest installed is not a gate. Delegating
+    # to `pytest.main()` made this suite pass locally and fail in CI for a
+    # reason that had nothing to do with the contracts it checks.
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from run_contract_tests import main as run_main
+
+    raise SystemExit(run_main([__file__]))

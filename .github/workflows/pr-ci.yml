@@ -73,25 +73,25 @@ jobs:
       # dorny/paths-filter pudo llevar un scalar sin que ningun job lo
       # detectara. Un test que no corre en ningun sitio no es un gate.
       #
-      # Se ejecutan como scripts, no con `pytest`: el runner de
-      # ubuntu-latest no trae pytest instalado, y anadirlo como paso previo
-      # seria una dependencia nueva en el path de merge para correr tests que
-      # son scripts con su propio `if __name__ == "__main__"`.
+      # El runner propio de scripts/run_contract_tests.py sustituye a un
+      # framework de tests: el runner de ubuntu-latest no trae ningun
+      # framework instalado, y las suites de scripts/ son scripts con
+      # funciones test_ que no necesitan fixtures ni descubrimiento
+      # sofisticado. Instalar un framework aqui anadiria una dependencia
+      # al camino de merge para correr checks lineales.
       #
-      # `set -euo pipefail` es explicito a proposito: un `run: |` de GitHub
-      # Actions NO usa `set -e` por defecto, asi que sin el, un fallo en un
-      # test intermedio no cortaria el bucle y solo el ultimo test decidiria
-      # el exit code. Con un solo fichero, eso seria invisible; con cinco, es
-      # un gate que reporta verde sobre un fallo. `pipefail` cubre el caso de
-      # que alguien anada un pipe.
+      # `set -euo pipefail` es explicito a proposito: un bloque `run: |` de
+      # GitHub Actions NO habilita `set -e` por defecto, asi que sin el, un
+      # fallo a mitad del runner dejaria terminar el script con el codigo del
+      # ultimo comando. El runner ya devuelve != 0 si algo falla, pero el
+      # pipefail cubre el caso de que alguien anada una tuberia.
       - name: Product + CI contract tests
         run: |
           set -euo pipefail
-          for t in scripts/product/test_*.py scripts/ci/test_select_suites.py; do
-            echo "::group::$t"
-            python3 "$t"
-            echo "::endgroup::"
-          done
+          python3 scripts/run_contract_tests.py \
+            scripts/product/test_*.py \
+            scripts/ci/test_select_suites.py \
+            scripts/ci/test_ci_contracts.py
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
