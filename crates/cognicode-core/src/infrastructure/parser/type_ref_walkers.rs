@@ -1147,7 +1147,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "tree-sitter-php parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
+    #[ignore = "PHP walker pines node names (function_definition) that tree-sitter-php 0.24.2 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump (commit fixes LanguageError version mismatch). Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_php_type_refs_function() {
         let source = "function save(User $user, Repository $repo): void { }";
         test_walker(
@@ -1166,7 +1166,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "tree-sitter-php parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
+    #[ignore = "PHP walker pines node names (class_declaration) that tree-sitter-php 0.24.2 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_php_type_refs_class() {
         let source = "class User extends Model implements Serializable {}";
         test_walker(
@@ -1185,7 +1185,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "tree-sitter-swift parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
+    #[ignore = "Swift walker pines node names (function_declaration) that tree-sitter-swift 0.7.3 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_swift_type_refs_function() {
         let source = "func save(user: User, repo: Repository) -> Error? { return nil }";
         test_walker(
@@ -1204,7 +1204,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "tree-sitter-swift parser compiled with LANGUAGE_VERSION=15 (ts 0.22.x); runtime is 0.24.7 (expects 14). Await grammar regeneration."]
+    #[ignore = "Swift walker pines node names (class_declaration) that tree-sitter-swift 0.7.3 with tree-sitter 0.27 runtime no longer emits. Grammar contract change discovered after M0.6 bump. Adaptation tracked as follow-up walker-grammar-drift."]
     fn test_walk_swift_type_refs_class() {
         let source = "class User: Model, Serializable { }";
         test_walker(
