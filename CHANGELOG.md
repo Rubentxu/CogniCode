@@ -62,6 +62,10 @@ For granular commit history, see `git log v0.50.0..v0.86.0`.
 
 ## [v0.99.2] — 2026-09-27
 
+> Release trail: see `3abdcc2a docs(release): v0.99.2 — human-readable
+> release trail + SDDK-107 row` for the publish-time disclosure and the
+> full set of authoritative commits in the v0.99.2 cycle.
+
 Production-Ready programme closure (Post-PRF stabilisation,
 operator directive 2026-09-27: "creamos release y archivado sddk").
 SEMVER PATCH (rule 6): feat commits in the period are
