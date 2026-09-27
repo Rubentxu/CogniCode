@@ -90,8 +90,14 @@ def normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
         "authority": metadata.get("authority"),
         "stability": metadata["stability"],
         "input_schema": tool["inputSchema"],
-        # A-004 must not invent output contracts before structured-output work.
-        "output_schema": metadata.get("output_schema"),
+        # A-004 kept this null on purpose: inventing output contracts before
+        # structured-output work would have published shapes the runtime never
+        # promised. A-012 is that work — the runtime now derives the schema
+        # from the very type that serialises the result, so `outputSchema` on
+        # the wire is the only admissible source. `_meta.output_schema` is
+        # still honoured when present, but the runtime field wins when both
+        # exist: a hand-written copy must never override the derive.
+        "output_schema": tool.get("outputSchema") or metadata.get("output_schema"),
         "requirements": requirements,
         "requirements_status": status,
         "estimated_latency_ms": metadata["estimated_latency_ms"],

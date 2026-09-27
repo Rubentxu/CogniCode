@@ -60,6 +60,8 @@ use crate::application::services::refactor_service::RefactorService;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
+// `JsonSchema` derives the published MCP output contract from this type, so
+// the contract cannot drift from the struct that produces the bytes.
 use crate::infrastructure::graph::{
     FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
@@ -200,6 +202,7 @@ use crate::interface::mcp::schemas::{
     ValidationResult,
 };
 use crate::interface::mcp::security::{InputValidator, RateLimiter};
+use schemars::JsonSchema;
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
 
@@ -1134,14 +1137,14 @@ pub struct BuildGraphInput {
 }
 
 /// A single edge in the build_graph response.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct EdgeInfo {
     pub from: String,
     pub to: String,
 }
 
 /// Output for build_graph
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct BuildGraphOutput {
     pub success: bool,
     /// PRF-ANA-04: explicit build outcome surfaced to the caller so
@@ -1173,7 +1176,7 @@ pub struct BuildGraphOutput {
 }
 
 /// PRF-ANA-06: provenance basis for a build_graph result.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct BasisDto {
     /// Canonicalized workspace path the graph was built from.
     pub workspace: String,
@@ -1189,7 +1192,7 @@ pub struct BasisDto {
 }
 
 /// F2.W8: per-file skipped-file record surfaced through `build_graph`.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct SkippedFileDto {
     pub path: String,
     pub reason_kind: &'static str,
