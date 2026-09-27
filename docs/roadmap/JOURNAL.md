@@ -5725,3 +5725,18 @@ download fuera del scope de este turno.
   pendiente del operador.
 
 **Commits ahead of origin/main:** 0 (todo pushed).
+
+
+## N+25 — PRODUCT-1.0 / CP0.A-003 product manifest cerrado
+
+**Fecha:** 2026-09-27 (turno autónomo).
+
+**Ciclo SDDK:** `p-c1fac1fea05615c6/cp0-product-manifest`, A-lite, cerrado en secuencia 14 con gates `exploration-sufficient`, `requirements-testable`, `architecture-consistent`, `implementation-complete`, `tests-pass`, `policy-compliant`, `debt-severity-assigned`, `debt-priority-assigned`, `no-pending-effects`, `release-uat-approved`, `ledger-valid` y `vault-index-current`.
+
+**Resultado:** A-003 entregó `product/product-manifest.json`, schema `cognicode.product/v1`, generator determinista y tests focused. El manifest deriva versión de Cargo, `source_commit` de Git, idiomas del enum parser y targets certificados del workflow de release. La superficie pública queda limitada a `cogh`, `cognicode` y `cognicode-mcp`; explorer/control-plane no se anuncian.
+
+**Evidencia:** `python3 scripts/product/test_product_manifest.py` 5/5 PASS; JSON/schema parse PASS; `jsonschema` PASS; generator `--check` PASS; claims boundary PASS; commit `96d06854` publicado en `origin/main`; ledger 259 eventos verificado; vault canónico validado e indexado sin errores.
+
+**Release:** `NO_RELEASE_REQUIRED`. No hubo bump Cargo, cambio runtime ni tag nuevo. `v0.99.2` sigue siendo la release binaria vigente. El push observó bypass del required-check `merge-gate`, por lo que no se declara CI verde.
+
+**Siguiente WU:** A-004 tool/catalog generator y A-005 language/platform support matrix, ambos P0 y dependientes de A-003. M0.11 permanece carry-over con 82 warnings.
