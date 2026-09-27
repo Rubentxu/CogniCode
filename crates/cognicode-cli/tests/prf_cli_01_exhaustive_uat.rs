@@ -11,13 +11,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn cognicode_bin() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .parent()
-        .expect("repo root")
-        .join("target/release/cognicode")
+mod common;
+
+fn cognicode_bin() -> std::path::PathBuf {
+    common::binary_path("cognicode")
 }
 
 fn run_in(dir: &Path, args: &[&str]) -> std::process::Output {
