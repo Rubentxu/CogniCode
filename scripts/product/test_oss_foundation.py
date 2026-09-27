@@ -149,17 +149,25 @@ def test_community_files_are_substantive() -> None:
 def test_community_documents_cite_real_repository_paths() -> None:
     """A reference a reader cannot follow is decoration. Assert the paths exist.
 
-    Scoped to the documents whose references are operational. A Code of Conduct
-    deliberately cites no repository paths; forcing one would be noise.
+    Every cited path must exist, not merely one of them. The earlier
+    `assert resolved` accepted a document that cited four real paths and
+    one invented one, so a broken link into `docs/` — which is gitignored
+    and therefore easy to reference something that only exists on one
+    maintainer's disk — passed unnoticed. Confirmed by appending
+    `docs/roadmap/NO-EXISTE-ESTA-RUTA.md` to CONTRIBUTING.md: the test still
+    passed.
+
+    Scoped to the documents whose references are operational. A Code of
+    Conduct deliberately cites no repository paths; forcing one would be
+    noise.
     """
     for name in ["CONTRIBUTING.md", "SECURITY.md", "SUPPORT.md"]:
         text = read(name)
         cited = re.findall(r"`([A-Za-z0-9_./-]+\.(?:md|toml|yml|yaml|json|rs))`", text)
         assert cited, f"{name} cites no repository path"
-        resolved = [c for c in cited if (ROOT / c).exists()]
-        assert resolved, (
-            f"{name} cites paths that do not exist in this repository: "
-            f"{[c for c in cited if not (ROOT / c).exists()][:5]}"
+        missing = [c for c in cited if not (ROOT / c).exists()]
+        assert not missing, (
+            f"{name} cites paths that do not exist in this repository: {missing[:5]}"
         )
 
 
