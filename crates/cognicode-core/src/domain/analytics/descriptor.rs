@@ -431,10 +431,10 @@ pub enum AnalyticsError {
 // RunOutput
 // ============================================================================
 
-/// Output produced by an algorithm's [`AlgorithmDescriptor::execute()`] call.
+/// Output produced by an algorithm's `AlgorithmDescriptor::execute()` call.
 ///
 /// Each variant corresponds to one algorithm family. The registry's `run()`
-/// method wraps this in a [`RunResult`] with lineage tracking.
+/// method wraps this in a [`RunResult`](crate::application::services::graph_analytics::RunResult) with lineage tracking.
 #[derive(Debug, Clone)]
 pub enum RunOutput {
     /// PageRank scores: node symbol ID → score.
@@ -561,7 +561,7 @@ pub trait AlgorithmExecute: AlgorithmDescriptor {
     /// # Returns
     ///
     /// The algorithm's typed output wrapped in [`RunOutput`]. The caller
-    /// ( [`AlgorithmRegistry::run()`][super::AlgorithmRegistry::run]) handles
+    /// ( [`crate::application::services::graph_analytics::AlgorithmRegistry::run`]) handles
     /// lineage tracking and mode-specific wrapping.
     async fn execute(
         &self,
