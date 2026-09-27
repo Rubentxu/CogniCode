@@ -85,6 +85,14 @@ jobs:
       # fallo a mitad del runner dejaria terminar el script con el codigo del
       # ultimo comando. El runner ya devuelve != 0 si algo falla, pero el
       # pipefail cubre el caso de que alguien anada una tuberia.
+      # `jsonschema` valida cada documento publicado contra su schema. Sin
+      # esto el validador pasaria en local y fallaria en CI, que es la
+      # forma mas cara de descubrir una dependencia no declarada: tarde y
+      # en un merge que no es tuyo. Version pineada porque el comportamiento
+      # de `additionalProperties` y del orden de errores es parte del
+      # contrato de los mensajes que este gate produce.
+      - name: Install product validation dependencies
+        run: python3 -m pip install --disable-pip-version-check "jsonschema==4.25.1"
       - name: Product + CI contract tests
         run: |
           set -euo pipefail
