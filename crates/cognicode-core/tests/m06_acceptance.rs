@@ -34,8 +34,8 @@ fn m06_acceptance_swift_parser_constructs() {
 
 #[test]
 fn m06_acceptance_php_parses_real_source() {
-    let parser = TreeSitterParser::new(Language::Php)
-        .expect("PHP parser should construct after M0.6 fix");
+    let parser =
+        TreeSitterParser::new(Language::Php).expect("PHP parser should construct after M0.6 fix");
     let real_php = r#"<?php
 namespace App;
 
@@ -91,8 +91,7 @@ class User: Model, Serializable {
 #[test]
 fn m06_acceptance_rust_still_parses_regression_check() {
     // Regression check: the bump must not have broken Rust parsing.
-    let parser = TreeSitterParser::new(Language::Rust)
-        .expect("Rust parser should still construct");
+    let parser = TreeSitterParser::new(Language::Rust).expect("Rust parser should still construct");
     let rust_src = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
     let tree = parser
         .parse_tree(rust_src)
@@ -107,17 +106,57 @@ fn m06_acceptance_other_29_parsers_still_work() {
     // This guards against any accidental regression from the tree-sitter
     // bump affecting parsers we didn't expect to break.
     let cases: &[(&str, Language, &str)] = &[
-        ("python", Language::Python, "def add(a, b):\n    return a + b\n"),
-        ("javascript", Language::JavaScript, "function add(a, b) { return a + b; }\n"),
-        ("typescript", Language::TypeScript, "function add(a: number, b: number): number { return a + b; }\n"),
-        ("go", Language::Go, "package main\nfunc add(a, b int) int { return a + b }\n"),
-        ("java", Language::Java, "class A { int add(int a, int b) { return a + b; } }\n"),
-        ("c", Language::C, "int add(int a, int b) { return a + b; }\n"),
-        ("cpp", Language::Cpp, "int add(int a, int b) { return a + b; }\n"),
-        ("csharp", Language::CSharp, "class A { int Add(int a, int b) { return a + b; } }\n"),
+        (
+            "python",
+            Language::Python,
+            "def add(a, b):\n    return a + b\n",
+        ),
+        (
+            "javascript",
+            Language::JavaScript,
+            "function add(a, b) { return a + b; }\n",
+        ),
+        (
+            "typescript",
+            Language::TypeScript,
+            "function add(a: number, b: number): number { return a + b; }\n",
+        ),
+        (
+            "go",
+            Language::Go,
+            "package main\nfunc add(a, b int) int { return a + b }\n",
+        ),
+        (
+            "java",
+            Language::Java,
+            "class A { int add(int a, int b) { return a + b; } }\n",
+        ),
+        (
+            "c",
+            Language::C,
+            "int add(int a, int b) { return a + b; }\n",
+        ),
+        (
+            "cpp",
+            Language::Cpp,
+            "int add(int a, int b) { return a + b; }\n",
+        ),
+        (
+            "csharp",
+            Language::CSharp,
+            "class A { int Add(int a, int b) { return a + b; } }\n",
+        ),
         ("ruby", Language::Ruby, "def add(a, b)\n  a + b\nend\n"),
-        ("scala", Language::Scala, "object A { def add(a: Int, b: Int): Int = a + b }\n"),
-        ("lua", Language::Lua, "function add(a, b) return a + b end\n"),
+        (
+            "scala",
+            Language::Scala,
+            "object A { def add(a: Int, b: Int): Int = a + b }\n",
+        ),
+        (
+            "lua",
+            Language::Lua,
+            "function add(a, b) return a + b end\n",
+        ),
         ("bash", Language::Bash, "add() { echo $(( $1 + $2 )); }\n"),
         ("haskell", Language::Haskell, "add a b = a + b\n"),
         ("yaml", Language::Yaml, "foo: bar\nbaz: qux\n"),

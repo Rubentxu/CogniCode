@@ -4339,18 +4339,108 @@ nuevo work item a abrir.
 * **Lesson 73 (nueva)**: cuando el bug es de "runtime panic", verificar
   SIEMPRE con worktree antes de aplicar al repo principal. El bump de
   29 parsers habría sido aterrador sin la validación en worktree.
-* **Lesson 74 (nueva)**: SDDK closeout debe ejercitar el path real de
-  aceptación del usuario, no solo `cargo test` (inspección indirecta).
-  El self-grill del sistema me señaló que mis gates de `cargo test`
-  no representaban el camino que el usuario real toma. Solventado
-  añadiendo `crates/cognicode-core/tests/m06_acceptance.rs` con 6 tests
-  que invocan `TreeSitterParser::new(Language::Php/Swift)` directamente
-  sobre source real. 6/6 PASS.
-* **Lesson 75 (nueva)**: el CLI binario (`cognicode analyze`) tiene un
-  gap pre-existente con PHP/Swift (`Languages: {}`, `parsed_files=0`)
-  que NO es regresión del bump M0.6. Verificado cross-cutting con
-  `git checkout <pre-bump-SHA> -- Cargo.toml Cargo.lock` y comparación
-  de output. El bug es de orquestación CLI ↔ parser (el CLI filtra por
-  extensión antes de invocar el parser, pero el pipeline actual no
-  incluye PHP/Swift en el set efectivo). Deuda separada, fuera de
-  scope M0.6.
+* **Lesson 74 (corregida)**: para bugs donde el usuario final ve un
+  runtime panic / API contract violation, la validación interna
+  (`cargo test --lib`, clippy, fmt, deny) es **necesaria pero no
+  suficiente**. Se requiere un integration test que ejercite el path
+  público de aceptación del usuario (`TreeSitterParser::new(...) +
+  parse_tree(...)` sobre source real). No es un replacement de las
+  validaciones internas, es un complemento. Sin este test, el bump
+  M0.6 podría haberse "verificado verde" sin realmente reparar la
+  experiencia del usuario (caso de mi primera versión del fix, donde
+  el cache stale del binario release engañó la validación).
+* **Lesson 75 (corregida)**: el CLI binario (`cognicode analyze`)
+  reporta `Languages: {}` y `parsed_files=0` para proyectos con
+  `.php`/`.swift`. Esto NO es un gap independiente pre-existente:
+  es **consecuencia directa del walker-grammar-drift**. Pre-bump, el
+  mismo síntoma se producía por distinta razón
+  (`LanguageError { version: 15 }` skippea el archivo en
+  `TreeSitterParser::with_cache`). Post-bump, el parser construye OK,
+  pero `find_all_symbols_with_path` no extrae symbols porque el
+  walker pineaba nombres de nodo del grammar anterior. La cadena
+  causal: `parse failure → no symbols → parsed_files=0 → Languages:
+  {}`. La deuda de fondo es **walker-grammar-drift**, no la
+  orquestación CLI.
+
+## Entrada N+11 — correcciones Lessons 74/75 + walker-grammar-drift concretado (2026-09-27 07:21 UTC)
+
+**Trigger:** auto-grill del sistema ("Re-read the request, update the
+todo plan and goal assessments, correct anything stale or overstated").
+
+**Correcciones aplicadas:**
+
+1. **Lesson 74 reformulada** — ya no dice "validación interna es
+   inspección indirecta". Ahora dice "validación interna es necesaria
+   pero no suficiente para bugs de API contract; requiere integration
+   test del path público". Honra el rol de `cargo test --lib` /
+   clippy / fmt / deny como **complemento**, no replacement.
+
+2. **Lesson 75 reformulada** — ya no dice "CLI binario gap
+   pre-existente independiente". Ahora dice "CLI binario gap es
+   **consecuencia directa** del walker-grammar-drift, no gap separado".
+   La cadena causal verificada en `analysis_service.rs:399-444`:
+   pre-bump `LanguageError { version: 15 }` skippea archivo →
+   `parsed_files=0`; post-bump walker no encuentra nombres pineados →
+   symbols.empty → `parsed_files=0`. Mismo síntoma, distinta causa.
+
+**Walker-grammar-drift concretado como work item:**
+
+3 de los 4 tests `#[ignore]` PHP/Swift
+(`test_walk_php_type_refs_function/class`,
+`test_walk_swift_type_refs_function/class`) pineaban nombres de nodo
+que el grammar actualizado no emite para los snippets simples del
+test:
+- `tree_sitter_php::LANGUAGE_PHP` (compilado con ts 0.25) + ts 0.27
+  runtime emite nombres distintos a los pineados.
+- Lo mismo para `tree_sitter_swift::LANGUAGE` (0.7.3) + ts 0.27.
+
+**Investigación necesaria** (NO ejecutada en esta sesión):
+
+1. Inspeccionar el AST real que emite el grammar actualizado sobre el
+   source de cada test. Para PHP: usar `tree-sitter parse` con
+   `tree-sitter-php 0.24.2` y ver qué nodo raíz emite para
+   `function save(User $user, Repository $repo): void { }` y para
+   `class User extends Model implements Serializable {}`. Probable
+   que el nodo raíz sea `php_only_php` o algo similar, y los hijos
+   `function_definition` / `class_declaration` no se emitan como
+   tales sino como `function_static_method` / `class_declaration`
+   con un qualifier distinto.
+
+2. Adaptar `walk_php_type_refs` y `walk_swift_type_refs` en
+   `crates/cognicode-core/src/infrastructure/parser/type_ref_walkers.rs`
+   para usar los nombres de nodo correctos del grammar actualizado.
+
+3. Re-habilitar los 4 tests `#[ignore]` (3 fallan ahora, 1 verde
+   según el worktree cross-validation inicial).
+
+4. Verificar que el CLI `cognicode analyze` sobre un proyecto PHP/Swift
+   ahora extrae symbols (`parsed_files > 0`, `Languages: {"php": N,
+   "swift": M}` en el log).
+
+**Estimación:** 1-2 días-persona. Dependencias: ninguna. Riesgo:
+medio (cambio de contrato del walker puede afectar otros consumidores
+del AST, pero PHP/Swift son lenguajes nuevos en el walker, así que el
+blast radius es acotado).
+
+**Estado del branch:**
+
+* HEAD: `64235846` (sin cambios desde N+10).
+* Working tree: M (JOURNAL con correcciones).
+* Remote: 3 commits ahead de `origin/main`.
+
+**Próximo trabajo ejecutable en AUTO:**
+
+El walker-grammar-drift es **bounded** y **bounded-win** para
+arrancar autonomamente. Si el operador no da otra directiva, es el
+candidato natural para la siguiente sesión. Sin embargo, requiere
+**primero** que yo inspeccione el AST real del grammar actualizado
+(herramienta `tree-sitter parse` o un binario de inspección), lo cual
+implica network o build tooling adicional — fuera de scope para esta
+sesión de cierre. Lo dejo registrado.
+
+**Mantenimiento al cierre:**
+
+* M0.1..M0.9: CLOSED.
+* walker-grammar-drift: NUEVO (registrado aquí y en MAINTENANCE).
+* F0.1: PENDING (carry-over).
+* E3: NOT_TRIGGERED.
