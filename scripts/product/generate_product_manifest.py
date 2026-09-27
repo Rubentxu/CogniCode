@@ -11,6 +11,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# `import check_semantics` would work in CI and fail when this module is
+# loaded by path from the test suite. Resolve it next to this file first.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from check_semantics import check_provenance, content_mismatch  # noqa: E402
+
 SCHEMA_VERSION = "cognicode.product/v1"
 MCP_PROTOCOL_REVISION = "2025-03-26"
 SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
@@ -252,8 +257,15 @@ def main() -> int:
         rendered = render(manifest)
         if args.check:
             actual = output.read_text(encoding="utf-8")
-            if actual != rendered:
-                raise ValueError(f"generated manifest differs from {output}")
+            # `source_commit` is provenance, not derived content. Comparing
+            # it against `HEAD` would make the check fail on every fresh
+            # commit, which is how a gate becomes a gate nobody reads.
+            # Content stays strict; provenance is validated for shape.
+            # See check_semantics for the reasoning.
+            mismatch = content_mismatch(actual, rendered)
+            if mismatch is not None:
+                raise ValueError(f"{output} does not match generated content: {mismatch}")
+            check_provenance(actual, str(output))
         else:
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(rendered, encoding="utf-8")
