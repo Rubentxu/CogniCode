@@ -5663,3 +5663,65 @@ download fuera del scope de este turno.
 * Lesson 87: rustdoc hygiene atomic-batching recipe.
 * Lesson 88: cross-crate intra-doc link architecture preservation.
 
+
+## N+24 — PRODUCT-1.0 / CP0 commence + A-002 closure (cycle `cp0-product-truth`)
+
+**Fecha:** 2026-09-27 (turno autónomo, operador autorizó "adelante").
+
+**Operativa SDDK:**
+
+* Binario shim `~/.local/share/sddk/bin/sddk` (1.145.1) estaba roto
+  buscando tabla legacy `ledger_events` (SDDK-107 storage).
+* Descubierto: `/home/rubentxu/.local/share/sddk/framework/bin/sddk`
+  (1.169.121) funciona con el ledger moderno `events_v1`. **Lesson 89
+  candidate**: cuando shim falle, buscar versiones alternativas en
+  `framework/bin/`.
+* Cycle `p-c1fac1fea05615c6/c011-rustdoc-hygiene` (N+23) cerrado via
+  supersede goal-replaced.
+* Cycle `p-c1fac1fea05615c6/cp0-product-truth` creado (lease
+  agent-bazzite-rubentxu-n+24), A-lite path, ejecutado A-002.A
+  end-to-end (explore→specify→design→build→verify→release→archive via
+  supersede).
+
+**A-002.A — Version Metadata Reconciliation:**
+
+* 4 artefactos generados: `exploration-report.md`, `spec.md`,
+  `design.md`, `implementation-receipt.md`, `verification-report.md`
+  bajo `~/.local/share/sddk/projects/.../cycle-artifacts/.../cp0-product-truth/`.
+* Gates evaluados: exploration-sufficient, requirements-testable,
+  architecture-consistent, implementation-complete, tests-pass,
+  policy-compliant, debt-severity-assigned, debt-priority-assigned.
+* 3 commits atómicos `docs(...)`: `8b63624b` README, `89c5d4d4`
+  INSTALL, `20f2a1ff` CHANGELOG.
+* Push a origin/main: `3901bd4c..20f2a1ff`.
+* Verificación: v0.96.0=0, 0.97.x=0, v0.99.2 aparece en README×4,
+  INSTALL×1, CHANGELOG×6. Battery 2223/0/12 verde. fmt/clippy clean.
+
+**Hallazgos exploración:**
+
+* Tag/workspace/binarios todos en `0.99.2` (coherente).
+* README tenía `v0.96.0` y `@0.96.0` stale; INSTALL tenía `0.97.3`
+  uninstall example stale; CHANGELOG no apuntaba al commit trail.
+* GitHub description tiene "17 tools / 6 languages" hardcoded —
+  no genera de cargo metadata todavía (deferred a A-004/A-005).
+* GitHub licenseInfo=null, homepageUrl="" — gaps estructurales
+  fuera de scope CP0 (deferred a A-007 LICENSE, A-019/A-020 site).
+* `.github/workflows/release.yml` lee versión de Cargo.toml
+  (R8 tag/workspace coherence gate funciona, evidencia v0.99.2).
+
+**Decisión de release:**
+
+* Regla 6 SEMVER: doc-only no amerita bump.
+* Status `RELEASE_PENDING` apropiado pero release material no
+  aplica (no bump). Supersede con goal-replaced es la salida
+  honesta para un WU completed sin artefacto público que liberar.
+
+**Próximo WU candidato (PRODUCT-1.0):**
+
+* A-003 (P0): Product manifest generado — schema versionado + source
+  SHA. Depende solo de A-002 (done). Primer entregable que ancla
+  claims a datos derivados.
+* A-007 (P0): LICENSE file — bloquea gate OSS. Decisión de licencia
+  pendiente del operador.
+
+**Commits ahead of origin/main:** 0 (todo pushed).
