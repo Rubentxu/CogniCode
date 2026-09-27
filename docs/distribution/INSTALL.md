@@ -71,7 +71,7 @@ cogh rollback                 # revierte la última transición registrada, si e
 cogh install mcp-server --version latest --profile reviewer --ide opencode
 
 # Retira una versión instalada y su integración IDE de forma explícita:
-cogh uninstall mcp-server --version 0.97.3 --ide opencode
+cogh uninstall mcp-server --version v0.99.2 --ide opencode
 ```
 
 `cogh update --profile core` es un cambio deliberado de perfil y retirará
