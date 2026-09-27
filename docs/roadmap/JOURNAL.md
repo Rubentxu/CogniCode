@@ -4155,3 +4155,79 @@ a:
 8. **CR-07 protobuf/OTel migration** high-risk fuera de
    scope branch.
 9. **ST-01..05 deep modules refactor** fuera de scope.
+
+## Entrada N+9 — cierre de sesión (2026-09-27 00:05 UTC)
+
+**Trigger:** operador emite directiva "cerramos sesion persiste
+todo el contexto del trabajo actual para mañana" a
+2026-09-27T00:05:12Z.
+
+**Acción:** SDDK close-out final + persistencia completa del
+contexto operativo en disco + remote sincronizado. Sin commits
+adicionales (estado ya cerrado en commit `516de585`).
+
+**Estado del branch al cierre:**
+
+* HEAD: `516de58520a1e587f28b110bb36c9f4ff1d1928c`
+* Working tree: clean
+* Remote: sincronizado con `origin/arch/cr-06-application-fitness-functions`
+* Commits over `f774b89f`: 40
+* SDDK WorkItem activo: `075f7bc1-d088-404c-92af-3976462ae03e`
+  (CR-06 carryover, reused)
+
+**Estado de outcomes al cierre:**
+
+* PR-G1: IN PROGRESS_HIGH
+* PR-G2: UNLOCKED
+* PR-PERF: IN PROGRESS_HIGH
+* PR-ARCH: IN PROGRESS_HIGH
+* PR-SEC: PENDING (Bounded partial advance 2026-09-26)
+* PR-DEVEX: IN PROGRESS_HIGH
+* PR-DEPTH: PENDING
+
+**Mantenimiento al cierre:**
+
+* M0.1..M0.5: CLOSED
+* M0.6: BLOCKED
+* M0.7: CLOSED
+* M0.8: CLOSED
+* M0.9: CLOSED (nuevo este turno, f0708d4b)
+
+**Follow-ups operator-gated (acumulado, 9 items — listo
+para retomar mañana):**
+
+1. M0.6 PHP/Swift tree-sitter bump (BLOCKED, 3 opciones).
+2. ~~License identity para workspace crates~~ RESUELTO
+   (f0708d4b cierra los 10).
+3. **Promote cargo-deny licenses a CI-blocking** (nuevo este
+   turno) — operador decide si actualiza release.yml para
+   promover el gate de cargo-deny a blocking.
+4. Pre-commit rustfmt git hook o workflow_dispatch extension
+   (closes 3-drift-domain root cause; recomendado en M0.7).
+5. 147 `broken_intra_doc_links` requieren ciclo dedicado
+   (operator policy: ¿qué target intended tenía cada
+   docstring original?).
+6. Promote `cargo doc --no-deps -- -D warnings` como CI gate
+   (actualmente solo local via `just docs-check`).
+7. CR-01 C8-R recertification desde clean clone (firma
+   humana requerida).
+8. CR-07 protobuf/OTel migration (high-risk, fuera de scope
+   branch).
+9. ST-01..05 deep modules refactor (fuera de scope).
+
+**Próxima sesión — opciones de retomar:**
+
+A. `git sddk-cycle-resume` — estado reconstruido desde
+   SDDK, listo para trabajar.
+B. Directiva explícita del operador sobre cuál de los 9
+   follow-ups priorizar.
+C. Autonomous mode (mismo patrón que turno 13): el agente
+   continúa con criterio propio sobre el siguiente item
+   bounded-win de la lista.
+
+**Just recipes disponibles para auditabilidad:**
+
+* `just fmt-check` — invocado en cada bounded audit (M0.7).
+* `just docs-check` — invocado en cada bounded audit (M0.8).
+* `just deny-check` (a añadir si operador quiere) —
+  ejecutable ahora con `cargo deny check licenses` exit 0.
