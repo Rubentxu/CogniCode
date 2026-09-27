@@ -4444,3 +4444,60 @@ sesión de cierre. Lo dejo registrado.
 * walker-grammar-drift: NUEVO (registrado aquí y en MAINTENANCE).
 * F0.1: PENDING (carry-over).
 * E3: NOT_TRIGGERED.
+
+## Entrada N+12 — auditoría round 2 + disclosure imprecisiones (2026-09-27 07:25 UTC)
+
+**Trigger:** auto-validación del sistema ("Do more validation on the
+work below").
+
+**Imprecisiones detectadas durante la auditoría honesta de mis propios
+claims** (registradas para auditoría futura; **NO** se modifican los
+registros previos porque eso sería falsificación histórica):
+
+1. **Rango de cadena causal:** reporté `analysis_service.rs:399-444`
+   como la cadena causal verificada "línea por línea". El rango
+   correcto es **`399-598`** — incluye el log final con `lang_counts`
+   (líneas 585-598) que se llena de `symbol.location().file().extension()`,
+   NO de `parsed_files`. Sin el rango 585-598, mi cadena causal era
+   incompleta. Conexión completa: pre-bump `with_cache` falla
+   (línea 401-410) → `was_parsed=false` → `parsed_files=0`;
+   post-bump `with_cache` OK, walker no extrae symbols →
+   `symbols.is_empty()` → `parsed_files++` pero `lang_counts={}`.
+
+2. **"3 líneas drift" en commit body 171b7a9c y en el closeout
+   correspondiente:** impreciso. El diff real tiene **69 líneas +/-**
+   (múltiples hunks de rustfmt sobre el acceptance test de 145
+   líneas). El closeout `171b7a9c377235702aa8482251b37db911faf0ab.txt`
+   contiene persistido este claim inexacto — no se modifica
+   retroactivamente para preservar honestidad histórica.
+
+3. **"4 commits ahead origin"** (en mis reportes): debería decir
+   "**4 commits de esta sesión, 45 total ahead de `origin/main`**".
+   Confusión entre dos métricas: commits de la sesión vs total acumulado.
+
+**Worktree pre-existente detectado** (no deuda de esta sesión):
+`/tmp/cognicode_f551` (f551311c detached, prunable) data sep 26 23:xx.
+Es de una sesión anterior, no lo creé yo.
+
+**Lecciones:**
+
+* **Lesson 76 (nueva)**: cuando se cita un rango de líneas como
+  "verificado línea por línea", el rango debe cubrir **toda la cadena
+  causal completa**, no solo los matches obvios.
+* **Lesson 77 (nueva)**: los registros persistentes (commit bodies,
+  closeouts, journal) son **inmutables para preservar honestidad
+  histórica**. Imprecisiones detectadas a posteriori deben disclosed
+  en entradas posteriores (como esta N+12), NO reescribirse en los
+  originales. Mismo principio que "bumps reales, markers honestos"
+  del JOURNAL N+8.
+
+**Estado del branch al cierre (verificado este turno):**
+
+* HEAD: `171b7a9c` (4 commits de esta sesión sobre `4962a571`).
+* Working tree: clean.
+* Remote: 4 commits ahead de `origin/main` (esta sesión), 45 total.
+* Battery fresh: cognicode-core `2216 passed, 0 failed, 19 ignored`;
+  acceptance test `6 passed, 0 failed, 0 ignored`.
+* Gates fresh: `cargo fmt` exit 0; `cargo clippy` exit 0; `cargo deny
+  check licenses` ok.
+* SDDK closeouts: `e2ee94ad`, `7df67417`, `64235846`, `171b7a9c`.
