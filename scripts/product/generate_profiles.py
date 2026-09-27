@@ -182,7 +182,7 @@ def validate_against_schema(document: dict[str, Any], schema_path: Path) -> None
     jsonschema.validate(document, schema)
 
 
-def validate_contract(document: dict[str, Any]) -> None:
+def validate_contract(document: dict[str, Any], root: Path) -> None:
     ids = [item["id"] for item in document["profiles"]]
     if len(set(ids)) != len(ids):
         raise ValueError("duplicate profile ids are not allowed")
@@ -217,21 +217,68 @@ def validate_contract(document: dict[str, Any]) -> None:
     if derived_ids & declared_ids:
         raise ValueError("derived and declared profile ids must not overlap")
 
-    # Profiles flagged `mutating` must mark `mutating` consistently with the
-    # Feature Flag block from the product manifest contract; we hard-code
-    # the expected per-id posture here.
-    expected_mutating = {
-        "core": False,
-        "reviewer": False,
-        "developer": True,
-        "experimental": False,
-    }
+    # The `mutating` flag is not authored here. It is read from the Rust
+    # table `PROFILE_POSTURES` (crates/cognicode-core/src/product.rs), which
+    # is what the runtime actually enforces. Hard-coding the same map in
+    # Python created a second source of truth: the JSON could say
+    # `mutating: false` while the runtime enforced the opposite, and nothing
+    # would notice. Deriving from the enforced table means the public
+    # contract cannot disagree with the behaviour.
+    expected_mutating = load_postures_from_rust(root)
     for profile in document["profiles"]:
+        if profile["id"] not in expected_mutating:
+            raise ValueError(
+                f"profile {profile['id']} has no posture in "
+                "cognicode_core::product::PROFILE_POSTURES"
+            )
         if profile["mutating"] != expected_mutating[profile["id"]]:
             raise ValueError(
                 f"profile {profile['id']}: mutating must be "
                 f"{expected_mutating[profile['id']]} (got {profile['mutating']})"
             )
+
+
+PROFILE_POSTURES_SOURCE = Path(
+    "crates/cognicode-core/src/product.rs"
+)
+
+
+def load_postures_from_rust(root: Path) -> dict[str, bool]:
+    """Read the enforced posture table out of the Rust source.
+
+    `PROFILE_POSTURES` in `cognicode-core/src/product.rs` is what the runtime
+    actually enforces. This reads it directly rather than duplicating the
+    values, so the published contract cannot drift from the behaviour.
+
+    Parsing the literal is deliberate: shelling out to `cargo` on every
+    generator run would make a documentation check depend on a Rust
+    toolchain, and the table is a closed, four-row literal that the module's
+    own tests pin. A shape change fails loudly below rather than silently
+    yielding fewer profiles than expected.
+    """
+    source = root / PROFILE_POSTURES_SOURCE
+    text = source.read_text(encoding="utf-8")
+    match = re.search(
+        r"pub const PROFILE_POSTURES[^=]*=\s*&\[(.*?)\];",
+        text,
+        re.DOTALL,
+    )
+    if not match:
+        raise ValueError(
+            f"{PROFILE_POSTURES_SOURCE} does not declare a readable "
+            "PROFILE_POSTURES table; the generator cannot verify the "
+            "published posture against the enforced one"
+        )
+    rows = re.findall(
+        r'\(\s*"([a-z0-9_-]+)"\s*,\s*ProfilePosture::(ReadOnly|ReadWrite)\s*\)',
+        match.group(1),
+    )
+    if not rows:
+        raise ValueError(
+            f"{PROFILE_POSTURES_SOURCE} declares PROFILE_POSTURES but no rows "
+            "matched the expected (id, ProfilePosture::X) shape"
+        )
+    return {profile_id: posture == "ReadWrite" for profile_id, posture in rows}
 
 
 def render(document: dict[str, Any]) -> str:
@@ -269,7 +316,7 @@ def main() -> int:
         )
         source_commit = _parse_source_commit(args.source_commit, head_sha)
         document = build_profiles(root, source_commit)
-        validate_contract(document)
+        validate_contract(document, root)
         validate_against_schema(document, schema)
         rendered = render(document)
         if args.check:

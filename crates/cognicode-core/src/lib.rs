@@ -4,6 +4,7 @@ pub mod application;
 pub mod domain;
 pub mod infrastructure;
 pub mod interface;
+pub mod product;
 pub mod sandbox_core;
 pub mod schemas;
 

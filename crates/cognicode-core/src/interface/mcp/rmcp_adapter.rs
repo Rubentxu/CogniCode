@@ -75,6 +75,36 @@ impl CogniCodeHandler {
         }
     }
 
+    /// Whether this handler refuses to mutate the workspace.
+    ///
+    /// The posture is public because it is part of the product contract:
+    /// `product/profiles.json` promises that a `mutating: false` profile
+    /// cannot write, and this is the value that promise resolves to.
+    pub fn is_read_only(&self) -> bool {
+        self.ctx.read_only.load(Ordering::SeqCst)
+    }
+
+    /// Build a handler whose posture is derived from a public profile.
+    ///
+    /// This is the link A-009 exists to add. `--read-only` is a flag a human
+    /// types; a profile is something an installer resolves. Before this,
+    /// nothing connected them, so `product/profiles.json` could promise
+    /// `mutating: false` for `reviewer` while the runtime allowed writes —
+    /// the promise was unenforceable.
+    ///
+    /// The posture comes from [`crate::product::ProfilePosture`], the same
+    /// table the profile generator reads, so the published contract and the
+    /// enforced behaviour cannot disagree.
+    ///
+    /// An unknown profile id yields a permissive handler. Silently muting a
+    /// profile nobody has classified would break existing installations, and
+    /// the table is closed and test-pinned, so this is a compile-time
+    /// concern rather than a runtime surprise.
+    pub fn for_profile(project_root: PathBuf, profile_id: &str) -> Self {
+        let read_only = crate::product::ProfilePosture::is_profile_read_only(profile_id);
+        Self::with_options(project_root, read_only)
+    }
+
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
     pub fn with_graph_store(
         project_root: PathBuf,
