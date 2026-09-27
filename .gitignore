@@ -213,3 +213,9 @@ sandbox/scripts/tests/__pycache__/
 # Compat matrix binaries (Post-PRF L1.3): binarios legacy para tests
 # de compat (extraídos de releases publicados, no commiteados).
 sandbox/.compat/
+
+# Python bytecode caches. scripts/ci/test_select_suites.py is now run by the
+# PR-CI `check` job, so running the suite locally produces these. Without the
+# ignore they show up as untracked noise on every run.
+__pycache__/
+*.pyc
