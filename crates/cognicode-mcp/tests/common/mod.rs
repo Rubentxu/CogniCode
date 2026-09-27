@@ -79,7 +79,57 @@ fn resolve_binary_path_for(name: &str) -> PathBuf {
     if release.exists() {
         return release;
     }
-    workspace_root.join("target").join("debug").join(name)
+    let debug = workspace_root.join("target").join("debug").join(name);
+    if debug.exists() {
+        // A stale binary here is worse than no binary at all: a UAT would run
+        // against whatever was built hours ago and report a green result that
+        // says nothing about the code under review. When Cargo is actually
+        // writing somewhere else (a shared `CARGO_TARGET_DIR`, or the
+        // `.cargo/config.toml` this workspace sets), prefer that build even
+        // though `CARGO_TARGET_DIR` is unset in the test's environment.
+        if let Some(fresh) = cargo_configured_target_dir(workspace_root.join("target")) {
+            return fresh.join("debug").join(name);
+        }
+        return debug;
+    }
+    debug
+}
+
+/// The target directory Cargo is configured to write to, if the workspace
+/// declares one in `.cargo/config.toml`.
+///
+/// Returns `None` when the build lands in the default location, in which case
+/// the caller already has the right path and this is all noise.
+fn cargo_configured_target_dir(default: PathBuf) -> Option<PathBuf> {
+    let workspace_root = default.parent()?;
+    let config = workspace_root.join(".cargo").join("config.toml");
+    let text = std::fs::read_to_string(config).ok()?;
+    for line in text.lines() {
+        let line = line.trim();
+        // Skip commented-out or section-header lines; only a real
+        // `target-dir = "..."` under `[build]` redirects the output.
+        if line.starts_with('#') || line.starts_with('[') {
+            continue;
+        }
+        let Some(value) = line.strip_prefix("target-dir") else {
+            continue;
+        };
+        let value = value
+            .trim_start()
+            .strip_prefix('=')?
+            .trim()
+            .trim_matches('"');
+        if value.is_empty() {
+            continue;
+        }
+        let resolved = PathBuf::from(value);
+        return Some(if resolved.is_absolute() {
+            resolved
+        } else {
+            workspace_root.join(resolved)
+        });
+    }
+    None
 }
 
 fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
@@ -272,5 +322,78 @@ mod tests {
         // If the env var is unset at compile time, the test is a no-op:
         // `binary_path` falls back to the other resolution branches, which
         // are environment dependent and not worth pinning here.
+    }
+
+    /// The binary the UATs will actually run must not predate the code.
+    ///
+    /// The failure this catches is silent and expensive: a workspace that
+    /// builds into a shared `CARGO_TARGET_DIR` keeps an older
+    /// `target/debug/<binary>` around, every black-box UAT runs against that
+    /// stale build, the suite stays green, and the results describe code that
+    /// no longer exists.
+    ///
+    /// The oracle is the newest library source under `crates/`, not the test
+    /// binary. Comparing against the test binary looks tempting and is
+    /// wrong: Cargo links the two in the same build and their mtimes differ
+    /// by however long the link step took, so a correct setup fails by
+    /// milliseconds. Source mtime is the thing that decides whether the
+    /// binary reflects the tree.
+    #[test]
+    fn the_binary_under_test_is_not_older_than_the_sources_it_was_built_from() {
+        let path = binary_path();
+        assert!(path.exists(), "resolved binary does not exist: {path:?}");
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+        let binary_time =
+            modified(&path).unwrap_or_else(|| panic!("cannot stat the resolved binary: {path:?}"));
+        let Some((newest, newest_time)) = newest_source_under(&workspace_root.join("crates"))
+        else {
+            // No sources to compare against: nothing to assert.
+            return;
+        };
+        assert!(
+            binary_time >= newest_time,
+            "the binary the UATs will run is stale: {path:?} (mtime {binary_time:?}) predates \
+             {newest:?} ({newest_time:?}); every black-box UAT would run against a build that \
+             does not contain the current code"
+        );
+    }
+
+    /// The most recently modified compilable source under `root`, with mtime.
+    ///
+    /// `tests/` is excluded on purpose: an integration test never links into
+    /// the server binary, so a test edited seconds ago must not make a
+    /// perfectly current binary look stale. Only files the binary is actually
+    /// built from are a valid oracle.
+    fn newest_source_under(root: &Path) -> Option<(PathBuf, std::time::SystemTime)> {
+        let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
+        // `target` holds build output, not sources; skipping it keeps the walk
+        // bounded and stops a stale artifact from counting as input.
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(dir) = stack.pop() {
+            let Ok(entries) = std::fs::read_dir(&dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let name = path.file_name();
+                    if name.is_some_and(|n| n == "target" || n == "tests" || n == "benches") {
+                        continue;
+                    }
+                    stack.push(path);
+                } else if path.extension().is_some_and(|e| e == "rs")
+                    && let Some(time) = modified(&path)
+                    && newest.as_ref().is_none_or(|(_, best)| time > *best)
+                {
+                    newest = Some((path, time));
+                }
+            }
+        }
+        newest
+    }
+
+    fn modified(path: &Path) -> Option<std::time::SystemTime> {
+        std::fs::metadata(path).ok()?.modified().ok()
     }
 }

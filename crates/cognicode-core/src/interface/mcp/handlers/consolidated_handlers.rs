@@ -12,6 +12,9 @@ use crate::interface::mcp::schemas::{
     SmartSearchResult,
 };
 use std::time::Duration;
+// `JsonSchema` derives the published MCP output contract from this type, so
+// the contract cannot drift from the struct that produces the bytes.
+use schemars::JsonSchema;
 
 // ============================================================================
 // Phase 5.2 — Composite Tools
@@ -275,7 +278,7 @@ fn default_overview_detail() -> String {
     "medium".into()
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ProjectOverviewOutput {
     pub detail: String,
     pub architecture_score: Option<f64>,
@@ -374,7 +377,7 @@ fn default_map_format() -> String {
     "compact".into()
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct CodebaseMapOutput {
     pub format: String,
     pub map: String,
@@ -424,7 +427,7 @@ use crate::application::services::graph_insights::GraphInsightsService;
 #[derive(Debug, serde::Deserialize)]
 pub struct ProjectInsightsInput {}
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ProjectInsightsOutput {
     /// Total symbols in the graph.
     pub total_symbols: usize,
@@ -446,13 +449,13 @@ pub struct ProjectInsightsOutput {
     pub summary: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct HotPath {
     pub symbol_id: String,
     pub score: f64,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct CommunityOverviewDto {
     pub count: usize,
     pub largest_size: usize,
@@ -460,7 +463,7 @@ pub struct CommunityOverviewDto {
     pub avg_cohesion: f64,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct CycleInfo {
     pub total_clusters: usize,
     pub symbols_in_cycles: usize,
@@ -539,7 +542,7 @@ pub struct ReviewPrInput {
     pub files: Vec<String>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ReviewPrOutput {
     pub files_analyzed: usize,
     pub impacted_files: Vec<String>,
@@ -608,7 +611,7 @@ fn default_iac_depth() -> usize {
     2
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct IacQueryOutput {
     pub resource_id: String,
     pub resource_type: String,
@@ -616,7 +619,7 @@ pub struct IacQueryOutput {
     pub dependents: Vec<IacRelation>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct IacRelation {
     pub id: String,
     pub name: String,
@@ -794,7 +797,7 @@ pub struct GraphCheckpointInput {
     pub checkpoint_id: Option<u64>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphCheckpointOutput {
     pub operation: String,
     pub checkpoint_id: Option<u64>,

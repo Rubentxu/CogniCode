@@ -9,6 +9,9 @@ use std::collections::HashSet;
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
+// `JsonSchema` derives the published MCP output contract from this type, so
+// the contract cannot drift from the struct that produces the bytes.
+use schemars::JsonSchema;
 
 // ============================================================================
 // graph_query
@@ -30,7 +33,7 @@ fn default_budget() -> usize {
     1500
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryOutput {
     pub question: String,
     pub nodes: Vec<GraphQueryNode>,
@@ -38,7 +41,7 @@ pub struct GraphQueryOutput {
     pub explanation: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryNode {
     pub id: String,
     pub label: String,
@@ -47,7 +50,7 @@ pub struct GraphQueryNode {
     pub why_matched: Vec<String>,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryEdge {
     pub source: String,
     pub target: String,
@@ -185,7 +188,7 @@ fn default_depth_e() -> usize {
     2
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphExplainOutput {
     pub node: ExplainNode,
     pub callers: Vec<ExplainNeighbor>,
@@ -194,7 +197,7 @@ pub struct GraphExplainOutput {
     pub fan_out: usize,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ExplainNode {
     pub id: String,
     pub label: String,
@@ -203,7 +206,7 @@ pub struct ExplainNode {
     pub line: u32,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ExplainNeighbor {
     pub symbol: String,
     pub relation: String,
@@ -358,12 +361,12 @@ fn extract_keywords(question: &str) -> Vec<String> {
 pub struct GetTypeRefsInput {
     pub symbol_name: String,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GetTypeRefsOutput {
     pub symbol: String,
     pub references: Vec<TypeRefRecord>,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct TypeRefRecord {
     pub target: String,
     pub context: String,
@@ -410,7 +413,7 @@ pub async fn handle_get_type_references(
 pub struct GetImportsInput {
     pub file_path: String,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GetImportsOutput {
     pub file_path: String,
     pub imports: Vec<String>,
@@ -473,7 +476,7 @@ pub async fn handle_get_imports(
 pub struct GetImplementorsInput {
     pub trait_name: String,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GetImplementorsOutput {
     pub trait_name: String,
     pub implementors: Vec<String>,
@@ -523,7 +526,7 @@ pub async fn handle_get_implementors(
 pub struct GetMembersInput {
     pub class_name: String,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GetMembersOutput {
     pub class_name: String,
     pub methods: Vec<String>,
@@ -594,7 +597,7 @@ pub struct QueryFilters {
     pub community_id: Option<usize>,
     pub exclude_kinds: Option<Vec<String>>,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct GraphQueryFilteredOutput {
     pub question: String,
     pub nodes: Vec<GraphQueryNode>,
@@ -649,7 +652,7 @@ pub struct ExportCallflowInput {
     pub max_sections: Option<usize>,
     pub format: Option<String>,
 }
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ExportCallflowOutput {
     pub mermaid: String,
     pub community_count: usize,

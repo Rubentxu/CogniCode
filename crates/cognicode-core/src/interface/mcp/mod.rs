@@ -6,6 +6,7 @@ pub mod dto_mapping;
 pub mod error;
 pub mod file_ops_handlers;
 pub mod handlers;
+pub mod output_contracts;
 pub mod parameter_aliases;
 pub mod prompts;
 pub mod resources;

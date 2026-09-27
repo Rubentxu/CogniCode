@@ -11,6 +11,134 @@
       },
       "type": "object"
     },
+    "outputSchema": {
+      "$defs": {
+        "BasisDto": {
+          "description": "PRF-ANA-06: provenance basis for a build_graph result.",
+          "properties": {
+            "complete": {
+              "description": "`true` only when every identity component was established.",
+              "type": "boolean"
+            },
+            "config_digest": {
+              "description": "Digest over the effective configuration relevant to the build.\nStable across identical configurations; changes when config changes.",
+              "type": "string"
+            },
+            "source_manifest_digest": {
+              "description": "Digest over the source manifest (sorted relative paths + content\nhashes). Same sources ⇒ same digest; any source change ⇒ different\ndigest. Empty when the manifest could not be computed.",
+              "type": "string"
+            },
+            "workspace": {
+              "description": "Canonicalized workspace path the graph was built from.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "workspace",
+            "config_digest",
+            "source_manifest_digest",
+            "complete"
+          ],
+          "type": "object"
+        },
+        "EdgeInfo": {
+          "description": "A single edge in the build_graph response.",
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        "SkippedFileDto": {
+          "description": "F2.W8: per-file skipped-file record surfaced through `build_graph`.",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "reason_kind": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "reason_kind",
+            "reason"
+          ],
+          "type": "object"
+        }
+      },
+      "description": "Output for build_graph",
+      "properties": {
+        "basis": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BasisDto"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "PRF-ANA-06: identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable."
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/EdgeInfo"
+          },
+          "type": "array"
+        },
+        "message": {
+          "type": "string"
+        },
+        "relationships_found": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "skipped_files": {
+          "description": "F2.W8: files that could not be processed during the walk.\n`None` when the graph was served from cache (no walk happened\non this call); `Some([])` when the walk finished with no\nomissions; `Some([..])` when one or more files were dropped\nbecause of I/O / parsing failures.",
+          "items": {
+            "$ref": "#/$defs/SkippedFileDto"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "status": {
+          "description": "PRF-ANA-04: explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no skipped files.\n  - `\"partial\"`: walk happened, at least one file was\n    dropped (I/O or parsing failure).\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.",
+          "type": "string"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "symbols_found": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "success",
+        "status",
+        "symbols_found",
+        "relationships_found",
+        "edges",
+        "message"
+      ],
+      "title": "BuildGraphOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1496,6 +1624,98 @@
       ],
       "type": "object"
     },
+    "outputSchema": {
+      "$defs": {
+        "GraphQueryEdge": {
+          "properties": {
+            "confidence": {
+              "format": "double",
+              "type": "number"
+            },
+            "provenance": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target",
+            "relation",
+            "provenance",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "GraphQueryNode": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why_matched": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "kind",
+            "why_matched"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/GraphQueryEdge"
+          },
+          "type": "array"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/GraphQueryNode"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "nodes",
+        "edges",
+        "explanation"
+      ],
+      "title": "GraphQueryOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1526,6 +1746,98 @@
       "required": [
         "symbol"
       ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ExplainNeighbor": {
+          "properties": {
+            "depth": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "symbol": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol",
+            "relation",
+            "depth"
+          ],
+          "type": "object"
+        },
+        "ExplainNode": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "source_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "kind",
+            "line"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "callees": {
+          "items": {
+            "$ref": "#/$defs/ExplainNeighbor"
+          },
+          "type": "array"
+        },
+        "callers": {
+          "items": {
+            "$ref": "#/$defs/ExplainNeighbor"
+          },
+          "type": "array"
+        },
+        "fan_in": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fan_out": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "node": {
+          "$ref": "#/$defs/ExplainNode"
+        }
+      },
+      "required": [
+        "node",
+        "callers",
+        "callees",
+        "fan_in",
+        "fan_out"
+      ],
+      "title": "GraphExplainOutput",
       "type": "object"
     },
     "_meta": {
@@ -1592,6 +1904,42 @@
       ],
       "type": "object"
     },
+    "outputSchema": {
+      "$defs": {
+        "TypeRefRecord": {
+          "properties": {
+            "context": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "context"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "references": {
+          "items": {
+            "$ref": "#/$defs/TypeRefRecord"
+          },
+          "type": "array"
+        },
+        "symbol": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "symbol",
+        "references"
+      ],
+      "title": "GetTypeRefsOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1618,6 +1966,25 @@
       "required": [
         "file_path"
       ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "file_path": {
+          "type": "string"
+        },
+        "imports": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "file_path",
+        "imports"
+      ],
+      "title": "GetImportsOutput",
       "type": "object"
     },
     "_meta": {
@@ -1648,6 +2015,25 @@
       ],
       "type": "object"
     },
+    "outputSchema": {
+      "properties": {
+        "implementors": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "trait_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "trait_name",
+        "implementors"
+      ],
+      "title": "GetImplementorsOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1674,6 +2060,32 @@
       "required": [
         "class_name"
       ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "class_name": {
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "methods": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "class_name",
+        "methods",
+        "fields"
+      ],
+      "title": "GetMembersOutput",
       "type": "object"
     },
     "_meta": {
@@ -1732,6 +2144,105 @@
       ],
       "type": "object"
     },
+    "outputSchema": {
+      "$defs": {
+        "GraphQueryEdge": {
+          "properties": {
+            "confidence": {
+              "format": "double",
+              "type": "number"
+            },
+            "provenance": {
+              "type": "string"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            },
+            "target": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "target",
+            "relation",
+            "provenance",
+            "confidence"
+          ],
+          "type": "object"
+        },
+        "GraphQueryNode": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "source_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "why_matched": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "id",
+            "label",
+            "kind",
+            "why_matched"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "applied_filters": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/GraphQueryEdge"
+          },
+          "type": "array"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/GraphQueryNode"
+          },
+          "type": "array"
+        },
+        "question": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "question",
+        "nodes",
+        "edges",
+        "explanation",
+        "applied_filters"
+      ],
+      "title": "GraphQueryFilteredOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1761,6 +2272,24 @@
           "type": "integer"
         }
       },
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "community_count": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mermaid": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "mermaid",
+        "community_count"
+      ],
+      "title": "ExportCallflowOutput",
       "type": "object"
     },
     "_meta": {
@@ -1841,6 +2370,59 @@
       },
       "type": "object"
     },
+    "outputSchema": {
+      "properties": {
+        "architecture_score": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "coverage_estimate": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "entry_points": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hot_paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "recommendations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "system_prompt_context": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "detail",
+        "hot_paths",
+        "entry_points",
+        "recommendations"
+      ],
+      "title": "ProjectOverviewOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1869,6 +2451,28 @@
       },
       "type": "object"
     },
+    "outputSchema": {
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "map": {
+          "type": "string"
+        },
+        "token_estimate": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "format",
+        "map",
+        "token_estimate"
+      ],
+      "title": "CodebaseMapOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -1887,6 +2491,138 @@
     "description": "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
     "inputSchema": {
       "properties": {},
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "CommunityOverviewDto": {
+          "properties": {
+            "avg_cohesion": {
+              "format": "double",
+              "type": "number"
+            },
+            "count": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "largest_size": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "smallest_size": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "count",
+            "largest_size",
+            "smallest_size",
+            "avg_cohesion"
+          ],
+          "type": "object"
+        },
+        "CycleInfo": {
+          "properties": {
+            "symbols_in_cycles": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_clusters": {
+              "format": "uint",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "total_clusters",
+            "symbols_in_cycles"
+          ],
+          "type": "object"
+        },
+        "HotPath": {
+          "properties": {
+            "score": {
+              "format": "double",
+              "type": "number"
+            },
+            "symbol_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "symbol_id",
+            "score"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "communities": {
+          "$ref": "#/$defs/CommunityOverviewDto",
+          "description": "Community overview from GraphInsightsService."
+        },
+        "cycles": {
+          "$ref": "#/$defs/CycleInfo",
+          "description": "Cycle clusters from GraphInsightsService."
+        },
+        "dead_code": {
+          "description": "Dead code count (symbols with no callers/dependents).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "entry_points": {
+          "description": "Entry points (root symbols).",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "health_score": {
+          "description": "Health score 0-100 from GraphInsightsService.",
+          "format": "double",
+          "type": "number"
+        },
+        "hot_paths": {
+          "description": "Hot paths — top god node names ranked by importance score.",
+          "items": {
+            "$ref": "#/$defs/HotPath"
+          },
+          "type": "array"
+        },
+        "summary": {
+          "description": "Human-readable summary.",
+          "type": "string"
+        },
+        "total_edges": {
+          "description": "Total edges (dependencies) in the graph.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_symbols": {
+          "description": "Total symbols in the graph.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "total_symbols",
+        "total_edges",
+        "entry_points",
+        "dead_code",
+        "health_score",
+        "hot_paths",
+        "communities",
+        "cycles",
+        "summary"
+      ],
+      "title": "ProjectInsightsOutput",
       "type": "object"
     },
     "_meta": {
@@ -1973,6 +2709,42 @@
           "type": "string"
         }
       },
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "checkpoint_id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "edges": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "operation": {
+          "type": "string"
+        },
+        "symbols": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "operation",
+        "symbols",
+        "edges",
+        "message"
+      ],
+      "title": "GraphCheckpointOutput",
       "type": "object"
     },
     "_meta": {
@@ -2105,6 +2877,66 @@
       ],
       "type": "object"
     },
+    "outputSchema": {
+      "$defs": {
+        "IacRelation": {
+          "properties": {
+            "confidence": {
+              "format": "double",
+              "type": "number"
+            },
+            "edge_type": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name",
+            "kind",
+            "edge_type",
+            "confidence"
+          ],
+          "type": "object"
+        }
+      },
+      "properties": {
+        "dependencies": {
+          "items": {
+            "$ref": "#/$defs/IacRelation"
+          },
+          "type": "array"
+        },
+        "dependents": {
+          "items": {
+            "$ref": "#/$defs/IacRelation"
+          },
+          "type": "array"
+        },
+        "resource_id": {
+          "type": "string"
+        },
+        "resource_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "resource_id",
+        "resource_type",
+        "dependencies",
+        "dependents"
+      ],
+      "title": "IacQueryOutput",
+      "type": "object"
+    },
     "_meta": {
       "cognicode": {
         "authority": "read",
@@ -2134,6 +2966,42 @@
       "required": [
         "files"
       ],
+      "type": "object"
+    },
+    "outputSchema": {
+      "properties": {
+        "breaking_changes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "files_analyzed": {
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "impacted_files": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "risk_level": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "files_analyzed",
+        "impacted_files",
+        "risk_level",
+        "breaking_changes",
+        "summary"
+      ],
+      "title": "ReviewPrOutput",
       "type": "object"
     },
     "_meta": {

@@ -363,7 +363,10 @@ pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
 
 /// Returns the complete list of public MCP tool definitions.
 /// This is the single source of truth for `tools/list` and the parity-test surface.
-pub(crate) fn build_all_tools() -> Vec<Tool> {
+///
+/// Public so the A-012 contract suite can compare what the catalog advertises
+/// against what the derive produces. Read-only: it rebuilds the vector.
+pub fn build_all_tools() -> Vec<Tool> {
     vec![
                     Tool::new(
                         "build_graph",
@@ -1340,6 +1343,15 @@ pub(crate) fn build_all_tools() -> Vec<Tool> {
     ]
     .into_iter()
     .map(|mut tool| {
+        // CP2.3 / A-012 (structured output): announce the published output
+        // contract. The schema is derived from the very type that serialises
+        // the result, so `tools/list` cannot describe a shape the handler
+        // does not produce. Tools without a concrete output type keep `None`,
+        // which is the honest answer: "no contract", not "any shape".
+        if let Some(schema) = super::output_contracts::output_schema_for(tool.name.as_ref()) {
+            tool = tool.with_raw_output_schema(Arc::new(schema));
+        }
+
         // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission explicitly so
         // clients can distinguish mutating tools without hardcoding names.
         // The declared `authority` field (cognicode_meta) is the primary oracle;

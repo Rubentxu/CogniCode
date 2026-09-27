@@ -545,6 +545,7 @@ dependencies = [
  "regex",
  "rig-core",
  "rmcp",
+ "schemars",
  "serde",
  "serde_json",
  "serde_yaml",
