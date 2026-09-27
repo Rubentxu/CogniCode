@@ -3,18 +3,18 @@
 //!
 //! `ImpactAnalysisService` is a **stateless** coordinator: it holds no
 //! fields, exposes a `new()` constructor, and rebuilds a
-//! [`CallGraphProjection`] on every public call from the immutable
+//! `CallGraphProjection` on every public call from the immutable
 //! `&CallGraph` reference passed by the caller. The projection is
 //! consumed read-only — neither the aggregate nor the projection is
 //! mutated.
 //!
 //! ## Direction semantics
 //!
-//! [`Self::impact_radius`] follows the **predecessor** direction
+//! [`ImpactAnalysisService::impact_radius`] follows the **predecessor** direction
 //! (reverse BFS over incoming edges). It answers the "what depends on X"
 //! question.
 //!
-//! [`Self::forward_radius`] follows the **successor** direction
+//! [`ImpactAnalysisService::forward_radius`] follows the **successor** direction
 //! (forward BFS over outgoing edges). It answers the "what does X
 //! affect" question. The two methods are symmetric counterparts and
 //! must return identical sets when applied to the same `(graph, root,
@@ -24,7 +24,7 @@
 //! ## Companion to [`crate::domain::services::ImpactAnalyzer`]
 //!
 //! `ImpactAnalyzer` (domain service) stays untouched and continues to
-//! produce the count-based [`ImpactReport`]. The application service
+//! produce the count-based `ImpactReport`. The application service
 //! does not replace it — it is a strictly additive capability that
 //! gives callers access to the graph algorithms exposed by
 //! `CallGraphProjection` (Dijkstra, SCC, connected components, etc.)
@@ -45,7 +45,7 @@ use cognicode_graph_algos::GraphBuilder;
 /// Application service for graph-aware impact analysis.
 ///
 /// Holds **no state**. Every public method rebuilds a
-/// [`CallGraphProjection`] from the supplied `&CallGraph`, then delegates
+/// `CallGraphProjection` from the supplied `&CallGraph`, then delegates
 /// to the projection algorithm that best fits the query. Because the
 /// projection is per-call and read-only, the service is safe to share
 /// across threads and is trivially constructible.
@@ -92,7 +92,7 @@ impl ImpactAnalysisService {
     /// depth. The root itself is **not** included in the result.
     ///
     /// Symmetric counterpart of [`Self::impact_radius`]: delegates to
-    /// [`CallGraphProjection::find_forward_reach`] after building a
+    /// [`CallGraphProjectionPort::find_forward_reach`] after building a
     /// fresh projection.
     ///
     /// Returns `vec![]` (no panic) when:
@@ -174,7 +174,7 @@ impl ImpactAnalysisService {
     /// Extract a neighborhood subgraph of `root` bounded by `max_depth`
     /// hops in `direction`.
     ///
-    /// Thin wrapper around [`CallGraphProjection::extract_subgraph`]
+    /// Thin wrapper around [`CallGraphProjectionPort::extract_subgraph`]
     /// that converts the projection-level [`SubgraphView`](crate::domain::ports::call_graph_projection::SubgraphView)
     /// into the wire-friendly [`SubgraphResultDto`].
     ///
@@ -235,7 +235,7 @@ impl ImpactAnalysisService {
 
     /// Explain the lowest-cost path from `from` to `to`.
     ///
-    /// Wraps [`CallGraphProjection::explain_path`] into a
+    /// Wraps [`CallGraphProjectionPort::explain_path`] into a
     /// wire-friendly [`ExplainResultDto`]. **The outer `Option` is
     /// always `Some`** — a missing path is encoded as
     /// `Some(ExplainResultDto { found: false, ... })` so the MCP tool
