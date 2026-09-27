@@ -354,7 +354,7 @@ impl PerFileStrategy {
     /// Unlike the trait method, walk errors are NOT silently dropped
     /// (`filter_map(|e| e.ok())` is replaced by a path that collects
     /// skipped entries), and read/parse failures inside `merge_with_report`
-    /// are surfaced in [`BuildStatus::Partial`].
+    /// are surfaced in [`BuildStatus::Partial`](crate::infrastructure::graph::per_file_graph::BuildStatus::Partial).
     ///
     /// Use this when the caller needs to know whether the resulting graph
     /// represents complete coverage of the project directory or whether
@@ -439,7 +439,7 @@ impl FullGraphStrategy {
     /// [`Self::build_full_graph`] silently dropped walk errors via
     /// `filter_map(|e| e.ok())` and read/parse failures via
     /// `match Err(_) => continue`. This counterpart exposes every skip
-    /// as a [`SkippedFile`] with a classified [`SkipReason`].
+    /// as a [`SkippedFile`](crate::infrastructure::graph::per_file_graph::SkippedFile) with a classified [`SkipReason`](crate::infrastructure::graph::per_file_graph::SkipReason).
     ///
     /// Use this when the caller needs to know whether the resulting graph
     /// represents complete coverage of the project directory.
