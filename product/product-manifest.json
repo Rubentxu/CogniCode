@@ -1,0 +1,230 @@
+{
+  "schema_version": "cognicode.product/v1",
+  "product": "cognicode",
+  "version": "0.99.2",
+  "source_commit": "828af2796bb05625b92bccc7d357c300388aeaff",
+  "public_surface": {
+    "binaries": [
+      {
+        "name": "cogh",
+        "kind": "bootstrap-cli",
+        "package": "cognicode-cli",
+        "support_level": "supported"
+      },
+      {
+        "name": "cognicode",
+        "kind": "analysis-cli",
+        "package": "cognicode-cli",
+        "support_level": "supported"
+      },
+      {
+        "name": "cognicode-mcp",
+        "kind": "mcp-stdio-server",
+        "package": "cognicode-mcp",
+        "support_level": "supported"
+      }
+    ],
+    "profiles": [
+      {
+        "name": "core",
+        "description": "Read-only navigation, symbols, search, and basic impact.",
+        "mutating": false
+      },
+      {
+        "name": "reviewer",
+        "description": "Core plus architecture, quality, and graph analysis.",
+        "mutating": false
+      },
+      {
+        "name": "developer",
+        "description": "Reviewer plus explicitly enabled mutating capabilities.",
+        "mutating": true
+      },
+      {
+        "name": "experimental",
+        "description": "Capabilities without a GA contract, never stable by default.",
+        "mutating": false
+      }
+    ],
+    "mcp": {
+      "transport": "stdio",
+      "protocol_revision": "2025-03-26",
+      "tool_catalog": "tools.json"
+    }
+  },
+  "languages": [
+    {
+      "name": "python",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "rust",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "javascript",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "typescript",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "go",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "java",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "c",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "cpp",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "csharp",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "hcl",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "yaml",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "ruby",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "php",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "swift",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "scala",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "lua",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "zig",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "dart",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "groovy",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "elixir",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "erlang",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "haskell",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "julia",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "bash",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "r",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "powershell",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "json",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "fortran",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "verilog",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    },
+    {
+      "name": "systemverilog",
+      "support_level": "experimental",
+      "evidence": "tree-sitter parser enum; detailed support matrix is A-005"
+    }
+  ],
+  "platforms": [
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "support_level": "certified",
+      "evidence": ".github/workflows/release.yml Linux GNU release lane"
+    },
+    {
+      "target": "x86_64-unknown-linux-gnu",
+      "support_level": "certified",
+      "evidence": ".github/workflows/release.yml Linux GNU release lane"
+    }
+  ],
+  "artifacts": {
+    "tools": "tools.json",
+    "languages": "languages.json",
+    "platforms": "platforms.json"
+  },
+  "feature_flags": {
+    "read_only_mode": true,
+    "mutations": "developer-explicit",
+    "telemetry_default": "off",
+    "network_default": "denied"
+  }
+}
