@@ -5740,3 +5740,17 @@ download fuera del scope de este turno.
 **Release:** `NO_RELEASE_REQUIRED`. No hubo bump Cargo, cambio runtime ni tag nuevo. `v0.99.2` sigue siendo la release binaria vigente. El push observó bypass del required-check `merge-gate`, por lo que no se declara CI verde.
 
 **Siguiente WU:** A-004 tool/catalog generator y A-005 language/platform support matrix, ambos P0 y dependientes de A-003. M0.11 permanece carry-over con 82 warnings.
+
+## N+26 — PRODUCT-1.0 / CP0.A-004 tool catalog cerrado
+
+**Fecha:** 2026-09-27 (turno autónomo).
+
+**Ciclo SDDK:** `p-c1fac1fea05615c6/cp0-tool-catalog`, A-lite, secuencia Verify completada con gates `exploration-sufficient`, `requirements-testable`, `architecture-consistent`, `implementation-complete`, `tests-pass`, `policy-compliant`, `debt-severity-assigned` y `debt-priority-assigned`.
+
+**Resultado:** A-004 publica `product/tools.json` como proyección `cognicode.tools/v1` de una captura real de MCP `tools/list`. El catálogo contiene 73 tools ordenadas, metadata runtime preservada, schema versionado, profiles públicos deterministas y unknowns explícitos para output/cache/network. La autoridad sigue siendo `build_all_tools()`/`tools/list`; no se creó un registry paralelo.
+
+**Evidencia:** `cargo build -p cognicode-mcp --bin cognicode-mcp --bin mcp-client` exit 0; captura HEAD fresca byte-identical; `python3 scripts/product/test_product_tool_catalog.py` 4/4 PASS; `python3 scripts/product/test_product_manifest.py` 5/5 PASS; schema e invariantes PASS; generator `--check` PASS; commit `85222f67`.
+
+**Release:** `NO_RELEASE_REQUIRED`. No cambió Cargo, runtime, CLI ni binarios; `v0.99.2` sigue siendo la release binaria vigente. El release receipt queda ligado al commit y al cycle SDDK, sin tag nuevo.
+
+**Siguiente WU:** A-005 language/platform support matrix, P0 y dependiente de A-003. M0.11 permanece carry-over con 82 warnings.

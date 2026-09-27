@@ -5,7 +5,7 @@
 | A-001 | Crear track `community-productization` y puntero en ROADMAP | P0 | — | una sola autoridad de agenda |
 | A-002 | Reconciliar versión release/main/README/repo metadata | P0 | A-001 | cero claims contradictorias |
 | A-003 | Product manifest generado | P0 | A-002 | **CLOSED 2026-09-27** — schema `cognicode.product/v1`, `source_commit`, generator determinista, tests 5/5, ciclo `p-c1fac1fea05615c6/cp0-product-manifest`, commit `96d06854`; siguientes A-004/A-005 |
-| A-004 | Tool/catalog generator | P0 | A-003 | docs/tool count nunca manual |
+| A-004 | Tool/catalog generator | P0 | A-003 | **CLOSED 2026-09-27** — `cognicode.tools/v1`, captura runtime `tools/list` de 73 tools, generator determinista, schema, tests 4/4, ciclo `p-c1fac1fea05615c6/cp0-tool-catalog`, commit `85222f67`; A-005 queda siguiente |
 | A-005 | Language/platform support matrix | P0 | A-003 | Certified/Supported/Experimental/Unsupported |
 | A-006 | Definir profiles core/reviewer/developer/experimental | P0 | A-004 | tools/list filtrable/reproducible |
 | A-007 | Resolver licencia repo y añadir ficheros | P0 | decisión operador | GitHub detecta license |
