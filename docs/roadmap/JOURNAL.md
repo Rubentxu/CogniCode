@@ -5592,3 +5592,74 @@ release v0.99.2). `origin/main` = `a2a3a2e2`.
    pero conservable como histórico del programa
    production-ready).
 
+
+## N+23 — M0.11 rustdoc bounded audit (commence + 12 batches)
+
+**Fecha:** 2026-09-27 (turno autónomo).
+
+**Decisión directiva:** "continúa con el roadmap hasta el final,
+foco en valor operativo y facilidad, gates humanos pre-aprobados".
+Bajo esa autoridad, M0.11 (rustdoc audit, 3-5d) se commenzó como
+sublotes atómicos bounded en lugar de big-bang.
+
+**Resultado del turno:**
+
+* 12 commits atómicos:
+  `1de94ffc, 31007463, 9ab2c1ef, 44ec2d03, 29cf0046, 35dd52a8,
+   d7229c76, 0de64271, 6c735b10, 7851b657, 10965efa, aa12d87d`.
+* 65 rustdoc broken_intra_doc_links fixeados (de 147 → 82;
+  44.2% de progreso).
+* 12 archivos con warnings a 0 restantes (graph_analytics,
+  impact_analysis, software_world/mod.rs, change_proposal/executor,
+  graph_query_port, batch_builder, mcp/explorer, session/mod.rs,
+  change_proposal/trial, promotion_authority/permit,
+  analytics/descriptor, infrastructure/graph/strategy).
+* Batería siempre verde: 2223/0/12 (core default),
+  2785/0/12 (core --features evidence-kernel),
+  955/0/0 (explorer), 5668/0/30 (workspace total).
+* Cada commit con git sddk-align + git sddk-close completos
+  (.git/sddk-agent-gate/closeout-<sha>.txt presente).
+
+**Patrones descubiertos (Lesson 87, formalizable):**
+
+1. `Self::method` en module-level docs NO resuelve; debe ser
+   `StructName::method`. En doc dentro de `impl StructName { fn ... }`
+   sí funciona (`Self` está en scope).
+2. Types definidos en submodulos (`pub mod foo;`) NO son visibles
+   como `[`Foo`]` desde module-level docs de otro modulo; requieren
+   `[`Foo`](crate::path::to::Foo)`.
+3. Cross-crate intra-doc links NO resuelven sin Cargo dep edge
+   (architectural directionality preservada por downgrade a
+   code span).
+4. Enum-variant references deben apuntar al enum real
+   (`WorldSourceState::Base`, no `SoftwareWorld::Base`).
+5. Forward-references intra-archivo a métodos de traits definidos
+   más abajo son frágiles; preferir code span sobre intra-doc link.
+6. Field-references en struct-field docs no necesitan intra-doc
+   links (auto-referentes).
+
+**SDDK-107 storage repair (carry-over):** Sigue OPEN; el binario
+`sddk` 1.145.1 activo no soporta `ledger_events` legacy pero la
+DB real tiene schema moderno `events_v1`. Workaround aplicado:
+release material via git nativo + archivado manual (CHANGELOG,
+JOURNAL, MAINTENANCE). El binario 1.171.2 está descargado pero el
+bundle no incluye bin (solo assets); upgrade requiere red/release
+download fuera del scope de este turno.
+
+**Backlog status post-N+23:**
+
+* M0.1..M0.10, M0.12, M0.13: CLOSED.
+* M0.11: IN_PROGRESS (82 warnings remaining across 62 files;
+  12 files at 0; ~44% complete).
+* F0.1: CLOSED.
+* E3: NOT_TRIGGERED.
+* SDDK-107: OPEN.
+* CR-01: PENDING.
+
+**Commits ahead of origin/main:** 18 (12 M0.11 + 5 anteriores + N+21 reconciliation + docs).
+
+**Lessons to formalize (next session):**
+
+* Lesson 87: rustdoc hygiene atomic-batching recipe.
+* Lesson 88: cross-crate intra-doc link architecture preservation.
+
