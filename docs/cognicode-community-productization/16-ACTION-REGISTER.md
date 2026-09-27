@@ -59,3 +59,11 @@ Para evitar micromanagement, agrupar en bloques:
 5. **BLOCK-E Agent Adoption**: A-033..040.
 6. **BLOCK-F Beta → GA**: A-041..044.
 7. **BLOCK-G DNS IaC**: A-045 opcional.
+
+## Deuda de CP1 — estado real tras la sesión 2026-09-27
+
+| ID | Estado | Resolución |
+|---|---|---|
+| CP1-DEBT-01 | **CLOSED** | `generate_profiles.py --check` y `generate_support_matrix.py --check` fallaban por diseño, no por deriva real: los generadores estampan `source_commit` desde `git rev-parse HEAD`, así que comparar el documento entero lo invalidaba en cada commit. `--check` ahora compara contenido estrictamente y valida la procedencia por forma, con la semántica compartida en `scripts/product/check_semantics.py`. Verificado por mutación en cuatro casos. Commit `ff60df36`. |
+| CP1-DEBT-02 | **PARTIAL** | Habilitar Discussions **era automatizable**: `UpdateRepositoryInput.hasDiscussionsEnabled` existe en el schema GraphQL y se aplicó, verificado por `GET /repos/{owner}/{repo}` (`has_discussions: false` → `true`). Crear las **categorías** sí es manual: `createDiscussionCategory` no existe en `Mutation` (`undefinedField`) y el endpoint REST devuelve 404. Quedan cuatro categorías pendientes de alta manual; conjunto y propósito ya especificados en ADR-053. Commit `905d8b6b`. |
+| CP1-DEBT-03 | **RECLASSIFIED** | No es deuda técnica sino una decisión explícita del maintainer: `.gitignore` declara `docs/` local-only con protocolo documentado de `git add -f`. No se modifica. El riesgo real —un documento público citando una ruta que solo existe en su disco— se cierra en el lado correcto: `test_community_documents_cite_real_repository_paths` pasó a exigir que **todas** las rutas citadas existan, no solo una. Commit `00068420`. |
