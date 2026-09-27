@@ -32,6 +32,31 @@ The JSON Schema is `product/schemas/product-manifest.v1.schema.json`.
 - Platforms are limited to Linux GNU release lanes that already have release evidence. macOS and Windows are intentionally absent.
 - Bundle and plugin manifests are separate installation contracts and are not replaced by this file.
 
+## Language and platform matrices
+
+`languages.json` and `platforms.json` are generated projections for public
+claims. They do not replace the runtime parser registry or release workflows.
+
+Generate and validate both matrices with the source SHA used for the product
+snapshot:
+
+```bash
+python3 scripts/product/generate_support_matrix.py \
+  --source-commit "$(git rev-parse HEAD)"
+python3 scripts/product/test_product_support_matrix.py
+```
+
+The language matrix distinguishes parser presence from focused acceptance
+coverage. A parser without focused acceptance evidence remains `experimental`.
+The platform matrix marks only the two published Linux GNU lanes as
+`certified`; the Linux musl CI lane is `experimental`, and deferred macOS and
+Windows public targets are `unsupported` for the current release contract.
+
+Schemas:
+
+- `product/schemas/languages.v1.schema.json`
+- `product/schemas/platforms.v1.schema.json`
+
 ## Tool catalog
 
 Capture the runtime list with the HEAD-built MCP binaries, then regenerate:

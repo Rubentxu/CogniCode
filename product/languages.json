@@ -1,0 +1,422 @@
+{
+  "schema_version": "cognicode.languages/v1",
+  "product": "cognicode",
+  "version": "0.99.2",
+  "source_commit": "7c624d016475056205de62405bcf125943bb30a7",
+  "languages": [
+    {
+      "id": "bash",
+      "name": "Bash",
+      "support_level": "supported",
+      "extensions": [
+        "bash",
+        "sh"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "c",
+      "name": "C",
+      "support_level": "supported",
+      "extensions": [
+        "c",
+        "h"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "cpp",
+      "name": "C++",
+      "support_level": "supported",
+      "extensions": [
+        "cc",
+        "cpp",
+        "cxx",
+        "hpp",
+        "hxx"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "csharp",
+      "name": "C#",
+      "support_level": "supported",
+      "extensions": [
+        "cs"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "dart",
+      "name": "Dart",
+      "support_level": "experimental",
+      "extensions": [
+        "dart"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "elixir",
+      "name": "Elixir",
+      "support_level": "experimental",
+      "extensions": [
+        "ex",
+        "exs"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "erlang",
+      "name": "Erlang",
+      "support_level": "experimental",
+      "extensions": [
+        "erl",
+        "hrl"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "fortran",
+      "name": "Fortran",
+      "support_level": "experimental",
+      "extensions": [
+        "f",
+        "f03",
+        "f08",
+        "f90",
+        "f95"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "go",
+      "name": "Go",
+      "support_level": "supported",
+      "extensions": [
+        "go"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "groovy",
+      "name": "Groovy",
+      "support_level": "experimental",
+      "extensions": [
+        "gradle",
+        "groovy"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "haskell",
+      "name": "Haskell",
+      "support_level": "supported",
+      "extensions": [
+        "hs"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "hcl",
+      "name": "HCL",
+      "support_level": "experimental",
+      "extensions": [
+        "hcl",
+        "tf",
+        "tfvars"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "java",
+      "name": "Java",
+      "support_level": "supported",
+      "extensions": [
+        "java"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "javascript",
+      "name": "JavaScript",
+      "support_level": "supported",
+      "extensions": [
+        "cjs",
+        "js",
+        "jsx",
+        "mjs"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "json",
+      "name": "JSON",
+      "support_level": "supported",
+      "extensions": [
+        "json"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "julia",
+      "name": "Julia",
+      "support_level": "experimental",
+      "extensions": [
+        "jl"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "lua",
+      "name": "Lua",
+      "support_level": "supported",
+      "extensions": [
+        "lua",
+        "luau"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "php",
+      "name": "PHP",
+      "support_level": "supported",
+      "extensions": [
+        "php"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "powershell",
+      "name": "PowerShell",
+      "support_level": "experimental",
+      "extensions": [
+        "ps1",
+        "psm1"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "python",
+      "name": "Python",
+      "support_level": "supported",
+      "extensions": [
+        "py",
+        "pyw"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "r",
+      "name": "R",
+      "support_level": "experimental",
+      "extensions": [
+        "R",
+        "r"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "ruby",
+      "name": "Ruby",
+      "support_level": "supported",
+      "extensions": [
+        "rb"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "rust",
+      "name": "Rust",
+      "support_level": "supported",
+      "extensions": [
+        "rs"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "scala",
+      "name": "Scala",
+      "support_level": "supported",
+      "extensions": [
+        "scala"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "swift",
+      "name": "Swift",
+      "support_level": "supported",
+      "extensions": [
+        "swift"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "systemverilog",
+      "name": "SystemVerilog",
+      "support_level": "experimental",
+      "extensions": [
+        "sv"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "typescript",
+      "name": "TypeScript",
+      "support_level": "supported",
+      "extensions": [
+        "ts",
+        "tsx"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "verilog",
+      "name": "Verilog",
+      "support_level": "experimental",
+      "extensions": [
+        "v"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "yaml",
+      "name": "YAML",
+      "support_level": "supported",
+      "extensions": [
+        "yaml",
+        "yml"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    },
+    {
+      "id": "zig",
+      "name": "Zig",
+      "support_level": "experimental",
+      "extensions": [
+        "zig"
+      ],
+      "evidence": [
+        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "LanguageConfig extension and symbol mapping in language_config.rs",
+        "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
+      ]
+    }
+  ]
+}

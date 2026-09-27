@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_product_manifest.py"
-BASELINE = "828af2796bb05625b92bccc7d357c300388aeaff"
+BASELINE = "7c624d016475056205de62405bcf125943bb30a7"
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
