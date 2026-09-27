@@ -2,7 +2,7 @@
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
   "version": "0.99.2",
-  "source_commit": "7c624d016475056205de62405bcf125943bb30a7",
+  "source_commit": "73235889409afea43bc18cb0122a3966676dbb85",
   "public_surface": {
     "binaries": [
       {
@@ -27,23 +27,31 @@
     "profiles": [
       {
         "name": "core",
-        "description": "Read-only navigation, symbols, search, and basic impact.",
-        "mutating": false
-      },
-      {
-        "name": "reviewer",
-        "description": "Core plus architecture, quality, and graph analysis.",
-        "mutating": false
+        "description": "Daily CLI",
+        "mutating": false,
+        "install": true,
+        "stability": "stable"
       },
       {
         "name": "developer",
-        "description": "Reviewer plus explicitly enabled mutating capabilities.",
-        "mutating": true
+        "description": "Onboarding for CogniCode contributors \u2014 SDDK/OpenSpec workflow, internal `just` recipes, architecture rules, release gates.",
+        "mutating": true,
+        "install": false,
+        "stability": "experimental"
       },
       {
         "name": "experimental",
-        "description": "Capabilities without a GA contract, never stable by default.",
-        "mutating": false
+        "description": "Stability bracket for artifacts not yet install-ready. Not an install path.",
+        "mutating": false,
+        "install": false,
+        "stability": "experimental"
+      },
+      {
+        "name": "reviewer",
+        "description": "Adds the MCP bridge daemon for IDE integration",
+        "mutating": false,
+        "install": true,
+        "stability": "stable"
       }
     ],
     "mcp": {
@@ -219,7 +227,8 @@
   "artifacts": {
     "tools": "tools.json",
     "languages": "languages.json",
-    "platforms": "platforms.json"
+    "platforms": "platforms.json",
+    "profiles": "profiles.json"
   },
   "feature_flags": {
     "read_only_mode": true,

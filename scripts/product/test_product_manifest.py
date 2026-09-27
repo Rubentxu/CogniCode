@@ -10,7 +10,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_product_manifest.py"
-BASELINE = "7c624d016475056205de62405bcf125943bb30a7"
+BASELINE = "73235889409afea43bc18cb0122a3966676dbb85"
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -38,10 +38,12 @@ def test_current_provenance_and_public_surface() -> None:
         ]
         assert [item["name"] for item in manifest["public_surface"]["profiles"]] == [
             "core",
-            "reviewer",
             "developer",
             "experimental",
+            "reviewer",
         ]
+        assert manifest["public_surface"]["profiles"][0]["install"] is True
+        assert manifest["public_surface"]["profiles"][1]["install"] is False
         assert manifest["public_surface"]["mcp"]["protocol_revision"] == "2025-03-26"
 
 

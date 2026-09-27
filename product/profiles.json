@@ -1,0 +1,64 @@
+{
+  "schema_version": "cognicode.profiles/v1",
+  "product": "cognicode",
+  "source_commit": "73235889409afea43bc18cb0122a3966676dbb85",
+  "profiles": [
+    {
+      "id": "core",
+      "stability": "stable",
+      "install": true,
+      "mutating": false,
+      "description": "Daily CLI",
+      "components": [
+        "cogh",
+        "cognicode"
+      ],
+      "skill_bundles": [
+        "cognicode"
+      ],
+      "evidence": "release_contract.rs::PUBLISHED_PROFILES lists this id; release_contract.rs::COMPONENTS.publishable entries whose profiles include this id determine components"
+    },
+    {
+      "id": "developer",
+      "description": "Onboarding for CogniCode contributors \u2014 SDDK/OpenSpec workflow, internal `just` recipes, architecture rules, release gates.",
+      "stability": "experimental",
+      "install": false,
+      "mutating": true,
+      "components": [
+        "cogh",
+        "cognicode"
+      ],
+      "skill_bundles": [
+        "cognicode-developer"
+      ],
+      "evidence": "skills/cognicode-developer/manifest.yaml present; release_contract.rs::SKILL_BUNDLES.cognicode-developer is published:false"
+    },
+    {
+      "id": "experimental",
+      "description": "Stability bracket for artifacts not yet install-ready. Not an install path.",
+      "stability": "experimental",
+      "install": false,
+      "mutating": false,
+      "components": [],
+      "skill_bundles": [],
+      "evidence": "no published component or bundle; the term is preserved as a stability marker for the future"
+    },
+    {
+      "id": "reviewer",
+      "stability": "stable",
+      "install": true,
+      "mutating": false,
+      "description": "Adds the MCP bridge daemon for IDE integration",
+      "components": [
+        "cogh",
+        "cognicode",
+        "cognicode-mcp"
+      ],
+      "skill_bundles": [
+        "cognicode",
+        "cognicode-mcp"
+      ],
+      "evidence": "release_contract.rs::PUBLISHED_PROFILES lists this id; release_contract.rs::COMPONENTS.publishable entries whose profiles include this id determine components"
+    }
+  ]
+}

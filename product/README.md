@@ -27,7 +27,7 @@ The JSON Schema is `product/schemas/product-manifest.v1.schema.json`.
 - `public_surface.mcp.tool_catalog` points to the generated `product/tools.json`. Tool definitions remain authoritative in the runtime MCP registry. A-004 publishes a normalized projection from a real `tools/list` capture and never duplicates the registry.
 - `product/tool-catalog-runtime.json` is the captured `tools/list` input used to generate the committed catalog. It is provenance input, not a second tool registry.
 - `product/tools.json` preserves runtime metadata, sorts by tool name, and represents undeclared output/cache/network fields as `null` with `requirements_status: "not_declared"`. Null is not a negative capability claim.
-- `public_profiles` is a deterministic product projection: stable core categories map to `core` and `reviewer`, other stable read tools to `reviewer`, mutating tools to `developer`, and experimental/gated tools to `experimental`.
+- `public_profiles` is **derived** from `product/profiles.json`. The product manifest no longer hard-codes a profile list. See "Public profiles and stability" below.
 - Language entries currently prove parser presence only and are conservatively marked `experimental`. A-005 owns the evidence-backed support matrix.
 - Platforms are limited to Linux GNU release lanes that already have release evidence. macOS and Windows are intentionally absent.
 - Bundle and plugin manifests are separate installation contracts and are not replaced by this file.
@@ -56,6 +56,37 @@ Schemas:
 
 - `product/schemas/languages.v1.schema.json`
 - `product/schemas/platforms.v1.schema.json`
+
+## Public profiles and stability
+
+`product/profiles.json` is the canonical product-level projection of install and declared profiles, and the only source the product-manifest reads for `public_surface.profiles`. It is generated, schema-validated and committed.
+
+The contract surface (`cognicode.profiles/v1`) carries four profiles. Each carries a `stability`, an `install` boolean, a `mutating` boolean, the set of `components` and `skill_bundles` it ships, and one line of evidence:
+
+| id           | stability    | install | mutating | components                                   | skill_bundles                |
+|--------------|--------------|---------|----------|----------------------------------------------|------------------------------|
+| `core`       | `stable`     | true    | false    | `cogh`, `cognicode`                          | `cognicode`                  |
+| `reviewer`   | `stable`     | true    | false    | `cogh`, `cognicode`, `cognicode-mcp`          | `cognicode`, `cognicode-mcp` |
+| `developer`  | `experimental` | false | true     | declared; not an install path                | `cognicode-developer`        |
+| `experimental` | `experimental` | false | false | declared; stability bracket, no install path | none                         |
+
+Honest contracts only:
+
+- The release contract in `crates/cognicode-cli/src/cmd/release_contract.rs` is the single behavioural source for binary ids, profile lists per component, and `SkillBundleSpec.published` flags. The generator parses that file and projects it into the schema.
+- `--profile core` and `--profile reviewer` resolve through `cogh`. The installer does NOT accept `--profile developer` or `--profile experimental` today; the contract states that explicitly via `install: false` so the public surface stays aligned with the runtime.
+- The `mutating` field on `developer` reflects the existing `feature_flags.mutations = "developer-explicit"` posture and is not an enabling claim.
+
+Generate and validate:
+
+```bash
+python3 scripts/product/generate_profiles.py \
+  --source-commit "$(git rev-parse HEAD)"
+python3 scripts/product/generate_profiles.py \
+  --source-commit "$(git rev-parse HEAD)" --check
+python3 -m pytest -q scripts/product/test_profiles.py
+```
+
+Schema: `product/schemas/profiles.v1.schema.json`.
 
 ## Tool catalog
 
