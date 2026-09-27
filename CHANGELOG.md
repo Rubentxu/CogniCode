@@ -60,6 +60,108 @@ Cycle-by-cycle highlights:
 
 For granular commit history, see `git log v0.50.0..v0.86.0`.
 
+## [v0.99.2] — 2026-09-27
+
+Production-Ready programme closure (Post-PRF stabilisation,
+operator directive 2026-09-27: "creamos release y archivado sddk").
+SEMVER PATCH (rule 6): feat commits in the period are
+CI/architecture-enforcement (QW-03, QW-04, CR-06, CR-08) per
+the programme authorised 2026-09-26, not user-visible product
+features, so 0.99.1 → 0.99.2.
+
+### Fixed
+
+- **M0.6 — `fix(parser): bump tree-sitter 0.24.7 → 0.27.0`**:
+  resolves the `LanguageError(version)` mismatch that crashed
+  `cognicode analyze` on PHP and Swift corpora.
+  Commit `e2ee94ad`.
+- **M0.10 — `fix(parser)` + `fix(walkers)`**: two-layer grammar
+  drift in `tree_sitter_parser.rs` (function_node_type + identifier
+  name) and `type_ref_walkers.rs` (PHP/Swift node names). Restores
+  symbol extraction for PHP and Swift treesitter inputs.
+  Commits `2becec6a` + `4eacab93`.
+- **M0.13 — `test(release)` + `test(cli)`**: target-dir UAT
+  mismatch fix (`~/.cargo/config.toml` overriding
+  `target-dir = /var/home/rubentxu/cargo-targets` broke 7 UAT
+  tests pinning `<repo_root>/target/release/`). Added
+  `common::release_dir()` helper in CLI + MCP test harnesses to
+  honour the resolved Cargo target-dir across all profiles.
+  Commits `555ed54c` + `89fffd58`.
+
+### Added
+
+- **M0.12 — `test(graph)` + `test(analysis_service)`**:
+  re-enabled 3 bounded `#[ignore]` tests with contract
+  assertions (lightweight_index + on_demand_graph benchmarks +
+  debug_call_relationships). Commits `b482a4ff` + `0132e260`.
+- **QW-03 — `feat(ci)`**: bin-tracking guard becomes testable +
+  integrated into PR-CI merge-gate. Commits `d781e846` +
+  `47085b0d`.
+- **QW-04 — `feat(ci)`**: contractual test wired into
+  `release.yml` + `pr-ci.yml`. Commit `cc357018`.
+- **CR-06 — `feat(architecture)`**: application_no_infrastructure
+  + application_no_interface canonical constraints registered
+  + historical drift frozen under `TemporaryException` mechanism.
+  Commits `82c6d644` + `417f6c23`.
+- **CR-08 — `feat(ci)`**: dorny/paths-filter wired into `pr-ci` +
+  deterministic suite selector + 14 contractual tests.
+  Commits `3a834ca5` + `cba2c6eb` + `cbb1d824`.
+- **M0.10 acceptance — `test(core)`**: 6 end-to-end acceptance
+  tests for PHP/Swift symbol extraction, exercising the public
+  API path. Commit `a47cf419`.
+
+### Performance
+
+- **e91.W1 — `perf`**: honest `iterations`/`converged` semantics
+  on graph_insights. Commits `6f40a08b` + `42a1ddcf`.
+- **e91.W2 — `perf`**: PageRank characterisation. Commits
+  `8b4bbe85` + `6b2738f3`.
+
+### Documentation
+
+- 25 commits across `docs/roadmap/JOURNAL.md`,
+  `docs/roadmap/MAINTENANCE.md`, the production-ready
+  `ROADMAP-ADDENDUM.md`, `EXECUTION-PLAN.md`, the three
+  `PHASE-{1,2,3}-*.md`, the OpenSpec changes, and
+  certification addenda. Highlights:
+  - JOURNAL entries N+1..N+20 (recount of the
+    production-ready programme work and post-M0 closures).
+  - MAINTENANCE rows M0.1..M0.13 closed except M0.11
+    (rustdoc audit, 3-5d, OPEN).
+  - lessons 71..84 formalised.
+
+### Pre-flight evidence
+
+- `cargo test --workspace` = `5668 passed; 0 failed; 30 ignored`.
+- `cargo fmt --check` exit 0.
+- `cargo clippy --workspace --all-targets -- -D warnings`
+  exit 0.
+- Release plan via `sddk release plan --tag v0.99.2 --route local`
+  returns the 4-step route (push_main, verify_main_sha,
+  create_annotated_tag, verify_remote_tag).
+- `git push origin main` (61 commits fast-forward to
+  `origin/main` = `37129dfd`).
+- Annotated tag `v0.99.2` + `git push origin v0.99.2`
+  (`origin/v0.99.2 = v0.99.2`).
+
+### Known follow-ups (operator-gated)
+
+1. **SDDK-107 — repair local ledger** — the local
+   `~/.local/share/sddk/data/ledger.sqlite` is missing the
+   `ledger_events` table; the active framework is 1.171.2 but
+   the active binary is 1.145.1 and the local DB schema
+   appears to be the older version. This blocks
+   `sddk cycle start` (release apply chain itself ran via
+   native git because the cycle record wasn't available for
+   `sddk release vault` either).
+2. **M0.11** — 147 `broken_intra_doc_links` warnings (3-5
+   day estimation). Doc-only drift.
+3. **F0.1** — already CLOSED (§42 ROADMAP) since 2026-09-25;
+   appears PENDING in MAINTENANCE due to inventory drift
+   between the two sources. Reconciliation note added.
+4. **CR-01 firma humana contractual** — analog to C7. PENDING
+   since 2026-09-25.
+
 ## [v1.0.0] — 2026-09-20
 
 Operational cut closing the E31 program and INC-007. Tagged per ADR-031 §3
