@@ -4231,3 +4231,111 @@ C. Autonomous mode (mismo patrón que turno 13): el agente
 * `just docs-check` — invocado en cada bounded audit (M0.8).
 * `just deny-check` (a añadir si operador quiere) —
   ejecutable ahora con `cargo deny check licenses` exit 0.
+
+## Entrada N+10 — M0.6 CLOSED + discovery walker-grammar-drift (2026-09-27 07:10 UTC)
+
+**Trigger:** operador autoriza arrancar CR-01 + M0.6 (sesión 2026-09-27,
+06:49 UTC). El agente descubre durante el SDDK PRE-FLIGHT que CR-01 ya
+está PASS como ancestro de HEAD (`f774b89f docs(certification): C8-R
+reproducible recertification — PASS on af057cc5`), por lo que el único
+trabajo genuinamente abierto es M0.6.
+
+**M0.6 decisión:** opción A del MAINTENANCE.md (bump `tree-sitter`
+0.24→0.27). Eligida a criterio del agente tras análisis de las 3
+opciones:
+* (A) bump runtime: 1 línea en `[workspace.dependencies]`, riesgo
+  medio (29 parsers a verificar), repara el bug real.
+* (B) fork PHP/Swift: deuda de mantenimiento permanente.
+* (C) marcar como Unsupported: cosmético, no repara nada.
+
+**Fix aplicado (commit e2ee94ad):**
+
+* `Cargo.toml`: `tree-sitter = "0.24"` → `"0.27"`.
+* `crates/cognicode-core-mock/Cargo.toml`: pin redundante `tree-sitter
+  = "0.24"` → `tree-sitter.workspace = true` (alineado con workspace,
+  antes causaba conflicto de versiones en `cargo update`).
+* `Cargo.lock`: `tree-sitter v0.24.7` → `v0.27.0`.
+* `crates/cognicode-core/src/infrastructure/parser/type_ref_walkers.rs`:
+  mensajes `#[ignore]` de los 4 tests PHP/Swift actualizados para
+  reflejar la nueva realidad.
+
+**Validación:**
+
+* `cargo check --workspace --all-targets`: exit 0 (29 parsers siguen
+  compilando).
+* `cargo test -p cognicode-core --lib`: **2216 passed, 0 failed, 19
+  ignored** (cero regresión; el count de `#[ignore]` no cambió).
+* `cargo clippy --workspace --all-targets -- -D warnings`: exit 0.
+* `cargo fmt --all -- --check`: exit 0.
+* `cargo deny check licenses`: licenses ok.
+* Cross-validation en `git worktree /tmp/cognicode-m06-bump`: zero
+  regresión. Worktree limpiado al traer el fix al repo principal.
+
+**Bug M0.6 original CERRADO:**
+
+* `LanguageError { version: 15 }` en `TreeSitterParser::new()` para
+  PHP/Swift: **REPARADO**. Antes pineaba 4 tests `#[ignore]`; ahora 0
+  tests pinean ese error. Producción puede parsear `.php` y `.swift`
+  sin error runtime.
+
+**Nueva deuda descubierta (walker-grammar-drift):**
+
+3 de los 4 tests `#[ignore]` PHP/Swift ahora fallan con
+`node type 'X' not found in source` en vez de `LanguageError`. Causa:
+el grammar tree-sitter-php 0.24.2 + tree-sitter 0.27 emite nombres de
+nodo distintos (`function_definition`/`class_declaration`) a los que
+`walk_php_type_refs`/`walk_swift_type_refs` pinean. Es un **cambio de
+contrato del grammar** que requiere análisis del AST actualizado y
+adaptación de los walkers. NO incluido en scope de M0.6 (sería
+scope-creep). Documentado en mensajes `#[ignore]` y registrado como
+nuevo work item a abrir.
+
+**Estado del branch:**
+
+* HEAD: `e2ee94ad` (4 archivos, +10/-9).
+* Working tree: clean.
+* Remote: pendiente push (no se hace push sin decisión del operador).
+* Commits over `origin/main`: 42 (era 41, +1 este turno).
+* SDDK closeout: `e2ee94adeebbf2c861e5ebdae75e24ee25e31e90`.
+
+**Mantenimiento al cierre:**
+
+* M0.1..M0.5: CLOSED.
+* M0.6: **CLOSED 2026-09-27** (este turno).
+* M0.7..M0.9: CLOSED.
+* F0.1: PENDING (carry-over).
+* E3: NOT_TRIGGERED.
+
+**Próximos pasos (operator-gated):**
+
+1. Push de `e2ee94ad` a `origin/arch/cr-06-application-fitness-functions`
+   (decisión del operador — sin red automática).
+2. Bump SEMVER patch `v0.99.1` → `v0.99.2` (M0.6 cierra con cambio de
+   binario porque el tree-sitter runtime cambia → `cognicode` /
+   `cognicode-mcp` linked contra la nueva versión). Decisión del
+   operador según MAINTENANCE.md §"Cómo se decide agrupar o separar
+   releases".
+3. Abrir work item **walker-grammar-drift** (3 tests PHP/Swift fallando
+   por cambio de nombres de nodo del grammar). Requiere análisis del
+   AST actualizado + adaptación de `walk_php_type_refs` y
+   `walk_swift_type_refs`.
+4. CR-01: ya PASS en `f774b89f` (ancestro de HEAD). Solo queda firma
+   humana del operador al nivel contractual — fuera de scope del branch.
+5. Resto del backlog production-ready (CR-02..09, ST-01..05) intacto.
+
+**Lecciones:**
+
+* **Lesson 71 (nueva)**: SDDK PRE-FLIGHT debe verificar WorkItems contra
+  el árbol git real, no contra `CURRENT.md`. El CURRENT.md listaba CR-01
+  como "PENDIENTE firma humana" lo cual sugería trabajo pendiente, pero
+  el commit `f774b89f` ya tenía CR-01 PASS técnico como ancestro de
+  HEAD. La verificación `git merge-base HEAD <candidato>` habría
+  detectado esto en el primer turno y evitado el detour.
+* **Lesson 72 (nueva)**: `cognicode-core-mock` pineaba `tree-sitter`
+  directamente, no via `workspace = true`. Cualquier bump del workspace
+  chocaba con este pin. Esto es deuda de configuración que se repite en
+  crates de "mock" — vale auditar el resto del workspace por pines
+  directos similares (búsqueda dirigida sugerida para próximo turno).
+* **Lesson 73 (nueva)**: cuando el bug es de "runtime panic", verificar
+  SIEMPRE con worktree antes de aplicar al repo principal. El bump de
+  29 parsers habría sido aterrador sin la validación en worktree.
