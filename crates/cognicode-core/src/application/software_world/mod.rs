@@ -1,10 +1,10 @@
 //! Software world foundation (e71 WU1 — M9).
 //!
-//! A [`SoftwareWorld`] describes **isolation and lineage** of a candidate
+//! A [`SoftwareWorld`](crate::application::software_world::world::SoftwareWorld) describes **isolation and lineage** of a candidate
 //! analysis target. It is *not* a second source of truth: it carries no
 //! `Fact`s, no `ReadSet`, no `EvidenceBundle`, no graph store handle.
-//! The only canonical reference is [`SoftwareWorld::base_snapshot`], which
-//! points at a [`SnapshotId`] (bijective with a `RevisionId`).
+//! The only canonical reference is [`SoftwareWorld::base_snapshot`](crate::application::software_world::world::SoftwareWorld::base_snapshot), which
+//! points at a `SnapshotId` (bijective with a `RevisionId`).
 //!
 //! ## Why a separate concept from `Snapshot`?
 //!
@@ -25,7 +25,7 @@
 //!
 //! ## Why `source_state` is descriptive, not materialized
 //!
-//! A forked world carries a [`WorldSourceState::Forked`] record: the
+//! A forked world carries a [`WorldSourceState::Forked`](crate::application::software_world::world::WorldSourceState::Forked) record: the
 //! `path` is a logical identifier (e.g. a workspace-relative source
 //! reference), the `content_hash` is a stable 256-bit digest. We do NOT
 //! copy bytes, files or facts into the world. The world is a receipt, not
@@ -37,14 +37,14 @@
 //!
 //! This module is pure domain logic. It does not read from disk, does not
 //! generate UUIDs at construction time, and does not touch any graph
-//! store. Construction is total (no fallible variants). [`ContentHash`]
+//! store. Construction is total (no fallible variants). [`ContentHash`](crate::application::software_world::world::ContentHash)
 //! is constructed by the caller; we never compute hashes here. Fork
 //! construction (e71 WU2) is pure: no clock, no env, no IO.
 //!
 //! ## Fail-closed by construction
 //!
-//! - A [`SoftwareWorld::Base`] world has `parent_world == None`.
-//! - A [`SoftwareWorld::Forked`] world has `parent_world == Some(_)`.
+//! - A [`WorldSourceState::Base`](crate::application::software_world::world::WorldSourceState::Base) world has `parent_world == None`.
+//! - A [`WorldSourceState::Forked`](crate::application::software_world::world::WorldSourceState::Forked) world has `parent_world == Some(_)`.
 //! - The constructor enforces this: callers cannot fabricate a base
 //!   world with a parent, nor a forked world without one.
 //!
@@ -57,7 +57,7 @@
 //! untouched and the architectural rule "domain has no IO/types of
 //! operational lineage" is preserved (see `AGENTS.md`).
 //!
-//! The feature gate `evidence-kernel` is required because [`SnapshotId`]
+//! The feature gate `evidence-kernel` is required because [`SnapshotId`](crate::domain::kernel_ids::SnapshotId)
 //! lives behind that gate.
 
 #[cfg(feature = "evidence-kernel")]
