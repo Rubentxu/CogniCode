@@ -4339,3 +4339,18 @@ nuevo work item a abrir.
 * **Lesson 73 (nueva)**: cuando el bug es de "runtime panic", verificar
   SIEMPRE con worktree antes de aplicar al repo principal. El bump de
   29 parsers habría sido aterrador sin la validación en worktree.
+* **Lesson 74 (nueva)**: SDDK closeout debe ejercitar el path real de
+  aceptación del usuario, no solo `cargo test` (inspección indirecta).
+  El self-grill del sistema me señaló que mis gates de `cargo test`
+  no representaban el camino que el usuario real toma. Solventado
+  añadiendo `crates/cognicode-core/tests/m06_acceptance.rs` con 6 tests
+  que invocan `TreeSitterParser::new(Language::Php/Swift)` directamente
+  sobre source real. 6/6 PASS.
+* **Lesson 75 (nueva)**: el CLI binario (`cognicode analyze`) tiene un
+  gap pre-existente con PHP/Swift (`Languages: {}`, `parsed_files=0`)
+  que NO es regresión del bump M0.6. Verificado cross-cutting con
+  `git checkout <pre-bump-SHA> -- Cargo.toml Cargo.lock` y comparación
+  de output. El bug es de orquestación CLI ↔ parser (el CLI filtra por
+  extensión antes de invocar el parser, pero el pipeline actual no
+  incluye PHP/Swift en el set efectivo). Deuda separada, fuera de
+  scope M0.6.
