@@ -170,6 +170,45 @@ pub fn release_bin_path() -> PathBuf {
     p
 }
 
+/// Absolute path to the `release/` directory that contains the
+/// release-profile binaries (e.g. `cogh`, `cognicode`, `cognicode-mcp`).
+///
+/// Resolution order (first match wins):
+///
+/// 1. The parent of the resolved cognicode binary when that parent
+///    already ends with `release` (e.g. when `cargo test --release`
+///    was used). Same path as `cargo build --release` would write to.
+/// 2. The sibling `release/` directory when the resolved cognicode
+///    binary lives in `debug/` (the usual case under `cargo test`
+///    without `--release`). This directory is normally populated by
+///    a separate `cargo build --release` invocation.
+/// 3. The literal `<repo_root>/target/release` — workspace default.
+///
+/// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
+/// because it breaks under a global `~/.cargo/config.toml`
+/// target-dir override. Honours the resolved target-dir chosen by
+/// Cargo for the integration test, falling back to the workspace
+/// default only when it fails.
+pub fn release_dir() -> PathBuf {
+    let probe = binary_path("cognicode");
+    let parent = probe
+        .parent()
+        .map(PathBuf::from)
+        .expect("release_dir: probe has no parent");
+    if parent.ends_with("release") {
+        return parent;
+    }
+    if parent.ends_with("debug") {
+        let sibling = parent.parent().map(|p| p.join("release"));
+        if let Some(s) = sibling
+            && s.exists()
+        {
+            return s;
+        }
+    }
+    repo_root().join("target").join("release")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

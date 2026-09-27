@@ -48,6 +48,10 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     let root = repo_root();
     let version = workspace_version();
     let tag = workspace_tag();
+    // CR-00c / M0.13: respect CARGO_TARGET_DIR (Lesson 84 — hard-coded
+    // paths to target/release/ break on systems with a global
+    // `.cargo/config.toml` target-dir override).
+    let release_dir = common::release_dir();
 
     let stage = std::env::temp_dir().join(format!("prf-dist-uat-stage-{}", std::process::id()));
     let generated = std::env::temp_dir().join(format!("prf-dist-uat-gen-{}", std::process::id()));
@@ -55,16 +59,20 @@ fn dist_release_candidate_generates_verifies_and_detects_tampering() {
     let _ = std::fs::remove_dir_all(&generated);
     std::fs::create_dir_all(&stage).unwrap();
 
-    // 1. Stage real payloads from target/release (real binaries, not fixtures).
+    // 1. Stage real payloads from release_dir (real binaries, not fixtures).
     for stem in ["cogh", "cognicode", "cognicode-mcp"] {
-        let src = root.join(format!("target/release/{stem}"));
-        assert!(src.exists(), "missing release binary {stem}");
+        let src = release_dir.join(stem);
+        assert!(
+            src.exists(),
+            "missing release binary {stem} at {}",
+            src.display()
+        );
         let dst = stage.join(format!("{stem}-{version}-{PLATFORM}.tar.gz"));
         let st = Command::new("tar")
             .arg("-czf")
             .arg(&dst)
             .arg("-C")
-            .arg(root.join("target/release"))
+            .arg(&release_dir)
             .arg(stem)
             .status()
             .unwrap();

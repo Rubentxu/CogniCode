@@ -17,25 +17,18 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
+mod common;
 
 fn cli_bin() -> PathBuf {
-    repo_root().join("target/release/cognicode")
+    common::release_dir().join("cognicode")
 }
 
 fn mcp_bin() -> PathBuf {
-    repo_root().join("target/release/cognicode-mcp")
+    common::release_dir().join("cognicode-mcp")
 }
 
 fn corpus() -> PathBuf {
-    repo_root().join("docs/prf/fixtures/equivalence_full_vs_perfile")
+    common::repo_root().join("docs/prf/fixtures/equivalence_full_vs_perfile")
 }
 
 /// Ruta CLI: `cognicode graph full <dir>` — JSON en stdout.

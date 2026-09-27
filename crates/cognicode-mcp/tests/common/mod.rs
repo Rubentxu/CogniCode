@@ -177,6 +177,59 @@ impl McpSession {
     }
 }
 
+/// Absolute path to the `release/` directory that contains the
+/// release-profile binaries (cogh, cognicode, cognicode-mcp, ...).
+///
+/// Resolution order (first match wins):
+///
+/// 1. `<probe parent>/release/<self_name>` — when the resolved
+///    binary happens to live in the release profile (e.g.
+///    `cargo test --release -p cognicode-mcp`).
+/// 2. `<probe parent>/release/` — sibling sibling directory
+///    (when `cargo test -p cognicode-mcp` was run without `--release`,
+///    the resolved debug binary points at `debug/cognicode-mcp`,
+///    but a sibling `release/` dir is expected to exist if the user
+///    built with `cargo build --release --bin cognicode-mcp`).
+/// 3. The literal `<repo_root>/target/release` — workspace default.
+///
+/// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
+/// because it breaks under a global `~/.cargo/config.toml`
+/// target-dir override. We honour the same location Cargo chose for
+/// the binary resolved by `binary_path`, falling back to the
+/// repo-root default only when that fails.
+pub fn release_dir() -> PathBuf {
+    let probe = binary_path();
+    // case 1+2: probe parent already is the release dir.
+    let parent = probe
+        .parent()
+        .map(PathBuf::from)
+        .expect("release_dir: probe has no parent");
+    if parent.ends_with("release") {
+        return parent;
+    }
+    if parent.ends_with("debug") {
+        // Sibling release dir at the same level.
+        let sibling = parent.parent().map(|p| p.join("release"));
+        if let Some(s) = sibling
+            && s.exists()
+        {
+            return s;
+        }
+    }
+    // 3. Workspace-relative fallback.
+    repo_root().join("target").join("release")
+}
+
+/// Compute the repo root the same way as in binary_path resolution.
+pub fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

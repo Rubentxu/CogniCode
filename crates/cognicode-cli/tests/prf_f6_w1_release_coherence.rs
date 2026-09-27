@@ -66,23 +66,28 @@ fn stage_payloads(tag: &str) -> PathBuf {
     let stem = tag.replace('v', "");
     // VERSION is encoded in the payload filenames (e.g.
     // cognicode-{ver}-x86_64-unknown-linux-gnu.tar.gz). We
-    // re-tar the binaries that are already in target/release.
+    // re-tar the binaries that are already in the release dir.
+    // CR-00c / M0.13: respect CARGO_TARGET_DIR via common::release_dir()
+    // (Lesson 84 — hard-coded target/release/ paths break on systems
+    // with a global `.cargo/config.toml` target-dir override).
+    let release_dir_path = common::release_dir();
     let stage = std::env::temp_dir().join(format!("prf-f6-w1-stage-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&stage);
     std::fs::create_dir_all(&stage).unwrap();
 
     for bin_name in ["cogh", "cognicode", "cognicode-mcp"] {
-        let src = root.join(format!("target/release/{bin_name}"));
+        let src = release_dir_path.join(bin_name);
         assert!(
             src.exists(),
-            "missing release binary {bin_name}; build release first"
+            "missing release binary {bin_name} at {}; build release first",
+            src.display()
         );
         let dst = stage.join(format!("{bin_name}-{stem}-x86_64-unknown-linux-gnu.tar.gz"));
         let st = Command::new("tar")
             .arg("-czf")
             .arg(&dst)
             .arg("-C")
-            .arg(root.join("target/release"))
+            .arg(&release_dir_path)
             .arg(bin_name)
             .status()
             .unwrap();
