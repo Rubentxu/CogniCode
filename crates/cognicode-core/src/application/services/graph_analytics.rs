@@ -2,8 +2,8 @@
 //! domain API.
 //!
 //! Each method takes a `&CallGraph` (the domain aggregate) and operates
-//! on a transient [`CallGraphProjection`] snapshot. The projection's
-//! underlying [`StableGraph`] already implements every petgraph trait
+//! on a transient `CallGraphProjection` snapshot. The projection's
+//! underlying `StableGraph` already implements every petgraph trait
 //! the algorithms below need (`NodeIndexable`, `IntoEdges`,
 //! `IntoNeighborsDirected`, `GraphProp<EdgeType = Directed>`, …), so
 //! the algorithms run directly on the projection — no extra graph
@@ -11,16 +11,16 @@
 //!
 //! ## Provided analytics
 //!
-//! - [`Self::page_rank`] — importance score per symbol (god-node signal).
-//! - [`Self::all_simple_paths`] — every simple path between two
+//! - [`GraphAnalyticsService::page_rank`] — importance score per symbol (god-node signal).
+//! - [`GraphAnalyticsService::all_simple_paths`] — every simple path between two
 //!   symbols, bounded by a hop budget.
-//! - [`Self::condensation`] — strongly-connected-component
+//! - [`GraphAnalyticsService::condensation`] — strongly-connected-component
 //!   decomposition (cycles collapsed into single components).
-//! - [`Self::god_nodes`] — symbols whose PageRank sits above a
+//! - [`GraphAnalyticsService::god_nodes`] — symbols whose PageRank sits above a
 //!   percentile threshold.
-//! - [`Self::transitive_reduction`] — minimal set of dependency edges
+//! - [`GraphAnalyticsService::transitive_reduction`] — minimal set of dependency edges
 //!   that preserve reachability.
-//! - [`Self::feedback_arc_set`] — edges whose removal makes the
+//! - [`GraphAnalyticsService::feedback_arc_set`] — edges whose removal makes the
 //!   dependency graph acyclic (cycle-breaker candidates).
 //!
 //! ## Edge cases
