@@ -13,7 +13,7 @@
 //! ## What this module does NOT do
 //!
 //! - It does not compute a verdict. The verdict lives in
-//!   [`GateDecision`] from e69.
+//!   the `GateDecision` returned by e69's [`crate::application::policy_gate::evaluate`].
 //! - It does not recompute the diff. The diff lives in e68.
 //! - It does not run the work. The work ran during the trial; this
 //!   module receives the [`PerWorkReport`]s.
@@ -82,8 +82,8 @@ pub struct TrialInput {
     pub work_results: Vec<PerWorkReport>,
     /// Evidence bundle assembled during the trial. The
     /// [`TrialExecutor`](super::executor::TrialExecutor) will evaluate
-    /// this bundle against its configured [`PolicySpec`] to produce
-    /// the [`PolicyDecision`] (the verdict).
+    /// this bundle against its configured [`crate::application::policy_gate::PolicySpec`] to produce
+    /// the [`PolicyDecision`](crate::application::policy_gate::PolicyDecision) (the verdict).
     pub evidence_bundle: EvidenceBundle,
 }
 
@@ -127,7 +127,7 @@ pub struct TrialEvidence {
 /// a caller-supplied [`TrialId`], and a [`PolicyDecision`].
 ///
 /// The trial executor computes the gate decision by evaluating the
-/// input's evidence bundle against a configured [`PolicySpec`]. The
+/// input's evidence bundle against a configured [`crate::application::policy_gate::PolicySpec`]. The
 /// assembler itself is pure: it does not run the gate. This split
 /// keeps `assemble_trial_evidence` total and deterministic; the
 /// gate-evaluation side-effect lives in
