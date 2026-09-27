@@ -1,4 +1,6 @@
 {
+  "name": "cognicode",
+  "license": "MIT OR Apache-2.0",
   "dependencies": {
     "playwright": "^1.59.1"
   },

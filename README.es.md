@@ -12,12 +12,13 @@
 
 CogniCode es un servidor de inteligencia de código escrito en Rust que proporciona análisis profundo, grafos de llamadas, búsqueda semántica y refactorización segura a agentes de IA a través del [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Imagina las capacidades de IntelliJ IDEA — expuestas como herramientas que tu IA puede invocar.
 
-Construido con **Domain-Driven Design** y **Clean Architecture**, soporta seis lenguajes de serie.
+Construido con **Domain-Driven Design** y **Clean Architecture**, analiza 30
+lenguajes de serie: 18 con evidencia de aceptación completa y 12 experimentales.
 
 ## Características
 
-- **32+ herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
-- **6 lenguajes** — Rust, Python, TypeScript, JavaScript, Go, Java (mediante Tree-sitter)
+- **73 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
+- **30 lenguajes** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) y 12 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
 - **4 estrategias de grafo** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)
 - **Refactorización segura** — renombrar, extraer, inline, mover, cambiar firma con vista previa de impacto
@@ -124,6 +125,13 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 
 ## Herramientas MCP
 
+CogniCode publica **73 herramientas MCP**. Las tablas siguientes son una
+**selección curada**, agrupada por la capacidad que más le importa al lector,
+no la superficie completa. La lista autoritativa, generada desde el código y
+verificada en CI, está en [`product/tools.json`](product/tools.json); los
+esquemas de entrada y salida por herramienta están en
+[`product/README.md`](product/README.md).
+
 ### Análisis de Grafos (12 herramientas)
 
 | Herramienta | Descripción |
@@ -227,14 +235,44 @@ Elige la estrategia adecuada para tu caso de uso:
 
 ## Lenguajes Soportados
 
-| Lenguaje | Extensiones |
-|----------|-------------|
-| Rust | `.rs` |
-| Python | `.py` |
-| TypeScript | `.ts`, `.tsx` |
-| JavaScript | `.js`, `.jsx` |
-| Go | `.go` |
-| Java | `.java` |
+Se analizan 30 lenguajes. **18 son `supported`**, con evidencia de aceptación
+enfocada para las rutas de análisis; **12 son `experimental`**, es decir, se
+parsean e indexan pero todavía no se someten al mismo listón. La lista
+autoritativa por lenguaje, con la evidencia de cada nivel, está en
+[`product/languages.json`](product/languages.json).
+
+| Lenguaje | Extensiones | Soporte |
+|----------|-------------|---------|
+| Rust | `.rs` | supported |
+| Python | `.py` | supported |
+| TypeScript | `.ts`, `.tsx` | supported |
+| JavaScript | `.js`, `.jsx` | supported |
+| Java | `.java` | supported |
+| Go | `.go` | supported |
+| C | `.c`, `.h` | supported |
+| C++ | `.cpp`, `.hpp`, `.cc` | supported |
+| C# | `.cs` | supported |
+| Ruby | `.rb` | supported |
+| PHP | `.php` | supported |
+| Swift | `.swift` | supported |
+| Scala | `.scala` | supported |
+| Haskell | `.hs` | supported |
+| Lua | `.lua` | supported |
+| Bash | `.sh`, `.bash` | supported |
+| JSON | `.json` | supported |
+| YAML | `.yaml`, `.yml` | supported |
+| Dart | `.dart` | experimental |
+| Elixir | `.ex`, `.exs` | experimental |
+| Erlang | `.erl` | experimental |
+| Fortran | `.f90` | experimental |
+| Groovy | `.groovy` | experimental |
+| HCL | `.hcl`, `.tf` | experimental |
+| Julia | `.jl` | experimental |
+| PowerShell | `.ps1` | experimental |
+| R | `.r` | experimental |
+| SystemVerilog | `.sv` | experimental |
+| Verilog | `.v` | experimental |
+| Zig | `.zig` | experimental |
 
 ## Arquitectura
 
@@ -389,8 +427,15 @@ trazado de rutas de ejecución** y mucho más.
 
 ## Licencia
 
-Ver [LICENSE](LICENSE) para más detalles.
+Publicado bajo **MIT OR Apache-2.0**, a tu elección. Los textos completos están
+en [`LICENSE-MIT`](LICENSE-MIT) y [`LICENSE-APACHE`](LICENSE-APACHE); la
+concesión está en [`LICENSE`](LICENSE) y el registro de la decisión en
+[`docs/adr/ADR-053-cp1-license-publication.md`](docs/adr/ADR-053-cp1-license-publication.md).
 
 ## Contribuciones
 
-¡Las contribuciones son bienvenidas! No dudes en enviar un Pull Request.
+Consulta [`CONTRIBUTING.md`](CONTRIBUTING.md) para el flujo que este proyecto
+exige de verdad, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) para el
+comportamiento esperado de quienes participan, y [`SECURITY.md`](SECURITY.md)
+antes de reportar una vulnerabilidad. Los canales de soporte están en
+[`SUPPORT.md`](SUPPORT.md).

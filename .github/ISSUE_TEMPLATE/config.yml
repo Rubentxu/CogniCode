@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Rubentxu/CogniCode/security/advisories/new
+    about: Report privately through GitHub Security Advisories. Never a public issue. See SECURITY.md.
+  - name: Support question
+    url: https://github.com/Rubentxu/CogniCode/blob/main/SUPPORT.md
+    about: Check the versioned product artifacts first — most questions are answered there. Then open a bug or feature issue.
+  - name: Conduct concern
+    url: https://github.com/Rubentxu/CogniCode/security/advisories/new
+    about: Reported privately through the same channel as security. See CODE_OF_CONDUCT.md.
