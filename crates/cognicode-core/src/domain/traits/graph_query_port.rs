@@ -1,12 +1,12 @@
 //! Graph navigation port — ISP-segregated from SymbolRepository identity methods.
 //!
-//! [`GraphQueryPort`] provides graph traversal and navigation queries separated
-//! from the identity-resolution methods of [`SymbolRepository`].
+//! `GraphQueryPort` provides graph traversal and navigation queries separated
+//! from the identity-resolution methods of `SymbolRepository`.
 //! This separation follows ADR-010 Phase 4: identity methods stay on
-//! [`SymbolRepository`](cognicode_explorer::ports::SymbolRepository), while
+//! `SymbolRepository` (defined in `cognicode_explorer::ports`), while
 //! navigation/traversal methods live here.
 //!
-//! [`CallGraphRepository`](cognicode_explorer::adapters::CallGraphRepository)
+//! `CallGraphRepository` (defined in `cognicode_explorer::adapters`)
 //! implements this trait on the same `Arc<CallGraph>` backing store.
 
 use crate::domain::aggregates::{CallEntry, SymbolId};
@@ -50,7 +50,7 @@ pub struct RelationTargetWithMetadata {
 
 /// A full graph edge enriched with edge metadata (provenance, confidence).
 ///
-/// Returned by [`GraphQueryPort::edges_with_metadata`]. Carries
+/// Returned by `GraphQueryPort::edges_with_metadata`. Carries
 /// the source [`SymbolId`], the resolved target [`RelationTarget`], the
 /// edge [`DependencyType`], and the `(Provenance, confidence)` tuple.
 #[derive(Debug, Clone, PartialEq)]
@@ -93,7 +93,7 @@ pub struct CalleeWithMetadata {
 
 /// Graph navigation and traversal queries.
 ///
-/// Separated from [`SymbolRepository`](cognicode_explorer::ports::SymbolRepository)
+/// Separated from `SymbolRepository` (defined in `cognicode_explorer::ports`)
 /// per ADR-010 Phase 4. CallGraphRepository implements BOTH
 /// SymbolRepository (identity) AND GraphQueryPort (navigation) on the
 /// same `Arc<CallGraph>` backing store.
