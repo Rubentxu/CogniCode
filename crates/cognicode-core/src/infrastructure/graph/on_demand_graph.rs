@@ -962,7 +962,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "integration: scans entire project via set_index"]
     fn test_on_demand_graph_real_project_benchmark() {
         use std::time::Instant;
 
@@ -997,7 +996,17 @@ mod tests {
             result2.entries.len()
         );
 
-        // Just verify it ran
-        assert!(result.entries.len() >= 0, "Builder should work");
+        // Re-enabled by M0.12 (#[ignore] audit 2026-09-27):
+        // bounded benchmark (~10s) that exercises OnDemandGraphBuilder
+        // end-to-end on real source. Was #[ignore]d under "integration:
+        // scans entire project" — but it scans cognicode-core only and
+        // pins the contract that set_index + build_for_symbol return a
+        // queryable graph. Lesson 79.
+        assert!(
+            !result.entries.is_empty() || !result2.entries.is_empty(),
+            "OnDemandGraph should yield callees or callers entries for 'new'; got callees={}, callers={}",
+            result.entries.len(),
+            result2.entries.len()
+        );
     }
 }

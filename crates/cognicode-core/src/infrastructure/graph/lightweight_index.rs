@@ -358,7 +358,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "integration: scans entire project via build_index"]
     fn test_lightweight_index_real_project_benchmark() {
         use std::time::Instant;
 
@@ -390,6 +389,21 @@ mod tests {
             results.len()
         );
 
-        assert!(index.symbol_count() > 0, "Index should have symbols");
+        // Re-enabled by M0.12 (#[ignore] audit 2026-09-27):
+        // light benchmark (~5s on cognicode-core) that exercises the
+        // LightweightIndex path end-to-end on real source. Was #[ignore]d
+        // under "integration: scans entire project" — but this test is
+        // bounded (scans cognicode-core only) and pin the contract that
+        // build_index returns a non-empty index that can answer symbol
+        // queries for known module-internal symbols. Lesson 79.
+        assert!(
+            index.symbol_count() > 100,
+            "LightweightIndex should index >100 symbols in cognicode-core, got {}",
+            index.symbol_count()
+        );
+        assert!(
+            !results.is_empty(),
+            "find_symbol('build_project_graph') should return ≥1 location"
+        );
     }
 }
