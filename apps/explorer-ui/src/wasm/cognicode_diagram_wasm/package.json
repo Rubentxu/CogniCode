@@ -1,0 +1,20 @@
+{
+  "name": "cognicode-diagram-wasm",
+  "type": "module",
+  "collaborators": [
+    "CogniCode Team"
+  ],
+  "description": "WASM shim for cognicode-diagram — exposes DiagramSession to the browser (ADR-033)",
+  "version": "0.5.0",
+  "license": "MIT OR Apache-2.0",
+  "files": [
+    "cognicode_diagram_wasm_bg.wasm",
+    "cognicode_diagram_wasm.js",
+    "cognicode_diagram_wasm.d.ts"
+  ],
+  "main": "cognicode_diagram_wasm.js",
+  "types": "cognicode_diagram_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

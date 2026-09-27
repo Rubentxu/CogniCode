@@ -67,6 +67,31 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy -D warnings
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # Contratos de scripts de producto y CI. Ninguno estaba enganchado a
+      # un workflow, que es como CP1-DEBT-01 (generate_profiles --check
+      # roto) llevo dias sin que nadie lo notara, y como el filtro
+      # dorny/paths-filter pudo llevar un scalar sin que ningun job lo
+      # detectara. Un test que no corre en ningun sitio no es un gate.
+      #
+      # El runner propio de scripts/run_contract_tests.py sustituye a un
+      # framework de tests: el runner de ubuntu-latest no trae ningun
+      # framework instalado, y las suites de scripts/ son scripts con
+      # funciones test_ que no necesitan fixtures ni descubrimiento
+      # sofisticado. Instalar un framework aqui anadiria una dependencia
+      # al camino de merge para correr checks lineales.
+      #
+      # `set -euo pipefail` es explicito a proposito: un bloque `run: |` de
+      # GitHub Actions NO habilita `set -e` por defecto, asi que sin el, un
+      # fallo a mitad del runner dejaria terminar el script con el codigo del
+      # ultimo comando. El runner ya devuelve != 0 si algo falla, pero el
+      # pipefail cubre el caso de que alguien anada una tuberia.
+      - name: Product + CI contract tests
+        run: |
+          set -euo pipefail
+          python3 scripts/run_contract_tests.py \
+            scripts/product/test_*.py \
+            scripts/ci/test_select_suites.py \
+            scripts/ci/test_ci_contracts.py
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
@@ -136,18 +161,35 @@ jobs:
       strategy: ${{ steps.sel.outputs.strategy }}
       reason: ${{ steps.sel.outputs.reason }}
       suites: ${{ steps.sel.outputs.suites }}
-      has_changes: ${{ steps.paths.outputs.any }}
+      has_changes: ${{ steps.paths.outputs.all }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
       - name: Detectar paths modificados
         id: paths
         uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4 — pinned 2026-09-26 by CR-08
         with:
-          # Lista base para detectar 'algo ha cambiado' (siempre matchea)
-          filters: .*:[*]
-          # Listamos separadamente las reglas específicas para mapear
-          # a suites; 'changes-all' will be matched against 'changed-files'.
+          # El filtro debe ser un objeto YAML: cada clave nombra un filtro y
+          # cada valor es la lista de patterns. El antiguo `.*:[*]` era un
+          # string, no un objeto, y dorny/paths-filter lo rechazaba con
+          # "Invalid filter YAML format: Root element is not an object",
+          # de modo que este job no podia emitir outputs y `selector`
+          # quedaba rojo en todo PR que lo disparase.
+          #
+          # Se declara un unico filtro `all` que matchea cualquier path. Los
+          # outputs que el step siguiente consume (`changes-all`,
+          # `changes-all-files`) salen de `list-files`, no de un filtro
+          # nombrado, asi que no hace falta declarar reglas de mapeo aqui:
+          # el mapeo path -> suite lo hace scripts/ci/select-suites.sh, que
+          # es donde vive esa politica y donde es testeable.
+          filters: |
+            all:
+              - '**'
+          # 'shell' emite los paths uno por linea; select-suites.sh espera
+          # separacion por espacio, y el step siguiente hace el tr.
           list-files: shell
+          # Deteccion por PR (no solo push): el selector clasifica los paths
+          # del PR contra el commit base.
+          list-files-separator: '\n'
       - name: Ejecutar selector determinista
         id: sel
         # SELECT_PATHS recibe la lista cruda separada por NUL.

@@ -1,8 +1,11 @@
 //! Grounded finding flow — end-to-end acceptance seam (e67 WU3).
 //!
 //! Composes the existing production seams (WU1 ingest, WU2 grounded AST
-//! projection) with the canonical M6 finding authorities — [`DetectorAdmission`],
-//! [`DetectorExecutor`], [`CanonicalEvidenceWriter`], [`FindingAssembler`],
+//! projection) with the canonical M6 finding authorities —
+//! [`DetectorAdmission`](crate::domain::findings::admission::DetectorAdmission),
+//! [`DetectorExecutor`],
+//! [`CanonicalEvidenceWriter`],
+//! [`FindingAssembler`](crate::domain::findings::assembler::FindingAssembler),
 //! [`KernelEvidenceReadModel`] and [`FindingVerifier`] — to demonstrate the
 //! full vertical that e67 sets out to prove:
 //!

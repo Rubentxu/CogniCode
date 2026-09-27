@@ -106,10 +106,11 @@ fn inspectable_to_string(kind: &InspectableObjectType) -> String {
     s.trim_matches('"').to_string()
 }
 
-/// Public helper that lets non-port code (e.g. the [`ViewRegistry`] in
-/// `registry.rs`) map an `InspectableObjectType` enum variant to the
-/// snake_case wire form used by the `view_specs.applies_to` column
-/// and [`ViewSpecStore::list_for_workspace`].
+/// Public helper that lets non-port code (e.g. the
+/// [`ViewRegistry`](crate::registry::ViewRegistry) in `registry.rs`) map an
+/// `InspectableObjectType` enum variant to the snake_case wire form used by
+/// the `view_specs.applies_to` column and
+/// [`ViewSpecStore::list_for_workspace`](cognicode_core::domain::ports::view_spec_store::ViewSpecStore::list_for_workspace).
 pub fn inspectable_to_wire(kind: InspectableObjectType) -> String {
     inspectable_to_string(&kind)
 }

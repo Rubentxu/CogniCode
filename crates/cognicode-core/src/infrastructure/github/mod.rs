@@ -4,7 +4,7 @@
 //! - [`client`] — the `GitHubClient` trait + `RawIssue` DTO.
 //! - [`octocrab_client`] — the production `OctocrabClient`
 //!   (gated behind `multimodal`).
-//! - [`mock_client`] — the in-memory `MockGitHubClient` for
+//! - `mock_client` — the in-memory `MockGitHubClient` for
 //!   unit tests (`#[cfg(test)]`).
 //!
 //! Every submodule is `#[cfg(feature = "multimodal")]`-gated

@@ -35,7 +35,7 @@
 //! admitted by a single `HumanPromoter`-class admitter; admission by a
 //! non-promoted admitter is rejected upstream, which is the
 //! load-bearing property of the admission flow (see
-//! [`ArchitectureAdmissionService::admit`]).
+//! [`ArchitectureAdmissionService::admit`](crate::application::architecture::admission::ArchitectureAdmissionService::admit)).
 //!
 //! ## Stability
 //!

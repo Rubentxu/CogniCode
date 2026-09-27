@@ -86,8 +86,8 @@ pub trait SymbolRepository: Send + Sync {
     fn find_symbols_by_file(&self, file: &str) -> ExplorerResult<Vec<ResolvedSymbol>>;
 
     /// Return a sorted, deduplicated list of the parent directories of
-    /// every indexed symbol's file. Mirrors [`CallGraph::modules`] —
-    /// scope identities in Phase 2 are derived from this set.
+    /// every indexed symbol's file. Scope identities in Phase 2 are derived
+    /// from this set.
     fn module_list(&self) -> Vec<String>;
 
     /// Return every indexed symbol in the graph. Used by scope inspection

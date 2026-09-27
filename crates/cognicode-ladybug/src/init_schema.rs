@@ -25,8 +25,9 @@ fn narrative_view_ddls() -> Vec<&'static str> {
     ]
 }
 
-/// Create the `NarrativeView` node table and indexes backing the
-/// [`NarrativeStore`] port.
+/// Create the `NarrativeView` node table and indexes backing the canonical
+/// [`NarrativeStore`](cognicode_core::domain::ports::narrative_store::NarrativeStore)
+/// port.
 ///
 /// Idempotent — every statement uses `IF NOT EXISTS`.
 ///
@@ -82,8 +83,9 @@ fn evidence_ddls() -> Vec<&'static str> {
     ]
 }
 
-/// Create the `KnowledgeEvidence` node table backing the
-/// [`EvidenceStore`] port.
+/// Create the `KnowledgeEvidence` node table backing the canonical
+/// [`EvidenceStore`](cognicode_core::domain::ports::evidence_store::EvidenceStore)
+/// port.
 ///
 /// Idempotent — every statement uses `IF NOT EXISTS`.
 ///

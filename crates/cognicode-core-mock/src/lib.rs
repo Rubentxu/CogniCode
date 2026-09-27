@@ -716,7 +716,7 @@ impl RefactorStrategy for MockRefactorStrategy {
 // Repository
 // ============================================================================
 
-/// Mock implementation of [`Repository`].
+/// Mock implementation of [`CallGraphStore`].
 #[derive(Debug, Default)]
 pub struct MockRepository {
     symbols: HashMap<String, Symbol>,

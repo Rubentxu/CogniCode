@@ -6,7 +6,7 @@
 //!
 //! ## Phase 0 reconciliation
 //!
-//! The [`PostgresIngestCommitPort`] adapter below now wraps the three stages in
+//! The adapter below now wraps the three stages in
 //! a single `pool.begin()` transaction so failures in any stage roll back
 //! the whole commit (no orphan revisions on a partial failure). Each
 //! stage's SQL lives inside the tx via the underlying `&mut PgConnection`

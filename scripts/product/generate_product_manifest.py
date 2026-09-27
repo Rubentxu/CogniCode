@@ -34,28 +34,8 @@ PUBLIC_BINARIES = [
         "support_level": "supported",
     },
 ]
-PUBLIC_PROFILES = [
-    {
-        "name": "core",
-        "description": "Read-only navigation, symbols, search, and basic impact.",
-        "mutating": False,
-    },
-    {
-        "name": "reviewer",
-        "description": "Core plus architecture, quality, and graph analysis.",
-        "mutating": False,
-    },
-    {
-        "name": "developer",
-        "description": "Reviewer plus explicitly enabled mutating capabilities.",
-        "mutating": True,
-    },
-    {
-        "name": "experimental",
-        "description": "Capabilities without a GA contract, never stable by default.",
-        "mutating": False,
-    },
-]
+PUBLIC_PROFILES_PATH = Path("product/profiles.json")
+PROFILES_SCHEMA_VERSION = "cognicode.profiles/v1"
 LANGUAGE_NAMES = {
     "C": "c",
     "Cpp": "cpp",
@@ -133,6 +113,7 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
         }
         for target in certified_platforms(root)
     ]
+    profiles = _load_public_profiles(root)
     return {
         "schema_version": SCHEMA_VERSION,
         "product": "cognicode",
@@ -140,7 +121,7 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
         "source_commit": source_commit,
         "public_surface": {
             "binaries": PUBLIC_BINARIES,
-            "profiles": PUBLIC_PROFILES,
+            "profiles": profiles,
             "mcp": {
                 "transport": "stdio",
                 "protocol_revision": MCP_PROTOCOL_REVISION,
@@ -153,6 +134,7 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
             "tools": "tools.json",
             "languages": "languages.json",
             "platforms": "platforms.json",
+            "profiles": "profiles.json",
         },
         "feature_flags": {
             "read_only_mode": True,
@@ -161,6 +143,37 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
             "network_default": "denied",
         },
     }
+
+
+def _load_public_profiles(root: Path) -> list[dict[str, Any]]:
+    """Load public profiles by projecting ``product/profiles.json``.
+
+    The contract is the single source of truth for the public profile
+    surface; the manifest MUST NOT hard-code it (lesson EvidenceStore).
+    """
+    path = root / PUBLIC_PROFILES_PATH if not PUBLIC_PROFILES_PATH.is_absolute() else PUBLIC_PROFILES_PATH
+    if not path.exists():
+        raise ValueError(
+            f"public profile contract is missing at {path}; "
+            f"run 'python3 scripts/product/generate_profiles.py --source-commit <SHA>'"
+        )
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if document.get("schema_version") != PROFILES_SCHEMA_VERSION:
+        raise ValueError(
+            f"public profile contract uses {document.get('schema_version')!r}, "
+            f"expected {PROFILES_SCHEMA_VERSION!r}"
+        )
+    projected = [
+        {
+            "name": profile["id"],
+            "description": profile["description"],
+            "mutating": profile["mutating"],
+            "install": profile["install"],
+            "stability": profile["stability"],
+        }
+        for profile in document["profiles"]
+    ]
+    return projected
 
 
 def validate_manifest(manifest: dict[str, Any]) -> None:
@@ -187,8 +200,19 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if names != [item["name"] for item in PUBLIC_BINARIES]:
         raise ValueError(f"public binary surface drifted: {names!r}")
     profile_names = [item["name"] for item in surface["profiles"]]
-    if profile_names != [item["name"] for item in PUBLIC_PROFILES]:
+    if sorted(profile_names) != ["core", "developer", "experimental", "reviewer"]:
         raise ValueError(f"public profile surface drifted: {profile_names!r}")
+    profile_mutations = {item["name"]: item["mutating"] for item in surface["profiles"]}
+    expected_mutations = {
+        "core": False,
+        "developer": True,
+        "experimental": False,
+        "reviewer": False,
+    }
+    if profile_mutations != expected_mutations:
+        raise ValueError(
+            f"public profile mutating posture drifted: {profile_mutations!r}"
+        )
     if surface["mcp"]["protocol_revision"] != MCP_PROTOCOL_REVISION:
         raise ValueError("MCP protocol revision is not the verified revision")
     if "tools" in surface or "tools" in manifest:

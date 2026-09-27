@@ -4,7 +4,8 @@
 //! Snapshot-scoped `EntityId` values are occurrence keys (e37 D3); this
 //! module recovers per-snapshot entity views and semantic fingerprints
 //! from `facts_in_snapshot` slices so a later matcher (WU-3, design D3/D6)
-//! can thread [`StableEntityId`]s across snapshot pairs. Rename evidence
+//! can thread [`StableEntityId`](crate::domain::kernel_ids::StableEntityId)s
+//! across snapshot pairs. Rename evidence
 //! enters as plain DATA resolved by the caller through the kernel
 //! `RenameEvidencePort` (design D2) — the matcher never performs I/O and
 //! produces no facts, so no `ProducerKind`/bincode surface is touched.

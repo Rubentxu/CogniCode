@@ -257,7 +257,8 @@ pub enum AdmitterRole {
 impl Admitter {
     /// The only admitter roles that may turn a candidate into a
     /// constraint. `Other` is rejected by the admission flow
-    /// ([`ConstraintAdmission::admit`]) and produces ZERO findings.
+    /// ([`ArchitectureAdmissionService::admit`](crate::application::architecture::admission::ArchitectureAdmissionService::admit))
+    /// and produces ZERO findings.
     pub fn may_admit(&self) -> bool {
         matches!(
             self.role,

@@ -1,6 +1,7 @@
 //! Interface Error Types
 //!
-//! Errors at the MCP interface layer. Preserves causal chain via thiserror's #[source].
+//! Errors at the MCP interface layer. Preserves causal chain via thiserror's
+//! `#[source]` attribute.
 
 use crate::interface::mcp::handlers::HandlerError;
 use crate::interface::mcp::security::SecurityError;

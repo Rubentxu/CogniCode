@@ -26,6 +26,7 @@ rmcp.workspace = true
 
 [dev-dependencies]
 trybuild = "1"
+serde_json.workspace = true
 
 [features]
 # v0.78.0: lbug 0.19 as the canonical store (E29 final cutover).

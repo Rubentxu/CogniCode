@@ -12,12 +12,13 @@
 
 CogniCode is a Rust-based code intelligence server that provides deep analysis, call graphs, semantic search, and safe refactoring to AI agents via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Think IntelliJ IDEA's capabilities — exposed as tools your AI can call.
 
-Built with **Domain-Driven Design** and **Clean Architecture**, it supports six languages out of the box.
+Built with **Domain-Driven Design** and **Clean Architecture**, it analyses 30
+languages out of the box — 18 with full acceptance evidence, 12 experimental.
 
 ## Features
 
-- **32+ MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
-- **6 languages** — Rust, Python, TypeScript, JavaScript, Go, Java (via Tree-sitter)
+- **73 MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
+- **30 languages** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) and 12 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
 - **4 graph strategies** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
 - **Safe refactoring** — rename, extract, inline, move, change signature with impact preview
@@ -124,6 +125,12 @@ Add CogniCode as an MCP server in your AI client configuration:
 
 ## MCP Tools
 
+CogniCode ships **73 MCP tools**. The tables below are a **curated selection**,
+grouped by the capability a reader is most likely to care about — not the full
+surface. The authoritative list, generated from the code and checked in CI, is
+[`product/tools.json`](product/tools.json); per-tool input and output schemas are
+in [`product/README.md`](product/README.md).
+
 ### Graph Analysis (12 tools)
 
 | Tool | Description |
@@ -227,14 +234,44 @@ Choose the right strategy for your use case:
 
 ## Supported Languages
 
-| Language | Extensions |
-|----------|------------|
-| Rust | `.rs` |
-| Python | `.py` |
-| TypeScript | `.ts`, `.tsx` |
-| JavaScript | `.js`, `.jsx` |
-| Go | `.go` |
-| Java | `.java` |
+30 languages are parsed and indexed. **18 are `supported`**, meaning they have
+focused acceptance evidence for the analysis paths; **12 are `experimental`**,
+meaning they parse and index but are not yet held to the same bar. The
+authoritative per-language list, with the evidence behind each level, is
+[`product/languages.json`](product/languages.json).
+
+| Language | Extensions | Support |
+|----------|------------|---------|
+| Rust | `.rs` | supported |
+| Python | `.py` | supported |
+| TypeScript | `.ts`, `.tsx` | supported |
+| JavaScript | `.js`, `.jsx` | supported |
+| Java | `.java` | supported |
+| Go | `.go` | supported |
+| C | `.c`, `.h` | supported |
+| C++ | `.cpp`, `.hpp`, `.cc` | supported |
+| C# | `.cs` | supported |
+| Ruby | `.rb` | supported |
+| PHP | `.php` | supported |
+| Swift | `.swift` | supported |
+| Scala | `.scala` | supported |
+| Haskell | `.hs` | supported |
+| Lua | `.lua` | supported |
+| Bash | `.sh`, `.bash` | supported |
+| JSON | `.json` | supported |
+| YAML | `.yaml`, `.yml` | supported |
+| Dart | `.dart` | experimental |
+| Elixir | `.ex`, `.exs` | experimental |
+| Erlang | `.erl` | experimental |
+| Fortran | `.f90` | experimental |
+| Groovy | `.groovy` | experimental |
+| HCL | `.hcl`, `.tf` | experimental |
+| Julia | `.jl` | experimental |
+| PowerShell | `.ps1` | experimental |
+| R | `.r` | experimental |
+| SystemVerilog | `.sv` | experimental |
+| Verilog | `.v` | experimental |
+| Zig | `.zig` | experimental |
 
 ## Architecture
 
@@ -398,8 +435,15 @@ tag/workspace coherence check in `.github/workflows/release.yml` (R8).
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+Released under **MIT OR Apache-2.0**, at your option. The full texts are
+[`LICENSE-MIT`](LICENSE-MIT) and [`LICENSE-APACHE`](LICENSE-APACHE); see
+[`LICENSE`](LICENSE) for the grant itself and
+[`docs/adr/ADR-053-cp1-license-publication.md`](docs/adr/ADR-053-cp1-license-publication.md)
+for the decision record.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow this project actually
+enforces, [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) for the behaviour expected
+of everyone participating, and [`SECURITY.md`](SECURITY.md) before reporting a
+vulnerability. Support channels are in [`SUPPORT.md`](SUPPORT.md).

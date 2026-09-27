@@ -162,7 +162,8 @@ pub struct SubgraphEdgeDto {
     pub source: String,
     /// Target symbol id.
     pub target: String,
-    /// Canonical `Display` form of the edge's [`DependencyType`].
+    /// Canonical `Display` form of the edge's
+    /// [`DependencyType`](crate::domain::value_objects::dependency_type::DependencyType).
     pub dependency_type: String,
     /// Sanitized edge confidence in `[0.0, 1.0]`.
     pub confidence: f64,
@@ -240,7 +241,8 @@ pub struct ExplainHopDto {
     pub from: String,
     /// Target symbol id of the hop.
     pub to: String,
-    /// Canonical `Display` form of the edge's [`DependencyType`].
+    /// Canonical `Display` form of the edge's
+    /// [`DependencyType`](crate::domain::value_objects::dependency_type::DependencyType).
     pub dependency_type: String,
     /// Sanitized edge confidence in `[0.0, 1.0]`.
     pub confidence: f64,

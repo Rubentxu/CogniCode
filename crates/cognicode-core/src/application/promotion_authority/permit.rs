@@ -1,26 +1,26 @@
 //! PromotionPermit (e73 WU2 — M9).
 //!
 //! A [`PromotionPermit`] is the authority to apply a
-//! [`ChangeProposal`](crate::application::change_proposal::proposal::ChangeProposal)
+//! `ChangeProposal`
 //! to the current world. It is **only** issued from a sealed
-//! [`PromotionAuthorization`](crate::application::promotion_authority::authorization::PromotionAuthorization),
+//! `PromotionAuthorization`,
 //! which in turn is only granted over a `CleanPromotionReady`
 //! [`PromotionDryRun`]
 //! by
-//! [`PromotionAuthorizationPolicy`](crate::application::promotion_authority::authorization::PromotionAuthorizationPolicy).
+//! `PromotionAuthorizationPolicy`.
 //!
 //! ## e80a: minting requires authority, not just cleanliness
 //!
 //! Before e80a, `issue_promotion_permit(id, dry_run)` minted a permit from a
 //! clean dry-run alone, so an automated author could self-promote. Now the
-//! minting function takes a [`PromotionAuthorization`](crate::application::promotion_authority::authorization::PromotionAuthorization), which for an automated
+//! minting function takes a `PromotionAuthorization`, which for an automated
 //! author can only be obtained with a verified external human approval bound
 //! to the exact promotion attempt. The compiler makes
 //! `CleanPromotionReady alone → PromotionPermit` impossible.
 //!
 //! ## Creation is not authority
 //!
-//! Following the umbrella rule, the [`ChangeProposal`](crate::application::change_proposal::proposal::ChangeProposal) does NOT
+//! Following the umbrella rule, the `ChangeProposal` does NOT
 //! carry a permit. The permit is constructed separately, by the
 //! [`issue_promotion_permit`] function, and only when a CleanPromotion
 //! dry-run justifies it.

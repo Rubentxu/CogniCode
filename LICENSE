@@ -1,0 +1,19 @@
+CogniCode is licensed under the MIT License OR the Apache License, Version 2.0,
+at your option.
+
+    SPDX-License-Identifier: MIT OR Apache-2.0
+
+Both texts are published in this repository:
+
+  * LICENSE-MIT    — the MIT License, in full
+  * LICENSE-APACHE — the Apache License, Version 2.0, in full
+
+"You may choose either license." A downstream consumer may use CogniCode under
+MIT, under Apache-2.0, or under both terms applied to different files, at their
+own discretion. The choice is theirs, not ours.
+
+Rationale for the dual option, and the full decision record, are in
+`docs/roadmap/adr/ADR-011-CP1-LICENSE-DECISION.md`. That decision was taken in
+maintenance unit M0.9 (commit f0708d4b); this file publishes it.
+
+Copyright 2025-2026 The CogniCode Authors

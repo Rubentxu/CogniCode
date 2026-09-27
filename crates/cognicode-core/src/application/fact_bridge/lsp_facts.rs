@@ -25,7 +25,7 @@
 //! symbol's 1-BASED fact-side FQN, so RuntimeObserver facts join the
 //! `core:defines` entities the DeterministicAnalyzer emits for the same
 //! source. Container references resolve through the per-file extraction
-//! context ([`SubjectIndex`]); anything unresolvable keeps the documented
+//! context (the private `SubjectIndex`); anything unresolvable keeps the documented
 //! non-joinable fallback (the reference-site file path — never an invented
 //! entity FQN).
 //!

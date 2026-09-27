@@ -58,7 +58,8 @@ pub struct MoldQLItem {
 }
 
 impl MoldQLResult {
-    /// Project a backend [`ResultSet`] into the view-shaped [`MoldQLResult`].
+    /// Project a backend [`ResultSet`](cognicode_core::domain::plan::result::ResultSet)
+    /// into the view-shaped [`MoldQLResult`].
     ///
     /// Mapping policy: paths take priority (1 item per path); otherwise nodes
     /// (1 item per node). `total` = number of items produced.
@@ -662,8 +663,8 @@ impl<'a> MoldQLExecutor<'a> {
 // ports. The service constructs this in `execute_query`.
 // ============================================================================
 
-/// Read-only bundle of ports the executor needs. Built from
-/// [`crate::service::ExplorerService`] and consumed by
+/// Read-only bundle of ports the executor needs. Built by
+/// [`MoldQLService`](crate::facades::MoldQLService) and consumed by
 /// [`MoldQLExecutor`]. Mirrors the field layout of `LensContext` so
 /// service-owned data does not need to be public.
 pub struct MoldQLView {

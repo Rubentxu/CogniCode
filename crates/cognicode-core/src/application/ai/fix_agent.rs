@@ -16,7 +16,9 @@
 //!
 //! ## What the model may and may not choose
 //!
-//! The model produces a [`SourcePatchCandidate`]. The **trusted envelope** —
+//! The model produces a
+//! [`SourcePatchCandidate`](crate::domain::ai::patch::SourcePatchCandidate).
+//! The **trusted envelope** —
 //! `ChangeProposalId`, `base_world`, and `RequestedBy` — comes from this
 //! orchestrator's configuration and call site, never from model output.
 //! In particular `requested_by` is always

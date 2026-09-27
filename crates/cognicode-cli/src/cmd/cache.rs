@@ -1,8 +1,8 @@
 //! `cogh::cache` — Download cache helpers with rollback support.
 //!
 //! Provides atomic download helpers that integrate with the
-//! [`RollbackJournal`] so that partial downloads can be cleaned up
-//! on failure or startup.
+//! [`RollbackJournal`](super::rollback_journal::RollbackJournal) so that
+//! partial downloads can be cleaned up on failure or startup.
 //!
 //! `partial_download_cleanup` is part of the public `cogh::cache` API
 //! surface; it is exercised by the unit test below and is expected to be

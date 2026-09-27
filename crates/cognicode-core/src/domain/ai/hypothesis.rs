@@ -183,8 +183,8 @@ impl HypothesisStatement {
 
 /// An advisory AI-generated observation.
 ///
-/// Constructed via [`Hypothesis::new`] which rejects an empty
-/// statement and validates that supporting/contradicting refs do not
+/// Constructed via a `Hypothesis::new` constructor which rejects an
+/// empty statement and validates that supporting/contradicting refs do not
 /// contain the same canonical id twice (de-duplication is the caller's
 /// responsibility, but the type guarantees the supporting and
 /// contradicting sets are disjoint).

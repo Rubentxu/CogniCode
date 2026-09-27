@@ -1342,7 +1342,8 @@ impl ControlPlaneState {
 /// * `status: "evaluated"` if the registry has admitted constraints
 ///   and the evaluator finishes cleanly;
 /// * `status: "incomplete"` with `reason` if any admitted constraint
-///   errors during evaluation (mirrors [`ControlQueryService::query_architecture`]).
+///   errors during evaluation (mirrors
+///   [`ControlQueryService`](cognicode_core::application::architecture::ControlQueryService)).
 ///
 /// Unlike the legacy handler, this one cannot return
 /// `control_query_service_not_wired`: the state is built without an

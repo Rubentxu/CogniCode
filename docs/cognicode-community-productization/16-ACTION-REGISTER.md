@@ -6,10 +6,10 @@
 | A-002 | Reconciliar versión release/main/README/repo metadata | P0 | A-001 | cero claims contradictorias |
 | A-003 | Product manifest generado | P0 | A-002 | **CLOSED 2026-09-27** — schema `cognicode.product/v1`, `source_commit`, generator determinista, tests 5/5, ciclo `p-c1fac1fea05615c6/cp0-product-manifest`, commit `96d06854`; siguientes A-004/A-005 |
 | A-004 | Tool/catalog generator | P0 | A-003 | **CLOSED 2026-09-27** — `cognicode.tools/v1`, captura runtime `tools/list` de 73 tools, generator determinista, schema, tests 4/4, ciclo `p-c1fac1fea05615c6/cp0-tool-catalog`, commit `85222f67`; A-005 queda siguiente |
-| A-005 | Language/platform support matrix | P0 | A-003 | Certified/Supported/Experimental/Unsupported |
-| A-006 | Definir profiles core/reviewer/developer/experimental | P0 | A-004 | tools/list filtrable/reproducible |
-| A-007 | Resolver licencia repo y añadir ficheros | P0 | decisión operador | GitHub detecta license |
-| A-008 | SECURITY/CONTRIBUTING/SUPPORT/CoC/templates | P0 | A-007 parcial | community health verde |
+| A-005 | Language/platform support matrix | P0 | A-003 | **CLOSED 2026-09-27** — `product/languages.json` + `product/platforms.json`, schema `languages.v1`, 30 lenguajes (18 supported / 12 experimental) y 3 plataformas; clasificaciones derivadas de la cobertura de aceptación real (m06 + m10) y de los lanes de release/CI, no declaradas; commit `73235889` |
+| A-006 | Definir profiles core/reviewer/developer/experimental | P0 | A-004 | **CLOSED 2026-09-27** — `product/profiles.json` (`cognicode.profiles/v1`) pasa a ser la única fuente pública, reemplazando la constante `PUBLIC_PROFILES` hard-coded del manifest; profiles derivados de `release_contract.rs` + 2 declarados a mano (developer, experimental, `install:false`); commit `f24609f0` |
+| A-007 | Resolver licencia repo y añadir ficheros | P0 | decisión operador | **CLOSED 2026-09-27** — decisión de licencia ya tomada en M0.9 (`f0708d4b`); CP1 no la re-decidió, la publicó: `LICENSE-MIT` + `LICENSE-APACHE` completos, `LICENSE` raíz, license-of-record en `[workspace.package]`, ADR-053; commit `95595af9` |
+| A-008 | SECURITY/CONTRIBUTING/SUPPORT/CoC/templates | P0 | A-007 parcial | **CLOSED 2026-09-27** — `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `SUPPORT.md`, 3 issue forms y PR template, escritos desde los contratos reales; READMEs EN/ES reconciliados a cifras canónicas (73 tools, 30 lenguajes) citando los artefactos de origen; suite verificada por mutación (3 contratos rotos deliberadamente, 3 tests fallaron); commit `95595af9`. **Gate OSS incompleto**: CP1.7 Discussions sigue `operator-gated` (CP1-DEBT-02) |
 | A-009 | Audit authority + agent-safe profile | P0 | A-006 | reviewer sin write/exec/network |
 | A-010 | MCP conformance baseline | P0 | A-009 | revisión MCP declarada con PASS |
 | A-011 | Schema snapshots stable profile | P0 | A-006 | drift incompatible fail |
@@ -59,3 +59,11 @@ Para evitar micromanagement, agrupar en bloques:
 5. **BLOCK-E Agent Adoption**: A-033..040.
 6. **BLOCK-F Beta → GA**: A-041..044.
 7. **BLOCK-G DNS IaC**: A-045 opcional.
+
+## Deuda de CP1 — estado real tras la sesión 2026-09-27
+
+| ID | Estado | Resolución |
+|---|---|---|
+| CP1-DEBT-01 | **CLOSED** | `generate_profiles.py --check` y `generate_support_matrix.py --check` fallaban por diseño, no por deriva real: los generadores estampan `source_commit` desde `git rev-parse HEAD`, así que comparar el documento entero lo invalidaba en cada commit. `--check` ahora compara contenido estrictamente y valida la procedencia por forma, con la semántica compartida en `scripts/product/check_semantics.py`. Verificado por mutación en cuatro casos. Commit `ff60df36`. |
+| CP1-DEBT-02 | **PARTIAL** | Habilitar Discussions **era automatizable**: `UpdateRepositoryInput.hasDiscussionsEnabled` existe en el schema GraphQL y se aplicó, verificado por `GET /repos/{owner}/{repo}` (`has_discussions: false` → `true`). Crear las **categorías** sí es manual: `createDiscussionCategory` no existe en `Mutation` (`undefinedField`) y el endpoint REST devuelve 404. Quedan cuatro categorías pendientes de alta manual; conjunto y propósito ya especificados en ADR-053. Commit `905d8b6b`. |
+| CP1-DEBT-03 | **RECLASSIFIED** | No es deuda técnica sino una decisión explícita del maintainer: `.gitignore` declara `docs/` local-only con protocolo documentado de `git add -f`. No se modifica. El riesgo real —un documento público citando una ruta que solo existe en su disco— se cierra en el lado correcto: `test_community_documents_cite_real_repository_paths` pasó a exigir que **todas** las rutas citadas existan, no solo una. Commit `00068420`. |

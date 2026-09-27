@@ -1,0 +1,68 @@
+{
+  "schema_version": "cognicode.platforms/v1",
+  "product": "cognicode",
+  "version": "0.99.2",
+  "source_commit": "73235889409afea43bc18cb0122a3966676dbb85",
+  "platforms": [
+    {
+      "id": "linux-aarch64",
+      "target": "aarch64-unknown-linux-gnu",
+      "name": "Linux Aarch64",
+      "support_level": "certified",
+      "evidence": [
+        "Native publishable lane in .github/workflows/release.yml",
+        "Validated by .github/workflows/release-validate.yml"
+      ]
+    },
+    {
+      "id": "linux-x86-64",
+      "target": "x86_64-unknown-linux-gnu",
+      "name": "Linux X86 64",
+      "support_level": "certified",
+      "evidence": [
+        "Native publishable lane in .github/workflows/release.yml",
+        "Validated by .github/workflows/release-validate.yml"
+      ]
+    },
+    {
+      "id": "linux-x86-64-musl",
+      "target": "x86_64-unknown-linux-musl",
+      "name": "Linux x86_64 musl",
+      "support_level": "experimental",
+      "evidence": [
+        "CI smoke build in .github/workflows/ci.yml",
+        "No publishable release lane in .github/workflows/release.yml"
+      ]
+    },
+    {
+      "id": "macos-arm64",
+      "target": "aarch64-apple-darwin",
+      "name": "macOS arm64",
+      "support_level": "unsupported",
+      "evidence": [
+        "No macOS lane exists in .github/workflows/release.yml",
+        "A-027 tracks macOS arm64 build/certification"
+      ]
+    },
+    {
+      "id": "macos-x86-64",
+      "target": "x86_64-apple-darwin",
+      "name": "macOS x86_64",
+      "support_level": "unsupported",
+      "evidence": [
+        "No macOS lane exists in .github/workflows/release.yml",
+        "A-027 tracks macOS build/certification"
+      ]
+    },
+    {
+      "id": "windows-x86-64",
+      "target": "x86_64-pc-windows-msvc",
+      "name": "Windows x86_64",
+      "support_level": "unsupported",
+      "evidence": [
+        "No Windows lane exists in .github/workflows/release.yml",
+        "A-028 tracks Windows x64 build/certification"
+      ]
+    }
+  ]
+}

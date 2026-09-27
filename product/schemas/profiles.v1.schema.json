@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cognicode.profiles/v1",
+  "type": "object",
+  "required": ["schema_version", "product", "source_commit", "profiles"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "cognicode.profiles/v1"},
+    "product": {"const": "cognicode"},
+    "source_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "stability",
+          "install",
+          "mutating",
+          "description",
+          "components",
+          "skill_bundles",
+          "evidence"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": ["core", "reviewer", "developer", "experimental"]
+          },
+          "stability": {
+            "type": "string",
+            "enum": ["experimental", "beta", "stable", "deprecated"]
+          },
+          "install": {"type": "boolean"},
+          "mutating": {"type": "boolean"},
+          "description": {"type": "string", "minLength": 1},
+          "components": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "skill_bundles": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "evidence": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+          {
+            "if": {"properties": {"install": {"const": true}}, "required": ["install"]},
+            "then": {"properties": {"components": {"minItems": 1}}}
+          }
+        ]
+      }
+    }
+  }
+}

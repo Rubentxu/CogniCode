@@ -150,7 +150,7 @@ pub enum ParseSymbolKindError {
 }
 
 /// Parses a [`SymbolKind`] from its [`Display`](fmt::Display) string
-/// (e.g. `"function"`, `"class"`, `"method"`). Inverse of [`Display`].
+/// (e.g. `"function"`, `"class"`, `"method"`). Inverse of `Display`.
 /// Returns [`ParseSymbolKindError::Unknown`] when the string does not
 /// match any known kind.
 impl FromStr for SymbolKind {

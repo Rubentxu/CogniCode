@@ -738,6 +738,7 @@ dependencies = [
  "cognicode-explorer",
  "cognicode-ladybug",
  "rmcp",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",

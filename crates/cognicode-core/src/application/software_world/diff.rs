@@ -1,7 +1,8 @@
 //! Software-world diff wiring (e71 WU3 — M9).
 //!
 //! Connects [`SoftwareWorld`] (e71 WU1+WU2) with the e68
-//! [`FactDelta`] / [`compute_fact_delta`] without re-implementing any
+//! `FactDelta` / `compute_fact_delta` (imported below) without
+//! re-implementing any
 //! diff algebra. The whole job of this module is **guards and labels**:
 //!
 //! - [`assert_base_snapshots_pair`] refuses to wire a `FactDelta`
@@ -66,7 +67,7 @@ pub enum WorldDiffError {
 /// This is the only invariant the wiring enforces. A diff between two
 /// worlds that point at different canonical revisions is not a "world
 /// diff" — it is a cross-base diff, which e68 also does not define.
-/// The e68 [`compute_fact_delta`] takes two snapshots directly; here
+/// The e68 `compute_fact_delta` takes two snapshots directly; here
 /// we add the world-level guard that wraps it.
 ///
 /// Panics (does not return `Err`) on mismatch. The mismatch is a

@@ -111,10 +111,19 @@ emit_json() {
   local reason="$2"
   shift 2
   # remaining args: suites
+  # Cada suite debe ir citada: `suites":[core,explorer]` es texto, no JSON,
+  # y jq (que el workflow usa para leer `.suites`) falla sobre el. Se cita
+  # cada elemento al construir la lista, no al imprimir, para que el string
+  # de `reason` pueda seguir conteniendo sus propios parentesis.
   local joined=""
   if [ $# -gt 0 ]; then
-    local IFS=','
-    joined="$*"
+    local quoted=""
+    local s
+    for s in "$@"; do
+      [ -n "$quoted" ] && quoted="${quoted},"
+      quoted="${quoted}\"${s}\""
+    done
+    joined="$quoted"
   fi
   if [ -z "$joined" ]; then
     printf '{"strategy":"%s","reason":"%s","suites":[]}\n' \

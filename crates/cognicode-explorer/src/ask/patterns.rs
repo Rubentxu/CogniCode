@@ -6,7 +6,7 @@
 //! call so it can surface `graph_unavailable` cleanly.
 
 /// A coarse classification of a free-form question. The router picks
-/// one variant per question via [`classify`].
+/// one variant per question via the crate-private `classify` function.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum QuestionCategory {
     /// "path between A and B" / "how does X depend on Y"

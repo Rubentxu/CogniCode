@@ -31,7 +31,8 @@ pub struct OracleConfig {
     pub strict: bool,
 }
 
-/// Report produced by [`AnalyticsOracleHarness::parity_check`][super::AnalyticsOracleHarness::parity_check].
+/// Report produced by `AnalyticsOracleHarness::parity_check` (the harness is
+/// `#[cfg(test)]`, so it is not linkable from published documentation).
 ///
 /// Summarizes the comparison between PostgreSQL and Neo4j analytics results.
 #[derive(Debug, Clone, Serialize, Deserialize)]

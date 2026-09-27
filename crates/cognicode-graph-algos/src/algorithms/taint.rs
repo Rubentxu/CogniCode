@@ -77,7 +77,8 @@ pub struct TaintResult {
 
 /// Run the forward taint propagation.
 ///
-/// - `edges`: the DFG edges (output of [`dfg_edges`]). The walk uses
+/// - `edges`: the DFG edges (output of
+///   [`dfg_edges`](crate::algorithms::dfg::dfg_edges)). The walk uses
 ///   these to trace `from → to` flows.
 /// - `sources`: indices of statements that produce tainted data.
 /// - `sinks`: indices of statements that consume data — any taint reaching

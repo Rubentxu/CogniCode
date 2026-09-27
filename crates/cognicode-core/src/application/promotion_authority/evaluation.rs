@@ -43,7 +43,7 @@ use crate::domain::evidence_kernel::ids::SnapshotId;
 ///
 /// The base/candidate/current worlds together describe the timeline:
 /// A → trial produced B → C is now. The
-/// [`evaluate_promotion`](super::evaluate_promotion) function compares
+/// [`evaluate_promotion`] function compares
 /// them and produces a [`PromotionDryRun`].
 #[derive(Debug, Clone)]
 pub struct PromotionEvaluationInput<'a> {

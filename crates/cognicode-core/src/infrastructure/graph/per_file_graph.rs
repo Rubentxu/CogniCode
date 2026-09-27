@@ -335,7 +335,7 @@ impl PerFileGraphCache {
     /// Merges multiple file graphs into a single graph and reports which
     /// files were skipped (and why).
     ///
-    /// This is the explicit, non-silent counterpart of [`merge`]. The
+    /// This is the explicit, non-silent counterpart of `merge`. The
     /// returned [`BuildReport`] tells the caller:
     ///   - whether the resulting graph represents **Complete**, **Partial**,
     ///     or **Failed** coverage of `file_paths`;

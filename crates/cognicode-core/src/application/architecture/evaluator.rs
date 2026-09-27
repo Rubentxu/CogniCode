@@ -1,13 +1,15 @@
 //! Architecture evaluator (e77.1, M10 corrective slice).
 //!
 //! The evaluator's **primary output** is a list of
-//! [`ArchitectureViolation`]s, not a list of [`Finding`]s. The
+//! [`ArchitectureViolation`]s, not a list of
+//! [`Finding`](crate::domain::findings::finding::Finding)s. The
 //! distinction is load-bearing:
 //!
 //! * A violation is a *detection*. It carries enough navigation
 //!   information (constraint, file, line, dependency path) for a
 //!   human or an automated tool to act on, plus an **optional**
-//!   [`GroundingRef`] that bridges to canonical evidence.
+//!   [`GroundingRef`](crate::domain::findings::grounding::GroundingRef) that
+//!   bridges to canonical evidence.
 //! * A finding is a *gated conclusion*. It carries
 //!   `DetectorAuthority`, `EvidenceId`s, `DetectorDigests`, a
 //!   causal chain grounded in canonical evidence, and a status.

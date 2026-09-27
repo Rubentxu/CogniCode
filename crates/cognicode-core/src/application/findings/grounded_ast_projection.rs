@@ -8,7 +8,7 @@
 //! # Why this module exists
 //!
 //! The M6 AST backend consumes abstract [`AstInput`] units; its design
-//! notes ([`ast_backend`]) explicitly call out that "wiring a real
+//! notes (the `ast_backend` module) explicitly call out that "wiring a real
 //! tree-sitter extractor that produces these constructs is a follow-up".
 //! e67 WU2 lands that follow-up **without modifying the backend semantics**:
 //! the projection layer here is the only new code, and it operates purely

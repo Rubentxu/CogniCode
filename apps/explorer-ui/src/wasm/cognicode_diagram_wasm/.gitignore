@@ -1,0 +1,15 @@
+# wasm-pack writes its bundle into this directory: the `.js` glue, the
+# `.wasm` binary and the `.d.ts` bindings. All of that is generated, so it
+# stays out of the repository.
+*
+
+# `package.json` is not wasm-pack output. It is hand-written source: it names
+# the shim package, declares the license of record, and lists which generated
+# files the package ships in `files`. It has to be versioned.
+#
+# It was previously swept up by the `*` above and never committed, so
+# `test_package_json_declares_the_same_license` passed on any maintainer
+# checkout that had run `wasm-pack build` and failed in CI, where the
+# generated bundle does not exist and the file must come from git. A contract
+# test that only passes when a build has been run locally is not a contract.
+!package.json
