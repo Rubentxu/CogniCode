@@ -6804,3 +6804,89 @@ de core con 0 tests cuando eran 8 (`20 passed` casa con `0 passed`); y el predic
 mientras el workflow usaba un selector de paquete desnudo, o sea que el contrato daba verde sobre
 una definicion que hacia su propio criterio insatisfacible. Ambos se detectaron leyendo, no
 ejecutando.
+
+---
+
+## N+49 — A-014 verificada por ejecucion, y un defecto real en el ledger de SDDK
+
+Sesion `/autonomo`. El objetivo no era codigo nuevo: era **cerrar A-014 en el ledger con evidencia
+real**, porque el work item `8fec95db` seguia en `active` con `execution_evidence: []` pese a que su
+criterio de aceptacion estaba arreglado, verificado y commiteado. Volvemos al principio: "completado"
+no es "cerrado", y un item en `active` sin evidencia obliga a la proxima sesion a decidir si A-014
+esta hecho. No lo estaba, en el ledger.
+
+**Criterio de aceptacion re-ejecutado, no re-leido.**
+
+```
+argv:        cargo run -q -p cognicode-cli --bin cognicode -- capabilities --json
+exit_code:   0
+digest:      9436de05863e5f26c75b7c4986d77f9185eff56ff9c8fea322b23851f5854d07
+schema:      cognicode.capabilities/v1   tools: 73   profiles: 4   mutating: 3
+```
+
+Condicion estructural tambien re-verificada hoy, no heredada de ayer: suite A-014 **10/10**, pines de
+A-014 y A-015 presentes en `pr-ci.yml` (1 y 1), contrato de cobertura **4/4**. A-014 esta cerrada de
+verdad; lo que faltaba era el asiento en el ledger.
+
+**El gate `exploration-sufficient` se evaluo con evidencia validada.** El motor no acepta cualquier
+JSON: `passed` exige `argv`, `exit_code` y `output_digest`, y lo rechaza con
+`ENGINE_INVALID_PASS_EVIDENCE` si faltan. Aportar `output_digest` real, no de ejemplo, obligo a
+ejecutar el binario otra vez y hashear su stdout. Un digest inventado habria pasado la forma y no la
+sustancia; el motor no lo distingue, asi que la disciplina de hashear de verdad es la unica defensa.
+
+**Y aqui el defecto: `ENGINE_MISSING_ARTIFACT` que no se puede satisfacer.** La transicion
+`phase.explore.complete` exige el artefacto `exploration-report`. Se intento todo lo que la CLI
+expone, en este orden:
+
+1. clave `exploration-report` dentro de la evidencia del gate → rechazado
+2. `artifacts: [{kind, path, sha256}]` (el formato del contrato del orquestador) → rechazado
+3. `required_artifacts: {exploration-report: {...}}` → rechazado
+4. `sddk artifact store --kind exploration-report --cycle <este>` → **creado y verificado**:
+   `art-e1622bd3990b-7301ae8e`, sha256 `e1622bd3...`, fila real en la tabla `artifacts` con
+   `kind=exploration-report` y `cycle_id` correcto
+5. `sddk cycle inventory` (reconstruye el inventario) → el hash del inventario cambia, el requisito
+   sigue `requires_met: false`
+6. copiar el informe a `cycle-artifacts-dir` → sigue sin cumplirse
+
+El artefacto **existe, esta content-addressed, esta registrado con el kind y el ciclo correctos, y su
+hash verifica**. La CLI no expone ningun comando para enlazar un artefacto almacenado a un requisito
+de transicion.
+
+**Causa raiz, aislada leyendo la base de datos, no adivinando.** `gate_receipts` recibe el receipt
+con su `command_id`/`frame_id` propios, y cada evaluacion crea uno distinto. Pero al leer
+`events_v1` para el ciclo A-014 hay **un solo evento, `cycle.created`**: `evaluate-gate` persiste su
+receipt y **no emite ningun evento de ledger**. La transicion busca un receipt ligado al frame del
+evento de transicion, y ese enlace no existe por construccion. Por eso el mensaje de recuperacion
+("run evaluate-gate") es inaccionable: uno puede correrlo y el error no cambia.
+
+Tambien se descarto la causa vecina mas obvia antes de llegar aqui: el lease. `sddk cycle lock
+acquire --owner agent:cli` devolvio `fencing_token=1`, y sin `--root`/`--scope` la transicion paso a
+resolver el ciclo por el lease y a exigir `--lease-owner` (antes fallaba en inferencia). El lease es
+necesario y **no** es la causa. Ambos fallos que quedan (`ENGINE_MISSING_ARTIFACT` y
+`ENGINE_MISSING_GATE_RECEIPT` para `cycle.block`) tienen la misma raiz: el receipt se escribe pero
+no se enlaza al frame del comando que lo consume.
+
+**Por que NO se fuerza.** Bypass con `--no-verify` pondria en el ledger una transicion con un
+requisito incumplido, que es exactamente la clase de estado falso que ya se registro para A-024 en
+N+43 (item terminalizado sin evidencia, irreversible). Un ledger con un estado falso cuesta mas
+recuperar que un item que sigue honestamente en `active`. **A-014 se queda en `active` con su
+criterio verificado y documentado**, que es un estado verdadero; el defecto es del toolchain y se
+reporta como tal.
+
+**Estado del ledger al cerrar, sin adornos:** work item `8fec95db` en `active`, ciclo
+`cp2-a014-capabilities-json` en `Open/Explore`, con gate `exploration-sufficient` evaluado `passed` y
+el gate `block-condition-met` evaluado `passed`, ambos con evidencia real persistida. El codigo, los
+tests, los pines del gate y el registro de acciones estan cerrados y verificados
+(`46f24cf1`, PR #307). Lo unico que no puede avanzar es el asiento terminal, por el defecto de arriba.
+
+**Lesson 119 (nueva):** un motor que exige un artefacto y no expone la forma de enlazarlo produce un
+bloqueo que no es de trabajo, sino de herramienta, y la diferencia importa porque uno cambia el
+codigo y el otro se escala. Lo que lo distingue es observable: si el artefacto esta registrado con
+su `kind` y su `ciclo` correctos y su hash verifica, y el requisito sigue sin cumplirse, reintentar
+con mas envoltorios JSON no va a funcionar. Seis intentos y una lectura de la tabla de eventos
+contaron mas que una hora de pruebas de formatos.
+
+**Lesson 120 (nueva):** el mensaje de recuperacion de un error de motor no es una instruccion, es una
+pista. "Run evaluate-gate --gate X" es exactamente lo que se ejecuto, seis veces, y el error no
+cambio. Cuando la recomendacion del error ya se ha seguido y el error persiste, la recomendacion
+describe la intencion del motor, no el camino que falta.
