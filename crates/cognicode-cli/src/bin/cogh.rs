@@ -288,6 +288,27 @@ pub enum IdeAction {
     },
 }
 
+fn finish_setup(
+    home: &CognicodeHome,
+    version: &str,
+    tag: &str,
+    profile: &str,
+) -> anyhow::Result<()> {
+    let report = doctor::run_doctor(&home.root);
+    print!("{report}");
+    if !report.is_healthy() {
+        return Err(anyhow::anyhow!(
+            "setup failed: final doctor report is unhealthy"
+        ));
+    }
+    println!();
+    println!(
+        "Setup complete: installed {} ({}) with the {} profile.",
+        version, tag, profile
+    );
+    Ok(())
+}
+
 fn run_setup(
     home: &CognicodeHome,
     version: &str,
@@ -301,13 +322,7 @@ fn run_setup(
         .parse::<lifecycle_resolver::Channel>()
         .map_err(|e| anyhow::anyhow!("invalid release channel: {e}"))?;
     let resolved = layout::cmd_install(home, version, channel, base_url, staging, profile)?;
-    layout::cmd_doctor(home)?;
-    println!();
-    println!(
-        "Setup complete: installed {} ({}) with the {} profile.",
-        resolved.version, resolved.tag, profile
-    );
-    Ok(())
+    finish_setup(home, &resolved.version, &resolved.tag, profile)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -490,5 +505,19 @@ mod tests {
         unsafe {
             std::env::remove_var("COGNICODE_ASSET_BASE_URL");
         }
+    }
+
+    #[test]
+    #[serial]
+    fn setup_rejects_an_unhealthy_final_doctor_report() {
+        let temp = tempfile::tempdir().expect("create setup home");
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("resolve setup home");
+        let error = finish_setup(&home, "0.100.0", "v0.100.0", "reviewer")
+            .expect_err("setup must fail when doctor reports a core failure");
+
+        assert!(
+            error.to_string().contains("unhealthy"),
+            "expected an unhealthy setup error, got: {error:#}"
+        );
     }
 }

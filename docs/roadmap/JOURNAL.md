@@ -6082,3 +6082,19 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
 5. **Próximo WU candidato (decisión autónoma del agente):** consolidar los 4 forks de `Session` (Lesson 96 deuda P3) es el siguiente WU de calidad accionable por el agente. Alternativas: PR-SEC remaining (protobuf advisory OTel 0.28 — alto riesgo), CR-01 (operator-gated), A-016 site (cross-repo).
+
+## N+37 — Retrospectiva: `cogh setup` no debe ocultar un doctor unhealthy
+
+**Fecha:** 2026-09-28 (investigación retrospectiva autónoma bajo SDDK).
+
+**Hallazgo confirmado:** `cogh setup` invocaba `cmd_doctor`, que imprime `overall: UNHEALTHY` pero devuelve `Ok(())` por diseño informativo. Setup continuaba y podía devolver exit code 0 y anunciar `Setup complete` aunque el diagnóstico final contuviera `FAIL`.
+
+**Causa raíz:** desacoplamiento entre el reporte (`DoctorReport::is_healthy()`) y el contrato de salida de la operación compuesta `setup`. El doctor standalone debe seguir siendo informativo; setup necesita un gate explícito.
+
+**Corrección:** `finish_setup` evalúa `DoctorReport::is_healthy()` y retorna error antes del mensaje de finalización cuando hay un `FAIL`. El cambio se limita a `crates/cognicode-cli/src/bin/cogh.rs`; no modifica instalador, perfiles ni `cogh doctor` standalone.
+
+**Evidencia quirúrgica:** el test nuevo fue RED por símbolo inexistente (exit 101), luego `cargo test -p cognicode-cli --bin cogh setup_` pasó 2/2; `cargo test -p cognicode-cli --test cogh_cli` pasó 11/11; `cargo fmt --all --check` y `git diff --check` pasaron.
+
+**Clasificación:** defecto confirmado y falso éxito corregido. **SemVer:** `fix(cli)` implica PATCH; no se creó tag ni se publicó release.
+
+**Siguiente:** revalidar HEAD, crear commit atómico y cerrar el ciclo SDDK. Mantener A-023/A-024 bloqueados hasta que exista publicación MCP/mise o contrato MCPB autorizado.
