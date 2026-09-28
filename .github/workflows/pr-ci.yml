@@ -475,6 +475,27 @@ jobs:
       # Tambien en `tests/`, por tanto tampoco lo cubria `--lib`.
       - name: A-015 licenses gate (license allow-list vs crate metadata)
         run: cargo test -p cognicode-cli --test a015_licenses_gate --quiet
+      # Gate the whole cognicode-cli integration surface, not a hand-picked
+      # subset. `--lib` is invalid for this crate (bin-only), and the
+      # `tests/` targets are the crate's published black-box contracts; a
+      # step per suite would rot the next time one is added. Verified
+      # end-to-end at 592 passed / 0 failed / 2 ignored in 47s local.
+      #
+      # `--features ladybug` is not decoration. The crate defaults to no
+      # features, so evidence_cli_mcp_equivalence sits behind a crate-level
+      # `#![cfg(feature = "ladybug")]` and compiles to an EMPTY test binary
+      # without it: 0 tests, exit 0, green forever under any invocation.
+      - name: cognicode-cli integration suites (all targets, --features ladybug)
+        run: cargo test -p cognicode-cli --features ladybug --quiet
+      # Pins the step above. Two failure modes this has to catch:
+      #   1. the step disappears from the workflow (silent loss of ~590 tests)
+      #   2. it is rewritten to a narrower selector, e.g. `--bins`, which
+      #      would drop the 21 `tests/` targets and re-open the original gap
+      # The second is why this asserts a *count* against the filesystem, not
+      # a substring match: a substring check passes happily on a selector
+      # that silently excludes half the crate.
+      - name: cognicode-cli gate coverage contract (must not rot or narrow)
+        run: cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet
       # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
       # Pinea que `GraphInsightsService::analyze` cumple el budget
       # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step
