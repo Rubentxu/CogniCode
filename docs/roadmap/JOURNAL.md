@@ -6002,3 +6002,48 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
 5. **Próximo WU candidato (decisión autónoma del agente):** A-016 `Rubentxu/cognicode-site` (P0, cross-repo, sin deps), o PR-SEC remaining (protobuf advisory — requiere migración OTel 0.28), o CR-01 C8-R recert.
+
+## N+35 — A-016 tools/runtime contract consistency pin (reciprocidad)
+
+**Fecha:** 2026-09-28 (turno autónomo en modo SDDK como autoridad exclusiva).
+
+**Recuperación vía SDDK (sin asumir):** `agent-session start` emitió contexto con `head=e4010983`, `branch=docs/cp2-a012-closure`, `sddk_adoption=complete`, `sddk_ledger=last_hash:sha256:4a049ec3...`. Backlog vacío, 0 work items activos, 12 work items todos `"done"` antes de este turno. CP1 `RELEASE_PENDING` espera operador.
+
+**PRE-FLIGHT emitido:** `Readiness: READY` para WU "tools-runtime-consistency-pin" (test-only, CP2 hard gate). Cycle SDDK `p-c1fac1fea05615c6/tools-runtime-consistency-pin` creado formal con `sddk cycle start --path a-lite`.
+
+**Lesson 95 (segunda revisión, en JOURNAL):** Confirmado en re-lectura directa: `MUTATING_TOOLS` runtime = `["write_file", "edit_file", "reparse_on_edit"]` (3 names), `product/tools.json` declarando `authority: "mutating"` para los mismos 3 names. **Coincidencia exacta; el sistema estaba — y sigue estando — coherente.** La metodologia de pin es válida aunque el caso particular de `build_graph` no era un drift real. NO se requiere fix de código.
+
+**Strict TDD ejecutado (3 reciprocidad tests, todos verdes en el primer intento):**
+
+1. `a016_tools_runtime_consistency_every_contract_mutating_is_in_runtime` (reciprocidad contract→runtime) — para cada tool con `authority: mutating` en tools.json, requiere membresía en `MUTATING_TOOLS`. Falla RED si alguien añade un mutator al contract sin actualizar el runtime.
+2. `a016_tools_runtime_consistency_every_runtime_mutating_is_in_contract` (reciprocidad runtime→contract) — para cada entry en `MUTATING_TOOLS`, requiere `authority: mutating` en tools.json. Falla RED si el runtime añade un mutator sin actualizar el contract.
+3. `a016_tools_runtime_consistency_authority_is_present_and_string` (schema triangulate) — `authority` debe ser JSON string (no `null`, no número, no ausente). Falla RED si alguien cambia el tipo.
+
+**Implementación (test-only WU, 0 cambios de producto):**
+- `crates/cognicode-mcp/tests/a016_tools_runtime_consistency.rs` (new, 162 líneas): 3 tests + helpers `product_tools_json_path()` (dos `parent()`s en vez de `"../.."`) y `load_tools_json()`.
+
+**Verificación:**
+- `cargo test -p cognicode-mcp --test a016_tools_runtime_consistency` → **3/0/0**.
+- `cargo test -p cognicode-mcp` (full crate) → all green, 0 regresiones.
+- `cargo test -p cognicode-cli` (full crate) → all green (A-014, A-015 siguen pasando).
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo fmt --all --check` → exit 0.
+
+**Commit:** `18860e65 test(mcp): A-016 tools/runtime contract consistency pin (reciprocidad)` — 1 archivo, +162 insertions, un solo cambio lógico.
+
+**Cierre formal SDDK:** 7 transiciones A-lite (explore→specify→design→build→verify→release→archive) con 8 gate-receipts, 14 eventos añadidos al ledger. Status `CLOSED/archive`, 8 artefactos. WorkItem `145dfaef-...` → `done`, `exit_gate=archive.complete`.
+
+**Lesson 100 (nueva):** Reciprocidad es la forma correcta de pinear drift entre contract y runtime. Un test unidireccional puede pasar mientras el sistema ha driftado en la otra dirección (e.g., contract dice mutating, runtime trata el tool en otra lista). Dos tests reciprocales son el mínimo para cubrir ambos vectores de drift.
+
+**SEMVER (regla 6):** test-only WU. `test(mcp)` no es feat/fix. v0.99.2 sin cambios. Sin scope creep:
+- NO consolida los 4 forks de `Session` (Lesson 96 queda como deuda separada)
+- NO toca `product/tools.json` ni `MUTATING_TOOLS` runtime (no hay drift que arreglar)
+- NO reorganiza workflows
+- NO modifica protobuf advisory
+
+**Pendiente del operador (sin cambios desde N+34):**
+1. Push o PR de los **10** commits ahead de `origin/main` con `merge-gate` verde.
+2. Decisión SemVer CP1.
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
+5. **Próximo WU candidato (decisión autónoma del agente, N+36):** consolidar los 4 forks de `Session` (Lesson 96 deuda P3) es el siguiente WU de calidad accionable por el agente. Alternativas: PR-SEC remaining (protobuf advisory OTel 0.28 — alto riesgo), CR-01 (operator-gated), A-016 site (cross-repo).
