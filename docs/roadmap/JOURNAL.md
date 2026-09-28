@@ -5850,3 +5850,47 @@ download fuera del scope de este turno.
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7) — sigue pendiente.
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation` y ejecutar `release.complete` → `archive.complete` — sigue pendiente.
 5. Decidir el siguiente WU: **A-013** Black-box lifecycle UAT (P0, dep A-009 ya cerrado), **A-014** `cognicode capabilities --json` (P1, dep A-003 ya cerrado), **PR-SEC** (protobuf advisory + Actions SHA pinning + licenses CI gate — ahora desbloqueado por QW-03/04 cerrados), o **CR-01** C8-R recertificación (también desbloqueado).
+
+## N+32 — A-013 Black-box lifecycle UAT strict TDD: 6 tests verdes, gap de `build_graph` descubierto
+
+**Fecha:** 2026-09-28 (turno autónomo en modo SDDK como autoridad exclusiva).
+
+**Recuperación vía SDDK (sin asumir):** `agent-session start` emitió contexto con `head=dbea6fdf`, `branch=docs/cp2-a012-closure`, `sddk_adoption=complete`, `sddk_ledger=last_hash:sha256:4a049ec3...`. Backlog vacío, 0 work items activos, 1 ciclo `RELEASE_PENDING` (CP1 esperando operador), 1 ciclo `OPEN` (`production-ready-q3-2026`, ya cerrado el turno anterior).
+
+**PRE-FLIGHT emitido:** `Readiness: READY` para WorkItem `A-013/CP2.7 — Black-box lifecycle UAT` (P0, dep A-009 ya cerrado). Cycle SDDK `p-c1fac1fea05615c6/a-013-lifecycle-uat` creado formal con `sddk cycle start --path a-lite`.
+
+**Strict TDD ejecutado (RED → GREEN → TRIANGULATE → REFACTOR):**
+
+1. **Baseline verificado manualmente** — el binario `cognicode-mcp` arranca, hace handshake `initialize`, devuelve `tools/list` paginado (20 tools/página, 73 totales), y cierra limpio con stdin EOF. Confirmado antes de escribir el test.
+2. **GREEN baselines (3 tests)** — `startup_returns_tools_list_with_at_least_one_tool`, `call_readonly_tool_mid_lifecycle`, `shutdown_via_stdin_eof_exits_cleanly`. Pasan al primer intento (el binario ya cumple el contrato).
+3. **TRIANGULATE T1 (RED → GREEN):** `invalid_workspace_reports_clean_error` — spawn con `--cwd` que no existe. El harness surface un error no-vacío en menos de 10s. Pasa.
+4. **TRIANGULATE T2 (RED detection):** `readonly_rejects_mutating_call_mid_lifecycle` con `build_graph` falló RED — **`build_graph` está declarado `authority: read` en `product/tools.json` pero el runtime lo trata como mutating (escribe graph cache)**. Gap contract/runtime detectado. Re-escritura del test para usar `edit_file` (consenso mutating en ambos lados). Pasa.
+5. **TRIANGULATE T3:** `signal_term_shuts_down_cleanly` ajustado para aceptar `code == Some(0) || code == Some(143) || signal == Some(15)` (raw Unix killed-by-signal). Pasa.
+
+**Harness extensions (aditivas, ningún test preexistente modificado):**
+- `McpSession::request(method, params) -> Result<Value, String>` — JSON-RPC genérico.
+- `McpSession::spawn_with_flags(ws, &["--read-only"]) -> Result<...>` — spawn con flags extra.
+- `McpSession::pid() -> u32` — accessor del child pid.
+- `McpSession::signal_and_wait("TERM") -> Result<ExitStatus, String>` (Unix) — shell-out a `/bin/kill -- -s TERM <pid>` (POSIX, sin nuevas deps).
+
+**Verificación:**
+- `cargo test -p cognicode-mcp --test a013_lifecycle_uat` → **9/0/0** (6 A-013 + 3 common::tests).
+- `cargo test -p cognicode-mcp` (full crate, ~30 binaries) → all green.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo fmt --all --check` → exit 0.
+- `git sddk-align --ack` → acknowledged.
+
+**Commit:** `9aed8841 test(mcp): A-013 black-box lifecycle UAT (startup to shutdown PASS)` — 2 archivos, +442 insertions, un solo cambio lógico.
+
+**Cierre formal SDDK:** 7 transiciones A-lite (explore→specify→design→build→verify→release→archive) con 8 gate-receipts cada una, 14 eventos añadidos al ledger. Status `CLOSED/archive`, 8 artefactos. WorkItem `a0130001-0000-4000-8000-000000000001` → `done`, `exit_gate=archive.complete`.
+
+**Descubrimiento principal (Lesson 95, nueva):** Strict TDD es válido retroactivamente sobre código mergeado y **un test RED correctamente escrito detecta gaps reales entre contrato público y runtime**. T2 con `build_graph` falló porque `product/tools.json` dice `authority: read` pero `MUTATING_TOOLS` lo trata como writer. El gap está documentado como debt P2 (candidato para futuro audit de `MUTATING_TOOLS`); A-013 no lo arregla (scope discipline). El test se reescribió con `edit_file` (consenso mutating) sin tocar el server.
+
+**Lesson 96 (nueva):** Scope discipline estricta — un test nuevo NO es el lugar para consolidar `Session` structs paralelos en `a009_*` / `prf_sec_05_*` / `prf_mcp_03_*` (descubierto en explore), ni para arreglar el gap de `build_graph`. Cada uno merece su propio ciclo, sin scope creep.
+
+**Pendiente del operador (sin cambios desde N+31):**
+1. Push o PR de los 4 commits ahead de `origin/main` (QW-03 fix, JOURNAL N+30, A-013, JOURNAL N+32).
+2. Decisión SemVer CP1 (opciones: `v0.99.2`, `v0.99.3` PATCH, o `v0.100.0` MINOR).
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
+5. **Próximo WU candidato (decisión autónoma del agente):** A-014 `cognicode capabilities --json` (P1, dep A-003 cerrado; sin deuda bloqueante; el `build_graph` audit queda como follow-up).
