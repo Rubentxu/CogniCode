@@ -6684,3 +6684,66 @@ No es que falte cobertura: es que **se reporta cobertura mientras no la hay**, y
 cualquier ejecucion manual que uno se ocurra hacer para comprobarlo. Un `#[cfg]` a nivel de crate
 sobre una suite es una excepcion de compilacion disfrazada de excepcion de coste; si se asume,
 se escribe en el sitio donde alguien lo va a leer.
+
+---
+
+## N+48 — el mismo defecto en `cognicode-core`: 32 suites, y 6 que no corren en ningun sitio
+
+Cerrada la unidad del CLI, la pregunta era si el patron era del crate o del repo. Auditoria de los
+tres crates restantes, mismo metodo: contar `tests/*.rs` contra los `--test` nombrados en
+`pr-ci.yml`.
+
+| crate | ficheros en `tests/` | nombrados en el gate | `--lib` en el gate |
+|---|---|---|---|
+| `cognicode-cli` | 27 | 6 (ya cerrados en N+47) | 0 |
+| `cognicode-mcp` | 25 | 6 | 0 |
+| `cognicode-core` | **36** | **4** | **4** |
+| `cognicode-ladybug` | 0 | 0 | 1 |
+
+`cognicode-core` tiene el defecto mas grande y con un matiz que importa: `--lib` **si es valido**
+aqui (core tiene `src/lib.rs`), a diferencia del CLI. Por eso el defecto se lee menos: el comando
+parece correcto. Pero `--lib` excluye `tests/` por construccion, asi que las 4 invocaciones del gate
+saltan las 32 suites restantes. **Una invocacion que parece correcta y no ejecuta lo que el nombre
+sugiere es mas dificil de detectar que una que es evidentemente invalida.**
+
+**Medicion: 32 suites, 224 tests, todos verdes, 70 s, ninguno en el gate.** Se comportan como
+A-013 y A-014: verdes y nunca ejecutados. Incluye `m06_acceptance` (6) y `m10_acceptance` (6), cuyos
+nombres son criterios de aceptacion de hitos cerrados.
+
+**Y aqui aparece el hallazgo serio: 8 de las 32 reportan 0 tests.** Al comprobar el total me
+equivoque al contar y conjure 11; el numero correcto es **8** (mi primer grep casaba `20 passed`
+como `0 passed`, y lo corrijo antes de escribir nada). Las 8 declaran 46 tests que **no se ejecutan
+nunca**, por `#![cfg(feature = "evidence-kernel")]` a nivel de crate, igual que `ladybug` en el CLI.
+
+**El matiz que evita exagerar el hallazgo.** `ci.yml` **si** construye `evidence-kernel` y corre dos
+de las ocho (`findings_canonical_grounding_e2e`, `workspace_isolation`). Las otras seis
+(`behavior_authority_e2e`, `behavior_budget_e2e`, `cp5_tie_break`, `equivalence_harness`,
+`identity_benchmark`, `intelligence_event_log_e2e`) **no corren en ningun workflow del repositorio**.
+
+**Y `ci.yml` no es un check de PR.** Los checks observados en PR #307 son `fmt + clippy`, `build
+cognicode-mcp (release)` y `CR-08 selector de suites`. `ci.yml` no aparece. Ademas el unico check
+obligatorio es `merge-gate` (regla PR-CI de AGENTS.md), o sea: **las suites que solo corren en
+`ci.yml` no bloquean un merge**, se ejecutan o no segun el push, no segun la revision. Dos de las
+seis que no corren en ningun sitio tienen ademas el nombre `*_e2e`.
+
+**Estado real, sin adornos:** el merge gate protege hoy 597 tests del CLI, 46 del MCP, 4 de core.
+`cognicode-core` aporta 2232 tests `--lib` que si corren, y 224 tests de `tests/` que no, entre ellos
+46 que no se ejecutan bajo ninguna combinacion de flags en ningun workflow.
+
+**Decision.** No lo arreglo aqui. Cerrar sesion con esto a medias seria peor que dejarlo escrito: son
+tres suites en `ci.yml` que hay que mover al gate, una feature que hay que construir ahi, y 6 suites
+que hay que enabling, y cada uno de esos toca el gate que ahora mismo esta validando el PR #307. Se
+queda con numeros y con el criterio de cierre siguiente:
+
+1. `merge-gate` debe construir `cognicode-core` con `--features evidence-kernel`, o las 8 suites
+   existen solo en el laptop de quien las escribio.
+2. Las 6 que no corren en ningun workflow se.span por un step sin restriccion de targets.
+3. Un contrato por crate que cuente `tests/*.rs` contra lo que el selector compila, con la misma
+   asercion de conteo que Lesson 116: narrowing y borrado son la misma asercion.
+
+**Lesson 118 (nueva):** un gate que ejecuta un objetivo distinto del que su nombre sugiere es peor
+que uno que falla. `cognicode-core --lib` es un comando valido que ejecuta 2232 tests y se salta 224
+sin decir nada; `cognicode-cli --lib` es un comando invalido que habria saltado lo mismo de forma
+visible. Un error visible se encuentra; uno que ejecuta 2000 tests correctos y 200 equivocados en
+silencio, no. **Por eso el criterio de verificacion no puede ser "el comando corre" sino "el
+selector compila el conjunto que dice compilar".**
