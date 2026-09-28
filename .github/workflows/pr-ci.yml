@@ -99,7 +99,8 @@ jobs:
           python3 scripts/run_contract_tests.py \
             scripts/product/test_*.py \
             scripts/ci/test_select_suites.py \
-            scripts/ci/test_ci_contracts.py
+            scripts/ci/test_ci_contracts.py \
+            scripts/ci/test_serial_env_contract.py
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)

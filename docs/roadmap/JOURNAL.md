@@ -6224,3 +6224,24 @@ La auditoría de clase anterior afirmó "0 violaciones reales" para el contrato 
 **Lesson 107 (nueva):** un guard de serialización es una garantía de que *todos* los actores participan en el mismo protocolo. Añadirlo solo al lector crea una falsa sensación de seguridad: el escritor sin guard invalida silenciosamente a todos los lectores. Auditar "quién tiene el atributo" no basta; hay que auditar "quién escribe sin él".
 
 **Lesson 108 (nueva, sobre el instrumental):** la Lesson 106 predijo que un escaneo por regex produce falsos positivos. El fallo real fue peor: mi parser de funciones tenía un regex `^` sin `[ \t]*`, así que **no encontraba funciones indentadas dentro de `mod tests`**. En `lifecycle_journal.rs` encontraba 6 funciones donde hay 13, y por eso reportaba "0 writers" cuando los había. Peor que un falso positivo: un falso **negativo** que se presenta como cobertura. Un auditor que no se puede falsificar no es evidencia. La Lesson 106 sigue siendo válida, pero se queda corta: no basta con leer los sitios marcados, hay que **demostrar que el escaneo encuentra lo que dice encontrar**, con un caso conocido y positivo.
+
+### El guard de env ahora es un contrato ejecutable, y encontró un tercer writer (N+41)
+
+La Lesson 108 decía: un auditor que no se puede falsificar no es evidencia. Convertir eso en un artefacto del repo era el trabajo pendiente real de este turno.
+
+**Nuevo contrato.** `scripts/ci/test_serial_env_contract.py`, enganchado al gate "Product + CI contract tests" de `pr-ci.yml` (junto a `test_ci_contracts.py` y `test_select_suites.py`, que ya existen exactamente por el mismo motivo: "the harness failed twice in ways that were invisible locally").
+
+El contrato **no se limita a repetir el escaneo**: incluye sus propios self-tests, que son la lección aplicada:
+- `test_the_auditor_finds_indented_functions` — falla si el parser vuelve a no ver funciones indentadas en `mod tests` (el fallo exacto de la Lesson 108).
+- `test_the_auditor_finds_a_planted_violation` — planta un writer sin guard y exige que se detecte, para que el guard no pueda pasar en vacío.
+- `test_env_mutation_regex_sees_names_inside_string_literals` — el nombre de la variable vive en un literal de cadena; si se hace strip antes de matchear, un repo conforme reporta cero writers.
+- `test_comment_mentioning_set_var_is_not_a_mutation` — un doc comment que nombra `set_var` no es una mutación (evita el falso positivo que ingeniero la Lesson 106).
+- `test_fully_qualified_serial_attribute_is_recognised` — `#[serial_test::serial]` cuenta como serializado.
+
+**Tercer writer encontrado, y no lo había visto ninguna de las auditorías anteriores.** `install.rs:187` `t_debt2_declared_skill_bundle_dirs_use_manifest_ids` era `#[test]` sin `#[serial]` y escribía `OPENCODE_CONFIG` (vía `TempCognicodeHome::new()` y un bloque propio en install.rs:273-310). El propio guard documenta su contrato — *"Callers MUST be `#[serial]`"* en `layout.rs:1102` — y este caller lo incumplía. El contrato contradecía al código y nada lo verificaba.
+
+**Evidencia de que el guard muerde de verdad.** Con el fix: 6/6 verdes. Quitando `#[serial]` de `install.rs`: el contrato falla nombrando exactamente ese test. Reaplicado: verde.
+
+**Verificación completa.** Gate de contratos tal como lo ejecuta CI: **53 passed, 0 failed**. `cognicode-cli` 29 binarios sin fallos, flake check 0/8 a 16 threads, fmt 0, clippy `-D warnings` 0.
+
+**Lesson 109 (nueva):** un contrato que nadie ejecuta es un comentario con assertions. El valor de `test_ci_contracts.py` no era su regex, era estar **enganchado al gate**. Sin el enganche, esta nuevasuite habría sido el cuarto artefacto de auditoría que existe, acierta y no previene nada.

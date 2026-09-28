@@ -185,6 +185,7 @@ mod tests {
     ///     ComponentId   = "cognicode-mcp"
     ///     SkillBundleId = "skills-for-claude"  (≠ ComponentId)
     #[test]
+    #[serial]
     fn t_debt2_declared_skill_bundle_dirs_use_manifest_ids() {
         use crate::bundle_manifest::BundleManifest;
         let _temphome = TempCognicodeHome::new();
