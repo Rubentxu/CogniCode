@@ -37,6 +37,25 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
+def _list_tags() -> list[str]:
+    """Local tag names, or an empty list if git cannot answer.
+
+    Returning an empty list is meaningful, not an error: it is what a
+    shallow clone with no tag refspec looks like, and the caller must treat
+    that as "unknown", not as "no version was ever released".
+    """
+    result = subprocess.run(
+        ["git", "tag", "--list"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    return result.stdout.split()
+
+
 def cargo_metadata() -> dict:
     """Resolve the real workspace metadata. Fails loudly if the toolchain is absent.
 
@@ -218,14 +237,48 @@ def test_security_policy_supported_versions_are_real() -> None:
     assert current in claimed, f"SECURITY.md does not mention the actual current version {current}"
 
     # Anything else it names must be a real released tag, not an invented version.
-    released = subprocess.run(
-        ["git", "tag", "--list"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    known = {t.lstrip("v") for t in released.stdout.split()}
+    #
+    # The tag list cannot be trusted on its own. `actions/checkout` without
+    # `fetch-depth: 0` produces a shallow clone that carries no tags, and
+    # `git tag --list` then returns empty, so every version named in
+    # SECURITY.md looks invented. That is how v0.99.2 - a tag that really
+    # exists (d84508f0) - was reported as never released on PR #306.
+    #
+    # So: no tags at all means the clone cannot answer the question, and the
+    # check degrades to asserting the current version rather than failing on
+    # missing evidence. When tags ARE present the original strictness holds.
+    # Query the remote when local tags are absent, so a full checkout is
+    # never required to make this gate meaningful.
+    known = {t.lstrip("v") for t in _list_tags()}
+
+    if not known:
+        # Shallow clone with no tag refspec: the local repo cannot answer
+        # whether a version was released. Ask the remote before giving up.
+        remote = subprocess.run(
+            ["git", "ls-remote", "--tags", "origin"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if remote.returncode == 0 and remote.stdout.strip():
+            known = {
+                line.rsplit("refs/tags/", 1)[-1].removesuffix("^{}").lstrip("v")
+                for line in remote.stdout.splitlines()
+                if "refs/tags/" in line
+            }
+
+    if not known:
+        # No local and no remote tag visibility. Failing here would make the
+        # gate depend on clone depth rather than on the artefact, so assert
+        # only what is verifiable offline and say so.
+        assert current in claimed, (
+            f"no git tags are visible locally or on origin, so released-version "
+            f"claims in SECURITY.md cannot be checked; at minimum it must name "
+            f"the current version {current}"
+        )
+        return
+
     invented = [c for c in set(claimed) if c != current and c not in known and c.split(".")[0] != "2"]
     assert not invented, f"SECURITY.md names versions that were never released: {sorted(invented)}"
 
