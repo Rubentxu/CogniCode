@@ -6442,8 +6442,8 @@ cache en disco. A-013 no lo afirma a proposito, porque solo debe anclar la inter
 flag/lifecycle para tools en las que contrato y runtime coinciden. Ese desajuste es del dominio de
 tool authority y lo he dejado anotado en la fila de A-014, que es quien lo hereda.
 
-**Lesson 112 (nueva):** "el test pasa" y "el test corre" son afirmaciones distintas, y la segunda
-implica a la tercera: nada. Antes de dar por buena una suite, hay que responder de donde la ejecuta
+**Lesson 112 (nueva):** "el test pasa" y "el test corre" son afirmaciones distintas, y la segunda no
+se deduce de la primera. Antes de dar por buena una suite, hay que responder de donde la ejecuta
 el gate, no solo que verde tiene en local. Y la comprobacion que mas informo aqui no fue ejecutar
 los tests, fue **contar cuantos contratos black-box del crate no aparecian en ningun workflow**: al
 mirar el hueco completo en lugar del hueco de la unidad asignada, la unidad_resultado crecio de un
@@ -6496,3 +6496,93 @@ terminal hay que responder "que evidencia sostiene esto" y, si la respuesta es "
 elegir un estado reversible. Y en un sistema de estados con decisiones de aplazamiento: un estado
 "en pausa" que detiene la linea entera convierte cada decision de espera en un bloqueo global. La
 espera se registra como espera, no como una bandera que para el motor.
+
+---
+
+## N+45 — A-014 y A-015: el mismo `--lib` ciego, ahora en el crate CLI
+
+**Como se llego aqui.** A-013 cerrado en N+44 dejo como siguiente A-014. Antes de escribir una linea,
+lei si ya existia: si, `crates/cognicode-cli/tests/a014_capabilities_json.rs` con 5 tests, todos
+verdes. El mismo patron que A-013, y por el mismo motivo no estaba en el registro como cerrada.
+
+**El hueco, confirmado con la ejecucion y no por lectura.** `cognicode capabilities --format json`
+funciona: emite `cognicode.capabilities/v1` con 73 tools y 4 profiles. Sus 5 tests estan en
+`tests/`, y el gate no los corre. La suite `cli` del selector CR-08 tambien es `--lib`.
+
+**La suite tiene dientes, pero solo en un test de cinco.** Mute `schema_version` de `v1` a `v999` en
+`build_capabilities_doc`: **1 de 5** tests fallo (`..._emits_v1_schema_with_tools_profiles_runtime`).
+Los otros cuatro pasaron. No es una suite inerte, pero es mas delgada de lo que sugiere "5 tests
+verdes", asi que lo dejo dicho en lugar de presentarlo como cobertura solida.
+
+**Hipotesis mia que resulto falsa, y que la ejecucion evitó propagar.** Leyendo
+`build_capabilities_doc` vi que resuelve `product/tools.json` y `product/profiles.json` via
+`CARGO_MANIFEST_DIR` y sospeche que un usuario instalado, sin el repo, caeria en un fallback
+degradado. Lo simule: copie el binario a un directorio fuera del repo y lo ejecute ahi. Devuelve
+**73 tools y 4 profiles completos**. `CARGO_MANIFEST_DIR` es una constante de compilacion, no una
+ruta en tiempo de ejecucion, asi que la lectura del repo viaja dentro del binario. Mi hipotesis era
+falsa y la habria escrito como defecto si no la ejecuto.
+
+**El alcance real es mayor que A-014.** Contando los test files del crate CLI frente a los que el
+gate nombra: **23 de 27 no corren**. Solo 4 estan pineados (los qw0x, mas el contrato que acabo de
+anadir). Eso excede el scope de A-014, asi que **no** he tocado el resto: anadir 20 suites
+arrasando seria cambiar el alcance del gate para tapar unFinding de cobertura, el mismo error que
+evite en N+44. Lo que si he hecho es anadir las dos que pertenecen a esta unidad (A-014, A-015),
+mediendo su coste primero: 1.7 s y 1.9 s. Las otras 21 quedan registradas como follow-up medible.
+
+**Evidencia.** Mutacion `v1` → `v999`: 1/5 FAILED, restaurado 9/9 (incluye 4 tests del harness
+`common`). Mutacion del contrato de cobertura (borrar el pin de A-014 del workflow): 2/4 FAILED por
+dos tests independientes, restaurado 4/4. `pr-ci.yml` parsea, `cargo fmt --all -- --check` limpio,
+`cargo clippy -p cognicode-cli --tests -- -D warnings` limpio, gate de contratos de scripts 64/0.
+
+**Lesson 114 (nueva):** el alcance de un hallazgo y el alcance de su arreglo son decisiones
+distintas, y confundirlas es la forma mas comoda de meter un cambio grande en un commit que
+pretendia ser pequeño. "23 de 27 test files sin gate" es un hallazgo real y accionable; meter los 23
+en el mismo commit que cierra A-014 no lo es, porque convierte un cierre verificable en un
+redimensionado del gate que nadie ha medido. Anadir lo que pertenece a la unidad, medir el resto, y
+dejar el resto escrito.
+
+**Follow-up medible, no bloqueante:** 21 test files del crate `cognicode-cli` siguen sin gate
+(`cogh_cli`, `cognicode_lifecycle`, `cognicode_plugin`, `prf_cli_*`, `prf_dist_*`, `prf_f6_*`,
+`evidence_cli_mcp_equivalence`, `portable_skill_bundle`, `cognicode_ide_adapter`,
+`prf_ci_01_07_clippy_gate_uat`, `prf_ext_02_partial_uat`, `prf_f4_w2_binary_restart`). Cierra lo que
+ya se sabe que pasara cuando se midan uno a uno; el patron de A-013/A-014 dice que varios estan
+verdes y nunca se han ejecutado en el merge gate.
+
+### N+45 (bis) — el criterio de aceptacion de A-014 no existia
+
+Al ir a cerrar A-014, la fila del registro que estaba cerrando es ella misma el criterio de
+aceptacion: `cognicode capabilities --json`. Lo ejecuto en vez de asumir que era abreviatura:
+
+```
+$ cognicode capabilities --json
+error: unexpected argument '--json' found          # exit 2
+$ cognicode capabilities --format json
+{"cli_version":"0.100.0","profiles":[...            # exit 0
+```
+
+**No era abreviatura, era contrato roto.** El registro enuncia un comando que el binario rechaza, y
+un consumidor que lea la documentacion del proyecto se lleva una invocacion rota. Eso convierte
+"contrato machine-readable" en "contrato documentado de forma incorrecta", que es peor: lo segundo
+falla en el cliente, no en el servidor.
+
+**Correccion minima.** `--json` como alias con `conflicts_with = "format"`. Se eligio el alias y no
+reescribir el registro porque el registro es la especificacion de A-014 y el criterio ya fue
+aceptado por el mantenedor; cambiar la especificacion para que el codigo pase es invertir el
+sentido del cierre. `conflicts_with` y no "el ultimo gana": `--json --format text` debe fallar, no
+elegir en silencio. Verificado: el conflicto sale como `error: the argument '--json' cannot be used
+with '--format <FORMAT>'`, y `capabilities` a secas sigue en `text`.
+
+**Evidencia.** Test RED antes del fix: `9 passed, 1 failed`
+(`the_documented_json_flag_is_accepted_and_equivalent`). GREEN despues: `10 passed`. El test no
+comprueba que el alias exista, compara los **dos documentos** — schema_version, inventario de tools
+y `runtime.mutating_tools` — porque un alias que emitiera un subconjunto distinto de tools o un
+set mutating distinto prometeria una postura que el binario no aplica. Mutacion del contrato de
+cobertura ya-described (borrar el pin de A-014): 2/4 FAILED por dos tests independientes,
+restaurado 4/4. `cargo test -p cognicode-core --lib`: 2232 passed, 0 failed (el cambio toca el
+dispatch del CLI, asi que no es una suite affected-only). fmt y clippy `-D warnings` limpios.
+
+**Lesson 115 (nueva):** cerrar una accion exige ejecutar el criterio de aceptacion tal y como esta
+escrito, no la forma que el codigo resulta haber implementado. Aqui las dos se diferencian en un
+flag, y la diferencia era exactamente el criterio de cierre de la unidad. Un cierre por
+auto-reporte habria dado A-014 por bueno con el contrato roto, que es el peor resultado posible:
+un item cerrado certificando un comando que no funciona.
