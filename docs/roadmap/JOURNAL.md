@@ -5957,3 +5957,48 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
 5. **Próximo WU candidato (decisión autónoma del agente):** A-016 `Rubentxu/cognicode-site` (P0, sin deps), o PR-SEC (protobuf advisory + Actions SHA pinning + licenses CI gate — ahora desbloqueado), o CR-01 C8-R recertificación (también desbloqueado).
+
+## N+34 — A-015 cargo deny check licenses step en CI (PR-SEC remaining)
+
+**Fecha:** 2026-09-28 (turno autónomo en modo SDDK como autoridad exclusiva).
+
+**Recuperación vía SDDK (sin asumir):** `agent-session start` emitió contexto con `head=ef06bcb2`, `branch=docs/cp2-a012-closure`, `sddk_adoption=complete`, `sddk_ledger=last_hash:sha256:4a049ec3...`. Backlog vacío, 0 work items activos, 12 work items todos `"done"` antes de este turno. CP1 `RELEASE_PENDING` espera operador.
+
+**PRE-FLIGHT emitido:** `Readiness: READY` para WU "a-015-licenses-gate-ci" (PR-SEC remaining). Cycle SDDK `p-c1fac1fea05615c6/a-015-licenses-gate-ci` creado formal con `sddk cycle start --path a-lite`.
+
+**Lesson 95 revisada (corrección importante):** El gap de `build_graph` (detectado en A-013 T2) NO era real. Re-leyendo `AnalysisService::build_graph` se confirma que el cache es `Arc<...>` en memoria, no escritura a disco. `mutates_workspace: false` en `runtime_metadata` es correcto. Contract/runtime son coherentes; el gap era metodologia, no runtime. El T2 de A-013 ya se habia reescrito a `edit_file` (consenso mutating en ambos lados), que es el movimiento correcto. **NO requiere fix de `build_graph` ni de `MUTATING_TOOLS` runtime.** La Lesson 95 original era imprecisa; la corrijo aquí y la redacto como "Lesson 95 (falso positivo): el T2 original asumió que `build_graph` escribe a disco; re-lectura confirma que solo escribe en memoria".
+
+**Strict TDD ejecutado (3 tests verdes en el primer intento — el gate ya estaba bien configurado por M0.9 `f0708d4b`):**
+
+1. `a015_deny_toml_declares_a_licenses_section` (RED→GREEN baseline) — pina que `deny.toml` tiene la sección `[licenses]`. Sin esto, el gate sería un green silencioso.
+2. `a015_cargo_deny_check_licenses_passes_on_the_real_workspace` (RED→GREEN baseline) — ejecuta el gate contra el workspace, pina exit 0 + `licenses ok`. Skip explícito si `cargo-deny` no está disponible.
+3. `a015_cargo_deny_version_reports_a_recognised_build` (TRIANGULATE) — sanity check del binario. Sin esto, los otros dos tests skipearían silenciosamente.
+
+**Implementación (additiva, 0 regresiones):**
+- `.github/workflows/release-validate.yml` (+10 líneas): nuevo step `Licenses gate (cargo-deny)` paralelo al `Advisories gate` existente. Mismo `cargo install cargo-deny --locked || true` pattern.
+- `crates/cognicode-cli/tests/a015_licenses_gate.rs` (new, 159 líneas): 3 tests + helper `locate_cargo_deny()` que prueba PATH + `$CARGO_HOME/bin` + `$HOME/.cargo/bin`.
+
+**Verificación:**
+- `cargo test -p cognicode-cli --test a015_licenses_gate` → **3/0/0** (1.24s).
+- `cargo test -p cognicode-cli` (full crate, 29 binaries) → all green, 0 regresiones.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo fmt --all --check` → exit 0.
+- `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release-validate.yml'))"` → parses sin error.
+- `cargo deny check licenses` → `licenses ok` (1.3s, el coste real del nuevo step CI).
+
+**Commit:** `745f2a7c chore(ci): A-015 cargo deny check licenses step en release-validate` — 2 archivos, +169 insertions, un solo cambio lógico.
+
+**Cierre formal SDDK:** 7 transiciones A-lite (explore→specify→design→build→verify→release→archive) con 8 gate-receipts, 14 eventos añadidos al ledger (438 eventos totales). Status `CLOSED/archive`, 8 artefactos. WorkItem `760a17d2-...` → `done`, `exit_gate=archive.complete`.
+
+**Lesson 98 (nueva):** Un CI gate sin policy explícita sería un green silencioso. El test `a015_deny_toml_declares_a_licenses_section` cierra ese agujero: pine que `deny.toml` tiene la sección `[licenses]`. Sin el test, alguien podría borrar la sección y el CI seguiría verde. La forma de hacer un gate honesto es pinear TANTO el ejecutor (`cargo deny check licenses`) COMO la policy (la sección en `deny.toml`).
+
+**Lesson 99 (nueva, meta):** Una Lesson registrada como evidencia de un gap puede ser imprecisa. La regla: releer la fuente antes de actuar sobre la Lesson. Aquí, releer `AnalysisService::build_graph` reveló que la Lesson 95 original (de A-013) era un falso positivo. El fix correcto era corregir la Lesson en JOURNAL, no el código.
+
+**SEMVER (regla 6):** `chore(ci)` no es feat/fix. v0.99.2 sin cambios. El cambio es de CI surface, no de release contract.
+
+**Pendiente del operador (sin cambios desde N+33):**
+1. Push o PR de los 8 commits ahead de `origin/main` con `merge-gate` verde.
+2. Decisión SemVer CP1 (ver N+33).
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
+5. **Próximo WU candidato (decisión autónoma del agente):** A-016 `Rubentxu/cognicode-site` (P0, cross-repo, sin deps), o PR-SEC remaining (protobuf advisory — requiere migración OTel 0.28), o CR-01 C8-R recert.
