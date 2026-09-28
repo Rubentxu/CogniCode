@@ -6626,7 +6626,7 @@ comentario por coste (30-60 s) y con el gate real de clippy corriendo en CI: es 
 documentado en ningun sitio como coste asumido. **Uno legitimo, uno silencioso.** La diferencia no es
 estetica: el primero dice por que no corre y quien lo corre en su lugar; el segundo no dice nada.
 
-**Decision.** No los anado todavia. Este no es el patron de A-014 (dos suites de la unidad,，正如
+**Decision.** No los anado todavia. Este no es el patron de A-014 (dos suites de la unidad, ya
 medidas). Aqui son 21 suites mas 325 tests de bin y una feature que el gate no construye: eso es
 una unidad propia, con su propio criterio de cierre, y meterlo en el commit de A-014 habria sido
 exactamente el error que Lesson 114 ya senala. Queda medida, con numeros, y con el hallazgo mas
@@ -6635,3 +6635,52 @@ se construye.
 
 **Follow-up con numeros, no con adjetivos:** 21 suites / 165 tests, 80 s medidos; feature
 `ladybug` sin construir en CI, que anade 325 tests de bin + 9 de equivalencia.
+
+---
+
+## N+47 — cerrar el hueco medido: 597 tests donde habia 165
+
+Unidad propia `cp2-cli-coverage-gap` para lo que N+46 midio. El arreglo es un step, no 21:
+
+```yaml
+- name: cognicode-cli integration suites (all targets, --features ladybug)
+  run: cargo test -p cognicode-cli --features ladybug --quiet
+```
+
+**Por que uno y no 21.** Un selector sin objetivo explicito es lo unico que compila lib + bins +
+todos los `tests/` + doctests, y por lo tanto lo unico que hace que **la proxima suite que se anada
+al crate quede gateada sin que nadie edite el workflow**. Un step por suite promete lo contrario:
+cada suite nueva nace sin gate, y por eso estas 21 llevaban años sin el. Y con `--features ladybug`
+lafeature que une CLI y backend se construye en el gate por primera vez.
+
+**De 165 a 597 tests, 42 s.** Verificado con el comando exacto del step, no con un subconjunto.
+
+**El contrato cuenta ficheros, no busca substrings.** Dos modos de fallo, y no tienen la misma
+forma: borrar el step, y **estrecharlo**. Estrechar es mas probable que borrar, porque estrechar se
+ve como un refinamiento. `cargo test -p cognicode-cli --features ladybug --bins` conserva 325 tests
+de bin, sigue pasando cualquier asercion por substring sobre `--features ladybug`, y deja fuera los
+21 targets de `tests/`: reabre exactamente el hueco que este commit cierra, en silencio. Por eso la
+asercion primaria es un **conteo de `tests/*.rs` contra lo que el selector compila**, no una
+coincidencia de texto.
+
+Dos mutaciones, aplicadas y comprobadas:
+- borrar el step → **3 de 5 FAILED**; restaurado 5/5
+- estrechar a `--bins` → **3 de 5 FAILED**, y el mensaje **nombra las 21 suites** una a una; restaurado 5/5
+
+**Un fallo mio que casi se cuela en el codigo.** Escribi el predicado de "selector sin
+restringir" exigiendo `--tests` **y** `--bins` explicitos, y luego use un selector de paquete
+desnudo en el workflow. El contrato daba verde con una definicion que su propio criterio hacia
+imposible. No lo detecto ejecutando: lo detecto leyendo el codigo del contrato contra el comando
+que habia escrito treinta segundos antes. Ejecutar el contrato y ver 5/5 no hacia falta como prueba
+de nada.
+
+**Lesson 116 (nueva):** un test de cobertura que comprueba que el workflow *menciona* algo no
+protege contra que el workflow *haga menos*. El estrechamiento de un selector es mas probable que su
+borrado, y es invisible a la comprobacion por substring, porque el substring sigue ahi. Cuando lo
+que se protege es un conjunto, la asercion tiene que ser sobre el conjunto.
+
+**Lesson 117 (nueva):** un gate que compila a un binario vacio y sale 0 es peor que no tener gate.
+No es que falte cobertura: es que **se reporta cobertura mientras no la hay**, y eso sobrevive a
+cualquier ejecucion manual que uno se ocurra hacer para comprobarlo. Un `#[cfg]` a nivel de crate
+sobre una suite es una excepcion de compilacion disfrazada de excepcion de coste; si se asume,
+se escribe en el sitio donde alguien lo va a leer.
