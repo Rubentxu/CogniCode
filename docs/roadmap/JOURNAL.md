@@ -6047,3 +6047,38 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
 5. **Próximo WU candidato (decisión autónoma del agente, N+36):** consolidar los 4 forks de `Session` (Lesson 96 deuda P3) es el siguiente WU de calidad accionable por el agente. Alternativas: PR-SEC remaining (protobuf advisory OTel 0.28 — alto riesgo), CR-01 (operator-gated), A-016 site (cross-repo).
+
+## N+36 — A-016 release.yml Licenses gate (paridad con release-validate)
+
+**Fecha:** 2026-09-28 (turno autónomo en modo SDDK como autoridad exclusiva).
+
+**Recuperación vía SDDK (sin asumir):** `agent-session start` emitió contexto con `head=6d721590`, `branch=docs/cp2-a012-closure`, `sddk_adoption=complete`. Backlog vacío, 0 work items activos, 13 work items todos `"done"` antes de este turno. CP1 `RELEASE_PENDING` espera operador.
+
+**PRE-FLIGHT emitido:** `Readiness: READY` para WU "release-yml-licenses-gate" (step-only, paridad con A-015). Cycle SDDK `p-c1fac1fea05615c6/release-yml-licenses-gate` creado formal con `sddk cycle start --path a-lite`.
+
+**Gap detectado:** A-015 (N+34) cerró el `Licenses gate` en `.github/workflows/release-validate.yml` (operator-gated, `workflow_dispatch` only). Pero el release factory real `.github/workflows/release.yml` (trigger `push: tags: ['v*']`) tiene `Advisories gate` (línea 125) pero NO `Licenses gate`. Una dependencia con licencia no-permitida pasaba `release.yml` sin detección; solo `release-validate.yml` lo habría bloqueado (y ese workflow no corre en push de tag).
+
+**Implementación (step-only WU, 0 cambios de producto):**
+- `.github/workflows/release.yml` (+10 líneas): nuevo step `Licenses gate (cargo-deny)` paralelo al `Advisories gate` existente. Mismo `cargo install cargo-deny --locked || true` pattern que `release-validate.yml:131`.
+
+**Verificación:**
+- YAML parse: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/release.yml'))"` → parses sin error.
+- `cargo deny check licenses` → `licenses ok` (1.3s, el coste real del nuevo step CI).
+- `cargo test -p cognicode-cli --test a015_licenses_gate` → **3/0/0** (los tests de A-015 son la autoridad local del gate; A-016 es step-only, no añade tests).
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo fmt --all --check` → exit 0.
+
+**Commit:** `761663a7 chore(ci): A-016 release.yml Licenses gate step (paridad con release-validate)` — 1 archivo, +10 insertions, un solo cambio lógico.
+
+**Cierre formal SDDK:** 7 transiciones A-lite (explore→specify→design→build→verify→release→archive) con 8 gate-receipts, 14 eventos añadidos al ledger. Status `CLOSED/archive`, 8 artefactos. WorkItem `54a51a7e-...` → `done`, `exit_gate=archive.complete`.
+
+**Lesson 101 (nueva):** Un CI gate aplicado solo a un workflow operator-gated (`workflow_dispatch` only) no protege el release factory real (`push: tags: ['v*']`). PR-SEC requiere **paridad** entre `release.yml` (factory) y `release-validate.yml` (validate) para que la policy se aplique a todo el pipeline. La aplicación de un gate solo al workflow operator-gated deja un gap en el flujo de release automático.
+
+**SEMVER (regla 6):** `chore(ci)` no es feat/fix. Sin bump. v0.99.2 sin cambios.
+
+**Pendiente del operador (sin cambios desde N+35):**
+1. Push o PR de los **12** commits ahead de `origin/main` con `merge-gate` verde.
+2. Decisión SemVer CP1.
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
+5. **Próximo WU candidato (decisión autónoma del agente):** consolidar los 4 forks de `Session` (Lesson 96 deuda P3) es el siguiente WU de calidad accionable por el agente. Alternativas: PR-SEC remaining (protobuf advisory OTel 0.28 — alto riesgo), CR-01 (operator-gated), A-016 site (cross-repo).
