@@ -6747,3 +6747,60 @@ sin decir nada; `cognicode-cli --lib` es un comando invalido que habria saltado 
 visible. Un error visible se encuentra; uno que ejecuta 2000 tests correctos y 200 equivocados en
 silencio, no. **Por eso el criterio de verificacion no puede ser "el comando corre" sino "el
 selector compila el conjunto que dice compilar".**
+
+---
+
+## Cierre de sesion 2026-09-28 — estado y siguiente bloque
+
+**Entregado y verificado (rama `cp2-a013-lifecycle-gate`, HEAD `bf2880ec`, PR #307 abierto).**
+
+A-014 cerrado con su criterio de aceptacion ejecutado literalmente, no por auto-reporte:
+`cognicode capabilities --json` salia con **exit 2** (`unexpected argument '--json' found`) porque la
+implementacion solo aceptaba `--format json`. No era abreviatura, era el criterio de cierre de la
+unidad roto. Corregido con alias + `conflicts_with`, RED `9/1` → GREEN `10/10`, y el test compara
+los dos documentos emitidos para que un alias no pueda bifurcar el contrato.
+
+Y el gate del CLI paso de 165 a **597 tests** con un step sin restriccion de targets mas
+`--features ladybug`, que es la feature que nunca se habia construido en ningun workflow y sin la
+cual `evidence_cli_mcp_equivalence` compila a un binario de tests **vacio**: 0 tests, exit 0, verde
+eterno bajo cualquier invocacion, incluidas las manuales.
+
+Commits: `29c9f714` (cobertura A-014/A-015), `69523805` (alias `--json`), `35404582` (cierre
+A-014), `ddb5e841` (medicion N+46), `25ac2a0d` (gate del CLI), `a4386f26` (N+47),
+`bf2880ec` (N+48).
+
+**Lo que queda abierto, con numeros (ciclo `cp2-core-coverage-gate` creado y en `explore`).**
+
+`cognicode-core`: 36 ficheros en `tests/`, **4** nombrados en el gate, **4** invocaciones `--lib` que
+son validas pero saltan `tests/` por construccion. Medido: **32 suites, 224 tests, todos verdes,
+ninguno en el gate**. De esas, **8 declaran 46 tests que no se ejecutan nunca**, tras
+`#![cfg(feature = "evidence-kernel")]` a nivel de crate. **Seis de las ocho no corren en ningun
+workflow del repositorio**; las otras dos solo en `ci.yml`, que **no es check de PR**, asi que
+tampoco bloquean un merge. `merge-gate` es el unico check obligatorio.
+
+Criterio de cierre del siguiente bloque, en orden:
+1. `merge-gate` construye `cognicode-core --features evidence-kernel` (si no, esas 8 suites existen
+   solo en el portatil de quien las escribio).
+2. Step sin restriccion para las 32 suites de `tests/`, con los mismos tres pasos de N+47: medir
+   primero, mutar despues, contrato con conteo.
+3. Contrato de cobertura por crate que cuente `tests/*.rs` contra lo que el selector compila
+   (Lesson 116: substring no detecta narrowing; conteo si).
+
+**Pendiente de confirmacion remota:** PR #307 sigue `BLOCKED` con `mergeState: BLOCKED` y sin
+checks conclusions en la ultima lectura. Los 5 steps nuevos (A-009/A-010/A-012/A-013/PRF-SEC-02 de
+N+44, A-014/A-015 y el bloque del CLI) **no tienen confirmacion remota todavia**. Verde local no es
+gate verde: la regla de entrega del proyecto exige `merge-gate` verde sobre el PR antes de integrar
+nada en `main`.
+
+**Decisiones tomadas que conviene no re-litigar:** el alcance del hallazgo y el alcance del arreglo
+son decisiones distintas (Lesson 114); un criterio de aceptacion se ejecuta tal como esta escrito,
+no en la forma que el codigo resulto tener (Lesson 115); una suite que reporta 0 tests es peor que
+una que no corre (Lesson 117); y un gate que ejecuta 2232 tests correctos y 224 equivocados en
+silencio no se encuentra mirando que el comando corra (Lesson 118).
+
+**Correcciones propias de esta sesion, registradas por no perderlas:** un grep mio conto 11 suites
+de core con 0 tests cuando eran 8 (`20 passed` casa con `0 passed`); y el predicado
+"selector sin restriccion" del contrato de cobertura exigia `--tests` **y** `--bins` explicitos
+mientras el workflow usaba un selector de paquete desnudo, o sea que el contrato daba verde sobre
+una definicion que hacia su propio criterio insatisfacible. Ambos se detectaron leyendo, no
+ejecutando.
