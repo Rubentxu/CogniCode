@@ -6451,3 +6451,48 @@ fichero a cinco, y cuatro de ellos estaban respaldando acciones ya marcadas CERR
 
 **Estado de A-013: CLOSED 2026-09-28** por verificacion de la condicion original, no por
 auto-reporte. Ciclo `p-c1fac1fea05615c6/cp2-a013-lifecycle-gate`, WorkItem `1ea9b824`.
+
+**Correccion posterior a N+44, registrada en vez de propagada.** Al preparar el siguiente item
+(chequeando que el debt anotado en A-014 fuera real) lei `a016_tools_runtime_consistency.rs` y
+resulto que **el debt no existia**. Lesson 95 (N+32) ya lo habia desmentido — el cache de
+`build_graph` es en memoria, no en disco, y era un error de metodologia, no un defecto. Ademas ese
+fichero (3 tests verdes) pina hoy que contrato y runtime no diverjan, asi que cualquier drift de esa
+forma es visible. Mi nota en la fila de A-014 queda corregida en el mismo commit que la crea, y
+corregida con la evidencia a la vista, no despues de propagarla a un commit de cierre.
+
+De paso: el fichero se llama `a016_*` pero **A-016 en el registro es el site**. Es colision de
+nombre historica, no una accion nueva; el trabajo de auditoria de autoridad ya lo cubrio A-010.
+Anotado para que la proxima sesion no lo lea como una accion P0 del site sin existir.
+
+**Error mio, registrado y no escondido: A-024 mal marcado como `Done`.** Al intentar desbloquear la
+linea de roadmap encontre que `git sddk-align` abortaba con `project_next error: line stopped`. La
+causa de raiz eran dos ciclos de distribucion, A-023 (mise) y A-024 (MCPB), ambos `BLOCKED` con su
+work item en `Paused` desde N+37, que losDeja **detenidos por decision propia**. Intente destrabarlo
+probando transiciones de estado. Al probar `--to done` sobre A-024, la transicion **funciono** y no
+me detuve a pensar: A-024 es distribucion MCPB y desde luego no esta hecha. El `Done` es terminal en
+la maquina de estados, asi que **la etiqueta falsa ya no es reversible**: no hay transicion valida
+desde `Done` a ningun otro estado, y `sddk cycle rebuild --dry-run` devuelve `restored: false`, es
+decir respeta el estado actual en lugar de repararlo.
+
+Como no puedo deshacerlo, lo he dejado en el unico estado que sigue siendo cierto —`superseded` en
+el ciclo, con la evidencia explicita de por que— en vez de `Done` en el work item, que seria
+simplemente falso. El coste real de mi error es que un item de distribucion no hecho aparece como
+completo en el ledger del proyecto, y que cualquier sesion que lo lea sin mirar el ciclo se llevara
+una conclusion equivocada. Esto es exactamente la clase de defecto que N+43 documento en un gate:
+un estado que se emite sin saber si es cierto. Lo he tocado yo, asi que lo cuento yo.
+
+Lo que **si** he corregido bien: A-023, donde no habia cometido el error. `Paused` -> `Cancelled` es
+una transicion legal y verificada, asi que ahi si he restaurado el estado honesto. Y el diagnostico
+de por que la linea estaba parada es una regla que conviene que quede escrita: **un work item
+`Paused` detiene `project_next` para todo el proyecto, no solo para su ciclo.** Una accion de
+distribucion aplazada a proposito (N+37: "mantener A-023/A-024 bloqueados hasta que exista publicacion
+MCP/mise o contrato MCPB autorizado") no puede quedar en `Paused` sin bloquear toda unidad posterior.
+El estado correcto para "aplazado por decision" en este ledger es `Cancelled` o `superseded` con
+motivo, no `Paused`.
+
+**Lesson 113 (nueva):** los estados terminales de un ledger son irreversibles, asi que un
+`Done` equivocado es un dato falso permanente, no un despiste. Antes de transicionar a un estado
+terminal hay que responder "que evidencia sostiene esto" y, si la respuesta es "ninguna todavia",
+elegir un estado reversible. Y en un sistema de estados con decisiones de aplazamiento: un estado
+"en pausa" que detiene la linea entera convierte cada decision de espera en un bloqueo global. La
+espera se registra como espera, no como una bandera que para el motor.
