@@ -163,6 +163,18 @@ impl RustVerifier {
 
 #[async_trait]
 impl CodeVerifier for RustVerifier {
+    fn toolchain_available(&self) -> Result<(), String> {
+        // `which::which` is a PATH walk, not a fork. That distinction is the
+        // whole point: the earlier `rustc --version` probe called fork()+exec
+        // on every request, and under parallel load the kernel can fail the
+        // fork with EAGAIN, which was then reported as "rustc not found" for a
+        // toolchain that was installed and working — see M0.5 in
+        // MAINTENANCE.md.
+        which::which("rustc")
+            .map(|_| ())
+            .map_err(|_| "rustc not found".to_string())
+    }
+
     fn verify(&self, path: &str) -> Result<CompilationResult, CodeVerifierError> {
         self.verify_impl(path, None)
     }

@@ -64,6 +64,30 @@ pub enum CompilationResult {
 /// a dedicated interface for code verification, separate from file operations.
 #[async_trait]
 pub trait CodeVerifier: Send + Sync {
+    /// Reports whether this verifier's toolchain is usable on this host.
+    ///
+    /// Returns `Err(message)` with the user-facing reason when it is not
+    /// (e.g. `"rustc not found"`), and `Ok(())` otherwise. The caller
+    /// surfaces the message unchanged as an `AppError::InvalidParameter`.
+    ///
+    /// This exists as part of the port rather than as an application-layer
+    /// `which` call for two reasons. A hardcoded probe in the service
+    /// duplicated the adapter's knowledge of its own toolchain, so any other
+    /// backend would still be gated on rustc being installed; and because the
+    /// probe bypassed the injected dependency, the absent-toolchain path could
+    /// not be tested without mutating the process-wide `PATH`, which is
+    /// process-global state and is observed by every concurrently running test.
+    ///
+    /// The default implementation probes nothing and reports available, so an
+    /// implementation that has no external toolchain keeps working without
+    /// opting in. Implementations that spawn a subprocess should override it
+    /// with a lookup that does not fork: a `rustc --version` probe fails with
+    /// EAGAIN under parallel load and gets misreported as a missing toolchain
+    /// (see M0.5 in MAINTENANCE.md).
+    fn toolchain_available(&self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Synchronous verification of a single file.
     ///
     /// Returns `Ok(CompilationResult)` on success (including Skipped/Rejected).
