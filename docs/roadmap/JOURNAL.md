@@ -6373,3 +6373,81 @@ el defecto seguia vivo: es un fallo de logica del gate, no de configuracion. Ana
 entorno habria escondido el defecto en lugar de corregirlo, y habria dejado el gate igual de
 inmune a cualquier otro rango ilegible. El punto de este trabajo es que la clase de defecto no se
 pueda reintroducir aunque alguien vuelva a tocar el workflow.
+
+---
+
+## N+44 — A-013: 46 tests en verde que nunca se ejecutaron
+
+**Contexto recuperado por SDDK, no supuesto.** `sddk cycle status` → sin ciclo activo (los dos
+anteriores CLOSED). `main` = `ab931890`, PR #306 mergeada. Modo `on`, adopción `complete`,
+framework 2.0.1. Agenda: `16-ACTION-REGISTER.md` es la autoridad. A-013 era el P0 mas bajo sin dueño:
+A-009 (su dependencia) CLOSED, A-013 abierta, y tres acciones mas (A-024 P0, A-026, A-038) listandola
+como prerequisito.
+
+**El hallazgo, y por que A-013 no se cerraba.** La suite existia y pasaba: 9 tests, `9 passed`. El
+criterio de cierre de A-013 es literalmente "artifacts: startup→shutdown PASS", asi que la lectura
+rapida era cerrar y seguir. Esa lectura habria sido una mentira, y la comprobacion de si la suite
+podia **detectar** una regresion fue lo que la desmentio:
+
+El selector CR-08 mapea `crates/cognicode-mcp/**` a la suite `mcp`, y `pr-ci.yml` ejecuta esa suite
+como `cargo test -p cognicode-mcp --lib`. **`--lib` no compila `tests/`.** Toda la superficie
+black-box del crate vive en `tests/`. Los 9 tests de A-013 no se ejecutaban en ningun job de ningun
+workflow, y sus 9 verdes locales no significaban nada para el gate.
+
+**El hueco era mas ancho que A-013.** Al auditar la superficie black-box del crate MCP en vez de
+limitarme al fichero de A-013, la lista de contratos no ejecutados era de cinco, no uno:
+A-009 (postura read-only), A-010 (auditoria de autoridad), A-012 (structured output), A-013
+(ciclo de vida) y PRF-SEC-02. Los cuatro primeros son los que sostienen las garantias de CP2 que ya
+figuraban CERRADAS en el registro. Es decir: cuatro acciones cerradas/disparadas apoyandose en
+contratos que el gate no ejecutaba.
+
+**Evidencia de que la suite tiene dientes, antes de cerrar nada.** Mutacion del gate read-only en
+`rmcp_adapter.rs` (`if tool_is_mutating(tool_name) && ctx.read_only...` → `if false && ...`):
+`a013_lifecycle_uat_readonly_rejects_mutating_call_mid_lifecycle` **FAILED** (el `edit_file` bajo
+`--read-only` devolvio `isError:false` y "Multiple matches (2) found for old_string"). Restaurado:
+9/9. Sin esta comprobacion, "9 tests verdes" no distinguia un contrato vivo de un contrato muerto.
+
+**Fix.** Un step por contrato en `merge-gate`, no `cargo test -p cognicode-mcp --tests`: la suite
+completa del crate arrastra escenarios sandbox y networked que no son parte del gate de contrato, y
+meterlos seria cambiar el alcance del gate para tapar un hueco de cobertura. Sigue el patron que ya
+existia en el repo (`qw03_bin_tracking_guard`, `find_usages_compat_0_97`), sin inventar uno nuevo.
+
+**Contrato de cobertura** `crates/cognicode-cli/tests/a013_lifecycle_gate_contract.rs`: pinea que el
+gate *nombre* cada contrato, con la misma forma que `qw08_crate_selector.rs` (afirmar sobre el YAML,
+no sobre un runtime) por la misma razon — un contrato de CI no aplicado puede pudrir en silencio y
+nada mas en el repo lo notaria. Deliberadamente lexico y no parseo de YAML: el repo no fija ningun
+crate YAML en el lado Rust y la asercion es "este comando exacto aparece en este fichero", que una
+regex responde sin inventar dependencia.
+
+Matriz RED→GREEN y mutacion:
+- RED antes del fix: `1 passed; 2 failed`, con el fallo nombrando los cinco contratos ausentes.
+- GREEN: `3 passed`.
+- Mutacion (borrar el pin de A-013 del workflow, sustitucion aplicada y comprobada): `2 failed`.
+- Restaurado: `3 passed`.
+
+**Cobertura real: 46 tests** (9+11+12+9+5) que pasan de "verdes en local" a protegidos por el
+gate. `cargo fmt --all -- --check` limpio, `cargo clippy -p cognicode-cli --tests -- -D warnings`
+limpio, contrato del selector 14/14, gate de contratos de scripts 64/0.
+
+**Decision de alcance que conviene registrar.** No he tocado el selector CR-08 para que la suite
+`mcp` corra los tests de integracion. Seria el arreglo mas elegante y el mas peligroso: la suite
+`mcp` entra por muchisimas rutas (`crates/cognicode-mcp/**`), asi que pasarla a `--tests` multiplica
+el coste de CI en cada PR que toque ese crate, y arrastra escenarios que el gate no puede garantizar
+en un runner. La cobertura se anade donde se mide el coste, y el contrato nuevo impide que alguien
+"simplifique" los pins de vuelta a `--lib` creyendo que son redundantes.
+
+**Deuda registrada, no cerrada.** El comentario de A-013 anota un defecto real que su propia
+ejecucion destapo: `build_graph` esta declarado `authority: read` en `product/tools.json` pero escribe
+cache en disco. A-013 no lo afirma a proposito, porque solo debe anclar la interaccion
+flag/lifecycle para tools en las que contrato y runtime coinciden. Ese desajuste es del dominio de
+tool authority y lo he dejado anotado en la fila de A-014, que es quien lo hereda.
+
+**Lesson 112 (nueva):** "el test pasa" y "el test corre" son afirmaciones distintas, y la segunda
+implica a la tercera: nada. Antes de dar por buena una suite, hay que responder de donde la ejecuta
+el gate, no solo que verde tiene en local. Y la comprobacion que mas informo aqui no fue ejecutar
+los tests, fue **contar cuantos contratos black-box del crate no aparecian en ningun workflow**: al
+mirar el hueco completo en lugar del hueco de la unidad asignada, la unidad_resultado crecio de un
+fichero a cinco, y cuatro de ellos estaban respaldando acciones ya marcadas CERRADAS.
+
+**Estado de A-013: CLOSED 2026-09-28** por verificacion de la condicion original, no por
+auto-reporte. Ciclo `p-c1fac1fea05615c6/cp2-a013-lifecycle-gate`, WorkItem `1ea9b824`.
