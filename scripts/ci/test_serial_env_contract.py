@@ -76,6 +76,29 @@ NOT_A_CALL = {
 # leak between tests. A crate not listed here is checked for nothing.
 SHARED_PROCESS_CRATES = ("cognicode-cli", "cognicode-core")
 
+# Known limits of this audit, stated rather than implied. Both were probed
+# on 2026-09-28 rather than assumed:
+#
+# 1. SCOPE. Only the crates above are checked, because only their unit
+#    tests share a process. `cognicode-cli` has 74 env-writing tests across
+#    174 write sites, all serialised; `cognicode-core` has 0 (the core fix
+#    in a855bcde removed its only writer). A same-shaped defect in a crate
+#    not listed here is NOT covered. This is a deliberate allowlist: a
+#    documented gap is safer than an unverified derivation, which is how the
+#    earlier false negative happened.
+#
+# 2. MACROS. The audit walks direct `fn` calls, so a writer reachable only
+#    through macro expansion is invisible. Probed: a test calling
+#    `my_env_poison!()` is not detected, while a test calling `helper()`
+#    is. No macro in these two crates currently expands to an env mutation
+#    (the four `macro_rules!` in scope are theme/assertion helpers), so
+#    this is a latent gap, not a live defect. If a macro ever wraps
+#    `set_var`, this contract will not catch it.
+#
+# If either limit starts to matter, widen the audit rather than trusting
+# it: the failure mode to avoid is the one that produced Lesson 108, a
+# scanner reporting coverage it does not have.
+
 
 def strip_comments_and_strings(text: str) -> str:
     """Blank comments and string literals, preserving offsets and newlines."""
@@ -304,6 +327,54 @@ def test_fully_qualified_serial_attribute_is_recognised():
         funcs = parse_functions(p)
 
     assert funcs["t"]["serial"] is True, "fully qualified serial was not recognised"
+
+
+def test_audited_crates_actually_exist_and_contain_tests():
+    """The allowlist must name real crates, not stale paths.
+
+    A scanner whose scope list has drifted silently audits nothing while
+    still reporting a clean result. This pins the allowlist against that.
+    """
+    for crate in SHARED_PROCESS_CRATES:
+        root = REPO_ROOT / "crates" / crate
+        assert root.is_dir(), f"{crate} is listed but crates/{crate} does not exist"
+
+    cli_tests = sum(
+        1
+        for path in sorted((REPO_ROOT / "crates" / "cognicode-cli").rglob("*.rs"))
+        for info in parse_functions(path).values()
+        if info["test"]
+    )
+    assert cli_tests > 100, (
+        f"cognicode-cli yielded only {cli_tests} tests; the parser has likely "
+        f"regressed to missing indented functions (Lesson 108)."
+    )
+
+
+def test_known_limit_macro_reached_writer_is_not_detected():
+    """Pins the DOCUMENTED macro blind spot, so it cannot widen silently.
+
+    The audit walks direct `fn` calls, so a writer reachable only through
+    macro expansion is invisible. No macro in the audited crates currently
+    expands to an env mutation, so this is a latent gap. This test asserts
+    the gap still exists: if it ever starts failing, the audit has become
+    macro-aware and the note above should be updated rather than deleted.
+    """
+    import tempfile
+
+    macro_src = (
+        "#[cfg(test)]\nmod tests {\n"
+        "    #[test]\n    fn t() { my_env_poison!(); }\n}\n"
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "macro.rs"
+        p.write_text(macro_src)
+        funcs = parse_functions(p)
+        assert "t" in funcs
+        assert reaches_mutation("t", funcs) is False, (
+            "the audit now detects macro-reached writers; the documented "
+            "limit in the module header is stale and should be corrected"
+        )
 
 
 def main() -> int:
