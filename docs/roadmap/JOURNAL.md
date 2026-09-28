@@ -6116,3 +6116,74 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 **SEMVER:** `feat(skills)` sin impacto en runtime. Sin bump. v0.100.0 sin cambios.
 
 **Próximo WU:** A-037 `skills.sh pack` ya no está bloqueado por A-035 (que ahora existe). Alternativa: wait for A-023/A-024 if operator prefers distribution over skills.
+
+## N+39 — PR-306: dos fallos de `merge-gate`, causas raíz distintas
+
+**Fecha:** 2026-09-28 (recuperación de sesión + ejecución bajo SDDK).
+
+**Recuperación (sin asumir):** `agent-session start` → `head=d1cd28aa`, `branch=main`, `sddk_adoption=complete`. `sddk config resolve` → `mode on` (`declared:workspace`), `git.push human_gate (system-law)`. La rama del PR estaba en `6dd8530a`, 21 commits ahead de `origin/main`, PR #306 `DRAFT`, `mergeStateStatus=BLOCKED`.
+
+**Estado heredado de N+38:** el turno anterior dejó el PR en DRAFT con `merge-gate` rojo y 2 checks en `FAILURE`. Los logs exactos de `gh run view 36456416891 --log-failed` dieron dos causas **sin relación entre sí** — no era un único defecto con dos síntomas.
+
+### Fallo 1 — deriva de versión (4 de 4 checks de contrato)
+
+**Síntoma:** `TOTAL: 43 passed, 4 failed`. Assertions: `manifest["version"] == "0.99.2"` y `SECURITY.md does not mention the actual current version 0.100.0`.
+
+**Causa raíz:** `4702e471` (bump MINOR a 0.100.0) tocó **3 ficheros** — `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md` — y **cero** ficheros bajo `product/` (verificado con `git show --name-only`). Los tres documentos publicados derivan su `version` de `[workspace.package] version`, así que quedaron anunciando 0.99.2 mientras los binarios que describen reportan 0.100.0.
+
+**Por qué llegó a un gate y no al bump:** el test comparaba contra un **literal**. La reacción honesta a un gate rojo es regenerar el artefacto; un test que exige un literal castiga exactamente eso, porque hace que el camino correcto parezca equivocado. La causa de que la deriva llegara tan lejos es el literal, no el bump.
+
+**Fix:** regenerar con los generadores (no edición manual), preservando el sello `source_commit` en el baseline pineado para que los tests que assertan contra `BASELINE` sigan teniendo sentido. El test pasa a leer la versión del workspace de forma independiente. `SECURITY.md` distingue los dos estados que estaban confundidos: 0.100.0 es `main` actual pero **no está tageado** (`git tag --list` → solo existe `v0.99.2`), y `v0.99.2` es el último release. Las referencias a `v0.99.2` en README **se dejan**: nombran el tag real más reciente y ningún test las gatea.
+
+**Evidencia:** `47 passed, 0 failed` (desde `43/4`).
+
+**Commit:** `8c53eace fix(product): republish the artefacts the 0.100.0 bump left stale` — 5 ficheros.
+
+### Fallo 2 — aislamiento de test (`cognicode-core --lib`)
+
+**Síntoma:** `2230 passed; 1 failed` — `application::services::file_operations::tests::test_retrieve_and_verify_deterministic` panicked en `file_operations.rs:3171` con `assert!(result2.is_ok())`. Pasaba en aislamiento, siempre.
+
+**El sospechoso era inocente.** La causa era `test_retrieve_and_verify_rustc_not_found`, **en el mismo módulo**, que quitaba `rustc` del `PATH` de proceso y lo restauraba después. `#[serial]` era la razón de que nadie conectara los dos: ordena los tres tests `#[serial]` del módulo entre sí, pero un binario de test de librería corre los ~2200 tests concurrentemente, así que la ventana sin `rustc` en `PATH` era visible para **todo hermano no-serial**. Un hermano que llegara al chequeo recibía `rustc not found` y fallaba por un motivo ajeno a lo que testeaba.
+
+**La carrera era el síntoma.** El defecto real: la precondición "toolchain ausente" solo se podía preparar mutando estado global de proceso, porque `retrieve_and_verify` gateaba con un `which::which("rustc")` hardcodeado en la capa de aplicación. Eso duplicaba conocimiento que pertenece al adapter — se inyecta cualquier otro verifier y el servicio sigue exigiendo rustc — y **bypasseaba el `CodeVerifier` que el servicio ya inyecta**.
+
+**Fix:** el probe pasa detrás del puerto como `toolchain_available()`, con default `Ok(())` para que un implementor sin toolchain externo no se entere. `RustVerifier` lo sobrescribe con el mismo `which` walk sin fork que ya usaba el código — importante porque el probe con `fork` que lo sustituía falló con EAGAIN bajo carga paralela y se|reportó como "rustc not found" (M0.5). El test inyecta `ToolchainUnavailableVerifier`, queda determinista, y `GitRenameEvidenceAdapter::with_git_program` en este mismo crate es el precedente para inyectar un nombre de programa en vez de mutar el entorno.
+
+**Pin:** `test_lib_tests_do_not_mutate_process_wide_environment` lee el **propio fuente** del módulo. Es un check de fuente a propósito: una mutación ausente no se puede observar corriendo la suite, que es exactamente por qué el defecto original sobrevivió a todas las ejecuciones locales.
+
+**Evidencia (RED antes, GREEN después, más mutación plantada):**
+- RED primero, nombrando `3402: std::env::set_var("PATH", &new_path_str);` y `3418: std::env::set_var("PATH", &original_path);`
+- GREEN tras el fix.
+- **Mutación plantada** (`set_var("PATH", "/nonexistent")` reinsertada) → RED de nuevo con la línea offending reportada → revertida. Confirma que el pin tiene poder de detección y no es un verde vacuuo.
+- `cargo test -p cognicode-core --lib` → `2232 passed; 0 failed; 12 ignored` (2231 antes, +1 por el test nuevo).
+- `cargo test -p cognicode-mcp` → **149 passed, 0 failed** (30 binarios, `a013_lifecycle_uat` 6/6 verde contra el binario real; el oráculo de frescura `the_binary_under_test_is_not_older_than_the_sources_it_was_built_from` pasó).
+- `cargo test -p cognicode-cli` → **578 passed, 0 failed, 2 ignored**.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0 (tras corregir un `collapsible_if` que el propio cambio introdujo).
+- `cargo fmt --all` → exit 0.
+
+**Commit:** `a855bcde fix(core): stop a unit test from rewriting the process-wide PATH` — 3 ficheros, +172/-39.
+
+**Honestidad sobre la evidencia:** el interleaving que rompió CI **no se reprodujo nunca localmente** (suite completa 2231/0 antes del fix; 3 corridas de los 7 tests `retrieve_and_verify` y 6 del test a solas, todas verdes). La causa está establecida por fuente + el fallo exclusivo de CI, y el fix **elimina la mutación de estado compartido** en vez de estrechar una ventana temporal. **CI es la evidencia confirmante** y aún no ha corrido con estos commits.
+
+### Lesson 103 (nueva)
+
+`#[serial]` da assurance falsa. Serializa **los tests que llevan el atributo** entre sí, no contra el resto de la suite concurrente, así que un test `#[serial]` puede corromper un hermano no-serial sin que nada lo advierta. Se lee como "este test está aislado" cuando en realidad solo está aislado de sus pares.
+
+### Lesson 104 (nueva)
+
+Un literal de versión dentro de un test de contrato convierte cada bump en un gate rojo, y la respuesta natural a un gate rojo — regenerar el artefacto — es la correcta. El literal no detectaba la deriva antes: la empujaba hacia un sitio donde la honestidad se castiga. Un test de contrato debe comparar contra la **fuente** (el workspace), no contra una copia de ella. Es la misma clase de error que CP2-DEBT-04 (`--check` auto-invalidándose) y que la Lesson 88 de M0.11, vista desde el otro lado: allí el conteo heredado era evidencia falsa; aquí la expectativa copiada lo era.
+
+### Lesson 105 (nueva)
+
+Una capa de aplicación que gatea con un `which`/`env` hardcodeado por detrás de un puerto inyectado tiene dos defectos, no uno: duplica conocimiento del adapter **y** hace la precondición imposible de testear sin estado global. El puerto ya era la costura; el guard la bypassaba. Cuando un seam existe y no se usa, la pregunta útil no es "cómo testeo esto" sino "por qué el seam no está en el camino".
+
+### SEMVER (regla 6)
+
+`fix(core)` + `fix(product)` → PATCH respecto a 0.100.0, que ya está en la ventana de release de este PR. **Sin bump adicional**: los dos fixes entran dentro de la ventana `v0.100.0` que aún no se ha taggeado.
+
+**Pendiente del operador:**
+1. **Push de los 2 commits a `docs/cp2-a012-closure`** y CI verde. `git.push` es `human_gate (system-law)`; el agente NO auto-autoriza. La sesión anterior sí pusheó esta rama, pero eso no se hereda como consentimiento.
+2. Marcar PR #306 como listo para review (hoy `DRAFT`).
+3. Decisión SemVer CP1 y `release-uat-approved` para `cp1-oss-foundation` (sin cambios desde N+33).
+4. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+5. Tag `v0.100.0` solo después del merge.
