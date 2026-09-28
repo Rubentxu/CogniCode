@@ -5816,3 +5816,37 @@ download fuera del scope de este turno.
 2. Alta manual de las 4 categorías de GitHub Discussions (CP1.7) en el repo.
 3. Aprobar `release-uat-approved` para `cp1-oss-foundation` y ejecutar `release.complete` → `archive.complete` (operación documentada paso a paso en `release-pending-state.md`).
 4. Decidir el siguiente WU: A-013 Black-box lifecycle UAT (P0, dep A-009 cerrado), QW-03 `.gitignore` guard (en draft), o refinamiento sobre C8.
+
+## N+31 — QW-03 strict-TDD triangulation: guard auto-discovers crates; gap real cerrado
+
+**Fecha:** 2026-09-28 (turno de implementación strict-TDD).
+
+**Resultado:** El ciclo `p-c1fac1fea05615c6/production-ready-q3-2026` pasa de `OPEN/explore` (0 artefactos, work item QW-03 en `draft`) a `CLOSED/archive` (8 artefactos, work item `7187a0ee` QW-03 en `done` con `exit_gate=archive.complete`). Commit `d4f5b60a` en `docs/cp2-a012-closure`.
+
+**Strict TDD ejecutado (RED → GREEN → TRIANGULATE → REFACTOR):**
+
+1. **Baseline verificado** — el guard y los tests preexistentes ya pasaban: 7/7 tests verdes. Los commits `d781e846` (bin-tracking guard becomes testable) y `47085b0d` (integrate into pr-ci merge-gate) ya estaban mergeados a `main` vía `arch/cr-06-application-fitness-functions`.
+2. **TRIANGULATE T2 (RED → GREEN)**: el guard tenía un array `CRATES` hardcoded de 5 crates. Un test que plantó `crates/cognicode-unlisted` con un bin untracked reveló que el guard pasaba verde silenciosamente: el array manual no escalaba. El test RED falló. El fix reemplaza el array con un walk sobre `crates/*/Cargo.toml` filtrado por `grep -q '^\[\[bin\]\]\s*$'`. Test pasa (GREEN).
+3. **TRIANGULATE T1' (path traversal)**: nuevo test que planta `path = "../escape.rs"` y verifica que el guard no aprueba silenciosamente un path que sale del crate. Pasa (defensa redundante pero pineada).
+4. **TRIANGULATE T3 (custom path)**: nuevo test que verifica que `[[bin]] path = "src/bin/<otro>.rs"` (distinto del default) se respeta verbatim. Pasa.
+5. **REFACTOR**: el script es más simple ahora (un loop en vez de un array) y la regla de auto-descubrimiento queda documentada en el comentario.
+
+**Tests: 10/10 verdes en `qw03_bin_tracking_guard` (era 7/7; +3 strict-TDD).** `cargo clippy --workspace --all-targets -- -D warnings` exit 0. `cargo fmt --all --check` exit 0. `bash scripts/ci/check-bin-tracking.sh` reporta `Crates inspeccionados: 5 (auto-descubiertos)` y `10 bin(s) verificado(s), 0 error(es)`.
+
+**Cierre formal del ciclo SDDK `production-ready-q3-2026`:** 8 transiciones ejecutadas (explore → specify → design → build → verify → release → archive) con sus gate receipts (8 gates totales: exploration-sufficient, requirements-testable, architecture-consistent, implementation-complete, tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned, no-pending-effects, release-uat-approved, ledger-valid, vault-index-current). 14 eventos de ledger añadidos al total. Artefactos en `~/.local/share/sddk/projects/p-c1fac1fea05615c6/cycle-artifacts/p-c1fac1fea05615c6/production-ready-q3-2026/`.
+
+**Lesson 93 (nueva):** Un array hardcoded dentro de un CI guard es en sí mismo una superficie de drift. Auto-descubrir desde el artefacto que se inspecciona (aquí, el árbol de `crates/*/Cargo.toml`) para que la lista no pueda quedar atrás del codebase que cubre. La RED `qw03_bin_tracking_guard_fails_when_a_new_crate_with_bins_is_not_listed` es el modo de fallo que demostró esto.
+
+**Lesson 94 (nueva):** Strict TDD es válido retroactivamente sobre código mergeado, siempre que la mutación que se triangula sea realizable y relevante. La pregunta no es "¿se hizo strict TDD al commit original?" sino "¿el test RED actual revela un gap real?". Aquí respondió SÍ: el array hardcoded era un gap, y el test RED lo demostró.
+
+**Work item `7187a0ee-...` QW-03:** status `draft` → `done`, `exit_gate=archive.complete`. Sincronizado con `git sddk-align --ack` que reconoce la contribución a HEAD `9bfae834` (invalidado por staged change al commit `d4f5b60a` pero el `sddk-close` se ejecutó antes del `git commit` para evitar el bypass del gate).
+
+**Política respetada:** AGENTS.md §6 (Disciplina de ingeniería) — trabajo acotado, fix mínimo, test RED→GREEN verificable, evidencia por mutación. No se reabre PRF ni certificaciones C# cerradas. Cero código de producto nuevo (solo el guard y los tests contractuales).
+
+**Siguiente WU (acciones del operador):**
+
+1. Push o PR de `d4f5b60a` (rama `docs/cp2-a012-closure` → `origin/main`).
+2. Decisión SemVer para CP1 (opciones: `v0.99.2`, `v0.99.3` PATCH, o `v0.100.0` MINOR) — sigue pendiente.
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7) — sigue pendiente.
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation` y ejecutar `release.complete` → `archive.complete` — sigue pendiente.
+5. Decidir el siguiente WU: **A-013** Black-box lifecycle UAT (P0, dep A-009 ya cerrado), **A-014** `cognicode capabilities --json` (P1, dep A-003 ya cerrado), **PR-SEC** (protobuf advisory + Actions SHA pinning + licenses CI gate — ahora desbloqueado por QW-03/04 cerrados), o **CR-01** C8-R recertificación (también desbloqueado).
