@@ -11,6 +11,7 @@ use crate::infrastructure::graph::{
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::{OutlineNode, SymbolCodeService};
 use clap::{CommandFactory, Parser, Subcommand};
+use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Instant;
 use tracing::info;
@@ -174,6 +175,22 @@ pub enum CliCommand {
     #[cfg(feature = "evidence-cli-ladybug")]
     #[command(name = "evidence", subcommand)]
     Evidence(EvidenceCommand),
+
+    /// A-014 / CP2.4 — Machine-readable capability discovery.
+    ///
+    /// Emits a single JSON document on stdout (schema
+    /// `cognicode.capabilities/v1`) describing the tools, profiles
+    /// and runtime mutating set of the binary in front of you. The
+    /// `--format json` mode is the canonical contract; the default
+    /// `text` mode prints a short human summary on stdout.
+    ///
+    /// Pin contract: `crates/cognicode-cli/tests/a014_capabilities_json.rs`
+    /// (5 strict-TDD tests).
+    Capabilities {
+        /// Output format: `text` (default) or `json`.
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
 }
 
 /// E1.W3 — `cognicode evidence <list|search>`.
@@ -564,6 +581,11 @@ impl CommandExecutor {
             Some(CliCommand::Evidence(cmd)) => {
                 if let Err(e) = Self::execute_evidence(cmd).await {
                     eprintln!("evidence command failed: {}", e);
+                }
+            }
+            Some(CliCommand::Capabilities { format }) => {
+                if let Err(e) = Self::execute_capabilities(format).await {
+                    eprintln!("capabilities command failed: {}", e);
                 }
             }
             None => {
@@ -1497,6 +1519,48 @@ impl CommandExecutor {
         std::process::exit(exit_code);
     }
 
+    /// Execute the capabilities subcommand (A-014 / CP2.4).
+    ///
+    /// Emits a schema-versioned JSON document on stdout (the
+    /// canonical contract for downstream skills / integration
+    /// adapters). With `--format text` (default) prints a short
+    /// human summary. Either way stderr stays clean unless an
+    /// error is reported (the warning path for missing
+    /// `product/*.json` is the one exception).
+    async fn execute_capabilities(format: &str) -> Result<(), Box<dyn std::error::Error>> {
+        // Build the doc in memory first so any error in construction
+        // is reported as a structured envelope and never leaks a
+        // partial document to stdout.
+        let doc = build_capabilities_doc();
+
+        if format == "json" {
+            let serialized = serde_json::to_string(&doc)?;
+            println!("{}", serialized);
+        } else {
+            let tools = doc["tools"].as_array().map(|a| a.len()).unwrap_or(0);
+            let profiles = doc["profiles"].as_array().map(|a| a.len()).unwrap_or(0);
+            let mutating = doc["runtime"]["mutating_tools"]
+                .as_array()
+                .map(|a| a.len())
+                .unwrap_or(0);
+            println!("CogniCode Capabilities");
+            println!(
+                "  cli_version:    {}",
+                doc["cli_version"].as_str().unwrap_or("")
+            );
+            println!(
+                "  source_commit:  {}",
+                doc["source_commit"].as_str().unwrap_or("")
+            );
+            println!("  tools:          {}", tools);
+            println!("  profiles:       {}", profiles);
+            println!("  mutating_tools: {} (runtime)", mutating);
+            println!();
+            println!("Pass `--format json` for the machine-readable contract.");
+        }
+        Ok(())
+    }
+
     /// Execute the `docs-ingest` subcommand (T15). Walks
     /// `path` with the [`DocsExtractor`] and prints a
     /// structured summary to stdout. Idempotent: re-running on
@@ -2170,6 +2234,122 @@ fn print_text_render(out: &crate::interface::mcp::schemas::FindUsagesOutput) {
             ctx = u.context,
         );
     }
+}
+
+// ============================================================================
+// A-014 / CP2.4 — `cognicode capabilities` subcommand.
+//
+// The `build_capabilities_doc` function is intentionally free-standing
+// (not a method on `CommandExecutor`) so unit tests can call it
+// directly without spawning the binary. The only side effect is the
+// optional `git rev-parse HEAD` call for `source_commit`, which has a
+// graceful fallback to the empty string when git is unavailable.
+// ============================================================================
+
+/// Build the JSON document for `cognicode capabilities` (A-014).
+///
+/// Sources (in precedence order):
+///   1. `product/tools.json` for the public tool catalogue.
+///   2. `product/profiles.json` for the public profile surface.
+///   3. `crate::product::PROFILE_POSTURES` (canonical runtime
+///      posture; overrides the published `mutating` flag if the two
+///      disagree — the runtime is authoritative).
+///   4. `CogniCodeHandler::MUTATING_TOOLS` (canonical runtime
+///      mutating set; the source of truth for `--read-only` filtering).
+///   5. `git rev-parse HEAD` for `source_commit` (best-effort).
+///
+/// No network, no mutation. Reading from `product/*.json` falls back
+/// to runtime-only data when the artefacts are missing (rare; only
+/// happens if the binary was built against a tree where the files
+/// have been moved). A warning is emitted on stderr in that case.
+fn build_capabilities_doc() -> Value {
+    use crate::interface::mcp::rmcp_adapter::CogniCodeHandler;
+    use crate::product::PROFILE_POSTURES;
+
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
+    let tools_path = workspace_root.join("product").join("tools.json");
+    let profiles_path = workspace_root.join("product").join("profiles.json");
+
+    let mut doc = serde_json::json!({
+        "schema_version": "cognicode.capabilities/v1",
+        "cli_version": env!("CARGO_PKG_VERSION"),
+        "source_commit": current_source_commit(workspace_root),
+    });
+
+    let mut profiles_arr: Vec<Value> = Vec::new();
+    if let Ok(text) = std::fs::read_to_string(&profiles_path)
+        && let Ok(parsed) = serde_json::from_str::<Value>(&text)
+        && let Some(arr) = parsed.get("profiles").and_then(|v| v.as_array())
+    {
+        let posture_by_id: std::collections::HashMap<&str, bool> = PROFILE_POSTURES
+            .iter()
+            .map(|(id, posture)| (*id, !posture.is_read_only()))
+            .collect();
+        for p in arr {
+            let id = p.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            let mut entry = p.clone();
+            if let Some(&mutating) = posture_by_id.get(id) {
+                // Runtime posture is authoritative.
+                entry["mutating"] = Value::Bool(mutating);
+            }
+            profiles_arr.push(entry);
+        }
+    }
+    if profiles_arr.is_empty() {
+        profiles_arr = PROFILE_POSTURES
+            .iter()
+            .map(|(id, posture)| {
+                serde_json::json!({
+                    "id": id,
+                    "mutating": !posture.is_read_only(),
+                })
+            })
+            .collect();
+    }
+    doc["profiles"] = Value::Array(profiles_arr);
+
+    let mut tools_arr: Vec<Value> = Vec::new();
+    if let Ok(text) = std::fs::read_to_string(&tools_path)
+        && let Ok(parsed) = serde_json::from_str::<Value>(&text)
+        && let Some(arr) = parsed.get("tools").and_then(|v| v.as_array())
+    {
+        for t in arr {
+            tools_arr.push(t.clone());
+        }
+    }
+    if tools_arr.is_empty() {
+        eprintln!(
+            "warning: {} not found; emitting empty tools array",
+            tools_path.display()
+        );
+    }
+    doc["tools"] = Value::Array(tools_arr);
+
+    let mutating_tools: Vec<&str> = CogniCodeHandler::MUTATING_TOOLS.to_vec();
+    doc["runtime"] = serde_json::json!({
+        "mutating_tools": mutating_tools,
+        "mutating_tools_count": mutating_tools.len(),
+    });
+
+    doc
+}
+
+/// Resolve `source_commit` for the capabilities document.
+///
+/// `git rev-parse HEAD` via subprocess; returns the empty string if
+/// git is missing or the working tree is not a git checkout.
+fn current_source_commit(workspace_root: &std::path::Path) -> String {
+    std::process::Command::new("git")
+        .arg("rev-parse")
+        .arg("HEAD")
+        .current_dir(workspace_root)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
