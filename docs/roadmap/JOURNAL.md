@@ -6187,3 +6187,17 @@ Una capa de aplicación que gatea con un `which`/`env` hardcodeado por detrás d
 3. Decisión SemVer CP1 y `release-uat-approved` para `cp1-oss-foundation` (sin cambios desde N+33).
 4. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 5. Tag `v0.100.0` solo después del merge.
+
+### Auditoría de clase del defecto (N+39, post-fix)
+
+Un fix que solo quita *la instancia* y no *la clase* deja la siguiente ocurrencia sin cubrir. Se auditó el workspace completo para las dos clases de defecto de este turno.
+
+**Clase 1 — literal de versión en test de contrato.** `grep -rEn '"0\.[0-9]+\.[0-9]+"'` sobre `scripts/product/test_*.py` y `scripts/ci/test_*.py` → **cero coincidencias**. `test_product_manifest.py` era el único fichero del repo con un literal de versión, y es el que se corrigió. Sin recurrencia.
+
+**Clase 2 — mutación de env en tests.** `cognicode-core` tenía **un** par `set_var`: el corregido. `cognicode-cli` tiene ~140 call sites, pero **no son el mismo defecto**: `layout.rs:1090-1140` define un guard RAII `TempCognicodeHome` cuyo doc comment declara el contrato explícitamente (*"Callers MUST be `#[serial]`... SAFETY: callers are `#[serial]`; no concurrent env mutation"*). El crate de CLI ya resolvió esto por inyección; **core era el outlier** que leía `std::env` directamente.
+
+**Sobre el método (la parte que importa):** una primera comprobación automática reportó **5 violaciones** en `installer_transaction.rs`, y una segunda pasada **1** en `layout.rs`. **Las 6 eran falsos positivos** de un regex que buscaba `#[serial` y no veía el `#[serial_test::serial]` totalmente cualificado que el crate usa realmente. Al leer los 6 sitios a mano, todos o bien llevaban `#[serial]` bajo la grafía cualificada, o bien eran **funciones helper, no tests**, cuya garantía vive en el test que las llama: `f6w3_install_a` y `f6w3_install_via_fixture_round_trip` son helpers, alcanzadas desde `cmd_rollback_reverses_a_committed_install` (`layout.rs:1648`), que sí lleva `#[test]` + `#[serial]`. Comprobación corregida sobre `crates/*/src/**/*.rs`: **0 violaciones reales**.
+
+**Lesson 106 (nueva):** un grep que reporta N violaciones es un **generador de hipótesis, no un hallazgo**. Aquí produjo 6, de las cuales 6 eran erróneas; si se hubiera tomado como evidencia, se habrían fabricado 6 defectos fantasma y se habría mandado al siguiente agente a destripar un contrato de guard que está intacto. Regla: leer el sitio marcado antes de reportar un defecto, sobre todo cuando el codebase ya documenta un patrón que el regex no conoce. El eco de la Lesson 99: la Lesson 95 original era imprecisa y hubo que corregirla antes de actuar sobre ella; aquí la imprecisa era la herramienta.
+
+**Estado de la auditoría: CLOSED — sin recurrencia en ninguna de las dos clases.**
