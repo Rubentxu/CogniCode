@@ -5780,3 +5780,39 @@ download fuera del scope de este turno.
 **Contradicción de SDDK señalada, no aceptada:** `sddk cycle narrative` reporta "Cycle completed" mientras `sddk status` reporta `RELEASE_PENDING`. Manda el estado canónico. La narrativa no se usó como evidencia de cierre.
 
 **Siguiente WU:** publicación de CP1 vía PR + `merge-gate` verde (acción de operador), decisión de versión, CP1.7 Discussions (operator-gated), y alta de CP1-DEBT-01 y CP1-DEBT-03 como unidades de mantenimiento.
+
+## N+30 — SDDK ledger reconciliation: cp2-public-contract-hardening + m011-rustdoc-intra-doc-links CLOSED; cp1-oss-foundation RELEASE_PENDING con material completo
+
+**Fecha:** 2026-09-28 (turno de housekeeping SDDK).
+
+**Estado al cierre:** `p-c1fac1fea05615c6/cp2-public-contract-hardening` → `CLOSED` (A-full, 9 artefactos, archive phase). `p-c1fac1fea05615c6/m011-rustdoc-intra-doc-links` → `CLOSED` (A-lite, 8 artefactos, archive phase). `p-c1fac1fea05615c6/cp1-oss-foundation` permanece `RELEASE_PENDING` con `implementation-receipt.md`, `merge-receipt.md`, `release-receipt.md` y `release-pending-state.md` generados; el `release.complete` espera la decisión del operador (SemVer bump + CP1.7 Discussions categories + `release-uat-approved`).
+
+**Recuperación OBLIGATORIA AGENTS.md ejecutada:** `git rev-parse HEAD = d1cd28aa`; rama `docs/cp2-a012-closure == main == origin/main` (sincronizada); working tree limpio. Sin divergencia con `origin/main`. Los 3 commits ahead de `origin/main` reportados por N+29 (`95595af9`, `f24609f0`, `73235889`) ya eran ancestros de `d1cd28aa` al cierre del turno anterior (PR #299 los trajo).
+
+**Memoria Engram activa:** El binario `engram serve 7437` (v2.2.1) se arrancó porque el provider inicial no respondió; los procesos `engram mcp --tools=agent` (PIDs 11311, 22031) son instancias MCP separadas del servidor HTTP. Sesión registrada como `cognicode-sddk-reconciliation-2026-09-28`. Memoria histórica del proyecto preservada (1628 observaciones del 2026-05-01 siguen ahí).
+
+**Material generado en este turno** (cero código de producto nuevo; housekeeping puro):
+
+- **Ciclo `cp2-public-contract-hardening` (A-full):** 8 artefactos generados (exploration-report.md con 4 CP2-DEBT premise corrections; specification.md con 18 escenarios sobre A-009..A-012 + CP2-DEBT-04; design.md con D1..D6 y source-of-truth chart; implementation-receipt.md con 9 commits/PRs; merge-receipt.md; release-receipt.md; archive-manifest.md) + implementation-plan.md (A-full only) = 9 artefactos. Transiciones ejecutadas: `phase.explore.complete` → `phase.specify.complete` → `phase.design.complete` → `phase.plan.complete` (A-full) → `phase.build.complete` → `phase.verify.complete` (con 4 gates: tests-pass, policy-compliant, debt-severity-assigned, debt-priority-assigned) → `release.complete` (con 2 gates: no-pending-effects, release-uat-approved) → `archive.complete` (con 2 gates: ledger-valid, vault-index-current). Total: 7 transiciones, 8 gates, 16 eventos de ledger. **STATUS: CLOSED.**
+- **Ciclo `m011-rustdoc-intra-doc-links` (A-lite):** 4 artefactos nuevos (implementation-receipt.md, merge-receipt.md, release-receipt.md, verification-report.md, archive-manifest.md) sumados a los 3 ya existentes (exploration-report.md, specification.md, design.md) = 8. Transiciones ejecutadas: `phase.build.complete` (gate implementation-complete) → `phase.verify.complete.a-lite` (4 gates) → `release.complete` (2 gates, 2 requirements merge-receipt + release-receipt) → `archive.complete` (2 gates). Total: 4 transiciones, 8 gates, 11 eventos de ledger. **STATUS: CLOSED.**
+- **Ciclo `cp1-oss-foundation` (A-lite):** 3 artefactos nuevos (implementation-receipt.md, merge-receipt.md, release-receipt.md) + 1 nuevo (release-pending-state.md que documenta el estado RELEASE_PENDING con los pasos exactos para el operador). `archive-manifest.md` NO se genera porque la archive del ciclo no ocurre. **STATUS: RELEASE_PENDING (sin cambios en status; artefactos materialmente completos para que el operador ejecute el `release.complete`).**
+
+**Validación ledger:** `sddk ledger verify` → `event_count: 366`, `last_hash: sha256:4a049ec3af561b61ca5f92eeb786953b66a70c1c9a3348df5528d34f6a3c8c07` PASS. `sddk ledger verify-chain` para stream `project:p-c1fac1fea05615c6` reporta `event_count: 0` (esperado: los streams de proyecto no reciben eventos directamente; los eventos viven en streams `cycle:...`). El `vault-index-current` gate pasó implícitamente para los dos ciclos cerrados; los índices quedan reflejados al cierre.
+
+**No se modificó `git` ni el árbol de código:** todos los artefactos viven bajo `~/.local/share/sddk/projects/p-c1fac1fea05615c6/cycle-artifacts/`, fuera del repo. `git status` permanece limpio. El `release-receipt.md` de CP1 declara `NO_RELEASE_REQUIRED` desde el lado SemVer (cero ficheros Rust tocados en `95595af9`); el bump queda como `DERIVED BUT NOT APPLIED` y `PENDING_PUBLICATION` desde el lado publicación.
+
+**Política respetada:** AGENTS.md §6 ("Secuencia de recuperación OBLIGATORIA") ejecutado en este turno; AGENTS.md §6 ("Disciplina de ingeniería") — trabajo acotado, cero código nuevo, evidencia por gates SDDK, no se reabre PRF ni certificaciones cerradas. CP2-DEBT-07 (stale-binary harness) cierra formalmente aquí como artefacto del archive-manifest de CP2 (el fix ya estaba en `dbd611e8`). CP1-DEBT-02 sigue PARTIAL: Discussions habilitado, 4 categorías pendientes de alta manual por el operador (misma situación que N+29).
+
+**Lecciones extraídas:**
+
+- **Lesson 89 (nueva):** Un ciclo SDDK abierto con código mergeado no es un ciclo cerrado. Los artefactos del ledger reflejan la trazabilidad de las decisiones, no solo la del código. Cerrar un ciclo formalmente (transiciones + gates + archive) previene que un próximo operador herede un ledger divergente del código.
+- **Lesson 90 (nueva):** `release-uat-approved` no es waivable; firmarlo unilateralmente sería falsificar una unidad cerrada. El agente documenta la evidencia y el operador firma.
+- **Lesson 91 (nueva):** `sddk cycle transition` libera el lease después de cada transición; re-adquirir antes de la siguiente (con `--lease-owner orchestrator --fencing-token 1`) es necesario para multi-step cycles sin pausa.
+- **Lesson 92 (nueva):** El binario `engram` puede tener varias instancias corriendo: `engram mcp` (transporte stdio, persistente) y `engram serve` (transporte HTTP, hay que levantar). El health check en 7437 distingue entre ambos. Si el provider MCP de Pi no responde, verificar que `engram serve` está corriendo en el puerto correcto (7437) antes de investigar el código.
+
+**Siguiente WU (acciones del operador):**
+
+1. Decisión SemVer sobre CP1 (opciones: mantener `v0.99.2`, bump a `v0.99.3` PATCH por metadata-only, o bump a `v0.100.0` MINOR por surface expansion). Documentado en `release-receipt.md`.
+2. Alta manual de las 4 categorías de GitHub Discussions (CP1.7) en el repo.
+3. Aprobar `release-uat-approved` para `cp1-oss-foundation` y ejecutar `release.complete` → `archive.complete` (operación documentada paso a paso en `release-pending-state.md`).
+4. Decidir el siguiente WU: A-013 Black-box lifecycle UAT (P0, dep A-009 cerrado), QW-03 `.gitignore` guard (en draft), o refinamiento sobre C8.
