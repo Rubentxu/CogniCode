@@ -54,23 +54,38 @@ done
 
 cd "$TARGET_ROOT"
 
-# Crates a inspeccionar (los que tienen [[bin]] en este workspace).
-# Si añades un crate nuevo con bins declarados, añádelo aquí.
-CRATES=(
-  "crates/cognicode-cli"
-  "crates/cognicode-explorer"
-  "crates/cognicode-mcp"
-  "crates/cognicode-runtime"
-  "crates/cognicode-sandbox"
-)
+# Auto-descubrir crates con [[bin]] declarado en vez de mantener
+# un array hardcoded. El array manual es un drift surface — si
+# añade un crate con bins declarados, hay que actualizarlo a mano;
+# si se olvida, el guard pasa silenciosamente con un bin
+# untracked en el crate omitido. El walk es workspace-relative
+# (`crates/*/Cargo.toml`) y omite Cargo.lock del workspace root.
+#
+# Auto-discovery gaps prev: la iteración manual previa listaba
+# 5 crates. La triangulación T2 del strict-TDD mostró que un
+# crate nuevo con [[bin]] pasaba el guard verde silenciosamente.
+# Este walk es el fix.
+CRATES=()
+for cargo_toml_candidate in "$TARGET_ROOT/crates"/*/Cargo.toml; do
+  [ -f "$cargo_toml_candidate" ] || continue
+  # Ignorar workspaces anidados o archivos lock.
+  case "$(basename "$cargo_toml_candidate")" in
+    Cargo.toml) ;;
+    *) continue ;;
+  esac
+  # Si el crate tiene al menos un [[bin]] en su manifest,
+  # añadirlo al array. Un crate sin bins no necesita inspección.
+  if grep -q -E '^\[\[bin\]\]\s*$' "$cargo_toml_candidate"; then
+    CRATES+=("crates/$(basename "$(dirname "$cargo_toml_candidate")")")
+  fi
+done
 
 errors=0
 checked=0
 bin_names=()
 
 echo "→ Guard de bin source tracking (QW-03, 2026-09-26)"
-echo "  Crates inspeccionados: ${#CRATES[@]}"
-echo
+echo "  Crates inspeccionados: ${#CRATES[@]} (auto-descubiertos)"
 
 for crate in "${CRATES[@]}"; do
   cargo_toml="$TARGET_ROOT/$crate/Cargo.toml"
