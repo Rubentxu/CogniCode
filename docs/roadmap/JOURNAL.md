@@ -6098,3 +6098,21 @@ El agente deja la decisión al operador; el código está en HEAD sin modificar 
 **Clasificación:** defecto confirmado y falso éxito corregido. **SemVer:** `fix(cli)` implica PATCH; no se creó tag ni se publicó release.
 
 **Siguiente:** revalidar HEAD, crear commit atómico y cerrar el ciclo SDDK. Mantener A-023/A-024 bloqueados hasta que exista publicación MCP/mise o contrato MCPB autorizado.
+
+## N+38 — Retrospectiva + A-035 `cognicode-pr-review` skill bundle
+
+**Fecha:** 2026-09-28 (investigación retrospectiva + ejecución autónoma SDDK).
+
+**Investigación retrospectiva (N+37):** verificado que los ciclos anteriores (`cogh-setup-health-exit`, `a-034-agent-hardness-skill`) no introdujeron regresiones. Suite completa verde (325 tests binary cogh, 11 cogh_cli). Test rollback transitorio fue aislable y estable (3/3). SkillSet no incluye `agent-hardness` por diseño (pack se forma cuando las 4 launch skills maduran).
+
+**A-035 ejecutada:** `cognicode-pr-review` no existía. Creado `skills/cognicode-pr-review/SKILL.md` (289 líneas, six-step workflow: diff → changed symbols → consumers/usages → impact → architecture → tests/CI evidence → report) y `manifest.yaml` (31 líneas). Validaciones: `validate_skills.py` PASS 6 skills, `verify-skills.sh` PASS 6 skills.
+
+**Commit:** `af07e524 feat(skills): add cognicode-pr-review skill bundle` — 2 archivos, +320 insertions.
+
+**Cierre SDDK:** ciclo A-lite CLOSED, WorkItem `dea7f486-...` → `done`, 8 artefactos. Ledger 601 eventos.
+
+**Lesson 102 (nueva):** el launch pack de skills se completa skill a skill. Cada skill bundle se crea cuando sus dependencias están satisfechas, sin esperar a que todas estén creadas. El pack se activa cuando las 4 skills del launch set existen.
+
+**SEMVER:** `feat(skills)` sin impacto en runtime. Sin bump. v0.100.0 sin cambios.
+
+**Próximo WU:** A-037 `skills.sh pack` ya no está bloqueado por A-035 (que ahora existe). Alternativa: wait for A-023/A-024 if operator prefers distribution over skills.
