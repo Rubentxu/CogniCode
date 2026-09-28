@@ -10,6 +10,56 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.100.0] — 2026-09-28 (drafted)
+
+MINOR bump from v0.99.2 (rule 6): `feat(cli): A-014 cognicode capabilities
+--format json` (commit `3adca737`) added a public subcommand and a new
+machine-readable capability document. Anything that consumes that
+document (skills A-033..037, integration adapters) treats it as a
+public surface, so the bump follows.
+
+This release also accumulates (without further bump) the
+`test`, `chore`, `docs` and `refactor` commits in the v0.99.2..v0.100.0
+window per rule 6 (no feat commits besides the trigger above):
+
+- `test(mcp): A-013 black-box lifecycle UAT (startup→shutdown PASS)`
+  — 6 tests pinning the runtime contract.
+- `chore(ci): QW-03 bin-tracking guard auto-discovers crates` — CI
+  gate against silent untracked binaries.
+- `chore(ci): A-015 cargo deny check licenses step en release-validate`
+  — supply-chain licence gate in CI.
+- `chore(ci): A-016 release.yml Licenses gate step (paridad con
+  release-validate)` — release factory parity.
+- `test(mcp): A-016 tools/runtime contract consistency pin
+  (reciprocidad)` — auto-pin against contract/runtime drift.
+- `refactor(mcp): consolidate 3 Session forks onto common::McpSession`
+  — code-quality consolidation (Lesson 96 part 1; one fork
+  remaining for divergence reason).
+- `docs(roadmap): JOURNAL N+30..N+36` — operator-facing receipts.
+
+### Added
+
+- **`cognicode capabilities --format json`** (A-014): a single schema-
+  versioned JSON document on stdout describing tools, profiles, and
+  the runtime mutating set. Schema: `cognicode.capabilities/v1`.
+  Used by future skills (A-033..037) and integration adapters.
+
+### Changed
+
+- **QW-03 bin-tracking guard**: replaced the hand-maintained CRATES
+  list with a workspace walk filtered by `[[bin]]` declarations, so
+  a new crate with bins is detected automatically. CI guard.
+
+### Governance
+
+- **cargo deny check licenses**: CI step in both `release-validate.yml`
+  and `release.yml` (`A-015`, `A-016`). Without these steps, a
+  dependency with an unlisted licence would slip past the release
+  factory without detection.
+- **PR-SEC remaining**: `RUSTSEC-2024-0437` (protobuf advisory)
+  remains `ignore`d in `deny.toml`. Fix requires OpenTelemetry
+  0.27→0.28 migration; its own unit.
+
 ## [v0.50.0 — v0.86.0] — 2026-07-22 → 2026-08-05 (reconstructed summary)
 
 Period summary: 307 commits across 36 version tags (v0.50.0 → v0.86.0)

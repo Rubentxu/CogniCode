@@ -22,7 +22,7 @@ members = [
 exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
-version = "0.99.2"
+version = "0.100.0"
 edition = "2024"
 authors = ["CogniCode Team"]
 # ADR-011 (CP1.1): license of record, formalising the deferral M0.9 left open.
