@@ -6245,3 +6245,28 @@ El contrato **no se limita a repetir el escaneo**: incluye sus propios self-test
 **Verificación completa.** Gate de contratos tal como lo ejecuta CI: **53 passed, 0 failed**. `cognicode-cli` 29 binarios sin fallos, flake check 0/8 a 16 threads, fmt 0, clippy `-D warnings` 0.
 
 **Lesson 109 (nueva):** un contrato que nadie ejecuta es un comentario con assertions. El valor de `test_ci_contracts.py` no era su regex, era estar **enganchado al gate**. Sin el enganche, esta nuevasuite habría sido el cuarto artefacto de auditoría que existe, acierta y no previene nada.
+
+### Gate que solo podia pasar en un clon completo (N+42)
+
+Con la autorizacion del operador (push pre-aprobado), se empuja la rama de PR #306. CI responde con un fallo nuevo, distinto de los dos ya diagnosticados:
+
+```
+FAIL test_security_policy_supported_versions_are_real
+AssertionError: SECURITY.md names versions that were never released: ['0.99.2']
+```
+
+**`v0.99.2` si existe**: `d84508f0 refs/tags/v0.99.2` en `origin`, y el ROADMAP registra su liberacion el 2026-09-27. El documento era correcto; la asercion miente.
+
+**Causa raiz.** El test pregunta `git tag --list` si una version fue liberada. `actions/checkout` sin `fetch-depth` produce un clon superficial **sin tags**, asi que la lista sale vacia y toda version liberada parece inventada. El test solo podia pasar en un clon local completo: verde aqui, rojo alla. Misma clase que CP2-DEBT-07 (un gate cuya suposicion de entorno nunca se verifico).
+
+**Fix en dos partes, y la segunda es la que importa.**
+1. El test separa "no veo tags" de "esta version no fue liberada". Consulta `git ls-remote --tags origin` cuando falta vision local; si ninguna fuente responde, verifica solo la version actual y lo dice en el mensaje, en vez de fallar por evidencia ausente.
+2. El job `check` hace checkout con `fetch-depth: 0`.
+
+**El hallazgo que hace relevante el punto 2.** El fix (1) solo dejaba el gate en verde **pero le quitaba los dientes**: sin vision de tags, una version inventada deja de distinguirse de una liberada. Al plantar `9.99.9` el test **no lo detecto**. Ese fue el que mantiene vivo el check estricto en CI en vez de perderlo en silencio. Un fix que solo satisface el caso que falla es peor que el bug original.
+
+**Evidencia.** RED reproducido en un clon `--depth 1 --no-tags` con el mensaje identico al de CI. Matriz: sin-tags+correcto PASS, sin-tags+inventado RED, con-tags+inventado RED. Gate de contratos 55/0. `pr-ci.yml` parsea y `steps[0].with == {fetch-depth: 0}`.
+
+**Nota de método.** Mi primer test de mutación **era incorrecto**: planteé `| 0.99.2 |` pero la fila real es `| 0.99.2 (latest release, \`v0.99.2\`) | yes |`, asi que la mutación nunca se aplicó y llegué a leer un fallo del fix que no existía. Verificar que la mutación **se aplicó** es parte de probarla.
+
+**Lesson 110 (nueva):** un gate que consulta el estado de git debe declarar su suposicion de entorno. "La lista de tags esta vacia" y "no existen tags" son afirmaciones distintas, y confundirlas produce un gate que solo es verde donde el developer tiene el clon completo — es decir, verde exactamente donde no protege.
