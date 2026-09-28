@@ -194,6 +194,21 @@ pub enum Command {
     Where { binary: String },
     /// Initialize ~/.cognicode/ with bundled plugins
     Init,
+    /// A-015 / CP2.4-onboarding — single happy path: `init` then `doctor`.
+    ///
+    /// `cogh setup` is the on-ramp for a fresh install. It runs the two
+    /// local-only steps the operator can do without a remote channel:
+    ///   1. `cogh init` — populate the home layout with bundled plugins
+    ///      (idempotent; no-op if the layout is already initialised).
+    ///   2. `cogh doctor` — report health on the four orthogonal
+    ///      dimensions (core, MCP, native analysis, isolation).
+    ///
+    /// It does NOT call `cogh install` (which requires a remote
+    /// release channel) — that step remains a separate operator
+    /// decision because the choice of channel/version is policy, not
+    /// default. After `cogh setup` returns exit 0, the install is
+    /// ready to be wired into an IDE via `cogh install --ide <name>`.
+    Setup,
     /// Plugin management (add/remove/list)
     Plugin {
         #[command(subcommand)]
@@ -280,6 +295,16 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init => layout::cmd_init(&home),
+        Command::Setup => {
+            // A-015: chained init → doctor. Idempotent: re-running on
+            // an already-initialised home is safe (init no-ops).
+            layout::cmd_init(&home)?;
+            layout::cmd_doctor(&home)?;
+            println!();
+            println!("Setup complete. Next: cogh install --ide <name> to wire");
+            println!("a specific version into an IDE adapter.");
+            Ok(())
+        }
         Command::Install {
             plugin,
             version,

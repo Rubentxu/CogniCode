@@ -193,6 +193,60 @@ fn cogh_current_reads_pinned_version_from_tracker() {
 }
 
 // ============================================================================
+// REQ: `cogh setup` provides the local install → doctor happy path
+// ============================================================================
+
+#[test]
+fn cogh_setup_initialises_home_and_runs_doctor() {
+    let home = tempfile::tempdir().expect("create temp home");
+    let out = run_cogh(home.path(), ["setup"]);
+
+    assert!(
+        out.status.success(),
+        "cogh setup must exit 0 on a fresh home; got {:?}\nstderr: {}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let body = stdout(&out);
+    assert!(
+        body.contains("Initialized") && body.contains("Installed"),
+        "setup must report the init step; got: {body}"
+    );
+    assert!(
+        body.contains("cogh doctor"),
+        "setup must report the doctor step; got: {body}"
+    );
+    assert!(
+        body.contains("Setup complete"),
+        "setup must report completion; got: {body}"
+    );
+    assert!(
+        home.path().join("bin").is_dir(),
+        "setup must initialise the home layout"
+    );
+}
+
+#[test]
+fn cogh_setup_is_idempotent_for_initialised_home() {
+    let home = tempfile::tempdir().expect("create temp home");
+    let first = run_cogh(home.path(), ["setup"]);
+    assert!(
+        first.status.success(),
+        "first setup failed: {:?}",
+        first.status
+    );
+
+    let second = run_cogh(home.path(), ["setup"]);
+    assert!(
+        second.status.success(),
+        "second setup must remain successful; got {:?}\nstderr: {}",
+        second.status,
+        String::from_utf8_lossy(&second.stderr)
+    );
+    assert!(stdout(&second).contains("Setup complete"));
+}
+
+// ============================================================================
 // REQ: `cogh doctor` validates installation
 // ============================================================================
 
