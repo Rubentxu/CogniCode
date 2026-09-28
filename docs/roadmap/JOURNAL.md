@@ -6201,3 +6201,26 @@ Un fix que solo quita *la instancia* y no *la clase* deja la siguiente ocurrenci
 **Lesson 106 (nueva):** un grep que reporta N violaciones es un **generador de hipótesis, no un hallazgo**. Aquí produjo 6, de las cuales 6 eran erróneas; si se hubiera tomado como evidencia, se habrían fabricado 6 defectos fantasma y se habría mandado al siguiente agente a destripar un contrato de guard que está intacto. Regla: leer el sitio marcado antes de reportar un defecto, sobre todo cuando el codebase ya documenta un patrón que el regex no conoce. El eco de la Lesson 99: la Lesson 95 original era imprecisa y hubo que corregirla antes de actuar sobre ella; aquí la imprecisa era la herramienta.
 
 **Estado de la auditoría: CLOSED — sin recurrencia en ninguna de las dos clases.**
+
+### Flake real de lifecycle_journal: dos tests sin `#[serial]` en tracker.rs (N+40)
+
+La auditoría de clase anterior afirmó "0 violaciones reales" para el contrato `#[serial]`. **Esa conclusión era incorrecta**, y este turno lo demuestra corrigiendo el propio instrumental.
+
+**El fallo real.** `cargo test -p cognicode-cli --bin cogh -- --test-threads=16` fallaba de forma intermitente: **5 de 6 ejecuciones**, siempre en `lifecycle_journal::tests::t_debt4_loaded_journal_is_drop_neutralized` con `load must succeed: Io(".../journal/0.95.0.json", NotFound)`. Con `--test-threads=1`: 0 de 3. El test **sí** lleva `#[serial]`: el problema no era ese test, sino que otro lo pisaba.
+
+**Mecanismo.** `journal_path()` (lifecycle_journal.rs:49) resuelve `cognicode_home()` desde `COGNICODE_HOME`. El test serializado escribe su propio `COGNICODE_HOME` y luego llama a `journal_path("0.95.0")`, que vuelve a **leer el env del proceso**. Dos tests de `tracker.rs` (`h_f6_1_tests`, líneas 146 y 175) escriben `COGNICODE_HOME` **sin `#[serial]`**. `serial_test` solo serializa entre tests que llevan el atributo, así que esos dos contaminan el env para todo el proceso y corrompen a un test correctamente serializado. **El atributo del lector es necesario pero no suficiente: el escritor no serializado invalida a todos los lectores serializados.**
+
+**Confirmado como preexistente, no causado por PR-306.** Worktree en el baseline `6dd8530a` (pre-fix): **3 de 6 ejecuciones fallan**, y el test que falla allí es `test_load_corrupt_json_fails_loudly` — mismo módulo, misma causa raíz. PR-306 no lo introdujo; tampoco lo arregló.
+
+**Fix.** `#[serial]` en los dos tests de `tracker.rs` más el `use serial_test::serial;` en el módulo `h_f6_1_tests`.
+
+**Evidencia (RED antes, PASS después, y reversa para probar causalidad).**
+- Con el fix: **0 de 8** ejecuciones fallidas.
+- Revirtiendo el fix: **3 de 8** fallidas.
+- Con el fix, de nuevo: **0 de 10**.
+
+**Fallo no relacionado encontrado de paso.** `a014_capabilities_json` fallaba 3/9 con `source_commit must be a hex git SHA; got ""`. **No es un defecto de código**: el binario debug era un artefacto cacheado obsoleto. Tras rebuild forzado, ambos binarios devuelven `bc4bc2cf...` y el test pasa 9/9. Registro esto porque el modo de fallo (un artefacto stale que se hace pasar por bug) es fácil de diagnosticar como regresión real.
+
+**Lesson 107 (nueva):** un guard de serialización es una garantía de que *todos* los actores participan en el mismo protocolo. Añadirlo solo al lector crea una falsa sensación de seguridad: el escritor sin guard invalida silenciosamente a todos los lectores. Auditar "quién tiene el atributo" no basta; hay que auditar "quién escribe sin él".
+
+**Lesson 108 (nueva, sobre el instrumental):** la Lesson 106 predijo que un escaneo por regex produce falsos positivos. El fallo real fue peor: mi parser de funciones tenía un regex `^` sin `[ \t]*`, así que **no encontraba funciones indentadas dentro de `mod tests`**. En `lifecycle_journal.rs` encontraba 6 funciones donde hay 13, y por eso reportaba "0 writers" cuando los había. Peor que un falso positivo: un falso **negativo** que se presenta como cobertura. Un auditor que no se puede falsificar no es evidencia. La Lesson 106 sigue siendo válida, pero se queda corta: no basta con leer los sitios marcados, hay que **demostrar que el escaneo encuentra lo que dice encontrar**, con un caso conocido y positivo.
