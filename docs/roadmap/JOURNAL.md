@@ -5894,3 +5894,66 @@ download fuera del scope de este turno.
 3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
 4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
 5. **Próximo WU candidato (decisión autónoma del agente):** A-014 `cognicode capabilities --json` (P1, dep A-003 cerrado; sin deuda bloqueante; el `build_graph` audit queda como follow-up).
+
+## N+33 — A-014 `cognicode capabilities --format json` strict TDD: 5 tests verdes, capability discovery machine-readable publicado
+
+**Fecha:** 2026-09-28 (turno autónomo en modo SDDK como autoridad exclusiva).
+
+**Recuperación vía SDDK (sin asumir):** `agent-session start` emitió contexto con `head=48a8980c`, `branch=docs/cp2-a012-closure`, `sddk_adoption=complete`, `sddk_ledger=last_hash:sha256:4a049ec3...`. Backlog vacío, 0 work items activos, 11 work items todos `"done"` antes de este turno. CP1 `RELEASE_PENDING` espera operador.
+
+**PRE-FLIGHT emitido:** `Readiness: READY` para WorkItem `A-014/CP2.4 — cognicode capabilities --json (machine-readable discovery)` (P1, dep A-003 cerrado). Cycle SDDK `p-c1fac1fea05615c6/a-014-capabilities-json` creado formal con `sddk cycle start --path a-lite`.
+
+**Strict TDD ejecutado:**
+
+1. **RED baseline (test 1):** `a014_capabilities_json_emits_v1_schema_with_tools_profiles_runtime` falló RED — el binario correctamente rechazó `--json` con `error: unexpected argument '--json' found` (la convención del CLI es `--format json`, no `--json`).
+2. **Test reescrito** para usar `--format json` (consistente con `find-usages`, `graph full`, `doctor`, `evidence list/search`). 5 tests RED → 5 tests GREEN tras implementar `build_capabilities_doc` + `execute_capabilities`.
+3. **TRIANGULATE T2 (test 3):** `a014_capabilities_json_does_not_write_to_stderr_in_json_mode` — stdout empieza con `{` y termina con `}`, parseable limpio. Pasa.
+4. **TRIANGULATE T4 (test 4):** `a014_capabilities_json_carries_cli_version_and_source_commit` — `cli_version` == `CARGO_PKG_VERSION`, `source_commit` == `git rev-parse HEAD` (o prefijo corto). Pasa.
+5. **TRIANGULATE T5 (test 5):** `a014_capabilities_json_runtime_mutating_tools_match_profile_posture` — el runtime mutating set contiene los tres canónicos (`write_file`, `edit_file`, `reparse_on_edit`) y `reviewer.mutating == false`. Pasa.
+
+**Implementación (additiva):**
+- `crates/cognicode-core/src/interface/cli/commands.rs` (+180 líneas): nueva variante `CliCommand::Capabilities { format: String }`, nuevo método `async fn execute_capabilities`, dos funciones libres (`build_capabilities_doc`, `current_source_commit`).
+- `crates/cognicode-cli/tests/a014_capabilities_json.rs` (new, 273 líneas): 5 tests strict TDD.
+
+**Schema emitido (`cognicode.capabilities/v1`):**
+```json
+{
+  "schema_version": "cognicode.capabilities/v1",
+  "cli_version": "0.99.2",
+  "source_commit": "48a8980c...",
+  "tools": [...73 tools con name/authority/category/stability/requirements/...],
+  "profiles": [...4 profiles con id/mutating/...],
+  "runtime": {
+    "mutating_tools": ["write_file", "edit_file", "reparse_on_edit"],
+    "mutating_tools_count": 3
+  }
+}
+```
+
+**Runtime posture es autoritativa:** el campo `mutating` en cada profile se sobrescribe con el valor de `PROFILE_POSTURES` (runtime) si difiere del publicado en `product/profiles.json`. Esto previene drift contract/runtime.
+
+**Verificación:**
+- `cargo test -p cognicode-cli --test a014_capabilities_json` → **9/0/0** (5 A-014 + 4 common::tests).
+- `cargo test -p cognicode-cli` (full crate) → all green.
+- `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+- `cargo fmt --all --check` → exit 0.
+
+**Commit:** `3adca737 feat(cli): A-014 cognicode capabilities --format json (machine-readable discovery)` — 2 archivos, +453 insertions, un solo cambio lógico.
+
+**Cierre formal SDDK:** 7 transiciones A-lite (explore→specify→design→build→verify→release→archive) con 8 gate-receipts, 14 eventos añadidos al ledger (420 eventos totales). Status `CLOSED/archive`, 8 artefactos. WorkItem `82719e1d-...` → `done`, `exit_gate=archive.complete`.
+
+**Lesson 97 (nueva):** Cuando un test usa una forma de flag distinta de la convención del binario (`--json` vs `--format json`), el RED aparece en CI al primer run. El fix es alinear el test al contrato público existente. La consistencia con `find-usages` / `graph full` / `doctor` / `evidence list/search` (todos `--format {text,json}`) gana sobre un atajo más corto.
+
+**SEMVER (regla 6):** `feat(cli): ...` indica MINOR. La versión bumpada depende del operador:
+- Hold en `v0.99.2`: defendible si CP1 release.complete decide bump independiente.
+- Bump a `v0.100.0` (MINOR): defendible si se libera junto con CP1 y/o A-013 como un solo lote coherente.
+- Bump a `v0.99.3` (PATCH): NO defendible bajo regla 6 (feat ≠ PATCH).
+
+El agente deja la decisión al operador; el código está en HEAD sin modificar `Cargo.toml`.
+
+**Pendiente del operador (sin cambios desde N+32):**
+1. Push o PR de los 6 commits ahead de `origin/main` (QW-03 fix, N+30, A-013, N+32, A-014, N+33) con `merge-gate` verde.
+2. Decisión SemVer (ver arriba).
+3. Alta manual de 4 categorías de GitHub Discussions (CP1.7).
+4. Aprobar `release-uat-approved` para `cp1-oss-foundation`.
+5. **Próximo WU candidato (decisión autónoma del agente):** A-016 `Rubentxu/cognicode-site` (P0, sin deps), o PR-SEC (protobuf advisory + Actions SHA pinning + licenses CI gate — ahora desbloqueado), o CR-01 C8-R recertificación (también desbloqueado).
