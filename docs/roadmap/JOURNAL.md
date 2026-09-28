@@ -6270,3 +6270,106 @@ AssertionError: SECURITY.md names versions that were never released: ['0.99.2']
 **Nota de método.** Mi primer test de mutación **era incorrecto**: planteé `| 0.99.2 |` pero la fila real es `| 0.99.2 (latest release, \`v0.99.2\`) | yes |`, asi que la mutación nunca se aplicó y llegué a leer un fallo del fix que no existía. Verificar que la mutación **se aplicó** es parte de probarla.
 
 **Lesson 110 (nueva):** un gate que consulta el estado de git debe declarar su suposicion de entorno. "La lista de tags esta vacia" y "no existen tags" son afirmaciones distintas, y confundirlas produce un gate que solo es verde donde el developer tiene el clon completo — es decir, verde exactamente donde no protege.
+
+---
+
+## N+43 — El gemelo invertido: un gate que|reporta PASS sin leer nada
+
+**Origen.** Auditoria de seguimiento a N+42 (queda anotada alli como follow-up): buscar el resto
+de gates que dependen de historia o tags de git y comprobar su `fetch-depth`. Es la continuacion
+natural de la Lesson 110, no un tema nuevo.
+
+**Resultado de la auditoria: los gates de release estan bien.** Verificado empiricamente, no
+supuesto. En un clon `--depth 1 --no-tags`:
+- `release-tag-coherence.sh v0.100.0 <sha>` (la forma que invocan `release.yml` y
+  `release-validate.yml`) → **PASS**. No necesita tags: recibe el tag explicito.
+- sin argumentos (auto-detect via `git describe`) → **exit 2**, no un PASS falso. Degrada
+  honestamente.
+- `generate-release-notes.sh` y el job `release` ya usan `fetch-depth: 0`.
+
+Una cosa que habria sido facil declarar rota y no lo estaba. Por eso la verificacion empirica
+va antes que la conclusion.
+
+**El defecto real esta al otro lado de la clase.** `scripts/ci/check_regression_test.sh` (gate T6)
+resuelve su base asi:
+
+```bash
+elif git rev-parse main >/dev/null 2>&1; then DIFF_BASE="main"
+else DIFF_BASE="HEAD~1"; fi          # ← sin verificar que exista
+...
+mapfile -t FIX_COMMIT_SUBJECTS < <(git log "$DIFF_BASE..HEAD" ... | grep -E "^fix..." || true)
+if [ "${#FIX_COMMIT_SUBJECTS[@]}" -eq 0 ]; then echo "T6 PASS"; exit 0; fi
+```
+
+En un clon superficial sin `origin/main`, `git log HEAD~1..HEAD` escribe *"ambiguous argument"*
+en stderr, la tuberia no produce nada, `|| true` se come el fallo, y el gate cuenta **cero**
+commits `fix(*)` como "nada que enforcing":
+
+```
+==> T6 PASS: no fix(*) commits in the diff. Nothing to enforce.
+exit 0
+```
+
+El rango ilegible produce exactamente el mismo resultado que un rango limpio. Un gate que
+reporta PASS sobre un diff que nunca leyo es peor que no tener gate, porque un PASS falso es
+indistinguible de un PASS real. Esto es el inverso exacto de N+42: alli "no veo nada" se leia como
+"esta version no existe" (falso FAIL, falla ruidoso, coste bajo); aqui "no veo nada" se lee como
+"todo bien" (falso PASS, fallo silencioso, coste alto).
+
+**Tres defectos mas, encontrados de paso, mismo origen.**
+- El header documentaba `2 ERROR (could not determine base branch, no diff, etc.)` y el script
+  **no contenia ninguna linea `exit 2`**. El contrato documentado era ficcion.
+- `regression-check.yml` lleva exportando `CI_T6_BASE` desde el input `base_branch` y el script
+  **nunca lo leia**. El input del operador era inerte.
+- Una base que resuelve al mismo commit que HEAD produce un rango estructuralmente vacio, que
+  alcanza el mismo "nada que enforcing" → PASS. Un rango vacio no demuestra nada sobre la regla.
+
+**Fix.** Fail-closed sobre la procedencia del rango, no sobre su contenido:
+1. `CI_T6_BASE` manda si esta presente, y debe resolver; si no, `exit 2` sin fallback.
+2. Cada rama del fallback verifica con `rev-parse --verify --quiet`; si ninguna resuelve, `exit 2`.
+3. Base que resuelve a HEAD → `exit 2`, con el motivo escrito.
+4. Se implementa el `exit 2` que el header ya prometia.
+
+La decision de diseno que mas importa: el contrato es sobre **procedencia**, no sobre contenido.
+Hacer el gate escéptico ante un diff vacio de verdad moveria el fallo a cada cambio de solo
+documentacion. `test_no_fix_commits_passes` existe para fijar ese limite.
+
+**Evidencia.**
+- RED: `FAIL 8 of 9`. Los 3 que pasan (`fix`+test → 0, `fix` sin test → 1, docs-only → 0) pasan
+  de verdad, el RED es preciso y no indiscriminado.
+- GREEN: `PASS all 9`.
+- Mutacion (gate completo revertido a `HEAD`): `FAIL 8 of 9` → la suite detecta la regresion.
+- Restaurado: `PASS all 9`.
+- Uso real en este repo con `CI_T6_BASE=origin/main`: exit 0, encuentra los 5 `fix(*)` de la
+  rama y los 10 ficheros de test que los acompanan.
+- Gate de contrato completo tal y como lo corre CI: `TOTAL: 64 passed, 0 failed` (era 55).
+- `pr-ci.yml` parsea.
+
+**Dos errores mios en el camino, ambos del mismo tipo que el defecto que huntaba.**
+1. El `main()` de la suite nueva uso `dir()` dentro de una funcion, que devuelve solo los locals:
+   encontro 0 tests y reporto **`PASS all 0`**. Un PASS vacio, en el fichero cuyo unico proposito
+   es detectar PASS vacios. Corregido a `globals()` y con el caso "0 tests" treaties como FAIL,
+   para que no pueda repetirse en silencio.
+2. Los repos de prueba los monte con la base resolviendo al mismo commit que HEAD, lo que
+   reproducia el tercer defecto por construccion y hacia las aserciones mas Debiles de lo que
+   parecian. Rehacidos con forma real de PR (`main` + rama `feature`).
+
+**Contract suite nueva** `scripts/ci/test_t6_gate_contract.py`, enganchada al job `check`. Construye
+repos git reales en vez de fixtures, porque lo que se prueba es el comportamiento de git en un
+clon de profundidad 1, que ningun stub reproduce. Incluye self-test de mutacion, y comprueba que
+la mutacion **se aplico** antes de confiar en su resultado.
+
+**Lesson 111 (nueva):** un gate que lee su regla de git tiene dos fallos opuestos y ambos son
+invisibles. "No veo nada" puede leerse como "todo bien" (PASS falso) o como "esto no existe" (FAIL
+falso). El primero es el peligroso porque el gate sigue verde para el output. Contrato: **el
+resultado de un gate se emite solo si el gate sabe que leyo lo que dice haber leido**; si la fuente
+no responde, el veredicto es ERROR, nunca PASS ni FAIL. Y una variante del mismo error: un
+contrato que no llega a ejecutarse y reporta verde es peor que no escribirlo, porque consume la
+confianza del revisor.
+
+**Descarte de la idea de arreglarlo con mas `fetch-depth: 0`.** El gate T6 ya corre en
+`regression-check.yml` con `fetch-depth: 0` (linea 63), asi que el fix de entorno ya estaba ahi y
+el defecto seguia vivo: es un fallo de logica del gate, no de configuracion. Anadir otra capa de
+entorno habria escondido el defecto en lugar de corregirlo, y habria dejado el gate igual de
+inmune a cualquier otro rango ilegible. El punto de este trabajo es que la clase de defecto no se
+pueda reintroducir aunque alguien vuelva a tocar el workflow.
