@@ -6586,3 +6586,52 @@ escrito, no la forma que el codigo resulta haber implementado. Aqui las dos se d
 flag, y la diferencia era exactamente el criterio de cierre de la unidad. Un cierre por
 auto-reporte habria dado A-014 por bueno con el contrato roto, que es el peor resultado posible:
 un item cerrado certificando un comando que no funciona.
+
+---
+
+## N+46 — medir el hueco completo: 21 suites y un segundo ciego que no era `--lib`
+
+A-014 cerro con 21 suites sin gate escritas como follow-up medible. aqui van medidas, una a una,
+porque un follow-up sin numero es una promesa y no un hallazgo.
+
+**Las 21 suites: 165 tests, todas verdes, ninguna en el gate.** `cogh_cli` 11, `portable_skill_bundle`
+12, `cognicode_lifecycle` 11, `cognicode_ide_adapter` 11, `cognicode_plugin` 9, `prf_f6_w3_bis_staging`
+13, `prf_cli_01_exhaustive` 11, `prf_cli_01` 10, `prf_f6_w2` 9, `prf_sec_03` 8, `prf_cli_06` 8,
+`prf_cli_03` 7, `prf_f4_w2` 7, `prf_dist_workflow_flatten` 7, `prf_f6_w1` 6, `prf_ext_02` 6,
+`prf_state_06` 6, `prf_dist_01_06` 5, `prf_f6_w3_bis_sbom` 5, `prf_ci_01_07` 3 (1 `#[ignore]`).
+Coste total medido: 80 s, de los cuales 60 s son tres suites. El resto es sub-segundo. **A-013 y
+A-014 tenian razon: estaban verdes y nunca se habian ejecutado.**
+
+**La que no era verde, porque no era ninguna: `evidence_cli_mcp_equivalence`.** Reporta
+`0 passed; 0 failed` y sale **0**. No es una suite que pasa: es una suite que no existe durante la
+ejecucion. Causa: `#![cfg(feature = "ladybug")]` a nivel de crate, y `default = []` en
+`crates/cognicode-cli/Cargo.toml`. Sin la feature, el binario de test se compila vacio.
+
+Esto es peor que el ciego de A-013. Ahi habia un gate que ejecutaba otra cosa; aqui **cualquier
+invocacion de esta suite daria verde para siempre**, incluido un `cargo test` manual, porque el
+`#[cfg]` borra los 5 tests antes de que el runner los vea. Un fallo futuro de la equivalencia
+CLI/MCP no solo pasaria inadvertido: no tendria donde manifestarse.
+
+**Y el gate nunca ha construido esa feature.** `grep ladybug .github/workflows/*.yml` solo encuentra
+`cargo test -p cognicode-ladybug --lib`, que testea el crate backend por separado. La feature que
+*une* CLI y backend no se compila en ningun workflow. Con `--features ladybug` el binario de
+`cognicode` tiene **325 tests** (18 s) que ninguna ejecucion del gate ha visto, mas los 9 de
+equivalencia. El gate construye el CLI slim, sin la feature, y por eso todo ese contrato no existe
+a ojos de CI.
+
+**Los otros dos `#[ignore]` y `#[cfg]` del crate, revisados uno a uno.** `prf_ci_01_07` tiene un
+`#[ignore]` en `clippy_positive_invariant_includes_workspace`, bien justificado en el propio
+comentario por coste (30-60 s) y con el gate real de clippy corriendo en CI: es correcto. El
+`#![cfg]` de `evidence_cli_mcp_equivalence` es el unico `cfg` a nivel de crate en `tests/` y no esta
+documentado en ningun sitio como coste asumido. **Uno legitimo, uno silencioso.** La diferencia no es
+estetica: el primero dice por que no corre y quien lo corre en su lugar; el segundo no dice nada.
+
+**Decision.** No los anado todavia. Este no es el patron de A-014 (dos suites de la unidad,，正如
+medidas). Aqui son 21 suites mas 325 tests de bin y una feature que el gate no construye: eso es
+una unidad propia, con su propio criterio de cierre, y meterlo en el commit de A-014 habria sido
+exactamente el error que Lesson 114 ya senala. Queda medida, con numeros, y con el hallazgo mas
+grave que el conteo: hay codigo alcanzable que el gate no puede ver porque una feature opcional no
+se construye.
+
+**Follow-up con numeros, no con adjetivos:** 21 suites / 165 tests, 80 s medidos; feature
+`ladybug` sin construir en CI, que anade 325 tests de bin + 9 de equivalencia.
