@@ -30,14 +30,10 @@ use cognicode_core::interface::mcp::rmcp_adapter::CogniCodeHandler;
 use cognicode_core::product::{PROFILE_POSTURES, ProfilePosture};
 
 use serde_json::Value;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
-use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use std::path::PathBuf;
 
 mod common;
-use common::binary_path;
+use common::McpSession;
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -57,116 +53,32 @@ fn declared_profiles() -> Vec<Value> {
         .clone()
 }
 
-struct Session {
-    child: Child,
-    stdin: tokio::process::ChildStdin,
-    stdout: BufReader<tokio::process::ChildStdout>,
-    next_id: u64,
-}
-
-impl Session {
-    async fn spawn(ws: &Path, read_only: bool) -> Self {
-        let mut cmd = Command::new(binary_path());
-        cmd.arg("--cwd").arg(ws);
-        if read_only {
-            cmd.arg("--read-only");
+/// Helper: enumerate every tool the runtime advertises, following the
+/// `nextCursor` chain in the response. Specific to A-009: this test
+/// asserts the union of tools a `reviewer` adopter sees, and that
+/// union must include all read tools and exclude mutating ones.
+async fn all_tool_names(session: &mut McpSession) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let mut params = serde_json::json!({});
+        if let Some(c) = &cursor {
+            params["cursor"] = Value::String(c.clone());
         }
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        let mut child = cmd.spawn().expect("spawn cognicode-mcp");
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        let mut s = Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
-            next_id: 1,
-        };
-        s.send(&serde_json::json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"uat-a009","version":"0"}}}))
-            .await;
-        let mut line = String::new();
-        tokio::time::timeout(Duration::from_secs(60), s.stdout.read_line(&mut line))
+        let response = session
+            .request("tools/list", params)
             .await
-            .expect("init timeout")
-            .expect("read init");
-        assert!(line.contains("\"result\""), "initialize failed: {line}");
-        s.send(&serde_json::json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
-            .await;
-        s.next_id = 2;
-        s
-    }
-
-    async fn send(&mut self, v: &Value) {
-        self.stdin
-            .write_all(format!("{v}\n").as_bytes())
-            .await
-            .expect("write");
-        self.stdin.flush().await.expect("flush");
-    }
-
-    async fn request(&mut self, v: Value) -> Value {
-        let id = v["id"].as_u64().expect("request id");
-        self.send(&v).await;
-        let deadline = tokio::time::sleep(Duration::from_secs(120));
-        tokio::pin!(deadline);
-        loop {
-            let mut line = String::new();
-            tokio::select! {
-                _ = &mut deadline => panic!("timeout waiting for id {id}"),
-                n = self.stdout.read_line(&mut line) => {
-                    assert!(n.expect("read") > 0, "stdout closed");
-                    let m: Value = serde_json::from_str(line.trim()).expect("json");
-                    if m.get("id").and_then(|x| x.as_u64()) == Some(id) {
-                        return m;
-                    }
-                }
-            }
+            .expect("tools/list request");
+        let result = &response["result"];
+        for tool in result["tools"].as_array().cloned().unwrap_or_default() {
+            names.push(tool["name"].as_str().unwrap_or_default().to_string());
+        }
+        match result["nextCursor"].as_str() {
+            Some(next) => cursor = Some(next.to_string()),
+            None => break,
         }
     }
-
-    async fn all_tool_names(&mut self) -> Vec<String> {
-        let mut names = Vec::new();
-        let mut cursor: Option<String> = None;
-        loop {
-            let id = self.next_id;
-            self.next_id += 1;
-            let mut params = serde_json::json!({});
-            if let Some(c) = &cursor {
-                params["cursor"] = Value::String(c.clone());
-            }
-            let response = self
-                .request(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/list","params":params}))
-                .await;
-            let result = &response["result"];
-            for tool in result["tools"].as_array().cloned().unwrap_or_default() {
-                names.push(tool["name"].as_str().unwrap_or_default().to_string());
-            }
-            match result["nextCursor"].as_str() {
-                Some(next) => cursor = Some(next.to_string()),
-                None => break,
-            }
-        }
-        names
-    }
-
-    async fn call_tool(&mut self, name: &str, args: Value) -> Value {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.request(serde_json::json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":name,"arguments":args}}))
-            .await
-    }
-
-    /// Stop the server so it does not outlive the test.
-    ///
-    /// `kill_on_drop` alone is not enough here: the session holds the
-    /// child's pipes, and dropping the struct while a request is in flight
-    /// can leave the process running. The existing read-only UAT ends the
-    /// same way.
-    async fn shutdown(&mut self) {
-        let _ = self.child.start_kill();
-    }
+    names
 }
 
 fn fixture_ws() -> PathBuf {
@@ -251,27 +163,44 @@ async fn reviewer_posture_refuses_writes_against_the_real_binary() {
     let ws = fixture_ws();
     let target = ws.join("a009-reviewer-must-not-write.txt");
 
-    let mut session = Session::spawn(&ws, true).await;
+    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only"])
+        .await
+        .expect("spawn cognicode-mcp --read-only");
 
-    let tools = session.all_tool_names().await;
+    let tools = all_tool_names(&mut session).await;
     assert!(
         !tools.iter().any(|t| t == "write_file"),
         "read-only mode must not advertise write_file; got {tools:?}"
     );
+    // Drive the rejection through the raw response so we can inspect the
+    // `result.isError` envelope (the server's refusal text is a plain
+    // string, not JSON; `McpSession::call_tool` parses the content as
+    // JSON and would reject it). The fork's original behaviour was the
+    // same shape, just inline.
     let response = session
-        .call_tool(
-            "write_file",
+        .request(
+            "tools/call",
             serde_json::json!({
-                "path": target.to_str().unwrap(),
-                "content": "must not be written"
+                "name": "write_file",
+                "arguments": {
+                    "path": target.to_str().unwrap(),
+                    "content": "must not be written"
+                }
             }),
         )
-        .await;
-
-    let text = serde_json::to_string(&response).unwrap();
+        .await
+        .expect("tools/call request");
+    let is_error = response["result"]["isError"].as_bool().unwrap_or(false);
+    let text = response["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        is_error,
+        "mutating call under --read-only must return isError: true; got: {response}"
+    );
     assert!(
         text.contains("read_only_mode"),
-        "the refusal must be honest about why; got: {text}"
+        "the refusal must be honest about why; got text: {text}"
     );
     assert!(
         !target.exists(),
@@ -285,9 +214,11 @@ async fn reviewer_posture_refuses_writes_against_the_real_binary() {
 #[tokio::test]
 async fn reviewer_posture_still_allows_reading() {
     let ws = fixture_ws();
-    let mut session = Session::spawn(&ws, true).await;
+    let mut session = McpSession::spawn_with_flags(&ws, &["--read-only"])
+        .await
+        .expect("spawn cognicode-mcp --read-only");
 
-    let tools = session.all_tool_names().await;
+    let tools = all_tool_names(&mut session).await;
     assert!(
         !tools.is_empty(),
         "read-only mode must still advertise read tools"
