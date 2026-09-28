@@ -1870,18 +1870,37 @@ impl FileOperationsService {
             ));
         }
 
-        // Early check: verify rustc is available before doing any verification work
-        // This implements the spec requirement: "rustc not found → error 'rustc not found'".
+        // Early check: the verifier's toolchain must be available before doing
+        // any verification work. This implements the spec requirement
+        // "rustc not found → error 'rustc not found'".
         //
-        // We use `which::which("rustc")` instead of spawning a `rustc --version` subprocess.
-        // The latter triggers fork()+exec on every call; under parallel test load this
-        // contends with other rustc invocations and the kernel can fail the fork with
-        // EAGAIN, which was misreported as "rustc not found" — see M0.5 in MAINTENANCE.md.
-        // `which` does only a PATH lookup (filesystem walk), so it is fork-free and
-        // safe under arbitrary concurrency. Same pattern as `mmdc` in
-        // cognicode-explorer/src/domain/snapshot.rs.
-        if input.verify && which::which("rustc").is_err() {
-            return Err(AppError::InvalidParameter("rustc not found".to_string()));
+        // The probe goes through the injected `code_verifier` rather than
+        // calling `which::which("rustc")` here. Two reasons, and the second
+        // one is a bug fix:
+        //
+        // 1. A hardcoded `rustc` string in the application layer duplicates the
+        //    knowledge that belongs to the adapter, so swapping the verifier
+        //    for any other backend silently kept probing for rustc.
+        // 2. Because the probe ignored the injected port, the "toolchain is
+        //    absent" path could not be exercised without mutating the
+        //    process-wide PATH. `test_retrieve_and_verify_rustc_not_found`
+        //    did exactly that, and the window it opened was visible to every
+        //    concurrently running lib test: a sibling whose verification
+        //    reached this guard got "rustc not found" back and failed for a
+        //    reason unrelated to what it was testing. That is how
+        //    `test_retrieve_and_verify_deterministic` failed in merge-gate
+        //    while passing in isolation. The port is the seam, so the test
+        //    now injects a verifier that reports the toolchain missing and
+        //    no environment is touched.
+        //
+        // The `which` lookup itself is kept inside `RustVerifier` where it
+        // belongs: it is a PATH walk, not a fork, which matters under
+        // parallel load — see M0.5 in MAINTENANCE.md, where a fork()+exec
+        // probe failed with EAGAIN and was misreported as "rustc not found".
+        if input.verify
+            && let Err(error) = self.code_verifier.toolchain_available()
+        {
+            return Err(AppError::InvalidParameter(error));
         }
 
         // Perform lexical search for .rs files matching the query
@@ -2051,6 +2070,9 @@ impl Default for FileOperationsService {
 mod tests {
     use super::*;
     use crate::application::dto::{FileEdit, ReadMode};
+    use crate::domain::traits::code_verifier::{
+        CodeVerifier, CodeVerifierError, CompilationResult,
+    };
     use crate::infrastructure::verification::RustVerifier;
     use serial_test::serial;
     use std::io::Write;
@@ -2066,6 +2088,63 @@ mod tests {
 
     fn test_service_in_temp_dir(temp_dir: &TempDir) -> FileOperationsService {
         test_service_with_workspace(temp_dir.path().to_path_buf())
+    }
+
+    /// Regression pin for the CI failure in `test_retrieve_and_verify_deterministic`.
+    ///
+    /// That test asserted `result2.is_ok()` and failed in `merge-gate` on
+    /// `cognicode-core --lib` while passing in isolation, with 2230 siblings
+    /// green. `#[serial]` explains it: it orders the three `#[serial]` tests in
+    /// this module against each other, but a lib test binary runs every *other*
+    /// test concurrently, and `test_retrieve_and_verify_rustc_not_found` in
+    /// this same module strips `rustc` out of `PATH` process-wide. Any sibling
+    /// whose verification path calls `which::which("rustc")` while that window
+    /// is open gets `rustc not found` back as an application error, so an
+    /// `assert!(result.is_ok())` fails for a reason that has nothing to do with
+    /// the code under test.
+    ///
+    /// The bug is not the race itself, it is the mechanism: `PATH` is
+    /// process-global state and this module reaches for it to arrange one
+    /// test's precondition. `GitRenameEvidenceAdapter` in this crate already
+    /// documents the alternative — inject the program name so the "tool absent"
+    /// case is reproducible without touching the environment.
+    ///
+    /// This is a source-level check on purpose. A mutation that is not present
+    /// cannot be observed by running the suite, which is precisely why the
+    /// original defect survived every local run.
+    #[test]
+    fn test_lib_tests_do_not_mutate_process_wide_environment() {
+        let source_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/application/services/file_operations.rs"
+        );
+        let text = std::fs::read_to_string(source_path).unwrap_or_else(|error| {
+            panic!("could not read {source_path}: {error}; the check is source-based by design")
+        });
+
+        let mut offenders: Vec<String> = Vec::new();
+        for (index, line) in text.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("//") {
+                continue;
+            }
+            // This test carries the pattern it looks for, as a string literal
+            // in its own detector. Skip the detector so it does not report
+            // itself; any other occurrence is a real mutation.
+            if trimmed.contains("env::set_var(") && !trimmed.contains("contains(") {
+                offenders.push(format!("{}: {trimmed}", index + 1));
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "lib tests must not mutate the process-wide environment; a sibling test running \
+             concurrently observes the mutation and fails for an unrelated reason (this is how \
+             test_retrieve_and_verify_deterministic failed in CI while passing in isolation). \
+             Inject the program name instead, as GitRenameEvidenceAdapter::with_git_program does.\n\
+             Offending lines:\n  {}",
+            offenders.join("\n  ")
+        );
     }
 
     fn test_service_with_temp_file(file: &NamedTempFile) -> FileOperationsService {
@@ -3319,10 +3398,48 @@ mod tests {
         );
     }
 
-    /// Test that rustc not found results in an error with the expected message.
-    /// Saves and restores PATH around the async call to ensure rustc is not found.
+    /// A `CodeVerifier` whose toolchain probe always reports the toolchain
+    /// missing. Used to exercise the absent-toolchain contract without
+    /// touching the process-wide environment.
+    struct ToolchainUnavailableVerifier;
+
+    #[async_trait::async_trait]
+    impl CodeVerifier for ToolchainUnavailableVerifier {
+        fn toolchain_available(&self) -> Result<(), String> {
+            Err("rustc not found".to_string())
+        }
+
+        fn verify(&self, _path: &str) -> Result<CompilationResult, CodeVerifierError> {
+            Err(CodeVerifierError::ToolchainUnavailable("rustc".to_string()))
+        }
+
+        async fn verify_with_timeout(
+            &self,
+            _path: &str,
+            _timeout_secs: u64,
+        ) -> Result<CompilationResult, CodeVerifierError> {
+            Err(CodeVerifierError::ToolchainUnavailable("rustc".to_string()))
+        }
+    }
+
+    /// Test that a missing toolchain results in an error with the expected message.
+    ///
+    /// This used to strip `rustc` out of `PATH` and restore it afterwards,
+    /// which made it the one test in this module that mutated process-global
+    /// state. `#[serial]` only orders the three `#[serial]` tests in this
+    /// module against each other, not against the other ~2200 lib tests
+    /// running concurrently, so the window while `PATH` lacked rustc was
+    /// visible to any sibling that reached the availability check. A sibling
+    /// then received `rustc not found` for a request that should have
+    /// succeeded, and failed for a reason unrelated to its own subject — that
+    /// is how `test_retrieve_and_verify_deterministic` failed in merge-gate
+    /// while passing in isolation.
+    ///
+    /// The precondition is now injected through the port, which is where it
+    /// belongs: the service already depends on a `CodeVerifier`, so the
+    /// toolchain state is the verifier's to report. No environment is touched,
+    /// and the test is deterministic instead of timing-dependent.
     #[tokio::test]
-    #[serial]
     async fn test_retrieve_and_verify_rustc_not_found() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("test.rs");
@@ -3332,26 +3449,11 @@ mod tests {
         )
         .unwrap();
 
-        // Save original PATH and remove rustc from it
-        let original_path = std::env::var("PATH").unwrap_or_default();
-        let new_path: std::collections::HashSet<String> = std::env::split_paths(&original_path)
-            .filter(|p| {
-                // Filter out directories that contain rustc
-                !p.join("rustc").exists() && !p.join("rustc.exe").exists()
-            })
-            .map(|p| p.to_string_lossy().to_string())
-            .collect();
-        let new_path_str = std::env::join_paths(new_path)
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-
-        // Set modified PATH (unsafe in multi-threaded context but OK for tests)
-        unsafe {
-            std::env::set_var("PATH", &new_path_str);
-        }
-
-        let service = test_service_in_temp_dir(&temp_dir);
+        let service = FileOperationsService::new(
+            temp_dir.path().to_string_lossy().to_string(),
+            Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])),
+            Arc::new(ToolchainUnavailableVerifier),
+        );
 
         let input = RetrieveAndVerifyRequest {
             query: "fn greet".to_string(),
@@ -3361,11 +3463,6 @@ mod tests {
         };
 
         let result = service.retrieve_and_verify(input).await;
-
-        // Restore PATH
-        unsafe {
-            std::env::set_var("PATH", &original_path);
-        }
 
         // Should get an error about rustc not found
         assert!(result.is_err(), "Should error when rustc not found");

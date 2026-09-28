@@ -123,6 +123,16 @@ jobs:
           cargo install cargo-deny --locked || true
           cargo deny check advisories
 
+      # A-015 / PR-SEC: licenses gate. Without an explicit step,
+      # a new dependency with an unlisted licence would slip past
+      # `merge-gate` until the next release audit. The local test
+      # `crates/cognicode-cli/tests/a015_licenses_gate.rs` is the
+      # developer-side equivalent; this step is the CI authority.
+      - name: Licenses gate (cargo-deny)
+        run: |
+          cargo install cargo-deny --locked || true
+          cargo deny check licenses
+
       - name: SBOM (cargo-cyclonedx, per published binary, canonical layout)
         run: |
           set -euo pipefail

@@ -57,7 +57,16 @@ jobs:
     name: fmt + clippy
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is required, not an optimisation. The product
+      # contract suite verifies that every version SECURITY.md claims to
+      # support is a real released tag, using `git tag --list`. The default
+      # shallow clone has no tags, so a genuinely released version such as
+      # v0.99.2 reads as invented and this gate fails on correct input
+      # (observed on PR #306). Full history keeps that check honest instead
+      # of degrading it.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
         with:
           components: rustfmt, clippy
@@ -99,7 +108,9 @@ jobs:
           python3 scripts/run_contract_tests.py \
             scripts/product/test_*.py \
             scripts/ci/test_select_suites.py \
-            scripts/ci/test_ci_contracts.py
+            scripts/ci/test_ci_contracts.py \
+            scripts/ci/test_serial_env_contract.py \
+            scripts/ci/test_t6_gate_contract.py
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)

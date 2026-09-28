@@ -138,12 +138,14 @@ mod tests {
 mod h_f6_1_tests {
     use super::*;
     use crate::layout::CognicodeHome;
+    use serial_test::serial;
 
     /// H-F6-1 regression: `*_at` functions must resolve strictly via the
     /// path given (the home-resolved one), never via the env. With
     /// COGNICODE_HOME pointing elsewhere, the `*_at` variants must write
     /// and read ONLY the explicit path.
     #[test]
+    #[serial]
     fn at_functions_ignore_env_and_honour_explicit_path() {
         let tmp = std::env::temp_dir().join(format!("cogh-hf61-{}", std::process::id()));
         let uat = tmp.join("uat");
@@ -173,6 +175,7 @@ mod h_f6_1_tests {
     /// H-F6-1 regression: reading an explicit path that does not exist is
     /// None even when the env-resolved tracker exists.
     #[test]
+    #[serial]
     fn read_optional_at_is_none_for_missing_explicit_path() {
         let tmp = std::env::temp_dir().join(format!("cogh-hf61b-{}", std::process::id()));
         let uat = tmp.join("uat");

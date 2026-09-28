@@ -225,6 +225,109 @@ impl McpSession {
         let _ = self.child.kill().await;
         let _ = self.child.wait().await;
     }
+
+    /// Send any JSON-RPC request and return the raw response value.
+    ///
+    /// Generic request helper added for A-013 (Black-box lifecycle
+    /// UAT). Most callers should keep using `call_tool` (which
+    /// understands the `result.content[0].text` envelope) and
+    /// `shutdown` (which guarantees the child is reaped). This
+    /// method is for lifecycle UAT steps that exercise JSON-RPC
+    /// methods outside the tool-call envelope (`tools/list`,
+    /// `ping`, future ones) without paying for a second harness.
+    pub async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.send(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
+            .await?;
+        let mut resp = String::new();
+        loop {
+            resp.clear();
+            let n = self
+                .stdout
+                .read_line(&mut resp)
+                .await
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err("server cerró stdout".into());
+            }
+            let m: Value = serde_json::from_str(resp.trim()).map_err(|e| e.to_string())?;
+            if m.get("id").and_then(|v| v.as_u64()) == Some(id) {
+                return Ok(m);
+            }
+        }
+    }
+
+    /// Spawn an extra `cognicode-mcp` child process with the given
+    /// extra CLI flags, initialize it, and return a `McpSession`
+    /// over it. Used by A-013 to test `--read-only` posture in
+    /// isolation without coupling to A-009's hand-rolled Session.
+    pub async fn spawn_with_flags(ws: &Path, extra_args: &[&str]) -> Result<Self, String> {
+        let mut cmd = Command::new(binary_path());
+        cmd.arg("--cwd").arg(ws);
+        for a in extra_args {
+            cmd.arg(a);
+        }
+        cmd.stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut s = Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            next_id: 1,
+        };
+        s.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"a013","version":"0"}}})).await?;
+        let mut line = String::new();
+        s.stdout
+            .read_line(&mut line)
+            .await
+            .map_err(|e| e.to_string())?;
+        if line.is_empty() {
+            return Err("sin respuesta a initialize".into());
+        }
+        s.send(&json!({"jsonrpc":"2.0","method":"notifications/initialized"}))
+            .await?;
+        s.next_id = 2;
+        Ok(s)
+    }
+
+    /// PID of the spawned child, or 0 if the OS has not assigned one
+    /// yet (rare; tokio assigns a pid synchronously in `spawn`).
+    pub fn pid(&self) -> u32 {
+        self.child.id().unwrap_or(0)
+    }
+
+    /// Send a Unix signal to the child by name and wait for it to exit.
+    ///
+    /// Used by A-013 to assert the binario shuts down cleanly
+    /// under SIGTERM (signal cancel) without paying for a separate
+    /// `nix` dependency. We shell out to `/bin/kill` (POSIX) so the
+    /// test runs on any Linux/macOS with no extra crate.
+    /// Unix-only.
+    #[cfg(unix)]
+    pub async fn signal_and_wait(
+        &mut self,
+        signal_name: &str,
+    ) -> Result<std::process::ExitStatus, String> {
+        use std::process::Command;
+        let pid = self.child.id().ok_or("child sin pid")?;
+        let status = Command::new("kill")
+            .arg("-s")
+            .arg(signal_name)
+            .arg("--")
+            .arg(format!("{}", pid))
+            .status()
+            .map_err(|e| format!("kill no se pudo ejecutar: {e}"))?;
+        if !status.success() {
+            return Err(format!("kill falló con {status}"));
+        }
+        self.child.wait().await.map_err(|e| e.to_string())
+    }
 }
 
 /// Absolute path to the `release/` directory that contains the

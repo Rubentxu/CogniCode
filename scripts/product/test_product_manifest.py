@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -11,6 +12,29 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_product_manifest.py"
 BASELINE = "73235889409afea43bc18cb0122a3966676dbb85"
+
+
+def workspace_version() -> str:
+    """The version the manifest is required to publish.
+
+    Read from ``Cargo.toml`` rather than hardcoded. A hardcoded literal made
+    this assertion fail on every version bump, which is a real cost: the
+    natural response to a red gate is to edit the artefact, and that is how a
+    published contract drifts away from the binary that produces it.
+
+    The assertion still has teeth. It compares the generated manifest against
+    the workspace version read independently here, so if the generator ever
+    derives the version from anywhere else — or stops propagating it — this
+    fails. What it no longer does is demand that someone remember to edit a
+    test file on release day.
+    """
+    workspace = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    match = re.search(
+        r'(?ms)^\[workspace\.package\]\s+.*?^version\s*=\s*["\']([^"\']+)["\']',
+        workspace,
+    )
+    assert match, "could not read the workspace version from Cargo.toml"
+    return match.group(1)
 
 
 def run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -29,7 +53,7 @@ def test_current_provenance_and_public_surface() -> None:
         assert result.returncode == 0, result.stderr
         manifest = json.loads(output.read_text(encoding="utf-8"))
         assert manifest["schema_version"] == "cognicode.product/v1"
-        assert manifest["version"] == "0.99.2"
+        assert manifest["version"] == workspace_version()
         assert manifest["source_commit"] == BASELINE
         assert [item["name"] for item in manifest["public_surface"]["binaries"]] == [
             "cogh",

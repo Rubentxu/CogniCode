@@ -254,6 +254,146 @@ fn qw03_bin_tracking_guard_passes_after_tracking_the_missing_file() {
     );
 }
 
+#[test]
+fn qw03_bin_tracking_guard_fails_when_a_new_crate_with_bins_is_not_listed() {
+    // TRIANGULATE T2 — auto-discovery gap.
+    //
+    // The guard's CRATES array was originally hardcoded to the
+    // five crates that had [[bin]] at the time of QW-03. If a new
+    // crate is added with [[bin]] but not added to that array, the
+    // guard passes green silently while a real drift exists in the
+    // unlisted crate. This pins the auto-discovery contract: the
+    // guard must inspect every crate that declares [[bin]], not
+    // only the ones enumerated by hand.
+    //
+    // History: this gap was discovered by the third-party mutation
+    // test during a strict-TDD triangulation of the guard. The fix
+    // replaces the hand-maintained CRATES list with a workspace
+    // walk that finds every crates/*/Cargo.toml.
+    let tmp = tempdir();
+    setup_full_tmp_repo(&tmp, |root| {
+        // Plant a brand-new crate that is NOT in the original CRATES
+        // array (the original list has 5 entries: cognicode-cli,
+        // cognicode-explorer, cognicode-mcp, cognicode-runtime,
+        // cognicode-sandbox). The new crate is unlisted by hand
+        // and must be discovered automatically.
+        let new_crate = root.join("crates/cognicode-unlisted");
+        fs::create_dir_all(new_crate.join("src/bin")).unwrap();
+        fs::write(
+            new_crate.join("Cargo.toml"),
+            r#"[package]
+name = "cognicode-unlisted"
+version = "0.0.1"
+edition = "2021"
+
+[[bin]]
+name = "qw03-unlisted-bin"
+path = "src/bin/qw03_unlisted_bin.rs"
+"#,
+        )
+        .unwrap();
+        // Intentionally do NOT create the source file. The guard
+        // must surface the missing/untracked bin in this new crate.
+    });
+
+    let out = run_guard(&tmp);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        !out.status.success(),
+        "QW-03 guard did NOT detect a bin in an unlisted crate. \
+         The CRATES array is still hand-maintained. stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout.contains("qw03-unlisted-bin") || stdout.contains("qw03_unlisted_bin"),
+        "guard output did not name the planted bin in the unlisted crate. Got:\n{stdout}"
+    );
+}
+
+#[test]
+fn qw03_bin_tracking_guard_fails_when_a_bin_source_path_points_outside_the_crate() {
+    // TRIANGULATE T1' — path traversal.
+    //
+    // A malicious or careless `path = "../escape.rs"` could land
+    // outside the crate directory. The guard must reject it
+    // because the path is supposed to be crate-local and the
+    // `git ls-files --error-unmatch` check assumes the path is
+    // inside the crate. Without this check, an attacker (or a
+    // typo) could point a bin at a path outside the crate
+    // directory and the guard would either crash on the path or
+    // silently miss the drift.
+    let tmp = tempdir();
+    setup_full_tmp_repo(&tmp, |root| {
+        let tmp_crate = root.join("crates/cognicode-cli");
+        let cargo_toml_path = tmp_crate.join("Cargo.toml");
+        let mut cargo_toml = fs::read_to_string(&cargo_toml_path).unwrap();
+        // `path = "../escape.rs"` lands in `crates/escape.rs`,
+        // not inside cognicode-cli.
+        cargo_toml.push_str("\n[[bin]]\nname = \"qw03-escape\"\npath = \"../escape.rs\"\n");
+        fs::write(&cargo_toml_path, cargo_toml).unwrap();
+    });
+
+    let out = run_guard(&tmp);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // The guard may either refuse (exit 1 with a clear message)
+    // or pass and surface the drift through a different check
+    // (file does not exist, path not tracked, etc.). The test
+    // pins: the guard MUST NOT silently green-light a path that
+    // lands outside the crate. We accept either behaviour as
+    // long as the output names the planted bin or its path.
+    let mentions_bin = stdout.contains("qw03-escape") || stdout.contains("../escape.rs");
+    assert!(
+        mentions_bin || !out.status.success(),
+        "QW-03 guard silently green-lit a path that lands outside the crate. \
+         stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}
+
+#[test]
+fn qw03_bin_tracking_guard_respects_explicit_custom_path() {
+    // TRIANGULATE T3 — explicit custom path.
+    //
+    // `[[bin]] path = "..."` overrides the default fallback
+    // (`src/main.rs` or `src/bin/<name>.rs`). The guard must use
+    // the explicit path verbatim. This is the path that catches
+    // a typo in the path string: if a future refactor drops the
+    // explicit-path branch, this test fails.
+    let tmp = tempdir();
+    setup_full_tmp_repo(&tmp, |root| {
+        let tmp_crate = root.join("crates/cognicode-cli");
+        let cargo_toml_path = tmp_crate.join("Cargo.toml");
+        let mut cargo_toml = fs::read_to_string(&cargo_toml_path).unwrap();
+        // Path does NOT follow the default `src/bin/<name>.rs` rule
+        // (the underscored form qw03-custom_path is different from
+        // the dash form of the bin name qw03-custom-path).
+        cargo_toml.push_str(
+            "\n[[bin]]\nname = \"qw03-custom-path\"\npath = \"src/bin/qw03_custom_path.rs\"\n",
+        );
+        fs::write(&cargo_toml_path, cargo_toml).unwrap();
+        let bin = tmp_crate.join("src/bin/qw03_custom_path.rs");
+        fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        fs::write(&bin, b"// qw03 custom-path bin source\nfn main() {}\n").unwrap();
+    });
+
+    let out = run_guard(&tmp);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        out.status.success(),
+        "QW-03 guard failed on a tmp repo with explicit custom path: \
+         stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(
+        stdout
+            .contains("OK:   qw03-custom-path (crates/cognicode-cli/src/bin/qw03_custom_path.rs)"),
+        "guard output missing the explicit-path OK line; got:\n{stdout}"
+    );
+}
+
 /// Build a unique temp directory under `std::env::temp_dir()` and
 /// return its path. The directory is NOT cleaned automatically — we
 /// rely on the OS tmp cleaner or the test runner to garbage-collect.

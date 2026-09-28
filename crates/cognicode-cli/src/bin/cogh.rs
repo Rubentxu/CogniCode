@@ -194,6 +194,29 @@ pub enum Command {
     Where { binary: String },
     /// Initialize ~/.cognicode/ with bundled plugins
     Init,
+    /// A-015 / CP2.4-onboarding — install, then diagnose the happy path.
+    ///
+    /// The default version/channel follow the normal stable install policy.
+    /// `--staging` provides the hermetic release fixture used by UAT and by
+    /// air-gapped operators; without it, resolution uses the configured
+    /// release service.
+    Setup {
+        /// Version ref (`latest` or an explicit release version).
+        #[arg(long, default_value = "latest")]
+        version: String,
+        /// Release channel (stable by default).
+        #[arg(long, default_value = "stable")]
+        channel: String,
+        /// Override the release API and asset origin.
+        #[arg(long)]
+        base_url: Option<String>,
+        /// Read releases.json from this directory instead of using the API.
+        #[arg(long)]
+        staging: Option<PathBuf>,
+        /// Installation profile (reviewer includes the MCP daemon).
+        #[arg(long, default_value = "reviewer")]
+        profile: String,
+    },
     /// Plugin management (add/remove/list)
     Plugin {
         #[command(subcommand)]
@@ -265,6 +288,43 @@ pub enum IdeAction {
     },
 }
 
+fn finish_setup(
+    home: &CognicodeHome,
+    version: &str,
+    tag: &str,
+    profile: &str,
+) -> anyhow::Result<()> {
+    let report = doctor::run_doctor(&home.root);
+    print!("{report}");
+    if !report.is_healthy() {
+        return Err(anyhow::anyhow!(
+            "setup failed: final doctor report is unhealthy"
+        ));
+    }
+    println!();
+    println!(
+        "Setup complete: installed {} ({}) with the {} profile.",
+        version, tag, profile
+    );
+    Ok(())
+}
+
+fn run_setup(
+    home: &CognicodeHome,
+    version: &str,
+    channel: &str,
+    base_url: Option<String>,
+    staging: Option<PathBuf>,
+    profile: &str,
+) -> anyhow::Result<()> {
+    layout::cmd_init(home)?;
+    let channel = channel
+        .parse::<lifecycle_resolver::Channel>()
+        .map_err(|e| anyhow::anyhow!("invalid release channel: {e}"))?;
+    let resolved = layout::cmd_install(home, version, channel, base_url, staging, profile)?;
+    finish_setup(home, &resolved.version, &resolved.tag, profile)
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -280,6 +340,13 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init => layout::cmd_init(&home),
+        Command::Setup {
+            version,
+            channel,
+            base_url,
+            staging,
+            profile,
+        } => run_setup(&home, &version, &channel, base_url, staging, &profile),
         Command::Install {
             plugin,
             version,
@@ -398,5 +465,59 @@ fn main() -> anyhow::Result<()> {
             } => ide::cmd_ide_install(&home, &ide, &plugin, &version),
             IdeAction::Uninstall { ide, version } => ide::cmd_ide_uninstall(&home, &ide, &version),
         },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::release_test_support::ResolverFixture;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn setup_installs_reviewer_profile_before_doctor() {
+        let fixture = ResolverFixture::build("0.100.0").expect("build release fixture");
+        let temp = tempfile::tempdir().expect("create setup home");
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("resolve setup home");
+        unsafe {
+            std::env::set_var("COGNICODE_ASSET_BASE_URL", &fixture.release.base_url);
+        }
+
+        run_setup(
+            &home,
+            "0.100.0",
+            "stable",
+            Some(fixture.release.base_url.clone()),
+            Some(fixture.staging_dir.clone()),
+            "reviewer",
+        )
+        .expect("setup should install and diagnose");
+
+        assert_eq!(
+            std::fs::read_to_string(home.tracker_version()).expect("read version pin"),
+            "0.100.0"
+        );
+        assert!(
+            home.version_manifest("0.100.0").exists(),
+            "setup must materialise the installed bundle manifest"
+        );
+        unsafe {
+            std::env::remove_var("COGNICODE_ASSET_BASE_URL");
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn setup_rejects_an_unhealthy_final_doctor_report() {
+        let temp = tempfile::tempdir().expect("create setup home");
+        let home = CognicodeHome::resolve(Some(temp.path())).expect("resolve setup home");
+        let error = finish_setup(&home, "0.100.0", "v0.100.0", "reviewer")
+            .expect_err("setup must fail when doctor reports a core failure");
+
+        assert!(
+            error.to_string().contains("unhealthy"),
+            "expected an unhealthy setup error, got: {error:#}"
+        );
     }
 }

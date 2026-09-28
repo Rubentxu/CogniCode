@@ -192,6 +192,11 @@ fn cogh_current_reads_pinned_version_from_tracker() {
     );
 }
 
+// `cogh setup` is covered by the binary-level UAT in `bin/cogh.rs`, where
+// ResolverFixture can provide a complete hermetic release payload. Keeping
+// the black-box suite free of network/staging fixture construction preserves
+// its isolated CLI contract tests.
+
 // ============================================================================
 // REQ: `cogh doctor` validates installation
 // ============================================================================

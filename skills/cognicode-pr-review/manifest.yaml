@@ -1,0 +1,31 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode-pr-review
+description: |
+  Reviews a pull request or diff using CogniCode to locate changed symbols,
+  trace consumers and usages, assess architectural impact, and verify against
+  tests and CI. Trigger: when an agent receives a PR link, a diff, or a
+  request to review changes.
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# Requires MCP or CLI surface to navigate the repository graph.
+requires: []
+
+# Compatible with the same IDEs as the runtime.
+ide_compatibility:
+  - opencode
+  - zcode
+  - claude
+  - codex
+
+# No scripts or additional assets required.
+scripts: []
+assets: []
+
+# Skill-version compatibility. Independent of the runtime binary version.
+compatibility:
+  cognicode_runtime: ">=0.95"

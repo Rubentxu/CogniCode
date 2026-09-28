@@ -1,0 +1,32 @@
+apiVersion: cognicode/v1
+kind: SkillBundle
+name: cognicode-agent-hardness
+description: |
+  Teaches the `inspect → corroborate → constrain → execute → verify`
+  discipline so an agent never treats CogniCode as an oracle of truth.
+  Trigger: when an agent is about to make a change, assert a property,
+  or dismiss a finding using CogniCode output.
+version: "1.0.0"
+maturity: stable
+homepage: https://github.com/Rubentxu/CogniCode
+authors:
+  - CogniCode Team
+
+# This skill requires the MCP surface or CLI to be available.
+# It does not install anything or require a specific plugin.
+requires: []
+
+# Compatible with the same IDEs as the runtime.
+ide_compatibility:
+  - opencode
+  - zcode
+  - claude
+  - codex
+
+# No scripts or additional assets required.
+scripts: []
+assets: []
+
+# Skill-version compatibility. Independent of the runtime binary version.
+compatibility:
+  cognicode_runtime: ">=0.95"

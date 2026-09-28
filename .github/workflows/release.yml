@@ -127,6 +127,16 @@ jobs:
           cargo install cargo-deny --locked || true
           cargo deny check advisories
 
+      # Parity with release-validate.yml (A-015): the licenses gate runs the
+      # same `cargo deny check licenses` policy that the validate workflow
+      # runs. Without this step, a new dependency with an unlisted licence
+      # would pass `release.yml` without detection; only `release-validate.yml`
+      # would catch it, and that workflow is `workflow_dispatch`-only.
+      - name: Licenses gate (cargo-deny)
+        run: |
+          cargo install cargo-deny --locked || true
+          cargo deny check licenses
+
       # PRF-CI-05: SBOM (CycloneDX) per workspace crate, uploaded with the
       # lane payloads for provenance. The actual generation is delegated
       # to scripts/ci/build-sboms-for-lane.sh so the validate workflow

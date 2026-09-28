@@ -17,19 +17,66 @@
 # Exit code:
 #   0  PASS (no fix(*) commits, OR fix(*) commits with test files)
 #   1  FAIL (fix(*) commits without any test file in the diff)
-#   2  ERROR (could not determine base branch, no diff, etc.)
+#   2  ERROR (the base ref could not be resolved, or resolved to HEAD, so the
+#      diff this gate was asked to inspect was never read)
+#
+# `regression-check.yml` sets CI_T6_BASE from its `base_branch` input. When
+# set, it is authoritative: an unresolvable value is an ERROR, never a
+# silent fallback to a different range.
+#
+# Why exit 2 exists and matters: this gate reads the rule it enforces out of
+# git history. If the range cannot be read, "no fix(*) commits" and "no
+# commits at all" become indistinguishable, and the gate reports PASS on a
+# diff it never saw. That is worse than no gate, because a false PASS is
+# indistinguishable from a real one. A depth-1 clone with no `origin/main`
+# and no resolvable `HEAD~1` reproduces it; pinned by
+# scripts/ci/test_t6_gate_contract.py.
 
 set -euo pipefail
 
 # Resolve base branch (feature branch workflow): prefer origin/main, fall
 # back to local main, then HEAD~1 to detect at least one commit back.
+#
+# The unresolvable case is an ERROR, not a fallback. The `|| true` that used
+# to sit on the `git log` below is what let an unread range read as a clean
+# bill: git printed "ambiguous argument" to stderr, the pipeline produced
+# nothing, and the gate counted zero fix(*) commits as "nothing to enforce".
 DIFF_BASE=""
-if git rev-parse origin/main >/dev/null 2>&1; then
+DIFF_BASE_EXPLICIT=0
+if [ -n "${CI_T6_BASE:-}" ]; then
+  # Operator-supplied base wins, and must resolve: substituting a different
+  # range would report a confident verdict about a range nobody asked for.
+  DIFF_BASE="$CI_T6_BASE"
+  DIFF_BASE_EXPLICIT=1
+elif git rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
   DIFF_BASE="origin/main"
-elif git rev-parse main >/dev/null 2>&1; then
+elif git rev-parse --verify --quiet main >/dev/null 2>&1; then
   DIFF_BASE="main"
-else
+elif git rev-parse --verify --quiet "HEAD~1^{commit}" >/dev/null 2>&1; then
   DIFF_BASE="HEAD~1"
+else
+  echo "::error::T6: no base ref is resolvable (tried CI_T6_BASE, origin/main, main, HEAD~1)." >&2
+  echo "::error::T6: the range to inspect is unknown, so no verdict can be reported." >&2
+  echo "::error::T6: fetch the base (git fetch origin main) or pass CI_T6_BASE." >&2
+  exit 2
+fi
+
+if ! git rev-parse --verify --quiet "${DIFF_BASE}^{commit}" >/dev/null 2>&1; then
+  echo "::error::T6: base ref '$DIFF_BASE' does not resolve to a commit." >&2
+  if [ "$DIFF_BASE_EXPLICIT" -eq 1 ]; then
+    echo "::error::T6: it came from CI_T6_BASE, so no fallback is substituted." >&2
+  fi
+  exit 2
+fi
+
+# A base that resolves to the same commit as HEAD describes a range with no
+# commits in it. The diff is then structurally empty, so the gate would reach
+# "nothing to enforce" and print PASS — but an empty range proves nothing
+# about the fix-without-test rule. Report the broken setup instead.
+if [ "$(git rev-parse "${DIFF_BASE}^{commit}")" = "$(git rev-parse HEAD)" ]; then
+  echo "::error::T6: base ref '$DIFF_BASE' resolves to HEAD, so the range is empty." >&2
+  echo "::error::T6: an empty range cannot demonstrate the fix-without-test rule." >&2
+  exit 2
 fi
 
 echo "==> T6 regression test check"
