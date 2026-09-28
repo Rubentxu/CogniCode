@@ -461,6 +461,20 @@ jobs:
         run: cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet
       - name: A-013 lifecycle gate coverage contract (must not rot)
         run: cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet
+      # A-014 / CP2.4-onboarding — capability discovery machine-readable.
+      #
+      # Mismo hueco que el bloque de arriba: `cognicode capabilities --format
+      # json` es el contrato que consumen A-033..037 (skills) y los adaptadores
+      # de integracion, y sus 5 tests vivian en `tests/`, fuera de `--lib`.
+      # Sin este step, un cambio que rompa el schema `cognicode.capabilities/v1`
+      # pasaria el gate entero.
+      - name: A-014 capabilities --format json (machine-readable contract)
+        run: cargo test -p cognicode-cli --test a014_capabilities_json --quiet
+      # A-015 — license gate contractual. Publica `licenses.json` y verifica que
+      # la allow-list de `deny.toml` y el campo `license` de cada crate no diverjan.
+      # Tambien en `tests/`, por tanto tampoco lo cubria `--lib`.
+      - name: A-015 licenses gate (license allow-list vs crate metadata)
+        run: cargo test -p cognicode-cli --test a015_licenses_gate --quiet
       # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
       # Pinea que `GraphInsightsService::analyze` cumple el budget
       # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step

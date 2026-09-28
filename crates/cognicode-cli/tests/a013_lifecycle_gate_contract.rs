@@ -56,6 +56,12 @@ const BLACKBOX_CONTRACTS: &[(&str, &str)] = &[
     ("a012_structured_output", "cognicode-mcp"),
     ("a013_lifecycle_uat", "cognicode-mcp"),
     ("prf_sec_02_read_only_uat", "cognicode-mcp"),
+    // Same `--lib` blind spot, different crate. A-014 publishes the
+    // `cognicode.capabilities/v1` document that the skill bundles and the
+    // integration adapters consume, so a silent schema break there is as
+    // expensive as a read-only posture break.
+    ("a014_capabilities_json", "cognicode-cli"),
+    ("a015_licenses_gate", "cognicode-cli"),
 ];
 
 #[test]
@@ -112,5 +118,26 @@ fn the_mcp_suite_does_not_rely_on_lib_only_for_these_contracts() {
         lib_only_mcp + pinned_mcp > 0 && pinned_mcp > 0,
         "expected both --lib ({lib_only_mcp}) and pinned --test ({pinned_mcp}) \
          invocations for cognicode-mcp"
+    );
+}
+
+#[test]
+fn a014_capabilities_contract_is_pinned() {
+    // A-014 is the discovery contract other units consume: the skill bundles
+    // (A-033..037) and any integration adapter read
+    // `cognicode capabilities --format json`. Its tests live in `tests/`, so
+    // the CLI `mcp`/`cli` suites run with `--lib` and never touch them.
+    let workflow = read_workflow();
+    assert!(
+        workflow.contains("--test a014_capabilities_json"),
+        "a014_capabilities_json is not named in pr-ci.yml. The \
+         `cognicode.capabilities/v1` schema is the discovery contract for \
+         skills and integration adapters, and nothing in the merge gate would \
+         notice it breaking."
+    );
+    assert!(
+        workflow.contains("--test a015_licenses_gate"),
+        "a015_licenses_gate is not named in pr-ci.yml, so the published \
+         license allow-list is not checked against crate metadata by the gate."
     );
 }
