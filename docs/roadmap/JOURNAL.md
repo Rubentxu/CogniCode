@@ -7433,3 +7433,52 @@ donde la regla dice que se mira*. Una exclusion comoda, como "no me fijes en `te
 esta el ruido", se convierte sin querer en un punto ciego que no coincide con ninguna regla
 razonable, y el test sigue pasando. **La asercion y la frase tienen que decir lo mismo, y eso se
 comprueba con un caso que la frase prohibe y la asercion no.**
+
+---
+
+## N+58 — la regla de las anclas tambien era mas ancha que su codigo, y una asercion tautologica
+
+N+57 arreglo que el walker excluyera todo `tests/`. Al arreglarlo quedo al descubierto el otro
+lado del mismo defecto: **la frase del criterio decia "cero referencias en ninguna parte" y el
+codigo decia "cero referencias dentro de `crates/`, `.github/`, `docs/` y `openspec/`"**. La raiz
+del repo tiene unos ochenta entradas mas, y ninguna estaba verificada.
+
+Medido con ripgrep sobre **todo** el repo (excluyendo `odd/` y `target/`): ninguna ancla aparece
+citada en un fichero de la raiz, ni en `tests/`, `specs/`, `plans/`, `product/`, `skills/`,
+`integrations/`, `apps/`, `evidence/`, `dist/`, `scripts/`, `sddk/`, `sandbox/` ni en el resto de
+directorios no escaneados. **Las 16 suites de la medicion de N+56 siguen siendo correctas**, porque
+la medicion si cubria todo. Pero ahora eso lo dice un test y no una tarde de comprobacion manual.
+
+**Dos correcciones, y una de ellas es una asercion inutil que escribi yo.**
+
+1. `ANCHOR_SCAN_DIRS` constante compartida, y `the_anchor_scan_scope_is_pinned` que falla si el
+   ambito se encoge o se widen sin revisar la frase. Probado: quitar `openspec` da **exit 101** con
+   el ambito nuevo impreso en el mensaje.
+
+2. La primera version de ese test tenia esto:
+
+```rust
+let must_scan = ["crates"];
+for dir in must_scan { assert!(scanned.contains(&dir), ...); }
+```
+
+Que es **tautologico**: `crates` ya estaba en la lista, asi que la asercion no podia fallar nunca.
+Un test que no puede fallar no es un test, es la misma decoracion que N+54 senalo en las cinco
+aserciones del contrato, reincidente en el fichero que se escribio para arreglarlo. Se sustituyo
+por `assert_eq!(ANCHOR_SCAN_DIRS.len(), 4, ...)`, que si cae cuando el ambito cambia.
+
+**Lesson 134 (nueva):** una asercion que deriva de un literal que la propia asercion define no
+comprueba nada. Revisar un test nuevo preguntandose "que mutacion lo haria fallar" es la unica
+forma de saber si protege algo, y aqui la respuesta habria sido "ninguna". La lesson 129
+("mutar cada asercion") es la que se aplico a si mismo, y por eso se encontro.
+
+Contrato de 7 a **8 aserciones, todas vistas caer**. `cargo fmt` limpio, `clippy --tests` sin
+errores, core completo **3106 passed, 0 failed**.
+
+**Y el patron completo de los tres bloques, que es lo que de verdad se aprende aqui.** Las
+reglas falsas que se han encontrado, en orden: las cuatro cifras de N+48 (medidas, no ejecutadas),
+la guarda `>= 30` (medida pero con suelo), las 13 anclas (criterio en prosa, nunca ejecutado), la
+exclusion de `tests/` (codigo mas debil que la frase), el ambito de 4 directorios (codigo mas
+estrecho que la frase) y la asercion tautologica (no comprobable). **Cinco de seis son el mismo
+error: enunciar una regla en prosa y suponer que se cumple.** La unica que era una medicion de
+verdad, la del conteo, fue la que sirvio para detectar a las otras cinco.

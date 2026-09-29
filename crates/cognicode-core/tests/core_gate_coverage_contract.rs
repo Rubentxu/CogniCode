@@ -219,14 +219,15 @@ fn anchor_suites_are_still_present_by_name() {
 #[test]
 fn anchors_stay_unreferenced_elsewhere() {
     let root = repo_root();
-    // Where a reference may legitimately live: this contract pins the very
-    // names, so the contract file itself is excluded, as is the suite's own
-    // source. Everything else counts.
+    // Only this contract is exempt: it pins the very names, quoted on
+    // purpose, and no suite can cite itself by its own quoted file name.
+    // Everything else counts, including other suites, which an earlier
+    // version of this test excluded wholesale.
     let mut referenced: Vec<&str> = Vec::new();
     for anchor in ANCHOR_SUITES {
         let needle = format!("\"{anchor}\"");
         let mut found = false;
-        for dir in ["crates", ".github", "docs", "openspec"] {
+        for dir in ANCHOR_SCAN_DIRS {
             walk(&root.join(dir), &needle, &mut found);
             if found {
                 break;
@@ -242,6 +243,39 @@ fn anchors_stay_unreferenced_elsewhere() {
          they are no longer the silently-loseable set this list protects: \
          {referenced:?}. Either move them out of the anchor list or keep \
          them if the reference is what should break."
+    );
+}
+
+/// Where the anchor-reference scan looks. Four directories, and the
+/// repository root holds about eighty more; the rule sentence is
+/// narrowed to match, because a rule narrower in the code than in the
+/// prose is the defect N+57 fixed. Verified 2026-09-29: no anchor is
+/// referenced from a root-level file or from the untracked scratch
+/// directories. `target/` is build output and is left out on purpose.
+const ANCHOR_SCAN_DIRS: &[&str] = &["crates", ".github", "docs", "openspec"];
+
+/// The scan scope is pinned, so widening or shrinking it is a reviewed
+/// act rather than a silent drift.
+#[test]
+fn the_anchor_scan_scope_is_pinned() {
+    let root = repo_root();
+    for dir in ANCHOR_SCAN_DIRS {
+        assert!(
+            root.join(dir).is_dir(),
+            "{dir} is scanned for anchor references but does not exist; the \
+             scan silently covers less than this test claims"
+        );
+    }
+    assert!(
+        !ANCHOR_SCAN_DIRS.contains(&"target"),
+        "target/ is build output; scanning it would be slow and meaningless"
+    );
+    assert_eq!(
+        ANCHOR_SCAN_DIRS.len(),
+        4,
+        "the anchor scan scope changed to {ANCHOR_SCAN_DIRS:?}. Widen it only \
+         together with the rule sentence, and remember that target/ and the \
+         untracked scratch directories are the intended exclusions."
     );
 }
 
