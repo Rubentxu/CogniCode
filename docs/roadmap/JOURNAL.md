@@ -7087,3 +7087,68 @@ cayo". El segundo watcher uso solo el id y funciono. Lo dejo escrito porque la l
 justo que un verde local no es un verde de CI: el reciproco tambien es cierto, y **un fallo de
 observacion no es un fallo del gate**. Distinguir uno de otro evita re-ejecutar 16 minutos de build
 release por un bug de shell.
+
+---
+
+## N+52 — `cp2-cli-coverage-gap` ya estaba cerrado: el conteo estaba obsoleto, no el gate
+
+N+51 dejo este ciclo como "siguiente P0, medido por ultima vez hace dos bloques". La obligacion de
+medir antes de decidir resulto en la conclusion opuesta a la que el roadmap sugeria: **el gate del
+CLI ya cubre las 28 suites**. No hay ciclo que abrir. Registrar esto es parte del trabajo, porque un
+roadmap que ofrece abrir un ciclo sobre un hueco inexistente consume una sesion entera de
+investigacion para volver a medir lo que ya se midio.
+
+**Medido en el arbol, 2026-09-29, sobre `97a0c740`.**
+
+| Que | Numero | Como |
+|---|---|---|
+| Suites en `crates/cognicode-cli/tests/` | **28** | `ls *.rs` |
+| Suites con un `--test <nombre>` pineado en `pr-ci.yml` | **7** | grep por nombre |
+| Suites cubiertas solo por el selector sin restriccion | **21** | las 28 menos las 7 |
+| Targets de test que compila el selector del gate | **28** | `--no-run --message-format=json` |
+| Suites tras `#![cfg(feature = ...)]` a nivel de crate | **1** | `evidence_cli_mcp_equivalence.rs` |
+| Suites del CLI que reportan 0 tests con la feature del gate | **0** | ejecucion target por target |
+
+Las 28 del selector son las 28 del arbol, una a una, sin sobras ni faltas. Ese es el invariante que
+`cli_gate_coverage_contract` ya pinea y por eso no hace falta un segundo contrato: el hueco que
+N+48 empezo a medir era el mismo que N+50 cerro con el selector de la linea 518.
+
+**El unico verde vacio del CLI, y por que no lo es.** `evidence_cli_mcp_equivalence` lleva
+`#![cfg(feature = "ladybug")]` en la linea 35, no en la 1. Ejecutado:
+
+```
+--features ladybug   -> running 9 tests,  9 passed; 0 failed
+sin la feature       -> running 0 tests,  0 passed; 0 failed   (verde vacio)
+```
+
+El gate pasa `--features ladybug`, asi que los 9 tests **corren**. Las 28 suites, una por una, con
+la feature del gate: ninguna reporta 0. Y `evidence_cli_mcp_equivalence` con la feature da 9 tests,
+no los 5 que registra `grep -c "#\[test"`: dos son `#[tokio::test]`, que el grep no cuenta. **Un
+conteo por grep de atributos subestima lo que un target ejecuta.** Es la misma trampa que N+48
+cayo al casar `20 passed` como `0 passed`, y merece la misma lesson: para volumen de tests, la
+fuente es la salida del runner.
+
+**El `0 passed` del log de CI no era un target de tests.** El paso `cognicode-cli integration
+suites` mostro 31 lineas de `test result` y una de ellas era `0 passed; 0 failed`. Con `--quiet` el
+log no nombra los binarios, asi que no se puede atribuir leyendo el log. Medido localmente, ninguna
+suite del CLI esta vacia, luego ese `0` corresponde al binario `unittests` de un objetivo sin
+`--lib`, que `cognicode-cli` no tiene tests unitarios propios porque es un crate solo-bins. Se
+comprobo ejecutando las 28 una a una, no suponiendolo. **Agregado `passed=598 failed=0` en el
+paso del CLI, de 31 lineas de resultado.** Queda escrito como medido y con su ambiguedad
+resuelta, no como afirmacion.
+
+**Lesson 125 (nueva):** un ciclo de backlog puede quedar obsoleto sin que nada falle. El gate de
+N+50 lo cerro entero y el roadmap seguia ofreciendo el ciclo como P0 siguiente porque el numero
+que lo justificaba venia de una medicion de dos bloques antes. Nada rojo, ningun test caido, un
+work item de trabajo que ya no tiene objeto. **La obsolescencia de un backlog item no se detecta
+con tests, se detecta midiendo**, igual que un test rojo. Y medir cuesta una sesion: es mas barato
+cerrar el item con evidencia que investigarlo hasta el fondo.
+
+**Lesson 126 (nueva):** contar atributos de test con grep es una estimacion, no un conteo. Los
+`#[tokio::test]` y los tests generados no aparecen, y el error va siempre en la direccion que hace
+el hueco parecer menor. Cuando el numero importa para una decision, sale de la salida del runner.
+
+**Estado tras N+52.** No hay ciclo `cp2-cli-coverage-gap` que abrir. El unico P0 vivo es integrar
+PR #307, que es decision del operador: rama `97a0c740` con `merge-gate` `SUCCESS` (run
+`36543355473`), `mergeStateStatus: CLEAN`, `MERGEABLE`. A-014 sigue `paused` por el defecto del
+toolchain de SDDK, no del repo, y no se fuerza a `done`.
