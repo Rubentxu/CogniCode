@@ -24,6 +24,11 @@
 //! defect on its own: `cargo test -p cognicode-cli --lib` must not appear
 //! in any workflow, because it is both wrong for this crate and a
 //! selector that skips every `tests/` target by construction.
+//!
+//! Third assertion, added after the gate went red for real: the gate can
+//! also fail by *executing* a suite whose preconditions the workflow does
+//! not create. See
+//! `the_gate_provides_what_the_release_flow_suites_require`.
 
 use std::path::{Path, PathBuf};
 
@@ -211,6 +216,75 @@ fn the_ladybug_feature_is_built_by_the_gate() {
          `evidence_cli_mcp_equivalence` compiles to an empty test binary \
          and reports 0 passed / 0 failed / exit 0. The restricted \
          selectors found: {unrestricted:?}"
+    );
+}
+
+#[test]
+fn the_gate_provides_what_the_release_flow_suites_require() {
+    // PR #307, run 36496128455. The unrestricted step compiles every
+    // `tests/*.rs` target, and four of those
+    // (`prf_dist_01_06_release_candidate_uat`,
+    // `prf_dist_workflow_flatten_uat`, `prf_f6_w1_release_coherence`,
+    // `prf_f6_w2_staging_contract`) shell out to real release-profile
+    // binaries via `common::release_bin_path()` / `common::release_dir()`.
+    //
+    // The gate job did not build them, so merge-gate went red with
+    // `missing release binary cogh at target/release/cogh`. It stayed
+    // invisible locally because a developer machine with a global
+    // `target-dir` override has those binaries sitting in the shared
+    // release dir, so the same command reports 27 passed / 0 failed.
+    //
+    // Two things are worth pinning and they are not the same assertion:
+    //
+    //   1. the four suites that need release binaries are still compiled
+    //      by the gate (narrowing the selector to hide them would convert
+    //      a red gate into an ungated suite, which is the original defect
+    //      wearing a different hat), and
+    //   2. the gate creates the binaries they need. Removing this step
+    //      is the regression that produced the red build, so it has to
+    //      fail here rather than at 23:17 in a remote log nobody reads.
+    let workflow = read_workflow();
+
+    let release_dependent = [
+        "prf_dist_01_06_release_candidate_uat",
+        "prf_dist_workflow_flatten_uat",
+        "prf_f6_w1_release_coherence",
+        "prf_f6_w2_staging_contract",
+    ];
+    let invocations = cli_test_invocations(&workflow);
+    let has_unrestricted = invocations.iter().any(|c| is_unrestricted_cli_selector(c));
+    assert!(
+        has_unrestricted,
+        "no unrestricted CLI selector: {invocations:?}. The four release-flow \
+         suites below depend on it to be compiled at all."
+    );
+
+    for suite in release_dependent {
+        let file = repo_root()
+            .join("crates/cognicode-cli/tests")
+            .join(format!("{suite}.rs"));
+        assert!(
+            file.exists(),
+            "release-flow suite {suite} no longer exists; update the list in \
+             this contract to match reality instead of leaving a stale pin"
+        );
+    }
+
+    // The precondition itself. `cargo build --release` for the CLI crate
+    // produces `cogh`, `cognicode` and `cognicode-release`, which is
+    // exactly the set the four suites resolve through
+    // `common::release_bin_path()` and `common::release_dir()`.
+    let builds_release = workflow.contains("cargo build --release -p cognicode-cli");
+    assert!(
+        builds_release,
+        "the merge gate runs suites that require real release-profile \
+         binaries (cogh, cognicode, cognicode-release) but never builds \
+         them. On a clean CI runner `target/release/` does not exist, so \
+         `common::release_dir()` falls through to a directory that is not \
+         there and the suites panic with `missing release binary cogh`. \
+         Locally this is masked by whatever release binaries happen to \
+         exist on the developer's machine. Add the release build to the \
+         merge-gate job, before the unrestricted step."
     );
 }
 
