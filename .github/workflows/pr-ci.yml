@@ -459,6 +459,8 @@ jobs:
         run: cargo test -p cognicode-mcp --test a013_lifecycle_uat --quiet
       - name: PRF-SEC-02 read-only posture (black-box MCP contract)
         run: cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet
+      - name: A-016 tools↔runtime consistency (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet
       - name: A-013 lifecycle gate coverage contract (must not rot)
         run: cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet
       # A-014 / CP2.4-onboarding — capability discovery machine-readable.

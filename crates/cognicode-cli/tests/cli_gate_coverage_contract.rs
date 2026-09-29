@@ -288,6 +288,25 @@ fn the_gate_provides_what_the_release_flow_suites_require() {
     );
 }
 
+/// The A-016 MCP contract suite must itself be gated. It is the only
+/// pin for the class of drift R5 cares about (published tool inventory
+/// vs runtime `MUTATING_TOOLS`); if no step in `pr-ci.yml` compiles it,
+/// a tool added to the runtime without a contract entry stays invisible
+/// to every required check and merge goes green anyway.
+#[test]
+fn the_a016_tools_runtime_consistency_suite_is_gated() {
+    let workflow = read_workflow();
+    assert!(
+        workflow.contains("--test a016_tools_runtime_consistency"),
+        "pr-ci.yml never references a016_tools_runtime_consistency, so the \
+         only contract↔runtime mutating-tools drift pin is ungated: a change \
+         breaking it reads green at merge time. Add a named step \
+         `cargo test -p cognicode-mcp --test a016_tools_runtime_consistency \
+         --quiet` to the merge-gate job, next to the other black-box MCP \
+         contract steps"
+    );
+}
+
 #[test]
 fn the_coverage_contract_itself_is_pinned() {
     // Self-reference. A contract that protects coverage but is itself
