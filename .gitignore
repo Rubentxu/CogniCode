@@ -219,3 +219,9 @@ sandbox/.compat/
 # ignore they show up as untracked noise on every run.
 __pycache__/
 *.pyc
+
+# SDDK orchestration scratch. `sddk` writes these into the working directory
+# when a command is run from the repo root; they are session output, never
+# project state. The unit's real evidence lives under docs/, not here.
+.sddk-scratch/
+out-*.json

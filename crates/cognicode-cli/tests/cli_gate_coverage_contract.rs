@@ -448,3 +448,76 @@ fn the_coverage_contract_itself_is_pinned() {
          coverage guarantee is itself ungated."
     );
 }
+
+/// The Kotlin DSL pipeline is the migration target for this gate. Until it is
+/// gated by the same contract as the workflow, a suite can be dropped from
+/// `merge-gate.pipeline.kts` — and the gate keeps passing, because every
+/// assertion in this file reads only `pr-ci.yml`.
+///
+/// `pr-ci.yml` stays the source of truth while both exist: deleting the
+/// workflow step still fails `the_merge_gate_compiles_every_integration_suite`,
+/// and deleting the pipeline step fails this test. Removing the migration
+/// target is therefore a separate, visible act — not a silent one.
+#[test]
+fn the_kotlin_pipeline_does_not_narrow_the_cli_gate() {
+    let kts_path = repo_root().join("merge-gate.pipeline.kts");
+    let Ok(kts) = std::fs::read_to_string(&kts_path) else {
+        // No pipeline yet: the workflow is the only gate, and the tests above
+        // already hold it. Nothing to compare against.
+        return;
+    };
+
+    let unrestricted: Vec<String> = kts
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains("cargo test -p cognicode-cli"))
+        .map(|l| l.to_string())
+        .filter(|c| is_unrestricted_cli_selector(c))
+        .collect();
+    assert!(
+        !unrestricted.is_empty(),
+        "merge-gate.pipeline.kts has no unrestricted `cargo test \
+         -p cognicode-cli` invocation, so every tests/*.rs target and bin \
+         target depends on individual stages there. The YAML keeps its \
+         unrestricted step, so the two gates have diverged."
+    );
+}
+
+/// Every `--test <suite>` the workflow gates in `cognicode-cli` must also be
+/// gated by the Kotlin pipeline. This is the anti-vacuity assertion for the
+/// migration: it fails if a stage is renamed away, or if the pipeline is
+/// edited to compile a narrower set than the workflow it replaces.
+#[test]
+fn the_kotlin_pipeline_gates_every_suite_the_workflow_gates() {
+    let kts_path = repo_root().join("merge-gate.pipeline.kts");
+    let Ok(kts) = std::fs::read_to_string(&kts_path) else {
+        return;
+    };
+    let workflow = read_workflow();
+
+    let gated_in_workflow: Vec<String> = cli_test_invocations(&workflow)
+        .iter()
+        .filter_map(|c| c.split("--test ").nth(1))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .map(|s| s.trim_matches('"').to_string())
+        .collect();
+
+    let mut missing: Vec<String> = gated_in_workflow
+        .iter()
+        .filter(|suite| {
+            !kts.contains(&format!("--test {suite}\""))
+                && !kts.contains(&format!("--test {suite} "))
+        })
+        .cloned()
+        .collect();
+    missing.sort();
+    missing.dedup();
+
+    assert!(
+        missing.is_empty(),
+        "pr-ci.yml gates these cognicode-cli suites that \
+         merge-gate.pipeline.kts does not: {missing:?}. The Kotlin pipeline \
+         is meant to replace the workflow with the same coverage; a suite that \
+         exists in only one of them is a narrowing the gate will not catch."
+    );
+}
