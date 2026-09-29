@@ -26,9 +26,14 @@
 // receives a literal `$` and expands its own. Two forms look equivalent and are not.
 // `\${'$'}name` leaves the backslash in the emitted script and bash then fails with
 // "syntax error near unexpected token `('", and `\$name` is rejected outright by
-// 0.39.1-rc1 with "Unresolved reference" (it compiles on 0.39.0, so validating against
-// whatever `pipelinek` is first on PATH hides the break). Run `mise which pipelinek` and
-// validate against that path, not against `pipelinek` from PATH.
+// 0.39.1-rc1 with "Unresolved reference" — it compiles on 0.39.0, so a PATH that
+// resolves an older build validates a pipeline that would not compile here.
+//
+// `pipelinek` on PATH resolves 0.39.1-rc1 from .tool-versions. That was not free: a
+// symlink at ~/.local/bin/pipelinek pointing at a 0.39.0 install took precedence over
+// the asdf shim and ran every pipeline against the wrong compiler. If validation and
+// run ever disagree again, check `command -v pipelinek` first — the bug is always a
+// version mismatch, never the script.
 //
 //   pipelinek run merge-gate.pipeline.kts --db <journal.db>
 import java.io.File

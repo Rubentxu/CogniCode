@@ -7778,6 +7778,78 @@ Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
 `clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
 **601 passed, 0 failed** (598 + los 3 nuevos).
 
+## N+51 — A-015 reconciliada, y la causa raíz real del atasco de A-014
+
+**A-015 estaba entregada y el registro no lo decía.** El commit `29a96c53` tocó
+`ROADMAP.md` y el journal pero **no** `16-ACTION-REGISTER.md`, así que la fila seguía
+leyéndose como abierta. Verificado en esta sesión, no por el mensaje del commit:
+`cargo test -p cognicode-cli --test a015_onboarding_gate` → **3 passed, 0 failed**, y el
+paso existe en `pr-ci.yml:488`. Fila corregida con la evidencia medida. Esto no es
+cosmetico: A-033, A-034, A-035 y A-036 son **P0** y declaran dependencia de A-015, asi
+que el camino a los skills figuraba bloqueado cuando ya no lo estaba.
+
+**La causa raíz del atasco de A-014 no es `evaluate-gate`.** N+49 la localizó en que
+`evaluate-gate` persiste su `gate_receipt` sin emitir evento de ledger. Es cierto, pero no
+es lo que impide avanzar. Medido hoy contra `sddk 2.2.27`:
+
+```
+$ sddk cycle start --name ledger-probe-check   →  status: OPEN, phase: explore   (OK)
+$ sddk cycle next                              →  error: no active cycle found
+```
+
+El ciclo se crea bien y de inmediato es invisible. Leyendo `cycles` en el ledger hay
+**25 ciclos con `status='OPEN'`** en el mismo proyecto, el mas antiguo de 2026-08-12. La
+resolucion de "ciclo activo" consulta el proyecto y encuentra 25 candidatos, asi que no
+elige ninguno. Un ciclo recien creado es irresoluble **por construccion**, con o sin
+gates. Eso explica por que A-014 lleva dos dias `active` sin poder transicionar, y por que
+el mensaje de recuperacion ("run evaluate-gate") es inaccionable: el problema no estaba
+nunca en el gate.
+
+**Ademas, los 25 ciclos no se pueden limpiar desde el agente.** La via legitima existe
+(`sddk cycle supersede`), pero exige aprobacion de operador antes de mutar `cycle_state`:
+
+```
+$ sddk cycle supersede --reason scope-invalid …
+error: ADMISSION: approval required before mutating 'cycle_state'
+       (decision_id=approval-system-cycle_supersede); no changes were made
+```
+
+El motor **rechazo, no escribio nada, y nombro la decision que necesita**. Eso es el
+sistema correctement cerrado y es la respuesta correcta: limpiar 25 ciclos es una
+decision de governance del operador, no una tarea de agente. No se forzo con
+`--no-verify`, por el mismo motivo que N+43 y N+49: escribir estado falso en un ledger es
+irreversible y mas caro de recuperar que un item que sigue honestamente abierto.
+
+**Herramienta: el PATH mintia sobre que se ejecutaba.** Un symlink en
+`~/.local/bin/pipelinek` apuntando a una instalacion **0.39.0** tenia precedencia sobre
+el shim de asdf, asi que todas las ejecuciones de pipeline de la sesion anterior
+corrieron contra un compilador distinto del que declara `.tool-versions`
+(0.39.1-rc1). No era cosmético: la rc1 **rechaza** `\$name` con "Unresolved reference",
+donde 0.39.0 compila en silencio, de modo que el pipeline se validaba verde contra un
+compilador que en la version fijada no compilaba. Symlink eliminado (la distribucion
+0.39.0 se conserva en disco, el cambio es reversible). Verificado despues:
+`command -v pipelinek` → shim de asdf, y `pipelinek validate` de ambos `.kts` →
+`VALIDATION SUCCESSFUL` sin ruta absoluta. `product-fast` reejecutado con el shim ya
+corregido: **8/8 stages**.
+
+**Lesson 121 (nueva):** un motor que crea un recurso y acto seguido no lo encuentra no
+tiene un bug de validacion, tiene una ambiguedad de seleccion. La distincion importa
+porque el trabajo de diagnostico de N+49 fue contorno a contorno de un gate que nunca
+iba a dejar pasar la transicion. Antes de culpar a la ultima capa que se ejecuto, cuenta
+los candidatos de la capa que elige.
+
+**Lesson 122 (nueva):** un `PATH` con varias instalaciones de la misma herramienta es una
+fuente de verdad mas, y silenciosamente incorrecta. `command -v` es la unica pregunta que
+distingue "el repo declara 0.39.1-rc1" de "estoy ejecutando 0.39.0", y es la que hay que
+hacer antes de atribuir un fallo de compilacion al codigo que se acaba de escribir.
+
+**Pendiente de decision del operador (no de agente):**
+1. Aprobar `approval-system-cycle_supersede` para cerrar los 25 ciclos `OPEN` y
+   desbloquear la resolucion de ciclo activo. Sin esto, ningun ciclo nuevo podra
+   transicionar de fase.
+2. Desbloquear la cola de runners de GitHub: el run PR-CI de #309 lleva 1h49m en
+   `pending` sin arrancar, y el required check `merge-gate` impide aterrizar en `main`.
+
 ## Apply A-014 — corrección de stderr JSON (2026-09-29)
 
 El comando JSON de capabilities escribía INFO de inicio y Rayon a stderr aunque
