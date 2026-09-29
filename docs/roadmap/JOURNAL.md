@@ -7383,3 +7383,53 @@ regla enunciada en prosa resulto falsa: las cuatro cifras de N+48, la guarda `>=
 13 anclas. **Si un criterio no se puede ejecutar, no es un criterio.** Y si se puede ejecutar,
 ejecutarlo: por menos trabajo que mantener la mentira, y porque la lista de anclas contaminada
 habria protegido suites que ya estaban anunciando su propia perdida.
+
+---
+
+## N+57 — el test implementaba una regla mas debil que la que decia
+
+N+56 dejo las anclas como conjuntos de "cero referencias fuera de su propio fichero", con un test
+que recorre el arbol para comprobarlo. Faltaba una pregunta mas honda: **¿el test implementa la
+regla que dice?** Y no la implementaba entera.
+
+El walker hacia esto:
+
+```rust
+let is_own_suite = path.to_string_lossy().contains("/tests/");
+```
+
+Es decir, **excluia todo el arbol `tests/` de cualquier crate**, no solo el fichero de la suite que
+se esta midiendo. Consecuencia: si una suite ancla aparecia citada dentro de **otra suite**, la
+referencia era invisible y el test pasaba. La frase del criterio dice "cero referencias en ninguna
+parte"; el codigo decia "cero referencias, excepto las que estan dentro de `tests/`". **Una regla
+que no ve una clase entera de referencias es mas debil que la frase que la describe**, y por eso
+es indistinguishable de no tenerla.
+
+La exclusion correcta es **por fichero, no por directorio**, y de hecho basta con eximir el propio
+contrato, que es el unico que cita los nombres entrecomillados a proposito. Una suite no puede
+autocitarse por su nombre de fichero entrecomillado de forma que case.
+
+**Probado en las dos direcciones:**
+
+| Caso | Antes | Ahora |
+|---|---|---|
+| arbol intacto | 7 passed, exit 0 | 7 passed, exit 0 |
+| `read_set_e2e` citado en `pr-ci.yml` | exit 101 | exit 101 |
+| `read_set_e2e` citado en **`findings_graph_e2e.rs`** (otra suite) | **exit 0, no lo veia** | **exit 101**, nombra el ancla |
+
+Ese tercer caso es el que faltaba y es exactamente el que la exclusion ancha escondia.
+
+**Por que la medicion original con ripgrep no lo detecta.** Alli la exclusion era
+`!**/tests/$s.rs`, o sea **solo el fichero de la suite**, y por eso las 16 que se contaron como
+"cero referencias" si eran correctas. El desajuste estaba solo en el test de Rust, no en la
+medicion. Conviene tener las dos cosas separadas: **la medicion y la asercion pueden divergir, y
+cuando divergen la asercion es la que manda en el gate**, porque es la que corre en CI.
+
+`cargo fmt` limpio, `clippy --tests` sin errores, core completo **3105 passed, 0 failed**, arbol
+con un solo fichero modificado.
+
+**Lesson 133 (nueva):** al escribir un test para una regla, comprobar tambien que el test *mira
+donde la regla dice que se mira*. Una exclusion comoda, como "no me fijes en `tests/` porque ahi
+esta el ruido", se convierte sin querer en un punto ciego que no coincide con ninguna regla
+razonable, y el test sigue pasando. **La asercion y la frase tienen que decir lo mismo, y eso se
+comprueba con un caso que la frase prohibe y la asercion no.**

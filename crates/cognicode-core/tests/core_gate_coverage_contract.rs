@@ -245,6 +245,15 @@ fn anchors_stay_unreferenced_elsewhere() {
     );
 }
 
+/// Walks a directory tree looking for a quoted needle.
+///
+/// Two files are exempt, and the exemption is per-file, not per-directory:
+/// the suite's own source (which naturally mentions nothing, but is the
+/// thing being measured) and this contract (which pins the names by
+/// definition). An earlier version excluded anything under a `tests/`
+/// path, which silently hid a reference from one suite into another. The
+/// rule claims "referenced nowhere else"; a rule that cannot see a whole
+/// class of references is weaker than the sentence describing it.
 fn walk(dir: &Path, needle: &str, found: &mut bool) {
     if *found {
         return;
@@ -257,11 +266,15 @@ fn walk(dir: &Path, needle: &str, found: &mut bool) {
         if path.is_dir() {
             walk(&path, needle, found);
         } else if let Ok(text) = std::fs::read_to_string(&path) {
-            let is_own_suite = path.to_string_lossy().contains("/tests/");
-            let is_contract = path
-                .file_name()
-                .is_some_and(|f| f == "core_gate_coverage_contract.rs");
-            if text.contains(needle) && !is_own_suite && !is_contract {
+            let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            // Exempt only this contract, which pins the names verbatim by
+            // design. No suite file is exempt: a suite cannot reference
+            // itself by its own quoted file name in a way that would match,
+            // and excluding the whole tests/ tree would hide a reference
+            // from one suite to another, which is a reference the rule
+            // claims to see.
+            let is_contract = name == "core_gate_coverage_contract.rs";
+            if text.contains(needle) && !is_contract {
                 *found = true;
                 return;
             }
