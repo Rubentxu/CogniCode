@@ -7897,3 +7897,107 @@ Lo añade que N+49 no vio: el gate `exploration-sufficient` de este mismo ciclo 
 sucesivos a lo largo de la sesión. El motor acepta reintentos ilimitados y ninguno
 enlaza, así que el número de intentos no es señal de nada: la sesión anterior
 reintentó seis veces porque cada fallo proponía la misma acción como recuperación.
+
+## N+52 · El workflow.yaml canonico del framework no valida contra su propio runtime
+
+**Fecha:** 2026-09-29 · **Ciclo:** `ci-pipelinek-kotlin-migration` · **Estado:** `BLOCKED_EXTERNAL`
+
+### Observado
+
+Se intentó cerrar `SDDK005` (falta `schemas/`) y `SDDK009` (falta
+`docs/generated/workflow.md`) vendorizando el workflow canonico. **Los dos
+workflow.yaml disponibles fallan, cada uno por una causa distinta:**
+
+| Origen | Fases | Fallo observado |
+|---|---|---|
+| `sddk-framework/workflow/` | `explore,specify,design,plan,build,verify,uat,release,archive` (9) | 5 estados decode-only: `REMEDIATING` x9, `UAT_WAITING` x4, `APPROVAL_PENDING` x8, `RECOVERING` x2, `RELEASE_PENDING` x11 |
+| `~/.sddk-validate/fd/clone/` | `explore,specify,design,plan,build,review,verify,release,archive` (9) | `unknown variant review` (fase retirada) |
+
+Mensaje exacto del runtime 2.2.27:
+
+```
+workflow declares runtime-derived status UatWaiting on transition
+phase.verify.uat.sync field to; runtime-derived statuses are decode-only
+since the cycle/run lifecycle cutover (DELTA-CONF-004)
+```
+
+### Derivado (no observado, no aplicado)
+
+El cutover `DELTA-CONF-004` retiró `Remediating`, `ReleasePending`,
+`UatWaiting`, `ApprovalPending` y `Recovering` del record del ciclo: esos
+hechos pasan a vivir en `Run`/`Authority`. Se **podría** reescribir el
+workflow sustituyendo cada uno por `BLOCKED`, pero eso exige decidir la
+semántica correcta de ~34 transiciones, y el fichero canónico pertenece al
+framework, no a este repo.
+
+**Decisión tomada: no vendorizar.** Meter en el repo un workflow con estados
+elegidos a ojo produce un artefacto que parece autoritativo y no lo es.
+`SDDK005` y `SDDK009` quedan abiertos por esta causa, con el motivo
+registrado, no por omisión.
+
+### Distinción relevante: el código fuente local NO es el runtime instalado
+
+`strings ~/.local/bin/sddk` revela la regla `DELTA-CONF-004`, pero
+`grep "runtime-derived"` sobre `sddk-engine` y `sddk-domain` no la encuentra.
+El checkout de `sddk-framework` es **anterior** a 2.2.27. Razonar sobre el
+código fuente local produce la conclusión contraria a la del runtime real.
+
+## N+53 · `manifest.toml`: las capabilities declaradas eran inventadas
+
+**Fecha:** 2026-09-29 · **Estado:** `CLOSED`
+
+El manifest declaraba `code.analyze`, `code.query`, `code.explore`,
+`code.graph`, `code.contract`. **Ninguno existe.** El catalogo publicado
+`product/tools.json` tiene 73 tools, 0 mutantes, espeladas
+`analyze_impact`, `ask_about_code`, `build_graph`, `codebase_map`...
+
+Dos correcciones:
+
+1. `PackConsequence` acepta exactamente `creates | modifies | irreversible`
+   (leido del binario instalado). `reads` no existe; `code.analyze = "creates"`
+   era valido, las otras cuatro `modifies` tambien, pero **invertido**: solo
+   crean artefactos, no modifican nada.
+2. Con 0 tools mutantes, ninguna capability puede declarar `modifies`. Todas
+   son `creates`.
+
+El encabezado del fichero afirmaba "every entry below is a measured fact".
+No lo era. Corregido: las capabilities son ahora 4 tools reales del catalogo.
+
+**Leccion:** un manifest que se autodescribe como "medido" y contiene
+identificadores inventados es peor que no tener manifest, porque `sddk lint`
+pasa y da confianza falsa. Verificar contra `product/tools.json` antes de escribir.
+
+## N+54 · `sddk lint` confunde tipos genericos de Rust con rutas
+
+**Fecha:** 2026-09-29 · **Estado:** `KNOWN_UPSTREAM_DEFECT`
+
+4 de los 51 errores propios son falsos positivos del parser:
+
+```
+error[SDDK001] openspec/changes/archive/2026-09-17-e86-cogh-lifecycle/design.md:121:
+  explicit repository reference "Option<String" does not exist
+  help: create plugins/Option<String or correct the explicit reference
+```
+
+El linter lee `Option<String` (tipo generico en prosa) como ruta y **sugiere
+crear un directorio llamado `Option<String`**. No se arregla editando el
+documento. Bug upstream.
+
+Los 47 restantes si son deuda propia real: rutas movidas en refactors
+(ladybug, graph-executor, executor-equivalence).
+
+## Balance de `sddk lint`
+
+```
+antes:  108 errores  (SDDK001 x104, 005, 009, 010, 014)
+ahora: 106 errores  (SDDK001 x104, 005, 009)
+cerrado: SDDK010, SDDK014
+```
+
+Desglose real de los 104 `SDDK001`: 53 en `sandbox/` (referencias de terceros,
+`../../../etc/passwd` como fixture de robustez), 4 falsos positivos del parser,
+47 deuda propia por rutas movidas.
+
+**Criterio aplicado:** no se "arregla" `sandbox/` porque los fixtures de
+robustez de terceros existen para referenciar rutas que no existen. Fixearlos
+destruye el test.
