@@ -7777,3 +7777,74 @@ la herramienta** (`cargo metadata`), no suponiendo el valor por defecto.
 Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
 `clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
 **601 passed, 0 failed** (598 + los 3 nuevos).
+
+## N+62 — La branch protection de `main` NO se aplicaba a los admins
+
+Al integrar A-015 hice `git push origin HEAD` a `main` creyendo que la
+branch protection lo impediria. **No lo impidio: entro.** Y al mirar por
+que, el hallazgo es peor que el push:
+
+```
+GET /branches/main/protection
+  required_status_checks: { strict: true, contexts: ["merge-gate"] }
+  enforce_admins:        { enabled: false }        <-- aqui
+```
+
+La proteccion existia, con el contexto correcto y `strict: true`, tal
+como documenta G0.1 (commit `07f989c9`). Lo que no estaba activated era
+**que se aplicara a los administradores**, y el operador del repo es
+admin. Es decir: `merge-gate` era obligatorio para todos menos para
+quien hace el trabajo, que es justo la condicion en la que un gate
+deja de ser un gate.
+
+**La prueba, y el rodeo que hizo falta para verla.** Activar
+`enforce_admins` no es un `PATCH` con un campo suelto: devuelve
+`404`. Es el sub-recurso:
+
+```
+POST /branches/main/protection/enforce_admins   ->  200 {"enabled":true}
+```
+
+Con eso, el negativo por fin lo rechazo **GitHub**, y no el gate local:
+
+```
+$ git push origin HEAD:main
+remote: error: GH006: Protected branch update failed for refs/heads/main.
+remote: - Required status check "merge-gate" is expected.
+ ! [remote rejected]   HEAD -> main (protected branch hook declined)
+exit=1
+```
+
+**El rodeo importa mas que el resultado.** El primer intento de push
+tambien salio `exit=1`, y con esoHubo quien lo dio por bueno. No lo
+bloqueo GitHub: lo bloqueo el gate local de SDDK, porque el commit de
+prueba tenia un closeout pendiente. El mensaje era
+`[SDDK] push blocked: a commit still has a pending semantic closeout`, y
+un `exit=1` sin leer de donde venia se lee como "la proteccion
+funciona". Hubo que cerrar el closeout, dejar el commit de prueba
+alcanzable para poder cerrarlo (`b9a74456` estaba huerfano tras un
+`git checkout -B` que fallo por un `index.lock`), y solo entonces el
+rechazo vino de GitHub.
+
+**Lesson 140 (nueva):** `enforce_admins: false` es un gate que se
+desactiva solo en manos de quien mas lo usa. Un required check sin
+`enforce_admins` protege a los colaboradores y **no al maintainer**, y
+como el maintainer es quien empuja, el gate no protege nada en la
+practica. Hay que leer la proteccion entera, no el campo que se espera
+ver.
+
+**Lesson 141 (nueva):** un negativo que no alcanza el sistema que se
+quiere probar **no prueba nada**. El `exit=1` era cierto en los dos
+intentos, pero solo el segundo因为 GitHub contesto. Antes de dar un
+negativo por bueno: leer **quien** produjo el rechazo. Un gate local, un
+permiso local o un error de compilacion pueden fabricar un `exit=1`
+exactamente igual que una proteccion remota.
+
+**Estado tras la correccion** (verificado por la API, no de memoria):
+
+```
+contexts=["merge-gate"]  strict=true  enforce_admins=true  force_push=false
+```
+
+Ramas y ficheros de prueba eliminados; `main` local y remoto en
+`29a96c53`; arbol limpio.
