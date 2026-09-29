@@ -7798,3 +7798,13 @@ JSON de 0 bytes en ambos modos; modo texto conserva resumen y 192 bytes INFO.
 Es una corrección Apply nueva en el ciclo operativo OPEN/build, no una
 reescritura de la entrada histórica de cierre A-014. El addendum del Action
 Register conserva esa distinción; este recibo no implica cierre de ciclo.
+
+Verificado de nuevo sobre `f1a58ccb` (rebased sobre `29a96c53`): A-014 11/11,
+A-015 gate 3/3, A-013 gate 4/4, CLI gate coverage 6/6, y la suite CLI completa
+**593 passed, 0 failed** (la entrada N+62 decía 601; ese era el conteo sobre
+otra base de trabajo, y aquí se sustituye por el observado en este árbol).
+`cargo fmt --all --check` exit 0, `cargo clippy -p cognicode-cli --all-targets
+-D warnings` sin warnings. La mutación RED se repitió aislando solo el
+`LevelFilter::OFF`: el test cae a **10 passed, 1 failed**, capturando las dos
+líneas `INFO Starting CogniCode CLI` y `Rayon global thread pool initialized`,
+y vuelve a 11/11 al restaurar. La aserción muerde.
