@@ -7223,3 +7223,62 @@ la direccion silenciosa.
 **Estado.** Rama `7fe096c0` + este commit, `merge-gate` verde en `36546790616` hasta el anterior.
 PR #307 sigue abierto, `CLEAN`, `MERGEABLE`, sin mergear: decision del operador. A-014 sigue
 `paused` por el defecto del toolchain, no del repo.
+
+---
+
+## N+54 — las cinco aserciones del contrato, vistas fallar una a una
+
+N+53 arreglo la guarda floja del contrato y demostro RED/GREEN. Faltaba lo que mas cuesta y mas
+importa: **comprobar que cada asercion muerde de verdad**, no que pasa en el caso bueno. Un
+contrato que nunca se ha visto caer no distingue una proteccion de un adorno, por muy bien escrita
+que este la asercion.
+
+Las cinco, una por una, con el fichero y el workflow restaurados despues de cada prueba.
+
+| Asercion | Mutacion aplicada | Resultado observado |
+|---|---|---|
+| `assert_eq!(len, 37)` | borrar `inc007_integration.rs` (36 suites) | `FAILED. 4 passed; 1 failed`, exit 101, lista las 36 |
+| sin restriccion | selector a `--tests` | `FAILED. 3 passed; 2 failed` |
+| sin restriccion | borrar el paso `--features evidence-kernel` | `FAILED. 4 passed; 1 failed`, mensaje con el selector encontrado |
+| feature vacia | suite tras `cfg` sin tests | cubierta por `a_gated_suite_still_declares_tests`; RED demostrado en N+51 con la suite borrada de disco |
+| autopin | quitar `--test core_gate_coverage_contract` del workflow | `FAILED. 4 passed; 1 failed`, "the coverage guarantee is itself ungated" |
+
+**El limite que N+53 declaro, ahora medido y no supuesto.** Renombrar `inc007_integration` a
+`renombrada_por_error` deja el conteo en 37 y el contrato pasa **5/5**. Es exactamente la laguna
+documentada: el `assert_eq` pina *cuantas* suites hay, no *cuales*. Pero el hecho relevante es el
+otro: **la suite renombrada sigue gateada**, porque el selector sin restriccion compila todo
+`tests/*.rs` y no depende del nombre. El renombrado no pierde cobertura, solo evade el pin de
+conteo. La proteccion real la da el selector; el `assert_eq` protege contra *borrar*, que es la
+operacion que de verdad pierde tests. Ambos hacen falta y cada uno cubre un fallo distinto.
+
+**Un falso positivo mio que conviene no pasar por alto.** La suite CLI completa fallo en local con
+`498 passed; 1 failed`, en `prf_dist_01_06_release_candidate_uat`:
+
+```
+panicked at crates/cognicode-cli/tests/prf_dist_01_06_release_candidate_uat.rs:65
+missing release binary cogh at .../target/release/cogh
+```
+
+Causa: yo estaba corriendo con `CARGO_TARGET_DIR` apuntando a un directorio scratch, y ese test
+exige el binario release en el `target/release` del repo. Con el target dir por defecto: **5 passed,
+exit 0**. El codigo estaba bien y el gate remoto tambien (verde en 598/598); el fallo era del
+entorno de prueba. **Un rojo local no es un rojo del producto**, y la leccion de N+50 ("un verde
+local no es un verde de CI") tiene el reciproco exacto: antes de reportar un fallo hay que
+comprobar que es del codigo y no del `CARGO_TARGET_DIR` con el que se ejecuto. Se registra porque
+casi se reporta como regresion.
+
+**Estado final medido desde el arbol de trabajo, con el target dir del repo:**
+
+```
+cognicode-core  --features evidence-kernel  -> exit 0,  3103 passed, 0 failed, 39 lineas de resultado
+cognicode-cli   --features ladybug         -> exit 0,   598 passed, 0 failed, 31 lineas de resultado
+cognicode-mcp                              -> exit 0,   149 passed, 0 failed
+```
+
+**Lesson 129 (nueva):** un contrato se evalua por los casos en los que se cae, no por los casos en
+los que pasa. Cinco aserciones que nunca se han visto fallar son cinco afirmaciones sin evidencia.
+Mutarlas una por una cuesta minutos y es la unica forma de saber que el fichero protege algo.
+
+**Lesson 130 (nueva):** antes de reportar un test rojo local, comprobar el `CARGO_TARGET_DIR` y las
+precondiciones de binarios. Un fallo de entorno que se lee como regresion cuesta mas que el test
+rojo que no existia, porque induces a arreglar codigo sano.
