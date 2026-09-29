@@ -1537,8 +1537,10 @@ impl CommandExecutor {
     async fn execute_capabilities(format: &str) -> Result<(), Box<dyn std::error::Error>> {
         // Build the doc in memory first so any error in construction
         // is reported as a structured envelope and never leaks a
-        // partial document to stdout.
-        let doc = build_capabilities_doc();
+        // partial document to stdout. JSON emission keeps stderr
+        // pristine (the document is pipeable unfiltered); the missing
+        // inventory warning is a text-mode diagnostic only.
+        let doc = build_capabilities_doc(format == "json");
 
         if format == "json" {
             let serialized = serde_json::to_string(&doc)?;
@@ -2268,8 +2270,10 @@ fn print_text_render(out: &crate::interface::mcp::schemas::FindUsagesOutput) {
 /// No network, no mutation. Reading from `product/*.json` falls back
 /// to runtime-only data when the artefacts are missing (rare; only
 /// happens if the binary was built against a tree where the files
-/// have been moved). A warning is emitted on stderr in that case.
-fn build_capabilities_doc() -> Value {
+/// have been moved). A warning is emitted on stderr in that case,
+/// unless `json_emission` is set: JSON output is pipeable unfiltered,
+/// so a successful run must never write diagnostics to stderr.
+fn build_capabilities_doc(json_emission: bool) -> Value {
     use crate::interface::mcp::rmcp_adapter::CogniCodeHandler;
     use crate::product::PROFILE_POSTURES;
 
@@ -2325,7 +2329,7 @@ fn build_capabilities_doc() -> Value {
             tools_arr.push(t.clone());
         }
     }
-    if tools_arr.is_empty() {
+    if tools_arr.is_empty() && !json_emission {
         eprintln!(
             "warning: {} not found; emitting empty tools array",
             tools_path.display()
