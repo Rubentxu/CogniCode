@@ -22,18 +22,20 @@
 // injected REPO_ROOT: nothing is read from the environment, and `repoRoot` is asserted
 // against a real Cargo.toml before any gate runs.
 //
-// Shell variables must be written `${'$'}name` — verified end to end: the shell
-// receives a literal `$` and expands its own. Two forms look equivalent and are not.
-// `\${'$'}name` leaves the backslash in the emitted script and bash then fails with
-// "syntax error near unexpected token `('", and `\$name` is rejected outright by
-// 0.39.1-rc1 with "Unresolved reference" — it compiles on 0.39.0, so a PATH that
-// resolves an older build validates a pipeline that would not compile here.
+// Shell variables inside a **raw** string (`"""..."""` + trimIndent) must be written
+// `${'$'}name`; the shell then receives a literal `$` and expands its own. This is not a
+// version quirk and the distinction that matters is raw vs normal string, not 0.43.0 vs
+// 0.39.1-rc1: in a normal single-line string `\$name` compiles and works, while in the
+// multiline raw strings every real step uses it fails with "Unresolved reference". Both
+// 0.39.1-rc1 and 0.43.0 behave the same way. `\${'$'}name` is wrong everywhere: the
+// backslash survives into the emitted script and bash fails with "syntax error near
+// unexpected token `('".
 //
-// `pipelinek` on PATH resolves 0.39.1-rc1 from .tool-versions. That was not free: a
-// symlink at ~/.local/bin/pipelinek pointing at a 0.39.0 install took precedence over
-// the asdf shim and ran every pipeline against the wrong compiler. If validation and
-// run ever disagree again, check `command -v pipelinek` first — the bug is always a
-// version mismatch, never the script.
+// `pipelinek` on PATH resolves 0.43.0. That was not free. A symlink at
+// ~/.local/bin/pipelinek pointing at a 0.39.0 install took precedence over the asdf shim
+// and ran every pipeline against a compiler the repo did not pin. If validation and run
+// ever disagree again, check `command -v pipelinek` first: the bug is a version
+// mismatch, never the script.
 //
 //   pipelinek run merge-gate.pipeline.kts --db <journal.db>
 import java.io.File
