@@ -6890,3 +6890,100 @@ contaron mas que una hora de pruebas de formatos.
 pista. "Run evaluate-gate --gate X" es exactamente lo que se ejecuto, seis veces, y el error no
 cambio. Cuando la recomendacion del error ya se ha seguido y el error persiste, la recomendacion
 describe la intencion del motor, no el camino que falta.
+
+---
+
+## N+50 — el gate rojo por tercera vez, y por qué verde local no era evidencia
+
+Sesion de recuperacion de contexto. El objetivo no era la agenda: era que el work item `8fec95db`
+(A-014) seguia en `active` sin poder transicionar por el defecto de ledger de N+49, y mientras se
+decidia eso aparecio algo que la sesion anterior no podia ver: **PR #307 estaba en `merge-gate`
+FAILURE desde las 23:17 del dia anterior**.
+
+**El fallo, tal cual lo da el log.** Run `36496128455`, job `109177749823`:
+
+```
+dist_release_candidate_generates_verifies_and_detects_tampering --- FAILED
+panicked at crates/cognicode-cli/tests/prf_dist_01_06_release_candidate_uat.rs:65:9:
+missing release binary cogh at /home/runner/work/CogniCode/CogniCode/target/release/cogh
+test result: FAILED. 4 passed; 1 failed
+##[error]Process completed with exit code 101.
+```
+
+**Causa raiz, aislada.** `25ac2a0d` (N+47) metio en `merge-gate` el step sin restriccion
+`cargo test -p cognicode-cli --features ladybug`. Ese selector compila **todos** los targets de
+`tests/`, y cuatro de ellos invocan binarios release reales via `common::release_bin_path()` y
+`common::release_dir()`: `prf_dist_01_06_release_candidate_uat`,
+`prf_dist_workflow_flatten_uat`, `prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract`. El job
+`merge-gate` nunca los construyo. En un runner limpio `target/release/` no existe, la resolucion cae
+al fallback `repo_root()/target/release`, y ahi no hay nada.
+
+**Por que N+47 lo midio como verde y no lo era.** N+47 reporto "592 passed / 0 failed / 2 ignored
+in 47s local" sobre una maquina con `~/.cargo/config.toml` fijando `target-dir =
+/var/home/rubentxu/cargo-targets`. Ahi habia binarios release de una corrida anterior. El mismo
+comando da **27 passed** aqui y **1 failed** en CI. La medicion local era correcta sobre la maquina
+local y no era evidencia sobre CI, que es la distincion que Lesson 118 ya senalaba y que aqui se
+paga de nuevo.
+
+Y un detalle que hace el hallazgo mas feo de lo que parece: esos binarios locales estan **stale**.
+`cogh` es de las 11:54, y el ultimo commit que toca `crates/cognicode-cli/src/bin/` es de las
+00:12. O sea que las cuatro suites estaban pasando contra binarios que no corresponden al arbol: no
+detectaban ni una regresion de release. Un verde que no puede detectar la clase de defecto que
+existe en el arbol no es un verde.
+
+**La decision: construir, no excluir.** Ninguna de las cuatro suites corre en **ningun** workflow del
+repositorio (verificado con grep sobre `prf_dist_01_06|prf_dist_workflow_flatten|prf_f6_w1|prf_f6_w2`
+en `.github/workflows/*.yml`: cero coincidencias). Estrechar el selector para que no se ejecuten
+habria convertido un gate rojo en cuatro suites sin gate, que es exactamente el hueco que N+46 y
+N+47 acaban de cerrar. El arreglo conserva el poder de deteccion y paga su coste en tiempo de build.
+
+Y el arreglo son **dos paquetes, no uno**. `cognicode-mcp` es miembro aparte del workspace, y las
+cuatro suites lo preparan junto a `cogh` y `cognicode` como payload canonico
+(`for stem in ["cogh", "cognicode", "cognicode-mcp"]`). Mi primer fix construia solo
+`-p cognicode-cli`; habria movido el fallo un paso por la misma asercion. Se detecta leyendo las
+cuatro suites una por una, no por el primer panic.
+
+**Evidencia, en orden y con su clase:**
+
+| Que | Resultado | Clase |
+|---|---|---|
+| Contrato `the_gate_provides_...` antes del fix | 5/6, FAILED | OBSERVED (RED) |
+| Contrato despues del fix | 6/6, exit 0 | OBSERVED (GREEN) |
+| Mutacion: quitar el step de build | FAILED, mensaje nombrando lo que falta | OBSERVED |
+| Mutacion: borrar una suite listada | FAILED, "no longer exists" | OBSERVED |
+| 4 suites, target limpio, solo los 2 builds del gate | 27 passed / 0 failed | OBSERVED (simulacion de CI) |
+| `cargo test -p cognicode-cli --features ladybug` | 31 targets, 0 failed, exit 0 | OBSERVED |
+| `cargo fmt --check`, `clippy -D warnings` | exit 0 / exit 0 | OBSERVED |
+| **`merge-gate` remoto** (run `36535221773`, SHA `e1dd8169`) | **SUCCESS, `mergeStateStatus: CLEAN`, `MERGEABLE`** | OBSERVED |
+
+La ultima fila se leyo del log, no del resumen. Step `Release-profile binaries for the release-flow
+UATs` → success; step `cognicode-cli integration suites` → success con 0 `FAILED` y 0 `panicked` en
+todo el log, y las cuatro suites que antes reventaban ejecutadas (5, 7, 6 y 9 tests). El contrato de
+cobertura, 6/6 tambien en remoto. La cadena completa: `fmt + clippy` SUCCESS, `build cognicode-mcp
+(release)` SUCCESS, `CR-08 selector` SUCCESS, `test pineado` SUCCESS, `merge-gate` SUCCESS.
+
+Lo que sigue siendo cierto despues de esto: el gate tardo **16 min** en lugar de ~6, y el build
+release anadido es la causa (3m41s + 5m05s en la simulacion local con target limpio). Es un coste
+deliberado para conservar cuatro suites que antes no las ejecutaba nadie, y queda anotado para que
+elegirlo sea una decision informada y no un descuido.
+
+**A-014 pasa a `paused`, no a `done`.** Al activar mi work item para que el gate de atencion
+apuntara a el, `sddk plan roadmap status` empezo a fallar con
+`multiple active work items: [8fec95db, e843c329]`, y eso **desactiva en silencio el attention gate**
+(el hook esta en modo `auto` y su sonda es precisamente ese comando; ver `lib.sh:sddk_probe_project`).
+Se resolvio poniendo A-014 en `paused`, que describe lo que se sabe: no esta hecho, no esta
+cancelado, esta detenido por un defecto de toolchain. `done` habria sido un estado falso en el
+ledger, la misma clase que N+43 registro para A-024 y que N+49 decidio no repetir.
+
+**Lesson 121 (nueva):** un gate puede fallar por ejecutar una suite cuyas precondiciones el propio
+workflow nunca crea. No es el step que falta (modo 1 de `cli_gate_coverage_contract`) ni el selector
+estrechado (modo 2); es un tercero, y el contrato existente no lo cubria porque solo contaba
+suites, no de donde salen los artefactos que esas suites consumen. La asercion que lo distingue
+comprueba la *precondicion*, no la *presencia*.
+
+**Lesson 122 (nueva):** cuando una maquina de desarrollo tiene `target-dir` global, "el comando
+pasa aqui" y "el comando pasa en CI" son afirmaciones sobre dos maquinas distintas, y la primera no
+implica la segunda. Peor: si los binarios de `target/` son mas viejos que el ultimo commit que toco
+su fuente, el verde local es verde contra codigo que ya no existe. Medir el gate exige reproducir su
+entorno de ejecucion, no confiar en el propio. La simulacion (`CARGO_TARGET_DIR` vacio + solo los
+builds que hace el job) costo 8m46s y es lo que convierte una suposicion en evidencia.
