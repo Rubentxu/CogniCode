@@ -6987,3 +6987,103 @@ implica la segunda. Peor: si los binarios de `target/` son mas viejos que el ult
 su fuente, el verde local es verde contra codigo que ya no existe. Medir el gate exige reproducir su
 entorno de ejecucion, no confiar en el propio. La simulacion (`CARGO_TARGET_DIR` vacio + solo los
 builds que hace el job) costo 8m46s y es lo que convierte una suposicion en evidencia.
+
+---
+
+## N+51 — los 33 suites de `cognicode-core` que no corrian, y una correccion a N+48
+
+Sesion de continuacion. N+50 dejo el gate verde; este bloque es el que N+47 dejo escrito como
+siguiente, y sus numeros de partida **no eran correctos**.
+
+**Lo que N+48 decia y lo que hay.** N+48 afirmaba "32 suites, 224 tests, ninguno en el gate" y
+"8 declaran 46 tests" tras `#![cfg(feature = "evidence-kernel")]". Medido hoy sobre el arbol:
+
+| Cifra | N+48 | Medido 2026-09-29 | Como se midio |
+|---|---|---|---|
+| Suites en `crates/cognicode-core/tests/` | 32 (de 36) | **37** | `ls *.rs` |
+| Suites sin paso en el gate | 32 | **33** de 37 | grep de cada nombre en `.github/workflows/*.yml` |
+| Suites tras `cfg(feature)` a nivel de crate | 8 | **5** | `cfg` en la linea 1 de cada fichero |
+| Tests declarados en las suites sin gate | 224 | **248** | conteo de `#[test]` / `#[tokio::test]` |
+
+Las 5 de verdad son `cp5_tie_break` (3), `equivalence_harness` (7), `identity_benchmark` (7) y
+`workspace_isolation` (2), con `#![cfg(feature = "evidence-kernel")]` en la linea 1, mas
+`behavior_budget_e2e` (7) que **solo documenta** el requisito en su cabecera sin llevarselo. N+48
+conto 8; la diferencia no es de criterio, es que 8 no es lo que hay en el arbol.
+
+No se corrige la entrada N+48. Se corrige aqui, porque un journal que se reescribe a si mismo
+pierde la capacidad de decir cuando se establecio por primera vez, que es justo lo que Lesson
+115 documenta para los criterios de aceptacion.
+
+**El verde vacio, demostrado ejecutando y no argumentando.** Las cuatro con cfg a nivel de crate, sin
+la feature:
+
+```
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Cuatro veces. Exit 0. Con `--features evidence-kernel`: **3 + 7 + 7 + 2**. Son 19 tests que
+reportan exito sin poder fallar, exactamente la clase que Lesson 117 nombro y que
+`cli_gate_coverage_contract` ya pinea para `--features ladybug` en el crate hermano. El mismo
+defecto, otra instancia, otro crate.
+
+**El matiz que N+48 se dio y que hay que corregir tambien: `ci.yml` no es un check de PR.** N+48
+dijo que seis de las ocho no corrian en ningun workflow y las otras dos solo en `ci.yml`, "que no
+es check de PR, asi que tampoco bloquean un merge". La segunda parte es mas fuerte de lo que
+parecia: `ci.yml` declara `on: workflow_dispatch` y nada mas, **sin `on: push` y sin
+`on: pull_request`**. No es que su resultado no bloquee un merge, es que **nunca se ejecuta en un
+PR**. Las tres suites que lo referencian (`architecture_drift_e2e`,
+`findings_canonical_grounding_e2e`, `workspace_isolation`) llevan tiempo sin correr en ningun
+contexto remoto. Un workflow que no se dispara no es una red de seguridad mas débil: no es red.
+
+**El arreglo.** Un selector sin restriccion con la feature, en `merge-gate`, que es el unico check
+obligatorio:
+
+```
+cargo test -p cognicode-core --features evidence-kernel --quiet
+```
+
+`--lib` es la razon especifica por la que el hueco era invisible: aqui **si** es valido (el crate
+tiene `lib.rs`), a diferencia del CLI que es solo-bins, asi que parece la invocacion responsable
+mientras salta los 37 targets de `tests/` por construccion. Antes el gate cubria 2794 tests de
+`--lib` mas 4 suites sueltas. Ahora: **3098 passed, 0 failed, 38 targets, 23 s**.
+
+Veintitres segundos. La cobertura que faltaba era casi gratis comparada con los 16 min que ya
+cuesta el build release de N+50. Ese es el dato que hace la decision obvia y no discutible.
+
+**El contrato, con conteo y no con substring.** `core_gate_coverage_contract.rs`, 5 tests. El
+primero cuenta `tests/*.rs` contra lo que el selector compila; `--tests` conserva los 37 targets de
+integracion y tira los 2794 de `--lib`, y pasa cualquier asercion que busque la cadena
+`cargo test -p cognicode-core`. RED **2/5** antes del fix (nombrando las 33), GREEN **5/5** despues.
+Dos mutaciones, dos dientes:
+
+* estrechar a `--tests` → **2 aserciones fallan**
+* quitar `--features evidence-kernel` → **1 asercion falla**, la del verde vacio, con un mensaje
+  que dice exactamente que las cinco suites compilan a binarios vacios
+
+**Lesson 123 (nueva):** "no es un check obligatorio" y "no se ejecuta" son afirmaciones distintas y
+la segunda es peor. `ci.yml` no es un check de PR, asi que el razonamiento de N+48 ("no bloquea un
+merge") era correcto y su conclusion operatoria tambien: no bloquea nada porque no corre. Un
+workflow con `on: workflow_dispatch` no es cobertura degraded, es cobertura ausente, y hay que
+contarla como ausente al medir el hueco, no como cubierta a medias.
+
+**Lesson 124 (nueva):** un conteo heredado de una entrada anterior del journal es una hypothesis,
+no un dato, aunque la entrada anterior lo escribiera con la misma seguridad que el codigo. Los
+numeros de N+48 estaban equivocados en las cuatro cifras y ninguno hacia el hueco mas pequeno: el
+real es mayor en suites y menor en las gated. Volvieron a medirse porque el arreglo de N+50
+obligaba a contar otra vez, no porque nadie sospechara que estaban mal. Merece la pena sospechar.
+
+**Cierre del work item `174c251f-dabc-414f-9026-65695d5418aa`, con la evidencia de CI observada.**
+Commit `f86958ab`, run `36540458444`, `conclusion: success`. `merge-gate` aparece en el rollup del
+PR #307 como `SUCCESS` **con `startedAt` 08:11:11Z, posterior al push de las 08:04**, y
+`mergeStateStatus: CLEAN`. Del log, no del resumen: contrato `5 passed; 0 failed`; suite core
+agregada `passed=3103 failed=0`, que son 3098 tests de `cognicode-core` mas los 5 del propio
+contrato. El paso nuevo no es un `continue-on-error` disfrazado: aparece con conclusion propia.
+
+Una nota sobre el gate de esta sesion, porque el watcher fallo y el fallo fue mio, no de CI. El
+primer `gh run watch` paso `"$id $sha"` donde la CLI espera un solo argumento, y la API devolvio
+404 y exit 1. Un 404 de "run not found" aqui significa "mal formado el argumento", no "el gate
+cayo". El segundo watcher uso solo el id y funciono. Lo dejo escrito porque la leccion de N+50 fue
+justo que un verde local no es un verde de CI: el reciproco tambien es cierto, y **un fallo de
+observacion no es un fallo del gate**. Distinguir uno de otro evita re-ejecutar 16 minutos de build
+release por un bug de shell.
