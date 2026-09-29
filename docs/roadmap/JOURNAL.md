@@ -7282,3 +7282,49 @@ Mutarlas una por una cuesta minutos y es la unica forma de saber que el fichero 
 **Lesson 130 (nueva):** antes de reportar un test rojo local, comprobar el `CARGO_TARGET_DIR` y las
 precondiciones de binarios. Un fallo de entorno que se lee como regresion cuesta mas que el test
 rojo que no existia, porque induces a arreglar codigo sano.
+
+---
+
+## N+55 — cerrando el hueco que N+54 dejo declarado abierto
+
+N+54 termino diciendo, en voz alta, que "renombrar **y** borrar a la vez seguiria dando 37 y pasaria
+el conteo". Dejar un hueco escrito no es lo mismo que cerrarlo, asi que aqui se cierra, con el mismo
+metodo: mutar la situacion y mirar como cae.
+
+**Por que el conteo solo no podia.** `assert_eq!(len, 37)` mide cantidad. Un renombrado no cambia
+la cantidad, asi que el conteo lo ve pasar. Un borrado si la cambia, asi que el conteo lo ve. Lo
+unico que **no** ve es la operacion compuesta: renombrar una suite y borrar otra en el mismo commit
+deja el numero intacto y las dos protecciones contentas. Ese era el hueco, y era real.
+
+**La solucion: anclas por nombre, no las 37 identidades.** Pinar las 37 seria mas fuerte, y es
+justo la podredumbre que el selector sin restriccion evita: habria que editar la lista en cada
+adicion. Asi que se pinan **13 suites ancla**, elegidas por un criterio, no por convenience: son las
+que **nadie mas referencia por nombre en el repo**. Perder cobertura que ningun sitio menciona es
+exactamente como un gate se pudre sin que nadie lo note, y esas son las que mas duele perder en
+silencio. Anadir una suite nueva no toca la lista, que era el requisito.
+
+**Los tres casos, ejecutados:**
+
+| Caso | Conteo | Resultado observado |
+|---|---|---|
+| arbol intacto | 37 | `6 passed; 0 failed`, exit 0 |
+| renombrada una **ancla** a `renombrada_por_error` | 37 | exit **101**, `5 passed; 1 failed`, "1 of 13 anchor suites are gone: [\"inc007_integration\"]" |
+| renombrada un ancla **y borrada** una no ancla | 36 | exit **101**, `4 passed; 2 failed` (caen el conteo y el ancla a la vez) |
+
+El caso que el conteo dejaba pasar es exactamente el tercero, y ahora cae por dos lados a la vez.
+Con eso el contrato pasa de 5 a 6 aserciones, todas vistas fallar.
+
+**Lo que sigue sin cubrirse, y se vuelve a decir en voz alta.** Una suite no anclada puede seguir
+borrandose o renombrandose sin que el contrato lo note, siempre que el total se mantenga en 37. Con
+13 de 37 ancladas, un commit que borre una no anclada y anada otra no anclada pasa. Cerrar eso exige
+pinar las 37 identidades, con el coste de mantenimiento que se acaba de rechazar. **Es un trade-off
+consciente y no una omision**: se acepta menos sensibilidad a cambio de que la lista no se pudra.
+Lo que si se garantiza, y es lo que de verdad perdia tests, es que borrar una suite sin compensar
+la cuenta, y que perder una de las 13 suites sin referencias externas. Las dos cosas fallan.
+
+`cargo fmt --check` limpio, `clippy --tests` sin errores, arbol restaurado a 37 suites.
+
+**Lesson 131 (nueva):** un invariante de cantidad no ve un invariante de identidad. Ambos hacen
+falta y no se sustituyen: el conteo detecta la perdida neta, el ancla detecta la sustitucion. La
+prueba de que falta uno de los dos es la operacion compuesta, donde cada proteccion se compensa con
+la otra y las dos pasan.

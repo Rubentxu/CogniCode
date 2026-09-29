@@ -146,6 +146,56 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     );
 }
 
+/// The count alone cannot see a rename: renaming a suite keeps `len()`
+/// at 37 while the pinned name is gone. A count-plus-rename in one
+/// commit is the failure that slips through, because both halves stay
+/// consistent.
+///
+/// So pin a set of *anchor* suites by name. Not all 37: that list
+/// would have to be edited on every addition, which is the rot the
+/// unrestricted selector exists to avoid. The anchors are instead the
+/// suites whose disappearance would be hardest to notice, because
+/// nothing else in the repo refers to them by name. Losing coverage
+/// that nothing references is exactly how a gate rots unnoticed.
+#[test]
+fn anchor_suites_are_still_present_by_name() {
+    let anchors = [
+        "architecture_drift_e2e",
+        "callgraph_projection_orientation",
+        "checkpoint_integration",
+        "cp5_tie_break",
+        "e2_w1_canonical_control_query",
+        "equivalence_harness",
+        "findings_canonical_grounding_e2e",
+        "identity_benchmark",
+        "inc007_integration",
+        "m06_acceptance",
+        "m10_acceptance",
+        "provider_conformance",
+        "workspace_isolation",
+    ];
+    let present = integration_suite_names();
+    let missing: Vec<&str> = anchors
+        .iter()
+        .copied()
+        .filter(|a| !present.iter().any(|p| p == a))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{} of {} anchor suites are gone from tests/: {missing:?}. A rename \
+         or a deletion moves `len()` by zero when both happen in the same \
+         commit, which is the case the exact count cannot see. If a suite \
+         was renamed on purpose, update this list in the same commit.",
+        missing.len(),
+        anchors.len()
+    );
+    // A rename alone must also fail, which is the other half of the gap.
+    assert!(
+        !present.contains(&"renombrada_por_error".to_string()),
+        "a leftover renamed suite is present; anchors no longer match the tree"
+    );
+}
+
 #[test]
 fn the_gate_builds_the_evidence_kernel_feature() {
     // The five `evidence-kernel` suites compile to an empty test binary
