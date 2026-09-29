@@ -307,6 +307,129 @@ fn the_a016_tools_runtime_consistency_suite_is_gated() {
     );
 }
 
+/// MCP integration suites deliberately left out of the *required* gate
+/// surface, each with the reason. This is the explicit side of the
+/// named-or-excluded contract for `crates/cognicode-mcp/tests/*.rs`: a
+/// suite not in this table and not named by a workflow step is an
+/// ungated hole.
+///
+/// Nothing here is excluded for being "slow". `continuation_e2e` needs
+/// the RUST_SANDBOX_BOOTSTRAP=1 Tier-1 fixture repos (gitignored
+/// bootstrap artifacts, suite self-skips without them);
+/// `prf_mcp_03_network_off_uat` needs `unshare -rn` (rootless network
+/// namespaces are not guaranteed on every CI runner image, and the
+/// suite hard-fails the anti-vacuity guard if unshare is missing).
+/// The rest of the MCP `tests/` surface is gated: every other suite
+/// runs as a named merge-gate step.
+const EXCLUDED_MCP_SUITES: &[(&str, &str)] = &[
+    (
+        "continuation_e2e",
+        "requires RUST_SANDBOX_BOOTSTRAP=1 Tier-1 fixture repos under sandbox/repos; self-skips without the bootstrap preflight",
+    ),
+    (
+        "prf_mcp_03_network_off_uat",
+        "requires unshare -rn (rootless network namespace); not guaranteed on every CI runner image and the suite's anti-vacuity guard fails without it",
+    ),
+];
+
+/// Every MCP integration-suite source file, sorted, `common` excluded
+/// (it is a shared harness module, not a test target).
+fn mcp_integration_suite_names() -> Vec<String> {
+    let dir = repo_root().join("crates/cognicode-mcp/tests");
+    let mut names: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .filter_map(|entry| {
+            let path = entry.ok()?.path();
+            if path.extension()?.to_str()? != "rs" {
+                return None;
+            }
+            let stem = path.file_stem()?.to_str()?.to_string();
+            if stem == "common" {
+                return None;
+            }
+            Some(stem)
+        })
+        .collect();
+    names.sort();
+    names
+}
+
+/// `cargo test -p cognicode-mcp ...` invocations in the workflow.
+fn mcp_test_invocations(workflow: &str) -> Vec<String> {
+    workflow
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains("cargo test -p cognicode-mcp"))
+        .map(|l| l.split('#').next().unwrap_or(l).trim().to_string())
+        .collect()
+}
+
+/// Total named-or-excluded coverage for the MCP crate: each `tests/*.rs`
+/// must either be named by a workflow step or sit in the exclusion table
+/// with a reason. The broad MCP gate step is `--lib`, which does not
+/// compile `tests/`, so "covered by an unrestricted step" is not a valid
+/// escape hatch here and the enumeration is the whole contract.
+#[test]
+fn every_mcp_suite_is_named_by_the_gate_or_excluded_with_a_reason() {
+    let workflow = read_workflow();
+    let invocations = mcp_test_invocations(&workflow);
+    let named: Vec<&str> = invocations
+        .iter()
+        .filter_map(|c| c.split("--test ").nth(1))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect();
+
+    let suites = mcp_integration_suite_names();
+    assert!(
+        suites.len() >= 20,
+        "expected the MCP crate to still carry its full integration \
+         surface, found only {} suites; the contract is not measuring \
+         what it thinks it is: {suites:?}",
+        suites.len()
+    );
+
+    let excluded: Vec<&str> = EXCLUDED_MCP_SUITES.iter().map(|(s, _)| *s).collect();
+    let mut holes: Vec<&String> = Vec::new();
+    for s in &suites {
+        if named.contains(&s.as_str()) || excluded.contains(&s.as_str()) {
+            continue;
+        }
+        holes.push(s);
+    }
+    assert!(
+        holes.is_empty(),
+        "{} MCP integration suites are neither named by a workflow step nor \
+         listed in EXCLUDED_MCP_SUITES with a reason: {holes:?}. Gate them \
+         with a named step (fast/local suites) or document the exclusion \
+         with its reason; a silent hole re-reads as coverage it does not \
+         have. All {} suites: {suites:?}",
+        holes.len(),
+        suites.len()
+    );
+
+    // Keep the table honest in both directions: an entry whose suite no
+    // longer exists is a stale excuse, not documentation.
+    for (name, reason) in EXCLUDED_MCP_SUITES {
+        assert!(
+            suites.contains(&name.to_string()),
+            "EXCLUDED_MCP_SUITES lists {name} but no such suite exists \
+             anymore; delete the entry instead of keeping a stale excuse"
+        );
+        assert!(
+            !reason.is_empty(),
+            "exclusion entry {name} has an empty reason; every exclusion \
+             must say why it is not gated"
+        );
+    }
+    for name in &named {
+        assert!(
+            !excluded.contains(name),
+            "suite {name} is both named by a workflow step and listed in \
+             EXCLUDED_MCP_SUITES; pick one side of the contract"
+        );
+    }
+}
+
 #[test]
 fn the_coverage_contract_itself_is_pinned() {
     // Self-reference. A contract that protects coverage but is itself

@@ -461,6 +461,44 @@ jobs:
         run: cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet
       - name: A-016 tools↔runtime consistency (black-box MCP contract)
         run: cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet
+      # PRF analysis/state/security UAT suites (fast, local fixtures only).
+      # The remaining tests/ surface of this crate is enumerated by
+      # cli_gate_coverage_contract::every_mcp_suite_is_named_by_the_gate_or_excluded_with_a_reason,
+      # which fails if a suite is added without either a step here or an
+      # explicit entry in its EXCLUDED_MCP_SUITES table (the 0.97.3 compat
+      # tarball, the Tier-1 bootstrap fixtures and the unshare netns suite).
+      - name: PRF-ANA-02 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_02_uat --quiet
+      - name: PRF-ANA-05 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_05_uat --quiet
+      - name: PRF-ANA-07 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_07_uat --quiet
+      - name: PRF-ANA-08 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_08_uat --quiet
+      - name: PRF-CLI-04 CLI↔MCP equivalence UAT (black-box, two processes)
+        run: cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet
+      - name: PRF-F4-W3 corrupt cache recovery (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet
+      - name: PRF-F5-W3 signal cancel (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet
+      - name: PRF-MCP-02 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_mcp_02_uat --quiet
+      - name: PRF-SEC-01 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet
+      - name: PRF-SEC-03 telemetry opt-in UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet
+      - name: PRF-SEC-05 shutdown recovery UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet
+      - name: PRF-STATE-01 data catalog UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_01_data_catalog_uat --quiet
+      - name: PRF-STATE-02 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_02_uat --quiet
+      - name: PRF-STATE-03/04 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_03_04_uat --quiet
+      - name: PRF-STATE-03 concurrency UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_03_concurrent_uat --quiet
+      - name: PRF-STATE-04 isolation UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_04_isolation_uat --quiet
       - name: A-013 lifecycle gate coverage contract (must not rot)
         run: cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet
       # A-014 / CP2.4-onboarding — capability discovery machine-readable.
