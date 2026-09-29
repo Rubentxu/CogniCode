@@ -190,6 +190,12 @@ pub enum CliCommand {
         /// Output format: `text` (default) or `json`.
         #[arg(long, default_value = "text")]
         format: String,
+        /// Documented shorthand for `--format json`, kept because
+        /// the A-014 acceptance criterion in the action register is
+        /// written as `cognicode capabilities --json`. Emits the
+        /// identical document; never a different contract.
+        #[arg(long, conflicts_with = "format")]
+        json: bool,
     },
 }
 
@@ -583,8 +589,9 @@ impl CommandExecutor {
                     eprintln!("evidence command failed: {}", e);
                 }
             }
-            Some(CliCommand::Capabilities { format }) => {
-                if let Err(e) = Self::execute_capabilities(format).await {
+            Some(CliCommand::Capabilities { format, json }) => {
+                let effective = if *json { "json" } else { format.as_str() };
+                if let Err(e) = Self::execute_capabilities(effective).await {
                     eprintln!("capabilities command failed: {}", e);
                 }
             }

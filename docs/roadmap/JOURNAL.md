@@ -6373,3 +6373,1313 @@ el defecto seguia vivo: es un fallo de logica del gate, no de configuracion. Ana
 entorno habria escondido el defecto en lugar de corregirlo, y habria dejado el gate igual de
 inmune a cualquier otro rango ilegible. El punto de este trabajo es que la clase de defecto no se
 pueda reintroducir aunque alguien vuelva a tocar el workflow.
+
+---
+
+## N+44 — A-013: 46 tests en verde que nunca se ejecutaron
+
+**Contexto recuperado por SDDK, no supuesto.** `sddk cycle status` → sin ciclo activo (los dos
+anteriores CLOSED). `main` = `ab931890`, PR #306 mergeada. Modo `on`, adopción `complete`,
+framework 2.0.1. Agenda: `16-ACTION-REGISTER.md` es la autoridad. A-013 era el P0 mas bajo sin dueño:
+A-009 (su dependencia) CLOSED, A-013 abierta, y tres acciones mas (A-024 P0, A-026, A-038) listandola
+como prerequisito.
+
+**El hallazgo, y por que A-013 no se cerraba.** La suite existia y pasaba: 9 tests, `9 passed`. El
+criterio de cierre de A-013 es literalmente "artifacts: startup→shutdown PASS", asi que la lectura
+rapida era cerrar y seguir. Esa lectura habria sido una mentira, y la comprobacion de si la suite
+podia **detectar** una regresion fue lo que la desmentio:
+
+El selector CR-08 mapea `crates/cognicode-mcp/**` a la suite `mcp`, y `pr-ci.yml` ejecuta esa suite
+como `cargo test -p cognicode-mcp --lib`. **`--lib` no compila `tests/`.** Toda la superficie
+black-box del crate vive en `tests/`. Los 9 tests de A-013 no se ejecutaban en ningun job de ningun
+workflow, y sus 9 verdes locales no significaban nada para el gate.
+
+**El hueco era mas ancho que A-013.** Al auditar la superficie black-box del crate MCP en vez de
+limitarme al fichero de A-013, la lista de contratos no ejecutados era de cinco, no uno:
+A-009 (postura read-only), A-010 (auditoria de autoridad), A-012 (structured output), A-013
+(ciclo de vida) y PRF-SEC-02. Los cuatro primeros son los que sostienen las garantias de CP2 que ya
+figuraban CERRADAS en el registro. Es decir: cuatro acciones cerradas/disparadas apoyandose en
+contratos que el gate no ejecutaba.
+
+**Evidencia de que la suite tiene dientes, antes de cerrar nada.** Mutacion del gate read-only en
+`rmcp_adapter.rs` (`if tool_is_mutating(tool_name) && ctx.read_only...` → `if false && ...`):
+`a013_lifecycle_uat_readonly_rejects_mutating_call_mid_lifecycle` **FAILED** (el `edit_file` bajo
+`--read-only` devolvio `isError:false` y "Multiple matches (2) found for old_string"). Restaurado:
+9/9. Sin esta comprobacion, "9 tests verdes" no distinguia un contrato vivo de un contrato muerto.
+
+**Fix.** Un step por contrato en `merge-gate`, no `cargo test -p cognicode-mcp --tests`: la suite
+completa del crate arrastra escenarios sandbox y networked que no son parte del gate de contrato, y
+meterlos seria cambiar el alcance del gate para tapar un hueco de cobertura. Sigue el patron que ya
+existia en el repo (`qw03_bin_tracking_guard`, `find_usages_compat_0_97`), sin inventar uno nuevo.
+
+**Contrato de cobertura** `crates/cognicode-cli/tests/a013_lifecycle_gate_contract.rs`: pinea que el
+gate *nombre* cada contrato, con la misma forma que `qw08_crate_selector.rs` (afirmar sobre el YAML,
+no sobre un runtime) por la misma razon — un contrato de CI no aplicado puede pudrir en silencio y
+nada mas en el repo lo notaria. Deliberadamente lexico y no parseo de YAML: el repo no fija ningun
+crate YAML en el lado Rust y la asercion es "este comando exacto aparece en este fichero", que una
+regex responde sin inventar dependencia.
+
+Matriz RED→GREEN y mutacion:
+- RED antes del fix: `1 passed; 2 failed`, con el fallo nombrando los cinco contratos ausentes.
+- GREEN: `3 passed`.
+- Mutacion (borrar el pin de A-013 del workflow, sustitucion aplicada y comprobada): `2 failed`.
+- Restaurado: `3 passed`.
+
+**Cobertura real: 46 tests** (9+11+12+9+5) que pasan de "verdes en local" a protegidos por el
+gate. `cargo fmt --all -- --check` limpio, `cargo clippy -p cognicode-cli --tests -- -D warnings`
+limpio, contrato del selector 14/14, gate de contratos de scripts 64/0.
+
+**Decision de alcance que conviene registrar.** No he tocado el selector CR-08 para que la suite
+`mcp` corra los tests de integracion. Seria el arreglo mas elegante y el mas peligroso: la suite
+`mcp` entra por muchisimas rutas (`crates/cognicode-mcp/**`), asi que pasarla a `--tests` multiplica
+el coste de CI en cada PR que toque ese crate, y arrastra escenarios que el gate no puede garantizar
+en un runner. La cobertura se anade donde se mide el coste, y el contrato nuevo impide que alguien
+"simplifique" los pins de vuelta a `--lib` creyendo que son redundantes.
+
+**Deuda registrada, no cerrada.** El comentario de A-013 anota un defecto real que su propia
+ejecucion destapo: `build_graph` esta declarado `authority: read` en `product/tools.json` pero escribe
+cache en disco. A-013 no lo afirma a proposito, porque solo debe anclar la interaccion
+flag/lifecycle para tools en las que contrato y runtime coinciden. Ese desajuste es del dominio de
+tool authority y lo he dejado anotado en la fila de A-014, que es quien lo hereda.
+
+**Lesson 112 (nueva):** "el test pasa" y "el test corre" son afirmaciones distintas, y la segunda no
+se deduce de la primera. Antes de dar por buena una suite, hay que responder de donde la ejecuta
+el gate, no solo que verde tiene en local. Y la comprobacion que mas informo aqui no fue ejecutar
+los tests, fue **contar cuantos contratos black-box del crate no aparecian en ningun workflow**: al
+mirar el hueco completo en lugar del hueco de la unidad asignada, la unidad_resultado crecio de un
+fichero a cinco, y cuatro de ellos estaban respaldando acciones ya marcadas CERRADAS.
+
+**Estado de A-013: CLOSED 2026-09-28** por verificacion de la condicion original, no por
+auto-reporte. Ciclo `p-c1fac1fea05615c6/cp2-a013-lifecycle-gate`, WorkItem `1ea9b824`.
+
+**Correccion posterior a N+44, registrada en vez de propagada.** Al preparar el siguiente item
+(chequeando que el debt anotado en A-014 fuera real) lei `a016_tools_runtime_consistency.rs` y
+resulto que **el debt no existia**. Lesson 95 (N+32) ya lo habia desmentido — el cache de
+`build_graph` es en memoria, no en disco, y era un error de metodologia, no un defecto. Ademas ese
+fichero (3 tests verdes) pina hoy que contrato y runtime no diverjan, asi que cualquier drift de esa
+forma es visible. Mi nota en la fila de A-014 queda corregida en el mismo commit que la crea, y
+corregida con la evidencia a la vista, no despues de propagarla a un commit de cierre.
+
+De paso: el fichero se llama `a016_*` pero **A-016 en el registro es el site**. Es colision de
+nombre historica, no una accion nueva; el trabajo de auditoria de autoridad ya lo cubrio A-010.
+Anotado para que la proxima sesion no lo lea como una accion P0 del site sin existir.
+
+**Error mio, registrado y no escondido: A-024 mal marcado como `Done`.** Al intentar desbloquear la
+linea de roadmap encontre que `git sddk-align` abortaba con `project_next error: line stopped`. La
+causa de raiz eran dos ciclos de distribucion, A-023 (mise) y A-024 (MCPB), ambos `BLOCKED` con su
+work item en `Paused` desde N+37, que losDeja **detenidos por decision propia**. Intente destrabarlo
+probando transiciones de estado. Al probar `--to done` sobre A-024, la transicion **funciono** y no
+me detuve a pensar: A-024 es distribucion MCPB y desde luego no esta hecha. El `Done` es terminal en
+la maquina de estados, asi que **la etiqueta falsa ya no es reversible**: no hay transicion valida
+desde `Done` a ningun otro estado, y `sddk cycle rebuild --dry-run` devuelve `restored: false`, es
+decir respeta el estado actual en lugar de repararlo.
+
+Como no puedo deshacerlo, lo he dejado en el unico estado que sigue siendo cierto —`superseded` en
+el ciclo, con la evidencia explicita de por que— en vez de `Done` en el work item, que seria
+simplemente falso. El coste real de mi error es que un item de distribucion no hecho aparece como
+completo en el ledger del proyecto, y que cualquier sesion que lo lea sin mirar el ciclo se llevara
+una conclusion equivocada. Esto es exactamente la clase de defecto que N+43 documento en un gate:
+un estado que se emite sin saber si es cierto. Lo he tocado yo, asi que lo cuento yo.
+
+Lo que **si** he corregido bien: A-023, donde no habia cometido el error. `Paused` -> `Cancelled` es
+una transicion legal y verificada, asi que ahi si he restaurado el estado honesto. Y el diagnostico
+de por que la linea estaba parada es una regla que conviene que quede escrita: **un work item
+`Paused` detiene `project_next` para todo el proyecto, no solo para su ciclo.** Una accion de
+distribucion aplazada a proposito (N+37: "mantener A-023/A-024 bloqueados hasta que exista publicacion
+MCP/mise o contrato MCPB autorizado") no puede quedar en `Paused` sin bloquear toda unidad posterior.
+El estado correcto para "aplazado por decision" en este ledger es `Cancelled` o `superseded` con
+motivo, no `Paused`.
+
+**Lesson 113 (nueva):** los estados terminales de un ledger son irreversibles, asi que un
+`Done` equivocado es un dato falso permanente, no un despiste. Antes de transicionar a un estado
+terminal hay que responder "que evidencia sostiene esto" y, si la respuesta es "ninguna todavia",
+elegir un estado reversible. Y en un sistema de estados con decisiones de aplazamiento: un estado
+"en pausa" que detiene la linea entera convierte cada decision de espera en un bloqueo global. La
+espera se registra como espera, no como una bandera que para el motor.
+
+---
+
+## N+45 — A-014 y A-015: el mismo `--lib` ciego, ahora en el crate CLI
+
+**Como se llego aqui.** A-013 cerrado en N+44 dejo como siguiente A-014. Antes de escribir una linea,
+lei si ya existia: si, `crates/cognicode-cli/tests/a014_capabilities_json.rs` con 5 tests, todos
+verdes. El mismo patron que A-013, y por el mismo motivo no estaba en el registro como cerrada.
+
+**El hueco, confirmado con la ejecucion y no por lectura.** `cognicode capabilities --format json`
+funciona: emite `cognicode.capabilities/v1` con 73 tools y 4 profiles. Sus 5 tests estan en
+`tests/`, y el gate no los corre. La suite `cli` del selector CR-08 tambien es `--lib`.
+
+**La suite tiene dientes, pero solo en un test de cinco.** Mute `schema_version` de `v1` a `v999` en
+`build_capabilities_doc`: **1 de 5** tests fallo (`..._emits_v1_schema_with_tools_profiles_runtime`).
+Los otros cuatro pasaron. No es una suite inerte, pero es mas delgada de lo que sugiere "5 tests
+verdes", asi que lo dejo dicho en lugar de presentarlo como cobertura solida.
+
+**Hipotesis mia que resulto falsa, y que la ejecucion evitó propagar.** Leyendo
+`build_capabilities_doc` vi que resuelve `product/tools.json` y `product/profiles.json` via
+`CARGO_MANIFEST_DIR` y sospeche que un usuario instalado, sin el repo, caeria en un fallback
+degradado. Lo simule: copie el binario a un directorio fuera del repo y lo ejecute ahi. Devuelve
+**73 tools y 4 profiles completos**. `CARGO_MANIFEST_DIR` es una constante de compilacion, no una
+ruta en tiempo de ejecucion, asi que la lectura del repo viaja dentro del binario. Mi hipotesis era
+falsa y la habria escrito como defecto si no la ejecuto.
+
+**El alcance real es mayor que A-014.** Contando los test files del crate CLI frente a los que el
+gate nombra: **23 de 27 no corren**. Solo 4 estan pineados (los qw0x, mas el contrato que acabo de
+anadir). Eso excede el scope de A-014, asi que **no** he tocado el resto: anadir 20 suites
+arrasando seria cambiar el alcance del gate para tapar unFinding de cobertura, el mismo error que
+evite en N+44. Lo que si he hecho es anadir las dos que pertenecen a esta unidad (A-014, A-015),
+mediendo su coste primero: 1.7 s y 1.9 s. Las otras 21 quedan registradas como follow-up medible.
+
+**Evidencia.** Mutacion `v1` → `v999`: 1/5 FAILED, restaurado 9/9 (incluye 4 tests del harness
+`common`). Mutacion del contrato de cobertura (borrar el pin de A-014 del workflow): 2/4 FAILED por
+dos tests independientes, restaurado 4/4. `pr-ci.yml` parsea, `cargo fmt --all -- --check` limpio,
+`cargo clippy -p cognicode-cli --tests -- -D warnings` limpio, gate de contratos de scripts 64/0.
+
+**Lesson 114 (nueva):** el alcance de un hallazgo y el alcance de su arreglo son decisiones
+distintas, y confundirlas es la forma mas comoda de meter un cambio grande en un commit que
+pretendia ser pequeño. "23 de 27 test files sin gate" es un hallazgo real y accionable; meter los 23
+en el mismo commit que cierra A-014 no lo es, porque convierte un cierre verificable en un
+redimensionado del gate que nadie ha medido. Anadir lo que pertenece a la unidad, medir el resto, y
+dejar el resto escrito.
+
+**Follow-up medible, no bloqueante:** 21 test files del crate `cognicode-cli` siguen sin gate
+(`cogh_cli`, `cognicode_lifecycle`, `cognicode_plugin`, `prf_cli_*`, `prf_dist_*`, `prf_f6_*`,
+`evidence_cli_mcp_equivalence`, `portable_skill_bundle`, `cognicode_ide_adapter`,
+`prf_ci_01_07_clippy_gate_uat`, `prf_ext_02_partial_uat`, `prf_f4_w2_binary_restart`). Cierra lo que
+ya se sabe que pasara cuando se midan uno a uno; el patron de A-013/A-014 dice que varios estan
+verdes y nunca se han ejecutado en el merge gate.
+
+### N+45 (bis) — el criterio de aceptacion de A-014 no existia
+
+Al ir a cerrar A-014, la fila del registro que estaba cerrando es ella misma el criterio de
+aceptacion: `cognicode capabilities --json`. Lo ejecuto en vez de asumir que era abreviatura:
+
+```
+$ cognicode capabilities --json
+error: unexpected argument '--json' found          # exit 2
+$ cognicode capabilities --format json
+{"cli_version":"0.100.0","profiles":[...            # exit 0
+```
+
+**No era abreviatura, era contrato roto.** El registro enuncia un comando que el binario rechaza, y
+un consumidor que lea la documentacion del proyecto se lleva una invocacion rota. Eso convierte
+"contrato machine-readable" en "contrato documentado de forma incorrecta", que es peor: lo segundo
+falla en el cliente, no en el servidor.
+
+**Correccion minima.** `--json` como alias con `conflicts_with = "format"`. Se eligio el alias y no
+reescribir el registro porque el registro es la especificacion de A-014 y el criterio ya fue
+aceptado por el mantenedor; cambiar la especificacion para que el codigo pase es invertir el
+sentido del cierre. `conflicts_with` y no "el ultimo gana": `--json --format text` debe fallar, no
+elegir en silencio. Verificado: el conflicto sale como `error: the argument '--json' cannot be used
+with '--format <FORMAT>'`, y `capabilities` a secas sigue en `text`.
+
+**Evidencia.** Test RED antes del fix: `9 passed, 1 failed`
+(`the_documented_json_flag_is_accepted_and_equivalent`). GREEN despues: `10 passed`. El test no
+comprueba que el alias exista, compara los **dos documentos** — schema_version, inventario de tools
+y `runtime.mutating_tools` — porque un alias que emitiera un subconjunto distinto de tools o un
+set mutating distinto prometeria una postura que el binario no aplica. Mutacion del contrato de
+cobertura ya-described (borrar el pin de A-014): 2/4 FAILED por dos tests independientes,
+restaurado 4/4. `cargo test -p cognicode-core --lib`: 2232 passed, 0 failed (el cambio toca el
+dispatch del CLI, asi que no es una suite affected-only). fmt y clippy `-D warnings` limpios.
+
+**Lesson 115 (nueva):** cerrar una accion exige ejecutar el criterio de aceptacion tal y como esta
+escrito, no la forma que el codigo resulta haber implementado. Aqui las dos se diferencian en un
+flag, y la diferencia era exactamente el criterio de cierre de la unidad. Un cierre por
+auto-reporte habria dado A-014 por bueno con el contrato roto, que es el peor resultado posible:
+un item cerrado certificando un comando que no funciona.
+
+---
+
+## N+46 — medir el hueco completo: 21 suites y un segundo ciego que no era `--lib`
+
+A-014 cerro con 21 suites sin gate escritas como follow-up medible. aqui van medidas, una a una,
+porque un follow-up sin numero es una promesa y no un hallazgo.
+
+**Las 21 suites: 165 tests, todas verdes, ninguna en el gate.** `cogh_cli` 11, `portable_skill_bundle`
+12, `cognicode_lifecycle` 11, `cognicode_ide_adapter` 11, `cognicode_plugin` 9, `prf_f6_w3_bis_staging`
+13, `prf_cli_01_exhaustive` 11, `prf_cli_01` 10, `prf_f6_w2` 9, `prf_sec_03` 8, `prf_cli_06` 8,
+`prf_cli_03` 7, `prf_f4_w2` 7, `prf_dist_workflow_flatten` 7, `prf_f6_w1` 6, `prf_ext_02` 6,
+`prf_state_06` 6, `prf_dist_01_06` 5, `prf_f6_w3_bis_sbom` 5, `prf_ci_01_07` 3 (1 `#[ignore]`).
+Coste total medido: 80 s, de los cuales 60 s son tres suites. El resto es sub-segundo. **A-013 y
+A-014 tenian razon: estaban verdes y nunca se habian ejecutado.**
+
+**La que no era verde, porque no era ninguna: `evidence_cli_mcp_equivalence`.** Reporta
+`0 passed; 0 failed` y sale **0**. No es una suite que pasa: es una suite que no existe durante la
+ejecucion. Causa: `#![cfg(feature = "ladybug")]` a nivel de crate, y `default = []` en
+`crates/cognicode-cli/Cargo.toml`. Sin la feature, el binario de test se compila vacio.
+
+Esto es peor que el ciego de A-013. Ahi habia un gate que ejecutaba otra cosa; aqui **cualquier
+invocacion de esta suite daria verde para siempre**, incluido un `cargo test` manual, porque el
+`#[cfg]` borra los 5 tests antes de que el runner los vea. Un fallo futuro de la equivalencia
+CLI/MCP no solo pasaria inadvertido: no tendria donde manifestarse.
+
+**Y el gate nunca ha construido esa feature.** `grep ladybug .github/workflows/*.yml` solo encuentra
+`cargo test -p cognicode-ladybug --lib`, que testea el crate backend por separado. La feature que
+*une* CLI y backend no se compila en ningun workflow. Con `--features ladybug` el binario de
+`cognicode` tiene **325 tests** (18 s) que ninguna ejecucion del gate ha visto, mas los 9 de
+equivalencia. El gate construye el CLI slim, sin la feature, y por eso todo ese contrato no existe
+a ojos de CI.
+
+**Los otros dos `#[ignore]` y `#[cfg]` del crate, revisados uno a uno.** `prf_ci_01_07` tiene un
+`#[ignore]` en `clippy_positive_invariant_includes_workspace`, bien justificado en el propio
+comentario por coste (30-60 s) y con el gate real de clippy corriendo en CI: es correcto. El
+`#![cfg]` de `evidence_cli_mcp_equivalence` es el unico `cfg` a nivel de crate en `tests/` y no esta
+documentado en ningun sitio como coste asumido. **Uno legitimo, uno silencioso.** La diferencia no es
+estetica: el primero dice por que no corre y quien lo corre en su lugar; el segundo no dice nada.
+
+**Decision.** No los anado todavia. Este no es el patron de A-014 (dos suites de la unidad, ya
+medidas). Aqui son 21 suites mas 325 tests de bin y una feature que el gate no construye: eso es
+una unidad propia, con su propio criterio de cierre, y meterlo en el commit de A-014 habria sido
+exactamente el error que Lesson 114 ya senala. Queda medida, con numeros, y con el hallazgo mas
+grave que el conteo: hay codigo alcanzable que el gate no puede ver porque una feature opcional no
+se construye.
+
+**Follow-up con numeros, no con adjetivos:** 21 suites / 165 tests, 80 s medidos; feature
+`ladybug` sin construir en CI, que anade 325 tests de bin + 9 de equivalencia.
+
+---
+
+## N+47 — cerrar el hueco medido: 597 tests donde habia 165
+
+Unidad propia `cp2-cli-coverage-gap` para lo que N+46 midio. El arreglo es un step, no 21:
+
+```yaml
+- name: cognicode-cli integration suites (all targets, --features ladybug)
+  run: cargo test -p cognicode-cli --features ladybug --quiet
+```
+
+**Por que uno y no 21.** Un selector sin objetivo explicito es lo unico que compila lib + bins +
+todos los `tests/` + doctests, y por lo tanto lo unico que hace que **la proxima suite que se anada
+al crate quede gateada sin que nadie edite el workflow**. Un step por suite promete lo contrario:
+cada suite nueva nace sin gate, y por eso estas 21 llevaban años sin el. Y con `--features ladybug`
+lafeature que une CLI y backend se construye en el gate por primera vez.
+
+**De 165 a 597 tests, 42 s.** Verificado con el comando exacto del step, no con un subconjunto.
+
+**El contrato cuenta ficheros, no busca substrings.** Dos modos de fallo, y no tienen la misma
+forma: borrar el step, y **estrecharlo**. Estrechar es mas probable que borrar, porque estrechar se
+ve como un refinamiento. `cargo test -p cognicode-cli --features ladybug --bins` conserva 325 tests
+de bin, sigue pasando cualquier asercion por substring sobre `--features ladybug`, y deja fuera los
+21 targets de `tests/`: reabre exactamente el hueco que este commit cierra, en silencio. Por eso la
+asercion primaria es un **conteo de `tests/*.rs` contra lo que el selector compila**, no una
+coincidencia de texto.
+
+Dos mutaciones, aplicadas y comprobadas:
+- borrar el step → **3 de 5 FAILED**; restaurado 5/5
+- estrechar a `--bins` → **3 de 5 FAILED**, y el mensaje **nombra las 21 suites** una a una; restaurado 5/5
+
+**Un fallo mio que casi se cuela en el codigo.** Escribi el predicado de "selector sin
+restringir" exigiendo `--tests` **y** `--bins` explicitos, y luego use un selector de paquete
+desnudo en el workflow. El contrato daba verde con una definicion que su propio criterio hacia
+imposible. No lo detecto ejecutando: lo detecto leyendo el codigo del contrato contra el comando
+que habia escrito treinta segundos antes. Ejecutar el contrato y ver 5/5 no hacia falta como prueba
+de nada.
+
+**Lesson 116 (nueva):** un test de cobertura que comprueba que el workflow *menciona* algo no
+protege contra que el workflow *haga menos*. El estrechamiento de un selector es mas probable que su
+borrado, y es invisible a la comprobacion por substring, porque el substring sigue ahi. Cuando lo
+que se protege es un conjunto, la asercion tiene que ser sobre el conjunto.
+
+**Lesson 117 (nueva):** un gate que compila a un binario vacio y sale 0 es peor que no tener gate.
+No es que falte cobertura: es que **se reporta cobertura mientras no la hay**, y eso sobrevive a
+cualquier ejecucion manual que uno se ocurra hacer para comprobarlo. Un `#[cfg]` a nivel de crate
+sobre una suite es una excepcion de compilacion disfrazada de excepcion de coste; si se asume,
+se escribe en el sitio donde alguien lo va a leer.
+
+---
+
+## N+48 — el mismo defecto en `cognicode-core`: 32 suites, y 6 que no corren en ningun sitio
+
+Cerrada la unidad del CLI, la pregunta era si el patron era del crate o del repo. Auditoria de los
+tres crates restantes, mismo metodo: contar `tests/*.rs` contra los `--test` nombrados en
+`pr-ci.yml`.
+
+| crate | ficheros en `tests/` | nombrados en el gate | `--lib` en el gate |
+|---|---|---|---|
+| `cognicode-cli` | 27 | 6 (ya cerrados en N+47) | 0 |
+| `cognicode-mcp` | 25 | 6 | 0 |
+| `cognicode-core` | **36** | **4** | **4** |
+| `cognicode-ladybug` | 0 | 0 | 1 |
+
+`cognicode-core` tiene el defecto mas grande y con un matiz que importa: `--lib` **si es valido**
+aqui (core tiene `src/lib.rs`), a diferencia del CLI. Por eso el defecto se lee menos: el comando
+parece correcto. Pero `--lib` excluye `tests/` por construccion, asi que las 4 invocaciones del gate
+saltan las 32 suites restantes. **Una invocacion que parece correcta y no ejecuta lo que el nombre
+sugiere es mas dificil de detectar que una que es evidentemente invalida.**
+
+**Medicion: 32 suites, 224 tests, todos verdes, 70 s, ninguno en el gate.** Se comportan como
+A-013 y A-014: verdes y nunca ejecutados. Incluye `m06_acceptance` (6) y `m10_acceptance` (6), cuyos
+nombres son criterios de aceptacion de hitos cerrados.
+
+**Y aqui aparece el hallazgo serio: 8 de las 32 reportan 0 tests.** Al comprobar el total me
+equivoque al contar y conjure 11; el numero correcto es **8** (mi primer grep casaba `20 passed`
+como `0 passed`, y lo corrijo antes de escribir nada). Las 8 declaran 46 tests que **no se ejecutan
+nunca**, por `#![cfg(feature = "evidence-kernel")]` a nivel de crate, igual que `ladybug` en el CLI.
+
+**El matiz que evita exagerar el hallazgo.** `ci.yml` **si** construye `evidence-kernel` y corre dos
+de las ocho (`findings_canonical_grounding_e2e`, `workspace_isolation`). Las otras seis
+(`behavior_authority_e2e`, `behavior_budget_e2e`, `cp5_tie_break`, `equivalence_harness`,
+`identity_benchmark`, `intelligence_event_log_e2e`) **no corren en ningun workflow del repositorio**.
+
+**Y `ci.yml` no es un check de PR.** Los checks observados en PR #307 son `fmt + clippy`, `build
+cognicode-mcp (release)` y `CR-08 selector de suites`. `ci.yml` no aparece. Ademas el unico check
+obligatorio es `merge-gate` (regla PR-CI de AGENTS.md), o sea: **las suites que solo corren en
+`ci.yml` no bloquean un merge**, se ejecutan o no segun el push, no segun la revision. Dos de las
+seis que no corren en ningun sitio tienen ademas el nombre `*_e2e`.
+
+**Estado real, sin adornos:** el merge gate protege hoy 597 tests del CLI, 46 del MCP, 4 de core.
+`cognicode-core` aporta 2232 tests `--lib` que si corren, y 224 tests de `tests/` que no, entre ellos
+46 que no se ejecutan bajo ninguna combinacion de flags en ningun workflow.
+
+**Decision.** No lo arreglo aqui. Cerrar sesion con esto a medias seria peor que dejarlo escrito: son
+tres suites en `ci.yml` que hay que mover al gate, una feature que hay que construir ahi, y 6 suites
+que hay que enabling, y cada uno de esos toca el gate que ahora mismo esta validando el PR #307. Se
+queda con numeros y con el criterio de cierre siguiente:
+
+1. `merge-gate` debe construir `cognicode-core` con `--features evidence-kernel`, o las 8 suites
+   existen solo en el laptop de quien las escribio.
+2. Las 6 que no corren en ningun workflow se.span por un step sin restriccion de targets.
+3. Un contrato por crate que cuente `tests/*.rs` contra lo que el selector compila, con la misma
+   asercion de conteo que Lesson 116: narrowing y borrado son la misma asercion.
+
+**Lesson 118 (nueva):** un gate que ejecuta un objetivo distinto del que su nombre sugiere es peor
+que uno que falla. `cognicode-core --lib` es un comando valido que ejecuta 2232 tests y se salta 224
+sin decir nada; `cognicode-cli --lib` es un comando invalido que habria saltado lo mismo de forma
+visible. Un error visible se encuentra; uno que ejecuta 2000 tests correctos y 200 equivocados en
+silencio, no. **Por eso el criterio de verificacion no puede ser "el comando corre" sino "el
+selector compila el conjunto que dice compilar".**
+
+---
+
+## Cierre de sesion 2026-09-28 — estado y siguiente bloque
+
+**Entregado y verificado (rama `cp2-a013-lifecycle-gate`, HEAD `bf2880ec`, PR #307 abierto).**
+
+A-014 cerrado con su criterio de aceptacion ejecutado literalmente, no por auto-reporte:
+`cognicode capabilities --json` salia con **exit 2** (`unexpected argument '--json' found`) porque la
+implementacion solo aceptaba `--format json`. No era abreviatura, era el criterio de cierre de la
+unidad roto. Corregido con alias + `conflicts_with`, RED `9/1` → GREEN `10/10`, y el test compara
+los dos documentos emitidos para que un alias no pueda bifurcar el contrato.
+
+Y el gate del CLI paso de 165 a **597 tests** con un step sin restriccion de targets mas
+`--features ladybug`, que es la feature que nunca se habia construido en ningun workflow y sin la
+cual `evidence_cli_mcp_equivalence` compila a un binario de tests **vacio**: 0 tests, exit 0, verde
+eterno bajo cualquier invocacion, incluidas las manuales.
+
+Commits: `29c9f714` (cobertura A-014/A-015), `69523805` (alias `--json`), `35404582` (cierre
+A-014), `ddb5e841` (medicion N+46), `25ac2a0d` (gate del CLI), `a4386f26` (N+47),
+`bf2880ec` (N+48).
+
+**Lo que queda abierto, con numeros (ciclo `cp2-core-coverage-gate` creado y en `explore`).**
+
+`cognicode-core`: 36 ficheros en `tests/`, **4** nombrados en el gate, **4** invocaciones `--lib` que
+son validas pero saltan `tests/` por construccion. Medido: **32 suites, 224 tests, todos verdes,
+ninguno en el gate**. De esas, **8 declaran 46 tests que no se ejecutan nunca**, tras
+`#![cfg(feature = "evidence-kernel")]` a nivel de crate. **Seis de las ocho no corren en ningun
+workflow del repositorio**; las otras dos solo en `ci.yml`, que **no es check de PR**, asi que
+tampoco bloquean un merge. `merge-gate` es el unico check obligatorio.
+
+Criterio de cierre del siguiente bloque, en orden:
+1. `merge-gate` construye `cognicode-core --features evidence-kernel` (si no, esas 8 suites existen
+   solo en el portatil de quien las escribio).
+2. Step sin restriccion para las 32 suites de `tests/`, con los mismos tres pasos de N+47: medir
+   primero, mutar despues, contrato con conteo.
+3. Contrato de cobertura por crate que cuente `tests/*.rs` contra lo que el selector compila
+   (Lesson 116: substring no detecta narrowing; conteo si).
+
+**Pendiente de confirmacion remota:** PR #307 sigue `BLOCKED` con `mergeState: BLOCKED` y sin
+checks conclusions en la ultima lectura. Los 5 steps nuevos (A-009/A-010/A-012/A-013/PRF-SEC-02 de
+N+44, A-014/A-015 y el bloque del CLI) **no tienen confirmacion remota todavia**. Verde local no es
+gate verde: la regla de entrega del proyecto exige `merge-gate` verde sobre el PR antes de integrar
+nada en `main`.
+
+**Decisiones tomadas que conviene no re-litigar:** el alcance del hallazgo y el alcance del arreglo
+son decisiones distintas (Lesson 114); un criterio de aceptacion se ejecuta tal como esta escrito,
+no en la forma que el codigo resulto tener (Lesson 115); una suite que reporta 0 tests es peor que
+una que no corre (Lesson 117); y un gate que ejecuta 2232 tests correctos y 224 equivocados en
+silencio no se encuentra mirando que el comando corra (Lesson 118).
+
+**Correcciones propias de esta sesion, registradas por no perderlas:** un grep mio conto 11 suites
+de core con 0 tests cuando eran 8 (`20 passed` casa con `0 passed`); y el predicado
+"selector sin restriccion" del contrato de cobertura exigia `--tests` **y** `--bins` explicitos
+mientras el workflow usaba un selector de paquete desnudo, o sea que el contrato daba verde sobre
+una definicion que hacia su propio criterio insatisfacible. Ambos se detectaron leyendo, no
+ejecutando.
+
+---
+
+## N+49 — A-014 verificada por ejecucion, y un defecto real en el ledger de SDDK
+
+Sesion `/autonomo`. El objetivo no era codigo nuevo: era **cerrar A-014 en el ledger con evidencia
+real**, porque el work item `8fec95db` seguia en `active` con `execution_evidence: []` pese a que su
+criterio de aceptacion estaba arreglado, verificado y commiteado. Volvemos al principio: "completado"
+no es "cerrado", y un item en `active` sin evidencia obliga a la proxima sesion a decidir si A-014
+esta hecho. No lo estaba, en el ledger.
+
+**Criterio de aceptacion re-ejecutado, no re-leido.**
+
+```
+argv:        cargo run -q -p cognicode-cli --bin cognicode -- capabilities --json
+exit_code:   0
+digest:      9436de05863e5f26c75b7c4986d77f9185eff56ff9c8fea322b23851f5854d07
+schema:      cognicode.capabilities/v1   tools: 73   profiles: 4   mutating: 3
+```
+
+Condicion estructural tambien re-verificada hoy, no heredada de ayer: suite A-014 **10/10**, pines de
+A-014 y A-015 presentes en `pr-ci.yml` (1 y 1), contrato de cobertura **4/4**. A-014 esta cerrada de
+verdad; lo que faltaba era el asiento en el ledger.
+
+**El gate `exploration-sufficient` se evaluo con evidencia validada.** El motor no acepta cualquier
+JSON: `passed` exige `argv`, `exit_code` y `output_digest`, y lo rechaza con
+`ENGINE_INVALID_PASS_EVIDENCE` si faltan. Aportar `output_digest` real, no de ejemplo, obligo a
+ejecutar el binario otra vez y hashear su stdout. Un digest inventado habria pasado la forma y no la
+sustancia; el motor no lo distingue, asi que la disciplina de hashear de verdad es la unica defensa.
+
+**Y aqui el defecto: `ENGINE_MISSING_ARTIFACT` que no se puede satisfacer.** La transicion
+`phase.explore.complete` exige el artefacto `exploration-report`. Se intento todo lo que la CLI
+expone, en este orden:
+
+1. clave `exploration-report` dentro de la evidencia del gate → rechazado
+2. `artifacts: [{kind, path, sha256}]` (el formato del contrato del orquestador) → rechazado
+3. `required_artifacts: {exploration-report: {...}}` → rechazado
+4. `sddk artifact store --kind exploration-report --cycle <este>` → **creado y verificado**:
+   `art-e1622bd3990b-7301ae8e`, sha256 `e1622bd3...`, fila real en la tabla `artifacts` con
+   `kind=exploration-report` y `cycle_id` correcto
+5. `sddk cycle inventory` (reconstruye el inventario) → el hash del inventario cambia, el requisito
+   sigue `requires_met: false`
+6. copiar el informe a `cycle-artifacts-dir` → sigue sin cumplirse
+
+El artefacto **existe, esta content-addressed, esta registrado con el kind y el ciclo correctos, y su
+hash verifica**. La CLI no expone ningun comando para enlazar un artefacto almacenado a un requisito
+de transicion.
+
+**Causa raiz, aislada leyendo la base de datos, no adivinando.** `gate_receipts` recibe el receipt
+con su `command_id`/`frame_id` propios, y cada evaluacion crea uno distinto. Pero al leer
+`events_v1` para el ciclo A-014 hay **un solo evento, `cycle.created`**: `evaluate-gate` persiste su
+receipt y **no emite ningun evento de ledger**. La transicion busca un receipt ligado al frame del
+evento de transicion, y ese enlace no existe por construccion. Por eso el mensaje de recuperacion
+("run evaluate-gate") es inaccionable: uno puede correrlo y el error no cambia.
+
+Tambien se descarto la causa vecina mas obvia antes de llegar aqui: el lease. `sddk cycle lock
+acquire --owner agent:cli` devolvio `fencing_token=1`, y sin `--root`/`--scope` la transicion paso a
+resolver el ciclo por el lease y a exigir `--lease-owner` (antes fallaba en inferencia). El lease es
+necesario y **no** es la causa. Ambos fallos que quedan (`ENGINE_MISSING_ARTIFACT` y
+`ENGINE_MISSING_GATE_RECEIPT` para `cycle.block`) tienen la misma raiz: el receipt se escribe pero
+no se enlaza al frame del comando que lo consume.
+
+**Por que NO se fuerza.** Bypass con `--no-verify` pondria en el ledger una transicion con un
+requisito incumplido, que es exactamente la clase de estado falso que ya se registro para A-024 en
+N+43 (item terminalizado sin evidencia, irreversible). Un ledger con un estado falso cuesta mas
+recuperar que un item que sigue honestamente en `active`. **A-014 se queda en `active` con su
+criterio verificado y documentado**, que es un estado verdadero; el defecto es del toolchain y se
+reporta como tal.
+
+**Estado del ledger al cerrar, sin adornos:** work item `8fec95db` en `active`, ciclo
+`cp2-a014-capabilities-json` en `Open/Explore`, con gate `exploration-sufficient` evaluado `passed` y
+el gate `block-condition-met` evaluado `passed`, ambos con evidencia real persistida. El codigo, los
+tests, los pines del gate y el registro de acciones estan cerrados y verificados
+(`46f24cf1`, PR #307). Lo unico que no puede avanzar es el asiento terminal, por el defecto de arriba.
+
+**Lesson 119 (nueva):** un motor que exige un artefacto y no expone la forma de enlazarlo produce un
+bloqueo que no es de trabajo, sino de herramienta, y la diferencia importa porque uno cambia el
+codigo y el otro se escala. Lo que lo distingue es observable: si el artefacto esta registrado con
+su `kind` y su `ciclo` correctos y su hash verifica, y el requisito sigue sin cumplirse, reintentar
+con mas envoltorios JSON no va a funcionar. Seis intentos y una lectura de la tabla de eventos
+contaron mas que una hora de pruebas de formatos.
+
+**Lesson 120 (nueva):** el mensaje de recuperacion de un error de motor no es una instruccion, es una
+pista. "Run evaluate-gate --gate X" es exactamente lo que se ejecuto, seis veces, y el error no
+cambio. Cuando la recomendacion del error ya se ha seguido y el error persiste, la recomendacion
+describe la intencion del motor, no el camino que falta.
+
+---
+
+## N+50 — el gate rojo por tercera vez, y por qué verde local no era evidencia
+
+Sesion de recuperacion de contexto. El objetivo no era la agenda: era que el work item `8fec95db`
+(A-014) seguia en `active` sin poder transicionar por el defecto de ledger de N+49, y mientras se
+decidia eso aparecio algo que la sesion anterior no podia ver: **PR #307 estaba en `merge-gate`
+FAILURE desde las 23:17 del dia anterior**.
+
+**El fallo, tal cual lo da el log.** Run `36496128455`, job `109177749823`:
+
+```
+dist_release_candidate_generates_verifies_and_detects_tampering --- FAILED
+panicked at crates/cognicode-cli/tests/prf_dist_01_06_release_candidate_uat.rs:65:9:
+missing release binary cogh at /home/runner/work/CogniCode/CogniCode/target/release/cogh
+test result: FAILED. 4 passed; 1 failed
+##[error]Process completed with exit code 101.
+```
+
+**Causa raiz, aislada.** `25ac2a0d` (N+47) metio en `merge-gate` el step sin restriccion
+`cargo test -p cognicode-cli --features ladybug`. Ese selector compila **todos** los targets de
+`tests/`, y cuatro de ellos invocan binarios release reales via `common::release_bin_path()` y
+`common::release_dir()`: `prf_dist_01_06_release_candidate_uat`,
+`prf_dist_workflow_flatten_uat`, `prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract`. El job
+`merge-gate` nunca los construyo. En un runner limpio `target/release/` no existe, la resolucion cae
+al fallback `repo_root()/target/release`, y ahi no hay nada.
+
+**Por que N+47 lo midio como verde y no lo era.** N+47 reporto "592 passed / 0 failed / 2 ignored
+in 47s local" sobre una maquina con `~/.cargo/config.toml` fijando `target-dir =
+/var/home/rubentxu/cargo-targets`. Ahi habia binarios release de una corrida anterior. El mismo
+comando da **27 passed** aqui y **1 failed** en CI. La medicion local era correcta sobre la maquina
+local y no era evidencia sobre CI, que es la distincion que Lesson 118 ya senalaba y que aqui se
+paga de nuevo.
+
+Y un detalle que hace el hallazgo mas feo de lo que parece: esos binarios locales estan **stale**.
+`cogh` es de las 11:54, y el ultimo commit que toca `crates/cognicode-cli/src/bin/` es de las
+00:12. O sea que las cuatro suites estaban pasando contra binarios que no corresponden al arbol: no
+detectaban ni una regresion de release. Un verde que no puede detectar la clase de defecto que
+existe en el arbol no es un verde.
+
+**La decision: construir, no excluir.** Ninguna de las cuatro suites corre en **ningun** workflow del
+repositorio (verificado con grep sobre `prf_dist_01_06|prf_dist_workflow_flatten|prf_f6_w1|prf_f6_w2`
+en `.github/workflows/*.yml`: cero coincidencias). Estrechar el selector para que no se ejecuten
+habria convertido un gate rojo en cuatro suites sin gate, que es exactamente el hueco que N+46 y
+N+47 acaban de cerrar. El arreglo conserva el poder de deteccion y paga su coste en tiempo de build.
+
+Y el arreglo son **dos paquetes, no uno**. `cognicode-mcp` es miembro aparte del workspace, y las
+cuatro suites lo preparan junto a `cogh` y `cognicode` como payload canonico
+(`for stem in ["cogh", "cognicode", "cognicode-mcp"]`). Mi primer fix construia solo
+`-p cognicode-cli`; habria movido el fallo un paso por la misma asercion. Se detecta leyendo las
+cuatro suites una por una, no por el primer panic.
+
+**Evidencia, en orden y con su clase:**
+
+| Que | Resultado | Clase |
+|---|---|---|
+| Contrato `the_gate_provides_...` antes del fix | 5/6, FAILED | OBSERVED (RED) |
+| Contrato despues del fix | 6/6, exit 0 | OBSERVED (GREEN) |
+| Mutacion: quitar el step de build | FAILED, mensaje nombrando lo que falta | OBSERVED |
+| Mutacion: borrar una suite listada | FAILED, "no longer exists" | OBSERVED |
+| 4 suites, target limpio, solo los 2 builds del gate | 27 passed / 0 failed | OBSERVED (simulacion de CI) |
+| `cargo test -p cognicode-cli --features ladybug` | 31 targets, 0 failed, exit 0 | OBSERVED |
+| `cargo fmt --check`, `clippy -D warnings` | exit 0 / exit 0 | OBSERVED |
+| **`merge-gate` remoto** (run `36535221773`, SHA `e1dd8169`) | **SUCCESS, `mergeStateStatus: CLEAN`, `MERGEABLE`** | OBSERVED |
+
+La ultima fila se leyo del log, no del resumen. Step `Release-profile binaries for the release-flow
+UATs` → success; step `cognicode-cli integration suites` → success con 0 `FAILED` y 0 `panicked` en
+todo el log, y las cuatro suites que antes reventaban ejecutadas (5, 7, 6 y 9 tests). El contrato de
+cobertura, 6/6 tambien en remoto. La cadena completa: `fmt + clippy` SUCCESS, `build cognicode-mcp
+(release)` SUCCESS, `CR-08 selector` SUCCESS, `test pineado` SUCCESS, `merge-gate` SUCCESS.
+
+Lo que sigue siendo cierto despues de esto: el gate tardo **16 min** en lugar de ~6, y el build
+release anadido es la causa (3m41s + 5m05s en la simulacion local con target limpio). Es un coste
+deliberado para conservar cuatro suites que antes no las ejecutaba nadie, y queda anotado para que
+elegirlo sea una decision informada y no un descuido.
+
+**A-014 pasa a `paused`, no a `done`.** Al activar mi work item para que el gate de atencion
+apuntara a el, `sddk plan roadmap status` empezo a fallar con
+`multiple active work items: [8fec95db, e843c329]`, y eso **desactiva en silencio el attention gate**
+(el hook esta en modo `auto` y su sonda es precisamente ese comando; ver `lib.sh:sddk_probe_project`).
+Se resolvio poniendo A-014 en `paused`, que describe lo que se sabe: no esta hecho, no esta
+cancelado, esta detenido por un defecto de toolchain. `done` habria sido un estado falso en el
+ledger, la misma clase que N+43 registro para A-024 y que N+49 decidio no repetir.
+
+**Lesson 121 (nueva):** un gate puede fallar por ejecutar una suite cuyas precondiciones el propio
+workflow nunca crea. No es el step que falta (modo 1 de `cli_gate_coverage_contract`) ni el selector
+estrechado (modo 2); es un tercero, y el contrato existente no lo cubria porque solo contaba
+suites, no de donde salen los artefactos que esas suites consumen. La asercion que lo distingue
+comprueba la *precondicion*, no la *presencia*.
+
+**Lesson 122 (nueva):** cuando una maquina de desarrollo tiene `target-dir` global, "el comando
+pasa aqui" y "el comando pasa en CI" son afirmaciones sobre dos maquinas distintas, y la primera no
+implica la segunda. Peor: si los binarios de `target/` son mas viejos que el ultimo commit que toco
+su fuente, el verde local es verde contra codigo que ya no existe. Medir el gate exige reproducir su
+entorno de ejecucion, no confiar en el propio. La simulacion (`CARGO_TARGET_DIR` vacio + solo los
+builds que hace el job) costo 8m46s y es lo que convierte una suposicion en evidencia.
+
+---
+
+## N+51 — los 33 suites de `cognicode-core` que no corrian, y una correccion a N+48
+
+Sesion de continuacion. N+50 dejo el gate verde; este bloque es el que N+47 dejo escrito como
+siguiente, y sus numeros de partida **no eran correctos**.
+
+**Lo que N+48 decia y lo que hay.** N+48 afirmaba "32 suites, 224 tests, ninguno en el gate" y
+"8 declaran 46 tests" tras `#![cfg(feature = "evidence-kernel")]". Medido hoy sobre el arbol:
+
+| Cifra | N+48 | Medido 2026-09-29 | Como se midio |
+|---|---|---|---|
+| Suites en `crates/cognicode-core/tests/` | 32 (de 36) | **37** | `ls *.rs` |
+| Suites sin paso en el gate | 32 | **33** de 37 | grep de cada nombre en `.github/workflows/*.yml` |
+| Suites tras `cfg(feature)` a nivel de crate | 8 | **5** | `cfg` en la linea 1 de cada fichero |
+| Tests declarados en las suites sin gate | 224 | **248** | conteo de `#[test]` / `#[tokio::test]` |
+
+Las 5 de verdad son `cp5_tie_break` (3), `equivalence_harness` (7), `identity_benchmark` (7) y
+`workspace_isolation` (2), con `#![cfg(feature = "evidence-kernel")]` en la linea 1, mas
+`behavior_budget_e2e` (7) que **solo documenta** el requisito en su cabecera sin llevarselo. N+48
+conto 8; la diferencia no es de criterio, es que 8 no es lo que hay en el arbol.
+
+No se corrige la entrada N+48. Se corrige aqui, porque un journal que se reescribe a si mismo
+pierde la capacidad de decir cuando se establecio por primera vez, que es justo lo que Lesson
+115 documenta para los criterios de aceptacion.
+
+**El verde vacio, demostrado ejecutando y no argumentando.** Las cuatro con cfg a nivel de crate, sin
+la feature:
+
+```
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+Cuatro veces. Exit 0. Con `--features evidence-kernel`: **3 + 7 + 7 + 2**. Son 19 tests que
+reportan exito sin poder fallar, exactamente la clase que Lesson 117 nombro y que
+`cli_gate_coverage_contract` ya pinea para `--features ladybug` en el crate hermano. El mismo
+defecto, otra instancia, otro crate.
+
+**El matiz que N+48 se dio y que hay que corregir tambien: `ci.yml` no es un check de PR.** N+48
+dijo que seis de las ocho no corrian en ningun workflow y las otras dos solo en `ci.yml`, "que no
+es check de PR, asi que tampoco bloquean un merge". La segunda parte es mas fuerte de lo que
+parecia: `ci.yml` declara `on: workflow_dispatch` y nada mas, **sin `on: push` y sin
+`on: pull_request`**. No es que su resultado no bloquee un merge, es que **nunca se ejecuta en un
+PR**. Las tres suites que lo referencian (`architecture_drift_e2e`,
+`findings_canonical_grounding_e2e`, `workspace_isolation`) llevan tiempo sin correr en ningun
+contexto remoto. Un workflow que no se dispara no es una red de seguridad mas débil: no es red.
+
+**El arreglo.** Un selector sin restriccion con la feature, en `merge-gate`, que es el unico check
+obligatorio:
+
+```
+cargo test -p cognicode-core --features evidence-kernel --quiet
+```
+
+`--lib` es la razon especifica por la que el hueco era invisible: aqui **si** es valido (el crate
+tiene `lib.rs`), a diferencia del CLI que es solo-bins, asi que parece la invocacion responsable
+mientras salta los 37 targets de `tests/` por construccion. Antes el gate cubria 2794 tests de
+`--lib` mas 4 suites sueltas. Ahora: **3098 passed, 0 failed, 38 targets, 23 s**.
+
+Veintitres segundos. La cobertura que faltaba era casi gratis comparada con los 16 min que ya
+cuesta el build release de N+50. Ese es el dato que hace la decision obvia y no discutible.
+
+**El contrato, con conteo y no con substring.** `core_gate_coverage_contract.rs`, 5 tests. El
+primero cuenta `tests/*.rs` contra lo que el selector compila; `--tests` conserva los 37 targets de
+integracion y tira los 2794 de `--lib`, y pasa cualquier asercion que busque la cadena
+`cargo test -p cognicode-core`. RED **2/5** antes del fix (nombrando las 33), GREEN **5/5** despues.
+Dos mutaciones, dos dientes:
+
+* estrechar a `--tests` → **2 aserciones fallan**
+* quitar `--features evidence-kernel` → **1 asercion falla**, la del verde vacio, con un mensaje
+  que dice exactamente que las cinco suites compilan a binarios vacios
+
+**Lesson 123 (nueva):** "no es un check obligatorio" y "no se ejecuta" son afirmaciones distintas y
+la segunda es peor. `ci.yml` no es un check de PR, asi que el razonamiento de N+48 ("no bloquea un
+merge") era correcto y su conclusion operatoria tambien: no bloquea nada porque no corre. Un
+workflow con `on: workflow_dispatch` no es cobertura degraded, es cobertura ausente, y hay que
+contarla como ausente al medir el hueco, no como cubierta a medias.
+
+**Lesson 124 (nueva):** un conteo heredado de una entrada anterior del journal es una hypothesis,
+no un dato, aunque la entrada anterior lo escribiera con la misma seguridad que el codigo. Los
+numeros de N+48 estaban equivocados en las cuatro cifras y ninguno hacia el hueco mas pequeno: el
+real es mayor en suites y menor en las gated. Volvieron a medirse porque el arreglo de N+50
+obligaba a contar otra vez, no porque nadie sospechara que estaban mal. Merece la pena sospechar.
+
+**Cierre del work item `174c251f-dabc-414f-9026-65695d5418aa`, con la evidencia de CI observada.**
+Commit `f86958ab`, run `36540458444`, `conclusion: success`. `merge-gate` aparece en el rollup del
+PR #307 como `SUCCESS` **con `startedAt` 08:11:11Z, posterior al push de las 08:04**, y
+`mergeStateStatus: CLEAN`. Del log, no del resumen: contrato `5 passed; 0 failed`; suite core
+agregada `passed=3103 failed=0`, que son 3098 tests de `cognicode-core` mas los 5 del propio
+contrato. El paso nuevo no es un `continue-on-error` disfrazado: aparece con conclusion propia.
+
+Una nota sobre el gate de esta sesion, porque el watcher fallo y el fallo fue mio, no de CI. El
+primer `gh run watch` paso `"$id $sha"` donde la CLI espera un solo argumento, y la API devolvio
+404 y exit 1. Un 404 de "run not found" aqui significa "mal formado el argumento", no "el gate
+cayo". El segundo watcher uso solo el id y funciono. Lo dejo escrito porque la leccion de N+50 fue
+justo que un verde local no es un verde de CI: el reciproco tambien es cierto, y **un fallo de
+observacion no es un fallo del gate**. Distinguir uno de otro evita re-ejecutar 16 minutos de build
+release por un bug de shell.
+
+---
+
+## N+52 — `cp2-cli-coverage-gap` ya estaba cerrado: el conteo estaba obsoleto, no el gate
+
+N+51 dejo este ciclo como "siguiente P0, medido por ultima vez hace dos bloques". La obligacion de
+medir antes de decidir resulto en la conclusion opuesta a la que el roadmap sugeria: **el gate del
+CLI ya cubre las 28 suites**. No hay ciclo que abrir. Registrar esto es parte del trabajo, porque un
+roadmap que ofrece abrir un ciclo sobre un hueco inexistente consume una sesion entera de
+investigacion para volver a medir lo que ya se midio.
+
+**Medido en el arbol, 2026-09-29, sobre `97a0c740`.**
+
+| Que | Numero | Como |
+|---|---|---|
+| Suites en `crates/cognicode-cli/tests/` | **28** | `ls *.rs` |
+| Suites con un `--test <nombre>` pineado en `pr-ci.yml` | **7** | grep por nombre |
+| Suites cubiertas solo por el selector sin restriccion | **21** | las 28 menos las 7 |
+| Targets de test que compila el selector del gate | **28** | `--no-run --message-format=json` |
+| Suites tras `#![cfg(feature = ...)]` a nivel de crate | **1** | `evidence_cli_mcp_equivalence.rs` |
+| Suites del CLI que reportan 0 tests con la feature del gate | **0** | ejecucion target por target |
+
+Las 28 del selector son las 28 del arbol, una a una, sin sobras ni faltas. Ese es el invariante que
+`cli_gate_coverage_contract` ya pinea y por eso no hace falta un segundo contrato: el hueco que
+N+48 empezo a medir era el mismo que N+50 cerro con el selector de la linea 518.
+
+**El unico verde vacio del CLI, y por que no lo es.** `evidence_cli_mcp_equivalence` lleva
+`#![cfg(feature = "ladybug")]` en la linea 35, no en la 1. Ejecutado:
+
+```
+--features ladybug   -> running 9 tests,  9 passed; 0 failed
+sin la feature       -> running 0 tests,  0 passed; 0 failed   (verde vacio)
+```
+
+El gate pasa `--features ladybug`, asi que los 9 tests **corren**. Las 28 suites, una por una, con
+la feature del gate: ninguna reporta 0. Y `evidence_cli_mcp_equivalence` con la feature da 9 tests,
+no los 5 que registra `grep -c "#\[test"`: dos son `#[tokio::test]`, que el grep no cuenta. **Un
+conteo por grep de atributos subestima lo que un target ejecuta.** Es la misma trampa que N+48
+cayo al casar `20 passed` como `0 passed`, y merece la misma lesson: para volumen de tests, la
+fuente es la salida del runner.
+
+**El `0 passed` del log de CI no era un target de tests.** El paso `cognicode-cli integration
+suites` mostro 31 lineas de `test result` y una de ellas era `0 passed; 0 failed`. Con `--quiet` el
+log no nombra los binarios, asi que no se puede atribuir leyendo el log. Medido localmente, ninguna
+suite del CLI esta vacia, luego ese `0` corresponde al binario `unittests` de un objetivo sin
+`--lib`, que `cognicode-cli` no tiene tests unitarios propios porque es un crate solo-bins. Se
+comprobo ejecutando las 28 una a una, no suponiendolo. **Agregado `passed=598 failed=0` en el
+paso del CLI, de 31 lineas de resultado.** Queda escrito como medido y con su ambiguedad
+resuelta, no como afirmacion.
+
+**Lesson 125 (nueva):** un ciclo de backlog puede quedar obsoleto sin que nada falle. El gate de
+N+50 lo cerro entero y el roadmap seguia ofreciendo el ciclo como P0 siguiente porque el numero
+que lo justificaba venia de una medicion de dos bloques antes. Nada rojo, ningun test caido, un
+work item de trabajo que ya no tiene objeto. **La obsolescencia de un backlog item no se detecta
+con tests, se detecta midiendo**, igual que un test rojo. Y medir cuesta una sesion: es mas barato
+cerrar el item con evidencia que investigarlo hasta el fondo.
+
+**Lesson 126 (nueva):** contar atributos de test con grep es una estimacion, no un conteo. Los
+`#[tokio::test]` y los tests generados no aparecen, y el error va siempre en la direccion que hace
+el hueco parecer menor. Cuando el numero importa para una decision, sale de la salida del runner.
+
+**Estado tras N+52.** No hay ciclo `cp2-cli-coverage-gap` que abrir. El unico P0 vivo es integrar
+PR #307, que es decision del operador: rama `97a0c740` con `merge-gate` `SUCCESS` (run
+`36543355473`), `mergeStateStatus: CLEAN`, `MERGEABLE`. A-014 sigue `paused` por el defecto del
+toolchain de SDDK, no del repo, y no se fuerza a `done`.
+
+---
+
+## N+53 — el contrato de core era ciego a la suite que Perdera, y dos negativos que cierran el lazo
+
+N+51 y N+52 afirmaron cobertura. Afirmar cobertura no es lo mismo que **demostrar que la cobertura
+muerde**, asi que se usa el metodo de los negativos: romper algo que antes no estaba gateado y
+comprobar que el gate se cae. Sin esto, "el gate cubre 37 suites" es una frase sobre el texto del
+workflow, no un comportamiento observado.
+
+**Negativo 1, `cognicode-core`, suite `inc007_integration` (1 test, nunca pineada).** Se anadio un
+`#[test]` que hace `panic!` y se ejecuto **el selector exacto del gate**:
+
+```
+cargo test -p cognicode-core --features evidence-kernel --quiet
+  -> exit 101,  test result: FAILED. 1 passed; 1 failed
+  -> 28 lineas de "test result: ok" en el mismo run
+```
+
+Es decir: el gate entero cae por un unico test roto en una suite que antes no miraba, y las otras
+36 siguen verdes. **Eso es cobertura real, no decorativa.** Fichero restaurado, `git status` limpio.
+
+**Negativo 2, `cognicode-cli`, suite `prf_ext_02_partial_uat` (2 tests, nunca pineada).** Mismo
+montaje sobre `cargo test -p cognicode-cli --features ladybug --quiet`: `test result: FAILED. 6 passed;
+1 failed`. Restaurado y limpio.
+
+**Y aqui aparece el defecto real, que no era de los negativos.** Al probar el contrato con **36**
+suites en vez de 37 (borrando una temporal), el contrato paso **5/5 en verde**. La guarda era:
+
+```rust
+assert!(suites.len() >= 30, "expected the crate to still carry its full integration surface")
+```
+
+Un `>=` con suelo solo comprueba que no se este midiendo el vacio. **No detecta que falte una
+suite**, que es exactamente el fallo que ese fichero existe para impedir. Yo escribi esa guarda, y
+es del mismo tipo que el defecto que N+48保持了 dos bloques: una comprobacion que parece
+suficiente porque falla en algun caso, y no falla en el que importa.
+
+**Corregido a un conteo exacto, RED/GREEN demostrado:**
+
+| Estado | Suites | exit | Resultado |
+|---|---|---|---|
+| Antes del fix, suite borrada | 36 | **0** | `5 passed; 0 failed` (ciego) |
+| Despues del fix, suite borrada | 36 | **101** | `4 passed; 1 failed`, mensaje con la lista |
+| Con la suite presente | 37 | **0** | `5 passed; 0 failed` |
+
+`assert_eq!(suites.len(), 37, ...)`, con un mensaje que obliga a distinguir borrado intencionado
+de perdida. Subir el numero pasa a ser un acto deliberado y revisable, que es el objetivo.
+
+**Que sigue sin tener guarda, y se dice en voz alta.** El `assert_eq` pinea el *numero* de suites de
+core, no su *identidad*: si alguien sustituye una suite por otra, el conteo sigue en 37 y el
+contrato pasa. Pinear las 37 identities con `contains` seria mas fuerte, a costa de un fichero que
+hay que tocar cada vez que se anade una suite, que es exactamente la podredumbre que N+50 evitar al
+usar un selector. Se elige el conteo y **se acepta el limite a sabiendas**, no por descuido. La
+cifra exacta mas el selector sin restriccion cubren "nadie desaparece sin que se note"; no cubren
+"nadie sustituye una suite por otra sin que se note". Esa segunda es un trade-off consciente, no un
+hueco olvidado.
+
+**Lesson 127 (nueva):** un contrato de cobertura se prueba rompiendolo, no leiendolo. "Cubre 37
+suites" era una afirmacion sobre el texto del YAML; el negativo lo converts en comportamiento. Un
+contrato que nunca se ha visto fallar no es un contrato, es decoracion, aunque tenga cinco
+aserciones y dos mutaciones documentadas.
+
+**Lesson 128 (nueva):** una guarda con suelo no es una guarda. `len() >= 30` protege contra medir
+nada y no protege contra perder uno. Cuando el numero **es** el invariante, el invariante se
+escribe con igualdad. Y el fallo va en la direccion de la guarda: `>=` siempre deja pasar la perdida, que es
+la direccion silenciosa.
+
+**Estado.** Rama `7fe096c0` + este commit, `merge-gate` verde en `36546790616` hasta el anterior.
+PR #307 sigue abierto, `CLEAN`, `MERGEABLE`, sin mergear: decision del operador. A-014 sigue
+`paused` por el defecto del toolchain, no del repo.
+
+---
+
+## N+54 — las cinco aserciones del contrato, vistas fallar una a una
+
+N+53 arreglo la guarda floja del contrato y demostro RED/GREEN. Faltaba lo que mas cuesta y mas
+importa: **comprobar que cada asercion muerde de verdad**, no que pasa en el caso bueno. Un
+contrato que nunca se ha visto caer no distingue una proteccion de un adorno, por muy bien escrita
+que este la asercion.
+
+Las cinco, una por una, con el fichero y el workflow restaurados despues de cada prueba.
+
+| Asercion | Mutacion aplicada | Resultado observado |
+|---|---|---|
+| `assert_eq!(len, 37)` | borrar `inc007_integration.rs` (36 suites) | `FAILED. 4 passed; 1 failed`, exit 101, lista las 36 |
+| sin restriccion | selector a `--tests` | `FAILED. 3 passed; 2 failed` |
+| sin restriccion | borrar el paso `--features evidence-kernel` | `FAILED. 4 passed; 1 failed`, mensaje con el selector encontrado |
+| feature vacia | suite tras `cfg` sin tests | cubierta por `a_gated_suite_still_declares_tests`; RED demostrado en N+51 con la suite borrada de disco |
+| autopin | quitar `--test core_gate_coverage_contract` del workflow | `FAILED. 4 passed; 1 failed`, "the coverage guarantee is itself ungated" |
+
+**El limite que N+53 declaro, ahora medido y no supuesto.** Renombrar `inc007_integration` a
+`renombrada_por_error` deja el conteo en 37 y el contrato pasa **5/5**. Es exactamente la laguna
+documentada: el `assert_eq` pina *cuantas* suites hay, no *cuales*. Pero el hecho relevante es el
+otro: **la suite renombrada sigue gateada**, porque el selector sin restriccion compila todo
+`tests/*.rs` y no depende del nombre. El renombrado no pierde cobertura, solo evade el pin de
+conteo. La proteccion real la da el selector; el `assert_eq` protege contra *borrar*, que es la
+operacion que de verdad pierde tests. Ambos hacen falta y cada uno cubre un fallo distinto.
+
+**Un falso positivo mio que conviene no pasar por alto.** La suite CLI completa fallo en local con
+`498 passed; 1 failed`, en `prf_dist_01_06_release_candidate_uat`:
+
+```
+panicked at crates/cognicode-cli/tests/prf_dist_01_06_release_candidate_uat.rs:65
+missing release binary cogh at .../target/release/cogh
+```
+
+Causa: yo estaba corriendo con `CARGO_TARGET_DIR` apuntando a un directorio scratch, y ese test
+exige el binario release en el `target/release` del repo. Con el target dir por defecto: **5 passed,
+exit 0**. El codigo estaba bien y el gate remoto tambien (verde en 598/598); el fallo era del
+entorno de prueba. **Un rojo local no es un rojo del producto**, y la leccion de N+50 ("un verde
+local no es un verde de CI") tiene el reciproco exacto: antes de reportar un fallo hay que
+comprobar que es del codigo y no del `CARGO_TARGET_DIR` con el que se ejecuto. Se registra porque
+casi se reporta como regresion.
+
+**Estado final medido desde el arbol de trabajo, con el target dir del repo:**
+
+```
+cognicode-core  --features evidence-kernel  -> exit 0,  3103 passed, 0 failed, 39 lineas de resultado
+cognicode-cli   --features ladybug         -> exit 0,   598 passed, 0 failed, 31 lineas de resultado
+cognicode-mcp                              -> exit 0,   149 passed, 0 failed
+```
+
+**Lesson 129 (nueva):** un contrato se evalua por los casos en los que se cae, no por los casos en
+los que pasa. Cinco aserciones que nunca se han visto fallar son cinco afirmaciones sin evidencia.
+Mutarlas una por una cuesta minutos y es la unica forma de saber que el fichero protege algo.
+
+**Lesson 130 (nueva):** antes de reportar un test rojo local, comprobar el `CARGO_TARGET_DIR` y las
+precondiciones de binarios. Un fallo de entorno que se lee como regresion cuesta mas que el test
+rojo que no existia, porque induces a arreglar codigo sano.
+
+---
+
+## N+55 — cerrando el hueco que N+54 dejo declarado abierto
+
+N+54 termino diciendo, en voz alta, que "renombrar **y** borrar a la vez seguiria dando 37 y pasaria
+el conteo". Dejar un hueco escrito no es lo mismo que cerrarlo, asi que aqui se cierra, con el mismo
+metodo: mutar la situacion y mirar como cae.
+
+**Por que el conteo solo no podia.** `assert_eq!(len, 37)` mide cantidad. Un renombrado no cambia
+la cantidad, asi que el conteo lo ve pasar. Un borrado si la cambia, asi que el conteo lo ve. Lo
+unico que **no** ve es la operacion compuesta: renombrar una suite y borrar otra en el mismo commit
+deja el numero intacto y las dos protecciones contentas. Ese era el hueco, y era real.
+
+**La solucion: anclas por nombre, no las 37 identidades.** Pinar las 37 seria mas fuerte, y es
+justo la podredumbre que el selector sin restriccion evita: habria que editar la lista en cada
+adicion. Asi que se pinan **13 suites ancla**, elegidas por un criterio, no por convenience: son las
+que **nadie mas referencia por nombre en el repo**. Perder cobertura que ningun sitio menciona es
+exactamente como un gate se pudre sin que nadie lo note, y esas son las que mas duele perder en
+silencio. Anadir una suite nueva no toca la lista, que era el requisito.
+
+**Los tres casos, ejecutados:**
+
+| Caso | Conteo | Resultado observado |
+|---|---|---|
+| arbol intacto | 37 | `6 passed; 0 failed`, exit 0 |
+| renombrada una **ancla** a `renombrada_por_error` | 37 | exit **101**, `5 passed; 1 failed`, "1 of 13 anchor suites are gone: [\"inc007_integration\"]" |
+| renombrada un ancla **y borrada** una no ancla | 36 | exit **101**, `4 passed; 2 failed` (caen el conteo y el ancla a la vez) |
+
+El caso que el conteo dejaba pasar es exactamente el tercero, y ahora cae por dos lados a la vez.
+Con eso el contrato pasa de 5 a 6 aserciones, todas vistas fallar.
+
+**Lo que sigue sin cubrirse, y se vuelve a decir en voz alta.** Una suite no anclada puede seguir
+borrandose o renombrandose sin que el contrato lo note, siempre que el total se mantenga en 37. Con
+13 de 37 ancladas, un commit que borre una no anclada y anada otra no anclada pasa. Cerrar eso exige
+pinar las 37 identidades, con el coste de mantenimiento que se acaba de rechazar. **Es un trade-off
+consciente y no una omision**: se acepta menos sensibilidad a cambio de que la lista no se pudra.
+Lo que si se garantiza, y es lo que de verdad perdia tests, es que borrar una suite sin compensar
+la cuenta, y que perder una de las 13 suites sin referencias externas. Las dos cosas fallan.
+
+`cargo fmt --check` limpio, `clippy --tests` sin errores, arbol restaurado a 37 suites.
+
+**Lesson 131 (nueva):** un invariante de cantidad no ve un invariante de identidad. Ambos hacen
+falta y no se sustituyen: el conteo detecta la perdida neta, el ancla detecta la sustitucion. La
+prueba de que falta uno de los dos es la operacion compuesta, donde cada proteccion se compensa con
+la otra y las dos pasan.
+
+---
+
+## N+56 — la regla de las anclas era falsa, y comprobarlo tambien es un test
+
+N+55 eligio 13 suites ancla a mano y escribio, en el propio codigo, que el criterio era "suites
+que **nadie mas referencia por nombre en el repo**". Ese criterio suena verificable, asi que se
+verifico, y **no se cumplia**: 7 de las 13 estaban referenciadas por un workflow
+(`callgraph_projection_orientation`, `checkpoint_integration`, `e2_w1_canonical_control_query`,
+`inc007_integration`, `m06_acceptance`, `m10_acceptance`, `provider_conformance`).
+
+Es la misma clase de fallo que la guarda `>= 30` y que las cifras de N+48, y por tercera vez en
+tres bloques: **una regla enunciada en un comentario que nadie ejecuta.** Un criterio escrito en
+prosa no es un criterio, es una intencion. Si no se puede comprobar con una ejecucion, o no es un
+criterio o hay que convertirla en una.
+
+**Medido con ripgrep sobre el arbol, 2026-09-29:** de las 37 suites de core, **16 no tienen ninguna
+referencia** fuera de su propio fichero. Esa es la lista real de anclas, y es la que se pina:
+
+`analytics_bounded_paths`, `analytics_registry_admission`, `analytics_registry_cohort_1`,
+`analytics_registry_cohort_2`, `architecture_e77_1_wu0_gap_characterization_e2e`,
+`architecture_e77_1_wu3_canonical_grounding_e2e`, `find_usages_cli_mcp_equivalence`,
+`findings_ast_e2e`, `findings_axiom_import_e2e`, `findings_dataflow_e2e`, `findings_graph_e2e`,
+`prf_ext_04_adapter_authority_uat`, `prf_h06_adversarial_e2e`, `read_set_e2e`.
+
+**Y el criterio deja de ser prosa.** Segundo test nuevo, `anchors_stay_unreferenced_elsewhere`:
+recorre `crates/`, `.github/`, `docs/` y `openspec/` buscando cada nombre de ancla, excluyendo el
+propio contrato (que los pina por definicion) y el propio `tests/`. Si un ancla gana una referencia,
+el ancla deja de ser la cosa que esta lista protege, porque su perdida ya se anunciaria sola, y el
+test falla.
+
+**Un detalle que casi se cuela.** La lista de anclas estaba **duplicada** en los dos tests. Una
+lista de pines duplicada es una lista que se corrige en un sitio y se pudre en el otro, o sea el
+mismo problema que resolvia la constante. Se extrajo a `const ANCHOR_SUITES`.
+
+**Los cuatro casos, ejecutados:**
+
+| Caso | Resultado |
+|---|---|
+| arbol intacto | `7 passed; 0 failed`, exit 0 |
+| `read_set_e2e` gana una referencia en `pr-ci.yml` | exit **101**, `6 passed; 1 failed`, nombra el ancla contaminada |
+| `read_set_e2e` renombrada, conteo intacto en 37 | exit **101**, `6 passed; 1 failed`, "1 of 14 anchor suites are gone" |
+| renombrado + borrado (N+55) | exit **101**, `4 passed; 2 failed` |
+
+El contrato pasa de 5 a **7 aserciones**, todas vistas caer, y ahora la propia lista de anclas esta
+sujeta a la regla que dice cumplir.
+
+`cargo fmt` aplicado y verificado, `clippy --tests` sin errores, suite core completa **3105 passed,
+0 failed** (los 2 nuevos).
+
+**Lesson 132 (nueva):** "criterio" y "comentario" no son lo mismo. Tres veces en tres bloques una
+regla enunciada en prosa resulto falsa: las cuatro cifras de N+48, la guarda `>= 30` y ahora las
+13 anclas. **Si un criterio no se puede ejecutar, no es un criterio.** Y si se puede ejecutar,
+ejecutarlo: por menos trabajo que mantener la mentira, y porque la lista de anclas contaminada
+habria protegido suites que ya estaban anunciando su propia perdida.
+
+---
+
+## N+57 — el test implementaba una regla mas debil que la que decia
+
+N+56 dejo las anclas como conjuntos de "cero referencias fuera de su propio fichero", con un test
+que recorre el arbol para comprobarlo. Faltaba una pregunta mas honda: **¿el test implementa la
+regla que dice?** Y no la implementaba entera.
+
+El walker hacia esto:
+
+```rust
+let is_own_suite = path.to_string_lossy().contains("/tests/");
+```
+
+Es decir, **excluia todo el arbol `tests/` de cualquier crate**, no solo el fichero de la suite que
+se esta midiendo. Consecuencia: si una suite ancla aparecia citada dentro de **otra suite**, la
+referencia era invisible y el test pasaba. La frase del criterio dice "cero referencias en ninguna
+parte"; el codigo decia "cero referencias, excepto las que estan dentro de `tests/`". **Una regla
+que no ve una clase entera de referencias es mas debil que la frase que la describe**, y por eso
+es indistinguishable de no tenerla.
+
+La exclusion correcta es **por fichero, no por directorio**, y de hecho basta con eximir el propio
+contrato, que es el unico que cita los nombres entrecomillados a proposito. Una suite no puede
+autocitarse por su nombre de fichero entrecomillado de forma que case.
+
+**Probado en las dos direcciones:**
+
+| Caso | Antes | Ahora |
+|---|---|---|
+| arbol intacto | 7 passed, exit 0 | 7 passed, exit 0 |
+| `read_set_e2e` citado en `pr-ci.yml` | exit 101 | exit 101 |
+| `read_set_e2e` citado en **`findings_graph_e2e.rs`** (otra suite) | **exit 0, no lo veia** | **exit 101**, nombra el ancla |
+
+Ese tercer caso es el que faltaba y es exactamente el que la exclusion ancha escondia.
+
+**Por que la medicion original con ripgrep no lo detecta.** Alli la exclusion era
+`!**/tests/$s.rs`, o sea **solo el fichero de la suite**, y por eso las 16 que se contaron como
+"cero referencias" si eran correctas. El desajuste estaba solo en el test de Rust, no en la
+medicion. Conviene tener las dos cosas separadas: **la medicion y la asercion pueden divergir, y
+cuando divergen la asercion es la que manda en el gate**, porque es la que corre en CI.
+
+`cargo fmt` limpio, `clippy --tests` sin errores, core completo **3105 passed, 0 failed**, arbol
+con un solo fichero modificado.
+
+**Lesson 133 (nueva):** al escribir un test para una regla, comprobar tambien que el test *mira
+donde la regla dice que se mira*. Una exclusion comoda, como "no me fijes en `tests/` porque ahi
+esta el ruido", se convierte sin querer en un punto ciego que no coincide con ninguna regla
+razonable, y el test sigue pasando. **La asercion y la frase tienen que decir lo mismo, y eso se
+comprueba con un caso que la frase prohibe y la asercion no.**
+
+---
+
+## N+58 — la regla de las anclas tambien era mas ancha que su codigo, y una asercion tautologica
+
+N+57 arreglo que el walker excluyera todo `tests/`. Al arreglarlo quedo al descubierto el otro
+lado del mismo defecto: **la frase del criterio decia "cero referencias en ninguna parte" y el
+codigo decia "cero referencias dentro de `crates/`, `.github/`, `docs/` y `openspec/`"**. La raiz
+del repo tiene unos ochenta entradas mas, y ninguna estaba verificada.
+
+Medido con ripgrep sobre **todo** el repo (excluyendo `odd/` y `target/`): ninguna ancla aparece
+citada en un fichero de la raiz, ni en `tests/`, `specs/`, `plans/`, `product/`, `skills/`,
+`integrations/`, `apps/`, `evidence/`, `dist/`, `scripts/`, `sddk/`, `sandbox/` ni en el resto de
+directorios no escaneados. **Las 16 suites de la medicion de N+56 siguen siendo correctas**, porque
+la medicion si cubria todo. Pero ahora eso lo dice un test y no una tarde de comprobacion manual.
+
+**Dos correcciones, y una de ellas es una asercion inutil que escribi yo.**
+
+1. `ANCHOR_SCAN_DIRS` constante compartida, y `the_anchor_scan_scope_is_pinned` que falla si el
+   ambito se encoge o se widen sin revisar la frase. Probado: quitar `openspec` da **exit 101** con
+   el ambito nuevo impreso en el mensaje.
+
+2. La primera version de ese test tenia esto:
+
+```rust
+let must_scan = ["crates"];
+for dir in must_scan { assert!(scanned.contains(&dir), ...); }
+```
+
+Que es **tautologico**: `crates` ya estaba en la lista, asi que la asercion no podia fallar nunca.
+Un test que no puede fallar no es un test, es la misma decoracion que N+54 senalo en las cinco
+aserciones del contrato, reincidente en el fichero que se escribio para arreglarlo. Se sustituyo
+por `assert_eq!(ANCHOR_SCAN_DIRS.len(), 4, ...)`, que si cae cuando el ambito cambia.
+
+**Lesson 134 (nueva):** una asercion que deriva de un literal que la propia asercion define no
+comprueba nada. Revisar un test nuevo preguntandose "que mutacion lo haria fallar" es la unica
+forma de saber si protege algo, y aqui la respuesta habria sido "ninguna". La lesson 129
+("mutar cada asercion") es la que se aplico a si mismo, y por eso se encontro.
+
+Contrato de 7 a **8 aserciones, todas vistas caer**. `cargo fmt` limpio, `clippy --tests` sin
+errores, core completo **3106 passed, 0 failed**.
+
+**Y el patron completo de los tres bloques, que es lo que de verdad se aprende aqui.** Las
+reglas falsas que se han encontrado, en orden: las cuatro cifras de N+48 (medidas, no ejecutadas),
+la guarda `>= 30` (medida pero con suelo), las 13 anclas (criterio en prosa, nunca ejecutado), la
+exclusion de `tests/` (codigo mas debil que la frase), el ambito de 4 directorios (codigo mas
+estrecho que la frase) y la asercion tautologica (no comprobable). **Cinco de seis son el mismo
+error: enunciar una regla en prosa y suponer que se cumple.** La unica que era una medicion de
+verdad, la del conteo, fue la que sirvio para detectar a las otras cinco.
+
+---
+
+## N+59 — 81 ficheros que el escaner se comia en silencio, aceptados por nombre y con motivo
+
+N+58 cerro el ambito del escaner de anclas. Quedaba un punto ciego mas, y es el mismo que me
+he encontrado tres bloques seguidos: **algo que el codigo salta sin decir nada**.
+
+El walker hacia:
+
+```rust
+} else if let Ok(text) = std::fs::read_to_string(&path) { ... }
+```
+
+`read_to_string` falla con `InvalidData` en cualquier fichero que no sea UTF-8 valido, y ese `else if
+let Ok` **se lo comia sin registrar**. Medido con Python sobre las cuatro dirs escaneadas: de
+**2856 ficheros, 81 no son UTF-8**.
+
+| Extension | Ficheros | Que es |
+|---|---|---|
+| `.webm` | 63 | grabaciones de regresion visual |
+| `.sqlite` / `.sqlite-shm` / `.db` | 9 | fixtures de workspace |
+| `.cache` | 4 | caches de grafo |
+| `.rlib` | 4 | artefactos de compilacion en el arbol |
+| `.wasm` | 1 | el paquete wasm de `cognicode-graph-wasm` |
+
+Una referencia a un nombre de suite escondida dentro de un binario no la encontraria ni un revisor.
+Un salto silencioso es indistinguible de una ausencia, que es justo el fallo que la leccion 128
+describio: **el `>=` deja pasar la perdida, y el `let Ok` la esconde.**
+
+**Ahora los ilegibles se cuentan y se asertan.** No se aceptan en bloque: el test falla y los
+nombra, y solo se acepta lo que esta en `ACCEPTED_UNREADABLE_EXTENSIONS` con su extension
+explicita. Se aplica a la lista real de 81, que son todos artefactos y ninguno codigo.
+
+**Un detalle de la API que casi hace fallar el arreglo.** `Path::extension()` de
+`foo.sqlite-shm` devuelve `shm`, no `sqlite-shm`. Aceptar solo `sqlite-shm` habria dejado pasar
+dos ficheros reales y el test habria fallen con un nombre que no estaba en la lista, que es la peor
+forma de fallar: describe mal el problema. Se comprueba el segundo componente del `file_stem`
+tambien.
+
+**Los tres casos:**
+
+| Caso | Resultado |
+|---|---|
+| arbol real con los 81 binarios | `8 passed`, exit 0 |
+| antes del arreglo, sin aceptacion | exit **101**, "81 files ... not valid UTF-8" |
+| `artefacto_raro.bin` con extension desconocida | exit **101**, nombra el fichero y ofrece las dos salidas |
+
+El tercero es la direccion importante: una extension **nueva** no pasa colada. Eso es lo que
+distingue una lista de aceptados de un `let Ok` con otro nombre.
+
+**Lesson 135 (nueva):** `if let Ok(x) = ...` sobre una lectura de disco es un salto silencioso con
+apariencia de robustez, y por eso es peor que un `unwrap` que al menos se nota. **Todo lo que se
+salta al leer tiene que acabar en un contador o en una asercion**, porque un fichero que no se lee
+y un fichero que no existe producen el mismo resultado observable, y esa es exactamente la
+ambiguedad que un gate no puede permitirse.
+
+Contrato sigue en **8 aserciones** (esta no anade una nueva, endurece una existente), `cargo fmt`
+limpio, `clippy --tests` sin errores, core completo **3106 passed, 0 failed**, un solo fichero
+modificado.
+
+---
+
+## N+60 — El 14, el 16 y el 37: tres cifras y ninguna era el conjunto
+
+N+59 cerro el escaner de ficheros ilegibles. Quedaba el otro asunto: la
+documentacion de N+56 habla de **16 suites con cero referencias** y la
+constante `ANCHOR_SUITES` enumeraba **14**. Contraste, recomputar, reconciliar.
+
+Lo que salio al medir no fue un descuadre de dos, sino **cuatro errores
+encadenados**, y el primero invalida la pregunta original.
+
+### 1. La regla "cero referencias" es insatisfacible y siempre lo fue
+
+Hay **0 suites sin referencias** en el repo. No porque casi todas esten
+citadas, sino porque `JOURNAL.md` cita **las 37**. Cualquier regla que
+dependa de "nadie escribe el nombre" deja de ser recomputable en cuanto
+existe documentacion que describe el trabajo. Este mismo journal es el
+que mato la regla: N+55 y N+56 escribieron los nombres que N+56 luego
+conto como no referenciados.
+
+### 2. El needle llevaba comillas, asi que no veia una sola referencia
+
+Era `format!("\"{anchor}\"")`. Pero una referencia real se escribe:
+
+```
+--test analytics_bounded_paths                    (CI, sin comillas)
+`analytics_bounded_paths`                        (journal, backticks)
+`analytics_bounded_paths.rs`                     (spec, con .rs)
+```
+
+Ninguna coincide con `"analytics_bounded_paths"`. `analytics_bounded_paths`
+esta citada en **4 ficheros** (`.agent/TESTING-STATE.md`, dos
+`openspec/changes/archive/`, un `archive-report.md`) y el contrato la
+declaraba no referenciada. De ahi el 14, el 16 y el 37: tres mediciones
+con una aguja que no podia picar nada.
+
+### 3. El escaner no leia los workflows. En absoluto
+
+Al pasar el criterio a "no la nombra ningun workflow ni ningun script",
+meti `walk()` ficheros de workflow. El negativo 1 **dio verde**, y
+eso no es un resultado, es un fallo del contrato. Motivo:
+
+```rust
+let Ok(entries) = std::fs::read_dir(dir) else { return; };
+```
+
+`read_dir` sobre un **fichero** falla, y ese `let Ok` se lo come. El
+escaneo de los workflows **no leia nada**, en silencio, mientras el
+contrato declaraba 4 directorios de ambito y notificaba verde. El mismo
+`let Ok` de N+59, aplicado por mi al segundo escaner, en la misma sesion.
+
+Ahora `walk` acepta ficheros y directorios, y un directorio que no se
+puede listar se reporta en vez de ignorarse.
+
+### 4. La lista medida estaba contaminada por un escaner roto
+
+Con el escaner arreglado, el conjunto real **bajo de 33 a 26**: 7 de los
+anclajes si estan nombrados por configuracion, y `m06_acceptance` y
+`m10_acceptance` tambien, por `scripts/product/generate_support_matrix.py`.
+Esos dos los Carnot. Eran anclajes porque "ningun workflow los nombra",
+criterio que ignora que un script los lee.
+
+### El criterio que queda
+
+**Ningun workflow lo nombra con `--test` y ningun script de `scripts/` lo
+menciona.** 26 suites. Dos needles (`--test suite` y `tests/suite.rs`)
+porque la configuracion cita de dos formas, y `docs/`, `openspec/` y
+`.agent/` quedan **fuera a proposito**: citan las 37 y volverian a hacer
+la regla insatisfacible.
+
+Y ya no es una lista que alguien mantiene: `the_anchor_set_is_the_measured_one`
+**recalcula el conjunto desde el arbol y lo compara**. Una suite nueva sin
+nombrar falla diciendo "anadela"; una que un workflow empieza a nombrar
+falla diciendo "quitala".
+
+| Negativo | Mutacion | Resultado |
+|---|---|---|
+| 1 | workflow anade `--test analytics_bounded_paths` | exit **101**, nombra el anclaje |
+| 2 | script cita `tests/identity_benchmark.rs` | exit **101** |
+| 3 | binario desconocido en `scripts/` | exit **101**, "2 configuration files" |
+| 4 | renombrar `identity_benchmark` | exit **101**, `5 passed; 4 failed` |
+| 5 | suite nueva sin nombrar | exit **101**, "expected exactly 37 ... found 38" |
+
+**Lesson 136 (nueva):** un criterio de "nadie menciona X" es
+**inverificable en cuanto existe documentacion sobre X**, y un needle
+con comillas es un criterio que no ve el mundo real. La forma de que un
+pin sobreviva es que el codigo **recalcule el conjunto y lo compare**,
+no que alguien lo lea y lo reescriba.
+
+**Lesson 137 (nueva):** un escaner al que se le pasa el path equivocado no
+falla, **no hace nada**. `walk` aceptaba directorios; darle ficheros
+devolvia `Err` y un `let Ok` lo silenciaba, asi que "anade un anclaje al
+workflow" daba verde con el workflow mutado. **Toda ruta que se le pasa
+a un escaner tiene que tener un negativo que demuestre que se lee**, o
+el escaner puede estar leyendo el conjunto vacio sin que se note.
+
+Contrato en **9 tests** (era 8; el nuevo es el que recalcula el
+conjunto), `cargo fmt` limpio, `clippy --tests` sin errores, core agregado
+**3107 passed, 0 failed**.
+
+### Confirmacion en CI de f428da1a
+
+Push `f428da1a`, run `36563346080`, `success`. Los cinco checks verdes:
+`merge-gate`, `test pineado (lib + E2E, CR-08-adapted)`,
+`CR-08 selector de suites`, `fmt + clippy` y
+`build cognicode-mcp (release)`.
+
+En el log del runner, el job del contrato registra:
+
+```
+merge-gate  cognicode-core gate coverage contract  test result: ok.
+            9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+y aparece la invocacion sin restringir `cargo test -p cognicode-core
+--features evidence-kernel`. `merge-gate` tardo **18 min 04 s**
+(11:48:01 -> 12:06:05) frente a los ~2 min de los demas jobs, que es la
+firma de que la superficie de 37 suites se ejecuta de verdad y no se
+colapsa en un `--lib`.
+
+Queda por confirmar, si el operador quiere el dato granular, el
+desglose por suite: el log agregado por `grep` no separa los targets de
+integracion de los unitarios, asi que **no se afirma aqui un recuento
+por suite observado en el runner**. Lo observado es el total del
+contrato, la presencia del selector sin restringir y la duracion.
+
+PR #307: `OPEN`, `MERGEABLE`, `CLEAN`, head `f428da1a`. La integracion
+sigue siendo decision del operador. A-014 continua en `paused`.
+
+### Correccion: ID del run en el mensaje de 951f2c0f
+
+El mensaje de ese commit dice `36563348080`. El run correcto es
+**`36563346080`**. El error esta **solo en el mensaje de git**: el
+cuerpo de `JOURNAL.md` y de `ROADMAP.md` lleva el ID correcto, y el
+`amend` que lo arreglaba fue bloqueado por el gate de SDDK, con lo que
+la historia publicada queda intacta.
+
+No se reescribe el commit. Se deja esta correccion como commit propio,
+que es lo que un ledger append-only exige. Es el mismo motivo por el que
+N+48 no se reescribio cuando sus cifras resultaron equivocadas.

@@ -271,3 +271,65 @@ fn a014_capabilities_json_runtime_mutating_tools_match_profile_posture() {
         reviewer["mutating"]
     );
 }
+
+/// A-014 acceptance criterion, as written in the action register, is
+/// `cognicode capabilities --json`. The implementation only accepted
+/// `--format json`, so the documented contract was broken: the command
+/// named by the register's own criterion exited 2 with
+/// "unexpected argument '--json' found". That is contract drift, not
+/// shorthand — a consumer reading the register would ship a broken
+/// invocation.
+///
+/// `--format json` stays canonical; `--json` is the documented alias
+/// the register promised, so both spellings must emit the identical
+/// document.
+#[test]
+fn the_documented_json_flag_is_accepted_and_equivalent() {
+    let via_format = Command::new(binary_path("cognicode"))
+        .arg("capabilities")
+        .arg("--format")
+        .arg("json")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to run `cognicode capabilities --format json`");
+
+    let via_json = Command::new(binary_path("cognicode"))
+        .arg("capabilities")
+        .arg("--json")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to run `cognicode capabilities --json`");
+
+    assert!(
+        via_json.status.success(),
+        "the action register's own acceptance command `cognicode capabilities \
+         --json` must succeed; it exited {:?} with stderr: {}",
+        via_json.status.code(),
+        String::from_utf8_lossy(&via_json.stderr)
+    );
+
+    let canonical: Value = serde_json::from_slice(&via_format.stdout)
+        .expect("`--format json` stdout must be a single JSON document");
+    let alias: Value = serde_json::from_slice(&via_json.stdout)
+        .expect("`--json` stdout must be a single JSON document");
+
+    assert_eq!(
+        canonical["schema_version"], alias["schema_version"],
+        "the alias must not fork the contract: both spellings have to report \
+         the same schema_version"
+    );
+    assert_eq!(
+        canonical["tools"].as_array().map(|a| a.len()),
+        alias["tools"].as_array().map(|a| a.len()),
+        "the alias must not fork the tool inventory"
+    );
+    assert_eq!(
+        canonical["runtime"]["mutating_tools"], alias["runtime"]["mutating_tools"],
+        "the alias must not fork the runtime mutating set; a divergent alias \
+         would let a consumer believe a posture that the binary does not enforce"
+    );
+}
