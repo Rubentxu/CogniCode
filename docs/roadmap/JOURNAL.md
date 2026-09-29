@@ -7880,3 +7880,20 @@ otra base de trabajo, y aquí se sustituye por el observado en este árbol).
 `LevelFilter::OFF`: el test cae a **10 passed, 1 failed**, capturando las dos
 líneas `INFO Starting CogniCode CLI` y `Rayon global thread pool initialized`,
 y vuelve a 11/11 al restaurar. La aserción muerde.
+
+**N+51bis — hipótesis de N+49 confirmada empíricamente.** Con la especificación
+escrita (6 requisitos, todos PASS) y la evidencia con el formato que el motor exige
+(`argv` + `exit_code` + `output_digest`), `evaluate-gate` devuelve
+`receipt_id: gate-requirements-testable-cf5415dac08d37ab-1, outcome: passed`, y el
+receipt existe en `gate_receipts` con `transition_id: phase.specify.complete` y el
+`plan_hash` correcto. La transición inmediata después vuelve a fallar con
+`ENGINE_MISSING_GATE_RECEIPT`. **El diagnóstico de N+49 era correcto**: cada
+`evaluate-gate` genera un `frame_id` propio (`frame:gate-b881010d-…`) y la transición
+busca un receipt ligado a *su* frame; como `evaluate-gate` no emite evento de ledger,
+el enlace no existe por construcción.
+
+Lo añade que N+49 no vio: el gate `exploration-sufficient` de este mismo ciclo tiene
+**6 receipts** (`seq` 1..6) con `plan_hash` idéntico, todos `passed`, de intentos
+sucesivos a lo largo de la sesión. El motor acepta reintentos ilimitados y ninguno
+enlaza, así que el número de intentos no es señal de nada: la sesión anterior
+reintentó seis veces porque cada fallo proponía la misma acción como recuperación.
