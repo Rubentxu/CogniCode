@@ -146,6 +146,27 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     );
 }
 
+/// The suites with zero references outside their own file, measured with
+/// ripgrep over the tree on 2026-09-29. One list, not two: a duplicated
+/// pin list is a pin list that gets amended in one place and goes stale
+/// in the other.
+const ANCHOR_SUITES: &[&str] = &[
+    "analytics_bounded_paths",
+    "analytics_registry_admission",
+    "analytics_registry_cohort_1",
+    "analytics_registry_cohort_2",
+    "architecture_e77_1_wu0_gap_characterization_e2e",
+    "architecture_e77_1_wu3_canonical_grounding_e2e",
+    "find_usages_cli_mcp_equivalence",
+    "findings_ast_e2e",
+    "findings_axiom_import_e2e",
+    "findings_dataflow_e2e",
+    "findings_graph_e2e",
+    "prf_ext_04_adapter_authority_uat",
+    "prf_h06_adversarial_e2e",
+    "read_set_e2e",
+];
+
 /// The count alone cannot see a rename: renaming a suite keeps `len()`
 /// at 37 while the pinned name is gone. A count-plus-rename in one
 /// commit is the failure that slips through, because both halves stay
@@ -153,29 +174,22 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
 ///
 /// So pin a set of *anchor* suites by name. Not all 37: that list
 /// would have to be edited on every addition, which is the rot the
-/// unrestricted selector exists to avoid. The anchors are instead the
-/// suites whose disappearance would be hardest to notice, because
-/// nothing else in the repo refers to them by name. Losing coverage
-/// that nothing references is exactly how a gate rots unnoticed.
+/// unrestricted selector exists to avoid. The anchors are the suites
+/// with **zero references anywhere outside their own file**, measured
+/// with ripgrep over the tree. Losing coverage that nothing mentions
+/// is how a gate rots unnoticed, and those are the suites whose loss
+/// is cheapest to miss.
+///
+/// The first version of this list was hand-picked and claimed to
+/// follow that rule. It did not: 7 of 13 named suites were referenced
+/// by a workflow. A rule that the list does not satisfy is decoration
+/// with a comment, so the anchors are the measured zero-reference set
+/// and `anchors_stay_unreferenced_elsewhere` re-checks the rule rather
+/// than leaving it asserted in a doc comment.
 #[test]
 fn anchor_suites_are_still_present_by_name() {
-    let anchors = [
-        "architecture_drift_e2e",
-        "callgraph_projection_orientation",
-        "checkpoint_integration",
-        "cp5_tie_break",
-        "e2_w1_canonical_control_query",
-        "equivalence_harness",
-        "findings_canonical_grounding_e2e",
-        "identity_benchmark",
-        "inc007_integration",
-        "m06_acceptance",
-        "m10_acceptance",
-        "provider_conformance",
-        "workspace_isolation",
-    ];
     let present = integration_suite_names();
-    let missing: Vec<&str> = anchors
+    let missing: Vec<&str> = ANCHOR_SUITES
         .iter()
         .copied()
         .filter(|a| !present.iter().any(|p| p == a))
@@ -187,13 +201,75 @@ fn anchor_suites_are_still_present_by_name() {
          commit, which is the case the exact count cannot see. If a suite \
          was renamed on purpose, update this list in the same commit.",
         missing.len(),
-        anchors.len()
+        ANCHOR_SUITES.len()
     );
     // A rename alone must also fail, which is the other half of the gap.
     assert!(
         !present.contains(&"renombrada_por_error".to_string()),
         "a leftover renamed suite is present; anchors no longer match the tree"
     );
+}
+
+/// The anchors claim to be the suites nothing else references. That claim
+/// is checkable, so it is checked: an anchor that has acquired a reference
+/// is no longer the thing this list was built to protect, because its loss
+/// would now announce itself. Leaving a stale anchor in place is the same
+/// class of error as the `>= 30` floor, one level up: a pin that no longer
+/// describes reality.
+#[test]
+fn anchors_stay_unreferenced_elsewhere() {
+    let root = repo_root();
+    // Where a reference may legitimately live: this contract pins the very
+    // names, so the contract file itself is excluded, as is the suite's own
+    // source. Everything else counts.
+    let mut referenced: Vec<&str> = Vec::new();
+    for anchor in ANCHOR_SUITES {
+        let needle = format!("\"{anchor}\"");
+        let mut found = false;
+        for dir in ["crates", ".github", "docs", "openspec"] {
+            walk(&root.join(dir), &needle, &mut found);
+            if found {
+                break;
+            }
+        }
+        if found {
+            referenced.push(anchor);
+        }
+    }
+    assert!(
+        referenced.is_empty(),
+        "these anchor suites are now referenced somewhere in the repo, so \
+         they are no longer the silently-loseable set this list protects: \
+         {referenced:?}. Either move them out of the anchor list or keep \
+         them if the reference is what should break."
+    );
+}
+
+fn walk(dir: &Path, needle: &str, found: &mut bool) {
+    if *found {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk(&path, needle, found);
+        } else if let Ok(text) = std::fs::read_to_string(&path) {
+            let is_own_suite = path.to_string_lossy().contains("/tests/");
+            let is_contract = path
+                .file_name()
+                .is_some_and(|f| f == "core_gate_coverage_contract.rs");
+            if text.contains(needle) && !is_own_suite && !is_contract {
+                *found = true;
+                return;
+            }
+        }
+        if *found {
+            return;
+        }
+    }
 }
 
 #[test]

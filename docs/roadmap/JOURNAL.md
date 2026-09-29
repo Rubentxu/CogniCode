@@ -7328,3 +7328,58 @@ la cuenta, y que perder una de las 13 suites sin referencias externas. Las dos c
 falta y no se sustituyen: el conteo detecta la perdida neta, el ancla detecta la sustitucion. La
 prueba de que falta uno de los dos es la operacion compuesta, donde cada proteccion se compensa con
 la otra y las dos pasan.
+
+---
+
+## N+56 — la regla de las anclas era falsa, y comprobarlo tambien es un test
+
+N+55 eligio 13 suites ancla a mano y escribio, en el propio codigo, que el criterio era "suites
+que **nadie mas referencia por nombre en el repo**". Ese criterio suena verificable, asi que se
+verifico, y **no se cumplia**: 7 de las 13 estaban referenciadas por un workflow
+(`callgraph_projection_orientation`, `checkpoint_integration`, `e2_w1_canonical_control_query`,
+`inc007_integration`, `m06_acceptance`, `m10_acceptance`, `provider_conformance`).
+
+Es la misma clase de fallo que la guarda `>= 30` y que las cifras de N+48, y por tercera vez en
+tres bloques: **una regla enunciada en un comentario que nadie ejecuta.** Un criterio escrito en
+prosa no es un criterio, es una intencion. Si no se puede comprobar con una ejecucion, o no es un
+criterio o hay que convertirla en una.
+
+**Medido con ripgrep sobre el arbol, 2026-09-29:** de las 37 suites de core, **16 no tienen ninguna
+referencia** fuera de su propio fichero. Esa es la lista real de anclas, y es la que se pina:
+
+`analytics_bounded_paths`, `analytics_registry_admission`, `analytics_registry_cohort_1`,
+`analytics_registry_cohort_2`, `architecture_e77_1_wu0_gap_characterization_e2e`,
+`architecture_e77_1_wu3_canonical_grounding_e2e`, `find_usages_cli_mcp_equivalence`,
+`findings_ast_e2e`, `findings_axiom_import_e2e`, `findings_dataflow_e2e`, `findings_graph_e2e`,
+`prf_ext_04_adapter_authority_uat`, `prf_h06_adversarial_e2e`, `read_set_e2e`.
+
+**Y el criterio deja de ser prosa.** Segundo test nuevo, `anchors_stay_unreferenced_elsewhere`:
+recorre `crates/`, `.github/`, `docs/` y `openspec/` buscando cada nombre de ancla, excluyendo el
+propio contrato (que los pina por definicion) y el propio `tests/`. Si un ancla gana una referencia,
+el ancla deja de ser la cosa que esta lista protege, porque su perdida ya se anunciaria sola, y el
+test falla.
+
+**Un detalle que casi se cuela.** La lista de anclas estaba **duplicada** en los dos tests. Una
+lista de pines duplicada es una lista que se corrige en un sitio y se pudre en el otro, o sea el
+mismo problema que resolvia la constante. Se extrajo a `const ANCHOR_SUITES`.
+
+**Los cuatro casos, ejecutados:**
+
+| Caso | Resultado |
+|---|---|
+| arbol intacto | `7 passed; 0 failed`, exit 0 |
+| `read_set_e2e` gana una referencia en `pr-ci.yml` | exit **101**, `6 passed; 1 failed`, nombra el ancla contaminada |
+| `read_set_e2e` renombrada, conteo intacto en 37 | exit **101**, `6 passed; 1 failed`, "1 of 14 anchor suites are gone" |
+| renombrado + borrado (N+55) | exit **101**, `4 passed; 2 failed` |
+
+El contrato pasa de 5 a **7 aserciones**, todas vistas caer, y ahora la propia lista de anclas esta
+sujeta a la regla que dice cumplir.
+
+`cargo fmt` aplicado y verificado, `clippy --tests` sin errores, suite core completa **3105 passed,
+0 failed** (los 2 nuevos).
+
+**Lesson 132 (nueva):** "criterio" y "comentario" no son lo mismo. Tres veces en tres bloques una
+regla enunciada en prosa resulto falsa: las cuatro cifras de N+48, la guarda `>= 30` y ahora las
+13 anclas. **Si un criterio no se puede ejecutar, no es un criterio.** Y si se puede ejecutar,
+ejecutarlo: por menos trabajo que mantener la mentira, y porque la lista de anclas contaminada
+habria protegido suites que ya estaban anunciando su propia perdida.
