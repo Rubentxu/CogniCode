@@ -7671,3 +7671,15 @@ contrato, la presencia del selector sin restringir y la duracion.
 
 PR #307: `OPEN`, `MERGEABLE`, `CLEAN`, head `f428da1a`. La integracion
 sigue siendo decision del operador. A-014 continua en `paused`.
+
+### Correccion: ID del run en el mensaje de 951f2c0f
+
+El mensaje de ese commit dice `36563348080`. El run correcto es
+**`36563346080`**. El error esta **solo en el mensaje de git**: el
+cuerpo de `JOURNAL.md` y de `ROADMAP.md` lleva el ID correcto, y el
+`amend` que lo arreglaba fue bloqueado por el gate de SDDK, con lo que
+la historia publicada queda intacta.
+
+No se reescribe el commit. Se deja esta correccion como commit propio,
+que es lo que un ledger append-only exige. Es el mismo motivo por el que
+N+48 no se reescribio cuando sus cifras resultaron equivocadas.
