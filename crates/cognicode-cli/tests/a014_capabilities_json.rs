@@ -159,11 +159,8 @@ fn a014_capabilities_json_does_not_write_to_stderr_in_json_mode() {
     // than a clean error envelope) breaks the `jq`/pipeline
     // contract that downstream skills rely on.
     //
-    // Note: the `tracing` global subscriber is initialised in
-    // `main.rs` with `.with_writer(std::io::stderr)`, so any log
-    // level emitted during execution lands on stderr. We allow
-    // stderr to be non-empty as long as stdout is exactly the
-    // JSON document (no human progress text leaks into stdout).
+    // Logging belongs on stderr for ordinary commands, but successful
+    // machine-readable output must leave it empty for safe pipelines.
     let out = run_capabilities_json();
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
@@ -182,10 +179,10 @@ fn a014_capabilities_json_does_not_write_to_stderr_in_json_mode() {
     );
     let _: Value = serde_json::from_str(&stdout)
         .unwrap_or_else(|e| panic!("stdout is not valid JSON: {e}\nstdout:\n{stdout}"));
-    // Stderr must be empty OR contain only the canonical error
-    // envelope (a `error` field at top level). For the GREEN case
-    // we expect stderr to be empty (no logging at default level).
-    let _ = stderr; // captured for future mutation; documented in design.md
+    assert!(
+        stderr.is_empty(),
+        "successful JSON mode must not write logs to stderr; got:\n{stderr}"
+    );
 }
 
 #[test]
@@ -257,19 +254,26 @@ fn a014_capabilities_json_runtime_mutating_tools_match_profile_posture() {
             "runtime.mutating_tools must include `{must_be_mutating}`; got {mutating_runtime:?}"
         );
     }
-    // The published profiles' `mutating` flag must be coherent
-    // with the canonical posture: `reviewer` is read-only.
+    // Every published profile must agree with its canonical runtime posture.
     let profiles = v["profiles"].as_array().unwrap();
-    let reviewer = profiles
-        .iter()
-        .find(|p| p["id"].as_str() == Some("reviewer"))
-        .expect("profiles must include `reviewer`");
-    assert_eq!(
-        reviewer["mutating"].as_bool(),
-        Some(false),
-        "reviewer profile must be advertised as non-mutating (posture posture table); got {:?}",
-        reviewer["mutating"]
-    );
+    let canonical_postures = [
+        ("core", false),
+        ("reviewer", false),
+        ("developer", true),
+        ("experimental", false),
+    ];
+    assert_eq!(profiles.len(), canonical_postures.len());
+    for (id, mutating) in canonical_postures {
+        let profile = profiles
+            .iter()
+            .find(|profile| profile["id"].as_str() == Some(id))
+            .unwrap_or_else(|| panic!("profiles must include `{id}`"));
+        assert_eq!(
+            profile["mutating"].as_bool(),
+            Some(mutating),
+            "profile `{id}` must match the canonical mutating posture"
+        );
+    }
 }
 
 /// A-014 acceptance criterion, as written in the action register, is
@@ -318,18 +322,30 @@ fn the_documented_json_flag_is_accepted_and_equivalent() {
         .expect("`--json` stdout must be a single JSON document");
 
     assert_eq!(
-        canonical["schema_version"], alias["schema_version"],
-        "the alias must not fork the contract: both spellings have to report \
-         the same schema_version"
+        canonical, alias,
+        "the alias must emit the identical document"
     );
-    assert_eq!(
-        canonical["tools"].as_array().map(|a| a.len()),
-        alias["tools"].as_array().map(|a| a.len()),
-        "the alias must not fork the tool inventory"
+}
+
+#[test]
+fn the_documented_json_flag_conflicts_with_format() {
+    let output = Command::new(binary_path("cognicode"))
+        .arg("capabilities")
+        .arg("--json")
+        .arg("--format")
+        .arg("json")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("failed to run conflicting capabilities flags");
+
+    assert!(
+        !output.status.success(),
+        "conflicting flags must be rejected"
     );
-    assert_eq!(
-        canonical["runtime"]["mutating_tools"], alias["runtime"]["mutating_tools"],
-        "the alias must not fork the runtime mutating set; a divergent alias \
-         would let a consumer believe a posture that the binary does not enforce"
+    assert!(
+        output.stdout.is_empty(),
+        "rejected invocation must not emit a partial document"
     );
 }

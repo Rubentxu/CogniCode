@@ -3,6 +3,7 @@
 //! This binary provides the command-line interface for CogniCode.
 
 use clap::Parser;
+use cognicode_core::interface::cli::commands::CliCommand;
 use cognicode_core::{Cli, CommandExecutor};
 use rayon::ThreadPoolBuilder;
 use tracing::info;
@@ -24,12 +25,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe { std::env::set_var("RUST_LOG", "debug") };
     }
 
+    let json_capabilities = matches!(
+        &cli.command,
+        Some(CliCommand::Capabilities { format, json }) if *json || format == "json"
+    );
+    let max_level = if json_capabilities {
+        tracing_subscriber::filter::LevelFilter::OFF
+    } else if cli.verbose {
+        tracing_subscriber::filter::LevelFilter::DEBUG
+    } else {
+        tracing_subscriber::filter::LevelFilter::INFO
+    };
     let subscriber = tracing_subscriber::FmtSubscriber::builder()
-        .with_max_level(if cli.verbose {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        })
+        .with_max_level(max_level)
         .with_target(false)
         // PRF-F1.W1 (H6): route tracing events to stderr so stdout
         // stays clean for pipelines (`cognicode analyze | jq`).

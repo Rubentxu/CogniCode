@@ -7777,3 +7777,24 @@ la herramienta** (`cargo metadata`), no suponiendo el valor por defecto.
 Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
 `clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
 **601 passed, 0 failed** (598 + los 3 nuevos).
+
+## Apply A-014 — corrección de stderr JSON (2026-09-29)
+
+El comando JSON de capabilities escribía INFO de inicio y Rayon a stderr aunque
+stdout fuera JSON válido. Añadida primero la assertion de silencio y observada
+RED real (10 passed, 1 failed, con los dos mensajes INFO capturados). El CLI
+aplica ahora `tracing_subscriber::filter::LevelFilter::OFF` solo para
+`capabilities --json` y `capabilities --format json`; el writer stderr y la ruta
+INFO de los demás comandos permanecen iguales.
+
+También se compara el documento JSON completo entre alias y forma canónica, se
+rechaza su combinación ambigua sin stdout parcial y se verifica mutabilidad de
+los cuatro perfiles (`core=false`, `reviewer=false`, `developer=true`,
+`experimental=false`). Evidencia change-scoped: A-014 11/11, A-013 gate 4/4,
+CLI gate coverage 6/6. Binario real desde `$HOME`: documentos byte-idénticos,
+schema `cognicode.capabilities/v1`, 73 tools, 4 perfiles, 3 mutators y stderr
+JSON de 0 bytes en ambos modos; modo texto conserva resumen y 192 bytes INFO.
+
+Es una corrección Apply nueva en el ciclo operativo OPEN/build, no una
+reescritura de la entrada histórica de cierre A-014. El addendum del Action
+Register conserva esa distinción; este recibo no implica cierre de ciclo.
