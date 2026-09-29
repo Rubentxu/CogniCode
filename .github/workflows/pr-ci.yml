@@ -525,6 +525,35 @@ jobs:
       # that silently excludes half the crate.
       - name: cognicode-cli gate coverage contract (must not rot or narrow)
         run: cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet
+      # Gate the whole cognicode-core integration surface, not a hand-picked
+      # subset. `--lib` is what every historical step used: it is valid for
+      # this crate (it has a lib.rs), it reads as responsible, and it skips
+      # all 37 `tests/*.rs` targets by construction. Measured 2026-09-29:
+      # 33 of them were named by no `--test` step and covered by no
+      # unrestricted one, and 3 more were reachable only from `ci.yml`,
+      # which is `on: workflow_dispatch` and so never blocks a merge.
+      # `merge-gate` is the only required check, so that made them dead code
+      # wearing a green exit code. 3098 tests, 0 failed, 23s.
+      #
+      # `--features evidence-kernel` is load-bearing for the same reason
+      # `--features ladybug` is on the CLI step above. Five suites
+      # (cp5_tie_break, equivalence_harness, identity_benchmark,
+      # workspace_isolation, and behavior_budget_e2e) sit behind a
+      # crate-level `#![cfg(feature = "evidence-kernel")]`; without it they
+      # compile to an EMPTY test binary: 0 passed, 0 failed, exit 0, green
+      # under any invocation. Verified: with the feature they report
+      # 3 + 7 + 7 + 2, without it 0 + 0 + 0 + 0.
+      - name: cognicode-core integration suites (all targets, --features evidence-kernel)
+        run: cargo test -p cognicode-core --features evidence-kernel --quiet
+      # Pins the step above. Same three failure modes the CLI contract
+      # pins, applied to this crate: the step disappears, it is narrowed to
+      # a selector that still looks responsible, or it keeps the selector
+      # and drops the feature that makes five suites real. The primary
+      # assertion is a count against the filesystem, because a substring
+      # match passes happily on `--tests`, which keeps every integration
+      # target and drops the lib tests.
+      - name: cognicode-core gate coverage contract (must not rot or narrow)
+        run: cargo test -p cognicode-core --features evidence-kernel --test core_gate_coverage_contract --quiet
       # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
       # Pinea que `GraphInsightsService::analyze` cumple el budget
       # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step
