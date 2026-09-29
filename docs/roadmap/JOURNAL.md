@@ -7152,3 +7152,74 @@ el hueco parecer menor. Cuando el numero importa para una decision, sale de la s
 PR #307, que es decision del operador: rama `97a0c740` con `merge-gate` `SUCCESS` (run
 `36543355473`), `mergeStateStatus: CLEAN`, `MERGEABLE`. A-014 sigue `paused` por el defecto del
 toolchain de SDDK, no del repo, y no se fuerza a `done`.
+
+---
+
+## N+53 — el contrato de core era ciego a la suite que Perdera, y dos negativos que cierran el lazo
+
+N+51 y N+52 afirmaron cobertura. Afirmar cobertura no es lo mismo que **demostrar que la cobertura
+muerde**, asi que se usa el metodo de los negativos: romper algo que antes no estaba gateado y
+comprobar que el gate se cae. Sin esto, "el gate cubre 37 suites" es una frase sobre el texto del
+workflow, no un comportamiento observado.
+
+**Negativo 1, `cognicode-core`, suite `inc007_integration` (1 test, nunca pineada).** Se anadio un
+`#[test]` que hace `panic!` y se ejecuto **el selector exacto del gate**:
+
+```
+cargo test -p cognicode-core --features evidence-kernel --quiet
+  -> exit 101,  test result: FAILED. 1 passed; 1 failed
+  -> 28 lineas de "test result: ok" en el mismo run
+```
+
+Es decir: el gate entero cae por un unico test roto en una suite que antes no miraba, y las otras
+36 siguen verdes. **Eso es cobertura real, no decorativa.** Fichero restaurado, `git status` limpio.
+
+**Negativo 2, `cognicode-cli`, suite `prf_ext_02_partial_uat` (2 tests, nunca pineada).** Mismo
+montaje sobre `cargo test -p cognicode-cli --features ladybug --quiet`: `test result: FAILED. 6 passed;
+1 failed`. Restaurado y limpio.
+
+**Y aqui aparece el defecto real, que no era de los negativos.** Al probar el contrato con **36**
+suites en vez de 37 (borrando una temporal), el contrato paso **5/5 en verde**. La guarda era:
+
+```rust
+assert!(suites.len() >= 30, "expected the crate to still carry its full integration surface")
+```
+
+Un `>=` con suelo solo comprueba que no se este midiendo el vacio. **No detecta que falte una
+suite**, que es exactamente el fallo que ese fichero existe para impedir. Yo escribi esa guarda, y
+es del mismo tipo que el defecto que N+48保持了 dos bloques: una comprobacion que parece
+suficiente porque falla en algun caso, y no falla en el que importa.
+
+**Corregido a un conteo exacto, RED/GREEN demostrado:**
+
+| Estado | Suites | exit | Resultado |
+|---|---|---|---|
+| Antes del fix, suite borrada | 36 | **0** | `5 passed; 0 failed` (ciego) |
+| Despues del fix, suite borrada | 36 | **101** | `4 passed; 1 failed`, mensaje con la lista |
+| Con la suite presente | 37 | **0** | `5 passed; 0 failed` |
+
+`assert_eq!(suites.len(), 37, ...)`, con un mensaje que obliga a distinguir borrado intencionado
+de perdida. Subir el numero pasa a ser un acto deliberado y revisable, que es el objetivo.
+
+**Que sigue sin tener guarda, y se dice en voz alta.** El `assert_eq` pinea el *numero* de suites de
+core, no su *identidad*: si alguien sustituye una suite por otra, el conteo sigue en 37 y el
+contrato pasa. Pinear las 37 identities con `contains` seria mas fuerte, a costa de un fichero que
+hay que tocar cada vez que se anade una suite, que es exactamente la podredumbre que N+50 evitar al
+usar un selector. Se elige el conteo y **se acepta el limite a sabiendas**, no por descuido. La
+cifra exacta mas el selector sin restriccion cubren "nadie desaparece sin que se note"; no cubren
+"nadie sustituye una suite por otra sin que se note". Esa segunda es un trade-off consciente, no un
+hueco olvidado.
+
+**Lesson 127 (nueva):** un contrato de cobertura se prueba rompiendolo, no leiendolo. "Cubre 37
+suites" era una afirmacion sobre el texto del YAML; el negativo lo converts en comportamiento. Un
+contrato que nunca se ha visto fallar no es un contrato, es decoracion, aunque tenga cinco
+aserciones y dos mutaciones documentadas.
+
+**Lesson 128 (nueva):** una guarda con suelo no es una guarda. `len() >= 30` protege contra medir
+nada y no protege contra perder uno. Cuando el numero **es** el invariante, el invariante se
+escribe con igualdad. Y el fallo va en la direccion de la guarda: `>=` siempre deja pasar la perdida, que es
+la direccion silenciosa.
+
+**Estado.** Rama `7fe096c0` + este commit, `merge-gate` verde en `36546790616` hasta el anterior.
+PR #307 sigue abierto, `CLEAN`, `MERGEABLE`, sin mergear: decision del operador. A-014 sigue
+`paused` por el defecto del toolchain, no del repo.

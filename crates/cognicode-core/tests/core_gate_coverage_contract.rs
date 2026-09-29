@@ -115,11 +115,21 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
         .collect();
 
     let suites = integration_suite_names();
-    assert!(
-        suites.len() >= 30,
-        "expected the crate to still carry its full integration surface, \
-         found only {} suites; the gate contract is not measuring what it \
-         thinks it is: {suites:?}",
+    // Exact, not ">=". This used to read `>= 30`, which is a guard against
+    // measuring nothing but says nothing about the surface actually
+    // present: deleting any single suite still passed, verified by removing
+    // `inc007_integration` and watching all 5 tests stay green with 36
+    // suites on disk. A count that only has a floor cannot detect a suite
+    // being quietly dropped, which is the exact failure this file exists
+    // to prevent. Raising the number is a deliberate, reviewable act; that
+    // is the point.
+    assert_eq!(
+        suites.len(),
+        37,
+        "expected exactly 37 cognicode-core integration suites, found {}. \
+         If a suite was removed on purpose, update this number in the same \
+         commit. If it was not, the gate contract is blind to a lost suite: \
+         {suites:?}",
         suites.len()
     );
 
