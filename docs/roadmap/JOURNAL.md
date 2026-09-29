@@ -7642,3 +7642,32 @@ el escaner puede estar leyendo el conjunto vacio sin que se note.
 Contrato en **9 tests** (era 8; el nuevo es el que recalcula el
 conjunto), `cargo fmt` limpio, `clippy --tests` sin errores, core agregado
 **3107 passed, 0 failed**.
+
+### Confirmacion en CI de f428da1a
+
+Push `f428da1a`, run `36563346080`, `success`. Los cinco checks verdes:
+`merge-gate`, `test pineado (lib + E2E, CR-08-adapted)`,
+`CR-08 selector de suites`, `fmt + clippy` y
+`build cognicode-mcp (release)`.
+
+En el log del runner, el job del contrato registra:
+
+```
+merge-gate  cognicode-core gate coverage contract  test result: ok.
+            9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+y aparece la invocacion sin restringir `cargo test -p cognicode-core
+--features evidence-kernel`. `merge-gate` tardo **18 min 04 s**
+(11:48:01 -> 12:06:05) frente a los ~2 min de los demas jobs, que es la
+firma de que la superficie de 37 suites se ejecuta de verdad y no se
+colapsa en un `--lib`.
+
+Queda por confirmar, si el operador quiere el dato granular, el
+desglose por suite: el log agregado por `grep` no separa los targets de
+integracion de los unitarios, asi que **no se afirma aqui un recuento
+por suite observado en el runner**. Lo observado es el total del
+contrato, la presencia del selector sin restringir y la duracion.
+
+PR #307: `OPEN`, `MERGEABLE`, `CLEAN`, head `f428da1a`. La integracion
+sigue siendo decision del operador. A-014 continua en `paused`.
