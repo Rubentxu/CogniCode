@@ -8001,3 +8001,60 @@ Desglose real de los 104 `SDDK001`: 53 en `sandbox/` (referencias de terceros,
 **Criterio aplicado:** no se "arregla" `sandbox/` porque los fixtures de
 robustez de terceros existen para referenciar rutas que no existen. Fixearlos
 destruye el test.
+
+## N+55 · El ledger de SDDK no tiene ningun ciclo; NO esta "bloqueado"
+
+**Fecha:** 2026-09-29 · **Estado:** `OBSERVED`
+
+Al intentar reconciliar el estado antes del cierre de sesion, las tres vias
+soportadas coinciden:
+
+```
+$ sddk cycle status --root .
+error: no active cycle found for project p-c1fac1fea05615c6
+$ sddk cycle next --root .        # identico
+$ sddk cycle verify-references    # identico
+$ sddk cycle narrative --root .
+**Cycle unknown**  Cycle completed.
+```
+
+La adopcion si esta completa:
+
+```
+$ sddk adopt status --root . --scope .
+status: complete
+project_id: p-c1fac1fea05615c6
+workspace_id: w-0826469ea14d6bb8ea5ef01c
+```
+
+### Lo que esto corrige
+
+El resumen de la sesion anterior daba por hecho que existian dos ciclos
+operativos:
+
+- `p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration` en `OPEN/specify`
+- `p-c1fac1fea05615c6/sddk-pack-contract` en `OPEN/explore`
+
+**Ninguno esta en el ledger.** Eso no significa que estuvieran bloqueados
+por el defecto `ENGINE_MISSING_GATE_RECEIPT`: significa que no llegaron a
+persistir. Dos lecturas posibles, ambas relevantes:
+
+1. `sddk-pack-contract` se creo y murio en `OPEN/explore` sin transicion, que
+   es consistente con el defecto de enlace `evaluate-gate`/frame ya
+   observado. El ciclo se creo; la transicion nunca se persistio.
+2. El ciclo del PipelineK nunca llego a crearse, y lo que se(recordo) como
+   `OPEN/specify` fue una intencion, no un estado.
+
+**No se distingue con las vias disponibles sin `sqlite3` instalado.** No se
+afirma ninguna de las dos. Queda como pregunta para la proxima sesion, con
+`sqlite3` disponible o con el soporte de listado que falta en el CLI 2.2.27
+(`sddk cycle list` no existe; los subcomandos reales son start, status,
+transition, evaluate-gate, rebuild, supersede, replan, pause, resume,
+artifacts-dir, narrative, lock, inventory, next, verify-references).
+
+### Consecuencia para reanudar
+
+El trabajo **no** esta bloqueado por un ciclo atascado. Mañana arranca con
+`sddk cycle start` limpio. El defecto de `evaluate-gate`/frame sigue siendo
+real y probably seguira bloqueando la *transicion*, pero eso es un problema
+distinto y posterior a la creacion del ciclo.
