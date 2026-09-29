@@ -7683,3 +7683,97 @@ la historia publicada queda intacta.
 No se reescribe el commit. Se deja esta correccion como commit propio,
 que es lo que un ledger append-only exige. Es el mismo motivo por el que
 N+48 no se reescribio cuando sus cifras resultaron equivocadas.
+
+---
+
+## N+61 — PR #307 integrado, y A-015 resultaba estar implementado y sin gate
+
+El operador aprueba los gates humanos. El unico P0 vivo era integrar PR #307.
+
+### PR #307 a `main`
+
+Run `36566165076` **success** sobre `6b853c19`, `merge-gate` `success`
+(12 min 36 s, `startedAt` 12:14:09Z, `finishedAt` 12:26:45Z), los cinco
+checks verdes y `mergeStateStatus: CLEAN`, `MERGEABLE`. Simulacion de
+merge con `git merge-tree --write-tree`: sin conflictos. Merge squash
+`4ee9ca61` a las 12:27:37Z.
+
+### El registro de acciones mentia sobre A-014
+
+Decir "sigue `paused`" era verdad en `ROADMAP.md` y falso en el ledger.
+Medido, no supuesto:
+
+| Fuente | Que dice |
+|---|---|
+| Ledger `a-014-capabilities-json` | `status: CLOSED`, `phase: archive` |
+| Ledger `a-013-lifecycle-uat` | `status: CLOSED` |
+| Ledger `a-015-licenses-gate-ci` | `status: CLOSED` |
+| Los 19 ciclos del proyecto | todos `CLOSED` |
+| `sddk plan roadmap status` | ya **no** falla con `multiple active work items` |
+| `pr-ci.yml` en `main` | linea 472 corre `a014_capabilities_json` |
+| `cargo test -p cognicode-cli --test a014_capabilities_json` | **10 passed** |
+
+El defecto de toolchain que dejo A-014 en `paused` (N+55, lesson 121) esta
+**resuelto**. `paused` describia un bloqueo que ya no existe: el estado
+era correcto cuando se escribio y hoy es obsoleto. Anotarlo, no borrarlo.
+
+**Lesson 138 (nueva):** un estado `paused` en un documento de roadmap
+envejece y nadie lo nota, porque el ledger no lo contradice de forma
+visible. **El estado terminal de un item se verifica contra el ledger y
+contra el gate, no contra el documento que lo describio.**
+
+### A-015: implementado, y sin nada que lo ejecutara
+
+El registro pedia "install -> doctor -> MCP en happy path". Al medir:
+`cogh setup` **ya existia** (`src/bin/cogh.rs:312`, `cmd_init` ->
+`cmd_install` -> `finish_setup` -> `run_doctor`, con `is_healthy`), tenia
+su `--help`, sus flags (`--staging`, `--home`, `--version`, `--profile`),
+y **cero tests y cero pasos de gate**. Podia haberse borrado hasta un
+`Ok(())` sin que nada se puesto rojo.
+
+El hueco no era la feature, era el **gate**. Contrato
+`a015_onboarding_gate.rs`, RED primero:
+
+| Negativo | Mutacion | Resultado |
+|---|---|---|
+| A | quitar el paso del gate | exit **101**, "no step running `--test a015_onboarding_gate`" |
+| B | `is_healthy` -> `if false` | exit **101**, "does not consult `is_healthy`" |
+| C | `Err` de salud -> `println` y sigue | exit **101**, "returns Ok even when the doctor is unhealthy" |
+| D | `cmd_init` despues de `cmd_install` | exit **101**, "must initialise, then install, then diagnose" |
+
+Los cuatro con codigo que **compila**. El caso C se intento dos veces: la primera mutacion rompia la compilacion, y un mutante que no compila lo detecta el compilador, no el contrato. La segunda cambio el mismo objetivo manteniendo la compilacion, y ahi si muerde el contrato.
+
+### Dos supuestos falsos que el propio contrato cometia
+
+**El binario no estaba donde el test asumia.** Este checkout fija
+`target_directory` a `/var/home/rubentxu/cargo-targets`, fuera del repo.
+El contrato buscaba `<root>/target/debug/cogh` y no lo encontraba con el
+binario recién compilado. Ahora resuelve `CARGO_TARGET_DIR`, luego
+`<root>/target`, luego lo que reporta `cargo metadata`, y solo como
+ultimo recurso compila. Es la misma clase que el escaner que solo aceptaba
+directorios: **el codigo estaba bien, la suposicion no**.
+
+**El primer aserto buscaba un string que el gate no escribe.** Buscaba
+`cogh setup` en el workflow, pero un gate ejecuta
+`cargo test --test a015_onboarding_gate`, no el comando. Un contrato que
+busca el comando en vez del target no pasa aunque la cobertura sea real.
+Ahora comprueba el target **y** que el `name:` del paso mencione
+`cogh setup`.
+
+### Colision de IDs, real y registrada
+
+El gate llama "A-015" al gate de licencias; el registro llama "A-015" al
+onboarding. Dos acciones, un id. El paso nuevo se nombra por el comando
+(`CP2.4 onboarding contract (cogh setup happy path)`) y el contrato
+comprueba que el nombre mencione `cogh setup`, para que en un log de CI
+no sean indistinguibles. La fila del registro **no se reescribe**: es
+evidencia historica y la colision se documenta al lado.
+
+**Lesson 139 (nueva):** un contrato debe comprobar **lo que el gate
+ejecuta**, no lo que el gate ejecuta segun la frase del manual. Y un
+supuesto sobre rutas, binarios o ficheros debe resolverse **preguntando a
+la herramienta** (`cargo metadata`), no suponiendo el valor por defecto.
+
+Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
+`clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
+**601 passed, 0 failed** (598 + los 3 nuevos).

@@ -475,6 +475,17 @@ jobs:
       # Tambien en `tests/`, por tanto tampoco lo cubria `--lib`.
       - name: A-015 licenses gate (license allow-list vs crate metadata)
         run: cargo test -p cognicode-cli --test a015_licenses_gate --quiet
+      # CP2.4-onboarding — `cogh setup`, the first command a new operator
+      # runs. NOTE the id collision: the action register calls the
+      # onboarding A-015 and calls the licenses gate A-015-licenses. The
+      # step is named after the command, not the id, so the two do not
+      # read as the same action.
+      #
+      # `setup` is implemented (init -> install -> doctor) and was
+      # exercised by nothing: a regression that dropped the doctor health
+      # check would have turned an unhealthy install into a green setup.
+      - name: CP2.4 onboarding contract (cogh setup happy path)
+        run: cargo test -p cognicode-cli --test a015_onboarding_gate --quiet
       # Release-profile binaries for the release-flow UATs.
       #
       # The unrestricted step below compiles every `tests/*.rs` target,
