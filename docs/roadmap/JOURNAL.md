@@ -7482,3 +7482,163 @@ exclusion de `tests/` (codigo mas debil que la frase), el ambito de 4 directorio
 estrecho que la frase) y la asercion tautologica (no comprobable). **Cinco de seis son el mismo
 error: enunciar una regla en prosa y suponer que se cumple.** La unica que era una medicion de
 verdad, la del conteo, fue la que sirvio para detectar a las otras cinco.
+
+---
+
+## N+59 — 81 ficheros que el escaner se comia en silencio, aceptados por nombre y con motivo
+
+N+58 cerro el ambito del escaner de anclas. Quedaba un punto ciego mas, y es el mismo que me
+he encontrado tres bloques seguidos: **algo que el codigo salta sin decir nada**.
+
+El walker hacia:
+
+```rust
+} else if let Ok(text) = std::fs::read_to_string(&path) { ... }
+```
+
+`read_to_string` falla con `InvalidData` en cualquier fichero que no sea UTF-8 valido, y ese `else if
+let Ok` **se lo comia sin registrar**. Medido con Python sobre las cuatro dirs escaneadas: de
+**2856 ficheros, 81 no son UTF-8**.
+
+| Extension | Ficheros | Que es |
+|---|---|---|
+| `.webm` | 63 | grabaciones de regresion visual |
+| `.sqlite` / `.sqlite-shm` / `.db` | 9 | fixtures de workspace |
+| `.cache` | 4 | caches de grafo |
+| `.rlib` | 4 | artefactos de compilacion en el arbol |
+| `.wasm` | 1 | el paquete wasm de `cognicode-graph-wasm` |
+
+Una referencia a un nombre de suite escondida dentro de un binario no la encontraria ni un revisor.
+Un salto silencioso es indistinguible de una ausencia, que es justo el fallo que la leccion 128
+describio: **el `>=` deja pasar la perdida, y el `let Ok` la esconde.**
+
+**Ahora los ilegibles se cuentan y se asertan.** No se aceptan en bloque: el test falla y los
+nombra, y solo se acepta lo que esta en `ACCEPTED_UNREADABLE_EXTENSIONS` con su extension
+explicita. Se aplica a la lista real de 81, que son todos artefactos y ninguno codigo.
+
+**Un detalle de la API que casi hace fallar el arreglo.** `Path::extension()` de
+`foo.sqlite-shm` devuelve `shm`, no `sqlite-shm`. Aceptar solo `sqlite-shm` habria dejado pasar
+dos ficheros reales y el test habria fallen con un nombre que no estaba en la lista, que es la peor
+forma de fallar: describe mal el problema. Se comprueba el segundo componente del `file_stem`
+tambien.
+
+**Los tres casos:**
+
+| Caso | Resultado |
+|---|---|
+| arbol real con los 81 binarios | `8 passed`, exit 0 |
+| antes del arreglo, sin aceptacion | exit **101**, "81 files ... not valid UTF-8" |
+| `artefacto_raro.bin` con extension desconocida | exit **101**, nombra el fichero y ofrece las dos salidas |
+
+El tercero es la direccion importante: una extension **nueva** no pasa colada. Eso es lo que
+distingue una lista de aceptados de un `let Ok` con otro nombre.
+
+**Lesson 135 (nueva):** `if let Ok(x) = ...` sobre una lectura de disco es un salto silencioso con
+apariencia de robustez, y por eso es peor que un `unwrap` que al menos se nota. **Todo lo que se
+salta al leer tiene que acabar en un contador o en una asercion**, porque un fichero que no se lee
+y un fichero que no existe producen el mismo resultado observable, y esa es exactamente la
+ambiguedad que un gate no puede permitirse.
+
+Contrato sigue en **8 aserciones** (esta no anade una nueva, endurece una existente), `cargo fmt`
+limpio, `clippy --tests` sin errores, core completo **3106 passed, 0 failed**, un solo fichero
+modificado.
+
+---
+
+## N+60 — El 14, el 16 y el 37: tres cifras y ninguna era el conjunto
+
+N+59 cerro el escaner de ficheros ilegibles. Quedaba el otro asunto: la
+documentacion de N+56 habla de **16 suites con cero referencias** y la
+constante `ANCHOR_SUITES` enumeraba **14**. Contraste, recomputar, reconciliar.
+
+Lo que salio al medir no fue un descuadre de dos, sino **cuatro errores
+encadenados**, y el primero invalida la pregunta original.
+
+### 1. La regla "cero referencias" es insatisfacible y siempre lo fue
+
+Hay **0 suites sin referencias** en el repo. No porque casi todas esten
+citadas, sino porque `JOURNAL.md` cita **las 37**. Cualquier regla que
+dependa de "nadie escribe el nombre" deja de ser recomputable en cuanto
+existe documentacion que describe el trabajo. Este mismo journal es el
+que mato la regla: N+55 y N+56 escribieron los nombres que N+56 luego
+conto como no referenciados.
+
+### 2. El needle llevaba comillas, asi que no veia una sola referencia
+
+Era `format!("\"{anchor}\"")`. Pero una referencia real se escribe:
+
+```
+--test analytics_bounded_paths                    (CI, sin comillas)
+`analytics_bounded_paths`                        (journal, backticks)
+`analytics_bounded_paths.rs`                     (spec, con .rs)
+```
+
+Ninguna coincide con `"analytics_bounded_paths"`. `analytics_bounded_paths`
+esta citada en **4 ficheros** (`.agent/TESTING-STATE.md`, dos
+`openspec/changes/archive/`, un `archive-report.md`) y el contrato la
+declaraba no referenciada. De ahi el 14, el 16 y el 37: tres mediciones
+con una aguja que no podia picar nada.
+
+### 3. El escaner no leia los workflows. En absoluto
+
+Al pasar el criterio a "no la nombra ningun workflow ni ningun script",
+meti `walk()` ficheros de workflow. El negativo 1 **dio verde**, y
+eso no es un resultado, es un fallo del contrato. Motivo:
+
+```rust
+let Ok(entries) = std::fs::read_dir(dir) else { return; };
+```
+
+`read_dir` sobre un **fichero** falla, y ese `let Ok` se lo come. El
+escaneo de los workflows **no leia nada**, en silencio, mientras el
+contrato declaraba 4 directorios de ambito y notificaba verde. El mismo
+`let Ok` de N+59, aplicado por mi al segundo escaner, en la misma sesion.
+
+Ahora `walk` acepta ficheros y directorios, y un directorio que no se
+puede listar se reporta en vez de ignorarse.
+
+### 4. La lista medida estaba contaminada por un escaner roto
+
+Con el escaner arreglado, el conjunto real **bajo de 33 a 26**: 7 de los
+anclajes si estan nombrados por configuracion, y `m06_acceptance` y
+`m10_acceptance` tambien, por `scripts/product/generate_support_matrix.py`.
+Esos dos los Carnot. Eran anclajes porque "ningun workflow los nombra",
+criterio que ignora que un script los lee.
+
+### El criterio que queda
+
+**Ningun workflow lo nombra con `--test` y ningun script de `scripts/` lo
+menciona.** 26 suites. Dos needles (`--test suite` y `tests/suite.rs`)
+porque la configuracion cita de dos formas, y `docs/`, `openspec/` y
+`.agent/` quedan **fuera a proposito**: citan las 37 y volverian a hacer
+la regla insatisfacible.
+
+Y ya no es una lista que alguien mantiene: `the_anchor_set_is_the_measured_one`
+**recalcula el conjunto desde el arbol y lo compara**. Una suite nueva sin
+nombrar falla diciendo "anadela"; una que un workflow empieza a nombrar
+falla diciendo "quitala".
+
+| Negativo | Mutacion | Resultado |
+|---|---|---|
+| 1 | workflow anade `--test analytics_bounded_paths` | exit **101**, nombra el anclaje |
+| 2 | script cita `tests/identity_benchmark.rs` | exit **101** |
+| 3 | binario desconocido en `scripts/` | exit **101**, "2 configuration files" |
+| 4 | renombrar `identity_benchmark` | exit **101**, `5 passed; 4 failed` |
+| 5 | suite nueva sin nombrar | exit **101**, "expected exactly 37 ... found 38" |
+
+**Lesson 136 (nueva):** un criterio de "nadie menciona X" es
+**inverificable en cuanto existe documentacion sobre X**, y un needle
+con comillas es un criterio que no ve el mundo real. La forma de que un
+pin sobreviva es que el codigo **recalcule el conjunto y lo compare**,
+no que alguien lo lea y lo reescriba.
+
+**Lesson 137 (nueva):** un escaner al que se le pasa el path equivocado no
+falla, **no hace nada**. `walk` aceptaba directorios; darle ficheros
+devolvia `Err` y un `let Ok` lo silenciaba, asi que "anade un anclaje al
+workflow" daba verde con el workflow mutado. **Toda ruta que se le pasa
+a un escaner tiene que tener un negativo que demuestre que se lee**, o
+el escaner puede estar leyendo el conjunto vacio sin que se note.
+
+Contrato en **9 tests** (era 8; el nuevo es el que recalcula el
+conjunto), `cargo fmt` limpio, `clippy --tests` sin errores, core agregado
+**3107 passed, 0 failed**.

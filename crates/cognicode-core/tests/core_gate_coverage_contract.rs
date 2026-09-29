@@ -146,24 +146,112 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     );
 }
 
-/// The suites with zero references outside their own file, measured with
-/// ripgrep over the tree on 2026-09-29. One list, not two: a duplicated
-/// pin list is a pin list that gets amended in one place and goes stale
-/// in the other.
+/// Non-UTF-8 extensions accepted as out of scope, with the reason.
+///
+/// Measured 2026-09-29 across the whole repository: 63 `.webm`
+/// regression recordings, 9 sqlite/db fixtures, 4 `.cache`, 4 `.rlib`,
+/// 1 `.wasm`, and 25 `.pyc`/`.pyo` files under `__pycache__`. None is
+/// source. A reference to a suite name cannot live in a recording, a
+/// database fixture or a compiled bytecode file in any way a reader
+/// would rely on.
+///
+/// The `.pyc` case is the one that bit first: `__pycache__` is generated
+/// by running the test suite, so a fresh `pytest` run in `scripts/`
+/// made this test fail for a reason that has nothing to do with the
+/// contract. The lesson is not the extension, it is that **generated
+/// artefacts must be excluded before they are counted**, or a gate
+/// measures its own test run.
+///
+/// This is a name-based exemption, so it carries the same shape of risk
+/// as the `tests/` exemption N+57 removed: a new binary type under a new
+/// extension will be collected and fail, which is the intended
+/// direction. A file hiding a reference under one of *these* extensions
+/// stays invisible, and that is a chosen trade-off, not an oversight.
+const ACCEPTED_UNREADABLE_EXTENSIONS: &[&str] = &[
+    "webm",
+    "sqlite",
+    "sqlite-shm",
+    "cache",
+    "rlib",
+    "wasm",
+    "db",
+    "pyc",
+    "pyo",
+];
+
+fn is_accepted_unreadable(path: &Path) -> bool {
+    // `foo.sqlite-shm` has extension "shm" under Path::extension, so the
+    // second component is checked too rather than trusting one API.
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let stem_ext = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .and_then(|s| s.rsplit_once('.').map(|(_, e)| e))
+        .unwrap_or("");
+    ACCEPTED_UNREADABLE_EXTENSIONS
+        .iter()
+        .any(|a| *a == ext || *a == stem_ext)
+}
+
+/// Suites that no CI workflow names with `--test` and no script under
+/// `scripts/` mentions, as of 2026-09-29: 26 entries.
+///
+/// The definition is deliberately the strongest one available, because
+/// the first two were both wrong and both plausible:
+///
+///   1. "zero references outside the suite" is empty, and not by
+///      accident. `JOURNAL.md` cites every one of the 37 suites, so a
+///      documentation-dependent rule can never be recomputed once the
+///      documentation exists. N+56 wrote 16, the constant then listed 14,
+///      a fresh grep gave 37: three numbers, three different mistakes.
+///   2. "no *quoted* references" was the immediate cause of the drift.
+///      The needle was `"suite"`, and a `--test` flag, a journal line and
+///      a spec line are all unquoted, so the scan could not see a single
+///      real reference. It called `analytics_bounded_paths` unreferenced
+///      while four files cited it.
+///   3. "named by no workflow" alone is wrong in the other direction:
+///      `m06_acceptance` and `m10_acceptance` name no workflow, but
+///      `scripts/product/generate_support_matrix.py` reads both, so their
+///      loss would break a script and not a gate. Hence the two needles,
+///      `--test suite` and `tests/suite.rs`, and hence `scripts/` in scope.
+///   4. The scan itself was broken, so an earlier version of this list
+///      was measured against a scan that read nothing. `walk` accepted
+///      only directories and swallowed `read_dir`'s error on a file, so
+///      passing the workflow paths was a no-op and 7 of the 33 pinned
+///      names were not really unnamed. Fixed in the same commit as the
+///      list, and the count moved 33 -> 26 because of it.
+///
+/// What is left is a criterion no amount of prose can satisfy: nothing
+/// in the machine-readable configuration names them. A rename breaks
+/// the name pin; a deletion breaks the exact count in
+/// `every_core_suite_is_either_named_or_covered_by_an_unrestricted_step`.
 const ANCHOR_SUITES: &[&str] = &[
     "analytics_bounded_paths",
     "analytics_registry_admission",
     "analytics_registry_cohort_1",
     "analytics_registry_cohort_2",
+    "analytics_registry_cohort_3",
     "architecture_e77_1_wu0_gap_characterization_e2e",
     "architecture_e77_1_wu3_canonical_grounding_e2e",
+    "architecture_self_host_e2e",
+    "behavior_authority_e2e",
+    "behavior_budget_e2e",
+    "callgraph_projection_orientation",
+    "checkpoint_integration",
+    "cp5_tie_break",
+    "e2_w1_canonical_control_query",
+    "equivalence_harness",
     "find_usages_cli_mcp_equivalence",
+    "find_usages_mcp_handler_e2e",
     "findings_ast_e2e",
     "findings_axiom_import_e2e",
     "findings_dataflow_e2e",
     "findings_graph_e2e",
+    "identity_benchmark",
+    "inc007_integration",
+    "intelligence_event_log_e2e",
     "prf_ext_04_adapter_authority_uat",
-    "prf_h06_adversarial_e2e",
+    "provider_conformance",
     "read_set_e2e",
 ];
 
@@ -175,17 +263,16 @@ const ANCHOR_SUITES: &[&str] = &[
 /// So pin a set of *anchor* suites by name. Not all 37: that list
 /// would have to be edited on every addition, which is the rot the
 /// unrestricted selector exists to avoid. The anchors are the suites
-/// with **zero references anywhere outside their own file**, measured
-/// with ripgrep over the tree. Losing coverage that nothing mentions
-/// is how a gate rots unnoticed, and those are the suites whose loss
-/// is cheapest to miss.
+/// whose loss is **cheapest to miss**: named by no workflow and by no
+/// script, so nothing in the machine-readable configuration breaks when
+/// they disappear.
 ///
 /// The first version of this list was hand-picked and claimed to
-/// follow that rule. It did not: 7 of 13 named suites were referenced
-/// by a workflow. A rule that the list does not satisfy is decoration
-/// with a comment, so the anchors are the measured zero-reference set
-/// and `anchors_stay_unreferenced_elsewhere` re-checks the rule rather
-/// than leaving it asserted in a doc comment.
+/// follow a zero-reference rule. It did not: 7 of 13 named suites were
+/// referenced by a workflow. A rule that the list does not satisfy is
+/// decoration with a comment, so `the_anchor_set_is_the_measured_one`
+/// recomputes the set from the tree and compares, instead of leaving the
+/// rule asserted in a doc comment.
 #[test]
 fn anchor_suites_are_still_present_by_name() {
     let present = integration_suite_names();
@@ -210,111 +297,254 @@ fn anchor_suites_are_still_present_by_name() {
     );
 }
 
-/// The anchors claim to be the suites nothing else references. That claim
-/// is checkable, so it is checked: an anchor that has acquired a reference
-/// is no longer the thing this list was built to protect, because its loss
-/// would now announce itself. Leaving a stale anchor in place is the same
-/// class of error as the `>= 30` floor, one level up: a pin that no longer
-/// describes reality.
+/// The anchors claim that no machine-readable configuration names them.
+/// That claim is checkable, so it is checked: a suite that has been added
+/// to a workflow is no longer the thing this list was built to protect,
+/// because its loss would now announce itself. Leaving a stale anchor in
+/// place is the same class of error as the `>= 30` floor, one level up: a
+/// pin that no longer describes reality.
 #[test]
 fn anchors_stay_unreferenced_elsewhere() {
     let root = repo_root();
-    // Only this contract is exempt: it pins the very names, quoted on
-    // purpose, and no suite can cite itself by its own quoted file name.
-    // Everything else counts, including other suites, which an earlier
-    // version of this test excluded wholesale.
     let mut referenced: Vec<&str> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
+    let workflows = workflow_paths();
     for anchor in ANCHOR_SUITES {
-        let needle = format!("\"{anchor}\"");
-        let mut found = false;
-        for dir in ANCHOR_SCAN_DIRS {
-            walk(&root.join(dir), &needle, &mut found);
-            if found {
-                break;
-            }
-        }
-        if found {
+        if is_named_by_configuration(anchor, &root, &workflows, &mut unreadable) {
             referenced.push(anchor);
+        }
+        if !unreadable.is_empty() {
+            break;
         }
     }
     assert!(
         referenced.is_empty(),
-        "these anchor suites are now referenced somewhere in the repo, so \
-         they are no longer the silently-loseable set this list protects: \
-         {referenced:?}. Either move them out of the anchor list or keep \
-         them if the reference is what should break."
+        "these anchor suites are now named by a workflow or a script, so they \
+         are no longer the cheapest-loss set this list protects: \
+         {referenced:?}. Remove them from ANCHOR_SUITES, or keep them and say \
+         in the commit why naming them in the config is the point."
+    );
+    assert!(
+        unreadable.is_empty(),
+        "{} configuration files are neither valid UTF-8 nor a \
+         known-accepted binary extension: {unreadable:?}",
+        unreadable.len()
     );
 }
 
-/// Where the anchor-reference scan looks. Four directories, and the
-/// repository root holds about eighty more; the rule sentence is
-/// narrowed to match, because a rule narrower in the code than in the
-/// prose is the defect N+57 fixed. Verified 2026-09-29: no anchor is
-/// referenced from a root-level file or from the untracked scratch
-/// directories. `target/` is build output and is left out on purpose.
-const ANCHOR_SCAN_DIRS: &[&str] = &["crates", ".github", "docs", "openspec"];
+/// Every workflow file, so the anchor rule scans all of them and not just
+/// the one the other assertions read.
+fn workflow_paths() -> Vec<PathBuf> {
+    let dir = repo_root().join(".github/workflows");
+    let mut out: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
+        .filter_map(|e| {
+            let p = e.ok()?.path();
+            let ext = p.extension()?.to_str()?;
+            (ext == "yml" || ext == "yaml").then_some(p)
+        })
+        .collect();
+    out.sort();
+    out
+}
 
-/// The scan scope is pinned, so widening or shrinking it is a reviewed
-/// act rather than a silent drift.
+/// Whether any machine-readable configuration names a suite.
+///
+/// Two needles, because configuration cites a suite in two ways: a
+/// workflow writes `--test suite`, a script writes `tests/suite.rs`. The
+/// bare name alone would match this contract and every journal entry,
+/// which is not the rule; the rule is about what the machine executes.
+///
+/// `docs/`, `openspec/` and `.agent/` are deliberately not scanned. They
+/// cite all 37 suites, so including them would make the rule permanently
+/// unsatisfiable and the pin meaningless.
+fn is_named_by_configuration(
+    suite: &str,
+    root: &Path,
+    workflows: &[PathBuf],
+    unreadable: &mut Vec<String>,
+) -> bool {
+    let bare = format!("--test {suite}");
+    let pathed = format!("tests/{suite}.rs");
+    let mut found = false;
+    walk(&root.join("scripts"), &bare, None, &mut found, unreadable);
+    if !found {
+        walk(&root.join("scripts"), &pathed, None, &mut found, unreadable);
+    }
+    for workflow in workflows {
+        if found {
+            break;
+        }
+        walk(workflow, &bare, None, &mut found, unreadable);
+        if !found {
+            walk(workflow, &pathed, None, &mut found, unreadable);
+        }
+    }
+    found
+}
+
+/// Recompute the anchor set from the tree and compare it to the constant.
+/// This is the test that replaces a hand-maintained list with a derived
+/// one: the list is a *pin* of what was measured, and this is the
+/// measurement. A new suite that nothing names fails here telling the
+/// operator to add it; a suite that a workflow starts naming fails
+/// telling them to remove it.
+#[test]
+fn the_anchor_set_is_the_measured_one() {
+    let root = repo_root();
+    let workflows = workflow_paths();
+    let mut measured: Vec<String> = Vec::new();
+    let mut unreadable: Vec<String> = Vec::new();
+    for suite in integration_suite_names() {
+        if suite == "core_gate_coverage_contract" {
+            continue;
+        }
+        if !is_named_by_configuration(&suite, &root, &workflows, &mut unreadable)
+            && unreadable.is_empty()
+        {
+            measured.push(suite);
+        }
+    }
+    let mut expected: Vec<&str> = ANCHOR_SUITES.to_vec();
+    expected.sort_unstable();
+    let mut got = measured;
+    got.sort();
+    assert_eq!(
+        got, expected,
+        "the measured anchor set no longer matches ANCHOR_SUITES. \
+         measured={got:?} pinned={expected:?}. If a suite became named by a \
+         workflow or a script, drop it from the constant; if a new suite is \
+         named by nothing, add it. Do not edit the constant to make the diff \
+         smaller than the reason."
+    );
+    assert!(
+        unreadable.is_empty(),
+        "{} configuration files were not searched: {unreadable:?}",
+        unreadable.len()
+    );
+}
+
+/// Where the anchor-reference scan looks: `scripts/` plus every workflow
+/// file. The rule is "named by no machine-readable configuration", not
+/// "unreferenced", because `docs/`, `openspec/` and `.agent/` cite all
+/// 37 suites and would make a zero-reference rule permanently
+/// unsatisfiable.
+///
+/// `target/` is build output and is left out on purpose. A rule narrower
+/// in the code than in the prose is the defect N+57 fixed, and the second
+/// definition of the anchor set failed the same way: the prose said "zero
+/// references", the code could only see a fraction of them.
 #[test]
 fn the_anchor_scan_scope_is_pinned() {
     let root = repo_root();
-    for dir in ANCHOR_SCAN_DIRS {
-        assert!(
-            root.join(dir).is_dir(),
-            "{dir} is scanned for anchor references but does not exist; the \
-             scan silently covers less than this test claims"
-        );
-    }
     assert!(
-        !ANCHOR_SCAN_DIRS.contains(&"target"),
-        "target/ is build output; scanning it would be slow and meaningless"
+        root.join("scripts").is_dir(),
+        "scripts/ is scanned for anchor references but does not exist; the \
+         scan silently covers less than this test claims"
     );
-    assert_eq!(
-        ANCHOR_SCAN_DIRS.len(),
-        4,
-        "the anchor scan scope changed to {ANCHOR_SCAN_DIRS:?}. Widen it only \
-         together with the rule sentence, and remember that target/ and the \
-         untracked scratch directories are the intended exclusions."
+    let workflows = workflow_paths();
+    assert!(
+        !workflows.is_empty(),
+        "no workflow files were found under .github/workflows, so the anchor \
+         scan would pass vacuously"
+    );
+    assert!(
+        !workflows
+            .iter()
+            .any(|p| p.to_string_lossy().contains("/target/")),
+        "target/ is build output; scanning it would be slow and meaningless"
     );
 }
 
-/// Walks a directory tree looking for a quoted needle.
+/// Walks a directory tree looking for a needle. A path that is a file is
+/// read directly, so a caller can pass a workflow file as well as a
+/// directory.
+///
+/// The file case is not a convenience. An earlier version read only
+/// directories and returned silently when handed a file, because
+/// `read_dir` on a file fails and the failure was swallowed by a `let Ok`
+/// — so passing the workflow paths scanned **nothing at all**, and a
+/// mutation that added `--test anchor` to `pr-ci.yml` left the contract
+/// green. A scan that cannot fail is not a scan.
 ///
 /// Two files are exempt, and the exemption is per-file, not per-directory:
-/// the suite's own source (which naturally mentions nothing, but is the
-/// thing being measured) and this contract (which pins the names by
-/// definition). An earlier version excluded anything under a `tests/`
-/// path, which silently hid a reference from one suite into another. The
-/// rule claims "referenced nowhere else"; a rule that cannot see a whole
-/// class of references is weaker than the sentence describing it.
-fn walk(dir: &Path, needle: &str, found: &mut bool) {
+/// the file under measurement (which necessarily mentions its own name)
+/// and this contract (which pins the names by definition). An earlier
+/// version excluded anything under a `tests/` path, which silently hid a
+/// reference from one suite into another.
+///
+/// Unreadable files are collected, not skipped: 81 files in this tree are
+/// not valid UTF-8, and an earlier version dropped every one of them
+/// silently through `let Ok(text) = ...`. A file that is not read and a
+/// file that does not exist are indistinguishable from outside, which is
+/// exactly the ambiguity a gate cannot carry.
+fn walk(
+    path: &Path,
+    needle: &str,
+    skip: Option<&Path>,
+    found: &mut bool,
+    unreadable: &mut Vec<String>,
+) {
     if *found {
         return;
     }
-    let Ok(entries) = std::fs::read_dir(dir) else {
+    if path.is_file() {
+        read_for_needle(path, needle, skip, found, unreadable);
         return;
+    }
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(e) => {
+            // A directory that cannot be listed is a blind spot, not a
+            // detail. Report it instead of pretending the scan finished.
+            unreadable.push(format!("{} (unreadable directory: {e})", path.display()));
+            return;
+        }
     };
     for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            walk(&path, needle, found);
-        } else if let Ok(text) = std::fs::read_to_string(&path) {
-            let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-            // Exempt only this contract, which pins the names verbatim by
-            // design. No suite file is exempt: a suite cannot reference
-            // itself by its own quoted file name in a way that would match,
-            // and excluding the whole tests/ tree would hide a reference
-            // from one suite to another, which is a reference the rule
-            // claims to see.
-            let is_contract = name == "core_gate_coverage_contract.rs";
-            if text.contains(needle) && !is_contract {
-                *found = true;
-                return;
-            }
+        let child = entry.path();
+        if child.is_dir() {
+            walk(&child, needle, skip, found, unreadable);
+        } else {
+            read_for_needle(&child, needle, skip, found, unreadable);
         }
         if *found {
             return;
+        }
+    }
+}
+
+/// Reads one file looking for the needle, honouring both exemptions and
+/// recording anything unreadable.
+fn read_for_needle(
+    path: &Path,
+    needle: &str,
+    skip: Option<&Path>,
+    found: &mut bool,
+    unreadable: &mut Vec<String>,
+) {
+    let name = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+    // Exempt this contract, which pins the names verbatim by design, and
+    // the file that is the subject of the search, which necessarily
+    // mentions its own name. Nothing else is exempt: excluding the whole
+    // tests/ tree would hide a reference from one suite to another, which
+    // is a reference the rule claims to see.
+    if name == "core_gate_coverage_contract.rs" {
+        return;
+    }
+    if skip.is_some_and(|s| s == path) {
+        return;
+    }
+    match std::fs::read_to_string(path) {
+        Ok(text) => {
+            if text.contains(needle) {
+                *found = true;
+            }
+        }
+        Err(e) => {
+            if !is_accepted_unreadable(path) {
+                unreadable.push(format!("{} ({e})", path.display()));
+            }
         }
     }
 }
