@@ -9,7 +9,7 @@
 | QW-05 | Actions release mutable tags | 0 | parser de workflows |
 | QW-06 | tiempo hasta PR de dependency update | ≤ 7 días | updater logs |
 | CR-01 | C8 clean-clone | PASS | runbook completo + SHA + checksums |
-| CR-02 | constraints CP retornadas | exactamente 3 canonical IDs | integración TCP/HTTP real |
+| CR-02 | constraints CP retornadas | el conjunto canónico admitido para la versión de esquema vigente (3 en el cierre de CR-02; **5 desde CR-06**, 2026-09-26 — el contrato es la identidad del conjunto, no el recuento) | integración TCP/HTTP real |
 | CR-03 | etapas de e91 perfiladas | 100% del wall time atribuible | profiler/instrumentation report |
 | CR-04 | p95 graph_insights | ≤ budget acordado; objetivo inicial ≤30 s fixture Tier-2 | benchmark estable |
 | CR-05 | G5 scorecard | GREEN | scorecard run; streak según contrato |
