@@ -8504,3 +8504,36 @@ precisamente lo que el contrato prohíbe.
 `Invalid parameter name: cycle_leases, cycle_leases` en 2.2.33 con la evidencia
 de que la misma query con `?1`/`?2` funciona vía `sqlite3` sobre el mismo
 fichero. No es asunto de CogniCode.
+
+### N+64.5 — El gate está VERDE con evidencia observada
+
+Run **36684133482** sobre `514b5441`, conclusion **`success`**:
+
+| Paso (todos en `merge-gate`) | Resultado |
+|---|---|
+| `Descargar binarios release (merge-gate)` | **success** |
+| `Restaurar permisos de ejecución (merge-gate)` | **success** |
+| `Verificar binarios descargados (merge-gate)` | **success** |
+| `PRF-CLI-04 CLI↔MCP equivalence UAT (black-box, two processes)` | **success** |
+| `Release-profile binaries for the release-flow UATs` | **success** |
+
+Salida literal del paso de verificación, no una inferencia:
+
+```text
+ok: cognicode-mcp
+ok: cognicode-control-plane
+ok: cognicode
+```
+
+`PRF-CLI-04` es exactamente la suite que fallaba con "falta binario CLI"
+desde antes de `38f57443`. Pasa. Los tres binarios están presentes y
+ejecutables dentro del runner de `merge-gate`.
+
+Estado del PR #309 tras el gate: `state=OPEN`, `mergeable=MERGEABLE`,
+`mergeStateStatus=CLEAN`, `head=514b5441`.
+
+**Lo que NO se afirma**: el work item `8fec95db` sigue `Active`. El PR está
+listo para merge pero **no está mergeado**; mergear es una acción del
+maintainer, y además el CLI de SDDK 2.2.33 no permite registrar la transición
+(N+65.2). Cerrar A-014 aquí sería mentir sobre el estado. Lo correcto es
+`RELEASE_PENDING` sostenido por evidencia, no un `CLOSED` fabricado.
