@@ -8461,3 +8461,46 @@ artefactos". Un artefacto solo existe donde su runner lo descarga
 explícitamente. Y un mensaje de fallo que no distingue "no existe" de "no
 ejecutable" convierte un diagnóstico de dos minutos en dos rondas de CI de
 18 minutos: la ambigüedad del mensaje es el coste real.
+
+### N+65.2 — Diagnóstico del defecto de SDDK 2.2.33 (no es corrupción de datos)
+
+`error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases`
+en todos los comandos del ledger. **La base de datos está intacta.**
+
+| Comprobación | Resultado |
+|---|---|
+| Tabla `cycle_leases` | existe, 22 filas |
+| Columnas | `cycle_id, owner, acquired_at_ms, expires_at_ms, fencing_token` |
+| Eventos totales | **682** (los mismos que con 2.2.27) |
+| Tablas | 25, todas presentes |
+| Query exacta del binario, ejecutada con `sqlite3` | **OK, 17 filas** |
+
+La query que 2.2.33 compila es esta (extraída del binario con `strings`):
+
+```sql
+SELECT cl.cycle_id, cl.owner
+FROM cycle_leases cl
+INNER JOIN cycles c ON cl.cycle_id = c.cycle_id
+WHERE c.project_id = ?1 AND cl.expires_at_ms > ?2
+ORDER BY cl.acquired_at_ms DESC
+```
+
+Declarada con `?1` y `?2`, y **funciona** contra la misma base de datos con el
+driver de Python. Por tanto el defecto está en el **binding de rusqlite del
+binario 2.2.33**, no en el SQL, ni en el esquema, ni en los datos: el binario
+pasa el nombre `cycle_leases` dos veces donde la librería espera un índice.
+
+**No es reparable desde este repo.** El binario es
+`~/.local/bin/sddk` (36 MB, 2026-09-30 09:16), y el framework `2.2.27` que
+funcionaba **ya no existe en disco**: `framework/` solo contiene `2.2.33`, así
+que tampoco hay downgrade posible. No se parchea el binario a ciegas.
+
+**Consecuencia**: el work item `8fec95db` (A-014) queda inaccesible por CLI
+mientras dure este defecto. Sigue `Active` y correctamente sin cerrar: el PR
+#309 aún no está integrado. Cerrarlo exigiría inventar el estado, que es
+precisamente lo que el contrato prohíbe.
+
+**Acción requerida del maintainer del framework**: reportar
+`Invalid parameter name: cycle_leases, cycle_leases` en 2.2.33 con la evidencia
+de que la misma query con `?1`/`?2` funciona vía `sqlite3` sobre el mismo
+fichero. No es asunto de CogniCode.
