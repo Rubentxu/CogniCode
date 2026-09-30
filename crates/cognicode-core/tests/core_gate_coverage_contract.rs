@@ -128,10 +128,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // `product/*.json` from the build machine's path). A suite was added on
     // purpose in that commit, which is exactly the case this assertion asks
     // to be a deliberate, reviewable act.
+    // 38 -> 39 with `clippy_gate_parity_contract` (2026-09-30). The new
+    // suite is named by no workflow and no script on purpose: it asserts
+    // properties of the pipeline scripts themselves rather than running a
+    // suite, so it belongs in the anchor set — the same class as this file.
     assert_eq!(
         suites.len(),
-        38,
-        "expected exactly 38 cognicode-core integration suites, found {}. \
+        39,
+        "expected exactly 39 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -250,6 +254,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
     "checkpoint_integration",
+    "clippy_gate_parity_contract",
     "cp5_tie_break",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
@@ -620,10 +625,7 @@ fn merge_gate_kts_runs_every_core_command_the_workflow_runs() {
         v
     };
 
-    let missing: Vec<&String> = workflow
-        .iter()
-        .filter(|w| !kts.contains(w))
-        .collect();
+    let missing: Vec<&String> = workflow.iter().filter(|w| !kts.contains(w)).collect();
     assert!(
         missing.is_empty(),
         "{} of {} distinct `cargo test -p cognicode-core` commands run in \
@@ -635,10 +637,7 @@ fn merge_gate_kts_runs_every_core_command_the_workflow_runs() {
         workflow.len()
     );
 
-    let extra: Vec<&String> = kts
-        .iter()
-        .filter(|k| !workflow.contains(k))
-        .collect();
+    let extra: Vec<&String> = kts.iter().filter(|k| !workflow.contains(k)).collect();
     assert!(
         extra.is_empty(),
         "merge-gate.pipeline.kts runs core commands absent from pr-ci.yml: \
