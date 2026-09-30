@@ -8191,3 +8191,118 @@ mide el resultado entregado. Los dos son vero y se contradicen, y por eso hace
 falta un tercero: el estado del PR. N+61 cerró el ciclo gemelo correcto y dejó
 el equivocado abierto, y la afirmación de "ya no falla" no se comprobó contra
 el comando que la sostenía.
+
+## N+64 — El gate ejecutaba una suite cuyo binario nunca construía, y la colisión de A-014 Made visible
+
+Cierre de los dos puntos abiertos de N+63: el `merge-gate` rojo del PR #309 y
+la prevención de la colisión de IDs. Work item `8fec95db` sigue `Active` (el
+trabajo aún no está entregado); lo que cambia aquí es que el bloqueo tiene
+causa, arreglo y gate.
+
+Todo el trabajo de código vive en la rama `fix/a014-capabilities-json-stderr`
+(commit `38f57443`), no en la rama de PipelineK.
+
+### N+64.1 — `merge-gate`: la suite exigía un binario que el job no construía
+
+`prf_cli_04_two_process_uat` es la **única** de las 13 suites MCP que tocan
+binario que resuelve sus dos binarios por `common::release_dir()` y no por
+`binary_path()`. Las otras 12 usan `binary_path()`, que con `CARGO_BIN_EXE`
+resuelve el propio binario de test y por tanto funciona en un runner limpio.
+`prf_cli_04` exige `target/release/cognicode` en disco, y el job `build-binary`
+solo construía `cognicode-mcp` (línea 127) y `cognicode-control-plane`
+(línea 141), subiendo esos dos.
+
+Medido antes de arreglar, por si el arreglo fuera más ancho: 25 suites MCP, 13
+tocan binario, **1** usa `release_dir()`. Dos líneas, no veinte.
+
+**RED reproducido localmente**, moviendo el binario release de esta máquina
+para imitar un runner limpio. Mismo fallo y mismas cifras que el log del CI:
+
+```
+cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+falta binario CLI: /var/home/rubentxu/cargo-targets/release/cognicode
+test result: FAILED. 3 passed; 1 failed; 0 ignored; finished in 0.01s
+```
+
+El `0,01 s` es lo que hacía que esto se leyera como sano. El commit `67fd5f48`
+declaraba en su mensaje *"16 named steps in the merge-gate job, one per suite,
+all verified locally green with repo-local fixtures (each suite < 0.1s)"*. La
+suite no era rápida: estaba abortando. En local pasaba porque un `cognicode`
+de un build anterior seguía en el directorio release.
+
+**GREEN**: `cargo build --release --bin cognicode` en un `CARGO_TARGET_DIR`
+aislado (3 min 25 s, compilado de verdad, no cacheado) y después
+`prf_cli_04_two_process_uat` **4 passed**, incluido
+`cli_and_mcp_processes_agree_on_symbols_and_edges`.
+
+Se renombra también el job. Decía `build cognicode-mcp (release)` mientras su
+comentario de cabecera prometía *"produce el binario para el E2E y para F0.1
+(cognicode CLI)"*. **Un job que dice una cosa y construye otra es exactamente
+como se cuelan estos fallos**, y el nombre era la mitad del defecto.
+
+### N+64.2 — La colisión de A-014, auditable desde el registro
+
+La fila A-014 de `16-ACTION-REGISTER.md` declara ahora los dos ciclos y sus
+dos work items, de modo que la colisión vive en la fuente de verdad y no solo
+en un comando de estado que nadie mira.
+
+Gate nuevo: `crates/cognicode-cli/tests/action_register_identity_contract.rs`,
+5 tests, pineado por nombre en `merge-gate`. Enforces: un action id tiene una
+fila; una fila declara como mucho un ciclo; todo ciclo declarado normaliza al
+action id de su propia fila; ningún work item pertenece a dos acciones.
+
+**Alcance medido, no supuesto.** De las 13 filas `CLOSED` del registro, solo 4
+declaran ciclo y 3 declaran work item (A-003..A-011 y A-015 cierran en prosa
+sin identidad de ledger). "Toda fila cerrada declara ciclo y work item" **no
+es una regla que este repo cumpla**, así que no se aserta: decirlo sería
+justo la ficción que N+63 documenta.
+
+Dos mutaciones vistas caer, cada una por la razón correcta:
+
+| Mutación | Aserción que cae |
+|---|---|
+| A-015 declara `ciclo cp2-a013-lifecycle-gate` | `a_row_declares_at_most_one_cycle_and_it_belongs_to_that_row` |
+| borrar el gemelo `82719e1d…` de la fila A-014 | `the_a014_collision_is_declared_not_hidden` (+1 aserción) |
+
+**La primera mutación necesitó tres arreglos de parser para que mordiera.** El
+gate pasaba una mutación que debía cazar, tres veces:
+
+1. `--no-verify` (que aparece en la prosa de la fila A-014) se parseaba como
+   un segundo ciclo.
+2. `cp2-a014-...` no casa con un patrón `a-0`: la normalización devolvía
+   `None` y la lista de ciclos salía vacía para una fila que sí declara uno.
+3. Los ids cualificados con proyecto (`p-c1fac1fea05615c6/cp2-a013-...`) eran
+   invisibles, porque el parser cortaba en la barra. **Mover un ciclo de fila
+   pasaba en verde.**
+
+Un gate que pasa todo es peor que no tener gate, porque se le confía. Y aquí
+hay un cuarto episodio de la misma familia: la primera aplicación de la
+mutación usó un `python3` con `str.replace` que **no encontró el ancla**,
+imprimió `mutacion aplicada` y no cambió nada. El gate parecía verde porque
+nunca vio la mutación. Se detectó comparando el fichero con su copia: eran
+idénticos. Desde entonces, mutación solo con `edit` o con aserción explícita
+de que el antes y el después difieren.
+
+### N+64.3 — Verificado y no verificado
+
+Verificado en esta sesión:
+
+| Comprobación | Resultado |
+|---|---|
+| `action_register_identity_contract` | **5 passed**, 0 failed |
+| `cli_gate_coverage_contract` (cuenta suites CLI) | **8 passed** (la suite nueva no lo rompe) |
+| `prf_cli_04_two_process_uat` tras build release real | **4 passed** |
+| `cargo fmt --check` | limpio |
+| `cargo clippy -p cognicode-cli --tests` | limpio |
+| RED del binario ausente | reproducido: 3 passed / 1 failed, 0,01 s |
+
+**NO verificado**: PR-CI no había corrido sobre `38f57443` al cerrar esta
+entrada. El gate es de `main` y el resultado final lo confirma el CI, no este
+journal. El work item `8fec95db` permanece `Active`.
+
+**Lección 141**: un gate hay que probarlo con una mutación, y comprobar que la
+mutación **llegó a aplicarse**. Una mutación que no se aplica produce el mismo
+verde que una regla correcta, y es la única forma de que un gate inútil parezca
+provechoso. Tres fallos seguidos en un mismo parser (prosa, formato, prefijo)
+dicen que el gate hay que escribirlo contra casos reales medidos, no contra el
+formato imaginado.
