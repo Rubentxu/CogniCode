@@ -346,11 +346,21 @@ fn cr06_synthetic_drift_application_to_infrastructure_is_detected() {
 /// CR-06 T7 (synthetic drift detector for application_no_interface).
 ///
 /// Pins the load-bearing property of the rule: when an
-/// `application/` module imports `crate::bin::...` (the layer used to
-/// represent `interface::mcp` per `LayerId::from_module_path`), the
+/// `application/` module imports the MCP interface layer, the
 /// evaluator MUST emit a violation with `constraint_id =
 /// architecture.application_no_interface`. This test proves the gate
 /// is live and not a no-op.
+///
+/// The fixture is the PRODUCTIVE import shape, deliberately:
+/// `crate::interface::mcp::security::...` is what `file_operations.rs`
+/// and `workspace_session.rs` actually carry. The original version of
+/// this test planted `crate::bin::something_interface` instead, which
+/// proved that Bin→Bin classification worked while the real boundary
+/// (`application → interface`) sailed through as `LayerId::Unknown`
+/// and never fired — a false negative the allowlist documented as
+/// "current source: zero drifts" (audit 2026-09-30). Testing the
+/// literal production shape is what makes this test able to catch
+/// that regression class.
 #[test]
 fn cr06_synthetic_drift_application_to_interface_is_detected() {
     let mut registry = ArchitectureRegistry::new();
@@ -364,13 +374,14 @@ fn cr06_synthetic_drift_application_to_interface_is_detected() {
     assert!(out.result.is_ok());
     let constraint = registry.admission.admitted().first().unwrap().clone();
 
-    // Synthetic fixture: an application module importing
-    // `crate::bin::something_interface`. The gate must fire.
+    // Productive fixture: the exact import two application modules carry
+    // today. The gate must fire on `interface::mcp`.
     let source = ArchitectureSource {
         files: vec![SourceFile {
             file_path: "src/application/example.rs".into(),
             module_path: Some("application::example".into()),
-            source: "use crate::bin::something_interface;\n".into(),
+            source: "use crate::interface::mcp::security::{InputValidator, SecurityError};\n"
+                .into(),
         }],
     };
 
@@ -388,4 +399,38 @@ fn cr06_synthetic_drift_application_to_interface_is_detected() {
         "architecture.application_no_interface"
     );
     assert_eq!(v.from_layer, LayerId::Application);
+}
+
+/// The Bin target stays forbidden too: `crate::bin::...` is how
+/// `interface::mcp` was once classified, and application code importing
+/// the binary entrypoint is a boundary violation regardless.
+#[test]
+fn cr06_synthetic_drift_application_to_bin_is_still_detected() {
+    let mut registry = ArchitectureRegistry::new();
+    let admitter = canonical_promoted_admitter();
+    let clock = cognicode_core::application::architecture::admission::SystemArchitectureClock;
+    let candidate = canonical_constraints()
+        .into_iter()
+        .find(|c| c.id.as_str() == "architecture.application_no_interface")
+        .expect("CR-06: application_no_interface must be canonical");
+    let out = registry.admission.admit(candidate, &admitter, &clock);
+    assert!(out.result.is_ok());
+    let constraint = registry.admission.admitted().first().unwrap().clone();
+
+    let source = ArchitectureSource {
+        files: vec![SourceFile {
+            file_path: "src/application/example.rs".into(),
+            module_path: Some("application::example".into()),
+            source: "use crate::bin::something_interface;\n".into(),
+        }],
+    };
+
+    let report = registry
+        .evaluate(&constraint, &source)
+        .expect("evaluator must succeed on valid input");
+    assert_eq!(
+        report.violations.len(),
+        1,
+        "application_no_interface must keep detecting application→bin drift; got 0"
+    );
 }

@@ -109,7 +109,11 @@ pub fn canonical_constraints() -> Vec<ConstraintCandidate> {
                 .expect("static id is well-formed"),
             kind: ArchitectureConstraintKind::LayerDependency(LayerDependencyRule {
                 from_layer: LayerId::Application,
-                forbidden_targets: vec![LayerId::Bin], // historical: `interface::mcp`
+                // `Interface` is the real boundary: `src/interface/` (MCP,
+                // CLI). `Bin` is retained — it is how `interface::mcp` was
+                // once mis-classified, and application importing the binary
+                // entrypoint is a violation regardless.
+                forbidden_targets: vec![LayerId::Interface, LayerId::Bin],
                 rationale: "application must not import the MCP/interface layer; RPC handlers \
                             depend on application, not the reverse."
                     .into(),
