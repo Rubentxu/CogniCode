@@ -8058,3 +8058,136 @@ El trabajo **no** esta bloqueado por un ciclo atascado. Mañana arranca con
 `sddk cycle start` limpio. El defecto de `evaluate-gate`/frame sigue siendo
 real y probably seguira bloqueando la *transicion*, pero eso es un problema
 distinto y posterior a la creacion del ciclo.
+
+## N+63 — La reconciliación que "no tenía nada que reconciliar" sí tenía
+
+Retomada de sesión sobre `ci/pipelinek-kotlin-gate`, HEAD `c97bb44a`, 7 commits
+por delante de `origin/main`. La entrada anterior (N+62) afirmaba que el ciclo
+`ci-pipelinek-kotlin-migration` **no existía** en el ledger. Existe.
+
+### N+63.1 — El ciclo existe y su work item sigue `Active`
+
+Medido, no supuesto:
+
+```
+$ sddk cycle status --cycle p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+cycle_id: p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+status: OPEN
+phase: specify
+path: A-full
+artifacts: 1
+
+$ sddk plan work-item list --cycle-id p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+- a3ec0553-39be-4051-8db4-72d2dcbc61a7 [Migrate the merge gate to a PipelineK Kotlin DSL pipeline] (Active)
+```
+
+El `frontier` del ciclo es `phase.specify.complete` (`requires_met: false`,
+falta el artefacto `specification`), más `cycle.block` y `cycle.pause`. La
+rama tiene 7 commits con código real (`merge-gate.pipeline.kts` 256 líneas,
+`product-fast.pipeline.kts` 94, `manifest.toml` 64 validado por `sddk pack
+validate` → `valid: true`) y el ciclo sigue pidiendo su `specification`. El
+ciclo y el trabajo **no** están alineados, que es distinto de "atascado".
+
+N+62 decía que no se distinguía entre "ciclo creado y muerto sin transición" y
+"ciclo nunca creado". Se distinguía, con dos comandos. Corrección registrada, no
+borrada.
+
+### N+63.2 — A-014 tiene dos ciclos gemelos, y el equivocado sigue abierto
+
+`sddk plan roadmap status` falla hoy con `multiple active work items`
+(`8fec95db…`, `a3ec0553…`). N+61 (línea 7712) afirmaba que ese comando ya no
+fallaba. La afirmación era **verdadera cuando se escribió** y es falsa hoy; lo
+que la vuelve engañosa es el motivo que da: no fue el defecto de toolchain de
+N+55 lo que lo destrabó, fue otra cosa.
+
+| Ciclo | Estado | Work item | Rama |
+|---|---|---|---|
+| `a-014-capabilities-json` | `CLOSED` / archive | `82719e1d` **Done** | — |
+| `cp2-a014-capabilities-json` | `RELEASE_PENDING` / release | `8fec95db` **Active** | `fix/a014-capabilities-json-stderr` |
+
+Es la **misma colisión de IDs** que el roadmap ya registró para A-015 (la nota
+"Collision de IDs registrada" al final de la fila PRODUCT-1.0), ahora repetida
+en A-014 y con coste: el gemelo `Active` ata `plan roadmap status`. El ciclo
+`cp2-a014-capabilities-json` tiene 6 artefactos declarados y 22 ficheros
+reales, incluido un `design-superseded-20260929.md` y un
+`tasks-superseded-20260929.md`: hubo un replan y su rastro está.
+
+**El work item `8fec95db` no se puede cerrar.** La tentación era cerrarlo
+porque el test pasa; no corresponde, por dos razones medidas.
+
+### N+63.3 — El artefacto de release afirma cosas que la realidad desmiente
+
+`release-readiness.md` del ciclo declara:
+
+- *"PR #309, mergeable, mergeStateStatus BLOCKED only by pending checks"*
+- *"Local gates (already verified…): a014 12/12"*
+
+Medido contra GitHub y contra el árbol:
+
+```
+$ gh pr view 309 --json state,mergedAt,mergeCommit
+{"state":"OPEN","mergedAt":null,"mergeCommit":null}
+
+$ cargo test -p cognicode-cli --test a014_capabilities_json
+test result: ok. 10 passed; 0 failed     # el artefacto dice 12/12
+
+$ git show origin/main:crates/cognicode-cli/tests/a014_capabilities_json.rs | grep -c '#\[test\]'
+6
+```
+
+El fichero en `origin/main` tiene **6** atributos `#[test]`, no 12. Los 10 que
+corren incluyen 4 de `common::tests::*` (resolución de `binary_path`). El
+PR #309 **nunca se mergeó**: la corrección de stderr que lo motiva vive en
+una rama abierta. Cerrar `8fec95db` habría convertido un bug abierto en un
+`Done`.
+
+### N+63.4 — Por qué el PR #309 no avanza: misma clase de defecto que N+50
+
+`gh pr checks 309`: `merge-gate` **fail** 5m1s, los otros cuatro `pass`.
+Causa en el log del job `109701177354`:
+
+```
+test cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+panicked at crates/cognicode-mcp/tests/prf_cli_04_two_process_uat.rs:101:5:
+falta binario CLI: /home/runner/work/CogniCode/CogniCode/target/release/cognicode
+test result: FAILED. 3 passed; 1 failed
+```
+
+La suite resuelve `cli_bin()` como `common::release_dir().join("cognicode")`
+(línea 22-23) y `mcp_bin()` como `…/cognicode-mcp` (línea 26-27). El job
+`build-binary` de `pr-ci.yml` construye **`cognicode-mcp`** (línea 127) y
+**`cognicode-control-plane`** (línea 141), y sube como artefacto solo esos dos
+(líneas 146-148). **`cognicode`, el CLI, nunca se construye en release.**
+
+Es la **misma clase de defecto** que N+50 (el selector arrastraba suites cuyos
+binarios el gate no construía), con el crate cambiado. Y el commit que la
+introduce lo declara en su propio mensaje: `67fd5f48` *"GREEN: 16 named
+steps in the merge-gate job, one per suite, all verified locally green with
+repo-local fixtures (each suite < 0.1s)"*. La afirmación **es falsa para al
+menos una** de las 16: los 0,01 s del log son porque el test aborta en la
+primera aserción, no porque fuera rápido. `prf_cli_04_two_process_uat` es
+exactamente la que la lista de RED del propio commit nombra.
+
+De los 16 pasos MCP añadidos, 15 pasan; el que necesita binario CLI falla. El
+patrón de N+60 vuelve: **una regla enunciada en prosa y supuesta cierta** —
+esta vez "todas verificadas localmente en verde", y solo la ejecución real la
+delató.
+
+### Consecuencia
+
+- `8fec95db` (A-014) permanece **`Active`**. Correcto: el trabajo está hecho
+  localmente y **no entregado**. El bloqueo es el `merge-gate` de #309.
+- El arreglo de una línea está identificado y verificado por lectura: añadir
+  `cargo build --release --bin cognicode` al job `build-binary` e incluir
+  `target/release/cognicode` en el `upload-artifact`. No se aplica aquí porque
+  la rama activa es otra y mezclarlos sería trabajo fuera del WorkItem.
+- `a3ec0553` (PipelineK) permanece **`Active`**. Su ciclo pide `specification`
+  antes de transicionar; el código ya está escrito en la rama.
+
+**Lección 140**: cerrar un work item porque su test pasa es un cierre
+incorrecto
+cuando la *entrega* no ocurrió. `cargo test` mide el árbol local; el work item
+mide el resultado entregado. Los dos son vero y se contradicen, y por eso hace
+falta un tercero: el estado del PR. N+61 cerró el ciclo gemelo correcto y dejó
+el equivocado abierto, y la afirmación de "ya no falla" no se comprobó contra
+el comando que la sostenía.
