@@ -128,10 +128,19 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // `product/*.json` from the build machine's path). A suite was added on
     // purpose in that commit, which is exactly the case this assertion asks
     // to be a deliberate, reviewable act.
+    // 38 -> 39 with `clippy_gate_parity_contract` (2026-09-30). The new
+    // suite is named by no workflow and no script on purpose: it asserts
+    // properties of the pipeline scripts themselves rather than running a
+    // suite, so it belongs in the anchor set — the same class as this file.
+    // 39 -> 40 with `roadmap_claims_contract` (2026-09-30). The ROADMAP had
+    // claimed PR #309 was unmerged 44 seconds after it was merged, and
+    // nothing re-checked it. Like the suite above, it asserts properties of
+    // a file the project governs rather than running a suite, so it belongs
+    // in the anchor set.
     assert_eq!(
         suites.len(),
-        38,
-        "expected exactly 38 cognicode-core integration suites, found {}. \
+        40,
+        "expected exactly 40 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -250,6 +259,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
     "checkpoint_integration",
+    "clippy_gate_parity_contract",
     "cp5_tie_break",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
@@ -265,6 +275,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "prf_ext_04_adapter_authority_uat",
     "provider_conformance",
     "read_set_e2e",
+    "roadmap_claims_contract",
 ];
 
 /// The count alone cannot see a rename: renaming a suite keeps `len()`
@@ -559,6 +570,97 @@ fn read_for_needle(
             }
         }
     }
+}
+
+/// The Kotlin merge-gate pipeline (`merge-gate.pipeline.kts`), the local
+/// parity replica of the required `merge-gate` check.
+fn read_merge_gate() -> String {
+    let path = repo_root().join("merge-gate.pipeline.kts");
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+}
+
+/// The `cargo test -p cognicode-core ...` invocations present in the Kotlin
+/// pipeline, normalized to bare commands so they compare against the workflow.
+/// Commented-out stages (`//`) are excluded: a stage that is commented out is
+/// a stage that does not run, which is exactly the narrowing this pins.
+fn kts_core_invocations(kts: &str) -> Vec<String> {
+    kts.lines()
+        .map(str::trim)
+        .filter(|l| l.contains("cargo test -p cognicode-core"))
+        .filter(|l| !l.starts_with("//"))
+        .map(|l| {
+            // The invocation starts at the first `cargo test`; the preceding
+            // `sh("$cd && ` is Kotlin scaffolding. Using `find` (not `split`)
+            // keeps the space that `split("cargo test")` would eat along with
+            // the string's opening quote.
+            let start = l.find("cargo test").unwrap_or(l.len());
+            let cmd = l[start..].trim_end_matches(['"', ')']).trim();
+            cmd.to_string()
+        })
+        .collect()
+}
+
+/// Parity between the Kotlin gate and the authoritative workflow, by COUNT.
+///
+/// `pr-ci.yml` is the merge authority and the only input; the `.kts` is the
+/// local replica. The comparison is set equality in both directions over
+/// distinct commands, not substring containment: five suites sit behind
+/// `#![cfg(feature = "evidence-kernel")]` and compile to `0 passed / exit 0`
+/// without the flag, so a substring assertion ("the word `evidence-kernel`
+/// appears") survives an unrestricted step being dropped entirely while a
+/// command-count comparison names the missing order.
+#[test]
+fn merge_gate_kts_runs_every_core_command_the_workflow_runs() {
+    let workflow: Vec<String> = {
+        let mut v: Vec<String> = core_test_invocations(&read_workflow())
+            .into_iter()
+            .map(|c| {
+                // `core_test_invocations` keeps the whole trimmed YAML line,
+                // so `run: cargo test ...` carries its YAML key. Strip it so
+                // the comparison is between commands, not between syntaxes.
+                c.strip_prefix("run:").unwrap_or(&c).trim().to_string()
+            })
+            .collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let kts: Vec<String> = {
+        let mut v = kts_core_invocations(&read_merge_gate());
+        v.sort();
+        v
+    };
+
+    let missing: Vec<&String> = workflow.iter().filter(|w| !kts.contains(w)).collect();
+    assert!(
+        missing.is_empty(),
+        "{} of {} distinct `cargo test -p cognicode-core` commands run in \
+         pr-ci.yml but not in merge-gate.pipeline.kts: {missing:?}. The Kotlin \
+         gate is the local parity replica; a stage that is missing (or \
+         commented out) narrows the gate without breaking anything else, \
+         which is the exact failure this contract exists to prevent.",
+        missing.len(),
+        workflow.len()
+    );
+
+    let extra: Vec<&String> = kts.iter().filter(|k| !workflow.contains(k)).collect();
+    assert!(
+        extra.is_empty(),
+        "merge-gate.pipeline.kts runs core commands absent from pr-ci.yml: \
+         {extra:?}. The workflow is the authority; the replica cannot invent \
+         coverage the gate does not have."
+    );
+
+    assert_eq!(
+        kts.len(),
+        workflow.len(),
+        "command-count mismatch: workflow has {} distinct core commands, kts \
+         has {}. Distinct kts commands with duplicates are not deduplicated \
+         on the kts side on purpose: a stage duplicated in the pipeline is a \
+         pipeline bug this count should surface. kts={kts:?}",
+        workflow.len(),
+        kts.len()
+    );
 }
 
 #[test]

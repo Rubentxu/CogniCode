@@ -4769,8 +4769,8 @@ ejecutado en una sesión con criterio propio.
 2. PHP grammar requiere `<?php` opener para parsear cualquier
    código. Los 4 tests `#[ignore]` originales usaban snippets sin
    opener, lo cual es por qué el walker no encontraba nodos
-   incluso cuando pineaba el kind correcto. Ambos bugs叠加:
-   el snippet inválido y los kind namespineados en el walker.
+   incluso cuando pineaba el kind correcto. Ambos bugs se superponen:
+   el snippet inválido y los kind names pineados en el walker.
 
 3. Swift grammar emite `inheritance_specifier` como children
    repeated por cada parent type (no como field-name agrupador).
@@ -7187,7 +7187,7 @@ assert!(suites.len() >= 30, "expected the crate to still carry its full integrat
 
 Un `>=` con suelo solo comprueba que no se este midiendo el vacio. **No detecta que falte una
 suite**, que es exactamente el fallo que ese fichero existe para impedir. Yo escribi esa guarda, y
-es del mismo tipo que el defecto que N+48保持了 dos bloques: una comprobacion que parece
+es del mismo tipo que el defecto que N+48 mantuvo en dos bloques: una comprobacion que parece
 suficiente porque falla en algun caso, y no falla en el que importa.
 
 **Corregido a un conteo exacto, RED/GREEN demostrado:**
@@ -7778,6 +7778,78 @@ Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
 `clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
 **601 passed, 0 failed** (598 + los 3 nuevos).
 
+## N+51 — A-015 reconciliada, y la causa raíz real del atasco de A-014
+
+**A-015 estaba entregada y el registro no lo decía.** El commit `29a96c53` tocó
+`ROADMAP.md` y el journal pero **no** `16-ACTION-REGISTER.md`, así que la fila seguía
+leyéndose como abierta. Verificado en esta sesión, no por el mensaje del commit:
+`cargo test -p cognicode-cli --test a015_onboarding_gate` → **3 passed, 0 failed**, y el
+paso existe en `pr-ci.yml:488`. Fila corregida con la evidencia medida. Esto no es
+cosmetico: A-033, A-034, A-035 y A-036 son **P0** y declaran dependencia de A-015, asi
+que el camino a los skills figuraba bloqueado cuando ya no lo estaba.
+
+**La causa raíz del atasco de A-014 no es `evaluate-gate`.** N+49 la localizó en que
+`evaluate-gate` persiste su `gate_receipt` sin emitir evento de ledger. Es cierto, pero no
+es lo que impide avanzar. Medido hoy contra `sddk 2.2.27`:
+
+```
+$ sddk cycle start --name ledger-probe-check   →  status: OPEN, phase: explore   (OK)
+$ sddk cycle next                              →  error: no active cycle found
+```
+
+El ciclo se crea bien y de inmediato es invisible. Leyendo `cycles` en el ledger hay
+**25 ciclos con `status='OPEN'`** en el mismo proyecto, el mas antiguo de 2026-08-12. La
+resolucion de "ciclo activo" consulta el proyecto y encuentra 25 candidatos, asi que no
+elige ninguno. Un ciclo recien creado es irresoluble **por construccion**, con o sin
+gates. Eso explica por que A-014 lleva dos dias `active` sin poder transicionar, y por que
+el mensaje de recuperacion ("run evaluate-gate") es inaccionable: el problema no estaba
+nunca en el gate.
+
+**Ademas, los 25 ciclos no se pueden limpiar desde el agente.** La via legitima existe
+(`sddk cycle supersede`), pero exige aprobacion de operador antes de mutar `cycle_state`:
+
+```
+$ sddk cycle supersede --reason scope-invalid …
+error: ADMISSION: approval required before mutating 'cycle_state'
+       (decision_id=approval-system-cycle_supersede); no changes were made
+```
+
+El motor **rechazo, no escribio nada, y nombro la decision que necesita**. Eso es el
+sistema correctement cerrado y es la respuesta correcta: limpiar 25 ciclos es una
+decision de governance del operador, no una tarea de agente. No se forzo con
+`--no-verify`, por el mismo motivo que N+43 y N+49: escribir estado falso en un ledger es
+irreversible y mas caro de recuperar que un item que sigue honestamente abierto.
+
+**Herramienta: el PATH mintia sobre que se ejecutaba.** Un symlink en
+`~/.local/bin/pipelinek` apuntando a una instalacion **0.39.0** tenia precedencia sobre
+el shim de asdf, asi que todas las ejecuciones de pipeline de la sesion anterior
+corrieron contra un compilador distinto del que declara `.tool-versions`
+(0.39.1-rc1). No era cosmético: la rc1 **rechaza** `\$name` con "Unresolved reference",
+donde 0.39.0 compila en silencio, de modo que el pipeline se validaba verde contra un
+compilador que en la version fijada no compilaba. Symlink eliminado (la distribucion
+0.39.0 se conserva en disco, el cambio es reversible). Verificado despues:
+`command -v pipelinek` → shim de asdf, y `pipelinek validate` de ambos `.kts` →
+`VALIDATION SUCCESSFUL` sin ruta absoluta. `product-fast` reejecutado con el shim ya
+corregido: **8/8 stages**.
+
+**Lesson 121 (nueva):** un motor que crea un recurso y acto seguido no lo encuentra no
+tiene un bug de validacion, tiene una ambiguedad de seleccion. La distincion importa
+porque el trabajo de diagnostico de N+49 fue contorno a contorno de un gate que nunca
+iba a dejar pasar la transicion. Antes de culpar a la ultima capa que se ejecuto, cuenta
+los candidatos de la capa que elige.
+
+**Lesson 122 (nueva):** un `PATH` con varias instalaciones de la misma herramienta es una
+fuente de verdad mas, y silenciosamente incorrecta. `command -v` es la unica pregunta que
+distingue "el repo declara 0.39.1-rc1" de "estoy ejecutando 0.39.0", y es la que hay que
+hacer antes de atribuir un fallo de compilacion al codigo que se acaba de escribir.
+
+**Pendiente de decision del operador (no de agente):**
+1. Aprobar `approval-system-cycle_supersede` para cerrar los 25 ciclos `OPEN` y
+   desbloquear la resolucion de ciclo activo. Sin esto, ningun ciclo nuevo podra
+   transicionar de fase.
+2. Desbloquear la cola de runners de GitHub: el run PR-CI de #309 lleva 1h49m en
+   `pending` sin arrancar, y el required check `merge-gate` impide aterrizar en `main`.
+
 ## Apply A-014 — corrección de stderr JSON (2026-09-29)
 
 El comando JSON de capabilities escribía INFO de inicio y Rayon a stderr aunque
@@ -7808,3 +7880,1194 @@ otra base de trabajo, y aquí se sustituye por el observado en este árbol).
 `LevelFilter::OFF`: el test cae a **10 passed, 1 failed**, capturando las dos
 líneas `INFO Starting CogniCode CLI` y `Rayon global thread pool initialized`,
 y vuelve a 11/11 al restaurar. La aserción muerde.
+
+**N+51bis — hipótesis de N+49 confirmada empíricamente.** Con la especificación
+escrita (6 requisitos, todos PASS) y la evidencia con el formato que el motor exige
+(`argv` + `exit_code` + `output_digest`), `evaluate-gate` devuelve
+`receipt_id: gate-requirements-testable-cf5415dac08d37ab-1, outcome: passed`, y el
+receipt existe en `gate_receipts` con `transition_id: phase.specify.complete` y el
+`plan_hash` correcto. La transición inmediata después vuelve a fallar con
+`ENGINE_MISSING_GATE_RECEIPT`. **El diagnóstico de N+49 era correcto**: cada
+`evaluate-gate` genera un `frame_id` propio (`frame:gate-b881010d-…`) y la transición
+busca un receipt ligado a *su* frame; como `evaluate-gate` no emite evento de ledger,
+el enlace no existe por construcción.
+
+Lo añade que N+49 no vio: el gate `exploration-sufficient` de este mismo ciclo tiene
+**6 receipts** (`seq` 1..6) con `plan_hash` idéntico, todos `passed`, de intentos
+sucesivos a lo largo de la sesión. El motor acepta reintentos ilimitados y ninguno
+enlaza, así que el número de intentos no es señal de nada: la sesión anterior
+reintentó seis veces porque cada fallo proponía la misma acción como recuperación.
+
+## N+52 · El workflow.yaml canonico del framework no valida contra su propio runtime
+
+**Fecha:** 2026-09-29 · **Ciclo:** `ci-pipelinek-kotlin-migration` · **Estado:** `BLOCKED_EXTERNAL`
+
+### Observado
+
+Se intentó cerrar `SDDK005` (falta `schemas/`) y `SDDK009` (falta
+`docs/generated/workflow.md`) vendorizando el workflow canonico. **Los dos
+workflow.yaml disponibles fallan, cada uno por una causa distinta:**
+
+| Origen | Fases | Fallo observado |
+|---|---|---|
+| `sddk-framework/workflow/` | `explore,specify,design,plan,build,verify,uat,release,archive` (9) | 5 estados decode-only: `REMEDIATING` x9, `UAT_WAITING` x4, `APPROVAL_PENDING` x8, `RECOVERING` x2, `RELEASE_PENDING` x11 |
+| `~/.sddk-validate/fd/clone/` | `explore,specify,design,plan,build,review,verify,release,archive` (9) | `unknown variant review` (fase retirada) |
+
+Mensaje exacto del runtime 2.2.27:
+
+```
+workflow declares runtime-derived status UatWaiting on transition
+phase.verify.uat.sync field to; runtime-derived statuses are decode-only
+since the cycle/run lifecycle cutover (DELTA-CONF-004)
+```
+
+### Derivado (no observado, no aplicado)
+
+El cutover `DELTA-CONF-004` retiró `Remediating`, `ReleasePending`,
+`UatWaiting`, `ApprovalPending` y `Recovering` del record del ciclo: esos
+hechos pasan a vivir en `Run`/`Authority`. Se **podría** reescribir el
+workflow sustituyendo cada uno por `BLOCKED`, pero eso exige decidir la
+semántica correcta de ~34 transiciones, y el fichero canónico pertenece al
+framework, no a este repo.
+
+**Decisión tomada: no vendorizar.** Meter en el repo un workflow con estados
+elegidos a ojo produce un artefacto que parece autoritativo y no lo es.
+`SDDK005` y `SDDK009` quedan abiertos por esta causa, con el motivo
+registrado, no por omisión.
+
+### Distinción relevante: el código fuente local NO es el runtime instalado
+
+`strings ~/.local/bin/sddk` revela la regla `DELTA-CONF-004`, pero
+`grep "runtime-derived"` sobre `sddk-engine` y `sddk-domain` no la encuentra.
+El checkout de `sddk-framework` es **anterior** a 2.2.27. Razonar sobre el
+código fuente local produce la conclusión contraria a la del runtime real.
+
+## N+53 · `manifest.toml`: las capabilities declaradas eran inventadas
+
+**Fecha:** 2026-09-29 · **Estado:** `CLOSED`
+
+El manifest declaraba `code.analyze`, `code.query`, `code.explore`,
+`code.graph`, `code.contract`. **Ninguno existe.** El catalogo publicado
+`product/tools.json` tiene 73 tools, 0 mutantes, espeladas
+`analyze_impact`, `ask_about_code`, `build_graph`, `codebase_map`...
+
+Dos correcciones:
+
+1. `PackConsequence` acepta exactamente `creates | modifies | irreversible`
+   (leido del binario instalado). `reads` no existe; `code.analyze = "creates"`
+   era valido, las otras cuatro `modifies` tambien, pero **invertido**: solo
+   crean artefactos, no modifican nada.
+2. Con 0 tools mutantes, ninguna capability puede declarar `modifies`. Todas
+   son `creates`.
+
+El encabezado del fichero afirmaba "every entry below is a measured fact".
+No lo era. Corregido: las capabilities son ahora 4 tools reales del catalogo.
+
+**Leccion:** un manifest que se autodescribe como "medido" y contiene
+identificadores inventados es peor que no tener manifest, porque `sddk lint`
+pasa y da confianza falsa. Verificar contra `product/tools.json` antes de escribir.
+
+## N+54 · `sddk lint` confunde tipos genericos de Rust con rutas
+
+**Fecha:** 2026-09-29 · **Estado:** `KNOWN_UPSTREAM_DEFECT`
+
+4 de los 51 errores propios son falsos positivos del parser:
+
+```
+error[SDDK001] openspec/changes/archive/2026-09-17-e86-cogh-lifecycle/design.md:121:
+  explicit repository reference "Option<String" does not exist
+  help: create plugins/Option<String or correct the explicit reference
+```
+
+El linter lee `Option<String` (tipo generico en prosa) como ruta y **sugiere
+crear un directorio llamado `Option<String`**. No se arregla editando el
+documento. Bug upstream.
+
+Los 47 restantes si son deuda propia real: rutas movidas en refactors
+(ladybug, graph-executor, executor-equivalence).
+
+## Balance de `sddk lint`
+
+```
+antes:  108 errores  (SDDK001 x104, 005, 009, 010, 014)
+ahora: 106 errores  (SDDK001 x104, 005, 009)
+cerrado: SDDK010, SDDK014
+```
+
+Desglose real de los 104 `SDDK001`: 53 en `sandbox/` (referencias de terceros,
+`../../../etc/passwd` como fixture de robustez), 4 falsos positivos del parser,
+47 deuda propia por rutas movidas.
+
+**Criterio aplicado:** no se "arregla" `sandbox/` porque los fixtures de
+robustez de terceros existen para referenciar rutas que no existen. Fixearlos
+destruye el test.
+
+## N+55 · El ledger de SDDK no tiene ningun ciclo; NO esta "bloqueado"
+
+**Fecha:** 2026-09-29 · **Estado:** `OBSERVED`
+
+Al intentar reconciliar el estado antes del cierre de sesion, las tres vias
+soportadas coinciden:
+
+```
+$ sddk cycle status --root .
+error: no active cycle found for project p-c1fac1fea05615c6
+$ sddk cycle next --root .        # identico
+$ sddk cycle verify-references    # identico
+$ sddk cycle narrative --root .
+**Cycle unknown**  Cycle completed.
+```
+
+La adopcion si esta completa:
+
+```
+$ sddk adopt status --root . --scope .
+status: complete
+project_id: p-c1fac1fea05615c6
+workspace_id: w-0826469ea14d6bb8ea5ef01c
+```
+
+### Lo que esto corrige
+
+El resumen de la sesion anterior daba por hecho que existian dos ciclos
+operativos:
+
+- `p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration` en `OPEN/specify`
+- `p-c1fac1fea05615c6/sddk-pack-contract` en `OPEN/explore`
+
+**Ninguno esta en el ledger.** Eso no significa que estuvieran bloqueados
+por el defecto `ENGINE_MISSING_GATE_RECEIPT`: significa que no llegaron a
+persistir. Dos lecturas posibles, ambas relevantes:
+
+1. `sddk-pack-contract` se creo y murio en `OPEN/explore` sin transicion, que
+   es consistente con el defecto de enlace `evaluate-gate`/frame ya
+   observado. El ciclo se creo; la transicion nunca se persistio.
+2. El ciclo del PipelineK nunca llego a crearse, y lo que se(recordo) como
+   `OPEN/specify` fue una intencion, no un estado.
+
+**No se distingue con las vias disponibles sin `sqlite3` instalado.** No se
+afirma ninguna de las dos. Queda como pregunta para la proxima sesion, con
+`sqlite3` disponible o con el soporte de listado que falta en el CLI 2.2.27
+(`sddk cycle list` no existe; los subcomandos reales son start, status,
+transition, evaluate-gate, rebuild, supersede, replan, pause, resume,
+artifacts-dir, narrative, lock, inventory, next, verify-references).
+
+### Consecuencia para reanudar
+
+El trabajo **no** esta bloqueado por un ciclo atascado. Mañana arranca con
+`sddk cycle start` limpio. El defecto de `evaluate-gate`/frame sigue siendo
+real y probably seguira bloqueando la *transicion*, pero eso es un problema
+distinto y posterior a la creacion del ciclo.
+
+## N+63 — La reconciliación que "no tenía nada que reconciliar" sí tenía
+
+Retomada de sesión sobre `ci/pipelinek-kotlin-gate`, HEAD `c97bb44a`, 7 commits
+por delante de `origin/main`. La entrada anterior (N+62) afirmaba que el ciclo
+`ci-pipelinek-kotlin-migration` **no existía** en el ledger. Existe.
+
+### N+63.1 — El ciclo existe y su work item sigue `Active`
+
+Medido, no supuesto:
+
+```
+$ sddk cycle status --cycle p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+cycle_id: p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+status: OPEN
+phase: specify
+path: A-full
+artifacts: 1
+
+$ sddk plan work-item list --cycle-id p-c1fac1fea05615c6/ci-pipelinek-kotlin-migration
+- a3ec0553-39be-4051-8db4-72d2dcbc61a7 [Migrate the merge gate to a PipelineK Kotlin DSL pipeline] (Active)
+```
+
+El `frontier` del ciclo es `phase.specify.complete` (`requires_met: false`,
+falta el artefacto `specification`), más `cycle.block` y `cycle.pause`. La
+rama tiene 7 commits con código real (`merge-gate.pipeline.kts` 256 líneas,
+`product-fast.pipeline.kts` 94, `manifest.toml` 64 validado por `sddk pack
+validate` → `valid: true`) y el ciclo sigue pidiendo su `specification`. El
+ciclo y el trabajo **no** están alineados, que es distinto de "atascado".
+
+N+62 decía que no se distinguía entre "ciclo creado y muerto sin transición" y
+"ciclo nunca creado". Se distinguía, con dos comandos. Corrección registrada, no
+borrada.
+
+### N+63.2 — A-014 tiene dos ciclos gemelos, y el equivocado sigue abierto
+
+`sddk plan roadmap status` falla hoy con `multiple active work items`
+(`8fec95db…`, `a3ec0553…`). N+61 (línea 7712) afirmaba que ese comando ya no
+fallaba. La afirmación era **verdadera cuando se escribió** y es falsa hoy; lo
+que la vuelve engañosa es el motivo que da: no fue el defecto de toolchain de
+N+55 lo que lo destrabó, fue otra cosa.
+
+| Ciclo | Estado | Work item | Rama |
+|---|---|---|---|
+| `a-014-capabilities-json` | `CLOSED` / archive | `82719e1d` **Done** | — |
+| `cp2-a014-capabilities-json` | `RELEASE_PENDING` / release | `8fec95db` **Active** | `fix/a014-capabilities-json-stderr` |
+
+Es la **misma colisión de IDs** que el roadmap ya registró para A-015 (la nota
+"Collision de IDs registrada" al final de la fila PRODUCT-1.0), ahora repetida
+en A-014 y con coste: el gemelo `Active` ata `plan roadmap status`. El ciclo
+`cp2-a014-capabilities-json` tiene 6 artefactos declarados y 22 ficheros
+reales, incluido un `design-superseded-20260929.md` y un
+`tasks-superseded-20260929.md`: hubo un replan y su rastro está.
+
+**El work item `8fec95db` no se puede cerrar.** La tentación era cerrarlo
+porque el test pasa; no corresponde, por dos razones medidas.
+
+### N+63.3 — El artefacto de release afirma cosas que la realidad desmiente
+
+`release-readiness.md` del ciclo declara:
+
+- *"PR #309, mergeable, mergeStateStatus BLOCKED only by pending checks"*
+- *"Local gates (already verified…): a014 12/12"*
+
+Medido contra GitHub y contra el árbol:
+
+```
+$ gh pr view 309 --json state,mergedAt,mergeCommit
+{"state":"OPEN","mergedAt":null,"mergeCommit":null}
+
+$ cargo test -p cognicode-cli --test a014_capabilities_json
+test result: ok. 10 passed; 0 failed     # el artefacto dice 12/12
+
+$ git show origin/main:crates/cognicode-cli/tests/a014_capabilities_json.rs | grep -c '#\[test\]'
+6
+```
+
+El fichero en `origin/main` tiene **6** atributos `#[test]`, no 12. Los 10 que
+corren incluyen 4 de `common::tests::*` (resolución de `binary_path`). El
+PR #309 **nunca se mergeó**: la corrección de stderr que lo motiva vive en
+una rama abierta. Cerrar `8fec95db` habría convertido un bug abierto en un
+`Done`.
+
+### N+63.4 — Por qué el PR #309 no avanza: misma clase de defecto que N+50
+
+`gh pr checks 309`: `merge-gate` **fail** 5m1s, los otros cuatro `pass`.
+Causa en el log del job `109701177354`:
+
+```
+test cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+panicked at crates/cognicode-mcp/tests/prf_cli_04_two_process_uat.rs:101:5:
+falta binario CLI: /home/runner/work/CogniCode/CogniCode/target/release/cognicode
+test result: FAILED. 3 passed; 1 failed
+```
+
+La suite resuelve `cli_bin()` como `common::release_dir().join("cognicode")`
+(línea 22-23) y `mcp_bin()` como `…/cognicode-mcp` (línea 26-27). El job
+`build-binary` de `pr-ci.yml` construye **`cognicode-mcp`** (línea 127) y
+**`cognicode-control-plane`** (línea 141), y sube como artefacto solo esos dos
+(líneas 146-148). **`cognicode`, el CLI, nunca se construye en release.**
+
+Es la **misma clase de defecto** que N+50 (el selector arrastraba suites cuyos
+binarios el gate no construía), con el crate cambiado. Y el commit que la
+introduce lo declara en su propio mensaje: `67fd5f48` *"GREEN: 16 named
+steps in the merge-gate job, one per suite, all verified locally green with
+repo-local fixtures (each suite < 0.1s)"*. La afirmación **es falsa para al
+menos una** de las 16: los 0,01 s del log son porque el test aborta en la
+primera aserción, no porque fuera rápido. `prf_cli_04_two_process_uat` es
+exactamente la que la lista de RED del propio commit nombra.
+
+De los 16 pasos MCP añadidos, 15 pasan; el que necesita binario CLI falla. El
+patrón de N+60 vuelve: **una regla enunciada en prosa y supuesta cierta** —
+esta vez "todas verificadas localmente en verde", y solo la ejecución real la
+delató.
+
+### Consecuencia
+
+- `8fec95db` (A-014) permanece **`Active`**. Correcto: el trabajo está hecho
+  localmente y **no entregado**. El bloqueo es el `merge-gate` de #309.
+- El arreglo de una línea está identificado y verificado por lectura: añadir
+  `cargo build --release --bin cognicode` al job `build-binary` e incluir
+  `target/release/cognicode` en el `upload-artifact`. No se aplica aquí porque
+  la rama activa es otra y mezclarlos sería trabajo fuera del WorkItem.
+- `a3ec0553` (PipelineK) permanece **`Active`**. Su ciclo pide `specification`
+  antes de transicionar; el código ya está escrito en la rama.
+
+**Lección 140**: cerrar un work item porque su test pasa es un cierre
+incorrecto
+cuando la *entrega* no ocurrió. `cargo test` mide el árbol local; el work item
+mide el resultado entregado. Los dos son vero y se contradicen, y por eso hace
+falta un tercero: el estado del PR. N+61 cerró el ciclo gemelo correcto y dejó
+el equivocado abierto, y la afirmación de "ya no falla" no se comprobó contra
+el comando que la sostenía.
+
+## N+64 — El gate ejecutaba una suite cuyo binario nunca construía, y la colisión de A-014 Made visible
+
+Cierre de los dos puntos abiertos de N+63: el `merge-gate` rojo del PR #309 y
+la prevención de la colisión de IDs. Work item `8fec95db` sigue `Active` (el
+trabajo aún no está entregado); lo que cambia aquí es que el bloqueo tiene
+causa, arreglo y gate.
+
+Todo el trabajo de código vive en la rama `fix/a014-capabilities-json-stderr`
+(commit `38f57443`), no en la rama de PipelineK.
+
+### N+64.1 — `merge-gate`: la suite exigía un binario que el job no construía
+
+`prf_cli_04_two_process_uat` es la **única** de las 13 suites MCP que tocan
+binario que resuelve sus dos binarios por `common::release_dir()` y no por
+`binary_path()`. Las otras 12 usan `binary_path()`, que con `CARGO_BIN_EXE`
+resuelve el propio binario de test y por tanto funciona en un runner limpio.
+`prf_cli_04` exige `target/release/cognicode` en disco, y el job `build-binary`
+solo construía `cognicode-mcp` (línea 127) y `cognicode-control-plane`
+(línea 141), subiendo esos dos.
+
+Medido antes de arreglar, por si el arreglo fuera más ancho: 25 suites MCP, 13
+tocan binario, **1** usa `release_dir()`. Dos líneas, no veinte.
+
+**RED reproducido localmente**, moviendo el binario release de esta máquina
+para imitar un runner limpio. Mismo fallo y mismas cifras que el log del CI:
+
+```
+cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+falta binario CLI: /var/home/rubentxu/cargo-targets/release/cognicode
+test result: FAILED. 3 passed; 1 failed; 0 ignored; finished in 0.01s
+```
+
+El `0,01 s` es lo que hacía que esto se leyera como sano. El commit `67fd5f48`
+declaraba en su mensaje *"16 named steps in the merge-gate job, one per suite,
+all verified locally green with repo-local fixtures (each suite < 0.1s)"*. La
+suite no era rápida: estaba abortando. En local pasaba porque un `cognicode`
+de un build anterior seguía en el directorio release.
+
+**GREEN**: `cargo build --release --bin cognicode` en un `CARGO_TARGET_DIR`
+aislado (3 min 25 s, compilado de verdad, no cacheado) y después
+`prf_cli_04_two_process_uat` **4 passed**, incluido
+`cli_and_mcp_processes_agree_on_symbols_and_edges`.
+
+Se renombra también el job. Decía `build cognicode-mcp (release)` mientras su
+comentario de cabecera prometía *"produce el binario para el E2E y para F0.1
+(cognicode CLI)"*. **Un job que dice una cosa y construye otra es exactamente
+como se cuelan estos fallos**, y el nombre era la mitad del defecto.
+
+### N+64.2 — La colisión de A-014, auditable desde el registro
+
+La fila A-014 de `16-ACTION-REGISTER.md` declara ahora los dos ciclos y sus
+dos work items, de modo que la colisión vive en la fuente de verdad y no solo
+en un comando de estado que nadie mira.
+
+Gate nuevo: `crates/cognicode-cli/tests/action_register_identity_contract.rs`,
+5 tests, pineado por nombre en `merge-gate`. Enforces: un action id tiene una
+fila; una fila declara como mucho un ciclo; todo ciclo declarado normaliza al
+action id de su propia fila; ningún work item pertenece a dos acciones.
+
+**Alcance medido, no supuesto.** De las 13 filas `CLOSED` del registro, solo 4
+declaran ciclo y 3 declaran work item (A-003..A-011 y A-015 cierran en prosa
+sin identidad de ledger). "Toda fila cerrada declara ciclo y work item" **no
+es una regla que este repo cumpla**, así que no se aserta: decirlo sería
+justo la ficción que N+63 documenta.
+
+Dos mutaciones vistas caer, cada una por la razón correcta:
+
+| Mutación | Aserción que cae |
+|---|---|
+| A-015 declara `ciclo cp2-a013-lifecycle-gate` | `a_row_declares_at_most_one_cycle_and_it_belongs_to_that_row` |
+| borrar el gemelo `82719e1d…` de la fila A-014 | `the_a014_collision_is_declared_not_hidden` (+1 aserción) |
+
+**La primera mutación necesitó tres arreglos de parser para que mordiera.** El
+gate pasaba una mutación que debía cazar, tres veces:
+
+1. `--no-verify` (que aparece en la prosa de la fila A-014) se parseaba como
+   un segundo ciclo.
+2. `cp2-a014-...` no casa con un patrón `a-0`: la normalización devolvía
+   `None` y la lista de ciclos salía vacía para una fila que sí declara uno.
+3. Los ids cualificados con proyecto (`p-c1fac1fea05615c6/cp2-a013-...`) eran
+   invisibles, porque el parser cortaba en la barra. **Mover un ciclo de fila
+   pasaba en verde.**
+
+Un gate que pasa todo es peor que no tener gate, porque se le confía. Y aquí
+hay un cuarto episodio de la misma familia: la primera aplicación de la
+mutación usó un `python3` con `str.replace` que **no encontró el ancla**,
+imprimió `mutacion aplicada` y no cambió nada. El gate parecía verde porque
+nunca vio la mutación. Se detectó comparando el fichero con su copia: eran
+idénticos. Desde entonces, mutación solo con `edit` o con aserción explícita
+de que el antes y el después difieren.
+
+### N+64.3 — Verificado y no verificado
+
+Verificado en esta sesión:
+
+| Comprobación | Resultado |
+|---|---|
+| `action_register_identity_contract` | **5 passed**, 0 failed |
+| `cli_gate_coverage_contract` (cuenta suites CLI) | **8 passed** (la suite nueva no lo rompe) |
+| `prf_cli_04_two_process_uat` tras build release real | **4 passed** |
+| `cargo fmt --check` | limpio |
+| `cargo clippy -p cognicode-cli --tests` | limpio |
+| RED del binario ausente | reproducido: 3 passed / 1 failed, 0,01 s |
+
+**NO verificado**: PR-CI no había corrido sobre `38f57443` al cerrar esta
+entrada. El gate es de `main` y el resultado final lo confirma el CI, no este
+journal. El work item `8fec95db` permanece `Active`.
+
+**Lección 141**: un gate hay que probarlo con una mutación, y comprobar que la
+mutación **llegó a aplicarse**. Una mutación que no se aplica produce el mismo
+verde que una regla correcta, y es la única forma de que un gate inútil parezca
+provechoso. Tres fallos seguidos en un mismo parser (prosa, formato, prefijo)
+dicen que el gate hay que escribirlo contra casos reales medidos, no contra el
+formato imaginado.
+
+## N+65 — sddk 2.2.33 rompió el acceso al ledger a mitad de la sesión N+64
+
+Hallazgo de tooling, no de producto. Se registra porque la sesión N+64 lo
+descubrió a mitad y cualquier trabajo de ledger que se intente ahora está
+bloqueado por él.
+
+### Síntoma
+
+Todos los comandos que tocan el ledger fallan:
+
+```
+$ sddk ledger verify
+error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases
+
+$ sddk cycle status --cycle p-c1fac1fea05615c6/cp2-a014-capabilities-json
+error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases
+
+$ sddk plan work-item show --work-item-id 8fec95db-...
+error: sddk plan requires an adopted project: LedgerFactory: database error: ...
+```
+
+### Causa: el binario se actualizó solo, en mitad de la sesión
+
+La sesion N+64 empezó con el toolchain en **2.2.27** y lo terminó en
+**2.2.33**:
+
+```
+$ sddk version                       # 09:01, al inicio de la sesión
+binary: 2.2.27
+resolved: /home/rubentxu/.local/share/sddk/framework/2.2.27
+
+$ sddk version                       # 09:18, al cierre
+binary: 2.2.33
+resolved: /home/rubentxu/.local/share/sddk/framework/2.2.33
+
+$ ls -la /home/rubentxu/.local/bin/sddk
+-rwxr-xr-x  36041168  sep 30 09:16  sddk        <-- 09:16, a mitad de sesión
+```
+
+La versión 2.2.27 fue **eliminada**: `framework/2.2.27` ya no existe y el
+symlink `current` apunta a 2.2.33. No hay forma de volver atrás sin
+reinstalar.
+
+El mensaje `Invalid parameter name: cycle_leases, cycle_leases` —el nombre
+duplicado— es la firma de un query builder que registra dos veces el mismo
+parámetro. Es un defecto del binario nuevo.
+
+### Los datos NO están corruptos
+
+Verificado por SQLite en solo lectura, saltándome el CLI roto:
+
+```
+$ python3 -c "import sqlite3; db=sqlite3.connect('file:...?mode=ro',uri=True); ..."
+tablas lease: [('cycle_leases',)]
+eventos en events_v1: 682
+```
+
+La tabla `cycle_leases` **existe** y los **682 eventos** siguen ahí, los mismos
+682 que `sddk ledger verify` accountaba a las 06:35. El fichero
+`ledger.sqlite` no se ha modificado: mtime `sep 30 00:19`, anterior a esta
+sesión. Nada de lo hecho en N+63 ni N+64 tocó el ledger.
+
+### Por qué importa más de lo que parece
+
+`AGENTS.md` y la sesión N+62 dependen del ledger para decidir qué hacer a
+continuar. Con el CLI caído:
+
+- no se puede cerrar un work item,
+- no se puede transicionar un ciclo,
+- no se puede listar el estado real,
+- no se puede responder "¿qué es lo siguiente?".
+
+Ninguna transición de N+63 ni N+64 se hizo, precisamente porque el estado no
+lo permitía. El toolchain caído **impide** el cierre de `8fec95db` aunque el
+`merge-gate` ya no lo bloquee.
+
+### Estado y siguiente acción
+
+- **Bloqueante** para cualquier trabajo de ledger. No es del repo: el repo no
+  contiene el binario `sddk`.
+- **Arreglo**: reportar al mantenedor del framework (bug de 2.2.33,
+  `Invalid parameter name` duplicado en `LedgerFactory`), o fijar 2.2.27
+  mientras tanto si hay forma de reinstalar esa versión.
+- **No se intenta nada**: no se va a parchear el binario ni a reconstruir la
+  DB, que está sana.
+
+**Lección 142**: un toolchain que se actualiza solo a mitad de una sesión
+puede dejar el estado de esa sesión a medias sin que nadie lo decida. El
+pre-flight de la mañana dio `version: 2.2.27` y era verdad; tres horas después
+era mentira, y ningún comando del repo lo delata. Anotar la versión al
+empezar no basta: hay que **reverificar al cerrar** si se va a tocar el
+ledger en ambos momentos.
+
+### N+64.4 — El primer arreglo era correcto y no bastaba (segunda causa)
+
+El commit `38f57443` construía el CLI y lo subía al artefacto. Run
+`36682728317` **confirma que esa parte funcionó**:
+
+| Job / paso | Resultado |
+|---|---|
+| `build release bins (cognicode CLI + MCP + control-plane)` | **success** |
+| └ `Build release binario (cognicode CLI)` | **success** |
+| └ `Upload binarios` | **success** |
+| artefacto `cognicode-bins-release` | 24 980 397 bytes |
+| `merge-gate` | **failure**, mismo mensaje |
+
+La causa real era otra, y salió de leer la estructura de jobs en vez del
+mensaje de fallo:
+
+**Los artefactos no cruzan runners.** `merge-gate` declara
+`needs: [check, build-binary, test-pr, selector]` y `test-pr` sí descarga los
+binarios. Eso es un señuelo: cada job corre en su runner propio.
+`build-binary` subiendo un artefacto y `test-pr` descargando lo traslada entre
+esos dos runners y a nadie más. `merge-gate` esperaba a `build-binary`, lo vio
+en verde, y no recibió ni un fichero.
+
+En el run, `merge-gate` **no tenía paso "Descargar binarios release"**: ese
+paso existe pero bajo el job `test-pr` (línea 261), no bajo `merge-gate`
+(línea 365). Y el paso "Release-profile binaries" que sí está dentro de
+`merge-gate` (línea ~576, `cargo build --release -p cognicode-cli`) va
+**DESPUÉS** de `prf_cli_04_two_process_uat` (línea 514). El orden del fichero,
+no el flag de build, era la segunda mitad del bug.
+
+**Mi hipótesis intermedia fue falsa.** Sospeché que `download-artifact` no
+conserva el bit de ejecución y que el binario llegaba sin permiso. El código
+lo desmiente: el aserto es `cli_bin().exists()` (línea 100-103), y un fichero
+sin permiso `x` **sí** cumple `.exists()`. Lo comprobé leyendo el test en vez
+de creerme el mensaje. En ese runner el fichero no había existido nunca.
+
+**Arreglo** (`514b5441`): `merge-gate` ahora cachea, fija toolchain, descarga
+`cognicode-bins-release` a `target/release`, hace chmod de los tres binarios y
+verifica que cada uno está **presente y ejecutable** antes de cualquier suite.
+El paso de verificación distingue `binario ausente` de `binario no
+ejecutable`: los dos producían la misma salida, y esa ambigüedad es lo que
+costó esta ronda.
+
+**Mi propio error de proceso**: apliqué la primera versión de este arreglo
+sobre `.github/workflows/pr-ci.yml` de la rama de PipelineK, que ni siquiera
+tiene el build del CLI. Lo detecté con `grep -c` sobre cada rama, lo revertí
+con `git checkout`, y creé un worktree desde la rama del PR antes de reintentar.
+
+Verificado: `yaml.safe_load` parsea el workflow, 5 jobs intactos, y los pasos
+nuevos son los seis primeros de `merge-gate`, por delante de toda suite.
+
+**NO verificado**: PR-CI no ha corrido sobre `514b5441`. Dos rondas de
+evidencia local bastaron para encontrar la primera causa y estaban
+equivocadas en la segunda, así que el CI es la única autoridad y no se declara
+verde.
+
+**Lección 143**: `needs:` significa "espera a que termine", **no** "hereda sus
+artefactos". Un artefacto solo existe donde su runner lo descarga
+explícitamente. Y un mensaje de fallo que no distingue "no existe" de "no
+ejecutable" convierte un diagnóstico de dos minutos en dos rondas de CI de
+18 minutos: la ambigüedad del mensaje es el coste real.
+
+### N+65.2 — Diagnóstico del defecto de SDDK 2.2.33 (no es corrupción de datos)
+
+`error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases`
+en todos los comandos del ledger. **La base de datos está intacta.**
+
+| Comprobación | Resultado |
+|---|---|
+| Tabla `cycle_leases` | existe, 22 filas |
+| Columnas | `cycle_id, owner, acquired_at_ms, expires_at_ms, fencing_token` |
+| Eventos totales | **682** (los mismos que con 2.2.27) |
+| Tablas | 25, todas presentes |
+| Query exacta del binario, ejecutada con `sqlite3` | **OK, 17 filas** |
+
+La query que 2.2.33 compila es esta (extraída del binario con `strings`):
+
+```sql
+SELECT cl.cycle_id, cl.owner
+FROM cycle_leases cl
+INNER JOIN cycles c ON cl.cycle_id = c.cycle_id
+WHERE c.project_id = ?1 AND cl.expires_at_ms > ?2
+ORDER BY cl.acquired_at_ms DESC
+```
+
+Declarada con `?1` y `?2`, y **funciona** contra la misma base de datos con el
+driver de Python. Por tanto el defecto está en el **binding de rusqlite del
+binario 2.2.33**, no en el SQL, ni en el esquema, ni en los datos: el binario
+pasa el nombre `cycle_leases` dos veces donde la librería espera un índice.
+
+**No es reparable desde este repo.** El binario es
+`~/.local/bin/sddk` (36 MB, 2026-09-30 09:16), y el framework `2.2.27` que
+funcionaba **ya no existe en disco**: `framework/` solo contiene `2.2.33`, así
+que tampoco hay downgrade posible. No se parchea el binario a ciegas.
+
+**Consecuencia**: el work item `8fec95db` (A-014) queda inaccesible por CLI
+mientras dure este defecto. Sigue `Active` y correctamente sin cerrar: el PR
+#309 aún no está integrado. Cerrarlo exigiría inventar el estado, que es
+precisamente lo que el contrato prohíbe.
+
+**Acción requerida del maintainer del framework**: reportar
+`Invalid parameter name: cycle_leases, cycle_leases` en 2.2.33 con la evidencia
+de que la misma query con `?1`/`?2` funciona vía `sqlite3` sobre el mismo
+fichero. No es asunto de CogniCode.
+
+### N+64.5 — El gate está VERDE con evidencia observada
+
+Run **36684133482** sobre `514b5441`, conclusion **`success`**:
+
+| Paso (todos en `merge-gate`) | Resultado |
+|---|---|
+| `Descargar binarios release (merge-gate)` | **success** |
+| `Restaurar permisos de ejecución (merge-gate)` | **success** |
+| `Verificar binarios descargados (merge-gate)` | **success** |
+| `PRF-CLI-04 CLI↔MCP equivalence UAT (black-box, two processes)` | **success** |
+| `Release-profile binaries for the release-flow UATs` | **success** |
+
+Salida literal del paso de verificación, no una inferencia:
+
+```text
+ok: cognicode-mcp
+ok: cognicode-control-plane
+ok: cognicode
+```
+
+`PRF-CLI-04` es exactamente la suite que fallaba con "falta binario CLI"
+desde antes de `38f57443`. Pasa. Los tres binarios están presentes y
+ejecutables dentro del runner de `merge-gate`.
+
+Estado del PR #309 tras el gate: `state=OPEN`, `mergeable=MERGEABLE`,
+`mergeStateStatus=CLEAN`, `head=514b5441`.
+
+**Lo que NO se afirma**: el work item `8fec95db` sigue `Active`. El PR está
+listo para merge pero **no está mergeado**; mergear es una acción del
+maintainer, y además el CLI de SDDK 2.2.33 no permite registrar la transición
+(N+65.2). Cerrar A-014 aquí sería mentir sobre el estado. Lo correcto es
+`RELEASE_PENDING` sostenido por evidencia, no un `CLOSED` fabricado.
+
+### N+64.6 — Re-verificación de la medida preventiva (y una corrección)
+
+Revisado lo afirmado en N+64 tras el run verde. Una afirmación era más fuerte
+de lo que la evidencia sostenía, y otra se sostenía pero por un motivo que no
+había comprobado.
+
+**Corrección**: dije que el gate de identidad de acciones estaba "pineado en
+`merge-gate`". Es cierto, pero mi filtro de búsqueda buscaba "identidad de
+acciones" y el paso se llama en inglés. El nombre real es
+`Action register identity contract (A-014 collision must stay visible)`. El
+paso existe, se ejecutó y pasó:
+
+| Evidencia | Resultado |
+|---|---|
+| Paso en el run 36684133482 | `Action register identity contract (...)` **success** |
+| Comando ejecutado por el paso | `cargo test -p cognicode-cli --test action_register_identity_contract --quiet` |
+| Detección de paths por CR-08 | `crates/cognicode-cli/tests/action_register_identity_contract.rs` **[added]** |
+| Local | `5 passed; 0 failed` |
+
+**Comprobación que faltaba**: la medida preventiva vive **solo en la rama del
+PR**, no en la rama principal. En `ci/pipelinek-kotlin-gate` el fichero
+`crates/cognicode-cli/tests/action_register_identity_contract.rs` no existe y
+`16-ACTION-REGISTER.md` tampoco está en `docs/roadmap/` (la ruta real es
+`docs/cognicode-community-productization/`). Es lo correcto: el gate no puede
+proteger un registro que solo existe en la rama del PR. Se vuelve exigible en
+cuanto el PR entre.
+
+**Contenido de la medida preventiva** (verificado leyendo la fila A-014, no
+suponiéndolo): la fila declara los **dos** ciclos (`cp2-a014-capabilities-json`
+y `a-014-capabilities-json`), los **dos** work items (`8fec95db` y
+`82719e1d-46aa-4902-8b86-2bc3291b85bf`) y la palabra "colisión". Los cinco
+tests del gate comprueban exactamente esas propiedades:
+
+```text
+the_register_is_readable_and_has_action_rows
+a_row_declares_at_most_one_cycle_and_it_belongs_to_that_row
+no_work_item_is_claimed_by_two_actions
+no_two_cycles_normalize_to_the_same_action_id
+the_a014_collision_is_declared_not_hidden
+```
+
+**Punto que sigue sin resolver y no se maquilla**: la fila A-014 empieza
+diciendo `CLOSED 2026-09-28`, mientras el work item `8fec95db` sigue `Active`
+y el PR no está mergeado. La fila es más antigua que el estado real. El gate
+**no** comprueba ese campo, y con razón: no tiene acceso al ledger. Queda
+discrepancia documental conocida, no un defecto del gate.
+
+### N+65.3 — El defecto de 2.2.33 TIENE salida: el binario bueno sigue en disco
+
+N+65.2cerró con "no reparable desde este repo". **Eso era demasiado pesimista
+y, peor, estaba incompleto.** El receipt de instalación delata la deriva:
+
+```json
+// ~/.local/share/sddk/sddk-install.json
+{ "version": "2.2.27",
+  "binary_sha256": "sha256:a3b76113bea07a8903a5969cb51e6b038ee70317e71654976265a1c86bca2cbd",
+  "binary_path": "bin/sddk" }
+```
+
+Y en disco hay **dos binarios distintos**:
+
+| Ruta | `sha256` | Versión | ¿Abre el ledger? |
+|---|---|---|---|
+| `~/.local/bin/sddk` (en `$PATH`) | `42b86e6d…` | **2.2.33** | **NO** (`Invalid parameter name`) |
+| `~/.local/share/sddk/bin/sddk` | `a3b76113…` = receipt | **2.2.27** | **SÍ** |
+
+Prueba con el binario del prefix, el que el receipt declara:
+
+```text
+$ ~/.local/share/sddk/bin/sddk ledger verify
+event_count: 682
+last_hash: sha256:25e3eeaad092e16edd8a84486e436477bfcdccf83ccc31bec013cf8cae2ef0d5
+```
+
+Los 682 eventos, la misma cadena de hashes. La instalación de 2.2.33 sobrescribió
+`~/.local/bin/sddk` **sin actualizar el receipt**: por eso `2.2.33` figuraba
+como `current` sin que nada registrara que el bundle bueno seguía disponible.
+
+**Consecuencia práctica**: el blocker de N+65.2 no es "el toolchain está roto
+y no hay salida". Es "hay un binario roto delante del bueno". Mientras no se
+haga nada, el ledger es accesible con:
+
+```bash
+~/.local/share/sddk/bin/sddk <subcomando>
+```
+
+**NO se cambió nada.** No se replaced el symlink, no se desinstaló 2.2.33, no
+se editó el receipt. Cambiar qué `sddk` resuelve el shell afecta a todas las
+sesiones y a la tooling del usuario: es decisión suya, y el arreglo upstream de
+2.2.33 sigue siendo lo que de verdad resuelve esto.
+
+**Y el diagnóstico de N+63.2 resultaba estar incompleto.** Con el binario
+bueno, `sddk plan roadmap status` sí responde, y el conflicto real es:
+
+```text
+error: multiple active work items:
+  ["8fec95db-b3ae-4f96-bd88-ddeca3c78ad2",
+   "a3ec0553-39be-4051-8db4-72d2dcbc61a7"]
+```
+
+| Work item | Ciclo | Estado work item | Estado ciclo |
+|---|---|---|---|
+| `8fec95db` | `cp2-a014-capabilities-json` | `active` | `RELEASE_PENDING` / `release` |
+| `a3ec0553` | **`ci-pipelinek-kotlin-migration`** | `active` | `OPEN` / `specify` |
+
+N+63.2 señaló el gemelo `82719e1d` (`a-014-capabilities-json`, `done`) como
+causa del `multiple active work items`. **Ese diagnóstico era incorrecto**: el
+work item en `done` no cuenta. El que bloquea es `a3ec0553`, que pertenece al
+ciclo de **PipelineK**, es decir trabajo en curso del usuario.
+
+**A-014 no está bloqueado por su propia colisión.** Está bloqueado porque
+comparte el estado de proyecto con un ciclo ajeno y abierto, lo cual es
+correcto: son dos líneas de trabajo simultáneas. La colisión de identidad que
+sí era un defecto (dos ciclos para la misma acción A-014) queda registrada y
+gatada, pero **no es la causa de este error**, y el gate de identidad no podía
+detectar esta otra: aquellos dos work items son activos legítimamente y en
+ciclos distintos.
+
+**Lección 144**: un diagnóstico de "sin salida" merece una comprobación más. Se
+cerró N+65.2 leyendo el receipt y la ruta del binario, y la respuesta estaba en
+el segundo fichero del `ls`. Además, "sin salida desde este repo" no equivale a
+"sin salida": aquí la salida era local y estaba verificada con `ledger verify`.
+
+### N+64.7 — QW-09: el guard que convierte el diagnóstico en prevention
+
+N+64.5 cerró con el gate verde. El defecto que lo causó, sin embargo, seguía
+existiendo como clase: **cualquier job que use `target/release/*` sin
+obtenerlo él mismo rompe el merge-gate, y el mensaje no dice por qué.** Pasó
+dos rounds de 19 min antes de entenderse.
+
+`scripts/ci/check-release-artifact-reachability.sh` (nuevo) comprueba por job
+que todo step que necesita un binario release —suite black-box, `PRF-CLI-04`,
+`Release-profile binaries`, o ejecución directa de `./target/release/`— esté
+precedido por un `download-artifact` o por un `cargo build --release`.
+
+**Un límite honesto**: un guard estático no puede probar que un runner tenga
+el fichero. Lo que sí puede, y es exactamente el defecto, es pinar que el job
+está cableado para obtenerlo antes de usarlo.
+
+Distingue las dos formas de fallo porque tienen arreglos distintos:
+
+| Caso | Síntoma | Arreglo |
+|---|---|---|
+| **AUSENTE** | el job nunca lo obtiene | añadir la descarga |
+| **DEMASIADO TARDE** | lo obtiene, pero tras el primer uso | moverlo |
+
+El segundo es el caso de `Release-profile binaries` (línea ~576) frente a
+`prf_cli_04` (línea 514). Los steps se ejecutan en orden de fichero, y el
+mensaje nombra la línea de cada uno.
+
+El primer caso RED **no es una construcción sintética**: es el
+`git show 38f57443:.github/workflows/pr-ci.yml` real, el fichero que de verdad
+tumbó el gate. El guard se demuestra contra historia.
+
+**Test contractual** `crates/cognicode-cli/tests/qw09_release_artifact_reachability.rs`,
+8 tests. Planta los dos casos RED y comprueba que el mensaje diagnostica el
+problema correcto, porque un mensaje que no distingue "no lo tiene" de "lo
+tiene tarde" es exactamente lo que manda al arreglo equivocado.
+
+**Mutaciones vistas caer** sobre el guard:
+
+| Mutación | Resultado |
+|---|---|
+| ignorar el orden (comparar el job entero) | cae **solo** el caso ORDEN |
+| eximir `merge-gate` | caen **los dos** casos RED |
+
+Restaurado: `8 passed; 0 failed`. `cargo fmt --check` y `cargo clippy
+--tests` limpios, `cli_gate_coverage_contract` 8/8.
+
+**Tres errores míos durante la construcción del guard**, todos de los que el
+test contractual me salvó:
+
+1. El parser leía solo la línea `name:` del step, pero la acción vive en la
+   línea `uses:` siguiente. Falló por un **falso positivo** (señaló que faltaba
+   la descarga que yo acababa de añadir). Un guard que produce falsos positivos
+   en el árbol limpio se desactiva en dos semanas.
+2. `provides_bins()` desempaquetaba tuplas de una lista de labels. Excepción en
+   tiempo de ejecución, no un fallo de aserción.
+3. El self-pin leía el workflow del commit `514b5441`, que es anterior a mi
+   propio pin: insatisfacible en el commit que lo introduce. Ahora lee el árbol
+   de trabajo, igual que `cli_gate_coverage_contract`.
+
+**Lección 145**: un guard preventivo se valida con el fichero roto real y con
+mutaciones, no con "pasa en verde". Y el self-pin de algo nuevo tiene que
+leer el árbol de trabajo, porque el pin y lo pineado llegan en el mismo
+commit: pinear contra historia hace el test insatisfacible por construcción.
+
+**Lección 146**: un mensaje de CI que no distingue dos causas distintas es un
+defecto por sí mismo, aunque el fallo sea correcto. Casi triplica el coste de
+cada incidente.
+
+**Nota de errata**: el mensaje del commit `71b7919f` dice "Tres errores mios
+constructing el guard", donde debía decir "al construir el guard". El error
+queda solo en el mensaje ya publicado; el texto de esta entrada es el
+correcto. No se reescribe historia por una errata ortográfica: `git rebase` de
+un commit ya pusheado no compra nada y cuesta un SHA nuevo que luego hay que
+rastrear.
+
+### N+64.8 — El guard se rompió en CI, no en local (y por qué)
+
+Commit `528202ba` añadió QW-09 con 8 tests verdes en local. Run `36687674150`
+lo tiró:
+
+```text
+could not read pr-ci.yml at 38f57443: fatal: invalid object name '38f57443'
+could not read pr-ci.yml at 514b5441: fatal: invalid object name '514b5441'
+test result: FAILED. 6 passed; 2 failed
+```
+
+**El guard sí pasó.** El paso del script dio verde. Falló el test contractual, y
+no por el guard: porque usaba `git show <rev>:.github/workflows/pr-ci.yml` para
+obtener los dos estados reales del workflow.
+
+`actions/checkout` hace fetch con una profundidad que no incluye esas
+revisiones. `git show 38f57443` resuelve en una máquina con historia completa
+y revienta en el runner. **Ocho pasos verdes en local, dos rojos en CI: el test
+se publicó roto y solo el CI podía decirlo.**
+
+**Arreglo** (`3b6c2f9d`): los dos estados del workflow son ahora ficheros
+versionados en `crates/cognicode-cli/tests/fixtures/`:
+
+| Fixture | Qué es |
+|---|---|
+| `pr-ci.merge-gate-has-no-download.yml` | el `pr-ci.yml` real en `38f57443` (661 líneas) |
+| `pr-ci.download-in-merge-gate.yml` | el `pr-ci.yml` real en `514b5441` (721 líneas) |
+
+Siguen siendo los ficheros **reales**, no construcciones sintéticas: el guard
+se demuestra contra historia, no contra un fixture diseñado para gustarle.
+
+**Un fixture puede pudrirse**, y un fixture podrido que sigue verde es peor que
+no tener fixture. Así que está pineado por
+`the_fixtures_still_represent_the_shapes_they_name`: el primero no debe tener
+el paso de descarga y sí debe tener suites black-box; el segundo sí debe
+tener la descarga. Una edición futura de `pr-ci.yml` ya no puede dejar los dos
+casos RED probando otra cosa en silencio.
+
+Verificado: `9 passed; 0 failed`, `cargo fmt --check` limpio,
+`cargo clippy --tests` con **0 warnings**. El test ya no contiene ningún
+`Command::new("git")`; las dos menciones que quedan de `git show` están en el
+comentario que explica por qué no se usa.
+
+**Por qué la iteración local no lo detectó**: un repo local tiene historia
+completa. El contrato de un test que usa `git show` incluye un supuesto sobre
+el entorno que ningún `cargo test` local puede falsificar. Los tests que leen
+historia deben trayerse la historia como fichero, o declararse
+`#[ignore]` en CI, que es peor: un test ignorado en el gate no protege nada.
+
+**Lección 147**: un test que depende de la profundidad del checkout es un test
+que solo se ejecuta en la máquina de quien lo escribió. Los fixtures que
+dependen de historia van versionados como ficheros, y se pinean para que no
+pudran quedar obsoletos sin que nadie lo note.
+
+### N+64.9 — El guard cubría 1 de 3 jobs y decía "todos"
+
+Commit `91b9b22f`. Revisé el guard por una pregunta incómoda: "¿y si lo que
+afirma es lo que realmente cubre?". No lo era.
+
+`needs_bins` casaba con la palabra `black-box` y con `./target/release/`, y
+el parser solo leía las líneas `name:` y `uses:` de cada step. Resultado, sobre
+el workflow real:
+
+```text
+merge-gate: 23 pasos que necesitan binarios
+```
+
+**Un solo job.** `test-pr` descarga los mismos tres binarios y les hace chmod
+dentro de un bloque `run: |`, y el cuerpo del bloque nunca se leía: el job que
+ha estado bien desde siempre era el job que nadie comprobaba. `build-binary`,
+que produce los artefactos, tampoco estaba en alcance.
+
+**Un guard que cubre un job de tres mientras imprime un "every job" con
+confianza es peor que uno que no cubre ninguno**, porque parece que funciona.
+
+Dos arreglos:
+
+| # | Cambio | Efecto |
+|---|---|---|
+| 1 | el parser pliega el cuerpo de un bloque `run:` en la etiqueta del step, y `needs_bins` casa cualquier mención de `target/release/` | `JOBS_IN_SCOPE: build-binary,merge-gate,test-pr` |
+| 2 | el guard emite `JOBS_IN_SCOPE:` en ambas salidas | el test lee la cobertura real |
+
+**El segundo arreglo existe porque el primero no bastaba.** La primera versión
+de `qw09_guard_examines_every_job_that_touches_release_binaries`
+**reimplementaba el parser** dentro del test. Lo demostré por mutación:
+quitarle al guard el parseo de bloques `run:` dejaba el test en verde, porque
+la copia del parser del test era un programa distinto del que se envía. **Dos
+implementaciones de una regla es una de más.** La misma mutación ahora lo
+tumba, con el alcance exacto:
+
+```text
+job 'test-pr' is out of the guard's scope (["merge-gate"])
+```
+
+Eso es el mismo defecto que este guard existe para prevenir, un nivel más
+arriba: **una comprobación que reporta éxito sin comprobar.** El que escribe
+el test tiene que poder leer lo que el guard realmente hizo, no recalcularlo.
+
+Los dos casos RED siguen saltando, y el caso AUSENTE ahora nombra además el
+step tardío que se le escapaba (línea 576, `Release-profile binaries`).
+
+Verificado: `10 passed; 0 failed`, `cargo fmt --check` limpio,
+`cargo clippy --tests` con 0 warnings.
+
+**Cómo se encontró**: no fue un test rojo, fue una pregunta. Ningún test del
+guard fallaba porque todos eran correctos sobre lo que el guard afirmaba
+examinar. La Coverage pregunta es distinta y es la que faltaba: *¿quién decide
+qué está en alcance, y está ese "quién" leyendo lo mismo que el guard?*
+
+**Lección 148**: un guard que imprime su propio alcance es más valuable que
+uno que solo imprime veredicto, porque su alcance se puede asertar. Y cuando
+el test del guard reimplementa la regla del guard, el test no prueba el guard:
+prueba el test, y la mutación lo demuestra en treinta segundos.
+
+### N+65.4 — Corrección de N+65.3: no hubo sobrescritura, hay dos copias
+
+N+65.3 escribió que la instalación de 2.2.33 "sobrescribió `~/.local/bin/sddk`
+sin actualizar el receipt". **La palabra "sobrescribió" implica reemplazo, y no
+lo hubo.** El dato correcto:
+
+```text
+~/.local/bin/sddk              36041168 bytes  2.2.33  ELF regular, NO symlink
+~/.local/share/sddk/bin/sddk   35364888 bytes  2.2.27  ELF regular, NO symlink
+```
+
+Dos **copias independientes**, no un enlace. `readlink -f` del primero devuelve
+él mismo. Ninguna de las dos se pisa: conviven. Eso cambia el arreglo, porque un
+symlink se arreglaria reapuntando, y una copia no.
+
+**Consecuencia**: `sddk dev use --version 2.2.27` probablemente **no** es el
+camino. Ese subcomando selecciona el **bundle** de assets, y los bundles
+siguientes son coherentes con esto:
+
+```text
+$ ~/.local/share/sddk/bin/sddk dev use --show
+version: 2.2.33      <- el bundle activo
+current: 2.2.33
+```
+
+O sea: el binario 2.2.27 está corriendo **con el bundle 2.2.33**, y funciona
+(abre el ledger, 682 eventos). El bundle 2.2.33 en disco son solo assets —
+`agents/`, `assets/`, `prompts/`, `skills/`, `BUNDLE.toml`,
+`MANIFEST.sha256` — **sin binario propio**.
+
+**Por tanto el diagnóstico se afina**: el defecto está en el **binario**
+`~/.local/bin/sddk` (2.2.33), no en el bundle ni en la base de datos. Dos
+binarios con el mismo bundle activo se comportan distinto, así que el problema
+es del binario y el bundle no participa. El arreglo real sigue siendo upstream
+sobre `list_active_cycle_leases_for_project`, y **no hay un comando local que
+repare el 2.2.33 sin reinstalarlo o volver a 2.2.27**. Reinstalar 2.2.27 sí es
+una acción real disponible; el binario del prefix ya es exactamente eso.
+
+**Lección 149**: "sobrescribir" y "tener dos copias" son hechos distintos con
+arreglos distintos, y la diferencia se ve en cinco segundos con `ls -la` y
+`readlink -f`. Escribir la conclusión antes de mirar la forma del fichero es
+inventar la causa para que encaje con el síntoma.
+
+### N+65.5 — Reconciliación del ROADMAP: dos afirmaciones aging
+
+Al auditar el ROADMAP antes del merge encontré dos afirmaciones que la
+evidencia de hoy ya no sostiene. Ambas son mías o de entradas previas, y ambas
+decían algo más fuerte de lo que se puede defender:
+
+**1. "PR #309 sigue OPEN y `merge-gate` falla por una causa identificada
+(N+63.4)".** El PR sigue OPEN, eso se sostiene. Lo de que `merge-gate` falla
+**ya era falso**: lleva VERDE desde N+64.5 (run `36690728299` sobre
+`91b9b22f`). Un lector que llegue a esa línea después de mergear concluyo que
+el gate está roto, cuando el gate lleva cuatro commits arreglándolo. Corregido
+con el run a la vista.
+
+**2. "`sddk plan roadmap status` ya no falla con `multiple active work
+items`" (N+61).** Hoy sí falla. Y no es el mismo conflicto que N+61 cerró: los
+dos activos reales son `8fec95db` y `a3ec0553` (`ci-pipelinek-kotlin-
+migration`, `OPEN`), este último trabajo en curso del operador. El gemelo
+`82719e1d` está en `done` y nunca contó, como ya corrigió N+63.2.
+
+**El patrón de fondo de las dos entradas** es el de N+60 y el que el propio
+ROADMAP ya describe sobre sí mismo: *reglas enunciadas en prosa y supuestas
+ciertas*. Una fila de tabla escrita en pasado queda convertida en presente, y
+`docs/roadmap/ROADMAP.md` es un documento que la gente cita. Un diario puede
+contar lo que pasó; un roadmap afirma lo que es, y por eso los dos tienen
+presupuesto distinto para la obsolescencia.
+
+**Lo que no hago** es reescribir N+61 ni N+63.4. El diario es append-only por
+contrato, y la corrección va en la fila que afirma, no reescribiendo la que
+se equivocó. N+65.3 → N+65.4 y ahora N+65.5 son la tercera y cuarta vez que
+esta sesión que un "diagnóstico cerrado" era el punto de partida y no el final.
+
+**Lección 150**: un roadmap afirma lo que ES. Cuando la realidad cambia, lo
+correcto es que la fila que afirma sea corregida, no que el diario acumule la
+corrección. Y una reconciliación previa a un merge es trabajo real, no
+documentación cosmetics: si el PR entra con el roadmap mintiendo sobre su
+propio gate, el siguiente que lo lea pierde una hora.
+
+### N+65.6 — El contrato de identidad A-014, verificado por mutación
+
+N+64.6 pineó `action_register_identity_contract` en `merge-gate` y
+reportó "5 tests verdes". Eso no es evidencia de nada: un contrato que nunca
+ha visto fallar es una descripción con `assert`. Los 5 verdes se bungaon en una
+sesión donde el propio código era la prueba.
+
+Seis mutaciones contra el registro real. Las seis mueren:
+
+| # | mutación | resultado |
+|---|---|---|
+| M1 | segundo ciclo `a-014-capabilities-json` en la fila A-013 | **2 tests FAILED** (`no_two_cycles_normalize_to_the_same_action_id`, `a_row_declares_at_most_one_cycle...`) |
+| M2 | gemelos en forma project-qualified `p-.../a-014-...` | **2 FAILED** |
+| M3 | quitar los backticks de `82719e1d` | 5 passed — **falso positivo mío, ver abajo** |
+| M4 | quitar la declaración del ciclo vivo `cp2-a014-...` | 1 FAILED |
+| M5 | **borrar el gemelo entero** de la fila A-014 | **2 FAILED** |
+| M6 | `8fec95db` reclamado también por A-013 | 1 FAILED |
+| M7 | `WorkItem \`TBD\`` (placeholder) | 1 FAILED |
+
+**M5 es la que importa**: es exactamente el modo de fallo de N+63.2. Si
+alguien "limpia" la fila de A-014 quitando la nota del gemelo porque parece
+prosa redundante, el contrato grita. Eso es lo que un gate debe hacer.
+
+**M3 fue un falso positivo mío y casi lo reporto como punto ciego real.** Al
+ver que M3 pasaba verde, mi primera lectura fue "el extractor no ve la forma sin
+backticks, hay un agujero". Antes de escribirlo, extraje el parser a un
+binario aislado y le pasé la fila real: devuelve
+`["8fec95db", "82719e1d-46aa-4902-8b86-2bc3291b85bf"]`. El extractor funciona.
+
+Lo que M3 medía era otra cosa: **los backticks son la única señal** de que el
+gemelo existe, y sin ellos la identidad se disuelve en prosa. El contrato no
+tiene un agujero; mi mutación cambió el objeto. M5, que borra el gemelo en
+lugar de destaparlo, sí muere, y por dos tests.
+
+**Lección 151**: un test que pasa bajo una mutación no es un punto ciego del
+código; puede ser una mutación mal formulada. Antes de reportar un defecto del
+sistema, hay que responder "¿el sistema probaba algo que debía ver, o mi
+mutación destruyó la señal?". El parser aislado de 20 líneas respondió en un
+segundo lo que dos lecturas del contrato no contestaban.
+
+Y el corolario: la lección de N+60 sigue valiendo. **Cinco de las reglas
+verificadas esta sesión eran falsas**, y ninguna se delató sola. Todas se
+delataron con la medición que las contradecía.
+
+## N+66 — `merge-gate.pipeline.kts`: allowlist de clippy muerto, restaurado el gate pelado
+
+Sesión 2026-09-30, turno corto. Identificado por review de la skill
+`cognicode-sddk` (operador); confirmado en este turno. **CI/pipelinek-kotlin-gate
+rama activa; HEAD previo `b3716640`; commit nuevo `f1f0f0c6`.**
+
+### N+66.1 — El defecto, sin maquillar
+
+El stage `clippy-baseline` en `merge-gate.pipeline.kts:72-89` declaraba "a
+documented baseline of 42 pre-existing errors in rig/tools.rs". El baseline
+no existe. Sobre el árbol al inicio del turno, el comando pelado de
+`pr-ci.yml:78` retorna 0:
+
+```text
+$ cargo clippy --workspace --all-targets -- -D warnings
+warning: profiles for the non root package will be ignored (cosmético: cognicode-graph-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s
+```
+
+Cero errores. La allowlist que filtraba `crates/cognicode-core/src/interface/rig/tools.rs`
+era un **ghost filter**: no protegía errores porque no había errores que
+filtrar. Y mientras filtraba nada, relajaba el gate: `pr-ci.yml:78` falla un
+PR al primer lint anywhere; el `.kts` solo fallaba fuera de `rig/tools.rs`.
+La puerta giratoria ya estaba abierta: el pipeline local permitía más que CI.
+Calza con la regla 8 de la skill (`cognicode-sddk`, "no rebajar gates para
+obtener verde"): la corrección honesta es borrar la allowlist y restaurar la
+aserción exacta, no ampliar la excepción.
+
+### N+66.2 — La edición mínima
+
+`merge-gate.pipeline.kts` (1 archivo, +7/-18):
+
+- Stage renombrado `clippy-baseline` → `clippy`.
+- Cuerpo reducido a la aserción exacta de `pr-ci.yml:78`:
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Comentario histórico preservado (4 líneas) explicando el porqué del cambio
+  para que un lector futuro no reintroduzca la allowlist pensando que es una
+  optimización.
+
+Commit `f1f0f0c6a2e583642f75dda8b16639ef456def35` —
+`fix(ci): remove dead clippy allowlist from merge-gate.pipeline.kts`.
+
+### N+66.3 — Verificación
+
+| gate | comando | resultado |
+|---|---|---|
+| Validación sintaxis | `pipelinek validate merge-gate.pipeline.kts` | VALIDATION SUCCESSFUL (event id `05b5f67d-2e6d-4647-adac-aa9c3e3d096e`) |
+| Aserción del clippy bare | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| Paridad `pr-ci.yml` ↔ `.kts` (core) | `cargo test -p cognicode-core --test core_gate_coverage_contract` | 10/10 PASSED |
+| PRF-CI-01 / PRF-CI-07 | `cargo test -p cognicode-cli --test prf_ci_01_07_clippy_gate_uat` | 3/3 PASSED (+1 `#[ignore]`) |
+
+Ninguno de los contratos rota con el cambio. `core_gate_coverage_contract`
+verifica set equality de `cargo test -p cognicode-core` entre `pr-ci.yml` y
+el `.kts`; mi edición no toca ese universo. El test `prf_ci_01_07` mantiene
+su forma (verifica que `ci.yml` declara el gate pelado y que clippy rechaza
+defectos reales).
+
+### N+66.4 — Lo que NO está cerrado
+
+1. **`product-fast.pipeline.kts:58-74`** lleva la misma allowlist pero con
+   `--all-features`. Mismo defecto, mismo arreglo. **Fuera de scope** de
+   este commit (regla de no scope-creep); registrado para decisión del
+   operador. La pregunta abierta es si `product-fast` debe seguir corriendo
+   `--all-features` (algunos crates solo compilan con feature flags) o
+   alinearse al comando pelado de `pr-ci.yml:78` — política, no fix monótono.
+2. **Test de paridad clippy entre `.kts` y `pr-ci.yml`**: no existe.
+   `core_gate_coverage_contract` solo pinea `cargo test -p cognicode-core`.
+   Un test análogo (`merge_gate_kts_runs_bare_clippy_d_warnings`) que lea
+   ambos archivos y falle si el `.kts` deja de ejecutar el comando pelado
+   sería bajo costo / alta leverage. Follow-up.
+3. **Run "completo" del merge-gate** no se ejecutó localmente en su totalidad.
+   El presupuesto del turno no alcanzaba; los 4 gates verificados son los
+   que `core_gate_coverage_contract` y `prf_ci_01_07_clippy_gate_uat`
+   exigen para esta unidad.
+
+### N+66.5 — Top 3 del operador, status tras este turno
+
+| # | corrección | estado |
+|---|---|---|
+| 1 | Borrar allowlist de clippy (`.kts:72-89`), restaurar aserción exacta de `pr-ci.yml:78` | **CLOSED LOCALMENTE** — commit `f1f0f0c6`, sin push. |
+| 2 | Identidad de PipelineK: 0.43.0 pin vs 0.43.0-rc1 runtime | **PENDIENTE** — fuera de este repo, requiere reporte a `Rubentxu/pipeline-kotlin`. |
+| 3 | Aislar interferencia de los tests rotos en `cargo test --workspace --lib` | **PENDIENTE** — budget largo, runs por módulo. Sospechoso `file_operations.rs:2116` (escaneo de código fuente) más `commands.rs:470` (`env::set_var` no detrás de `cfg(feature)`). |
+
+**Siguiente WU:** decisión del operador entre (a) push del PR con
+`f1f0f0c6` para merge en `ci/pipelinek-kotlin-gate`, (b) extender la misma
+limpieza a `product-fast.pipeline.kts` antes del merge, o (c) añadir el
+test de paridad clippy como endurecimiento del fix. Mi recomendación honesta es (a)
+primero — es el cambio con menor superficie y máxima leverage — y dejar
+(b)/(c) para turnos dedicados.
+
+**Lección 152**: un gate que filtra por nombre de archivo y dice "todo verde
+dentro del baseline" tiene que poder contrastarse con la realidad del
+comando que dice emular. Si el comando del workflow dice 0 y el filtro dice
+42, el filtro está mintiendo. La confianza del filtro no se hereda del
+hecho de que el comando "funciona" — se hereda del hecho de que el comando
+y el filtro dicen lo mismo. Cuando divergen, el filtro es el bug, no el
+comando.

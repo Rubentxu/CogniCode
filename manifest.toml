@@ -1,0 +1,64 @@
+# Pack manifest — declares what this repository contributes to SDDK.
+#
+# Generated against framework 2.2.27. `sddk lint` reads this to check the
+# pack contract.
+#
+# The capabilities below are the four load-bearing tools of the published
+# catalogue in `product/tools.json` (73 tools, all read-only), named exactly
+# as the product spells them. If one of these is renamed upstream, this file
+# is what becomes wrong and `sddk lint` is what will say so.
+
+[pack]
+id = "cognicode"
+version = "0.100.0"
+schema_version = 2
+compatibility = "rust>=1.96.0"
+risk = "medium"
+consequence = "creates"
+category = "core"
+description = "CogniCode: code intelligence over Rust and 30 languages, exposed as an MCP server and CLI"
+
+[dependencies]
+requires = []
+integrates_with = ["sddk-framework"]
+conflicts_with = []
+
+[provides]
+capabilities = [
+    "analyze_impact",
+    "ask_about_code",
+    "build_graph",
+    "codebase_map",
+]
+
+[capabilities]
+# PackConsequence has exactly three variants — creates, modifies, irreversible —
+# with no "reads". None of the 73 catalogue tools is mutating, so none can claim
+# `modifies`. They all create analysis artefacts, so `creates` is the honest
+# class: naming a read as harmless would understate what they leave in the store.
+"analyze_impact" = "creates"
+"ask_about_code" = "creates"
+"build_graph" = "creates"
+"codebase_map" = "creates"
+
+[fixtures]
+paths = [
+    ".github/workflows/pr-ci.yml",
+    "merge-gate.pipeline.kts",
+    "product-fast.pipeline.kts",
+]
+
+[artifacts]
+paths = ["product/"]
+
+[[commands]]
+name = "cognicode"
+surface = ["cli"]
+
+[[commands]]
+name = "cognicode-mcp"
+surface = ["mcp"]
+
+[[commands]]
+name = "cogh"
+surface = ["cli"]

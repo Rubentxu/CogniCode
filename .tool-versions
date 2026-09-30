@@ -1,2 +1,4 @@
 github-cli 2.92.0
 just 1.50.0
+java temurin-24.0.2+12
+github:Rubentxu/pipeline-kotlin 0.43.0
