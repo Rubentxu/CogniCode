@@ -488,6 +488,29 @@ jobs:
       # en CI antes de que el guard pierda su semántica.
       - name: QW-03 bin-tracking contractual test (L3.W2.2 dentro de merge-gate)
         run: cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
+      # QW-09 — release-artifact reachability guard.
+      #
+      # `needs:` hace que un job ESPERE a otro. NO traslada artefactos entre
+      # runners, porque cada job corre en su runner limpio. `merge-gate` estuvo
+      # dos runs de 19 min fallando con "falta binario CLI" sobre un
+      # `target/release/cognicode` que su propio `needs:` le garantizaba y que
+      # nunca recibió: el paso de descarga que arreglaba eso vivía bajo
+      # `test-pr`, no bajo `merge-gate`.
+      #
+      # El guard comprueba que todo job que necesita un binario release lo
+      # obtenga ANTES del primer paso que lo usa, y distingue las dos formas
+      # de fallo porque tienen arreglos distintos: "no lo obtiene" (añadir la
+      # descarga) y "lo obtiene después" (moverla). El mensaje de CI era
+      # idéntico en ambos casos, que es justo lo que costó dos rondas de
+      # diagnóstico.
+      - name: QW-09 release-artifact reachability guard (dentro de merge-gate)
+        run: bash scripts/ci/check-release-artifact-reachability.sh
+      # QW-09.2 — su test contractual, que planta los dos casos RED reales
+      # (el workflow de 38f57443 tal cual, y el bloque de descarga movido
+      # detrás de su primer uso). Sin esto, el guard podría volverse verde
+      # por sí mismo sin que nadie lo note.
+      - name: QW-09 release-artifact reachability contractual test
+        run: cargo test -p cognicode-cli --test qw09_release_artifact_reachability --quiet
       # L3.W3 — QW-04 preflight contractual test (Rust side).
       # El test `qw04_preflight_contract` cubre las tres
       # invariantes baratas del preflight: (a) el script existe y
