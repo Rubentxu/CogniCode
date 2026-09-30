@@ -132,10 +132,15 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // suite is named by no workflow and no script on purpose: it asserts
     // properties of the pipeline scripts themselves rather than running a
     // suite, so it belongs in the anchor set — the same class as this file.
+    // 39 -> 40 with `roadmap_claims_contract` (2026-09-30). The ROADMAP had
+    // claimed PR #309 was unmerged 44 seconds after it was merged, and
+    // nothing re-checked it. Like the suite above, it asserts properties of
+    // a file the project governs rather than running a suite, so it belongs
+    // in the anchor set.
     assert_eq!(
         suites.len(),
-        39,
-        "expected exactly 39 cognicode-core integration suites, found {}. \
+        40,
+        "expected exactly 40 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -270,6 +275,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "prf_ext_04_adapter_authority_uat",
     "provider_conformance",
     "read_set_e2e",
+    "roadmap_claims_contract",
 ];
 
 /// The count alone cannot see a rename: renaming a suite keeps `len()`
