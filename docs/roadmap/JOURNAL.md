@@ -8399,3 +8399,65 @@ pre-flight de la mañana dio `version: 2.2.27` y era verdad; tres horas después
 era mentira, y ningún comando del repo lo delata. Anotar la versión al
 empezar no basta: hay que **reverificar al cerrar** si se va a tocar el
 ledger en ambos momentos.
+
+### N+64.4 — El primer arreglo era correcto y no bastaba (segunda causa)
+
+El commit `38f57443` construía el CLI y lo subía al artefacto. Run
+`36682728317` **confirma que esa parte funcionó**:
+
+| Job / paso | Resultado |
+|---|---|
+| `build release bins (cognicode CLI + MCP + control-plane)` | **success** |
+| └ `Build release binario (cognicode CLI)` | **success** |
+| └ `Upload binarios` | **success** |
+| artefacto `cognicode-bins-release` | 24 980 397 bytes |
+| `merge-gate` | **failure**, mismo mensaje |
+
+La causa real era otra, y salió de leer la estructura de jobs en vez del
+mensaje de fallo:
+
+**Los artefactos no cruzan runners.** `merge-gate` declara
+`needs: [check, build-binary, test-pr, selector]` y `test-pr` sí descarga los
+binarios. Eso es un señuelo: cada job corre en su runner propio.
+`build-binary` subiendo un artefacto y `test-pr` descargando lo traslada entre
+esos dos runners y a nadie más. `merge-gate` esperaba a `build-binary`, lo vio
+en verde, y no recibió ni un fichero.
+
+En el run, `merge-gate` **no tenía paso "Descargar binarios release"**: ese
+paso existe pero bajo el job `test-pr` (línea 261), no bajo `merge-gate`
+(línea 365). Y el paso "Release-profile binaries" que sí está dentro de
+`merge-gate` (línea ~576, `cargo build --release -p cognicode-cli`) va
+**DESPUÉS** de `prf_cli_04_two_process_uat` (línea 514). El orden del fichero,
+no el flag de build, era la segunda mitad del bug.
+
+**Mi hipótesis intermedia fue falsa.** Sospeché que `download-artifact` no
+conserva el bit de ejecución y que el binario llegaba sin permiso. El código
+lo desmiente: el aserto es `cli_bin().exists()` (línea 100-103), y un fichero
+sin permiso `x` **sí** cumple `.exists()`. Lo comprobé leyendo el test en vez
+de creerme el mensaje. En ese runner el fichero no había existido nunca.
+
+**Arreglo** (`514b5441`): `merge-gate` ahora cachea, fija toolchain, descarga
+`cognicode-bins-release` a `target/release`, hace chmod de los tres binarios y
+verifica que cada uno está **presente y ejecutable** antes de cualquier suite.
+El paso de verificación distingue `binario ausente` de `binario no
+ejecutable`: los dos producían la misma salida, y esa ambigüedad es lo que
+costó esta ronda.
+
+**Mi propio error de proceso**: apliqué la primera versión de este arreglo
+sobre `.github/workflows/pr-ci.yml` de la rama de PipelineK, que ni siquiera
+tiene el build del CLI. Lo detecté con `grep -c` sobre cada rama, lo revertí
+con `git checkout`, y creé un worktree desde la rama del PR antes de reintentar.
+
+Verificado: `yaml.safe_load` parsea el workflow, 5 jobs intactos, y los pasos
+nuevos son los seis primeros de `merge-gate`, por delante de toda suite.
+
+**NO verificado**: PR-CI no ha corrido sobre `514b5441`. Dos rondas de
+evidencia local bastaron para encontrar la primera causa y estaban
+equivocadas en la segunda, así que el CI es la única autoridad y no se declara
+verde.
+
+**Lección 143**: `needs:` significa "espera a que termine", **no** "hereda sus
+artefactos". Un artefacto solo existe donde su runner lo descarga
+explícitamente. Y un mensaje de fallo que no distingue "no existe" de "no
+ejecutable" convierte un diagnóstico de dos minutos en dos rondas de CI de
+18 minutos: la ambigüedad del mensaje es el coste real.
