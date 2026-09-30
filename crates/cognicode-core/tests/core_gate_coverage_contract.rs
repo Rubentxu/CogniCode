@@ -137,10 +137,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // nothing re-checked it. Like the suite above, it asserts properties of
     // a file the project governs rather than running a suite, so it belongs
     // in the anchor set.
+    // 40 -> 41 with `action_pinning_contract` (2026-09-30, audit QW-05).
+    // Same class again: a property of `.github/workflows/*.yml`, not a suite.
+    // A suite was added on purpose in that commit, which is exactly the case
+    // this assertion asks to be a deliberate, reviewable act.
     assert_eq!(
         suites.len(),
-        40,
-        "expected exactly 40 cognicode-core integration suites, found {}. \
+        41,
+        "expected exactly 41 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -247,6 +251,11 @@ fn is_accepted_unreadable(path: &Path) -> bool {
 /// make the measured set and the pinned set disagree — which is exactly what
 /// `the_anchor_set_is_the_measured_one` is for.
 const ANCHOR_SUITES: &[&str] = &[
+    // `action_pinning_contract` (2026-09-30, audit QW-05) asserts a property
+    // of `.github/workflows/*.yml` rather than running a suite, exactly like
+    // the two entries above it. It belongs here for the same reason: the
+    // catch-all step runs it, and no `--test` step should name it.
+    "action_pinning_contract",
     "analytics_bounded_paths",
     "analytics_registry_admission",
     "analytics_registry_cohort_1",
