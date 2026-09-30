@@ -8929,3 +8929,47 @@ correcto es que la fila que afirma sea corregida, no que el diario acumule la
 corrección. Y una reconciliación previa a un merge es trabajo real, no
 documentación cosmetics: si el PR entra con el roadmap mintiendo sobre su
 propio gate, el siguiente que lo lea pierde una hora.
+
+### N+65.6 — El contrato de identidad A-014, verificado por mutación
+
+N+64.6 pineó `action_register_identity_contract` en `merge-gate` y
+reportó "5 tests verdes". Eso no es evidencia de nada: un contrato que nunca
+ha visto fallar es una descripción con `assert`. Los 5 verdes se bungaon en una
+sesión donde el propio código era la prueba.
+
+Seis mutaciones contra el registro real. Las seis mueren:
+
+| # | mutación | resultado |
+|---|---|---|
+| M1 | segundo ciclo `a-014-capabilities-json` en la fila A-013 | **2 tests FAILED** (`no_two_cycles_normalize_to_the_same_action_id`, `a_row_declares_at_most_one_cycle...`) |
+| M2 | gemelos en forma project-qualified `p-.../a-014-...` | **2 FAILED** |
+| M3 | quitar los backticks de `82719e1d` | 5 passed — **falso positivo mío, ver abajo** |
+| M4 | quitar la declaración del ciclo vivo `cp2-a014-...` | 1 FAILED |
+| M5 | **borrar el gemelo entero** de la fila A-014 | **2 FAILED** |
+| M6 | `8fec95db` reclamado también por A-013 | 1 FAILED |
+| M7 | `WorkItem \`TBD\`` (placeholder) | 1 FAILED |
+
+**M5 es la que importa**: es exactamente el modo de fallo de N+63.2. Si
+alguien "limpia" la fila de A-014 quitando la nota del gemelo porque parece
+prosa redundante, el contrato grita. Eso es lo que un gate debe hacer.
+
+**M3 fue un falso positivo mío y casi lo reporto como punto ciego real.** Al
+ver que M3 pasaba verde, mi primera lectura fue "el extractor no ve la forma sin
+backticks, hay un agujero". Antes de escribirlo, extraje el parser a un
+binario aislado y le pasé la fila real: devuelve
+`["8fec95db", "82719e1d-46aa-4902-8b86-2bc3291b85bf"]`. El extractor funciona.
+
+Lo que M3 medía era otra cosa: **los backticks son la única señal** de que el
+gemelo existe, y sin ellos la identidad se disuelve en prosa. El contrato no
+tiene un agujero; mi mutación cambió el objeto. M5, que borra el gemelo en
+lugar de destaparlo, sí muere, y por dos tests.
+
+**Lección 151**: un test que pasa bajo una mutación no es un punto ciego del
+código; puede ser una mutación mal formulada. Antes de reportar un defecto del
+sistema, hay que responder "¿el sistema probaba algo que debía ver, o mi
+mutación destruyó la señal?". El parser aislado de 20 líneas respondió en un
+segundo lo que dos lecturas del contrato no contestaban.
+
+Y el corolario: la lección de N+60 sigue valiendo. **Cinco de las reglas
+verificadas esta sesión eran falsas**, y ninguna se delató sola. Todas se
+delataron con la medición que las contradecía.
