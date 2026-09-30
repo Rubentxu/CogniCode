@@ -45,9 +45,17 @@ jobs:
           ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
 
       - name: Setup Podman
-        uses: rootful/setup-podman@v4  # DEPRECATED: repo borrado en GitHub; pinear antes de Q4/2026 o migrar a fork
-        with:
-          podman-version: 5.2.0
+        # rootful/setup-podman was DELETED from GitHub (its own comment said
+        # so) — pinning it is impossible, so the dead dependency is removed
+        # and podman is installed from the distro instead (audit QW-05:
+        # mutable release action tags = 0; a deleted action cannot be
+        # resolved at all).
+        run: |
+          podman --version || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq podman
+          }
+          podman --version
 
       - name: Pull images
         run: just sandbox-pull || true   # || true: digests pueden cambiar
@@ -82,9 +90,17 @@ jobs:
           ln -sfn "$GITHUB_WORKSPACE" "$HOME/Proyectos/rust/CogniCode"
 
       - name: Setup Podman
-        uses: rootful/setup-podman@v4  # DEPRECATED: repo borrado en GitHub; pinear antes de Q4/2026 o migrar a fork
-        with:
-          podman-version: 5.2.0
+        # rootful/setup-podman was DELETED from GitHub (its own comment said
+        # so) — pinning it is impossible, so the dead dependency is removed
+        # and podman is installed from the distro instead (audit QW-05:
+        # mutable release action tags = 0; a deleted action cannot be
+        # resolved at all).
+        run: |
+          podman --version || {
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq podman
+          }
+          podman --version
 
       - name: Run probe lane
         run: just sandbox-ci-probe
