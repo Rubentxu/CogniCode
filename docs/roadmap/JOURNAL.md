@@ -8584,3 +8584,79 @@ diciendo `CLOSED 2026-09-28`, mientras el work item `8fec95db` sigue `Active`
 y el PR no está mergeado. La fila es más antigua que el estado real. El gate
 **no** comprueba ese campo, y con razón: no tiene acceso al ledger. Queda
 discrepancia documental conocida, no un defecto del gate.
+
+### N+65.3 — El defecto de 2.2.33 TIENE salida: el binario bueno sigue en disco
+
+N+65.2cerró con "no reparable desde este repo". **Eso era demasiado pesimista
+y, peor, estaba incompleto.** El receipt de instalación delata la deriva:
+
+```json
+// ~/.local/share/sddk/sddk-install.json
+{ "version": "2.2.27",
+  "binary_sha256": "sha256:a3b76113bea07a8903a5969cb51e6b038ee70317e71654976265a1c86bca2cbd",
+  "binary_path": "bin/sddk" }
+```
+
+Y en disco hay **dos binarios distintos**:
+
+| Ruta | `sha256` | Versión | ¿Abre el ledger? |
+|---|---|---|---|
+| `~/.local/bin/sddk` (en `$PATH`) | `42b86e6d…` | **2.2.33** | **NO** (`Invalid parameter name`) |
+| `~/.local/share/sddk/bin/sddk` | `a3b76113…` = receipt | **2.2.27** | **SÍ** |
+
+Prueba con el binario del prefix, el que el receipt declara:
+
+```text
+$ ~/.local/share/sddk/bin/sddk ledger verify
+event_count: 682
+last_hash: sha256:25e3eeaad092e16edd8a84486e436477bfcdccf83ccc31bec013cf8cae2ef0d5
+```
+
+Los 682 eventos, la misma cadena de hashes. La instalación de 2.2.33 sobrescribió
+`~/.local/bin/sddk` **sin actualizar el receipt**: por eso `2.2.33` figuraba
+como `current` sin que nada registrara que el bundle bueno seguía disponible.
+
+**Consecuencia práctica**: el blocker de N+65.2 no es "el toolchain está roto
+y no hay salida". Es "hay un binario roto delante del bueno". Mientras no se
+haga nada, el ledger es accesible con:
+
+```bash
+~/.local/share/sddk/bin/sddk <subcomando>
+```
+
+**NO se cambió nada.** No se replaced el symlink, no se desinstaló 2.2.33, no
+se editó el receipt. Cambiar qué `sddk` resuelve el shell afecta a todas las
+sesiones y a la tooling del usuario: es decisión suya, y el arreglo upstream de
+2.2.33 sigue siendo lo que de verdad resuelve esto.
+
+**Y el diagnóstico de N+63.2 resultaba estar incompleto.** Con el binario
+bueno, `sddk plan roadmap status` sí responde, y el conflicto real es:
+
+```text
+error: multiple active work items:
+  ["8fec95db-b3ae-4f96-bd88-ddeca3c78ad2",
+   "a3ec0553-39be-4051-8db4-72d2dcbc61a7"]
+```
+
+| Work item | Ciclo | Estado work item | Estado ciclo |
+|---|---|---|---|
+| `8fec95db` | `cp2-a014-capabilities-json` | `active` | `RELEASE_PENDING` / `release` |
+| `a3ec0553` | **`ci-pipelinek-kotlin-migration`** | `active` | `OPEN` / `specify` |
+
+N+63.2 señaló el gemelo `82719e1d` (`a-014-capabilities-json`, `done`) como
+causa del `multiple active work items`. **Ese diagnóstico era incorrecto**: el
+work item en `done` no cuenta. El que bloquea es `a3ec0553`, que pertenece al
+ciclo de **PipelineK**, es decir trabajo en curso del usuario.
+
+**A-014 no está bloqueado por su propia colisión.** Está bloqueado porque
+comparte el estado de proyecto con un ciclo ajeno y abierto, lo cual es
+correcto: son dos líneas de trabajo simultáneas. La colisión de identidad que
+sí era un defecto (dos ciclos para la misma acción A-014) queda registrada y
+gatada, pero **no es la causa de este error**, y el gate de identidad no podía
+detectar esta otra:Aquellos dos work items son activos legítimamente y en
+ciclos distintos.
+
+**Lección 144**: un diagnóstico de "sin salida" merece una comprobación más. Se
+cerró N+65.2 leyendo el receipt y la ruta del binario, y la respuesta estaba en
+el segundo fichero del `ls`. Además, "sin salida desde este repo" no equivale a
+"sin salida": aquí la salida era local y estaba verificada con `ledger verify`.
