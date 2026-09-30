@@ -358,15 +358,30 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "ST-04: LSP module behind a port (CompositeProvider).",
         ),
         // ====================================================================
-        // application_no_interface — current source: zero drifts.
+        // application_no_interface — 2 entries, measured 2026-09-30.
         //
-        // application/* does not currently `use crate::bin::...` or
-        // `use crate::interface::mcp::...` (the latter lives outside the
-        // `application/` tree). The constraint still runs but the
-        // allowlist is empty. If a future commit introduces such an
-        // import, the gate fires immediately and the entry must be added
-        // here with an explicit owner.
+        // These drifts existed all along: `LayerId` did not model
+        // `interface`, so `crate::interface::...` imports resolved to
+        // `Unknown` and this constraint could never fire — the previous
+        // revision of this section documented "zero drifts", which the
+        // audit of 2026-09-30 disproved. With `LayerId::Interface` the
+        // evaluator sees exactly these two, both importing the MCP
+        // security validator that ST-01/ST-02 will replace with a port.
         // ====================================================================
+        ex(
+            "application_no_interface",
+            "application/services/file_operations.rs",
+            "interface::mcp::security",
+            "team:st-01",
+            "ST-01: security port (InputValidator, SecurityError); application validates paths via a port, not the MCP layer.",
+        ),
+        ex(
+            "application_no_interface",
+            "application/workspace_session.rs",
+            "interface::mcp::security",
+            "team:st-02",
+            "ST-02: same security port via the composition root.",
+        ),
     ]
 }
 
@@ -405,10 +420,14 @@ mod tests {
         // application_no_infrastructure tuples cover the unique
         // (file, dependency_path) combinations observed by the
         // self-host evaluator against `f774b89f`.
+        // 38 -> 40 (2026-09-30): the two application_no_interface
+        // drifts became visible once `LayerId::Interface` existed; the
+        // previous baseline of 38 counted a constraint whose gate
+        // could not fire.
         assert_eq!(
             list.len(),
-            38,
-            "expected exactly 38 entries; if you removed/added a drift \
+            40,
+            "expected exactly 40 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
