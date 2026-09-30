@@ -8789,3 +8789,63 @@ historia deben trayerse la historia como fichero, o declararse
 que solo se ejecuta en la máquina de quien lo escribió. Los fixtures que
 dependen de historia van versionados como ficheros, y se pinean para que no
 pudran quedar obsoletos sin que nadie lo note.
+
+### N+64.9 — El guard cubría 1 de 3 jobs y decía "todos"
+
+Commit `91b9b22f`. Revisé el guard por疫情 de "y si lo que afirma es lo que
+cubre?", y no lo era.
+
+`needs_bins` casaba con la palabra `black-box` y con `./target/release/`, y
+el parser solo leía las líneas `name:` y `uses:` de cada step. Resultado, sobre
+el workflow real:
+
+```text
+merge-gate: 23 pasos que necesitan binarios
+```
+
+**Un solo job.** `test-pr` descarga los mismos tres binarios y les hace chmod
+dentro de un bloque `run: |`, y el cuerpo del bloque nunca se leía: el job que
+ha estado bien desde siempre era el job que nadie comprobaba. `build-binary`,
+que produce los artefactos, tampoco estaba en alcance.
+
+**Un guard que cubre un job de tres mientras imprime un "every job" con
+confianza es peor que uno que no cubre ninguno**, porque parece que funciona.
+
+Dos arreglos:
+
+| # | Cambio | Efecto |
+|---|---|---|
+| 1 | el parser pliega el cuerpo de `run: \|` en la etiqueta del step, y `needs_bins` casa cualquier mención de `target/release/` | `JOBS_IN_SCOPE: build-binary,merge-gate,test-pr` |
+| 2 | el guard emite `JOBS_IN_SCOPE:` en ambas salidas | el test lee la cobertura real |
+
+**El segundo arreglo existe porque el primero no bastaba.** La primera versión
+de `qw09_guard_examines_every_job_that_touches_release_binaries`
+**reimplementaba el parser** dentro del test. Lo demostré por mutación:
+quitarle al guard el parseo de bloques `run:` dejaba el test en verde, porque
+la copia del parser del test era un programa distinto del que se envía. **Dos
+implementaciones de una regla es una de más.** La misma mutación ahora lo
+tumba, con el alcance exacto:
+
+```text
+job 'test-pr' is out of the guard's scope (["merge-gate"])
+```
+
+Eso es el mismo defecto que este guard existe para prevenir, un nivel más
+arriba: **una comprobación que reporta éxito sin comprobar.** El que escribe
+el test tiene que poder leer lo que el guard realmente hizo, no recalcularlo.
+
+Los dos casos RED siguen saltando, y el caso AUSENTE ahora nombra además el
+step tardío que se le escapaba (línea 576, `Release-profile binaries`).
+
+Verificado: `10 passed; 0 failed`, `cargo fmt --check` limpio,
+`cargo clippy --tests` con 0 warnings.
+
+**Cómo se encontró**: no fue un test rojo, fue una pregunta. Ningún test del
+guard fallaba porque todos eran correctos sobre lo que el guard afirmaba
+examinar. La Coverage pregunta es distinta y es la que faltaba: *¿quién decide
+qué está en alcance, y está ese "quién" leyendo lo mismo que el guard?*
+
+**Lección 148**: un guard que imprime su propio alcance es más valuable que
+uno que solo imprime veredicto, porque su alcance se puede asertar. Y cuando
+el test del guard reimplementa la regla del guard, el test no prueba el guard:
+prueba el test, y la mutación lo demuestra en treinta segundos.
