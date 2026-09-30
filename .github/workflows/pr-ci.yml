@@ -276,14 +276,27 @@ jobs:
         run: |
           chmod +x ./target/release/cognicode-mcp
           chmod +x ./target/release/cognicode-control-plane
+          # N+64b: el CLI `cognicode` se sube en el artefacto desde 38f57443,
+          # pero este chmod seguia sin incluirlo. `download-artifact` NO
+          # conserva el bit de ejecucion, asi que el binario llegaba al runner
+          # presente pero no ejecutable, y `release_dir()` lo resolvia igual:
+          # el mensaje de la suite fue "falta binario CLI", IDENTICO al de
+          # cuando no estaba. Por eso el primer arreglo (construir y subir el
+          # CLI) parecio no funcionar: el binario ya viajaba, le faltaba el
+          # permiso. Se verifica explicito para que la proxima vez el fallo
+          # diga "no ejecutable" y no "falta", que es la ambiguedad real.
+          chmod +x ./target/release/cognicode
       - name: Verificar binarios
         run: |
           test -x ./target/release/cognicode-mcp \
             || (echo "cognicode-mcp no ejecutable"; exit 1)
           test -x ./target/release/cognicode-control-plane \
             || (echo "cognicode-control-plane no ejecutable"; exit 1)
+          test -x ./target/release/cognicode \
+            || (echo "cognicode no ejecutable"; exit 1)
           ./target/release/cognicode-mcp --version
           ./target/release/cognicode-control-plane --help | head -5
+          ./target/release/cognicode --version
       # CR-08: resolucion de qué suites correr.
       # Si strategy=fallback, se corre TODO. Si=changed, subset.
       # Si=noop, este job queda en skip del cuerpo de tests pero
@@ -356,6 +369,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      # N+64c: ESTE job necesita los binarios release y no los tenia.
+      #
+      # `build-binary` los construye y los sube como artefacto, y `test-pr`
+      # los descarga — pero cada job corre en su PROPIO runner. Esperar a
+      # `build-binary` da exito sin trasladar un solo fichero: un artefacto
+      # solo existe en el runner que lo consume si ese runner lo descarga
+      # explicitamente. Por eso `prf_cli_04_two_process_uat` seguia fallando
+      # con "falta binario CLI" DESPUES de que 38f57443 construyera y subiera
+      # el binario correctamente ("Build release binario (cognicode CLI)"
+      # paso a SUCCESS, "Upload binarios" paso a SUCCESS, el artefacto
+      # cognicode-bins-release pesaba 25 MB).
+      #
+      # La asercion que falla es `cli_bin().exists()` sobre
+      # `common::release_dir()`. Aqui no habia nada que.exists(): este runner
+      # nunca recibio el binario. El paso "Release-profile binaries" de la
+      # linea ~576 lo construye, pero va DESPUES de prf_cli_04 en el orden del
+      # fichero, asi que tampoco ayuda.
+      - name: Cache cargo (merge-gate)
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
+      - name: dtolnay/rust-toolchain
+        uses: dtolnay/rust-toolchain@1.96.0 # pinned 2026-09-26 by CR-08-debt-verify
+      - name: Descargar binarios release (merge-gate)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
+        with:
+          name: cognicode-bins-release
+          path: ${{ github.workspace }}/target/release
+      - name: Restaurar permisos de ejecución (merge-gate)
+        run: |
+          chmod +x ./target/release/cognicode-mcp
+          chmod +x ./target/release/cognicode-control-plane
+          chmod +x ./target/release/cognicode
+      - name: Verificar binarios descargados (merge-gate)
+        run: |
+          for bin in cognicode-mcp cognicode-control-plane cognicode; do
+            if [ ! -f "./target/release/$bin" ]; then
+              echo "::error::binario ausente: $bin"
+              exit 1
+            fi
+            if [ ! -x "./target/release/$bin" ]; then
+              echo "::error::binario no ejecutable: $bin (falta chmod +x tras download-artifact)"
+              exit 1
+            fi
+            echo "ok: $bin"
+          done
+          ./target/release/cognicode-mcp --version
+          ./target/release/cognicode-control-plane --help | head -5
+          ./target/release/cognicode --version
       - name: Verificar que los jobs fan-out pasaron
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
