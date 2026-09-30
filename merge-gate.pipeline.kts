@@ -132,6 +132,19 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet")
             }
 
+            // pr-ci.yml:567. The unrestricted core step. Without it the five
+            // suites behind #![cfg(feature = "evidence-kernel")] compile to
+            // empty test binaries and report 0 passed / 0 failed / exit 0.
+            // core_gate_coverage_contract pins this stage by command parity.
+            stage("core-unrestricted-evidence-kernel") {
+                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --quiet")
+            }
+
+            // pr-ci.yml:481. A-014 product asset resolution.
+            stage("core-a014-product-asset-resolution") {
+                sh("$cd && cargo test -p cognicode-core --test a014_product_asset_resolution --quiet")
+            }
+
             // ladybug (pr-ci.yml:388)
             stage("cognicode-ladybug") {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
