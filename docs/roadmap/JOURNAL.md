@@ -8660,3 +8660,71 @@ ciclos distintos.
 cerró N+65.2 leyendo el receipt y la ruta del binario, y la respuesta estaba en
 el segundo fichero del `ls`. Además, "sin salida desde este repo" no equivale a
 "sin salida": aquí la salida era local y estaba verificada con `ledger verify`.
+
+### N+64.7 — QW-09: el guard que convierte el diagnóstico en prevention
+
+N+64.5 cerró con el gate verde. El defecto que lo causó, sin embargo, seguía
+existiendo como clase: **cualquier job que use `target/release/*` sin
+obtenerlo él mismo rompe el merge-gate, y el mensaje no dice por qué.** Pasó
+dos rounds de 19 min antes de entenderse.
+
+`scripts/ci/check-release-artifact-reachability.sh` (nuevo) comprueba por job
+que todo step que necesita un binario release —suite black-box, `PRF-CLI-04`,
+`Release-profile binaries`, o ejecución directa de `./target/release/`— esté
+precedido por un `download-artifact` o por un `cargo build --release`.
+
+**Un límite honesto**: un guard estático no puede probar que un runner tenga
+el fichero. Lo que sí puede, y es exactamente el defecto, es pinar que el job
+está cableado para obtenerlo antes de usarlo.
+
+Distingue las dos formas de fallo porque tienen arreglos distintos:
+
+| Caso | Síntoma | Arreglo |
+|---|---|---|
+| **AUSENTE** | el job nunca lo obtiene | añadir la descarga |
+| **DEMASIADO TARDE** | lo obtiene, pero tras el primer uso | moverlo |
+
+El segundo es el caso de `Release-profile binaries` (línea ~576) frente a
+`prf_cli_04` (línea 514). Los steps se ejecutan en orden de fichero, y el
+mensaje nombra la línea de cada uno.
+
+El primer caso RED **no es una construcción sintética**: es el
+`git show 38f57443:.github/workflows/pr-ci.yml` real, el fichero que de verdad
+tumbó el gate. El guard se demuestra contra historia.
+
+**Test contractual** `crates/cognicode-cli/tests/qw09_release_artifact_reachability.rs`,
+8 tests. Planta los dos casos RED y comprueba que el mensaje diagnostica el
+problema correcto, porque un mensaje que no distingue "no lo tiene" de "lo
+tiene tarde" es exactamente lo que manda al arreglo equivocado.
+
+**Mutaciones vistas caer** sobre el guard:
+
+| Mutación | Resultado |
+|---|---|
+| ignorar el orden (comparar el job entero) | cae **solo** el caso ORDEN |
+| eximir `merge-gate` | caen **los dos** casos RED |
+
+Restaurado: `8 passed; 0 failed`. `cargo fmt --check` y `cargo clippy
+--tests` limpios, `cli_gate_coverage_contract` 8/8.
+
+**Tres errores míos durante la construcción del guard**, todos de los que el
+test contractual me salvó:
+
+1. El parser leía solo la línea `name:` del step, pero la acción vive en la
+   línea `uses:` siguiente. Falló por un **falso positivo** (señaló que faltaba
+   la descarga que yo acababa de añadir). Un guard que produce falsos positivos
+   en el árbol limpio se desactiva en dos semanas.
+2. `provides_bins()` desempaquetaba tuplas de una lista de labels. Excepción en
+   tiempo de ejecución, no un fallo de aserción.
+3. El self-pin leía el workflow del commit `514b5441`, que es anterior a mi
+   propio pin: insatisfacible en el commit que lo introduce. Ahora lee el árbol
+   de trabajo, igual que `cli_gate_coverage_contract`.
+
+**Lección 145**: un guard preventivo se valida con el fichero roto real y con
+mutaciones, no con "pasa en verde". Y el self-pin de algo nuevo tiene que
+leer el árbol de trabajo, porque el pin y lo pineado llegan en el mismo
+commit: pinear contra historia hace el test insatisfacible por construcción.
+
+**Lección 146**: un mensaje de CI que no distingue dos causas distintas es un
+defecto por sí mismo, aunque el fallo sea correcto. Casi triplica el coste de
+cada incidente.
