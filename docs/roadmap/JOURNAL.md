@@ -8306,3 +8306,96 @@ verde que una regla correcta, y es la única forma de que un gate inútil parezc
 provechoso. Tres fallos seguidos en un mismo parser (prosa, formato, prefijo)
 dicen que el gate hay que escribirlo contra casos reales medidos, no contra el
 formato imaginado.
+
+## N+65 — sddk 2.2.33 rompió el acceso al ledger a mitad de la sesión N+64
+
+Hallazgo de tooling, no de producto. Se registra porque la sesión N+64 lo
+descubrió a mitad y cualquier trabajo de ledger que se intente ahora está
+bloqueado por él.
+
+### Síntoma
+
+Todos los comandos que tocan el ledger fallan:
+
+```
+$ sddk ledger verify
+error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases
+
+$ sddk cycle status --cycle p-c1fac1fea05615c6/cp2-a014-capabilities-json
+error: LedgerFactory: database error: Invalid parameter name: cycle_leases, cycle_leases
+
+$ sddk plan work-item show --work-item-id 8fec95db-...
+error: sddk plan requires an adopted project: LedgerFactory: database error: ...
+```
+
+### Causa: el binario se actualizó solo, en mitad de la sesión
+
+La sesion N+64 empezó con el toolchain en **2.2.27** y lo terminó en
+**2.2.33**:
+
+```
+$ sddk version                       # 09:01, al inicio de la sesión
+binary: 2.2.27
+resolved: /home/rubentxu/.local/share/sddk/framework/2.2.27
+
+$ sddk version                       # 09:18, al cierre
+binary: 2.2.33
+resolved: /home/rubentxu/.local/share/sddk/framework/2.2.33
+
+$ ls -la /home/rubentxu/.local/bin/sddk
+-rwxr-xr-x  36041168  sep 30 09:16  sddk        <-- 09:16, a mitad de sesión
+```
+
+La versión 2.2.27 fue **eliminada**: `framework/2.2.27` ya no existe y el
+symlink `current` apunta a 2.2.33. No hay forma de volver atrás sin
+reinstalar.
+
+El mensaje `Invalid parameter name: cycle_leases, cycle_leases` —el nombre
+duplicado— es la firma de un query builder que registra dos veces el mismo
+parámetro. Es un defecto del binario nuevo.
+
+### Los datos NO están corruptos
+
+Verificado por SQLite en solo lectura, saltándome el CLI roto:
+
+```
+$ python3 -c "import sqlite3; db=sqlite3.connect('file:...?mode=ro',uri=True); ..."
+tablas lease: [('cycle_leases',)]
+eventos en events_v1: 682
+```
+
+La tabla `cycle_leases` **existe** y los **682 eventos** siguen ahí, los mismos
+682 que `sddk ledger verify` accountaba a las 06:35. El fichero
+`ledger.sqlite` no se ha modificado: mtime `sep 30 00:19`, anterior a esta
+sesión. Nada de lo hecho en N+63 ni N+64 tocó el ledger.
+
+### Por qué importa más de lo que parece
+
+`AGENTS.md` y la sesión N+62 dependen del ledger para decidir qué hacer a
+continuar. Con el CLI caído:
+
+- no se puede cerrar un work item,
+- no se puede transicionar un ciclo,
+- no se puede listar el estado real,
+- no se puede responder "¿qué es lo siguiente?".
+
+Ninguna transición de N+63 ni N+64 se hizo, precisamente porque el estado no
+lo permitía. El toolchain caído **impide** el cierre de `8fec95db` aunque el
+`merge-gate` ya no lo bloquee.
+
+### Estado y siguiente acción
+
+- **Bloqueante** para cualquier trabajo de ledger. No es del repo: el repo no
+  contiene el binario `sddk`.
+- **Arreglo**: reportar al mantenedor del framework (bug de 2.2.33,
+  `Invalid parameter name` duplicado en `LedgerFactory`), o fijar 2.2.27
+  mientras tanto si hay forma de reinstalar esa versión.
+- **No se intenta nada**: no se va a parchear el binario ni a reconstruir la
+  DB, que está sana.
+
+**Lección 142**: un toolchain que se actualiza solo a mitad de una sesión
+puede dejar el estado de esa sesión a medias sin que nadie lo decida. El
+pre-flight de la mañana dio `version: 2.2.27` y era verdad; tres horas después
+era mentira, y ningún comando del repo lo delata. Anotar la versión al
+empezar no basta: hay que **reverificar al cerrar** si se va a tocar el
+ledger en ambos momentos.
