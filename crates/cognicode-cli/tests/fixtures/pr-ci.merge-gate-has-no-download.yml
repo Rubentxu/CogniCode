@@ -1,0 +1,661 @@
+# PR-CI — gate de merge sobre pull_request a main
+#
+# PRF-CI-07: dispara automáticamente una batería mínima pero suficiente en
+# cada PR contra `main`. NO es la batería completa de `ci.yml` (LOCAL-ONLY
+# con `act`); es el gate que un PR debe pasar para ser mergeable.
+#
+# Política (PRF §152 / HANDOFF §6.1 + ADR-031 + L1.2 Post-PRF):
+# - Antes del cierre contractual v0.98.1 (2026-09-24), los triggers remotos
+#   estaban deshabilitados para ahorrar minutos de CI en PRs revisados
+#   manualmente. Tras la firma C7, la suite adversarial es robusta y el
+#   retorno de inversión de un gate remoto es positivo: un PR que pase este
+#   workflow puede mergearse con confianza; uno que falle no.
+# - La batería completa (`ci.yml`) sigue siendo LOCAL-ONLY: solo corre
+#   bajo `act` o `just ci-local`. El release gate sigue siendo `release.yml`
+#   + `release-validate.yml` en tags.
+# - L1.2 (Post-PRF): el agregador `merge-gate` centraliza TODA la
+#   verificación (incluido el capabilities-drift-lint) para que el
+#   contrato remoto siga siendo un único required check estable. NO se
+#   añaden required checks adicionales en branch protection por gate nuevo.
+#
+# Jobs:
+#   - check        : fmt + clippy con -D warnings (falla el PR si hay warn)
+#   - build-binary : compila target/release/cognicode-mcp (necesario para
+#                    el test adversarial E2E y para F0.1 find_usages CLI)
+#   - test-pr      : batería mínima exigible para merge:
+#                    * cognicode-core --lib
+#                    * prf_sec_07_adversarial_campaign (nivel lib)
+#                    * prf_mcp_05 enforcement (nivel lib)
+#                    * prf_h06_adversarial_e2e (nivel binario, §153)
+#   - merge-gate   : AGREGADOR. Depende de los 3 anteriores + ejecuta
+#                    capabilities-drift-lint como step propio. Es el
+#                    ÚNICO required check de branch protection.
+#
+# Si un PR añade una suite nueva al catálogo pineado, el responsable debe
+# añadirla a `test-pr` mediante PR subsiguiente (mantener este gate
+# alineado con el pineo de C0..C7 es política, no se autoextiende).
+name: PR-CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancela runs redundantes en pushes subsiguientes al mismo PR.
+concurrency:
+  group: pr-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # -----------------------------------------------------------------------
+  # check — formato + lints
+  # -----------------------------------------------------------------------
+  check:
+    name: fmt + clippy
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 is required, not an optimisation. The product
+      # contract suite verifies that every version SECURITY.md claims to
+      # support is a real released tag, using `git tag --list`. The default
+      # shallow clone has no tags, so a genuinely released version such as
+      # v0.99.2 reads as invented and this gate fails on correct input
+      # (observed on PR #306). Full history keeps that check honest instead
+      # of degrading it.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+        with:
+          components: rustfmt, clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
+      - name: rustfmt --check
+        run: cargo fmt --all -- --check
+      - name: clippy -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # Contratos de scripts de producto y CI. Ninguno estaba enganchado a
+      # un workflow, que es como CP1-DEBT-01 (generate_profiles --check
+      # roto) llevo dias sin que nadie lo notara, y como el filtro
+      # dorny/paths-filter pudo llevar un scalar sin que ningun job lo
+      # detectara. Un test que no corre en ningun sitio no es un gate.
+      #
+      # El runner propio de scripts/run_contract_tests.py sustituye a un
+      # framework de tests: el runner de ubuntu-latest no trae ningun
+      # framework instalado, y las suites de scripts/ son scripts con
+      # funciones test_ que no necesitan fixtures ni descubrimiento
+      # sofisticado. Instalar un framework aqui anadiria una dependencia
+      # al camino de merge para correr checks lineales.
+      #
+      # `set -euo pipefail` es explicito a proposito: un bloque `run: |` de
+      # GitHub Actions NO habilita `set -e` por defecto, asi que sin el, un
+      # fallo a mitad del runner dejaria terminar el script con el codigo del
+      # ultimo comando. El runner ya devuelve != 0 si algo falla, pero el
+      # pipefail cubre el caso de que alguien anada una tuberia.
+      # `jsonschema` valida cada documento publicado contra su schema. Sin
+      # esto el validador pasaria en local y fallaria en CI, que es la
+      # forma mas cara de descubrir una dependencia no declarada: tarde y
+      # en un merge que no es tuyo. Version pineada porque el comportamiento
+      # de `additionalProperties` y del orden de errores es parte del
+      # contrato de los mensajes que este gate produce.
+      - name: Install product validation dependencies
+        run: python3 -m pip install --disable-pip-version-check "jsonschema==4.25.1"
+      - name: Product + CI contract tests
+        run: |
+          set -euo pipefail
+          python3 scripts/run_contract_tests.py \
+            scripts/product/test_*.py \
+            scripts/ci/test_select_suites.py \
+            scripts/ci/test_ci_contracts.py \
+            scripts/ci/test_serial_env_contract.py \
+            scripts/ci/test_t6_gate_contract.py
+
+  # -----------------------------------------------------------------------
+  # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
+  # -----------------------------------------------------------------------
+  build-binary:
+    name: build release bins (cognicode CLI + MCP + control-plane)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
+      - name: Build release binario (cognicode-mcp)
+        run: cargo build --release -p cognicode-mcp
+      # L1.2.W2 — cognicode-control-plane (E2.W2, 2026-09-25) tambien
+      # se compila aqui. El PR anterior lo añadio a Cargo.toml + bin
+      # pero no incluyo su build en CI: una regresion especifica del
+      # bin (p.ej. un cambio en api.rs o control_plane.rs) pasaba
+      # CI sin deteccion. Lo pineamos aqui para que el merge-gate
+      # cubra ambos bins del workspace.
+      - name: Build release binario (cognicode-control-plane)
+        # IMPORTANTE: --bin, NO -p. cognicode-control-plane es un bin
+        # declarado en crates/cognicode-explorer/Cargo.toml bajo el
+        # [[bin]] name="..."  block, no un package. cargo build -p
+        # FALLA con 'package ID specification ... did not match any
+        # packages'. workspace member = cognicode-explorer; bin =
+        # cognicode-control-plane.
+        run: cargo build --release --bin cognicode-control-plane
+      # N+64: el CLI `cognicode` faltaba aqui, y el gate lo ejecutaba igual.
+      # `prf_cli_04_two_process_uat` resuelve sus dos binarios por
+      # `common::release_dir()` (NO por `binary_path()` como las demas suites
+      # MCP, que usan CARGO_BIN_EXE): exige `target/release/cognicode` en
+      # disco. En un runner limpio ese fichero no existe porque este job solo
+      # construia los otros dos, y la suite abortaba en la primera asercion
+      # con "falta binario CLI" — en 0,01 s, que es lo que la hace parecer
+      # rapida y verde en la prosa del commit que la gateo.
+      #
+      # RED observado (release/cognicode ausente, runner limpio simulado):
+      #   cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+      #   falta binario CLI: .../target/release/cognicode
+      #   test result: FAILED. 3 passed; 1 failed; finished in 0.01s
+      #
+      # El nombre del job dice "build cognicode-mcp (release)" y su comentario
+      # de cabecera prometia "el binario para el E2E y para F0.1 (cognicode
+      # CLI)". Ambos eran falsos hasta este commit. Se corrige el nombre
+      # tambien: un job que dice una cosa y construye otra es como se
+      # cuelan estos fallos.
+      - name: Build release binario (cognicode CLI)
+        run: cargo build --release --bin cognicode
+      - name: Upload binarios
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.5.0 — pinned 2026-09-26 by QW-05
+        with:
+          name: cognicode-bins-release
+          path: |
+            target/release/cognicode-mcp
+            target/release/cognicode-control-plane
+            target/release/cognicode
+          retention-days: 1
+          if-no-files-found: error
+
+  # -----------------------------------------------------------------------
+  # selector — CR-08 selecciona suites según paths del PR.
+  #
+  # dorny/paths-filter expone la lista de paths modificados; el script
+  # scripts/ci/select-suites.sh decide qué suites deben correr según
+  # reglas de mapeo. El resultado se expone como outputs del job
+  # para que test-pr los consuma condicionalmente.
+  #
+  # Política CR-08:
+  #  - 'noop'     => test-pr salta TODA la batería (los archivos tocados
+  #                  son sandbox/meta y no impactan código compilable).
+  #                  Mantener fmt + clippy en `check` sigue siendo válido.
+  #  - 'changed'  => test-pr corre SOLO las suites listadas, fallback
+  #                  seguro si la lista es vacía.
+  #  - 'fallback' => test-pr corre la batería fija (backwards-compat
+  #                  completo) — esto es la política conservadora
+  #                  cuando el selector no sabe clasificar el cambio.
+  #
+  # Si dorny/paths-filter falla por permisos o cualquier razón,
+  # el job `selector` falla => merge-gate rojo => PR no mergeable.
+  # -----------------------------------------------------------------------
+  selector:
+    name: CR-08 selector de suites
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      strategy: ${{ steps.sel.outputs.strategy }}
+      reason: ${{ steps.sel.outputs.reason }}
+      suites: ${{ steps.sel.outputs.suites }}
+      has_changes: ${{ steps.paths.outputs.all }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - name: Detectar paths modificados
+        id: paths
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4 — pinned 2026-09-26 by CR-08
+        with:
+          # El filtro debe ser un objeto YAML: cada clave nombra un filtro y
+          # cada valor es la lista de patterns. El antiguo `.*:[*]` era un
+          # string, no un objeto, y dorny/paths-filter lo rechazaba con
+          # "Invalid filter YAML format: Root element is not an object",
+          # de modo que este job no podia emitir outputs y `selector`
+          # quedaba rojo en todo PR que lo disparase.
+          #
+          # Se declara un unico filtro `all` que matchea cualquier path. Los
+          # outputs que el step siguiente consume (`changes-all`,
+          # `changes-all-files`) salen de `list-files`, no de un filtro
+          # nombrado, asi que no hace falta declarar reglas de mapeo aqui:
+          # el mapeo path -> suite lo hace scripts/ci/select-suites.sh, que
+          # es donde vive esa politica y donde es testeable.
+          filters: |
+            all:
+              - '**'
+          # 'shell' emite los paths uno por linea; select-suites.sh espera
+          # separacion por espacio, y el step siguiente hace el tr.
+          list-files: shell
+          # Deteccion por PR (no solo push): el selector clasifica los paths
+          # del PR contra el commit base.
+          list-files-separator: '\n'
+      - name: Ejecutar selector determinista
+        id: sel
+        # SELECT_PATHS recibe la lista cruda separada por NUL.
+        # dorny/paths-filter emite paths uno por línea con 'shell' format;
+        # convertimos a space-separated vía tr.
+        run: |
+          if [ -z "${{ steps.paths.outputs.changes-all }}" ] || [ "${{ steps.paths.outputs.changes-all }}" = "false" ]; then
+            echo "No hay paths modificados (push event?); fallback a suite completa."
+            SELECT_OUTPUT='{"strategy":"fallback","reason":"no_changed_paths","suites":["core","explorer","mcp","cli","ladybug","merge"]}'
+          else
+            PATHS=$(echo '${{ steps.paths.outputs.changes-all-files }}' | tr '\n' ' ')
+            SELECT_OUTPUT=$(SELECT_PATHS="$PATHS" bash scripts/ci/select-suites.sh)
+          fi
+          echo "select output: $SELECT_OUTPUT"
+          # Parseamos JSON para outputs.
+          STRATEGY=$(echo "$SELECT_OUTPUT" | jq -r '.strategy')
+          REASON=$(echo "$SELECT_OUTPUT" | jq -r '.reason')
+          # suites array -> joined string para output (GitHub limita).
+          SUITES=$(echo "$SELECT_OUTPUT" | jq -r '.suites | join(",")')
+          echo "strategy=$STRATEGY reason=$REASON suites=$SUITES"
+          echo "strategy=$STRATEGY" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "suites=$SUITES" >> "$GITHUB_OUTPUT"
+
+  # -----------------------------------------------------------------------
+  # test-pr — batería exigible para merge (CR-08: condicional según selector).
+  # -----------------------------------------------------------------------
+  test-pr:
+    name: test pineado (lib + E2E, CR-08-adapted)
+    needs: [build-binary, selector]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
+      - name: Descargar binarios release
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
+        with:
+          name: cognicode-bins-release
+          path: ${{ github.workspace }}/target/release
+      - name: Restaurar permisos de ejecución de los binarios
+        run: |
+          chmod +x ./target/release/cognicode-mcp
+          chmod +x ./target/release/cognicode-control-plane
+      - name: Verificar binarios
+        run: |
+          test -x ./target/release/cognicode-mcp \
+            || (echo "cognicode-mcp no ejecutable"; exit 1)
+          test -x ./target/release/cognicode-control-plane \
+            || (echo "cognicode-control-plane no ejecutable"; exit 1)
+          ./target/release/cognicode-mcp --version
+          ./target/release/cognicode-control-plane --help | head -5
+      # CR-08: resolucion de qué suites correr.
+      # Si strategy=fallback, se corre TODO. Si=changed, subset.
+      # Si=noop, este job queda en skip del cuerpo de tests pero
+      # fmt+clippy+build-binary ya pasaron arriba.
+      - name: Resolver estrategia CR-08
+        id: cr08
+        env:
+          STRATEGY: ${{ needs.selector.outputs.strategy }}
+          SUITES: ${{ needs.selector.outputs.suites }}
+        run: |
+          echo "selector.strategy=$STRATEGY"
+          echo "selector.suites=$SUITES"
+          if [ "$STRATEGY" = "noop" ]; then
+            echo "noop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "noop=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$STRATEGY" = "fallback" ]; then
+            echo "fallback=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "fallback=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Para 'noop' estratégico, noop=true produce skip del cuerpo
+      # (este pattern usa `if:` o `continue-on-error`).
+      - name: Tests lib (cognicode-core) — CR-08 subset
+        if: steps.cr08.outputs.fallback != 'true'
+        run: cargo test -p cognicode-core --lib --quiet
+      - name: Adversarial lib (PRF-SEC-07) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
+        run: cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+      - name: MCP enforcement (PRF-MCP-05) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
+        run: cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+      - name: Adversarial E2E (PRF-SEC-07 binario) — subset si NO fallback
+        if: steps.cr08.outputs.fallback != 'true'
+        run: cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+      # Si strategy=fallback, corremos batería completa AL FINAL.
+      - name: "Batería completa fallback (CR-08 fallback path)"
+        if: steps.cr08.outputs.fallback == 'true'
+        run: |
+          echo "CR-08 fallback: corriendo batería completa."
+          cargo test -p cognicode-core --lib --quiet
+          cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+          cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+          cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+      # Si strategy=noop, emitimos skip explícito (merge-gate log legibilidad).
+      - name: "CR-08 noop: tests saltados por selector"
+        if: steps.cr08.outputs.noop == 'true'
+        run: |
+          echo "CR-08 noop: estrategia=noop (sandbox/meta only). Tests pineados no corren en este PR."
+          echo "Selección original: ${{ needs.selector.outputs.reason }}"
+
+
+  # -----------------------------------------------------------------------
+  # merge-gate — AGREGADOR único de branch protection (L1.2 Post-PRF).
+  #
+  # Este job es el ÚNICO required check de branch protection. Depende de
+  # los tres jobs fan-out (check, build-binary, test-pr) y EJECUTA EN SU
+  # PROPIO CUERPO el capabilities-drift-lint. Si este lint falla → este
+  # job falla → merge-gate rojo → PR no mergeable. Branch protection intacta.
+  #
+  # Cualquier nuevo gate debe añadirse como STEP dentro de este job, no
+  # como nuevo required check separado. Mantener un único contrato remoto
+  # estable es la regla.
+  # -----------------------------------------------------------------------
+  merge-gate:
+    name: merge-gate
+    needs: [check, build-binary, test-pr, selector]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+      - name: Verificar que los jobs fan-out pasaron
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          for job in check build-binary test-pr selector; do
+            result=$(echo "$NEEDS_JSON" | jq -r ".\"$job\".result")
+            if [ "$result" != "success" ]; then
+              echo "::error::$job job did not succeed ($result)"
+              exit 1
+            fi
+          done
+          check=$(echo "$NEEDS_JSON" | jq -r '.check.result')
+          build_binary=$(echo "$NEEDS_JSON" | jq -r '."build-binary".result')
+          test_pr=$(echo "$NEEDS_JSON" | jq -r '."test-pr".result')
+          selector_r=$(echo "$NEEDS_JSON" | jq -r '.selector.result')
+          echo "fan-out: OK (check=$check, build-binary=$build_binary, test-pr=$test_pr, selector=$selector_r)"
+          echo "CR-08 strategy: ${{ needs.selector.outputs.strategy }} | reason: ${{ needs.selector.outputs.reason }} | suites: ${{ needs.selector.outputs.suites }}"
+      # L1.2.W1 — capabilities drift lint.
+      # Si el doc contractual y el código divergen, este step falla y
+      # el PR deja de ser mergeable. Parte del agregador, NO un required
+      # check separado.
+      - name: capabilities drift lint (E0.W2 dentro de merge-gate)
+        run: python3 sandbox/scripts/capabilities_drift_lint.py --strict
+      # L1.3.W1 — compat matrix executable 0.97.x.
+      # Ejecuta el test E2E que pinea backward-compat del servidor
+      # actual contra el binario legacy 0.97.3 publicado en GitHub
+      # releases. Si el binario legacy no está disponible en
+      # `sandbox/.compat/0.97.3/cognicode-mcp` (CI runners sin fixture),
+      # el step se SKIPpea — pero en máquinas con el binario extraído
+      # (ver ADR-PRF-008 + sandbox/.compat/), un cambio que rompa
+      # backward-compat del contrato MCP falla este step y bloquea
+      # el merge. Política L1.3 / R1 de ADR-PRF-008.
+      - name: compat matrix 0.97.x (L1.3 dentro de merge-gate, SKIP si fixture ausente)
+        if: hashFiles('sandbox/.compat/0.97.3/cognicode-mcp') != ''
+        run: |
+          # Solo se ejecutan W1 (smoke 0.97.3) y W2 (backward
+          # compat del servidor actual). W3 (forward compat)
+          # usa el binario legacy como servidor y ya está
+          # pineado en sentido contrario por W1 + W2.
+          cargo test -p cognicode-mcp --test find_usages_compat_0_97 -- \
+            --skip compat_forward_0973_server_handles_modern_request
+      # L3.W1 — cognicode-ladybug unit tests.
+      # 50 tests inline cubren: open/close del store, init_schema
+      # idempotente, migrate_call_graph roundtrip, narrative_store
+      # save/load/invalidate, quality_store, e29_2_neighbors, etc.
+      # Pre-E1.W1 gap crítico: este crate NO estaba pineado en CI
+      # aunque tiene la batería inline más completa del repositorio.
+      # Cualquier refactor de `LadybugStore` que rompiese la suite
+      # pasaba CI remoto sin detección. Cierra deuda M0.4 (preparación
+      # E1).
+      - name: cognicode-ladybug unit tests (L3.W1 dentro de merge-gate)
+        run: cargo test -p cognicode-ladybug --lib --quiet
+      # L3.W2 — QW-03 bin-tracking guard.
+      # El script `scripts/ci/check-bin-tracking.sh` enumera cada
+      # crate que declara `[[bin]]` y comprueba que el source file
+      # correspondiente está tracked por git y NO está silenciado
+      # por `.gitignore`. Pinea el contrato contra la pérdida
+      # silenciosa del bin `cognicode-control-plane` (entry 9). El
+      # contrato vive en `crates/cognicode-cli/tests/qw03_bin_tracking_guard.rs`
+      # (3 tests: baseline + RED + recovery). Si este step falla,
+      # el merge-gate rojo y el PR deja de ser mergeable. Política
+      # L1.2.W* (paso step en merge-gate, no required check separado).
+      - name: QW-03 bin-tracking guard (L3.W2 dentro de merge-gate)
+        run: bash scripts/ci/check-bin-tracking.sh
+      # L3.W2.2 — QW-03 contractual test (Rust side).
+      # El test `qw03_bin_tracking_guard` cubre el contrato del
+      # guard desde el lado Rust: invoca el script sobre el repo
+      # real y sobre un tmp repo con drift plantado. Si el script
+      # cambia su contrato sin actualizar el test, este test rompe
+      # en CI antes de que el guard pierda su semántica.
+      - name: QW-03 bin-tracking contractual test (L3.W2.2 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
+      # L3.W3 — QW-04 preflight contractual test (Rust side).
+      # El test `qw04_preflight_contract` cubre las tres
+      # invariantes baratas del preflight: (a) el script existe y
+      # tiene +x, (b) el esquema JSON del recibo declara todos los
+      # campos requeridos, (c) el script neutraliza
+      # GIT_CONFIG_GLOBAL=/dev/null. (d) plus require_tool
+      # dispara fail() con un mensaje claro. El preflight caro
+      # (clone real + workspace tests) vive en release.yml.
+      - name: QW-04 preflight contractual test (L3.W3 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw04_preflight_contract --quiet
+      # L3.W4 — CR-08 selector determinista de suites (contract).
+      # El test `qw08_crate_selector` pinea el contrato JSON
+      # de scripts/ci/select-suites.sh: dado paths modificados,
+      # devuelve {strategy, reason, suites} con tres estrategias
+      # posibles (changed/fallback/noop). 14 tests cubren
+      # cada crate path, workflow/Cargo.toml fallbacks,
+      # sandbox/metadata noop, multi-path union y unknown
+      # pattern fallback. Tests corren en 0.01s (no compilan,
+      # no hacen git ls-files). El selector NO se ejecuta aún
+      # desde el job `test-pr` (eso requiere `dorny/paths-filter`
+      # como step previo); este test contractual garantiza que
+      # el contrato no se rompe silenciosamente antes de que
+      # la integración futura aterrice.
+      - name: CR-08 suite selector contractual test (L3.W4 dentro de merge-gate)
+        run: cargo test -p cognicode-cli --test qw08_crate_selector --quiet
+      # A-013 / CP2.7 + A-009/A-010/A-012 — black-box MCP contracts.
+      #
+      # El selector CR-08 mapea `crates/cognicode-mcp/**` a la suite `mcp`,
+      # y esa suite corre `--lib`. Los contratos black-box de este crate
+      # viven en `tests/`, que `--lib` no compila: A-009 (postura
+      # read-only), A-010 (auditoria de autoridad), A-012 (structured
+      # output), A-013 (ciclo de vida startup→shutdown) y PRF-SEC-02
+      # pasaban todos en verde sin ejecutarse nunca. Por eso A-013 seguia
+      # abierto en el registro de acciones pese a tener sus 9 tests en
+      # verde, y por eso A-024/A-026/A-038 lo listaban como prerequisito
+      # sin que hubiera nada que dependiera de el.
+      #
+      # Un step por contrato, no `cargo test -p cognicode-mcp --tests`:
+      # la suite completa de este crate arrastra escenarios sandbox y
+      # networked que no son parte del gate de contrato. Estos cinco son
+      # los que hablan JSON-RPC con el binario y no dependen de la red.
+      # El contrato que este step cumple lo pinan
+      # `crates/cognicode-cli/tests/a013_lifecycle_gate_contract.rs`.
+      - name: A-009 agent-safe profile (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a009_agent_safe_profile --quiet
+      - name: A-010 tool authority audit (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a010_tool_authority_audit --quiet
+      - name: A-012 structured output (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a012_structured_output --quiet
+      - name: A-013 lifecycle UAT (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a013_lifecycle_uat --quiet
+      - name: PRF-SEC-02 read-only posture (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet
+      - name: A-016 tools↔runtime consistency (black-box MCP contract)
+        run: cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet
+      # PRF analysis/state/security UAT suites (fast, local fixtures only).
+      # The remaining tests/ surface of this crate is enumerated by
+      # cli_gate_coverage_contract::every_mcp_suite_is_named_by_the_gate_or_excluded_with_a_reason,
+      # which fails if a suite is added without either a step here or an
+      # explicit entry in its EXCLUDED_MCP_SUITES table (the 0.97.3 compat
+      # tarball, the Tier-1 bootstrap fixtures and the unshare netns suite).
+      - name: PRF-ANA-02 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_02_uat --quiet
+      - name: PRF-ANA-05 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_05_uat --quiet
+      - name: PRF-ANA-07 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_07_uat --quiet
+      - name: PRF-ANA-08 analysis UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_ana_08_uat --quiet
+      - name: PRF-CLI-04 CLI↔MCP equivalence UAT (black-box, two processes)
+        run: cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet
+      - name: PRF-F4-W3 corrupt cache recovery (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet
+      - name: PRF-F5-W3 signal cancel (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet
+      - name: PRF-MCP-02 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_mcp_02_uat --quiet
+      - name: PRF-SEC-01 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet
+      - name: PRF-SEC-03 telemetry opt-in UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet
+      - name: PRF-SEC-05 shutdown recovery UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet
+      - name: PRF-STATE-01 data catalog UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_01_data_catalog_uat --quiet
+      - name: PRF-STATE-02 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_02_uat --quiet
+      - name: PRF-STATE-03/04 UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_03_04_uat --quiet
+      - name: PRF-STATE-03 concurrency UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_03_concurrent_uat --quiet
+      - name: PRF-STATE-04 isolation UAT (black-box MCP)
+        run: cargo test -p cognicode-mcp --test prf_state_04_isolation_uat --quiet
+      - name: A-013 lifecycle gate coverage contract (must not rot)
+        run: cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet
+      # A-014 / CP2.4-onboarding — capability discovery machine-readable.
+      #
+      # Mismo hueco que el bloque de arriba: `cognicode capabilities --format
+      # json` es el contrato que consumen A-033..037 (skills) y los adaptadores
+      # de integracion, y sus 5 tests vivian en `tests/`, fuera de `--lib`.
+      # Sin este step, un cambio que rompa el schema `cognicode.capabilities/v1`
+      # pasaria el gate entero.
+      - name: A-014 capabilities --format json (machine-readable contract)
+        run: cargo test -p cognicode-cli --test a014_capabilities_json --quiet
+      # A-015 — license gate contractual. Publica `licenses.json` y verifica que
+      # la allow-list de `deny.toml` y el campo `license` de cada crate no diverjan.
+      # Tambien en `tests/`, por tanto tampoco lo cubria `--lib`.
+      - name: A-015 licenses gate (license allow-list vs crate metadata)
+        run: cargo test -p cognicode-cli --test a015_licenses_gate --quiet
+      # CP2.4-onboarding — `cogh setup`, the first command a new operator
+      # runs. NOTE the id collision: the action register calls the
+      # onboarding A-015 and calls the licenses gate A-015-licenses. The
+      # step is named after the command, not the id, so the two do not
+      # read as the same action.
+      #
+      # `setup` is implemented (init -> install -> doctor) and was
+      # exercised by nothing: a regression that dropped the doctor health
+      # check would have turned an unhealthy install into a green setup.
+      - name: CP2.4 onboarding contract (cogh setup happy path)
+        run: cargo test -p cognicode-cli --test a015_onboarding_gate --quiet
+      # Release-profile binaries for the release-flow UATs.
+      #
+      # The unrestricted step below compiles every `tests/*.rs` target,
+      # and four of them (prf_dist_01_06, prf_dist_workflow_flatten,
+      # prf_f6_w1_release_coherence, prf_f6_w2_staging_contract) shell
+      # out to `cogh`, `cognicode` and `cognicode-release` through
+      # `common::release_bin_path()` / `common::release_dir()`.
+      #
+      # PR #307 red on this: merge-gate ran those suites on a clean
+      # runner where `target/release/` does not exist, and they panicked
+      # with `missing release binary cogh`. It never showed up locally
+      # because a machine with a global `target-dir` override already
+      # has those binaries in the shared release dir.
+      #
+      # Ordering is load-bearing, not style: cargo's release-profile
+      # artifacts are what `release_dir()` resolves, so the build has to
+      # complete before the test step runs. Pinned by
+      # `cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_suites_require`.
+      #
+      # Two packages, not one. `cognicode-mcp` is a separate workspace
+      # member, and all four suites stage it alongside `cogh` and
+      # `cognicode` as a canonical payload
+      # (`for stem in ["cogh", "cognicode", "cognicode-mcp"]`). Building
+      # only `-p cognicode-cli` would move the failure one step down the
+      # same assertion.
+      - name: Release-profile binaries for the release-flow UATs
+        run: |
+          cargo build --release -p cognicode-cli
+          cargo build --release -p cognicode-mcp
+      # Gate the whole cognicode-cli integration surface, not a hand-picked
+      # subset. `--lib` is invalid for this crate (bin-only), and the
+      # `tests/` targets are the crate's published black-box contracts; a
+      # step per suite would rot the next time one is added. Verified
+      # end-to-end at 592 passed / 0 failed / 2 ignored in 47s local.
+      #
+      # `--features ladybug` is not decoration. The crate defaults to no
+      # features, so evidence_cli_mcp_equivalence sits behind a crate-level
+      # `#![cfg(feature = "ladybug")]` and compiles to an EMPTY test binary
+      # without it: 0 tests, exit 0, green forever under any invocation.
+      - name: cognicode-cli integration suites (all targets, --features ladybug)
+        run: cargo test -p cognicode-cli --features ladybug --quiet
+      # Pins the step above. Two failure modes this has to catch:
+      #   1. the step disappears from the workflow (silent loss of ~590 tests)
+      #   2. it is rewritten to a narrower selector, e.g. `--bins`, which
+      #      would drop the 21 `tests/` targets and re-open the original gap
+      # The second is why this asserts a *count* against the filesystem, not
+      # a substring match: a substring check passes happily on a selector
+      # that silently excludes half the crate.
+      - name: cognicode-cli gate coverage contract (must not rot or narrow)
+        run: cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet
+      # N+64: the A-014 identity collision (two cycles carrying one action id,
+      # one of them silently Active) is what made `sddk plan roadmap status`
+      # fail with `multiple active work items` and no visible cause. A test
+      # file nobody runs is exactly the rot this repo has already paid for
+      # three times (N+50 selector, N+51 `--lib` blind spot, N+57 anchor
+      # scope), so the contract is pinned here by name.
+      - name: Action register identity contract (A-014 collision must stay visible)
+        run: cargo test -p cognicode-cli --test action_register_identity_contract --quiet
+      # Gate the whole cognicode-core integration surface, not a hand-picked
+      # subset. `--lib` is what every historical step used: it is valid for
+      # this crate (it has a lib.rs), it reads as responsible, and it skips
+      # all 37 `tests/*.rs` targets by construction. Measured 2026-09-29:
+      # 33 of them were named by no `--test` step and covered by no
+      # unrestricted one, and 3 more were reachable only from `ci.yml`,
+      # which is `on: workflow_dispatch` and so never blocks a merge.
+      # `merge-gate` is the only required check, so that made them dead code
+      # wearing a green exit code. 3098 tests, 0 failed, 23s.
+      #
+      # `--features evidence-kernel` is load-bearing for the same reason
+      # `--features ladybug` is on the CLI step above. Five suites
+      # (cp5_tie_break, equivalence_harness, identity_benchmark,
+      # workspace_isolation, and behavior_budget_e2e) sit behind a
+      # crate-level `#![cfg(feature = "evidence-kernel")]`; without it they
+      # compile to an EMPTY test binary: 0 passed, 0 failed, exit 0, green
+      # under any invocation. Verified: with the feature they report
+      # 3 + 7 + 7 + 2, without it 0 + 0 + 0 + 0.
+      - name: cognicode-core integration suites (all targets, --features evidence-kernel)
+        run: cargo test -p cognicode-core --features evidence-kernel --quiet
+      # Pins the step above. Same three failure modes the CLI contract
+      # pins, applied to this crate: the step disappears, it is narrowed to
+      # a selector that still looks responsible, or it keeps the selector
+      # and drops the feature that makes five suites real. The primary
+      # assertion is a count against the filesystem, because a substring
+      # match passes happily on `--tests`, which keeps every integration
+      # target and drops the lib tests.
+      - name: cognicode-core gate coverage contract (must not rot or narrow)
+        run: cargo test -p cognicode-core --features evidence-kernel --test core_gate_coverage_contract --quiet
+      # L3.W5 — CR-05 / e91.W7 regression budget for graph_insights.
+      # Pinea que `GraphInsightsService::analyze` cumple el budget
+      # de 30 s en Tier-2 fixture (runbook E91 §5). Sin este step
+      # una regresión silenciosa en el hot path podría re-emerger
+      # el cold-cache p95=367s observado en e90. Ver
+      # `crates/cognicode-core/tests/e91_w7_regression_budget.rs`
+      # para el contrato y la base empírica (619ms @ HEAD dev, 50×
+      # bajo el budget).
+      - name: CR-05 e91.W7 regression budget gate (L3.W5 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w7_regression_budget --quiet
+      # L3.W6 — CR-03 / e91.W8 per-stage profile breakdown.
+      # Reports wall-clock time of each public stage of
+      # `GraphInsightsService::analyze` and asserts no stage
+      # exceeds 5 s on Tier-2 fixture. Catches single-stage
+      # regressions that the aggregate budget (W7) cannot detect.
+      # Empirical dev baseline @ HEAD: projection 12ms, scc 1ms,
+      # god_nodes 21ms, feedback_arc_set 309ms, community_detect
+      # 332ms (slowest), analyze_full 629ms.
+      - name: CR-03 e91.W8 per-stage profile gate (L3.W6 dentro de merge-gate)
+        run: cargo test -p cognicode-core --test e91_w8_stage_profile --quiet
+      # L3.W2 (futuro) — otros contract/old-new compatibility tests
+      # añadidos como steps aquí, no como jobs separados. Política L1.2.
+      - name: merge-gate OK
+        run: echo "merge-gate[OK] fan-out verde + drift-lint verde"

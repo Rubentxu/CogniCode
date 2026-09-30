@@ -57,20 +57,21 @@ fn run_against(workflow: &str, tag: &str) -> std::process::Output {
     run_guard(&tmp)
 }
 
-/// Pull a real historical version of the workflow out of git.
-fn workflow_at(rev: &str) -> String {
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(repo_root())
-        .args(["show", &format!("{rev}:.github/workflows/pr-ci.yml")])
-        .output()
-        .expect("git show");
-    assert!(
-        out.status.success(),
-        "could not read pr-ci.yml at {rev}: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8(out.stdout).expect("utf-8 workflow")
+/// Read a workflow fixture from the crate's `tests/fixtures/` directory.
+///
+/// These are files, NOT `git show <rev>:...`. CI checks out the repository
+/// with `fetch-depth` too shallow to contain the revisions that produced these
+/// states, so `git show 38f57443` dies with "invalid object name" on the
+/// runner while passing perfectly on a developer machine with full history.
+/// A test that only breaks in CI is a test that ships broken. The fixtures are
+/// pinned by `the_fixtures_still_represent_the_shapes_they_name` below, so a
+/// stale copy is caught rather than trusted.
+fn fixture(name: &str) -> String {
+    let p = repo_root()
+        .join("crates/cognicode-cli/tests/fixtures")
+        .join(name);
+    fs::read_to_string(&p)
+        .unwrap_or_else(|e| panic!("missing workflow fixture {}: {e}", p.display()))
 }
 
 fn tempdir(tag: &str) -> PathBuf {
@@ -107,13 +108,13 @@ fn qw09_guard_passes_on_the_real_workflow() {
 
 /// RED 1 — the actual PR-CI defect.
 ///
-/// `38f57443` is the commit that built and uploaded the CLI correctly. The
-/// gate still failed, because `merge-gate` had no download step of its own:
-/// the one in the workflow belonged to `test-pr`. This is the real file, not
-/// a synthetic construction, so the guard is proven against history.
+/// `pr-ci.merge-gate-has-no-download.yml` is the real workflow as of
+/// `38f57443`: it built and uploaded the CLI correctly, and the gate still
+/// failed, because the only download step lived under `test-pr`. Not a
+/// synthetic construction — the file that actually broke the gate.
 #[test]
 fn qw09_guard_fails_on_the_workflow_that_broke_merge_gate() {
-    let broken = workflow_at("38f57443");
+    let broken = fixture("pr-ci.merge-gate-has-no-download.yml");
     let out = run_against(&broken, "absent");
     let stdout = String::from_utf8_lossy(&out.stdout);
 
@@ -133,6 +134,31 @@ fn qw09_guard_fails_on_the_workflow_that_broke_merge_gate() {
     );
 }
 
+/// The fixtures must keep representing the shapes their filenames claim,
+/// otherwise a future edit to `pr-ci.yml` would leave the two RED scenarios
+/// testing something other than the defects they document.
+#[test]
+fn the_fixtures_still_represent_the_shapes_they_name() {
+    let absent = fixture("pr-ci.merge-gate-has-no-download.yml");
+    assert!(
+        !absent.contains("Descargar binarios release (merge-gate)"),
+        "fixture 'merge-gate-has-no-download' now CONTAINS the download step, \
+         so the ABSENT case is no longer testing absence"
+    );
+    assert!(
+        absent.contains("black-box"),
+        "fixture 'merge-gate-has-no-download' has no black-box suite, so it \
+         cannot exercise the reachability check at all"
+    );
+
+    let present = fixture("pr-ci.download-in-merge-gate.yml");
+    assert!(
+        present.contains("Descargar binarios release (merge-gate)"),
+        "fixture 'download-in-merge-gate' lost the download step, so the \
+         TOO LATE case has nothing to reorder"
+    );
+}
+
 /// RED 2 — order, not absence.
 ///
 /// The download exists and the job is otherwise fine, but it sits AFTER the
@@ -142,10 +168,10 @@ fn qw09_guard_fails_on_the_workflow_that_broke_merge_gate() {
 /// a misleading message sends you to the wrong one.
 #[test]
 fn qw09_guard_fails_when_the_download_comes_after_its_first_user() {
-    let fixed = workflow_at("514b5441");
+    let fixed = fixture("pr-ci.download-in-merge-gate.yml");
     assert!(
         fixed.contains("Descargar binarios release (merge-gate)"),
-        "expected the fix commit to contain the download step"
+        "expected the fixture to contain the download step"
     );
 
     // Move the download step to just before `Release-profile binaries`,
