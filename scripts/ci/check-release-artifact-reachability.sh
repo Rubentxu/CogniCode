@@ -90,13 +90,25 @@ for idx, raw in enumerate(lines, start=1):
         label = label.split(" #")[0].strip().strip('"').strip("'")
         jobs[current].append((idx, label))
         continue
-    # A `uses:` / `with:` sub-line belongs to the step we just opened.
+    # A `uses:` / `with:` / `run:` sub-line belongs to the step we just opened.
+    # `run: |` opens a BLOCK: the indented lines that follow are the script
+    # body, and that is where a step usually names the binary it touches. A
+    # parser that reads only the `run:` line sees `- name: Restaurar permisos`
+    # and never learns the step chmods target/release/*. That blindness is why
+    # this folds the whole block into the step's label.
     sub = SUBLINE_RE.match(raw)
     if sub and jobs[current]:
         key, val = sub.group(1), sub.group(2)
         if key in ("uses", "with", "run"):
             val = val.split(" #")[0].strip()
             jobs[current][-1] = (jobs[current][-1][0], jobs[current][-1][1] + " " + val)
+            continue
+    # Indented continuation of a `run:` block: 8+ spaces that are not a new
+    # `key:` line. Folded into the current step so its commands are visible.
+    if jobs[current] and raw.startswith("        ") and raw.strip():
+        body = raw.strip()
+        if not re.match(r"^[A-Za-z_-]+:", body) or body.startswith(("./", "test ", "chmod ", "cargo ")):
+            jobs[current][-1] = (jobs[current][-1][0], jobs[current][-1][1] + " " + body)
 
 # --- classify steps --------------------------------------------------------
 BUILD_RE = re.compile(r"cargo\s+build\b[^\n]*--release|--release[^\n]*cargo\s+build")
@@ -119,21 +131,34 @@ def builds_release(labels):
 
 
 def needs_bins(label):
-    """True if this single step cannot succeed without a release binary."""
+    """True if this single step cannot succeed without a release binary.
+
+    The `uses:`/`with:`/`run:` text of the step is folded into its label, so
+    both `name:`-only and `uses:`-carrying steps are visible here.
+    """
+    low = label.lower()
+    # A step that names a release binary path at all, whether it verifies it,
+    # chmods it, executes it, or hands it to a suite.
+    if "target/release/" in low:
+        return True
     # Black-box MCP/CLI suites that shell out to target/release/*.
-    if "black-box" in label.lower():
+    if "black-box" in low:
         return True
     if re.search(r"PRF-CLI-04|prf_cli_04", label):
         return True
     if re.search(r"Release-profile binaries", label):
         return True
-    # A step that executes a built binary directly.
-    if re.search(r"\./target/release/", label):
+    # A step whose run block builds a binary it will later execute.
+    if re.search(r"cargo\s+test\b[^\n]*--release", label):
         return True
     return False
 
 
 problems = []
+# Every job the guard actually EXAMINED as needing binaries. Reported on both
+# exit paths so a test can assert real coverage instead of re-implementing this
+# parser and quietly drifting from it.
+in_scope = set()
 for job, steps in jobs.items():
     if not steps:
         continue
@@ -144,6 +169,7 @@ for job, steps in jobs.items():
             break
     if need_idx is None:
         continue
+    in_scope.add(job)
 
     need_line, need_label = need_idx
     # Everything this job does BEFORE the first step that needs binaries.
@@ -181,7 +207,9 @@ if problems:
     print("  artifacts between runners. Each job that uses target/release/*")
     print("  must download it or build it itself, before the first step")
     print("  that needs it.")
+    print(f"JOBS_IN_SCOPE: {','.join(sorted(in_scope))}")
     sys.exit(1)
 
 print("OK: every job that needs release binaries obtains them before use.")
+print(f"JOBS_IN_SCOPE: {','.join(sorted(in_scope))}")
 PY

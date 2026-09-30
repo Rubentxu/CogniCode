@@ -229,6 +229,58 @@ fn qw09_guard_fails_when_the_download_comes_after_its_first_user() {
     );
 }
 
+/// The guard must actually EXAMINE the jobs, not pass by vacuity.
+///
+/// It started out doing exactly that: `needs_bins` matched on the word
+/// "black-box" and on `./target/release/`, so it only ever classified
+/// `merge-gate`. `test-pr` downloads the same three binaries and chmods them
+/// inside a `run: |` block, and the parser never read the block body, so the
+/// job that has always been correct was the one nobody was checking. A guard
+/// that covers one of three jobs while reporting full coverage is worse than
+/// one that covers none, because it looks like it is working.
+///
+/// This reads the guard's OWN `JOBS_IN_SCOPE:` line rather than
+/// re-implementing its parser. The first version of this test did re-implement
+/// it, and that was the bug: mutating the guard to drop `run:`-block parsing
+/// left the test green, because the test's copy of the parser was a
+/// different program from the one shipping. Two implementations of one rule is
+/// one too many, and the guard now reports its coverage so there is a single
+/// source of truth to assert against.
+#[test]
+fn qw09_guard_examines_every_job_that_touches_release_binaries() {
+    let out = run_guard(&repo_root());
+    let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+    assert!(
+        out.status.success(),
+        "guard failed on the real workflow, cannot read its scope:\n{stdout}"
+    );
+
+    let scope_line = stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("JOBS_IN_SCOPE: "))
+        .unwrap_or_else(|| {
+            panic!(
+                "guard does not report JOBS_IN_SCOPE, so its real coverage \
+                 cannot be asserted. stdout:\n{stdout}"
+            )
+        });
+    let scope: Vec<&str> = scope_line
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    for expected in ["merge-gate", "test-pr", "build-binary"] {
+        assert!(
+            scope.contains(&expected),
+            "job '{expected}' is out of the guard's scope ({scope:?}). \
+             `test-pr` downloads and chmods the same three binaries inside a \
+             `run: |` block; if it is not in scope, the guard reports full \
+             coverage while ignoring a job that touches release binaries."
+        );
+    }
+}
+
 /// The guard must be pinned in the merge gate, or none of the above runs.
 /// Mirrors `cli_gate_coverage_contract`'s self-pin.
 ///
