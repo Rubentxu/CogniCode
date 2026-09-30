@@ -295,8 +295,13 @@ pub fn tool_authority_map() -> &'static HashMap<String, String> {
 /// floor). Returns `"mutating"` for any tool in the legacy list, even
 /// if the meta declaration is absent or says "read".
 ///
-/// Returns `"read"` for tools that are neither in the declared map nor
-/// in `MUTATING_TOOLS` — safe default for unknown tools.
+/// FAIL-CLOSED (audit 2026-09-30, finding #5): a tool that is neither
+/// in the declared map nor in `MUTATING_TOOLS` resolves to
+/// `"mutating"`, so read-only mode refuses it. The previous default —
+/// `"read"` — was fail-open: an undeclared mutating tool would have
+/// sailed through read-only mode. Deny-by-default costs an undeclared
+/// read tool a refusal until it is declared, which is the correct
+/// direction for a security property.
 pub fn resolve_tool_authority(tool_name: &str) -> String {
     if let Some(declared) = tool_authority_map().get(tool_name) {
         return declared.clone();
@@ -304,7 +309,7 @@ pub fn resolve_tool_authority(tool_name: &str) -> String {
     if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name) {
         return "mutating".to_string();
     }
-    "read".to_string()
+    "mutating".to_string()
 }
 
 /// PRF-MCP-05: True iff a tool is considered mutating under its
@@ -3026,15 +3031,18 @@ mod tests {
             );
         }
 
-        // 4: safe default for unknown names.
+        // 4: FAIL-CLOSED default for unknown names (audit 2026-09-30,
+        // finding #5). An unknown name resolves to the mutating posture
+        // so read-only mode refuses it; the previous revision asserted
+        // the opposite with the security direction inverted.
         assert!(
-            !tool_is_mutating("__definitely_not_a_real_tool_name__"),
-            "PRF-MCP-05: unknown tool name must default to not-mutating"
+            tool_is_mutating("__definitely_not_a_real_tool_name__"),
+            "PRF-MCP-05: unknown tool name must fail closed (mutating posture)"
         );
         assert_eq!(
             resolve_tool_authority("__definitely_not_a_real_tool_name__"),
-            "read",
-            "PRF-MCP-05: unknown tool name must resolve to authority 'read'"
+            "mutating",
+            "PRF-MCP-05: unknown tool name must resolve to authority 'mutating'"
         );
     }
 

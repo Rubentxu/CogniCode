@@ -219,15 +219,25 @@ fn mutating_tool_authority_is_correctly_propagated() {
 }
 
 #[test]
-fn unknown_tool_name_defaults_to_not_mutating() {
-    // Adversarial: a tool the registry has never heard of (e.g. a
-    // future-added tool that hasn't propagated authority yet) must be
-    // treated as NOT mutating — fail-safe default. This prevents a
-    // missing declaration from accidentally granting write power.
+fn unknown_tool_name_defaults_to_mutating() {
+    // Adversarial, FAIL-CLOSED (audit 2026-09-30, finding #5): a tool
+    // the registry has never heard of must be treated as MUTATING, so
+    // read-only mode refuses it. The previous revision of this test
+    // pinned the opposite — unknown → "read" — with a rationale that
+    // had the security direction inverted: defaulting to read is what
+    // GRANTS power to an undeclared tool (a mutating tool with a
+    // missing declaration sails through read-only mode); defaulting to
+    // mutating merely costs an undeclared READ tool a refusal until it
+    // is declared. For a security property, deny-by-default is the
+    // only safe direction.
+    //
+    // Every declared tool is unaffected: `resolve_tool_authority` hits
+    // the metadata map first, and the 73-tool catalogue test proves the
+    // map is complete for everything `build_all_tools()` registers.
     let synthetic = "__adversarial_synthetic_mutating_tool__";
     assert!(
-        !tool_is_mutating(synthetic),
-        "PRF-SEC-07 / PRF-MCP-05: unknown tool MUST default to read-only"
+        tool_is_mutating(synthetic),
+        "PRF-SEC-07 / PRF-MCP-05: unknown tool MUST fail closed (treated as mutating, refused in read-only mode)"
     );
 }
 
@@ -255,9 +265,12 @@ fn disconnected_client_does_not_leak_resources_at_library_level() {
     // to route the request to; if not, the dispatcher returns early.
     // Both paths must NOT panic.
     let ghost = "totally_unknown_tool_xyz";
+    // FAIL-CLOSED (audit 2026-09-30): an unknown name resolves to the
+    // mutating posture, i.e. refused under read-only. The load-bearing
+    // property here is that resolution never panics on unknown input.
     assert!(
-        !tool_is_mutating(ghost),
-        "unknown tool name must resolve safely without panic"
+        tool_is_mutating(ghost),
+        "unknown tool name must fail closed (mutating posture)"
     );
     // The map access itself is also safe: contains_key returns false
     // for unknown names.
