@@ -69,24 +69,13 @@ pipeline {
                 sh("$cd && cargo fmt --all -- --check")
             }
 
-            stage("clippy-baseline") {
-                // pr-ci.yml:78 runs `cargo clippy --workspace --all-targets -- -D warnings`
-                // with no allowlist. The repo carries a documented baseline of 42
-                // pre-existing errors in rig/tools.rs, so this reproduces the job's
-                // verdict: green on the baseline, red on anything new anywhere.
-                sh("""
-                    $cd || exit 1
-                    out=$(cargo clippy --workspace --all-targets -- -D warnings 2>&1 || true)
-                    outside=$(echo "${'$'}out" | grep -E '^[[:space:]]*-->' \
-                              | grep -v 'crates/cognicode-core/src/interface/rig/tools.rs' || true)
-                    if [ -n "${'$'}outside" ]; then
-                        echo "FAIL: clippy errors outside the documented baseline:"
-                        echo "${'$'}outside"
-                        exit 1
-                    fi
-                    total=$(echo "${'$'}out" | grep -cE '^[[:space:]]*-->' || true)
-                    echo "clippy: ${'$'}total errors, all inside the baseline file rig/tools.rs"
-                """.trimIndent())
+            stage("clippy") {
+                // pr-ci.yml:78 — bare `cargo clippy --workspace --all-targets -- -D warnings`.
+                // The previous stage name "clippy-baseline" carried an allowlist for 42
+                // pre-existing errors in rig/tools.rs that no longer exist (cargo clippy
+                // reports 0 on the current tree). The baseline was dead and the pipeline
+                // permitted more than CI; restored to the bare assertion CI runs.
+                sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
             }
         }
 
