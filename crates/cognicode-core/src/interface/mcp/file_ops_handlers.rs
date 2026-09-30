@@ -50,6 +50,9 @@ pub async fn handle_read_file(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
     let metrics = match get_global_metrics() {
@@ -103,6 +106,9 @@ pub async fn handle_write_file(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
     let metrics = match get_global_metrics() {
@@ -153,6 +159,9 @@ pub async fn handle_edit_file(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
     let metrics = match get_global_metrics() {
@@ -208,6 +217,9 @@ pub async fn handle_search_content(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
     let metrics = match get_global_metrics() {
@@ -261,6 +273,9 @@ pub async fn handle_list_files(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
     let metrics = match get_global_metrics() {
@@ -319,6 +334,9 @@ pub async fn handle_retrieve_and_verify(
             ctx.working_dir.to_string_lossy().as_ref(),
             ctx.validator.clone(),
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ))
     });
 

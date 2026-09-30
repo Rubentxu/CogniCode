@@ -142,6 +142,9 @@ impl WorkspaceSession {
             root.display().to_string(),
             validator,
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ));
         let semantic_search = Arc::new(RwLock::new(None));
         let symbol_code = Arc::new(SymbolCodeService::new());

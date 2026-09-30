@@ -27,6 +27,7 @@ pub mod evidence_bundle;
 #[cfg(feature = "evidence-kernel")]
 pub mod fact_bridge;
 pub mod findings;
+pub mod ports;
 // e69 WU3 — PolicyGate (application-layer; the only authority that
 // turns an EvidenceBundle into a structured decision). Gated by
 // `evidence-kernel` because it consumes gated types from
