@@ -164,6 +164,18 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
             }
 
+            // pr-ci.yml:512. QW-09 pins that every release-artifact path the
+            // workflow downloads is a path some earlier job produced.
+            stage("cli-qw09-release-artifact-reachability") {
+                sh("$cd && cargo test -p cognicode-cli --test qw09_release_artifact_reachability --quiet")
+            }
+
+            // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
+            // visible in the action register (N+63.2).
+            stage("cli-action-register-identity-contract") {
+                sh("$cd && cargo test -p cognicode-cli --test action_register_identity_contract --quiet")
+            }
+
             // The unrestricted step. pr-ci.yml:569. cli_gate_coverage_contract
             // fails if it is missing or narrowed: it is what compiles every
             // `tests/*.rs` target in the crate and what carries --features ladybug,
