@@ -189,3 +189,110 @@ fn the_roadmap_still_declares_itself_the_agenda_authority() {
          instrument rather than assuming it is."
     );
 }
+
+// ---------------------------------------------------------------------------
+// P0 audit item #0: document-authority consistency (QW-02 made mechanical)
+// ---------------------------------------------------------------------------
+
+/// Every action ID in the ACTION-REGISTER is unique.
+///
+/// The register is the single authority for PRODUCT-1.0 action IDs, so the
+/// same ID appearing twice means two different pieces of work claiming one
+/// identity — the failure class the project already lived through with
+/// A-014's twin cycles (N+63.2). Rows are matched on the leading `| A-0NN`
+/// cell so prose mentions of an ID inside another row's closure text do
+/// not count as duplicates.
+#[test]
+fn action_register_ids_are_unique() {
+    let path = repo_root().join("docs/cognicode-community-productization/16-ACTION-REGISTER.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+
+    let mut ids: Vec<String> = Vec::new();
+    for line in text.lines().filter(|l| l.starts_with("| A-")) {
+        let cell = line
+            .trim_start_matches('|')
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            cell.starts_with("A-") && cell[2..].chars().all(|c| c.is_ascii_digit()),
+            "unparseable action ID {cell:?} in row: {line}"
+        );
+        ids.push(cell);
+    }
+    assert!(
+        ids.len() >= 40,
+        "ACTION-REGISTER parsed to {} action rows; the register holds 45. A \
+         parse that returns almost nothing makes the uniqueness check \
+         vacuously green.",
+        ids.len()
+    );
+
+    let mut sorted = ids.clone();
+    sorted.sort();
+    sorted.dedup();
+    let duplicates: Vec<&String> = ids
+        .iter()
+        .filter(|id| ids.iter().filter(|other| *other == *id).count() > 1)
+        .collect();
+    assert_eq!(
+        ids.len(),
+        sorted.len(),
+        "duplicate action IDs in ACTION-REGISTER: {duplicates:?}. One ID must \
+         name one piece of work; this is the A-014 twin-cycle failure class."
+    );
+}
+
+/// CURRENT.md must declare itself a snapshot that defers to the ROADMAP.
+///
+/// The 2026-09-30 audit found CURRENT.md asserting the production-ready
+/// program had not started while main carried days of its commits. The
+/// structural fix is authority: CURRENT is a derived snapshot, and the
+/// declaration of that fact must be present so a reader meeting only this
+/// file knows which document wins.
+#[test]
+fn current_md_defers_to_the_roadmap_as_authority() {
+    let path = repo_root().join("docs/roadmap/CURRENT.md");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    assert!(
+        text.contains("única autoridad de agenda"),
+        "CURRENT.md no longer declares ROADMAP.md as the single agenda \
+         authority. Without that declaration CURRENT reads as a competing \
+         source of state — the exact QW-02 failure this contract guards."
+    );
+    assert!(
+        text.contains("Snapshot"),
+        "CURRENT.md must carry a Snapshot marker with its as-of date, so a \
+         stale snapshot is visibly a stale snapshot rather than a competing \
+         truth."
+    );
+}
+
+/// CR-02's acceptance criterion must not pin the constraint count.
+///
+/// CR-02 originally demanded \"exactly 3 canonical constraints\". CR-06
+/// added two more and the count became 5 — the criterion had rotted into
+/// an unsatisfiable literal. The contract is the identity of the admitted
+/// set for the current schema version, not an accidental number. Any
+/// reintroduction of a hardcoded count in the production-ready acceptance
+/// docs fails here.
+#[test]
+fn cr02_acceptance_does_not_pin_a_constraint_count() {
+    for name in [
+        "docs/roadmap/production-ready/METRICS-AND-ACCEPTANCE.md",
+        "docs/roadmap/production-ready/EXECUTION-PLAN.md",
+    ] {
+        let text = std::fs::read_to_string(repo_root().join(name))
+            .unwrap_or_else(|e| panic!("cannot read {name}: {e}"));
+        assert!(
+            !text.contains("exactamente 3 canonical"),
+            "{name} pins the canonical-constraint count again (\"exactamente \
+             3\"). The count has already drifted once (3 -> 5 when CR-06 \
+             landed) and turned the criterion unsatisfiable. Reference the \
+             admitted set identity for the current schema version instead."
+        );
+    }
+}
