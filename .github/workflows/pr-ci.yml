@@ -615,6 +615,15 @@ jobs:
       # pasaria el gate entero.
       - name: A-014 capabilities --format json (machine-readable contract)
         run: cargo test -p cognicode-cli --test a014_capabilities_json --quiet
+      # A-014 asset resolution. The contract above already asserts
+      # `!tools.is_empty()`, and it could not catch the build-machine
+      # dependency: in CI the build directory still exists, so a path frozen
+      # at compile time resolves and the assertion holds. The bug only
+      # appears for a user who installed the binary. This suite pins the
+      # property that actually broke and is named here so its absence is
+      # visible in the diff.
+      - name: A-014 product assets resolve from the runtime, not the build machine
+        run: cargo test -p cognicode-core --test a014_product_asset_resolution --quiet
       # A-015 — license gate contractual. Publica `licenses.json` y verifica que
       # la allow-list de `deny.toml` y el campo `license` de cada crate no diverjan.
       # Tambien en `tests/`, por tanto tampoco lo cubria `--lib`.
