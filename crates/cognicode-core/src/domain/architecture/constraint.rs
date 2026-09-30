@@ -53,6 +53,11 @@ pub enum LayerId {
     Domain,
     Application,
     Infrastructure,
+    /// The MCP/CLI presentation layer (`src/interface/`). Historically
+    /// unmodelled: imports of `crate::interface::...` resolved to
+    /// `Unknown`, so `application_no_interface` could never fire on the
+    /// boundary it exists to guard (audit 2026-09-30).
+    Interface,
     Bin,
     /// A module that does not map to a known layer (e.g. `tests/`,
     /// `benches/`, generated code). Constraints do not fire on these by
@@ -76,7 +81,13 @@ impl LayerId {
         let normalised = normalised.strip_prefix("crate::").unwrap_or(&normalised);
         // Drop everything past the first occurrence of these top-level
         // segments.
-        for top in ["domain", "application", "infrastructure", "bin"] {
+        for top in [
+            "domain",
+            "application",
+            "infrastructure",
+            "interface",
+            "bin",
+        ] {
             if let Some(rest) = normalised.strip_prefix(top) {
                 // We have matched. The next character must be `::`,
                 // `/`, or the end of string.
@@ -86,6 +97,7 @@ impl LayerId {
                         "domain" => LayerId::Domain,
                         "application" => LayerId::Application,
                         "infrastructure" => LayerId::Infrastructure,
+                        "interface" => LayerId::Interface,
                         "bin" => LayerId::Bin,
                         _ => unreachable!(),
                     };
@@ -102,6 +114,7 @@ impl fmt::Display for LayerId {
             Self::Domain => "domain",
             Self::Application => "application",
             Self::Infrastructure => "infrastructure",
+            Self::Interface => "interface",
             Self::Bin => "bin",
             Self::Unknown => "unknown",
         })
