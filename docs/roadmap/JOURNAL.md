@@ -8973,3 +8973,101 @@ segundo lo que dos lecturas del contrato no contestaban.
 Y el corolario: la lección de N+60 sigue valiendo. **Cinco de las reglas
 verificadas esta sesión eran falsas**, y ninguna se delató sola. Todas se
 delataron con la medición que las contradecía.
+
+## N+66 — `merge-gate.pipeline.kts`: allowlist de clippy muerto, restaurado el gate pelado
+
+Sesión 2026-09-30, turno corto. Identificado por review de la skill
+`cognicode-sddk` (operador); confirmado en este turno. **CI/pipelinek-kotlin-gate
+rama activa; HEAD previo `b3716640`; commit nuevo `f1f0f0c6`.**
+
+### N+66.1 — El defecto, sin maquillar
+
+El stage `clippy-baseline` en `merge-gate.pipeline.kts:72-89` declaraba "a
+documented baseline of 42 pre-existing errors in rig/tools.rs". El baseline
+no existe. Sobre el árbol al inicio del turno, el comando pelado de
+`pr-ci.yml:78` retorna 0:
+
+```text
+$ cargo clippy --workspace --all-targets -- -D warnings
+warning: profiles for the non root package will be ignored (cosmético: cognicode-graph-wasm)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.56s
+```
+
+Cero errores. La allowlist que filtraba `crates/cognicode-core/src/interface/rig/tools.rs`
+era un **ghost filter**: no protegía errores porque no había errores que
+filtrar. Y mientras filtraba nada, relajaba el gate: `pr-ci.yml:78` falla un
+PR al primer lint anywhere; el `.kts` solo fallaba fuera de `rig/tools.rs`.
+La puerta giratoria ya estaba abierta: el pipeline local permitía más que CI.
+Calza con la regla 8 de la skill (`cognicode-sddk`, "no rebajar gates para
+obtener verde"): la corrección honesta es borrar la allowlist y restaurar la
+aserción exacta, no ampliar la excepción.
+
+### N+66.2 — La edición mínima
+
+`merge-gate.pipeline.kts` (1 archivo, +7/-18):
+
+- Stage renombrado `clippy-baseline` → `clippy`.
+- Cuerpo reducido a la aserción exacta de `pr-ci.yml:78`:
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Comentario histórico preservado (4 líneas) explicando el porqué del cambio
+  para que un lector futuro no reintroduzca la allowlist pensando que es una
+  optimización.
+
+Commit `f1f0f0c6a2e583642f75dda8b16639ef456def35` —
+`fix(ci): remove dead clippy allowlist from merge-gate.pipeline.kts`.
+
+### N+66.3 — Verificación
+
+| gate | comando | resultado |
+|---|---|---|
+| Validación sintaxis | `pipelinek validate merge-gate.pipeline.kts` | VALIDATION SUCCESSFUL (event id `05b5f67d-2e6d-4647-adac-aa9c3e3d096e`) |
+| Aserción del clippy bare | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| Paridad `pr-ci.yml` ↔ `.kts` (core) | `cargo test -p cognicode-core --test core_gate_coverage_contract` | 10/10 PASSED |
+| PRF-CI-01 / PRF-CI-07 | `cargo test -p cognicode-cli --test prf_ci_01_07_clippy_gate_uat` | 3/3 PASSED (+1 `#[ignore]`) |
+
+Ninguno de los contratos rota con el cambio. `core_gate_coverage_contract`
+verifica set equality de `cargo test -p cognicode-core` entre `pr-ci.yml` y
+el `.kts`; mi edición no toca ese universo. El test `prf_ci_01_07` mantiene
+su forma (verifica que `ci.yml` declara el gate pelado y que clippy rechaza
+defectos reales).
+
+### N+66.4 — Lo que NO está cerrado
+
+1. **`product-fast.pipeline.kts:58-74`** lleva la misma allowlist pero con
+   `--all-features`. Mismo defecto, mismo arreglo. **Fuera de scope** de
+   este commit (regla de no scope-creep); registrado para decisión del
+   operador. La pregunta abierta es si `product-fast` debe seguir corriendo
+   `--all-features` (algunos crates solo compilan con feature flags) o
+   alinearse al comando pelado de `pr-ci.yml:78` — política, no fix monótono.
+2. **Test de paridad clippy entre `.kts` y `pr-ci.yml`**: no existe.
+   `core_gate_coverage_contract` solo pinea `cargo test -p cognicode-core`.
+   Un test análogo (`merge_gate_kts_runs_bare_clippy_d_warnings`) que lea
+   ambos archivos y falle si el `.kts` deja de ejecutar el comando pelado
+   sería bajo costo / alta leverage. Follow-up.
+3. **Run "completo" del merge-gate** no se ejecutó localmente en su totalidad.
+   El presupuesto del turno no alcanzaba; los 4 gates verificados son los
+   que `core_gate_coverage_contract` y `prf_ci_01_07_clippy_gate_uat`
+   exigen para esta unidad.
+
+### N+66.5 — Top 3 del operador, status tras este turno
+
+| # | corrección | estado |
+|---|---|---|
+| 1 | Borrar allowlist de clippy (`.kts:72-89`), restaurar aserción exacta de `pr-ci.yml:78` | **CLOSED LOCALMENTE** — commit `f1f0f0c6`, sin push. |
+| 2 | Identidad de PipelineK: 0.43.0 pin vs 0.43.0-rc1 runtime | **PENDIENTE** — fuera de este repo, requiere reporte a `Rubentxu/pipeline-kotlin`. |
+| 3 | Aislar interferencia de los tests rotos en `cargo test --workspace --lib` | **PENDIENTE** — budget largo, runs por módulo. Sospechoso `file_operations.rs:2116` (escaneo de código fuente) más `commands.rs:470` (`env::set_var` no detrás de `cfg(feature)`). |
+
+**Siguiente WU:** decisión del operador entre (a) push del PR con
+`f1f0f0c6` para merge en `ci/pipelinek-kotlin-gate`, (b) extender la misma
+limpieza a `product-fast.pipeline.kts` antes del merge, o (c) añadir el
+test de paridad clippy como endurecimiento del fix. Mi recomendación honesta es (a)
+primero — es el cambio con menor superficie y máxima leverage — y dejar
+(b)/(c) para turnos dedicados.
+
+**Lección 152**: un gate que filtra por nombre de archivo y dice "todo verde
+dentro del baseline" tiene que poder contrastarse con la realidad del
+comando que dice emular. Si el comando del workflow dice 0 y el filtro dice
+42, el filtro está mintiendo. La confianza del filtro no se hereda del
+hecho de que el comando "funciona" — se hereda del hecho de que el comando
+y el filtro dicen lo mismo. Cuando divergen, el filtro es el bug, no el
+comando.
