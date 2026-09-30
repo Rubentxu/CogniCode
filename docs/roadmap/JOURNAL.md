@@ -8849,3 +8849,46 @@ qué está en alcance, y está ese "quién" leyendo lo mismo que el guard?*
 uno que solo imprime veredicto, porque su alcance se puede asertar. Y cuando
 el test del guard reimplementa la regla del guard, el test no prueba el guard:
 prueba el test, y la mutación lo demuestra en treinta segundos.
+
+### N+65.4 — Corrección de N+65.3: no hubo sobrescritura, hay dos copias
+
+N+65.3 escribió que la instalación de 2.2.33 "sobrescribió `~/.local/bin/sddk`
+sin actualizar el receipt". **La palabra "sobrescribió"implies reemplazo, y no
+lo hubo.** El dato correcto:
+
+```text
+~/.local/bin/sddk              36041168 bytes  2.2.33  ELF regular, NO symlink
+~/.local/share/sddk/bin/sddk   35364888 bytes  2.2.27  ELF regular, NO symlink
+```
+
+Dos **copias independientes**, no un enlace. `readlink -f` del primero devuelve
+él mismo. Ninguna de las dos se pisa: conviven. Eso cambia el arreglo, porque un
+symlink se arreglaria reapuntando, y una copia no.
+
+**Consecuencia**: `sddk dev use --version 2.2.27` probablemente **no** es el
+camino. Ese subcomando selecciona el **bundle** de assets, y los bundles
+siguientes son coherentes con esto:
+
+```text
+$ ~/.local/share/sddk/bin/sddk dev use --show
+version: 2.2.33      <- el bundle activo
+current: 2.2.33
+```
+
+O sea: el binario 2.2.27 está corriendo **con el bundle 2.2.33**, y funciona
+(abre el ledger, 682 eventos). El bundle 2.2.33 en disco son solo assets —
+`agents/`, `assets/`, `prompts/`, `skills/`, `BUNDLE.toml`,
+`MANIFEST.sha256` — **sin binario propio**.
+
+**Por tanto el diagnóstico se afina**: el defecto está en el **binario**
+`~/.local/bin/sddk` (2.2.33), no en el bundle ni en la base de datos. Dos
+binarios con el mismo bundle activo se comportan distinto, así que el problema
+es del binario y el bundle no participa. El arreglo real sigue siendo upstream
+sobre `list_active_cycle_leases_for_project`, y **no hay un comando local que
+repare el 2.2.33 sin reinstalarlo o volver a 2.2.27**. Reinstalar 2.2.27 sí es
+una acción real disponible; el binario del prefix ya es exactamente eso.
+
+**Lección 149**: "sobrescribir" y "tener dos copias" son hechos distintos con
+arreglos distintos, y la diferencia se ve en cinco segundos con `ls -la` y
+`readlink -f`. Escribir la conclusión antes de mirar la forma del fichero es
+inventar la causa para que encaje con el síntoma.
