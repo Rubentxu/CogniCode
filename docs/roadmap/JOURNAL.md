@@ -8735,3 +8735,57 @@ queda solo en el mensaje ya publicado; el texto de esta entrada es el
 correcto. No se reescribe historia por una errata ortográfica: `git rebase` de
 un commit ya pusheado no compra nada y cuesta un SHA nuevo que luego hay que
 rastrear.
+
+### N+64.8 — El guard se rompió en CI, no en local (y por qué)
+
+Commit `528202ba` añadió QW-09 con 8 tests verdes en local. Run `36687674150`
+lo tiró:
+
+```text
+could not read pr-ci.yml at 38f57443: fatal: invalid object name '38f57443'
+could not read pr-ci.yml at 514b5441: fatal: invalid object name '514b5441'
+test result: FAILED. 6 passed; 2 failed
+```
+
+**El guard sí pasó.** El paso del script dio verde. Falló el test contractual, y
+no por el guard: porque usaba `git show <rev>:.github/workflows/pr-ci.yml` para
+obtener los dos estados reales del workflow.
+
+`actions/checkout` hace fetch con una profundidad que no incluye esas
+revisiones. `git show 38f57443` resuelve en una máquina con historia completa
+y revienta en el runner. **Ocho pasos verdes en local, dos rojos en CI: el test
+se publicó roto y solo el CI podía decirlo.**
+
+**Arreglo** (`3b6c2f9d`): los dos estados del workflow son ahora ficheros
+versionados en `crates/cognicode-cli/tests/fixtures/`:
+
+| Fixture | Qué es |
+|---|---|
+| `pr-ci.merge-gate-has-no-download.yml` | el `pr-ci.yml` real en `38f57443` (661 líneas) |
+| `pr-ci.download-in-merge-gate.yml` | el `pr-ci.yml` real en `514b5441` (721 líneas) |
+
+Siguen siendo los ficheros **reales**, no construcciones sintéticas: el guard
+se demuestra contra historia, no contra un fixture diseñado para gustarle.
+
+**Un fixture puede pudrirse**, y un fixture podrido que sigue verde es peor que
+no tener fixture. Así que está pineado por
+`the_fixtures_still_represent_the_shapes_they_name`: el primero no debe tener
+el paso de descarga y sí debe tener suites black-box; el segundo sí debe
+tener la descarga. Una edición futura de `pr-ci.yml` ya no puede dejar los dos
+casos RED probando otra cosa en silencio.
+
+Verificado: `9 passed; 0 failed`, `cargo fmt --check` limpio,
+`cargo clippy --tests` con **0 warnings**. El test ya no contiene ningún
+`Command::new("git")`; las dos menciones que quedan de `git show` están en el
+comentario que explica por qué no se usa.
+
+**Por qué la iteración local no lo detectó**: un repo local tiene historia
+completa. El contrato de un test que usa `git show` incluye un supuesto sobre
+el entorno que ningún `cargo test` local puede falsificar. Los tests que leen
+historia deben trayerse la historia como fichero, o declararse
+`#[ignore]` en CI, que es peor: un test ignorado en el gate no protege nada.
+
+**Lección 147**: un test que depende de la profundidad del checkout es un test
+que solo se ejecuta en la máquina de quien lo escribió. Los fixtures que
+dependen de historia van versionados como ficheros, y se pinean para que no
+pudran quedar obsoletos sin que nadie lo note.
