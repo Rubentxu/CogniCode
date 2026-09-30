@@ -4769,8 +4769,8 @@ ejecutado en una sesión con criterio propio.
 2. PHP grammar requiere `<?php` opener para parsear cualquier
    código. Los 4 tests `#[ignore]` originales usaban snippets sin
    opener, lo cual es por qué el walker no encontraba nodos
-   incluso cuando pineaba el kind correcto. Ambos bugs叠加:
-   el snippet inválido y los kind namespineados en el walker.
+   incluso cuando pineaba el kind correcto. Ambos bugs se superponen:
+   el snippet inválido y los kind names pineados en el walker.
 
 3. Swift grammar emite `inheritance_specifier` como children
    repeated por cada parent type (no como field-name agrupador).
@@ -7187,7 +7187,7 @@ assert!(suites.len() >= 30, "expected the crate to still carry its full integrat
 
 Un `>=` con suelo solo comprueba que no se este midiendo el vacio. **No detecta que falte una
 suite**, que es exactamente el fallo que ese fichero existe para impedir. Yo escribi esa guarda, y
-es del mismo tipo que el defecto que N+48保持了 dos bloques: una comprobacion que parece
+es del mismo tipo que el defecto que N+48 mantuvo en dos bloques: una comprobacion que parece
 suficiente porque falla en algun caso, y no falla en el que importa.
 
 **Corregido a un conteo exacto, RED/GREEN demostrado:**
