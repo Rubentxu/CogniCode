@@ -8892,3 +8892,40 @@ una acción real disponible; el binario del prefix ya es exactamente eso.
 arreglos distintos, y la diferencia se ve en cinco segundos con `ls -la` y
 `readlink -f`. Escribir la conclusión antes de mirar la forma del fichero es
 inventar la causa para que encaje con el síntoma.
+
+### N+65.5 — Reconciliación del ROADMAP: dos afirmaciones aging
+
+Al auditar el ROADMAP antes del merge encontré dos afirmaciones que la
+evidencia de hoy ya no sostiene. Ambas son mías o de entradas previas, y ambas
+decían algo más fuerte de lo que se puede defender:
+
+**1. "PR #309 sigue OPEN y `merge-gate` falla por una causa identificada
+(N+63.4)".** El PR sigue OPEN, eso se sostiene. Lo de que `merge-gate` falla
+**ya era falso**: lleva VERDE desde N+64.5 (run `36690728299` sobre
+`91b9b22f`). Un lector que llegue a esa línea después de mergear concluyo que
+el gate está roto, cuando el gate lleva cuatro commits arreglándolo. Corregido
+con el run a la vista.
+
+**2. "`sddk plan roadmap status` ya no falla con `multiple active work
+items`" (N+61).** Hoy sí falla. Y no es el mismo conflicto que N+61 cerró: los
+dos activos reales son `8fec95db` y `a3ec0553` (`ci-pipelinek-kotlin-
+migration`, `OPEN`), este último trabajo en curso del operador. El gemelo
+`82719e1d` está en `done` y nunca contó, como ya corrigió N+63.2.
+
+**El patrón de fondo de las dos entradas** es el de N+60 y el que el propio
+ROADMAP ya describe sobre sí mismo: *reglas enunciadas en prosa y supuestas
+ciertas*. Una fila de tabla escrita en pasado queda convertida en presente, y
+`docs/roadmap/ROADMAP.md` es un documento que la gente cita. Un diario puede
+contar lo que pasó; un roadmap afirma lo que es, y por eso los dos tienen
+presupuesto distinto para la obsolescencia.
+
+**Lo que no hago** es reescribir N+61 ni N+63.4. El diario es append-only por
+contrato, y la corrección va en la fila que afirma, no reescribiendo la que
+se equivocó. N+65.3 → N+65.4 y ahora N+65.5 son la tercera y cuarta vez que
+esta sesión que un "diagnóstico cerrado" era el punto de partida y no el final.
+
+**Lección 150**: un roadmap afirma lo que ES. Cuando la realidad cambia, lo
+correcto es que la fila que afirma sea corregida, no que el diario acumule la
+corrección. Y una reconciliación previa a un merge es trabajo real, no
+documentación cosmetics: si el PR entra con el roadmap mintiendo sobre su
+propio gate, el siguiente que lo lea pierde una hora.
