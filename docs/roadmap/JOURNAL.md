@@ -7777,3 +7777,34 @@ la herramienta** (`cargo metadata`), no suponiendo el valor por defecto.
 Contrato en **3 tests**, todos negativos vistos caer. `cargo fmt` limpio,
 `clippy --tests` sin errores, `pr-ci.yml` parsea, suite CLI completa
 **601 passed, 0 failed** (598 + los 3 nuevos).
+
+## Apply A-014 — corrección de stderr JSON (2026-09-29)
+
+El comando JSON de capabilities escribía INFO de inicio y Rayon a stderr aunque
+stdout fuera JSON válido. Añadida primero la assertion de silencio y observada
+RED real (10 passed, 1 failed, con los dos mensajes INFO capturados). El CLI
+aplica ahora `tracing_subscriber::filter::LevelFilter::OFF` solo para
+`capabilities --json` y `capabilities --format json`; el writer stderr y la ruta
+INFO de los demás comandos permanecen iguales.
+
+También se compara el documento JSON completo entre alias y forma canónica, se
+rechaza su combinación ambigua sin stdout parcial y se verifica mutabilidad de
+los cuatro perfiles (`core=false`, `reviewer=false`, `developer=true`,
+`experimental=false`). Evidencia change-scoped: A-014 11/11, A-013 gate 4/4,
+CLI gate coverage 6/6. Binario real desde `$HOME`: documentos byte-idénticos,
+schema `cognicode.capabilities/v1`, 73 tools, 4 perfiles, 3 mutators y stderr
+JSON de 0 bytes en ambos modos; modo texto conserva resumen y 192 bytes INFO.
+
+Es una corrección Apply nueva en el ciclo operativo OPEN/build, no una
+reescritura de la entrada histórica de cierre A-014. El addendum del Action
+Register conserva esa distinción; este recibo no implica cierre de ciclo.
+
+Verificado de nuevo sobre `f1a58ccb` (rebased sobre `29a96c53`): A-014 11/11,
+A-015 gate 3/3, A-013 gate 4/4, CLI gate coverage 6/6, y la suite CLI completa
+**593 passed, 0 failed** (la entrada N+62 decía 601; ese era el conteo sobre
+otra base de trabajo, y aquí se sustituye por el observado en este árbol).
+`cargo fmt --all --check` exit 0, `cargo clippy -p cognicode-cli --all-targets
+-D warnings` sin warnings. La mutación RED se repitió aislando solo el
+`LevelFilter::OFF`: el test cae a **10 passed, 1 failed**, capturando las dos
+líneas `INFO Starting CogniCode CLI` y `Rayon global thread pool initialized`,
+y vuelve a 11/11 al restaurar. La aserción muerde.

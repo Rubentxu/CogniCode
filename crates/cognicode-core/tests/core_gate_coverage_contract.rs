@@ -123,10 +123,15 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // being quietly dropped, which is the exact failure this file exists
     // to prevent. Raising the number is a deliberate, reviewable act; that
     // is the point.
+    // 37 -> 38 with `a014_product_asset_resolution` (A-014 asset resolution,
+    // added alongside the fix that stops `cognicode capabilities` reading
+    // `product/*.json` from the build machine's path). A suite was added on
+    // purpose in that commit, which is exactly the case this assertion asks
+    // to be a deliberate, reviewable act.
     assert_eq!(
         suites.len(),
-        37,
-        "expected exactly 37 cognicode-core integration suites, found {}. \
+        38,
+        "expected exactly 38 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -225,6 +230,13 @@ fn is_accepted_unreadable(path: &Path) -> bool {
 /// in the machine-readable configuration names them. A rename breaks
 /// the name pin; a deletion breaks the exact count in
 /// `every_core_suite_is_either_named_or_covered_by_an_unrestricted_step`.
+///
+/// `a014_product_asset_resolution` is deliberately NOT here. It is named by
+/// `pr-ci.yml` ("A-014 product assets resolve from the runtime, not the build
+/// machine"), and an anchor is by definition a suite that nothing names. Once
+/// a suite is named, the name pin covers it and adding it to this list would
+/// make the measured set and the pinned set disagree — which is exactly what
+/// `the_anchor_set_is_the_measured_one` is for.
 const ANCHOR_SUITES: &[&str] = &[
     "analytics_bounded_paths",
     "analytics_registry_admission",
