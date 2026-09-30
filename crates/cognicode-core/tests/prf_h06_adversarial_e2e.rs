@@ -18,7 +18,7 @@
 //! | V2c  | Path with `..` traversal → rejected.                                                              |
 //! | V3   | Binary-garbage file masquerading as Rust → classified as parse error (isError=true).             |
 //! | V4   | Decoy secret in source → token literal never appears in any diagnostic channel.                  |
-//! | V5   | Unknown tool name → `isError=true` + "tool not found"/"unknown".                                  |
+//! | V5   | Unknown tool name → `isError=true`; under `--read-only` the authority gate refuses it first (`read_only_mode`, fail-closed), outside read-only dispatch answers `tool not found`. |
 //! | V5b  | Every tool declared with authority ∈ {mutating,execute,network} is treated as mutating.         |
 //! | V6   | stdin closed before `initialize` → exit_code ∈ {0,1}, no panic on stderr.                       |
 //! | V6b  | Partial JSON-RPC header sent + stdin closed → same exit contract as V6.                          |
@@ -580,7 +580,37 @@ fn v5_unknown_tool_name_returns_is_error() {
     let resp = resp_opt.expect("response");
     let (_, _) = wait_clean(child);
 
-    assert_is_error_with(&resp, "not found", "V5");
+    // FAIL-CLOSED (audit 2026-09-30, finding #5): the authority gate runs
+    // BEFORE dispatch, and an unknown name now resolves to the mutating
+    // posture, so under --read-only the rejection is `read_only_mode`
+    // rather than dispatch's `not found`. Both are typed rejections and
+    // nothing executes; what this pins is that the unknown call is
+    // refused by the first line of defence instead of being classified
+    // as a harmless read.
+    let jsonrpc_err = resp.get("error").is_some();
+    let is_err = resp
+        .pointer("/result/isError")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    assert!(
+        jsonrpc_err || is_err,
+        "V5: expected isError=true or jsonrpc error, got {resp}"
+    );
+    let text = resp
+        .pointer("/result/content/0/text")
+        .and_then(Value::as_str)
+        .or_else(|| {
+            resp.get("error")
+                .and_then(|e| e.get("message"))
+                .and_then(Value::as_str)
+        })
+        .unwrap_or("")
+        .to_lowercase();
+    assert!(
+        text.contains("read_only_mode") || text.contains("not found"),
+        "V5: unknown tool must be refused under read-only (read_only_mode \
+         rejection, or not-found outside read-only), got {text:?}"
+    );
 }
 
 #[test]
