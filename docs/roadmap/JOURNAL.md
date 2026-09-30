@@ -8792,8 +8792,8 @@ pudran quedar obsoletos sin que nadie lo note.
 
 ### N+64.9 — El guard cubría 1 de 3 jobs y decía "todos"
 
-Commit `91b9b22f`. Revisé el guard por疫情 de "y si lo que afirma es lo que
-cubre?", y no lo era.
+Commit `91b9b22f`. Revisé el guard por una pregunta incómoda: "¿y si lo que
+afirma es lo que realmente cubre?". No lo era.
 
 `needs_bins` casaba con la palabra `black-box` y con `./target/release/`, y
 el parser solo leía las líneas `name:` y `uses:` de cada step. Resultado, sobre
@@ -8815,7 +8815,7 @@ Dos arreglos:
 
 | # | Cambio | Efecto |
 |---|---|---|
-| 1 | el parser pliega el cuerpo de `run: \|` en la etiqueta del step, y `needs_bins` casa cualquier mención de `target/release/` | `JOBS_IN_SCOPE: build-binary,merge-gate,test-pr` |
+| 1 | el parser pliega el cuerpo de un bloque `run:` en la etiqueta del step, y `needs_bins` casa cualquier mención de `target/release/` | `JOBS_IN_SCOPE: build-binary,merge-gate,test-pr` |
 | 2 | el guard emite `JOBS_IN_SCOPE:` en ambas salidas | el test lee la cobertura real |
 
 **El segundo arreglo existe porque el primero no bastaba.** La primera versión
