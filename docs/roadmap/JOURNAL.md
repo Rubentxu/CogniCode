@@ -8653,7 +8653,7 @@ comparte el estado de proyecto con un ciclo ajeno y abierto, lo cual es
 correcto: son dos líneas de trabajo simultáneas. La colisión de identidad que
 sí era un defecto (dos ciclos para la misma acción A-014) queda registrada y
 gatada, pero **no es la causa de este error**, y el gate de identidad no podía
-detectar esta otra:Aquellos dos work items son activos legítimamente y en
+detectar esta otra: aquellos dos work items son activos legítimamente y en
 ciclos distintos.
 
 **Lección 144**: un diagnóstico de "sin salida" merece una comprobación más. Se
