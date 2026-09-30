@@ -8537,3 +8537,50 @@ listo para merge pero **no está mergeado**; mergear es una acción del
 maintainer, y además el CLI de SDDK 2.2.33 no permite registrar la transición
 (N+65.2). Cerrar A-014 aquí sería mentir sobre el estado. Lo correcto es
 `RELEASE_PENDING` sostenido por evidencia, no un `CLOSED` fabricado.
+
+### N+64.6 — Re-verificación de la medida preventiva (y una corrección)
+
+Revisado lo afirmado en N+64 tras el run verde. Una afirmación era más fuerte
+de lo que la evidencia sostenía, y otra se sostenía pero por un motivo que no
+había comprobado.
+
+**Corrección**: dije que el gate de identidad de acciones estaba "pineado en
+`merge-gate`". Es cierto, pero mi filtro de búsqueda buscaba "identidad de
+acciones" y el paso se llama en inglés. El nombre real es
+`Action register identity contract (A-014 collision must stay visible)`. El
+paso existe, se ejecutó y pasó:
+
+| Evidencia | Resultado |
+|---|---|
+| Paso en el run 36684133482 | `Action register identity contract (...)` **success** |
+| Comando ejecutado por el paso | `cargo test -p cognicode-cli --test action_register_identity_contract --quiet` |
+| Detección de paths por CR-08 | `crates/cognicode-cli/tests/action_register_identity_contract.rs` **[added]** |
+| Local | `5 passed; 0 failed` |
+
+**Comprobación que faltaba**: la medida preventiva vive **solo en la rama del
+PR**, no en la rama principal. En `ci/pipelinek-kotlin-gate` el fichero
+`crates/cognicode-cli/tests/action_register_identity_contract.rs` no existe y
+`16-ACTION-REGISTER.md` tampoco está en `docs/roadmap/` (la ruta real es
+`docs/cognicode-community-productization/`). Es lo correcto: el gate no puede
+proteger un registro que solo existe en la rama del PR. Se vuelve exigible en
+cuanto el PR entre.
+
+**Contenido de la medida preventiva** (verificado leyendo la fila A-014, no
+suponiéndolo): la fila declara los **dos** ciclos (`cp2-a014-capabilities-json`
+y `a-014-capabilities-json`), los **dos** work items (`8fec95db` y
+`82719e1d-46aa-4902-8b86-2bc3291b85bf`) y la palabra "colisión". Los cinco
+tests del gate comprueban exactamente esas propiedades:
+
+```text
+the_register_is_readable_and_has_action_rows
+a_row_declares_at_most_one_cycle_and_it_belongs_to_that_row
+no_work_item_is_claimed_by_two_actions
+no_two_cycles_normalize_to_the_same_action_id
+the_a014_collision_is_declared_not_hidden
+```
+
+**Punto que sigue sin resolver y no se maquilla**: la fila A-014 empieza
+diciendo `CLOSED 2026-09-28`, mientras el work item `8fec95db` sigue `Active`
+y el PR no está mergeado. La fila es más antigua que el estado real. El gate
+**no** comprueba ese campo, y con razón: no tiene acceso al ledger. Queda
+discrepancia documental conocida, no un defecto del gate.
