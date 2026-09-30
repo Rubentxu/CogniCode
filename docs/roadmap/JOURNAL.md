@@ -8853,7 +8853,7 @@ prueba el test, y la mutación lo demuestra en treinta segundos.
 ### N+65.4 — Corrección de N+65.3: no hubo sobrescritura, hay dos copias
 
 N+65.3 escribió que la instalación de 2.2.33 "sobrescribió `~/.local/bin/sddk`
-sin actualizar el receipt". **La palabra "sobrescribió"implies reemplazo, y no
+sin actualizar el receipt". **La palabra "sobrescribió" implica reemplazo, y no
 lo hubo.** El dato correcto:
 
 ```text
