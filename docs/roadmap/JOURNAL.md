@@ -8728,3 +8728,10 @@ commit: pinear contra historia hace el test insatisfacible por construcción.
 **Lección 146**: un mensaje de CI que no distingue dos causas distintas es un
 defecto por sí mismo, aunque el fallo sea correcto. Casi triplica el coste de
 cada incidente.
+
+**Nota de errata**: el mensaje del commit `71b7919f` dice "Tres errores mios
+constructing el guard", donde debía decir "al construir el guard". El error
+queda solo en el mensaje ya publicado; el texto de esta entrada es el
+correcto. No se reescribe historia por una errata ortográfica: `git rebase` de
+un commit ya pusheado no compra nada y cuesta un SHA nuevo que luego hay que
+rastrear.
