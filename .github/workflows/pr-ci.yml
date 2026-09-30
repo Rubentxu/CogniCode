@@ -116,7 +116,7 @@ jobs:
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
   # -----------------------------------------------------------------------
   build-binary:
-    name: build cognicode-mcp (release)
+    name: build release bins (cognicode CLI + MCP + control-plane)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
@@ -139,6 +139,27 @@ jobs:
         # packages'. workspace member = cognicode-explorer; bin =
         # cognicode-control-plane.
         run: cargo build --release --bin cognicode-control-plane
+      # N+64: el CLI `cognicode` faltaba aqui, y el gate lo ejecutaba igual.
+      # `prf_cli_04_two_process_uat` resuelve sus dos binarios por
+      # `common::release_dir()` (NO por `binary_path()` como las demas suites
+      # MCP, que usan CARGO_BIN_EXE): exige `target/release/cognicode` en
+      # disco. En un runner limpio ese fichero no existe porque este job solo
+      # construia los otros dos, y la suite abortaba en la primera asercion
+      # con "falta binario CLI" — en 0,01 s, que es lo que la hace parecer
+      # rapida y verde en la prosa del commit que la gateo.
+      #
+      # RED observado (release/cognicode ausente, runner limpio simulado):
+      #   cli_and_mcp_processes_agree_on_symbols_and_edges --- FAILED
+      #   falta binario CLI: .../target/release/cognicode
+      #   test result: FAILED. 3 passed; 1 failed; finished in 0.01s
+      #
+      # El nombre del job dice "build cognicode-mcp (release)" y su comentario
+      # de cabecera prometia "el binario para el E2E y para F0.1 (cognicode
+      # CLI)". Ambos eran falsos hasta este commit. Se corrige el nombre
+      # tambien: un job que dice una cosa y construye otra es como se
+      # cuelan estos fallos.
+      - name: Build release binario (cognicode CLI)
+        run: cargo build --release --bin cognicode
       - name: Upload binarios
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.5.0 — pinned 2026-09-26 by QW-05
         with:
@@ -146,6 +167,7 @@ jobs:
           path: |
             target/release/cognicode-mcp
             target/release/cognicode-control-plane
+            target/release/cognicode
           retention-days: 1
           if-no-files-found: error
 
@@ -576,6 +598,14 @@ jobs:
       # that silently excludes half the crate.
       - name: cognicode-cli gate coverage contract (must not rot or narrow)
         run: cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet
+      # N+64: the A-014 identity collision (two cycles carrying one action id,
+      # one of them silently Active) is what made `sddk plan roadmap status`
+      # fail with `multiple active work items` and no visible cause. A test
+      # file nobody runs is exactly the rot this repo has already paid for
+      # three times (N+50 selector, N+51 `--lib` blind spot, N+57 anchor
+      # scope), so the contract is pinned here by name.
+      - name: Action register identity contract (A-014 collision must stay visible)
+        run: cargo test -p cognicode-cli --test action_register_identity_contract --quiet
       # Gate the whole cognicode-core integration surface, not a hand-picked
       # subset. `--lib` is what every historical step used: it is valid for
       # this crate (it has a lib.rs), it reads as responsible, and it skips
