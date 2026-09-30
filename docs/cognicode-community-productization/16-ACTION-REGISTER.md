@@ -1,5 +1,18 @@
 # Action Register — PRODUCT-1.0
 
+> **IDs y colisiones (declarado 2026-09-30, auditoría).** Los IDs `A-0XX` de
+> esta tabla son **IDs de acciones del roadmap**, y esta tabla es su única
+> autoridad. Los nombres de suite de test (`a013_lifecycle_uat`,
+> `a015_licenses_gate`, `a015_onboarding_gate`, `a016_tools_runtime_
+> consistency`, …) son **nombres de gate**, no IDs de acción: dos de ellos
+> colisionan numéricamente con acciones de esta tabla (A-015 = onboarding
+> aquí, `a015_licenses_gate` en CI; A-016 = cognicode-site aquí,
+> `a016_tools_runtime_consistency` en CI). Decir "A-016 verde" es ambiguo
+> por diseño heredado; citar la acción por su fila de esta tabla y el gate
+> por su nombre de suite. La migración a IDs namespaced (`CP-A016`) queda
+> registrada como follow-up y la colisión queda vigilada por
+> `roadmap_claims_contract::action_register_ids_are_unique`.
+
 | ID | Acción | Prioridad | Dependencia | Resultado / Acceptance |
 |---|---|---:|---|---|
 | A-001 | Crear track `community-productization` y puntero en ROADMAP | P0 | — | una sola autoridad de agenda |

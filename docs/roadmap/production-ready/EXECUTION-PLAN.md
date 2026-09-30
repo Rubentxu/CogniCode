@@ -12,7 +12,7 @@
 | QW-06 | Sin updater de dependencias | Añadir Dependabot/Renovate solo para Cargo/GHA con cadence controlada | `.github/dependabot.yml` o equivalente | 2–4 h | P3 | QW-05 |
 | QW-07 | `.env` trackeado | Sustituir `.env` versionado por `.env.example`/config local | raíz repo | 1–2 h | P3 | — |
 | CR-01 | C8 no reproducible | Recertificar C8 desde clone limpio sobre nuevo SHA congelado | runbook C8 | 1–2 d | P0 | QW-01..04 |
-| CR-02 | CP evidencia insuficiente | UAT exige exactamente 3 canonical constraints + respuesta coherente | CP integration/UAT | 0.5–1 d | P0 | CR-01 preparación |
+| CR-02 | CP evidencia insuficiente | UAT exige el conjunto canónico admitido para la versión de esquema vigente (3 al firmar CR-02; 5 desde CR-06) + respuesta coherente | CP integration/UAT | 0.5–1 d | P0 | CR-01 preparación |
 | CR-03 | e91 G5 RED | Perf profiling por etapa con fixture multi-repo | e91 / graph insights | 1–2 d | P0 | QW-02 |
 | CR-04 | e91 G5 RED | Implementar optimización mínima basada en profiling | community/graph insights | 2–4 d | P0 | CR-03 |
 | CR-05 | Sin perf regression gate | Test budget + scorecard y streak válido | e91 + CI perf lane | 1–2 d | P0 | CR-04 |

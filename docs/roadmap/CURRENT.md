@@ -1,18 +1,29 @@
-# CURRENT — Puntero operativo post-PRF (reemplaza a `docs/prf/CURRENT.md`)
+# CURRENT — Snapshot operativo (deriva de `docs/roadmap/ROADMAP.md`)
 
-> **Estado**: puntero activo. Sustituye a `docs/prf/CURRENT.md` (snapshot pre-C8,
-> 50 commits stale, congelado como histórico). Esta es la fuente de verdad
-> operativa para CogniCode post-PRF.
+> **Autoridad**: `docs/roadmap/ROADMAP.md` es la **única autoridad de agenda**
+> de CogniCode. Este fichero es un **snapshot puntual**, no una segunda
+> fuente de estado: donde este documento y el ROADMAP diverjan, manda el
+> ROADMAP y este snapshot se considera obsoleto hasta su próxima
+> regeneración. Declarado así tras la auditoría de 2026-09-30, que encontró
+> este fichero afirmando un estado (programa no iniciado, PIVOT pendiente)
+> que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
+> drift que QW-02 define como contradictorio.
+
+> **Snapshot**: 2026-09-30, sobre `main` posterior al merge de PR #310
+> (`ff97755a`). Regenerar antes de citar.
 
 ## HEAD y batería (a 2026-09-27)
 
 * **HEAD funcional**: ver `git rev-parse HEAD` (este doc se versiona junto al workspace, no a sí mismo).
 * **Commits del agente sobre `origin/main`**: ver `git log --author=jcode-bot --oneline | wc -l`.
 * **Tests workspace**: `cargo test --workspace` →
-  **passed=5651 failed=0 ignored=33**.
+  **passed=5651 failed=0 ignored=33** *(cifra del snapshot 2026-09-27; no es
+  current — re-medir antes de citar)*.
 * **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
 * **Working tree**: clean (pendiente commit docs M0.10 closeout).
-* **Versión binario**: `cognicode 0.99.1` (bump SEMVER patch pendiente decisión operador post-M0.6; M0.10 puede mover a v0.99.2).
+* **Versión binario**: `cognicode 0.99.1` en el momento del snapshot;
+  el workspace está en `0.100.0` desde A-035 — ver `Cargo.toml`, no este
+  fichero.
 
 ## Capacidades certificadas (Post-PRF)
 
@@ -46,13 +57,16 @@ Todos los work units e91 cerrados:
 | e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
 | **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **CLOSED 2026-09-27** (commit `e2ee94ad` + cierre oficial en `7df67417` + acceptance en `64235846` + correcciones en `171b7a9c`). Bump `tree-sitter = "0.24" → "0.27"` aplicado; `LanguageError { version: 15 }` REPARADO; 6 acceptance tests pineando API pública pasan; clippy/fmt clean. |
 | **M0.10 walker-grammar-drift** | PHP/Swift walkers pinean nombres de nodo del grammar tree-sitter-php 0.23 / tree-sitter-swift 0.7.3 que el grammar actualizado ya no emite. Síntoma: `cognicode analyze` sobre proyecto `.php`/`.swift` reporta `Languages: {}` y `parsed_files=0`. Detectado post-M0.6 cierre. | **CLOSED 2026-09-27** (commits `2becec6a` parser core + `4eacab93` walker + `a47cf419` acceptance). Causa raíz en 2 capas: parser central (`function_node_type` y `find_identifier_name`) + walker layer (6 grammar-drift points). Validado con `cargo test --workspace` 5651/0/33 (vs 5565/0/37 pre-M0.10 = +86 tests, -4 ignored) y `cargo test -p cognicode-core --test m10_acceptance` 6/0/0. |
-| **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **PENDIENTE** |
+| **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **EJECUTADO** — el programa arrancó tras el pivot de 2026-09-26; estado por outcome en `docs/roadmap/production-ready/ROADMAP-ADDENDUM.md` (reconciliado 2026-09-30). Este snapshot anterior lo registraba como PENDIENTE: era el drift que motivó la declaración de autoridad de la cabecera. |
 
-## Programa production-ready (Post-PIVOT, no iniciado)
+## Programa production-ready (Post-PIVOT, en ejecución)
 
-Tras el pivot del 2026-09-26, el siguiente programa de estabilización
-queda versionado y listo para arrancar (no se ejecuta hasta decisión
-del operador). Detalle completo en
+Tras el pivot del 2026-09-26 el programa arrancó y lleva ejecutándose
+(cierre de QW/CR, CR-06 reabierto y corregido el 2026-09-30, verticales
+ST-01..05 pendientes). El estado por outcome vive en
+`docs/roadmap/production-ready/ROADMAP-ADDENDUM.md` (reconciliado
+2026-09-30); la agenda viva, en `ROADMAP.md`. Detalle histórico del
+arranque en
 `docs/roadmap/production-ready/EXECUTIVE-SUMMARY.md` y `EXECUTION-PLAN.md`.
 
 * **Outcomes**: PR-G1 (governance), PR-G2 (C8-R), PR-PERF (e91 G5),
