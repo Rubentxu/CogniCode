@@ -9071,3 +9071,502 @@ comando que dice emular. Si el comando del workflow dice 0 y el filtro dice
 hecho de que el comando "funciona" — se hereda del hecho de que el comando
 y el filtro dicen lo mismo. Cuando divergen, el filtro es el bug, no el
 comando.
+
+## N+67 — ST-01 cerrado, y el commit anterior se había publicado en rojo
+
+Sesión 2026-10-01. **Rama `fix/st01-file-operations-ports`; commit de código
+`ba031da5` sobre `4b7de348`.** Continuación de la vertical ST-01
+(`EXECUTION-PLAN.md`: extraer `PathPolicy` + ports de parser/filesystem/
+verifier para que `application` deje de depender de MCP/infra).
+
+### N+67.1 — Lo que el commit anterior afirmaba sobre sí mismo
+
+`4b7de348` pineaba **42** entradas de allowlist. Contando `ex(` en el árbol
+de ese commit salen **39**. El test
+`inventory_size_is_pinned_at_current_baseline` fallaba en ese commit, con el
+árbol tal y como quedó publicado:
+
+```text
+$ git worktree add --detach /tmp/wt-st01-base 4b7de348
+$ cargo test -p cognicode-core
+test result: FAILED. 2231 passed; 1 failed; 12 ignored
+test ...::cr06_allowlist::tests::inventory_size_is_pinned_at_current_baseline ... FAILED
+```
+
+El error era aritmética, no medición: las tres entradas de
+`file_operations.rs` se contaba como adiciones cuando ya existían (son las
+que cubren el módulo `#[cfg(test)]`). Un allowlist que miente sobre su propio
+tamaño es peor que uno que confiesa deuda: el primero hace pasar por verde un
+gate que no cuenta.
+
+### N+67.2 — Gates de ST-01, todos medidos en `ba031da5`
+
+| gate | comando | resultado |
+|---|---|---|
+| compilación | `cargo check -p cognicode-core --all-targets` | exit 0 |
+| aceptación | `cargo test -p cognicode-core --test architecture_self_host_e2e` | **6 passed / 0 failed** |
+| anti-vacuidad | 3× `cr06_synthetic_drift_*` | PASS — sigue disparando en `application→bin/infra/interface` |
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| batería del core | `cargo test -p cognicode-core` | **2517 passed / 0 failed / 16 ignored** |
+| grep secundario | `crate::interface::mcp` en `file_operations.rs` | 1 ocurrencia, línea 1990, dentro de `mod tests` (1982) → **0 en producción** |
+
+El criterio de aceptación de ST-01 ("0 imports application→MCP en
+FileOperations") queda cumplido con las dos manos: la fitness function
+(`finds_zero_drift_on_clean_source`) y el grep.
+
+### N+67.3 — Un rojo que NO era de ST-01, medido para no atribuirlo mal
+
+La primera corrida completa dio `1 failed`:
+`test_verify_rust_file_subprocess_killed_on_timeout`. Antes de escribir
+"preexistente" lo medí, porque el árbol base con el mismo comando pasaba:
+
+| corrida | árbol | comando | rojo |
+|---|---|---|---|
+| 1 | con diff | `cargo test -p cognicode-core` | test de PIDs de `rustc` |
+| 2 | base `4b7de348` | `cargo test -p cognicode-core` | inventario pineado |
+| 3 | base `4b7de348` | `--lib` | inventario pineado |
+| 4 | con diff | un solo test | **verde** |
+| 5-7 | con diff | `cargo test -p cognicode-core` | **verde 3/3** |
+
+Causa raíz: el test cuenta PIDs de `rustc` de **toda la máquina** con `pgrep`
+y falla si aparecen más de 2 nuevos. No lleva `#[serial]`, aunque el módulo lo
+importa en la línea 1991, así que corre concurrente con
+`test_verify_rust_file_compilable_rust`, `test_verify_rust_file_broken_rust` y
+`test_verify_rust_file_timeout_rejected`, que sí lanzan `rustc` de verdad. Es
+acoplamiento al entorno, no a la lógica de ST-01, y es intermitente: 1 fallo
+en 7 corridas. El fix es `#[serial]` sobre ese test — una línea, otra unidad.
+
+### N+67.4 — Divergencia con el recibo N+66 (corregida aquí, no reescrita allí)
+
+Al reconstruir el contexto, `git branch --contains f1f0f0c6` salió vacío y N+66
+decía "CLOSED LOCALMENTE — sin push". La conclusión obvia era "commit
+huérfano, recuperarlo". **Era falsa, y recuperar el SHA habría sido
+destructivo.** El linaje fue replanteado por un rebase:
+
+| N+66 cita | realidad en `ci/pipelinek-kotlin-gate` |
+|---|---|
+| HEAD previo `b3716640` | `1a87fbdb` (mismo patch-id `3b7a50ae`, otro contexto) |
+| commit `f1f0f0c6` | `2a13925d` (**patch-id idéntico** `92cec58d`) |
+| "sin push" | rama pusheada: local == `origin/ci/pipelinek-kotlin-gate` == `b5d8682c` |
+
+Forzar `f1f0f0c6` sobre la rama habría revertido el rebase y tirado 4 commits
+ya publicados, entre ellos el propio recibo N+66 (`1194661a`) y el test de
+paridad `50223fbc`. El commit no era trabajo perdido: era el mismo cambio con
+el SHA de antes del rebase. **N+66 no se corrige aquí** (append-only, y la
+rama es otro linaje); queda propuesta una errata aparte.
+
+### N+67.5 — Lo que NO está cerrado
+
+1. **T8 sigue abierta** a propósito. Las tres entradas de `file_operations.rs`
+   son guardas de regresión, no deuda: el módulo de test compone los
+   adaptadores reales por diseño. Cerrarlas = sustituirlas por dobles de test.
+2. **El brazo `catch-all` de `impl PathPolicy` es inalcanzable hoy.**
+   `validate_path` (security.rs:326-440) solo retorna las 6 variantes de ruta
+   que el `match` cubre explícitamente. Es defensa ante un `SecurityError` que
+   comparte con `validate_file_size` / rate limit. Riesgo latente, no bug: si
+   algún día `validate_path` devolviera `RateLimitExceeded`, el port lo
+   reportaría como `InvalidPathCharacters` con un path fabricado.
+3. **Ningún test pina el mapeo de errores** de `PathPolicy`. El port tiene 5
+   referencias en 5 ficheros de producción y 0 en tests. El contrato de
+   traducción `SecurityError → PathPolicyError` no ha visto fallar nunca.
+4. **Batería de workspace completa no ejecutada.** Solo `cognicode-core`
+   (2517/0/16). Nada más se ha medido en esta sesión.
+5. **Errata de N+66 pendiente** y **error `VAULT003` del vault pendiente**
+   (diagnosticado: no es un nodo ausente sino *casing* —
+   `REQ-Gate-003-Core-Parity-With-**M**ain.md` existe, el wikilink de
+   `DES-Gate-001` escribe `With-**m**ain`; 2 ocurrencias, líneas 12 y 66).
+6. **Rama sin push**: `ba031da5` es local. El PR contra `main` es decisión del
+   operador.
+
+**Lección 153**: un commit que se publica con su propio test en rojo no es un
+commit pendiente de una comprobación, es un commit que ya miente. Aquí la
+mentira era del tamaño del allowlist: 42 contra 39, y durante un turno
+completo nadie lo vio porque el gate de ST-01 (la fitness function) estaba
+verde y el que contaba era otro test. Un gate que pasa no dice que el árbol
+esté bien: dice que *ese* gate pasó. La lección 151 ya decía que un test que
+pasa bajo una mutación puede ser una mutación mal formulada; esta es la
+simétrica — un árbol que pasa un gate puede tener otro gate roto al lado.
+
+## N+68 — El flake era un test sin serializar, y el contrato del port no tenía test
+
+Sesión 2026-10-01, continuación de N+67. **Rama `fix/st01-file-operations-ports`
+sobre `4b1c2f2a`.** Cierra tres deudas que N+67 dejó anotadas y repara el vault
+que estaba en fail-closed.
+
+### N+68.1 — El flake: `#[serial]` en los 4 tests que faltaban
+
+N+67.3 diagnosticó el rojo intermitente pero NO lo arregló. La causa era
+acoplamiento de concurrencia, y el arreglo es de pertenencia a grupo, no de
+lógica: `serial_test::serial` solo serializa tests **marcados** entre sí, así
+que un test marcado sigue corriendo en paralelo con los no marcados.
+
+Medición antes/después, mismo comando (`cargo test -p cognicode-core --lib`),
+con el nombre del test que falla capturado:
+
+| estado | corridas | fallos |
+|---|---|---|
+| antes del fix | 7 | **1** (`test_verify_rust_file_subprocess_killed_on_timeout`) |
+| después del fix | 8 | **0** |
+
+Los 4 tests de `file_operations.rs` que lanzan `rustc` de verdad y no estaban
+marcados: `test_verify_rust_file_compilable_rust`,
+`test_verify_rust_file_broken_rust`, `test_verify_rust_file_timeout_rejected`
+y el propio detector `test_verify_rust_file_subprocess_killed_on_timeout`.
+`infrastructure/verification/rust_verifier.rs` ya tenía los suyos marcados
+(4 de 4). Los 8 que lanzan `rustc` están ahora en el grupo serial: es una
+propiedad estática, verificable en el diff, no una promesa probabilística.
+
+Un test que muestrea `pgrep` de **toda la máquina** es sensible a cualquier
+subproceso concurrente, no solo a los que expiran. Por eso el detector también
+lleva `#[serial]`: serializar solo a los generadores no bastaba.
+
+**Lo que este fix NO demuestra**: que la flake desapareció. 0 fallos en 8
+corridas no es prueba de ausencia. Lo que sí cambió es el acoplamiento, y eso
+está en el diff.
+
+### N+68.2 — El contrato `SecurityError → PathPolicyError` ya no es una descripción con `assert`
+
+N+67.5 §3: `PathPolicy` tenía 5 referencias en producción y **0** en tests.
+Dos tests nuevos en `security.rs`, cada caso pineando **ambos lados** (el
+`SecurityError` que el validador produce y el `PathPolicyError` que el port
+debe devolver), más el caso positivo que hace que la tabla sea un contrato y
+no una suite de rechazos:
+
+| caso | disparador |
+|---|---|
+| traversal | `../../etc/passwd` |
+| null byte | `bad\0name` |
+| too deep | 101 componentes absolutos (`MAX_PATH_COMPONENTS` = 100) |
+| unreachable | padre inexistente bajo el workspace |
+| outside workspace | fichero existente fuera del workspace declarado |
+| symlink | symlink real a fichero real (`#[cfg(unix)]`) |
+| **aceptado** | fichero normal dentro del workspace |
+
+RED demostrado por mutación contra `impl PathPolicy`. Las tres mueren:
+
+| # | mutación | resultado |
+|---|---|---|
+| M1 | `PathTraversalAttempt` → `PathNotAccessible` en el port | **1 FAILED** |
+| M2 | `PathTooDeep { depth: 0, .. }` (caída de payload) | **1 FAILED** |
+| M3 | `match Ok::<(), SecurityError>(())` (siempre `Ok`) | **1 FAILED** |
+
+Fichero restaurado byte-idéntico tras las tres (`sha256 ed7b5b5a…`).
+
+**El catch-all sigue sin test que lo observe, y ahora se sabe por qué**: como
+`validate_path` solo retorna las 6 variantes de ruta, el brazo `Err(other)` es
+inalcanzable. Ninguna mutación razonable lo alcanza. Queda registrado como
+riesgo latente (N+67.5 §2), no como bug.
+
+### N+68.3 — El vault deja de estar fail-closed
+
+`VAULT003` no era un nodo ausente. `specs/ci-gate/REQ-Gate-003-Core-Parity-With-**M**ain.md`
+existe con `title`/`slug` en mayúscula; el wikilink de `DES-Gate-001` escribía
+`With-**m**ain`. Dos ocurrencias (líneas 12 y 66), dos caracteres.
+
+```text
+antes:  errors 1  diagnostics [VAULT003 ...]   exit 1
+después: errors 0 warnings 0                   exit 0
+```
+
+139 nodos, 389 backlinks en ambos casos: el único cambio es el enlace.
+
+Además, `DES-Gate-001` afirmaba dos cosas que N+66 ya había desmentido: que
+clippy seguía *"staged con un baseline documentado de 42 errores"* y que el
+lado `.kts` estaba *"NOT BUILT"*. Medido a `ba031da5`: el `.kts:78` corre el
+clippy pelado y `.kts:128-134` stagea los dos core suites que el nodo listaba
+como ausentes. El `Rationale` **no se reescribió**: es una observación fechada
+`OBSERVED 2026-09-30 at 7e7cc57a` y el registro de lo que era cierto entonces
+tiene valor. Se añadió una sección `Superseded` con el estado medido y una
+entrada de changelog bi-temporal.
+
+`status: proposed` y `verified_in_cycle: never` **no** se promovieron: el
+vocabulario de design-nodes en uso es solo `proposed` y `blocked`, y
+inventar un valor de lifecycle sin autoridad detrás es crear una segunda
+fuente de verdad. Decisión del operador.
+
+### N+68.4 — Errata de N+66
+
+N+67.4midió la divergencia; aquí queda consolidada como errata, porque el
+journal es append-only y N+66 no se edita. Las tres afirmaciones falsas de
+N+66 y su realidad:
+
+| N+66 dice | realidad |
+|---|---|
+| "HEAD previo `b3716640`" | `1a87fbdb` (mismo patch-id `3b7a50ae`) |
+| "commit nuevo `f1f0f0c6`" | `2a13925d` (patch-id **idéntico** `92cec58d`) |
+| "CLOSED LOCALMENTE — sin push" | pusheada: local == `origin/ci/pipelinek-kotlin-gate` == `b5d8682c` |
+
+El linaje fue replanteado por un rebase. `git branch --contains f1f0f0c6` sale
+vacío y eso **no** significa trabajo perdido: un SHA reescrito sigue siendo el
+mismo cambio. Recuperarlo habría tirado 4 commits ya publicados.
+
+### N+68.5 — ST-02 medido, y por qué NO se ha arrancado
+
+`workspace_session.rs`: 4534 líneas, 10 campos en el struct, **1** import de
+`interface` (línea 40, `InputValidator`) y **7** de `infrastructure`.
+
+El import de `interface` parece trivial porque `InputValidator` ya implementa
+`PathPolicy` (eso lo hizo ST-01). La medición dice lo contrario:
+
+```text
+$ grep -rn "WorkspaceSession::new" --include=*.rs . | wc -l
+77
+```
+
+`FileOperationsService::new` ya recibe `Arc<dyn PathPolicy>`, así que el
+`InputValidator` de la línea 140 existe solo para construirlo. Eliminar el
+import exige que `application` deje de nombrarlo, y eso obliga a mover la
+composición fuera de `application` — lo que toca la firma de
+`WorkspaceSession::new` y sus **77** puntos de llamada, la mayoría tests del
+propio módulo.
+
+Eso no es un refactor mecánico de una línea: es el diseño de ST-02 (5 d según
+`DEPENDENCY-MAP.md`), y su tensión real es que los 77 callers quieren el
+constructor cómodo mientras `application` no puede nombrar tipos de
+`interface`. Empezarlo al final de una sesión ya larga lo dejaría a medias, que
+es exactamente lo que la disciplina prohíbe. **Se mide y se registra; no se
+abre.**
+
+### N+68.6 — Gates de esta unidad
+
+| gate | comando | resultado |
+|---|---|---|
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| suite del core | `cargo test -p cognicode-core` | **2519 passed / 0 failed / 16 ignored** |
+| flake | `cargo test -p cognicode-core --lib` × 8 | 8/8 verde (antes 1/7) |
+| vault | `sddk vault validate` | 0 errors, exit 0 |
+| anti-vacuidad | 3 mutaciones | las 3 FAILED |
+
+### N+68.7 — Lo que NO está cerrado
+
+1. **El catch-all de `impl PathPolicy` sigue sin cobertura** y es demostrablemente
+   inalcanzable con las reglas actuales (N+68.2). Riesgo latente.
+2. **Batería de workspace completa no ejecutada**, solo `cognicode-core`.
+3. **ST-02 sin arrancar** (N+68.5): necesita exploración de diseño antes de código.
+4. **`DES-Gate-001` sigue `proposed` / `verified_in_cycle: never`**: decisión de
+   lifecycle del operador, no mecánica.
+5. **14 nodos del vault citan el `project_id` antiguo** `p-c1fac1fea05615c6` y
+   ninguno cita el actual `p-2c63a808fcee924a`. Consistente con una re-adopción
+   que heredó el vault, pero no está verificado ni documentado en ninguna parte.
+6. **Rama sin push**: 5 commits por delante de `origin/main`.
+
+**Lección 154**: un test que muestrea estado global (`pgrep`, variables de
+entorno, puertos) no se arreglá Serializándolo a él solo. `#[serial]` es un
+grupo, y el grupo lo definen **todos** los que tocan ese estado. El primer
+intento de N+68.1 puso el atributo en los 4 tests de `file_operations` y falló
+igual, porque la pertenencia al grupo es transitiva: había que preguntar
+quién más toca el estado, no solo quién parece sospechoso. Y un arreglo de
+concurrencia no se prueba con "N corridas verdes" — eso no prueba ausencia de
+flake — sino con una propiedad estática del grupo que se pueda leer en el diff.
+
+## N+69 — ST-02: la deuda de frontera, cuantificada, y por qué la rebanada 1 es barata
+
+Sesión 2026-10-01, continuación inmediata de N+68. Sin cambios de código: es
+exploración y medida. **Rama `fix/st01-file-operations-ports` sobre `3cda2ee6`.**
+
+### N+69.1 — Corrección de magnitud en N+68.5
+
+N+68.5 conclude que eliminar el import de `interface` en
+`workspace_session.rs` "toca la firma de `WorkspaceSession::new` y sus **77**
+puntos de llamada". El 77 es correcto; la **implicación** de que 77 es acoplamiento
+de producción no lo es. El desglose:
+
+| callers | dónde | naturaleza |
+|---|---|---|
+| **2** | `interface/cli/commands.rs:1821`, `:1893` | producción, capa `interface` |
+| 75 | `application/workspace_session.rs` | su propio `mod tests` |
+
+Los 2 de producción están en `interface/`, que **puede** nombrar
+`interface::mcp::security`. La restricción solo ata a `application`. Los 75 son
+tests del módulo: se resuelven con un doble o con un constructor de test, no
+con 75 ediciones de firma. La cifra correcta no es "77 sitios", es "2 sitios
+que importan y 75 que se pueden dejar como están".
+
+### N+69.2 — La deuda de frontera, medida (no heredada del doc)
+
+39 entradas en `exceptions()`. Repartidas:
+
+| constraint | entradas |
+|---|---|
+| `application_no_infrastructure` | 37 |
+| `application_no_interface` | **2** |
+
+| owner | entradas | vertical |
+|---|---|---|
+| `team:st-04` | 18 | HandlerContext |
+| `team:st-03` | 11 | AnalysisService |
+| `team:st-02` | 7 | WorkspaceSession |
+| `team:st-01` | 3 | FileOperations (guardas `cfg(test)`) |
+
+Las 2 entradas de `application_no_interface` son **toda** la deuda
+`application → interface` que queda:
+
+- `application/services/file_operations.rs` → `interface::mcp::security` (`team:st-01`, guarda `cfg(test)`)
+- `application/workspace_session.rs` → `interface::mcp::security` (`team:st-02`)
+
+**Consecuencia que el roadmap no decía explícitamente**: la rebanada 1 de ST-02
+no es "un paso más" hacia PR-ARCH, es **la última**
+`application → interface` de producción en el codebase. Terminada, la única
+entrada que sobrevive de esa constraint es la guarda de test de ST-01.
+
+### N+69.3 — ST-02 rebanada 1, dimensionada
+
+`workspace_session.rs`: 4534 líneas, 10 campos, 1 import de `interface`
+(línea 40) y 7 de `infrastructure`. La rebanada 1 ataca **solo el import de
+`interface`**:
+
+1. `application` deja de nombrar `InputValidator`. `FileOperationsService::new`
+   ya recibe `Arc<dyn PathPolicy>` (firma verificada en `file_operations.rs:244`),
+   así que el `InputValidator` de la línea 140 existe únicamente para construirlo.
+2. La composición real (que nombra `InputValidator`) vive en la capa
+   `interface`, que es quien puede.
+3. `application::WorkspaceSession` recibe las capacidades; los 2 callers de
+   `interface/cli/commands.rs` pasan las reales.
+4. Los 75 tests siguen con `WorkspaceSession::new(path)` de 1 argumento
+   (verificado: las 4 formas únicas son `new(temp_dir.path())`,
+   `new(temp_dir1.path())`, `new(temp_dir2.path())`, `new("/nonexistent/path")`),
+   respaldados por un doble de `PathPolicy` — que además ya es pineable con el
+   contrato de N+68.2.
+
+Superficie tocada: 1 import, 2 callers de producción, 1 doble nuevo, 1 entrada
+de allowlist eliminada (39 → 38). Los 75 tests no cambian de firma.
+
+### N+69.4 — Lo que esa rebanada NO cierra
+
+ST-02 completo sigue siendo las 7 imports de `infrastructure` y el struct de
+10 campos: `GraphCache`, `TraversalDirection`, `CompositeProvider`, `Language`,
+`semantic::{SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService}`
+y `RustVerifier`. Son las 7 entradas `team:st-02` del allowlist. La rebanada 1
+deja `application_no_interface` en 1 (solo la guarda de test) pero
+`application_no_infrastructure` en 37.
+
+Y la larga cola real no es ST-02: es **ST-03 (11) y ST-04 (18)**, que son 29 de
+las 39 entradas. ST-04 toca 21 ficheros distintos de `application`. Si el
+objetivo es PR-ARCH, el orden por retorno no es ST-02 → ST-03 → ST-04, porque
+ST-02 es la única que elimina una categoría de constraint entera.
+
+### N+69.5 — Gates
+
+Ninguno: esta entrada no toca código. Lo que se afirma son mediciones, todas
+reproducibles con los comandos citados (`grep` sobre `exceptions()`,
+`WorkspaceSession::new`, y la firma de `FileOperationsService::new`).
+
+**Lección 155**: un número sin desglose propaga un error de magnitud. "77
+puntos de llamada" se leyó como "77 acoplamientos" y casi convierte una
+rebanada de un día en una de cinco. El mismo hecho, desglosado, es 2 sitios que
+importan y 75 que no importan nada: la restricción ata a la capa, no al
+recuento de llamadas. Antes de heredar una cifra de un diagnóstico, desglosar
+en la dimensión que la restricción realmente acota.
+
+## N+70 — ST-02 rebanada 1, y la mentira que el allowlist llevaba dentro
+
+Sesión 2026-10-01. **Rama `fix/st01-file-operations-ports`.** Ejecuta lo
+dimensionado en N+69.3 y, en el camino, desmiente una afirmación que cuatro
+entradas del allowlist llevaban escribiendo.
+
+### N+70.1 — Lo implementado
+
+`application/workspace_session.rs` (4534 líneas) deja de nombrar
+`interface::mcp::security::InputValidator`:
+
+- `WorkspaceSession::new` pasa a ser
+  `with_path_policy(root, Arc<dyn PathPolicy>)`. La capa `application` recibe
+  el port; el código que decide *qué* validador construir sube a la capa que
+  puede nombrarlo.
+- `new(root)` se conserva como `#[cfg(test)] pub(crate)`: compone el
+  `InputValidator` **real** para los 75 tests del módulo. Un doble permisivo
+  los habría dejado en verde sin seguir cubriendo los rechazos que existen
+  para cubrir — una suite verde que dejó de significar nada.
+- Los 2 callers de producción (`interface/cli/commands.rs:1821`, `:1893`)
+  construyen el validador y pasan el port, siguiendo el patrón que el propio
+  fichero ya usaba en su línea 1736.
+
+Resultado: **cero acoplamiento `application → interface` de producción en todo
+el codebase.** Verificado por grep y por el gate.
+
+### N+70.2 — La predicción de N+69.3 era falsa, y el gate lo dijo
+
+N+69.3 Wheelled que el allowlist bajaría de 39 a 38 entradas al dejar de
+existir la violación. **No baja: sigue en 39.** Motivo: el evaluator lee
+líneas de fuente, así que un import dentro de `#[cfg(test)]` sigue contando.
+La entrada no desaparece, cambia de naturaleza: de deuda de producción a
+guarda. La afirmación correcta no es "39 → 38" sino "**ambas** entradas de
+`application_no_interface` son ahora `cfg(test)-only`".
+
+### N+70.3 — Lo que encontré al escribir el rationale: la guarda no la applicaba nadie
+
+Las cuatro entradas `cfg(test)-only` (3 de `file_operations.rs` + 1 de
+`workspace_session.rs`) decían, todas con la misma fórmula: *"Regression
+rule: a match on a non-test line means ST-0X regressed"*.
+
+**Eso era falso.** Lo medí antes de heredarlo. Reintroduje el import en una
+línea de producción de `workspace_session.rs` y el gate no se inmutó:
+
+```text
+$ # use crate::interface::mcp::security::InputValidator;  en la línea 41
+$ cargo test -p cognicode-core --test architecture_self_host_e2e
+test result: ok. 6 passed; 0 failed
+```
+
+La causa está en `TemporaryException::matches` (`constraint.rs:421`): compara
+`constraint_id`, `file_path` y un prefijo de `dependency_path`, y **no tiene
+nociones de número de línea**. Una entrada suprime *todas* las apariciones en
+ese fichero — el import de test que queremos y el de producción que no.
+
+Es la forma exacta del ghost filter de N+66: una entrada que promete
+proteger algo que el filtro no puede ver. Y como era falso, era falso en las
+cuatro: la de `workspace_session` la acabo de escribir yo, copiando la fórmula
+de las tres que ya estaban.
+
+### N+70.4 — La afirmación ahora es un test
+
+`cfg_test_only_entries_really_have_no_production_import` comprueba, para las
+4 entradas, que ningún import prohibido aparece **antes** del primer marcador
+`#[cfg(test)]` del fichero — zona que se compila siempre en producción.
+
+Verificado en las dos direcciones:
+
+| escenario | resultado |
+|---|---|
+| árbol limpio | **ok** (5/5 en el módulo) |
+| import prohibido en `file_operations.rs:28` | **FAILED**, con el fichero y la línea en el mensaje |
+
+Las 4 rationales del allowlist se reescribieron para apuntar al test en vez de
+declarar una regla que nadie aplicaba.
+
+**Alcance, dicho con honestidad**: el test cubre la región anterior al primer
+`#[cfg(test)]`. No cubre el stretch entre un item `#[cfg(test)]` y el módulo
+de tests (en `workspace_session.rs` son las líneas 201-2174). Un import
+escondido ahí no lo detectaría. La región cubierta es sound —nada anterior al
+primer marcador es solo-test— y es donde caen las regresiones reales, que es
+justo como entraron estos imports.
+
+### N+70.5 — Gates
+
+| gate | comando | resultado |
+|---|---|---|
+| compilación | `cargo check -p cognicode-core --all-targets` | exit 0 |
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| CR-06 fitness | `cargo test -p cognicode-core --test architecture_self_host_e2e` | **6 passed / 0 failed** |
+| suite del core | `cargo test -p cognicode-core` | **2520 passed / 0 failed / 16 ignored** |
+| anti-vacuidad | mutación de import en producción | **FAILED**, con fichero:línea |
+
+### N+70.6 — Lo que NO está cerrado
+
+1. **ST-02 no está cerrado**, solo su rebanada 1. Quedan las 7 imports de
+   `infrastructure` y el struct de 10 campos: son las 6 entradas
+   `application_no_infrastructure` de `team:st-02`.
+2. **El hueco del test nuevo** (región 201-2174) está declarado, no cerrado.
+3. **Batería de workspace completa no ejecutada**, solo `cognicode-core`.
+4. **Sin push**: la rama acumula 6 commits sobre `origin/main`.
+5. `DES-Gate-001` sigue `proposed`; 14 nodos del vault citan el `project_id`
+   antiguo (N+68.7, sin cambios).
+
+**Lección 156**: una regla escrita en el campo `rationale` de un allowlist es
+prosa, no código. Tres entradas llevaban meses (un día) diciendo "una
+aparición en línea no-test significa regresión", y nadie lo había comprobado:
+el filtro que lo debería hacer no mira líneas. Es la lección 152 aplicada a la
+dirección contraria — no se trata de que un gate afirme menos de lo que hace,
+sino de que una **excepción** afirme más de lo que su propio filtro puede
+ver. La cura no es reescribir la frase con más cuidado: es mover la afirmación
+a un test que muerde, y mutarlo para demostrar que muerde.

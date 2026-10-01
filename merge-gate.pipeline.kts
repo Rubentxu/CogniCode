@@ -77,6 +77,16 @@ pipeline {
                 // permitted more than CI; restored to the bare assertion CI runs.
                 sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
             }
+
+            stage("rustdoc-gate") {
+                // Wired 2026-10-01. The M0.11 rustdoc gate was green and ran in no
+                // pipeline at all, so a rustdoc warning that ST-01 introduced in
+                // infrastructure/parser/syntax_analysis.rs survived that commit, the
+                // whole branch and six more commits: nothing executed it. It surfaced
+                // only because someone ran `cargo test --workspace`.
+                // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_both_pipelines.
+                sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
+            }
         }
 
         // ---------------------------------------------------------- build-binary

@@ -25,12 +25,9 @@ use crate::application::dto::{
     VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
-use crate::domain::traits::Parser;
+use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
-use crate::infrastructure::parser::{Language, TreeSitterParser};
-use crate::infrastructure::vfs::VirtualFileSystem;
-use crate::interface::mcp::security::{InputValidator, SecurityError};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use ignore::WalkBuilder;
 use regex::Regex;
@@ -222,50 +219,45 @@ pub struct FileOperationsService {
     /// Workspace root for fallback path resolution
     workspace_root: String,
 
-    /// Virtual file system for edit operations
-    #[allow(dead_code)]
-    vfs: VirtualFileSystem,
+    /// Path-safety policy port (ST-01): the application owns the contract;
+    /// the MCP security layer implements it.
+    path_policy: Arc<dyn PathPolicy>,
 
-    /// Input validator for path security checks (single authority)
-    validator: Arc<InputValidator>,
+    /// Syntax-analysis port (ST-01): parsing, symbol extraction and
+    /// cleanliness probes behind a language-keyed seam.
+    syntax: Arc<dyn SyntaxAnalysis>,
 
     /// Code verifier for retrieve_and_verify operations (ISP-segregated)
     code_verifier: Arc<dyn CodeVerifier>,
 }
 
 impl FileOperationsService {
-    /// Creates a new FileOperationsService with the given InputValidator and CodeVerifier.
+    /// Creates a new FileOperationsService from injected ports (ST-01).
     ///
-    /// The validator is the single authority for path security validation.
-    /// The code_verifier handles compilation-based code verification.
+    /// `path_policy` is the single authority for path security validation
+    /// (implemented by the MCP `InputValidator` outside this layer).
+    /// `code_verifier` handles compilation-based code verification.
+    /// `syntax` owns parsing, symbol extraction and cleanliness probes.
+    ///
+    /// The constructor assembles nothing concrete itself: wiring belongs
+    /// to the composition root (see ST-02).
     pub fn new(
         workspace_root: impl Into<String>,
-        validator: Arc<InputValidator>,
+        path_policy: Arc<dyn PathPolicy>,
         code_verifier: Arc<dyn CodeVerifier>,
+        syntax: Arc<dyn SyntaxAnalysis>,
     ) -> Self {
         Self {
             workspace_root: workspace_root.into(),
-            vfs: VirtualFileSystem::new(),
-            validator,
+            path_policy,
             code_verifier,
+            syntax,
         }
-    }
-
-    /// Returns a default FileOperationsService with a default RustVerifier.
-    ///
-    /// This is useful for testing and simple cases where dependency injection is not needed.
-    pub fn with_defaults(workspace_root: impl Into<String>) -> Self {
-        use crate::infrastructure::verification::RustVerifier;
-        Self::new(
-            workspace_root,
-            Arc::new(InputValidator::new()),
-            Arc::new(RustVerifier::new()),
-        )
     }
 
     /// Validates that a path is within the workspace and safe.
     ///
-    /// Delegates to InputValidator::validate_path for security checks:
+    /// Delegates to the [`PathPolicy`] port for security checks:
     /// - Path traversal detection
     /// - Null byte detection
     /// - Path depth validation
@@ -276,31 +268,28 @@ impl FileOperationsService {
     fn validate_path(&self, path: &str) -> AppResult<String> {
         let requested = Path::new(path);
 
-        // Delegate security validation to InputValidator
-        self.validator
+        // Delegate security validation to the PathPolicy port
+        self.path_policy
             .validate_path(requested)
             .map_err(|e| match e {
-                SecurityError::PathTraversalAttempt { path } => {
+                PathPolicyError::PathTraversalAttempt { path } => {
                     AppError::InvalidParameter(format!("Path traversal attempt detected: {}", path))
                 }
-                SecurityError::PathNotAccessible { path } => {
+                PathPolicyError::PathNotAccessible { path } => {
                     AppError::InvalidParameter(format!("Path not accessible: {}", path))
                 }
-                SecurityError::PathOutsideWorkspace => {
+                PathPolicyError::PathOutsideWorkspace => {
                     AppError::InvalidParameter("Path outside workspace".to_string())
                 }
-                SecurityError::PathTooDeep { depth, max } => AppError::InvalidParameter(format!(
+                PathPolicyError::PathTooDeep { depth, max } => AppError::InvalidParameter(format!(
                     "Path too deep: {} components (max: {})",
                     depth, max
                 )),
-                SecurityError::InvalidPathCharacters { path } => {
+                PathPolicyError::InvalidPathCharacters { path } => {
                     AppError::InvalidParameter(format!("Invalid characters in path: {}", path))
                 }
-                SecurityError::SymlinkDetected { path } => {
+                PathPolicyError::SymlinkDetected { path } => {
                     AppError::InvalidParameter(format!("Symlink detected in path: {}", path))
-                }
-                other => {
-                    AppError::InvalidParameter(format!("Security validation failed: {}", other))
                 }
             })?;
 
@@ -634,29 +623,14 @@ impl FileOperationsService {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
-        let lang = Self::detect_language(path).and_then(|l| match l.as_str() {
-            "rust" => Some(Language::Rust),
-            "python" => Some(Language::Python),
-            "javascript" => Some(Language::JavaScript),
-            "typescript" => Some(Language::TypeScript),
-            "go" => Some(Language::Go),
-            "java" => Some(Language::Java),
-            _ => None,
-        });
-
-        let Some(language) = lang else {
+        let Some(lang_key) = Self::detect_language(path) else {
             // Fall back to raw content for unsupported languages
             let start = input.start_line.unwrap_or(1);
             let end = input.end_line.unwrap_or(u32::MAX);
             return self.read_file_range(path, start, end);
         };
 
-        let parser = TreeSitterParser::new(language)
-            .map_err(|e| AppError::InvalidParameter(format!("Parser error: {}", e)))?;
-
-        let symbols = parser
-            .find_all_symbols(&content)
-            .map_err(|e| AppError::InvalidParameter(format!("Symbol extraction error: {}", e)))?;
+        let symbols = self.syntax.find_all_symbols(&lang_key, &content)?;
 
         // Format as outline
         let mut outline = String::new();
@@ -686,28 +660,13 @@ impl FileOperationsService {
         let content = fs::read_to_string(path)
             .map_err(|e| AppError::InvalidParameter(format!("Failed to read file: {}", e)))?;
 
-        let lang = Self::detect_language(path).and_then(|l| match l.as_str() {
-            "rust" => Some(Language::Rust),
-            "python" => Some(Language::Python),
-            "javascript" => Some(Language::JavaScript),
-            "typescript" => Some(Language::TypeScript),
-            "go" => Some(Language::Go),
-            "java" => Some(Language::Java),
-            _ => None,
-        });
-
-        let Some(language) = lang else {
+        let Some(lang_key) = Self::detect_language(path) else {
             let start = input.start_line.unwrap_or(1);
             let end = input.end_line.unwrap_or(u32::MAX);
             return self.read_file_range(path, start, end);
         };
 
-        let parser = TreeSitterParser::new(language)
-            .map_err(|e| AppError::InvalidParameter(format!("Parser error: {}", e)))?;
-
-        let symbols = parser
-            .find_all_symbols(&content)
-            .map_err(|e| AppError::InvalidParameter(format!("Symbol extraction error: {}", e)))?;
+        let symbols = self.syntax.find_all_symbols(&lang_key, &content)?;
 
         // Format as compressed symbol list
         let mut symbols_output = String::new();
@@ -757,21 +716,13 @@ impl FileOperationsService {
         let lines_slice = &lines[start..end];
 
         // Try to use tree-sitter for better compression if language is supported
-        let lang = Self::detect_language(path).and_then(|l| match l.as_str() {
-            "rust" => Some(Language::Rust),
-            "python" => Some(Language::Python),
-            "javascript" => Some(Language::JavaScript),
-            "typescript" => Some(Language::TypeScript),
-            "go" => Some(Language::Go),
-            "java" => Some(Language::Java),
-            _ => None,
-        });
-
-        if let Some(language) = lang
-            && let Ok(parser) = TreeSitterParser::new(language)
-        {
-            // Use tree-sitter to extract symbols and compress
-            if let Ok(symbols) = parser.find_all_symbols(&lines_slice.join("\n")) {
+        if let Some(lang_key) = Self::detect_language(path) {
+            // Use tree-sitter to extract symbols and compress (best effort:
+            // unsupported or unparsable content falls through to plain text)
+            if let Ok(symbols) = self
+                .syntax
+                .find_all_symbols(&lang_key, &lines_slice.join("\n"))
+            {
                 let mut compressed = String::new();
                 let total_symbols = symbols.len();
 
@@ -863,15 +814,14 @@ impl FileOperationsService {
 
                 // Add body summary with compression info
                 compressed.push_str("// BODY SUMMARY:\n");
-                let lang_str = format!("{:?}", language);
-                let body_summary = Self::compress_content_basic(&lines_slice.join("\n"), &lang_str);
+                let body_summary = Self::compress_content_basic(&lines_slice.join("\n"), &lang_key);
                 compressed.push_str(&body_summary);
                 return Ok(compressed);
             }
         }
 
         // Fallback: basic compression without tree-sitter
-        let lang_str = lang.map(|l| format!("{:?}", l)).unwrap_or_default();
+        let lang_str = Self::detect_language(path).unwrap_or_default();
         Ok(Self::compress_content_basic(
             &lines_slice.join("\n"),
             &lang_str,
@@ -1280,48 +1230,16 @@ impl FileOperationsService {
 
         // Validate syntax using tree-sitter if possible
         let lang = Self::detect_language(&validated_path);
-        let validation = if let Some(lang_str) = lang {
-            let language = match lang_str.as_str() {
-                "rust" => Some(Language::Rust),
-                "python" => Some(Language::Python),
-                "javascript" => Some(Language::JavaScript),
-                "typescript" => Some(Language::TypeScript),
-                "go" => Some(Language::Go),
-                "java" => Some(Language::Java),
-                _ => None,
-            };
-
-            if let Some(language) = language {
-                match TreeSitterParser::new(language) {
-                    Ok(parser) => match parser.parse_tree(&new_content) {
-                        Ok(tree) => {
-                            if TreeSitterParser::has_error_nodes(&tree) {
-                                EditValidation {
-                                    passed: false,
-                                    syntax_issues: vec![],
-                                }
-                            } else {
-                                EditValidation {
-                                    passed: true,
-                                    syntax_issues: vec![],
-                                }
-                            }
-                        }
-                        Err(_) => EditValidation {
-                            passed: false,
-                            syntax_issues: vec![],
-                        },
-                    },
-                    Err(_) => EditValidation {
-                        passed: true, // Can't create parser, skip validation
-                        syntax_issues: vec![],
-                    },
-                }
-            } else {
-                EditValidation {
-                    passed: true, // Unsupported language, skip validation
+        let validation = if let Some(lang_key) = lang {
+            match self.syntax.parses_cleanly(&lang_key, &new_content) {
+                Ok(report) => EditValidation {
+                    passed: report.clean,
                     syntax_issues: vec![],
-                }
+                },
+                Err(_) => EditValidation {
+                    passed: true, // Can't create parser, skip validation
+                    syntax_issues: vec![],
+                },
             }
         } else {
             EditValidation {
@@ -2060,12 +1978,6 @@ impl FileOperationsService {
     }
 }
 
-impl Default for FileOperationsService {
-    fn default() -> Self {
-        Self::with_defaults(".")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2073,7 +1985,9 @@ mod tests {
     use crate::domain::traits::code_verifier::{
         CodeVerifier, CodeVerifierError, CompilationResult,
     };
+    use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
     use crate::infrastructure::verification::RustVerifier;
+    use crate::interface::mcp::security::InputValidator;
     use serial_test::serial;
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
@@ -2083,6 +1997,7 @@ mod tests {
             path.to_string_lossy().to_string(),
             Arc::new(InputValidator::new().with_workspace(vec![path])),
             Arc::new(RustVerifier::new()),
+            Arc::new(TreeSitterSyntaxAnalysis::new()),
         )
     }
 
@@ -3075,7 +2990,13 @@ mod tests {
     // Retrieve and Verify Tests
     // ========================================================================
 
+    // #[serial]: this test spawns a real `rustc`. Without it, it can run
+    // concurrently with test_verify_rust_file_subprocess_killed_on_timeout,
+    // whose `pgrep rustc` sampling is machine-global and would count this
+    // test's subprocess as an orphan. Same rule as the two retrieve_and_verify
+    // rust tests below.
     #[test]
+    #[serial]
     fn test_verify_rust_file_compilable_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("valid.rs");
@@ -3096,7 +3017,9 @@ mod tests {
         assert!(reason.is_none(), "reason should be None");
     }
 
+    // #[serial]: spawns a real `rustc`; see test_verify_rust_file_compilable_rust.
     #[test]
+    #[serial]
     fn test_verify_rust_file_broken_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("broken.rs");
@@ -3370,7 +3293,9 @@ mod tests {
     /// behavior by verifying that a file that would take >1ms is rejected when timeout is 0.
     /// Actually, we test with a file that exists and is valid, but verify the timeout path
     /// is exercised by using an impossibly short timeout (0s = immediate timeout).
+    // #[serial]: spawns a real `rustc` before killing it on the 0s timeout.
     #[tokio::test]
+    #[serial]
     async fn test_verify_rust_file_timeout_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("slow.rs");
@@ -3453,6 +3378,7 @@ mod tests {
             temp_dir.path().to_string_lossy().to_string(),
             Arc::new(InputValidator::new().with_workspace(vec![temp_dir.path().to_path_buf()])),
             Arc::new(ToolchainUnavailableVerifier),
+            Arc::new(TreeSitterSyntaxAnalysis::new()),
         );
 
         let input = RetrieveAndVerifyRequest {
@@ -3481,7 +3407,14 @@ mod tests {
     ///
     /// This test runs multiple timeout-triggered verifications and ensures that
     /// rustc processes do not accumulate (which would indicate orphans).
+    // #[serial]: this test is the DETECTOR, not a spawner — it samples
+    // machine-wide `pgrep rustc` before and after and fails if more than two
+    // new PIDs appear. It is therefore sensitive to every other test in this
+    // binary that spawns `rustc`, not just to the three that time out. Those
+    // are all marked #[serial] for that reason. A sampling test that any
+    // concurrent subprocess can trip is a flake generator, not a guard.
     #[tokio::test]
+    #[serial]
     async fn test_verify_rust_file_subprocess_killed_on_timeout() {
         use std::process::Command;
 

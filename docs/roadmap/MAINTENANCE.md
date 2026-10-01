@@ -109,13 +109,17 @@ backlog M0.* queda **técnicamente cerrado** como fase de mantenimiento
 v0.98.x/v0.99.x:
 
 * **M0.1 a M0.5**: CLOSED (entries 11, 12, 13, 14, 23 del JOURNAL).
-* **M0.6**: **BLOCKED con herencia**. No se cierra sin decisión humana,
-  pero queda fuera del scope del nuevo programa (CR-* y ST-* no dependen
-  de M0.6; el fix de tree-sitter puede ejecutarse en cualquier momento
-  del programa o como hotfix independiente si el operador lo decide).
-* **F0.1** (find_usages CLI): sigue PENDING, L1 del Post-PRF. No se ha
-  priorizado dentro del nuevo programa (queda como carry-over si
-  reaparece como bloqueador E0.W consumer proof).
+* **M0.6**: **CERRADA 2026-09-27** (commit `e2ee94ad`, "bump tree-sitter 0.24.7 →
+  0.27.0, fixes PHP/Swift LanguageError version mismatch"). Reconciliado 2026-10-01:
+  la fila de la tabla M0.6 ya decía CLOSED desde el 2026-09-27 y la fila de aquí
+  decía BLOCKED. La tabla gana; el commit existe. Queda una deuda residual
+  registrada y **viva**, `walker-grammar-drift` (3 de 4 tests `#[ignore]` de
+  PHP/Swift ahora fallan por `node type 'X' not found` en vez de `LanguageError`),
+  que es un item distinto y no se cierra con esto.
+* **F0.1** (find_usages CLI): **CERRADA 2026-09-25** (commit `3cb07f90`,
+  `feat(cli): find-usages subcommand (F0.1 / L1.4)`). Reconciliado 2026-10-01: la
+  sección F0.1 de más arriba ya lo daba por cerrado y esta línea lo daba por
+  PENDING. El commit existe.
 * **E3** (RPC mínima): sigue `NOT_TRIGGERED`. Sin consumidor real que
   lo justifique, no se ejecuta.
 
@@ -183,7 +187,15 @@ operador porque requiere decisión de orquestación
 ¿actualizar el binario via `sddk dev install`?).
 Trigger pendiente.
 
-**Estado**: OPEN 2026-09-27 (N+21).
+**Estado**: **RESUELTO 2026-09-27** vía binario `1.169.121`
+(ver `ROADMAP.md` fila SDDK-107). Reconciliado 2026-10-01: esta
+línea seguía en OPEN pese a que `ROADMAP.md:46` ya lo daba por
+resuelto. El binario instalado hoy es `sddk 2.4.2`, muy por encima
+de la versión que lo arregló, y el ledger de planning de este
+checkout responde con normalidad, así que el bug de la tabla
+`ledger_events` no se reproduce. El trigger pendiente de las
+líneas de arriba se descarta; el workaround de release por git
+nativo queda como historia, no como deuda abierta.
 
 **Lesson 85** — formalizada: el bypass implícito
 del required-check `merge-gate` por la API de GitHub

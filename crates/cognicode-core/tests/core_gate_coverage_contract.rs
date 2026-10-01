@@ -788,3 +788,45 @@ fn the_coverage_contract_itself_is_pinned() {
          coverage guarantee is itself ungated."
     );
 }
+
+/// The M0.11 rustdoc gate must run in BOTH pipelines.
+///
+/// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
+/// all. It was green, and it could not fail a single PR. An intra-doc link
+/// that ST-01 broke in `infrastructure/parser/syntax_analysis.rs` survived
+/// that commit, the whole branch, and six further commits — it surfaced only
+/// because someone happened to run `cargo test --workspace`.
+///
+/// `pr-ci.yml:81-86` already states the standard this enforces, in the
+/// comment above the scripts contract runner: *"Un test que no corre en
+/// ningun sitio no es un gate."* The gate was breaking that rule 600 lines
+/// further down the same file.
+///
+/// This assertion deliberately lives in the core crate rather than next to
+/// the gate it protects. `pr-ci.yml:719` runs the core crate unrestricted and
+/// `pr-ci.yml:729` gives this file its own step in both pipelines, so if the
+/// rustdoc wiring is deleted the core suite still runs and this still fails.
+/// A contract that only the deleted wiring could execute would notice
+/// nothing — which is the failure mode it exists to catch.
+#[test]
+fn the_rustdoc_gate_runs_in_both_pipelines() {
+    const GATE: &str = "m011_rustdoc_gate";
+
+    let workflow = read_workflow();
+    assert!(
+        workflow.contains(GATE),
+        "pr-ci.yml no longer runs {GATE}. That gate holds the workspace at zero \
+         rustdoc warnings in the gated categories; without it a broken doc link or \
+         a public-docs-to-private-item reference passes every PR. Restore the step \
+         next to the clippy gate."
+    );
+
+    let kts = read_merge_gate();
+    assert!(
+        kts.contains(GATE),
+        "merge-gate.pipeline.kts no longer runs {GATE}. A local gate that mirrors \
+         less than the required check is a gate that cannot be trusted to tell you \
+         the check is green — the same failure shape as the dead clippy baseline \
+         that this crate's sibling contract pins."
+    );
+}

@@ -67,7 +67,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+      - uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0 — pinned 2026-10-01 by supply-chain-action-pins (branch 1.96.0, PGP-verified upstream)
         with:
           components: rustfmt, clippy
       - name: Cache cargo
@@ -76,6 +76,16 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy -D warnings
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # M0.11 rustdoc gate, wired 2026-10-01. It was green and executed in no
+      # workflow at all, so a rustdoc warning that ST-01 introduced in
+      # `infrastructure/parser/syntax_analysis.rs` survived that commit, this
+      # whole branch and six more commits — it only surfaced because someone
+      # happened to run `cargo test --workspace`. The comment further down in
+      # this file already states the standard: a test that runs nowhere is
+      # not a gate.
+      # Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_both_pipelines.
+      - name: rustdoc gate (M0.11)
+        run: cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
       # Contratos de scripts de producto y CI. Ninguno estaba enganchado a
       # un workflow, que es como CP1-DEBT-01 (generate_profiles --check
       # roto) llevo dias sin que nadie lo notara, y como el filtro
@@ -120,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+      - uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0 — pinned 2026-10-01 by supply-chain-action-pins (branch 1.96.0, PGP-verified upstream)
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Build release binario (cognicode-mcp)
@@ -264,7 +274,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
-      - uses: dtolnay/rust-toolchain@1.96.0  # pinned 2026-09-26 by CR-08-debt-verify — rust-toolchain.toml @ master pins the same version
+      - uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0 — pinned 2026-10-01 by supply-chain-action-pins (branch 1.96.0, PGP-verified upstream)
       - name: Cache cargo
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: Descargar binarios release
@@ -389,7 +399,7 @@ jobs:
       - name: Cache cargo (merge-gate)
         uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
       - name: dtolnay/rust-toolchain
-        uses: dtolnay/rust-toolchain@1.96.0 # pinned 2026-09-26 by CR-08-debt-verify
+        uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0 — pinned 2026-10-01 by supply-chain-action-pins (branch 1.96.0, PGP-verified upstream)
       - name: Descargar binarios release (merge-gate)
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.1.8 — pinned 2026-09-26 by QW-05
         with:

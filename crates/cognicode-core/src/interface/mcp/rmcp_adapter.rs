@@ -159,6 +159,9 @@ impl CogniCodeHandler {
             canonical_root.to_string_lossy().as_ref(),
             validator,
             Arc::new(RustVerifier::new()),
+            Arc::new(
+                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
+            ),
         ));
 
         HandlerContext::builder()

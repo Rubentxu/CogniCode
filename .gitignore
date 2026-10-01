@@ -131,11 +131,20 @@ autoresearch/
 # source. Pre-existing ADR files remain in git history (commits before
 # this .gitignore entry was added) — only future commits are affected.
 #
+# CORRECTED 2026-10-01: this rule read `docs/`, excluding the DIRECTORY.
+# Git does not descend into an excluded directory, so every `!/docs/...`
+# negation below it was inert — `docs/ROADMAP.md` was ignored despite the
+# two lines that declare it a tracked entrypoint. `docs/*` excludes the
+# same paths but leaves `docs/` itself traversable, so negations work.
+# Verified not to widen the policy: see
+# crates/cognicode-cli/tests/gitignore_negation_contract.rs.
+#
 # NOTE: The ADRs in docs/adr/ are first-class documentation that the
-# project relies on. If you need to commit specific subdirectories of
-# docs/ (e.g. ADRs), use `git add -f docs/adr/ADR-NNN-...` to force-add
-# despite this ignore rule.
-docs/
+# project relies on. There is deliberately no `!/docs/adr/` negation;
+# ADRs are added with `git add -f docs/adr/ADR-NNN-...` and the ones
+# already tracked predate this rule. That is the declared policy, and
+# the contract test holds it rather than changing it.
+docs/*
 
 # Sandbox fixtures: node_modules and build artifacts (not code)
 sandbox/fixtures/**/node_modules/
@@ -176,8 +185,25 @@ CONTEXT.md
 # Production-ready action plan package (Post-PRF stabilization program,
 # baseline `2991e5e2`). Tracked because it is the active roadmap
 # addendum governing CR-* and ST-* work units. See ROADMAP-ADDENDUM.md.
+# `!/docs/roadmap/` is required: without it, `docs/roadmap` stays excluded, git
+# never descends into it, and the negations below match nothing. It is re-closed
+# right after with `docs/roadmap/*`, so the exemption covers the addendum package
+# and not the whole directory, which would otherwise pull in ephemeral files such
+# as docs/roadmap/INSTALL.md.
+!/docs/roadmap/
+docs/roadmap/*
 !/docs/roadmap/production-ready/
 !/docs/roadmap/production-ready/**/
+
+# NOTE: docs/debts/ is deliberately NOT exempted. It looks like it should be —
+# `advisory_ignore_backing_contract` reads DEBT-SEC-001 in CI, so the register
+# has to be tracked. But exempting the directory also exposes DEBT-SDDK-002..005,
+# which exist on disk and were never committed, and DEBT-SDDK-004/005/006 all
+# carry the line "local only, NEVER pushed to remote (ephemeral per
+# AGENTS.md)". Making them trackable by default is a policy decision about the
+# local-only rule of 2026-06-24, not a side effect of fixing the negations.
+# DEBT-SEC-001 is tracked because a gate depends on it, and that exception is
+# recorded rather than smuggled in. Tracked separately.
 
 # C8 recertification openspec change (Post-PRF stabilization).
 !/openspec/changes/2026-09-26-c8-recertification/
