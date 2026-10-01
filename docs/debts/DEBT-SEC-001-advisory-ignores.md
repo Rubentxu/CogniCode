@@ -66,22 +66,37 @@ layout as the table above so that the contract treats both uniformly.
 
 ## Known debt this register does NOT cover
 
-**`yoke-derive 0.8.3` is yanked and the advisories gate fails because of it.**
+**None open.** This section previously recorded `yoke-derive 0.8.3` as yanked
+and blocking. That is resolved as of 2026-10-01; the resolution is kept here
+rather than deleted, because the record of how it was misdiagnosed is the useful
+part.
 
-`deny.toml` sets `yanked = "deny"`, no ignore covers it, and `cargo deny check
-advisories` reports `error[yanked]: detected yanked crate`. It arrives purely
-transitively: `cognicode-core -> lsp-types 0.93.2 -> url 2.5.8 -> idna 1.1.0 ->
+`deny.toml` sets `yanked = "deny"` and no ignore covers yanks, which is correct
+and stays. The crate arrived purely transitively:
+`cognicode-core -> lsp-types 0.93.2 -> url 2.5.8 -> idna 1.1.0 ->
 icu_collections 2.3.0 -> yoke 0.8.3 -> yoke-derive 0.8.3`.
 
-`cargo update -p yoke --dry-run` reports `Locking 0 packages to latest compatible
-versions`, so there is no compatible bump available today. Resolving it means
-advancing the `lsp-types` / `url` / `idna` chain or waiving the yank policy, and
-then re-validating the workspace build. That is tracked separately; it is not
-absorbed into the ignore list, because a yanked crate is not an advisory and
-silencing it as one would hide a different problem behind this document.
+On 2026-10-01 this register was written asserting that no compatible update
+existed, on the evidence of `cargo update -p yoke --dry-run` reporting `Locking
+0 packages to latest compatible versions`, and that resolving it would require
+advancing the `lsp-types` / `url` / `idna` chain or waiving the yank policy. Both
+were wrong, and the mistake was to query the wrong crate: the gate's own
+message names `cargo update -p yoke-derive`, and `yoke`'s newest release *is*
+0.8.3, which the lock already held. Running the command against `yoke` correctly
+reported nothing to do, and that null result was read as proof of impossibility.
 
-Consequence, stated plainly: **the advisories gate is red as of 2026-10-01**,
-on the yank alone. It is not reported as green anywhere in this repository.
+Re-measured against the crates.io API: `yoke-derive` 0.8.4 exists and is not
+yanked, and `cargo update -p yoke-derive --dry-run` reports `Locking 1 package to
+latest compatible version`. The fix was a patch bump of one proc-macro, two lines
+of `Cargo.lock`. No policy waiver was needed and no MCP-facing type moved.
+
+**`cargo deny check advisories` is green as of 2026-10-01**, verified on the
+resulting lockfile, with `cargo deny check licenses` also green.
+
+The general lesson is the one this register exists for, applied to itself: a
+negative result from a tool is evidence about the query that was run, not about
+the world. The query was wrong, and the conclusion was stated with enough
+confidence to shape a work item around it.
 
 ## Adding or retiring an ignore
 
