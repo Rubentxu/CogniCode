@@ -26,7 +26,7 @@ flowchart LR
   ST3 --> ST5[ST-05 single graph-build semantic owner]
 
   QW5[QW-05 pin Actions] --> QW6[QW-06 dependency updater]
-  CR7[CR-07 OTel 0.28]
+  CR7[CR-07 OTel 0.29.1]
 ```
 
 ## Timeline recomendado

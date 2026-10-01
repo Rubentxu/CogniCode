@@ -34,10 +34,21 @@ ignore = [
     "RUSTSEC-2024-0384", # instant 0.1.13; via cognicode-core -> notify 7.0.0; author points to web-time
     "RUSTSEC-2026-0192", # ttf-parser 0.25.1; via mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0
     "RUSTSEC-2025-0141", # bincode 2.0.1, DIRECT dep of cognicode-core; team ceased development
-    # vulnerability, transitive — fix requires opentelemetry-prometheus 0.28
-    # (prometheus 0.14, protobuf 3) = OTel 0.27->0.28 major migration,
-    # deferred deliberately at JOURNAL:3584-3588 ("romper /metrics en
-    # producción sería peor que el advisory"); exposure limited to /metrics.
+    # vulnerability, transitive — fix requires opentelemetry-prometheus 0.29.1
+    # (prometheus 0.14 -> protobuf ^3.7.2), i.e. the OTel 0.27 -> 0.29 migration
+    # (TWO majors, not one), deferred deliberately at JOURNAL:3584-3588
+    # ("romper /metrics en producción sería peor que el advisory"); exposure
+    # limited to /metrics.
+    #
+    # CORRECTED 2026-10-01. This comment previously said the fix required
+    # "opentelemetry-prometheus 0.28 (prometheus 0.14, protobuf 3)". That is
+    # false, and it was the reason the item stayed parked: bumping to 0.28
+    # leaves protobuf on 2.x. Measured against the crates.io index, 0.28.0 and
+    # 0.29.0 both declare prometheus ^0.13 + protobuf ^2.14; only 0.29.1
+    # declares prometheus ^0.14 with no direct protobuf dep, and prometheus
+    # 0.14.0 is what pulls protobuf ^3.7.2. Re-check with:
+    #   curl -s https://index.crates.io/op/en/opentelemetry-prometheus \
+    #     | grep -o '"vers":"0\.\(28\|29\)[^"]*"[^}]*'
     "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion -> stack overflow on untrusted input
 ]
 

@@ -17,7 +17,7 @@
 | CR-04 | e91 G5 RED | Implementar optimización mínima basada en profiling | community/graph insights | 2–4 d | P0 | CR-03 |
 | CR-05 | Sin perf regression gate | Test budget + scorecard y streak válido | e91 + CI perf lane | 1–2 d | P0 | CR-04 |
 | CR-06 | CP no protege application | Añadir fitness functions `application_no_infrastructure` y `application_no_interface` | architecture constraints | 1–2 d | P1 | — |
-| CR-07 | Advisory protobuf | Migrar OTel 0.27→0.28 y eliminar `RUSTSEC-2024-0437` | Cargo manifests/metrics | 1–3 d | P1 | — |
+| CR-07 | Advisory protobuf | Migrar OTel 0.27→0.29.1 y eliminar `RUSTSEC-2024-0437` | Cargo manifests/metrics | 1–3 d | P1 | — |
 | CR-08 | PR-CI no sensible a paths | Selector determinista de suites afectadas + fallback seguro | `.github/workflows/pr-ci.yml`, scripts CI | 2–3 d | P1 | CR-06 |
 | CR-09 | Coverage sin gobernanza | Rebaseline HEAD + policy no-regression + cobertura crítica | CI/coverage | 1–2 d | P2 | CR-08 |
 | ST-01 | FileOperations depende de MCP/infra | Extraer `PathPolicy`, parser/filesystem/verifier ports | application/file operations | 2–4 d | P1 | CR-06 |

@@ -9570,3 +9570,60 @@ dirección contraria — no se trata de que un gate afirme menos de lo que hace,
 sino de que una **excepción** afirme más de lo que su propio filtro puede
 ver. La cura no es reescribir la frase con más cuidado: es mover la afirmación
 a un test que muerde, y mutarlo para demostrar que muerde.
+
+---
+
+### N+70.7 — Corrección de la premisa del diferimiento de CR-07 (2026-10-01)
+
+Este journal contiene, en N+70.5 y en entradas anteriores, la afirmación de que
+`RUSTSEC-2024-0437` se resuelve migrando a **OTel 0.28**. Esa afirmación es
+falsa, y era lo que mantenía CR-07 aparcado: un agente que la confiara sube a
+0.28, ve que protobuf sigue en 2.x, y concluye que el diferimiento está
+confirmado.
+
+Medido contra el índice de crates.io el 2026-10-01:
+
+| `opentelemetry-prometheus` | `prometheus` | `protobuf` | ¿resuelve el advisory? |
+|---|---|---|---|
+| 0.28.0 | `^0.13` | `^2.14` | no — sigue en protobuf 2 |
+| 0.29.0 | `^0.13` | `^2.14` | no — sigue en protobuf 2 |
+| **0.29.1** | `^0.14` | *(ninguna)* | **sí** |
+
+`prometheus 0.14.0` declara `protobuf ^3.7.2`, la versión corregida que nombra el
+advisory. Reproducible con una consulta al índice de crates.io:
+
+```bash
+curl -s https://index.crates.io/op/en/opentelemetry-prometheus \
+  | python3 -c 'import sys,json
+for l in sys.stdin:
+    d=json.loads(l)
+    if d["vers"] in ("0.28.0","0.29.0","0.29.1"):
+        dep={x["name"]:x["req"] for x in d["deps"] if x["kind"]=="normal"}
+        print(d["vers"], "prometheus="+dep.get("prometheus","-"), "protobuf="+dep.get("protobuf","(none)"))'
+```
+
+Dos consecuencias, y conviene no confundirlas:
+
+1. **El objetivo es exacto, no hipotético.** No hace falta esperar a nada.
+2. **La migración son dos majors, no uno**, y por tanto es más larga de lo que el
+   registro asumía. El riesgo que cita el diferimiento — "romper `/metrics` en
+   producción sería peor que el advisory" — sigue exactamente igual de vigente;
+   esta corrección no lo reduce.
+
+Las entradas anteriores de este journal **no se reescriben**: son historia y este
+journal es append-only. Esta nota es la corrección. Los ficheros de registro que
+sí son estado vigente (`deny.toml`, `docs/debts/DEBT-SEC-001-advisory-ignores.md`,
+las filas CR-07 de `docs/roadmap/production-ready/`) se corrigen en su sitio.
+
+**CR-07 sigue abierto.** `cargo deny check advisories` continúa verde con el
+ignore en su sitio, `protobuf` sigue en 2.28.0 y `PR-SEC` sigue `PENDING`. Lo que
+cambia es que la ruta es alcanzable y está medida. `CHANGELOG.md`,
+`evidence/u55-ci05-advisories-sbom/OBSERVATIONS.md` y los expedientes de `docs/prf/`
+conservan su texto original por ser registros históricos o evidencia cerrada.
+
+**Lección 157**: una premisa falsa en un fichero de estado se paga cada vez que
+alguien lo lee, y no se paga como error visible sino como decisión razonada.
+Aquí costó meses de item aparcado, y el síntoma — "lo intentamos y no
+funciona" — era indistinguible del síntoma real. La cura no fue intentarlo mejor:
+fue leer el grafo de dependencias real de la versión que se proponía, que es lo
+que la afirmación afirmaba conocer.

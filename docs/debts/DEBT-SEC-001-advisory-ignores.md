@@ -39,7 +39,40 @@ below are what the tool says, not what was assumed.
 | RUSTSEC-2024-0384 | `instant` | 0.1.13 | unmaintained | Crate is no longer maintained; its author recommends the maintained `web-time` crate instead. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> notify 7.0.0 -> notify-types 1.0.1`. | Drop the transitive `notify 7` dependency, which requires moving `cognicode-core` to `notify 8` or replacing the file-watching use. No version bump fixes this on its own. | Repo maintainer (no `.github/CODEOWNERS` exists, so ownership is by convention, not by file) | `a886ecfd` (2026-09-22), which declared `cargo deny check advisories: ok` at the time |
 | RUSTSEC-2025-0141 | `bincode` | 2.0.1 | unmaintained | The bincode team ceased development permanently after a doxxing and harassment incident. Advisory `Solution:` is "No safe upgrade is available!". It is a **direct** dependency of `cognicode-core`, not a transitive one. | Migrate the serialisation format. Advisory names `wincode`, `postcard`, `bitcode` and `rkyv` as alternatives. Any of them is a breaking change to the on-disk format. | Repo maintainer | `a886ecfd` (2026-09-22) |
 | RUSTSEC-2026-0192 | `ttf-parser` | 0.25.1 | unmaintained | The author states the crate is unmaintained and will not receive further fixes. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0`. | Wait for, or move to, `skrifa`, the actively maintained TrueType/OpenType parser named in the advisory. This is inside a transitive renderer, so the first move is upstream. | Repo maintainer | `a886ecfd` (2026-09-22) |
-| RUSTSEC-2024-0437 | `protobuf` | 2.28.0 | **vulnerability** | Affected versions do not properly parse unknown fields in user-supplied input, allowing a stack overflow on untrusted data. This is a real vulnerability, not a hygiene notice. | Upgrade to `>= 3.7.2`. Requires `opentelemetry-prometheus 0.28` (`prometheus 0.14`, `protobuf 3`), which is the `opentelemetry 0.27 -> 0.28` major migration. Deliberately deferred, see the quoted decision below. | Repo maintainer | `a886ecfd` (2026-09-22) and the CR-07 deferral at `docs/roadmap/JOURNAL.md:3584-3588` |
+| RUSTSEC-2024-0437 | `protobuf` | 2.28.0 | **vulnerability** | Affected versions do not properly parse unknown fields in user-supplied input, allowing a stack overflow on untrusted data. This is a real vulnerability, not a hygiene notice. | Upgrade to `>= 3.7.2`. Requires `opentelemetry-prometheus 0.29.1`, which declares `prometheus ^0.14` and no direct `protobuf` dep; `prometheus 0.14.0` in turn declares `protobuf ^3.7.2`. That makes it the `opentelemetry 0.27 -> 0.29` migration — **two** major versions, not one. Deliberately deferred, see the quoted decision below. | Repo maintainer | `a886ecfd` (2026-09-22) and the CR-07 deferral at `docs/roadmap/JOURNAL.md:3584-3588` |
+
+### Correction to the fix path above, 2026-10-01
+
+This row previously read *"Requires `opentelemetry-prometheus 0.28` (`prometheus 0.14`,
+`protobuf 3`), which is the `opentelemetry 0.27 -> 0.28` major migration."* That was
+wrong, and it was load-bearing: an agent that trusted it would bump to 0.28, observe
+that protobuf is still 2.x, and conclude the deferral was confirmed — the exact trap
+this register exists to prevent for the other rows.
+
+Measured against the crates.io index on 2026-10-01:
+
+| `opentelemetry-prometheus` | `prometheus` | `protobuf` | resolves this advisory? |
+|---|---|---|---|
+| 0.28.0 | `^0.13` | `^2.14` | no — still protobuf 2 |
+| 0.29.0 | `^0.13` | `^2.14` | no — still protobuf 2 |
+| **0.29.1** | `^0.14` | *(none)* | **yes** |
+
+Re-check with:
+
+```bash
+curl -s https://index.crates.io/op/en/opentelemetry-prometheus \
+  | python3 -c 'import sys,json
+for l in sys.stdin:
+    d=json.loads(l)
+    if d["vers"] in ("0.28.0","0.29.0","0.29.1"):
+        dep={x["name"]:x["req"] for x in d["deps"] if x["kind"]=="normal"}
+        print(d["vers"], "prometheus="+dep.get("prometheus","-"), "protobuf="+dep.get("protobuf","(none)"))'
+```
+
+The advisory is still live; the ignore above is unchanged. What changed is
+that the target is now exact and bounded instead of hypothetical — **and** that the
+migration is two majors, not the one the record assumed. The risk the deferral cites
+is untouched by this correction.
 
 ### The CR-07 deferral, quoted rather than lost
 
@@ -47,6 +80,12 @@ below are what the tool says, not what was assumed.
 > Riesgo alto: API OTel cambia entre 0.27 → 0.28 → 0.33 (actual).
 > Romper `/metrics` en producción sería peor que el advisory.
 > Merece un ciclo dedicado con PR review del operador.
+
+*Annotation, 2026-10-01: the quote is left byte-identical because it is what was
+decided. Two things about it are now known. The risk it names is still real and
+still justifies a dedicated cycle. But the "0.28" in its title names a version that
+does not resolve the advisory — see the correction above; the migration target is
+0.29.1, making it two majors rather than the one assumed here.*
 
 — `docs/roadmap/JOURNAL.md:3584-3588`
 
