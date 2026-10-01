@@ -10107,3 +10107,66 @@ local-only no estaban y sus referencias "resuelven" a nada. Un número medido co
 un método que favorece el resultado no es una medición: es una hipótesis con
 cifras. Cuando el número sale mejor de lo esperable, el primer sospechoso es el
 método.
+
+#### N+73.8 — Addendum: el inventario de N+73.6 estaba incompleto
+
+N+73.6 inventarió los workflows **declarados en el repo** (WF-01..07) y el plano
+de comandos. Ese no es el catálogo que responde al punto 8 del encargo: es la
+capa de convenciones locales. La superficie real está en el framework
+instalado (`prompts/sddk/`), y ahí hay **cuatro workflows canónicos**, no uno
+por crear:
+
+| workflow | `version` | fases | para qué |
+|---|---|---|---|
+| `sddk-b-direct` | 1.1.0 | 11 | hotfix; borra spec, propose, design, tasks y debt-verify, y **no tiene fase `apply`** |
+| `sddk-a-min` | 1.1.0 | 17 | `context_quality: [C2]`, cambio acotado; la más barata con la espina completa |
+| `sddk-a-lite` | 1.1.0 | 18 | `context_quality: [C1]`, el default declarado para trabajo acotado |
+| `sddk-a-full` | 1.1.0 | 23 | dominio nuevo o arquitectura |
+
+Y `prompts/sddk/dynamic-workflow.md` fija la regla que decide el punto 8:
+
+> *"If you can match a canonical path, **always prefer it** — generated workflows
+> are for genuinely novel goals."*
+
+Crear un workflow dinámico "porque es más dinámico" es la lectura incorrecta de
+esa frase. **La respuesta por defecto es elegir un canónico.**
+
+#### N+73.9 — El hueco real: ningún canónico puede expresar PR + merge-gate
+
+Medido sobre los cuatro ficheros. Una búsqueda de `pr|pull request|merge|
+branch-protection` solo encuentra el comentario `hitl-gate # PR approval` de
+B-direct y su menú de `load-skill`. **Ninguno tiene fase de PR ni de merge.**
+
+En los cuatro, la publicación es `push-main` + `annotated-semver-tag`, propiedad
+de `sddk-release`. En este repo `main` está protegida con
+`strict: true`, `contexts: [merge-gate]` y `enforce_admins: true`: el release de
+SDDK escribiría en `main` saltándose el único required check que decide si un
+commit entra. Ese es el hueco, y es el único que justificaría un workflow
+generado.
+
+Segunda tensión, con la regla de release del encargo: `release` es `mandatory`
+en los cuatro y `result-contract` se niega a cerrar el ciclo si el release no
+tuvo éxito — lo cual sí encaja con "nunca liberar trabajo parcial". Pero cada
+ciclo que publica crea un tag anotado, y un ciclo por WorkItem daría un tag por
+unidad, en conflicto con "SEMVER derivado del historial de commits".
+
+#### N+73.10 — Deriva de symlinks: real, con impacto cero hoy
+
+`~/.config/opencode/workflows/{sddk-b-direct,sddk-a-min,sddk-a-lite,sddk-a-full}.yaml`
+son symlinks a `framework/2.4.2/prompts/sddk/workflows/`, mientras
+`framework/current` apunta a `2.5.2` (SDDK instalado: **2.5.3**). Queda además
+un `sddk-a-full.yaml.bak` apuntando a `framework/1.151.2`, sin limpiar.
+
+Medido: los cuatro ficheros son **byte-idénticos** entre 2.4.2 y 2.5.2. La deriva
+**no cambia nada hoy**. Es una bomba de tiempo, no un incendio: el día que un
+workflow cambie entre versiones, el runtime cargará la definición vieja sin
+avisar. Se registra con su magnitud real en vez de como urgencia prestada.
+
+**Lección 162**: inventariar la capa local cuando la pregunta es sobre el
+framework es un inventario correcto de la pregunta equivocada. WF-01..07 son
+convenciones no versionadas en un directorio que `docs/*` ignora; los cuatro
+workflows canónicos son la superficie que de verdad carga el orquestador. Y la
+regla de `dynamic-workflow.md` es más restrictiva de lo que su nombre sugiere:
+un workflow generado solo existe para objetivos que no encajan en ningún
+canónico, y este repo tiene un hueco concreto — la fase de PR con merge-gate —
+que es el único candidato honesto.
