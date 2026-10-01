@@ -73,6 +73,26 @@ this for you; review will.
 pass" from a subset. The full gate is `merge-gate` in
 `.github/workflows/pr-ci.yml`, and it is required for every change to `main`.
 
+**When you run the full suite on a shared machine, give it a private
+`TMPDIR`.** Cargo deletes "orphaned" `rustdoctest*` directories under `TMPDIR`
+when it starts, so two concurrent cargo runs delete each other's doctest
+argument files and the loser reports:
+
+```
+failed to load argument file: /tmp/rustdoctestqGsZD/rustdoc-cfgs: No such file or directory
+```
+
+That is contention, not a broken doctest. Do not chase it in the code:
+
+```bash
+TMPDIR=/var/tmp/your-own-dir cargo test --workspace --no-fail-fast
+```
+
+**Count results after the test process exits, never from a log that is still
+being written.** A count taken mid-run silently under-reports, and two people
+counting the same run get two different totals. Aggregate once `cargo test`
+has returned.
+
 ## Pull requests
 
 Use the repository's PR template. It asks for four things, and all four are
