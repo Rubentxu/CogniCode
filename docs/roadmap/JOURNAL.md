@@ -10484,3 +10484,92 @@ existe un test que falla si una excepción queda obsoleta.
 el que lo escribiste. Con 35 ADRs trackeados y 53 en disco, recorrer el disco
 daba una garantía que en CI no era cierta. `git ls-files` no es una comodidad:
 es la única base honesta para un gate de merge.
+
+#### N+76.8 — El gate falló en su primera ejecución en CI, y tenía razón
+
+El PR #327 no mergeó a la primera. `merge-gate` falló en
+`every_backticked_provenance_path_resolves`:
+
+```
+these provenance paths are cited in backticks but do not exist, and are not
+declared in ALLOWED_MISSING:
+  docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md  <-  openspec/specs/generic-graph-equivalence-harness/spec.md
+```
+
+Ese fichero **existe en mi disco y no está en el repositorio**: `docs/*` está
+gitignored (`.gitignore:147`) y de ese paquete solo se force-addy la ruta
+anidada `docs/CogniCode_Living_Software_Intelligence/docs/adr/proposed/`. De
+598 ficheros trackeados bajo `docs/`, ese ledger no es uno de ellos.
+
+El defecto era mío y era de una forma que no había visto. El gate leía el
+**conjunto** por `git ls-files` —determinista— pero resolvía cada cita con
+`Path::exists()` —dependiente del entorno—. Dos preguntas distintas, y solo la
+primera es igual en todas partes. En verde en mi máquina, en rojo en el runner
+que debe hacer cumplir el gate, sobre el mismo commit.
+
+Medido antes de corregir: cambiar la resolución a "¿está commiteado?" voltea
+**una sola cita** de las 9. Ninguna otra. El defecto era estrecho, pero era
+exactamente el que hacía que el gate mintiera en una dirección y no en la
+otra.
+
+La corrección es `resolves_in_a_checkout`: una cita resuelve si el destino está
+trackeado, con fallback a "algún fichero trackeado cuelga de ahí" para citas
+que nombran un directorio. Y el test
+`resolution_asks_what_is_committed_not_what_is_on_disk` fija el defecto contra
+la ruta exacta que falló,recomprobando sus dos premisas: que el fichero siga en
+disco y que siga sin trackear. Si alguna deja de ser cierta, el test lo dice en
+lugar de pasar sobre una premisa caducada.
+
+**Lo que más cuesta es lo que este gate ya no puede usarse para.** "Pasa en mi
+máquina" nunca fue evidencia; aquí además era actively wrong. Un gate que
+depende del checkout no se puede validar localmente, y un gate que no se puede
+validar localmente se valida en CI o no se valida.
+
+**Lección 169**: un gate puede ser determinista sobre *qué lee* y seguir siendo
+dependiente del entorno sobre *a qué concluye*. El conjunto lo leía por
+`git ls-files` y aun así el veredicto dependía del disco. La asimetría es
+traicionera porque cada mitad parece correcta por separado, y solo se ven juntas
+en el runner.
+
+**Lección 170**: el fallo de CI no es una molestia que cerrar, es el único
+lugar donde aparece el verdad que el entorno local no puede mostrar. Si este
+gate hubieraptideado más amplio —los 238 backticks— el ruido habría enterrado
+esta cita entre 229 falsos positivos, y el defecto habría sobrevivido. El
+acotamiento que parecía una concesión en N+76.1 fue lo que hizo visible el
+defecto. Un gate que miente mucho no es peor gate: es un gate del que no se
+puede saber si miente.
+
+#### N+76.9 — El guardián de caracteres invisibles no miraba donde yo escribía
+
+Escribiendo N+76.8 metí yo mismo un homoglifo en este fichero: la palabra
+`recomprobando` quedó como `ريمprobando` —tres letras árabes— donde iba una
+"e". Lo detecté porque un `edit` no encontraba el texto que yo acababa de
+escribir.
+
+El guardián que llevo usando contra esto desde hace sesiones es
+`grep -P '[\x{4e00}-\x{9fff}]'`, que solo mira CJK. No cubre árabe, ni cirílico,
+ni hangul. Un rango de Unicode no es una defensa; es el rango del defecto que
+ya cometí una vez.
+
+Barrido real sobre el markdown **trackeado**:
+
+| fichero | script | caracteres | qué es |
+|---|---|---|---|
+| `docs/roadmap/certifications/C8-POST-PRF-GA.md:545` | cirílico | `бдету` | `añadido` -> `бnадido`, homoglifo en una palabra española |
+| `docs/roadmap/MAINTENANCE.md:22` | hangul | `잊` | `olvidó` -> `잊ó`; hangul significa "olvidar", así que la frase aún se lee bien y el defecto es más difícil de ver, no más |
+| `docs/prf/JOURNAL.md:5588` | cirílico | `обнаруживает` | `detecta` -> `обнаруживает`; **congelado, no se toca** |
+| `docs/roadmap/JOURNAL.md:4510-4648` | cirílico | pasajes | texto ruso íntegro de una sesión anterior, no homoglifos |
+
+Los tres primeros son corrupción de una palabra española por otra de un
+alfabeto no latino. El cuarto es otra cosa: un pasaje en ruso entero, no una
+letra sustituida.
+
+`docs/prf/` está congelado por `AGENTS.md`, así que la fila de `prf/JOURNAL.md`
+se reporta y no se repara. Reconstruir evidencia histórica para que el grep
+pase seríafalsear el expediente, que es peor que el defecto.
+
+**Lección 171**: un guardián acotado al defecto que ya cometí no es un
+guardián, es un recuerdo. `[\x4e00-\x9fff]` cubría CJK porque CJK fue lo que
+colé una vez; el siguiente intento coló árabe en la misma línea que el check.
+La defensa útil pregunta "¿qué scripts no pueden aparecer aquí?", no "¿vi esto
+alguna vez?".

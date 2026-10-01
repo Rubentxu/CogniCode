@@ -48,10 +48,31 @@
 //! | `docs/adr/0007.md` | `docs-source-adapter/spec.md` | same fixture, the other input document. |
 //! | `docs/analysis/release-1.0.0-scorecard.md` | `ADR-031-release-1.0.0-definition.md` | prospective: *"se archiva en … al publicar"*. The file is created at release time. |
 //! | `docs/adr/E32-cognicode-distribution.md` | `ADR-034`, `cognicode-cli/spec.md` | E32 is a ROADMAP *program* with sub-units E32-A..I, not an ADR, so this path never named a decision record. Choosing `ADR-034` or the ROADMAP E32 section would be invention. |
+//! | `docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md` | `generic-graph-equivalence-harness/spec.md` | a local-only workspace document under the gitignored `docs/` tree, so it is not in the published repository. The citation records where GAP S2 was tracked, for whoever holds that workspace. |
 //!
 //! Adding a row here is a claim that the path should not exist. The claim is in
 //! the diff, and `every_allowed_missing_states_a_reason` fails if the reason is
 //! blank.
+//!
+//! ## What `merge-gate` caught in this contract's first CI run
+//!
+//! The first version of this file shipped with the governed *set* read through
+//! `git ls-files` but each citation resolved against `Path::exists()`. Those are
+//! two different questions, and only the first one is the same everywhere.
+//!
+//! `merge-gate` failed on the first run in CI on
+//! `docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md`: present
+//! in the maintainer's working tree, absent from the repository, because `docs/`
+//! is gitignored and only nested paths under that package are force-added. The
+//! local run was green for a reason the runner could not reproduce.
+//!
+//! So a gate can be deterministic about *what it reads* and still be
+//! environment-dependent about *what it concludes*. Resolution now asks what is
+//! committed, and `resolution_asks_what_is_committed_not_what_is_on_disk` pins
+//! it against the exact path that failed.
+//!
+//! The flip side is that this file can no longer be validated by "it passes on
+//! my machine" — which was never evidence, and here was actively wrong.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -226,6 +247,10 @@ const ALLOWED_MISSING: &[(&str, &str)] = &[
         "docs/adr/E32-cognicode-distribution.md",
         "E32 is a ROADMAP program with sub-units E32-A..I, not an ADR; this path never named a decision record and picking a substitute would be invention",
     ),
+    (
+        "docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md",
+        "cited by the archived e40 spec as where GAP S2 was tracked. The ledger is a local-only workspace document under the gitignored docs/ tree (only its nested docs/adr/proposed/ path is force-added), so it is not part of the published repository. The citation records provenance for whoever holds that workspace, not a path a reader can follow from a checkout",
+    ),
 ];
 
 fn repo_root() -> PathBuf {
@@ -241,33 +266,71 @@ fn repo_root() -> PathBuf {
 /// the ROADMAP entrypoint. Read through `git ls-files` so an untracked scratch
 /// file cannot fail the build.
 fn governed_files(root: &Path) -> Vec<PathBuf> {
-    let listed = Command::new("git")
-        .current_dir(root)
-        .args(["ls-files", "--", "docs/adr/", "openspec/specs/"])
-        .output()
-        .expect("cannot run `git ls-files` (is git on PATH?)");
-    assert!(
-        listed.status.success(),
-        "`git ls-files` failed: {}",
-        String::from_utf8_lossy(&listed.stdout)
-    );
+    let tracked = tracked_paths(root);
 
-    let mut files: Vec<PathBuf> = String::from_utf8_lossy(&listed.stdout)
-        .lines()
-        .filter(|l| !l.trim().is_empty())
+    let mut files: Vec<PathBuf> = tracked
+        .iter()
+        .filter(|p| p.starts_with("docs/adr/") || p.starts_with("openspec/specs/"))
         .map(PathBuf::from)
         .collect();
 
-    // docs/ROADMAP.md is trackeado but not under docs/adr/, and it cites specs.
-    if root.join("docs/ROADMAP.md").is_file() {
+    // docs/ROADMAP.md is tracked but not under docs/adr/, and it cites specs.
+    if tracked.contains("docs/ROADMAP.md") {
         files.push(PathBuf::from("docs/ROADMAP.md"));
     }
     files.sort();
     files
 }
 
+/// Every path a clean checkout of this repository would contain.
+fn tracked_paths(root: &Path) -> BTreeSet<String> {
+    let listed = Command::new("git")
+        .current_dir(root)
+        .args(["ls-files", "-z"])
+        .output()
+        .expect("cannot run `git ls-files` (is git on PATH?)");
+    assert!(
+        listed.status.success(),
+        "`git ls-files` failed: {}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+
+    listed
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect()
+}
+
+/// Whether `path` resolves for someone who checked the repository out.
+///
+/// **Tracked, not present on disk.** `docs/` is gitignored and 598 files under it
+/// are force-added selectively, so a file can sit in one maintainer's working
+/// directory and not exist in a clean checkout at all. Asking the filesystem
+/// therefore answers a different question depending on who runs the test: the
+/// same commit passes on a laptop and fails on the runner that is supposed to
+/// enforce it.
+///
+/// This is not hypothetical. Receipt N+76 shipped exactly that gate: it read the
+/// governed set through `git ls-files` but resolved each citation against the
+/// filesystem, and `merge-gate` failed on the first run in CI on
+/// `docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md` — present
+/// in the working tree, absent from the repository. The set being scanned was
+/// deterministic; the verdict was not.
+fn resolves_in_a_checkout(tracked: &BTreeSet<String>, path: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    if tracked.contains(path) {
+        return true;
+    }
+    // A citation may name a directory rather than a file.
+    let prefix = format!("{path}/");
+    tracked.iter().any(|p| p.starts_with(&prefix))
+}
+
 /// Every broken provenance path, as `(path, citing file)`.
 fn broken_provenance_paths(root: &Path) -> Vec<(String, String)> {
+    let tracked = tracked_paths(root);
     let mut broken = Vec::new();
     for rel in governed_files(root) {
         let text = match std::fs::read_to_string(root.join(&rel)) {
@@ -275,7 +338,7 @@ fn broken_provenance_paths(root: &Path) -> Vec<(String, String)> {
             Err(e) => panic!("cannot read governed file {}: {e}", rel.display()),
         };
         for candidate in provenance_paths(&text) {
-            if root.join(&candidate).exists() {
+            if resolves_in_a_checkout(&tracked, &candidate) {
                 continue;
             }
             broken.push((candidate, rel.display().to_string()));
@@ -399,6 +462,54 @@ fn brace_notation_is_expanded_not_taken_literally() {
         broken.len(),
         2,
         "expansion did not surface both broken alternatives; found {broken:?}"
+    );
+}
+
+#[test]
+fn resolution_asks_what_is_committed_not_what_is_on_disk() {
+    // The defect receipt N+76 shipped and `merge-gate` caught on its first run in
+    // CI. The governed *set* was read through `git ls-files`, but each citation
+    // was resolved against the filesystem, so the verdict depended on whose
+    // checkout the gate ran in: green on a laptop that holds local-only files,
+    // red on the runner meant to enforce it.
+    //
+    // The fixture below is the exact path that failed. Both premises are
+    // asserted, so if it is ever tracked or removed this test says so instead of
+    // silently passing on a premise that no longer holds.
+    let root = repo_root();
+    let tracked = tracked_paths(&root);
+    let ledger = "docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md";
+
+    assert!(
+        root.join(ledger).is_file(),
+        "the fixture is no longer present in this working tree, so it can no longer \
+         demonstrate the defect; pick another local-only path"
+    );
+    assert!(
+        !tracked.contains(ledger),
+        "the fixture is now tracked, so it no longer distinguishes the two questions; \
+         pick another local-only path"
+    );
+    assert!(
+        !resolves_in_a_checkout(&tracked, ledger),
+        "a path present in the working tree but absent from the repository resolved as \
+         if it existed for a reader with a checkout; this is the N+76 defect"
+    );
+
+    // The other half of the contract: a committed path still resolves.
+    let adr = tracked
+        .iter()
+        .find(|p| p.starts_with("docs/adr/") && p.ends_with(".md"))
+        .expect("no tracked ADR to check against");
+    assert!(
+        resolves_in_a_checkout(&tracked, adr),
+        "a tracked ADR failed to resolve; the tracked-set check is too strict"
+    );
+
+    // A citation may name a directory rather than a file.
+    assert!(
+        resolves_in_a_checkout(&tracked, "docs/adr/"),
+        "a directory citation did not resolve even though it contains tracked files"
     );
 }
 
