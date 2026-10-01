@@ -602,6 +602,16 @@ jobs:
         run: cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet
       - name: PRF-SEC-03 telemetry opt-in UAT (black-box MCP)
         run: cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet
+      # CR-07: the `/metrics` exposition contract. This is the guard for the
+      # risk that parked the OTel 0.27 -> 0.29 migration: "romper /metrics en
+      # produccion seria peor que el advisory". That risk was correct and had
+      # no test behind it, so the migration shipped with the coverage built
+      # first. Real binary, real HTTP, real scrape — it asserts the 200, the
+      # literal `text/plain; version=0.0.4` that orchestrator scrape configs
+      # match on, and `target_info` as the marker that the exporter is
+      # registered rather than serving an empty registry.
+      - name: CR-07 /metrics exposition contract (black-box MCP)
+        run: cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --quiet
       - name: PRF-SEC-05 shutdown recovery UAT (black-box MCP)
         run: cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet
       - name: PRF-STATE-01 data catalog UAT (black-box MCP)

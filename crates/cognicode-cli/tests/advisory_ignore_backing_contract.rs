@@ -66,19 +66,54 @@ fn read(rel: &str) -> String {
 }
 
 /// Every id in the `ignore = [ ... ]` array of `deny.toml`.
+///
+/// The array is found by scanning **line by line** for the closing `]`, and
+/// comment-only lines are skipped while scanning. Both halves are load-bearing
+/// and both were learned the hard way:
+///
+/// - A `text[start..].find(']')` truncates the array at the first `]` *anywhere*,
+///   including inside a comment. Measured 2026-10-01: the CR-07 correction
+///   commit put a reproduction command in the `deny.toml` comment block whose
+///   regex `grep -o '"vers":"0\.\(28\|29\)[^"]*"[^}]*'` contains a literal `]`.
+///   That `]` closed the array early, so `RUSTSEC-2024-0437` — the last real
+///   entry — fell outside the parsed region, and this file reported the
+///   register and `deny.toml` as incoherent. `merge-gate` caught it as a real
+///   red build on PR #321.
+/// - Scanning lines and stopping at the first line that is only `]` would not
+///   have helped on its own, because the closing bracket sits after comment
+///   lines that mention brackets.
+///
+/// So the contract must survive a `deny.toml` comment that contains brackets,
+/// which is a normal thing to write when documenting how to re-check an
+/// advisory. A parser that a comment can silently break is the same defect
+/// shape this register was created to prevent, one level down.
 fn listed_ignores() -> Vec<String> {
     let text = read("deny.toml");
     let start = text
         .find("ignore = [")
         .unwrap_or_else(|| panic!("deny.toml has no `ignore = [` array under [advisories]"));
     let body_start = start + "ignore = [".len();
-    let end = text[body_start..]
-        .find(']')
-        .map(|i| body_start + i)
-        .unwrap_or_else(|| panic!("the `ignore = [` array in deny.toml is not closed"));
+
+    // Walk forward line by line, skipping comment-only lines, to find the
+    // line that actually closes the array.
+    let mut body_end = None;
+    let mut cursor = body_start;
+    while cursor < text.len() {
+        let rest = &text[cursor..];
+        let line_end = rest.find('\n').map(|i| cursor + i).unwrap_or(text.len());
+        let line = text[cursor..line_end].trim();
+        if !line.is_empty() && !line.starts_with('#') && line.starts_with(']') {
+            body_end = Some(cursor);
+            break;
+        }
+        cursor = line_end + 1;
+    }
+    let body_end = body_end.unwrap_or_else(|| {
+        panic!("the `ignore = [` array in deny.toml is not closed by a line starting with `]`")
+    });
 
     let mut out = Vec::new();
-    for line in text[body_start..end].lines() {
+    for line in text[body_start..body_end].lines() {
         // Each entry reads `"RUSTSEC-…", # reason`, so the id is whatever sits
         // between the first pair of quotes. Splitting on the quote is more
         // robust than trimming punctuation, which the trailing comma defeats.

@@ -50,4 +50,4 @@ Escala: impacto 1–5, esfuerzo XS/S/M/L/XL. La prioridad combina riesgo para pr
 ### Impacto medio / esfuerzo medio
 - política de cobertura;
 - CI adaptativa por paths;
-- migración OTel 0.28.
+- migración OTel 0.29.1.

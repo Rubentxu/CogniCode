@@ -7,7 +7,7 @@
 | R-03 | Refactor hexagonal cambia comportamiento | M | 5 | ST-01..05 | characterization tests + migración de un consumer por slice |
 | R-04 | Optimización e91 cambia comunidades/resultados | M | 5 | CR-04 | golden fixture y semantic-equivalence test antes/después |
 | R-05 | Perf gate flaky por ruido del runner | H | 3 | CR-05 | usar rango/percentile y runner estable; fallar por regresión significativa, no por ±5% |
-| R-06 | OTel 0.28 rompe `/metrics` o OTLP | M | 4 | CR-07 | contract tests para exposition format y startup sin collector |
+| R-06 | OTel 0.27→0.29 rompe `/metrics` o OTLP | M | 4 | CR-07 | contract tests para exposition format y startup sin collector |
 | R-07 | CI adaptativa omite suite relevante | M | 5 | CR-08 | `unknown => safe fallback`; test del selector con paths plantados |
 | R-08 | Coverage gate incentiva tests de bajo valor | M | 3 | CR-09 | no imponer porcentaje global arbitrario; no-regression + zonas críticas |
 | R-09 | División de mega-módulos aumenta superficie pública | M | 4 | ST-02..04 | medir public API count; aprobar solo interfaces más pequeñas que implementación ocultada |

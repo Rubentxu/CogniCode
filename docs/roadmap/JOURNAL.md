@@ -9570,3 +9570,278 @@ dirección contraria — no se trata de que un gate afirme menos de lo que hace,
 sino de que una **excepción** afirme más de lo que su propio filtro puede
 ver. La cura no es reescribir la frase con más cuidado: es mover la afirmación
 a un test que muerde, y mutarlo para demostrar que muerde.
+
+---
+
+### N+70.7 — Corrección de la premisa del diferimiento de CR-07 (2026-10-01)
+
+Este journal contiene, en N+70.5 y en entradas anteriores, la afirmación de que
+`RUSTSEC-2024-0437` se resuelve migrando a **OTel 0.28**. Esa afirmación es
+falsa, y era lo que mantenía CR-07 aparcado: un agente que la confiara sube a
+0.28, ve que protobuf sigue en 2.x, y concluye que el diferimiento está
+confirmado.
+
+Medido contra el índice de crates.io el 2026-10-01:
+
+| `opentelemetry-prometheus` | `prometheus` | `protobuf` | ¿resuelve el advisory? |
+|---|---|---|---|
+| 0.28.0 | `^0.13` | `^2.14` | no — sigue en protobuf 2 |
+| 0.29.0 | `^0.13` | `^2.14` | no — sigue en protobuf 2 |
+| **0.29.1** | `^0.14` | *(ninguna)* | **sí** |
+
+`prometheus 0.14.0` declara `protobuf ^3.7.2`, la versión corregida que nombra el
+advisory. Reproducible con una consulta al índice de crates.io:
+
+```bash
+curl -s https://index.crates.io/op/en/opentelemetry-prometheus \
+  | python3 -c 'import sys,json
+for l in sys.stdin:
+    d=json.loads(l)
+    if d["vers"] in ("0.28.0","0.29.0","0.29.1"):
+        dep={x["name"]:x["req"] for x in d["deps"] if x["kind"]=="normal"}
+        print(d["vers"], "prometheus="+dep.get("prometheus","-"), "protobuf="+dep.get("protobuf","(none)"))'
+```
+
+Dos consecuencias, y conviene no confundirlas:
+
+1. **El objetivo es exacto, no hipotético.** No hace falta esperar a nada.
+2. **La migración son dos majors, no uno**, y por tanto es más larga de lo que el
+   registro asumía. El riesgo que cita el diferimiento — "romper `/metrics` en
+   producción sería peor que el advisory" — sigue exactamente igual de vigente;
+   esta corrección no lo reduce.
+
+Las entradas anteriores de este journal **no se reescriben**: son historia y este
+journal es append-only. Esta nota es la corrección. Los ficheros de registro que
+sí son estado vigente (`deny.toml`, `docs/debts/DEBT-SEC-001-advisory-ignores.md`,
+las filas CR-07 de `docs/roadmap/production-ready/`) se corrigen en su sitio.
+
+**CR-07 sigue abierto.** `cargo deny check advisories` continúa verde con el
+ignore en su sitio, `protobuf` sigue en 2.28.0 y `PR-SEC` sigue `PENDING`. Lo que
+cambia es que la ruta es alcanzable y está medida. `CHANGELOG.md`,
+`evidence/u55-ci05-advisories-sbom/OBSERVATIONS.md` y los expedientes de `docs/prf/`
+conservan su texto original por ser registros históricos o evidencia cerrada.
+
+**Lección 157**: una premisa falsa en un fichero de estado se paga cada vez que
+alguien lo lee, y no se paga como error visible sino como decisión razonada.
+Aquí costó meses de item aparcado, y el síntoma — "lo intentamos y no
+funciona" — era indistinguible del síntoma real. La cura no fue intentarlo mejor:
+fue leer el grafo de dependencias real de la versión que se proponía, que es lo
+que la afirmación afirmaba conocer.
+
+---
+
+### N+71 — CR-07 cerrado: `RUSTSEC-2024-0437` pagado, no aparcado (2026-10-01)
+
+N+70.7 corrigió la premisa del diferimiento. Esta entrada la ejecuta. El
+advisory era real —`*stack overflow*` por recursión no controlada al parsear
+campos desconocidos, sobre entrada no confiable—, no un aviso de higiene, y
+ya no está en el árbol: `protobuf 2.28.0 → 3.7.2`.
+
+#### N+71.1 — Lo que la migración tocó de verdad
+
+| crate | antes | después |
+|---|---|---|
+| `opentelemetry` | 0.27.1 | 0.29.1 |
+| `opentelemetry_sdk` | 0.27.1 | 0.29.0 |
+| `opentelemetry-otlp` | 0.27.0 | **0.29.0** |
+| `opentelemetry-prometheus` | 0.27.0 | **0.29.1** |
+| `prometheus` | 0.13.4 | 0.14.0 |
+| `protobuf` | 2.28.0 | **3.7.2** |
+
+Una sola ruptura de API en el código, en `crates/cognicode-mcp/src/main.rs`:
+`PeriodicReader::builder(exporter, Tokio)` → `builder(exporter)`. No es un
+cambio de firma sino **de modelo**: en 0.29 el reader lanza su propio hilo
+(`OpenTelemetry.Metrics.PeriodicReader`) y `with_runtime()` desapareció del
+SDK. El intervalo por defecto sigue siendo 60 s y `OTEL_METRIC_EXPORT_INTERVAL`
+sigue mandando.
+
+#### N+71.2 — `opentelemetry-otlp` no tiene 0.29.1, y eso casi tapa el arreglo
+
+Pedir `0.29.1` a los cuatro crates falla la resolución con `failed to select a
+version`. La línea 0.29 de `opentelemetry-otlp` termina en **0.29.0**; la
+siguiente es 0.30.0. Los cuatro crates OTel **no están bloqueados entre sí**,
+y la diferencia no es cosmética.
+
+Lo que salva la combinación es que `protobuf` no pasaba por otlp. Medido sobre
+el lockfile de 0.27, los únicos que alcanzaban `protobuf` eran
+`opentelemetry-prometheus 0.27.0` y `prometheus 0.13.4`. Y los cuatro declaran
+`opentelemetry ^0.29` + `opentelemetry_sdk ^0.29`, así que resuelven juntos.
+Si alguien hubiera asumido simetría entre los crates, esto se habría
+desmontado como imposible.
+
+#### N+71.3 — El riesgo del diferimiento era real, y estaba sin medir
+
+La razón del/aparcamiento/ era, textual:
+
+> Romper `/metrics` en producción sería peor que el advisory.
+
+Predicción correcta, sin nada detrás. Medido antes de tocar un solo manifest:
+**ningún test del repositorio ejercitaba `/metrics`**. El endpoint —un
+contrato público, porque las configs de scrape de orquestadores hacen match
+sobre el content-type literal— tenía cobertura cero. Una migración que
+cambiara la exposición a formato protobuf habría roto todos los scrapers sin
+fallar una sola build.
+
+Por eso el UAT se escribió **antes** de migrar, no después:
+`crates/cognicode-mcp/tests/cr07_metrics_exposition_contract.rs`. Pinea el
+200, el `text/plain; version=0.0.4` leído del cable, líneas `# HELP`/`# TYPE`,
+y la presencia de `target_info` —que es lo que distingue "exporter
+registrado" de "handler que devuelve 200 con un registry vacío", el fallo que
+una aserción de status code no ve.
+
+Estado RED antes del fix: `2 passed / 1 failed`, y el que falla era
+exactamente el de la migración, con `telemetry_sdk_version=0.27.1` en el
+mensaje. Estado GREEN después: `3 passed / 0 failed`.
+
+**Sobre el binario release**, no el de debug: exposición **byte-idéntica** a la
+línea base previa salvo la etiqueta de versión, ahora `0.29.0`. 202 bytes
+antes y después.
+
+#### N+71.4 — El ignore se retiró solo, y eso era lo correcto
+
+Con la migración aplicada y el ignore aún en `deny.toml`,
+`unused-ignored-advisory = "deny"` falló el gate por su cuenta:
+
+```
+error[advisory-not-detected]: advisory was not encountered
+52 │     "RUSTSEC-2024-0437", # protobuf 2.28.0 ...
+   │      ━━━━━━━━━━━━━━━━━ no crate matched advisory criteria
+```
+
+Un ignore de vulnerabilidad viva que envejece hasta ser un ignore muerto no
+suprime nada y esconde que el árbol se movió. Que el gate —y no el criterio—
+sea lo que lo retiró es el comportamiento buscado.
+
+#### N+71.5 — El bug que encontró `merge-gate` en el commit anterior
+
+PR #321 (la corrección de premisa) llegó a `merge-gate` **rojo**, y no por
+razones de la corrección. `advisory_ignore_backing_contract` falló con:
+
+> `DEBT-SEC-001` lista `RUSTSEC-2024-0437` como ignore vigente, pero
+> `deny.toml` no lo ignora.
+
+Con el árbol del commit a la vista eso no puede pasar: ahí `deny.toml` **sí**
+lo ignoraba y el registro **sí** lo listaba. La causa está en el parser del
+propio test:
+
+```rust
+let end = text[body_start..].find(']')   // primer ']' en TODO el resto
+```
+
+`d953f6e1`.documenta en `deny.toml` cómo re-verificar el advisory, y el
+comando de reproducción es
+`grep -o '"vers":"0\.\(28\|29\)[^"]*"[^}]*'`. Ese `[^}]*` contiene un `]`
+literal —**dentro del comentario, antes del último ignore**—, así que el
+array se cerraba 3083 caracteres antes de tiempo y `RUSTSEC-2024-0437`
+quedaba fuera de la región parseada. El test reportaba incoherencia entre dos
+ficheros que sí eran coherentes.
+
+Un comentario que documenta cómo re-verificar una vulnerabilidad rompió el
+mecanismo que verifica el registro de vulnerabilidades. Se corrigió el parser
+para que escanee **línea a línea** saltando comentarios, con las dos pruebas:
+
+| mutación | esperado | resultado |
+|---|---|---|
+| el mismo `]` en un comentario, plantado | PASS (parser sobrevive) | **PASS** |
+| ignore listado sin fila de respaldo | FAIL (no vacuo) | **FAIL**, con el id en el mensaje |
+
+Es la lección 156 un nivel más abajo: la garantía escrita —"cada ignore tiene
+respaldo"— tenía un parser que un comentario podía silenciar. No hacía falta
+una mentira, solo un `]`.
+
+#### N+71.6 — Gates
+
+| gate | comando | resultado |
+|---|---|---|
+| resolución | `cargo update -p opentelemetry…` | `protobuf 2.28.0 -> 3.7.2` |
+| advisories | `cargo deny check advisories` | **ok**, sin el ignore |
+| licenses | `cargo deny check licenses` | **ok** |
+| contrato advisory | `cargo test -p cognicode-cli --test cr07_protobuf_advisory_closed` | **3 passed / 0 failed** |
+| coherencia registro | `cargo test -p cognicode-cli --test advisory_ignore_backing_contract` | **6 passed / 0 failed** |
+| UAT `/metrics` | `cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract` | **3 passed / 0 failed** |
+| UAT `/metrics` release | binario release + curl | 200, `text/plain; version=0.0.4`, 202 B, idéntico |
+| fmt | `cargo fmt --all --check` | limpio |
+| clippy | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| workspace | `cargo check --workspace --all-targets` | 0 errores |
+| suite core | `cargo test -p cognicode-core` | **2521 passed / 0 failed / 16 ignored** |
+| suite MCP | `cargo test -p cognicode-mcp` | **152 passed / 0 failed / 0 ignored** |
+| cobertura de gate | `cargo test -p cognicode-cli --test cli_gate_coverage_contract` | **10 passed / 0 failed** |
+
+#### N+71.8 — El gate rechazó mi propia suite, y tenía razón
+
+El `merge-gate` de #322 corrió sus 53 steps y falló en el 46. No fue la
+migración:
+
+```
+1 MCP integration suites are neither named by a workflow step nor listed in
+EXCLUDED_MCP_SUITES with a reason: ["cr07_metrics_exposition_contract"]
+```
+
+`cli_gate_coverage_contract` recorre `crates/cognicode-mcp/tests/*.rs` y exige
+que cada suite esté **nombrada** por un step del workflow o excluida **con su
+razón**. El gate amplio es `--lib`, que no compila `tests/`, así que no cabe
+escapar por cobertura implícita. El contrato lleva 26 suites enumeradas y la
+nueva no estaba en ninguna de las dos listas.
+
+Eso es el contrato haciendo su trabajo, y en la dirección que menos se ve: una
+suite RED→GREEN verificada localmente sigue siendo **código muerto** para el
+gate hasta que alguien la cablea. Sin este step, `/metrics` volvería a quedar
+sin cubrir en CI aunque el PR haya demostrado lo contrario en local — y el
+registro volvería a afirmar una garantía que el único mecanismo que la ejecuta
+no ve.
+
+Se añadió el step `CR-07 /metrics exposition contract (black-box MCP)` junto al
+resto de UAT de MCP en `pr-ci.yml`, y no una exclusión: esta suite es
+justamente la que protege el riesgo que justificaba el diferimiento, así que
+excluirla sería resolver el aviso quitando el detector.
+
+
+#### N+71.7 — Lo que NO está cerrado
+
+1. **`PR-SEC` sigue `PENDING`.** Quedan tres advisories vivos, los tres
+   `unmaintained` sin upgrade seguro: `instant`, `bincode`, `ttf-parser`. Son
+   una categoría más débil que aceptar una vulnerabilidad, pero no son cero.
+2. **`RUSTSEC-2024-0437` no está cerrado en `docs/prf/`.** El expediente PRF es
+   evidencia congelada y no se reabre; su texto sigue diciendo OTel 0.28. Vive
+   en el registro de deudas, que es donde apunta ahora el puntero.
+3. **Sin PR de código todavía.** El commit de N+70.7 sigue esperando review del
+   operador, y este trabajo tampoco lo tiene.
+4. **`merge-gate` de PR #321 debe re-ejecutarse.** El fix del parser vive en
+   este árbol, no en `d953f6e1`, así que el rojo de §N+71.5 no seliftará solo.
+
+**Lección 158**: hay tres formas de escribir algo que no es verdad, y esta las
+juntó una sola entrada. Un número de versión equivocado (decía 0.28, era
+0.29.1), una premisa que se cite bien pero no se mida (el riesgo de `/metrics`
+era una frase, no un test), y un mecanismo que se rompe en silencio (un `]` en
+un comentario). Las tres se ven igual desde arriba: el registro parece
+riguroso. La única que se detecta midiendo lo que el registro afirma —el grafo
+resuelto, la respuesta del endpoint, el parser bajo mutación— es la que decide
+si el advisory estaba arreglado o aparcado.
+
+#### N+71.9 — Veredicto del gate: `merge-gate` verde, PR mergeable
+
+Run `36897620124` sobre `cbc1c86a`:
+
+| check | resultado | duración |
+|---|---|---|
+| `CR-08 selector de suites` | pass | 6 s |
+| `fmt + clippy` | pass | 3 m 24 s |
+| `build release bins` (CLI + MCP + control-plane) | pass | 4 m 7 s |
+| `test pineado (lib + E2E)` | pass | 1 m 48 s |
+| **`merge-gate`** (único required check) | **pass** | 17 m 37 s |
+
+`mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`. Dentro del agregador, el step
+`CR-07 /metrics exposition contract (black-box MCP)` quedó **success**: el
+contrato que justifica el diferimiento se ejecuta ahora en CI, sobre el binario
+release, en cada PR.
+
+**Lo que NO ha cambiado con esto**: PR #322 sigue abierto y sin mergear, y el
+WorkItem SDDK `e1ef9a0a` sigue en `Active`. `merge-gate` verde significa que el
+cambio es *mergeable*, no que esté *mergado*. El registro de CR-07 pedía
+explícitamente review del operador, y un gate que pasa no es una firma.
+
+Queda una asimetría que conviene dejar escrita: entre el fallo del primer run
+(step 46, `cli_gate_coverage_contract`) y el verde del segundo hay exactamente
+un commit, `cbc1c86a`, que no arregla código sino que **cablea al gate una suite
+que ya existía y ya pasaba en local**. El código de la migración fue el mismo en
+los dos runs. Lo que cambió fue que el gate pudiera verla.

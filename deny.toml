@@ -34,12 +34,29 @@ ignore = [
     "RUSTSEC-2024-0384", # instant 0.1.13; via cognicode-core -> notify 7.0.0; author points to web-time
     "RUSTSEC-2026-0192", # ttf-parser 0.25.1; via mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0
     "RUSTSEC-2025-0141", # bincode 2.0.1, DIRECT dep of cognicode-core; team ceased development
-    # vulnerability, transitive — fix requires opentelemetry-prometheus 0.28
-    # (prometheus 0.14, protobuf 3) = OTel 0.27->0.28 major migration,
-    # deferred deliberately at JOURNAL:3584-3588 ("romper /metrics en
-    # producción sería peor que el advisory"); exposure limited to /metrics.
-    "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion -> stack overflow on untrusted input
 ]
+#
+# RUSTSEC-2024-0437 (protobuf 2.x stack overflow) is GONE from this list, and
+# the removal was forced by the gate rather than by good intentions: with the
+# OTel 0.27 -> 0.29 migration landed (prometheus 0.13 -> 0.14, protobuf
+# 2.28.0 -> 3.7.2), `unused-ignored-advisory = "deny"` reported
+# error[advisory-not-detected] for the ignore below, because no crate matched
+# it any more. A live vulnerability ignore that has silently become a dead one
+# is worse than no ignore at all: it suppresses nothing and hides the fact
+# that the tree moved. See docs/debts/DEBT-SEC-001-advisory-ignores.md,
+# "## Retired ignores".
+#
+# What the correction cost to learn, and what it bought:
+#
+#   opentelemetry-prometheus 0.28.0 -> prometheus ^0.13 + protobuf ^2.14  (no fix)
+#   opentelemetry-prometheus 0.29.0 -> prometheus ^0.13 + protobuf ^2.14  (no fix)
+#   opentelemetry-prometheus 0.29.1 -> prometheus ^0.14, no direct protobuf (fix)
+#
+# This list said 0.28 for months, which is why CR-07 stayed parked: bumping
+# to 0.28 leaves protobuf on 2.x and looks like the fix. Only 0.29.1 works.
+# Re-check with:
+#   curl -s https://index.crates.io/op/en/opentelemetry-prometheus \
+#     | grep -o '"vers":"0\.\(28\|29\)[^"]*"[^}]*'
 
 # ----------------------------------------------------------------------------
 # Licenses (Post-PRF addendum 2026-09-26)

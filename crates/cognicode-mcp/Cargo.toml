@@ -9,9 +9,15 @@ license = "MIT OR Apache-2.0"
 [lib]
 # M3.5: expose `auth::check_bearer_token` as a library surface so the
 # constant-time comparison can be unit-tested without compiling the
-# `cognicode-mcp-server` binary (which has an unrelated pre-existing
-# build break on the opentelemetry-prometheus 0.27 upgrade). Binaries
-# below keep working unchanged; this is purely additive.
+# `cognicode-mcp-server` binary. Binaries below keep working unchanged;
+# this is purely additive.
+#
+# This comment used to justify the same choice by claiming the server
+# binary did not build on the current opentelemetry-prometheus. That claim
+# was false: on f64f7195,
+# `cargo build -p cognicode-mcp --bin cognicode-mcp-server` exits 0 in 1m05s
+# from cold. The lib target stands on its own merit, which is why the
+# rationale above needs no second justification.
 name = "cognicode_mcp"
 path = "src/lib.rs"
 
