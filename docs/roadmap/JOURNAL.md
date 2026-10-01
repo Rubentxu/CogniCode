@@ -9358,3 +9358,102 @@ igual, porque la pertenencia al grupo es transitiva: había que preguntar
 quién más toca el estado, no solo quién parece sospechoso. Y un arreglo de
 concurrencia no se prueba con "N corridas verdes" — eso no prueba ausencia de
 flake — sino con una propiedad estática del grupo que se pueda leer en el diff.
+
+## N+69 — ST-02: la deuda de frontera, cuantificada, y por qué la rebanada 1 es barata
+
+Sesión 2026-10-01, continuación inmediata de N+68. Sin cambios de código: es
+exploración y medida. **Rama `fix/st01-file-operations-ports` sobre `3cda2ee6`.**
+
+### N+69.1 — Corrección de magnitud en N+68.5
+
+N+68.5 conclude que eliminar el import de `interface` en
+`workspace_session.rs` "toca la firma de `WorkspaceSession::new` y sus **77**
+puntos de llamada". El 77 es correcto; la **implicación** de que 77 es acoplamiento
+de producción no lo es. El desglose:
+
+| callers | dónde | naturaleza |
+|---|---|---|
+| **2** | `interface/cli/commands.rs:1821`, `:1893` | producción, capa `interface` |
+| 75 | `application/workspace_session.rs` | su propio `mod tests` |
+
+Los 2 de producción están en `interface/`, que **puede** nombrar
+`interface::mcp::security`. La restricción solo ata a `application`. Los 75 son
+tests del módulo: se resuelven con un doble o con un constructor de test, no
+con 75 ediciones de firma. La cifra correcta no es "77 sitios", es "2 sitios
+que importan y 75 que se pueden dejar como están".
+
+### N+69.2 — La deuda de frontera, medida (no heredada del doc)
+
+39 entradas en `exceptions()`. Repartidas:
+
+| constraint | entradas |
+|---|---|
+| `application_no_infrastructure` | 37 |
+| `application_no_interface` | **2** |
+
+| owner | entradas | vertical |
+|---|---|---|
+| `team:st-04` | 18 | HandlerContext |
+| `team:st-03` | 11 | AnalysisService |
+| `team:st-02` | 7 | WorkspaceSession |
+| `team:st-01` | 3 | FileOperations (guardas `cfg(test)`) |
+
+Las 2 entradas de `application_no_interface` son **toda** la deuda
+`application → interface` que queda:
+
+- `application/services/file_operations.rs` → `interface::mcp::security` (`team:st-01`, guarda `cfg(test)`)
+- `application/workspace_session.rs` → `interface::mcp::security` (`team:st-02`)
+
+**Consecuencia que el roadmap no decía explícitamente**: la rebanada 1 de ST-02
+no es "un paso más" hacia PR-ARCH, es **la última**
+`application → interface` de producción en el codebase. Terminada, la única
+entrada que sobrevive de esa constraint es la guarda de test de ST-01.
+
+### N+69.3 — ST-02 rebanada 1, dimensionada
+
+`workspace_session.rs`: 4534 líneas, 10 campos, 1 import de `interface`
+(línea 40) y 7 de `infrastructure`. La rebanada 1 ataca **solo el import de
+`interface`**:
+
+1. `application` deja de nombrar `InputValidator`. `FileOperationsService::new`
+   ya recibe `Arc<dyn PathPolicy>` (firma verificada en `file_operations.rs:244`),
+   así que el `InputValidator` de la línea 140 existe únicamente para construirlo.
+2. La composición real (que nombra `InputValidator`) vive en la capa
+   `interface`, que es quien puede.
+3. `application::WorkspaceSession` recibe las capacidades; los 2 callers de
+   `interface/cli/commands.rs` pasan las reales.
+4. Los 75 tests siguen con `WorkspaceSession::new(path)` de 1 argumento
+   (verificado: las 4 formas únicas son `new(temp_dir.path())`,
+   `new(temp_dir1.path())`, `new(temp_dir2.path())`, `new("/nonexistent/path")`),
+   respaldados por un doble de `PathPolicy` — que además ya es pineable con el
+   contrato de N+68.2.
+
+Superficie tocada: 1 import, 2 callers de producción, 1 doble nuevo, 1 entrada
+de allowlist eliminada (39 → 38). Los 75 tests no cambian de firma.
+
+### N+69.4 — Lo que esa rebanada NO cierra
+
+ST-02 completo sigue siendo las 7 imports de `infrastructure` y el struct de
+10 campos: `GraphCache`, `TraversalDirection`, `CompositeProvider`, `Language`,
+`semantic::{SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService}`
+y `RustVerifier`. Son las 7 entradas `team:st-02` del allowlist. La rebanada 1
+deja `application_no_interface` en 1 (solo la guarda de test) pero
+`application_no_infrastructure` en 37.
+
+Y la larga cola real no es ST-02: es **ST-03 (11) y ST-04 (18)**, que son 29 de
+las 39 entradas. ST-04 toca 21 ficheros distintos de `application`. Si el
+objetivo es PR-ARCH, el orden por retorno no es ST-02 → ST-03 → ST-04, porque
+ST-02 es la única que elimina una categoría de constraint entera.
+
+### N+69.5 — Gates
+
+Ninguno: esta entrada no toca código. Lo que se afirma son mediciones, todas
+reproducibles con los comandos citados (`grep` sobre `exceptions()`,
+`WorkspaceSession::new`, y la firma de `FileOperationsService::new`).
+
+**Lección 155**: un número sin desglose propaga un error de magnitud. "77
+puntos de llamada" se leyó como "77 acoplamientos" y casi convierte una
+rebanada de un día en una de cinco. El mismo hecho, desglosado, es 2 sitios que
+importan y 75 que no importan nada: la restricción ata a la capa, no al
+recuento de llamadas. Antes de heredar una cifra de un diagnóstico, desglosar
+en la dimensión que la restricción realmente acota.
