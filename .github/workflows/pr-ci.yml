@@ -76,6 +76,16 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy -D warnings
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # M0.11 rustdoc gate, wired 2026-10-01. It was green and executed in no
+      # workflow at all, so a rustdoc warning that ST-01 introduced in
+      # `infrastructure/parser/syntax_analysis.rs` survived that commit, this
+      # whole branch and six more commits — it only surfaced because someone
+      # happened to run `cargo test --workspace`. The comment further down in
+      # this file already states the standard: a test that runs nowhere is
+      # not a gate.
+      # Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_both_pipelines.
+      - name: rustdoc gate (M0.11)
+        run: cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
       # Contratos de scripts de producto y CI. Ninguno estaba enganchado a
       # un workflow, que es como CP1-DEBT-01 (generate_profiles --check
       # roto) llevo dias sin que nadie lo notara, y como el filtro
