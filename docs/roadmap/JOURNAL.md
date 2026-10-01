@@ -9817,3 +9817,31 @@ un comentario). Las tres se ven igual desde arriba: el registro parece
 riguroso. La única que se detecta midiendo lo que el registro afirma —el grafo
 resuelto, la respuesta del endpoint, el parser bajo mutación— es la que decide
 si el advisory estaba arreglado o aparcado.
+
+#### N+71.9 — Veredicto del gate: `merge-gate` verde, PR mergeable
+
+Run `36897620124` sobre `cbc1c86a`:
+
+| check | resultado | duración |
+|---|---|---|
+| `CR-08 selector de suites` | pass | 6 s |
+| `fmt + clippy` | pass | 3 m 24 s |
+| `build release bins` (CLI + MCP + control-plane) | pass | 4 m 7 s |
+| `test pineado (lib + E2E)` | pass | 1 m 48 s |
+| **`merge-gate`** (único required check) | **pass** | 17 m 37 s |
+
+`mergeStateStatus: CLEAN`, `mergeable: MERGEABLE`. Dentro del agregador, el step
+`CR-07 /metrics exposition contract (black-box MCP)` quedó **success**: el
+contrato que justifica el diferimiento se ejecuta ahora en CI, sobre el binario
+release, en cada PR.
+
+**Lo que NO ha cambiado con esto**: PR #322 sigue abierto y sin mergear, y el
+WorkItem SDDK `e1ef9a0a` sigue en `Active`. `merge-gate` verde significa que el
+cambio es *mergeable*, no que esté *mergado*. El registro de CR-07 pedía
+explícitamente review del operador, y un gate que pasa no es una firma.
+
+Queda una asimetría que conviene dejar escrita: entre el fallo del primer run
+(step 46, `cli_gate_coverage_contract`) y el verde del segundo hay exactamente
+un commit, `cbc1c86a`, que no arregla código sino que **cablea al gate una suite
+que ya existía y ya pasaba en local**. El código de la migración fue el mismo en
+los dos runs. Lo que cambió fue que el gate pudiera verla.
