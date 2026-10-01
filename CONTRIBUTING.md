@@ -79,7 +79,7 @@ when it starts, so two concurrent cargo runs delete each other's doctest
 argument files and the loser reports:
 
 ```
-failed to load argument file: /tmp/rustdoctestXXXXXX/rustdoc-cfgs: No such file or directory
+failed to load argument file: /tmp/rustdoctestqGsZD/rustdoc-cfgs: No such file or directory
 ```
 
 That is contention, not a broken doctest. Do not chase it in the code:
