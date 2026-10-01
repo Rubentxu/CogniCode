@@ -473,43 +473,55 @@ fn resolution_asks_what_is_committed_not_what_is_on_disk() {
     // checkout the gate ran in: green on a laptop that holds local-only files,
     // red on the runner meant to enforce it.
     //
-    // The fixture below is the exact path that failed. Both premises are
-    // asserted, so if it is ever tracked or removed this test says so instead of
-    // silently passing on a premise that no longer holds.
-    let root = repo_root();
-    let tracked = tracked_paths(&root);
+    // The first version of this test asserted that the failing path was *present
+    // in the working tree*. `merge-gate` failed that too, with "the fixture is
+    // no longer present in this working tree" — which is the point, stated
+    // backwards: the file is absent from a checkout, so a test cannot require it.
+    //
+    // So the properties below are asserted against a synthetic tracked set.
+    // Resolution must be a function of that set alone; nothing on disk may enter
+    // into it. Every assertion here is therefore identical on a laptop and on a
+    // runner.
+    let mut tracked = BTreeSet::new();
+    tracked.insert("docs/adr/ADR-001-example.md".to_string());
+    tracked.insert("openspec/specs/demo/docs/nested.md".to_string());
+
+    // A committed path resolves.
+    assert!(resolves_in_a_checkout(
+        &tracked,
+        "docs/adr/ADR-001-example.md"
+    ));
+    // Nothing else does. `docs/roadmap/JOURNAL.md` is present in every checkout
+    // of this repository, so it cannot be used as the counter-example; the point
+    // is that the function has no channel through which the disk could answer.
+    assert!(
+        !resolves_in_a_checkout(&tracked, "docs/roadmap/JOURNAL.md"),
+        "a path absent from the tracked set resolved"
+    );
+    assert!(
+        !resolves_in_a_checkout(&tracked, "docs/adr/ADR-999-absent.md"),
+        "an invented path resolved"
+    );
+    // A citation may name a directory rather than a file, with or without a
+    // trailing slash.
+    assert!(resolves_in_a_checkout(&tracked, "openspec/specs/demo/"));
+    assert!(resolves_in_a_checkout(&tracked, "openspec/specs/demo/docs"));
+    assert!(!resolves_in_a_checkout(&tracked, "openspec/specs/other/"));
+
+    // Grounded in the real repository by the one fact that is stable everywhere:
+    // the ledger that broke the first CI run is not committed. Whether it is
+    // sitting in someone's working tree is precisely the thing that varies.
     let ledger = "docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md";
-
+    let real = tracked_paths(&repo_root());
     assert!(
-        root.join(ledger).is_file(),
-        "the fixture is no longer present in this working tree, so it can no longer \
-         demonstrate the defect; pick another local-only path"
+        !real.contains(ledger),
+        "the ledger is now committed, so it no longer distinguishes the two questions \
+         and this test no longer describes the defect it exists for"
     );
     assert!(
-        !tracked.contains(ledger),
-        "the fixture is now tracked, so it no longer distinguishes the two questions; \
-         pick another local-only path"
-    );
-    assert!(
-        !resolves_in_a_checkout(&tracked, ledger),
-        "a path present in the working tree but absent from the repository resolved as \
-         if it existed for a reader with a checkout; this is the N+76 defect"
-    );
-
-    // The other half of the contract: a committed path still resolves.
-    let adr = tracked
-        .iter()
-        .find(|p| p.starts_with("docs/adr/") && p.ends_with(".md"))
-        .expect("no tracked ADR to check against");
-    assert!(
-        resolves_in_a_checkout(&tracked, adr),
-        "a tracked ADR failed to resolve; the tracked-set check is too strict"
-    );
-
-    // A citation may name a directory rather than a file.
-    assert!(
-        resolves_in_a_checkout(&tracked, "docs/adr/"),
-        "a directory citation did not resolve even though it contains tracked files"
+        !resolves_in_a_checkout(&real, ledger),
+        "a path absent from the repository resolved as if it existed for a reader with \
+         a checkout; this is the N+76 defect"
     );
 }
 
@@ -540,9 +552,14 @@ fn the_scan_covers_exactly_what_ci_can_see() {
         tracked_here > 0,
         "no ADR is tracked, so the gate would pass on an empty set"
     );
+    // Safe to assert on disk here, unlike in `resolution_asks_...`: the
+    // directory holds tracked files, so a checkout has it too. (A `PathBuf` is
+    // never empty, so this used to assert nothing.)
     assert!(
-        !on_disk.as_os_str().is_empty(),
-        "docs/adr/ does not exist; the scan is pointed at the wrong tree"
+        on_disk.is_dir(),
+        "docs/adr/ does not exist even though {} ADRs are tracked; the scan is pointed \
+         at the wrong tree",
+        tracked_here
     );
 }
 
