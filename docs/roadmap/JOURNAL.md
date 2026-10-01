@@ -9071,3 +9071,118 @@ comando que dice emular. Si el comando del workflow dice 0 y el filtro dice
 hecho de que el comando "funciona" — se hereda del hecho de que el comando
 y el filtro dicen lo mismo. Cuando divergen, el filtro es el bug, no el
 comando.
+
+## N+67 — ST-01 cerrado, y el commit anterior se había publicado en rojo
+
+Sesión 2026-10-01. **Rama `fix/st01-file-operations-ports`; commit de código
+`ba031da5` sobre `4b7de348`.** Continuación de la vertical ST-01
+(`EXECUTION-PLAN.md`: extraer `PathPolicy` + ports de parser/filesystem/
+verifier para que `application` deje de depender de MCP/infra).
+
+### N+67.1 — Lo que el commit anterior afirmaba sobre sí mismo
+
+`4b7de348` pineaba **42** entradas de allowlist. Contando `ex(` en el árbol
+de ese commit salen **39**. El test
+`inventory_size_is_pinned_at_current_baseline` fallaba en ese commit, con el
+árbol tal y como quedó publicado:
+
+```text
+$ git worktree add --detach /tmp/wt-st01-base 4b7de348
+$ cargo test -p cognicode-core
+test result: FAILED. 2231 passed; 1 failed; 12 ignored
+test ...::cr06_allowlist::tests::inventory_size_is_pinned_at_current_baseline ... FAILED
+```
+
+El error era aritmética, no medición: las tres entradas de
+`file_operations.rs` se contaba como adiciones cuando ya existían (son las
+que cubren el módulo `#[cfg(test)]`). Un allowlist que miente sobre su propio
+tamaño es peor que uno que confiesa deuda: el primero hace pasar por verde un
+gate que no cuenta.
+
+### N+67.2 — Gates de ST-01, todos medidos en `ba031da5`
+
+| gate | comando | resultado |
+|---|---|---|
+| compilación | `cargo check -p cognicode-core --all-targets` | exit 0 |
+| aceptación | `cargo test -p cognicode-core --test architecture_self_host_e2e` | **6 passed / 0 failed** |
+| anti-vacuidad | 3× `cr06_synthetic_drift_*` | PASS — sigue disparando en `application→bin/infra/interface` |
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| batería del core | `cargo test -p cognicode-core` | **2517 passed / 0 failed / 16 ignored** |
+| grep secundario | `crate::interface::mcp` en `file_operations.rs` | 1 ocurrencia, línea 1990, dentro de `mod tests` (1982) → **0 en producción** |
+
+El criterio de aceptación de ST-01 ("0 imports application→MCP en
+FileOperations") queda cumplido con las dos manos: la fitness function
+(`finds_zero_drift_on_clean_source`) y el grep.
+
+### N+67.3 — Un rojo que NO era de ST-01, medido para no atribuirlo mal
+
+La primera corrida completa dio `1 failed`:
+`test_verify_rust_file_subprocess_killed_on_timeout`. Antes de escribir
+"preexistente" lo medí, porque el árbol base con el mismo comando pasaba:
+
+| corrida | árbol | comando | rojo |
+|---|---|---|---|
+| 1 | con diff | `cargo test -p cognicode-core` | test de PIDs de `rustc` |
+| 2 | base `4b7de348` | `cargo test -p cognicode-core` | inventario pineado |
+| 3 | base `4b7de348` | `--lib` | inventario pineado |
+| 4 | con diff | un solo test | **verde** |
+| 5-7 | con diff | `cargo test -p cognicode-core` | **verde 3/3** |
+
+Causa raíz: el test cuenta PIDs de `rustc` de **toda la máquina** con `pgrep`
+y falla si aparecen más de 2 nuevos. No lleva `#[serial]`, aunque el módulo lo
+importa en la línea 1991, así que corre concurrente con
+`test_verify_rust_file_compilable_rust`, `test_verify_rust_file_broken_rust` y
+`test_verify_rust_file_timeout_rejected`, que sí lanzan `rustc` de verdad. Es
+acoplamiento al entorno, no a la lógica de ST-01, y es intermitente: 1 fallo
+en 7 corridas. El fix es `#[serial]` sobre ese test — una línea, otra unidad.
+
+### N+67.4 — Divergencia con el recibo N+66 (corregida aquí, no reescrita allí)
+
+Al reconstruir el contexto, `git branch --contains f1f0f0c6` salió vacío y N+66
+decía "CLOSED LOCALMENTE — sin push". La conclusión obvia era "commit
+huérfano, recuperarlo". **Era falsa, y recuperar el SHA habría sido
+destructivo.** El linaje fue replanteado por un rebase:
+
+| N+66 cita | realidad en `ci/pipelinek-kotlin-gate` |
+|---|---|
+| HEAD previo `b3716640` | `1a87fbdb` (mismo patch-id `3b7a50ae`, otro contexto) |
+| commit `f1f0f0c6` | `2a13925d` (**patch-id idéntico** `92cec58d`) |
+| "sin push" | rama pusheada: local == `origin/ci/pipelinek-kotlin-gate` == `b5d8682c` |
+
+Forzar `f1f0f0c6` sobre la rama habría revertido el rebase y tirado 4 commits
+ya publicados, entre ellos el propio recibo N+66 (`1194661a`) y el test de
+paridad `50223fbc`. El commit no era trabajo perdido: era el mismo cambio con
+el SHA de antes del rebase. **N+66 no se corrige aquí** (append-only, y la
+rama es otro linaje); queda propuesta una errata aparte.
+
+### N+67.5 — Lo que NO está cerrado
+
+1. **T8 sigue abierta** a propósito. Las tres entradas de `file_operations.rs`
+   son guardas de regresión, no deuda: el módulo de test compone los
+   adaptadores reales por diseño. Cerrarlas = sustituirlas por dobles de test.
+2. **El brazo `catch-all` de `impl PathPolicy` es inalcanzable hoy.**
+   `validate_path` (security.rs:326-440) solo retorna las 6 variantes de ruta
+   que el `match` cubre explícitamente. Es defensa ante un `SecurityError` que
+   comparte con `validate_file_size` / rate limit. Riesgo latente, no bug: si
+   algún día `validate_path` devolviera `RateLimitExceeded`, el port lo
+   reportaría como `InvalidPathCharacters` con un path fabricado.
+3. **Ningún test pina el mapeo de errores** de `PathPolicy`. El port tiene 5
+   referencias en 5 ficheros de producción y 0 en tests. El contrato de
+   traducción `SecurityError → PathPolicyError` no ha visto fallar nunca.
+4. **Batería de workspace completa no ejecutada.** Solo `cognicode-core`
+   (2517/0/16). Nada más se ha medido en esta sesión.
+5. **Errata de N+66 pendiente** y **error `VAULT003` del vault pendiente**
+   (diagnosticado: no es un nodo ausente sino *casing* —
+   `REQ-Gate-003-Core-Parity-With-**M**ain.md` existe, el wikilink de
+   `DES-Gate-001` escribe `With-**m**ain`; 2 ocurrencias, líneas 12 y 66).
+6. **Rama sin push**: `ba031da5` es local. El PR contra `main` es decisión del
+   operador.
+
+**Lección 153**: un commit que se publica con su propio test en rojo no es un
+commit pendiente de una comprobación, es un commit que ya miente. Aquí la
+mentira era del tamaño del allowlist: 42 contra 39, y durante un turno
+completo nadie lo vio porque el gate de ST-01 (la fitness function) estaba
+verde y el que contaba era otro test. Un gate que pasa no dice que el árbol
+esté bien: dice que *ese* gate pasó. La lección 151 ya decía que un test que
+pasa bajo una mutación puede ser una mutación mal formulada; esta es la
+simétrica — un árbol que pasa un gate puede tener otro gate roto al lado.
