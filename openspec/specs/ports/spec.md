@@ -80,5 +80,5 @@ The port types in `crates/cognicode-core/src/domain/ports/` MUST be DB-agnostic 
 
 ## References
 
-- [ADR-028 port abstraction](../../docs/adr/ADR-028-ladybugdb-port-abstraction-architecture.md)
-- [e29-0-clean-ports delta spec](../../sddk/e29-0-clean-ports/spec.md)
+- [ADR-028 port abstraction](../../../docs/adr/ADR-028-ladybugdb-port-abstraction-architecture.md)
+- [e29-0-clean-ports delta spec](../../../sddk/e29-0-clean-ports/spec.md)

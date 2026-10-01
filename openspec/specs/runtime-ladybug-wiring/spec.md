@@ -103,6 +103,6 @@ pub struct RuntimePorts {
 
 ## References
 
-- [e29-6-ladybug-store-wiring proposal](../changes/e29-6-ladybug-store-wiring/proposal.md)
-- [e29-6-ladybug-store-wiring design](../changes/e29-6-ladybug-store-wiring/design.md)
-- [e29-6-ladybug-store-wiring tasks](../changes/e29-6-ladybug-store-wiring/tasks.md)
+- [e29-6-ladybug-store-wiring proposal](../../../sddk/e29-6-ladybug-store-wiring/proposal.md)
+- [e29-6-ladybug-store-wiring design](../../../sddk/e29-6-ladybug-store-wiring/design.md)
+- [e29-6-ladybug-store-wiring tasks](../../../sddk/e29-6-ladybug-store-wiring/tasks.md)

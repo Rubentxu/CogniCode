@@ -890,8 +890,8 @@ CREATE REL TABLE Annotates (
 
 ## References
 
-- [ADR-026: LadybugDB migration decision](../../docs/adr/ADR-026-ladybugdb-canonical-migration.md)
-- [ADR-027: Hybrid schema strategy](../../docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md)
+- [ADR-026: LadybugDB migration decision](../../../docs/adr/ADR-026-ladybugdb-canonical-migration.md)
+- [ADR-027: Hybrid schema strategy](../../../docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md)
 - [LadybugDB CREATE TABLE docs](https://docs.ladybugdb.com/cypher/data-definition/create-table/)
 - [LadybugDB MAP type](https://docs.ladybugdb.com/cypher/data-types/)
 - [Kùzu multi-label discussion #3114](https://github.com/kuzudb/kuzu/discussions/3114) (reason multi-label is not supported)

@@ -108,8 +108,8 @@ measured.
 
 ## References
 
-- [E29.0 proposal](../../openspec/changes/e29-0-trustworthy-delivery-baseline/proposal.md)
-- [E29.4 proposal](../../openspec/changes/e29-4-scale-operability-proof/proposal.md)
+- [E29.0 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-0-trustworthy-delivery-baseline/proposal.md)
+- [E29.4 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-4-scale-operability-proof/proposal.md)
 - [ADR-012](./ADR-012-ui-visible-capability-contract.md)
 - [ADR-014](./ADR-014-moldql-pattern-graph-analytics-platform.md)
 - Local SDD evidence: `plans/cognicode-capability-readiness-assessment-2026-07-29.md` (not version-controlled by policy)

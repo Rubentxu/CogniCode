@@ -8,7 +8,7 @@
 ## Mapping to the umbrella spec
 
 The governing umbrella spec is
-[`portable-runtime-distribution`](../../cognicode-living-software-intelligence/specs/portable-runtime-distribution/spec.md)
+[`portable-runtime-distribution`](../2026-09-21-bulk-historical-pre-m13___cognicode-living-software-intelligence/specs/portable-runtime-distribution/spec.md)
 in the LSI umbrella. It declares 6 requirements (`PRT-001`..`PRT-006`).
 This traceability file uses an e74-local numbering scheme (`PRT-001`..`PRT-008`)
 where the first 6 IDs align 1:1 with the spec, and `PRT-007`/`PRT-008`
