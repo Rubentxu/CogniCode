@@ -10367,3 +10367,120 @@ job llevaba 18 m 28 s y terminó en `success`. Comprobar `conclusion` del job
 él, y el diagnóstico era más rekord de lo que el hecho justificaba: una explicación
 bonita sobre un dato que no se había medido.
 
+
+### N+76 — La premisa del work item era falsa, y medirla costó una consulta (2026-10-01)
+
+WorkItem SDDK `372290ee`. Apertura: `main` en `e93fa7ac`, tras el merge de
+#326. El work item nació de un patrón: tres barridas seguidas — N+73, N+74,
+N+75 — encontrando rutas rotas en backticks, con la conclusión evidente de que
+faltaba un verificador. La conclusión era correcta en su forma; el alcance no
+lo era, y eso solo se sabía midiendo.
+
+#### N+76.1 — Medí la premisa antes de escribir una línea
+
+| conjunto | rotas |
+|---|---|
+| toda ruta en backticks | **238** |
+| de esas, con raíz `docs/` u `openspec/` | **9** |
+
+Las otras 229 son `tools/list`, `references/`, `domain/`, `src/x.rs`,
+`tests/integration.rs`, rutas parciales terminadas en `/`, nombres de skill,
+identificadores de código y ejemplos de plantilla. Un "existe esto" sobre todos
+los backticks daría 229 falsos positivos por barrido — o sea, un gate que
+miente. Es la misma decisión que N+73.4 tomó para `sddk lint`, y el precedente
+ya estaba escrito.
+
+Las 9 reales se reparten en 3 reparables y 6 excepciones justificadas.
+
+#### N+76.2 — Las 3 reparables, con destino verificado
+
+- `ADR-CANONICAL-LAYOUT-versions.md:66` → closure record de e74, movido por el
+  bulk archive del 2026-09-21.
+- `generic-graph-equivalence-harness/spec.md:3` → change spec de e40, mismo
+  archivo masivo.
+- `ADR-IDENTITY-MAP-distribution.md:8` → citado como
+  `2026-09-18-arch-l5-.../proposal.md`. **La elipsis era un placeholder sin
+  resolver**, así que esa ruta no podía resolver por construcción: no estaba
+  rota por un cambio de layout, estaba rota desde que se escribió. El
+  directorio real es `2026-09-18-arch-l5-zero-install-pollution`.
+
+#### N+76.3 — Las 6 que se quedan rotas, y por qué
+
+Tres son fixtures GIVEN cuya semántica depende de que la ruta **no** exista.
+`openspec/specs/quality-store/` es el caso límite: su propio GIVEN afirma que el
+directorio no está, así que crearlo invertiría el test. Las otras dos
+(`docs/guide.md`, `docs/adr/0001.md`, `docs/adr/0007.md`) son documentos de
+entrada genéricos del adaptador de fuentes.
+
+Una es prospectiva: `docs/analysis/release-1.0.0-scorecard.md` se archiva ahí al
+publicar, y la release no ha ocurrido.
+
+Una es `E32`, que es un *programa* del ROADMAP con sub-unidades E32-A..I, no un
+ADR. Esa ruta nunca nombró un acta. Elegir `ADR-034` o la sección E32 del
+ROADMAP sería inventar el destino, así que queda como excepción con la razón
+escrita.
+
+Cada fila lleva su razón, un test falla si la razón está en blanco, y otro
+falla si la fila queda obsoleta. Eso evita que la allowlist vuelva a ser
+justo lo que este trabajo quería quitar: filas que hacen pasar un test sin decir
+por qué.
+
+#### N+76.4 — El defecto propio que encontró el TDD
+
+El extractor obvio es `text.split('`').skip(1).step_by(2)`. **Falla en
+silencio.** Un fence de markdown son *tres* backticks, así que un documento que
+contenga uno tiene un total impar y todo lo que viene después queda desplazado
+una posición.
+
+Medido sobre `openspec/specs/docs-source-adapter/spec.md`: 373 backticks, y el
+extractor por emparejamiento devolvía **cero rutas en todo el fichero**,
+incluidas las tres rotas que este contract existe para cazar. El gate habría
+pasado sin comprobar nada.
+
+Es exactamente la forma del ghost-filter N+66, y salió al escribir el test, no al
+revisarlo. El parser definitivo camina por bytes buscando runs de exactamente un
+backtick a cada lado, sin consultar la paridad global.
+
+#### N+76.5 — El conjunto gobernado es lo que CI puede ver
+
+`docs/adr/` está en `.gitignore:182` y los ADRs se force-addy de forma
+selectiva: **35 trackeados frente a 53 en disco**. Un runner de CI recibe un
+checkout, así que los 18 no trackeados no existen allí. Recorrer el working
+directory habría sido no-vacuo en mi máquina y **vacuuo en la ejecución que debe
+hacer cumplir el gate**.
+
+Por eso el conjunto se lee con `git ls-files`. No es un compromiso: es lo
+único que un gate puede afirmar sobre el runner que lo ejecuta. `docs/ROADMAP.md`
+está trackeado pero no cuelga de `docs/adr/`, así que se añade explícito.
+
+#### N+76.6 — Sin cambio de workflow
+
+`pr-ci.yml` ya corre `cargo test -p cognicode-cli --features ladybug`, que
+cubre todos los `tests/*.rs`. Añadir un step por test sería el anti-patrón que
+el propio comentario del workflow advierte. Verificado contra
+`cli_gate_coverage_contract`, que pasa para el gate de CLI (a diferencia del de
+MCP, que sí exige nombrar cada suite).
+
+#### N+76.7 — Lo que no se tocó, y por qué
+
+`docs/adr/ADR-052-reject-cargo-dist-e74.md` sí tenía una referencia rota y la
+reparé en local. **No viaja en el PR**: no está trackeado, así que ni el gate ni
+CI la ven. Ampliar `.gitignore` o forzar su alta es un cambio de política y
+pertenece a su propia revisión, no a un efecto secundario de esta.
+
+**Lección 166**: una premisa heredada de un patrón real puede ser falsa en su
+alcance. Tres barridas seguidas detectando el mismo defecto prueban que el
+defecto existe; no dicen qué lo causa ni cuánto abarca. Medir la premisa costó
+una consulta y evitó un gate con 229 falsos positivos por barrido.
+
+**Lección 167**: un verificador que devuelve un conjunto vacío no está
+"tranquilo", está ciego. El defecto del extractor por emparejamiento habría
+producido un test verde sobre un fichero de 373 backticks. La no-vacuidad
+necesita su propio test —`the_scan_actually_finds_a_broken_reference` y
+`a_code_fence_does_not_shift_every_later_span` existen para eso—, igual que
+existe un test que falla si una excepción queda obsoleta.
+
+**Lección 168**: un gate debe afirmar sobre el entorno que lo ejecuta, no sobre
+el que lo escribiste. Con 35 ADRs trackeados y 53 en disco, recorrer el disco
+daba una garantía que en CI no era cierta. `git ls-files` no es una comodidad:
+es la única base honesta para un gate de merge.
