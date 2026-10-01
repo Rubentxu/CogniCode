@@ -63,7 +63,7 @@ Three OpenSpec specs are promoted and bind the user-visible contract:
 - `portable-skill-bundle/spec.md:36,138` — `~/.cognicode/versions/<v>/skills/`
 
 The `install/` layout in current code is an undocumented e74-era
-implementation choice. e74 closure (`openspec/changes/e74-lsi-portable-runtime-distribution/closure-authorization.md`)
+implementation choice. e74 closure (`openspec/changes/archive/2026-09-21-e74-lsi-portable-runtime-distribution/closure-authorization.md`)
 records it as a "low severity" debt to be addressed when e76 introduces
 isolated installs. It was never promoted to an ADR.
 

@@ -1,6 +1,6 @@
 # Spec — e40 — GenericGraph equivalence harness
 
-> Source: `openspec/changes/e40-lsi-generic-graph-equivalence-harness/spec.md`
+> Source: `openspec/changes/archive/2026-09-21-e40-lsi-generic-graph-equivalence-harness/spec.md`
 > Archived: 2026-09-15
 > This is a copy of the change spec for archival into `openspec/specs/`.
 
