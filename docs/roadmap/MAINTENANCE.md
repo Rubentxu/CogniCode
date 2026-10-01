@@ -112,10 +112,17 @@ v0.98.x/v0.99.x:
 * **M0.6**: **CERRADA 2026-09-27** (commit `e2ee94ad`, "bump tree-sitter 0.24.7 →
   0.27.0, fixes PHP/Swift LanguageError version mismatch"). Reconciliado 2026-10-01:
   la fila de la tabla M0.6 ya decía CLOSED desde el 2026-09-27 y la fila de aquí
-  decía BLOCKED. La tabla gana; el commit existe. Queda una deuda residual
-  registrada y **viva**, `walker-grammar-drift` (3 de 4 tests `#[ignore]` de
-  PHP/Swift ahora fallan por `node type 'X' not found` en vez de `LanguageError`),
-  que es un item distinto y no se cierra con esto.
+  decía BLOCKED. La tabla gana; el commit existe. La deuda residual que esta
+  línea declaraba **viva**, `walker-grammar-drift`, **también está cerrada**:
+  se resolvió como **M0.10** (commits `2becec6a` + `4eacab93` + `a47cf419`,
+  2026-09-27) y los 4 tests PHP/Swift se re-habilitaron. Verificado de nuevo
+  el 2026-10-01 contra `HEAD`, no contra la prosa heredada:
+  `cargo test -p cognicode-core --lib type_ref_walkers` → **13 passed /
+  0 failed / 0 ignored**, sin ningún `#[cfg(test)]`-less ni `#[ignore]` en ese
+  módulo. Esta frase decía *"3 de 4 tests `#[ignore]` de PHP/Swift ahora
+  fallan por `node type 'X' not found`"*; era cierto el 2026-09-27 y dejó de
+  serlo el mismo día, un commit más tarde. La tabla M0.10 (arriba) es la
+  autoridad y dice CLOSED.
 * **F0.1** (find_usages CLI): **CERRADA 2026-09-25** (commit `3cb07f90`,
   `feat(cli): find-usages subcommand (F0.1 / L1.4)`). Reconciliado 2026-10-01: la
   sección F0.1 de más arriba ya lo daba por cerrado y esta línea lo daba por

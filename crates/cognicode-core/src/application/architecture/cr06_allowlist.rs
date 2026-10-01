@@ -430,6 +430,111 @@ fn ex(
     }
 }
 
+/// Classify every line containing `needle` as inside or outside a
+/// `#[cfg(test)]` scope.
+///
+/// Returns `(lineno, trimmed_line, is_test_only)` for each hit.
+///
+/// A `#[cfg(test)]` attribute is only test-gating the *item it annotates*,
+/// not the rest of the file, so the scope is the brace-balanced span that
+/// follows the attribute. Concretely:
+///
+/// - `#[cfg(test)] mod tests { … }` — the span is the whole module.
+/// - `#[cfg(test)] fn helper() { … }` — the span is that function's body.
+///
+/// The scan records the brace depth at which each `#[cfg(test)]` attribute
+/// appears, and treats every subsequent line as test-only until the depth
+/// returns below that point. Lines that are not inside any such span are
+/// production, which is the case this guard exists to catch.
+///
+/// A `#[cfg(test)]` with no braces (a `use` or a `const`) applies to that one
+/// item only, and the depth scan terminates on the first newline that closes
+/// it. This is a source scanner, not a parser: it does not attempt to be
+/// Rust-aware, so string literals containing braces would skew it. The two
+/// files it is pointed at are not written that way, and the guard fails
+/// loudly on a violation rather than silently, which is the property that
+/// matters here.
+#[cfg(test)]
+fn classify_imports<'a>(source: &'a str, needle: &str) -> Vec<(usize, &'a str, bool)> {
+    let mut hits = Vec::new();
+    // Brace depth at which each open `#[cfg(test)]` scope started. Signed,
+    // because a closing `}` moves the depth down and a `u32` would wrap.
+    let mut test_scopes: Vec<i32> = Vec::new();
+    let mut depth: i32 = 0;
+    let mut pending_cfg_test = false;
+
+    for (idx, raw) in source.lines().enumerate() {
+        let lineno = idx + 1;
+        let trimmed = raw.trim();
+
+        // The attribute gates the item that comes after it, so it only
+        // opens a scope on the following line.
+        if trimmed == "#[cfg(test)]" {
+            pending_cfg_test = true;
+            continue;
+        }
+
+        if trimmed.starts_with("use ") && trimmed.contains(needle) {
+            hits.push((lineno, trimmed, test_scopes.iter().any(|d| *d < depth)));
+        }
+
+        if pending_cfg_test {
+            test_scopes.push(depth);
+            pending_cfg_test = false;
+        }
+
+        // Count this line's braces BEFORE closing scopes. The line that opens
+        // a `#[cfg(test)] mod tests {` is where the scope becomes real, so
+        // filtering first would drop the scope on the same line it was added
+        // (its opening depth equals the current depth, not less than it).
+        depth += count_braces(trimmed);
+
+        // A scope stays open while the depth is strictly greater than the
+        // depth at which it opened, and closes once we return to it.
+        test_scopes.retain(|d| *d < depth);
+    }
+
+    hits
+}
+
+/// Net brace delta for a line, ignoring braces inside string literals and
+/// character literals so that a `"{"` in a message does not open a scope.
+#[cfg(test)]
+fn count_braces(line: &str) -> i32 {
+    let mut delta = 0i32;
+    let mut in_str = false;
+    let mut in_char = false;
+    let mut escaped = false;
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if escaped {
+            escaped = false;
+        } else if c == b'\\' && (in_str || in_char) {
+            escaped = true;
+        } else if in_str {
+            if c == b'"' {
+                in_str = false;
+            }
+        } else if in_char {
+            if c == b'\'' {
+                in_char = false;
+            }
+        } else {
+            match c {
+                b'"' => in_str = true,
+                b'\'' => in_char = true,
+                b'{' => delta += 1,
+                b'}' => delta -= 1,
+                _ => {}
+            }
+        }
+        i += 1;
+    }
+    delta
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,14 +662,31 @@ mod tests {
     ///
     /// So the claim gets a test instead of staying prose.
     ///
-    /// Scope, stated honestly: this asserts that no forbidden import appears
-    /// BEFORE the first `#[cfg(test)]` marker in the file. Everything before
-    /// that marker is unconditionally compiled into production, so this is
-    /// sound — and it is where a regression actually lands in practice, since
-    /// that is how the guarded imports were introduced in the first place. It
-    /// does NOT cover the stretch between a `#[cfg(test)]` item and the test
-    /// module itself (in `workspace_session.rs` that is lines 201-2174). A
-    /// forbidden import hiding there would not be caught.
+    /// Scope: this asserts that every forbidden import in the file is inside
+    /// a `#[cfg(test)]` scope, which is what the rationale claims and is the
+    /// only sound reading of it.
+    ///
+    /// Earlier this test cut the scan at the FIRST `#[cfg(test)]` marker and
+    /// stopped there, on the argument that "everything before the first marker
+    /// is unconditionally compiled into production". That argument was sound
+    /// for the region it covered and silent about the rest, and the silence
+    /// was load-bearing: measured 2026-10-01, planting a production
+    /// `use crate::interface::mcp::security::InputValidator` at line 2174 of
+    /// `workspace_session.rs` — after that marker, before `mod tests`, 1983
+    /// lines of real production code — left this test green. The CR-06 gate
+    /// does not catch it either, for the reason above: the allowlist entry
+    /// suppresses the whole file.
+    ///
+    /// So a "cfg(test)-only" entry could be made a lie anywhere past the first
+    /// marker and the only mechanism meant to catch it would agree. That is
+    /// the N+66 ghost-filter shape again, one level down, in the test that
+    /// exists to resolve it.
+    ///
+    /// The fix is to classify each import by whether it sits inside a
+    /// `#[cfg(test)]` scope, rather than by whether it sits before the first
+    /// marker: walk the file tracking brace depth, and treat the span from a
+    /// `#[cfg(test)]` attribute to the item it applies to as test-only. An
+    /// import outside every such span is a production import.
     #[test]
     fn cfg_test_only_entries_really_have_no_production_import() {
         /// (file_path, dependency_path) for every entry whose rationale says
@@ -597,30 +719,17 @@ mod tests {
             let source = std::fs::read_to_string(&path)
                 .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
 
-            let first_cfg_test = source
-                .lines()
-                .position(|l| l.trim() == "#[cfg(test)]")
-                .map(|i| i + 1)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "{file_path} declares a cfg(test)-only allowlist entry \
-                         but has no `#[cfg(test)]` marker, so the rationale \
-                         cannot mean anything"
-                    )
-                });
+            assert!(
+                source.lines().any(|l| l.trim() == "#[cfg(test)]"),
+                "{file_path} declares a cfg(test)-only allowlist entry \
+                 but has no `#[cfg(test)]` marker, so the rationale \
+                 cannot mean anything"
+            );
 
             let forbidden = format!("crate::{dep}");
-            for (idx, line) in source.lines().enumerate() {
-                let lineno = idx + 1;
-                if lineno > first_cfg_test {
-                    break; // at or after the marker: test-only territory
-                }
-                let trimmed = line.trim();
-                if !trimmed.starts_with("use ") {
-                    continue;
-                }
+            for (lineno, trimmed, in_test_scope) in classify_imports(&source, &forbidden) {
                 assert!(
-                    !trimmed.contains(&forbidden),
+                    in_test_scope,
                     "production import of a cfg(test)-only dependency at \
                      {file_path}:{lineno} — `{trimmed}`. The CR-06 gate will \
                      NOT catch this: TemporaryException::matches ignores line \
