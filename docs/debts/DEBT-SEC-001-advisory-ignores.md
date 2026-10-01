@@ -37,7 +37,7 @@ below are what the tool says, not what was assumed.
 | Advisory ID | Crate | Version in tree | Class | Why it is ignored | Fix path | Owner | Authorising record |
 |---|---|---|---|---|---|---|---|
 | RUSTSEC-2024-0384 | `instant` | 0.1.13 | unmaintained | Crate is no longer maintained; its author recommends the maintained `web-time` crate instead. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> notify 7.0.0 -> notify-types 1.0.1`. | Drop the transitive `notify 7` dependency, which requires moving `cognicode-core` to `notify 8` or replacing the file-watching use. No version bump fixes this on its own. | Repo maintainer (no `.github/CODEOWNERS` exists, so ownership is by convention, not by file) | `a886ecfd` (2026-09-22), which declared `cargo deny check advisories: ok` at the time |
-| RUSTSEC-2025-0141 | `bincode` | 2.0.1 | unmaintained | The bincode team ceased development permanently after a doxxing and harassment incident. Advisory `Solution:` is "No safe upgrade is available!". It is a **direct** dependency of `cognicode-core`, not a transitive one. | Migrate the serialisation format. Advisory names `wincode`, `postcard`, `bitcode` and `rkyv` as alternatives. Any of them is a breaking change to the on-disk format. | Repo maintainer | `a886ecfd` (2026-09-22) |
+| RUSTSEC-2025-0141 | `bincode` | 2.0.1 | unmaintained | The bincode team ceased development permanently after a doxxing and harassment incident. Advisory `Solution:` is "No safe upgrade is available!". It is a **direct** dependency of `cognicode-core`, not a transitive one. | **Re-measured 2026-10-01; see "The bincode row was over-dimensioned" below.** The fix path is a migration away from `bincode`, but it does **not** carry an on-disk format risk: the only artefact `bincode` writes in production is `<workspace>/.cognicode/graph.cache`, it is git-ignored, and it is rebuilt on any parse failure. | Repo maintainer | `a886ecfd` (2026-09-22); premise re-measured under SDDK WorkItem `024c5e6d` |
 | RUSTSEC-2026-0192 | `ttf-parser` | 0.25.1 | unmaintained | The author states the crate is unmaintained and will not receive further fixes. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0`. | Wait for, or move to, `skrifa`, the actively maintained TrueType/OpenType parser named in the advisory. This is inside a transitive renderer, so the first move is upstream. | Repo maintainer | `a886ecfd` (2026-09-22) |
 
 The three rows above are all `unmaintained` notices whose advisory
@@ -45,6 +45,41 @@ The three rows above are all `unmaintained` notices whose advisory
 accepting a known vulnerability and the two should not be read as equivalent.
 The one row that *was* a live vulnerability — `RUSTSEC-2024-0437` — is now
 retired; see below.
+
+### The bincode row was over-dimensioned
+
+The row previously read *"Migrate the serialisation format. … Any of them is a
+breaking change to the on-disk format."* That was a claim about blast radius
+that nobody had measured, and measuring it found something different. Measured
+**2026-10-01** against the tree, not against this document:
+
+| surface | what it actually does |
+|---|---|
+| persistent store | **SQLite** (`persistence/m0009..m0020.sql`). No `bincode`. |
+| `CachedGraphStore` | the real write path, and says so: *"no bincode, no Mutex"*. |
+| `InMemoryGraphStore` | encodes to a `Vec<u8>` held in `Mutex<Option<Vec<u8>>>`. It is the default `CogniCodeHandler` fallback when no SQLite (`handlers/mod.rs:240`, `rmcp_adapter.rs:42`), so it runs in production — but those bytes never leave the process. |
+| `save_durable_snapshot` | the **only** call-site that writes `bincode` to disk (`handlers/mod.rs:886`). Writes `("cognicode.graph.cache/v1", CallGraph, FileManifest)`. |
+| `CallGraphV1` | the legacy v1 blob shape, `deprecated` in `domain/aggregates/mod.rs`; `into_v2` is called only from tests. No production read of legacy blobs. |
+
+Two facts settle the risk:
+
+1. **The artefact is git-ignored.** `.gitignore:92` declares `.cognicode/`, and
+   `git check-ignore -q .cognicode/graph.cache` exits 0. The file has never been
+   committed and has never been evidence.
+2. **It is rebuilt, not preserved.** `load_durable_snapshot` returns `None` on
+   any parse failure, in the code's own words: *"a corrupt snapshot is treated as
+   absent (rebuild), never as valid evidence."*
+
+So `bincode` holds no user-data contract. The worst case of replacing it is one
+graph rebuild, not a broken file. **The row stays open** — `bincode` is still
+unmaintained and still ignored — but its fix path no longer promises a format
+break that does not exist, and the trigger for migrating it is "we have a reason
+to", not "we are one rebuild away from data loss".
+
+This is the register's own lesson applied to itself, again: a claim about
+blast radius is a claim until measured. `notify`'s `instant` and the `ttf-parser`
+row above carry the same *shape* of premise and have **not** been re-measured
+this way; that is their own work item, and nothing here says they are fine.
 
 ## Retired ignores
 
