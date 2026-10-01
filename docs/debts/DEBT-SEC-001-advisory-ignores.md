@@ -36,7 +36,6 @@ below are what the tool says, not what was assumed.
 
 | Advisory ID | Crate | Version in tree | Class | Why it is ignored | Fix path | Owner | Authorising record |
 |---|---|---|---|---|---|---|---|
-| RUSTSEC-2024-0384 | `instant` | 0.1.13 | unmaintained | Crate is no longer maintained; its author recommends the maintained `web-time` crate instead. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> notify 7.0.0 -> notify-types 1.0.1`. | Drop the transitive `notify 7` dependency, which requires moving `cognicode-core` to `notify 8` or replacing the file-watching use. No version bump fixes this on its own. | Repo maintainer (no `.github/CODEOWNERS` exists, so ownership is by convention, not by file) | `a886ecfd` (2026-09-22), which declared `cargo deny check advisories: ok` at the time |
 | RUSTSEC-2025-0141 | `bincode` | 2.0.1 | unmaintained | The bincode team ceased development permanently after a doxxing and harassment incident. Advisory `Solution:` is "No safe upgrade is available!". It is a **direct** dependency of `cognicode-core`, not a transitive one. | **Re-measured 2026-10-01; see "The bincode row was over-dimensioned" below.** The fix path is a migration away from `bincode`, but it does **not** carry an on-disk format risk: the only artefact `bincode` writes in production is `<workspace>/.cognicode/graph.cache`, it is git-ignored, and it is rebuilt on any parse failure. | Repo maintainer | `a886ecfd` (2026-09-22); premise re-measured under SDDK WorkItem `024c5e6d` |
 | RUSTSEC-2026-0192 | `ttf-parser` | 0.25.1 | unmaintained | The author states the crate is unmaintained and will not receive further fixes. Advisory `Solution:` is "No safe upgrade is available!". Arrives as `cognicode-core -> mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0`. | Wait for, or move to, `skrifa`, the actively maintained TrueType/OpenType parser named in the advisory. This is inside a transitive renderer, so the first move is upstream. | Repo maintainer | `a886ecfd` (2026-09-22) |
 
@@ -91,6 +90,51 @@ layout as the table above so that the contract treats both uniformly.
 |---|---|---|---|---|---|---|---|
 | RUSTSEC-2023-0057 | `libc` | 0.2.189 | unsound | Claimed: "libc pre-main std access (via crossbeam-deque build path); fix: libc bump". The advisory matched nothing: `libc 0.2.189` is past the affected range, so the ignore carried no risk. | None needed — the dependency moved on its own. Recorded 2026-10-01 so the removal is auditable; `unused-ignored-advisory = "deny"` in `deny.toml` now makes a dead ignore impossible to leave behind quietly. | Repo maintainer | Retired 2026-10-01 under SDDK WorkItem `367ca65e`, evidence `a00449b0` |
 | RUSTSEC-2024-0437 | `protobuf` | 2.28.0 | **vulnerability** | Affected versions do not properly parse unknown fields in user-supplied input, allowing a stack overflow on untrusted data. This was a real vulnerability, not a hygiene notice, and it was the only row on this register carrying a deliberate reviewed trade-off. | **Applied 2026-10-01 (CR-07).** Migrated OTel `0.27 -> 0.29`: `opentelemetry-prometheus 0.27.0 -> 0.29.1`, `prometheus 0.13.4 -> 0.14.0`, `protobuf 2.28.0 -> 3.7.2`. The only code change was `PeriodicReader::builder(exporter)` losing its runtime argument; in 0.29 the reader spawns its own thread and `with_runtime()` no longer exists. | Repo maintainer | Deferred at `docs/roadmap/JOURNAL.md:3584-3588`; premise corrected in N+70.7; paid in CR-07 with operator review |
+| RUSTSEC-2024-0384 | `instant` | 0.1.13 | unmaintained | Crate is no longer maintained; its author recommends the maintained `web-time` crate instead. Arrived as `cognicode-core -> notify 7.0.0 -> notify-types 1.0.1 -> instant 0.1.13`. | **Closed 2026-10-01** by `notify 7.0.0 -> 8.2.0`. No Rust source changed: `watcher.rs` uses `recommended_watcher`, `Event`, `EventKind`, `RecursiveMode` and `Watcher`, all unchanged across the major. `instant` left the tree entirely — `cargo tree -i instant` answers *"did not match any packages"*. | Repo maintainer | Closed under SDDK WorkItem `024c5e6d`; see below |
+
+### Why the `instant` row had the fix path it had
+
+This is the second time this register's `unmaintained` rows turned out to
+carry an unmeasured premise, and both times the measurement was cheap.
+
+The row read *"No version bump fixes this on its own"* and *"Drop the transitive
+`notify 7` dependency, which requires moving `cognicode-core` to `notify 8`"*.
+Read together those read as: the bump exists but will not help. Measured, the
+bump **is** the whole fix:
+
+| | in the tree when written | after `notify 8` |
+|---|---|---|
+| `notify` | 7.0.0 | 8.2.0 (stable, 53M downloads) |
+| `notify-types` | 1.0.1 | 2.1.0 |
+| `notify-types` depends on | `instant ^0.1` | **`web-time ^1.1.0`** |
+| `instant` in tree | yes | **no** |
+
+`web-time` is the crate this advisory's own author points at. The maintainer of
+`notify-types` made the same move the advisory asked for, one major earlier than
+this register assumed.
+
+Two things were verified rather than believed:
+
+- **`notify-types 2.0.0`'s dependency list was read directly** from the crates.io
+  API. It declares `serde` and `web-time`, and no `instant`.
+- **The removal was not decided, it was forced.** With the bump landed and the
+  ignore still listed, `unused-ignored-advisory = "deny"` failed on its own:
+  `error[advisory-not-detected] … no crate matched advisory criteria`. The
+  ignore was removed *because* the gate objected, the same way the protobuf row
+  above was.
+
+`notify-types` 1 → 2 does change event types, which is why `notify` 8 ships a
+`serialization-compat-6` feature. That risk does not apply here and the reason
+is measured: this repository does not serialise notify events. `watcher.rs`
+classifies them by `EventKind` to filter code files and to debounce, and stores
+nothing. `cargo check -p cognicode-core` is clean and
+`cargo test -p cognicode-core --lib ingest::watcher` is 3 passed / 0 failed on
+notify 8.2.0.
+
+The `ttf-parser` row above was measured the same way and **holds**: the newest
+stable `mermaid-rs-renderer`, 0.3.1, still declares `ttf-parser ^0.25` and
+`fontdb ^0.23`, so bumping that renderer would not clear the advisory. Its
+"the first move is upstream" fix path stands.
 
 ### Why this row is the interesting one in this register
 

@@ -31,10 +31,22 @@ unused-ignored-advisory = "deny"
 ignore = [
     # unmaintained, no safe upgrade available (verified against the advisory
     # database 2026-10-01; crate and version measured from Cargo.lock):
-    "RUSTSEC-2024-0384", # instant 0.1.13; via cognicode-core -> notify 7.0.0; author points to web-time
     "RUSTSEC-2026-0192", # ttf-parser 0.25.1; via mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0
     "RUSTSEC-2025-0141", # bincode 2.0.1, DIRECT dep of cognicode-core; team ceased development
 ]
+#
+# RUSTSEC-2024-0384 (instant, unmaintained) was ALSO on this list and is now
+# gone, and the removal was again forced by the gate rather than by good
+# intentions. The register had recorded "No version bump fixes this on its own"
+# next to "requires moving cognicode-core to notify 8", which reads as the bump
+# being useless. Measured, it is the whole fix: notify 8.2.0 depends on
+# notify-types ^2.0.0, and notify-types 2.0.0 depends on `web-time ^1.1.0` —
+# the crate this advisory's author points at — with no `instant` anywhere in the
+# tree. `cargo tree -i instant` answers "did not match any packages" after the
+# bump, and `unused-ignored-advisory = "deny"` then reported
+# error[advisory-not-detected] for the ignore, exactly as it did for protobuf
+# below. The advisory is CLOSED, not suppressed: leaving it would suppress
+# nothing while hiding that the tree moved.
 #
 # RUSTSEC-2024-0437 (protobuf 2.x stack overflow) is GONE from this list, and
 # the removal was forced by the gate rather than by good intentions: with the
