@@ -66,7 +66,7 @@ just build-wasm                     # explorer frontend
 # Test
 just test-unit                      # 178+ unit tests, no Postgres
 just test-pg                        # Postgres-backed integration tests
-just check-known-failures           # guard 41-entry baseline
+just check-known-failures           # known-failure baseline; local only, not a CI gate
 just lint                           # clippy as errors
 
 # Lifecycle
