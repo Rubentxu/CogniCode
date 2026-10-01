@@ -10241,4 +10241,129 @@ pista fue el número redondo — 87/87 es sospechosamente limpio — y la segund
 barrida, con otro extractor, lo convirtió en 27 referencias muertas que ya
 existían cuando dije que estaban resueltas. **La confianza en un resultado
 debería medirse por lo que el método no podía detectar.**
+### N+75 — Las tres filas de PR-SEC, medidas una por una: una se cierra, una se desincula y una se sostenía (2026-10-01)
+
+WorkItem SDDK `024c5e6d`. `PR-SEC` llevaba tiempo en `PENDING` con tres avisos
+`unmaintained` ignorados. El encargo dice que una alerta de deuda sin verificar
+no es deuda real, así que las tres se midieron antes de decidir nada.
+
+#### N+75.1 — `instant`: cerrado, no redimensionado
+
+La fila decía *"No version bump fixes this on its own"* y, en la misma frase,
+*"requires moving `cognicode-core` to `notify 8`"*. Leídas juntas dicen que el
+bump existe pero no sirve. Medido: **el bump es el arreglo entero**.
+
+| | antes | después |
+|---|---|---|
+| `notify` | 7.0.0 | 8.2.0 (estable, 53M descargas) |
+| `notify-types` | 1.0.1 | 2.1.0 |
+| `notify-types` depende de | `instant ^0.1` | **`web-time ^1.1.0`** |
+
+`web-time` es el crate que señala el propio advisory. Quien mantiene
+`notify-types` hizo exactamente ese movimiento un major antes de lo que el
+registro asumía. Leído de la lista de dependencias de la API de crates.io, no de
+memoria: `notify-types 2.0.0` declara `serde` y `web-time`, y ningún `instant`.
+
+`cargo update` responde `Removing instant v0.1.13`, y
+`cargo tree -p cognicode-core -i instant` responde *"package ID specification
+`instant` did not match any packages"*.
+
+**Ningún fichero Rust cambiado.** `watcher.rs` usa `recommended_watcher`,
+`Event`, `EventKind`, `RecursiveMode` y `Watcher`, iguales en 7 y en 8. El riesgo
+real del major es el cambio de tipos de `notify-types` 1→2, y aquí no aplica:
+este repo **no serializa** eventos de notify, los clasifica por `EventKind`.
+
+El ignore no se retiró a mano. Con el bump aplicado y el ignore aún listado,
+`unused-ignored-advisory = "deny"` falló por su cuenta con
+`error[advisory-not-detected]` — el mismo mecanismo que retiró `protobuf` en
+CR-07.
+
+#### N+75.2 — `bincode`: la premisa era más fuerte que la realidad
+
+La fila decía que migrarlo es *"a breaking change to the on-disk format"*.
+Medido: el store persistente es **SQLite** y nunca usó bincode;
+`CachedGraphStore`, el write path real, lo dice en su propia cabecera — *"no
+bincode, no Mutex"*; y el único fichero que bincode escribe,
+`<workspace>/.cognicode/graph.cache`, está bajo `.gitignore:92`, o sea que nunca
+se versionó. Su loader devuelve `None` ante cualquier fallo de parseo: *"a
+corrupt snapshot is treated as absent (rebuild), never as valid evidence"*.
+
+**La fila sigue abierta** — `bincode` sigue sin mantenerse y sigue ignorado —
+pero cambiarlo cuesta reconstruir un grafo, no romper un fichero. El disparador
+pasa de *"estamos a una reconstrucción de perder datos"* a *"tenemos una razón"*.
+
+#### N+75.3 — `ttf-parser`: la premisa se sostenía, y no se tocó
+
+`mermaid-rs-renderer 0.3.1`, la última estable, **sigue declarando**
+`ttf-parser ^0.25` y `fontdb ^0.23`. Subir no limpia el advisory. El
+*"first move is upstream"* del registro se queda como está.
+
+Una hipótesis se descartó antes de escribir nada: que `mermaid-rs-renderer`
+fuera una dependencia muerta, porque aparece en `cognicode-core/Cargo.toml`
+mientras los usos de la palabra "mermaid" están en explorer. **Era falsa.** El
+módulo `infrastructure/mermaid` sí renderiza, y `handlers/mod.rs:3865` lo llama
+desde producción. Un grep de tres segundos evitó una entrada de recibo que
+habría sido falsa.
+
+#### N+75.4 — Lo que cuesta cada fila, de verdad
+
+| fila | coste medido | decisión |
+|---|---|---|
+| `instant` | una línea de `Cargo.toml` | **pagada** |
+| `bincode` | reconstruir un caché local una vez | abierta, re-dimensionada |
+| `ttf-parser` | reemplazo upstream; hoy no hay vía | abierta, sin tocar |
+
+Y esto no lo escribió quien iba a arreglar el primero. Escribió "no hay bump"
+quien había escrito antes "es un breaking change". Las dos frases son del mismo
+registro, a semanas de distancia, y las dos estaban sin medir.
+
+#### N+75.5 — Y una falsa alarma que casi deja un diagnóstico bueno
+
+Anoté antes en esta sesión que el `merge-gate` del PR #325 llevaba **2 h 11 min
+colgado** en el step 13, y escribí *"dos horas contra setenta segundos no es
+lentitud: es un runner colgado"*. **Era falso, y el error era mío al medir.**
+
+Los datos crudos:
+
+| hecho | valor |
+|---|---|
+| run `36918471657` creado | 20:00:50 |
+| job `merge-gate` | 20:09:14 → **20:27:42** |
+| duración del job | **18 m 28 s** |
+| conclusión del job | **success** |
+
+Resté la hora de **observación** de un job contra la hora de **creación** de un
+run distinto, y leí el resultado como un cuelgue. Cuando vi el step 13 en
+`in_progress` eran las ~20:2x, no las 19:52 que anoté: el job estaba a dos
+minutos de terminar. No hubo cuelgue, y el `cancel` que lancé para "desbloquear"
+rescindió un run que iba a pasar.
+
+Lo que sí era cierto, y es lo que confundí con lo anterior: el run de reemplazo
+(`36920169051`) pasó **más de dos horas en `pending` antes de arrancar**, por
+cola de runners. Eso es lentitud de cola, no un job colgado, y produce una
+pantalla parecida desde fuera: checks en `pending` durante horas.
+
+La diferencia que la delata es comprobar `conclusion` del job antes de declarar
+nada, y comparar el intervalo dentro de un mismo job en vez de restar horas de
+distintos runs. No lo hice a tiempo.
+
+#### N+75.6 — SDDK ya había clasificado este ciclo
+
+`sddk status` devuelve `path: A-min` para el ciclo activo. Eso responde, para
+este ciclo, la incógnita que N+73 dejó abierta: si un WorkItem de este repo
+cae en C1 o C2, y por tanto si el canónico es `sddk-a-min` o `sddk-a-lite`.
+
+**Lección 164**: el registro de deuda más cuidadoso del repo tenía sus tres
+filas sin medir, y las dos que se able medir se movieron en direcciones
+opuestas — una exageraba el daño, la otra lo subestimaba hasta impedir pagar un
+advisory que costaba una línea. El sesgo no es "ser pesimista": es **declarar sin
+mirar**. Y el precio de mirar, en los tres casos, fue una consulta.
+
+**Lección 165**: una diferencia grande entre dos números es una hipótesis, no
+un hallazgo. Resté la hora a la que miré contra la hora a la que se creó un run,
+y "2 h 11 min" salió de restar cosas que no describían el mismo intervalo. El
+job llevaba 18 m 28 s y terminó en `success`. Comprobar `conclusion` del job
+—una línea de API— habría costado menos que el diagnóstico que escribí sobre
+él, y el diagnóstico era más rekord de lo que el hecho justificaba: una explicación
+bonita sobre un dato que no se había medido.
 
