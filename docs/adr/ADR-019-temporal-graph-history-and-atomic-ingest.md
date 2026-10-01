@@ -96,8 +96,8 @@ Checkpoint snapshots may complement, but not replace, temporal canonical rows.
 
 ## References
 
-- [E29.1 proposal](../../openspec/changes/e29-1-temporal-graph-and-atomic-ingest/proposal.md)
-- [E29.0 proposal](../../openspec/changes/e29-0-trustworthy-delivery-baseline/proposal.md)
+- [E29.1 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-1-temporal-graph-and-atomic-ingest/proposal.md)
+- [E29.0 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-0-trustworthy-delivery-baseline/proposal.md)
 - [ADR-014](./ADR-014-moldql-pattern-graph-analytics-platform.md)
 - [ADR-017](./ADR-017-postgresql-native-ingest-pipeline.md)
 - Local SDD evidence: `plans/cognicode-capability-readiness-assessment-2026-07-29.md` (not version-controlled by policy)

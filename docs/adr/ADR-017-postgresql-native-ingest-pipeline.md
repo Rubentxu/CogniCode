@@ -112,7 +112,7 @@ decisions.
 ## References
 
 - Historical source commit `6886b9f9`
-- [E29.0 proposal](../../openspec/changes/e29-0-trustworthy-delivery-baseline/proposal.md)
-- [E29.1 proposal](../../openspec/changes/e29-1-temporal-graph-and-atomic-ingest/proposal.md)
+- [E29.0 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-0-trustworthy-delivery-baseline/proposal.md)
+- [E29.1 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-1-temporal-graph-and-atomic-ingest/proposal.md)
 - [ADR-019](./ADR-019-temporal-graph-history-and-atomic-ingest.md)
 - [`CONTEXT.md` ingest vocabulary](../../CONTEXT.md#ingest-pipeline)

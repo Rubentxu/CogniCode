@@ -115,8 +115,8 @@ Rejected. Reachability does not prove runtime order.
 
 ## References
 
-- [E29.2 proposal](../../openspec/changes/e29-2-semantic-projection-kernel/proposal.md)
-- [E29.3 proposal](../../openspec/changes/e29-3-moldable-explorer-runtime/proposal.md)
+- [E29.2 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-2-semantic-projection-kernel/proposal.md)
+- [E29.3 proposal](../../openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-3-moldable-explorer-runtime/proposal.md)
 - [ADR-003](./ADR-003-diagram-representations.md)
 - [ADR-004](./ADR-004-c4-investigation-model.md)
 - [ADR-014](./ADR-014-moldql-pattern-graph-analytics-platform.md)

@@ -419,7 +419,7 @@ The next decision on the Phase 0 surface:
 
 - [ADR-026](./ADR-026-ladybugdb-canonical-migration.md)
 - [ADR-027](./ADR-027-ladybugdb-hybrid-schema-strategy.md)
-- [GraphExecutor port spec](../specs/graph-executor-port/spec.md)
-- [Executor equivalence conformance spec](../specs/executor-equivalence-conformance/spec.md)
-- [LadybugDB spike validation spec](../specs/ladybug-spike-validation/spec.md)
+- [GraphExecutor port spec](../../openspec/specs/graph-executor-port/spec.md)
+- [Executor equivalence conformance spec](../../openspec/specs/executor-equivalence-conformance/spec.md)
+- [LadybugDB spike validation spec](../../openspec/specs/ladybug-spike-validation/spec.md)
 - `sddk/audit-e29-0/code-vs-design-audit.md` (local-only audit that drove this reconciliation pass)

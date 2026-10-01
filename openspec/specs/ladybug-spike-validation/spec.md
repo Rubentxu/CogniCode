@@ -172,7 +172,7 @@ fn s1_creates_lbdb_file_and_round_trips_one_row() {
 > - Added scenario-style Given/When/Then acceptance criteria (mirrors S1's protocol style; strict TDD).
 > - All DDL examples use the v0.2.0 schema spec syntax.
 >
-> **Prerequisite**: the schema spec at `./ladybug-graph-schema/spec.md` v0.2.0 MUST be the canonical source for DDL. Any DDL drift between this S2 section and the schema spec is a bug — defer to the schema spec.
+> **Prerequisite**: the schema spec at `../ladybug-graph-schema/spec.md` v0.2.0 MUST be the canonical source for DDL. Any DDL drift between this S2 section and the schema spec is a bug — defer to the schema spec.
 
 ### Objective
 
@@ -190,7 +190,7 @@ Validate that LadybugDB can store and retrieve CogniCode's graph schema at scale
 ### Preconditions (Given)
 
 - **Given** S1 has passed: `lbug 0.19.0` builds, links, and `conn.query()` is the working API for DDL/DML/queries
-- **And** the corrected schema DDL is taken verbatim from `./ladybug-graph-schema/spec.md` v0.2.0
+- **And** the corrected schema DDL is taken verbatim from `../ladybug-graph-schema/spec.md` v0.2.0
 - **And** synthetic test data is generated procedurally in Rust code (10K Symbol rows + 50K Calls edges) and written to a tempdir as CSV
 - **And** the spike crate `crates/spike-ladybug/` has `csv = "1"` added to `[dev-dependencies]` (no other new deps)
 - **And** the spike crate remains excluded from the workspace (`exclude = ["crates/spike-ladybug"]`)
@@ -363,7 +363,7 @@ spike-ladybug-s2:
 
 | Failure | Action |
 |---------|--------|
-| DDL syntax error (`SERIAL INT64`, `MAP<...>`, missing FROM/TO, rel PK, etc.) | Reference `./ladybug-graph-schema/spec.md` v0.2.0 verbatim — the schema spec is the single source of truth |
+| DDL syntax error (`SERIAL INT64`, `MAP<...>`, missing FROM/TO, rel PK, etc.) | Reference `../ladybug-graph-schema/spec.md` v0.2.0 verbatim — the schema spec is the single source of truth |
 | `COPY FROM` rejects the rel CSV (column count mismatch, FROM/TO not first 2) | Regenerate the CSV using Kùzu internal node IDs assigned by Symbol COPY FROM; verify with `MATCH (s:Symbol) RETURN id(s)` first |
 | MAP property CSV encoding rejected | Use the standard Kùzu MAP literal syntax `{key=value,key2=value2}` and ensure the CSV column is wrapped in quotes when it contains braces |
 | COPY FROM elapsed ≥ 60s | Profile (10K rows + 50K edges is trivially within budget per Kùzu benchmark evidence >100K rows/sec); check disk I/O and PARALLEL setting |
@@ -752,7 +752,7 @@ All 6 stages must pass. If any stage fails:
 
 - [LadybugDB documentation](https://docs.ladybugdb.com)
 - [lbug crate](https://crates.io/crates/lbug)
-- [Graph schema spec](./ladybug-graph-schema/spec.md)
-- [ADR-026: LadybugDB migration decision](../../docs/adr/ADR-026-ladybugdb-canonical-migration.md)
-- [ADR-027: Hybrid schema strategy](../../docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md)
-- [ADR-028: Port abstraction architecture](../../docs/adr/ADR-028-ladybugdb-port-abstraction-architecture.md)
+- [Graph schema spec](../ladybug-graph-schema/spec.md)
+- [ADR-026: LadybugDB migration decision](../../../docs/adr/ADR-026-ladybugdb-canonical-migration.md)
+- [ADR-027: Hybrid schema strategy](../../../docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md)
+- [ADR-028: Port abstraction architecture](../../../docs/adr/ADR-028-ladybugdb-port-abstraction-architecture.md)
