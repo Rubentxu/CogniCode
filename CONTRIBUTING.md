@@ -55,7 +55,16 @@ just test-unit   # unit tests
 just check       # cargo check across the workspace
 just lint        # clippy
 just fmt         # format
+just check-known-failures   # known-failure baseline is still honest
 ```
+
+**`just check-known-failures` is not a CI gate.** It runs
+`cargo test -p cognicode-core --lib` — without `--features evidence-kernel`,
+which is the slice `merge-gate` does *not* cover — and compares the failures it
+sees against `scripts/known_failures.yaml`. Run it yourself after touching
+`cognicode-core`, and run `just update-known-failures` after fixing a test that
+the baseline lists. CI will not catch a stale baseline for you: it neither runs
+this check nor suppresses anything because of it.
 
 If your change touches the release contract, the MCP tool surface, or the
 product artifacts, there are narrower checks that are the real gate:
