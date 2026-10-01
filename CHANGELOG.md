@@ -10,55 +10,152 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
-## [v0.100.0] — 2026-09-28 (drafted)
+## [v0.100.0] — 2026-10-01
 
-MINOR bump from v0.99.2 (rule 6): `feat(cli): A-014 cognicode capabilities
---format json` (commit `3adca737`) added a public subcommand and a new
-machine-readable capability document. Anything that consumes that
-document (skills A-033..037, integration adapters) treats it as a
-public surface, so the bump follows.
+**First tag since `v0.99.2`** (`37129dfd`). It publishes the whole
+`v0.99.2..cee87547` window: **99 commits** — 56 `docs`, 13 `fix`, 8 `test`,
+7 `feat`, 3 `ci`, 2 `chore`, the rest merges.
 
-This release also accumulates (without further bump) the
-`test`, `chore`, `docs` and `refactor` commits in the v0.99.2..v0.100.0
-window per rule 6 (no feat commits besides the trigger above):
+MINOR bump from v0.99.2 (rule 6). The window contains **7 `feat` commits and
+no breaking change**, so the bump follows the `feat`s; `fix`, `test`, `ci`,
+`chore` and `docs` accumulate inside it without triggering anything further.
+Measured with:
 
-- `test(mcp): A-013 black-box lifecycle UAT (startup→shutdown PASS)`
-  — 6 tests pinning the runtime contract.
-- `chore(ci): QW-03 bin-tracking guard auto-discovers crates` — CI
-  gate against silent untracked binaries.
-- `chore(ci): A-015 cargo deny check licenses step en release-validate`
-  — supply-chain licence gate in CI.
-- `chore(ci): A-016 release.yml Licenses gate step (paridad con
-  release-validate)` — release factory parity.
-- `test(mcp): A-016 tools/runtime contract consistency pin
-  (reciprocidad)` — auto-pin against contract/runtime drift.
-- `refactor(mcp): consolidate 3 Session forks onto common::McpSession`
-  — code-quality consolidation (Lesson 96 part 1; one fork
-  remaining for divergence reason).
-- `docs(roadmap): JOURNAL N+30..N+36` — operator-facing receipts.
+```
+git log --format='%s' v0.99.2..cee87547 \
+  | sed -E 's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.99.2..cee87547 | grep -cE '^BREAKING[ -]CHANGE'   # 0
+```
+
+> **Correction to the earlier draft of this entry.** It was written at
+> `ab931890` and justified the bump with `feat(cli): A-014 cognicode
+> capabilities --format json` (commit `3adca737`), stating the window held
+> "no feat commits besides the trigger above". Both claims were wrong for the
+> released history: `3adca737` is not an ancestor of `cee87547` (it exists only
+> on `docs/cp2-a012-closure`), and the window holds 7 `feat` commits, not 1.
+> The MINOR conclusion was right; its stated reason was not, and a release
+> entry must not cite a commit outside its own range. The lists below are
+> rebuilt from the measured history rather than carried over.
 
 ### Added
 
-- **`cognicode capabilities --format json`** (A-014): a single schema-
-  versioned JSON document on stdout describing tools, profiles, and
-  the runtime mutating set. Schema: `cognicode.capabilities/v1`.
-  Used by future skills (A-033..037) and integration adapters.
+The 7 `feat` commits, which are what make this MINOR. All are published
+surface rather than internal CI work:
 
-### Changed
+- **Generated product manifest contract** (`96d06854`).
+- **Generated MCP tool catalog** (`85222f67`).
+- **A-005 language and platform support matrices** (`73235889`).
+- **A-006 public profile stability contract** (`f24609f0`).
+- **OSS surface**: licence, community docs and templates (`95595af9`, CP1).
+- **Read-only posture enforced rather than promised** (`b1d3e773`): the
+  public profile's read-only claim is now enforced in core.
+- **Derived output contracts for 15 MCP tools** (`dbd611e8`, A-012/CP2.3).
 
-- **QW-03 bin-tracking guard**: replaced the hand-maintained CRATES
-  list with a workspace walk filtered by `[[bin]]` declarations, so
-  a new crate with bins is detected automatically. CI guard.
+### Fixed
 
-### Governance
+- **MCP fails closed on unknown tool authority** (`3e6c7fc2`, audit
+  finding #5) — an unrecognised authority is now rejected rather than
+  resolved. Pinned by `b70018cc` under a read-only profile.
+- **`application_no_interface` now fires on the real boundary**
+  (`bc62eba4`) — the architecture rule was passing vacuously.
+- **CLI stderr silenced in capabilities JSON, and asserted**
+  (`70132ae6`): the machine-readable document was carrying diagnostics.
+- **Every published document is validated against its own schema**
+  (`11eaa936`).
+- **Two product `--check` modes no longer invalidate themselves**
+  (`ae42b108` manifest, `ff60df36` generator) — the provenance stamp they
+  wrote made the next run fail.
+- **WASM shim `package.json` is versioned again** (`0eff2e6e`); a nested
+  `.gitignore` had dropped it.
+- **Contract suites no longer need pytest** (`c4c7d8e1`, `7d2eadf1`), and
+  **the CR-08 suite selector can actually select** (`5de41cd8`).
+- **Two CLI suites added by PR #309 were ungated** — no Kotlin stage
+  covered them (`b5d8682c`).
+- **Dead clippy allowlist removed** from `merge-gate.pipeline.kts`
+  (`2a13925d`).
+- **A roadmap claim that was false when written** (`11905210`).
+- **PR #315** (`cee87547`): ST-01 closed, the rustdoc gate wired in, and
+  the advisories gate left green. Details in its own commits below.
 
-- **cargo deny check licenses**: CI step in both `release-validate.yml`
-  and `release.yml` (`A-015`, `A-016`). Without these steps, a
-  dependency with an unlisted licence would slip past the release
-  factory without detection.
-- **PR-SEC remaining**: `RUSTSEC-2024-0437` (protobuf advisory)
-  remains `ignore`d in `deny.toml`. Fix requires OpenTelemetry
-  0.27→0.28 migration; its own unit.
+### Security and supply chain
+
+- **`cargo deny check advisories` is green.** It had been failing on the
+  yanked `yoke-derive 0.8.3` under `yanked = "deny"`, and it is a blocking
+  step in `release.yml` and `release-validate.yml`. Bumped to 0.8.4. No
+  policy waiver was added: `disable-yank-checking` had been considered under
+  a wrong premise and was not needed.
+- **`RUSTSEC-2023-0057` retired from the `deny.toml` ignore list.** It was
+  dead — `cargo deny` reported `advisory-not-detected` because `libc`
+  0.2.189 is past the affected range. Retired with a dated row rather than
+  deleted silently.
+- **Two advisory reasons that contradicted the advisory database**,
+  including one describing bincode as a transitive 1.x dependency when the
+  affected crate is the 2.0.1 the workspace uses directly.
+- **`docs/debts/DEBT-SEC-001-advisory-ignores.md`** added, with one row per
+  advisory ignore, plus `advisory_ignore_backing_contract`, which fails if
+  an ignore has no row or a row exists for an ignore that is not listed.
+  The previous `deny.toml` header pointed at a frozen PRF matrix containing
+  none of those ids, so the file enforced a rule its own ignores had broken
+  five times out of five.
+- **Four advisory ignores remain active**, each with a per-ignore rationale
+  inline in `deny.toml` and a backing row in the debt register:
+  `RUSTSEC-2024-0384` (`instant` 0.1.13, unmaintained), `RUSTSEC-2026-0192`
+  (`ttf-parser` 0.25.1, unmaintained), `RUSTSEC-2025-0141` (`bincode` 2.0.1,
+  a direct dependency whose team ceased development) and `RUSTSEC-2024-0437`
+  (`protobuf` 2.28.0). The last is a real vulnerability rather than an
+  unmaintained crate; its fix requires an OpenTelemetry 0.27→0.28 migration
+  and was deferred deliberately, with exposure limited to `/metrics`. It
+  remains its own unit and is **not** fixed by this release.
+
+### Fixed — regression caught by the newly wired gates
+
+These existed at `v0.99.2` and were only found once the gates ran:
+
+- **An intra-doc link broken by `4b7de348`**, which survived that commit
+  and six more because nothing ran the gate that would have caught it.
+- **`cargo fmt --check` failing on the branch**, introduced by two commits
+  of the same branch, which would have failed the merge-gate.
+- **`.gitignore` negations that granted nothing.** `docs/` was excluded as
+  a directory, so every `!/docs/...` below it was inert, including the two
+  lines that declared `docs/ROADMAP.md` a tracked entrypoint.
+
+### Changed — CI and architecture
+
+- **M0.11 rustdoc warning gate added** (`e4f7641a`) and wired into
+  `pr-ci.yml` and `merge-gate.pipeline.kts`, closing a core parity gap
+  (`1a87fbdb`, `1f38703c`). Its absence is why the broken intra-doc link
+  above survived.
+- **`cogh setup` gated** (`29a96c53`): it was already implemented and
+  executed nothing.
+- **clippy-gate parity pinned**, including the unbuilt `rig` surface
+  (`50223fbc`).
+- **Published tool authority pinned to the enforced one** (`57c21f87`).
+- **OSS docs: every cited path must exist**, not just one (`00068420`).
+- **A-013 lifecycle UAT in the merge gate** (`4ee9ca61`), 46 black-box MCP
+  tests.
+- **PipelineK raised to 0.43.0** (`95a75f8d`), the latest published, with
+  the merge-gate expressed in Kotlin DSL against `origin/main`
+  (`30047ec9`).
+- **SDDK pack contract declares measured capabilities** (`f50072a7`).
+
+### Verification
+
+Measured on the release commit, not carried over from an earlier state:
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check` | exit 0 |
+| `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| `cargo deny check advisories` | ok |
+| `cargo deny check licenses` | ok |
+| `cargo build --workspace` | exit 0 |
+| `cargo test --workspace --no-fail-fast` | **5843 passed / 0 failed / 30 ignored** |
+
+The suite figure is a full-workspace run including doc-tests, counted after the
+run exited. Doc-tests need a private `TMPDIR` on a shared machine: cargo clears
+"orphaned" `rustdoctest*` directories under `TMPDIR` at startup, so concurrent
+cargo runs delete each other's doctest argument files and produce spurious
+`failed to load argument file: /tmp/rustdoctestXXXXXX/rustdoc-cfgs` failures.
 
 ## [v0.50.0 — v0.86.0] — 2026-07-22 → 2026-08-05 (reconstructed summary)
 
