@@ -9845,3 +9845,108 @@ Queda una asimetría que conviene dejar escrita: entre el fallo del primer run
 un commit, `cbc1c86a`, que no arregla código sino que **cablea al gate una suite
 que ya existía y ya pasaba en local**. El código de la migración fue el mismo en
 los dos runs. Lo que cambió fue que el gate pudiera verla.
+
+
+---
+
+### N+72 — El guard que legitima 4 excepciones CR-06 no miraba 1983 líneas (2026-10-01)
+
+WorkItem SDDK `1279183d`. Cierra el punto 2 de N+70.6, que llevaba declarado
+desde la sesión anterior como hueco abierto.
+
+#### N+72.1 — La brecha, medida en vez de citada
+
+`cfg_test_only_entries_really_have_no_production_import` es lo único que
+legitima cuatro entradas del allowlist CR-06 cuyo `rationale` dice, textualmente,
+que existen *"solo porque el módulo de test compone adaptadores reales"* y que
+una regresión a producción la cazaría el guard.
+
+El guard cortaba el escaneo en la **primera** marca `#[cfg(test)]` del fichero
+y hacía `break` a partir de ahí. En `workspace_session.rs` esa marca está en la
+línea **191** y `mod tests` en la **2175**: quedaban **1983 líneas** sin cubrir,
+en su mayoría código de producción.
+
+Dos mutaciones, ejecutadas, no supuestas:
+
+| mutación | resultado | qué demuestra |
+|---|---|---|
+| quitar `#[cfg(test)]` de la línea 191 | FAILED (`workspace_session.rs:193`) | el guard tenía dientes, pero solo mientras el marcador no se moviera |
+| plantar `use crate::interface::mcp::security::InputValidator` en la línea 2174, **conservando** el marcador | **ok** | la brecha era real |
+
+La segunda es la que importa: el import queda en la capa `application`, en
+producción, y **ni el guard ni el gate CR-06 lo ven**. El gate tampoco, y por
+el motivo ya documentado: `TemporaryException::matches` compara `constraint_id`
++ `file_path` + prefijo de `dependency_path` y no tiene nociones de número de
+línea, así que una entrada suprime todas las apariciones del fichero.
+
+Es la lección 156 aplicada al test que existía para resolverla: una excepción
+afirmaba más de lo que su propio filtro podía ver, y el filtro era el guard.
+
+**Hipótesis que se cayó antes de escribir código**: la conjetura de partida era
+que el guard era vacuo para la cuarta entrada, porque su import real (línea
+193) queda una línea después del corte. La primera mutación la refutó — el
+guard la cazaba. La brecha no era vacuidad sino cobertura parcial, que es
+peor: un filtro que funciona en la mitad de su dominio parece entero.
+
+#### N+72.2 — El fix: clasificar por scope, no por posición
+
+Sustituido el corte por la primera marca por detección de scope real. Se lleva
+la profundidad de llaves y cada `#[cfg(test)]` abre un span que acaba cuando la
+profundidad vuelve a bajar de donde empezó. Un import fuera de todo span es de
+producción. Las llaves dentro de literales de cadena y carácter se ignoran, para
+que un `"{"` en un mensaje no abra un scope.
+
+Los helpers (`classify_imports`, `count_braces`) viven a nivel de módulo con
+`#[cfg(test)]`, porque solo los usa el test; clippy lo exige en las dos
+direcciones (`dead_code` en la compilación de lib, y
+`items_after_test_module` si se dejan dentro del módulo de tests).
+
+#### N+72.3 — Matriz de 4, después del fix
+
+| # | escenario | esperado | resultado |
+|---|---|---|---|
+| A | árbol limpio | PASS | **ok** |
+| B | import de producción en el hueco (línea 2174) | FAIL | **FAILED**, con fichero y línea |
+| C | helper `#[cfg(test)]` legítimo después del marcador | PASS | **ok** |
+| D | ese mismo helper sin `#[cfg(test)]` | FAIL | **FAILED**, en la línea 201 |
+
+B es la que antes pasaba en verde. C y D son la pareja que demuestra que el
+scanner no se ha vuelto permisivo por el camino: clasifica por scope, no por
+posición, así que un import legítimo en un `#[cfg(test)]` posterior al primer
+marcador se acepta (C) y el mismo import sin su `#[cfg(test)]` se rechaza (D).
+
+#### N+72.4 — Gates
+
+| gate | comando | resultado |
+|---|---|---|
+| guard, árbol limpio | `cargo test -p cognicode-core --lib application::architecture::cr06_allowlist` | **5 passed / 0 failed** |
+| gate E0 | `cargo test -p cognicode-core --test architecture_self_host_e2e` | **6 passed / 0 failed** |
+| suite core | `cargo test -p cognicode-core` | **2521 passed / 0 failed / 16 ignored** |
+| fmt | `cargo fmt --all --check` | limpio |
+| clippy | `cargo clippy -p cognicode-core --all-targets -- -D warnings` | exit 0 |
+
+Sin cambio de comportamiento de producción: el diff toca un fichero de test.
+
+#### N+72.5 — Lo que NO se cierra aquí
+
+1. **ST-02 sigue abierto**: 6 imports de `infrastructure` en producción en
+   `workspace_session.rs` (líneas 33-40) y el struct de 10 campos. Son entradas
+   `team:st-02` del allowlist, blanket a propósito, y este guard no las toca:
+   su `rationale` no dice "cfg(test)-only", dice "vía port".
+2. **El allowlist tiene `inventory_size_is_pinned_at_current_baseline`**, así
+   que quitar esas 6 entradas exige tocar ese pin en el mismo commit.
+3. **`MAINTENANCE.md:116`** llama `walker-grammar-drift` "registrada y **viva**".
+   Verificado hoy: `cargo test -p cognicode-core --lib type_ref_walkers` →
+   **13 passed / 0 failed / 0 ignored**. La tabla M0.10 (línea 21) lo da
+   CLOSED y es la que gana. La línea 116 es una afirmación obsoleta dentro de
+   la misma fuente normativa; corregida en el mismo commit que este recibo.
+
+**Lección 159**: un guard puede tener dientes y aun así tener un punto ciego,
+y las dos cosas se ven igual desde arriba — el test pasa. La diferencia entre
+"el filtro no funciona" y "el filtro funciona en la mitad de su dominio" se
+decide con una mutación colocada **exactamente en la zona que el propio doc
+decía no cubrir**, no con una mutación obvia. La primera mutación que hice
+(quitar el marcador) refutó mi hipótesis y confirmó que el guard servía para
+algo; la segunda, en el hueco declarado, es la que encontró el defecto real.
+Medir dónde el mecanismo *no* afirma proteger es lo que convierte una cita en
+un hecho, y es más lento que citar.
