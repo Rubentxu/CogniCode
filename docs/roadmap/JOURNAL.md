@@ -9765,6 +9765,36 @@ una mentira, solo un `]`.
 | workspace | `cargo check --workspace --all-targets` | 0 errores |
 | suite core | `cargo test -p cognicode-core` | **2521 passed / 0 failed / 16 ignored** |
 | suite MCP | `cargo test -p cognicode-mcp` | **152 passed / 0 failed / 0 ignored** |
+| cobertura de gate | `cargo test -p cognicode-cli --test cli_gate_coverage_contract` | **10 passed / 0 failed** |
+
+#### N+71.8 — El gate rechazó mi propia suite, y tenía razón
+
+El `merge-gate` de #322 corrió sus 53 steps y falló en el 46. No fue la
+migración:
+
+```
+1 MCP integration suites are neither named by a workflow step nor listed in
+EXCLUDED_MCP_SUITES with a reason: ["cr07_metrics_exposition_contract"]
+```
+
+`cli_gate_coverage_contract` recorre `crates/cognicode-mcp/tests/*.rs` y exige
+que cada suite esté **nombrada** por un step del workflow o excluida **con su
+razón**. El gate amplio es `--lib`, que no compila `tests/`, así que no cabe
+escapar por cobertura implícita. El contrato lleva 26 suites enumeradas y la
+nueva no estaba en ninguna de las dos listas.
+
+Eso es el contrato haciendo su trabajo, y en la dirección que menos se ve: una
+suite RED→GREEN verificada localmente sigue siendo **código muerto** para el
+gate hasta que alguien la cablea. Sin este step, `/metrics` volvería a quedar
+sin cubrir en CI aunque el PR haya demostrado lo contrario en local — y el
+registro volvería a afirmar una garantía que el único mecanismo que la ejecuta
+no ve.
+
+Se añadió el step `CR-07 /metrics exposition contract (black-box MCP)` junto al
+resto de UAT de MCP en `pr-ci.yml`, y no una exclusión: esta suite es
+justamente la que protege el riesgo que justificaba el diferimiento, así que
+excluirla sería resolver el aviso quitando el detector.
+
 
 #### N+71.7 — Lo que NO está cerrado
 
