@@ -10170,3 +10170,75 @@ regla de `dynamic-workflow.md` es más restrictiva de lo que su nombre sugiere:
 un workflow generado solo existe para objetivos que no encajan en ningún
 canónico, y este repo tiene un hueco concreto — la fase de PR con merge-gate —
 que es el único candidato honesto.
+
+---
+
+### N+74 — La verificación que dio 87/87 era un suelo, no un conteo (2026-10-01)
+
+WorkItem SDDK `7ab4716a` (segunda barrida del mismo bloque). Apertura: el PR #324
+ya estaba mergeado y los criterios del work item se habían revalidado sobre
+`main` — 87 enlaces relativos en 12 ficheros, 0 rotos. Faltaba un criterio más.
+
+#### N+74.1 — El linter solo ve enlaces markdown
+
+`sddk lint` extrae referencias de la forma `[texto](ruta)`. Una referencia
+escrita como **código en línea** — `` `openspec/changes/e29-3-…` `` — no existe
+para él. El chequeo de 87 enlaces que hice en N+73 usaba el mismo extractor, así
+que heredó la misma ceguera.
+
+Al barrer `docs/adr/` y `openspec/specs/` por rutas en backticks aparecieron **27
+referencias muertas más** en el mismo árbol que acababa de dar 87/87.
+
+**87 era un suelo, no un conteo.** Un número de verificaciones no es un número de
+referencias: es un número del método que se ejecutó.
+
+#### N+74.2 — Dos referencias más del bulk archive
+
+`ADR-029` y `ADR-030` citan los delta specs de `e29-3-port-abstraction-audit`, que
+el bulk archive del 2026-09-21 movió a
+`archive/2026-09-21-bulk-historical-pre-m13___e29-3-port-abstraction-audit/`.
+Misma causa, misma fecha de ruptura que N+73.2. En commit aparte porque el del
+siguiente tiene otra causa.
+
+#### N+74.3 — Y 25 que nunca estuvieron bien
+
+25 cross-references point to `docs/specs/<name>/spec.md`, a directory that
+**nunca existió**: los specs viven en `openspec/specs/`. Cada nombre citado
+tiene su equivalente 1:1, verificado con `test -e`:
+
+| documento | referencias |
+|---|---|
+| `openspec/specs/{cognicode-cli,cognicode-ide-adapter,cognicode-plugin,portable-skill-bundle,cognicode-lifecycle}` | 17 |
+| `docs/adr/ADR-034/035/036` | 6 |
+| `docs/ROADMAP.md` | 6 |
+
+Detalle que lo distingue del bulk archive: ADR-034 etiqueta sus propias
+referencias `(OpenSpec)`. El autor **sabía** de dónde venían y escribió la ruta
+mal. Nada las alertó porque nunca apuntaron a nada real — no hace falta que un
+directorio se mueva para que un puntero sea mentira.
+
+#### N+74.4 — Lo que no se repara, y por qué
+
+- **`docs/adr/E32-cognicode-distribution.md` (2 ocurrencias).** `docs/ROADMAP.md`
+  dice que E32 es un **programa** con sub-unidades E32-A..I, no un ADR. Ese
+  fichero nunca nombró un decision record. Elegir entre `ADR-034` y la sección E32
+  del ROADMAP sería inventar el destino.
+- **`docs/historico/roadmaps/legacy-ROADMAP-E30-E31.md`** conserva sus 6
+  referencias: es un snapshot histórico, no documentación viva. Reescribir un
+  registro del pasado no es reparar.
+- **Otras 8 rutas rotas medidas y no tocadas**:
+  `docs/guide.md`, `docs/analysis/release-1.0.0-scorecard.md`, `docs/adr/0001.md`,
+  `docs/adr/0007.md`, `openspec/specs/quality-store/`,
+  `openspec/changes/e74-lsi-portable-runtime-distribution/closure-authorization.md`,
+  `openspec/changes/e40-lsi-generic-graph-equivalence-harness/spec.md` y una ruta
+  con elipsis literal, `openspec/changes/archive/2026-09-18-arch-l5-.../proposal.md`.
+  Cada una necesita una decisión de destino que esta barrida no tomó.
+
+**Lección 163**: una verificación que pasa es una afirmación sobre el método que
+la ejecutó, no sobre el objeto. Si el método no puede ver una clase de defecto,
+su resultado no es "cero defectos de esa clase": es "cero de los que sé mirar". El
+pista fue el número redondo — 87/87 es sospechosamente limpio — y la segunda
+barrida, con otro extractor, lo convirtió en 27 referencias muertas que ya
+existían cuando dije que estaban resueltas. **La confianza en un resultado
+debería medirse por lo que el método no podía detectar.**
+
