@@ -8,7 +8,7 @@
 //!
 //! ## This is not a second `Parser`
 //!
-//! [`domain::traits::Parser`] already exists and already declares a
+//! [`crate::domain::traits::Parser`] already exists and already declares a
 //! `find_all_symbols`. The overlap is deliberate and the difference is not
 //! cosmetic:
 //!
