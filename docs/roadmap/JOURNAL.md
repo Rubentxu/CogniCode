@@ -10573,3 +10573,64 @@ guardián, es un recuerdo. `[\x4e00-\x9fff]` cubría CJK porque CJK fue lo que
 colé una vez; el siguiente intento coló árabe en la misma línea que el check.
 La defensa útil pregunta "¿qué scripts no pueden aparecer aquí?", no "¿vi esto
 alguna vez?".
+
+#### N+76.10 — Investigación retrospectiva del ciclo (#317..#326)
+
+Alcance: los diez merges hasta `e93fa7ac` y el PR #327 en vuelo. SDDK `next` =
+`372290ee`, ledger íntegro (34 eventos).
+
+**H1 — el gate nuevo gobierna el 11% del árbol que podría gobernar.** Medido
+sobre los **1175** markdown trackeados bajo `docs/` y `openspec/`, el gate
+cubre 127. Rotas dentro: 0. Rotas fuera: **319**.
+
+Antes de llamar eso defecto, intenté refutarlo, y la refutación es lo que
+decide el veredicto:
+
+| categoría | rutas | veredicto |
+|---|---|---|
+| citadas solo desde `archive-manifest.md` | 97 | **uso histórico correcto**: el manifiesto dice literalmente "This folder was moved from X" |
+| citadas desde `openspec/changes/` (pre-archivo) | 210 | mayoritariamente el mismo caso |
+| `docs/specs/` (la migración que arreglé en #325, en otro árbol) | 14 | **genuino** |
+| `openspec/specs/` | 16 | **genuino** |
+| `docs/*` sueltos (`docs/CURRENT.md`, `docs/AGENTS.md`, `docs/adr/ADR-001...`) | 72 | mayormente abreviaturas mal prefijadas |
+| artefactos local-only (`docs/debts/`, `docs/historico/`, `docs/CogniCode_Living.../`) | 14 | existen en mi disco, no en un checkout |
+
+**Ampliar el gate sin discriminar daría un allowlist de 222 filas**, que es
+exactamente el "gate que miente" que N+73.4 ya rechazó para `sddk lint`. El
+acotamiento no fue una concesión: es lo que hace el gate utilizable. Lo que sí
+era defecto era **no declararlo** — la doc del módulo afirma que cubre "las
+rutas que llevan provenance" sin decir que 319 no las cubre. Eso sí es un falso
+éxito del mismo género que el 87/87 de N+74, y por eso queda escrito.
+
+Corolario: la categoría mayoritaria no es deuda. Un `archive-manifest` que
+registra su ubicación previa está haciendo su trabajo.
+
+**H2 — el bump `notify` 7→8 de #326.** Verificado: `notify v8.2.0` resuelto,
+`cargo tree -i instant` sin resultados, el watcher usa 5 ítems
+(`Event`, `EventKind`, `RecursiveMode`, `Watcher`, `recommended_watcher`) y
+compila con clippy limpio. El cierre del advisory es real.
+
+Pero el hallazgo es otro: los 3 tests de `watcher.rs` cubren `is_watchable` y
+`debounce_changes`. **Ninguno toca `notify`.** `start_watcher` —el único código
+que habla con la librería que se acaba de subir de versión mayor— no tiene
+cobertura. El cierre del advisory está verificado; la afirmación de que no
+cambia el comportamiento **no**. Riesgo, no defecto.
+
+**H3 — homoglifos**, los de N+76.9: `C8-POST-PRF-GA.md:545` (`añadido`) y
+`MAINTENANCE.md:22` (`olvidó`) son corrupción real y están sin reparar.
+`docs/prf/JOURNAL.md:5588` es congelado.
+
+**Falsos éxitos encontrados en el propio trabajo de este ciclo**: dos. El gate
+que consultaba el disco, y el test que lo fijaba dependía del disco. Los dos
+los cazó `merge-gate`, ninguno lo cazó la ejecución local — que es la única
+prueba que este repo daba por buena y que aquí no valía.
+
+**Lección 172**: refutar el hallazgo antes de aceptarlo es lo que separa
+"319 rutas rotas" de "222 falsos positivos y 30 genuinos". Aceptar la primera
+cifra habría producido un allowlist gigante, es decir, el defecto que el gate
+existía para evitar.
+
+**Lección 173**: un bump mayor de dependencia se verifica con `cargo tree`,
+clippy y el advisory cerrado. El comportamiento real necesita un test que
+arranque el watcher, y no había ninguno. "Compila" y "funciona" no son la misma
+evidencia, y la segunda es la que importa.
