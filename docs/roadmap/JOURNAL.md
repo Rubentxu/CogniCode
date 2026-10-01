@@ -9950,3 +9950,160 @@ decía no cubrir**, no con una mutación obvia. La primera mutación que hice
 algo; la segunda, en el hueco declarado, es la que encontró el defecto real.
 Medir dónde el mecanismo *no* afirma proteger es lo que convierte una cita en
 un hecho, y es más lento que citar.
+
+---
+
+### N+73 — `sddk lint` llevaba rojo en silencio: 28 referencias rotas en docs propios (2026-10-01)
+
+WorkItem SDDK `7ab4716a`. Origen del bloque: ejecutar un comando del framework
+que **no está en ningún workflow**. `sddk lint` falla y nada lo detecta, porque
+nadie lo ejecuta.
+
+#### N+73.1 — Lo que hay, separado de lo que es nuestro
+
+Medido sobre el repo real en `HEAD` (`82f8dfac`), revirtiendo los 12 ficheros
+del bloque con `git checkout --` sobre un respaldo explícito del patch
+(`/tmp/provenance.patch`), y restaurándolo después con `git apply`:
+
+| clase | baseline | ahora | ¿deuda? |
+|---|---|---|---|
+| `sandbox/repos/**` (roslyn, react, go, click, clap…) | 52 | 52 | **no** — código vendored de terceros |
+| `docs/prf/**` | 3 | 3 | congelado, Read-ONLY |
+| docs propios | **48** | **20** | sí, 28 reparadas en 12 ficheros |
+| `SDDK005` + `SDDK009` | 2 | 2 | framework |
+| **total** | **105** | **77** | |
+
+Un worktree aislado **no** sirve para medir esto: al no contener los ficheros
+local-only de `docs/` (los targets existen en disco pero no están versionados),
+sus referencias "resuelven" y el baseline sale 61 en vez de 48. La primera
+medición dio un número que parecía bueno y era una invención del método.
+
+Aislar lo nuestro antes de contar es lo que separa una deuda de una lista de
+ruido: 105 suena a incendio y 48 con la mitad third-party, no.
+
+#### N+73.2 — La deuda con fecha de ruptura
+
+Los ADR-016..019 se escribieron el **2026-08-10** apuntando a
+`../../openspec/changes/e29-{0,1,2,3,4}/proposal.md`. El **2026-09-21** el commit
+`f69c53c9` ("bulk archive 103 historical cycles") movió esos changes a
+`openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-*/` y no
+repuntó los ADR. **Diez días** después, cuatro decisiones arquitectónicas tenían
+su cadena de provenance rota, y nada lo indicaba.
+
+Es la clase de CR-07 otra vez: un puntero escrito a algo que ya no está donde se
+dijo, con la diferencia de que aquí el destino **sí** existía, solo se mudó.
+
+Repuntado, con cada destino resuelto y verificado antes de escribir:
+
+| origen | antes | después |
+|---|---|---|
+| ADR-016/017/018/019 | `openspec/changes/e29-*/proposal.md` | `…/archive/2026-09-21-…___e29-*/` |
+| ADR-026/028 | `../specs/*/spec.md` | `../../openspec/specs/*/spec.md` |
+| 4 specs de `openspec/` | `../../docs/adr/…`, `../../sddk/…`, `../changes/e29-6-…` | `../../../…` (el `../../` no subía bastante) |
+| `docs/adr/README.md` fila 21 | `ADR-015-temporal-graph-history-and-atomic-ingest` | `ADR-019-…` |
+
+Verificación posterior: los **51** enlaces relativos de los 12 ficheros resuelven
+por `realpath` contra el árbol real. Ninguno queda roto por el arreglo.
+
+El caso del README merece nombre propio: la fila decía **ADR-015** con el
+**título de ADR-019**, mientras el ADR-015 real es
+`ADR-015-e28-6-admission-decisions.md`. Corregido el número; **las filas que
+falten en el índice no se inventan aquí** — son alcance de su propio work item.
+
+#### N+73.3 — Los 20 que quedan, y por qué no los "arreglo"
+
+**17 son falsos positivos del propio linter.** El extractor de referencias
+parsea prosa como rutas:
+
+| falso positivo | qué es en realidad | ocurrencias |
+|---|---|---|
+| `git-versioning` | el nombre de un skill que **sí existe**: `.claude/skills/git-versioning/SKILL.md`, 6148 bytes | 4 |
+| `Option<String`, `&str` | genéricos de Rust en prosa archivada | 5 |
+| `../../../etc/passwd` | fixtures de prueba de path traversal en `sandbox/manifests/` | 3 |
+| `write` | una palabra en prosa de ADR-036 | 1 |
+| `./architecture.md`, `./ADR-002-…` | ejemplos dentro de cláusulas **GIVEN** que describen cómo se parsean enlaces | 4 |
+
+Ese último caso me corrigió a mí: **repuntee esas cuatro referencias y luego
+las revertí**. Editar el interior de un fixture para satisfacer un linter que
+confunde un ejemplo con una referencia es exactamente el error que este bloque
+denuncia.
+
+**3 son deuda real sin destino**, y no se resuelven inventando el fichero:
+
+- `sddk/e29-0-define-new-ports/design.md` → `.opencode/skills/work-unit-commits/SKILL.md`.
+  `find` no devuelve `work-unit-commits` en ningún punto del repo: el directorio
+  `.opencode/skills/` no existe, no está vacío.
+- `sddk/wasm-graph-transforms/proposal.md` → `ADR-047-wasm-shared-compute-amendment.md`.
+  El ADR-047 real es `ADR-047-evidence-based-delivery.md`.
+- el mismo proposal → `ADR-007-no-wasm-in-browser.md`. El ADR-007 real es
+  `ADR-007-node-properties-graph-query-port.md`. El único ADR sobre wasm del
+  repo es `ADR-033-diagram-workbench-wasm-visual-computation.md`.
+
+Los tres apuntan a documentos que **no existen bajo ningún nombre**. Escribirlos
+sería fabricar procedencia. Quedan registrados como deuda abierta.
+
+#### N+73.4 — Por qué `sddk lint` NO se gatea
+
+Gatearlo hoy bloquearía PRs legítimos por `Option<String>` y `git-versioning`.
+**Gatear un lint que miente es peor que no gatearlo**, porque convierte un aviso
+en ruido y entrena a ignorar el gate.
+
+#### N+73.5 — `SDDK009`: la causa raíz no es "stale", es que no hay fuente
+
+El lint dice que `docs/generated/workflow.md` está "missing or stale" y receta
+` sddk generate docs --root . --in-repo `. Ejecutado, **falla**:
+
+```text
+failed to load canonical workflow: failed to read workflow manifest
+"./workflow/workflow.yaml": No such file or directory (os error 2)
+```
+
+No hay manifiesto. SDDK tiene una superficie de workflows **declarativa**
+(`workflow/workflow.yaml` → metadata, tablas y diagrama Mermaid de estado vía
+`sddk generate docs`) y este repo no la ha adoptado. Lo que hay son convenciones
+locales en `docs/`, no el mecanismo del framework.
+
+`SDDK005` sigue abierto: no se puede leer el directorio canónico de schemas.
+
+#### N+73.6 — Punto 8: los workflows locales no están versionados
+
+Inventariados los 7 workflows declarados (WF-01..07) y el plano de comandos de
+SDDK. Dos hallazgos con consecuencias:
+
+1. **`WF-01` no menciona SDDK**, y es el workflow de desarrollo declarado,
+   mientras el gate que de verdad decide si un commit entra es `merge-gate`.
+   Declarado y aplicado son documentos distintos, y solo uno está en un fichero.
+2. **Ninguno de WF-01..07 está versionado.** `docs/*` está ignorado y
+   `docs/cognicode-community-productization/` no tiene negación, así que el
+   directorio entero es local-only salvo dos ficheros forzados a mano.
+
+**No se toca `.gitignore`.** La regla local-only del 2026-06-24 está sostenida a
+propósito por `gitignore_negation_contract.rs`, cuyo propio mensaje dice que
+levantar una exclusión "es un cambio de política y pertenece a su propia
+revisión, no a un efecto secundario de arreglar las negaciones". Añadir una
+exención para que WF-08 sea entregable sería exactamente el atajo que ese test
+existe para impedir.
+
+#### N+73.7 — Descubrimiento lateral: `sddk debt` no es deuda técnica
+
+`sddk debt report` sin `--root/--scope` resolvió **otro proyecto**
+(`p-52b95ef…/kernel-cycle-8`) y escribió un report con `findings: []`. Los
+`INC-*` del vault (`INC-001-lat-001-launch-latency`, `INC-003-inf-001-infra-instability`,
+`INC-004-scal-001-scalability-typescript`…) son **incidencias de producto y
+adopción**, no deuda técnica. Son planos distintos y confundirlos produce
+"deuda" que no existe — el mismo error que N+72 y N+70 a otro nivel.
+
+**Lección 160**: un comando del framework que nadie ejecuta no es una
+herramienta, es una hipótesis. `sddk lint` llevaba meses reportando hallazgos —
+la mitad en repos de terceros que ni son código nuestro — y porque no estaba en
+ningún workflow, nadie lo había corrido. La deuda más barata de arreglar es la
+que ya tiene herramienta y solo necesita que alguien la ejecute. Y el orden
+importa: **acotar antes de contar**, porque el número que decide si algo se
+atiende no es el total sino el que excluye lo que no es tuyo.
+
+**Lección 161**: el método de medición es parte del resultado. El worktree
+aislado dio un baseline *favorable* (61 en vez de 48) porque los targets
+local-only no estaban y sus referencias "resuelven" a nada. Un número medido con
+un método que favorece el resultado no es una medición: es una hipótesis con
+cifras. Cuando el número sale mejor de lo esperable, el primer sospechoso es el
+método.
