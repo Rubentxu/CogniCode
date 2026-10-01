@@ -45,8 +45,15 @@
 //! (DEBT-SDDK-002..005). Exempting the directory would have staged them by
 //! default, and three of them carry the line "local only, NEVER pushed to
 //! remote (ephemeral per AGENTS.md)". The obvious cleanup and the declared
-//! policy point in opposite directions, so the policy wins here and the
-//! question is registered rather than answered.
+//! policy point in opposite directions, so the policy wins here.
+//!
+//! That question has since been answered rather than left registered. The rule
+//! is in `no_tracked_debt_register_declares_itself_local_only`: a debt register
+//! is tracked **if and only if** a gate reads it, and a file that declares
+//! itself local-only is never tracked. `DEBT-SEC-001` is tracked because
+//! `advisory_ignore_backing_contract` reads it. `DEBT-SDDK-006` was tracked
+//! while carrying the local-only header — the one register contradicting itself
+//! — and has been untracked to match its four siblings.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -116,7 +123,64 @@ const NOT_EXEMPT: &[&str] = &[
     // for four files whose authors said the opposite. That is a policy
     // decision, not a consequence of fixing the negations.
     "docs/debts/DEBT-SDDK-002.md",
+    "docs/debts/DEBT-SDDK-006.md",
 ];
+
+/// Every tracked file under `docs/debts/` must not declare itself local-only.
+///
+/// This is the rule that decides which debt registers are versioned:
+///
+/// > A debt register is tracked **if and only if** a gate reads it, and a file
+/// > that declares itself local-only is never tracked.
+///
+/// `DEBT-SEC-001-advisory-ignores.md` satisfies both halves: it is tracked
+/// because `advisory_ignore_backing_contract` reads it in CI, and it carries no
+/// local-only header. `DEBT-SDDK-002..006` satisfy neither — no gate reads them
+/// and every one of them opens with "local only, NEVER pushed to remote".
+///
+/// The failure this pins is a tracked file making a false statement about
+/// itself. It happened once: `DEBT-SDDK-006.md` was force-added while its four
+/// siblings stayed untracked, so it was the only register that contradicted its
+/// own header.
+#[test]
+fn no_tracked_debt_register_declares_itself_local_only() {
+    let listed = Command::new("git")
+        .current_dir(repo_root())
+        .args(["ls-files", "docs/debts/"])
+        .output()
+        .expect("cannot run `git ls-files` (is git on PATH?)");
+
+    assert!(
+        listed.status.success(),
+        "`git ls-files docs/debts/` failed: {}",
+        String::from_utf8_lossy(&listed.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&listed.stdout).into_owned();
+    let tracked: Vec<&str> = stdout.lines().filter(|l| !l.trim().is_empty()).collect();
+
+    // Not vacuous: the register a gate depends on must still be versioned.
+    assert!(
+        tracked
+            .iter()
+            .any(|p| p.ends_with("DEBT-SEC-001-advisory-ignores.md")),
+        "no debt register is tracked at all. `advisory_ignore_backing_contract` reads \
+         DEBT-SEC-001 in CI, so losing it breaks the advisories gate. If the gate no \
+         longer needs it, that is a separate decision with its own evidence."
+    );
+
+    for path in tracked {
+        let text = std::fs::read_to_string(repo_root().join(path))
+            .unwrap_or_else(|e| panic!("cannot read tracked file {path}: {e}"));
+        assert!(
+            !text.contains("NEVER pushed to remote"),
+            "{path} is tracked but declares itself \"local only, NEVER pushed to remote\". \
+             That is a tracked file making a false statement about itself. Either the \
+             header is wrong or the file should not be tracked; the rule above says the \
+             latter, because no gate reads it."
+        );
+    }
+}
 
 #[test]
 fn declared_negations_actually_unignore_their_paths() {
