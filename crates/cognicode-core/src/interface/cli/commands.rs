@@ -1815,10 +1815,18 @@ impl CommandExecutor {
     /// Execute analyze subcommand
     async fn execute_analyze(path: &str) -> Result<(), Box<dyn std::error::Error>> {
         use crate::WorkspaceSession;
+        use crate::interface::mcp::security::InputValidator;
+        use std::sync::Arc;
 
         println!("Analyzing code at: {}", path);
 
-        let session = WorkspaceSession::new(path)
+        // ST-02: the composition that names the validator lives HERE, in the
+        // interface layer, because `application` sits below it and may not
+        // name `interface::mcp::security`. The session receives the port.
+        let path_policy = Arc::new(
+            InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]),
+        );
+        let session = WorkspaceSession::with_path_policy(path, path_policy)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 
@@ -1887,10 +1895,17 @@ impl CommandExecutor {
         format: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use crate::WorkspaceSession;
+        use crate::interface::mcp::security::InputValidator;
+        use std::sync::Arc;
 
         let path = ".";
 
-        let session = WorkspaceSession::new(path)
+        // ST-02: composition belongs to the interface layer. See
+        // `execute_analyze` for the same shape.
+        let path_policy = Arc::new(
+            InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]),
+        );
+        let session = WorkspaceSession::with_path_policy(path, path_policy)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 

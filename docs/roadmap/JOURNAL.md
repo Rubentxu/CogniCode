@@ -9457,3 +9457,116 @@ rebanada de un día en una de cinco. El mismo hecho, desglosado, es 2 sitios que
 importan y 75 que no importan nada: la restricción ata a la capa, no al
 recuento de llamadas. Antes de heredar una cifra de un diagnóstico, desglosar
 en la dimensión que la restricción realmente acota.
+
+## N+70 — ST-02 rebanada 1, y la mentira que el allowlist llevaba dentro
+
+Sesión 2026-10-01. **Rama `fix/st01-file-operations-ports`.** Ejecuta lo
+dimensionado en N+69.3 y, en el camino, desmiente una afirmación que cuatro
+entradas del allowlist llevaban escribiendo.
+
+### N+70.1 — Lo implementado
+
+`application/workspace_session.rs` (4534 líneas) deja de nombrar
+`interface::mcp::security::InputValidator`:
+
+- `WorkspaceSession::new` pasa a ser
+  `with_path_policy(root, Arc<dyn PathPolicy>)`. La capa `application` recibe
+  el port; el código que decide *qué* validador construir sube a la capa que
+  puede nombrarlo.
+- `new(root)` se conserva como `#[cfg(test)] pub(crate)`: compone el
+  `InputValidator` **real** para los 75 tests del módulo. Un doble permisivo
+  los habría dejado en verde sin seguir cubriendo los rechazos que existen
+  para cubrir — una suite verde que dejó de significar nada.
+- Los 2 callers de producción (`interface/cli/commands.rs:1821`, `:1893`)
+  construyen el validador y pasan el port, siguiendo el patrón que el propio
+  fichero ya usaba en su línea 1736.
+
+Resultado: **cero acoplamiento `application → interface` de producción en todo
+el codebase.** Verificado por grep y por el gate.
+
+### N+70.2 — La predicción de N+69.3 era falsa, y el gate lo dijo
+
+N+69.3 Wheelled que el allowlist bajaría de 39 a 38 entradas al dejar de
+existir la violación. **No baja: sigue en 39.** Motivo: el evaluator lee
+líneas de fuente, así que un import dentro de `#[cfg(test)]` sigue contando.
+La entrada no desaparece, cambia de naturaleza: de deuda de producción a
+guarda. La afirmación correcta no es "39 → 38" sino "**ambas** entradas de
+`application_no_interface` son ahora `cfg(test)-only`".
+
+### N+70.3 — Lo que encontré al escribir el rationale: la guarda no la applicaba nadie
+
+Las cuatro entradas `cfg(test)-only` (3 de `file_operations.rs` + 1 de
+`workspace_session.rs`) decían, todas con la misma fórmula: *"Regression
+rule: a match on a non-test line means ST-0X regressed"*.
+
+**Eso era falso.** Lo medí antes de heredarlo. Reintroduje el import en una
+línea de producción de `workspace_session.rs` y el gate no se inmutó:
+
+```text
+$ # use crate::interface::mcp::security::InputValidator;  en la línea 41
+$ cargo test -p cognicode-core --test architecture_self_host_e2e
+test result: ok. 6 passed; 0 failed
+```
+
+La causa está en `TemporaryException::matches` (`constraint.rs:421`): compara
+`constraint_id`, `file_path` y un prefijo de `dependency_path`, y **no tiene
+nociones de número de línea**. Una entrada suprime *todas* las apariciones en
+ese fichero — el import de test que queremos y el de producción que no.
+
+Es la forma exacta del ghost filter de N+66: una entrada que promete
+proteger algo que el filtro no puede ver. Y como era falso, era falso en las
+cuatro: la de `workspace_session` la acabo de escribir yo, copiando la fórmula
+de las tres que ya estaban.
+
+### N+70.4 — La afirmación ahora es un test
+
+`cfg_test_only_entries_really_have_no_production_import` comprueba, para las
+4 entradas, que ningún import prohibido aparece **antes** del primer marcador
+`#[cfg(test)]` del fichero — zona que se compila siempre en producción.
+
+Verificado en las dos direcciones:
+
+| escenario | resultado |
+|---|---|
+| árbol limpio | **ok** (5/5 en el módulo) |
+| import prohibido en `file_operations.rs:28` | **FAILED**, con el fichero y la línea en el mensaje |
+
+Las 4 rationales del allowlist se reescribieron para apuntar al test en vez de
+declarar una regla que nadie aplicaba.
+
+**Alcance, dicho con honestidad**: el test cubre la región anterior al primer
+`#[cfg(test)]`. No cubre el stretch entre un item `#[cfg(test)]` y el módulo
+de tests (en `workspace_session.rs` son las líneas 201-2174). Un import
+escondido ahí no lo detectaría. La región cubierta es sound —nada anterior al
+primer marcador es solo-test— y es donde caen las regresiones reales, que es
+justo como entraron estos imports.
+
+### N+70.5 — Gates
+
+| gate | comando | resultado |
+|---|---|---|
+| compilación | `cargo check -p cognicode-core --all-targets` | exit 0 |
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| CR-06 fitness | `cargo test -p cognicode-core --test architecture_self_host_e2e` | **6 passed / 0 failed** |
+| suite del core | `cargo test -p cognicode-core` | **2520 passed / 0 failed / 16 ignored** |
+| anti-vacuidad | mutación de import en producción | **FAILED**, con fichero:línea |
+
+### N+70.6 — Lo que NO está cerrado
+
+1. **ST-02 no está cerrado**, solo su rebanada 1. Quedan las 7 imports de
+   `infrastructure` y el struct de 10 campos: son las 6 entradas
+   `application_no_infrastructure` de `team:st-02`.
+2. **El hueco del test nuevo** (región 201-2174) está declarado, no cerrado.
+3. **Batería de workspace completa no ejecutada**, solo `cognicode-core`.
+4. **Sin push**: la rama acumula 6 commits sobre `origin/main`.
+5. `DES-Gate-001` sigue `proposed`; 14 nodos del vault citan el `project_id`
+   antiguo (N+68.7, sin cambios).
+
+**Lección 156**: una regla escrita en el campo `rationale` de un allowlist es
+prosa, no código. Tres entradas llevaban meses (un día) diciendo "una
+aparición en línea no-test significa regresión", y nadie lo había comprobado:
+el filtro que lo debería hacer no mira líneas. Es la lección 152 aplicada a la
+dirección contraria — no se trata de que un gate afirme menos de lo que hace,
+sino de que una **excepción** afirme más de lo que su propio filtro puede
+ver. La cura no es reescribir la frase con más cuidado: es mover la afirmación
+a un test que muerde, y mutarlo para demostrar que muerde.

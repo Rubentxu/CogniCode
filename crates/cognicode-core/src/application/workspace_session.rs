@@ -18,6 +18,7 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
+use crate::application::ports::PathPolicy;
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -37,7 +38,6 @@ use crate::infrastructure::semantic::{
     SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
 };
 use crate::infrastructure::verification::RustVerifier;
-use crate::interface::mcp::security::InputValidator;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -118,10 +118,20 @@ pub struct WorkspaceSession {
 }
 
 impl WorkspaceSession {
-    /// Create a new WorkspaceSession for the given directory.
+    /// Composition entry point that receives its path policy from the caller.
+    ///
+    /// `application` cannot name `interface::mcp::security::InputValidator`:
+    /// that layer sits above us, and the CR-06 `application_no_interface`
+    /// fitness function is what enforces it. Deciding *which* validator to
+    /// build is composition, and composition belongs to the layer that is
+    /// allowed to name it — the interface layer, which calls this constructor
+    /// with the real thing (ST-02).
     ///
     /// The directory must exist and contain a codebase.
-    pub async fn new(workspace_root: impl AsRef<Path>) -> WorkspaceResult<Self> {
+    pub async fn with_path_policy(
+        workspace_root: impl AsRef<Path>,
+        path_policy: Arc<dyn PathPolicy>,
+    ) -> WorkspaceResult<Self> {
         let root = workspace_root.as_ref();
         if !root.exists() || !root.is_dir() {
             return Err(WorkspaceError::FileNotFound(root.display().to_string()));
@@ -137,10 +147,9 @@ impl WorkspaceSession {
         // Initialize services with shared graph cache
         let analysis = Arc::new(AnalysisService::with_graph_cache(graph_cache.clone()));
         let refactor = Arc::new(RefactorService::new());
-        let validator = Arc::new(InputValidator::new().with_workspace(vec![root.clone()]));
         let file_ops = Arc::new(FileOperationsService::new(
             root.display().to_string(),
-            validator,
+            path_policy,
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -169,6 +178,23 @@ impl WorkspaceSession {
             #[cfg(feature = "persistence")]
             graph_store,
         })
+    }
+
+    /// Test-only convenience constructor: composes the REAL `InputValidator`.
+    ///
+    /// The behavioural tests in this module need the real rules (traversal,
+    /// symlink, depth, workspace boundary). A permissive double would leave
+    /// them passing while no longer exercising the rejections they exist to
+    /// cover — a green suite that stopped meaning anything. So the interface
+    /// import is confined to `#[cfg(test)]` code, which is exactly the shape
+    /// the CR-06 allowlist guards against regressing onto production lines.
+    #[cfg(test)]
+    pub(crate) async fn new(workspace_root: impl AsRef<Path>) -> WorkspaceResult<Self> {
+        use crate::interface::mcp::security::InputValidator;
+
+        let workspace = workspace_root.as_ref().to_path_buf();
+        let policy = Arc::new(InputValidator::new().with_workspace(vec![workspace]));
+        Self::with_path_policy(workspace_root, policy).await
     }
 
     /// Returns the workspace root path

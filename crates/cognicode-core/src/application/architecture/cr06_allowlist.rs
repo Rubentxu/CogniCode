@@ -97,21 +97,21 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "application/services/file_operations.rs",
             "infrastructure::parser",
             "team:st-01",
-            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter. Regression rule: a match on a non-test line means ST-01 regressed.",
+            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
         ex(
             "application_no_infrastructure",
             "application/services/file_operations.rs",
             "infrastructure::verification::",
             "team:st-01",
-            "cfg(test)-only: behaviour tests compose the real RustVerifier. Regression rule: a match on a non-test line means ST-01 regressed.",
+            "cfg(test)-only: behaviour tests compose the real RustVerifier. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
         ex(
             "application_no_interface",
             "application/services/file_operations.rs",
             "interface::mcp::security",
             "team:st-01",
-            "cfg(test)-only: behaviour tests compose InputValidator directly. Production path validation goes through the PathPolicy port (ST-01). Regression rule: a match on a non-test line means ST-01 regressed.",
+            "cfg(test)-only: behaviour tests compose InputValidator directly. Production path validation goes through the PathPolicy port (ST-01). This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
         // application_no_infrastructure — ST-02 (WorkspaceSession composition)
         // ====================================================================
@@ -373,24 +373,39 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-04",
             "ST-04: LSP module behind a port (CompositeProvider).",
         ),
-        // application_no_interface — 1 entry here, measured 2026-09-30.
+        // application_no_interface — 1 entry here, re-measured 2026-10-01.
         //
         // These drifts existed all along: `LayerId` did not model
         // `interface`, so `crate::interface::...` imports resolved to
         // `Unknown` and this constraint could never fire — the previous
         // revision of this section documented "zero drifts", which the
         // audit of 2026-09-30 disproved. With `LayerId::Interface` the
-        // evaluator sees them. `file_operations.rs` moved to the ST-01
-        // block above (its remaining match is the test module); the one
-        // below is the `workspace_session.rs` composition root that
-        // ST-02 will rewire.
+        // evaluator sees them.
+        //
+        // ST-02 slice 1 rewired the composition: `WorkspaceSession::new`
+        // became `with_path_policy`, and the code that names
+        // `InputValidator` moved to the two `interface/cli/commands.rs`
+        // call sites, which may legally name an interface type. The only
+        // remaining import in this crate's `application` layer is the
+        // `#[cfg(test)]` convenience constructor that composes the REAL
+        // validator for the 75 behavioural tests in that module.
+        //
+        // So this entry is no longer production debt: it is a regression
+        // guard, exactly like the three `file_operations.rs` entries above.
+        // It does NOT disappear, and that is the measured fact, not an
+        // oversight: the evaluator reads source lines, so a `#[cfg(test)]`
+        // import still matches. N+69.3 predicted 39 -> 38 entries; the
+        // self-host run says otherwise and the count stays 39.
+        //
+        // With both entries being test-only guards, no PRODUCTION
+        // `application -> interface` coupling remains in the codebase.
         // ====================================================================
         ex(
             "application_no_interface",
             "application/workspace_session.rs",
             "interface::mcp::security",
             "team:st-02",
-            "ST-02: same security port via the composition root.",
+            "cfg(test)-only after ST-02 slice 1: the 75 behavioural tests in this module compose the real InputValidator by design. Production path validation goes through the PathPolicy port, wired by interface/cli/commands.rs. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
     ]
 }
@@ -521,6 +536,98 @@ mod tests {
                 !entry.expiry.is_empty(),
                 "expiry must be set on every entry"
             );
+        }
+    }
+
+    /// Makes the "cfg(test)-only" rationale actually enforceable.
+    ///
+    /// Four allowlist entries claim they exist only because the test module
+    /// composes real adapters, and that a production regression would be
+    /// caught. **Measured 2026-10-01: the gate does not catch it.**
+    /// Reintroducing `use crate::interface::mcp::security::InputValidator;`
+    /// at the top of `workspace_session.rs` left `architecture_self_host_e2e`
+    /// at 6/6 green.
+    ///
+    /// The reason is `TemporaryException::matches`: it compares
+    /// `constraint_id`, `file_path` and a `dependency_path` prefix, and has
+    /// no notion of line numbers. One entry therefore suppresses every
+    /// occurrence in that file — the test import we mean, and a production
+    /// import we would not. That is the N+66 ghost-filter shape: an entry
+    /// promising to protect something the filter cannot see.
+    ///
+    /// So the claim gets a test instead of staying prose.
+    ///
+    /// Scope, stated honestly: this asserts that no forbidden import appears
+    /// BEFORE the first `#[cfg(test)]` marker in the file. Everything before
+    /// that marker is unconditionally compiled into production, so this is
+    /// sound — and it is where a regression actually lands in practice, since
+    /// that is how the guarded imports were introduced in the first place. It
+    /// does NOT cover the stretch between a `#[cfg(test)]` item and the test
+    /// module itself (in `workspace_session.rs` that is lines 201-2174). A
+    /// forbidden import hiding there would not be caught.
+    #[test]
+    fn cfg_test_only_entries_really_have_no_production_import() {
+        /// (file_path, dependency_path) for every entry whose rationale says
+        /// "cfg(test)-only". Keep in step with `exceptions()`.
+        const GUARDED: &[(&str, &str)] = &[
+            (
+                "application/services/file_operations.rs",
+                "infrastructure::parser",
+            ),
+            (
+                "application/services/file_operations.rs",
+                "infrastructure::verification::",
+            ),
+            (
+                "application/services/file_operations.rs",
+                "interface::mcp::security",
+            ),
+            (
+                "application/workspace_session.rs",
+                "interface::mcp::security",
+            ),
+        ];
+
+        let cargo_manifest =
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let src_root = std::path::Path::new(&cargo_manifest).join("src");
+
+        for (file_path, dep) in GUARDED {
+            let path = src_root.join(file_path);
+            let source = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+
+            let first_cfg_test = source
+                .lines()
+                .position(|l| l.trim() == "#[cfg(test)]")
+                .map(|i| i + 1)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "{file_path} declares a cfg(test)-only allowlist entry \
+                         but has no `#[cfg(test)]` marker, so the rationale \
+                         cannot mean anything"
+                    )
+                });
+
+            let forbidden = format!("crate::{dep}");
+            for (idx, line) in source.lines().enumerate() {
+                let lineno = idx + 1;
+                if lineno > first_cfg_test {
+                    break; // at or after the marker: test-only territory
+                }
+                let trimmed = line.trim();
+                if !trimmed.starts_with("use ") {
+                    continue;
+                }
+                assert!(
+                    !trimmed.contains(&forbidden),
+                    "production import of a cfg(test)-only dependency at \
+                     {file_path}:{lineno} — `{trimmed}`. The CR-06 gate will \
+                     NOT catch this: TemporaryException::matches ignores line \
+                     numbers, so the allowlist entry suppresses it silently. \
+                     Move the import into test-only code or put it behind a port.",
+                );
+            }
         }
     }
 }
