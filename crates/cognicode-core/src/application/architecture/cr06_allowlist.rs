@@ -75,10 +75,44 @@ pub fn exceptions() -> Vec<TemporaryException> {
         // ====================================================================
         // application_no_infrastructure — ST-01 (FileOperations seams)
         // ====================================================================
-        // ST-01 CLOSED 2026-09-30: the three entries for this file (parser, vfs,
-        // verification) were removed with the ports injection — the file no
-        // longer imports infrastructure in production code.
-        // ====================================================================
+        // ST-01 CLOSED for production code, 2026-09-30.
+        //
+        // The ports injection moved the service's tree-sitter and verifier
+        // use behind `SyntaxAnalysis`, and deleted the never-read
+        // `vfs: VirtualFileSystem` field outright. So of the four entries
+        // this file carried, ONE is genuinely gone (`infrastructure::vfs::`)
+        // and the other three survive only because the `#[cfg(test)]` module
+        // composes the real adapters — behaviour tests wire the actual
+        // tree-sitter and verifier implementations by design.
+        //
+        // The three survivors are the regression guard, not leftover debt.
+        // Each carries the rule: a match on a non-test line means ST-01
+        // regressed. The prefixes stay BROAD on purpose — matching is by
+        // prefix (see `TemporaryException::matches`), so `infrastructure::parser`
+        // also catches a future `infrastructure::parser::TreeSitterParser`
+        // import in production code, which a narrowed
+        // `infrastructure::parser::syntax_analysis` would let through.
+        ex(
+            "application_no_infrastructure",
+            "application/services/file_operations.rs",
+            "infrastructure::parser",
+            "team:st-01",
+            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter. Regression rule: a match on a non-test line means ST-01 regressed.",
+        ),
+        ex(
+            "application_no_infrastructure",
+            "application/services/file_operations.rs",
+            "infrastructure::verification::",
+            "team:st-01",
+            "cfg(test)-only: behaviour tests compose the real RustVerifier. Regression rule: a match on a non-test line means ST-01 regressed.",
+        ),
+        ex(
+            "application_no_interface",
+            "application/services/file_operations.rs",
+            "interface::mcp::security",
+            "team:st-01",
+            "cfg(test)-only: behaviour tests compose InputValidator directly. Production path validation goes through the PathPolicy port (ST-01). Regression rule: a match on a non-test line means ST-01 regressed.",
+        ),
         // application_no_infrastructure — ST-02 (WorkspaceSession composition)
         // ====================================================================
         ex(
@@ -339,44 +373,18 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-04",
             "ST-04: LSP module behind a port (CompositeProvider).",
         ),
-        // ====================================================================
-        // ST-01 residual (2026-09-30): file_operations.rs production code
-        // imports neither infrastructure nor interface — the two entries
-        // added below cover ONLY the #[cfg(test)] module's composition of
-        // real adapters (behaviour tests wire the actual tree-sitter and
-        // verifier implementations by design). If these ever match a
-        // non-test line number, the refactor regressed.
-        ex(
-            "application_no_infrastructure",
-            "application/services/file_operations.rs",
-            "infrastructure::parser::syntax_analysis",
-            "team:st-01",
-            "cfg(test)-only: behaviour tests compose the real tree-sitter adapter.",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/services/file_operations.rs",
-            "infrastructure::verification::",
-            "team:st-01",
-            "cfg(test)-only: behaviour tests compose the real RustVerifier.",
-        ),
-        // application_no_interface — 2 entries, measured 2026-09-30.
+        // application_no_interface — 1 entry here, measured 2026-09-30.
         //
         // These drifts existed all along: `LayerId` did not model
         // `interface`, so `crate::interface::...` imports resolved to
         // `Unknown` and this constraint could never fire — the previous
         // revision of this section documented "zero drifts", which the
         // audit of 2026-09-30 disproved. With `LayerId::Interface` the
-        // evaluator sees exactly these two, both importing the MCP
-        // security validator that ST-01/ST-02 will replace with a port.
+        // evaluator sees them. `file_operations.rs` moved to the ST-01
+        // block above (its remaining match is the test module); the one
+        // below is the `workspace_session.rs` composition root that
+        // ST-02 will rewire.
         // ====================================================================
-        ex(
-            "application_no_interface",
-            "application/services/file_operations.rs",
-            "interface::mcp::security",
-            "team:st-01",
-            "ST-01 CLOSED for production code: path validation goes through the PathPolicy port. This entry now covers ONLY the #[cfg(test)] module composing InputValidator directly; if it ever matches a non-test line, ST-01 regressed.",
-        ),
         ex(
             "application_no_interface",
             "application/workspace_session.rs",
@@ -426,16 +434,23 @@ mod tests {
         // drifts became visible once `LayerId::Interface` existed; the
         // previous baseline of 38 counted a constraint whose gate
         // could not fire.
-        // 40 -> 42 (2026-09-30): ST-01 moved the production-code
-        // imports behind ports, so its three file_operations.rs entries
-        // now match only the `#[cfg(test)]` module. They stay declared:
-        // an allowlist entry that silently stops matching is a gate that
-        // silently stops being honest, and the regression rule lives in
-        // the rationale text.
+        // 40 -> 39 (2026-09-30, ST-01). One entry is genuinely DELETED:
+        // `infrastructure::vfs::` on file_operations.rs, because the
+        // `vfs: VirtualFileSystem` field it covered is gone — the field was
+        // constructed per service and never read. The other three entries
+        // for that file are NOT new: they already existed and are still
+        // there because the `#[cfg(test)]` module composes the real
+        // adapters. They survive as the regression guard, with their
+        // rationales rewritten, not as fresh debt.
+        //
+        // An earlier revision of this commit claimed 42, having counted
+        // those three as additions. It was arithmetic, not measurement;
+        // the test below caught it, which is the only reason this file
+        // still has a number worth trusting.
         assert_eq!(
             list.len(),
-            42,
-            "expected exactly 42 entries; if you removed/added a drift \
+            39,
+            "expected exactly 39 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

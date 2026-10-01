@@ -987,6 +987,51 @@ impl RateLimiter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ST-01: the MCP validator doubles as the application's PathPolicy port.
+//
+// Implementing `application::ports::PathPolicy` here (in the interface
+// layer, which may depend on application) is what lets
+// `application/services/file_operations.rs` program against the port and
+// drop its `crate::interface::mcp::security` import. The application owns
+// the contract; this layer keeps owning the rules.
+//
+// Lives above `mod tests` rather than after it: `clippy::items_after_test_module`
+// fires on the trailing position, and `merge-gate` runs clippy with `-D
+// warnings`, so an impl block parked at the bottom of the file is a red
+// build, not a style nit.
+// ---------------------------------------------------------------------------
+
+impl PathPolicy for InputValidator {
+    fn validate_path(&self, path: &Path) -> Result<(), PathPolicyError> {
+        // Same rules, same order — only the error type changes owner.
+        match InputValidator::validate_path(self, path) {
+            Ok(()) => Ok(()),
+            Err(SecurityError::PathTraversalAttempt { path }) => {
+                Err(PathPolicyError::PathTraversalAttempt { path })
+            }
+            Err(SecurityError::PathNotAccessible { path }) => {
+                Err(PathPolicyError::PathNotAccessible { path })
+            }
+            Err(SecurityError::PathOutsideWorkspace) => Err(PathPolicyError::PathOutsideWorkspace),
+            Err(SecurityError::PathTooDeep { depth, max }) => {
+                Err(PathPolicyError::PathTooDeep { depth, max })
+            }
+            Err(SecurityError::InvalidPathCharacters { path }) => {
+                Err(PathPolicyError::InvalidPathCharacters { path })
+            }
+            Err(SecurityError::SymlinkDetected { path }) => {
+                Err(PathPolicyError::SymlinkDetected { path })
+            }
+            // Non-path policies (size/query/rate) are other validators'
+            // concerns; the path policy port never produces them.
+            Err(other) => Err(PathPolicyError::InvalidPathCharacters {
+                path: format!("rejected by policy: {other}"),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1904,46 +1949,6 @@ mod tests {
                     _ => panic!("Unexpected error type for '{}': {:?}", path, err),
                 }
             }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// ST-01: the MCP validator doubles as the application's PathPolicy port.
-//
-// Implementing `application::ports::PathPolicy` here (in the interface
-// layer, which may depend on application) is what lets
-// `application/services/file_operations.rs` program against the port and
-// drop its `crate::interface::mcp::security` import. The application owns
-// the contract; this layer keeps owning the rules.
-// ---------------------------------------------------------------------------
-
-impl PathPolicy for InputValidator {
-    fn validate_path(&self, path: &Path) -> Result<(), PathPolicyError> {
-        // Same rules, same order — only the error type changes owner.
-        match InputValidator::validate_path(self, path) {
-            Ok(()) => Ok(()),
-            Err(SecurityError::PathTraversalAttempt { path }) => {
-                Err(PathPolicyError::PathTraversalAttempt { path })
-            }
-            Err(SecurityError::PathNotAccessible { path }) => {
-                Err(PathPolicyError::PathNotAccessible { path })
-            }
-            Err(SecurityError::PathOutsideWorkspace) => Err(PathPolicyError::PathOutsideWorkspace),
-            Err(SecurityError::PathTooDeep { depth, max }) => {
-                Err(PathPolicyError::PathTooDeep { depth, max })
-            }
-            Err(SecurityError::InvalidPathCharacters { path }) => {
-                Err(PathPolicyError::InvalidPathCharacters { path })
-            }
-            Err(SecurityError::SymlinkDetected { path }) => {
-                Err(PathPolicyError::SymlinkDetected { path })
-            }
-            // Non-path policies (size/query/rate) are other validators'
-            // concerns; the path policy port never produces them.
-            Err(other) => Err(PathPolicyError::InvalidPathCharacters {
-                path: format!("rejected by policy: {other}"),
-            }),
         }
     }
 }

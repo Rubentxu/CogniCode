@@ -25,8 +25,7 @@ use crate::application::dto::{
     VerificationStatus, VerifiedMatchDto, WriteFileRequest, WriteFileResult,
 };
 use crate::application::error::{AppError, AppResult};
-use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis, SyntaxReport};
-use crate::domain::traits::Parser;
+use crate::application::ports::{PathPolicy, PathPolicyError, SyntaxAnalysis};
 use crate::domain::traits::code_verifier::{CodeVerifier, CompilationResult};
 use crate::domain::value_objects::SymbolKind;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
