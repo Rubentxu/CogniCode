@@ -161,16 +161,45 @@ rayon = "1.11.0"
 lsp-types = "0.93"
 
 # OpenTelemetry
-opentelemetry = "0.27"
-opentelemetry_sdk = { version = "0.27", features = ["metrics", "rt-tokio"] }
-opentelemetry-otlp = { version = "0.27", features = ["metrics", "grpc-tonic"] }
-opentelemetry-prometheus = "0.27"
+#
+# CR-07: 0.27 -> 0.29.1 resolves RUSTSEC-2024-0437 (protobuf 2 stack overflow).
+# The target is exact, not a guess, and it is NOT 0.28. Measured against the
+# crates.io index on 2026-10-01:
+#
+#   opentelemetry-prometheus 0.28.0 -> prometheus ^0.13 + protobuf ^2.14  (no fix)
+#   opentelemetry-prometheus 0.29.0 -> prometheus ^0.13 + protobuf ^2.14  (no fix)
+#   opentelemetry-prometheus 0.29.1 -> prometheus ^0.14, no direct protobuf
+#
+# `prometheus 0.14.0` is what pulls `protobuf ^3.7.2`, the patched version the
+# advisory names. So this is a TWO-major migration, and stopping at 0.29.0
+# would produce a tree that looks migrated and is still vulnerable.
+# `crates/cognicode-cli/tests/cr07_protobuf_advisory_closed.rs` pins that.
+#
+# The four crates are NOT version-locked with each other, and the difference
+# is load-bearing:
+#
+#   opentelemetry-prometheus 0.29.0 -> prometheus ^0.13 + protobuf ^2.14  (no fix)
+#   opentelemetry-prometheus 0.29.1 -> prometheus ^0.14, no direct protobuf (fix)
+#   opentelemetry-otlp          0.29.1 -> DOES NOT EXIST; 0.29.0 is the last of
+#                                    the 0.29 line (next release is 0.30.0)
+#
+# `opentelemetry-otlp` is pinned to 0.29.0 rather than the 0.29.1 the other
+# three carry, because it never published a 0.29.1. It can still resolve here
+# because it declares `opentelemetry ^0.29` + `opentelemetry_sdk ^0.29`, the
+# same line the exporter does, and because it is not where protobuf came from:
+# measured from the 0.27 lockfile, `protobuf` was reached only through
+# `opentelemetry-prometheus 0.27.0` and `prometheus 0.13.4`, never through otlp.
+opentelemetry = "0.29.1"
+opentelemetry_sdk = { version = "0.29", features = ["metrics", "rt-tokio"] }
+opentelemetry-otlp = { version = "0.29.0", features = ["metrics", "grpc-tonic"] }
+opentelemetry-prometheus = "0.29.1"
 # Direct dep so the server binary can build a `prometheus::Registry` and
-# call `TextEncoder::encode(&registry.gather(), …)` on `/metrics` (the
-# 0.27 OTel→Prom exporter removed the old `Prometheus::default().export()`
-# shortcut). Matches the 0.13.4 transitive already resolved in Cargo.lock
-# via opentelemetry-prometheus 0.27 — adding it here is resolution-neutral.
-prometheus = "0.13"
+# call `TextEncoder::encode(&registry.gather(), …)` on `/metrics` (the 0.27
+# OTel→Prom exporter removed the old `Prometheus::default().export()`
+# shortcut). MUST stay in lockstep with the `prometheus` that
+# `opentelemetry-prometheus` resolves, or the two halves of `/metrics` sit on
+# different major versions and the collected `MetricFamily`s cannot be encoded.
+prometheus = "0.14"
 
 # Mermaid
 mermaid-rs-renderer = { version = "0.2", default-features = false }

@@ -49,11 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Default endpoint: http://localhost:4317 (configurable via OTEL_EXPORTER_OTLP_ENDPOINT env var)
         let exporter = MetricExporter::builder().with_tonic().build()?;
 
-        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(
-            exporter,
-            opentelemetry_sdk::runtime::Tokio,
-        )
-        .build();
+        // CR-07: OTel 0.27 -> 0.29. In 0.29 `PeriodicReader` no longer takes a
+        // runtime — `builder()` takes only the exporter and the reader spawns
+        // its own OS thread ("OpenTelemetry.Metrics.PeriodicReader"). The
+        // `rt-tokio` runtime argument and `with_runtime()` were removed, so
+        // dropping the argument here is the whole migration for this call site.
+        // Behaviour is preserved: the same 60s default interval applies, and
+        // it is still overridable via `OTEL_METRIC_EXPORT_INTERVAL`.
+        let reader = opentelemetry_sdk::metrics::PeriodicReader::builder(exporter).build();
         let meter_provider = SdkMeterProvider::builder().with_reader(reader).build();
 
         // Set the global meter provider
