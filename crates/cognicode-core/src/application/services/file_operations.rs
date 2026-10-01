@@ -2990,7 +2990,13 @@ mod tests {
     // Retrieve and Verify Tests
     // ========================================================================
 
+    // #[serial]: this test spawns a real `rustc`. Without it, it can run
+    // concurrently with test_verify_rust_file_subprocess_killed_on_timeout,
+    // whose `pgrep rustc` sampling is machine-global and would count this
+    // test's subprocess as an orphan. Same rule as the two retrieve_and_verify
+    // rust tests below.
     #[test]
+    #[serial]
     fn test_verify_rust_file_compilable_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("valid.rs");
@@ -3011,7 +3017,9 @@ mod tests {
         assert!(reason.is_none(), "reason should be None");
     }
 
+    // #[serial]: spawns a real `rustc`; see test_verify_rust_file_compilable_rust.
     #[test]
+    #[serial]
     fn test_verify_rust_file_broken_rust() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("broken.rs");
@@ -3285,7 +3293,9 @@ mod tests {
     /// behavior by verifying that a file that would take >1ms is rejected when timeout is 0.
     /// Actually, we test with a file that exists and is valid, but verify the timeout path
     /// is exercised by using an impossibly short timeout (0s = immediate timeout).
+    // #[serial]: spawns a real `rustc` before killing it on the 0s timeout.
     #[tokio::test]
+    #[serial]
     async fn test_verify_rust_file_timeout_rejected() {
         let temp_dir = TempDir::new().unwrap();
         let rs_file = temp_dir.path().join("slow.rs");
@@ -3397,7 +3407,14 @@ mod tests {
     ///
     /// This test runs multiple timeout-triggered verifications and ensures that
     /// rustc processes do not accumulate (which would indicate orphans).
+    // #[serial]: this test is the DETECTOR, not a spawner — it samples
+    // machine-wide `pgrep rustc` before and after and fails if more than two
+    // new PIDs appear. It is therefore sensitive to every other test in this
+    // binary that spawns `rustc`, not just to the three that time out. Those
+    // are all marked #[serial] for that reason. A sampling test that any
+    // concurrent subprocess can trip is a flake generator, not a guard.
     #[tokio::test]
+    #[serial]
     async fn test_verify_rust_file_subprocess_killed_on_timeout() {
         use std::process::Command;
 

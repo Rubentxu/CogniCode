@@ -1051,6 +1051,146 @@ mod tests {
         InputValidator::with_limits(1024 * 1024, 1000, 500).with_workspace(vec![workspace])
     }
 
+    // ── ST-01: the PathPolicy port contract ────────────────────────────────
+    //
+    // The `impl PathPolicy for InputValidator` above claims "same rules, same
+    // order — only the error type changes owner". Nothing tested that claim.
+    // `PathPolicy` had zero references in any test (JOURNAL N+67.5), so an
+    // edit could re-route a variant, drop a payload field, or collapse the
+    // whole `match` into the catch-all arm and the suite would stay green.
+    //
+    // Every case below pins BOTH sides: the `SecurityError` the validator
+    // really produces, and the `PathPolicyError` the port must translate it
+    // into. Asserting only the port side would pass even if the validator
+    // changed underneath; asserting only the validator side would miss a
+    // broken translation. The divergence between the two IS the defect.
+
+    /// An absolute path with exactly `MAX_PATH_COMPONENTS + 1` components and
+    /// no `..` segment, so it trips the depth rule and nothing earlier.
+    fn too_deep_absolute_path() -> std::path::PathBuf {
+        let segs: Vec<&str> = (0..=MAX_PATH_COMPONENTS).map(|_| "seg").collect();
+        std::path::PathBuf::from("/").join(segs.join("/"))
+    }
+
+    #[test]
+    fn path_policy_translates_each_path_rejection_one_to_one() {
+        let dir = TempDir::new().unwrap();
+        let workspace = dir.path().to_path_buf();
+
+        let real = workspace.join("real.txt");
+        std::fs::write(&real, b"x").unwrap();
+
+        // An existing file that is NOT under the declared workspace.
+        let outside_dir = TempDir::new().unwrap();
+        let outside = outside_dir.path().join("outside.txt");
+        std::fs::write(&outside, b"x").unwrap();
+
+        let v = create_test_validator().with_workspace(vec![workspace.clone()]);
+
+        // (label, path, SecurityError from the validator, PathPolicyError from the port)
+        let mut cases: Vec<(&str, std::path::PathBuf, SecurityError, PathPolicyError)> = vec![
+            (
+                "traversal",
+                std::path::PathBuf::from("../../etc/passwd"),
+                SecurityError::PathTraversalAttempt {
+                    path: "../../etc/passwd".into(),
+                },
+                PathPolicyError::PathTraversalAttempt {
+                    path: "../../etc/passwd".into(),
+                },
+            ),
+            (
+                "null byte",
+                std::path::PathBuf::from("bad\0name"),
+                SecurityError::InvalidPathCharacters {
+                    path: "bad\0name".into(),
+                },
+                PathPolicyError::InvalidPathCharacters {
+                    path: "bad\0name".into(),
+                },
+            ),
+            (
+                "too deep",
+                too_deep_absolute_path(),
+                SecurityError::PathTooDeep {
+                    depth: MAX_PATH_COMPONENTS + 2,
+                    max: MAX_PATH_COMPONENTS,
+                },
+                PathPolicyError::PathTooDeep {
+                    depth: MAX_PATH_COMPONENTS + 2,
+                    max: MAX_PATH_COMPONENTS,
+                },
+            ),
+            (
+                "unreachable",
+                workspace.join("no_such_dir").join("no_such_file.txt"),
+                SecurityError::PathNotAccessible {
+                    path: workspace
+                        .join("no_such_dir")
+                        .join("no_such_file.txt")
+                        .to_string_lossy()
+                        .to_string(),
+                },
+                PathPolicyError::PathNotAccessible {
+                    path: workspace
+                        .join("no_such_dir")
+                        .join("no_such_file.txt")
+                        .to_string_lossy()
+                        .to_string(),
+                },
+            ),
+            (
+                "outside workspace",
+                outside.clone(),
+                SecurityError::PathOutsideWorkspace,
+                PathPolicyError::PathOutsideWorkspace,
+            ),
+        ];
+
+        #[cfg(unix)]
+        {
+            let link = workspace.join("link.txt");
+            std::os::unix::fs::symlink(&real, &link).unwrap();
+            let link_str = link.to_string_lossy().to_string();
+            cases.push((
+                "symlink",
+                link,
+                SecurityError::SymlinkDetected {
+                    path: link_str.clone(),
+                },
+                PathPolicyError::SymlinkDetected { path: link_str },
+            ));
+        }
+
+        for (label, path, expected_security, expected_policy) in cases {
+            assert_eq!(
+                InputValidator::validate_path(&v, &path),
+                Err(expected_security),
+                "[{label}] the validator's own verdict changed"
+            );
+            assert_eq!(
+                PathPolicy::validate_path(&v, &path),
+                Err(expected_policy),
+                "[{label}] the port must translate this rejection without \
+                 changing variant or payload"
+            );
+        }
+    }
+
+    #[test]
+    fn path_policy_accepts_a_path_inside_the_workspace() {
+        // The positive half. A port that rejects everything would pass every
+        // translation case above; this is what makes the table above a
+        // contract rather than a rejection suite.
+        let dir = TempDir::new().unwrap();
+        let v = create_test_validator().with_workspace(vec![dir.path().to_path_buf()]);
+        let inside = dir.path().join("ok.txt");
+        std::fs::write(&inside, b"x").unwrap();
+
+        assert_eq!(InputValidator::validate_path(&v, &inside), Ok(()));
+        assert_eq!(PathPolicy::validate_path(&v, &inside), Ok(()));
+    }
+
     // =============================================================================
     // TOCTOU Race Condition Tests
     // =============================================================================

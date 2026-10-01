@@ -9186,3 +9186,175 @@ verde y el que contaba era otro test. Un gate que pasa no dice que el árbol
 esté bien: dice que *ese* gate pasó. La lección 151 ya decía que un test que
 pasa bajo una mutación puede ser una mutación mal formulada; esta es la
 simétrica — un árbol que pasa un gate puede tener otro gate roto al lado.
+
+## N+68 — El flake era un test sin serializar, y el contrato del port no tenía test
+
+Sesión 2026-10-01, continuación de N+67. **Rama `fix/st01-file-operations-ports`
+sobre `4b1c2f2a`.** Cierra tres deudas que N+67 dejó anotadas y repara el vault
+que estaba en fail-closed.
+
+### N+68.1 — El flake: `#[serial]` en los 4 tests que faltaban
+
+N+67.3 diagnosticó el rojo intermitente pero NO lo arregló. La causa era
+acoplamiento de concurrencia, y el arreglo es de pertenencia a grupo, no de
+lógica: `serial_test::serial` solo serializa tests **marcados** entre sí, así
+que un test marcado sigue corriendo en paralelo con los no marcados.
+
+Medición antes/después, mismo comando (`cargo test -p cognicode-core --lib`),
+con el nombre del test que falla capturado:
+
+| estado | corridas | fallos |
+|---|---|---|
+| antes del fix | 7 | **1** (`test_verify_rust_file_subprocess_killed_on_timeout`) |
+| después del fix | 8 | **0** |
+
+Los 4 tests de `file_operations.rs` que lanzan `rustc` de verdad y no estaban
+marcados: `test_verify_rust_file_compilable_rust`,
+`test_verify_rust_file_broken_rust`, `test_verify_rust_file_timeout_rejected`
+y el propio detector `test_verify_rust_file_subprocess_killed_on_timeout`.
+`infrastructure/verification/rust_verifier.rs` ya tenía los suyos marcados
+(4 de 4). Los 8 que lanzan `rustc` están ahora en el grupo serial: es una
+propiedad estática, verificable en el diff, no una promesa probabilística.
+
+Un test que muestrea `pgrep` de **toda la máquina** es sensible a cualquier
+subproceso concurrente, no solo a los que expiran. Por eso el detector también
+lleva `#[serial]`: serializar solo a los generadores no bastaba.
+
+**Lo que este fix NO demuestra**: que la flake desapareció. 0 fallos en 8
+corridas no es prueba de ausencia. Lo que sí cambió es el acoplamiento, y eso
+está en el diff.
+
+### N+68.2 — El contrato `SecurityError → PathPolicyError` ya no es una descripción con `assert`
+
+N+67.5 §3: `PathPolicy` tenía 5 referencias en producción y **0** en tests.
+Dos tests nuevos en `security.rs`, cada caso pineando **ambos lados** (el
+`SecurityError` que el validador produce y el `PathPolicyError` que el port
+debe devolver), más el caso positivo que hace que la tabla sea un contrato y
+no una suite de rechazos:
+
+| caso | disparador |
+|---|---|
+| traversal | `../../etc/passwd` |
+| null byte | `bad\0name` |
+| too deep | 101 componentes absolutos (`MAX_PATH_COMPONENTS` = 100) |
+| unreachable | padre inexistente bajo el workspace |
+| outside workspace | fichero existente fuera del workspace declarado |
+| symlink | symlink real a fichero real (`#[cfg(unix)]`) |
+| **aceptado** | fichero normal dentro del workspace |
+
+RED demostrado por mutación contra `impl PathPolicy`. Las tres mueren:
+
+| # | mutación | resultado |
+|---|---|---|
+| M1 | `PathTraversalAttempt` → `PathNotAccessible` en el port | **1 FAILED** |
+| M2 | `PathTooDeep { depth: 0, .. }` (caída de payload) | **1 FAILED** |
+| M3 | `match Ok::<(), SecurityError>(())` (siempre `Ok`) | **1 FAILED** |
+
+Fichero restaurado byte-idéntico tras las tres (`sha256 ed7b5b5a…`).
+
+**El catch-all sigue sin test que lo observe, y ahora se sabe por qué**: como
+`validate_path` solo retorna las 6 variantes de ruta, el brazo `Err(other)` es
+inalcanzable. Ninguna mutación razonable lo alcanza. Queda registrado como
+riesgo latente (N+67.5 §2), no como bug.
+
+### N+68.3 — El vault deja de estar fail-closed
+
+`VAULT003` no era un nodo ausente. `specs/ci-gate/REQ-Gate-003-Core-Parity-With-**M**ain.md`
+existe con `title`/`slug` en mayúscula; el wikilink de `DES-Gate-001` escribía
+`With-**m**ain`. Dos ocurrencias (líneas 12 y 66), dos caracteres.
+
+```text
+antes:  errors 1  diagnostics [VAULT003 ...]   exit 1
+después: errors 0 warnings 0                   exit 0
+```
+
+139 nodos, 389 backlinks en ambos casos: el único cambio es el enlace.
+
+Además, `DES-Gate-001` afirmaba dos cosas que N+66 ya había desmentido: que
+clippy seguía *"staged con un baseline documentado de 42 errores"* y que el
+lado `.kts` estaba *"NOT BUILT"*. Medido a `ba031da5`: el `.kts:78` corre el
+clippy pelado y `.kts:128-134` stagea los dos core suites que el nodo listaba
+como ausentes. El `Rationale` **no se reescribió**: es una observación fechada
+`OBSERVED 2026-09-30 at 7e7cc57a` y el registro de lo que era cierto entonces
+tiene valor. Se añadió una sección `Superseded` con el estado medido y una
+entrada de changelog bi-temporal.
+
+`status: proposed` y `verified_in_cycle: never` **no** se promovieron: el
+vocabulario de design-nodes en uso es solo `proposed` y `blocked`, y
+inventar un valor de lifecycle sin autoridad detrás es crear una segunda
+fuente de verdad. Decisión del operador.
+
+### N+68.4 — Errata de N+66
+
+N+67.4midió la divergencia; aquí queda consolidada como errata, porque el
+journal es append-only y N+66 no se edita. Las tres afirmaciones falsas de
+N+66 y su realidad:
+
+| N+66 dice | realidad |
+|---|---|
+| "HEAD previo `b3716640`" | `1a87fbdb` (mismo patch-id `3b7a50ae`) |
+| "commit nuevo `f1f0f0c6`" | `2a13925d` (patch-id **idéntico** `92cec58d`) |
+| "CLOSED LOCALMENTE — sin push" | pusheada: local == `origin/ci/pipelinek-kotlin-gate` == `b5d8682c` |
+
+El linaje fue replanteado por un rebase. `git branch --contains f1f0f0c6` sale
+vacío y eso **no** significa trabajo perdido: un SHA reescrito sigue siendo el
+mismo cambio. Recuperarlo habría tirado 4 commits ya publicados.
+
+### N+68.5 — ST-02 medido, y por qué NO se ha arrancado
+
+`workspace_session.rs`: 4534 líneas, 10 campos en el struct, **1** import de
+`interface` (línea 40, `InputValidator`) y **7** de `infrastructure`.
+
+El import de `interface` parece trivial porque `InputValidator` ya implementa
+`PathPolicy` (eso lo hizo ST-01). La medición dice lo contrario:
+
+```text
+$ grep -rn "WorkspaceSession::new" --include=*.rs . | wc -l
+77
+```
+
+`FileOperationsService::new` ya recibe `Arc<dyn PathPolicy>`, así que el
+`InputValidator` de la línea 140 existe solo para construirlo. Eliminar el
+import exige que `application` deje de nombrarlo, y eso obliga a mover la
+composición fuera de `application` — lo que toca la firma de
+`WorkspaceSession::new` y sus **77** puntos de llamada, la mayoría tests del
+propio módulo.
+
+Eso no es un refactor mecánico de una línea: es el diseño de ST-02 (5 d según
+`DEPENDENCY-MAP.md`), y su tensión real es que los 77 callers quieren el
+constructor cómodo mientras `application` no puede nombrar tipos de
+`interface`. Empezarlo al final de una sesión ya larga lo dejaría a medias, que
+es exactamente lo que la disciplina prohíbe. **Se mide y se registra; no se
+abre.**
+
+### N+68.6 — Gates de esta unidad
+
+| gate | comando | resultado |
+|---|---|---|
+| clippy pelado | `cargo clippy --workspace --all-targets -- -D warnings` | exit 0 |
+| suite del core | `cargo test -p cognicode-core` | **2519 passed / 0 failed / 16 ignored** |
+| flake | `cargo test -p cognicode-core --lib` × 8 | 8/8 verde (antes 1/7) |
+| vault | `sddk vault validate` | 0 errors, exit 0 |
+| anti-vacuidad | 3 mutaciones | las 3 FAILED |
+
+### N+68.7 — Lo que NO está cerrado
+
+1. **El catch-all de `impl PathPolicy` sigue sin cobertura** y es demostrablemente
+   inalcanzable con las reglas actuales (N+68.2). Riesgo latente.
+2. **Batería de workspace completa no ejecutada**, solo `cognicode-core`.
+3. **ST-02 sin arrancar** (N+68.5): necesita exploración de diseño antes de código.
+4. **`DES-Gate-001` sigue `proposed` / `verified_in_cycle: never`**: decisión de
+   lifecycle del operador, no mecánica.
+5. **14 nodos del vault citan el `project_id` antiguo** `p-c1fac1fea05615c6` y
+   ninguno cita el actual `p-2c63a808fcee924a`. Consistente con una re-adopción
+   que heredó el vault, pero no está verificado ni documentado en ninguna parte.
+6. **Rama sin push**: 5 commits por delante de `origin/main`.
+
+**Lección 154**: un test que muestrea estado global (`pgrep`, variables de
+entorno, puertos) no se arreglá Serializándolo a él solo. `#[serial]` es un
+grupo, y el grupo lo definen **todos** los que tocan ese estado. El primer
+intento de N+68.1 puso el atributo en los 4 tests de `file_operations` y falló
+igual, porque la pertenencia al grupo es transitiva: había que preguntar
+quién más toca el estado, no solo quién parece sospechoso. Y un arreglo de
+concurrencia no se prueba con "N corridas verdes" — eso no prueba ausencia de
+flake — sino con una propiedad estática del grupo que se pueda leer en el diff.
