@@ -1,23 +1,44 @@
 # cargo-deny configuration (PRF-CI-05).
 # Policy: NEW vulnerabilities/unsound in advisories are ERRORS (deny).
-# The entries below are documented, tracked debt — each has a reason and
-# a recorded fix path in docs/prf/specs/RECONCILIATION-MATRIX.md and
-# JOURNAL §55. Adding a new ignore without a matrix entry is a review
-# failure.
+#
+# CORRECTED 2026-10-01. This header used to say that every ignore below had "a
+# reason and a recorded fix path in docs/prf/specs/RECONCILIATION-MATRIX.md and
+# JOURNAL §55". None of the five ids appeared in that matrix, which carries only
+# a summary sentence claiming "5 deudas documentadas"; and JOURNAL §55 is about
+# the A-013 lifecycle gate, not advisories. The backing record is
+# docs/debts/DEBT-SEC-001-advisory-ignores.md, one row per ignore, enforced by
+# crates/cognicode-cli/tests/advisory_ignore_backing_contract.rs.
+#
+# Each reason below was corrected on 2026-10-01 against what `cargo deny` and
+# the advisory database actually report. Two of the old ones were wrong: this
+# file claimed RUSTSEC-2024-0384 affects "instant < 0.1.13 ... fix: notify 8"
+# when the tree carries instant 0.1.13 and the advisory's Solution line reads
+# "No safe upgrade is available!", and it described RUSTSEC-2025-0141 as
+# "bincode 1.x ... transitive" when bincode 2.0.1 is a DIRECT dependency of
+# cognicode-core and is the crate the advisory names.
+#
+# RUSTSEC-2023-0057 (libc) was RETIRED on 2026-10-01: cargo deny reported
+# advisory-not-detected, because libc 0.2.189 is past the affected range. It
+# carried no risk. Recorded in the register rather than deleted silently.
+#
+# unused-ignored-advisory is "deny" so an ignore that no longer matches anything
+# becomes an error instead of a warning. That is the failure mode that let a dead
+# ignore sit here unnoticed.
 [advisories]
 version = 2
 yanked = "deny"
+unused-ignored-advisory = "deny"
 ignore = [
-    # unmaintained, transitive, no compatible replacement yet:
-    "RUSTSEC-2024-0384", # instant < 0.1.13 unmaintained; via notify 7; fix: notify 8
-    "RUSTSEC-2026-0192", # ttf-parser unmaintained; via mermaid-rs-renderer/fontdb; fix: upstream
-    "RUSTSEC-2025-0141", # bincode 1.x unmaintained; transitive; workspace uses bincode 2 directly
-    # unsound, transitive:
-    "RUSTSEC-2023-0057", # libc pre-main std access (via crossbeam-deque build path); fix: libc bump
+    # unmaintained, no safe upgrade available (verified against the advisory
+    # database 2026-10-01; crate and version measured from Cargo.lock):
+    "RUSTSEC-2024-0384", # instant 0.1.13; via cognicode-core -> notify 7.0.0; author points to web-time
+    "RUSTSEC-2026-0192", # ttf-parser 0.25.1; via mermaid-rs-renderer 0.2.2 -> fontdb 0.23.0
+    "RUSTSEC-2025-0141", # bincode 2.0.1, DIRECT dep of cognicode-core; team ceased development
     # vulnerability, transitive — fix requires opentelemetry-prometheus 0.28
     # (prometheus 0.14, protobuf 3) = OTel 0.27->0.28 major migration,
-    # tracked as its own unit; exposure limited to the /metrics export path.
-    "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion
+    # deferred deliberately at JOURNAL:3584-3588 ("romper /metrics en
+    # producción sería peor que el advisory"); exposure limited to /metrics.
+    "RUSTSEC-2024-0437", # protobuf 2.28.0 uncontrolled recursion -> stack overflow on untrusted input
 ]
 
 # ----------------------------------------------------------------------------
@@ -46,10 +67,11 @@ ignore = [
 # the LGPL-licensed transitive if a permissively-licensed alternative
 # appears.
 #
-# This section makes the licenses gate executable; it does NOT make
-# it BLOCKING in CI (release.yml and release-validate.yml only run
-# `cargo deny check advisories`, not licenses). Adding licenses to
-# the CI gate is a separate decision tracked as CR-N.N (TBD).
+# This section makes the licenses gate executable. It IS wired as its own
+# blocking step in release.yml:135-138 (`cargo deny check licenses`). An earlier
+# version of this comment claimed that release.yml and release-validate.yml
+# "only run `cargo deny check advisories`, not licenses", which stopped being
+# true when that step was added; corrected 2026-10-01.
 #
 # Status after this commit (2026-09-26):
 #   - All third-party dependencies PASS the allow-list.
