@@ -197,13 +197,19 @@ docs/roadmap/*
 
 # NOTE: docs/debts/ is deliberately NOT exempted. It looks like it should be —
 # `advisory_ignore_backing_contract` reads DEBT-SEC-001 in CI, so the register
-# has to be tracked. But exempting the directory also exposes DEBT-SDDK-002..005,
-# which exist on disk and were never committed, and DEBT-SDDK-004/005/006 all
-# carry the line "local only, NEVER pushed to remote (ephemeral per
-# AGENTS.md)". Making them trackable by default is a policy decision about the
-# local-only rule of 2026-06-24, not a side effect of fixing the negations.
-# DEBT-SEC-001 is tracked because a gate depends on it, and that exception is
-# recorded rather than smuggled in. Tracked separately.
+# has to be tracked. But exempting the directory also exposes DEBT-SDDK-002..006,
+# which exist on disk, were never committed, and all carry the line "local only,
+# NEVER pushed to remote (ephemeral per AGENTS.md)". Making them trackable by
+# default is a policy decision about the local-only rule of 2026-06-24, not a
+# side effect of fixing the negations.
+#
+# The rule that settled it: a debt register is tracked if and only if a gate
+# reads it, and a file declaring itself local-only is never tracked. DEBT-SEC-001
+# is the single exception because the advisories gate depends on it, and that
+# exception is recorded rather than smuggled in. DEBT-SDDK-006 was force-added
+# alongside it while carrying the local-only header, which made it the only
+# register contradicting itself; it has been untracked to match its siblings.
+# `gitignore_negation_contract.rs` holds both directions of this rule.
 
 # C8 recertification openspec change (Post-PRF stabilization).
 !/openspec/changes/2026-09-26-c8-recertification/
