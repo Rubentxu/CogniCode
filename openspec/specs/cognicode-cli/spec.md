@@ -265,10 +265,10 @@ for the current shell.
 - ADR-034 — `cognicode-distribution-package`
 - ADR-035 — `asdf-vm-version-management-pattern`
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`
-- `docs/specs/cognicode-plugin/spec.md`
-- `docs/specs/cognicode-ide-adapter/spec.md`
-- `docs/specs/portable-skill-bundle/spec.md`
-- `docs/specs/cognicode-lifecycle/spec.md`
+- `openspec/specs/cognicode-plugin/spec.md`
+- `openspec/specs/cognicode-ide-adapter/spec.md`
+- `openspec/specs/portable-skill-bundle/spec.md`
+- `openspec/specs/cognicode-lifecycle/spec.md`
 - `docs/adr/E32-cognicode-distribution.md`
 
 ## Implementation Log

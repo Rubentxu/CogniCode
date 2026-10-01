@@ -117,8 +117,8 @@ These plugins are embedded in the `cogh` binary at build time
 
 - ADR-034 — `cognicode-distribution-package`
 - ADR-035 — `asdf-vm-version-management-pattern`
-- `docs/specs/cognicode-cli/spec.md`
-- `docs/specs/cognicode-ide-adapter/spec.md`
+- `openspec/specs/cognicode-cli/spec.md`
+- `openspec/specs/cognicode-ide-adapter/spec.md`
 
 ## Implementation Log
 

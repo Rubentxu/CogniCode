@@ -273,9 +273,9 @@ end-to-end demo. E35-E37 are follow-ups.
 
 - ADR-035 (asdf-vm version-management pattern)
 - ADR-036 (IDE-abstraction pattern)
-- `docs/specs/cognicode-cli/spec.md` (OpenSpec)
-- `docs/specs/cognicode-plugin/spec.md` (OpenSpec)
-- `docs/specs/cognicode-ide-adapter/spec.md` (OpenSpec)
+- `openspec/specs/cognicode-cli/spec.md` (OpenSpec)
+- `openspec/specs/cognicode-plugin/spec.md` (OpenSpec)
+- `openspec/specs/cognicode-ide-adapter/spec.md` (OpenSpec)
 - `docs/adr/E32-cognicode-distribution.md` (sub-cycle plan)
 
 ## Implementation Log

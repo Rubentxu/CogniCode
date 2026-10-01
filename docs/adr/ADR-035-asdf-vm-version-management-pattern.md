@@ -162,7 +162,7 @@ novel work is **plugin manifest format** and **IDE adapter plugins**.
 - asdf-vm: https://asdf-vm.com
 - asdf-vm source: https://github.com/asdf-vm/asdf (Go, ~5K LOC)
 - ADR-034: `[[ADR-034-cognicode-distribution-package]]`
-- `docs/specs/cognicode-cli/spec.md` (OpenSpec)
+- `openspec/specs/cognicode-cli/spec.md` (OpenSpec)
 
 ## Implementation Log
 

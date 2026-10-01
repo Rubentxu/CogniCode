@@ -63,6 +63,6 @@ La fábrica libre `project_call_graph(&CallGraph) → Arc<dyn CallGraphProjectio
 ## Referencias
 
 - [ADR-028 port abstraction](./ADR-028-ladybugdb-port-abstraction-architecture.md)
-- e29-3-port-abstraction-audit delta spec: `openspec/changes/e29-3-port-abstraction-audit/specs/port-layer-hexagon/spec.md`
+- e29-3-port-abstraction-audit delta spec: `openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-3-port-abstraction-audit/specs/port-layer-hexagon/spec.md`
 - Spec sync: `openspec/specs/ports/spec.md`
 - engram: `sddk/e29-3-port-abstraction-audit/jurisprudence-d1` (jurisprudence candidate)

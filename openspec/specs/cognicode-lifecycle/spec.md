@@ -190,8 +190,8 @@ installed version and the available versions.
 
 ## Cross-references
 
-- `docs/specs/cognicode-cli/spec.md`
-- `docs/specs/cognicode-plugin/spec.md`
+- `openspec/specs/cognicode-cli/spec.md`
+- `openspec/specs/cognicode-plugin/spec.md`
 
 ## Implementation Log
 

@@ -80,5 +80,5 @@ NO retornan `Err(...)` en estado vacío.
 
 - [ADR-027 ladybugdb-hybrid-schema-strategy](./ADR-027-ladybugdb-hybrid-schema-strategy.md)
 - [ADR-028 port abstraction](./ADR-028-ladybugdb-port-abstraction-architecture.md)
-- e29-3-port-abstraction-audit delta spec: `openspec/changes/e29-3-port-abstraction-audit/specs/quality-store-backend/spec.md`
+- e29-3-port-abstraction-audit delta spec: `openspec/changes/archive/2026-09-21-bulk-historical-pre-m13___e29-3-port-abstraction-audit/specs/quality-store-backend/spec.md`
 - engram: `sddk/e29-3-port-abstraction-audit/warning-w2-schema-collision`
