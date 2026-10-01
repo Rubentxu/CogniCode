@@ -342,8 +342,8 @@ crates/cognicode-cli/                 # cogh binary
 
 - ADR-034: `[[ADR-034-cognicode-distribution-package]]`
 - ADR-035: `[[ADR-035-asdf-vm-version-management-pattern]]`
-- `docs/specs/cognicode-ide-adapter/spec.md`
-- `docs/specs/portable-skill-bundle/spec.md`
+- `openspec/specs/cognicode-ide-adapter/spec.md`
+- `openspec/specs/portable-skill-bundle/spec.md`
 
 ## Implementation Log
 

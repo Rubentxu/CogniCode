@@ -651,7 +651,7 @@ a ciclo independiente).
 - Drop `compatibility: opencode` field from existing skills
 - Add `manifest.yaml` to each of 4 skills
 - Verify references/ and assets/ structure
-- Doc: `docs/specs/portable-skill-bundle/spec.md`
+- Doc: `openspec/specs/portable-skill-bundle/spec.md`
 - 4 skills shipped (sense-and-adapt, recent-refactor, recent-rust, test-pyramid)
 
 ### E32-D — opencode IDE adapter ✅ COMPLETED (e33-10 PR #287, v0.94.11)
@@ -727,8 +727,8 @@ Ver `docs/V1.0.0-PRE-CUT-CHECKLIST.md` para el plan operativo completo.
 - **ADR-034**: `cognicode-distribution-package` — architecture overview
 - **ADR-035**: `asdf-vm-version-management-pattern` — design rationale
 - **ADR-036**: `IDE-abstraction-portable-skills-per-ide-adapters` — IDE plugin design
-- `docs/specs/cognicode-cli/spec.md` — cogh CLI surface
-- `docs/specs/cognicode-plugin/spec.md` — plugin manifest
-- `docs/specs/cognicode-ide-adapter/spec.md` — IDE adapter
-- `docs/specs/portable-skill-bundle/spec.md` — portable skill format
-- `docs/specs/cognicode-lifecycle/spec.md` — install/update/uninstall
+- `openspec/specs/cognicode-cli/spec.md` — cogh CLI surface
+- `openspec/specs/cognicode-plugin/spec.md` — plugin manifest
+- `openspec/specs/cognicode-ide-adapter/spec.md` — IDE adapter
+- `openspec/specs/portable-skill-bundle/spec.md` — portable skill format
+- `openspec/specs/cognicode-lifecycle/spec.md` — install/update/uninstall

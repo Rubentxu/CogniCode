@@ -232,8 +232,8 @@ Each IDE has its own JSON config shape. The adapter specifies the
 ## Cross-references
 
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`
-- `docs/specs/cognicode-cli/spec.md`
-- `docs/specs/portable-skill-bundle/spec.md`
+- `openspec/specs/cognicode-cli/spec.md`
+- `openspec/specs/portable-skill-bundle/spec.md`
 
 ## Implementation Log
 

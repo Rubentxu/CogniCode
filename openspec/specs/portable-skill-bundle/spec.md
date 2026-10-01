@@ -322,8 +322,8 @@ to components, without widening the closed `ArtifactKind` set:
 ## Cross-references
 
 - ADR-036 — `IDE-abstraction-portable-skills-per-ide-adapters`
-- `docs/specs/cognicode-cli/spec.md`
-- `docs/specs/cognicode-ide-adapter/spec.md`
+- `openspec/specs/cognicode-cli/spec.md`
+- `openspec/specs/cognicode-ide-adapter/spec.md`
 
 ## Implementation Log
 
