@@ -69,8 +69,8 @@ const RUST_TOOLCHAIN_VERSION: &str = "1.96.0";
 /// Every workflow in `.github/workflows/`, sorted, discovered from disk.
 fn workflow_files(root: &Path) -> Vec<PathBuf> {
     let dir = root.join(".github/workflows");
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
     let mut out: Vec<PathBuf> = entries
         .map(|e| e.expect("readable dir entry").path())
         .filter(|p| p.extension().is_some_and(|x| x == "yml"))
@@ -99,7 +99,11 @@ fn third_party_refs(workflow: &str) -> Vec<(usize, String)> {
             continue;
         };
         // A trailing `# comment` documents the ref; it is not part of it.
-        let value = line[pos + "uses:".len()..].split('#').next().unwrap_or("").trim();
+        let value = line[pos + "uses:".len()..]
+            .split('#')
+            .next()
+            .unwrap_or("")
+            .trim();
         if value.is_empty() || value.starts_with("./") || value.starts_with("docker://") {
             continue;
         }
@@ -112,7 +116,10 @@ fn is_sha_pinned(reference: &str) -> bool {
     let Some((_, rev)) = reference.rsplit_once('@') else {
         return false;
     };
-    rev.len() == 40 && rev.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    rev.len() == 40
+        && rev
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
 }
 
 #[test]
