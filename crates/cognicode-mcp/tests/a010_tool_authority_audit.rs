@@ -364,12 +364,12 @@ async fn every_published_mutating_tool_is_refused_under_read_only() {
 /// floor in `resolve_tool_authority`, and exists so that the catalogue test
 /// above is backed by the same invariant the runtime uses.
 #[test]
-fn every_tool_in_the_legacy_mutating_floor_is_published_as_mutating() {
-    for tool in cognicode_core::interface::mcp::rmcp_adapter::CogniCodeHandler::MUTATING_TOOLS {
+fn every_tool_in_the_derived_mutating_set_is_published_as_mutating() {
+    for tool in cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names() {
         assert_eq!(
-            published_authority(tool).as_deref(),
+            published_authority(&tool).as_deref(),
             Some("mutating"),
-            "{tool} is in the runtime mutating floor but the catalogue does \
+            "{tool} is in the runtime mutating set but the catalogue does \
              not publish it as mutating"
         );
     }

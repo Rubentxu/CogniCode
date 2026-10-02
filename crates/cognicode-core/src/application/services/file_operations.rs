@@ -3407,12 +3407,17 @@ mod tests {
     ///
     /// This test runs multiple timeout-triggered verifications and ensures that
     /// rustc processes do not accumulate (which would indicate orphans).
-    // #[serial]: this test is the DETECTOR, not a spawner — it samples
-    // machine-wide `pgrep rustc` before and after and fails if more than two
-    // new PIDs appear. It is therefore sensitive to every other test in this
-    // binary that spawns `rustc`, not just to the three that time out. Those
-    // are all marked #[serial] for that reason. A sampling test that any
-    // concurrent subprocess can trip is a flake generator, not a guard.
+    // #[serial] is no longer load-bearing here, and that is the point. This
+    // used to sample machine-wide `pgrep rustc` and fail if more than two new
+    // PIDs appeared, which meant any `rustc` anywhere on the box — a parallel
+    // cargo in another checkout, the integration lane compiling the next
+    // feature-matrix arm — could trip it. It failed at `core-no-default` with
+    // three new PIDs and passed minutes later on an idle machine, unchanged.
+    //
+    // The guard now samples only this process's own children, which is what
+    // "no orphaned rustc from this test" actually means. `RustVerifier` spawns
+    // through `tokio::process::Command`, so its rustc is a direct child here,
+    // and `pgrep -P <self>` names it without naming anyone else's.
     #[tokio::test]
     #[serial]
     async fn test_verify_rust_file_subprocess_killed_on_timeout() {
@@ -3432,29 +3437,24 @@ mod tests {
 
         let service = test_service_in_temp_dir(&temp_dir);
 
-        let _count_rustc = || -> usize {
+        // The rustc processes this test can possibly have orphaned: our own
+        // children. Scoping the sample to them is what turns this from a
+        // machine-wide count into a guard with teeth.
+        let own_rustc_pids = || -> Vec<i32> {
             Command::new("pgrep")
-                .args(["rustc"])
+                .args(["-P", &std::process::id().to_string(), "rustc"])
                 .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).lines().count())
-                .unwrap_or(0)
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|l| l.trim().parse().ok())
+                .collect()
         };
 
         // Run multiple timeout iterations - if kill_on_drop works, process count
         // should remain stable. If orphans occur, count will grow with each iteration.
         let iterations = 5;
-        let mut rustc_pids_before: Vec<i32> = vec![];
-
-        // Get baseline PIDs
-        let output = Command::new("pgrep")
-            .arg("rustc")
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
-        rustc_pids_before = output
-            .lines()
-            .filter_map(|l| l.trim().parse().ok())
-            .collect();
+        let rustc_pids_before = own_rustc_pids();
 
         for i in 0..iterations {
             // Use 0 timeout to trigger immediate timeout
@@ -3474,16 +3474,7 @@ mod tests {
         // Give extra time for any orphans to be reaped
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
-        // Get PIDs after
-        let output_after = Command::new("pgrep")
-            .arg("rustc")
-            .output()
-            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
-            .unwrap_or_default();
-        let rustc_pids_after: Vec<i32> = output_after
-            .lines()
-            .filter_map(|l| l.trim().parse().ok())
-            .collect();
+        let rustc_pids_after = own_rustc_pids();
 
         // Check that no NEW rustc PIDs appear (orphans would create new PIDs not in baseline)
         let new_pids: Vec<i32> = rustc_pids_after
@@ -3492,13 +3483,13 @@ mod tests {
             .copied()
             .collect();
 
-        // If there are new PIDs, it could be orphans from other system processes
-        // Only fail if the count grew significantly (more than 2x the iterations)
-        let new_count = new_pids.len();
+        // These are our own children, so there is no allowance and no
+        // "could be somebody else's process" escape hatch: `kill_on_drop`
+        // either reaped every rustc this test started or it did not.
         assert!(
-            new_count <= 2,
-            "Potential orphan rustc processes detected. New PIDs: {:?}. \
-             This may indicate kill_on_drop is not working correctly.",
+            new_pids.is_empty(),
+            "orphaned rustc processes from this test: {:?}. kill_on_drop is \
+             not reaping every child it spawned.",
             new_pids
         );
     }
