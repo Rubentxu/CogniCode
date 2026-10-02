@@ -86,8 +86,8 @@ pipeline {
         }
 
         stage("cli-gate-coverage-contract") {
-            // Contract over .github/workflows/pr-ci.yml: asserts every gated suite is named
-            // or excluded with a reason.
+            // The gate coverage contract: asserts every gated suite is named in the
+            // merge authority or excluded with a reason.
             sh("$cd && cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet")
         }
     }

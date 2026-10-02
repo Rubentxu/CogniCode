@@ -157,18 +157,46 @@ fn qw08_crate_selector_returns_ladybug_for_ladybug_path() {
 }
 
 #[test]
+fn qw08_crate_selector_falls_back_on_pipeline_change() {
+    // PipelineK is the authority that decides what runs, so a change to one of
+    // its scripts is precisely the case a selective gate must re-validate
+    // completely: the diff can remove a suite from the battery and nothing
+    // else would notice.
+    let (code, stdout) = run_select("merge-gate.pipeline.kts");
+    assert_eq!(code, 0);
+    assert_eq!(
+        extract_json_field(&stdout, "strategy"),
+        Some("fallback"),
+        "pipeline changes must trigger fallback"
+    );
+    assert_eq!(
+        extract_json_field(&stdout, "reason"),
+        Some("pipeline_changed(merge-gate.pipeline.kts)"),
+        "a pipeline change must be reported as such, not swallowed by the \
+         unknown-path catch-all. The behaviour was already correct — the \
+         catch-all also forces the full battery — but the reason is what a \
+         reader uses to tell a deliberate policy from an accident, and an \
+         orchestration change arriving as `unknown_path` reads as the latter."
+    );
+    let suites = extract_suites(&stdout);
+    assert!(
+        suites.len() >= 5,
+        "fallback must include all suites; got {suites:?}"
+    );
+}
+
+#[test]
 fn qw08_crate_selector_falls_back_on_workflow_change() {
+    // The GitHub Actions workflows are being retired, but the selector keeps
+    // the rule until the directory is actually gone: a workflow change still
+    // means CI changed, and dropping the rule early would leave that window
+    // selecting a subset.
     let (code, stdout) = run_select(".github/workflows/pr-ci.yml");
     assert_eq!(code, 0);
     assert_eq!(
         extract_json_field(&stdout, "strategy"),
         Some("fallback"),
         "workflow changes must trigger fallback"
-    );
-    let suites = extract_suites(&stdout);
-    assert!(
-        suites.len() >= 5,
-        "fallback must include all suites; got {suites:?}"
     );
 }
 

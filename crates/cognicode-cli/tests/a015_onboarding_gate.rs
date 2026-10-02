@@ -32,70 +32,57 @@
 use std::path::PathBuf;
 use std::process::Command;
 
+mod common;
+
+use common::{merge_authority_runs, merge_authority_stage_of, not_run_message};
+
 fn repo_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("crates/cognicode-cli has a parent")
-        .parent()
-        .expect("crates/ has a parent")
-        .to_path_buf()
+    common::repo_root()
 }
 
-fn read_workflow() -> String {
-    let path = repo_root().join(".github/workflows/pr-ci.yml");
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
-}
-
-/// The gate step that covers `cogh setup`, as the command line it runs.
+/// The command line that covers `cogh setup`.
 ///
-/// Matches the contract target rather than the literal string `cogh
-/// setup`: the gate runs `cargo test --test a015_onboarding_gate`, and the
-/// contract is what proves the setup behaviour. The step is named after
-/// the command in its `name:`, which is checked below, so the two halves
-/// are tied together instead of either drifting alone.
-fn gate_setup_step(workflow: &str) -> Option<String> {
-    workflow.lines().find_map(|line| {
-        let l = line.trim();
-        if l.contains("a015_onboarding_gate") {
-            Some(l.split('#').next().unwrap_or(l).trim().to_string())
-        } else {
-            None
-        }
-    })
-}
+/// Matches the contract target rather than the literal string `cogh setup`:
+/// the gate runs `cargo test --test a015_onboarding_gate`, and the contract is
+/// what proves the setup behaviour.
+const ONBOARDING_GATE: &str = "cargo test -p cognicode-cli --test a015_onboarding_gate";
 
-/// The gate must run the onboarding contract, and name the command.
+/// The gate must run the onboarding contract, and the stage must say which
+/// command it protects.
 ///
-/// RED before the step exists, which is the point: the command is
+/// RED before the stage exists, which is the point: the command is
 /// implemented, the action row is open, and nothing ran it.
 #[test]
 fn the_gate_runs_the_onboarding_contract() {
-    let workflow = read_workflow();
-    let step = gate_setup_step(&workflow).unwrap_or_else(|| {
-        panic!(
-            "merge-gate has no step running `--test a015_onboarding_gate`. \
-             `cogh setup` is implemented and A-015 asks for the \
+    assert!(
+        merge_authority_runs(ONBOARDING_GATE),
+        "{}",
+        not_run_message(
+            ONBOARDING_GATE,
+            "`cogh setup` is implemented and A-015 asks for the \
              install->doctor->MCP happy path to be covered; a command that \
-             nothing exercises is a command that can rot silently. \
-             Workflow: {}",
-            repo_root().join(".github/workflows/pr-ci.yml").display()
+             nothing exercises is a command that can rot silently."
         )
-    });
-    assert!(
-        step.contains("cargo test -p cognicode-cli --test a015_onboarding_gate"),
-        "the onboarding step does not run the contract target: {step:?}"
     );
-    // The step's name must say which command it protects. A step named
-    // after an id that two different actions share is how the licenses
-    // gate and the onboarding gate end up indistinguishable in a log.
-    let named = workflow
-        .lines()
-        .any(|l| l.trim().starts_with("- name:") && l.contains("cogh setup"));
+
+    // The stage must say what it protects, and must be distinguishable from
+    // the other gate that carries the same action id. A-015 is used twice in
+    // the register — onboarding here, licences in `a015_licenses_gate` — so a
+    // stage named only by the id cannot be told apart in a log. The two halves
+    // are tied together on purpose: renaming one to the other's name has to
+    // fail here.
+    let stage = merge_authority_stage_of(ONBOARDING_GATE).expect("the gate runs it");
     assert!(
-        named,
-        "the onboarding step is not named after `cogh setup`. The action \
-         register uses A-015 for both the onboarding and the licenses gate, \
-         so a step named only by id cannot be told apart in a CI log."
+        stage.contains("a015") && stage.contains("onboarding"),
+        "the stage running the onboarding contract is `{stage}`, which does not \
+         identify it. The action register uses A-015 for both the onboarding and \
+         the licences gate, so a stage named only by the id cannot be told apart \
+         in a CI log."
+    );
+    assert!(
+        !stage.contains("licenses"),
+        "the stage running the onboarding contract is `{stage}`, which is the \
+         name of the other A-015 gate. The two halves are now indistinguishable."
     );
 }
 

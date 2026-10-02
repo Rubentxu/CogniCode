@@ -42,10 +42,17 @@ capabilities = [
 "codebase_map" = "creates"
 
 [fixtures]
+# The orchestration this pack contributes. PipelineK is the authority that
+# decides what gates a merge, so the pipelines are what a consumer has to be
+# able to read. `.github/workflows/pr-ci.yml` used to be first in this list
+# and is being retired; the wiring contracts read `merge-gate.pipeline.kts`
+# through `scripts/ci/pipeline_authority.py`, and a fixture that names a file
+# the repository no longer has is a lie in a manifest.
 paths = [
-    ".github/workflows/pr-ci.yml",
     "merge-gate.pipeline.kts",
+    "integration.pipeline.kts",
     "product-fast.pipeline.kts",
+    "scripts/ci/pipeline_authority.py",
 ]
 
 [artifacts]

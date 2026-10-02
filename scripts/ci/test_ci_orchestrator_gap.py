@@ -99,23 +99,63 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
         "inventory that has never run, which is the failure this migration "
         "exists to remove. It moves here when it is enabled there."
     ),
-    "target/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
-        "The second half of that same disabled step."
+    "<cargo>/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
+        "The second half of that same disabled step. The key changed shape when "
+        "`normalise` learned to fold a cargo output directory to `<cargo>/`, so "
+        "that the two spellings of the same binary are one gate. The "
+        "justification is unchanged and still describes a real difference."
+    ),
+    "bash scripts/ci/release-tag-coherence.sh --from-version <param> <param>": (
+        "An alternative input path, not a second gate. "
+        "`release-tag-coherence.sh` takes a tag, or `--from-version <v> <sha>` "
+        "when the thing being checked is a version that is not tagged yet. "
+        "`release-validate.yml` uses the second form because it validates a "
+        "version supplied by the operator; `release-candidate.pipeline.kts` "
+        "takes `RELEASE_TAG` and has no untagged mode, so it only has the first "
+        "form to use. If the candidate lane ever grows an untagged input, this "
+        "entry goes with the ratchet."
+    ),
+    "cargo install cargo-deny --locked": (
+        "The PipelineK side pins the version: "
+        "`cargo install cargo-deny --version 0.20.2 --locked`. Actions installs "
+        "whatever resolves, so the advisory and licence verdicts can be taken by "
+        "a different cargo-deny than the one `deny.toml` was written against. "
+        "Pinning is the stricter of the two, and a ratchet — not a migration "
+        "decision — is what should change it."
+    ),
+    "cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; "
+    "print(json.load(sys.stdin)[\"packages\"][\"workspace_members\"][0])'": (
+        "Version resolution, not a check. Both orchestrators read the same value "
+        "and both fall back the same way; Actions tries `cargo metadata` first "
+        "under `|| true` and then greps `Cargo.toml`, while the candidate lane "
+        "goes straight to the guaranteed path and reads `Cargo.toml` in Kotlin. "
+        "The `|| true` is why the first attempt may fail without failing the "
+        "lane, so the second is the one that decides. Same value, one fewer "
+        "process."
+    ),
+    "cargo test <param>": (
+        "One templated gate against eight concrete ones. Actions collapses the "
+        "eight-arm feature matrix into `run: cargo test ${{ matrix.args }}`, so "
+        "the inventory sees a single gate named `<param>`; "
+        "`integration.pipeline.kts` spells all eight arms out, as separate "
+        "stages, so they appear as covered individually. A key cannot be both "
+        "one gate and eight."
     ),
     "cargo fmt --check": (
         "Same gate, different spelling: PipelineK runs "
         "`cargo fmt --all -- --check`, which covers every workspace member. The "
         "un-suffixed form Actions uses is the looser of the two."
     ),
-    "cargo test <param>": (
-        "Actions collapses the eight-arm feature matrix into one templated "
-        "step, so the inventory can only see one gate named `<param>`. "
-        "PipelineK spells all eight arms out, which is why the arms appear as "
-        "covered individually. One templated gate cannot be matched against "
-        "eight concrete ones."
-    ),
 }
 
+# A fourth entry used to live here: `cargo test <param>`, justified as
+# "Actions collapses the eight-arm feature matrix into one templated step, so
+# the inventory can only see one gate". That stopped being true when the
+# extractor learned to join backslash continuations, which is what the YAML
+# feature matrix actually uses: the eight arms became individually visible on
+# both sides, and the entry became dead weight. It was deleted because the
+# ratchet below said so, which is the ratchet doing its job.
+#
 # The tools whose invocations count as gates.
 #
 # A gate is a command whose non-zero exit changes a verdict. The boundary is
@@ -147,9 +187,22 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
 # as gates: they mention a binary, they do not run one. The pipe form is the
 # one place a gate is not the head — `echo "$subject" | commitlint` runs
 # commitlint — so it is matched separately rather than by anchoring.
+# `$repoRoot/` is the repository root the pipelines resolve once and interpolate,
+# so `$repoRoot/target/release/cognicode-release` runs the same binary that
+# `target/release/cognicode-release` does. It is in this list because otherwise
+# every step invoking the release tool through the pipeline's own variable read
+# as no gate at all.
 GATE_HEAD = re.compile(
     r"^(?:cargo|just|python3|bash|commitlint|gh|rustup|npm|"
-    r"target/release/|\./target/release/)\b"
+    # `<cargo>/` is what `normalise` leaves behind for any path into a cargo
+    # output directory. It has to be a recognised head here, because `is_gate`
+    # runs on the *normalised* key: a normalisation rule that quietly turns a
+    # gate into something `GATE_HEAD` does not match does not report a gap, it
+    # deletes the gate from the inventory. That is the one failure this file
+    # cannot have — a missing gate reads as coverage nobody questioned. The
+    # literal spellings are kept alongside it so the rule and this head can
+    # disagree without either silently dropping the other.
+    r"<cargo>/|target/release/|\./target/release/|\$repoRoot/)\b"
 )
 GATE_PIPE = re.compile(r"\|\s*(?:commitlint|gh|cargo|just|python3|bash)\b")
 
@@ -165,7 +218,11 @@ def is_gate(line: str) -> bool:
 RUN_BLOCK = re.compile(r"run:\s*\|\s*\n((?:\s{6,}.*\n|\n)+)")
 RUN_INLINE = re.compile(r"run:\s*(\S.*)$", re.MULTILINE)
 SH_RAW = re.compile(r'sh\(\s*"""(.*?)"""', re.DOTALL)
-SH_LINE = re.compile(r'sh\(\s*"(.*?)"', re.DOTALL)
+# `\"` inside a single-line Kotlin string is an escaped quote, not the end of
+# the argument list. The previous pattern stopped at it, so a step written as
+# `sh("$cd && foo.sh \"${VAR}\"")` was read as `foo.sh \` — the argument
+# vanished and the gate compared as a shorter, different command.
+SH_LINE = re.compile(r'sh\(\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
 FOR_LOOP = re.compile(r"for\s+\w+\s+in\s+\\?\s*\n(.*?)\n\s*do", re.DOTALL)
 DONE = re.compile(r"^\s*done\s*$", re.MULTILINE)
 
@@ -179,6 +236,11 @@ def check(condition: bool, message: str) -> None:
 
 def normalise(command: str) -> str:
     """A comparable identity for one gate invocation."""
+    # An escaped quote inside a single-line Kotlin string is a quote, not a
+    # delimiter. This runs before the backslash rule below, which would
+    # otherwise turn the `\` of `\"` into a space and leave the argument with a
+    # trailing one.
+    command = command.replace('\\"', '"')
     # A YAML `run: |` block continues a command with a trailing backslash, and
     # the backslash survives whitespace joining as a lone token. The Kotlin side
     # writes the same command on one line, so the two never matched.
@@ -186,7 +248,43 @@ def normalise(command: str) -> str:
     command = " ".join(command.split())
     # The inline `run:` capture keeps the key.
     command = re.sub(r"^run:\s*", "", command)
+    # A trailing comment is prose about the command, not part of it. Actions
+    # writes `just sandbox-pull || true   # || true: digests pueden cambiar`
+    # and the comment survived every later rule, so one gate and its PipelineK
+    # counterpart read as two.
+    command = re.sub(r"\s+#.*$", "", command)
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
+    # The same wrapper written as a shell variable, which is how every stage
+    # in these pipelines spells it. It is a `cd`, not a parameter, and mapping
+    # it to `<param>` moved the gate off the head of the command: the inventory
+    # then saw 102 gaps in a pipeline that runs 99 gates, every one of them a
+    # command that had lost its `cd` prefix. A false positive in the instrument
+    # that measures the migration is worse than no instrument.
+    command = re.sub(r"^\$cd\s*&&\s*", "", command)
+    # The repository root the pipeline resolves once, said as a wrapper. It has
+    # to go before the `$var` rule below, or the rule turns it into
+    # `<param>/target/release/cognicode-release`, the head stops being a gate,
+    # and every step that reaches a binary through the pipeline's own variable
+    # becomes invisible. Wrapper, not parameter — the same distinction as `$cd`.
+    command = command.replace('"$repoRoot/', "").replace("$repoRoot/", "")
+    # Where cargo writes its output is the machine's decision, not the gate's.
+    # Actions writes `target/release/cogh`; a pipeline that asks cargo writes
+    # `"$TARGET_DIR/release/cogh"`. Same profile, same binary, same command —
+    # and treating the two spellings as different reported four gates as
+    # uncovered in a pipeline that runs all four, which is the instrument
+    # lying about coverage.
+    #
+    # The profile and the binary name survive on purpose. `release` and `debug`
+    # builds of the same binary are different gates, and so is a different
+    # binary. Only the directory collapses.
+    command = re.sub(r'"\$TARGET_DIR/([^"]*)"', r"<cargo>/\1", command)
+    command = re.sub(r"(?<![\w/.\-])(?:\./)?target/", "<cargo>/", command)
+    # Selecting which justfile to read is how the recipe is invoked, not which
+    # recipe it is. `just --justfile sandbox/justfile sandbox-ci-smoke` and
+    # `just sandbox-ci-smoke` are one gate; the sandbox lanes are only reachable
+    # from the repository root with the explicit form, because a plain `import`
+    # collides on the `build` recipe.
+    command = re.sub(r"^just\s+--justfile\s+\S+\s+", "just ", command)
     command = re.sub(r"^set -e\s+", "", command)
     # `if ! <gate>; then` is a gate under a condition. The condition is the
     # orchestrator's business; the gate is the command.
@@ -194,7 +292,12 @@ def normalise(command: str) -> str:
     command = command.strip().rstrip("\\").strip()
     # `|| true` is a deliberate tolerance and means the same as the advisory
     # form: the exit code stops being the verdict. The gate is the command.
-    command = re.sub(r"\s*\|\|\s*true\s*$", "", command).strip()
+    # The optional `)` is the case `VAR=$(gate || true)`: the tolerance belongs
+    # to the command inside the substitution, and without this the key kept it
+    # and the same gate read as a different one. Found by writing an
+    # ACCEPTED_DIFFERENCES entry against the key as written rather than as
+    # measured, which the stale-entry ratchet then rejected.
+    command = re.sub(r"\s*\|\|\s*true\s*(\))?\s*$", lambda m: m.group(1) or "", command).strip()
     # An advisory stage is written `|| echo 'ADVISORY: ...'` so a failure is
     # reported without failing the lane. That preserves `ci.yml`'s
     # `continue-on-error: true` semantics — and the suffix is the one place
@@ -202,6 +305,21 @@ def normalise(command: str) -> str:
     # be removed for the gate to be recognised as the same one. Advisory-ness
     # lives in the pipeline, not in the gate's identity.
     command = re.sub(r"\s*\|\|\s*echo\s+['\"]?ADVISORY:.*$", "", command)
+    # The shell scaffolding a gate is wrapped in is not the gate. Actions wraps
+    # the coverage gate in `|| { ... }` and the PipelineK side in `; then`,
+    # because the two languages spell an error handler differently; the command
+    # between them is byte-identical. Left in, the CR-09 coverage gate — the
+    # one gate with a numeric threshold — read as two different gates.
+    # Every alternative here has to be anchored to whitespace on its left. A
+    # looser `\s*\}\s*$` looked harmless and was not: it stripped the trailing
+    # brace of `${{ matrix.args }}`, so the feature matrix read as a gate called
+    # `cargo test ${{ matrix.args }` that no pipeline could ever match. A rule
+    # that deletes a character is a rule that needs a left context.
+    # `; then` and `; do` need no left context: they are shell keywords and
+    # cannot end a real command otherwise. They do not always have whitespace
+    # in front of them either — `71.00; then` is the coverage gate followed by
+    # its error handler written on one line.
+    command = re.sub(r"(?:\s+\|\||\s+&&)\s*\{|;\s*(?:then|do)\s*$", "", command)
     command = command.strip()
     # `VAR=$(some gate)` is the same gate with its output captured, not a
     # different one. Both orchestrators capture the selector's output this way
@@ -216,7 +334,44 @@ def normalise(command: str) -> str:
         command = assignment.group(1).strip()
     # A YAML matrix value is a parameter, not a different gate.
     command = re.sub(r"\$\{\{[^}]*\}\}", "<param>", command)
+    # Kotlin escapes a literal `$` inside a raw string as `${'$'}`; the shell
+    # receives a plain `$`. Left in place, `${'$'}tool` and `target/release/
+    # cognicode-release` are the same command with two spellings, and the
+    # inventory reported the pipeline as not running a gate it does run.
+    command = command.replace("${'$'}", "$")
+    # A shell variable is a parameter too, and for the same reason. A pipeline
+    # that runs `build-sboms-for-lane.sh $target` runs exactly the gate that
+    # Actions runs as `build-sboms-for-lane.sh "${{ matrix.rust_target }}"`.
+    # Without this the migration cannot be measured: every stage that names its
+    # platform once and interpolates it read as an uncovered gate, which is a
+    # false positive in an instrument whose whole job is to be believed.
+    #
+    # `test_the_normaliser_does_not_fuse_two_different_gates` is the guard on
+    # this: losing a distinction is worse than reporting a spurious gap.
+    command = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*[^}]*\}", "<param>", command)
+    command = re.sub(r"\$[A-Za-z_][A-Za-z0-9_]*", "<param>", command)
     return command
+
+
+# Three keys in the gap are not gates at all, and are left in the count rather
+# than filtered out, because filtering by shape is how an instrument starts
+# hiding real differences. They are the tail of embedded code inside a step:
+#
+#   done < <(target/release/cognicode-release skills --published ...)
+#   python3 - "$victim" <<'PY'
+#   target/release/cognicode-release verify --staging <param> ... --tag "v<param>"
+#
+# The first is the `done` of a `while` loop, seen as a command because the loop
+# body ends in a pipe. The second is a heredoc that mutates a file inside a
+# negative test. The third is the `verify` call inside `release-validate.yml`'s
+# negative tests, which run it against a downloaded copy with the tag spelled
+# `v$version`; `release.pipeline.kts` runs the same two negative tests with the
+# tag passed as a variable and the staging as a temporary path, so the two keys
+# differ in spelling while the property — that `verify` rejects a missing and an
+# altered artifact — is covered on both sides.
+#
+# The closure criterion for this migration is zero executable Actions workflows,
+# not a zero in this number, and these three disappear with the workflows.
 
 
 def gate_key(command: str) -> str:
@@ -226,9 +381,18 @@ def gate_key(command: str) -> str:
     side prefixes most steps with it. Those are packaging differences, not
     different gates.
     """
+    # Shell quoting is syntax, not identity: `script.sh "$target"` and
+    # `script.sh $target` are the same gate, and making the match depend on
+    # the author having quoted identically in both orchestrators is a way to
+    # report a covered gate as missing.
+    command = re.sub(r"([\"'])<param>\1", "<param>", command)
     command = command.replace("$cd && ", "")
     command = re.sub(r"^\$\{?cd[^&|]*&&\s*", "", command)
-    command = command.replace('"$repoRoot/', "").replace("./", "")
+    command = (
+        command.replace('"$repoRoot/', "")
+        .replace("$repoRoot/", "")
+        .replace("./", "")
+    )
     return command.strip()
 
 
@@ -260,31 +424,97 @@ def expand_for_loops(text: str) -> list[str]:
     return lines
 
 
+def join_continuations(block: str) -> list[str]:
+    """Fold a `run: |` block's backslash continuations into one line each.
+
+    A line ending in a backslash is not a command, it is the first half of one. Treated
+    as a command on its own it produced an identity with no arguments —
+    `target/release/cognicode-release generate` — which can never equal the
+    PipelineK side's `... generate --staging staging --out release ...` no
+    matter what either orchestrator actually runs. The two spellings of the
+    same command are joined here, once, so the comparison sees the command.
+    """
+    lines = [l.strip() for l in block.splitlines()]
+    joined: list[str] = []
+    pending = ""
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        if pending:
+            line = pending + " " + line
+            pending = ""
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+            continue
+        joined.append(line)
+    if pending:
+        # A trailing backslash with nothing after it: the command is what there
+        # is, and dropping it would lose a gate rather than shorten one.
+        joined.append(pending)
+    return joined
+
+
+def actions_commands(workflow_texts: dict[str, str]) -> list[str]:
+    """Every command line Actions runs, before any normalisation."""
+    candidates: list[str] = []
+    for text in workflow_texts.values():
+        for block in RUN_BLOCK.findall(text):
+            candidates.extend(join_continuations(block))
+        candidates.extend(RUN_INLINE.findall(text))
+    return candidates
+
+
 def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
     gates: set[str] = set()
-    for text in workflow_texts.values():
-        candidates: list[str] = []
-        for block in RUN_BLOCK.findall(text):
-            candidates.extend(
-                line.strip()
-                for line in block.splitlines()
-                if line.strip() and not line.strip().startswith("#")
-            )
-        candidates.extend(RUN_INLINE.findall(text))
-        for candidate in candidates:
-            # Normalise first, then ask. Every Kotlin step is written as
-            # `$cd && <gate>`, so anchoring the head check before the wrapper is
-            # stripped matched nothing on the PipelineK side and reported the
-            # whole pipeline as missing.
-            keyed = gate_key(normalise(candidate))
-            if is_gate(keyed):
-                gates.add(keyed)
+    for candidate in actions_commands(workflow_texts):
+        # Normalise first, then ask. Every Kotlin step is written as
+        # `$cd && <gate>`, so anchoring the head check before the wrapper is
+        # stripped matched nothing on the PipelineK side and reported the
+        # whole pipeline as missing.
+        keyed = gate_key(normalise(candidate))
+        if is_gate(keyed):
+            gates.add(keyed)
     return gates
+
+
+# The type annotation is optional because the pipelines that declare a constant
+# mostly write `val tool = "..."` without it, and requiring it would make the
+# resolution quietly apply to nothing in this repository.
+#
+# A value containing a backslash is excluded. `val cd = "cd \"$repoRoot\""` is
+# one, and resolving it would rewrite every step's wrapper rather than the gate
+# inside it — which is the mistake the `$var` rule already made once. A `$` in
+# the value is fine: it is the repo root, and `gate_key` drops that prefix.
+VAL_DECL = re.compile(r'^val\s+(\w+)(?:\s*:\s*\w+)?\s*=\s*"([^"\\]*)"\s*$', re.MULTILINE)
+
+
+def resolve_vals(text: str) -> str:
+    """Substitute the pipeline's own string constants before reading steps.
+
+    A pipeline declares `val tool = "$repoRoot/target/release/cognicode-release"`
+    and every step then says `$tool generate`. That is the right way to write it
+    — one declaration instead of a path repeated in six stages — but a checker
+    reading the source sees `$tool` and cannot tell what it runs, so a gate the
+    pipeline demonstrably runs reads as uncovered.
+
+    Only `val x: String = "literal"` is resolved. A `val` bound to an expression
+    (`System.getenv(...)`, `File(".")`) is left alone, because its value is not
+    knowable from the text and pretending otherwise would make the instrument
+    assert something it cannot see.
+    """
+    constants = dict(VAL_DECL.findall(text))
+    if not constants:
+        return text
+    for name, value in constants.items():
+        text = re.sub(r"\$\{'\$'\}" + re.escape(name) + r"\b", value, text)
+        text = re.sub(r"\$" + re.escape(name) + r"\b", value, text)
+    return text
 
 
 def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
     gates: set[str] = set()
-    for text in pipeline_texts.values():
+    for raw in pipeline_texts.values():
+        text = resolve_vals(raw)
         # The loop is expanded first, while the source still carries Kotlin's
         # escaped dollar, because that is what the loop placeholder looks like.
         # Unescaping before this point would rewrite the placeholder and expand
@@ -292,6 +522,14 @@ def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
         # pipeline that runs them.
         candidates = [line.strip() for line in expand_for_loops(text)]
         candidates.extend(SH_LINE.findall(text))
+        # A stage written as a Kotlin raw string is a multi-line shell script,
+        # and a command in it can wrap with a backslash exactly as one in a
+        # `run: |` block can. Reading those line by line splits one command into
+        # several, and the halves do not start with a gate head, so the gate
+        # disappears rather than being shortened. Joined the same way, so the
+        # two orchestrators are compared as commands rather than as spellings.
+        for block in SH_RAW.findall(text):
+            candidates.extend(join_continuations(block))
         for candidate in candidates:
             # Inside a Kotlin raw string, `${'$'}` is how a literal dollar
             # reaches the emitted shell script. This contract reads the .kts
@@ -393,6 +631,136 @@ def test_both_orchestrators_are_readable() -> None:
         "the PipelineK side produced zero gates; the inventory is not reading "
         "the pipelines correctly",
     )
+
+
+def test_the_normaliser_keeps_the_program_being_run() -> None:
+    """Two commands that run different things must never share a gate identity.
+
+    `normalise` is lossy by design: it erases `cd`, `set -e`, `run:`, the
+    `|| echo ADVISORY` suffix, YAML matrix values, shell variables and quoting,
+    because all of those are the orchestrator's spelling rather than the gate's.
+    Every one of those rules can, if written carelessly, swallow the command
+    itself — the `$var` rule first did exactly that, turning `$cd && cargo …`
+    into `<param> && cargo …` and reporting 102 gaps in a pipeline running 99
+    gates.
+
+    What must survive is the program being invoked. So this checks the real
+    inventory: for every gate identity, the first two significant tokens of
+    each command that maps to it have to agree. A false match is worse than a
+    gap here, because a gap is a to-do and a false match is silence.
+    """
+    programs: dict[str, set[str]] = {}
+    for command in actions_commands(read_workflows()):
+        keyed = normalise(command)
+        if not is_gate(gate_key(keyed)):
+            continue
+        head = " ".join(gate_key(keyed).split()[:2])
+        programs.setdefault(gate_key(keyed), set()).add(head)
+
+    fused = {k: sorted(v) for k, v in programs.items() if len(v) > 1}
+    check(
+        not fused,
+        "these gate identities are reached by commands that invoke different "
+        "programs, so the inventory could claim coverage it does not have: "
+        f"{fused}",
+    )
+
+
+def test_an_actions_expression_always_becomes_exactly_one_param() -> None:
+    """A `${{ … }}` expression is a parameter, whole. Not most of it.
+
+    One rule for the shell scaffolding around a gate was written as
+    `\\s*\\}\\s*$` with no left context, and it stripped the trailing brace
+    of `${{ matrix.args }}`. The feature matrix then read as a gate called
+    `cargo test ${{ matrix.args }` — one brace short — which no pipeline could
+    ever match, and the gap reported a gate that did not exist while the real
+    one went unaccounted. Nothing else caught it: the ratchet only fails when
+    the gap *grows*, and the number did not move.
+
+    A rule that deletes a character needs a test that says which character. This
+    is that test.
+    """
+    cases = [
+        ("cargo test ${{ matrix.args }}", "cargo test <param>"),
+        ("cargo test ${{ matrix.args }} --quiet", "cargo test <param> --quiet"),
+        ("bash x.sh ${{ inputs.version }}", "bash x.sh <param>"),
+        ("cargo test -p a --features ${{ matrix.feat }}", "cargo test -p a --features <param>"),
+    ]
+    for raw, expected in cases:
+        got = normalise(raw)
+        check(
+            got == expected,
+            f"normalise({raw!r}) is {got!r}, expected {expected!r}. An Actions "
+            f"expression is one parameter; a rule that eats part of it produces "
+            f"a key nothing can match",
+        )
+
+
+def test_where_cargo_writes_is_not_part_of_the_gate() -> None:
+    """A cargo output directory is the machine's decision, not the program's.
+
+    Actions writes `target/release/cogh`; a pipeline that asks cargo where its
+    output went writes `"$TARGET_DIR/release/cogh"`. Those are the same command
+    against the same binary in the same profile, and before this rule the
+    instrument reported four gates as uncovered in a pipeline that runs all
+    four — it lied about coverage in the direction that costs nothing to
+    believe.
+
+    The profile and the binary name survive, because those *are* the gate.
+    `release` and `debug` builds of one binary are different gates, and two
+    different binaries are different gates. Only the directory collapses.
+
+    The second half is the part that is easy to get wrong. `is_gate` runs on
+    the normalised key, so a rule that rewrites a head into something
+    `GATE_HEAD` does not recognise does not report a difference — it removes
+    the gate from the inventory, and a removed gate reads as coverage nobody
+    questioned. Folding and staying a gate are one property, and they are
+    asserted together for that reason.
+    """
+    pairs = [
+        (
+            "target/release/cognicode --version",
+            '"$TARGET_DIR/release/cognicode" --version',
+        ),
+        (
+            "./target/release/cogh install --profile core",
+            '"$TARGET_DIR/release/cogh" install --profile core',
+        ),
+        (
+            "target/release/cognicode-control-plane --help | head -5",
+            '"$TARGET_DIR/release/cognicode-control-plane" --help | head -5',
+        ),
+    ]
+    for actions_form, pipelinek_form in pairs:
+        actions_key = gate_key(normalise(actions_form))
+        pipelinek_key = gate_key(normalise(pipelinek_form))
+        check(
+            actions_key == pipelinek_key,
+            f"the two spellings of one gate do not fold together: "
+            f"{actions_key!r} vs {pipelinek_key!r}. Either cargo's output "
+            f"directory is being treated as part of the program, or one side "
+            f"resolved it and the other assumed it",
+        )
+        check(
+            is_gate(actions_key),
+            f"{actions_key!r} normalised but is no longer recognised as a gate. "
+            f"A normalisation rule that stops a gate looking like a gate does "
+            f"not report a gap — it deletes the gate from the inventory, and a "
+            f"deleted gate reads as coverage nobody questioned. Add the folded "
+            f"head to GATE_HEAD",
+        )
+
+    must_stay_distinct = [
+        ("target/release/cog --version", "target/debug/cog --version"),
+        ("target/release/cog --version", "target/release/cogv --version"),
+    ]
+    for left, right in must_stay_distinct:
+        check(
+            gate_key(normalise(left)) != gate_key(normalise(right)),
+            f"{left!r} and {right!r} folded together. The rule exists to drop "
+            f"the directory, not the profile and not the binary name; losing "
+            f"those is a real difference hidden rather than reported",
+        )
 
 
 def test_the_gap_did_not_grow() -> None:

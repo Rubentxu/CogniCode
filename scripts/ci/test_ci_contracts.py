@@ -16,14 +16,26 @@ invisible locally.
    not stop the loop and only the last file would set the exit code. With
    one file that is invisible.
 
-So the harness is pinned here on three properties:
+So the harness is pinned here on properties:
 
 - no test script under `scripts/` may import pytest, because that makes
   it unrunnable on the merge gate;
 - the runner exits non-zero when any test fails, and continues running
   the rest so one failure does not mask others;
-- the PR-CI job that invokes the runner has `set -e` and does not invoke
-  pytest directly.
+- a script that exposes no test is reported, not counted as passing;
+- the suite passes in an interpreter that has no pytest at all.
+
+The third of those used to be a per-file count, and that is worth
+recording: the merge path was asserted by reading the orchestrator's
+source — `set -euo pipefail` present, `run_contract_tests.py` invoked,
+`pytest` never mentioned. All three were true only because the text said
+so, and two of them describe a mechanism PipelineK does not have. The
+properties behind them are now asserted against the things that actually
+decide what runs: `test_cr06_ratchet.py` walks the chain from the merge
+authority through `run-all-contracts.sh` to this glob, and the
+`no_contract_test_imports_pytest` and `suite_runs_without_pytest_installed`
+checks below cover the portability property without reading any
+orchestrator.
 
 Run:
     python3 scripts/ci/test_ci_contracts.py
@@ -38,7 +50,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER = REPO_ROOT / "scripts" / "run_contract_tests.py"
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-ci.yml"
 
 failures: list[str] = []
 
@@ -130,29 +141,6 @@ def test_runner_rejects_a_script_with_no_tests() -> None:
     check(
         "no test_* function" in proc.stdout,
         f"the reason must be reported; stdout was:\n{proc.stdout}",
-    )
-
-
-def test_workflow_invocations_are_hardened() -> None:
-    """The merge path must not depend on pytest and must fail fast."""
-    text = WORKFLOW.read_text(encoding="utf-8")
-    check(
-        "python3 -m pytest" not in text,
-        "pr-ci.yml invokes pytest, which the runner does not have",
-    )
-    check(
-        "pytest" not in text,
-        "pr-ci.yml mentions pytest; if this is only a comment saying why it "
-        "is not used, say so in the comment rather than leaving a bare mention",
-    )
-    check(
-        "set -euo pipefail" in text,
-        "pr-ci.yml must enable set -e explicitly; a run block does not do it "
-        "for you, so a mid-loop failure would not stop the loop",
-    )
-    check(
-        "run_contract_tests.py" in text,
-        "pr-ci.yml should invoke the shared runner rather than iterating files",
     )
 
 

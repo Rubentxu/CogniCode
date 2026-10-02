@@ -32,6 +32,9 @@
 //! The primary assertion is a count against the filesystem, for the
 //! reason above: every `tests/*.rs` must be a target the gate compiles.
 
+mod common;
+
+use common::{merge_authority_runs, not_run_message};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -43,9 +46,13 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn read_workflow() -> String {
-    let path = repo_root().join(".github/workflows/pr-ci.yml");
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+/// The merge authority's command text, one entry per line.
+///
+/// The orchestrator that gates a merge is `merge-gate.pipeline.kts`; it used
+/// to be `.github/workflows/pr-ci.yml`. Which file that is, is declared once
+/// in `common` rather than re-derived here.
+fn merge_authority_text() -> String {
+    common::merge_authority_lines().join("\n")
 }
 
 /// Every integration-suite source file in the crate, sorted.
@@ -105,7 +112,7 @@ fn is_unrestricted_core_selector(command: &str) -> bool {
 
 #[test]
 fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = core_test_invocations(&workflow);
     let has_unrestricted = invocations.iter().any(|c| is_unrestricted_core_selector(c));
     let named: Vec<&str> = invocations
@@ -241,7 +248,7 @@ fn is_accepted_unreadable(path: &Path) -> bool {
 /// `every_core_suite_is_either_named_or_covered_by_an_unrestricted_step`.
 ///
 /// `a014_product_asset_resolution` is deliberately NOT here. It is named by
-/// `pr-ci.yml` ("A-014 product assets resolve from the runtime, not the build
+/// the merge gate ("A-014 product assets resolve from the runtime, not the build
 /// machine"), and an anchor is by definition a suite that nothing names. Once
 /// a suite is named, the name pin covers it and adding it to this list would
 /// make the measured set and the pinned set disagree — which is exactly what
@@ -355,26 +362,17 @@ fn anchors_stay_unreferenced_elsewhere() {
     );
 }
 
-/// Every workflow file, so the anchor rule scans all of them and not just
-/// the one the other assertions read.
+/// Every pipeline file, so the anchor rule scans all of them and not just
+/// the one the other assertions read. `common` owns that list because the
+/// same set is needed by every wiring contract in the crate.
 fn workflow_paths() -> Vec<PathBuf> {
-    let dir = repo_root().join(".github/workflows");
-    let mut out: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()))
-        .filter_map(|e| {
-            let p = e.ok()?.path();
-            let ext = p.extension()?.to_str()?;
-            (ext == "yml" || ext == "yaml").then_some(p)
-        })
-        .collect();
-    out.sort();
-    out
+    common::pipeline_paths()
 }
 
 /// Whether any machine-readable configuration names a suite.
 ///
 /// Two needles, because configuration cites a suite in two ways: a
-/// workflow writes `--test suite`, a script writes `tests/suite.rs`. The
+/// pipeline writes `--test suite`, a script writes `tests/suite.rs`. The
 /// bare name alone would match this contract and every journal entry,
 /// which is not the rule; the rule is about what the machine executes.
 ///
@@ -447,7 +445,7 @@ fn the_anchor_set_is_the_measured_one() {
     );
 }
 
-/// Where the anchor-reference scan looks: `scripts/` plus every workflow
+/// Where the anchor-reference scan looks: `scripts/` plus every pipeline
 /// file. The rule is "named by no machine-readable configuration", not
 /// "unreferenced", because `docs/`, `openspec/` and `.agent/` cite all
 /// 37 suites and would make a zero-reference rule permanently
@@ -465,14 +463,24 @@ fn the_anchor_scan_scope_is_pinned() {
         "scripts/ is scanned for anchor references but does not exist; the \
          scan silently covers less than this test claims"
     );
-    let workflows = workflow_paths();
+    let pipelines = workflow_paths();
     assert!(
-        !workflows.is_empty(),
-        "no workflow files were found under .github/workflows, so the anchor \
-         scan would pass vacuously"
+        !pipelines.is_empty(),
+        "no PipelineK scripts were found at the repository root, so the anchor \
+         scan would pass vacuously. The rule is 'named by no machine-readable \
+         orchestration', and the pipelines are that orchestration now that the \
+         GitHub Actions workflows are gone."
     );
     assert!(
-        !workflows
+        pipelines
+            .iter()
+            .any(|p| p.file_name().is_some_and(|n| n == common::MERGE_AUTHORITY)),
+        "the pipeline list does not include {}, so the scan is not covering the \
+         thing that actually gates a merge",
+        common::MERGE_AUTHORITY
+    );
+    assert!(
+        !pipelines
             .iter()
             .any(|p| p.to_string_lossy().contains("/target/")),
         "target/ is build output; scanning it would be slow and meaningless"
@@ -480,14 +488,14 @@ fn the_anchor_scan_scope_is_pinned() {
 }
 
 /// Walks a directory tree looking for a needle. A path that is a file is
-/// read directly, so a caller can pass a workflow file as well as a
+/// read directly, so a caller can pass a pipeline file as well as a
 /// directory.
 ///
 /// The file case is not a convenience. An earlier version read only
 /// directories and returned silently when handed a file, because
 /// `read_dir` on a file fails and the failure was swallowed by a `let Ok`
 /// — so passing the workflow paths scanned **nothing at all**, and a
-/// mutation that added `--test anchor` to `pr-ci.yml` left the contract
+/// mutation that added `--test anchor` to the merge authority left the contract
 /// green. A scan that cannot fail is not a scan.
 ///
 /// Two files are exempt, and the exemption is per-file, not per-directory:
@@ -572,97 +580,6 @@ fn read_for_needle(
     }
 }
 
-/// The Kotlin merge-gate pipeline (`merge-gate.pipeline.kts`), the local
-/// parity replica of the required `merge-gate` check.
-fn read_merge_gate() -> String {
-    let path = repo_root().join("merge-gate.pipeline.kts");
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
-}
-
-/// The `cargo test -p cognicode-core ...` invocations present in the Kotlin
-/// pipeline, normalized to bare commands so they compare against the workflow.
-/// Commented-out stages (`//`) are excluded: a stage that is commented out is
-/// a stage that does not run, which is exactly the narrowing this pins.
-fn kts_core_invocations(kts: &str) -> Vec<String> {
-    kts.lines()
-        .map(str::trim)
-        .filter(|l| l.contains("cargo test -p cognicode-core"))
-        .filter(|l| !l.starts_with("//"))
-        .map(|l| {
-            // The invocation starts at the first `cargo test`; the preceding
-            // `sh("$cd && ` is Kotlin scaffolding. Using `find` (not `split`)
-            // keeps the space that `split("cargo test")` would eat along with
-            // the string's opening quote.
-            let start = l.find("cargo test").unwrap_or(l.len());
-            let cmd = l[start..].trim_end_matches(['"', ')']).trim();
-            cmd.to_string()
-        })
-        .collect()
-}
-
-/// Parity between the Kotlin gate and the authoritative workflow, by COUNT.
-///
-/// `pr-ci.yml` is the merge authority and the only input; the `.kts` is the
-/// local replica. The comparison is set equality in both directions over
-/// distinct commands, not substring containment: five suites sit behind
-/// `#![cfg(feature = "evidence-kernel")]` and compile to `0 passed / exit 0`
-/// without the flag, so a substring assertion ("the word `evidence-kernel`
-/// appears") survives an unrestricted step being dropped entirely while a
-/// command-count comparison names the missing order.
-#[test]
-fn merge_gate_kts_runs_every_core_command_the_workflow_runs() {
-    let workflow: Vec<String> = {
-        let mut v: Vec<String> = core_test_invocations(&read_workflow())
-            .into_iter()
-            .map(|c| {
-                // `core_test_invocations` keeps the whole trimmed YAML line,
-                // so `run: cargo test ...` carries its YAML key. Strip it so
-                // the comparison is between commands, not between syntaxes.
-                c.strip_prefix("run:").unwrap_or(&c).trim().to_string()
-            })
-            .collect();
-        v.sort();
-        v.dedup();
-        v
-    };
-    let kts: Vec<String> = {
-        let mut v = kts_core_invocations(&read_merge_gate());
-        v.sort();
-        v
-    };
-
-    let missing: Vec<&String> = workflow.iter().filter(|w| !kts.contains(w)).collect();
-    assert!(
-        missing.is_empty(),
-        "{} of {} distinct `cargo test -p cognicode-core` commands run in \
-         pr-ci.yml but not in merge-gate.pipeline.kts: {missing:?}. The Kotlin \
-         gate is the local parity replica; a stage that is missing (or \
-         commented out) narrows the gate without breaking anything else, \
-         which is the exact failure this contract exists to prevent.",
-        missing.len(),
-        workflow.len()
-    );
-
-    let extra: Vec<&String> = kts.iter().filter(|k| !workflow.contains(k)).collect();
-    assert!(
-        extra.is_empty(),
-        "merge-gate.pipeline.kts runs core commands absent from pr-ci.yml: \
-         {extra:?}. The workflow is the authority; the replica cannot invent \
-         coverage the gate does not have."
-    );
-
-    assert_eq!(
-        kts.len(),
-        workflow.len(),
-        "command-count mismatch: workflow has {} distinct core commands, kts \
-         has {}. Distinct kts commands with duplicates are not deduplicated \
-         on the kts side on purpose: a stage duplicated in the pipeline is a \
-         pipeline bug this count should surface. kts={kts:?}",
-        workflow.len(),
-        kts.len()
-    );
-}
-
 #[test]
 fn the_gate_builds_the_evidence_kernel_feature() {
     // The five `evidence-kernel` suites compile to an empty test binary
@@ -673,7 +590,7 @@ fn the_gate_builds_the_evidence_kernel_feature() {
     //
     // The CLI contract pins the same trap for `--features ladybug`; this
     // is the core-crate instance of the same defect class.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = core_test_invocations(&workflow);
     let unrestricted: Vec<&String> = invocations
         .iter()
@@ -781,15 +698,15 @@ fn the_coverage_contract_itself_is_pinned() {
             .exists(),
         "this contract file is missing from tests/; it cannot be running"
     );
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     assert!(
         workflow.contains("--test core_gate_coverage_contract"),
-        "core_gate_coverage_contract is not named in pr-ci.yml, so the \
+        "core_gate_coverage_contract is not run by the merge authority, so the \
          coverage guarantee is itself ungated."
     );
 }
 
-/// The M0.11 rustdoc gate must run in BOTH pipelines.
+/// The M0.11 rustdoc gate must run in whatever gates a merge.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
 /// all. It was green, and it could not fail a single PR. An intra-doc link
@@ -797,36 +714,23 @@ fn the_coverage_contract_itself_is_pinned() {
 /// that commit, the whole branch, and six further commits — it surfaced only
 /// because someone happened to run `cargo test --workspace`.
 ///
-/// `pr-ci.yml:81-86` already states the standard this enforces, in the
-/// comment above the scripts contract runner: *"Un test que no corre en
-/// ningun sitio no es un gate."* The gate was breaking that rule 600 lines
-/// further down the same file.
+/// The standard is already written down in this repository: *"Un test que no
+/// corre en ningun sitio no es un gate."* The gate was breaking that rule.
 ///
-/// This assertion deliberately lives in the core crate rather than next to
-/// the gate it protects. `pr-ci.yml:719` runs the core crate unrestricted and
-/// `pr-ci.yml:729` gives this file its own step in both pipelines, so if the
-/// rustdoc wiring is deleted the core suite still runs and this still fails.
-/// A contract that only the deleted wiring could execute would notice
+/// This assertion deliberately lives in the core crate rather than next to the
+/// gate it protects. The merge authority runs the core crate unrestricted, so
+/// if the rustdoc wiring is deleted the core suite still runs and this still
+/// fails. A contract that only the deleted wiring could execute would notice
 /// nothing — which is the failure mode it exists to catch.
 #[test]
-fn the_rustdoc_gate_runs_in_both_pipelines() {
+fn the_rustdoc_gate_runs_in_the_merge_authority() {
     const GATE: &str = "m011_rustdoc_gate";
 
-    let workflow = read_workflow();
     assert!(
-        workflow.contains(GATE),
-        "pr-ci.yml no longer runs {GATE}. That gate holds the workspace at zero \
-         rustdoc warnings in the gated categories; without it a broken doc link or \
-         a public-docs-to-private-item reference passes every PR. Restore the step \
-         next to the clippy gate."
-    );
-
-    let kts = read_merge_gate();
-    assert!(
-        kts.contains(GATE),
-        "merge-gate.pipeline.kts no longer runs {GATE}. A local gate that mirrors \
-         less than the required check is a gate that cannot be trusted to tell you \
-         the check is green — the same failure shape as the dead clippy baseline \
-         that this crate's sibling contract pins."
+        merge_authority_runs(GATE),
+        "the merge authority no longer runs {GATE}. That gate holds the workspace \
+         at zero rustdoc warnings in the gated categories; without it a broken \
+         doc link or a public-docs-to-private-item reference passes every PR.\n{}",
+        not_run_message(GATE, "Restore the stage next to the clippy gate.")
     );
 }

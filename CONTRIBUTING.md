@@ -79,8 +79,14 @@ without a regression test is an unverified claim. The CI gate will not catch
 this for you; review will.
 
 **A passing selected suite is not a passing release gate.** Do not report "tests
-pass" from a subset. The full gate is `merge-gate` in
-`.github/workflows/pr-ci.yml`, and it is required for every change to `main`.
+pass" from a subset. The full gate is the `merge-gate` stage tree in
+`merge-gate.pipeline.kts`, and it is required for every change to `main`.
+
+PipelineK is the only authority that executes CI/CD. `scripts/ci/pipeline_authority.py`
+declares which pipeline that is, once, and the wiring contracts read it from
+there. If you are adding a gate, add the stage to the pipeline and let the
+contract suite find it: `scripts/ci/run-all-contracts.sh` discovers
+`scripts/ci/test_*.py` by glob, so a new contract needs no orchestrator edit.
 
 **When you run the full suite on a shared machine, give it a private
 `TMPDIR`.** Cargo deletes "orphaned" `rustdoctest*` directories under `TMPDIR`

@@ -42,6 +42,8 @@
 //! | 1    | a measured operation exceeded its budget          |
 //! | 3    | a budgeted operation was never measured           |
 
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
@@ -237,17 +239,37 @@ fn the_real_budget_declares_enforcement_it_does_not_have() {
              enforcement status is a fact rather than a sentence somebody has to interpret.",
         );
 
-    let workflows = std::fs::read_to_string(root.join(".github/workflows/pr-ci.yml"))
-        .expect("pr-ci.yml is the gate the budget names");
-    let wired = workflows.contains("perf-budget-check") || workflows.contains("perf-budget.toml");
-
     assert!(
         declared == "ci" || declared == "none",
         "unrecognised enforcement status `{declared}`; expected `ci` or `none`"
     );
-    assert!(
-        declared != "ci" || wired,
-        "perf-budget.toml declares `ENFORCEMENT: ci`, but pr-ci.yml does not run the \
-         checker. Either wire it or change the declaration in the same commit."
-    );
+
+    // Which lane enforces the budget. The orchestrator that gates a merge is
+    // `merge-gate.pipeline.kts`; it used to be `.github/workflows/pr-ci.yml`,
+    // and the declaration is about a lane rather than about a file, so it is
+    // asked of every pipeline instead of one named path.
+    let wired = common::invoked_by("perf-budget-check");
+
+    // Both directions, because the old one-way form could not fail in the
+    // state the repository is in: `perf-budget.toml` declares `none`, and
+    // `declared != "ci" || wired` is then true whatever `wired` says. An
+    // assertion that cannot go red in the present is not a gate.
+    if declared == "ci" {
+        assert!(
+            !wired.is_empty(),
+            "perf-budget.toml declares `ENFORCEMENT: ci`, but no pipeline runs \
+             the checker. Either wire it or change the declaration in the same \
+             commit."
+        );
+    } else {
+        assert!(
+            wired.is_empty(),
+            "perf-budget.toml declares `ENFORCEMENT: none`, yet the checker runs \
+             in {wired:?}. Either the declaration is stale or the lane is \
+             enforcing something the budget says is not enforced. Note that \
+             running the checker is not free of consequence: with 9 of the 16 \
+             budgeted operations having no benchmark it exits 3 UNMEASURED, so \
+             wiring it turns a lane permanently red."
+        );
+    }
 }

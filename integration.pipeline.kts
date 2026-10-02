@@ -111,7 +111,7 @@ pipeline {
         stage("coverage") {
             stage("install-llvm-cov") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     if command -v cargo-llvm-cov >/dev/null 2>&1; then
                         echo "cargo-llvm-cov already present, skipping install"
                     else
@@ -122,7 +122,7 @@ pipeline {
 
             stage("core-lib-coverage") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     set -euo pipefail
                     # The regions threshold is stricter than the lines one
                     # because it counts branches. Both sit slightly under the
@@ -192,13 +192,16 @@ pipeline {
             // while testing can pass on the machine that wrote the bug.
             stage("cogh-clean-home-install") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     set -euo pipefail
                     export HOME=/tmp/cognicode-test-home-${'$'}(id -u)
                     export XDG_CONFIG_HOME="${'$'}HOME/.config"
                     export XDG_DATA_HOME="${'$'}HOME/.local/share"
                     mkdir -p "${'$'}HOME"
-                    ./target/release/cogh install --profile core || echo "ADVISORY: cogh install reported failures"
+                    # Cargo may write somewhere other than the repository's `target/`;
+                    # asking is the only way to find the binary this stage installs.
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    "${'$'}TARGET_DIR/release/cogh" install --profile core || echo "ADVISORY: cogh install reported failures"
                     echo "clean-HOME install attempted"
                 """.trimIndent())
             }
@@ -227,7 +230,7 @@ pipeline {
             // explicit count check is what stops that from looking green.
             stage("lint-commit-subjects") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     set -euo pipefail
                     range="origin/main..HEAD"
                     count="${'$'}(git rev-list --count "${'$'}range")"
