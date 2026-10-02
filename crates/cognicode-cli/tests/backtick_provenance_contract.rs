@@ -580,6 +580,7 @@ fn every_allowed_missing_states_a_reason() {
     // Every allowed path must still be cited somewhere, or the row is stale and
     // the allowlist has started accumulating entries nobody needs.
     let root = repo_root();
+    let tracked = tracked_paths(&root);
     let cited: BTreeSet<String> = governed_files(&root)
         .iter()
         .flat_map(|rel| {
@@ -593,6 +594,20 @@ fn every_allowed_missing_states_a_reason() {
             cited.contains(*path),
             "ALLOWED_MISSING row `{path}` is stale: nothing in the governed tree cites it. \
              Remove the row rather than leaving an allowlist entry that no longer applies."
+        );
+
+        // The other direction, and the one this contract was missing until a
+        // mutation exposed it: a row must also still be *needed*. If the path
+        // now resolves, the allowlist is excusing a citation that is in fact
+        // fine, and nothing else would ever notice -- the row is still cited,
+        // so the staleness check above passes.
+        //
+        // Proven by adding a row pointing at `openspec/specs/cognicode-cli/spec.md`,
+        // which exists and is cited: all seven tests still passed.
+        assert!(
+            !resolves_in_a_checkout(&tracked, path),
+            "ALLOWED_MISSING row `{path}` is obsolete: that path now resolves in a checkout, \
+             so it no longer needs to be excused. Delete the row."
         );
     }
 }
