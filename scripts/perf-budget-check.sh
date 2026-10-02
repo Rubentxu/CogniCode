@@ -13,7 +13,9 @@ set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-BUDGET_FILE="${PROJECT_ROOT}/perf-budget.toml"
+# Overridable so the decision logic can be exercised against fixtures; see the
+# injection seam in section 2.
+BUDGET_FILE="${COGNICODE_PERF_BUDGET_FILE:-${PROJECT_ROOT}/perf-budget.toml}"
 BENCH_OUTPUT="$(mktemp -t cognicode-bench.XXXXXX)"
 trap 'rm -f "${BENCH_OUTPUT}"' EXIT
 
@@ -36,6 +38,21 @@ fi
 
 # --- 2. Run benchmarks ------------------------------------------------------
 
+# Injection seam. When COGNICODE_PERF_BENCH_OUTPUT names a readable file, its
+# contents are used as the raw Criterion output instead of running the suite.
+#
+# This exists because the suite takes ~457 s, and a check nobody can afford to
+# run is a check that does not run -- the same reason the anchor suites in
+# N+55..N+60 are asserted by name rather than by executing them. The decision
+# logic below is untouched; only its input is supplied.
+#
+# The budget is overridable the same way, so the two can be exercised against
+# fixtures that are measured, over budget, or never measured at all.
+
+if [[ -n "${COGNICODE_PERF_BENCH_OUTPUT:-}" && -r "${COGNICODE_PERF_BENCH_OUTPUT}" ]]; then
+    echo "=== Using supplied benchmark output: ${COGNICODE_PERF_BENCH_OUTPUT} ==="
+    cat "${COGNICODE_PERF_BENCH_OUTPUT}" >"${BENCH_OUTPUT}"
+else
 echo "=== Running benchmarks (this may take a few minutes) ==="
 # `cargo bench` already passes `--bench` to the compiled binary, which
 # switches Criterion into the real-bench harness (instead of the
@@ -50,6 +67,7 @@ if ! cargo bench \
     echo "ERROR: cargo bench failed. Tail of output:" >&2
     tail -n 40 "${BENCH_OUTPUT}" >&2
     exit 2
+fi
 fi
 
 # --- 3. Parse benchmark output ---------------------------------------------
@@ -150,11 +168,13 @@ done < "${PARSED}"
 
 # --- 6. Report on any budget entries that no benchmark produced ------------
 
+unmeasured_count=0
 while IFS=$'\t' read -r bench_name budget_us; do
     [[ -z "${bench_name}" ]] && continue
     if [[ -z "${CHECKED[${bench_name}]:-}" ]]; then
         printf "%-32s %14s %14s %10s\n" \
-            "${bench_name}" "${budget_us}" "(missing)" "SKIP"
+            "${bench_name}" "${budget_us}" "(missing)" "UNMEASURED"
+        unmeasured_count=$((unmeasured_count + 1))
     fi
 done < "${BUDGETS}"
 
@@ -176,9 +196,29 @@ fail_count="$(awk -F'\t' '
 ' "${PARSED}" "${BUDGETS}")"
 
 echo
+
+# A budgeted operation with no measurement is Unknown, not clean. Reporting it
+# as within budget is how this script came to print "All benchmarks within
+# budget" while 9 of 16 operations had never been run at all.
+#
+# The verdict is ordered so the two diagnoses never collapse into one red:
+# an unmeasured budget is a hole in the enforcement, an over-budget operation
+# is a regression. They need different fixes, so they exit with different
+# codes.
+if [[ "${unmeasured_count}" -gt 0 ]]; then
+    echo "=== ${unmeasured_count} budgeted operation(s) were never measured ==="
+    echo "They are listed above as UNMEASURED. A budget nobody measures is not a budget:"
+    echo "either write the benchmark or delete the entry. This is NOT a pass."
+fi
+
 if [[ "${fail_count}" -gt 0 ]]; then
     echo "=== ${fail_count} benchmark(s) over budget ==="
     exit 1
 fi
+
+if [[ "${unmeasured_count}" -gt 0 ]]; then
+    exit 3
+fi
+
 echo "=== All benchmarks within budget ==="
 exit 0
