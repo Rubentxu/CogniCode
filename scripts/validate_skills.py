@@ -57,6 +57,11 @@ SKILLS_DIR = REPO_ROOT / "skills"
 # published authority so the two cannot drift apart unnoticed.
 PUBLISHED_CATALOG = REPO_ROOT / "product/tools.json"
 
+# The published profile document, for the same reason: a profile id is
+# a legitimate backticked identifier that the runtime does not expose
+# as a tool, and the set of them is published rather than hardcoded.
+PUBLISHED_PROFILES = REPO_ROOT / "product/profiles.json"
+
 # Patterns that MUST NOT appear in user-facing skills
 USER_SKILL_FORBIDDEN_PATTERNS = [
     # Local-machine absolute paths
@@ -189,66 +194,98 @@ def validate_developer_skill(skill_md: str, skill_name: str) -> list[str]:
     return errors
 
 
-def extract_tool_name_refs(skill_md: str) -> set[str]:
+# Backticked words that are not MCP tools. Everything here is a name a
+# skill legitimately needs to write in backticks but that the runtime
+# does not expose as a tool.
+#
+# This list is a denylist, and a denylist only knows what someone
+# remembered to put in it. The published profile ids used to be absent
+# from it and survived only because the skills happened to write them
+# comma-separated, which trips the "near a parenthesis or comma means
+# it is a parameter" heuristic further down. Rewording a profile list
+# without commas turned three legitimate identifiers into
+# "referenced MCP tool `reviewer` not in runtime catalog". The profile
+# ids are not on this list because they are not hardcoded: they are
+# derived from `product/profiles.json` at run time, which is the
+# published authority (A-006) and the only place that can know what a
+# profile is called.
+NON_TOOL_NAMES = frozenset(
+    {
+        # binary names
+        "cogh",
+        "cognicode",
+        "cognicode-mcp",
+        # cogh subcommands (CLI, not MCP)
+        "install",
+        "uninstall",
+        "list",
+        "current",
+        "latest",
+        "update",
+        "reshim",
+        "rollback",
+        "doctor",
+        "where",
+        "init",
+        "plugin",
+        "skill",
+        "ide",
+        "version",
+        # cognicode subcommands (CLI, not MCP)
+        "analyze",
+        "serve",
+        "refactor",
+        "index",
+        "graph",
+        "navigate",
+        # crates / external dependencies
+        "tokio",
+        "sqlx",
+        "serde",
+        "anyhow",
+        "thiserror",
+        # MCP plumbing
+        "tools/list",
+        "tools/call",
+        # just recipes
+        "build_release",
+        "build_wasm",
+        "build_server",
+        "test_unit",
+        "test_pg",
+        "check_known_failures",
+        "lint",
+        "dev",
+        "run",
+        "start",
+    }
+)
+
+
+def extract_tool_name_refs(
+    skill_md: str, extra_non_tools: frozenset[str] = frozenset()
+) -> set[str]:
     """Find MCP tool names referenced in the skill text.
 
     Looks for words in backticks that match MCP tool naming
-    conventions (snake_case, lowercase).
+    conventions (snake_case, lowercase), minus the names in
+    `NON_TOOL_NAMES` and minus `extra_non_tools` — the published
+    profile ids, which are legitimate backticked identifiers that the
+    runtime does not expose as tools.
+
+    `extra_non_tools` is a parameter rather than a module global so
+    that "does the gate ignore profile names" is a question this
+    function can be asked directly, with a synthetic set, instead of
+    one that can only be answered by whatever the repo currently
+    publishes.
     """
     refs: set[str] = set()
     for m in re.finditer(r"`([a-z][a-z0-9_]+)`", skill_md):
         name = m.group(1)
         # Filter out common non-tool names that appear in backticks
-        if name in {
-            # binary names
-            "cogh",
-            "cognicode",
-            "cognicode-mcp",
-            # cogh subcommands (CLI, not MCP)
-            "install",
-            "uninstall",
-            "list",
-            "current",
-            "latest",
-            "update",
-            "reshim",
-            "rollback",
-            "doctor",
-            "where",
-            "init",
-            "plugin",
-            "skill",
-            "ide",
-            "version",
-            # cognicode subcommands (CLI, not MCP)
-            "analyze",
-            "serve",
-            "refactor",
-            "index",
-            "graph",
-            "navigate",
-            # crates / external dependencies
-            "tokio",
-            "sqlx",
-            "serde",
-            "anyhow",
-            "thiserror",
-            # MCP plumbing
-            "tools/list",
-            "tools/call",
-            # just recipes
-            "build_release",
-            "build_wasm",
-            "build_server",
-            "test_unit",
-            "test_pg",
-            "check_known_failures",
-            "lint",
-            "dev",
-            "run",
-            "start",
-        }:
+        if name in NON_TOOL_NAMES or name in extra_non_tools:
             continue
+        # just recipes
         if name.startswith("just_"):
             continue
         if len(name) < 5:  # too short to be a real tool name
@@ -258,7 +295,10 @@ def extract_tool_name_refs(skill_md: str) -> set[str]:
 
 
 def validate_tool_refs(
-    skill_md: str, skill_name: str, catalog: set[str]
+    skill_md: str,
+    skill_name: str,
+    catalog: set[str],
+    extra_non_tools: frozenset[str] = frozenset(),
 ) -> tuple[list[str], set[str]]:
     """Returns (errors, valid_refs).
 
@@ -266,12 +306,14 @@ def validate_tool_refs(
     that look like tool names but are not in the catalog are
     distinguished as follows:
 
+    - Names in `extra_non_tools` (the published profile ids) are not
+      tool references at all and are ignored here.
     - If the token appears within 20 characters of a `(` (likely a
       function/parameter list), it is treated as a parameter name
       and not flagged.
     - Otherwise it is flagged as a missing MCP tool reference.
     """
-    refs = extract_tool_name_refs(skill_md)
+    refs = extract_tool_name_refs(skill_md, extra_non_tools)
     errors: list[str] = []
     valid_refs: set[str] = set()
     for r in refs:
@@ -335,6 +377,28 @@ def load_catalog() -> set[str] | None:
     return {tool["name"] for tool in tools}
 
 
+def load_profile_ids() -> frozenset[str] | None:
+    """Profile ids from the published profiles document, or None if absent.
+
+    `product/profiles.json` is the public source of truth for the
+    profile set — A-006 moved it there to replace a hardcoded constant
+    in the manifest, and `generate_profiles.py` now derives it from the
+    Rust source rather than duplicating it. Reading it here is what
+    keeps the skill gate from inventing a second, stale list of profile
+    names.
+
+    Returns None rather than an empty frozenset for the same reason
+    `load_catalog` does: an empty set would mean "the product publishes
+    no profiles", which is a claim, and answering with it would put
+    every backticked profile name back into circulation as a
+    suspected tool reference.
+    """
+    if not PUBLISHED_PROFILES.exists():
+        return None
+    data = json.loads(PUBLISHED_PROFILES.read_text())
+    return frozenset(profile["id"] for profile in data["profiles"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -355,6 +419,18 @@ def main() -> int:
             "the skill tool-reference gate could not run. This is a harness "
             "error, not a pass: without it every tool reference below is "
             "checked against an empty catalog.",
+            file=sys.stderr,
+        )
+        return 2
+
+    profile_ids = load_profile_ids()
+    if profile_ids is None:
+        print(
+            f"ERROR: published profiles not found at {PUBLISHED_PROFILES}; "
+            "the skill tool-reference gate could not tell a profile name "
+            "apart from a tool name. This is a harness error, not a pass: "
+            "without it every backticked profile name is reported as a "
+            "missing MCP tool.",
             file=sys.stderr,
         )
         return 2
@@ -450,7 +526,9 @@ def main() -> int:
         # non-empty-or-exit-2 above, so the guard is only the question it
         # was always meant to ask.
         if "mcp" in skill_md.lower():
-            errs, valid = validate_tool_refs(skill_md, skill_name, catalog)
+            errs, valid = validate_tool_refs(
+                skill_md, skill_name, catalog, profile_ids
+            )
             for e in errs:
                 print(f"  FAIL: {e}")
                 total_errors += 1

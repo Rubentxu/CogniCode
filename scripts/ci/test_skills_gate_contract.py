@@ -63,6 +63,7 @@ VALIDATOR = REPO_ROOT / "scripts" / "validate_skills.py"
 VERIFIER = REPO_ROOT / "scripts" / "verify-skills.sh"
 SKILLS_DIR = REPO_ROOT / "skills"
 CATALOG = REPO_ROOT / "product" / "tools.json"
+PROFILES = REPO_ROOT / "product" / "profiles.json"
 
 # Floors, not exact counts. The point is to catch the gate checking
 # nothing, not to fail every time a skill is edited. Measured
@@ -118,24 +119,39 @@ def run_validator(root: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def stage_tree(tmp: Path, catalog: dict | None) -> Path:
+def stage_tree(tmp: Path, product: dict[str, dict] | None) -> Path:
     """Build a `<root>/{scripts,skills,product}` tree the validator accepts.
 
     The validator derives every path from its own location, so staging a
     copy under a temporary root is the only way to exercise the
     catalog-absent and catalog-empty branches without touching the
     repository's real `product/`.
+
+    `product` maps a filename under `product/` to the document to write.
+    Pass None to stage no `product/` directory at all. Pass a subset to
+    stage a document missing its companion, which is how the
+    profiles-absent branch gets exercised without the catalog-absent one
+    firing first.
     """
     root = tmp
     (root / "scripts").mkdir(parents=True, exist_ok=True)
     shutil.copy(VALIDATOR, root / "scripts" / "validate_skills.py")
     shutil.copytree(SKILLS_DIR, root / "skills")
-    if catalog is not None:
+    if product is not None:
         (root / "product").mkdir(parents=True, exist_ok=True)
-        (root / "product" / "tools.json").write_text(
-            json.dumps(catalog), encoding="utf-8"
-        )
+        for name, document in product.items():
+            (root / "product" / name).write_text(
+                json.dumps(document), encoding="utf-8"
+            )
     return root
+
+
+def published() -> dict[str, dict]:
+    """The real `product/` documents, parsed."""
+    return {
+        "tools.json": json.loads(CATALOG.read_text(encoding="utf-8")),
+        "profiles.json": json.loads(PROFILES.read_text(encoding="utf-8")),
+    }
 
 
 def test_the_validators_are_pinned_in_a_job_merge_gate_needs() -> None:
@@ -219,9 +235,8 @@ def test_the_gate_still_detects_a_tool_name_that_does_not_exist() -> None:
     cite a tool that is not in it, in a staged copy so the repository
     is untouched.
     """
-    catalog = json.loads(CATALOG.read_text(encoding="utf-8"))
     with tempfile.TemporaryDirectory() as tmp:
-        root = stage_tree(Path(tmp), catalog)
+        root = stage_tree(Path(tmp), published())
         target = root / "skills" / "cognicode" / "SKILL.md"
         target.write_text(
             target.read_text(encoding="utf-8")
@@ -254,7 +269,7 @@ def test_a_missing_catalog_is_an_explicit_failure_not_a_skipped_check() -> None:
     when the gate is misfiring.
     """
     with tempfile.TemporaryDirectory() as tmp:
-        root = stage_tree(Path(tmp), catalog=None)
+        root = stage_tree(Path(tmp), product=None)
         proc = run_validator(root)
 
     check(
@@ -271,6 +286,75 @@ def test_a_missing_catalog_is_an_explicit_failure_not_a_skipped_check() -> None:
     )
 
 
+def test_a_missing_profiles_document_is_also_an_explicit_failure() -> None:
+    """The same rule for the document the gate needs to know profile names.
+
+    Without `product/profiles.json` the gate cannot tell `` `reviewer` ``
+    (a profile) from `` `graph_query_tier2` `` (a tool), so every
+    backticked profile name in every skill becomes a reported missing
+    tool. Same shape as the catalog: an absent input is a harness error
+    the gate could not run, never a silent degradation.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = stage_tree(Path(tmp), {"tools.json": published()["tools.json"]})
+        proc = run_validator(root)
+
+    check(
+        proc.returncode == 2,
+        "a missing published profiles document must be a harness error (exit 2); "
+        f"got exit {proc.returncode}\n{proc.stdout}\n{proc.stderr}",
+    )
+    check(
+        "profiles.json" in proc.stdout + proc.stderr,
+        "the message must name the document it could not find; output was:\n"
+        f"{proc.stdout}\n{proc.stderr}",
+    )
+
+
+def test_a_profile_name_is_not_reported_as_a_missing_tool() -> None:
+    """A legitimate profile mention must not fail the gate.
+
+    The gate had a denylist of backticked words that are not tools, and
+    the published profile ids were not on it. They survived only
+    because the skills happened to write them comma-separated, which
+    trips the "near a comma means it is a parameter" heuristic. Measured
+    before the fix, all three of these were reported as missing MCP
+    tools: the comma-separated list, the same list without commas, and
+    the word `reviewer` in an ordinary sentence.
+
+    This is the reason the ids are read from `product/profiles.json`
+    rather than hardcoded. Hardcoding them would have fixed today's four
+    and left the next profile to be a false positive.
+    """
+    profiles = json.loads(PROFILES.read_text(encoding="utf-8"))
+    ids = [profile["id"] for profile in profiles["profiles"]]
+    check(bool(ids), "no profile ids in product/profiles.json; the test is vacuous")
+
+    body = "MCP is available. Use `build_graph` and `find_usages` to navigate.\n"
+    cases = {
+        "comma separated": "Profiles: " + ", ".join(f"`{i}`" for i in ids) + " exist.\n",
+        "space separated": "Profiles " + " ".join(f"`{i}`" for i in ids) + " exist.\n",
+        "in a sentence": f"Pick the `{ids[0]}` profile for read-only work.\n",
+    }
+    with tempfile.TemporaryDirectory() as tmp:
+        root = stage_tree(Path(tmp), published())
+        target = root / "skills" / "cognicode" / "SKILL.md"
+        pristine = target.read_text(encoding="utf-8")
+        results = {}
+        for label, extra in cases.items():
+            # Rewritten from `pristine` each time, so the three phrasings
+            # are independent rather than accumulating into one text.
+            target.write_text(pristine + "\n" + body + extra, encoding="utf-8")
+            results[label] = run_validator(root)
+
+    for label, proc in results.items():
+        check(
+            proc.returncode == 0,
+            f"naming a published profile ({label}) must not fail the skill gate; "
+            f"exit {proc.returncode}\n{proc.stdout}\n{proc.stderr}",
+        )
+
+
 def test_an_empty_catalog_does_not_pass_vacuously() -> None:
     """A catalog with no tools is a claim, and the gate must reject it.
 
@@ -283,7 +367,10 @@ def test_an_empty_catalog_does_not_pass_vacuously() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = stage_tree(
             Path(tmp),
-            {"schema_version": "cognicode.tools/v1", "tools": []},
+            {
+                "tools.json": {"schema_version": "cognicode.tools/v1", "tools": []},
+                "profiles.json": published()["profiles.json"],
+            },
         )
         proc = run_validator(root)
 
