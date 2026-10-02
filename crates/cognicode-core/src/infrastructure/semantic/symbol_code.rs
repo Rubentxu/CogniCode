@@ -475,6 +475,24 @@ pub fn extract_docstring(source: &str, symbol_line: u32) -> Option<String> {
     None
 }
 
+impl crate::application::ports::SymbolSource for SymbolCodeService {
+    /// Returns just the code, not the docstring or line span.
+    ///
+    /// The session asked for `.code` and discarded the rest, so the port
+    /// returns the one thing it wanted rather than a struct it would have to
+    /// destructure to throw two fields away.
+    fn source_at(
+        &self,
+        path: &std::path::Path,
+        line: u32,
+        column: u32,
+    ) -> crate::application::AppResult<String> {
+        SymbolCodeService::get_symbol_code(self, &path.to_string_lossy(), line, column)
+            .map(|cached| cached.code)
+            .map_err(|e| crate::application::ports::parser_failure("reading symbol source", e))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

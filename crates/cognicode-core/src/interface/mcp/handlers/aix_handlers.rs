@@ -135,7 +135,7 @@ pub async fn handle_ranked_symbols(
     // Search using semantic search
     let results = ctx
         .semantic_search
-        .search(crate::infrastructure::semantic::SearchQuery {
+        .search(crate::domain::value_objects::SymbolSearchQuery {
             query: input.query.clone(),
             kinds: vec![],
             max_results: input.limit,
@@ -509,7 +509,7 @@ pub async fn handle_nl_to_symbol(
     // Search using semantic search
     let results = ctx
         .semantic_search
-        .search(crate::infrastructure::semantic::SearchQuery {
+        .search(crate::domain::value_objects::SymbolSearchQuery {
             query: input.query.clone(),
             kinds: vec![],
             max_results: input.limit * 2,
@@ -1765,7 +1765,7 @@ pub async fn handle_suggest_context(
         // Query semantic search (FTS5-backed)
         let search_results =
             ctx.semantic_search
-                .search(crate::infrastructure::semantic::SearchQuery {
+                .search(crate::domain::value_objects::SymbolSearchQuery {
                     query: fts5_query,
                     kinds: vec![],
                     max_results: limit,

@@ -18,7 +18,9 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
-use crate::application::ports::{ComplexityAnalysis, PathPolicy, SharedGraph, SyntaxAnalysis};
+use crate::application::ports::{
+    ComplexityAnalysis, PathPolicy, SharedGraph, SymbolSearch, SymbolSource, SyntaxAnalysis,
+};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -32,12 +34,10 @@ use crate::domain::traits::code_verifier::CodeVerifier;
 use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
+use crate::domain::value_objects::SymbolKind;
+use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::lsp::CompositeProvider;
-
-use crate::infrastructure::semantic::{
-    SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
-};
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -102,6 +102,10 @@ pub struct IncrementalResult {
 /// in the interface layer**, which is the layer allowed to name both. A
 /// `dyn` that somebody in `application` builds with `ConcreteType::new()` has
 /// moved the type, not the coupling.
+/// No `new()`: at eight parts, four of them `Arc<dyn Trait>` with the same
+/// arity and similar names, positional arguments stop being readable and
+/// clippy is right about it. The fields are public, so a struct literal
+/// names each one — `default_capabilities` builds it that way.
 pub struct WorkspaceCapabilities {
     /// Decides what a session is allowed to read and write.
     pub path_policy: Arc<dyn PathPolicy>,
@@ -115,27 +119,10 @@ pub struct WorkspaceCapabilities {
     pub complexity: Arc<dyn ComplexityAnalysis>,
     /// The graph this session and its analysis service agree on.
     pub graph: Arc<dyn SharedGraph>,
-}
-
-impl WorkspaceCapabilities {
-    /// Assemble the set from five already-built parts.
-    pub fn new(
-        path_policy: Arc<dyn PathPolicy>,
-        code_verifier: Arc<dyn CodeVerifier>,
-        syntax: Arc<dyn SyntaxAnalysis>,
-        intelligence: Arc<dyn CodeIntelligenceProvider>,
-        complexity: Arc<dyn ComplexityAnalysis>,
-        graph: Arc<dyn SharedGraph>,
-    ) -> Self {
-        Self {
-            path_policy,
-            code_verifier,
-            syntax,
-            intelligence,
-            complexity,
-            graph,
-        }
-    }
+    /// The symbol index, injected already built but filled lazily.
+    pub symbol_search: Arc<dyn SymbolSearch>,
+    /// Reads the source a symbol occupies.
+    pub symbol_source: Arc<dyn SymbolSource>,
 }
 
 /// Transport-neutral facade for CogniCode operations.
@@ -151,10 +138,16 @@ pub struct WorkspaceSession {
     refactor: Arc<RefactorService>,
     /// File operations service
     file_ops: Arc<FileOperationsService>,
-    /// Semantic search service (lazy initialized)
-    semantic_search: Arc<RwLock<Option<SemanticSearchService>>>,
+    /// Symbol index, injected already built.
+    symbol_search: Arc<dyn SymbolSearch>,
+    /// Whether the index has been populated for this workspace yet.
+    ///
+    /// A flag rather than an `Option<Arc<dyn SymbolSearch>>` slot, because
+    /// the index now arrives from outside: there is no instance to defer
+    /// constructing, only work to defer doing.
+    semantic_index_ready: Arc<RwLock<bool>>,
     /// Symbol code extraction service
-    symbol_code: Arc<SymbolCodeService>,
+    symbol_code: Arc<dyn SymbolSource>,
     /// Cached call graph (built on demand)
     graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
     /// LSP navigation provider (lazy initialized)
@@ -209,12 +202,15 @@ impl WorkspaceSession {
             capabilities.code_verifier,
             capabilities.syntax,
         ));
-        let semantic_search = Arc::new(RwLock::new(None));
-        let symbol_code = Arc::new(SymbolCodeService::new());
+        // Both arrive built and shared with nothing else to construct. The
+        // index stays lazy because populating it walks the workspace.
+        let semantic_index_ready = Arc::new(RwLock::new(false));
+        let symbol_code = capabilities.symbol_source;
         let graph = Arc::new(RwLock::new(None));
         let lsp = Arc::new(RwLock::new(None));
         let intelligence = capabilities.intelligence;
         let complexity = capabilities.complexity;
+        let symbol_search = capabilities.symbol_search;
 
         #[cfg(feature = "persistence")]
         let graph_store = Arc::new(RwLock::new(None));
@@ -224,7 +220,8 @@ impl WorkspaceSession {
             analysis,
             refactor,
             file_ops,
-            semantic_search,
+            symbol_search,
+            semantic_index_ready,
             symbol_code,
             graph,
             lsp,
@@ -590,25 +587,22 @@ impl WorkspaceSession {
         if let Err(e) = self.ensure_semantic_search().await {
             tracing::warn!("Failed to initialize semantic search for FTS5 sync: {}", e);
         } else {
-            let search_guard = self.semantic_search.read().await;
-            if let Some(ref semantic_search) = *search_guard {
-                // Index new files
-                for rel_path in &new_files {
-                    let full_path = self.workspace_root.join(rel_path);
-                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
-                        tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
-                    }
+            // Index new files
+            for rel_path in &new_files {
+                let full_path = self.workspace_root.join(rel_path);
+                if let Err(e) = self.symbol_search.index_file(&full_path) {
+                    tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
                 }
-                // Index modified files
-                for rel_path in &modified_files {
-                    let full_path = self.workspace_root.join(rel_path);
-                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
-                        tracing::warn!(
-                            "Failed to index modified file {:?} to FTS5: {}",
-                            full_path,
-                            e
-                        );
-                    }
+            }
+            // Index modified files
+            for rel_path in &modified_files {
+                let full_path = self.workspace_root.join(rel_path);
+                if let Err(e) = self.symbol_search.index_file(&full_path) {
+                    tracing::warn!(
+                        "Failed to index modified file {:?} to FTS5: {}",
+                        full_path,
+                        e
+                    );
                 }
             }
         }
@@ -622,15 +616,16 @@ impl WorkspaceSession {
 
     /// Ensures semantic search is initialized
     async fn ensure_semantic_search(&self) -> WorkspaceResult<()> {
-        let mut search_guard = self.semantic_search.write().await;
-        if search_guard.is_none() {
-            let service = SemanticSearchService::new();
-            service
-                .populate_from_directory(&self.workspace_root)
+        let mut ready = self.semantic_index_ready.write().await;
+        if !*ready {
+            // The index is injected; only filling it is ours to do, and only
+            // now, because populating it walks the whole workspace.
+            self.symbol_search
+                .index_workspace(&self.workspace_root)
                 .map_err(|e| {
                     WorkspaceError::Internal(anyhow::anyhow!("Semantic search init failed: {}", e))
                 })?;
-            *search_guard = Some(service);
+            *ready = true;
         }
         Ok(())
     }
@@ -788,49 +783,33 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         self.ensure_semantic_search().await?;
 
-        let search_guard = self.semantic_search.read().await;
-        let service = search_guard.as_ref().ok_or_else(|| {
-            WorkspaceError::Internal(anyhow::anyhow!("Semantic search not initialized"))
-        })?;
-
         let search_kinds = kinds.map(Self::map_kind_strings).unwrap_or_default();
 
-        let search_query = SearchQuery {
+        let search_query = SymbolSearchQuery {
             query: query.to_string(),
             kinds: search_kinds,
             max_results,
         };
-        let results = service.search(search_query);
+        let results = self.symbol_search.search(&search_query);
         Ok(results
             .into_iter()
-            .map(|r| crate::application::dto::SymbolDto::from_symbol(&r.symbol))
+            .map(|symbol| crate::application::dto::SymbolDto::from_symbol(&symbol))
             .collect())
     }
 
-    /// Maps a vector of kind strings to SearchSymbolKind enums
+    /// Maps a vector of kind strings to domain symbol kinds
     /// Invalid kinds are silently ignored
-    fn map_kind_strings(kind_strings: Vec<String>) -> Vec<SearchSymbolKind> {
+    fn map_kind_strings(kind_strings: Vec<String>) -> Vec<SymbolKind> {
         kind_strings
             .into_iter()
             .filter_map(|k| Self::map_kind_string(&k))
             .collect()
     }
 
-    /// Maps a single kind string to SearchSymbolKind
+    /// Maps a single kind string to a domain symbol kind
     /// Returns None for invalid kinds (silently ignored)
-    fn map_kind_string(kind: &str) -> Option<SearchSymbolKind> {
-        match kind.to_lowercase().as_str() {
-            "function" => Some(SearchSymbolKind::Function),
-            "class" => Some(SearchSymbolKind::Class),
-            "method" => Some(SearchSymbolKind::Method),
-            "variable" => Some(SearchSymbolKind::Variable),
-            "trait" => Some(SearchSymbolKind::Trait),
-            "struct" => Some(SearchSymbolKind::Struct),
-            "enum" => Some(SearchSymbolKind::Enum),
-            "module" => Some(SearchSymbolKind::Module),
-            "constant" => Some(SearchSymbolKind::Constant),
-            _ => None,
-        }
+    fn map_kind_string(kind: &str) -> Option<SymbolKind> {
+        SymbolKind::from_search_label(kind)
     }
 
     /// Get the source code for a symbol at a specific location
@@ -842,12 +821,9 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<String> {
         let path = self.resolve_path(file_path)?;
 
-        let result = self
-            .symbol_code
-            .get_symbol_code(&path.to_string_lossy(), line, column)
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Symbol code error: {}", e)))?;
-
-        Ok(result.code)
+        self.symbol_code
+            .source_at(&path, line, column)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Symbol code error: {}", e)))
     }
 
     // =========================================================================
@@ -3673,19 +3649,28 @@ pub const MY_CONST: i32 = 42;
             "Should detect file modification"
         );
 
-        // Verify the semantic search index has the new symbol
-        // Access semantic_search through the internal method
-        let search_guard = session.semantic_search.read().await;
-        if let Some(ref semantic_search) = *search_guard {
-            // Check that the index has the new function
-            let index_len = semantic_search.index().len();
+        // Verify the semantic index can answer for both the original symbol
+        // and the one the reindex added.
+        //
+        // This used to read `index().len()` off the concrete service, which is
+        // no longer a thing the session holds. Counting entries asserted that
+        // something was stored; asking for the symbols asserts that the index
+        // is usable, which is what the caller actually depends on.
+        session.ensure_semantic_search().await.unwrap();
+        for name in ["original_function", "new_semantic_function"] {
+            let found = session
+                .symbol_search
+                .search(&SymbolSearchQuery {
+                    query: name.to_string(),
+                    kinds: vec![],
+                    max_results: 10,
+                })
+                .iter()
+                .any(|s| s.name() == name);
             assert!(
-                index_len >= 2,
-                "Should have at least 2 symbols in semantic index (original + new), got {}",
-                index_len
+                found,
+                "semantic index should answer for {name:?} after incremental_reindex"
             );
-        } else {
-            panic!("Semantic search should be initialized after incremental_reindex");
         }
     }
 

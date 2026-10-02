@@ -146,3 +146,30 @@ pub trait ComplexityAnalysis: Send + Sync {
         function: Option<&str>,
     ) -> AppResult<crate::application::dto::ComplexityResult>;
 }
+
+/// Port for finding symbols by name.
+///
+/// The session used to hold an `Option<SemanticSearchService>` behind a lock
+/// and build it itself, which put a concrete index in the application's hands
+/// and made the choice of index part of application code. Three methods,
+/// because three is what it called: index a workspace, index one file, answer
+/// a query.
+pub trait SymbolSearch: Send + Sync {
+    /// Index every parseable file under `root`.
+    fn index_workspace(&self, root: &std::path::Path) -> AppResult<()>;
+
+    /// Index (or re-index) one file.
+    fn index_file(&self, path: &std::path::Path) -> AppResult<()>;
+
+    /// Symbols matching `query`, best first.
+    fn search(
+        &self,
+        query: &crate::domain::value_objects::SymbolSearchQuery,
+    ) -> Vec<crate::domain::aggregates::symbol::Symbol>;
+}
+
+/// Port for reading the source a symbol occupies.
+pub trait SymbolSource: Send + Sync {
+    /// The source text of the symbol starting at `line`/`column` in `path`.
+    fn source_at(&self, path: &std::path::Path, line: u32, column: u32) -> AppResult<String>;
+}

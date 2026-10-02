@@ -30,6 +30,7 @@ use crate::infrastructure::complexity::TreeSitterComplexity;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::lsp::CompositeProvider;
 use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
+use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService};
 use crate::infrastructure::verification::RustVerifier;
 
 /// The capabilities a deployment gets when nothing overrides them.
@@ -48,13 +49,19 @@ pub fn default_capabilities(
     let complexity: Arc<dyn crate::application::ports::ComplexityAnalysis> =
         Arc::new(TreeSitterComplexity);
     let graph: Arc<dyn crate::application::ports::SharedGraph> = Arc::new(GraphCache::new());
+    let symbol_search: Arc<dyn crate::application::ports::SymbolSearch> =
+        Arc::new(SemanticSearchService::new());
+    let symbol_source: Arc<dyn crate::application::ports::SymbolSource> =
+        Arc::new(SymbolCodeService::new());
 
-    WorkspaceCapabilities::new(
+    WorkspaceCapabilities {
         path_policy,
         code_verifier,
         syntax,
         intelligence,
         complexity,
         graph,
-    )
+        symbol_search,
+        symbol_source,
+    }
 }

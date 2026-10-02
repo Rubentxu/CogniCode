@@ -62,13 +62,12 @@ use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
+use crate::domain::value_objects::SymbolKind;
 use crate::infrastructure::graph::{
     FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
 };
-use crate::infrastructure::semantic::{
-    SearchSymbolKind, SemanticSearchService, SymbolCodeService, build_outline,
-};
+use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
     // Existing schemas
@@ -3744,32 +3743,23 @@ pub async fn handle_semantic_search(
     // Ensure the search index is populated before querying
     let _ensure = ensure_semantic_indexed_with_services(&semantic_search, &working_dir)?;
 
-    // Convert kind filters
-    let kinds: Vec<SearchSymbolKind> = input
+    // Convert kind filters. `from_search_label` is the same table this handler
+    // used to spell out inline and `WorkspaceSession` spelled out again; it
+    // lives in the domain once now.
+    let kinds: Vec<SymbolKind> = input
         .kinds
         .as_ref()
         .map(|kinds| {
             kinds
                 .iter()
-                .filter_map(|k| match k.to_lowercase().as_str() {
-                    "function" => Some(SearchSymbolKind::Function),
-                    "class" => Some(SearchSymbolKind::Class),
-                    "method" => Some(SearchSymbolKind::Method),
-                    "variable" => Some(SearchSymbolKind::Variable),
-                    "trait" => Some(SearchSymbolKind::Trait),
-                    "struct" => Some(SearchSymbolKind::Struct),
-                    "enum" => Some(SearchSymbolKind::Enum),
-                    "module" => Some(SearchSymbolKind::Module),
-                    "constant" => Some(SearchSymbolKind::Constant),
-                    _ => None,
-                })
+                .filter_map(|k| SymbolKind::from_search_label(k))
                 .collect()
         })
         .unwrap_or_default();
 
     // Build search query
     let query_text = input.query.clone();
-    let query = crate::infrastructure::semantic::SearchQuery {
+    let query = crate::domain::value_objects::SymbolSearchQuery {
         query: input.query,
         kinds,
         max_results: input.max_results,

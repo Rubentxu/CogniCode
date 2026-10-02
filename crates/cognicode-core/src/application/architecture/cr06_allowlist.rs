@@ -133,13 +133,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-02",
             "ST-02: persistence via port (InMemoryGraphStore).",
         ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::semantic",
-            "team:st-02",
-            "ST-02: semantic module as a port.",
-        ),
         // ====================================================================
         // application_no_infrastructure — ST-03 (AnalysisService mega-split)
         // ====================================================================
@@ -588,10 +581,29 @@ mod tests {
         // session. The concrete cache has seventeen; the other twelve belong to
         // callers that are allowed to name the concrete type, and re-exporting
         // all of them would have been a second copy of the class.
+        // 39 -> 38 -> 37 -> 36 -> 35. Slice 4 deleted
+        // `infrastructure::semantic`, and it was two problems wearing one
+        // name. `SemanticSearchService` and `SymbolCodeService` were built and
+        // held by the session, so both went behind ports (`SymbolSearch`,
+        // `SymbolSource`). And `SearchSymbolKind` was nine of `SymbolKind`'s
+        // twenty-four variants with a `to_symbol_kind()` that mapped each to
+        // itself — a second vocabulary kept in step by hand, now deleted in
+        // favour of the domain enum.
+        //
+        // The query type moved to `domain::value_objects::SymbolSearchQuery`
+        // rather than keeping its name: `domain::traits::search_provider`
+        // already defines a `SearchQuery` for text and regex search, and two
+        // types with one name and different meanings is a trap. The label
+        // table moved with it, because `"function" => Function` had been
+        // written out twice — once in this session's `map_kind_string` and
+        // again verbatim in the MCP handler.
+        //
+        // `infrastructure::lsp` is the last production entry this file has,
+        // and `infrastructure::persistence::` the last test-only one.
         assert_eq!(
             list.len(),
-            36,
-            "expected exactly 36 entries; if you removed/added a drift \
+            35,
+            "expected exactly 35 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
