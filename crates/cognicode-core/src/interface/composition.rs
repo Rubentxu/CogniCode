@@ -26,6 +26,7 @@ use std::sync::Arc;
 use crate::application::workspace_session::WorkspaceCapabilities;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::traits::code_verifier::CodeVerifier;
+use crate::infrastructure::complexity::TreeSitterComplexity;
 use crate::infrastructure::lsp::CompositeProvider;
 use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
 use crate::infrastructure::verification::RustVerifier;
@@ -43,6 +44,8 @@ pub fn default_capabilities(
     let code_verifier: Arc<dyn CodeVerifier> = Arc::new(RustVerifier::new());
     let syntax: Arc<dyn crate::application::ports::SyntaxAnalysis> =
         Arc::new(TreeSitterSyntaxAnalysis::new());
+    let complexity: Arc<dyn crate::application::ports::ComplexityAnalysis> =
+        Arc::new(TreeSitterComplexity);
 
-    WorkspaceCapabilities::new(path_policy, code_verifier, syntax, intelligence)
+    WorkspaceCapabilities::new(path_policy, code_verifier, syntax, intelligence, complexity)
 }

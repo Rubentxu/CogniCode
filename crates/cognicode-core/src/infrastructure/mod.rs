@@ -4,6 +4,7 @@
 //! such as tree-sitter for parsing and petgraph for dependency graphs.
 
 pub mod avc;
+pub mod complexity;
 // LSI evidence kernel in-memory adapters (E36 M1, design D7). Hidden on
 // default builds so the byte-level surface is unchanged (`multimodal`
 // precedent). The LadybugDB adapter is deferred (D7).

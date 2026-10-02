@@ -132,13 +132,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_infrastructure",
             "application/workspace_session.rs",
-            "infrastructure::parser::",
-            "team:st-02",
-            "ST-02: parser types via port (Language).",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
             "infrastructure::persistence::",
             "team:st-02",
             "ST-02: persistence via port (InMemoryGraphStore).",
@@ -561,21 +554,31 @@ mod tests {
         // the test below caught it, which is the only reason this file
         // still has a number worth trusting.
         //
-        // 39 -> 38 (2026-10-02, ST-02 slice 1). `infrastructure::verification::`
-        // is genuinely DELETED. `RustVerifier` was the one type in
-        // `WorkspaceSession` that was only ever named to call `::new()` on it:
-        // `FileOperationsService` already held `Arc<dyn CodeVerifier>`, so
-        // the import bought the right to *choose* the implementation and
-        // nothing else. The choice moved to `interface/composition.rs`,
-        // which is the layer allowed to name both sides. The same slice moved
-        // `TreeSitterSyntaxAnalysis` and `CompositeProvider`; those two
-        // entries stay because `infrastructure::parser::` is still reachable
-        // through `Language` and `infrastructure::lsp` through the lazily
-        // built `lsp` field, so removing them now would be a lie.
+        // 39 -> 38 -> 37 (ST-02 slices 1 and 2). Both are genuinely DELETED.
+        //
+        // Slice 1 removed `infrastructure::verification::`: `RustVerifier` was
+        // the one type only ever named to call `::new()` on it, and the choice
+        // moved to `interface/composition.rs`.
+        //
+        // Slice 2 removed `infrastructure::parser::`, which needed more than
+        // moving an enum. `Language` became a domain value object — a closed
+        // enumeration, the extensions that select it, the AST node kinds each
+        // one uses — with the single method that names a `tree_sitter_*` crate
+        // left behind as an inherent impl in the parser. But the entry could
+        // not be retired on that alone: `get_complexity` was still calling
+        // `TreeSitterParser::new` and then walking `tree_sitter::Node`s from
+        // application. A `dyn Parser` would have hidden the import and kept the
+        // coupling, so the walk itself moved behind a `ComplexityAnalysis` port
+        // and `get_complexity` shrank from 60 lines to 20.
+        //
+        // The two neighbours of the deleted pair stay, and saying why is the
+        // point: `infrastructure::graph::` is still reachable through
+        // `GraphCache`/`TraversalDirection` and `infrastructure::lsp` through
+        // the lazily built `lsp` field, so retiring them now would be a lie.
         assert_eq!(
             list.len(),
-            38,
-            "expected exactly 38 entries; if you removed/added a drift \
+            37,
+            "expected exactly 37 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

@@ -18,7 +18,7 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
-use crate::application::ports::{PathPolicy, SyntaxAnalysis};
+use crate::application::ports::{ComplexityAnalysis, PathPolicy, SyntaxAnalysis};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -30,11 +30,12 @@ use crate::domain::traits::code_intelligence::{
 use crate::domain::traits::code_verifier::CodeVerifier;
 #[cfg(feature = "persistence")]
 use crate::domain::traits::graph_store::GraphStore;
+use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
 use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::graph::TraversalDirection;
 use crate::infrastructure::lsp::CompositeProvider;
-use crate::infrastructure::parser::Language;
+
 use crate::infrastructure::semantic::{
     SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
 };
@@ -111,21 +112,25 @@ pub struct WorkspaceCapabilities {
     pub syntax: Arc<dyn SyntaxAnalysis>,
     /// Answers document-symbol questions.
     pub intelligence: Arc<dyn CodeIntelligenceProvider>,
+    /// Measures complexity, whatever walks the tree to do it.
+    pub complexity: Arc<dyn ComplexityAnalysis>,
 }
 
 impl WorkspaceCapabilities {
-    /// Assemble the set from four already-built parts.
+    /// Assemble the set from five already-built parts.
     pub fn new(
         path_policy: Arc<dyn PathPolicy>,
         code_verifier: Arc<dyn CodeVerifier>,
         syntax: Arc<dyn SyntaxAnalysis>,
         intelligence: Arc<dyn CodeIntelligenceProvider>,
+        complexity: Arc<dyn ComplexityAnalysis>,
     ) -> Self {
         Self {
             path_policy,
             code_verifier,
             syntax,
             intelligence,
+            complexity,
         }
     }
 }
@@ -153,6 +158,8 @@ pub struct WorkspaceSession {
     lsp: Arc<RwLock<Option<Arc<CompositeProvider>>>>,
     /// Code intelligence provider for document symbols
     intelligence: Arc<dyn CodeIntelligenceProvider>,
+    /// Complexity measurement (the tree walk lives in the adapter)
+    complexity: Arc<dyn ComplexityAnalysis>,
     /// Graph store for persistence (behind feature flag)
     #[cfg(feature = "persistence")]
     graph_store: Arc<RwLock<Option<Arc<dyn GraphStore>>>>,
@@ -205,6 +212,7 @@ impl WorkspaceSession {
         let graph = Arc::new(RwLock::new(None));
         let lsp = Arc::new(RwLock::new(None));
         let intelligence = capabilities.intelligence;
+        let complexity = capabilities.complexity;
 
         #[cfg(feature = "persistence")]
         let graph_store = Arc::new(RwLock::new(None));
@@ -219,6 +227,7 @@ impl WorkspaceSession {
             graph,
             lsp,
             intelligence,
+            complexity,
             #[cfg(feature = "persistence")]
             graph_store,
         })
@@ -354,8 +363,8 @@ impl WorkspaceSession {
     /// Save current graph to persistence store.
     #[cfg(feature = "persistence")]
     pub async fn save_to_store(&self) -> WorkspaceResult<()> {
+        use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use crate::infrastructure::parser::Language;
         use ignore::WalkBuilder;
 
         let graph_guard = self.graph.read().await;
@@ -427,8 +436,8 @@ impl WorkspaceSession {
     /// and re-parses only those files, updating the graph incrementally.
     #[cfg(feature = "persistence")]
     pub async fn incremental_reindex(&self) -> WorkspaceResult<IncrementalResult> {
+        use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use crate::infrastructure::parser::Language;
         use ignore::WalkBuilder;
         use std::collections::HashSet;
 
@@ -737,191 +746,19 @@ impl WorkspaceSession {
         file_path: &str,
         function_name: Option<&str>,
     ) -> WorkspaceResult<crate::application::dto::ComplexityResult> {
-        use crate::domain::services::ComplexityCalculator;
-
         let path = self.resolve_path(file_path)?;
         let source = std::fs::read_to_string(&path)
             .map_err(|e| WorkspaceError::InvalidInput(format!("Failed to read file: {}", e)))?;
 
+        // The one decision this layer still owns: which language a file is.
+        // `Language` is a domain value object, so classifying by extension is
+        // vocabulary rather than a reach into a parser.
         let language = Language::from_extension(path.extension())
             .ok_or_else(|| WorkspaceError::InvalidInput("Unsupported file type".to_string()))?;
 
-        let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
-            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-
-        let calculator = ComplexityCalculator::new();
-        let tree = parser
-            .parse_tree(&source)
-            .map_err(|e| WorkspaceError::AnalysisFailed(format!("Parse error: {}", e)))?;
-
-        let function_node_type = parser.language().function_node_type();
-        let mut max_nesting = 0u32;
-        let mut decision_points = Vec::new();
-        let mut param_count = 0u32;
-        let mut func_start_line = 0u32;
-        let mut func_end_line = 0u32;
-
-        self.find_function_metrics(
-            tree.root_node(),
-            &source,
-            function_name,
-            function_node_type,
-            &mut max_nesting,
-            &mut decision_points,
-            &mut param_count,
-            &mut func_start_line,
-            &mut func_end_line,
-            0,
-        );
-
-        let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
-        let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
-        let lines_of_code = if func_end_line > func_start_line {
-            func_end_line - func_start_line
-        } else {
-            1
-        };
-
-        Ok(crate::application::dto::ComplexityResult {
-            cyclomatic,
-            cognitive,
-            lines_of_code,
-            parameter_count: param_count,
-            nesting_depth: max_nesting,
-            function_name: function_name.map(String::from),
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn find_function_metrics(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        target_name: Option<&str>,
-        function_type: &str,
-        max_nesting: &mut u32,
-        decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
-        param_count: &mut u32,
-        func_start_line: &mut u32,
-        func_end_line: &mut u32,
-        current_nesting: u32,
-    ) {
-        if node.kind() == function_type
-            && let Some(name) = self.find_identifier_in_node(node, source)
-        {
-            let should_process = match target_name {
-                Some(target) => name == target,
-                None => *func_start_line == 0,
-            };
-
-            if should_process {
-                *func_start_line = node.start_position().row as u32;
-                *func_end_line = node.end_position().row as u32;
-                *param_count = self.count_parameters(node, source);
-                self.process_decision_points(
-                    node,
-                    source,
-                    max_nesting,
-                    decision_points,
-                    current_nesting,
-                );
-            }
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                self.find_function_metrics(
-                    child,
-                    source,
-                    target_name,
-                    function_type,
-                    max_nesting,
-                    decision_points,
-                    param_count,
-                    func_start_line,
-                    func_end_line,
-                    current_nesting,
-                );
-            }
-        }
-    }
-
-    fn find_identifier_in_node(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                    return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
-                }
-                if let Some(id) = self.find_identifier_in_node(child, source) {
-                    return Some(id);
-                }
-            }
-        }
-        None
-    }
-
-    fn count_parameters(&self, node: tree_sitter::Node, _source: &str) -> u32 {
-        let mut count = 0u32;
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "parameters" {
-                    for j in 0..child.child_count() {
-                        if let Some(param) = child.child(j)
-                            && param.kind() == "identifier"
-                        {
-                            count += 1;
-                        }
-                    }
-                }
-                if child.kind() == "identifier" {
-                    count += 1;
-                }
-            }
-        }
-        count
-    }
-
-    fn process_decision_points(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        max_nesting: &mut u32,
-        decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
-        current_nesting: u32,
-    ) {
-        let kind = node.kind();
-
-        match kind {
-            "if_statement" | "if_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::If);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "while_statement" | "while_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::While);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "for_statement" | "for_in_statement" => {
-                decision_points.push(crate::domain::services::DecisionPoint::For);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "case_clause" | "match_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::Match);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            _ => {}
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                self.process_decision_points(
-                    child,
-                    source,
-                    max_nesting,
-                    decision_points,
-                    current_nesting,
-                );
-            }
-        }
+        self.complexity
+            .measure(language.name(), &source, function_name)
+            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))
     }
 
     /// Semantic search for symbols (backward compatible, no kind filter)
@@ -1416,7 +1253,7 @@ impl WorkspaceSession {
 
     /// Get statistics about the call graph
     pub async fn get_graph_stats(&self) -> WorkspaceResult<Option<GraphStatsDto>> {
-        use crate::infrastructure::parser::Language;
+        use crate::domain::value_objects::Language;
         use std::collections::HashMap;
 
         let graph_guard = self.graph.read().await;

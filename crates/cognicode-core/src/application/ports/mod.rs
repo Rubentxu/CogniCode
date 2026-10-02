@@ -69,3 +69,28 @@ pub trait SyntaxAnalysis: Send + Sync {
 pub fn parser_failure(context: &str, cause: impl std::fmt::Display) -> AppError {
     AppError::InvalidParameter(format!("{context}: {cause}"))
 }
+
+/// Port for measuring the complexity of source text.
+///
+/// Deep capability, and deliberately *not* a parser factory. The obvious
+/// cheaper shape was to hand application a `dyn Parser` and let
+/// `get_complexity` walk the tree itself; that moves the import without moving
+/// the coupling, because every signature on the walk still said
+/// `tree_sitter::Node`. What the application actually wants is the four
+/// numbers, so that is what crosses the boundary.
+///
+/// Keyed by lower-case language name, like [`SyntaxAnalysis`]: the application
+/// classifies the file by extension and states the answer, and the adapter is
+/// spared a second opinion about which extension means what.
+pub trait ComplexityAnalysis: Send + Sync {
+    /// Cyclomatic, cognitive and structural complexity of `source`.
+    ///
+    /// `function` narrows the measurement to one function; `None` measures the
+    /// first one found, which is what the existing behaviour did.
+    fn measure(
+        &self,
+        language: &str,
+        source: &str,
+        function: Option<&str>,
+    ) -> AppResult<crate::application::dto::ComplexityResult>;
+}
