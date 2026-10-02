@@ -1825,7 +1825,11 @@ impl CommandExecutor {
         // name `interface::mcp::security`. The session receives the port.
         let path_policy =
             Arc::new(InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]));
-        let session = WorkspaceSession::with_path_policy(path, path_policy)
+        let capabilities = crate::interface::composition::default_capabilities(
+            std::path::Path::new(path),
+            path_policy,
+        );
+        let session = WorkspaceSession::with_capabilities(path, capabilities)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 
@@ -1903,7 +1907,11 @@ impl CommandExecutor {
         // `execute_analyze` for the same shape.
         let path_policy =
             Arc::new(InputValidator::new().with_workspace(vec![std::path::PathBuf::from(path)]));
-        let session = WorkspaceSession::with_path_policy(path, path_policy)
+        let capabilities = crate::interface::composition::default_capabilities(
+            std::path::Path::new(path),
+            path_policy,
+        );
+        let session = WorkspaceSession::with_capabilities(path, capabilities)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
 

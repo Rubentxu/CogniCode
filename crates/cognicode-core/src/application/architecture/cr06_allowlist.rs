@@ -150,13 +150,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
             "team:st-02",
             "ST-02: semantic module as a port.",
         ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::verification::",
-            "team:st-02",
-            "ST-02: verifier via port (RustVerifier).",
-        ),
         // ====================================================================
         // application_no_infrastructure — ST-03 (AnalysisService mega-split)
         // ====================================================================
@@ -403,9 +396,9 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_interface",
             "application/workspace_session.rs",
-            "interface::mcp::security",
+            "interface::",
             "team:st-02",
-            "cfg(test)-only after ST-02 slice 1: the 75 behavioural tests in this module compose the real InputValidator by design. Production path validation goes through the PathPolicy port, wired by interface/cli/commands.rs. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+            "cfg(test)-only after ST-02 slice 1: the 75 behavioural tests in this module compose the REAL validator, verifier and parser by design, and ask the interface layer to assemble them. Production path validation goes through the PathPolicy port, wired by interface/cli/commands.rs via interface/composition.rs. The prefix was widened from `interface::mcp::security` to `interface::` when the test constructor started calling `interface::composition::default_capabilities` instead of re-assembling the parts itself: this gate cannot see line numbers, so it suppresses any interface import in this file either way, and one entry for the file is truer than two that say the same thing. The real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
     ]
 }
@@ -567,10 +560,22 @@ mod tests {
         // those three as additions. It was arithmetic, not measurement;
         // the test below caught it, which is the only reason this file
         // still has a number worth trusting.
+        //
+        // 39 -> 38 (2026-10-02, ST-02 slice 1). `infrastructure::verification::`
+        // is genuinely DELETED. `RustVerifier` was the one type in
+        // `WorkspaceSession` that was only ever named to call `::new()` on it:
+        // `FileOperationsService` already held `Arc<dyn CodeVerifier>`, so
+        // the import bought the right to *choose* the implementation and
+        // nothing else. The choice moved to `interface/composition.rs`,
+        // which is the layer allowed to name both sides. The same slice moved
+        // `TreeSitterSyntaxAnalysis` and `CompositeProvider`; those two
+        // entries stay because `infrastructure::parser::` is still reachable
+        // through `Language` and `infrastructure::lsp` through the lazily
+        // built `lsp` field, so removing them now would be a lie.
         assert_eq!(
             list.len(),
-            39,
-            "expected exactly 39 entries; if you removed/added a drift \
+            38,
+            "expected exactly 38 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
@@ -704,10 +709,16 @@ mod tests {
                 "application/services/file_operations.rs",
                 "interface::mcp::security",
             ),
-            (
-                "application/workspace_session.rs",
-                "interface::mcp::security",
-            ),
+            // Prefix widened from `interface::mcp::security` to `interface::`
+            // in ST-02 slice 1, in step with `exceptions()`. Two things caught
+            // that this pair has to be kept in step with: the Rust test walks
+            // these paths to prove they are genuinely test-only, and
+            // `scripts/ci/test_cr06_ratchet.py` parses this very constant and
+            // cross-checks it against the inventory. When only `exceptions()`
+            // was widened the ratchet went RED with "the Rust guard lists ...
+            // but this contract cannot find it in the inventory" — which is
+            // the drift it exists to report, caught on the commit that made it.
+            ("application/workspace_session.rs", "interface::"),
         ];
 
         let cargo_manifest =

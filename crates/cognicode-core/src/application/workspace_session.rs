@@ -18,7 +18,7 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
-use crate::application::ports::PathPolicy;
+use crate::application::ports::{PathPolicy, SyntaxAnalysis};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -27,6 +27,7 @@ use crate::domain::events::GraphEvent;
 use crate::domain::traits::code_intelligence::{
     CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol,
 };
+use crate::domain::traits::code_verifier::CodeVerifier;
 #[cfg(feature = "persistence")]
 use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Location;
@@ -37,7 +38,6 @@ use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::{
     SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
 };
-use crate::infrastructure::verification::RustVerifier;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +89,47 @@ pub struct IncrementalResult {
     pub graph_updated: bool,
 }
 
+/// Everything a `WorkspaceSession` is assembled from that this layer is not
+/// allowed to name itself.
+///
+/// `application` sits below `infrastructure`, so a `use` of a concrete
+/// implementation is a CR-06 violation even when the thing being used is only
+/// a constructor call. `PathPolicy` already worked this way; this is the same
+/// convention one slice further along.
+///
+/// The important property is not that these are trait objects — they already
+/// were, inside `FileOperationsService` — but that **the construction happens
+/// in the interface layer**, which is the layer allowed to name both. A
+/// `dyn` that somebody in `application` builds with `ConcreteType::new()` has
+/// moved the type, not the coupling.
+pub struct WorkspaceCapabilities {
+    /// Decides what a session is allowed to read and write.
+    pub path_policy: Arc<dyn PathPolicy>,
+    /// Verifies code, whatever the implementation turned out to be.
+    pub code_verifier: Arc<dyn CodeVerifier>,
+    /// Parses source, whatever the implementation turned out to be.
+    pub syntax: Arc<dyn SyntaxAnalysis>,
+    /// Answers document-symbol questions.
+    pub intelligence: Arc<dyn CodeIntelligenceProvider>,
+}
+
+impl WorkspaceCapabilities {
+    /// Assemble the set from four already-built parts.
+    pub fn new(
+        path_policy: Arc<dyn PathPolicy>,
+        code_verifier: Arc<dyn CodeVerifier>,
+        syntax: Arc<dyn SyntaxAnalysis>,
+        intelligence: Arc<dyn CodeIntelligenceProvider>,
+    ) -> Self {
+        Self {
+            path_policy,
+            code_verifier,
+            syntax,
+            intelligence,
+        }
+    }
+}
+
 /// Transport-neutral facade for CogniCode operations.
 ///
 /// Owns all service instances and cached state for a single workspace.
@@ -118,19 +159,25 @@ pub struct WorkspaceSession {
 }
 
 impl WorkspaceSession {
-    /// Composition entry point that receives its path policy from the caller.
+    /// Composition entry point that receives everything it cannot build.
     ///
     /// `application` cannot name `interface::mcp::security::InputValidator`:
     /// that layer sits above us, and the CR-06 `application_no_interface`
-    /// fitness function is what enforces it. Deciding *which* validator to
-    /// build is composition, and composition belongs to the layer that is
-    /// allowed to name it — the interface layer, which calls this constructor
-    /// with the real thing (ST-02).
+    /// fitness function is what enforces it. The same reasoning now covers
+    /// `infrastructure`, and for a stronger reason: the layer that decides
+    /// *which* verifier, parser and intelligence provider a deployment runs is
+    /// the layer above, and a slim build and a full build do not want the same
+    /// ones (ST-02).
+    ///
+    /// What this constructor still owns is assembly: the graph cache is shared
+    /// between the session and `AnalysisService`, so the two have to be built
+    /// together, and the workspace root is canonicalised here because every
+    /// consumer assumes it is.
     ///
     /// The directory must exist and contain a codebase.
-    pub async fn with_path_policy(
+    pub async fn with_capabilities(
         workspace_root: impl AsRef<Path>,
-        path_policy: Arc<dyn PathPolicy>,
+        capabilities: WorkspaceCapabilities,
     ) -> WorkspaceResult<Self> {
         let root = workspace_root.as_ref();
         if !root.exists() || !root.is_dir() {
@@ -149,18 +196,15 @@ impl WorkspaceSession {
         let refactor = Arc::new(RefactorService::new());
         let file_ops = Arc::new(FileOperationsService::new(
             root.display().to_string(),
-            path_policy,
-            Arc::new(RustVerifier::new()),
-            Arc::new(
-                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
-            ),
+            capabilities.path_policy,
+            capabilities.code_verifier,
+            capabilities.syntax,
         ));
         let semantic_search = Arc::new(RwLock::new(None));
         let symbol_code = Arc::new(SymbolCodeService::new());
         let graph = Arc::new(RwLock::new(None));
         let lsp = Arc::new(RwLock::new(None));
-        let intelligence: Arc<dyn CodeIntelligenceProvider> =
-            Arc::new(CompositeProvider::new(&root));
+        let intelligence = capabilities.intelligence;
 
         #[cfg(feature = "persistence")]
         let graph_store = Arc::new(RwLock::new(None));
@@ -180,21 +224,32 @@ impl WorkspaceSession {
         })
     }
 
-    /// Test-only convenience constructor: composes the REAL `InputValidator`.
+    /// Test-only convenience constructor: composes the REAL implementations.
     ///
     /// The behavioural tests in this module need the real rules (traversal,
-    /// symlink, depth, workspace boundary). A permissive double would leave
-    /// them passing while no longer exercising the rejections they exist to
-    /// cover — a green suite that stopped meaning anything. So the interface
-    /// import is confined to `#[cfg(test)]` code, which is exactly the shape
-    /// the CR-06 allowlist guards against regressing onto production lines.
+    /// symlink, depth, workspace boundary) and the real verifier and parser. A
+    /// permissive double would leave them passing while no longer exercising
+    /// the rejections they exist to cover — a green suite that stopped meaning
+    /// anything.
+    ///
+    /// So it asks the interface layer to assemble, exactly as the CLI does,
+    /// rather than reaching for the constructors itself. That keeps the
+    /// `application` → `interface` import confined to `#[cfg(test)]`, which is
+    /// the shape the CR-06 allowlist guards against regressing onto production
+    /// lines, and it means the tests and production cannot drift apart in what
+    /// they consider the real thing.
     #[cfg(test)]
     pub(crate) async fn new(workspace_root: impl AsRef<Path>) -> WorkspaceResult<Self> {
+        use crate::interface::composition::default_capabilities;
         use crate::interface::mcp::security::InputValidator;
 
         let workspace = workspace_root.as_ref().to_path_buf();
         let policy = Arc::new(InputValidator::new().with_workspace(vec![workspace]));
-        Self::with_path_policy(workspace_root, policy).await
+        // The root is canonicalised by `with_capabilities`; composing against
+        // the un-canonicalised path only decides which provider gets built, and
+        // both spellings name the same directory.
+        let capabilities = default_capabilities(workspace_root.as_ref(), policy);
+        Self::with_capabilities(workspace_root, capabilities).await
     }
 
     /// Returns the workspace root path
