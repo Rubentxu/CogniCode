@@ -1,3 +1,5 @@
+import java.io.File
+
 // release — publish a candidate that has already been built and proved.
 //
 // The second half of the release factory. `release-candidate.pipeline.kts`
@@ -47,13 +49,35 @@
 // `gh` is not an orchestrator mechanism. GitHub Releases is where the product
 // goes; PipelineK is what decides to call it.
 
-import java.io.File
+// The version the workspace declares, read the way the workflows read it: the
+// first `version = "..."` line of the root manifest.
+//
+// An empty tag means a dry run, and a dry run that stamps the candidate
+// `0.0.0-dev` fails the coherence check by construction — `verify --version
+// 0.0.0-dev` against a workspace at 0.100.0 is guaranteed to be red, so the
+// "run it locally to see if it works" path could never work. The placeholder
+// was a nicer-looking way of saying the same thing.
+fun workspaceVersion(root: String): String {
+    val manifest = File("$root/Cargo.toml")
+    if (!manifest.isFile) {
+        error("no Cargo.toml at $root; this is not the repository root")
+    }
+    val declared = manifest.readLines()
+        .firstOrNull { it.trimStart().startsWith("version") }
+        ?.let { Regex("version\\s*=\\s*\"([^\"]+)\"").find(it) }
+        ?.groupValues
+        ?.get(1)
+    return declared ?: error(
+        "Cargo.toml declares no `version = \"...\"`, so there is nothing to " +
+            "stamp a candidate with. A placeholder would make every dry run red."
+    )
+}
 
 val repoRoot: String = File(".").canonicalPath
 val cd = "cd \"$repoRoot\""
 
 val tag: String = System.getenv("RELEASE_TAG") ?: ""
-val version: String = if (tag.isEmpty()) "0.0.0-dev" else tag.removePrefix("v")
+val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.removePrefix("v")
 val repo: String = System.getenv("GITHUB_REPOSITORY") ?: "Rubentxu/CogniCode"
 val tool = "$repoRoot/target/release/cognicode-release"
 

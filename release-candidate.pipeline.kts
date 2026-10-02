@@ -69,6 +69,30 @@ val cd = "cd \"$repoRoot\""
 // places a target name appears.
 val targets = listOf("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
 
+// The version the workspace declares, read the way the workflows read it: the
+// first `version = "..."` line of the root manifest.
+//
+// An empty tag means a dry run, and a dry run that stamps the candidate
+// `0.0.0-dev` fails the coherence check by construction — `verify --version
+// 0.0.0-dev` against a workspace at 0.100.0 is guaranteed to be red, so the
+// "run it locally to see if it works" path could never work. The placeholder
+// was a nicer-looking way of saying the same thing.
+fun workspaceVersion(root: String): String {
+    val manifest = File("$root/Cargo.toml")
+    if (!manifest.isFile) {
+        error("no Cargo.toml at $root; this is not the repository root")
+    }
+    val declared = manifest.readLines()
+        .firstOrNull { it.trimStart().startsWith("version") }
+        ?.let { Regex("version\\s*=\\s*\"([^\"]+)\"").find(it) }
+        ?.groupValues
+        ?.get(1)
+    return declared ?: error(
+        "Cargo.toml declares no `version = \"...\"`, so there is nothing to " +
+            "stamp a candidate with. A placeholder would make every dry run red."
+    )
+}
+
 // `x86_64-unknown-linux-gnu` -> `linux-x86_64`. The release tool's `--platform`
 // spelling is its own, not cargo's, and the mapping between the two is the
 // product's rather than this script's.
@@ -82,7 +106,7 @@ fun platformOf(target: String): String = when (target) {
 // from, so it is an input: `RELEASE_TAG=v1.2.3 pipelinek run …`. Empty means
 // "derive from the tree", which is what a pre-release dry run wants.
 val tag: String = System.getenv("RELEASE_TAG") ?: ""
-val version: String = if (tag.isEmpty()) "0.0.0-dev" else tag.removePrefix("v")
+val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.removePrefix("v")
 
 // The release tool is built once and reused by packaging, generation and
 // verification, rather than rebuilt per stage as the workflow's three jobs each

@@ -102,6 +102,42 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
     "target/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
         "The second half of that same disabled step."
     ),
+    "bash scripts/ci/release-tag-coherence.sh --from-version <param> <param>": (
+        "An alternative input path, not a second gate. "
+        "`release-tag-coherence.sh` takes a tag, or `--from-version <v> <sha>` "
+        "when the thing being checked is a version that is not tagged yet. "
+        "`release-validate.yml` uses the second form because it validates a "
+        "version supplied by the operator; `release-candidate.pipeline.kts` "
+        "takes `RELEASE_TAG` and has no untagged mode, so it only has the first "
+        "form to use. If the candidate lane ever grows an untagged input, this "
+        "entry goes with the ratchet."
+    ),
+    "cargo install cargo-deny --locked": (
+        "The PipelineK side pins the version: "
+        "`cargo install cargo-deny --version 0.20.2 --locked`. Actions installs "
+        "whatever resolves, so the advisory and licence verdicts can be taken by "
+        "a different cargo-deny than the one `deny.toml` was written against. "
+        "Pinning is the stricter of the two, and a ratchet — not a migration "
+        "decision — is what should change it."
+    ),
+    "cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; "
+    "print(json.load(sys.stdin)[\"packages\"][\"workspace_members\"][0])'": (
+        "Version resolution, not a check. Both orchestrators read the same value "
+        "and both fall back the same way; Actions tries `cargo metadata` first "
+        "under `|| true` and then greps `Cargo.toml`, while the candidate lane "
+        "goes straight to the guaranteed path and reads `Cargo.toml` in Kotlin. "
+        "The `|| true` is why the first attempt may fail without failing the "
+        "lane, so the second is the one that decides. Same value, one fewer "
+        "process."
+    ),
+    "cargo test <param>": (
+        "One templated gate against eight concrete ones. Actions collapses the "
+        "eight-arm feature matrix into `run: cargo test ${{ matrix.args }}`, so "
+        "the inventory sees a single gate named `<param>`; "
+        "`integration.pipeline.kts` spells all eight arms out, as separate "
+        "stages, so they appear as covered individually. A key cannot be both "
+        "one gate and eight."
+    ),
     "cargo fmt --check": (
         "Same gate, different spelling: PipelineK runs "
         "`cargo fmt --all -- --check`, which covers every workspace member. The "
@@ -233,7 +269,12 @@ def normalise(command: str) -> str:
     command = command.strip().rstrip("\\").strip()
     # `|| true` is a deliberate tolerance and means the same as the advisory
     # form: the exit code stops being the verdict. The gate is the command.
-    command = re.sub(r"\s*\|\|\s*true\s*$", "", command).strip()
+    # The optional `)` is the case `VAR=$(gate || true)`: the tolerance belongs
+    # to the command inside the substitution, and without this the key kept it
+    # and the same gate read as a different one. Found by writing an
+    # ACCEPTED_DIFFERENCES entry against the key as written rather than as
+    # measured, which the stale-entry ratchet then rejected.
+    command = re.sub(r"\s*\|\|\s*true\s*(\))?\s*$", lambda m: m.group(1) or "", command).strip()
     # An advisory stage is written `|| echo 'ADVISORY: ...'` so a failure is
     # reported without failing the lane. That preserves `ci.yml`'s
     # `continue-on-error: true` semantics — and the suffix is the one place
@@ -246,7 +287,16 @@ def normalise(command: str) -> str:
     # because the two languages spell an error handler differently; the command
     # between them is byte-identical. Left in, the CR-09 coverage gate — the
     # one gate with a numeric threshold — read as two different gates.
-    command = re.sub(r"\s*(\|\|\s*\{|&&\s*\{|;\s*then|;\s*do|\}\s*)$", "", command)
+    # Every alternative here has to be anchored to whitespace on its left. A
+    # looser `\s*\}\s*$` looked harmless and was not: it stripped the trailing
+    # brace of `${{ matrix.args }}`, so the feature matrix read as a gate called
+    # `cargo test ${{ matrix.args }` that no pipeline could ever match. A rule
+    # that deletes a character is a rule that needs a left context.
+    # `; then` and `; do` need no left context: they are shell keywords and
+    # cannot end a real command otherwise. They do not always have whitespace
+    # in front of them either — `71.00; then` is the coverage gate followed by
+    # its error handler written on one line.
+    command = re.sub(r"(?:\s+\|\||\s+&&)\s*\{|;\s*(?:then|do)\s*$", "", command)
     command = command.strip()
     # `VAR=$(some gate)` is the same gate with its output captured, not a
     # different one. Both orchestrators capture the selector's output this way
@@ -278,6 +328,27 @@ def normalise(command: str) -> str:
     command = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*[^}]*\}", "<param>", command)
     command = re.sub(r"\$[A-Za-z_][A-Za-z0-9_]*", "<param>", command)
     return command
+
+
+# Three keys in the gap are not gates at all, and are left in the count rather
+# than filtered out, because filtering by shape is how an instrument starts
+# hiding real differences. They are the tail of embedded code inside a step:
+#
+#   done < <(target/release/cognicode-release skills --published ...)
+#   python3 - "$victim" <<'PY'
+#   target/release/cognicode-release verify --staging <param> ... --tag "v<param>"
+#
+# The first is the `done` of a `while` loop, seen as a command because the loop
+# body ends in a pipe. The second is a heredoc that mutates a file inside a
+# negative test. The third is the `verify` call inside `release-validate.yml`'s
+# negative tests, which run it against a downloaded copy with the tag spelled
+# `v$version`; `release.pipeline.kts` runs the same two negative tests with the
+# tag passed as a variable and the staging as a temporary path, so the two keys
+# differ in spelling while the property — that `verify` rejects a missing and an
+# altered artifact — is covered on both sides.
+#
+# The closure criterion for this migration is zero executable Actions workflows,
+# not a zero in this number, and these three disappear with the workflows.
 
 
 def gate_key(command: str) -> str:
@@ -570,6 +641,36 @@ def test_the_normaliser_keeps_the_program_being_run() -> None:
         "programs, so the inventory could claim coverage it does not have: "
         f"{fused}",
     )
+
+
+def test_an_actions_expression_always_becomes_exactly_one_param() -> None:
+    """A `${{ … }}` expression is a parameter, whole. Not most of it.
+
+    One rule for the shell scaffolding around a gate was written as
+    `\\s*\\}\\s*$` with no left context, and it stripped the trailing brace
+    of `${{ matrix.args }}`. The feature matrix then read as a gate called
+    `cargo test ${{ matrix.args }` — one brace short — which no pipeline could
+    ever match, and the gap reported a gate that did not exist while the real
+    one went unaccounted. Nothing else caught it: the ratchet only fails when
+    the gap *grows*, and the number did not move.
+
+    A rule that deletes a character needs a test that says which character. This
+    is that test.
+    """
+    cases = [
+        ("cargo test ${{ matrix.args }}", "cargo test <param>"),
+        ("cargo test ${{ matrix.args }} --quiet", "cargo test <param> --quiet"),
+        ("bash x.sh ${{ inputs.version }}", "bash x.sh <param>"),
+        ("cargo test -p a --features ${{ matrix.feat }}", "cargo test -p a --features <param>"),
+    ]
+    for raw, expected in cases:
+        got = normalise(raw)
+        check(
+            got == expected,
+            f"normalise({raw!r}) is {got!r}, expected {expected!r}. An Actions "
+            f"expression is one parameter; a rule that eats part of it produces "
+            f"a key nothing can match",
+        )
 
 
 def test_the_gap_did_not_grow() -> None:
