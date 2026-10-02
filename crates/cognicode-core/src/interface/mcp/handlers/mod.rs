@@ -1256,7 +1256,7 @@ pub async fn handle_build_graph(
         };
 
         if !is_stale && let Some((graph, manifest)) = snapshot {
-            ctx.analysis_service.graph_cache().set(graph);
+            ctx.analysis_service.graph_cache().replace(graph);
             let store = ctx.get_graph_store();
             let _ = store.save_manifest(&manifest);
             loaded_from_cache = true;
@@ -1608,10 +1608,12 @@ pub async fn handle_get_file_symbols(
     // If compression is requested, return a natural language summary
     if input.compressed {
         let graph_cache = ctx.analysis_service.graph_cache();
-        let graph = graph_cache.get_ref();
+        let graph = graph_cache.get();
         // Convert to DTO for compression
         let output_dto: GetFileSymbolsResult = output.into();
-        let summary = ctx.compressor.compress_symbols(&output_dto, Some(graph));
+        let summary = ctx
+            .compressor
+            .compress_symbols(&output_dto, Some(graph.as_ref()));
         Ok(serde_json::json!({
             "compressed": true,
             "summary": summary,

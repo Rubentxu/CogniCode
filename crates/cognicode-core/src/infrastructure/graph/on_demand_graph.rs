@@ -15,23 +15,13 @@
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::value_objects::TraversalDirection;
 use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
 use crate::infrastructure::graph::lightweight_index::{LightweightIndex, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-
-/// Direction for call hierarchy traversal
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TraversalDirection {
-    /// Traverse callees (outgoing edges - what does this symbol call)
-    Callees,
-    /// Traverse callers (incoming edges - what calls this symbol)
-    Callers,
-    /// Traverse both directions
-    Both,
-}
 
 /// Result of a call hierarchy query
 #[derive(Debug, Clone)]

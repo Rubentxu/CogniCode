@@ -15,14 +15,16 @@ use crate::application::dto::{
     RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
+use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::DependencyType;
+use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::graph::{
     CallHierarchyResult, GraphCache, LightweightIndex, OnDemandGraphBuilder, PetGraphStore,
-    SymbolLocation, TraversalDirection,
+    SymbolLocation,
 };
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
@@ -35,7 +37,7 @@ pub struct AnalysisService {
     complexity_calculator: ComplexityCalculator,
     cycle_detector: CycleDetector,
     impact_analyzer: ImpactAnalyzer,
-    graph_cache: Arc<GraphCache>,
+    graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
     /// File cache: maps file path to (mtime, size, content_hash,
@@ -93,7 +95,7 @@ impl AnalysisService {
     ///
     /// This allows multiple services (e.g., WorkspaceSession and HandlerContext)
     /// to share the same graph cache, preventing duplicate builds.
-    pub fn with_graph_cache(cache: Arc<GraphCache>) -> Self {
+    pub fn with_graph_cache(cache: Arc<dyn SharedGraph>) -> Self {
         Self {
             complexity_calculator: ComplexityCalculator::new(),
             cycle_detector: CycleDetector::new(),
@@ -108,7 +110,7 @@ impl AnalysisService {
     }
 
     /// Returns the graph cache for accessing the project graph
-    pub fn graph_cache(&self) -> Arc<GraphCache> {
+    pub fn graph_cache(&self) -> Arc<dyn SharedGraph> {
         self.graph_cache.clone()
     }
 
@@ -605,7 +607,7 @@ impl AnalysisService {
             );
         }
 
-        self.graph_cache.set(call_graph);
+        self.graph_cache.replace(call_graph);
 
         // Update coverage metrics
         let coverage_percent = if total_files > 0 {
@@ -674,7 +676,7 @@ impl AnalysisService {
             }
         }
         let graph = store.to_call_graph();
-        self.graph_cache.set(graph);
+        self.graph_cache.replace(graph);
         Ok(())
     }
 
@@ -703,7 +705,7 @@ impl AnalysisService {
         }
 
         let graph = cache.merge_all();
-        self.graph_cache.set(graph);
+        self.graph_cache.replace(graph);
         Ok(())
     }
 
@@ -1117,7 +1119,7 @@ impl AnalysisService {
                 }
 
                 let call_graph = store.into_inner().unwrap().to_call_graph();
-                graph_cache.set(call_graph);
+                graph_cache.replace(call_graph);
 
                 // Compute coverage
                 let coverage_percent = if total_files > 0 {

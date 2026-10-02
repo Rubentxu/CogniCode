@@ -18,7 +18,7 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
-use crate::application::ports::{ComplexityAnalysis, PathPolicy, SyntaxAnalysis};
+use crate::application::ports::{ComplexityAnalysis, PathPolicy, SharedGraph, SyntaxAnalysis};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -32,8 +32,7 @@ use crate::domain::traits::code_verifier::CodeVerifier;
 use crate::domain::traits::graph_store::GraphStore;
 use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
-use crate::infrastructure::graph::GraphCache;
-use crate::infrastructure::graph::TraversalDirection;
+use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::lsp::CompositeProvider;
 
 use crate::infrastructure::semantic::{
@@ -114,6 +113,8 @@ pub struct WorkspaceCapabilities {
     pub intelligence: Arc<dyn CodeIntelligenceProvider>,
     /// Measures complexity, whatever walks the tree to do it.
     pub complexity: Arc<dyn ComplexityAnalysis>,
+    /// The graph this session and its analysis service agree on.
+    pub graph: Arc<dyn SharedGraph>,
 }
 
 impl WorkspaceCapabilities {
@@ -124,6 +125,7 @@ impl WorkspaceCapabilities {
         syntax: Arc<dyn SyntaxAnalysis>,
         intelligence: Arc<dyn CodeIntelligenceProvider>,
         complexity: Arc<dyn ComplexityAnalysis>,
+        graph: Arc<dyn SharedGraph>,
     ) -> Self {
         Self {
             path_policy,
@@ -131,6 +133,7 @@ impl WorkspaceCapabilities {
             syntax,
             intelligence,
             complexity,
+            graph,
         }
     }
 }
@@ -195,11 +198,10 @@ impl WorkspaceSession {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to canonicalize path: {}", e))
         })?;
 
-        // Create a shared GraphCache that both WorkspaceSession and AnalysisService use
-        let graph_cache = Arc::new(GraphCache::new());
-
-        // Initialize services with shared graph cache
-        let analysis = Arc::new(AnalysisService::with_graph_cache(graph_cache.clone()));
+        // One graph, handed in already built, shared with the analysis service
+        // because two caches would mean two answers to "what does this repo
+        // look like" and a rebuild nobody could see.
+        let analysis = Arc::new(AnalysisService::with_graph_cache(capabilities.graph));
         let refactor = Arc::new(RefactorService::new());
         let file_ops = Arc::new(FileOperationsService::new(
             root.display().to_string(),

@@ -15,11 +15,11 @@
 
 use std::sync::Arc;
 
+use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::value_objects::CheckpointId;
 use crate::domain::value_objects::file_manifest::FileManifest;
-use crate::infrastructure::graph::GraphCache;
 use crate::infrastructure::persistence::InMemoryGraphStore;
 
 /// `GraphStore` impl that reads from a shared `GraphCache` and
@@ -36,7 +36,7 @@ use crate::infrastructure::persistence::InMemoryGraphStore;
 /// detection.
 pub struct CachedGraphStore {
     /// Lock-free cache for reads (real versioned ring per ADR-035).
-    cache: Arc<GraphCache>,
+    cache: Arc<dyn SharedGraph>,
     /// Inner store for write/manifest/clear operations.
     inner: InMemoryGraphStore,
 }
@@ -44,7 +44,7 @@ pub struct CachedGraphStore {
 impl CachedGraphStore {
     /// Create a new `CachedGraphStore` that reads from `cache` and
     /// forwards writes to a fresh `InMemoryGraphStore`.
-    pub fn new(cache: Arc<GraphCache>) -> Self {
+    pub fn new(cache: Arc<dyn SharedGraph>) -> Self {
         Self {
             cache,
             inner: InMemoryGraphStore::new(),
@@ -58,7 +58,7 @@ impl GraphStore for CachedGraphStore {
     /// prompt the user to run `build_graph` first (matches legacy
     /// behaviour).
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
-        let arc_graph = self.cache.get();
+        let arc_graph = SharedGraph::get(self.cache.as_ref());
         if arc_graph.symbol_count() == 0 && arc_graph.edge_count() == 0 {
             Ok(None)
         } else {
@@ -99,7 +99,7 @@ impl GraphStore for CachedGraphStore {
     /// no checkpoint has ever been published. Delegates to
     /// [`GraphCache::current_id`].
     fn current_checkpoint_id(&self) -> Option<CheckpointId> {
-        self.cache.current_id()
+        SharedGraph::current_id(self.cache.as_ref())
     }
 
     /// Returns the `CallGraph` snapshot pinned to `id`. `Err(
@@ -114,7 +114,7 @@ impl GraphStore for CachedGraphStore {
     /// `get_at` is a true "not found" and we lift it to
     /// `Err(CheckpointNotFound)`.
     fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
-        if self.cache.current_id().is_none() {
+        if SharedGraph::current_id(self.cache.as_ref()).is_none() {
             return Ok(None);
         }
         self.cache
@@ -131,6 +131,10 @@ mod tests {
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::value_objects::file_manifest::FileManifest;
     use crate::domain::value_objects::{Location, SymbolKind};
+    // These tests are infrastructure testing infrastructure, so they name the
+    // concrete cache the struct is built from. Production code above reaches
+    // it only through `SharedGraph`.
+    use crate::infrastructure::graph::GraphCache;
     use std::path::PathBuf;
 
     fn build_small_graph() -> CallGraph {

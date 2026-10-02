@@ -115,13 +115,10 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         // application_no_infrastructure — ST-02 (WorkspaceSession composition)
         // ====================================================================
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::graph::",
-            "team:st-02",
-            "ST-02: composition root injects GraphCache via port (covers GraphCache, TraversalDirection).",
-        ),
+        // `infrastructure::graph::` and `infrastructure::parser::` used to sit
+        // here and no longer do — slices 3 and 2 retired them. What each cost is
+        // written down in the inventory test, because a deleted entry with no
+        // record of why is indistinguishable from one deleted by accident.
         ex(
             "application_no_infrastructure",
             "application/workspace_session.rs",
@@ -571,14 +568,30 @@ mod tests {
         // coupling, so the walk itself moved behind a `ComplexityAnalysis` port
         // and `get_complexity` shrank from 60 lines to 20.
         //
-        // The two neighbours of the deleted pair stay, and saying why is the
-        // point: `infrastructure::graph::` is still reachable through
-        // `GraphCache`/`TraversalDirection` and `infrastructure::lsp` through
-        // the lazily built `lsp` field, so retiring them now would be a lie.
+        // The two neighbours of the deleted pair stayed after slice 2, and
+        // saying why is the point: `infrastructure::lsp` is still reachable
+        // through the lazily built `lsp` field. Slice 3 retired
+        // `infrastructure::graph::` as well, so `infrastructure::semantic` is
+        // the last production neighbour this file has left.
+        //
+        // 39 -> 38 -> 37 -> 36. Slice 3 deleted `infrastructure::graph::`,
+        // and it was not a matter of moving two types. `TraversalDirection` —
+        // a three-variant enum with no methods, asked for by a query string —
+        // moved to `domain::value_objects` beside `NodeKind` and `EdgeKind`.
+        // `GraphCache` could not: it is an `ArcSwap` over a versioned ring with
+        // a pluggable snapshot provider, so it stayed in infrastructure and
+        // `application` reached it through a new `SharedGraph` port.
+        //
+        // The port has five methods because five is what the call sites use,
+        // counted rather than mirrored: `get`/`replace` in `AnalysisService`,
+        // `current_id`/`get_at` in `CachedGraphStore`, `subscribe` in the
+        // session. The concrete cache has seventeen; the other twelve belong to
+        // callers that are allowed to name the concrete type, and re-exporting
+        // all of them would have been a second copy of the class.
         assert_eq!(
             list.len(),
-            37,
-            "expected exactly 37 entries; if you removed/added a drift \
+            36,
+            "expected exactly 36 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

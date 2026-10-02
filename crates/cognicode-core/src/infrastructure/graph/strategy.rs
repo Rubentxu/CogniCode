@@ -6,10 +6,9 @@
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::DependencyRepository;
+use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::graph::lightweight_index::LightweightIndex;
-use crate::infrastructure::graph::on_demand_graph::{
-    CallHierarchyResult, OnDemandGraphBuilder, TraversalDirection,
-};
+use crate::infrastructure::graph::on_demand_graph::{CallHierarchyResult, OnDemandGraphBuilder};
 use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, PerFileGraphCache};
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
 use crate::infrastructure::parser::TreeSitterParser;
