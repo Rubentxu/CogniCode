@@ -122,13 +122,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_infrastructure",
             "application/workspace_session.rs",
-            "infrastructure::lsp",
-            "team:st-02",
-            "ST-02: composition root injects LSP provider via port (CompositeProvider).",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
             "infrastructure::persistence::",
             "team:st-02",
             "ST-02: persistence via port (InMemoryGraphStore).",
@@ -600,10 +593,24 @@ mod tests {
         //
         // `infrastructure::lsp` is the last production entry this file has,
         // and `infrastructure::persistence::` the last test-only one.
+        // 39 -> 34, and ST-02 is closed. Slice 5 deleted
+        // `infrastructure::lsp`, the last production entry, and it was smaller
+        // than the other four: `CodeIntelligenceProvider` already declared
+        // `find_references`, `get_definition` and `hover`, `CompositeProvider`
+        // already implemented it, and the session was already holding one
+        // injected as `intelligence`. The lazy `lsp` field existed to build a
+        // second provider on demand; with the first one arriving from the
+        // composition root there was nothing left to defer, so the field and
+        // `ensure_lsp` went rather than becoming a second handle to the same
+        // object.
+        //
+        // `workspace_session.rs` now imports nothing from `infrastructure` on
+        // any production line. `infrastructure::persistence::` stays as the
+        // file's one test-only entry: its only import is inside `mod tests`.
         assert_eq!(
             list.len(),
-            35,
-            "expected exactly 35 entries; if you removed/added a drift \
+            34,
+            "expected exactly 34 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."

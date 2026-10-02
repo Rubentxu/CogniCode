@@ -37,7 +37,6 @@ use crate::domain::value_objects::Location;
 use crate::domain::value_objects::SymbolKind;
 use crate::domain::value_objects::SymbolSearchQuery;
 use crate::domain::value_objects::TraversalDirection;
-use crate::infrastructure::lsp::CompositeProvider;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -150,8 +149,6 @@ pub struct WorkspaceSession {
     symbol_code: Arc<dyn SymbolSource>,
     /// Cached call graph (built on demand)
     graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
-    /// LSP navigation provider (lazy initialized)
-    lsp: Arc<RwLock<Option<Arc<CompositeProvider>>>>,
     /// Code intelligence provider for document symbols
     intelligence: Arc<dyn CodeIntelligenceProvider>,
     /// Complexity measurement (the tree walk lives in the adapter)
@@ -207,7 +204,6 @@ impl WorkspaceSession {
         let semantic_index_ready = Arc::new(RwLock::new(false));
         let symbol_code = capabilities.symbol_source;
         let graph = Arc::new(RwLock::new(None));
-        let lsp = Arc::new(RwLock::new(None));
         let intelligence = capabilities.intelligence;
         let complexity = capabilities.complexity;
         let symbol_search = capabilities.symbol_search;
@@ -224,7 +220,6 @@ impl WorkspaceSession {
             semantic_index_ready,
             symbol_code,
             graph,
-            lsp,
             intelligence,
             complexity,
             #[cfg(feature = "persistence")]
@@ -628,16 +623,6 @@ impl WorkspaceSession {
             *ready = true;
         }
         Ok(())
-    }
-
-    /// Ensures the LSP provider is initialized
-    async fn ensure_lsp(&self) -> WorkspaceResult<Arc<CompositeProvider>> {
-        let mut lsp_guard = self.lsp.write().await;
-        if lsp_guard.is_none() {
-            let provider = CompositeProvider::new(&self.workspace_root);
-            *lsp_guard = Some(Arc::new(provider)); // Store Arc-wrapped provider
-        }
-        Ok(Arc::clone(lsp_guard.as_ref().unwrap()))
     }
 
     // =========================================================================
@@ -1664,15 +1649,14 @@ impl WorkspaceSession {
         line: u32,
         column: u32,
     ) -> WorkspaceResult<Vec<SourceLocation>> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        match provider
-            .as_ref()
+        match self
+            .intelligence
             .get_definition(&location)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
@@ -1684,15 +1668,14 @@ impl WorkspaceSession {
 
     /// Get hover information
     pub async fn hover(&self, file: &str, line: u32, column: u32) -> WorkspaceResult<String> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        match provider
-            .as_ref()
+        match self
+            .intelligence
             .hover(&location)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
@@ -1710,15 +1693,14 @@ impl WorkspaceSession {
         column: u32,
         include_decl: bool,
     ) -> WorkspaceResult<Vec<SourceLocation>> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        let refs = provider
-            .as_ref()
+        let refs = self
+            .intelligence
             .find_references(&location, include_decl)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?;
