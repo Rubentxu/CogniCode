@@ -239,9 +239,14 @@ fn rust_toolchain_action_matches_the_repository_toolchain() {
         }
     }
 
+    // 20 as of 2026-10-02: the 20th is the `supply-chain` job added to put
+    // cargo-deny on the merge path (PR-SEC), pinned to the same verified
+    // 1.96.0 commit as the other 19. The count is a tripwire, not a budget:
+    // adding or removing a ref means saying so here, so that the diff shows
+    // the surface changed rather than growing quietly.
     assert_eq!(
-        seen, 19,
-        "expected 19 {RUST_TOOLCHAIN_ACTION} refs across all workflows, found {seen}. \
+        seen, 20,
+        "expected 20 {RUST_TOOLCHAIN_ACTION} refs across all workflows, found {seen}. \
          A ref was added or removed without updating this test."
     );
     assert!(

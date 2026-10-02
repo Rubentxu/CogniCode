@@ -130,6 +130,7 @@ jobs:
             scripts/ci/test_select_suites.py \
             scripts/ci/test_ci_contracts.py \
             scripts/ci/test_skills_gate_contract.py \
+            scripts/ci/test_supply_chain_gate_contract.py \
             scripts/ci/test_serial_env_contract.py \
             scripts/ci/test_t6_gate_contract.py
       # CP5 / A-033..A-036 — el gate de skills. `validate_skills.py` es lo
@@ -158,6 +159,71 @@ jobs:
           set -euo pipefail
           python3 scripts/validate_skills.py
           bash scripts/verify-skills.sh
+
+  # ---------------------------------------------------------------------------
+  # supply-chain — PR-SEC / PRF-CI-05 en el camino de merge
+  # ---------------------------------------------------------------------------
+  # Un job aparte, y no un step mas en `check`, por dos razones medidas.
+  #
+  # `check` se llama "fmt + clippy" y su step mas caro es
+  # `cargo clippy --workspace --all-targets`, que son minutos. Anadir cargo-deny
+  # al final de ese job lo serializaria detras de clippy. Como job independiente
+  # corre en paralelo con `check` y con `build-binary`, que es lo que importa
+  # cuando la cola de runners es el cuello de botella.
+  #
+  # Y porque el motivo de que este gate faltara no fue que nadie lo escribiera:
+  # fue que vivia en la capa equivocada. Medido 2026-10-02 con
+  # `grep -rn 'cargo deny' .github/workflows/`: las unicas invocaciones estaban
+  # en `release.yml` (`on: push, tags: v*`) y `release-validate.yml`
+  # (`on: workflow_dispatch`). Ninguna se dispara en un pull request. Una
+  # dependencia con advisory publicado se mergeaba a main sin que nada la
+  # mirase, y lo primero que la examinaba era el siguiente tag de version.
+  #
+  # El propio `release.yml` ya habia visto la forma del problema y lo habia
+  # parchado una capa mas abajo, en su propio comentario:
+  #   "Without this step, a new dependency with an unlisted licence would pass
+  #    `release.yml` without detection; only `release-validate.yml` would catch
+  #    it, and that workflow is `workflow_dispatch`-only."
+  # El comentario acierta y el arreglo se queda corto: duplicar el gate en
+  # `release.yml` cierra "release.yml solo" y deja abierto el camino de merge.
+  # Es el fallo de A-013 —un gate que solo alcanza un workflow
+  # `workflow_dispatch` es codigo muerto con codigo de salida verde— aplicado al
+  # outcome de seguridad.
+  #
+  # Pinned by scripts/ci/test_supply_chain_gate_contract.py, que comprueba que
+  # este job este en el `needs:` de merge-gate y que la version este fijada.
+  supply-chain:
+    name: supply-chain (cargo-deny)
+    runs-on: ubuntu-latest
+    steps:
+      # `fetch-depth: 0` por el mismo motivo que en `check`: los generadores de
+      # producto leen `git rev-parse HEAD` y una clonacion superficial los hace
+      # fallar sobre entrada correcta.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.2.2 — pinned 2026-09-26 by QW-05
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@ebb3d1676050bfd0971c36c1e215b5751473994d # 1.96.0 — pinned 2026-10-01 by supply-chain-action-pins (branch 1.96.0, PGP-verified upstream)
+      - uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2.7.7 — pinned 2026-09-26 by QW-05
+      # La version esta fijada a proposito. `cargo install cargo-deny --locked`
+      # fija el Cargo.lock de cargo-deny, pero la herramienta sigue resolviendo
+      # a la ultima version del dia: el comportamiento del gate podria cambiar
+      # sin ningun commit en este repositorio, y nadie habria revisado ese
+      # cambio. 0.20.2 es la version contra la que se escribio la politica de
+      # `deny.toml` y la que asume `advisory_ignore_backing_contract.rs`.
+      #
+      # Sin `|| true`, a diferencia de `release.yml`: alli la tolerancia hacia
+      # a que un fallo de instalacion degenerara en un fallo del check, aqui
+      # seria exactamente el fallo silencioso que este job existe para evitar.
+      - name: Install cargo-deny (version fixed)
+        run: cargo install cargo-deny --version 0.20.2 --locked
+      - name: Advisories gate (PR-SEC, PRF-CI-05)
+        run: cargo deny check advisories
+      # Eje de licencias aparte, y no `cargo deny check` a secas, para que un
+      # fallo diga que eje fallo. La allow-list de `[licenses]` en `deny.toml`
+      # tambien trabaja: las ~150 dependencias de terceros pasan por ella, y sin
+      # este step esa politica no la ejercita ningun merge.
+      - name: Licenses gate (PR-SEC)
+        run: cargo deny check licenses
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
@@ -411,7 +477,7 @@ jobs:
   # -----------------------------------------------------------------------
   merge-gate:
     name: merge-gate
-    needs: [check, build-binary, test-pr, selector]
+    needs: [check, build-binary, test-pr, selector, supply-chain]
     if: always()
     runs-on: ubuntu-latest
     steps:
