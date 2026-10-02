@@ -61,7 +61,7 @@ pub async fn handle_smart_search(
     // cannot stall the whole composite. The default is 60s; tests can
     // tighten it via HandlerContextBuilder::with_sub_handler_timeout.
     // UAT 2026-08-10 DEFECT-3.
-    let sub_timeout = ctx.sub_handler_timeout;
+    let sub_timeout = ctx.sub_handler_timeout();
     let (sem, rank, idf) = tokio::join!(
         tokio::time::timeout(
             sub_timeout,

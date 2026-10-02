@@ -47,11 +47,21 @@ impl CogniCodeHandler {
     /// PRF-SEC-02: create a handler in read-only mode. Mutating tools
     /// (write_file, edit_file, reparse_on_edit) are hidden from `tools/list`
     /// and rejected at dispatch with a typed error.
+    ///
+    /// ST-04: read-only and cancellation are both set through the builder.
+    /// They used to be reassigned onto the built context by hand, which is
+    /// only possible while the fields are `pub` — and a public `Arc` field
+    /// also permits swapping it later, which would let a live handler be
+    /// flipped into read-only (or out of it) after a client connected. That
+    /// is the property PRF-SEC-02 exists to deny. Fixing it by adding a
+    /// setter would have preserved the hole and dressed it up as an API.
     pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = Self::build_ctx(project_root);
-        ctx.cancellation_token = cancellation_token.clone();
-        ctx.read_only = Arc::new(AtomicBool::new(read_only));
+        let ctx = Self::build_ctx(
+            project_root,
+            Some(read_only),
+            Some(cancellation_token.clone()),
+        );
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
@@ -63,7 +73,7 @@ impl CogniCodeHandler {
     /// to share the same `graph_loaded` flag between the MCP dispatch
     /// and the `/ready` HTTP handler.
     pub fn from_ctx(ctx: Arc<HandlerContext>) -> Self {
-        let cancellation_token = ctx.cancellation_token.clone();
+        let cancellation_token = ctx.cancellation_token().clone();
         Self {
             ctx,
             cancellation_token,
@@ -76,7 +86,7 @@ impl CogniCodeHandler {
     /// `product/profiles.json` promises that a `mutating: false` profile
     /// cannot write, and this is the value that promise resolves to.
     pub fn is_read_only(&self) -> bool {
-        self.ctx.read_only.load(Ordering::SeqCst)
+        self.ctx.is_read_only()
     }
 
     /// Build a handler whose posture is derived from a public profile.
@@ -106,11 +116,11 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::builder()
+        let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
+            .with_cancellation_token(cancellation_token.clone())
             .build();
-        ctx.cancellation_token = cancellation_token.clone();
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
@@ -127,21 +137,33 @@ impl CogniCodeHandler {
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::builder()
+        let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
-            .with_graph_store_arc(store);
-        if let Some(repo) = iac_repo {
-            ctx = ctx.with_iac_repo(repo);
-        }
-        let mut ctx = ctx.build();
-        ctx.cancellation_token = cancellation_token.clone();
+            .with_graph_store_arc(store)
+            .with_cancellation_token(cancellation_token.clone());
+        let ctx = match iac_repo {
+            Some(repo) => ctx.with_iac_repo(repo),
+            None => ctx,
+        };
+        let ctx = ctx.build();
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
     }
 
-    fn build_ctx(project_root: PathBuf) -> HandlerContext {
+    /// ST-04: read-only and cancellation are configured here, through the
+    /// builder, instead of being reassigned onto the finished context. Both
+    /// used to be `pub` fields patched from outside, which is only possible
+    /// while the field is public — and a public `Arc` field also allows
+    /// swapping it later, letting a live handler be flipped into read-only
+    /// (or out of it) after a client connected. Denying that is the point of
+    /// PRF-SEC-02; adding a setter would have kept the hole and renamed it.
+    fn build_ctx(
+        project_root: PathBuf,
+        read_only: Option<bool>,
+        cancellation_token: Option<Arc<AtomicBool>>,
+    ) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
 
@@ -159,10 +181,16 @@ impl CogniCodeHandler {
             ),
         ));
 
-        HandlerContext::builder()
+        let mut builder = HandlerContext::builder()
             .with_working_dir(canonical_root)
-            .with_file_ops_service(file_ops_service)
-            .build()
+            .with_file_ops_service(file_ops_service);
+        if let Some(read_only) = read_only {
+            builder = builder.with_read_only(read_only);
+        }
+        if let Some(token) = cancellation_token {
+            builder = builder.with_cancellation_token(token);
+        }
+        builder.build()
     }
 
     /// Get the current CallGraph from the store
@@ -1457,9 +1485,7 @@ impl ServerHandler for CogniCodeHandler {
             // oracle), with no second list to fall back to.
             let all_tools: Vec<_> = build_all_tools()
                 .into_iter()
-                .filter(|t| {
-                    !self.ctx.read_only.load(Ordering::SeqCst) || !tool_is_mutating(&t.name)
-                })
+                .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
                 .collect();
 
             // Paginate
@@ -1530,7 +1556,7 @@ async fn call_tool_handler(
     // runs. Error is typed/honest (isError text), not a silent success.
     // Authority comes from the declared `cognicode.authority` field (primary oracle),
     // with no second list to fall back to.
-    if tool_is_mutating(tool_name) && ctx.read_only.load(Ordering::SeqCst) {
+    if tool_is_mutating(tool_name) && ctx.is_read_only() {
         return Err(InterfaceError::Internal(format!(
             "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
         )));

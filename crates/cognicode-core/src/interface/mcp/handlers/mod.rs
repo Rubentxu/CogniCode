@@ -352,7 +352,7 @@ pub struct HandlerContext {
     /// One value, not three independently-optional fields — see
     /// [`ClientIdentity`] for why the distinction is load-bearing.
     client: ClientIdentity,
-    pub cancellation_token: Arc<AtomicBool>,
+    cancellation_token: Arc<AtomicBool>,
     log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
     /// Tracks symbol access hotness for AI relevance learning
     symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
@@ -383,7 +383,7 @@ pub struct HandlerContext {
     /// and filtered out of `tools/list`. Default `false` preserves the
     /// existing behavior for the HTTP server; the stdio binary exposes
     /// `--read-only`.
-    pub read_only: Arc<AtomicBool>,
+    read_only: Arc<AtomicBool>,
     /// PRF-F5.W4: per-sub-handler timeout for composite tools (e.g.
     /// `handle_smart_search`). Default `Duration::from_secs(60)`
     /// preserves the production behavior; tests can override it
@@ -391,7 +391,7 @@ pub struct HandlerContext {
     /// timeout paths in seconds rather than minutes. The field is part
     /// of the public HandlerContext API so production callers that build
     /// a context can tighten the budget explicitly if needed.
-    pub sub_handler_timeout: std::time::Duration,
+    sub_handler_timeout: std::time::Duration,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -412,6 +412,21 @@ impl HandlerContext {
     /// a version, and no caller can write the field back out.
     pub fn client(&self) -> &ClientIdentity {
         &self.client
+    }
+
+    /// ST-04: whether this context refuses workspace mutation.
+    ///
+    /// Read-only is fixed when the context is built and there is no setter.
+    /// That is deliberate: PRF-SEC-02 treats it as part of the posture a
+    /// client is admitted under, and a `pub` field would have allowed a live
+    /// handler to be flipped into or out of read-only after connecting.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only.load(Ordering::SeqCst)
+    }
+
+    /// ST-04: the per-context sub-handler timeout for composite tools.
+    pub fn sub_handler_timeout(&self) -> std::time::Duration {
+        self.sub_handler_timeout
     }
 
     pub fn cancellation_token(&self) -> &Arc<AtomicBool> {
@@ -5839,6 +5854,66 @@ mod tests {
         assert_eq!(*anonymous.client(), ClientIdentity::unknown());
     }
 
+    // ST-04 slice 3: `read_only` and `cancellation_token` lost `pub`, which
+    // required `rmcp_adapter.rs` to stop reassigning the finished context.
+    // It configured both by hand — `ctx.read_only = Arc::new(...)` after
+    // `build_ctx` — and `with_read_only` / `with_cancellation_token` already
+    // existed on the builder. A public `Arc` field permits swapping the flag
+    // on a live handler, which would let a connected client be moved out of
+    // read-only. This asserts the posture still holds after the change: it
+    // is decided at build time and survives independently of how it was set.
+    #[test]
+    fn t_st04_read_only_posture_is_decided_at_build_time_and_has_no_setter() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let read_only_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_read_only(true)
+            .build();
+        assert!(read_only_ctx.is_read_only());
+
+        let writable_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_read_only(false)
+            .build();
+        assert!(!writable_ctx.is_read_only());
+
+        // The default is writable, matching the pre-existing behaviour for
+        // the HTTP server; only the explicit opt-in is restricted.
+        let default_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(!default_ctx.is_read_only());
+
+        // Two contexts built differently do not share the flag. Before this
+        // slice both fields were reassigned from outside, so sharing or
+        // clobbering them was possible; now each context owns its own.
+        assert!(read_only_ctx.is_read_only());
+        assert!(!writable_ctx.is_read_only());
+    }
+
+    #[test]
+    fn t_st04_sub_handler_timeout_is_read_through_its_accessor() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert_eq!(
+            default_ctx.sub_handler_timeout(),
+            std::time::Duration::from_secs(60),
+            "the default budget must not drift when the field stops being public"
+        );
+
+        let tight = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_sub_handler_timeout(std::time::Duration::from_nanos(1))
+            .build();
+        assert_eq!(
+            tight.sub_handler_timeout(),
+            std::time::Duration::from_nanos(1)
+        );
+    }
+
     // ST-04 slice 2: four fields went from `pub` to private because no
     // reader existed outside this module. Privatizing is only safe if the
     // behaviour each one carried is still reachable, so this asserts the
@@ -5914,9 +5989,16 @@ mod tests {
     // and `file_ops_handlers.rs` — two sibling modules that are NOT children
     // of `handlers`, so unlike `handlers/*` they cannot see private fields.
     // Those need accessors written first.
+    //
+    // Slice 3 did exactly that, 14 -> 11: `sub_handler_timeout()` and
+    // `is_read_only()` accessors plus `cancellation_token()` (which already
+    // existed). Removing `read_only`'s `pub` is not a pure visibility change:
+    // `rmcp_adapter` used to reassign the whole `Arc` after building, and it
+    // now configures through `with_read_only` instead, so a live handler can
+    // no longer be flipped into or out of read-only.
     #[test]
     fn t_st04_handler_context_public_field_count_is_ratcheted() {
-        const CURRENT_PUBLIC_FIELDS: usize = 14;
+        const CURRENT_PUBLIC_FIELDS: usize = 11;
 
         let source = include_str!("mod.rs");
         let start = source
