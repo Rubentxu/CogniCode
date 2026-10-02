@@ -7,35 +7,53 @@
 //   selector     -> CR-08 suite selector                (pr-ci.yml:173)
 //   merge-gate   -> fan-out assertion + drift lint + compat matrix (pr-ci.yml:330)
 //
-// Workspace: PipelineK gives every stage its own throwaway directory
-// (`<run>/workspace/<stage>-<n>`) and the DSL has no working-directory parameter
-// (`fun sh(command: String)` in pipeline-scripting-api/.../PipelineDsl.kt). No released
-// distribution implements `--workspace`: 0.39.1-rc1, 0.40.0 and 0.43.0 all ignore it, and
-// the v2 launcher accepts the flag and then discards it. Builds also disagree on whether
-// a step inherits the script's directory, so a pipeline that assumes either behaviour
-// works on one version and silently tests nothing on another.
+// Workspace: the repository root is resolved here and interpolated into every
+// step, because PipelineK runs each `sh()` step in the launching process's
+// working directory and a step must not depend on where the launcher stood.
 //
-// The repository root is resolved in the DSL and interpolated into every step. The script
-// itself is evaluated with the launching process's working directory — verified: a script
-// in /tmp still resolved `File(".")` to the repository — while each sh() step runs in the
-// throwaway directory. This side is the only place the real path is available. It is not an
-// injected REPO_ROOT: nothing is read from the environment, and `repoRoot` is asserted
-// against a real Cargo.toml before any gate runs.
+// An earlier revision of this header claimed the opposite — that PipelineK
+// gives every stage its own throwaway directory, so no step could see another's
+// output, and that is why the root is interpolated. That claim was false and
+// was measured out of it on 2026-10-02 with a two-stage probe run under
+// pipelinek 0.46.0 and no `cd` prefix anywhere:
 //
-// Shell variables inside a **raw** string (`"""..."""` + trimIndent) must be written
-// `${'$'}name`; the shell then receives a literal `$` and expands its own. This is not a
-// version quirk and the distinction that matters is raw vs normal string, not 0.43.0 vs
-// 0.39.1-rc1: in a normal single-line string `\$name` compiles and works, while in the
-// multiline raw strings every real step uses it fails with "Unresolved reference". Both
-// 0.39.1-rc1 and 0.43.0 behave the same way. `\${'$'}name` is wrong everywhere: the
-// backslash survives into the emitted script and bash fails with "syntax error near
-// unexpected token `('".
+//     WRITER_PWD  = <repo root>
+//     READER_PWD  = <repo root>
+//     RELATIVE_SHARED = yes
+//     REPO_VISIBLE    = yes
 //
-// `pipelinek` on PATH resolves 0.43.0. That was not free. A symlink at
-// ~/.local/bin/pipelinek pointing at a 0.39.0 install took precedence over the asdf shim
-// and ran every pipeline against a compiler the repo did not pin. If validation and run
-// ever disagree again, check `command -v pipelinek` first: the bug is a version
-// mismatch, never the script.
+// Stages share the filesystem and the working directory. A file one stage
+// writes at a relative path is visible to the next, and a release binary built
+// in one stage can be executed by another.
+//
+// The consequence is not cosmetic. QW-09 exists because in GitHub Actions
+// `needs:` means "wait for that job", not "inherit that job's artifacts" — every
+// job gets a fresh runner. That failure mode does not exist here, so the
+// reachability property is not "each stage must obtain its own binaries" but
+// "a step must not consume a path that a later step produces". Ordering is the
+// whole invariant. It is pinned by
+// `scripts/ci/test_pipeline_artifact_reachability.py` over these scripts rather
+// than over YAML, and deliberately so: pinning it over `pr-ci.yml` would have
+// made the retiring orchestrator the authority for a property of this one.
+//
+// The same probe found the other half: a stage can write into the repository
+// itself. Nothing here cleans up after itself, so a step that writes a
+// relative path writes into the working tree.
+//
+// Shell variables inside a **raw** string (`"""..."""` + trimIndent) must be
+// written `${'$'}name`; the shell then receives a literal `$` and expands its
+// own. This is not a version quirk and the distinction that matters is raw vs
+// normal string, not 0.46.0 vs 0.39.1-rc1: in a normal single-line string
+// `\$name` compiles and works, while in the multiline raw strings every real
+// step uses it fails with "Unresolved reference". `\${'$'}name` is wrong
+// everywhere: the backslash survives into the emitted script and bash fails
+// with "syntax error near unexpected token `('".
+//
+// `pipelinek` on PATH resolves 0.46.0. That was not free. A symlink at
+// ~/.local/bin/pipelinek pointing at a 0.39.0 install took precedence over the
+// asdf shim and ran every pipeline against a compiler the repo did not pin. If
+// validation and run ever disagree again, check `command -v pipelinek` first:
+// the bug is a version mismatch, never the script.
 //
 //   pipelinek run merge-gate.pipeline.kts --db <journal.db>
 import java.io.File
