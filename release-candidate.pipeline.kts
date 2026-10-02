@@ -93,11 +93,25 @@ fun workspaceVersion(root: String): String {
     )
 }
 
-// `x86_64-unknown-linux-gnu` -> `linux-x86_64`. The release tool's `--platform`
+// `x86_64-unknown-linux-gnu` -> `linux-x86-64`. The release tool's `--platform`
 // spelling is its own, not cargo's, and the mapping between the two is the
 // product's rather than this script's.
+//
+// The hyphens matter and were wrong here until 2026-10-02: this arm said
+// `linux-x86_64`, and `cognicode-release plan --platform linux-x86_64` answers
+// `Error: unknown platform`. Nothing compared this mapping against the contract,
+// because the only check that did read the lane — `scripts/check-release-matrix.sh`
+// — was reading `.github/workflows/release.yml` instead, where the id was
+// spelled correctly. The packaging stage would have failed on the first real
+// run. The two spellings also disagreed with each other inside this file:
+// `linux-aarch64` has always been hyphenated here.
+//
+// `scripts/product/release_lane.py` reads both this mapping and `val targets`
+// and refuses to answer when they disagree, and
+// `scripts/check-release-matrix.sh` now compares this name against the
+// contract's own `platform-token`. That is what catches the next one.
 fun platformOf(target: String): String = when (target) {
-    "x86_64-unknown-linux-gnu" -> "linux-x86_64"
+    "x86_64-unknown-linux-gnu" -> "linux-x86-64"
     "aarch64-unknown-linux-gnu" -> "linux-aarch64"
     else -> error("no release platform is declared for cargo target `$target`. Add it to `targets` and to `platformOf` together, so a target can never be built without a platform name to package it under.")
 }
@@ -220,25 +234,57 @@ pipeline {
                     sh("$cd && bash scripts/ci/build-sboms-for-lane.sh $target")
                 }
 
+                // The lane's output has to land where the flatten script looks
+                // for it: `staging/payloads-<platform>/dist/` and
+                // `staging/payloads-<platform>/crates/`. This stage wrote
+                // `dist/*.tar.gz` at the repository root, because that is where
+                // the workflow's `upload-artifact` step listed its `path:` and
+                // the transfer itself — the thing that used to build the lane
+                // directories — has no equivalent here. So `payloads` failed
+                // with "no payloads-* lane directories found", and `generate`
+                // had an empty staging tree to work from.
+                //
+                // The directory layout is not an accident of the YAML even
+                // though the transfer was: `stage-platform-payloads.sh` reads
+                // exactly this shape, rejects anything else at the staging root,
+                // and is exercised by five negative cases. Migrating the
+                // property means producing the layout it consumes.
                 stage("package-$target") {
                     sh(releasePaths + "\n" + """
-                        mkdir -p dist
+                        platform=${platformOf(target)}
+                        lane="staging/payloads-${'$'}platform"
+                        mkdir -p "${'$'}lane/dist" "${'$'}lane/crates"
                         # The published product surface is the contract's, not this
                         # script's: `plan` prints the canonical filenames, and the
                         # component name is recovered by stripping the derived
                         # `-{version}-{token}.tar.gz` suffix. A third list of
                         # components written here would be a third place to forget.
-                        for filename in $("${'$'}TARGET_DIR/release/cognicode-release" plan --platform ${platformOf(target)} --version "$version"); do
+                        for filename in $("${'$'}TARGET_DIR/release/cognicode-release" plan --platform "${'$'}platform" --version "$version"); do
                             component="${'$'}{filename%-${'$'}version-*}"
                             filename=$("${'$'}TARGET_DIR/release/cognicode-release" name --component "${'$'}component" \
-                                        --platform ${platformOf(target)} --version "$version")
+                                        --platform "${'$'}platform" --version "$version")
                             stage=$(mktemp -d)
                             mkdir -p "${'$'}stage/bin"
                             cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component"
-                            tar -czf "dist/${'$'}filename" -C "${'$'}stage" bin
-                            echo "packaged ${'$'}filename"
+                            tar -czf "${'$'}lane/dist/${'$'}filename" -C "${'$'}stage" bin
+                            echo "packaged ${'$'}filename for ${'$'}platform"
+                            rm -rf "${'$'}stage"
                         done
-                        ls -la dist
+                        # The SBOM belongs to the lane, not to the repository: the
+                        # flatten script pairs `<component>-<triple>.cdx.json`
+                        # with the payloads of the same lane, and a payload whose
+                        # SBOM sits elsewhere is a payload with no evidence.
+                        for component in cogh cognicode cognicode-mcp; do
+                            sbom="crates/${'$'}component-$target.cdx.json"
+                            if [ ! -f "${'$'}sbom" ]; then
+                                echo "FAIL: ${'$'}sbom is missing."
+                                echo "  build-sboms-for-lane.sh writes crates/<component>-<target>.cdx.json;"
+                                echo "  the sbom-${'$'}target stage runs before this one and did not produce it."
+                                exit 1
+                            fi
+                            cp "${'$'}sbom" "${'$'}lane/crates/"
+                        done
+                        ls -la "${'$'}lane/dist" "${'$'}lane/crates"
                     """.trimIndent())
                 }
 
@@ -259,11 +305,10 @@ pipeline {
                 }
 
                 stage("archive-standalone-$target") {
-                    sh("""
-                        $cd || exit 1
+                    sh(releasePaths + "\n" + """
                         export HOME=$(mktemp -d)
                         work=$(mktemp -d)
-                        for archive in dist/*.tar.gz; do
+                        for archive in "staging/payloads-${platformOf(target)}"/dist/*.tar.gz; do
                             tar -xzf "${'$'}archive" -C "${'$'}work"
                         done
                         # No Rust toolchain and no repository files after extraction.
@@ -278,6 +323,32 @@ pipeline {
 
         // ------------------------------------------------------------- candidate
         stage("candidate") {
+            // The flatten script rejects anything at the staging root that is
+            // not a `payloads-*` lane directory or a pre-staged skill bundle, and
+            // `generate` expects the bundles there. The workflow had a step for
+            // this between the artifact transfer and the flatten; the port did
+            // not, so `payloads` and `generate` both ran against a tree that was
+            // missing part of what it publishes.
+            stage("skill-bundles") {
+                sh(releasePaths + "\n" + """
+                    mkdir -p staging
+                    # Which bundles are published is the contract's answer, not a
+                    # list written here. The workflow carried a python fallback
+                    # for when the binary was absent; the candidate lane builds
+                    # the tool two stages earlier and has no reason to.
+                    while IFS= read -r id; do
+                        [ -n "${'$'}id" ] || continue
+                        if [ ! -f "skills/${'$'}id/manifest.yaml" ]; then
+                            echo "FAIL: published skill bundle '${'$'}id' has no skills/${'$'}id/manifest.yaml"
+                            exit 1
+                        fi
+                        tar -czf "staging/${'$'}id-${'$'}version.tar.gz" -C "skills/${'$'}id" .
+                        echo "staged ${'$'}id-${'$'}version.tar.gz"
+                    done < <("${'$'}TARGET_DIR/release/cognicode-release" skills --published)
+                    ls -la staging
+                """.trimIndent())
+            }
+
             stage("payloads") {
                 sh("$cd && bash scripts/ci/stage-platform-payloads.sh staging")
             }
