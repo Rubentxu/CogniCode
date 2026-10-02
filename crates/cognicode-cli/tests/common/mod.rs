@@ -212,21 +212,169 @@ pub fn release_dir() -> PathBuf {
 /// The pipeline a merge is gated on. Declared here and nowhere else.
 pub const MERGE_AUTHORITY: &str = "merge-gate.pipeline.kts";
 
-/// The merge authority's source with whole-line comments removed.
+/// The pipeline that builds and certifies a release candidate.
+///
+/// Named here for the same reason the merge authority is: a contract that says
+/// "the release lane must generate SBOMs with the shared script" has to name
+/// one file, and the file it names must be the one that runs.
+pub const RELEASE_CANDIDATE_AUTHORITY: &str = "release-candidate.pipeline.kts";
+
+/// One pipeline's source, whole-line comments removed.
 ///
 /// A comment that quotes a command is otherwise indistinguishable from a step
 /// that runs it, in both directions: a comment naming a removed gate would
 /// satisfy "the gate exists", and a comment explaining why something is pinned
 /// would trip "it is pinned".
-pub fn merge_authority_lines() -> Vec<String> {
-    let path = repo_root().join(MERGE_AUTHORITY);
+pub fn pipeline_text(pipeline: &str) -> String {
+    let path = repo_root().join(pipeline);
     let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        .unwrap_or_else(|e| panic!("cannot read {pipeline}: {e}"));
     text.lines()
-        .map(str::trim)
-        .filter(|l| !l.starts_with("//"))
-        .map(str::to_owned)
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One pipeline's source as trimmed, comment-free lines.
+pub fn pipeline_lines(pipeline: &str) -> Vec<String> {
+    pipeline_text(pipeline)
+        .lines()
+        .map(|l| l.trim().to_owned())
         .collect()
+}
+
+/// Every `sh(...)` body in `text`, with its byte offset in that text.
+///
+/// Extracting bodies rather than scanning lines is what lets a command that
+/// wraps count. The line-based check this replaced documented the limitation
+/// and prescribed moving the command onto one line — the wrong remedy, because
+/// it distorts a pipeline to satisfy a checker, and the distortion is invisible
+/// to whoever reads the pipeline next. It also diverged: `pipeline_authority.py`
+/// had already worked on bodies, and the two Rust copies had not caught up, so
+/// a contract failed against a pipeline that does run the command.
+///
+/// A command outside an `sh(` body still does not count. A `val`, a stage name,
+/// or a comment that survived stripping would run nothing.
+///
+/// Kotlin's `${'$'}` is resolved, because the contract reads the `.kts` source
+/// rather than the emitted shell and the escape is an artefact of that.
+pub fn sh_bodies_with_offsets(text: &str) -> Vec<(usize, String)> {
+    const RAW: &str = "\"\"\"";
+    let bytes = text.as_bytes();
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(offset) = text[cursor..].find("sh(") {
+        let after = cursor + offset + 3;
+        let rest = text[after..].trim_start();
+        let body_start = after + (text[after..].len() - rest.len());
+
+        if rest.starts_with(RAW) {
+            let from = body_start + RAW.len();
+            let Some(end) = text[from..].find(RAW) else {
+                break;
+            };
+            out.push((from, text[from..from + end].replace("${'$'}", "$")));
+            cursor = from + end + RAW.len();
+            continue;
+        }
+
+        if rest.starts_with('"') {
+            let from = body_start + 1;
+            let mut i = from;
+            let mut end = None;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'"' => {
+                        end = Some(i);
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            let Some(end) = end else { break };
+            out.push((
+                from,
+                text[from..end].replace('\\', "").replace("${'$'}", "$"),
+            ));
+            cursor = end + 1;
+            continue;
+        }
+
+        cursor = after;
+    }
+
+    out
+}
+
+/// Whether `pipeline` runs `command` inside an `sh(...)` body.
+///
+/// The `sh(` requirement is what makes this fail-closed: a command quoted
+/// anywhere else would run nothing.
+pub fn pipeline_runs(pipeline: &str, command: &str) -> bool {
+    sh_bodies_with_offsets(&pipeline_text(pipeline))
+        .iter()
+        .any(|(_, body)| body.contains(command))
+}
+
+/// The name of the stage that runs `command`, for the failure message.
+///
+/// Found by walking back from the body that contains the command rather than by
+/// matching a line, so a command that is not on the same line as its `sh(` is
+/// still attributed to the right stage.
+pub fn pipeline_stage_of(pipeline: &str, command: &str) -> Option<String> {
+    let text = pipeline_text(pipeline);
+    let offset = sh_bodies_with_offsets(&text)
+        .into_iter()
+        .find(|(_, body)| body.contains(command))
+        .map(|(offset, _)| offset)?;
+    stage_before(&text[..offset])
+}
+
+/// The innermost `stage("…")` that opens before `offset`.
+///
+/// Textual rather than structural, and deliberately so: it has to name the
+/// stage a failing contract points at, and parsing Kotlin's braces to do that
+/// would be a second implementation of a language to answer a question about
+/// error messages.
+fn stage_before(prefix: &str) -> Option<String> {
+    let mut current = None;
+    for line in prefix.lines() {
+        let line = line.trim();
+        if let Some(name) = line
+            .strip_prefix("stage(\"")
+            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
+        {
+            current = Some(name);
+        }
+    }
+    current.or_else(|| Some("(top level)".to_owned()))
+}
+
+/// A failure message naming the pipeline, the command and the stages that do
+/// exist, so a RED from these contracts is actionable without a diff.
+pub fn pipeline_not_run_message(pipeline: &str, command: &str, required: &str) -> String {
+    let stages: Vec<String> = pipeline_lines(pipeline)
+        .into_iter()
+        .filter_map(|l| {
+            l.strip_prefix("stage(\"")
+                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
+        })
+        .collect();
+    format!(
+        "{pipeline} does not run `{command}`.\n{required}\nstages present: {}",
+        if stages.is_empty() {
+            "none".to_owned()
+        } else {
+            stages.join(", ")
+        }
+    )
+}
+
+/// The merge authority's source with whole-line comments removed.
+pub fn merge_authority_lines() -> Vec<String> {
+    pipeline_lines(MERGE_AUTHORITY)
 }
 
 /// Whether the merge authority runs `command` inside an `sh(...)` body.
@@ -237,46 +385,18 @@ pub fn merge_authority_lines() -> Vec<String> {
 /// multi-line `sh("""…""")` also does not count, which is a false negative
 /// rather than a false pass.
 pub fn merge_authority_runs(command: &str) -> bool {
-    merge_authority_lines()
-        .iter()
-        .any(|line| line.contains("sh(") && line.contains(command))
+    pipeline_runs(MERGE_AUTHORITY, command)
 }
 
 /// The name of the stage that runs `command`, for the failure message.
 pub fn merge_authority_stage_of(command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in merge_authority_lines() {
-        if let Some(name) = line
-            .strip_prefix("stage(\"")
-            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
-        {
-            current = Some(name);
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
+    pipeline_stage_of(MERGE_AUTHORITY, command)
 }
 
 /// A failure message naming the authority, the command and the stages that do
 /// exist, so a RED from these contracts is actionable without a diff.
 pub fn not_run_message(command: &str, required: &str) -> String {
-    let stages: Vec<String> = merge_authority_lines()
-        .into_iter()
-        .filter_map(|l| {
-            l.strip_prefix("stage(\"")
-                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
-        })
-        .collect();
-    format!(
-        "{MERGE_AUTHORITY} does not run `{command}`.\n{required}\nstages present: {}",
-        if stages.is_empty() {
-            "none".to_owned()
-        } else {
-            stages.join(", ")
-        }
-    )
+    pipeline_not_run_message(MERGE_AUTHORITY, command, required)
 }
 
 /// `pipeline:stage` for every pipeline that runs `command`, sorted.
@@ -296,35 +416,21 @@ pub fn invoked_by(command: &str) -> Vec<String> {
         let Ok(text) = std::fs::read_to_string(&pipeline) else {
             continue;
         };
-        let live: Vec<String> = text
+        let live: String = text
             .lines()
-            .map(str::trim)
-            .filter(|l| !l.starts_with("//"))
-            .map(str::to_owned)
-            .collect();
-        if let Some(stage) = merge_authority_stage_in(&live, command) {
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Some(stage) = sh_bodies_with_offsets(&live)
+            .into_iter()
+            .find(|(_, body)| body.contains(command))
+            .and_then(|(offset, _)| stage_before(&live[..offset]))
+        {
             out.push(format!("{name}:{stage}"));
         }
     }
     out.sort();
     out
-}
-
-/// The stage that runs `command` within one already-stripped pipeline.
-fn merge_authority_stage_in(lines: &[String], command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in lines {
-        if let Some(name) = line
-            .strip_prefix("stage(\"")
-            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
-        {
-            current = Some(name);
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
 }
 
 /// Every PipelineK script at the repository root, sorted.
