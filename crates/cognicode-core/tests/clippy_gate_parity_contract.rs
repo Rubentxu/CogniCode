@@ -1,4 +1,4 @@
-//! Clippy-gate parity contract between the Kotlin pipelines and `pr-ci.yml`.
+//! The clippy gate: the merge pipeline must lint as strictly as it claims.
 //!
 //! The sibling contract in this crate (`core_gate_coverage_contract.rs`)
 //! pins `cargo test` parity: every core command the workflow runs must be
@@ -140,8 +140,8 @@ fn extract_quoted(s: &str) -> Option<String> {
 /// is a loud, specific one rather than a green that means nothing ran.
 fn measured_error_count(invocation: &str) -> Option<usize> {
     match invocation {
-        // `pr-ci.yml:78`. Verified 0 on 2026-09-30 at 426d5b03, and again
-        // when the dead baseline was removed.
+        // The merge gate's clippy stage. Verified 0 on 2026-09-30 at 426d5b03,
+        // and again when the dead baseline was removed.
         "cargo clippy --workspace --all-targets -- -D warnings" => Some(0),
         // `product-fast.pipeline.kts`. Verified 42 on 2026-09-30 at
         // 426d5b03: all `clippy::manual_async_fn`, all in
@@ -151,40 +151,28 @@ fn measured_error_count(invocation: &str) -> Option<usize> {
     }
 }
 
-/// The `merge-gate` clippy stage must run the bare assertion.
+/// The merge gate's clippy stage must run the bare assertion, and nothing else.
 ///
-/// This is the assertion `pr-ci.yml:78` already makes, restated for the
-/// local replica so the two cannot drift. It is deliberately a direct
-/// equality on the invocation rather than a "contains" check: a substring
-/// assertion survives the stage being rewritten into a filter, which is
-/// the exact regression this contract exists to catch.
+/// This used to be a parity assertion between two orchestrators: the
+/// required `merge-gate` check ran one command in `.github/workflows/pr-ci.yml`
+/// and `merge-gate.pipeline.kts` mirrored it. With the workflow retired there
+/// is nothing to mirror, and the property that was underneath is the one worth
+/// keeping: the gate that decides a merge lints with `-D warnings` and no
+/// filter, so nothing can quietly widen.
+///
+/// The equality is direct rather than a "contains" check on purpose: a
+/// substring assertion survives the stage being rewritten into a filter, which
+/// is the exact regression this contract exists to catch.
 #[test]
-fn merge_gate_clippy_matches_the_workflow_command_exactly() {
+fn merge_gate_clippy_runs_exactly_the_bare_command() {
     let invocations = kts_clippy_invocations(&read_kts("merge-gate.pipeline.kts"));
     assert_eq!(
         invocations,
         vec!["cargo clippy --workspace --all-targets -- -D warnings".to_string()],
-        "merge-gate.pipeline.kts must declare exactly the clippy command \
-         pr-ci.yml:78 runs, and nothing else. Found: {invocations:?}. The \
-         workflow is the authority; a replica that runs a different lint \
-         configuration is not a replica."
-    );
-}
-
-/// `pr-ci.yml` must still assert the bare command.
-///
-/// The replica's parity is only meaningful while the source says this, so
-/// the source is checked rather than trusted.
-#[test]
-fn pr_ci_still_asserts_bare_clippy() {
-    let workflow = std::fs::read_to_string(repo_root().join(".github/workflows/pr-ci.yml"))
-        .expect("read pr-ci.yml");
-    assert!(
-        workflow.contains("cargo clippy --workspace --all-targets -- -D warnings"),
-        "pr-ci.yml no longer runs `cargo clippy --workspace --all-targets \
-         -- -D warnings`. If the lint gate moved or changed shape, this \
-         contract's parity assertions are measuring against a command \
-         nobody enforces."
+        "merge-gate.pipeline.kts must declare exactly the bare clippy command, \
+         and nothing else. Found: {invocations:?}. This pipeline is the gate: a \
+         lint configuration that differs from the bare assertion is a gate that \
+         lets through what it is supposed to hold back."
     );
 }
 
@@ -223,7 +211,7 @@ fn no_pipeline_exempts_a_file_its_own_flags_report_clean() {
                 "{pipeline} exempts {exemptions:?} from its clippy gate, \
                  but `{invocation}` reports 0 errors. The baseline is dead: \
                  it filters nothing while still relaxing the gate, so this \
-                 pipeline would pass where pr-ci.yml fails. Delete the \
+                 pipeline would pass where the bare command fails. Delete the \
                  exemption, or — if the errors are real — fix them. Widening \
                  the exemption is not an option."
             );
@@ -241,7 +229,8 @@ fn the_measured_baseline_is_the_documented_one() {
     assert_eq!(
         measured_error_count("cargo clippy --workspace --all-targets -- -D warnings"),
         Some(0),
-        "pr-ci.yml's clippy command was measured at 0 errors on 2026-09-30. \
+        "the merge gate's bare clippy command was measured at 0 errors on \
+         2026-09-30. \
          If that is no longer true the workspace has new lint debt and the \
          bare command is the gate that reports it — fix the code, do not \
          update this number to match."
@@ -349,7 +338,7 @@ fn parse_member_list(line: &str) -> Vec<PathBuf> {
 /// crates/cognicode-core/Cargo.toml:17:rig = ["dep:rig-core"]
 /// ```
 ///
-/// The consequence is that `pr-ci.yml:78` — and every stage in
+/// The consequence is that the merge gate — and every stage in
 /// `merge-gate.pipeline.kts` — compiles with `rig` off, so the 29
 /// `#[cfg(feature = "rig")]` sites in the crate are not type-checked, not
 /// linted, and not covered by a single test. That is the same failure mode

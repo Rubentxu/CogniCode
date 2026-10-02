@@ -9,6 +9,12 @@ Two defects motivated this file, and both were invisible until CI ran:
    the `selector` job went red on every PR that reached it. The
    selector could not classify anything; it could only fail.
 
+   That defect is gone with the action: the checks it pinned were about the
+   shape of a `filters:` value and an output key that only
+   `dorny/paths-filter` emits. Neither has anywhere to occur once the
+   workflows are gone, so a contract still asserting them would be guarding
+   a mechanism the repository no longer has.
+
 2. `emit_json` joined suite names with `IFS=','` and no quoting, producing
    `suites":[core,explorer]`. That is not JSON. The workflow reads the
    field with `jq -r '.suites | join(",")'`, which fails on it, so even
@@ -16,7 +22,10 @@ Two defects motivated this file, and both were invisible until CI ran:
 
 The contract this file pins: for every input class, the selector exits 0,
 emits parseable JSON, and the `strategy` matches what the documented
-policy requires. Parsing with `json.loads` is the assertion that would
+policy requires. Orchestration files are an input class in their own right —
+a pipeline that decides what runs is exactly the thing a selective gate must
+re-validate completely, so both `*.pipeline.kts` and `.github/workflows/**`
+force the full battery. Parsing with `json.loads` is the assertion that would
 have caught defect 2; checking `strategy` is what catches a policy that
 silently stops selecting.
 
@@ -34,7 +43,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SELECTOR = REPO_ROOT / "scripts" / "ci" / "select-suites.sh"
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-ci.yml"
 
 # Input classes paired with the strategy the header of the script promises.
 # `noop` means "touched files do not affect compiled code"; `fallback` is
@@ -49,6 +57,11 @@ CASES: list[tuple[str, str, str]] = [
     # Cargo manifests and CI wiring force the full battery.
     ("Cargo.toml", "fallback", ""),
     ("Cargo.lock", "fallback", ""),
+    # Orchestration, by either spelling. PipelineK is the authority now, so a
+    # change to a pipeline is the case that has to force the full battery; the
+    # workflows stay in the selector until the directory is gone.
+    ("merge-gate.pipeline.kts", "fallback", ""),
+    ("integration.pipeline.kts", "fallback", ""),
     (".github/workflows/ci.yml", "fallback", ""),
     ("scripts/ci/select-suites.sh", "fallback", ""),
     # Nothing touched.
@@ -146,21 +159,6 @@ def check_all() -> list[str]:
     check(
         "suites\":[core" not in proc.stdout,
         f"unquoted suite tokens reintroduced: {proc.stdout!r}",
-    )
-
-    # --- contract: the workflow hands the filter a YAML object ----------
-    # A scalar `filters:` value is what made dorny/paths-filter abort. The
-    # check is textual on purpose: it is the exact failure mode, and the
-    # workflow file is the only place it can occur.
-    workflow_text = WORKFLOW.read_text(encoding="utf-8")
-    check(
-        "filters: .*:[*]" not in workflow_text,
-        "pr-ci.yml still passes a scalar to dorny/paths-filter; "
-        "it must be a YAML object",
-    )
-    check(
-        "outputs.any" not in workflow_text,
-        "pr-ci.yml still reads a paths-filter output that the filter does not emit",
     )
 
     return list(failures)

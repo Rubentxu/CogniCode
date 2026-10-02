@@ -1,6 +1,14 @@
-// merge-gate — full parity with .github/workflows/pr-ci.yml `merge-gate`.
+// merge-gate — the pipeline a merge is gated on.
 //
-// The GitHub workflow fans out into four jobs and aggregates them:
+// This was built to full parity with `.github/workflows/pr-ci.yml` and then
+// took its place. The line numbers in the comments below are left where they
+// were: they are provenance, pointing at the stage each gate came from, and
+// the question they answered — "does the required check run this?" — is
+// answered here now. The orchestrator that decides what runs is this file,
+// declared once in `scripts/ci/pipeline_authority.py` and read from there by
+// every wiring contract.
+//
+// The four GitHub jobs it replaces, for the record:
 //   check        -> fmt + clippy                        (pr-ci.yml:56)
 //   build-binary -> release builds of mcp + control-plane (pr-ci.yml:118)
 //   test-pr      -> core + cli + mcp suites             (pr-ci.yml:239)
@@ -61,6 +69,15 @@ import java.io.File
 val repoRoot: String = File(".").canonicalPath
 val cd = "cd \"$repoRoot\""
 
+// The file that says what gates a merge. Declared here so `repo-contract` can
+// check that the pipeline it is running inside actually exists, instead of
+// checking that some other orchestrator's file does. That check used to name
+// `.github/workflows/pr-ci.yml`, which meant the pipeline refused to run until
+// a file that the cutover exists to delete was present: the gate could not
+// outlive its own predecessor. The name below is the same fact the wiring
+// contracts read from `scripts/ci/pipeline_authority.py`.
+val authority = "merge-gate.pipeline.kts"
+
 pipeline {
     stages {
         // ---------------------------------------------------------------- check
@@ -75,11 +92,16 @@ pipeline {
                         echo "FAIL: $repoRoot has no Cargo.toml"
                         exit 1
                     }
-                    test -f "$repoRoot/.github/workflows/pr-ci.yml" || {
-                        echo "FAIL: gate source workflow is missing"
+                    test -f "$repoRoot/$authority" || {
+                        echo "FAIL: the merge authority $authority is missing from \$repoRoot."
+                        echo "      A pipeline that cannot find itself cannot gate anything."
                         exit 1
                     }
-                    echo "repo=$repoRoot crates=$(ls -d $repoRoot/crates/*/ | wc -l)"
+                    test -d "$repoRoot/scripts/ci" || {
+                        echo "FAIL: \$repoRoot/scripts/ci is missing, so there is no contract suite to run"
+                        exit 1
+                    }
+                    echo "repo=$repoRoot authority=$authority crates=$(ls -d $repoRoot/crates/*/ | wc -l)"
                 """.trimIndent())
             }
 
@@ -290,9 +312,19 @@ pipeline {
                 sh("$cd && bash scripts/ci/check-bin-tracking.sh")
             }
 
-            stage("release-artifact-reachability") {
-                sh("$cd && bash scripts/ci/check-release-artifact-reachability.sh")
-            }
+            // QW-09 used to have two stages here: a shell guard and a Rust
+            // contract, both reading `pr-ci.yml`. Both are gone, and the
+            // property is stronger for it. The original question was GitHub's
+            // — "does this job download the artifact an earlier job uploaded?" —
+            // which only exists because every Actions job gets a fresh runner
+            // and `needs:` does not mean "inherits artifacts". PipelineK has
+            // neither problem: the stages share one filesystem (measured, not
+            // assumed), so the surviving property is an ordering one — every
+            // step that consumes a release artifact needs an earlier step that
+            // produced it. `scripts/ci/test_pipeline_artifact_reachability.py`
+            // states that, and it is discovered by the `contracts` stage above
+            // rather than named by this one, and it scans every `*.pipeline.kts`
+            // rather than a single workflow.
 
             // CR-07. `/metrics` is the only reason the OpenTelemetry upgrade was
             // worth doing, and the upgrade was the only reason RUSTSEC-2024-0437
@@ -328,12 +360,6 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
             }
 
-            // pr-ci.yml:512. QW-09 pins that every release-artifact path the
-            // workflow downloads is a path some earlier job produced.
-            stage("cli-qw09-release-artifact-reachability") {
-                sh("$cd && cargo test -p cognicode-cli --test qw09_release_artifact_reachability --quiet")
-            }
-
             // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
             // visible in the action register (N+63.2).
             stage("cli-action-register-identity-contract") {
@@ -355,39 +381,183 @@ pipeline {
             }
 
             // mcp (pr-ci.yml:453-501)
-            stage("mcp-gated-suites") {
-                sh("""
-                    $cd || exit 1
-                    set -e
-                    for t in \
-                      a009_agent_safe_profile \
-                      a010_tool_authority_audit \
-                      a012_structured_output \
-                      a013_lifecycle_uat \
-                      prf_sec_02_read_only_uat \
-                      a016_tools_runtime_consistency \
-                      prf_ana_02_uat \
-                      prf_ana_05_uat \
-                      prf_ana_07_uat \
-                      prf_ana_08_uat \
-                      prf_cli_04_two_process_uat \
-                      prf_f4_w3_corrupt_cache_recovery \
-                      prf_f5_w3_signal_cancel \
-                      prf_mcp_02_uat \
-                      prf_sec_01_uat \
-                      prf_sec_03_telemetry_optin_uat \
-                      prf_sec_05_shutdown_recovery_uat \
-                      prf_state_01_data_catalog_uat \
-                      prf_state_02_uat \
-                      prf_state_03_04_uat \
-                      prf_state_03_concurrent_uat \
-                      prf_state_04_isolation_uat
-                    do
-                        echo "--- mcp: ${'$'}t"
-                        cargo test -p cognicode-mcp --test "${'$'}t" --quiet
-                    done
-                """.trimIndent())
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a009-agent-safe-profile") {
+                sh("$cd && cargo test -p cognicode-mcp --test a009_agent_safe_profile --quiet")
             }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a010-tool-authority-audit") {
+                sh("$cd && cargo test -p cognicode-mcp --test a010_tool_authority_audit --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a012-structured-output") {
+                sh("$cd && cargo test -p cognicode-mcp --test a012_structured_output --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a013-lifecycle-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test a013_lifecycle_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-02-read-only-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a016-tools-runtime-consistency") {
+                sh("$cd && cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-05-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_05_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-07-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_07_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-08-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_08_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-cli-04-two-process-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-f4-w3-corrupt-cache-recovery") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-f5-w3-signal-cancel") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-mcp-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_mcp_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-01-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-03-telemetry-optin-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-05-shutdown-recovery-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-01-data-catalog-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_01_data_catalog_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-03-04-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_03_04_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-03-concurrent-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_03_concurrent_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-04-isolation-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_04_isolation_uat --quiet")
+            }
+
         }
 
         // ------------------------------------------------------------ merge-gate

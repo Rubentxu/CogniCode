@@ -27,9 +27,12 @@
 #   1. Touch en `Cargo.toml` workspace, `Cargo.lock`, `.cargo/**`,
 #      cualquier `crates/*/Cargo.toml`, `rust-toolchain*` -> fallback ALL.
 #      (Un cambio en deps/registro afecta a TODOS los compiles).
-#   2. Touch en `.github/workflows/**` -> fallback ALL.
-#      (Los workflows son la pieza contractual de CI; un cambio puede
-#      cambiar pines o steps y debe re-validarse todo).
+#   2. Touch en `*.pipeline.kts` (raiz) o `.github/workflows/**` ->
+#      fallback ALL.
+#      (La orquestacion es la pieza contractual de CI; un cambio puede
+#      cambiar gates, pines o stages y debe re-validarse todo).
+#      Las pipelines son la autoridad; los workflows se retiran con el
+#      cutover, pero la regla se queda hasta que el directorio no exista.
 #   3. Touch en `scripts/ci/**` -> fallback ALL.
 #      (Lo nuevo es infraestructura de CI).
 #   4. Touch en `crates/cognicode-core/**` -> ['core'].
@@ -51,12 +54,13 @@
 # Test contractual:
 #   crates/cognicode-cli/tests/qw08_crate_selector.rs
 #
-# Política L1.2: este selector NO se ejecuta directamente desde el job
-# `test-pr` (no tenemos `git diff` natural en pull_request event); su
-# existencia en scripts/ está documentada como pieza contractual del
-# CR-08, y el test contractual pinea el mapeo. Un job que llame al
-# selector vivirá en un cambio futuro (`dorny/paths-filter` o
-# `tj-actions/changed-files`).
+# Política L1.2 (revisada durante el cutover a PipelineK): el selector SÍ se
+# ejecuta — el stage `selector` de `merge-gate.pipeline.kts` lo invoca — pero
+# su entrada no viene de un filtro de paths de Actions sino de las propias
+# pipelines, que enumeran los `sh()` que las ejecutan. Lo que no cambia es el
+# contrato: el mapeo está pineado por `qw08_crate_selector.rs` y por
+# `scripts/ci/test_select_suites.py`, y ambos lopin el script, no el
+# orquestador.
 #
 # Política de release: el selector NO modifica el release gate
 # (`release.yml`); release siempre corre la suite completa. Aquí solo
@@ -184,7 +188,11 @@ for p in $PATHS; do
       needs_all="true"
       reason="crate_manifest_changed($p)"
       ;;
-    # Regla 2: workflows => ALL
+    # Regla 2: orquestacion => ALL
+    *.pipeline.kts)
+      needs_all="true"
+      reason="pipeline_changed($p)"
+      ;;
     .github/workflows/*|.github/workflows|.github/*)
       needs_all="true"
       reason="workflow_changed($p)"

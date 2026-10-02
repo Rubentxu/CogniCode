@@ -30,10 +30,13 @@ one commit is one logical change.
 Paste the commands you ran and their real output. Not a summary of what you
 believe happened.
 
-During development, run only the affected tests. The full release gate is
-`merge-gate` in .github/workflows/pr-ci.yml and is required before merge; a
-green subset is not a green gate, and saying "tests pass" from a subset is not
-an acceptable claim.
+During development, run only the affected tests. The full release gate is the
+`merge-gate` stage tree in merge-gate.pipeline.kts and is required before
+merge; a green subset is not a green gate, and saying "tests pass" from a
+subset is not an acceptable claim.
+
+PipelineK is the only orchestrator. Gates are added to a pipeline, not to a
+GitHub Actions workflow, and the GitHub workflows are being retired.
 
 If this is a bug fix, link the test that failed BEFORE and passes AFTER. A fix
 without a regression test is an unverified claim.

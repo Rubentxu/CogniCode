@@ -26,10 +26,13 @@
 //! selector that skips every `tests/` target by construction.
 //!
 //! Third assertion, added after the gate went red for real: the gate can
-//! also fail by *executing* a suite whose preconditions the workflow does
-//! not create. See
+//! also fail by *executing* a suite whose preconditions the gate does not
+//! create. See
 //! `the_gate_provides_what_the_release_flow_suites_require`.
 
+mod common;
+
+use common::merge_authority_lines;
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -41,9 +44,14 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn read_workflow() -> String {
-    let path = repo_root().join(".github/workflows/pr-ci.yml");
-    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+/// The merge authority's command text, one entry per line.
+///
+/// The orchestrator that gates a merge is `merge-gate.pipeline.kts`; it used
+/// to be `.github/workflows/pr-ci.yml`. Which file that is, is declared once
+/// in `common` rather than re-derived here, so a second orchestrator cannot
+/// quietly become a third source of truth.
+fn merge_authority_text() -> String {
+    merge_authority_lines().join("\n")
 }
 
 /// Every integration-suite source file in the crate, sorted.
@@ -110,11 +118,11 @@ fn is_unrestricted_cli_selector(command: &str) -> bool {
 }
 
 #[test]
-fn no_workflow_runs_lib_only_for_the_cli_crate() {
+fn no_orchestrator_runs_lib_only_for_the_cli_crate() {
     // The original defect. `--lib` is invalid for a bin-only crate, and
     // even if it resolved it would skip every `tests/` target by
     // construction, which is how 21 suites stayed green and unexecuted.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let offenders: Vec<&str> = workflow
         .lines()
         .map(str::trim)
@@ -122,7 +130,7 @@ fn no_workflow_runs_lib_only_for_the_cli_crate() {
         .collect();
     assert!(
         offenders.is_empty(),
-        "pr-ci.yml runs `cargo test -p cognicode-cli --lib` at: {offenders:?}. \
+        "the merge authority runs `cargo test -p cognicode-cli --lib` at: {offenders:?}. \
          cognicode-cli is bin-only, and `--lib` skips every `tests/` target, \
          which is the blind spot that left 21 integration suites unexecuted."
     );
@@ -133,7 +141,7 @@ fn the_merge_gate_compiles_every_integration_suite() {
     // The count-based assertion that a substring check cannot make: the
     // gate must contain at least one unrestricted invocation, so newly
     // added suites are picked up without anyone editing the workflow.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = cli_test_invocations(&workflow);
     let unrestricted: Vec<&String> = invocations
         .iter()
@@ -141,7 +149,7 @@ fn the_merge_gate_compiles_every_integration_suite() {
         .collect();
     assert!(
         !unrestricted.is_empty(),
-        "pr-ci.yml has no unrestricted `cargo test -p cognicode-cli` \
+        "the merge authority has no unrestricted `cargo test -p cognicode-cli` \
          invocation. Found only: {invocations:?}. Without one, every \
          `tests/*.rs` target and every bin target depends on individual \
          `--test` steps, and the next suite added to the crate is \
@@ -155,7 +163,7 @@ fn every_suite_is_either_gated_by_name_or_covered_by_the_unrestricted_step() {
     // step exists OR an unrestricted step compiles it. This is the
     // assertion that fails loudly when someone replaces the broad step
     // with a narrower selector while leaving the old named steps intact.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = cli_test_invocations(&workflow);
     let has_unrestricted = invocations.iter().any(|c| is_unrestricted_cli_selector(c));
     let named: Vec<&str> = invocations
@@ -196,7 +204,7 @@ fn the_ladybug_feature_is_built_by_the_gate() {
     //
     // Asserting the feature is present in the unrestricted step is what
     // makes those tests reachable at all.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = cli_test_invocations(&workflow);
     let unrestricted: Vec<&String> = invocations
         .iter()
@@ -243,7 +251,7 @@ fn the_gate_provides_what_the_release_flow_suites_require() {
     //   2. the gate creates the binaries they need. Removing this step
     //      is the regression that produced the red build, so it has to
     //      fail here rather than at 23:17 in a remote log nobody reads.
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
 
     let release_dependent = [
         "prf_dist_01_06_release_candidate_uat",
@@ -290,20 +298,20 @@ fn the_gate_provides_what_the_release_flow_suites_require() {
 
 /// The A-016 MCP contract suite must itself be gated. It is the only
 /// pin for the class of drift R5 cares about (published tool inventory
-/// vs runtime `MUTATING_TOOLS`); if no step in `pr-ci.yml` compiles it,
+/// vs runtime `MUTATING_TOOLS`); if nothing the merge authority runs compiles it,
 /// a tool added to the runtime without a contract entry stays invisible
 /// to every required check and merge goes green anyway.
 #[test]
 fn the_a016_tools_runtime_consistency_suite_is_gated() {
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     assert!(
         workflow.contains("--test a016_tools_runtime_consistency"),
-        "pr-ci.yml never references a016_tools_runtime_consistency, so the \
+        "the merge authority never references a016_tools_runtime_consistency, so the \
          only contract↔runtime mutating-tools drift pin is ungated: a change \
-         breaking it reads green at merge time. Add a named step \
+         breaking it reads green at merge time. Add a named stage running \
          `cargo test -p cognicode-mcp --test a016_tools_runtime_consistency \
          --quiet` to the merge-gate job, next to the other black-box MCP \
-         contract steps"
+         contract stages"
     );
 }
 
@@ -371,7 +379,7 @@ fn mcp_test_invocations(workflow: &str) -> Vec<String> {
 /// escape hatch here and the enumeration is the whole contract.
 #[test]
 fn every_mcp_suite_is_named_by_the_gate_or_excluded_with_a_reason() {
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     let invocations = mcp_test_invocations(&workflow);
     let named: Vec<&str> = invocations
         .iter()
@@ -441,83 +449,10 @@ fn the_coverage_contract_itself_is_pinned() {
             .exists(),
         "this contract file is missing from tests/; it cannot be running"
     );
-    let workflow = read_workflow();
+    let workflow = merge_authority_text();
     assert!(
         workflow.contains("--test cli_gate_coverage_contract"),
-        "cli_gate_coverage_contract is not named in pr-ci.yml, so the \
+        "cli_gate_coverage_contract is not run by the merge authority, so the \
          coverage guarantee is itself ungated."
-    );
-}
-
-/// The Kotlin DSL pipeline is the migration target for this gate. Until it is
-/// gated by the same contract as the workflow, a suite can be dropped from
-/// `merge-gate.pipeline.kts` — and the gate keeps passing, because every
-/// assertion in this file reads only `pr-ci.yml`.
-///
-/// `pr-ci.yml` stays the source of truth while both exist: deleting the
-/// workflow step still fails `the_merge_gate_compiles_every_integration_suite`,
-/// and deleting the pipeline step fails this test. Removing the migration
-/// target is therefore a separate, visible act — not a silent one.
-#[test]
-fn the_kotlin_pipeline_does_not_narrow_the_cli_gate() {
-    let kts_path = repo_root().join("merge-gate.pipeline.kts");
-    let Ok(kts) = std::fs::read_to_string(&kts_path) else {
-        // No pipeline yet: the workflow is the only gate, and the tests above
-        // already hold it. Nothing to compare against.
-        return;
-    };
-
-    let unrestricted: Vec<String> = kts
-        .lines()
-        .map(str::trim)
-        .filter(|l| l.contains("cargo test -p cognicode-cli"))
-        .map(|l| l.to_string())
-        .filter(|c| is_unrestricted_cli_selector(c))
-        .collect();
-    assert!(
-        !unrestricted.is_empty(),
-        "merge-gate.pipeline.kts has no unrestricted `cargo test \
-         -p cognicode-cli` invocation, so every tests/*.rs target and bin \
-         target depends on individual stages there. The YAML keeps its \
-         unrestricted step, so the two gates have diverged."
-    );
-}
-
-/// Every `--test <suite>` the workflow gates in `cognicode-cli` must also be
-/// gated by the Kotlin pipeline. This is the anti-vacuity assertion for the
-/// migration: it fails if a stage is renamed away, or if the pipeline is
-/// edited to compile a narrower set than the workflow it replaces.
-#[test]
-fn the_kotlin_pipeline_gates_every_suite_the_workflow_gates() {
-    let kts_path = repo_root().join("merge-gate.pipeline.kts");
-    let Ok(kts) = std::fs::read_to_string(&kts_path) else {
-        return;
-    };
-    let workflow = read_workflow();
-
-    let gated_in_workflow: Vec<String> = cli_test_invocations(&workflow)
-        .iter()
-        .filter_map(|c| c.split("--test ").nth(1))
-        .filter_map(|rest| rest.split_whitespace().next())
-        .map(|s| s.trim_matches('"').to_string())
-        .collect();
-
-    let mut missing: Vec<String> = gated_in_workflow
-        .iter()
-        .filter(|suite| {
-            !kts.contains(&format!("--test {suite}\""))
-                && !kts.contains(&format!("--test {suite} "))
-        })
-        .cloned()
-        .collect();
-    missing.sort();
-    missing.dedup();
-
-    assert!(
-        missing.is_empty(),
-        "pr-ci.yml gates these cognicode-cli suites that \
-         merge-gate.pipeline.kts does not: {missing:?}. The Kotlin pipeline \
-         is meant to replace the workflow with the same coverage; a suite that \
-         exists in only one of them is a narrowing the gate will not catch."
     );
 }
