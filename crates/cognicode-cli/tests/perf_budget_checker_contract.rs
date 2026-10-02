@@ -244,11 +244,29 @@ fn the_real_budget_declares_enforcement_it_does_not_have() {
         "unrecognised enforcement status `{declared}`; expected `ci` or `none`"
     );
 
-    // Which lane enforces the budget. The orchestrator that gates a merge is
-    // `merge-gate.pipeline.kts`; it used to be `.github/workflows/pr-ci.yml`,
-    // and the declaration is about a lane rather than about a file, so it is
-    // asked of every pipeline instead of one named path.
-    let wired = common::invoked_by("perf-budget-check");
+    // Which lane runs the checker, and whether it can stop that lane. The
+    // orchestrator that gates a merge is `merge-gate.pipeline.kts`; it used to
+    // be `.github/workflows/pr-ci.yml`, and the declaration is about a lane
+    // rather than about a file, so it is asked of every pipeline instead of one
+    // named path.
+    //
+    // `ENFORCEMENT` is about enforcement, not about invocation, and the two came
+    // apart here. `certification.pipeline.kts` runs the checker, prints the
+    // exit code, says in so many words that the verdict is not a PASS, and
+    // continues — so the budget is *observed* and not *enforced*, and `none`
+    // is still the truthful word. The previous version of this test asked only
+    // "is the checker invoked?", which cannot tell those apart, so it read a
+    // faithful lane as a lie. It stayed green anyway, because the reader it used
+    // matched `sh(` and the command on ONE line and could not see inside the
+    // multi-line `sh("""…""")` body the stage actually uses. Two defects, one of
+    // them in the instrument.
+    let invocations = common::invocations("perf-budget-check");
+    let observed: Vec<&str> = invocations.iter().map(|i| i.at.as_str()).collect();
+    let enforced: Vec<&str> = invocations
+        .iter()
+        .filter(|i| i.blocking)
+        .map(|i| i.at.as_str())
+        .collect();
 
     // Both directions, because the old one-way form could not fail in the
     // state the repository is in: `perf-budget.toml` declares `none`, and
@@ -256,20 +274,22 @@ fn the_real_budget_declares_enforcement_it_does_not_have() {
     // assertion that cannot go red in the present is not a gate.
     if declared == "ci" {
         assert!(
-            !wired.is_empty(),
+            !enforced.is_empty(),
             "perf-budget.toml declares `ENFORCEMENT: ci`, but no pipeline runs \
-             the checker. Either wire it or change the declaration in the same \
-             commit."
+             the checker in a position where its verdict can fail the lane \
+             (observed in {observed:?}, none of them blocking). Either wire it \
+             where a non-zero exit stops the lane or change the declaration in \
+             the same commit."
         );
     } else {
         assert!(
-            wired.is_empty(),
-            "perf-budget.toml declares `ENFORCEMENT: none`, yet the checker runs \
-             in {wired:?}. Either the declaration is stale or the lane is \
-             enforcing something the budget says is not enforced. Note that \
-             running the checker is not free of consequence: with 9 of the 16 \
-             budgeted operations having no benchmark it exits 3 UNMEASURED, so \
-             wiring it turns a lane permanently red."
+            enforced.is_empty(),
+            "perf-budget.toml declares `ENFORCEMENT: none`, yet the checker can \
+             fail the lane from {enforced:?}. Either the declaration is stale or \
+             the lane is enforcing something the budget says is not enforced. \
+             Note that running the checker is not free of consequence: with 9 of \
+             the 16 budgeted operations having no benchmark it exits 3 \
+             UNMEASURED, so making it blocking turns a lane permanently red."
         );
     }
 }

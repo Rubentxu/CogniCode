@@ -407,7 +407,47 @@ pub fn not_run_message(command: &str, required: &str) -> String {
 /// as `scripts/ci/pipeline_authority.py::invoked_by`, which answers the same
 /// question for the Python contracts.
 pub fn invoked_by(command: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<String> = invocations(command).into_iter().map(|i| i.at).collect();
+    out.sort();
+    out
+}
+
+/// One `sh(...)` body that runs `command`, and whether it can stop the lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invocation {
+    /// `pipeline:stage`.
+    pub at: String,
+    /// `true` when a non-zero exit from `command` reaches the end of the stage,
+    /// and a failing stage aborts the pipeline (measured, see
+    /// `scripts/ci/probe-pipelinek-semantics.sh`).
+    pub blocking: bool,
+}
+
+/// Every `sh(...)` body in every pipeline that runs `command`, paired with
+/// whether it can stop the lane.
+///
+/// The distinction exists because *running* a checker and *enforcing* it are
+/// different facts, and only the second one may be claimed. `merge-gate` runs
+/// `clippy` and fails the merge; `certification` runs `perf-budget-check`,
+/// prints that the verdict is not a PASS, and continues. Both invoke a
+/// command, and a contract that only asks "is it invoked?" cannot tell them
+/// apart — which is how `perf-budget.toml` came to declare `ENFORCEMENT: none`
+/// while a lane ran the checker, and how nobody noticed for as long as the
+/// reader could not see inside a multi-line `sh("""…""")` body.
+///
+/// Two mechanisms disable errexit around an invocation, and they are the two
+/// the lanes themselves document ("ADVISORY IS `|| echo`, AND HERE THAT IS THE
+/// ONLY OPTION"):
+///
+///   * `|| …` on the invocation line — `bash x.sh || echo 'ADVISORY: …'`;
+///   * `set +e` (or `set +o errexit`) earlier in the same body, so the
+///     invocation's status is captured instead of aborting.
+///
+/// A third mechanism is a deliberate edit to this list, not an accident: a
+/// body this function cannot classify is reported as **blocking**, because the
+/// dangerous reading of an unknown stage is the one that can turn a lane red.
+pub fn invocations(command: &str) -> Vec<Invocation> {
+    let mut out: Vec<Invocation> = Vec::new();
     for pipeline in pipeline_paths() {
         let name = match pipeline.file_name().and_then(|n| n.to_str()) {
             Some(n) => n.to_owned(),
@@ -421,16 +461,41 @@ pub fn invoked_by(command: &str) -> Vec<String> {
             .filter(|l| !l.trim_start().starts_with("//"))
             .collect::<Vec<_>>()
             .join("\n");
-        if let Some(stage) = sh_bodies_with_offsets(&live)
-            .into_iter()
-            .find(|(_, body)| body.contains(command))
-            .and_then(|(offset, _)| stage_before(&live[..offset]))
-        {
-            out.push(format!("{name}:{stage}"));
+        for (offset, body) in sh_bodies_with_offsets(&live) {
+            if !body.contains(command) {
+                continue;
+            }
+            let Some(stage) = stage_before(&live[..offset]) else {
+                continue;
+            };
+            out.push(Invocation {
+                at: format!("{name}:{stage}"),
+                blocking: reaches_stage_exit(&body, command),
+            });
         }
     }
-    out.sort();
+    out.sort_by(|a, b| a.at.cmp(&b.at));
     out
+}
+
+/// Whether the exit status of `command` can become the exit status of the
+/// `sh(...)` body that contains it.
+fn reaches_stage_exit(body: &str, command: &str) -> bool {
+    let Some(at) = body.find(command) else {
+        return true;
+    };
+    let end = body[at..].find('\n').map_or(body.len(), |nl| at + nl);
+
+    // `bash x.sh || echo …` — the status is consumed by the guard.
+    if body[at + command.len()..end].contains("||") {
+        return false;
+    }
+    // `set +e` earlier in the same body — the status is captured, not raised.
+    // Its absence is what leaves errexit armed, which is the blocking case.
+    !body[..at].lines().any(|l| {
+        let t = l.trim();
+        t == "set +e" || t == "set +o errexit"
+    })
 }
 
 /// Every PipelineK script at the repository root, sorted.
@@ -455,6 +520,81 @@ pub fn pipeline_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The repository already contains one honest example of each kind, so the
+    /// classifier is checked against them rather than against fixtures written
+    /// to match it.
+    ///
+    /// `certification.pipeline.kts` has both: `t6-regression-test` invokes its
+    /// script bare, and `perf-budget-verdict` invokes a script under `set +e`
+    /// and prints that the exit code is not a PASS. If `reaches_stage_exit`
+    /// answered one constant for both, the `ENFORCEMENT` contract in
+    /// `perf_budget_checker_contract.rs` would be a rubber stamp that happens to
+    /// be green.
+    #[test]
+    fn a_bare_invocation_is_blocking_and_a_guarded_one_is_not() {
+        let bare = invocations("check_regression_test");
+        let bare_blocking: Vec<&str> = bare
+            .iter()
+            .filter(|i| i.blocking)
+            .map(|i| i.at.as_str())
+            .collect();
+        assert!(
+            bare_blocking.contains(&"certification.pipeline.kts:t6-regression-test"),
+            "a stage that runs its script with nothing between it and the exit \
+             status can stop the lane, and must be classified as blocking. \
+             Classified as: {bare:?}"
+        );
+
+        let guarded = invocations("perf-budget-check");
+        assert!(
+            !guarded.is_empty(),
+            "the performance verdict is the repository's advisory example; if it \
+             disappeared, this test would stop testing anything"
+        );
+        let guarded_blocking: Vec<&str> = guarded
+            .iter()
+            .filter(|i| i.blocking)
+            .map(|i| i.at.as_str())
+            .collect();
+        assert!(
+            guarded_blocking.is_empty(),
+            "a stage that captures the exit code and says in its output that the \
+             verdict is not a PASS cannot stop the lane, and must not be \
+             classified as blocking. Classified as: {guarded:?}"
+        );
+    }
+
+    /// What the classifier keys on, stated as behaviour rather than as prose.
+    /// A body it cannot read must come back blocking, because the expensive
+    /// mistake is a lane that turns red and nobody can say why.
+    #[test]
+    fn only_a_guard_that_precedes_the_invocation_makes_it_advisory() {
+        assert!(
+            reaches_stage_exit("out=$(bash x.sh 2>&1)", "x.sh"),
+            "a bare command substitution has the script's exit status, so under \
+             `set -e` it aborts the stage"
+        );
+        assert!(
+            !reaches_stage_exit("set +e\nout=$(bash x.sh 2>&1)\nset -e\n", "x.sh"),
+            "`set +e` in force when the script runs means the status was \
+             captured, and a `set -e` afterwards does not un-capture it"
+        );
+        assert!(
+            !reaches_stage_exit("bash x.sh || echo 'ADVISORY: …'", "x.sh"),
+            "an inline guard consumes the status"
+        );
+        assert!(
+            reaches_stage_exit("out=$(bash x.sh 2>&1)\nset +e\n", "x.sh"),
+            "order matters: a `set +e` written after the invocation did not \
+             protect it"
+        );
+        assert!(
+            reaches_stage_exit("unrelated line", "x.sh"),
+            "a body with no invocation of the command is unclassifiable, and \
+             the dangerous reading is the one reported"
+        );
+    }
 
     /// `binary_path("cogh")` must return an absolute path ending in
     /// `cogh`. Existence is environment-dependent (the binary may or
