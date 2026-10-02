@@ -116,6 +116,17 @@ def normalise(command: str) -> str:
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
     command = re.sub(r"^set -e\s+", "", command)
     command = command.strip().rstrip("\\").strip()
+    # `VAR=$(some gate)` is the same gate with its output captured, not a
+    # different one. Both orchestrators capture the selector's output this way
+    # and write the variable with a different spelling, which read as a gap in
+    # a pipeline that runs the command. Parsed rather than stripped in two
+    # steps: an earlier pair of regexes left a stray quote behind and produced
+    # `'SELECT_PATHS=...sh)'`, still not matching.
+    assignment = re.match(
+        r'^[A-Za-z_][A-Za-z0-9_]*="?\$\((.*)\)"?$', command, re.DOTALL
+    )
+    if assignment:
+        command = assignment.group(1).strip()
     # A YAML matrix value is a parameter, not a different gate.
     command = re.sub(r"\$\{\{[^}]*\}\}", "<param>", command)
     return command
@@ -182,9 +193,20 @@ def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
 def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
     gates: set[str] = set()
     for text in pipeline_texts.values():
+        # The loop is expanded first, while the source still carries Kotlin's
+        # escaped dollar, because that is what the loop placeholder looks like.
+        # Unescaping before this point would rewrite the placeholder and expand
+        # the loop to nothing — which reads as 24 MCP suites vanishing from a
+        # pipeline that runs them.
         candidates = [line.strip() for line in expand_for_loops(text)]
         candidates.extend(SH_LINE.findall(text))
         for candidate in candidates:
+            # Inside a Kotlin raw string, `${'$'}` is how a literal dollar
+            # reaches the emitted shell script. This contract reads the .kts
+            # source, not the emitted script, so the escape is still visible
+            # here and would make every step using a shell variable look like a
+            # different gate.
+            candidate = candidate.replace("${'$'}", "$")
             if GATE.search(candidate):
                 gates.add(gate_key(normalise(candidate)))
     return gates
