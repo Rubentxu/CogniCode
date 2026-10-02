@@ -107,15 +107,16 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
         "`cargo fmt --all -- --check`, which covers every workspace member. The "
         "un-suffixed form Actions uses is the looser of the two."
     ),
-    "cargo test <param>": (
-        "Actions collapses the eight-arm feature matrix into one templated "
-        "step, so the inventory can only see one gate named `<param>`. "
-        "PipelineK spells all eight arms out, which is why the arms appear as "
-        "covered individually. One templated gate cannot be matched against "
-        "eight concrete ones."
-    ),
 }
 
+# A fourth entry used to live here: `cargo test <param>`, justified as
+# "Actions collapses the eight-arm feature matrix into one templated step, so
+# the inventory can only see one gate". That stopped being true when the
+# extractor learned to join backslash continuations, which is what the YAML
+# feature matrix actually uses: the eight arms became individually visible on
+# both sides, and the entry became dead weight. It was deleted because the
+# ratchet below said so, which is the ratchet doing its job.
+#
 # The tools whose invocations count as gates.
 #
 # A gate is a command whose non-zero exit changes a verdict. The boundary is
@@ -200,6 +201,11 @@ def normalise(command: str) -> str:
     command = " ".join(command.split())
     # The inline `run:` capture keeps the key.
     command = re.sub(r"^run:\s*", "", command)
+    # A trailing comment is prose about the command, not part of it. Actions
+    # writes `just sandbox-pull || true   # || true: digests pueden cambiar`
+    # and the comment survived every later rule, so one gate and its PipelineK
+    # counterpart read as two.
+    command = re.sub(r"\s+#.*$", "", command)
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
     # The same wrapper written as a shell variable, which is how every stage
     # in these pipelines spells it. It is a `cd`, not a parameter, and mapping
@@ -214,6 +220,12 @@ def normalise(command: str) -> str:
     # and every step that reaches a binary through the pipeline's own variable
     # becomes invisible. Wrapper, not parameter — the same distinction as `$cd`.
     command = command.replace('"$repoRoot/', "").replace("$repoRoot/", "")
+    # Selecting which justfile to read is how the recipe is invoked, not which
+    # recipe it is. `just --justfile sandbox/justfile sandbox-ci-smoke` and
+    # `just sandbox-ci-smoke` are one gate; the sandbox lanes are only reachable
+    # from the repository root with the explicit form, because a plain `import`
+    # collides on the `build` recipe.
+    command = re.sub(r"^just\s+--justfile\s+\S+\s+", "just ", command)
     command = re.sub(r"^set -e\s+", "", command)
     # `if ! <gate>; then` is a gate under a condition. The condition is the
     # orchestrator's business; the gate is the command.
@@ -229,6 +241,12 @@ def normalise(command: str) -> str:
     # be removed for the gate to be recognised as the same one. Advisory-ness
     # lives in the pipeline, not in the gate's identity.
     command = re.sub(r"\s*\|\|\s*echo\s+['\"]?ADVISORY:.*$", "", command)
+    # The shell scaffolding a gate is wrapped in is not the gate. Actions wraps
+    # the coverage gate in `|| { ... }` and the PipelineK side in `; then`,
+    # because the two languages spell an error handler differently; the command
+    # between them is byte-identical. Left in, the CR-09 coverage gate — the
+    # one gate with a numeric threshold — read as two different gates.
+    command = re.sub(r"\s*(\|\|\s*\{|&&\s*\{|;\s*then|;\s*do|\}\s*)$", "", command)
     command = command.strip()
     # `VAR=$(some gate)` is the same gate with its output captured, not a
     # different one. Both orchestrators capture the selector's output this way
@@ -312,16 +330,42 @@ def expand_for_loops(text: str) -> list[str]:
     return lines
 
 
+def join_continuations(block: str) -> list[str]:
+    """Fold a `run: |` block's backslash continuations into one line each.
+
+    A line ending in a backslash is not a command, it is the first half of one. Treated
+    as a command on its own it produced an identity with no arguments —
+    `target/release/cognicode-release generate` — which can never equal the
+    PipelineK side's `... generate --staging staging --out release ...` no
+    matter what either orchestrator actually runs. The two spellings of the
+    same command are joined here, once, so the comparison sees the command.
+    """
+    lines = [l.strip() for l in block.splitlines()]
+    joined: list[str] = []
+    pending = ""
+    for line in lines:
+        if not line or line.startswith("#"):
+            continue
+        if pending:
+            line = pending + " " + line
+            pending = ""
+        if line.endswith("\\"):
+            pending = line[:-1].rstrip()
+            continue
+        joined.append(line)
+    if pending:
+        # A trailing backslash with nothing after it: the command is what there
+        # is, and dropping it would lose a gate rather than shorten one.
+        joined.append(pending)
+    return joined
+
+
 def actions_commands(workflow_texts: dict[str, str]) -> list[str]:
     """Every command line Actions runs, before any normalisation."""
     candidates: list[str] = []
     for text in workflow_texts.values():
         for block in RUN_BLOCK.findall(text):
-            candidates.extend(
-                line.strip()
-                for line in block.splitlines()
-                if line.strip() and not line.strip().startswith("#")
-            )
+            candidates.extend(join_continuations(block))
         candidates.extend(RUN_INLINE.findall(text))
     return candidates
 
@@ -384,6 +428,14 @@ def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
         # pipeline that runs them.
         candidates = [line.strip() for line in expand_for_loops(text)]
         candidates.extend(SH_LINE.findall(text))
+        # A stage written as a Kotlin raw string is a multi-line shell script,
+        # and a command in it can wrap with a backslash exactly as one in a
+        # `run: |` block can. Reading those line by line splits one command into
+        # several, and the halves do not start with a gate head, so the gate
+        # disappears rather than being shortened. Joined the same way, so the
+        # two orchestrators are compared as commands rather than as spellings.
+        for block in SH_RAW.findall(text):
+            candidates.extend(join_continuations(block))
         for candidate in candidates:
             # Inside a Kotlin raw string, `${'$'}` is how a literal dollar
             # reaches the emitted shell script. This contract reads the .kts

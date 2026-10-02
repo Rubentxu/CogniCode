@@ -243,7 +243,20 @@ pipeline {
             stage("generate") {
                 sh("""
                     $cd || exit 1
-                    ${'$'}tool generate --staging staging --out release --version "$version"
+                    # `--tag` and `--source-commit` are not decoration:
+                    # `source_commit` is a required field of the release
+                    # inventory, and `prf_dist_01_06_release_candidate_uat`
+                    # asserts the inventory records HEAD. A manifest that does
+                    # not name the commit it was built from cannot be tied to
+                    # one, which is the first link of the chain this lane exists
+                    # to keep.
+                    source=$(git rev-parse HEAD)
+                    ${'$'}tool generate \
+                        --staging staging \
+                        --out release \
+                        --version "$version" \
+                        --tag "$tag" \
+                        --source-commit "${'$'}source"
                 """.trimIndent())
             }
 
