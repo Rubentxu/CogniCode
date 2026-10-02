@@ -1,6 +1,27 @@
 # Performance budget for CogniCode operations.
 # These are MAXIMUM allowed times in microseconds.
-# CI fails if any operation exceeds its budget.
+#
+# ENFORCEMENT: none
+#
+# This is a declaration, not prose, and perf_budget_checker_contract reads that
+# exact line. This file used to say "CI fails if any operation exceeds its
+# budget", which was false: no workflow referenced `perf` and nothing invoked
+# scripts/perf-budget-check.sh. The checker exists and works, but running it
+# takes ~457 s, so wiring it into merge-gate (already 12-20 min) is an open
+# decision. Tracked in work item 6e1bb51a-09df-456b-9287-fdfedba835c1.
+#
+# If you wire the checker into CI, change this line to `ENFORCEMENT: ci` in the
+# same commit. The contract fails if the two ever disagree, so the declaration
+# cannot rot.
+#
+# To check manually: ./scripts/perf-budget-check.sh
+#   exit 0  every budgeted operation was measured and within budget
+#   exit 1  a measured operation exceeded its budget
+#   exit 3  a budgeted operation had no benchmark at all
+#
+# Today 9 of the 16 entries below have no benchmark, so a manual run exits 3.
+# That is the honest answer, not a regression.
+#
 # Budgets are generous for CI runners (which are slower than dev machines).
 
 [graph.operations]
