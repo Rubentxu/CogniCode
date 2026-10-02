@@ -10810,3 +10810,168 @@ permite testear. Aquí convirtió un test de 457 s en uno de 0.16 s, y de paso
 invalidó un RED que era ruido de cuatro procesos compitiendo por un fichero.
 Sin ella, el defecto se habría "verificado" con un test que no distingue lo que
 cree probar de lo que de verdad prueba.
+
+---
+
+## N+78 — Un gate que nadie ejecutaba, y una autoridad congelada
+
+**WorkItem** `97cecfce-b099-4d58-91af-f9582a827b60` · **PR** #330 → `0c9b4ae4`
+**Rama** `fix/cp5-skills-gate` · **Eje** CP5 (skills) · **Alcance** hueco de
+enforcement, no ejecución de A-033..A-036.
+
+### Por qué esta unidad y no la deuda técnica
+
+`13-ROADMAP-COMMUNITY-PRODUCTIZATION.md` líneas 154-191 fija la regla de reparto.
+Medí si había un P0 del eje CP ejecutable y lo había: **A-033..A-036**, con
+A-009 y A-014 cerradas y sin dependencia técnica abierta → regla 2, avanza.
+`161665c7` es deuda que no bloquea ningún P0 → regla 3, se registra con su
+disparador y espera. Pasó a `paused`.
+
+Es la primera vez que la regla decide algo distinto de "seguir con el eje
+técnico", que es exactamente para lo que está escrita.
+
+### El hallazgo
+
+`validate_skills.py` es lo único que separa una skill que enseña un nombre de
+tool de un agente que lo llama y recibe un error JSON-RPC. Eso es el gate de
+CP5 y es el criterio de aceptación de A-033..A-036.
+
+`grep -rn` sobre `.github/workflows/`: **cero invocaciones**. Pasaba, y pasar
+era el problema. Es el mismo patrón que A-013 (`--lib` que no compila
+`tests/`), A-014 y A-015, por cuarta vez en este eje.
+
+`portable_skill_bundle.rs` no lo cubría: sus 8 tests ejercitan el CLI validador
+contra fixtures sintéticos. Prueban que el mecanismo funciona cuando le handing
+un bundle, no que los seis bundles que el repo publica sean válidos.
+
+### Tres defectos, el mismo origen
+
+**1. La autoridad era un archivo congelado.** El validador barría
+`openspec/changes/archive/` buscando el `runtime-tools-list.json` más reciente.
+Un directorio de archivo es un registro histórico: el comportamiento del gate
+pasaba a depender de qué ciclos estuvieran archivados, y quedaban dos fuentes
+de verdad para la superficie de tools. Ahora resuelve `product/tools.json`, la
+autoridad publicada y gateada por A-010 y A-011.
+
+**2. Un warning que decía lo contrario de lo que hacía el código.** Con el
+catálogo ausente, `load_catalog()` devolvía un conjunto vacío tras imprimir
+`tool-ref validation skipped`. No se saltaba nada: `catalog and "MCP" in
+skill_md or "mcp" in skill_md.lower()` parsea como `(catalog and ...) or (...)`
+porque `and` liga más fuerte que `or`, de modo que la segunda disyuntiva
+mantenía viva la rama con el catálogo vacío. De paso, `"MCP" in skill_md` era
+subsumido por `"mcp" in skill_md.lower()` y estaba muerto.
+
+**3. Un falso positivo sobre identificadores legítimos.** Los ids de perfil
+publicados no estaban en la denylist de palabras entre backticks que no son
+tools, y sobrevivían solo porque las skills los escribían separados por comas,
+lo que dispara la heurística de "un token cerca de una `(` o `,` es un nombre
+de parámetro". Se leen ahora de `product/profiles.json`.
+
+### Cuatro salidas medidas, no cuatro suposiciones
+
+| Catálogo | Tool inventado | Resultado |
+|---|---|---|
+| publicado | no | exit 0 — PASS 6 skills, 60 tool refs |
+| publicado | sí | exit 1 — 1 error, dientes intactos |
+| ausente | — | exit 2 — error explícito de harness |
+| presente pero vacío | — | exit 1 — 12 errores, no pasa vacuamente |
+
+Sobre el árbol real, antes del fix, tres redacciones legítimas de un nombre de
+perfil fallaban el gate: lista separada por comas (pasaba solo por la
+heurística), lista sin comas (2 errores) y la palabra `reviewer` en una frase
+normal (1 error).
+
+### El contrato
+
+`scripts/ci/test_skills_gate_contract.py`, 7 tests, cada uno con una forma
+propia de pudrirse en silencio:
+
+| Test | Qué fija |
+|---|---|
+| `..._pinned_in_a_job_merge_gate_needs` | El step existe **y** su job está en el `needs:` resuelto de merge-gate |
+| `..._not_vacuous_over_the_real_tree` | Suelo de 5 skills y 30 tool refs sobre el árbol real (medido 6 y 60) |
+| `..._detects_a_tool_name_that_does_not_exist` | Un tool inexistente sigue fallando |
+| `..._missing_catalog_is_an_explicit_failure` | Catálogo ausente → exit 2, nunca "skipped" |
+| `..._empty_catalog_does_not_pass_vacuously` | Catálogo vacío → falla, no pasa |
+| `..._profile_name_is_not_reported_as_a_missing_tool` | Un perfil en tres redacciones no falla |
+| `..._missing_profiles_document_is_also_an_explicit_failure` | Perfiles ausentes → exit 2 |
+
+Los dos primeros asertos son independientes y los dos hacen falta: el primero
+lo cumple un comentario que explique la ausencia, y el segundo es el fallo de
+A-013. Se comprueba **resolviendo** el `needs:` en vez de nombrar el job, para
+que mover el step a un job programado falle en vez de seguir pareciendo
+correcto.
+
+El suelo de no-vacuidad es sobre el árbol real, no sobre un fixture: un fixture
+sintético prueba que el escáner funciona cuando le dan una ruta, no que el
+barrido encuentre alguna.
+
+### Dientes, por mutación
+
+```
+RED antes del cableado     2 fallos, ambos "no job in pr-ci.yml runs ..."
+                           los otros 4 tests pasan
+GREEN después              PASS
+
+Mutación del needs:        quitar `check` del needs de merge-gate
+                           → 2 fallos que nombran el job y enumeran la lista
+                             resuelta; restaurado → PASS
+
+Mutación de la exclusión:  quitar la exención de perfiles de la llamada
+                           → 1 fallo que nombra la redacción rota y lista las
+                             tres tools acusadas falsamente
+
+Checkout limpio            contract PASS + bloque del gate exit 0,
+                           con las dependencias pineadas exactas
+Runner completo            71 passed, 0 failed
+```
+
+### Tres premisas propias que resultaron falsas al medirlas
+
+**La divergencia entre el snapshot archivado y `product/tools.json` era
+latente, no activa.** Los dos listaban los mismos 73 nombres. Se corrige
+igualmente porque la divergencia habría sido silenciosa, pero la afirmación de
+"dos fuentes de verdad en conflicto" no se sostiene para hoy.
+
+**Supuse que el catálogo ausente hacía pasar el gate en silencio.** Ocurre al
+revés: `and` liga más fuerte que `or`, la rama se ejecutaba igual y fallaba con
+12 errores nombrando tools que existen, bajo un warning que decía "skipped".
+
+**Casi reporto un falso verde por mi propia tubería.** Medí `EXIT=0` con
+`| head` y ese exit es el de `head`. Repetido sin tubería: ahí sí era real, y
+el control que faltaba — un subcomando inexistente, que sale 2 — ahí sí
+estaba.
+
+### Lección 180
+
+Una denylist solo sabe lo que alguien recuerda poner en ella. Los ids de perfil
+no estaban en la lista de palabras entre backticks que no son tools, y
+sobrevivieron por una coincidencia de redacción —las comas— que nadie había
+elegido como mecanismo. Un gate escrito contra una autoridad publicada
+(`product/profiles.json`) no tiene esa clase de olvido: si mañana hay un
+quinto perfil, el gate lo sabe sin que nadie lo escriba.
+
+### Lección 181
+
+Medir si un gate "anda" y medir si gatea son dos preguntas. Los validadores de
+skills pasaban, con 6 bundles y 60 tool refs validadas, y no los ejecutaba
+ningún merge. Un gate que se ejecuta y pasa es un gate; un gate que pasa sin
+ejecutarse es un archivo. Solo la segunda pregunta —¿lo ejecuta algo que un
+merge espere?— distingue las dos, y por eso el contrato resuelve el `needs:`
+de `merge-gate` en vez de conformarse con que el step exista.
+
+### Lección 182
+
+Un warning que describe lo contrario de lo que hace el código es peor que no
+tener warning, porque convence al lector de que el gate está apagado cuando lo
+que está es fallando. `tool-ref validation skipped` precedía a doce errores que
+nombraban tools que existen. La corrección no fue afinar el mensaje: fue que un
+dato ausente y un dato vacío dejaran de ser la misma cosa. `exit 2` para lo
+primero, conjunto vacío solo para lo segundo.
+
+### Alcance que NO se ejecuta aquí
+
+Esta unidad cierra el hueco de enforcement. No ejecuta A-033..A-036: no crea
+el skill que falta (`cognicode-quality-investigator` no está en `skills/`) ni
+escribe las eval suites que su criterio de aceptación pide. Ese es el siguiente
+ciclo, y ahora con un gate que lo va a mirar.
