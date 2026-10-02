@@ -28,7 +28,6 @@
 //!
 //! Strict TDD discipline: 2 tests, baseline + triangulate.
 
-use cognicode_core::interface::mcp::rmcp_adapter::CogniCodeHandler;
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -64,10 +63,10 @@ fn a016_tools_runtime_consistency_every_contract_mutating_is_in_runtime() {
     let tools_array = tools["tools"]
         .as_array()
         .expect("`tools` must be a JSON array");
-    let mutating_set: std::collections::HashSet<String> = CogniCodeHandler::MUTATING_TOOLS
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let mutating_set: std::collections::HashSet<String> =
+        cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names()
+            .into_iter()
+            .collect();
     let contract_mutating: Vec<String> = tools_array
         .iter()
         .filter(|t| t.get("authority").and_then(|v| v.as_str()) == Some("mutating"))
@@ -80,17 +79,17 @@ fn a016_tools_runtime_consistency_every_contract_mutating_is_in_runtime() {
     assert!(
         missing.is_empty(),
         "Tools declared `authority: mutating` in product/tools.json but NOT in \
-         `CogniCodeHandler::MUTATING_TOOLS` runtime. Under `--read-only` the \
+         the runtime mutating set. Under `--read-only` the \
          runtime would ACCEPT these calls, contradicting the public contract. \
-         Missing from runtime: {missing:?}. Either add them to MUTATING_TOOLS \
-         or change their authority to read in tools.json."
+         Missing from runtime: {missing:?}. Either declare them with a \
+         non-read authority in the tool or change tools.json."
     );
     assert!(
         !contract_mutating.is_empty(),
         "No tool declared `authority: mutating` in product/tools.json — the \
          public contract claims NO mutating tools. That is either a \
          documentation gap (a mutating tool is missing its declaration) or \
-         the runtime MUTATING_TOOLS list is dead code. Inspect both."
+         the runtime mutating set is dead code. Inspect both."
     );
 }
 
@@ -114,16 +113,16 @@ fn a016_tools_runtime_consistency_every_runtime_mutating_is_in_contract() {
         })
         .collect();
     let mut unexpected: Vec<String> = Vec::new();
-    for runtime_tool in CogniCodeHandler::MUTATING_TOOLS {
-        match contract_authority.get(*runtime_tool) {
+    for runtime_tool in cognicode_core::interface::mcp::rmcp_adapter::mutating_tool_names() {
+        match contract_authority.get(&runtime_tool) {
             Some(auth) if auth == "mutating" => {}
             Some(auth) => unexpected.push(format!(
-                "`{runtime_tool}` is in MUTATING_TOOLS runtime but declared \
+                "`{runtime_tool}` is in the runtime mutating set but declared \
                  authority=read in tools.json (saw `{auth}`); the runtime \
                  refuses it under --read-only but the contract advertises it as read"
             )),
             None => unexpected.push(format!(
-                "`{runtime_tool}` is in MUTATING_TOOLS runtime but is missing \
+                "`{runtime_tool}` is in the runtime mutating set but is missing \
                  from product/tools.json entirely"
             )),
         }

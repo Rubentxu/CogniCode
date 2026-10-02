@@ -2287,7 +2287,6 @@ fn print_text_render(out: &crate::interface::mcp::schemas::FindUsagesOutput) {
 /// unless `json_emission` is set: JSON output is pipeable unfiltered,
 /// so a successful run must never write diagnostics to stderr.
 fn build_capabilities_doc(json_emission: bool) -> Value {
-    use crate::interface::mcp::rmcp_adapter::CogniCodeHandler;
     use crate::product::PROFILE_POSTURES;
 
     let workspace_root = resolve_product_assets_root();
@@ -2349,7 +2348,9 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
     }
     doc["tools"] = Value::Array(tools_arr);
 
-    let mutating_tools: Vec<&str> = CogniCodeHandler::MUTATING_TOOLS.to_vec();
+    // Derived from the tools' own declarations, so this report cannot
+    // disagree with what `--read-only` actually refuses.
+    let mutating_tools = crate::interface::mcp::rmcp_adapter::mutating_tool_names();
     doc["runtime"] = serde_json::json!({
         "mutating_tools": mutating_tools,
         "mutating_tools_count": mutating_tools.len(),
