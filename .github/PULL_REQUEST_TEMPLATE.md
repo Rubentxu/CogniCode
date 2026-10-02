@@ -35,8 +35,9 @@ During development, run only the affected tests. The full release gate is the
 merge; a green subset is not a green gate, and saying "tests pass" from a
 subset is not an acceptable claim.
 
-PipelineK is the only orchestrator. Gates are added to a pipeline, not to a
-GitHub Actions workflow, and the GitHub workflows are being retired.
+PipelineK is the only orchestrator. Gates are added to a lane, not to a GitHub
+Actions workflow, and there are no GitHub Actions workflows left in this
+repository — `scripts/ci/test_no_actions_workflows.py` fails if one reappears.
 
 If this is a bug fix, link the test that failed BEFORE and passes AFTER. A fix
 without a regression test is an unverified claim.

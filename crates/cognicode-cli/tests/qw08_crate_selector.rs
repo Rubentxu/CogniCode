@@ -186,21 +186,6 @@ fn qw08_crate_selector_falls_back_on_pipeline_change() {
 }
 
 #[test]
-fn qw08_crate_selector_falls_back_on_workflow_change() {
-    // The GitHub Actions workflows are being retired, but the selector keeps
-    // the rule until the directory is actually gone: a workflow change still
-    // means CI changed, and dropping the rule early would leave that window
-    // selecting a subset.
-    let (code, stdout) = run_select(".github/workflows/pr-ci.yml");
-    assert_eq!(code, 0);
-    assert_eq!(
-        extract_json_field(&stdout, "strategy"),
-        Some("fallback"),
-        "workflow changes must trigger fallback"
-    );
-}
-
-#[test]
 fn qw08_crate_selector_falls_back_on_crate_cargo_toml_change() {
     let (code, stdout) = run_select("crates/cognicode-core/Cargo.toml");
     assert_eq!(code, 0);
