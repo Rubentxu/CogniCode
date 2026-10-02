@@ -100,6 +100,13 @@ val cd = "cd \"$repoRoot\""
 // contracts read from `scripts/ci/pipeline_authority.py`.
 val authority = "merge-gate.pipeline.kts"
 
+// Where a stage that produces a lot of output leaves it, so that a failure is
+// something a person can read instead of an exit code with no story attached.
+// Outside the repository: a lane that writes its logs into the tree makes
+// `cargo fmt --check` and the contract suite see files nobody committed.
+val logDir: String = File(System.getProperty("java.io.tmpdir"), "cognicode-logs").absolutePath
+val cdLog = "mkdir -p \"$logDir\""
+
 pipeline {
     stages {
         // ---------------------------------------------------------------- check
@@ -401,8 +408,49 @@ pipeline {
             // `tests/*.rs` target in the crate and what carries --features ladybug,
             // without which evidence_cli_mcp_equivalence compiles to an empty
             // binary and reports 0 passed / 0 failed / exit 0.
+            //
+            // It is also the only stage in this lane that runs a whole crate's
+            // suite rather than one `--test` target, and it is the only stage
+            // that died: four clean runs, all of them here, all of them after
+            // 10.127 / 10.126 / 10.135 / 10.129 ms with exit 101 and not one
+            // byte of output captured, in a run that had produced 30 KB from
+            // the same command when the stage stood alone.
+            //
+            // What is NOT the cause, each measured rather than assumed: not the
+            // size of the output (PipelineK captured 21 MB in this position,
+            // from one writer and from thirty, in both cases whole); not stderr
+            // (520 KB of it captured from a step that failed); not a capture
+            // cap (700 KB and 21 MB both survived); not memory (55-65 GB free
+            // at the moment of failure, no OOM kill); not disk; not the cargo
+            // build-directory lock (held on purpose with flock: cargo waits
+            // 120 s and is killed by the timeout, it does not exit 101); not
+            // the stage's position (38 trivial stages in front of it pass) and
+            // not any single predecessor (five contiguous prefixes of this lane
+            // pass, and the stage passes after the ladybug crate, after a
+            // feature switch on the same crate, and after core with
+            // evidence-kernel).
+            //
+            // So this is a workaround for a defect inside the orchestrator, not
+            // a diagnosis, and it is written down as one. What is known is that
+            // redirecting this stage's output makes the difference: the same
+            // lane, the same tree, the same command, passes 64 of 64 with the
+            // redirection and fails 4 of 4 without it. The tail is there so
+            // that if it ever fails again the output is on disk and named,
+            // instead of a run database that says only "shell exited with
+            // code 101" — which is what four failures produced.
             stage("cli-unrestricted-ladybug") {
-                sh("$cd && cargo test -p cognicode-cli --features ladybug --quiet")
+                sh("""
+                    $cd || exit 1
+                    $cdLog || exit 1
+                    set +e
+                    cargo test -p cognicode-cli --features ladybug --quiet \
+                        > "$logDir/cli-unrestricted-ladybug.log" 2>&1
+                    rc=${'$'}?
+                    set -e
+                    tail -40 "$logDir/cli-unrestricted-ladybug.log"
+                    echo "the full log is $logDir/cli-unrestricted-ladybug.log"
+                    exit ${'$'}rc
+                """.trimIndent())
             }
 
             // the gate contract itself (pr-ci.yml:578)
