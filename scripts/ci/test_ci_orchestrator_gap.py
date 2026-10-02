@@ -83,6 +83,39 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
+# Differences between the two orchestrators that are not a missing gate.
+#
+# Each entry is a gate Actions runs and PipelineK does not, with the reason it
+# is not one. They are declared rather than filtered out silently: every entry
+# is printed on every run, so a reviewer sees the same list the contract is
+# reasoning about, and challenging one is a one-line edit. The ratchet still
+# measures the raw gap against the base commit, so adding a gate here does not
+# hide a growth — it only stops a justified difference being reported as a
+# regression.
+ACCEPTED_DIFFERENCES: dict[str, str] = {
+    "cargo build --release --bin cognicode-mcp": (
+        "Inside the step ci.yml disables with `if: false`, pending a running API "
+        "server. Migrating a step nothing executes would put a gate in the "
+        "inventory that has never run, which is the failure this migration "
+        "exists to remove. It moves here when it is enabled there."
+    ),
+    "target/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
+        "The second half of that same disabled step."
+    ),
+    "cargo fmt --check": (
+        "Same gate, different spelling: PipelineK runs "
+        "`cargo fmt --all -- --check`, which covers every workspace member. The "
+        "un-suffixed form Actions uses is the looser of the two."
+    ),
+    "cargo test <param>": (
+        "Actions collapses the eight-arm feature matrix into one templated "
+        "step, so the inventory can only see one gate named `<param>`. "
+        "PipelineK spells all eight arms out, which is why the arms appear as "
+        "covered individually. One templated gate cannot be matched against "
+        "eight concrete ones."
+    ),
+}
+
 # The tools whose invocations count as gates.
 #
 # A gate is a command whose non-zero exit changes a verdict. The boundary is
@@ -99,6 +132,15 @@ WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 #
 # `cargo` is matched whole rather than per-subcommand so the list cannot go
 # stale again when a new subcommand becomes a gate.
+#
+# Prerequisites are counted too, and that is deliberate: `cargo install
+# cargo-llvm-cov`, `rustup target add` and `npm install -g @commitlint/cli`
+# decide nothing, but a failure in any of them aborts the lane, so one side
+# having it and the other not is a real difference in what the two
+# orchestrators actually do. What is excluded is setup that cannot fail the
+# lane — `python3 -m pip install` is the one case, because a pip failure there
+# surfaces as the gate that needed it failing, and counting it separately
+# would let a pipeline claim coverage by installing the thing that checks it.
 #
 # Anchored to the start of the command. Searching anywhere in the line made
 # `chmod +x target/release/cognicode` and `test -x target/release/...` count
@@ -137,12 +179,30 @@ def check(condition: bool, message: str) -> None:
 
 def normalise(command: str) -> str:
     """A comparable identity for one gate invocation."""
+    # A YAML `run: |` block continues a command with a trailing backslash, and
+    # the backslash survives whitespace joining as a lone token. The Kotlin side
+    # writes the same command on one line, so the two never matched.
+    command = command.replace("\\", " ")
     command = " ".join(command.split())
     # The inline `run:` capture keeps the key.
     command = re.sub(r"^run:\s*", "", command)
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
     command = re.sub(r"^set -e\s+", "", command)
+    # `if ! <gate>; then` is a gate under a condition. The condition is the
+    # orchestrator's business; the gate is the command.
+    command = re.sub(r"^if\s+!?\s*", "", command)
     command = command.strip().rstrip("\\").strip()
+    # `|| true` is a deliberate tolerance and means the same as the advisory
+    # form: the exit code stops being the verdict. The gate is the command.
+    command = re.sub(r"\s*\|\|\s*true\s*$", "", command).strip()
+    # An advisory stage is written `|| echo 'ADVISORY: ...'` so a failure is
+    # reported without failing the lane. That preserves `ci.yml`'s
+    # `continue-on-error: true` semantics — and the suffix is the one place
+    # the PipelineK side spells a gate differently from Actions, so it has to
+    # be removed for the gate to be recognised as the same one. Advisory-ness
+    # lives in the pipeline, not in the gate's identity.
+    command = re.sub(r"\s*\|\|\s*echo\s+['\"]?ADVISORY:.*$", "", command)
+    command = command.strip()
     # `VAR=$(some gate)` is the same gate with its output captured, not a
     # different one. Both orchestrators capture the selector's output this way
     # and write the variable with a different spelling, which read as a gap in
@@ -382,6 +442,21 @@ def test_the_gap_did_not_grow() -> None:
         "state why the Kotlin side does not need it.",
     )
 
+    # An entry that no longer matches anything is a stale justification, and a
+    # stale justification is how an allowlist stops meaning anything.
+    stale = sorted(set(ACCEPTED_DIFFERENCES) - head_gap)
+    check(
+        not stale,
+        "these accepted differences no longer describe anything in the gap, so "
+        "their justification is dead weight:\n"
+        + "\n".join(f"      - {g}" for g in stale)
+        + "\n    Delete them, or fix whichever orchestrator change made them "
+        "unnecessary.",
+    )
+
+    explained = sorted(head_gap & set(ACCEPTED_DIFFERENCES))
+    unexplained = head_gap - set(ACCEPTED_DIFFERENCES)
+
     print(
         f"orchestrator gap: {len(head_gap)} of {len(head_actions)} Actions gates "
         f"not covered by PipelineK (base {base[:12]}: {len(base_gap)}); "
@@ -389,6 +464,11 @@ def test_the_gap_did_not_grow() -> None:
     )
     for gate in newly_covered:
         print(f"  covered: {gate}")
+    for gate in explained:
+        print(f"  accepted difference: {gate}")
+    print(
+        f"  {len(unexplained)} unexplained gap(s) remaining"
+    )
 
 
 def main() -> int:
