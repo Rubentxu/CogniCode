@@ -10634,3 +10634,69 @@ existía para evitar.
 clippy y el advisory cerrado. El comportamiento real necesita un test que
 arranque el watcher, y no había ninguno. "Compila" y "funciona" no son la misma
 evidencia, y la segunda es la que importa.
+
+#### N+76.11 — Segunda investigación: el contrato tenía puertas que no cierran
+
+Alcance: los commits sin pushear y el PR #327. SDDK `next` = `372290ee`,
+ledger íntegro. `sddk lint` sigue en 77: sin regresión respecto al baseline.
+
+**PR #314 está obsoleto.** Propone pinear `dtolnay/rust-toolchain@1.96.0` a
+`ebb3d167…`, y ese SHA **ya está en `main`**; `action_ref_pin_contract` pasa
+7/7 hoy. El ROADMAP marca QW-05 PASS desde 2026-10-01 mientras su PR sigue
+abierto desde el 30. Mergeado sería no-op o conflicto. #308 (branch protection
+de admins) lleva tres días en lo mismo. **Riesgo de proceso, no defecto.**
+
+**El tercero de los falsos éxitos estaba en el allowlist.**
+`every_allowed_missing_states_a_reason` comprobaba que cada fila dijera por qué
+y que siguiera citándose. No comprobaba que **siguiera siendo necesaria**: una
+fila cuyo destino ya está commiteado sigue citándose, así que el test pasaba y
+el allowlist acumulaba filas que no excusan nada.
+
+Mutación: añadir una fila que apunta a `openspec/specs/cognicode-cli/spec.md`
+—que existe y es citada por las llaves del ROADMAP— dejó **7/7 verdes**. Con el
+chequeo añadido, esa misma fila falla diciendo que la fila está obsoleta y que
+hay que borrarla.
+
+**El cuarto: el gate no detecta que el escáner esté vacío.** Rompiendo
+`provenance_paths` para que devuelva conjunto vacío:
+
+```
+test every_backticked_provenance_path_resolves ... ok      <-- el gate pasa
+test the_scan_actually_finds_a_broken_reference ... FAILED
+the scan of the real governed tree found only 0 provenance paths across 0 files
+```
+
+El gate que nombra CI **pasa con un escáner que no encuentra nada**. Lo
+sostienen los otros tests, y si ellos fallaran por el mismo motivo el gate
+seguiría verde. `the_scan_actually_finds_a_broken_reference` usaba un fixture
+sintético: probaba que el escáner encuentra una ruta cuando se le da una, no
+que el barrido del árbol real encuentre alguna. Ahora hay suelo sobre el árbol
+real: 25 rutas y 15 ficheros conductores, frente a **44 rutas en 26 ficheros**
+medidos.
+
+Y una corrección mía de medición: conté **78** rutas con un script que sumaba
+conjuntos por fichero y duplicaba las citas cross-file. El gate deduplica
+globalmente y la cifra correcta es **44**. Cuando dos cuentas discrepan, la del
+código es la buena.
+
+**`odd/` lleva la sesión entera sin versionar y no está gitignored.** Contiene
+7 documentos de diseño y exploración del 2026-09-29 (A-013, A-014, A-015,
+PR306, QW03, reconciliación del ledger, pin de consistencia), todos de trabajo
+ya mergeado. No lo borro sin autorización. Aparece en `git status` en cada
+sesión y nada lo protege.
+
+**Lección 174**: los falsos éxitos de este contrato eran el mismo patrón —una
+comprobación que no puede fallar sobre su propio modo de fallo—. Dos los cazó
+`merge-gate` porque CI tiene un entorno distinto; el tercero solo apareció al
+mutar. **La mutación es lo que convierte una aserción en una puerta**, y un
+gate puede pasar semanas en verde sin haber sido probado en su modo de fallo.
+
+**Lección 175**: el gate que más importa puede ser el que menos detecta.
+`every_backticked_provenance_path_resolves` es el que CI nombra, y es el que
+pasa con el escáner anulado. La fuerza real de una suite está en la suma de sus
+tests, no en el que tiene el nombre más serio.
+
+**Lección 176**: un PR abierto no es evidencia de trabajo pendiente. #314 pide
+algo que ya está en `main` desde el 1 de octubre. "Abierto" y "necesario" son
+cosas distintas, y confundirlas es lo que hace que un backlog mienta sobre sí
+mismo.
