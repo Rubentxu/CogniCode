@@ -187,6 +187,13 @@ def normalise(command: str) -> str:
     # The inline `run:` capture keeps the key.
     command = re.sub(r"^run:\s*", "", command)
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
+    # The same wrapper written as a shell variable, which is how every stage
+    # in these pipelines spells it. It is a `cd`, not a parameter, and mapping
+    # it to `<param>` moved the gate off the head of the command: the inventory
+    # then saw 102 gaps in a pipeline that runs 99 gates, every one of them a
+    # command that had lost its `cd` prefix. A false positive in the instrument
+    # that measures the migration is worse than no instrument.
+    command = re.sub(r"^\$cd\s*&&\s*", "", command)
     command = re.sub(r"^set -e\s+", "", command)
     # `if ! <gate>; then` is a gate under a condition. The condition is the
     # orchestrator's business; the gate is the command.
@@ -216,6 +223,22 @@ def normalise(command: str) -> str:
         command = assignment.group(1).strip()
     # A YAML matrix value is a parameter, not a different gate.
     command = re.sub(r"\$\{\{[^}]*\}\}", "<param>", command)
+    # Kotlin escapes a literal `$` inside a raw string as `${'$'}`; the shell
+    # receives a plain `$`. Left in place, `${'$'}tool` and `target/release/
+    # cognicode-release` are the same command with two spellings, and the
+    # inventory reported the pipeline as not running a gate it does run.
+    command = command.replace("${'$'}", "$")
+    # A shell variable is a parameter too, and for the same reason. A pipeline
+    # that runs `build-sboms-for-lane.sh $target` runs exactly the gate that
+    # Actions runs as `build-sboms-for-lane.sh "${{ matrix.rust_target }}"`.
+    # Without this the migration cannot be measured: every stage that names its
+    # platform once and interpolates it read as an uncovered gate, which is a
+    # false positive in an instrument whose whole job is to be believed.
+    #
+    # `test_the_normaliser_does_not_fuse_two_different_gates` is the guard on
+    # this: losing a distinction is worse than reporting a spurious gap.
+    command = re.sub(r"\$\{[A-Za-z_][A-Za-z0-9_]*[^}]*\}", "<param>", command)
+    command = re.sub(r"\$[A-Za-z_][A-Za-z0-9_]*", "<param>", command)
     return command
 
 
@@ -226,6 +249,11 @@ def gate_key(command: str) -> str:
     side prefixes most steps with it. Those are packaging differences, not
     different gates.
     """
+    # Shell quoting is syntax, not identity: `script.sh "$target"` and
+    # `script.sh $target` are the same gate, and making the match depend on
+    # the author having quoted identically in both orchestrators is a way to
+    # report a covered gate as missing.
+    command = re.sub(r"([\"'])<param>\1", "<param>", command)
     command = command.replace("$cd && ", "")
     command = re.sub(r"^\$\{?cd[^&|]*&&\s*", "", command)
     command = command.replace('"$repoRoot/', "").replace("./", "")
@@ -260,10 +288,10 @@ def expand_for_loops(text: str) -> list[str]:
     return lines
 
 
-def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
-    gates: set[str] = set()
+def actions_commands(workflow_texts: dict[str, str]) -> list[str]:
+    """Every command line Actions runs, before any normalisation."""
+    candidates: list[str] = []
     for text in workflow_texts.values():
-        candidates: list[str] = []
         for block in RUN_BLOCK.findall(text):
             candidates.extend(
                 line.strip()
@@ -271,14 +299,19 @@ def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
                 if line.strip() and not line.strip().startswith("#")
             )
         candidates.extend(RUN_INLINE.findall(text))
-        for candidate in candidates:
-            # Normalise first, then ask. Every Kotlin step is written as
-            # `$cd && <gate>`, so anchoring the head check before the wrapper is
-            # stripped matched nothing on the PipelineK side and reported the
-            # whole pipeline as missing.
-            keyed = gate_key(normalise(candidate))
-            if is_gate(keyed):
-                gates.add(keyed)
+    return candidates
+
+
+def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
+    gates: set[str] = set()
+    for candidate in actions_commands(workflow_texts):
+        # Normalise first, then ask. Every Kotlin step is written as
+        # `$cd && <gate>`, so anchoring the head check before the wrapper is
+        # stripped matched nothing on the PipelineK side and reported the
+        # whole pipeline as missing.
+        keyed = gate_key(normalise(candidate))
+        if is_gate(keyed):
+            gates.add(keyed)
     return gates
 
 
@@ -392,6 +425,39 @@ def test_both_orchestrators_are_readable() -> None:
         bool(pipelinek_gates(pipelines)),
         "the PipelineK side produced zero gates; the inventory is not reading "
         "the pipelines correctly",
+    )
+
+
+def test_the_normaliser_keeps_the_program_being_run() -> None:
+    """Two commands that run different things must never share a gate identity.
+
+    `normalise` is lossy by design: it erases `cd`, `set -e`, `run:`, the
+    `|| echo ADVISORY` suffix, YAML matrix values, shell variables and quoting,
+    because all of those are the orchestrator's spelling rather than the gate's.
+    Every one of those rules can, if written carelessly, swallow the command
+    itself — the `$var` rule first did exactly that, turning `$cd && cargo …`
+    into `<param> && cargo …` and reporting 102 gaps in a pipeline running 99
+    gates.
+
+    What must survive is the program being invoked. So this checks the real
+    inventory: for every gate identity, the first two significant tokens of
+    each command that maps to it have to agree. A false match is worse than a
+    gap here, because a gap is a to-do and a false match is silence.
+    """
+    programs: dict[str, set[str]] = {}
+    for command in actions_commands(read_workflows()):
+        keyed = normalise(command)
+        if not is_gate(gate_key(keyed)):
+            continue
+        head = " ".join(gate_key(keyed).split()[:2])
+        programs.setdefault(gate_key(keyed), set()).add(head)
+
+    fused = {k: sorted(v) for k, v in programs.items() if len(v) > 1}
+    check(
+        not fused,
+        "these gate identities are reached by commands that invoke different "
+        "programs, so the inventory could claim coverage it does not have: "
+        f"{fused}",
     )
 
 

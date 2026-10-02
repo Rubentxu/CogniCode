@@ -731,9 +731,6 @@ fn the_rustdoc_gate_runs_in_the_merge_authority() {
         "the merge authority no longer runs {GATE}. That gate holds the workspace \
          at zero rustdoc warnings in the gated categories; without it a broken \
          doc link or a public-docs-to-private-item reference passes every PR.\n{}",
-        not_run_message(
-            GATE,
-            "Restore the stage next to the clippy gate."
-        )
+        not_run_message(GATE, "Restore the stage next to the clippy gate.")
     );
 }

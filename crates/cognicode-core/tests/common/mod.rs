@@ -42,8 +42,8 @@ pub fn repo_root() -> PathBuf {
 /// pinned would trip "it is pinned".
 pub fn merge_authority_lines() -> Vec<String> {
     let path = repo_root().join(MERGE_AUTHORITY);
-    let text = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    let text =
+        fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     text.lines()
         .map(str::trim)
         .filter(|l| !l.starts_with("//"))
@@ -65,37 +65,25 @@ pub fn merge_authority_runs(command: &str) -> bool {
         .any(|line| line.contains("sh(") && line.contains(command))
 }
 
-/// The name of the stage that runs `command`, for the failure message.
-///
-/// Textual rather than structural: enough to say which lane is running the
-/// wrong thing, which is the part worth naming in a failure.
-pub fn merge_authority_stage_of(command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in merge_authority_lines() {
-        if let Some(rest) = line.strip_prefix("stage(\"") {
-            if let Some(end) = rest.find('"') {
-                current = Some(rest[..end].to_owned());
-            }
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
-}
-
 /// A failure message naming the authority, the command and what is there
 /// instead, so a RED from these contracts is actionable without a diff.
 pub fn not_run_message(command: &str, required: &str) -> String {
     let stages: Vec<String> = merge_authority_lines()
         .into_iter()
-        .filter_map(|l| l.strip_prefix("stage(\"").and_then(|r| r.find('"').map(|e| r[..e].to_owned())))
+        .filter_map(|l| {
+            l.strip_prefix("stage(\"")
+                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
+        })
         .collect();
     format!(
         "{MERGE_AUTHORITY} does not run `{command}`.\n\
          {required}\n\
          stages present: {}",
-        if stages.is_empty() { "none".to_owned() } else { stages.join(", ") }
+        if stages.is_empty() {
+            "none".to_owned()
+        } else {
+            stages.join(", ")
+        }
     )
 }
 

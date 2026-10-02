@@ -209,6 +209,143 @@ pub fn release_dir() -> PathBuf {
     repo_root().join("target").join("release")
 }
 
+/// The pipeline a merge is gated on. Declared here and nowhere else.
+pub const MERGE_AUTHORITY: &str = "merge-gate.pipeline.kts";
+
+/// The merge authority's source with whole-line comments removed.
+///
+/// A comment that quotes a command is otherwise indistinguishable from a step
+/// that runs it, in both directions: a comment naming a removed gate would
+/// satisfy "the gate exists", and a comment explaining why something is pinned
+/// would trip "it is pinned".
+pub fn merge_authority_lines() -> Vec<String> {
+    let path = repo_root().join(MERGE_AUTHORITY);
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.starts_with("//"))
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Whether the merge authority runs `command` inside an `sh(...)` body.
+///
+/// The `sh(` requirement is what makes this fail-closed. A command quoted
+/// anywhere else — a `val`, a stage name, a comment that survived stripping —
+/// does not count, because it would run nothing. A command spread over a
+/// multi-line `sh("""…""")` also does not count, which is a false negative
+/// rather than a false pass.
+pub fn merge_authority_runs(command: &str) -> bool {
+    merge_authority_lines()
+        .iter()
+        .any(|line| line.contains("sh(") && line.contains(command))
+}
+
+/// The name of the stage that runs `command`, for the failure message.
+pub fn merge_authority_stage_of(command: &str) -> Option<String> {
+    let mut current: Option<String> = None;
+    for line in merge_authority_lines() {
+        if let Some(name) = line
+            .strip_prefix("stage(\"")
+            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
+        {
+            current = Some(name);
+        }
+        if line.contains("sh(") && line.contains(command) {
+            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
+        }
+    }
+    None
+}
+
+/// A failure message naming the authority, the command and the stages that do
+/// exist, so a RED from these contracts is actionable without a diff.
+pub fn not_run_message(command: &str, required: &str) -> String {
+    let stages: Vec<String> = merge_authority_lines()
+        .into_iter()
+        .filter_map(|l| {
+            l.strip_prefix("stage(\"")
+                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
+        })
+        .collect();
+    format!(
+        "{MERGE_AUTHORITY} does not run `{command}`.\n{required}\nstages present: {}",
+        if stages.is_empty() {
+            "none".to_owned()
+        } else {
+            stages.join(", ")
+        }
+    )
+}
+
+/// `pipeline:stage` for every pipeline that runs `command`, sorted.
+///
+/// The list form matters: a caller asking "where does this run?" needs the
+/// answer to be empty *because nothing runs it* rather than because a lookup
+/// missed, and a single `bool` cannot tell those apart. It is the same shape
+/// as `scripts/ci/pipeline_authority.py::invoked_by`, which answers the same
+/// question for the Python contracts.
+pub fn invoked_by(command: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for pipeline in pipeline_paths() {
+        let name = match pipeline.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        let Ok(text) = std::fs::read_to_string(&pipeline) else {
+            continue;
+        };
+        let live: Vec<String> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.starts_with("//"))
+            .map(str::to_owned)
+            .collect();
+        if let Some(stage) = merge_authority_stage_in(&live, command) {
+            out.push(format!("{name}:{stage}"));
+        }
+    }
+    out.sort();
+    out
+}
+
+/// The stage that runs `command` within one already-stripped pipeline.
+fn merge_authority_stage_in(lines: &[String], command: &str) -> Option<String> {
+    let mut current: Option<String> = None;
+    for line in lines {
+        if let Some(name) = line
+            .strip_prefix("stage(\"")
+            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
+        {
+            current = Some(name);
+        }
+        if line.contains("sh(") && line.contains(command) {
+            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
+        }
+    }
+    None
+}
+
+/// Every PipelineK script at the repository root, sorted.
+///
+/// The set of files that decide what runs, so it is what a scan for "is this
+/// named by machine-readable orchestration" has to cover. While GitHub Actions
+/// existed, the `.github/workflows/*.yml` files were scanned alongside these;
+/// with the workflows gone, scanning anything else would make the rule
+/// quietly cover less than it claims.
+pub fn pipeline_paths() -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = std::fs::read_dir(repo_root())
+        .unwrap_or_else(|e| panic!("cannot read the repository root: {e}"))
+        .filter_map(|e| {
+            let p = e.ok()?.path();
+            (p.extension()?.to_str()? == "kts").then_some(p)
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,134 +425,3 @@ mod tests {
 // a module, so there are three small implementations of one rule, and all of
 // them are strict in the same direction: a match only counts on a line that
 // actually invokes it.
-
-/// The pipeline a merge is gated on. Declared here and nowhere else.
-pub const MERGE_AUTHORITY: &str = "merge-gate.pipeline.kts";
-
-/// The merge authority's source with whole-line comments removed.
-///
-/// A comment that quotes a command is otherwise indistinguishable from a step
-/// that runs it, in both directions: a comment naming a removed gate would
-/// satisfy "the gate exists", and a comment explaining why something is pinned
-/// would trip "it is pinned".
-pub fn merge_authority_lines() -> Vec<String> {
-    let path = repo_root().join(MERGE_AUTHORITY);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-    text.lines()
-        .map(str::trim)
-        .filter(|l| !l.starts_with("//"))
-        .map(str::to_owned)
-        .collect()
-}
-
-/// Whether the merge authority runs `command` inside an `sh(...)` body.
-///
-/// The `sh(` requirement is what makes this fail-closed. A command quoted
-/// anywhere else — a `val`, a stage name, a comment that survived stripping —
-/// does not count, because it would run nothing. A command spread over a
-/// multi-line `sh("""…""")` also does not count, which is a false negative
-/// rather than a false pass.
-pub fn merge_authority_runs(command: &str) -> bool {
-    merge_authority_lines()
-        .iter()
-        .any(|line| line.contains("sh(") && line.contains(command))
-}
-
-/// The name of the stage that runs `command`, for the failure message.
-pub fn merge_authority_stage_of(command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in merge_authority_lines() {
-        if let Some(rest) = line.strip_prefix("stage(\"") {
-            if let Some(end) = rest.find('"') {
-                current = Some(rest[..end].to_owned());
-            }
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
-}
-
-/// A failure message naming the authority, the command and the stages that do
-/// exist, so a RED from these contracts is actionable without a diff.
-pub fn not_run_message(command: &str, required: &str) -> String {
-    let stages: Vec<String> = merge_authority_lines()
-        .into_iter()
-        .filter_map(|l| {
-            l.strip_prefix("stage(\"")
-                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
-        })
-        .collect();
-    format!(
-        "{MERGE_AUTHORITY} does not run `{command}`.\n{required}\nstages present: {}",
-        if stages.is_empty() { "none".to_owned() } else { stages.join(", ") }
-    )
-}
-
-/// `pipeline:stage` for every pipeline that runs `command`, sorted.
-///
-/// The list form matters: a caller asking "where does this run?" needs the
-/// answer to be empty *because nothing runs it* rather than because a lookup
-/// missed, and a single `bool` cannot tell those apart. It is the same shape
-/// as `scripts/ci/pipeline_authority.py::invoked_by`, which answers the same
-/// question for the Python contracts.
-pub fn invoked_by(command: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for pipeline in pipeline_paths() {
-        let name = match pipeline.file_name().and_then(|n| n.to_str()) {
-            Some(n) => n.to_owned(),
-            None => continue,
-        };
-        let Ok(text) = std::fs::read_to_string(&pipeline) else {
-            continue;
-        };
-        let live: Vec<String> = text
-            .lines()
-            .map(str::trim)
-            .filter(|l| !l.starts_with("//"))
-            .map(str::to_owned)
-            .collect();
-        if let Some(stage) = merge_authority_stage_in(&live, command) {
-            out.push(format!("{name}:{stage}"));
-        }
-    }
-    out.sort();
-    out
-}
-
-/// The stage that runs `command` within one already-stripped pipeline.
-fn merge_authority_stage_in(lines: &[String], command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in lines {
-        if let Some(rest) = line.strip_prefix("stage(\"") {
-            if let Some(end) = rest.find('"') {
-                current = Some(rest[..end].to_owned());
-            }
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
-}
-
-/// Every PipelineK script at the repository root, sorted.
-///
-/// The set of files that decide what runs, so it is what a scan for "is this
-/// named by machine-readable orchestration" has to cover. While GitHub Actions
-/// existed, the `.github/workflows/*.yml` files were scanned alongside these;
-/// with the workflows gone, scanning anything else would make the rule
-/// quietly cover less than it claims.
-pub fn pipeline_paths() -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = std::fs::read_dir(repo_root())
-        .unwrap_or_else(|e| panic!("cannot read the repository root: {e}"))
-        .filter_map(|e| {
-            let p = e.ok()?.path();
-            (p.extension()?.to_str()? == "kts").then_some(p)
-        })
-        .collect();
-    out.sort();
-    out
-}
