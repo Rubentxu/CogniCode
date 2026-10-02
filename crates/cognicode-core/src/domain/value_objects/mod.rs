@@ -3,6 +3,7 @@
 //! Value objects are immutable types that are defined by their attributes rather than a unique identity.
 
 pub mod checkpoint_id;
+pub mod client_identity;
 pub mod dependency_type;
 pub mod edge_kind;
 pub mod edge_metadata;
@@ -31,6 +32,7 @@ pub mod space;
 pub mod space_id;
 
 pub use checkpoint_id::CheckpointId;
+pub use client_identity::ClientIdentity;
 pub use dependency_type::DependencyType;
 pub use edge_kind::EdgeKind;
 pub use edge_metadata::EdgeMetadata;

@@ -62,7 +62,7 @@ use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
-use crate::domain::value_objects::SymbolKind;
+use crate::domain::value_objects::{ClientIdentity, SymbolKind};
 use crate::infrastructure::graph::{
     FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
@@ -348,9 +348,10 @@ pub struct HandlerContext {
     pub compressor: Arc<ContextCompressorService>,
     pub semantic_search: Arc<SemanticSearchService>,
     pub symbol_code: Arc<SymbolCodeService>,
-    pub client_protocol_version: Option<String>,
-    pub client_name: Option<String>,
-    pub client_version: Option<String>,
+    /// ST-04: who is on the other end, if anyone announced themselves.
+    /// One value, not three independently-optional fields — see
+    /// [`ClientIdentity`] for why the distinction is load-bearing.
+    client: ClientIdentity,
     pub cancellation_token: Arc<AtomicBool>,
     pub log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
     /// Tracks symbol access hotness for AI relevance learning
@@ -404,6 +405,15 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
+    /// ST-04: the connected client's identity, or [`ClientIdentity::unknown`].
+    ///
+    /// Read-only by construction. `ClientIdentity` owns the three attributes
+    /// and hands back `Option<&str>`, so no caller can install a name without
+    /// a version, and no caller can write the field back out.
+    pub fn client(&self) -> &ClientIdentity {
+        &self.client
+    }
+
     pub fn cancellation_token(&self) -> &Arc<AtomicBool> {
         &self.cancellation_token
     }
@@ -512,9 +522,7 @@ pub struct HandlerContextBuilder {
     compressor: Option<Arc<ContextCompressorService>>,
     semantic_search: Option<Arc<SemanticSearchService>>,
     symbol_code: Option<Arc<SymbolCodeService>>,
-    client_protocol_version: Option<String>,
-    client_name: Option<String>,
-    client_version: Option<String>,
+    client: ClientIdentity,
     cancellation_token: Option<Arc<AtomicBool>>,
     log_level: Option<Arc<tokio::sync::RwLock<tracing::Level>>>,
     symbol_hotness: Option<Arc<Mutex<HashMap<String, usize>>>>,
@@ -587,20 +595,27 @@ impl HandlerContextBuilder {
     }
 
     /// Sets the client protocol version.
+    ///
+    /// ST-04: composes the existing [`ClientIdentity`] rather than assigning
+    /// a field of its own, so the builder keeps the API callers already use
+    /// while the context stops exposing the pieces.
     pub fn with_client_protocol_version(mut self, version: impl Into<String>) -> Self {
-        self.client_protocol_version = Some(version.into());
+        let version = version.into();
+        self.client = self.client.with_protocol_version(version);
         self
     }
 
     /// Sets the client name.
     pub fn with_client_name(mut self, name: impl Into<String>) -> Self {
-        self.client_name = Some(name.into());
+        let name = name.into();
+        self.client = self.client.with_name(name);
         self
     }
 
     /// Sets the client version.
     pub fn with_client_version(mut self, version: impl Into<String>) -> Self {
-        self.client_version = Some(version.into());
+        let version = version.into();
+        self.client = self.client.with_version(version);
         self
     }
 
@@ -727,9 +742,7 @@ impl HandlerContextBuilder {
             symbol_code: self
                 .symbol_code
                 .unwrap_or_else(|| Arc::new(SymbolCodeService::new())),
-            client_protocol_version: self.client_protocol_version,
-            client_name: self.client_name,
-            client_version: self.client_version,
+            client: self.client,
             cancellation_token: self
                 .cancellation_token
                 .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
@@ -5784,9 +5797,92 @@ mod tests {
             .with_log_level(tracing::Level::DEBUG)
             .build();
 
-        assert_eq!(ctx.client_name, Some("test-client".to_string()));
-        assert_eq!(ctx.client_version, Some("1.0.0".to_string()));
-        assert_eq!(ctx.client_protocol_version, Some("2024-01".to_string()));
+        assert_eq!(ctx.client().name(), Some("test-client"));
+        assert_eq!(ctx.client().version(), Some("1.0.0"));
+        assert_eq!(ctx.client().protocol_version(), Some("2024-01"));
+    }
+
+    // ST-04: the client identity used to be three independent public fields
+    // on `HandlerContext`. Three `Option<String>`s that are always set
+    // together and always mean one thing is not three optional values, it is
+    // one optional value with three attributes — and modelling it that way
+    // makes the impossible states unrepresentable. `ClientIdentity::unknown`
+    // is the only "no client" and there is no spelling that sets a name
+    // without a version.
+    #[test]
+    fn t_st04_client_identity_is_one_value_not_three_optional_fields() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let identified = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_client_name("cognicode-cli")
+            .with_client_version("0.98.1")
+            .with_client_protocol_version("2024-11")
+            .build();
+        let c = identified.client();
+        assert_eq!(c.name(), Some("cognicode-cli"));
+        assert_eq!(c.version(), Some("0.98.1"));
+        assert_eq!(c.protocol_version(), Some("2024-11"));
+        // A client that identifies itself is known, not half-known.
+        assert!(c.is_known());
+
+        // A context built without client metadata is unknown as a whole.
+        let anonymous = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(!anonymous.client().is_known());
+        assert_eq!(anonymous.client().name(), None);
+        assert_eq!(anonymous.client().version(), None);
+        assert_eq!(anonymous.client().protocol_version(), None);
+        // There is exactly one "no identity" value, so two anonymous
+        // contexts cannot disagree about not having one.
+        assert_eq!(*anonymous.client(), ClientIdentity::unknown());
+    }
+
+    // ST-04 KPI ratchet: `METRICS-AND-ACCEPTANCE.md` scores ST-04 as
+    // "campos públicos HandlerContext → tendencia a 0". A prose target that
+    // nothing measures is the same thing ST-02's ratchet found drift for, so
+    // the count is asserted here instead.
+    //
+    // This is a ratchet, not a proof of completion. It fails if the count
+    // goes UP (regression — the service-locator surface growing again) and
+    // also fails if it goes DOWN unexpectedly (a field was made private and
+    // something that depended on it silently lost meaning). To lower it, the
+    // number in the assert is lowered in the same commit that does the work.
+    //
+    // The count is read from this file's own source rather than reflected,
+    // because Rust cannot enumerate struct fields at run time.
+    //
+    // It started at 21. The first slice removed THREE public fields, not two:
+    // `client_protocol_version`, `client_name` and `client_version` were
+    // replaced by one private `client: ClientIdentity`. Private fields do not
+    // count — that is the whole point of the metric, so a value that is
+    // reachable only through an accessor scores the same as no field at all.
+    #[test]
+    fn t_st04_handler_context_public_field_count_is_ratcheted() {
+        const CURRENT_PUBLIC_FIELDS: usize = 18;
+
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub struct HandlerContext {")
+            .expect("HandlerContext declaration not found");
+        let body_start = start + "pub struct HandlerContext {".len();
+        let body_end = source[body_start..]
+            .find("\n}")
+            .expect("HandlerContext body end not found")
+            + body_start;
+
+        let public_fields = source[body_start..body_end]
+            .lines()
+            .filter(|l| l.trim_start().starts_with("pub "))
+            .count();
+
+        assert_eq!(
+            public_fields, CURRENT_PUBLIC_FIELDS,
+            "HandlerContext exposes {public_fields} public fields; the ST-04 \
+             ratchet expects {CURRENT_PUBLIC_FIELDS}. Raise it only in the same \
+             commit that lowers it, and say in the message why the count moved."
+        );
     }
 
     #[test]
@@ -5835,8 +5931,7 @@ mod tests {
 
         // Both should have canonicalized working_dir
         assert_eq!(ctx_new.working_dir, ctx_builder.working_dir);
-        assert_eq!(ctx_new.client_name, ctx_builder.client_name);
-        assert_eq!(ctx_new.client_version, ctx_builder.client_version);
+        assert_eq!(ctx_new.client(), ctx_builder.client());
     }
 
     #[test]
