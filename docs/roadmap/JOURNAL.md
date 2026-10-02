@@ -10700,3 +10700,113 @@ tests, no en el que tiene el nombre más serio.
 algo que ya está en `main` desde el 1 de octubre. "Abierto" y "necesario" son
 cosas distintas, y confundirlas es lo que hace que un backlog mienta sobre sí
 mismo.
+
+### N+77 — CP2.8: un presupuesto que nadie comprobaba, sobre 9 operaciones que nadie midió
+
+WorkItem SDDK `6e1bb51a`, PR #328 mergeado como `ff898a83`. Cycle
+`p-2c63a808fcee924a/roadmap-closeout`, path A-min.
+
+#### N+77.1 — El defecto, y por qué es peor que no tener presupuesto
+
+Ejecutado el checker contra el budget real:
+
+```
+OPERATION                           BUDGET (us)    ACTUAL (us)     STATUS
+add_node                                     50         2.4370       PASS
+... 7 en total, todas PASS ...
+graph_nodes_100                            5000      (missing)       SKIP
+graph_search                              10000      (missing)       SKIP
+graph_subgraph                             15000      (missing)       SKIP
+brain_open                                  5000      (missing)       SKIP
+brain_ask                                 30000      (missing)       SKIP
+parse_simple                                100      (missing)       SKIP
+parse_complex                               500      (missing)       SKIP
+execute_find                               5000      (missing)       SKIP
+execute_traverse                          10000      (missing)       SKIP
+
+=== All benchmarks within budget ===
+exit 0
+```
+
+**9 de las 16 operaciones presupuestadas no tienen benchmark en ningún sitio.**
+Toda la sección `[mcp.tools]`, más `[parse.*]` y `[execute.*]`, presupone
+benchmarks que nunca se escribieron.
+
+La causa era una línea. La sección 7 contaba entradas de `actual`, y una
+operación sin benchmark no genera entrada `actual`, así que **no podía contar
+como fallo**. `SKIP` sonaba a "no aplica"; era "nunca lo intentamos".
+
+Y por encima: `perf-budget.toml` abría con *"CI fails if any operation exceeds
+its budget"*. `grep -rn perf .github/workflows/` devuelve cero, y las únicas
+menciones del script están en su propia cabecera. **El enforcement no existía
+en ninguna parte.**
+
+Un presupuesto que nadie comprueba no es neutro. Es peor que no tenerlo, porque
+quien lo lee concluye que nadie lo cruza, y entonces nadie lo mira. Eso es
+`Unknown` presentado como `clean`, que es exactamente lo que `AGENTS.md`
+prohíbe.
+
+#### N+77.2 — El fix: tres diagnósticos donde había uno
+
+| exit | significado |
+|---|---|
+| 0 | toda operación presupuestada fue medida y está en presupuesto |
+| 1 | una operación **medida** se pasó |
+| 3 | una operación presupuestada **nunca se midió** |
+
+Tres códigos porque son tres problemas con arreglos distintos: un hueco en la
+enforcement no es una regresión de rendimiento, y colapsarlos en un rojo
+indiferenciado es lo que permite que un equipo decida ignorarlos.
+
+`perf-budget.toml` ahora **declara** `# ENFORCEMENT: none` en vez de afirmar en
+prosa. Y `perf_budget_checker_contract` cruza esa declaración contra
+`pr-ci.yml`, así que cablear el checker sin cambiar la línea en el mismo commit
+rompe el gate.
+
+#### N+77.3 — El fallo de método, que casi lo dejaba pasar
+
+La primera versión del test buscaba el substring `"ci fails"` para detectar la
+afirmación falsa. Al sustituirla por su negación, **el grep encontró la frase
+citada dentro de la propia negación** y el test falló.
+
+Un substring no distingue afirmar de negar. Por eso el estado pasó a
+**declararse** en una línea parseable: la versión pequeña de lo que este
+JOURNAL lleva tres receipts defendiendo. Y el test falla si borras la
+declaración, en vez de pasar en silencio sobre un fichero sin estado.
+
+El primer RED tampoco era válido: mis 4 tests corren en paralelo y cada uno
+lanzó su propio `cargo bench` (242 s), que colisionó en
+`graph_benchmarks.rs:189`. Añadí una costura de inyección al script
+(`COGNICODE_PERF_BENCH_OUTPUT`, `COGNICODE_PERF_BUDGET_FILE`) y el contract pasó
+de **457 s a 0.16 s** con un RED limpio: 2 fallos, los dos defectos, y los 2
+tests de control verdes.
+
+#### N+77.4 — Por qué NO se cableó al CI
+
+Medido: **457 s (7.6 min)**. `merge-gate` ya dura entre 12 y 20 min, así que
+cablearlo lo lleva a 20-28 min. Y los presupuestos de rendimiento sobre runners
+compartidos son ruidosos: un gate que falla por ruido enseña a reintentar en
+vez de a arreglar, que es peor que no tener gate.
+
+Queda como work item `bb604803` con sus disparadores. Y un dato que abarata ese
+seguimiento: `graph_search`, `graph_subgraph`, `brain_open` y `brain_ask` **sí
+existen** como tools MCP en `crates/`. No faltan, nunca se benchmarkearon.
+`graph_nodes_100` sí que no existe con ese nombre.
+
+**Lección 177**: `SKIP` es una palabra peligrosa. En un verificador significa
+"esto no aplica, no pasa nada", y aquí significaba "esto nunca se midió". El
+nombre de una columna de estado decide si alguien la lee como una ausencia
+administrativa o como un agujero. Cuando una categoría mezcla las dos cosas, el
+nombre la borra.
+
+**Lección 178**: un presupuesto sin enforcement tiene una aserción más fuerte que
+no tenerlo. "Nadie cruza este techo" y "nadie sabe si alguien cruza este techo"
+son afirmaciones distintas, y solo la segunda es cierta. Declarar
+`ENFORCEMENT: none` cuesta una línea y devuelve al fichero la capacidad de
+decir la verdad.
+
+**Lección 179**: una costura de inyección no es solo buena práctica, es lo que
+permite testear. Aquí convirtió un test de 457 s en uno de 0.16 s, y de paso
+invalidó un RED que era ruido de cuatro procesos compitiendo por un fichero.
+Sin ella, el defecto se habría "verificado" con un test que no distingue lo que
+cree probar de lo que de verdad prueba.
