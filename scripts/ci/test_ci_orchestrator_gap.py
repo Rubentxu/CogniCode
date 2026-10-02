@@ -83,15 +83,42 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
-# The tools whose invocations count as gates. A `run:` step that installs a
-# dependency or uploads an artifact is not a gate and is not inventoried; this
-# is a coverage contract, not a transcript of the orchestrators.
-GATE = re.compile(
-    r"(cargo (?:test|clippy|fmt|deny|build)"
-    r"|python3 \S+\.py"
-    r"|bash \S+\.sh"
-    r"|just \S+)"
+# The tools whose invocations count as gates.
+#
+# A gate is a command whose non-zero exit changes a verdict. The boundary is
+# drawn there, not at "looks like a build command", because the first version
+# of this list was `cargo (test|clippy|fmt|deny|build)` and it missed real
+# gates that were running in Actions the whole time:
+#
+#   cargo llvm-cov --lib -p cognicode-core --summary-only \
+#     --fail-under-lines 75.00 --fail-under-regions 71.00
+#
+# That is the CR-09 coverage gate: blocking, with a numeric threshold, and the
+# inventory reported a gap of 40 while being unable to see it. A measurement
+# that cannot see a gate cannot report on gates.
+#
+# `cargo` is matched whole rather than per-subcommand so the list cannot go
+# stale again when a new subcommand becomes a gate.
+#
+# Anchored to the start of the command. Searching anywhere in the line made
+# `chmod +x target/release/cognicode` and `test -x target/release/...` count
+# as gates: they mention a binary, they do not run one. The pipe form is the
+# one place a gate is not the head — `echo "$subject" | commitlint` runs
+# commitlint — so it is matched separately rather than by anchoring.
+GATE_HEAD = re.compile(
+    r"^(?:cargo|just|python3|bash|commitlint|gh|rustup|npm|"
+    r"target/release/|\./target/release/)\b"
 )
+GATE_PIPE = re.compile(r"\|\s*(?:commitlint|gh|cargo|just|python3|bash)\b")
+
+
+def is_gate(line: str) -> bool:
+    # A prerequisite is not a verdict. `python3 -m pip install` sets the stage
+    # for a gate that runs later; counting it would mean the Kotlin pipeline
+    # "covered" a gate merely by installing the thing that checks it.
+    if line.startswith("python3 -m "):
+        return False
+    return bool(GATE_HEAD.match(line) or GATE_PIPE.search(line))
 
 RUN_BLOCK = re.compile(r"run:\s*\|\s*\n((?:\s{6,}.*\n|\n)+)")
 RUN_INLINE = re.compile(r"run:\s*(\S.*)$", re.MULTILINE)
@@ -116,6 +143,17 @@ def normalise(command: str) -> str:
     command = re.sub(r"^cd\s+\S+\s*&&\s*", "", command)
     command = re.sub(r"^set -e\s+", "", command)
     command = command.strip().rstrip("\\").strip()
+    # `VAR=$(some gate)` is the same gate with its output captured, not a
+    # different one. Both orchestrators capture the selector's output this way
+    # and write the variable with a different spelling, which read as a gap in
+    # a pipeline that runs the command. Parsed rather than stripped in two
+    # steps: an earlier pair of regexes left a stray quote behind and produced
+    # `'SELECT_PATHS=...sh)'`, still not matching.
+    assignment = re.match(
+        r'^[A-Za-z_][A-Za-z0-9_]*="?\$\((.*)\)"?$', command, re.DOTALL
+    )
+    if assignment:
+        command = assignment.group(1).strip()
     # A YAML matrix value is a parameter, not a different gate.
     command = re.sub(r"\$\{\{[^}]*\}\}", "<param>", command)
     return command
@@ -174,19 +212,36 @@ def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
             )
         candidates.extend(RUN_INLINE.findall(text))
         for candidate in candidates:
-            if GATE.search(candidate):
-                gates.add(gate_key(normalise(candidate)))
+            # Normalise first, then ask. Every Kotlin step is written as
+            # `$cd && <gate>`, so anchoring the head check before the wrapper is
+            # stripped matched nothing on the PipelineK side and reported the
+            # whole pipeline as missing.
+            keyed = gate_key(normalise(candidate))
+            if is_gate(keyed):
+                gates.add(keyed)
     return gates
 
 
 def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
     gates: set[str] = set()
     for text in pipeline_texts.values():
+        # The loop is expanded first, while the source still carries Kotlin's
+        # escaped dollar, because that is what the loop placeholder looks like.
+        # Unescaping before this point would rewrite the placeholder and expand
+        # the loop to nothing — which reads as 24 MCP suites vanishing from a
+        # pipeline that runs them.
         candidates = [line.strip() for line in expand_for_loops(text)]
         candidates.extend(SH_LINE.findall(text))
         for candidate in candidates:
-            if GATE.search(candidate):
-                gates.add(gate_key(normalise(candidate)))
+            # Inside a Kotlin raw string, `${'$'}` is how a literal dollar
+            # reaches the emitted shell script. This contract reads the .kts
+            # source, not the emitted script, so the escape is still visible
+            # here and would make every step using a shell variable look like a
+            # different gate.
+            candidate = candidate.replace("${'$'}", "$")
+            keyed = gate_key(normalise(candidate))
+            if is_gate(keyed):
+                gates.add(keyed)
     return gates
 
 
