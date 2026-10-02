@@ -48,6 +48,28 @@
 // itself. Nothing here cleans up after itself, so a step that writes a
 // relative path writes into the working tree.
 //
+// And the second thing that probe measures is the one this file silently
+// depends on everywhere: **a failing stage aborts the pipeline.** Measured on
+// 2026-10-02 under pipelinek 0.46.0 with a three-stage probe — write, fail with
+// exit 7, write — where the third stage's marker was never created and the
+// process exited 1:
+//
+//     StepFailed ... failureKind: SCRIPT, message: shell exited with code 7
+//     RunFinished ... outcome: failure        <- immediately, no stage 3
+//
+// That is what `set -euo pipefail` gave the old workflow, implicitly, and it is
+// why no stage here needs a `set -e` of its own. It is also the reason every
+// ADVISORY stage in `integration.pipeline.kts` ends its command with
+// `|| echo 'ADVISORY: …'`: PipelineK has no `continue-on-error`, so a non-zero
+// exit is the only way to stop a lane, and the only way not to stop one is to
+// not exit non-zero. `|| echo` is not a loose substitute for a policy flag
+// here; it is the whole mechanism.
+//
+// Both probes are reproducible with `scripts/ci/probe-pipelinek-semantics.sh`.
+// It is not a contract — a CI runner does not ship the `pipelinek` binary — so
+// it is the thing to re-run by hand after a version bump, and a changed answer
+// is a change of policy to review rather than a version number to accept.
+//
 // Shell variables inside a **raw** string (`"""..."""` + trimIndent) must be
 // written `${'$'}name`; the shell then receives a literal `$` and expands its
 // own. This is not a version quirk and the distinction that matters is raw vs
