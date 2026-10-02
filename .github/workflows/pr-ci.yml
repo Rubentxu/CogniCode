@@ -131,6 +131,7 @@ jobs:
             scripts/ci/test_ci_contracts.py \
             scripts/ci/test_skills_gate_contract.py \
             scripts/ci/test_supply_chain_gate_contract.py \
+            scripts/ci/test_cr06_ratchet.py \
             scripts/ci/test_serial_env_contract.py \
             scripts/ci/test_t6_gate_contract.py
       # CP5 / A-033..A-036 — el gate de skills. `validate_skills.py` es lo
