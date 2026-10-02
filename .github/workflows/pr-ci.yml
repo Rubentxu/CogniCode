@@ -110,8 +110,18 @@ jobs:
       # en un merge que no es tuyo. Version pineada porque el comportamiento
       # de `additionalProperties` y del orden de errores es parte del
       # contrato de los mensajes que este gate produce.
+      #
+      # `PyYAML` lo necesitan los dos validadores de skills de abajo.
+      # `validate_skills.py` degrada a "SKIP: PyYAML not installed" sin el,
+      # y `verify-skills.sh` aborta en su primer `import yaml`. Ninguno de
+      # los dos casos es un fallo: son las dos formas que tiene un gate de
+      #estalar en silencio cuando le falta una dependencia, y por eso se
+      # declara aqui en vez de confiar en lo que traiga la imagen.
       - name: Install product validation dependencies
-        run: python3 -m pip install --disable-pip-version-check "jsonschema==4.25.1"
+        run: |
+          python3 -m pip install --disable-pip-version-check \
+            "jsonschema==4.25.1" \
+            "PyYAML==6.0.3"
       - name: Product + CI contract tests
         run: |
           set -euo pipefail
@@ -119,8 +129,35 @@ jobs:
             scripts/product/test_*.py \
             scripts/ci/test_select_suites.py \
             scripts/ci/test_ci_contracts.py \
+            scripts/ci/test_skills_gate_contract.py \
             scripts/ci/test_serial_env_contract.py \
             scripts/ci/test_t6_gate_contract.py
+      # CP5 / A-033..A-036 — el gate de skills. `validate_skills.py` es lo
+      # unico que separa una skill que ensena un nombre de tool de un
+      # agente que lo llama y recibe un error JSON-RPC, y `verify-skills.sh`
+      # comprueba que cada bundle tenga su manifest. Los dos existian, los
+      # dos pasaban, y ningun workflow los invocaba: medido 2026-10-02 con
+      # `grep -rn` sobre `.github/workflows/`, cero coincidencias. Es el
+      # mismo patron que A-013 (`--lib` que no compila `tests/`) y que
+      # A-014/A-015, ahora en el eje CP.
+      #
+      # `portable_skill_bundle.rs` no cubre el hueco: sus 8 tests ejercitan
+      # el CLI validador contra fixtures sinteticos, lo que prueba que el
+      # mecanismo funciona cuando le handing un bundle, no que los seis
+      # bundles que el repo publica sean validos.
+      #
+      # El orden importa y va al reves del habitual: primero el contrato que
+      # fija este step, despues el step. Asi una supresion futura del step
+      # falla por el contrato y no por el validador, que se limitaria a no
+      # ejecutarse. `test_skills_gate_contract.py` comprueba ademas que este
+      # job este en el `needs:` de merge-gate, que es el fallo de A-013: un
+      # gate en un job que ningun merge espera es codigo muerto con codigo
+      # de salida verde.
+      - name: CP5 skill gate (tool-name references and bundle manifests)
+        run: |
+          set -euo pipefail
+          python3 scripts/validate_skills.py
+          bash scripts/verify-skills.sh
 
   # -----------------------------------------------------------------------
   # build-binary — produce el binario para el E2E y para F0.1 (cognicode CLI)
