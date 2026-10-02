@@ -353,9 +353,9 @@ pub struct HandlerContext {
     /// [`ClientIdentity`] for why the distinction is load-bearing.
     client: ClientIdentity,
     pub cancellation_token: Arc<AtomicBool>,
-    pub log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
+    log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
     /// Tracks symbol access hotness for AI relevance learning
-    pub symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
+    symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
@@ -370,14 +370,14 @@ pub struct HandlerContext {
     /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
     /// `OnceLock` ensures thread-safe single initialization.
     /// See ADR-030.
-    pub fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
+    fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
     /// M3.1: Flag flipped to `true` after the first successful `build_graph`
     /// call completes through `call_tool_handler`. Used by the `/ready`
     /// HTTP endpoint to report graph-readiness distinct from process
     /// liveness (`/health`). Atomic + `Arc` so the flag can be observed
     /// by the HTTP readiness handler without going through the dispatch
     /// boundary.
-    pub graph_loaded: Arc<AtomicBool>,
+    graph_loaded: Arc<AtomicBool>,
     /// PRF-SEC-02: read-only mode. When `true`, mutating tools
     /// (write_file, edit_file, reparse_on_edit) are rejected at dispatch
     /// and filtered out of `tools/list`. Default `false` preserves the
@@ -5839,6 +5839,53 @@ mod tests {
         assert_eq!(*anonymous.client(), ClientIdentity::unknown());
     }
 
+    // ST-04 slice 2: four fields went from `pub` to private because no
+    // reader existed outside this module. Privatizing is only safe if the
+    // behaviour each one carried is still reachable, so this asserts the
+    // accessors, not the visibility — the point is that nothing was lost,
+    // not that something became harder to reach.
+    #[tokio::test]
+    async fn t_st04_privatized_state_is_still_reachable_through_accessors() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_log_level(tracing::Level::DEBUG)
+            .build();
+
+        // symbol_hotness: recording and reading still work end to end.
+        assert_eq!(ctx.get_symbol_hotness("nothing_yet"), 0.0);
+        ctx.record_symbol_access("hot", 3);
+        assert_eq!(ctx.get_symbol_hotness("hot"), 1.0);
+        // The `Telemetry` trait is the other reader of these two fields, and
+        // it is what `handlers/*` uses. Privatizing must not have changed
+        // what that trait hands out. `log_level` is a tokio RwLock (awaited);
+        // `symbol_hotness` is a std Mutex (not).
+        assert_eq!(*ctx.log_level().read().await, tracing::Level::DEBUG);
+        assert_eq!(
+            Telemetry::symbol_hotness(&ctx)
+                .lock()
+                .expect("hotness lock")
+                .get("hot")
+                .copied(),
+            Some(3)
+        );
+
+        // graph_loaded: the /ready flag still starts false and still flips.
+        assert!(!ctx.is_graph_loaded());
+        ctx.mark_graph_loaded();
+        assert!(ctx.is_graph_loaded());
+
+        // fallback_store: the lazy cached store still resolves, and it
+        // resolves to the SAME store on a second call — memoizing is the
+        // whole reason `fallback_store` is a `OnceLock`.
+        let first = ctx.get_graph_store();
+        let second = ctx.get_graph_store();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "fallback_store must memoize, not rebuild per call"
+        );
+    }
+
     // ST-04 KPI ratchet: `METRICS-AND-ACCEPTANCE.md` scores ST-04 as
     // "campos públicos HandlerContext → tendencia a 0". A prose target that
     // nothing measures is the same thing ST-02's ratchet found drift for, so
@@ -5853,14 +5900,23 @@ mod tests {
     // The count is read from this file's own source rather than reflected,
     // because Rust cannot enumerate struct fields at run time.
     //
-    // It started at 21. The first slice removed THREE public fields, not two:
+    // It started at 21. Slice 1 removed THREE public fields, not two:
     // `client_protocol_version`, `client_name` and `client_version` were
-    // replaced by one private `client: ClientIdentity`. Private fields do not
-    // count — that is the whole point of the metric, so a value that is
-    // reachable only through an accessor scores the same as no field at all.
+    // replaced by one private `client: ClientIdentity`. Slice 2 removed
+    // four more — `symbol_hotness`, `log_level`, `graph_loaded` and
+    // `fallback_store` — none of which had a single reader outside this
+    // module. Private fields do not count: that is the whole point of the
+    // metric, so a value reachable only through an accessor scores the same
+    // as no field at all.
+    //
+    // The next candidates are `read_only`, `cancellation_token` and
+    // `sub_handler_timeout`, which still have readers in `rmcp_adapter.rs`
+    // and `file_ops_handlers.rs` — two sibling modules that are NOT children
+    // of `handlers`, so unlike `handlers/*` they cannot see private fields.
+    // Those need accessors written first.
     #[test]
     fn t_st04_handler_context_public_field_count_is_ratcheted() {
-        const CURRENT_PUBLIC_FIELDS: usize = 18;
+        const CURRENT_PUBLIC_FIELDS: usize = 14;
 
         let source = include_str!("mod.rs");
         let start = source
