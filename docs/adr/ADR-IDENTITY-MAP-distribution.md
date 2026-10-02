@@ -5,7 +5,7 @@
 > `BinaryName`, `SkillBundleId`) and which are derivable from which.
 >
 > Produced during the architectural cycle `arch-identity-taxonomy`
-> (DEBT-3 per `openspec/changes/archive/2026-09-18-arch-l5-.../proposal.md`).
+> (DEBT-3 per `openspec/changes/archive/2026-09-18-arch-l5-zero-install-pollution/proposal.md`).
 >
 > ADR status: **proposed** (WU2 of the cycle; will move to **accepted** after
 > WU3 + WU4 + WU5 land).

@@ -10367,3 +10367,336 @@ job llevaba 18 m 28 s y terminó en `success`. Comprobar `conclusion` del job
 él, y el diagnóstico era más rekord de lo que el hecho justificaba: una explicación
 bonita sobre un dato que no se había medido.
 
+
+### N+76 — La premisa del work item era falsa, y medirla costó una consulta (2026-10-01)
+
+WorkItem SDDK `372290ee`. Apertura: `main` en `e93fa7ac`, tras el merge de
+#326. El work item nació de un patrón: tres barridas seguidas — N+73, N+74,
+N+75 — encontrando rutas rotas en backticks, con la conclusión evidente de que
+faltaba un verificador. La conclusión era correcta en su forma; el alcance no
+lo era, y eso solo se sabía midiendo.
+
+#### N+76.1 — Medí la premisa antes de escribir una línea
+
+| conjunto | rotas |
+|---|---|
+| toda ruta en backticks | **238** |
+| de esas, con raíz `docs/` u `openspec/` | **9** |
+
+Las otras 229 son `tools/list`, `references/`, `domain/`, `src/x.rs`,
+`tests/integration.rs`, rutas parciales terminadas en `/`, nombres de skill,
+identificadores de código y ejemplos de plantilla. Un "existe esto" sobre todos
+los backticks daría 229 falsos positivos por barrido — o sea, un gate que
+miente. Es la misma decisión que N+73.4 tomó para `sddk lint`, y el precedente
+ya estaba escrito.
+
+Las 9 reales se reparten en 3 reparables y 6 excepciones justificadas.
+
+#### N+76.2 — Las 3 reparables, con destino verificado
+
+- `ADR-CANONICAL-LAYOUT-versions.md:66` → closure record de e74, movido por el
+  bulk archive del 2026-09-21.
+- `generic-graph-equivalence-harness/spec.md:3` → change spec de e40, mismo
+  archivo masivo.
+- `ADR-IDENTITY-MAP-distribution.md:8` → citado como
+  `2026-09-18-arch-l5-.../proposal.md`. **La elipsis era un placeholder sin
+  resolver**, así que esa ruta no podía resolver por construcción: no estaba
+  rota por un cambio de layout, estaba rota desde que se escribió. El
+  directorio real es `2026-09-18-arch-l5-zero-install-pollution`.
+
+#### N+76.3 — Las 6 que se quedan rotas, y por qué
+
+Tres son fixtures GIVEN cuya semántica depende de que la ruta **no** exista.
+`openspec/specs/quality-store/` es el caso límite: su propio GIVEN afirma que el
+directorio no está, así que crearlo invertiría el test. Las otras dos
+(`docs/guide.md`, `docs/adr/0001.md`, `docs/adr/0007.md`) son documentos de
+entrada genéricos del adaptador de fuentes.
+
+Una es prospectiva: `docs/analysis/release-1.0.0-scorecard.md` se archiva ahí al
+publicar, y la release no ha ocurrido.
+
+Una es `E32`, que es un *programa* del ROADMAP con sub-unidades E32-A..I, no un
+ADR. Esa ruta nunca nombró un acta. Elegir `ADR-034` o la sección E32 del
+ROADMAP sería inventar el destino, así que queda como excepción con la razón
+escrita.
+
+Cada fila lleva su razón, un test falla si la razón está en blanco, y otro
+falla si la fila queda obsoleta. Eso evita que la allowlist vuelva a ser
+justo lo que este trabajo quería quitar: filas que hacen pasar un test sin decir
+por qué.
+
+#### N+76.4 — El defecto propio que encontró el TDD
+
+El extractor obvio es `text.split('`').skip(1).step_by(2)`. **Falla en
+silencio.** Un fence de markdown son *tres* backticks, así que un documento que
+contenga uno tiene un total impar y todo lo que viene después queda desplazado
+una posición.
+
+Medido sobre `openspec/specs/docs-source-adapter/spec.md`: 373 backticks, y el
+extractor por emparejamiento devolvía **cero rutas en todo el fichero**,
+incluidas las tres rotas que este contract existe para cazar. El gate habría
+pasado sin comprobar nada.
+
+Es exactamente la forma del ghost-filter N+66, y salió al escribir el test, no al
+revisarlo. El parser definitivo camina por bytes buscando runs de exactamente un
+backtick a cada lado, sin consultar la paridad global.
+
+#### N+76.5 — El conjunto gobernado es lo que CI puede ver
+
+`docs/adr/` está en `.gitignore:182` y los ADRs se force-addy de forma
+selectiva: **35 trackeados frente a 53 en disco**. Un runner de CI recibe un
+checkout, así que los 18 no trackeados no existen allí. Recorrer el working
+directory habría sido no-vacuo en mi máquina y **vacuuo en la ejecución que debe
+hacer cumplir el gate**.
+
+Por eso el conjunto se lee con `git ls-files`. No es un compromiso: es lo
+único que un gate puede afirmar sobre el runner que lo ejecuta. `docs/ROADMAP.md`
+está trackeado pero no cuelga de `docs/adr/`, así que se añade explícito.
+
+#### N+76.6 — Sin cambio de workflow
+
+`pr-ci.yml` ya corre `cargo test -p cognicode-cli --features ladybug`, que
+cubre todos los `tests/*.rs`. Añadir un step por test sería el anti-patrón que
+el propio comentario del workflow advierte. Verificado contra
+`cli_gate_coverage_contract`, que pasa para el gate de CLI (a diferencia del de
+MCP, que sí exige nombrar cada suite).
+
+#### N+76.7 — Lo que no se tocó, y por qué
+
+`docs/adr/ADR-052-reject-cargo-dist-e74.md` sí tenía una referencia rota y la
+reparé en local. **No viaja en el PR**: no está trackeado, así que ni el gate ni
+CI la ven. Ampliar `.gitignore` o forzar su alta es un cambio de política y
+pertenece a su propia revisión, no a un efecto secundario de esta.
+
+**Lección 166**: una premisa heredada de un patrón real puede ser falsa en su
+alcance. Tres barridas seguidas detectando el mismo defecto prueban que el
+defecto existe; no dicen qué lo causa ni cuánto abarca. Medir la premisa costó
+una consulta y evitó un gate con 229 falsos positivos por barrido.
+
+**Lección 167**: un verificador que devuelve un conjunto vacío no está
+"tranquilo", está ciego. El defecto del extractor por emparejamiento habría
+producido un test verde sobre un fichero de 373 backticks. La no-vacuidad
+necesita su propio test —`the_scan_actually_finds_a_broken_reference` y
+`a_code_fence_does_not_shift_every_later_span` existen para eso—, igual que
+existe un test que falla si una excepción queda obsoleta.
+
+**Lección 168**: un gate debe afirmar sobre el entorno que lo ejecuta, no sobre
+el que lo escribiste. Con 35 ADRs trackeados y 53 en disco, recorrer el disco
+daba una garantía que en CI no era cierta. `git ls-files` no es una comodidad:
+es la única base honesta para un gate de merge.
+
+#### N+76.8 — El gate falló en su primera ejecución en CI, y tenía razón
+
+El PR #327 no mergeó a la primera. `merge-gate` falló en
+`every_backticked_provenance_path_resolves`:
+
+```
+these provenance paths are cited in backticks but do not exist, and are not
+declared in ALLOWED_MISSING:
+  docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md  <-  openspec/specs/generic-graph-equivalence-harness/spec.md
+```
+
+Ese fichero **existe en mi disco y no está en el repositorio**: `docs/*` está
+gitignored (`.gitignore:147`) y de ese paquete solo se force-addy la ruta
+anidada `docs/CogniCode_Living_Software_Intelligence/docs/adr/proposed/`. De
+598 ficheros trackeados bajo `docs/`, ese ledger no es uno de ellos.
+
+El defecto era mío y era de una forma que no había visto. El gate leía el
+**conjunto** por `git ls-files` —determinista— pero resolvía cada cita con
+`Path::exists()` —dependiente del entorno—. Dos preguntas distintas, y solo la
+primera es igual en todas partes. En verde en mi máquina, en rojo en el runner
+que debe hacer cumplir el gate, sobre el mismo commit.
+
+Medido antes de corregir: cambiar la resolución a "¿está commiteado?" voltea
+**una sola cita** de las 9. Ninguna otra. El defecto era estrecho, pero era
+exactamente el que hacía que el gate mintiera en una dirección y no en la
+otra.
+
+La corrección es `resolves_in_a_checkout`: una cita resuelve si el destino está
+trackeado, con fallback a "algún fichero trackeado cuelga de ahí" para citas
+que nombran un directorio. Y el test
+`resolution_asks_what_is_committed_not_what_is_on_disk` fija el defecto contra
+la ruta exacta que falló,recomprobando sus dos premisas: que el fichero siga en
+disco y que siga sin trackear. Si alguna deja de ser cierta, el test lo dice en
+lugar de pasar sobre una premisa caducada.
+
+**Lo que más cuesta es lo que este gate ya no puede usarse para.** "Pasa en mi
+máquina" nunca fue evidencia; aquí además era actively wrong. Un gate que
+depende del checkout no se puede validar localmente, y un gate que no se puede
+validar localmente se valida en CI o no se valida.
+
+**Lección 169**: un gate puede ser determinista sobre *qué lee* y seguir siendo
+dependiente del entorno sobre *a qué concluye*. El conjunto lo leía por
+`git ls-files` y aun así el veredicto dependía del disco. La asimetría es
+traicionera porque cada mitad parece correcta por separado, y solo se ven juntas
+en el runner.
+
+**Lección 170**: el fallo de CI no es una molestia que cerrar, es el único
+lugar donde aparece el verdad que el entorno local no puede mostrar. Si este
+gate hubieraptideado más amplio —los 238 backticks— el ruido habría enterrado
+esta cita entre 229 falsos positivos, y el defecto habría sobrevivido. El
+acotamiento que parecía una concesión en N+76.1 fue lo que hizo visible el
+defecto. Un gate que miente mucho no es peor gate: es un gate del que no se
+puede saber si miente.
+
+#### N+76.9 — El guardián de caracteres invisibles no miraba donde yo escribía
+
+Escribiendo N+76.8 metí yo mismo un homoglifo en este fichero: la palabra
+`recomprobando` quedó como `ريمprobando` —tres letras árabes— donde iba una
+"e". Lo detecté porque un `edit` no encontraba el texto que yo acababa de
+escribir.
+
+El guardián que llevo usando contra esto desde hace sesiones es
+`grep -P '[\x{4e00}-\x{9fff}]'`, que solo mira CJK. No cubre árabe, ni cirílico,
+ni hangul. Un rango de Unicode no es una defensa; es el rango del defecto que
+ya cometí una vez.
+
+Barrido real sobre el markdown **trackeado**:
+
+| fichero | script | caracteres | qué es |
+|---|---|---|---|
+| `docs/roadmap/certifications/C8-POST-PRF-GA.md:545` | cirílico | `бдету` | `añadido` -> `бnадido`, homoglifo en una palabra española |
+| `docs/roadmap/MAINTENANCE.md:22` | hangul | `잊` | `olvidó` -> `잊ó`; hangul significa "olvidar", así que la frase aún se lee bien y el defecto es más difícil de ver, no más |
+| `docs/prf/JOURNAL.md:5588` | cirílico | `обнаруживает` | `detecta` -> `обнаруживает`; **congelado, no se toca** |
+| `docs/roadmap/JOURNAL.md:4510-4648` | cirílico | pasajes | texto ruso íntegro de una sesión anterior, no homoglifos |
+
+Los tres primeros son corrupción de una palabra española por otra de un
+alfabeto no latino. El cuarto es otra cosa: un pasaje en ruso entero, no una
+letra sustituida.
+
+`docs/prf/` está congelado por `AGENTS.md`, así que la fila de `prf/JOURNAL.md`
+se reporta y no se repara. Reconstruir evidencia histórica para que el grep
+pase seríafalsear el expediente, que es peor que el defecto.
+
+**Lección 171**: un guardián acotado al defecto que ya cometí no es un
+guardián, es un recuerdo. `[\x4e00-\x9fff]` cubría CJK porque CJK fue lo que
+colé una vez; el siguiente intento coló árabe en la misma línea que el check.
+La defensa útil pregunta "¿qué scripts no pueden aparecer aquí?", no "¿vi esto
+alguna vez?".
+
+#### N+76.10 — Investigación retrospectiva del ciclo (#317..#326)
+
+Alcance: los diez merges hasta `e93fa7ac` y el PR #327 en vuelo. SDDK `next` =
+`372290ee`, ledger íntegro (34 eventos).
+
+**H1 — el gate nuevo gobierna el 11% del árbol que podría gobernar.** Medido
+sobre los **1175** markdown trackeados bajo `docs/` y `openspec/`, el gate
+cubre 127. Rotas dentro: 0. Rotas fuera: **319**.
+
+Antes de llamar eso defecto, intenté refutarlo, y la refutación es lo que
+decide el veredicto:
+
+| categoría | rutas | veredicto |
+|---|---|---|
+| citadas solo desde `archive-manifest.md` | 97 | **uso histórico correcto**: el manifiesto dice literalmente "This folder was moved from X" |
+| citadas desde `openspec/changes/` (pre-archivo) | 210 | mayoritariamente el mismo caso |
+| `docs/specs/` (la migración que arreglé en #325, en otro árbol) | 14 | **genuino** |
+| `openspec/specs/` | 16 | **genuino** |
+| `docs/*` sueltos (`docs/CURRENT.md`, `docs/AGENTS.md`, `docs/adr/ADR-001...`) | 72 | mayormente abreviaturas mal prefijadas |
+| artefactos local-only (`docs/debts/`, `docs/historico/`, `docs/CogniCode_Living.../`) | 14 | existen en mi disco, no en un checkout |
+
+**Ampliar el gate sin discriminar daría un allowlist de 222 filas**, que es
+exactamente el "gate que miente" que N+73.4 ya rechazó para `sddk lint`. El
+acotamiento no fue una concesión: es lo que hace el gate utilizable. Lo que sí
+era defecto era **no declararlo** — la doc del módulo afirma que cubre "las
+rutas que llevan provenance" sin decir que 319 no las cubre. Eso sí es un falso
+éxito del mismo género que el 87/87 de N+74, y por eso queda escrito.
+
+Corolario: la categoría mayoritaria no es deuda. Un `archive-manifest` que
+registra su ubicación previa está haciendo su trabajo.
+
+**H2 — el bump `notify` 7→8 de #326.** Verificado: `notify v8.2.0` resuelto,
+`cargo tree -i instant` sin resultados, el watcher usa 5 ítems
+(`Event`, `EventKind`, `RecursiveMode`, `Watcher`, `recommended_watcher`) y
+compila con clippy limpio. El cierre del advisory es real.
+
+Pero el hallazgo es otro: los 3 tests de `watcher.rs` cubren `is_watchable` y
+`debounce_changes`. **Ninguno toca `notify`.** `start_watcher` —el único código
+que habla con la librería que se acaba de subir de versión mayor— no tiene
+cobertura. El cierre del advisory está verificado; la afirmación de que no
+cambia el comportamiento **no**. Riesgo, no defecto.
+
+**H3 — homoglifos**, los de N+76.9: `C8-POST-PRF-GA.md:545` (`añadido`) y
+`MAINTENANCE.md:22` (`olvidó`) son corrupción real y están sin reparar.
+`docs/prf/JOURNAL.md:5588` es congelado.
+
+**Falsos éxitos encontrados en el propio trabajo de este ciclo**: dos. El gate
+que consultaba el disco, y el test que lo fijaba dependía del disco. Los dos
+los cazó `merge-gate`, ninguno lo cazó la ejecución local — que es la única
+prueba que este repo daba por buena y que aquí no valía.
+
+**Lección 172**: refutar el hallazgo antes de aceptarlo es lo que separa
+"319 rutas rotas" de "222 falsos positivos y 30 genuinos". Aceptar la primera
+cifra habría producido un allowlist gigante, es decir, el defecto que el gate
+existía para evitar.
+
+**Lección 173**: un bump mayor de dependencia se verifica con `cargo tree`,
+clippy y el advisory cerrado. El comportamiento real necesita un test que
+arranque el watcher, y no había ninguno. "Compila" y "funciona" no son la misma
+evidencia, y la segunda es la que importa.
+
+#### N+76.11 — Segunda investigación: el contrato tenía puertas que no cierran
+
+Alcance: los commits sin pushear y el PR #327. SDDK `next` = `372290ee`,
+ledger íntegro. `sddk lint` sigue en 77: sin regresión respecto al baseline.
+
+**PR #314 está obsoleto.** Propone pinear `dtolnay/rust-toolchain@1.96.0` a
+`ebb3d167…`, y ese SHA **ya está en `main`**; `action_ref_pin_contract` pasa
+7/7 hoy. El ROADMAP marca QW-05 PASS desde 2026-10-01 mientras su PR sigue
+abierto desde el 30. Mergeado sería no-op o conflicto. #308 (branch protection
+de admins) lleva tres días en lo mismo. **Riesgo de proceso, no defecto.**
+
+**El tercero de los falsos éxitos estaba en el allowlist.**
+`every_allowed_missing_states_a_reason` comprobaba que cada fila dijera por qué
+y que siguiera citándose. No comprobaba que **siguiera siendo necesaria**: una
+fila cuyo destino ya está commiteado sigue citándose, así que el test pasaba y
+el allowlist acumulaba filas que no excusan nada.
+
+Mutación: añadir una fila que apunta a `openspec/specs/cognicode-cli/spec.md`
+—que existe y es citada por las llaves del ROADMAP— dejó **7/7 verdes**. Con el
+chequeo añadido, esa misma fila falla diciendo que la fila está obsoleta y que
+hay que borrarla.
+
+**El cuarto: el gate no detecta que el escáner esté vacío.** Rompiendo
+`provenance_paths` para que devuelva conjunto vacío:
+
+```
+test every_backticked_provenance_path_resolves ... ok      <-- el gate pasa
+test the_scan_actually_finds_a_broken_reference ... FAILED
+the scan of the real governed tree found only 0 provenance paths across 0 files
+```
+
+El gate que nombra CI **pasa con un escáner que no encuentra nada**. Lo
+sostienen los otros tests, y si ellos fallaran por el mismo motivo el gate
+seguiría verde. `the_scan_actually_finds_a_broken_reference` usaba un fixture
+sintético: probaba que el escáner encuentra una ruta cuando se le da una, no
+que el barrido del árbol real encuentre alguna. Ahora hay suelo sobre el árbol
+real: 25 rutas y 15 ficheros conductores, frente a **44 rutas en 26 ficheros**
+medidos.
+
+Y una corrección mía de medición: conté **78** rutas con un script que sumaba
+conjuntos por fichero y duplicaba las citas cross-file. El gate deduplica
+globalmente y la cifra correcta es **44**. Cuando dos cuentas discrepan, la del
+código es la buena.
+
+**`odd/` lleva la sesión entera sin versionar y no está gitignored.** Contiene
+7 documentos de diseño y exploración del 2026-09-29 (A-013, A-014, A-015,
+PR306, QW03, reconciliación del ledger, pin de consistencia), todos de trabajo
+ya mergeado. No lo borro sin autorización. Aparece en `git status` en cada
+sesión y nada lo protege.
+
+**Lección 174**: los falsos éxitos de este contrato eran el mismo patrón —una
+comprobación que no puede fallar sobre su propio modo de fallo—. Dos los cazó
+`merge-gate` porque CI tiene un entorno distinto; el tercero solo apareció al
+mutar. **La mutación es lo que convierte una aserción en una puerta**, y un
+gate puede pasar semanas en verde sin haber sido probado en su modo de fallo.
+
+**Lección 175**: el gate que más importa puede ser el que menos detecta.
+`every_backticked_provenance_path_resolves` es el que CI nombra, y es el que
+pasa con el escáner anulado. La fuerza real de una suite está en la suma de sus
+tests, no en el que tiene el nombre más serio.
+
+**Lección 176**: un PR abierto no es evidencia de trabajo pendiente. #314 pide
+algo que ya está en `main` desde el 1 de octubre. "Abierto" y "necesario" son
+cosas distintas, y confundirlas es lo que hace que un backlog mienta sobre sí
+mismo.
