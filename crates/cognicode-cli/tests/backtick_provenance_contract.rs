@@ -391,6 +391,43 @@ fn the_scan_actually_finds_a_broken_reference() {
         governed.len()
     );
 
+    // Non-vacuity over the *real* tree, not only over the fixture below.
+    //
+    // The fixture proves the scanner can find a path when handed one. It says
+    // nothing about whether the scan of the governed tree finds any at all --
+    // and an empty result makes `every_backticked_provenance_path_resolves`
+    // pass with nothing checked. That is the fence-parity defect this contract
+    // already shipped once, and it would look identical from here.
+    //
+    // Measured: 26 of the governed files contribute a path, 44 distinct ones
+    // once deduplicated across files. (A quick script counted 78 because it
+    // summed per-file sets and double-counted citations that appear in several
+    // ADRs; this accumulates into one set, so 44 is the real figure.) The floors
+    // sit well under both so that legitimately pruning a citation does not fail
+    // the build, while still being unreachable by a scanner that stopped
+    // finding anything.
+    let root = repo_root();
+    let mut contributors = 0usize;
+    let mut found_paths = BTreeSet::new();
+    for rel in governed_files(&root) {
+        let Ok(text) = std::fs::read_to_string(root.join(&rel)) else {
+            continue;
+        };
+        let hits = provenance_paths(&text);
+        if !hits.is_empty() {
+            contributors += 1;
+        }
+        found_paths.extend(hits);
+    }
+    assert!(
+        found_paths.len() >= 25 && contributors >= 15,
+        "the scan of the real governed tree found only {} provenance paths across {} files; \
+         a scanner that has stopped finding citations makes the gate pass with nothing \
+         checked. If citations were legitimately removed, lower these floors deliberately.",
+        found_paths.len(),
+        contributors
+    );
+
     let fixture = "Source: `openspec/changes/does-not-exist/proposal.md` and \
                    `openspec/specs/real/spec.md`.\n";
     let found = provenance_paths(fixture);
