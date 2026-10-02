@@ -58,9 +58,8 @@ fn the_merge_authority_declares_clippy_d_warnings_gate() {
     // could stay green while the gate that gates merges was absent. The property
     // is not "this file mentions clippy"; it is "the thing a change must pass to
     // merge runs clippy with warnings denied".
-    let runs = common::merge_authority_runs(
-        "cargo clippy --workspace --all-targets -- -D warnings",
-    );
+    let runs =
+        common::merge_authority_runs("cargo clippy --workspace --all-targets -- -D warnings");
     assert!(
         runs,
         "{}",

@@ -376,10 +376,9 @@ fn prf_f6_w3_bis_release_lane_sbom_step_invokes_shared_script() {
     );
 
     // The old broken invocation must not survive anywhere in the lane.
-    let text = std::fs::read_to_string(
-        common::repo_root().join(common::RELEASE_CANDIDATE_AUTHORITY),
-    )
-    .expect("read the release candidate lane");
+    let text =
+        std::fs::read_to_string(common::repo_root().join(common::RELEASE_CANDIDATE_AUTHORITY))
+            .expect("read the release candidate lane");
     assert!(
         !text.contains("cargo cyclonedx --format json\n")
             && !text.contains("cargo cyclonedx --format json\r\n"),
@@ -415,4 +414,3 @@ fn prf_f6_w3_bis_release_lane_stages_payloads_through_the_shared_script() {
         )
     );
 }
-

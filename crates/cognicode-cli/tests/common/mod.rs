@@ -227,8 +227,8 @@ pub const RELEASE_CANDIDATE_AUTHORITY: &str = "release-candidate.pipeline.kts";
 /// would trip "it is pinned".
 pub fn pipeline_text(pipeline: &str) -> String {
     let path = repo_root().join(pipeline);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {pipeline}: {e}"));
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {pipeline}: {e}"));
     text.lines()
         .filter(|l| !l.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
