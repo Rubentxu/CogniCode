@@ -463,12 +463,19 @@ def working_tree_source(rel_path: str) -> str | None:
         return None
 
 
-WORKFLOW_REL = ".github/workflows/pr-ci.yml"
 SELF_NAME = "test_cr06_ratchet.py"
+
+# This ratchet is not named anywhere. The merge authority runs
+# `scripts/ci/run-all-contracts.sh`, which discovers `scripts/ci/test_*.py` by
+# glob. So the wiring question sits one level up — is the runner itself reached?
+# — and it is asked here rather than assumed, because two gates in this
+# repository shipped correct, tested and never run.
+RUNNER = "scripts/ci/run-all-contracts.sh"
+DISCOVERY_GLOB = "scripts/ci/test_*.py"
 
 
 def check_gate_is_wired() -> None:
-    """Something a merge waits on must run this file.
+    """Something a merge waits on must reach this file.
 
     This is the A-013 / CP5 shape, and this contract is not exempt from it. Two
     gates in this repository shipped correct, tested, and unexecuted: the CP5
@@ -476,64 +483,38 @@ def check_gate_is_wired() -> None:
     invokes is the same defect wearing a better name, and it is the most likely
     way for this work to be worthless.
 
-    Asserted by reading the job list out of the workflow rather than by naming
-    a job, so moving the step to a tag-triggered or `workflow_dispatch` job
-    fails instead of still looking right.
+    The chain has three links and the last one is the one that is easy to lose:
+    the merge authority invokes the runner, the runner discovers this file by
+    glob, and the glob still matches. A rename or a move turns this contract
+    into something nothing runs while every other assertion here still passes.
     """
-    text = working_tree_source(WORKFLOW_REL)
-    if text is None:
-        failures.append(f"workflow not found: {WORKFLOW_REL}")
-        return
+    import pipeline_authority as authority
 
-    # Whole-line comments are dropped first: this file's own rationale quotes
-    # the runner command, and a comment must not satisfy "the gate is wired".
-    live = "\n".join(
-        line for line in text.splitlines() if not line.lstrip().startswith("#")
-    )
-
+    hosts = authority.invoked_by(RUNNER)
     check(
-        SELF_NAME in live,
-        f"{SELF_NAME} is not invoked by {WORKFLOW_REL}. A ratchet that "
-        f"nothing runs is the CP5 failure again: correct, tested, and "
-        f"invisible. Add it to the contract-runner step",
+        authority.MERGE_AUTHORITY in hosts,
+        f"{RUNNER} is not invoked by {authority.MERGE_AUTHORITY} "
+        f"(found in: {sorted(hosts) or 'no pipeline at all'}). A ratchet that "
+        f"nothing runs is the CP5 failure again: correct, tested, and invisible",
     )
 
-    # The job that runs the contract runner must be one merge-gate waits on.
-    job_starts = list(re.finditer(r"^  ([A-Za-z0-9_-]+):\s*$", live, re.MULTILINE))
-    blocks: dict[str, str] = {}
-    for index, match in enumerate(job_starts):
-        end = (
-            job_starts[index + 1].start()
-            if index + 1 < len(job_starts)
-            else len(live)
-        )
-        blocks[match.group(1)] = live[match.start() : end]
-
-    if SELF_NAME not in live:
-        return
-
-    owning_jobs = [job for job, body in blocks.items() if SELF_NAME in body]
+    matched = sorted(REPO_ROOT.glob(DISCOVERY_GLOB))
     check(
-        bool(owning_jobs),
-        f"{SELF_NAME} appears in {WORKFLOW_REL} but not inside any job block, "
-        f"so it is not run by any job",
+        SELF_NAME in [p.name for p in matched],
+        f"{SELF_NAME} no longer matches {DISCOVERY_GLOB}, so the runner never "
+        f"discovers it. Renaming or moving this file without touching the glob "
+        f"silently stops it from running",
     )
-    gate = blocks.get("merge-gate", "")
-    needs_match = re.search(r"^\s+needs:\s*\[(.*?)\]", gate, re.MULTILINE)
-    needs = set()
-    if needs_match:
-        needs = {
-            item.strip()
-            for item in needs_match.group(1).split(",")
-            if item.strip()
-        }
-    for job in owning_jobs:
-        check(
-            job in needs,
-            f"the job running {SELF_NAME} is `{job}`, which merge-gate does not "
-            f"list in its needs ({sorted(needs) or 'no needs found'}). Nothing "
-            f"waits for this ratchet, so nothing is enforced by it",
-        )
+
+    # The runner has to execute what it discovered rather than accept a list it
+    # was handed, or the glob is decoration and discovery can drift back to a
+    # second place to forget a contract.
+    runner_text = working_tree_source(RUNNER) or ""
+    check(
+        "CI_CONTRACTS" in runner_text and "test_*.py" in runner_text,
+        f"{RUNNER} no longer discovers contracts by glob. It runs whatever it is "
+        f"handed, which puts the contract list back into a second place",
+    )
 
 
 class Measurement:

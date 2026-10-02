@@ -57,8 +57,11 @@ import sys
 import tempfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import pipeline_authority as authority  # noqa: E402
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pr-ci.yml"
 VALIDATOR = REPO_ROOT / "scripts" / "validate_skills.py"
 VERIFIER = REPO_ROOT / "scripts" / "verify-skills.sh"
 SKILLS_DIR = REPO_ROOT / "skills"
@@ -154,37 +157,48 @@ def published() -> dict[str, dict]:
     }
 
 
-def test_the_validators_are_pinned_in_a_job_merge_gate_needs() -> None:
-    """The step must exist, and it must be somewhere a merge can be stopped.
+def test_the_validators_are_invoked_by_the_merge_authority() -> None:
+    """The step must exist, and a merge must not be able to pass without it.
 
-    Asserted against the resolved `needs:` list rather than against the
-    name of the job it happens to sit in today, because the failure
-    being guarded against is a step quietly moving to a job that runs
-    on a schedule.
+    The property is unchanged by the move off Actions: "runs somewhere a merge
+    is stopped" is "runs in a stage of the merge authority". What changed is the
+    mechanism, and `needs:` is a GitHub concept that does not exist here, so it
+    is not re-implemented — the authority is resolved from
+    `pipeline_authority.MERGE_AUTHORITY`, declared in one place so that every
+    wiring contract agrees on it.
+
+    Looked up through the invoked `sh()` body rather than the file text, so a
+    comment quoting a command cannot satisfy it.
     """
-    text = WORKFLOW.read_text(encoding="utf-8")
-    blocks = workflow_job_blocks(text)
-    required = set(merge_gate_needs(text))
-    check(bool(required), "could not resolve merge-gate's needs: list from pr-ci.yml")
-
     for script in ("scripts/validate_skills.py", "scripts/verify-skills.sh"):
-        hosting = [
-            job_id
-            for job_id, body in blocks.items()
-            if script in body and f"run:" in body
-        ]
+        hosts = authority.invoked_by(script)
         check(
-            bool(hosting),
-            f"no job in pr-ci.yml runs {script}; the CP5 skill gate is not wired "
-            "into any merge path",
+            bool(hosts),
+            f"no pipeline runs {script}; the CP5 skill gate is not wired into "
+            f"any merge path",
         )
-        outside = [job for job in hosting if job not in required]
+        outside = sorted(set(hosts) - {authority.MERGE_AUTHORITY})
         check(
             not outside,
-            f"{script} runs in {outside}, which merge-gate does not need "
-            f"(needs: {sorted(required)}). A gate in a job that no merge waits "
-            "on is dead code with a green exit code — the A-013 failure",
+            f"{script} runs only in {outside}, and the merge authority is "
+            f"{authority.MERGE_AUTHORITY}. A gate in a lane that no merge waits "
+            f"on is dead code with a green exit code — the A-013 failure",
         )
+
+
+def test_the_merge_authority_exists() -> None:
+    """Anti-vacuity: the pipeline the wiring checks resolve must be there.
+
+    A renamed or deleted merge authority would otherwise leave the assertions
+    above reporting that no pipeline runs the validators, which reads as a real
+    wiring gap rather than a contract looking in the wrong place.
+    """
+    path = Path(authority.REPO_ROOT) / authority.MERGE_AUTHORITY
+    check(
+        path.is_file(),
+        f"the declared merge authority does not exist: {path}. Restore it, or "
+        f"update MERGE_AUTHORITY in pipeline_authority.py",
+    )
 
 
 def test_the_skill_gate_is_not_vacuous_over_the_real_tree() -> None:

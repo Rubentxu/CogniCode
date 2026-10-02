@@ -38,6 +38,17 @@ from types import ModuleType
 
 def load_module(path: Path) -> ModuleType:
     """Import a script by path without requiring it to be on sys.path."""
+    # A contract's own directory goes on sys.path so a suite can import a
+    # sibling module. Several contracts share `scripts/ci/pipeline_authority.py`
+    # rather than each re-deriving which orchestrator is the merge authority,
+    # and that import has to work identically whether the suite is run by this
+    # runner, by `./scripts/ci/run-all-contracts.sh`, or directly as
+    # `python3 scripts/ci/<name>.py`. Only the middle one of those puts the
+    # repository root on sys.path, so without this the suite passes on the
+    # command line and fails in the gate.
+    parent = str(path.resolve().parent)
+    if parent not in sys.path:
+        sys.path.insert(0, parent)
     spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
         raise ImportError(f"cannot load {path}")
