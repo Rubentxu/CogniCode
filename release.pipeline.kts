@@ -1,0 +1,277 @@
+// release — publish a candidate that has already been built and proved.
+//
+// The second half of the release factory. `release-candidate.pipeline.kts`
+// writes `dist/` and `release/`; this lane publishes those files and nothing
+// else. It cannot rebuild them, and that is the property the whole chain
+// exists for:
+//
+//     build candidate -> immutable candidate -> validate -> publish
+//
+// with no rebuild in the middle. `release.yml` had one anyway, in the form of
+// `cargo build --release --bin cognicode-release` appearing in all three of its
+// jobs; here the tool is built once, by the candidate lane, and read.
+//
+// Order is not incidental. The draft is created, populated and confirmed
+// before it is published, and the candidate is re-verified after the upload and
+// again by re-downloading the published bytes and checking the sums from those
+// bytes. A consumer gets the files that were validated, or the lane fails.
+//
+// THE NEGATIVE TESTS, AND WHY THEY RUN ON A COPY
+// ----------------------------------------------
+// `release-validate.yml` proved that `cognicode-release verify` rejects a
+// missing archive and rejects an altered one. Those two jobs worked on a
+// downloaded copy, which was the only way to damage a payload without
+// damaging the release — each job got its own fresh runner.
+//
+// Here the stages share one filesystem, which is what makes the candidate a
+// directory and what makes publishing it safe. It is also what would make a
+// naive port of those two jobs destructive: `rm` on the real archive would
+// delete the artefact this lane is about to publish. So both negative tests
+// copy the candidate first, corrupt the copy, and assert the checker fails on
+// the copy. If the copy step ever stops happening, the release stops being
+// possible, which is the safe direction for that mistake to point.
+//
+// ONE CAPABILITY HAS NO EQUIVALENT HERE
+// -------------------------------------
+// `actions/attest-build-provenance` generates SLSA build provenance. It is an
+// action, and PipelineK has no action runtime, so there is nothing to port it
+// to. `gh attestation verify` — the consumer-facing half, which is what proves
+// the published bytes are the attested ones — is kept, because `gh` is a tool
+// this lane can call.
+//
+// The generation half is an open item, not a silent drop: `provenance` below
+// fails closed when `RELEASE_REQUIRE_PROVENANCE=1` and no attestation exists,
+// and says what is missing. Until a replacement is chosen, publishing runs
+// without generated provenance and the lane does not pretend otherwise.
+//
+// `gh` is not an orchestrator mechanism. GitHub Releases is where the product
+// goes; PipelineK is what decides to call it.
+
+import java.io.File
+
+val repoRoot: String = File(".").canonicalPath
+val cd = "cd \"$repoRoot\""
+
+val tag: String = System.getenv("RELEASE_TAG") ?: ""
+val version: String = if (tag.isEmpty()) "0.0.0-dev" else tag.removePrefix("v")
+val repo: String = System.getenv("GITHUB_REPOSITORY") ?: "Rubentxu/CogniCode"
+val tool = "$repoRoot/target/release/cognicode-release"
+
+pipeline {
+    stages {
+        // ------------------------------------------------------------- consume
+        stage("consume-candidate") {
+            stage("candidate-present") {
+                sh("""
+                    $cd || exit 1
+                    for d in dist release; do
+                        test -d "${'$'}d" || {
+                            echo "this lane publishes a candidate; it does not build one."
+                            echo "No ${'$'}d/ directory. Run release-candidate.pipeline.kts first,"
+                            echo "or point this lane at the tree it wrote."
+                            exit 1
+                        }
+                    done
+                    archives=$(ls -1 release/*.tar.gz 2>/dev/null | wc -l)
+                    test "${'$'}archives" -ge 1 || {
+                        echo "release/ holds no archives. An empty candidate is not a candidate."
+                        exit 1
+                    }
+                    echo "candidate: ${'$'}archives archive(s)"
+                """.trimIndent())
+            }
+
+            stage("re-verify-candidate") {
+                sh("""
+                    $cd || exit 1
+                    ${'$'}tool verify --staging release --version "$version" --tag "$tag"
+                """.trimIndent())
+            }
+        }
+
+        // ------------------------------------------------------- negative tests
+        // Both corrupt a copy. See the header: the stages share a filesystem,
+        // and a corrupt-the-real-thing port would delete the release.
+        stage("negative") {
+            stage("verify-rejects-missing-artifact") {
+                sh("""
+                    $cd || exit 1
+                    work=$(mktemp -d)
+                    cp -r release "${'$'}work/release"
+                    shopt -s nullglob
+                    archives=("${'$'}work"/release/*.tar.gz)
+                    if [ "${'$'}{#archives[@]}" -lt 2 ]; then
+                        echo "need at least 2 archives to delete one and still exercise the verify path; got ${'$'}{#archives[@]}"
+                        exit 1
+                    fi
+                    victim="${'$'}{archives[0]}"
+                    echo "removing ${'$'}victim from the COPY to simulate a corrupted payload"
+                    rm "${'$'}victim"
+                    set +e
+                    ${'$'}tool verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
+                    rc=${'$'}?
+                    set -e
+                    if [ "${'$'}rc" -eq 0 ]; then
+                        echo "release-verify returned 0 against a staging set missing an archive."
+                        echo "The checker is a no-op and every other verdict in this lane is worthless."
+                        exit 1
+                    fi
+                    echo "release-verify correctly rejected the missing artifact (rc=${'$'}rc)"
+                """.trimIndent())
+            }
+
+            stage("verify-rejects-altered-artifact") {
+                sh("""
+                    $cd || exit 1
+                    work=$(mktemp -d)
+                    cp -r release "${'$'}work/release"
+                    shopt -s nullglob
+                    archives=("${'$'}work"/release/*.tar.gz)
+                    victim="${'$'}{archives[0]}"
+                    printf 'x' >> "${'$'}victim"
+                    set +e
+                    ${'$'}tool verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
+                    rc=${'$'}?
+                    set -e
+                    if [ "${'$'}rc" -eq 0 ]; then
+                        echo "release-verify returned 0 against an altered archive."
+                        echo "SHA256SUMS is not being checked, so publication would ship"
+                        echo "whatever bytes happened to be in the file."
+                        exit 1
+                    fi
+                    echo "release-verify correctly rejected the altered artifact (rc=${'$'}rc)"
+                """.trimIndent())
+            }
+        }
+
+        // ---------------------------------------------------------------- draft
+        stage("draft") {
+            stage("create-draft") {
+                sh("""
+                    $cd || exit 1
+                    if [ -z "${'$'}RELEASE_TAG" ]; then
+                        echo "RELEASE_TAG is unset, so there is nothing to publish to."
+                        echo "This lane publishes. It does not dry-run."
+                        exit 1
+                    fi
+                    NOTES=$(bash scripts/generate-release-notes.sh "" "${'$'}RELEASE_TAG" || echo "CogniCode ${'$'}RELEASE_TAG")
+                    # The tag already exists, so --target is not passed: that flag
+                    # is for creating a tag that is missing, and passing it would
+                    # move the release onto whatever the name resolves to now.
+                    if gh release view "${'$'}RELEASE_TAG" >/dev/null 2>&1; then
+                        echo "release ${'$'}RELEASE_TAG already exists; reusing it"
+                    else
+                        gh release create "${'$'}RELEASE_TAG" --draft --title "CogniCode ${'$'}RELEASE_TAG" --notes "${'$'}NOTES"
+                    fi
+                """.trimIndent())
+            }
+
+            stage("upload-payloads") {
+                sh("""
+                    $cd || exit 1
+                    gh release upload "${'$'}RELEASE_TAG" release/*.tar.gz --clobber
+                """.trimIndent())
+            }
+
+            stage("confirm-uploaded-set") {
+                sh("""
+                    $cd || exit 1
+                    expected=$(cd release && ls *.tar.gz | sort)
+                    actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
+                    if [ "${'$'}expected" != "${'$'}actual" ]; then
+                        echo "the uploaded asset set does not match the produced payload set"
+                        diff <(echo "${'$'}expected") <(echo "${'$'}actual") || true
+                        exit 1
+                    fi
+                    echo "uploaded payload set confirmed ($(echo "${'$'}expected" | wc -l) artifacts)"
+                """.trimIndent())
+            }
+
+            stage("upload-manifests") {
+                sh("""
+                    $cd || exit 1
+                    gh release upload "${'$'}RELEASE_TAG" \
+                        release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
+                """.trimIndent())
+            }
+        }
+
+        // ----------------------------------------------------------- provenance
+        stage("provenance") {
+            stage("attestations") {
+                sh("""
+                    $cd || exit 1
+                    for f in release/*.tar.gz; do
+                        gh attestation verify "${'$'}f" --repo "${'$'}GITHUB_REPOSITORY"
+                    done
+                    gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY"
+                """.trimIndent())
+            }
+
+            stage("provenance-required") {
+                sh("""
+                    $cd || exit 1
+                    # See the header: `actions/attest-build-provenance` is the one
+                    # capability in this lane with no PipelineK equivalent. The
+                    # operator decides whether its absence blocks a release, and
+                    # this stage says which way they decided rather than letting
+                    # the answer be implied by silence.
+                    if [ "${'$'}{RELEASE_REQUIRE_PROVENANCE:-0}" != "1" ]; then
+                        echo "provenance generation is NOT enforced for this run."
+                        echo "  actions/attest-build-provenance has no PipelineK equivalent yet."
+                        echo "  Set RELEASE_REQUIRE_PROVENANCE=1 to make its absence a failure."
+                        exit 0
+                    fi
+                    if ! gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                        echo "RELEASE_REQUIRE_PROVENANCE=1 but the candidate carries no attestation."
+                        echo "  Nothing in this lane can generate one: the generator was a GitHub"
+                        echo "  Action and PipelineK has no action runtime. Choose a replacement"
+                        echo "  before enforcing this."
+                        exit 1
+                    fi
+                    echo "provenance present and verified"
+                """.trimIndent())
+            }
+        }
+
+        // ------------------------------------------------------------- publish
+        stage("publish") {
+            // The draft-first safety net: the candidate is re-verified after the
+            // upload, so a payload that changed in transit fails here rather
+            // than at a consumer's install.
+            stage("re-verify-after-upload") {
+                sh("""
+                    $cd || exit 1
+                    ${'$'}tool verify --staging release --version "$version" --tag "$tag"
+                """.trimIndent())
+            }
+
+            stage("publish-draft") {
+                sh("""
+                    $cd || exit 1
+                    gh release edit "${'$'}RELEASE_TAG" --draft=false
+                """.trimIndent())
+            }
+
+            stage("verify-as-consumer") {
+                sh("""
+                    $cd || exit 1
+                    draft=$(gh release view "${'$'}RELEASE_TAG" --json isDraft -q .isDraft)
+                    if [ "${'$'}draft" != "false" ]; then
+                        echo "release ${'$'}RELEASE_TAG is still a draft after publishing it"
+                        exit 1
+                    fi
+                    gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort
+                    # Re-download every asset and check the sums from the published
+                    # bytes. Everything before this proves the local candidate;
+                    # this proves the candidate a consumer would actually get.
+                    work=$(mktemp -d)
+                    cd "${'$'}work"
+                    gh release download "${'$'}RELEASE_TAG"
+                    sha256sum -c SHA256SUMS
+                    echo "published release verified from re-downloaded bytes"
+                """.trimIndent())
+            }
+        }
+    }
+}

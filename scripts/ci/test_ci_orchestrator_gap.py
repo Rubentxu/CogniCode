@@ -147,9 +147,14 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
 # as gates: they mention a binary, they do not run one. The pipe form is the
 # one place a gate is not the head — `echo "$subject" | commitlint` runs
 # commitlint — so it is matched separately rather than by anchoring.
+# `$repoRoot/` is the repository root the pipelines resolve once and interpolate,
+# so `$repoRoot/target/release/cognicode-release` runs the same binary that
+# `target/release/cognicode-release` does. It is in this list because otherwise
+# every step invoking the release tool through the pipeline's own variable read
+# as no gate at all.
 GATE_HEAD = re.compile(
     r"^(?:cargo|just|python3|bash|commitlint|gh|rustup|npm|"
-    r"target/release/|\./target/release/)\b"
+    r"target/release/|\./target/release/|\$repoRoot/)\b"
 )
 GATE_PIPE = re.compile(r"\|\s*(?:commitlint|gh|cargo|just|python3|bash)\b")
 
@@ -165,7 +170,11 @@ def is_gate(line: str) -> bool:
 RUN_BLOCK = re.compile(r"run:\s*\|\s*\n((?:\s{6,}.*\n|\n)+)")
 RUN_INLINE = re.compile(r"run:\s*(\S.*)$", re.MULTILINE)
 SH_RAW = re.compile(r'sh\(\s*"""(.*?)"""', re.DOTALL)
-SH_LINE = re.compile(r'sh\(\s*"(.*?)"', re.DOTALL)
+# `\"` inside a single-line Kotlin string is an escaped quote, not the end of
+# the argument list. The previous pattern stopped at it, so a step written as
+# `sh("$cd && foo.sh \"${VAR}\"")` was read as `foo.sh \` — the argument
+# vanished and the gate compared as a shorter, different command.
+SH_LINE = re.compile(r'sh\(\s*"((?:[^"\\]|\\.)*)"', re.DOTALL)
 FOR_LOOP = re.compile(r"for\s+\w+\s+in\s+\\?\s*\n(.*?)\n\s*do", re.DOTALL)
 DONE = re.compile(r"^\s*done\s*$", re.MULTILINE)
 
@@ -179,6 +188,11 @@ def check(condition: bool, message: str) -> None:
 
 def normalise(command: str) -> str:
     """A comparable identity for one gate invocation."""
+    # An escaped quote inside a single-line Kotlin string is a quote, not a
+    # delimiter. This runs before the backslash rule below, which would
+    # otherwise turn the `\` of `\"` into a space and leave the argument with a
+    # trailing one.
+    command = command.replace('\\"', '"')
     # A YAML `run: |` block continues a command with a trailing backslash, and
     # the backslash survives whitespace joining as a lone token. The Kotlin side
     # writes the same command on one line, so the two never matched.
@@ -194,6 +208,12 @@ def normalise(command: str) -> str:
     # command that had lost its `cd` prefix. A false positive in the instrument
     # that measures the migration is worse than no instrument.
     command = re.sub(r"^\$cd\s*&&\s*", "", command)
+    # The repository root the pipeline resolves once, said as a wrapper. It has
+    # to go before the `$var` rule below, or the rule turns it into
+    # `<param>/target/release/cognicode-release`, the head stops being a gate,
+    # and every step that reaches a binary through the pipeline's own variable
+    # becomes invisible. Wrapper, not parameter — the same distinction as `$cd`.
+    command = command.replace('"$repoRoot/', "").replace("$repoRoot/", "")
     command = re.sub(r"^set -e\s+", "", command)
     # `if ! <gate>; then` is a gate under a condition. The condition is the
     # orchestrator's business; the gate is the command.
@@ -256,7 +276,11 @@ def gate_key(command: str) -> str:
     command = re.sub(r"([\"'])<param>\1", "<param>", command)
     command = command.replace("$cd && ", "")
     command = re.sub(r"^\$\{?cd[^&|]*&&\s*", "", command)
-    command = command.replace('"$repoRoot/', "").replace("./", "")
+    command = (
+        command.replace('"$repoRoot/', "")
+        .replace("$repoRoot/", "")
+        .replace("./", "")
+    )
     return command.strip()
 
 
@@ -315,9 +339,44 @@ def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
     return gates
 
 
+# The type annotation is optional because the pipelines that declare a constant
+# mostly write `val tool = "..."` without it, and requiring it would make the
+# resolution quietly apply to nothing in this repository.
+#
+# A value containing a backslash is excluded. `val cd = "cd \"$repoRoot\""` is
+# one, and resolving it would rewrite every step's wrapper rather than the gate
+# inside it — which is the mistake the `$var` rule already made once. A `$` in
+# the value is fine: it is the repo root, and `gate_key` drops that prefix.
+VAL_DECL = re.compile(r'^val\s+(\w+)(?:\s*:\s*\w+)?\s*=\s*"([^"\\]*)"\s*$', re.MULTILINE)
+
+
+def resolve_vals(text: str) -> str:
+    """Substitute the pipeline's own string constants before reading steps.
+
+    A pipeline declares `val tool = "$repoRoot/target/release/cognicode-release"`
+    and every step then says `$tool generate`. That is the right way to write it
+    — one declaration instead of a path repeated in six stages — but a checker
+    reading the source sees `$tool` and cannot tell what it runs, so a gate the
+    pipeline demonstrably runs reads as uncovered.
+
+    Only `val x: String = "literal"` is resolved. A `val` bound to an expression
+    (`System.getenv(...)`, `File(".")`) is left alone, because its value is not
+    knowable from the text and pretending otherwise would make the instrument
+    assert something it cannot see.
+    """
+    constants = dict(VAL_DECL.findall(text))
+    if not constants:
+        return text
+    for name, value in constants.items():
+        text = re.sub(r"\$\{'\$'\}" + re.escape(name) + r"\b", value, text)
+        text = re.sub(r"\$" + re.escape(name) + r"\b", value, text)
+    return text
+
+
 def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
     gates: set[str] = set()
-    for text in pipeline_texts.values():
+    for raw in pipeline_texts.values():
+        text = resolve_vals(raw)
         # The loop is expanded first, while the source still carries Kotlin's
         # escaped dollar, because that is what the loop placeholder looks like.
         # Unescaping before this point would rewrite the placeholder and expand

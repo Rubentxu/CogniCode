@@ -120,6 +120,14 @@ pipeline {
 
         // ------------------------------------------------------------- supply
         stage("supply-chain") {
+            // The workflow installs cargo-deny per lane and tolerates a failure
+            // there, because the install failing surfaces as the gate that needs
+            // it failing. Same shape here: the version is pinned to the one
+            // deny.toml is written against, and the install is not the verdict.
+            stage("install-cargo-deny") {
+                sh("$cd && cargo install cargo-deny --version 0.20.2 --locked || echo 'the install is not the verdict; the gate below reports it'")
+            }
+
             stage("advisories") {
                 sh("$cd && cargo deny check advisories")
             }
