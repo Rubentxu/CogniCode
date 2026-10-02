@@ -87,6 +87,69 @@ pipeline {
                 // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_both_pipelines.
                 sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
             }
+
+            // The contract suite. One entry point, no list: the pipeline names a
+            // script, the script discovers `scripts/ci/test_*.py` by glob. The
+            // previous shape named eight contract files inside pr-ci.yml, which
+            // meant a new contract passed locally and ran in CI only if whoever
+            // wrote it also edited that YAML — how the CP5 skill gate stayed
+            // green while no workflow invoked it.
+            stage("contracts") {
+                sh("$cd && bash scripts/ci/run-all-contracts.sh")
+            }
+
+            // CP5 / A-033..A-036. `validate_skills.py` resolves tool names from
+            // the published catalog rather than a private list; `verify-skills.sh`
+            // checks each bundle has a manifest. Both were correct, both passed,
+            // and no workflow invoked them until 2026-10-02.
+            //
+            // PyYAML is declared here rather than trusted from the runner image:
+            // validate_skills.py degrades to a printed SKIP without it, and
+            // verify-skills.sh aborts on `import yaml`. Neither is a failure, and
+            // both are how a gate goes stale in silence.
+            stage("skills-toolchain") {
+                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\"")
+            }
+
+            stage("skills-validate") {
+                sh("$cd && python3 scripts/validate_skills.py")
+            }
+
+            stage("skills-bundles") {
+                sh("$cd && bash scripts/verify-skills.sh")
+            }
+        }
+
+        // ---------------------------------------------------------- supply-chain
+        // pr-ci.yml's `supply-chain` job, added in 05c66126. Advisories and
+        // licences ran at tag time and never on a pull request, so a dependency
+        // with a published advisory merged unnoticed.
+        //
+        // cargo-deny is installed with a fixed version on purpose: `--locked`
+        // alone pins its dependencies while floating the tool, so the gate's
+        // behaviour would change with no commit in this repository.
+        // Measured 2026-10-02 on this machine: 1m43s to install from scratch.
+        stage("supply-chain") {
+            stage("install-cargo-deny") {
+                sh(
+                    """
+                    ${'$'}cd || exit 1
+                    if command -v cargo-deny >/dev/null 2>&1; then
+                        echo "cargo-deny already present, skipping install"
+                    else
+                        cargo install cargo-deny --version 0.20.2 --locked
+                    fi
+                    """.trimIndent(),
+                )
+            }
+
+            stage("advisories") {
+                sh("$cd && cargo deny check advisories")
+            }
+
+            stage("licenses") {
+                sh("$cd && cargo deny check licenses")
+            }
         }
 
         // ---------------------------------------------------------- build-binary
@@ -100,6 +163,17 @@ pipeline {
             stage("build-control-plane-release") {
                 sh("$cd && cargo build --release --bin cognicode-control-plane")
             }
+
+            // pr-ci.yml also builds the CLI itself. Without it the binary the
+            // release-flow suites shell out to by path does not exist, and the
+            // reachability checks that look for it have nothing to reach.
+            stage("build-cognicode-cli-release") {
+                sh("$cd && cargo build --release -p cognicode-cli")
+            }
+
+            stage("build-cognicode-release-bin") {
+                sh("$cd && cargo build --release --bin cognicode")
+            }
         }
 
         // ------------------------------------------------------------- selector
@@ -109,6 +183,20 @@ pipeline {
             // than reimplementing the diff walk in shell.
             stage("qw08-crate-selector") {
                 sh("$cd && cargo test -p cognicode-cli --test qw08_crate_selector --quiet")
+            }
+
+            // pr-ci.yml also runs the selector script itself, not only its
+            // contract. The contract pins what the script decides; running the
+            // script is what proves the decision is consumable downstream. A
+            // green contract over a script nothing calls is the A-013 shape.
+            stage("select-suites-script") {
+                sh("""
+                    ${'$'}cd || exit 1
+                    set -euo pipefail
+                    PATHS="scripts/ci/run-all-contracts.sh"
+                    SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"
+                    echo "${'$'}SELECT_OUTPUT"
+                """.trimIndent())
             }
         }
 
@@ -147,6 +235,28 @@ pipeline {
             // ladybug (pr-ci.yml:388)
             stage("cognicode-ladybug") {
                 sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
+            }
+
+            // PR-SEC reachability: every release-artifact path the pipeline
+            // downloads is a path some earlier stage produced. Runs here as
+            // well as in pr-ci.yml because the Kotlin pipeline is the one that
+            // will own release once the migration closes, and a check that only
+            // runs on the orchestrator being retired checks nothing.
+            stage("bin-tracking") {
+                sh("$cd && bash scripts/ci/check-bin-tracking.sh")
+            }
+
+            stage("release-artifact-reachability") {
+                sh("$cd && bash scripts/ci/check-release-artifact-reachability.sh")
+            }
+
+            // CR-07. `/metrics` is the only reason the OpenTelemetry upgrade was
+            // worth doing, and the upgrade was the only reason RUSTSEC-2024-0437
+            // is gone from deny.toml. A package version that satisfies an
+            // advisory without still exposing the endpoint is the regression
+            // this pins.
+            stage("cr07-metrics-exposition") {
+                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --quiet")
             }
 
             // cli named contracts (pr-ci.yml:408-528)

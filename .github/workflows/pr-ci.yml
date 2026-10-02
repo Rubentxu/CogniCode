@@ -122,19 +122,15 @@ jobs:
           python3 -m pip install --disable-pip-version-check \
             "jsonschema==4.25.1" \
             "PyYAML==6.0.3"
+      # Un solo entrypoint. La lista de contratos no vive en ningun
+      # orquestador: `run-all-contracts.sh` descubre `scripts/ci/test_*.py`
+      # por glob, verificado hoy contra los ocho ficheros que la lista escrita
+      # nombraba. Con la lista a mano, un contrato nuevo pasaba en local y no
+      # corria en CI salvo que quien lo escribiera se acordara de editar este
+      # YAML, que es exactamente como el gate de skills de CP5 estuvo verde
+      # y no lo invoco ningun workflow.
       - name: Product + CI contract tests
-        run: |
-          set -euo pipefail
-          python3 scripts/run_contract_tests.py \
-            scripts/product/test_*.py \
-            scripts/ci/test_select_suites.py \
-            scripts/ci/test_ci_contracts.py \
-            scripts/ci/test_skills_gate_contract.py \
-            scripts/ci/test_supply_chain_gate_contract.py \
-            scripts/ci/test_cr06_ratchet.py \
-            scripts/ci/test_ci_orchestrator_gap.py \
-            scripts/ci/test_serial_env_contract.py \
-            scripts/ci/test_t6_gate_contract.py
+        run: bash scripts/ci/run-all-contracts.sh
       # CP5 / A-033..A-036 — el gate de skills. `validate_skills.py` es lo
       # unico que separa una skill que ensena un nombre de tool de un
       # agente que lo llama y recibe un error JSON-RPC, y `verify-skills.sh`
