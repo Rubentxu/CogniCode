@@ -6,6 +6,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -14,6 +15,11 @@ import jsonschema
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_support_matrix.py"
 BASELINE = "7c624d016475056205de62405bcf125943bb30a7"
+
+# Resolved the way the generator resolves it: this file is loaded by path, so
+# its own directory is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_lane  # noqa: E402
 
 
 def load_generator():
@@ -41,10 +47,14 @@ def test_generation_and_classification() -> None:
     assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 18
     assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 12
     assert [item["id"] for item in languages["languages"]] == sorted(item["id"] for item in languages["languages"])
-    assert {item["target"] for item in platforms["platforms"] if item["support_level"] == "certified"} == {
-        "aarch64-unknown-linux-gnu",
-        "x86_64-unknown-linux-gnu",
-    }
+    # The certified set is whatever the release lane builds, read here
+    # independently of the generator. Asserting two literals instead would be a
+    # third copy of the same fact — the lane declares it, the generator reads
+    # it, and a test repeated it — and the copy nobody reconciles is the one
+    # that goes stale when a platform is added.
+    assert {
+        item["target"] for item in platforms["platforms"] if item["support_level"] == "certified"
+    } == set(release_lane.release_targets(ROOT))
     assert any(item["target"] == "x86_64-unknown-linux-musl" and item["support_level"] == "experimental" for item in platforms["platforms"])
     assert sum(item["support_level"] == "unsupported" for item in platforms["platforms"]) == 3
 

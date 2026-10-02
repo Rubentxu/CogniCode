@@ -6,12 +6,37 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_product_manifest.py"
 BASELINE = "73235889409afea43bc18cb0122a3966676dbb85"
+
+# `import release_lane` resolves the same way the generator does: the contract
+# suite loads this file by path, so its own directory is not on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_lane  # noqa: E402
+
+
+def release_targets() -> list[str]:
+    """The cargo targets the release lane declares, sorted.
+
+    The same reasoning as `workspace_version` below, applied to the platform
+    list. This assertion used to carry its own copy of the two GNU targets, so
+    the fact "which platforms are certified" was stated in the release lane, in
+    the generator, and here — and the generator's copy was the one that drifted
+    silently, because nothing compared the three.
+
+    It still has teeth. It compares the generated manifest against the lane
+    read independently here, so a generator that stops reading the lane, or
+    starts inventing a platform, fails. What it no longer does is require
+    someone to remember to edit a literal when a platform is added — which is
+    exactly the edit that gets forgotten, and the failure it causes is a red
+    gate on a release day rather than a stale claim in a published manifest.
+    """
+    return sorted(release_lane.release_targets(ROOT))
 
 
 def workspace_version() -> str:
@@ -88,10 +113,10 @@ def test_support_claims_are_conservative() -> None:
         manifest = json.loads(output.read_text(encoding="utf-8"))
         assert manifest["languages"]
         assert {item["support_level"] for item in manifest["languages"]} == {"experimental"}
-        assert [item["target"] for item in manifest["platforms"]] == [
-            "aarch64-unknown-linux-gnu",
-            "x86_64-unknown-linux-gnu",
-        ]
+        # Compared as sorted lists because order is not the claim being made.
+        # The manifest lists the lane's declaration order; the property is that
+        # it claims exactly the targets the lane builds, no more and no fewer.
+        assert sorted(item["target"] for item in manifest["platforms"]) == release_targets()
         assert {item["support_level"] for item in manifest["platforms"]} == {"certified"}
         assert "tools" not in manifest
 

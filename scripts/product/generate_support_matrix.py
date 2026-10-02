@@ -17,6 +17,7 @@ from typing import Any
 # `import check_semantics` would work in CI and fail in the test suite. Resolve
 # the sibling explicitly so both paths behave the same.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_lane  # noqa: E402
 from check_semantics import check_provenance, content_mismatch  # noqa: E402
 
 LANGUAGE_SCHEMA_VERSION = "cognicode.languages/v1"
@@ -57,38 +58,61 @@ LANGUAGE_INFO = {
     "SystemVerilog": ("systemverilog", "SystemVerilog"),
 }
 
+# Platforms the product does not claim. The reason each is unsupported is that
+# the release lane does not build it, and that is now checked rather than
+# asserted in prose: `deferred_evidence` verifies the target is absent from
+# `val targets` and fails if it appears.
+#
+# The strings used to read "No macOS lane exists in .github/workflows/release.yml"
+# — a claim about a file. If someone added a macOS target to the release lane,
+# the evidence would have kept saying no lane existed while the lane built one,
+# which is worse than having no evidence at all.
 DEFERRED_PUBLIC_PLATFORMS = [
     {
         "id": "macos-arm64",
         "target": "aarch64-apple-darwin",
         "name": "macOS arm64",
         "support_level": "unsupported",
-        "evidence": [
-            "No macOS lane exists in .github/workflows/release.yml",
-            "A-027 tracks macOS arm64 build/certification",
-        ],
+        "tracking": "A-027 tracks macOS arm64 build/certification",
     },
     {
         "id": "macos-x86-64",
         "target": "x86_64-apple-darwin",
         "name": "macOS x86_64",
         "support_level": "unsupported",
-        "evidence": [
-            "No macOS lane exists in .github/workflows/release.yml",
-            "A-027 tracks macOS build/certification",
-        ],
+        "tracking": "A-027 tracks macOS build/certification",
     },
     {
         "id": "windows-x86-64",
         "target": "x86_64-pc-windows-msvc",
         "name": "Windows x86_64",
         "support_level": "unsupported",
-        "evidence": [
-            "No Windows lane exists in .github/workflows/release.yml",
-            "A-028 tracks Windows x64 build/certification",
-        ],
+        "tracking": "A-028 tracks Windows x64 build/certification",
     },
 ]
+
+
+def deferred_evidence(root: Path, entry: dict[str, object]) -> list[str]:
+    """Evidence for a platform this product does not claim: verified absence.
+
+    The evidence for "unsupported" is a negative fact — nothing builds this —
+    so the check is that the release lane does not name the target. A
+    hand-written sentence claiming absence cannot notice the day it stops
+    being true.
+    """
+    target = str(entry["target"])
+    if target in release_lane.release_targets(root):
+        raise ValueError(
+            f"{release_lane.RELEASE_LANE} builds `{target}`, but "
+            f"`{entry['id']}` is listed here as unsupported. The release lane "
+            f"is the authority for what is published; either the platform is "
+            f"now supported and this entry is stale, or the lane is building "
+            f"something the product does not claim."
+        )
+    return [
+        f"Not built by {release_lane.RELEASE_LANE} (no entry in `val targets`)",
+        str(entry["tracking"]),
+    ]
 
 
 def run_git(root: Path, *args: str) -> str:
@@ -175,28 +199,46 @@ def acceptance_variants(root: Path) -> set[str]:
     return variants
 
 
-def release_platforms(root: Path) -> list[tuple[str, str]]:
-    source = read_required(root, ".github/workflows/release.yml")
-    pairs = re.findall(
-        r"-\s+platform:\s*([a-z0-9-]+)\s+runner:.*?rust_target:\s*([a-z0-9_-]+)",
-        source,
-        re.DOTALL,
-    )
-    expected = {
-        ("linux-x86-64", "x86_64-unknown-linux-gnu"),
-        ("linux-aarch64", "aarch64-unknown-linux-gnu"),
-    }
-    if set(pairs) != expected:
-        raise ValueError(f"release platform lanes drifted: {pairs!r}")
-    return sorted(pairs)
+def release_platforms(root: Path) -> list[release_lane.ReleasePlatform]:
+    """Every published platform, from the lane that publishes it.
+
+    This read `.github/workflows/release.yml` with a regex shaped around a
+    YAML matrix entry, and then asserted the pairs against its own `expected`
+    set. Both halves are gone: `release_lane.py` reads the declarations in
+    `release-candidate.pipeline.kts` and reconciles them with each other.
+
+    A matrix regex was the fragile part. It matched
+    `platform: <id> runner: … rust_target: <triple>` across a YAML block, so
+    reformatting one entry — adding a comment, reordering keys — would have
+    read as "the release platform lanes drifted" and failed a manifest
+    generation for a reason that had nothing to do with the platforms.
+
+    The return type names both parts. This function's first version returned a
+    plain tuple and the one caller unpacked it in the opposite order, producing
+    a manifest whose `id` was a cargo triple; the attributes make that a
+    mistake you can see rather than a document that looks fine.
+    """
+    return release_lane.release_platforms(root)
 
 
 def musl_target(root: Path) -> str:
-    source = read_required(root, ".github/workflows/ci.yml")
-    target = "x86_64-unknown-linux-musl"
-    if target not in source:
-        raise ValueError("CI musl target is missing")
-    return target
+    """The musl target the integration lane smoke-builds.
+
+    Read from `integration.pipeline.kts`, which runs the build. It used to be
+    read from `ci.yml` by substring search: the check was "this file mentions
+    the target", which is satisfied by a comment and would have survived the
+    build being deleted.
+    """
+    source = read_required(root, "integration.pipeline.kts")
+    match = re.search(r"--target\s+([a-z0-9_]+-unknown-linux-musl)", source)
+    if not match:
+        raise ValueError(
+            "integration.pipeline.kts builds no musl target. The platform "
+            "matrix lists linux-x86-64-musl as an experimental smoke build, so "
+            "either the build moved to another lane or the entry is a claim "
+            "nothing backs."
+        )
+    return match.group(1)
 
 
 def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -239,16 +281,16 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
         )
 
     platforms = []
-    for platform_id, target in release_platforms(root):
+    for entry in release_platforms(root):
         platforms.append(
             {
-                "id": platform_id,
-                "target": target,
-                "name": platform_id.replace("-", " ").title(),
+                "id": entry.platform,
+                "target": entry.target,
+                "name": entry.platform.replace("-", " ").title(),
                 "support_level": "certified",
                 "evidence": [
-                    "Native publishable lane in .github/workflows/release.yml",
-                    "Validated by .github/workflows/release-validate.yml",
+                    f"Native publishable lane in {release_lane.RELEASE_LANE}",
+                    f"Certified by {release_lane.RELEASE_LANE} and published unchanged by release.pipeline.kts",
                 ],
             }
         )
@@ -259,12 +301,21 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             "name": "Linux x86_64 musl",
             "support_level": "experimental",
             "evidence": [
-                "CI smoke build in .github/workflows/ci.yml",
-                "No publishable release lane in .github/workflows/release.yml",
+                "Smoke build in integration.pipeline.kts",
+                f"No publishable release lane in {release_lane.RELEASE_LANE}",
             ],
         }
     )
-    platforms.extend(DEFERRED_PUBLIC_PLATFORMS)
+    for entry in DEFERRED_PUBLIC_PLATFORMS:
+        platforms.append(
+            {
+                "id": entry["id"],
+                "target": entry["target"],
+                "name": entry["name"],
+                "support_level": entry["support_level"],
+                "evidence": deferred_evidence(root, entry),
+            }
+        )
 
     version = workspace_version(root)
     languages_document = {
