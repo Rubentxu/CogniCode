@@ -14,6 +14,7 @@ from typing import Any
 # `import check_semantics` would work in CI and fail when this module is
 # loaded by path from the test suite. Resolve it next to this file first.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_lane  # noqa: E402
 from check_semantics import check_provenance, content_mismatch  # noqa: E402
 
 SCHEMA_VERSION = "cognicode.product/v1"
@@ -92,12 +93,15 @@ def parser_languages(root: Path) -> list[str]:
 
 
 def certified_platforms(root: Path) -> list[str]:
-    workflow = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    targets = sorted(set(re.findall(r"([a-z0-9_]+-unknown-linux-gnu)", workflow)))
-    expected = ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
-    if targets != expected:
-        raise ValueError(f"release workflow certified target set changed: {targets!r}")
-    return targets
+    """The cargo targets the release lane actually builds.
+
+    This read `.github/workflows/release.yml` and then asserted the answer
+    against its own `expected` list — three places stating one fact, one of
+    them a file the cutover deletes. `release_lane.py` reads the two
+    declarations in `release-candidate.pipeline.kts` instead, and reconciles
+    them against each other, so the set here is the set the lane builds.
+    """
+    return release_lane.release_targets(root)
 
 
 def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
@@ -114,7 +118,7 @@ def build_manifest(root: Path, source_commit: str) -> dict[str, Any]:
         {
             "target": target,
             "support_level": "certified",
-            "evidence": ".github/workflows/release.yml Linux GNU release lane",
+            "evidence": "cargo build lane in release-candidate.pipeline.kts",
         }
         for target in certified_platforms(root)
     ]

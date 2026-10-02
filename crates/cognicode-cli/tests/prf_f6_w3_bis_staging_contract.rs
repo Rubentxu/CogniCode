@@ -13,12 +13,15 @@
 //!
 //! This test pins the corrected contract in three layers:
 //!
-//! 1. **Workflow contract**: parse `release.yml` and
-//!    `release-validate.yml` and assert that every
-//!    `actions/upload-artifact` uses the same `payloads-*` name
-//!    pattern and every `actions/download-artifact` uses
-//!    `pattern: payloads-*`. This prevents future divergences
-//!    between the two workflows.
+//! 1. **Lane contract**: assert that the release lane stages payloads
+//!    through `scripts/ci/stage-platform-payloads.sh` and that
+//!    `release.pipeline.kts` verifies the candidate before publishing
+//!    it. This replaces an assertion that `release.yml` and
+//!    `release-validate.yml` agreed on `actions/upload-artifact` and
+//!    `actions/download-artifact` name patterns, which the cutover to
+//!    PipelineK made unexpressible: stages share a filesystem, so there
+//!    is no transfer for the two lanes to disagree about. See
+//!    `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 //!
 //! 2. **Flatten script contract**: execute the actual
 //!    `stage-platform-payloads.sh` against a synthetic staging
@@ -33,16 +36,18 @@
 //!    short-form + triple-alias collision, and wrong-triple
 //!    tarball in a lane. All must be rejected loudly.
 //!
-//! The test uses the **same short platform identifier** that the
-//! workflow injects (`matrix.platform == linux-x86-64` and
-//! `linux-aarch64`). Older tests built the layout by hand with the
-//! target triple as the lane name; that hand-built layout must
-//! continue to work via an explicit alias accepted by the script,
-//! so this test also exercises the alias path for backwards
+//! The test uses the **same short platform identifier** the release
+//! lane packages each target under (`platformOf` in
+//! `release-candidate.pipeline.kts`). Older tests built the layout by
+//! hand with the target triple as the lane name; that hand-built
+//! layout must continue to work via an explicit alias accepted by the
+//! script, so this test also exercises the alias path for backwards
 //! compatibility with existing fixtures.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+mod common;
 
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -51,139 +56,18 @@ fn repo_root() -> PathBuf {
     p
 }
 
-fn release_validate_yml() -> PathBuf {
-    repo_root().join(".github/workflows/release-validate.yml")
-}
-
-fn release_yml() -> PathBuf {
-    repo_root().join(".github/workflows/release.yml")
-}
-
 fn flatten_script() -> PathBuf {
     repo_root().join("scripts/ci/stage-platform-payloads.sh")
 }
 
-/// Tier-1 platform short identifiers, matching `matrix.platform` in
-/// the workflows' strategy matrix.
+/// Tier-1 platform short identifiers, matching the `platformOf` mapping
+/// `release-candidate.pipeline.kts` packages each target under.
 const TIER1_SHORT: &[&str] = &["linux-x86-64", "linux-aarch64"];
 /// Tier-1 platform target triples, matching the tarball + SBOM
 /// filename suffix produced by `cognicode-release name`.
 const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"];
 const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
-
-/// Read the workflow file as text and return all `actions/upload-artifact@v4`
-/// `name:` lines (the ones under the `with:` block), scoped to a job
-/// name (matches the `  <job>:` key). `None` returns every upload name.
-fn upload_names_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
-    let text = std::fs::read_to_string(workflow)
-        .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
-    let mut out = Vec::new();
-    let mut current_job: Option<String> = None;
-    let target_job = job.map(|s| s.to_string());
-    let mut in_target_upload = false;
-    for line in text.lines() {
-        let leading = line.len() - line.trim_start().len();
-        let bare = line.trim();
-        // Job declarations are two-space-indented identifiers ending with ':'.
-        if leading == 2
-            && let Some(name) = bare.strip_suffix(':')
-            && !name.contains(' ')
-            && !name.starts_with('#')
-        {
-            current_job = Some(name.to_string());
-        }
-        let trimmed = line.trim_start();
-        let job_match = target_job
-            .as_ref()
-            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
-
-        if trimmed.starts_with("uses: actions/upload-artifact") && job_match {
-            in_target_upload = true;
-            continue;
-        }
-        if in_target_upload {
-            // Only accept `name:` lines that live inside the `with:` block.
-            // `name:` at job or step level (e.g. `    name: assemble-and-verify-local`)
-            // is ignored because the leading indent is < 8.
-            if trimmed.starts_with("name:") && leading >= 8 {
-                let value = trimmed.trim_start_matches("name:").trim();
-                out.push(value.to_string());
-            }
-            // Exit when we leave the upload step (a step boundary at indent 6).
-            if trimmed.starts_with("- ") && leading <= 6 {
-                in_target_upload = false;
-            }
-            // Also exit when we hit a non-`with:` line at the same or lower indent.
-            if !trimmed.is_empty()
-                && !trimmed.starts_with("name:")
-                && !trimmed.starts_with("path:")
-                && !trimmed.starts_with("if-")
-                && !trimmed.starts_with("#")
-                && !trimmed.starts_with("with:")
-                && !trimmed.starts_with("uses:")
-                && leading <= 8
-            {
-                in_target_upload = false;
-            }
-        }
-        let _ = &mut in_target_upload; // suppress unused warning
-    }
-    out
-}
-
-/// Read the workflow file and return all `actions/download-artifact@v4`
-/// `pattern:` lines (inside the `with:` block), scoped to a job name.
-fn download_patterns_in(workflow: &Path, job: Option<&str>) -> Vec<String> {
-    let text = std::fs::read_to_string(workflow)
-        .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
-    let mut out = Vec::new();
-    let mut current_job: Option<String> = None;
-    let target_job = job.map(|s| s.to_string());
-    let mut in_target_download = false;
-    for line in text.lines() {
-        let leading = line.len() - line.trim_start().len();
-        let bare = line.trim();
-        if leading == 2
-            && let Some(name) = bare.strip_suffix(':')
-            && !name.contains(' ')
-            && !name.starts_with('#')
-        {
-            current_job = Some(name.to_string());
-        }
-        let trimmed = line.trim_start();
-        let job_match = target_job
-            .as_ref()
-            .is_none_or(|t| current_job.as_deref() == Some(t.as_str()));
-
-        if trimmed.starts_with("uses: actions/download-artifact") && job_match {
-            in_target_download = true;
-            continue;
-        }
-        if in_target_download {
-            if trimmed.starts_with("pattern:") && leading >= 8 {
-                let value = trimmed.trim_start_matches("pattern:").trim();
-                out.push(value.to_string());
-            }
-            if trimmed.starts_with("- ") && leading <= 6 {
-                in_target_download = false;
-            }
-            if !trimmed.is_empty()
-                && !trimmed.starts_with("pattern:")
-                && !trimmed.starts_with("path:")
-                && !trimmed.starts_with("merge-")
-                && !trimmed.starts_with("if-")
-                && !trimmed.starts_with("#")
-                && !trimmed.starts_with("with:")
-                && !trimmed.starts_with("uses:")
-                && leading <= 8
-            {
-                in_target_download = false;
-            }
-        }
-    }
-    out
-}
 
 /// Reproduce the layout that `actions/download-artifact@v4` produces
 /// after the corrected contract: each lane directory is named
@@ -236,81 +120,54 @@ fn run_flatten(staging: &Path) -> std::process::ExitStatus {
 }
 
 // -------------------------------------------------------------------
-// Layer 1: workflow contract
+// Layer 1: lane contract
 // -------------------------------------------------------------------
 
-/// Build jobs in both workflows must upload lane artifacts under the
-/// SAME name pattern (`payloads-${{ matrix.platform }}`) so the
-/// `stage-platform-payloads.sh` script can consume them without
-/// branching on the workflow. Run #35991553492 failed because
-/// `release-validate.yml`'s `build` job used `validate-payloads-*`
-/// while `release.yml`'s `build` job used `payloads-*`.
+/// The candidate lane must build its staging tree with the shared flatten
+/// script, and the release lane must verify that same tree before publishing
+/// it.
 ///
-/// Other jobs (e.g. the `validate` job that uploads the assembled
-/// release output under a different name) are out of scope here; the
-/// lane ↔ flatten contract is solely about what `build` uploads and
-/// what `validate` downloads.
+/// This layer used to assert that `release.yml#build` and
+/// `release-validate.yml#build` uploaded under the same artifact name and that
+/// both downloaded with the same pattern. Run #35991553492 failed because the
+/// two had silently diverged, and the contract existed to stop exactly that.
+///
+/// It is retired because the divergence it watched for is no longer
+/// expressible. Measured under `pipelinek` 0.46.0: stages share a filesystem,
+/// so there is no transfer between the build and the flatten step for two
+/// lanes to disagree about. The candidate is a directory,
+/// `stage-platform-payloads.sh` writes it, and `release.pipeline.kts` reads
+/// `release/` — it has no way to reconstruct a candidate it did not receive,
+/// and so no way to validate one artifact and publish another.
+///
+/// What replaces it is the wiring itself. See
+/// `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 #[test]
-fn prf_f6_w3_bis_workflow_upload_names_are_shared() {
-    let rv = upload_names_in(&release_validate_yml(), Some("build"));
-    let rel = upload_names_in(&release_yml(), Some("build"));
+fn prf_f6_w3_bis_candidate_lane_stages_through_the_shared_flatten_script() {
+    const STAGE: &str = "scripts/ci/stage-platform-payloads.sh";
     assert!(
-        !rv.is_empty(),
-        "could not find any upload-artifact name in release-validate.yml#build"
+        common::pipeline_runs(common::RELEASE_CANDIDATE_AUTHORITY, STAGE),
+        "{}",
+        common::pipeline_not_run_message(
+            common::RELEASE_CANDIDATE_AUTHORITY,
+            STAGE,
+            "the staging tree the candidate is verified against and published \
+             from is the one this script builds. Assembling it any other way \
+             makes the canonical payload and SBOM names the orchestrator's \
+             claim rather than the script's output",
+        )
     );
     assert!(
-        !rel.is_empty(),
-        "could not find any upload-artifact name in release.yml#build"
+        common::pipeline_runs("release.pipeline.kts", "verify --staging release"),
+        "{}",
+        common::pipeline_not_run_message(
+            "release.pipeline.kts",
+            "verify --staging release",
+            "the release lane must verify the candidate directory before it \
+             publishes it. A release that does not re-check what it is about to \
+             ship has no evidence beyond the build that produced it",
+        )
     );
-    for name in &rv {
-        // The lane artifact name must be exactly
-        // `payloads-${{ matrix.platform }}` — no extra prefix like
-        // `validate-payloads-` is allowed, even though both strings
-        // share the suffix `payloads-${{ matrix.platform }}`.
-        // Run #35991553492 failed precisely because the name was
-        // `validate-payloads-${{ matrix.platform }}`.
-        assert!(
-            name == "payloads-${{ matrix.platform }}",
-            "release-validate.yml#build upload name `{name}` must be exactly `payloads-${{ matrix.platform }}`; \
-             run #35991553492 failed because this workflow diverged from release.yml"
-        );
-    }
-    for name in &rel {
-        assert_eq!(
-            name, "payloads-${{ matrix.platform }}",
-            "release.yml#build upload name `{name}` changed; the shared contract must be preserved"
-        );
-    }
-}
-
-/// The `validate` job in both workflows must download the lane
-/// artifacts with the same pattern (`payloads-*`). Negative-test jobs
-/// download a different artifact (the assembled release output) and
-/// are out of scope for this contract.
-#[test]
-fn prf_f6_w3_bis_workflow_download_patterns_are_shared() {
-    let rv = download_patterns_in(&release_validate_yml(), Some("validate"));
-    let rel = download_patterns_in(&release_yml(), Some("release"));
-    assert!(
-        !rv.is_empty(),
-        "could not find any download-artifact pattern in release-validate.yml#validate"
-    );
-    assert!(
-        !rel.is_empty(),
-        "could not find any download-artifact pattern in release.yml#release"
-    );
-    for p in &rv {
-        assert_eq!(
-            p, "payloads-*",
-            "release-validate.yml#validate download pattern `{p}` must be exactly `payloads-*`"
-        );
-    }
-    for p in &rel {
-        assert_eq!(
-            p, "payloads-*",
-            "release.yml#release download pattern `{p}` changed; the shared contract must be preserved"
-        );
-    }
 }
 
 // -------------------------------------------------------------------

@@ -25,36 +25,31 @@
 //!    against a future cargo-cyclonedx regression that silently
 //!    emits empty or per-crate files.
 //!
-//! 3. **Workflow contract**: parse `release.yml` and
-//!    `release-validate.yml` and assert that the SBOM step invokes
-//!    the shared script (not the broken `cargo cyclonedx --format
-//!    json` invocation) and that the upload path references the
-//!    canonical names. This is what makes the bug fix
+//! 3. **Lane contract**: assert that the release lane generates SBOMs with
+//!    `scripts/ci/build-sboms-for-lane.sh` (not the broken
+//!    `cargo cyclonedx --format json` invocation) and that it stages payloads
+//!    through `scripts/ci/stage-platform-payloads.sh`, which is what places
+//!    the canonical SBOM names in the candidate. This is what makes the bug fix
 //!    un-driftable.
 //!
-//! Layer 3 is the same `upload_names_in` / `download_patterns_in`
-//! helpers used by `prf_f6_w3_bis_staging_contract.rs`; here we
-//! only assert that the SBOM step name matches what we expect and
-//! that the upload path does NOT include the broken `crates/*.cdx.json`.
+//! Layer 3 used to parse `release.yml` and `release-validate.yml` and assert
+//! the same thing about both. There is one lane now, and the artifact it
+//! publishes is a directory rather than a set of transferred uploads, so what
+//! remains to be pinned is that the lane uses the shared scripts at all. See
+//! `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 
 use std::path::PathBuf;
 use std::process::Command;
 
 use serial_test::serial;
 
+mod common;
+
 fn repo_root() -> PathBuf {
     let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.pop();
     p.pop();
     p
-}
-
-fn release_validate_yml() -> PathBuf {
-    repo_root().join(".github/workflows/release-validate.yml")
-}
-
-fn release_yml() -> PathBuf {
-    repo_root().join(".github/workflows/release.yml")
 }
 
 fn sbom_script() -> PathBuf {
@@ -354,59 +349,68 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
 // Layer 3: workflow contract
 // -------------------------------------------------------------------
 
-/// Both workflows must invoke `scripts/ci/build-sboms-for-lane.sh`
-/// for SBOM generation. A regression to the bare
-/// `cargo cyclonedx --format json` invocation (which silently
-/// produces no output from the workspace root) would resurface
-/// the run #35995529045 failure.
+/// The release lane must generate SBOMs with the shared script.
+///
+/// A regression to the bare `cargo cyclonedx --format json` invocation
+/// (which silently produces no output from the workspace root) would
+/// resurface the run #35995529045 failure.
+///
+/// This read `release.yml` and `release-validate.yml` and asserted the same
+/// thing about two files. There is one lane now, and it is the one that
+/// builds the candidate the release publishes — so that is the one that has
+/// to generate them. See `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 #[test]
 #[serial]
-fn prf_f6_w3_bis_workflow_sbom_step_invokes_shared_script() {
-    for workflow in [&release_yml(), &release_validate_yml()] {
-        let text = std::fs::read_to_string(workflow)
-            .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
-        assert!(
-            text.contains("scripts/ci/build-sboms-for-lane.sh"),
-            "{}: SBOM step must invoke scripts/ci/build-sboms-for-lane.sh; \
-             the bare `cargo cyclonedx --format json` is broken from the workspace root",
-            workflow.display()
-        );
-        // The old broken invocation must not survive.
-        assert!(
-            !text.contains("cargo cyclonedx --format json\n")
-                && !text.contains("cargo cyclonedx --format json\r\n"),
-            "{}: the bare `cargo cyclonedx --format json` invocation must be removed; \
-             it produces no output from the workspace root",
-            workflow.display()
-        );
-    }
+fn prf_f6_w3_bis_release_lane_sbom_step_invokes_shared_script() {
+    const COMMAND: &str = "scripts/ci/build-sboms-for-lane.sh";
+    assert!(
+        common::pipeline_runs(common::RELEASE_CANDIDATE_AUTHORITY, COMMAND),
+        "{}",
+        common::pipeline_not_run_message(
+            common::RELEASE_CANDIDATE_AUTHORITY,
+            COMMAND,
+            "SBOM generation must go through the shared script; the bare \
+             `cargo cyclonedx --format json` produces no output from the \
+             workspace root, which is what run #35995529045 hit",
+        )
+    );
+
+    // The old broken invocation must not survive anywhere in the lane.
+    let text =
+        std::fs::read_to_string(common::repo_root().join(common::RELEASE_CANDIDATE_AUTHORITY))
+            .expect("read the release candidate lane");
+    assert!(
+        !text.contains("cargo cyclonedx --format json\n")
+            && !text.contains("cargo cyclonedx --format json\r\n"),
+        "{}: the bare `cargo cyclonedx --format json` invocation must be removed; \
+         it produces no output from the workspace root",
+        common::RELEASE_CANDIDATE_AUTHORITY
+    );
 }
 
-/// Both workflows must upload SBOMs under their canonical names
-/// (not the broken `crates/*.cdx.json` glob). The upload path must
-/// explicitly list the three per-component SBOMs.
+/// The candidate's staging must carry the canonical SBOM names, not the
+/// broken `crates/*.cdx.json` glob. Run #35995529045 failed because the
+/// upload matched a layout where the SBOMs do not live.
+///
+/// The names are produced and consumed by `scripts/ci/stage-platform-payloads.sh`,
+/// which is exercised behaviourally above and by the staging contract. What is
+/// pinned here is the wiring: the release lane runs that script, so the staging
+/// tree it publishes is the one the script defines rather than one assembled
+/// by hand at the orchestration layer.
 #[test]
 #[serial]
-fn prf_f6_w3_bis_workflow_upload_path_uses_canonical_sbom_names() {
-    for workflow in [&release_yml(), &release_validate_yml()] {
-        let text = std::fs::read_to_string(workflow)
-            .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
-        for comp in PUBLISHED_COMPONENTS {
-            let needle = format!("crates/{comp}-${{{{ matrix.rust_target }}}}.cdx.json");
-            assert!(
-                text.contains(&needle),
-                "{}: upload path must reference canonical SBOM `{needle}`; \
-                 run #35995529045 failed because the upload used `crates/*.cdx.json` \
-                 which does not match the layout where SBOMs actually live",
-                workflow.display()
-            );
-        }
-        // The broken glob must not survive.
-        assert!(
-            !text.contains("crates/*.cdx.json"),
-            "{}: the broken `crates/*.cdx.json` upload glob must be removed; \
-             it is a one-level glob that misses the SBOMs the script produces",
-            workflow.display()
-        );
-    }
+fn prf_f6_w3_bis_release_lane_stages_payloads_through_the_shared_script() {
+    const COMMAND: &str = "scripts/ci/stage-platform-payloads.sh";
+    assert!(
+        common::pipeline_runs(common::RELEASE_CANDIDATE_AUTHORITY, COMMAND),
+        "{}",
+        common::pipeline_not_run_message(
+            common::RELEASE_CANDIDATE_AUTHORITY,
+            COMMAND,
+            "the candidate's staging tree — payloads and their SBOMs — is built \
+             by the shared flatten script. If the lane assembled it any other \
+             way, the canonical SBOM names would be the orchestrator's claim \
+             rather than the script's output",
+        )
+    );
 }

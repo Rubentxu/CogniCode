@@ -173,16 +173,18 @@ The sandbox MUST expose a paginated `tools/list` probe (`sandbox/scripts/list_mc
 
 ### Requirement: CI Automation
 
-A GitHub Actions workflow (`sandbox-nightly.yml`) MUST run the full matrix nightly, including stability repeats and benchmark, archive results, and publish the scorecard. A fast smoke lane (`sandbox-ci-smoke`, < 5 min) MUST run on every PR.
+`certification.pipeline.kts` MUST run the full matrix nightly, including stability repeats and benchmark, archive results, and publish the scorecard. A fast smoke lane (`sandbox-ci-smoke`, < 5 min) MUST run on every PR.
 
-#### Scenario: Nightly workflow exists with smoke and probe lanes
+The orchestrator is named rather than described. The requirement used to be "a GitHub Actions workflow (`sandbox-nightly.yml`) MUST …", with a scenario that asserted the file exists and carries `schedule: cron(0 3 * * *)`. That is a requirement about a file, so it became false the moment CI/CD moved to PipelineK while the property it protected — the nightly matrix runs, the smoke lane runs on every change, results are archived — was still true. Naming the lane keeps the property and drops the file.
 
-- GIVEN `.github/workflows/`
-- WHEN workflows are enumerated
-- THEN `sandbox-nightly.yml` exists with `schedule: cron(0 3 * * *)` and `workflow_dispatch`
-- AND the workflow includes: podman setup → `just sandbox-pull && just sandbox-setup` → `just sandbox-ci-smoke` lane → `just sandbox-ci-probe` lane
-- AND results are uploaded as artifacts (scorecard, trends, failure logs)
-- AND the job uses `continue-on-error: true` if running on `ubuntu-latest` (hosted runners may lack rootless podman + systemd)
+#### Scenario: Certification lane carries the smoke and probe stages
+
+- GIVEN the repository root
+- WHEN `certification.pipeline.kts` is read
+- THEN it runs `just sandbox-pull` and `just sandbox-setup` before the sandbox stages
+- AND it runs a `sandbox-ci-smoke` stage and a `sandbox-ci-probe` stage
+- AND the probe stage is advisory: a failure is recorded and reported without failing the lane
+- AND the scorecard stage runs only when `CERTIFICATION_SCORECARD` is set, so a local run does not publish one
 
 #### Scenario: Smoke lane reports infra-failure vs product-failure
 

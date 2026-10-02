@@ -2,7 +2,7 @@
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
   "version": "0.100.0",
-  "source_commit": "73235889409afea43bc18cb0122a3966676dbb85",
+  "source_commit": "b6986b95c1545f64acf0a81dea9eaa1459fcb9fe",
   "public_surface": {
     "binaries": [
       {
@@ -214,14 +214,14 @@
   ],
   "platforms": [
     {
-      "target": "aarch64-unknown-linux-gnu",
-      "support_level": "certified",
-      "evidence": ".github/workflows/release.yml Linux GNU release lane"
-    },
-    {
       "target": "x86_64-unknown-linux-gnu",
       "support_level": "certified",
-      "evidence": ".github/workflows/release.yml Linux GNU release lane"
+      "evidence": "cargo build lane in release-candidate.pipeline.kts"
+    },
+    {
+      "target": "aarch64-unknown-linux-gnu",
+      "support_level": "certified",
+      "evidence": "cargo build lane in release-candidate.pipeline.kts"
     }
   ],
   "artifacts": {

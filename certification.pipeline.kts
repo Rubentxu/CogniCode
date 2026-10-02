@@ -45,12 +45,21 @@
 // the reason it does not stop the lane.
 //
 // The performance verdict is the sharpest case. `perf-budget.toml` budgets 16
-// operations; 7 have a benchmark. The other 9 return exit 3 UNMEASURED
-// unconditionally, so `scripts/perf-budget-check.sh` cannot return 0 and the
-// checker cannot be wired as a blocking gate without turning this lane
-// permanently red. It runs as ADVISORY and says exactly that. A benchmark that
-// produces numbers is not a verdict, and pretending the second exists is how
-// the first one gets mistaken for it.
+// operations and the checker was run against the real ones on 2026-10-02:
+// 7 are measured and all 7 are inside budget (`shortest_path` at 299 µs
+// against 1000 µs is the tightest, 3.3x of headroom; the loosest is
+// `subgraph_extraction_50_nodes` at 72x), and 9 have no benchmark anywhere in
+// `crates/*/benches/`. So the checker exits 3 UNMEASURED and cannot return 0,
+// and it runs as ADVISORY, saying exactly that.
+//
+// Splitting exit 1 from exit 3 — fail the lane on a measured regression, report
+// the unmeasured ones and continue — is the obvious next step and is NOT done
+// here, because the 3.3x figure is a measurement of one development machine and
+// not of a CI runner, and a gate whose headroom is unknown on the hardware that
+// enforces it is a lane that turns red for a reason nobody can act on. It needs
+// the runner measured, or the 9 entries benchmarked or deleted, whichever
+// happens first. A benchmark that produces numbers is not a verdict, and
+// pretending the second exists is how the first one gets mistaken for it.
 
 import java.io.File
 
@@ -130,12 +139,13 @@ pipeline {
             // lives in integration as ADVISORY; deciding against a budget is a
             // different act, and it is the one that belongs here.
             //
-            // It cannot be blocking. Measured 2026-10-02: 9 of the 16 budgeted
-            // operations have no benchmark and return exit 3 UNMEASURED, so the
-            // checker cannot return 0. Wiring it as a gate would make this lane
-            // permanently red, which teaches everyone to ignore it — the exact
-            // outcome `perf-budget.toml`'s own `ENFORCEMENT: none` currently
-            // records honestly.
+            // It cannot be blocking yet. Measured 2026-10-02: 9 of the 16
+            // budgeted operations have no benchmark and return exit 3
+            // UNMEASURED, so the checker cannot return 0 and wiring it as a
+            // gate would make this lane permanently red, which teaches everyone
+            // to ignore it — the exact outcome `perf-budget.toml`'s own
+            // `ENFORCEMENT: none` records honestly. The header says what would
+            // have to be measured first.
             stage("perf-budget-verdict") {
                 sh("""
                     $cd || exit 1

@@ -352,41 +352,50 @@ commit msg:
 push:
     git push
 
-# ─── CI (local-only) ───────────────────────────────────────────────────────────
+# ─── CI ───────────────────────────────────────────────────────────────────────
 #
-# CI runs locally via `act` (https://github.com/nektos/act) backed by
-# `podman`. There are NO GitHub-hosted runners in this project by policy
-# (v1.0.0 readiness program decision). The workflow YAMLs live in
-# `.github/workflows/` but only carry `workflow_dispatch:` / `workflow_call:`
-# triggers, so they never execute on GitHub without an explicit trigger.
+# CI runs locally through PipelineK, the one execution authority. There are no
+# GitHub Actions workflows left to run: they used to be executed here with `act`
+# plus podman, which meant the repository shipped a second orchestrator whose
+# behaviour was a container image's behaviour rather than the machine's. See
+# `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 #
 # Requirements:
-#   - act (/usr/local/bin/act, 0.2.89+)
-#   - podman with a running user socket (/run/user/1000/podman/podman.sock)
-#   - ~/.config/act/actrc listing the catthehacker/ubuntu images
+#   - pipelinek on PATH (asdf; `command -v pipelinek` if a lane and a validation
+#     ever disagree, the cause is a version mismatch and not the script)
+#   - podman rootless, for the sandbox stages in `certification.pipeline.kts`
 #
-# Default workflow: regression-check.yml (T6 enforcement).
+# Each recipe names one lane. There is no "run everything" recipe on purpose:
+# `ci-local` used to fire two `act` invocations, and the second one's failures
+# were the first one's noise. Which lane you want is a decision worth making
+# explicitly.
 
-# T6 — fix(*) commits must include a regression test (local-only enforcement)
+# T6 — fix(*) commits must include a regression test
 ci-t6:
-    @echo "🛡️  T6 regression test check (local-only via act+podman)..."
+    @echo "🛡️  T6 regression test check..."
     @test -x scripts/ci/check_regression_test.sh || chmod +x scripts/ci/check_regression_test.sh
-    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
-        act -W .github/workflows/regression-check.yml workflow_dispatch
+    pipelinek run --db .pipelinek/ci-t6.db certification.pipeline.kts
 
-# Dry-run T6 check (no container, validates the workflow syntactically)
-ci-t6-dry:
-    @echo "🛡️  T6 dry-run (validates workflow + script)..."
-    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
-        act -n -W .github/workflows/regression-check.yml workflow_dispatch
+# Validate the lanes without running them. This is what `act -n` was for, and
+# unlike it this compiles the actual script, so a stage that cannot be built is
+# caught here rather than at the first expensive command.
+ci-validate:
+    @echo "🛡️  Validating every lane..."
+    @for lane in *.pipeline.kts; do echo "==> $$lane"; pipelinek validate $$lane || exit 1; done
 
-# Run all enabled CI workflows locally via act+podman (regression-check + ci)
-ci-local:
-    @echo "🛡️  Running all CI workflows locally via act+podman..."
-    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
-        act -W .github/workflows/regression-check.yml workflow_dispatch
-    DOCKER_HOST=unix:///run/user/1000/podman/podman.sock \
-        act -W .github/workflows/ci.yml workflow_dispatch
+# The gate a change must pass to merge.
+ci-merge-gate:
+    @echo "🛡️  merge-gate lane..."
+    pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts
+
+# The full matrix: cross-platform builds, adversarial corpora, musl, coverage.
+ci-integration:
+    @echo "🛡️  integration lane (expensive)..."
+    pipelinek run --db .pipelinek/integration.db integration.pipeline.kts
+
+# Everything the merge gate and the integration lane run, in that order.
+ci-local: ci-merge-gate ci-integration
+    @echo "✅  change-fast and integration lanes green"
 
 # T7 — regenerate the per-scenario flaky log (sandbox/results/flaky_scenarios.{md,json})
 scorecard-stability window_days="30":

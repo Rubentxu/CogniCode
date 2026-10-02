@@ -212,21 +212,169 @@ pub fn release_dir() -> PathBuf {
 /// The pipeline a merge is gated on. Declared here and nowhere else.
 pub const MERGE_AUTHORITY: &str = "merge-gate.pipeline.kts";
 
-/// The merge authority's source with whole-line comments removed.
+/// The pipeline that builds and certifies a release candidate.
+///
+/// Named here for the same reason the merge authority is: a contract that says
+/// "the release lane must generate SBOMs with the shared script" has to name
+/// one file, and the file it names must be the one that runs.
+pub const RELEASE_CANDIDATE_AUTHORITY: &str = "release-candidate.pipeline.kts";
+
+/// One pipeline's source, whole-line comments removed.
 ///
 /// A comment that quotes a command is otherwise indistinguishable from a step
 /// that runs it, in both directions: a comment naming a removed gate would
 /// satisfy "the gate exists", and a comment explaining why something is pinned
 /// would trip "it is pinned".
-pub fn merge_authority_lines() -> Vec<String> {
-    let path = repo_root().join(MERGE_AUTHORITY);
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+pub fn pipeline_text(pipeline: &str) -> String {
+    let path = repo_root().join(pipeline);
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {pipeline}: {e}"));
     text.lines()
-        .map(str::trim)
-        .filter(|l| !l.starts_with("//"))
-        .map(str::to_owned)
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// One pipeline's source as trimmed, comment-free lines.
+pub fn pipeline_lines(pipeline: &str) -> Vec<String> {
+    pipeline_text(pipeline)
+        .lines()
+        .map(|l| l.trim().to_owned())
         .collect()
+}
+
+/// Every `sh(...)` body in `text`, with its byte offset in that text.
+///
+/// Extracting bodies rather than scanning lines is what lets a command that
+/// wraps count. The line-based check this replaced documented the limitation
+/// and prescribed moving the command onto one line — the wrong remedy, because
+/// it distorts a pipeline to satisfy a checker, and the distortion is invisible
+/// to whoever reads the pipeline next. It also diverged: `pipeline_authority.py`
+/// had already worked on bodies, and the two Rust copies had not caught up, so
+/// a contract failed against a pipeline that does run the command.
+///
+/// A command outside an `sh(` body still does not count. A `val`, a stage name,
+/// or a comment that survived stripping would run nothing.
+///
+/// Kotlin's `${'$'}` is resolved, because the contract reads the `.kts` source
+/// rather than the emitted shell and the escape is an artefact of that.
+pub fn sh_bodies_with_offsets(text: &str) -> Vec<(usize, String)> {
+    const RAW: &str = "\"\"\"";
+    let bytes = text.as_bytes();
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(offset) = text[cursor..].find("sh(") {
+        let after = cursor + offset + 3;
+        let rest = text[after..].trim_start();
+        let body_start = after + (text[after..].len() - rest.len());
+
+        if rest.starts_with(RAW) {
+            let from = body_start + RAW.len();
+            let Some(end) = text[from..].find(RAW) else {
+                break;
+            };
+            out.push((from, text[from..from + end].replace("${'$'}", "$")));
+            cursor = from + end + RAW.len();
+            continue;
+        }
+
+        if rest.starts_with('"') {
+            let from = body_start + 1;
+            let mut i = from;
+            let mut end = None;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'"' => {
+                        end = Some(i);
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            let Some(end) = end else { break };
+            out.push((
+                from,
+                text[from..end].replace('\\', "").replace("${'$'}", "$"),
+            ));
+            cursor = end + 1;
+            continue;
+        }
+
+        cursor = after;
+    }
+
+    out
+}
+
+/// Whether `pipeline` runs `command` inside an `sh(...)` body.
+///
+/// The `sh(` requirement is what makes this fail-closed: a command quoted
+/// anywhere else would run nothing.
+pub fn pipeline_runs(pipeline: &str, command: &str) -> bool {
+    sh_bodies_with_offsets(&pipeline_text(pipeline))
+        .iter()
+        .any(|(_, body)| body.contains(command))
+}
+
+/// The name of the stage that runs `command`, for the failure message.
+///
+/// Found by walking back from the body that contains the command rather than by
+/// matching a line, so a command that is not on the same line as its `sh(` is
+/// still attributed to the right stage.
+pub fn pipeline_stage_of(pipeline: &str, command: &str) -> Option<String> {
+    let text = pipeline_text(pipeline);
+    let offset = sh_bodies_with_offsets(&text)
+        .into_iter()
+        .find(|(_, body)| body.contains(command))
+        .map(|(offset, _)| offset)?;
+    stage_before(&text[..offset])
+}
+
+/// The innermost `stage("…")` that opens before `offset`.
+///
+/// Textual rather than structural, and deliberately so: it has to name the
+/// stage a failing contract points at, and parsing Kotlin's braces to do that
+/// would be a second implementation of a language to answer a question about
+/// error messages.
+fn stage_before(prefix: &str) -> Option<String> {
+    let mut current = None;
+    for line in prefix.lines() {
+        let line = line.trim();
+        if let Some(name) = line
+            .strip_prefix("stage(\"")
+            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
+        {
+            current = Some(name);
+        }
+    }
+    current.or_else(|| Some("(top level)".to_owned()))
+}
+
+/// A failure message naming the pipeline, the command and the stages that do
+/// exist, so a RED from these contracts is actionable without a diff.
+pub fn pipeline_not_run_message(pipeline: &str, command: &str, required: &str) -> String {
+    let stages: Vec<String> = pipeline_lines(pipeline)
+        .into_iter()
+        .filter_map(|l| {
+            l.strip_prefix("stage(\"")
+                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
+        })
+        .collect();
+    format!(
+        "{pipeline} does not run `{command}`.\n{required}\nstages present: {}",
+        if stages.is_empty() {
+            "none".to_owned()
+        } else {
+            stages.join(", ")
+        }
+    )
+}
+
+/// The merge authority's source with whole-line comments removed.
+pub fn merge_authority_lines() -> Vec<String> {
+    pipeline_lines(MERGE_AUTHORITY)
 }
 
 /// Whether the merge authority runs `command` inside an `sh(...)` body.
@@ -237,46 +385,18 @@ pub fn merge_authority_lines() -> Vec<String> {
 /// multi-line `sh("""…""")` also does not count, which is a false negative
 /// rather than a false pass.
 pub fn merge_authority_runs(command: &str) -> bool {
-    merge_authority_lines()
-        .iter()
-        .any(|line| line.contains("sh(") && line.contains(command))
+    pipeline_runs(MERGE_AUTHORITY, command)
 }
 
 /// The name of the stage that runs `command`, for the failure message.
 pub fn merge_authority_stage_of(command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in merge_authority_lines() {
-        if let Some(name) = line
-            .strip_prefix("stage(\"")
-            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
-        {
-            current = Some(name);
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
-    }
-    None
+    pipeline_stage_of(MERGE_AUTHORITY, command)
 }
 
 /// A failure message naming the authority, the command and the stages that do
 /// exist, so a RED from these contracts is actionable without a diff.
 pub fn not_run_message(command: &str, required: &str) -> String {
-    let stages: Vec<String> = merge_authority_lines()
-        .into_iter()
-        .filter_map(|l| {
-            l.strip_prefix("stage(\"")
-                .and_then(|r| r.find('"').map(|e| r[..e].to_owned()))
-        })
-        .collect();
-    format!(
-        "{MERGE_AUTHORITY} does not run `{command}`.\n{required}\nstages present: {}",
-        if stages.is_empty() {
-            "none".to_owned()
-        } else {
-            stages.join(", ")
-        }
-    )
+    pipeline_not_run_message(MERGE_AUTHORITY, command, required)
 }
 
 /// `pipeline:stage` for every pipeline that runs `command`, sorted.
@@ -287,7 +407,47 @@ pub fn not_run_message(command: &str, required: &str) -> String {
 /// as `scripts/ci/pipeline_authority.py::invoked_by`, which answers the same
 /// question for the Python contracts.
 pub fn invoked_by(command: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
+    let mut out: Vec<String> = invocations(command).into_iter().map(|i| i.at).collect();
+    out.sort();
+    out
+}
+
+/// One `sh(...)` body that runs `command`, and whether it can stop the lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Invocation {
+    /// `pipeline:stage`.
+    pub at: String,
+    /// `true` when a non-zero exit from `command` reaches the end of the stage,
+    /// and a failing stage aborts the pipeline (measured, see
+    /// `scripts/ci/probe-pipelinek-semantics.sh`).
+    pub blocking: bool,
+}
+
+/// Every `sh(...)` body in every pipeline that runs `command`, paired with
+/// whether it can stop the lane.
+///
+/// The distinction exists because *running* a checker and *enforcing* it are
+/// different facts, and only the second one may be claimed. `merge-gate` runs
+/// `clippy` and fails the merge; `certification` runs `perf-budget-check`,
+/// prints that the verdict is not a PASS, and continues. Both invoke a
+/// command, and a contract that only asks "is it invoked?" cannot tell them
+/// apart — which is how `perf-budget.toml` came to declare `ENFORCEMENT: none`
+/// while a lane ran the checker, and how nobody noticed for as long as the
+/// reader could not see inside a multi-line `sh("""…""")` body.
+///
+/// Two mechanisms disable errexit around an invocation, and they are the two
+/// the lanes themselves document ("ADVISORY IS `|| echo`, AND HERE THAT IS THE
+/// ONLY OPTION"):
+///
+///   * `|| …` on the invocation line — `bash x.sh || echo 'ADVISORY: …'`;
+///   * `set +e` (or `set +o errexit`) earlier in the same body, so the
+///     invocation's status is captured instead of aborting.
+///
+/// A third mechanism is a deliberate edit to this list, not an accident: a
+/// body this function cannot classify is reported as **blocking**, because the
+/// dangerous reading of an unknown stage is the one that can turn a lane red.
+pub fn invocations(command: &str) -> Vec<Invocation> {
+    let mut out: Vec<Invocation> = Vec::new();
     for pipeline in pipeline_paths() {
         let name = match pipeline.file_name().and_then(|n| n.to_str()) {
             Some(n) => n.to_owned(),
@@ -296,35 +456,46 @@ pub fn invoked_by(command: &str) -> Vec<String> {
         let Ok(text) = std::fs::read_to_string(&pipeline) else {
             continue;
         };
-        let live: Vec<String> = text
+        let live: String = text
             .lines()
-            .map(str::trim)
-            .filter(|l| !l.starts_with("//"))
-            .map(str::to_owned)
-            .collect();
-        if let Some(stage) = merge_authority_stage_in(&live, command) {
-            out.push(format!("{name}:{stage}"));
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        for (offset, body) in sh_bodies_with_offsets(&live) {
+            if !body.contains(command) {
+                continue;
+            }
+            let Some(stage) = stage_before(&live[..offset]) else {
+                continue;
+            };
+            out.push(Invocation {
+                at: format!("{name}:{stage}"),
+                blocking: reaches_stage_exit(&body, command),
+            });
         }
     }
-    out.sort();
+    out.sort_by(|a, b| a.at.cmp(&b.at));
     out
 }
 
-/// The stage that runs `command` within one already-stripped pipeline.
-fn merge_authority_stage_in(lines: &[String], command: &str) -> Option<String> {
-    let mut current: Option<String> = None;
-    for line in lines {
-        if let Some(name) = line
-            .strip_prefix("stage(\"")
-            .and_then(|rest| rest.find('"').map(|end| rest[..end].to_owned()))
-        {
-            current = Some(name);
-        }
-        if line.contains("sh(") && line.contains(command) {
-            return Some(current.unwrap_or_else(|| "(top level)".to_owned()));
-        }
+/// Whether the exit status of `command` can become the exit status of the
+/// `sh(...)` body that contains it.
+fn reaches_stage_exit(body: &str, command: &str) -> bool {
+    let Some(at) = body.find(command) else {
+        return true;
+    };
+    let end = body[at..].find('\n').map_or(body.len(), |nl| at + nl);
+
+    // `bash x.sh || echo …` — the status is consumed by the guard.
+    if body[at + command.len()..end].contains("||") {
+        return false;
     }
-    None
+    // `set +e` earlier in the same body — the status is captured, not raised.
+    // Its absence is what leaves errexit armed, which is the blocking case.
+    !body[..at].lines().any(|l| {
+        let t = l.trim();
+        t == "set +e" || t == "set +o errexit"
+    })
 }
 
 /// Every PipelineK script at the repository root, sorted.
@@ -349,6 +520,81 @@ pub fn pipeline_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The repository already contains one honest example of each kind, so the
+    /// classifier is checked against them rather than against fixtures written
+    /// to match it.
+    ///
+    /// `certification.pipeline.kts` has both: `t6-regression-test` invokes its
+    /// script bare, and `perf-budget-verdict` invokes a script under `set +e`
+    /// and prints that the exit code is not a PASS. If `reaches_stage_exit`
+    /// answered one constant for both, the `ENFORCEMENT` contract in
+    /// `perf_budget_checker_contract.rs` would be a rubber stamp that happens to
+    /// be green.
+    #[test]
+    fn a_bare_invocation_is_blocking_and_a_guarded_one_is_not() {
+        let bare = invocations("check_regression_test");
+        let bare_blocking: Vec<&str> = bare
+            .iter()
+            .filter(|i| i.blocking)
+            .map(|i| i.at.as_str())
+            .collect();
+        assert!(
+            bare_blocking.contains(&"certification.pipeline.kts:t6-regression-test"),
+            "a stage that runs its script with nothing between it and the exit \
+             status can stop the lane, and must be classified as blocking. \
+             Classified as: {bare:?}"
+        );
+
+        let guarded = invocations("perf-budget-check");
+        assert!(
+            !guarded.is_empty(),
+            "the performance verdict is the repository's advisory example; if it \
+             disappeared, this test would stop testing anything"
+        );
+        let guarded_blocking: Vec<&str> = guarded
+            .iter()
+            .filter(|i| i.blocking)
+            .map(|i| i.at.as_str())
+            .collect();
+        assert!(
+            guarded_blocking.is_empty(),
+            "a stage that captures the exit code and says in its output that the \
+             verdict is not a PASS cannot stop the lane, and must not be \
+             classified as blocking. Classified as: {guarded:?}"
+        );
+    }
+
+    /// What the classifier keys on, stated as behaviour rather than as prose.
+    /// A body it cannot read must come back blocking, because the expensive
+    /// mistake is a lane that turns red and nobody can say why.
+    #[test]
+    fn only_a_guard_that_precedes_the_invocation_makes_it_advisory() {
+        assert!(
+            reaches_stage_exit("out=$(bash x.sh 2>&1)", "x.sh"),
+            "a bare command substitution has the script's exit status, so under \
+             `set -e` it aborts the stage"
+        );
+        assert!(
+            !reaches_stage_exit("set +e\nout=$(bash x.sh 2>&1)\nset -e\n", "x.sh"),
+            "`set +e` in force when the script runs means the status was \
+             captured, and a `set -e` afterwards does not un-capture it"
+        );
+        assert!(
+            !reaches_stage_exit("bash x.sh || echo 'ADVISORY: …'", "x.sh"),
+            "an inline guard consumes the status"
+        );
+        assert!(
+            reaches_stage_exit("out=$(bash x.sh 2>&1)\nset +e\n", "x.sh"),
+            "order matters: a `set +e` written after the invocation did not \
+             protect it"
+        );
+        assert!(
+            reaches_stage_exit("unrelated line", "x.sh"),
+            "a body with no invocation of the command is unclassifiable, and \
+             the dangerous reading is the one reported"
+        );
+    }
 
     /// `binary_path("cogh")` must return an absolute path ending in
     /// `cogh`. Existence is environment-dependent (the binary may or

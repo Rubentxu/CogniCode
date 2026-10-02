@@ -22,6 +22,18 @@
 # Today 9 of the 16 entries below have no benchmark, so a manual run exits 3.
 # That is the honest answer, not a regression.
 #
+# Measured 2026-10-02 against the real budget, not estimated: 7 entries were
+# benchmarked and all 7 are inside their ceiling. The tightest is
+# `shortest_path` at 299.171 us against 1000 us (3.3x of headroom); the loosest
+# is `subgraph_extraction_50_nodes` at 27.882 us against 2000 us (72x). What
+# decides the exit code is the other 9, which have no measurement at all.
+#
+# Failing the lane on exit 1 alone — a measured regression — while reporting the
+# unmeasured entries and continuing, is the honest shape for this checker, and
+# it is deliberately not done yet: the 3.3x above is one development machine and
+# not a CI runner. Wiring a ceiling whose headroom is unknown on the machine
+# that enforces it produces a lane that is red for a reason nobody can act on.
+#
 # Budgets are generous for CI runners (which are slower than dev machines).
 
 [graph.operations]

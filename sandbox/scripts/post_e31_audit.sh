@@ -88,8 +88,8 @@ check "scorecard-stability recipe" \
 # 7. T6 CI gate
 echo ""
 echo "T6 CI gate (E31-B5):"
-check "regression-check.yml workflow exists" \
-    "test -f .github/workflows/regression-check.yml"
+check "certification lane runs the T6 gate" \
+    "grep -q 'check_regression_test.sh' certification.pipeline.kts"
 check "check_regression_test.sh exists" \
     "test -f scripts/ci/check_regression_test.sh"
 check "ci-t6 recipe in justfile" \

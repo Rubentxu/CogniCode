@@ -34,20 +34,89 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The merge authority's source with whole-line comments removed.
+/// Every `sh(...)` body in `text`, with its byte offset in that text.
+///
+/// Extracting bodies rather than scanning lines is what lets a command that
+/// wraps count. The line-based check this replaced documented the limitation
+/// and prescribed moving the command onto one line — the wrong remedy, because
+/// it distorts a pipeline to satisfy a checker, and the distortion is invisible
+/// to whoever reads the pipeline next. It also diverged: `pipeline_authority.py`
+/// had already worked on bodies, and the Rust copies had not caught up, so a
+/// contract could fail against a pipeline that does run the command.
+///
+/// A command outside an `sh(` body still does not count: a `val`, a stage name,
+/// or a comment that survived stripping would run nothing.
+pub fn sh_bodies_with_offsets(text: &str) -> Vec<(usize, String)> {
+    const RAW: &str = "\"\"\"";
+    let bytes = text.as_bytes();
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut cursor = 0usize;
+
+    while let Some(offset) = text[cursor..].find("sh(") {
+        let after = cursor + offset + 3;
+        let rest = text[after..].trim_start();
+        let body_start = after + (text[after..].len() - rest.len());
+
+        if rest.starts_with(RAW) {
+            let from = body_start + RAW.len();
+            let Some(end) = text[from..].find(RAW) else {
+                break;
+            };
+            out.push((from, text[from..from + end].replace("${'$'}", "$")));
+            cursor = from + end + RAW.len();
+            continue;
+        }
+
+        if rest.starts_with('"') {
+            let from = body_start + 1;
+            let mut i = from;
+            let mut end = None;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'"' => {
+                        end = Some(i);
+                        break;
+                    }
+                    _ => i += 1,
+                }
+            }
+            let Some(end) = end else { break };
+            out.push((
+                from,
+                text[from..end].replace('\\', "").replace("${'$'}", "$"),
+            ));
+            cursor = end + 1;
+            continue;
+        }
+
+        cursor = after;
+    }
+
+    out
+}
+
+/// The merge authority's source, whole-line comments removed.
 ///
 /// A comment that quotes a command is otherwise indistinguishable from a step
 /// that runs it. That cuts both ways: a comment naming a removed gate would
 /// satisfy "the gate exists", and a comment explaining why something is
 /// pinned would trip "it is pinned".
-pub fn merge_authority_lines() -> Vec<String> {
+pub fn merge_authority_text() -> String {
     let path = repo_root().join(MERGE_AUTHORITY);
     let text =
         fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
     text.lines()
-        .map(str::trim)
-        .filter(|l| !l.starts_with("//"))
-        .map(str::to_owned)
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The merge authority's source as trimmed, comment-free lines.
+pub fn merge_authority_lines() -> Vec<String> {
+    merge_authority_text()
+        .lines()
+        .map(|l| l.trim().to_owned())
         .collect()
 }
 
@@ -55,14 +124,11 @@ pub fn merge_authority_lines() -> Vec<String> {
 ///
 /// The `sh(` requirement is what makes this fail-closed. A command quoted
 /// anywhere else — a `val`, a stage name, a comment that survived stripping —
-/// does not count, because it would run nothing. A command spread over a
-/// multi-line `sh("""…""")` also does not count, which is a false negative
-/// rather than a false pass: the caller fails, and someone moves the command
-/// onto one line.
+/// does not count, because it would run nothing.
 pub fn merge_authority_runs(command: &str) -> bool {
-    merge_authority_lines()
+    sh_bodies_with_offsets(&merge_authority_text())
         .iter()
-        .any(|line| line.contains("sh(") && line.contains(command))
+        .any(|(_, body)| body.contains(command))
 }
 
 /// A failure message naming the authority, the command and what is there

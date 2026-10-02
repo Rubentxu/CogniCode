@@ -1,11 +1,19 @@
 //! PRF-CI-01 / PRF-CI-07 — Acceptance tests for the CI clippy gate.
 //!
 //! PRF-CI-01 (POSITIVE invariant): on a clean workspace, the exact
-//! clippy command declared in `.github/workflows/ci.yml` (the
+//! clippy command the merge authority runs (the
 //! `cargo clippy --workspace --all-targets -- -D warnings` gate)
 //! MUST exit with code 0.  This proves that the documentation-paper
 //! "clippy clean" promise is not aspirational — it is verified against
-//! the actual command the CI runs.
+//! the actual command the gate runs.
+//!
+//! The structural half of PRF-CI-01 used to read
+//! `.github/workflows/ci.yml`. That was the wrong authority: `ci.yml` is
+//! the full matrix and policy treats it as local-only, while the check
+//! `main` requires came from `pr-ci.yml`. The contract could therefore
+//! stay green while the gate that actually gates merges was missing.
+//! It now asks `merge-gate.pipeline.kts` — see
+//! `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
 //!
 //! PRF-CI-07 (NEGATIVE invariant): the same command MUST refuse to
 //! certify a build that contains a real defect.  We prove this by
@@ -28,6 +36,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+mod common;
+
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -37,22 +47,28 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn ci_yml_declares_clippy_d_warnings_gate() {
-    // PRF-CI-01 structural invariant: the gate exists in CI config.
-    // If this fails, the gate has been removed and the test below is
-    // meaningless.
-    let ci = repo_root().join(".github/workflows/ci.yml");
-    let content = std::fs::read_to_string(&ci).expect("read ci.yml");
-    let has_gate = content.contains("cargo clippy")
-        && content.contains("--workspace")
-        && content.contains("--all-targets")
-        && content.contains("-D")
-        && content.contains("warnings");
+fn the_merge_authority_declares_clippy_d_warnings_gate() {
+    // PRF-CI-01 structural invariant: the gate exists in the orchestrator that
+    // gates a merge. If this fails, the gate has been removed and the test below
+    // is meaningless.
+    //
+    // This read `.github/workflows/ci.yml`, which was the wrong authority twice
+    // over. `ci.yml` is the full matrix, treated as local-only by policy, while
+    // the check `main` actually requires came from `pr-ci.yml` — so the contract
+    // could stay green while the gate that gates merges was absent. The property
+    // is not "this file mentions clippy"; it is "the thing a change must pass to
+    // merge runs clippy with warnings denied".
+    let runs =
+        common::merge_authority_runs("cargo clippy --workspace --all-targets -- -D warnings");
     assert!(
-        has_gate,
-        ".github/workflows/ci.yml no longer enforces `cargo clippy --workspace \
-         --all-targets -- -D warnings`. The gate is gone or altered; PRF-CI-01 is \
-         no longer verifiable. Re-add the gate (see docs/prf/specs/SPEC-CI.md)."
+        runs,
+        "{}",
+        common::not_run_message(
+            "cargo clippy --workspace --all-targets -- -D warnings",
+            "PRF-CI-01 is no longer verifiable: nothing that gates a merge runs \
+             the strict lint gate. Re-add it to the merge authority (see \
+             docs/prf/specs/SPEC-CI.md).",
+        )
     );
 }
 
