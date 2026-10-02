@@ -111,7 +111,25 @@ val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.rem
 // The release tool is built once and reused by packaging, generation and
 // verification, rather than rebuilt per stage as the workflow's three jobs each
 // did. One build, one binary, one version.
-val tool = "$repoRoot/target/release/cognicode-release"
+//
+// Only the *directory* is resolved here, and each command still spells the tool
+// by name. Binding the whole path to a shell variable — `TOOL=…` then `$TOOL
+// verify …` — reads well and hides the program from
+// `scripts/ci/test_ci_orchestrator_gap.py`, which has to recognise this gate as
+// the one Actions runs. Resolving the directory is what the machine decides;
+// naming the binary is what the pipeline decides, and the second one is the gate.
+//
+// `target/release/` is where cargo writes only when nothing else says otherwise,
+// and on this repository it does not: `~/.cargo/config.toml` sets
+// `build.target-dir`, because the checkout is one of several sharing a machine.
+// A path computed in Kotlin at script-compile time would be wrong on exactly
+// those machines, and wrong in the direction that looks most like success. Cargo
+// is the authority for where its own output goes; every stage that needs a built
+// artifact asks it through `scripts/ci/target-dir.sh`.
+val releasePaths = """
+    $cd || exit 1
+    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+""".trimIndent()
 
 pipeline {
     stages {
@@ -203,21 +221,20 @@ pipeline {
                 }
 
                 stage("package-$target") {
-                    sh("""
-                        $cd || exit 1
+                    sh(releasePaths + "\n" + """
                         mkdir -p dist
                         # The published product surface is the contract's, not this
                         # script's: `plan` prints the canonical filenames, and the
                         # component name is recovered by stripping the derived
                         # `-{version}-{token}.tar.gz` suffix. A third list of
                         # components written here would be a third place to forget.
-                        for filename in $(${'$'}tool plan --platform ${platformOf(target)} --version "$version"); do
+                        for filename in $("${'$'}TARGET_DIR/release/cognicode-release" plan --platform ${platformOf(target)} --version "$version"); do
                             component="${'$'}{filename%-${'$'}version-*}"
-                            filename=$(${'$'}tool name --component "${'$'}component" \
+                            filename=$("${'$'}TARGET_DIR/release/cognicode-release" name --component "${'$'}component" \
                                         --platform ${platformOf(target)} --version "$version")
                             stage=$(mktemp -d)
                             mkdir -p "${'$'}stage/bin"
-                            cp "target/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component"
+                            cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component"
                             tar -czf "dist/${'$'}filename" -C "${'$'}stage" bin
                             echo "packaged ${'$'}filename"
                         done
@@ -226,13 +243,14 @@ pipeline {
                 }
 
                 stage("binary-smoke-$target") {
-                    sh("""
-                        $cd || exit 1
+                    sh(releasePaths + "\n" + """
                         export HOME=$(mktemp -d)
                         export XDG_CONFIG_HOME="${'$'}HOME/.config"
                         export XDG_DATA_HOME="${'$'}HOME/.local/share"
                         export COGNICODE_HOME="${'$'}HOME/.cognicode"
-                        dir="target/$target/release"
+                        # `--target $target` puts cross output under the target
+                        # subdirectory of whatever cargo's target dir is.
+                        dir="${'$'}TARGET_DIR/$target/release"
                         "${'$'}dir/cogh" --version
                         "${'$'}dir/cogh" --help | head -5
                         "${'$'}dir/cognicode" --version
@@ -265,8 +283,7 @@ pipeline {
             }
 
             stage("generate") {
-                sh("""
-                    $cd || exit 1
+                sh(releasePaths + "\n" + """
                     # `--tag` and `--source-commit` are not decoration:
                     # `source_commit` is a required field of the release
                     # inventory, and `prf_dist_01_06_release_candidate_uat`
@@ -275,7 +292,7 @@ pipeline {
                     # one, which is the first link of the chain this lane exists
                     # to keep.
                     source=$(git rev-parse HEAD)
-                    ${'$'}tool generate \
+                    "${'$'}TARGET_DIR/release/cognicode-release" generate \
                         --staging staging \
                         --out release \
                         --version "$version" \
@@ -288,9 +305,8 @@ pipeline {
             // SHA256SUMS. Everything after this point is about those files, not
             // about rebuilding anything.
             stage("verify") {
-                sh("""
-                    $cd || exit 1
-                    ${'$'}tool verify --staging release --version "$version"
+                sh(releasePaths + "\n" + """
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version"
                 """.trimIndent())
             }
 

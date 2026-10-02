@@ -99,8 +99,11 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
         "inventory that has never run, which is the failure this migration "
         "exists to remove. It moves here when it is enabled there."
     ),
-    "target/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
-        "The second half of that same disabled step."
+    "<cargo>/release/cognicode-mcp --cwd . --tools file_read,file_write 2>&1 | head -5": (
+        "The second half of that same disabled step. The key changed shape when "
+        "`normalise` learned to fold a cargo output directory to `<cargo>/`, so "
+        "that the two spellings of the same binary are one gate. The "
+        "justification is unchanged and still describes a real difference."
     ),
     "bash scripts/ci/release-tag-coherence.sh --from-version <param> <param>": (
         "An alternative input path, not a second gate. "
@@ -191,7 +194,15 @@ ACCEPTED_DIFFERENCES: dict[str, str] = {
 # as no gate at all.
 GATE_HEAD = re.compile(
     r"^(?:cargo|just|python3|bash|commitlint|gh|rustup|npm|"
-    r"target/release/|\./target/release/|\$repoRoot/)\b"
+    # `<cargo>/` is what `normalise` leaves behind for any path into a cargo
+    # output directory. It has to be a recognised head here, because `is_gate`
+    # runs on the *normalised* key: a normalisation rule that quietly turns a
+    # gate into something `GATE_HEAD` does not match does not report a gap, it
+    # deletes the gate from the inventory. That is the one failure this file
+    # cannot have — a missing gate reads as coverage nobody questioned. The
+    # literal spellings are kept alongside it so the rule and this head can
+    # disagree without either silently dropping the other.
+    r"<cargo>/|target/release/|\./target/release/|\$repoRoot/)\b"
 )
 GATE_PIPE = re.compile(r"\|\s*(?:commitlint|gh|cargo|just|python3|bash)\b")
 
@@ -256,6 +267,18 @@ def normalise(command: str) -> str:
     # and every step that reaches a binary through the pipeline's own variable
     # becomes invisible. Wrapper, not parameter — the same distinction as `$cd`.
     command = command.replace('"$repoRoot/', "").replace("$repoRoot/", "")
+    # Where cargo writes its output is the machine's decision, not the gate's.
+    # Actions writes `target/release/cogh`; a pipeline that asks cargo writes
+    # `"$TARGET_DIR/release/cogh"`. Same profile, same binary, same command —
+    # and treating the two spellings as different reported four gates as
+    # uncovered in a pipeline that runs all four, which is the instrument
+    # lying about coverage.
+    #
+    # The profile and the binary name survive on purpose. `release` and `debug`
+    # builds of the same binary are different gates, and so is a different
+    # binary. Only the directory collapses.
+    command = re.sub(r'"\$TARGET_DIR/([^"]*)"', r"<cargo>/\1", command)
+    command = re.sub(r"(?<![\w/.\-])(?:\./)?target/", "<cargo>/", command)
     # Selecting which justfile to read is how the recipe is invoked, not which
     # recipe it is. `just --justfile sandbox/justfile sandbox-ci-smoke` and
     # `just sandbox-ci-smoke` are one gate; the sandbox lanes are only reachable
@@ -670,6 +693,73 @@ def test_an_actions_expression_always_becomes_exactly_one_param() -> None:
             f"normalise({raw!r}) is {got!r}, expected {expected!r}. An Actions "
             f"expression is one parameter; a rule that eats part of it produces "
             f"a key nothing can match",
+        )
+
+
+def test_where_cargo_writes_is_not_part_of_the_gate() -> None:
+    """A cargo output directory is the machine's decision, not the program's.
+
+    Actions writes `target/release/cogh`; a pipeline that asks cargo where its
+    output went writes `"$TARGET_DIR/release/cogh"`. Those are the same command
+    against the same binary in the same profile, and before this rule the
+    instrument reported four gates as uncovered in a pipeline that runs all
+    four — it lied about coverage in the direction that costs nothing to
+    believe.
+
+    The profile and the binary name survive, because those *are* the gate.
+    `release` and `debug` builds of one binary are different gates, and two
+    different binaries are different gates. Only the directory collapses.
+
+    The second half is the part that is easy to get wrong. `is_gate` runs on
+    the normalised key, so a rule that rewrites a head into something
+    `GATE_HEAD` does not recognise does not report a difference — it removes
+    the gate from the inventory, and a removed gate reads as coverage nobody
+    questioned. Folding and staying a gate are one property, and they are
+    asserted together for that reason.
+    """
+    pairs = [
+        (
+            "target/release/cognicode --version",
+            '"$TARGET_DIR/release/cognicode" --version',
+        ),
+        (
+            "./target/release/cogh install --profile core",
+            '"$TARGET_DIR/release/cogh" install --profile core',
+        ),
+        (
+            "target/release/cognicode-control-plane --help | head -5",
+            '"$TARGET_DIR/release/cognicode-control-plane" --help | head -5',
+        ),
+    ]
+    for actions_form, pipelinek_form in pairs:
+        actions_key = gate_key(normalise(actions_form))
+        pipelinek_key = gate_key(normalise(pipelinek_form))
+        check(
+            actions_key == pipelinek_key,
+            f"the two spellings of one gate do not fold together: "
+            f"{actions_key!r} vs {pipelinek_key!r}. Either cargo's output "
+            f"directory is being treated as part of the program, or one side "
+            f"resolved it and the other assumed it",
+        )
+        check(
+            is_gate(actions_key),
+            f"{actions_key!r} normalised but is no longer recognised as a gate. "
+            f"A normalisation rule that stops a gate looking like a gate does "
+            f"not report a gap — it deletes the gate from the inventory, and a "
+            f"deleted gate reads as coverage nobody questioned. Add the folded "
+            f"head to GATE_HEAD",
+        )
+
+    must_stay_distinct = [
+        ("target/release/cog --version", "target/debug/cog --version"),
+        ("target/release/cog --version", "target/release/cogv --version"),
+    ]
+    for left, right in must_stay_distinct:
+        check(
+            gate_key(normalise(left)) != gate_key(normalise(right)),
+            f"{left!r} and {right!r} folded together. The rule exists to drop "
+            f"the directory, not the profile and not the binary name; losing "
+            f"those is a real difference hidden rather than reported",
         )
 
 

@@ -195,7 +195,7 @@ pipeline {
             stage("install-cargo-deny") {
                 sh(
                     """
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     if command -v cargo-deny >/dev/null 2>&1; then
                         echo "cargo-deny already present, skipping install"
                     else
@@ -245,21 +245,29 @@ pipeline {
             // cargo at all.
             stage("verify-release-binaries") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     set -euo pipefail
+                    # The binaries were written wherever cargo says they go, which is
+                    # not necessarily the repository's `target/`. This stage asked a
+                    # hardcoded path for them and failed on 2026-10-02 with
+                    # "target/release/cognicode was not built" immediately after the
+                    # stage that builds it had succeeded. A verifier that hardcodes
+                    # where the artifact lands is not verifying the artifact.
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
                     for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "target/release/${'$'}bin" ]; then
-                            echo "FAIL: target/release/${'$'}bin was not built"
+                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
+                            echo "  cargo target dir: ${'$'}TARGET_DIR"
                             exit 1
                         fi
-                        if [ ! -x "target/release/${'$'}bin" ]; then
-                            echo "FAIL: target/release/${'$'}bin is not executable"
+                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
                             exit 1
                         fi
                     done
-                    ./target/release/cognicode --version
-                    ./target/release/cognicode-control-plane --help | head -5
-                    ./target/release/cognicode-mcp --version
+                    "${'$'}TARGET_DIR/release/cognicode" --version
+                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
+                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
                 """.trimIndent())
             }
         }
@@ -279,7 +287,7 @@ pipeline {
             // green contract over a script nothing calls is the A-013 shape.
             stage("select-suites-script") {
                 sh("""
-                    ${'$'}cd || exit 1
+                    $cd || exit 1
                     set -euo pipefail
                     PATHS="scripts/ci/run-all-contracts.sh"
                     SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"

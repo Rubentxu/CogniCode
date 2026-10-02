@@ -27,10 +27,11 @@ cd "$(dirname "$0")/.."
 
 WORKFLOW=".github/workflows/release.yml"
 # Resolve the real target directory: it can be moved by CARGO_TARGET_DIR or by a
-# repository `.cargo/config.toml`, so never assume `target/`.
-TARGET_DIR=$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])' 2>/dev/null \
-    || echo "${CARGO_TARGET_DIR:-target}")
+# repository or user `.cargo/config.toml`, so never assume `target/`. The
+# resolver is shared with every pipeline stage that has to find a built binary;
+# a second copy of cargo's config resolution here would be a second thing to
+# drift.
+TARGET_DIR=$(scripts/ci/target-dir.sh)
 RELEASE_BIN="$TARGET_DIR/release/cognicode-release"
 
 if [[ ! -f "$WORKFLOW" ]]; then

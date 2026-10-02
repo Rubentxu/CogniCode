@@ -79,7 +79,18 @@ val cd = "cd \"$repoRoot\""
 val tag: String = System.getenv("RELEASE_TAG") ?: ""
 val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.removePrefix("v")
 val repo: String = System.getenv("GITHUB_REPOSITORY") ?: "Rubentxu/CogniCode"
-val tool = "$repoRoot/target/release/cognicode-release"
+
+// The release tool is built by the candidate lane and read here. Only the
+// *directory* is resolved: `target/release/` is where cargo writes only when
+// nothing else says otherwise, and on this repository it does not —
+// `~/.cargo/config.toml` sets `build.target-dir` for the shared machine. Each
+// command still names the tool, because the name is the gate and the directory
+// is the machine's business. See `scripts/ci/target-dir.sh` and the longer note
+// in `release-candidate.pipeline.kts`.
+val releasePaths = """
+    $cd || exit 1
+    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+""".trimIndent()
 
 pipeline {
     stages {
@@ -106,9 +117,8 @@ pipeline {
             }
 
             stage("re-verify-candidate") {
-                sh("""
-                    $cd || exit 1
-                    ${'$'}tool verify --staging release --version "$version" --tag "$tag"
+                sh(releasePaths + "\n" + """
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
         }
@@ -118,8 +128,7 @@ pipeline {
         // and a corrupt-the-real-thing port would delete the release.
         stage("negative") {
             stage("verify-rejects-missing-artifact") {
-                sh("""
-                    $cd || exit 1
+                sh(releasePaths + "\n" + """
                     work=$(mktemp -d)
                     cp -r release "${'$'}work/release"
                     shopt -s nullglob
@@ -132,7 +141,7 @@ pipeline {
                     echo "removing ${'$'}victim from the COPY to simulate a corrupted payload"
                     rm "${'$'}victim"
                     set +e
-                    ${'$'}tool verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
                     rc=${'$'}?
                     set -e
                     if [ "${'$'}rc" -eq 0 ]; then
@@ -145,8 +154,7 @@ pipeline {
             }
 
             stage("verify-rejects-altered-artifact") {
-                sh("""
-                    $cd || exit 1
+                sh(releasePaths + "\n" + """
                     work=$(mktemp -d)
                     cp -r release "${'$'}work/release"
                     shopt -s nullglob
@@ -154,7 +162,7 @@ pipeline {
                     victim="${'$'}{archives[0]}"
                     printf 'x' >> "${'$'}victim"
                     set +e
-                    ${'$'}tool verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging "${'$'}work/release" --version "$version" --tag "$tag"
                     rc=${'$'}?
                     set -e
                     if [ "${'$'}rc" -eq 0 ]; then
@@ -266,7 +274,7 @@ pipeline {
             stage("re-verify-after-upload") {
                 sh("""
                     $cd || exit 1
-                    ${'$'}tool verify --staging release --version "$version" --tag "$tag"
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
 
