@@ -257,3 +257,8 @@ __pycache__/
 # project state. The unit's real evidence lives under docs/, not here.
 .sddk-scratch/
 out-*.json
+
+# PipelineK run databases. The merge gate writes one per repository so a
+# published verdict is auditable after the fact rather than only assertable at
+# the moment it was posted. See scripts/ci/publish-merge-gate.sh.
+.pipelinek/
