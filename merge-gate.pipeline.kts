@@ -174,6 +174,32 @@ pipeline {
             stage("build-cognicode-release-bin") {
                 sh("$cd && cargo build --release --bin cognicode")
             }
+
+            // pr-ci.yml:400. A release binary that compiles and then does not
+            // start is caught only here: the build stage is satisfied by an
+            // artifact that exists, not by one that runs. This was one of
+            // three gates the first version of the coverage inventory could
+            // not see, because it matched `cargo <subcommand>` and these run no
+            // cargo at all.
+            stage("verify-release-binaries") {
+                sh("""
+                    ${'$'}cd || exit 1
+                    set -euo pipefail
+                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
+                        if [ ! -f "target/release/${'$'}bin" ]; then
+                            echo "FAIL: target/release/${'$'}bin was not built"
+                            exit 1
+                        fi
+                        if [ ! -x "target/release/${'$'}bin" ]; then
+                            echo "FAIL: target/release/${'$'}bin is not executable"
+                            exit 1
+                        fi
+                    done
+                    ./target/release/cognicode --version
+                    ./target/release/cognicode-control-plane --help | head -5
+                    ./target/release/cognicode-mcp --version
+                """.trimIndent())
+            }
         }
 
         // ------------------------------------------------------------- selector

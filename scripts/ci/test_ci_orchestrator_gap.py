@@ -83,15 +83,42 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 
-# The tools whose invocations count as gates. A `run:` step that installs a
-# dependency or uploads an artifact is not a gate and is not inventoried; this
-# is a coverage contract, not a transcript of the orchestrators.
-GATE = re.compile(
-    r"(cargo (?:test|clippy|fmt|deny|build)"
-    r"|python3 \S+\.py"
-    r"|bash \S+\.sh"
-    r"|just \S+)"
+# The tools whose invocations count as gates.
+#
+# A gate is a command whose non-zero exit changes a verdict. The boundary is
+# drawn there, not at "looks like a build command", because the first version
+# of this list was `cargo (test|clippy|fmt|deny|build)` and it missed real
+# gates that were running in Actions the whole time:
+#
+#   cargo llvm-cov --lib -p cognicode-core --summary-only \
+#     --fail-under-lines 75.00 --fail-under-regions 71.00
+#
+# That is the CR-09 coverage gate: blocking, with a numeric threshold, and the
+# inventory reported a gap of 40 while being unable to see it. A measurement
+# that cannot see a gate cannot report on gates.
+#
+# `cargo` is matched whole rather than per-subcommand so the list cannot go
+# stale again when a new subcommand becomes a gate.
+#
+# Anchored to the start of the command. Searching anywhere in the line made
+# `chmod +x target/release/cognicode` and `test -x target/release/...` count
+# as gates: they mention a binary, they do not run one. The pipe form is the
+# one place a gate is not the head — `echo "$subject" | commitlint` runs
+# commitlint — so it is matched separately rather than by anchoring.
+GATE_HEAD = re.compile(
+    r"^(?:cargo|just|python3|bash|commitlint|gh|rustup|npm|"
+    r"target/release/|\./target/release/)\b"
 )
+GATE_PIPE = re.compile(r"\|\s*(?:commitlint|gh|cargo|just|python3|bash)\b")
+
+
+def is_gate(line: str) -> bool:
+    # A prerequisite is not a verdict. `python3 -m pip install` sets the stage
+    # for a gate that runs later; counting it would mean the Kotlin pipeline
+    # "covered" a gate merely by installing the thing that checks it.
+    if line.startswith("python3 -m "):
+        return False
+    return bool(GATE_HEAD.match(line) or GATE_PIPE.search(line))
 
 RUN_BLOCK = re.compile(r"run:\s*\|\s*\n((?:\s{6,}.*\n|\n)+)")
 RUN_INLINE = re.compile(r"run:\s*(\S.*)$", re.MULTILINE)
@@ -185,8 +212,13 @@ def actions_gates(workflow_texts: dict[str, str]) -> set[str]:
             )
         candidates.extend(RUN_INLINE.findall(text))
         for candidate in candidates:
-            if GATE.search(candidate):
-                gates.add(gate_key(normalise(candidate)))
+            # Normalise first, then ask. Every Kotlin step is written as
+            # `$cd && <gate>`, so anchoring the head check before the wrapper is
+            # stripped matched nothing on the PipelineK side and reported the
+            # whole pipeline as missing.
+            keyed = gate_key(normalise(candidate))
+            if is_gate(keyed):
+                gates.add(keyed)
     return gates
 
 
@@ -207,8 +239,9 @@ def pipelinek_gates(pipeline_texts: dict[str, str]) -> set[str]:
             # here and would make every step using a shell variable look like a
             # different gate.
             candidate = candidate.replace("${'$'}", "$")
-            if GATE.search(candidate):
-                gates.add(gate_key(normalise(candidate)))
+            keyed = gate_key(normalise(candidate))
+            if is_gate(keyed):
+                gates.add(keyed)
     return gates
 
 
