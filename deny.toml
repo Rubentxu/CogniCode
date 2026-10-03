@@ -97,10 +97,11 @@ ignore = [
 # appears.
 #
 # This section makes the licenses gate executable. It IS wired as its own
-# blocking step in release.yml:135-138 (`cargo deny check licenses`). An earlier
-# version of this comment claimed that release.yml and release-validate.yml
-# "only run `cargo deny check advisories`, not licenses", which stopped being
-# true when that step was added; corrected 2026-10-01.
+# blocking step — the `licenses` stage of `release-candidate.pipeline.kts`,
+# running `cargo deny check licenses`. An earlier version of this comment
+# claimed that the two release workflows "only run `cargo deny check
+# advisories`, not licenses", which stopped being true when that step was
+# added; corrected 2026-10-01.
 #
 # Status after this commit (2026-09-26):
 #   - All third-party dependencies PASS the allow-list.

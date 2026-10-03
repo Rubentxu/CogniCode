@@ -27,12 +27,14 @@
 #   1. Touch en `Cargo.toml` workspace, `Cargo.lock`, `.cargo/**`,
 #      cualquier `crates/*/Cargo.toml`, `rust-toolchain*` -> fallback ALL.
 #      (Un cambio en deps/registro afecta a TODOS los compiles).
-#   2. Touch en `*.pipeline.kts` (raiz) o `.github/workflows/**` ->
-#      fallback ALL.
+#   2. Touch en `*.pipeline.kts` (raiz) -> fallback ALL.
 #      (La orquestacion es la pieza contractual de CI; un cambio puede
-#      cambiar gates, pines o stages y debe re-validarse todo).
-#      Las pipelines son la autoridad; los workflows se retiran con el
-#      cutover, pero la regla se queda hasta que el directorio no exista.
+#      cambiar gates o stages y debe re-validarse todo).
+#      La regla tambien cubria `.github/workflows/**`, y se queda con la forma
+#      de un caso que ya no puede ocurrir: no hay workflows. Una regla para un
+#      directorio ausente no protege nada y sugiere que el directorio sigue
+#      siendo una superficie de CI. Si alguna vez vuelve a haber orquestacion
+#      fuera de las pipelines, esa regla tiene que nacer con ella.
 #   3. Touch en `scripts/ci/**` -> fallback ALL.
 #      (Lo nuevo es infraestructura de CI).
 #   4. Touch en `crates/cognicode-core/**` -> ['core'].
@@ -192,10 +194,6 @@ for p in $PATHS; do
     *.pipeline.kts)
       needs_all="true"
       reason="pipeline_changed($p)"
-      ;;
-    .github/workflows/*|.github/workflows|.github/*)
-      needs_all="true"
-      reason="workflow_changed($p)"
       ;;
     # Regla 3: scripts CI => ALL
     scripts/ci/*|scripts/ci|scripts/ci/*.sh)
