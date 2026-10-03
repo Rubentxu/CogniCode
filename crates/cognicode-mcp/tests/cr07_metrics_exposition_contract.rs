@@ -196,28 +196,64 @@ struct Scrape {
     body: String,
 }
 
+/// Kills the server whenever it goes out of scope, panic or not.
+///
+/// `Child`'s own `Drop` does not kill: it only drops the handle and leaves the
+/// process running. A panic between `spawn` and the caller's `kill` — which is
+/// exactly what a failing scrape does — therefore stranded the server on the
+/// machine, holding its port, until someone noticed.
+///
+/// MEDIDO 2026-10-04, con la cuenta cerrada: cuatro `cognicode-mcp-server`
+/// huerfanos, todos reparentados a init.
+///
+///     20:38  la lane de v0.101.5, que cayo con el ConnectionReset de la linea 66
+///     16:53  la reproduccion de la carrera de puertos (hilo 439794 -> hijo 439798)
+///     09:52  estres mutado, fallo 1 de 2
+///     09:39  estres mutado, fallo 2 de 2
+///
+/// Uno por cada ejecucion que fallo, ni una mas. Un fallo de test que se lleva
+/// por delante un proceso de la maquina convierte un rojo en deuda que se
+/// acumula entre corridas.
+struct ChildGuard(Child);
+
+impl ChildGuard {
+    fn kill_and_wait(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        self.kill_and_wait();
+    }
+}
+
 impl Scrape {
-    /// The guard is returned so the caller keeps the port reserved for the whole
-    /// time the child is alive. Binding it to `_reservation` is enough: the lock
-    /// is released when that binding goes out of scope, which the explicit
-    /// `child.wait()` above it has already made safe.
-    fn fetch() -> (Self, Child, MutexGuard<'static, ()>) {
+    /// Both guards are returned so the caller keeps the port reserved and the
+    /// server owned for the whole time it is alive. Binding them to
+    /// `_reservation` and `child` is enough: both are released when those
+    /// bindings go out of scope, which the caller's `kill_and_wait()` above has
+    /// already made safe.
+    fn fetch() -> (Self, ChildGuard, MutexGuard<'static, ()>) {
         let reservation = port_reservation();
         let port = free_port();
         let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
 
-        let mut child = Command::new(server_binary())
-            .arg("--cwd")
-            .arg(fixture_ws())
-            .arg("--listen")
-            .arg(addr.to_string())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn cognicode-mcp-server");
+        let mut child = ChildGuard(
+            Command::new(server_binary())
+                .arg("--cwd")
+                .arg(fixture_ws())
+                .arg("--listen")
+                .arg(addr.to_string())
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn cognicode-mcp-server"),
+        );
 
-        let (status_line, headers, body) = wait_for_scrape(addr, &mut child);
+        let (status_line, headers, body) = wait_for_scrape(addr, &mut child.0);
         (
             Scrape {
                 status_line,
@@ -233,8 +269,7 @@ impl Scrape {
 #[test]
 fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
     let (scrape, mut child, _reservation) = Scrape::fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    child.kill_and_wait();
 
     assert!(
         scrape.status_line.contains("200"),
@@ -270,8 +305,7 @@ fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
 #[test]
 fn the_exporter_is_actually_registered_and_rendering() {
     let (scrape, mut child, _reservation) = Scrape::fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    child.kill_and_wait();
 
     // `target_info` is emitted by the OTel SDK's own Prometheus exporter.
     // Its presence is what distinguishes "exporter registered and rendering"
@@ -293,8 +327,7 @@ fn the_exporter_is_actually_registered_and_rendering() {
 #[test]
 fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
     let (scrape, mut child, _reservation) = Scrape::fetch();
-    let _ = child.kill();
-    let _ = child.wait();
+    child.kill_and_wait();
 
     let version = scrape
         .body
