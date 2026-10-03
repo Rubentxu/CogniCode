@@ -190,26 +190,39 @@ def test_a_compiler_that_rejects_the_triple_fails() -> None:
 
 
 def test_a_working_compiler_passes_and_names_itself() -> None:
+    """Un C y un C++ que compilan el probe: la guarda pasa y dice cuales uso.
+
+    El C++ tambien se configura porque para un target cruzado es
+    precondicion, no un extra: ver
+    `test_a_target_with_no_cxx_compiler_fails_and_says_which_variable`. Con las
+    dos mitas en su sitio, la guarda tiene que nombrar las dos, para que un
+    fallo posterior se pueda atribuir a un compilador y no al otro.
+    """
     target = "aarch64-unknown-linux-gnu"
     with tempfile.TemporaryDirectory() as raw:
-        cc = make_cc(raw, CC_OK)
-        done = run_guard(target, CC_aarch64_unknown_linux_gnu=cc)
+        cc = make_cc(raw, CC_OK, "fake-cc-ok")
+        cxx = make_cc(raw, CC_OK, "fake-cxx-ok")
+        done = run_guard(
+            target, CC_aarch64_unknown_linux_gnu=cc, CXX_aarch64_unknown_linux_gnu=cxx
+        )
     assert done.returncode == 0, (
-        f"un compilador que compila el probe debe pasar.\nstdout:\n{done.stdout}\n"
+        f"unos compiladores que compilan el probe deben pasar.\nstdout:\n{done.stdout}\n"
         f"stderr:\n{done.stderr}"
     )
-    assert "fake-cc" in done.stdout, (
-        f"la guarda debe decir que compilador uso, para que un fallo posterior "
-        f"se pueda atribuir.\n{done.stdout}"
+    assert "fake-cc-ok" in done.stdout, (
+        f"la guarda debe decir que compilador de C uso, para que un fallo "
+        f"posterior se pueda atribuir.\n{done.stdout}"
+    )
+    assert "fake-cxx-ok" in done.stdout, (
+        f"la guarda debe decir que compilador de C++ uso.\n{done.stdout}"
     )
 
 
-def test_a_broken_cxx_compiler_fails_but_its_absence_does_not() -> None:
-    """Un C++ configurado y roto es fallo; no tenerlo no lo es.
+def test_a_broken_cxx_compiler_fails() -> None:
+    """Un C++ configurado y roto es fallo, y tiene que decirlo.
 
-    Exigir C++ sin motivo seria un gate que bloquea por una herramienta que
-    este proyecto puede no necesitar. Pero si el operador ha configurado uno, el
-    build lo usara, asi que un C++ roto tiene que decirselo ahora.
+    Si el operador ha configurado uno, el build lo usara, asi que un C++ roto
+    tiene que decirselo ahora y no veinte minutos despues.
     """
     target = "aarch64-unknown-linux-gnu"
     with tempfile.TemporaryDirectory() as raw:
@@ -218,11 +231,43 @@ def test_a_broken_cxx_compiler_fails_but_its_absence_does_not() -> None:
         bad = run_guard(
             target, CC_aarch64_unknown_linux_gnu=cc_ok, CXX_aarch64_unknown_linux_gnu=cxx_bad
         )
-        absent = run_guard(target, CC_aarch64_unknown_linux_gnu=cc_ok)
     assert bad.returncode != 0, f"un C++ roto debe fallar.\n{bad.stdout}"
     assert "C++" in bad.stdout, bad.stdout
-    assert absent.returncode == 0, (
-        f"sin C++ configurado debe pasar: no todos los toolchain lo traen.\n"
+
+
+def test_a_target_with_no_cxx_compiler_fails_and_says_which_variable() -> None:
+    """Sin C++ esta lane no compila. Medido, no supuesto.
+
+    MEDIDO 2026-10-03. La lane de v0.101.4 cayo en `binaries-aarch64` con
+
+        error occurred in cc-rs: failed to find tool "aarch64-linux-gnu-g++"
+
+    y este test, hasta ahora, PINABA LO CONTRARIO: afirmaba que un target sin
+    C++ configurado debe pasar, con el motivo de que "no todos los toolchain lo
+    traen". Ese motivo es cierto en general y falso aqui. `cc-rs` no eligio
+    g++ por capricho: un build script del arbol lo pidio, asi que la ausencia
+    de C++ no es una hipotesis sobre el toolchain, es un fallo conocido de
+    este repositorio.
+
+    El efecto medido del comportamiento anterior era una guarda que pasaba
+    exactamente con el entorno que hacia fracasar el build veinte minutos mas
+    tarde. Una guarda que no puede fallar sobre la condicion que dice cubrir no
+    es una guarda: es una linea de log.
+
+    Asi que la ausencia de C++ para un target cruzado es fallo, y el mensaje
+    tiene que nombrar la variable que falta. Un fallo que no dice cual
+    configurar es un fallo que se repite.
+    """
+    target = "aarch64-unknown-linux-gnu"
+    with tempfile.TemporaryDirectory() as raw:
+        cc_ok = make_cc(raw, CC_OK, "fake-cc-ok")
+        absent = run_guard(target, CC_aarch64_unknown_linux_gnu=cc_ok)
+    assert absent.returncode != 0, (
+        f"sin C++ esta lane no compila, y la guarda no puede decir que si.\n"
+        f"{absent.stdout}"
+    )
+    assert "CXX_aarch64_unknown_linux_gnu" in absent.stdout, (
+        f"el fallo tiene que nombrar la variable que falta, no solo que falta algo.\n"
         f"{absent.stdout}"
     )
 
