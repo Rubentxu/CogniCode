@@ -21,11 +21,7 @@ use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::DependencyType;
-use crate::domain::value_objects::TraversalDirection;
-use crate::infrastructure::graph::{
-    CallHierarchyResult, GraphCache, LightweightIndex, OnDemandGraphBuilder, PetGraphStore,
-    SymbolLocation,
-};
+use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -39,7 +35,6 @@ pub struct AnalysisService {
     impact_analyzer: ImpactAnalyzer,
     graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
-    on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
     /// File cache: maps file path to (mtime, size, content_hash,
     /// symbols, relationships) — F2.W9 + PRF audit H-01. The
     /// content_hash field is SHA-256 of the file bytes at parse time,
@@ -78,17 +73,10 @@ impl AnalysisService {
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: Arc::new(GraphCache::new()),
             symbol_index: Mutex::new(None),
-            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
         }
-    }
-
-    /// Creates a new AnalysisService with a parser for testing
-    #[allow(dead_code)]
-    pub fn with_parser() -> Self {
-        Self::new()
     }
 
     /// Creates a new AnalysisService with a shared GraphCache
@@ -102,7 +90,6 @@ impl AnalysisService {
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: cache,
             symbol_index: Mutex::new(None),
-            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
@@ -141,39 +128,6 @@ impl AnalysisService {
             *guard = Some(index);
         }
         guard.as_ref().unwrap().clone()
-    }
-
-    /// Queries the call hierarchy for a symbol using on-demand approach.
-    ///
-    /// This method builds only the necessary portion of the graph for the query,
-    /// making it efficient for deep call hierarchies.
-    ///
-    /// # Arguments
-    /// * `symbol` - The symbol name to query
-    /// * `depth` - Maximum traversal depth
-    /// * `direction` - Whether to look at callers, callees, or both
-    pub fn query_call_hierarchy(
-        &self,
-        symbol: &str,
-        depth: u32,
-        direction: TraversalDirection,
-    ) -> AppResult<CallHierarchyResult> {
-        let mut guard = self.on_demand_builder.lock().unwrap();
-        if guard.is_none() {
-            let mut builder = OnDemandGraphBuilder::new();
-            let project_root = std::env::current_dir().map_err(|e| {
-                AppError::AnalysisError(format!("Failed to get current dir: {}", e))
-            })?;
-            builder
-                .set_index(&project_root)
-                .map_err(|e| AppError::AnalysisError(format!("Failed to build index: {}", e)))?;
-            *guard = Some(builder);
-        }
-        let result = guard
-            .as_mut()
-            .unwrap()
-            .build_for_symbol(symbol, depth, direction);
-        Ok(result)
     }
 
     /// Builds the full project graph explicitly.
