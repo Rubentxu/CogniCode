@@ -2,12 +2,22 @@
   "schema_version": "cognicode.platforms/v1",
   "product": "cognicode",
   "version": "0.100.0",
-  "source_commit": "b6986b95c1545f64acf0a81dea9eaa1459fcb9fe",
+  "source_commit": "3fe3c8a2924a5546e6c3bbf0219bce633ceb5acf",
   "platforms": [
     {
       "id": "linux-aarch64",
       "target": "aarch64-unknown-linux-gnu",
       "name": "Linux Aarch64",
+      "support_level": "certified",
+      "evidence": [
+        "Native publishable lane in release-candidate.pipeline.kts",
+        "Certified by release-candidate.pipeline.kts and published unchanged by release.pipeline.kts"
+      ]
+    },
+    {
+      "id": "linux-x86-64",
+      "target": "x86_64-unknown-linux-gnu",
+      "name": "Linux X86 64",
       "support_level": "certified",
       "evidence": [
         "Native publishable lane in release-candidate.pipeline.kts",
@@ -22,16 +32,6 @@
       "evidence": [
         "Smoke build in integration.pipeline.kts",
         "No publishable release lane in release-candidate.pipeline.kts"
-      ]
-    },
-    {
-      "id": "linux-x86_64",
-      "target": "x86_64-unknown-linux-gnu",
-      "name": "Linux X86_64",
-      "support_level": "certified",
-      "evidence": [
-        "Native publishable lane in release-candidate.pipeline.kts",
-        "Certified by release-candidate.pipeline.kts and published unchanged by release.pipeline.kts"
       ]
     },
     {
