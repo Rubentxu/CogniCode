@@ -61,6 +61,50 @@ BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5579}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
 BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
 
+# --- La rama que el clon puede nombrar -----------------------------------------
+#
+# MEDIDO 2026-10-03. La linea original era, entera:
+#
+#     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+#
+# En un checkout detached `git rev-parse --abbrev-ref HEAD` imprime la cadena
+# literal "HEAD" y sale con codigo 0, de modo que el `|| echo main` nunca se
+# ejecutaba: se pasaba `--branch HEAD` y el clon moria con
+#
+#     fatal: Rama remota HEAD no encontrada en upstream origin
+#
+# La lane `release-candidate` murio ahi en 0.3s al certificar desde el tag
+# v0.101.0, que es exactamente como se corta una release. El fallback existia
+# para cubrir el caso detached y no lo cubria, porque `--abbrev-ref` no falla
+# donde el fallback espera que falle: un guard que solo se dispara ante un error
+# que no llega a producirse.
+#
+# El nombre de la rama es una optimizacion, no un requisito. Dos lineas mas abajo
+# hacen `git fetch --depth 1 origin $TARGET_SHA` y `git checkout $TARGET_SHA`, y
+# eso es lo que fija el commit que se certifica. Asi que cuando no hay rama que
+# nombrar, se omite `--branch` y el clon usa el HEAD por defecto, en vez de pasar
+# un nombre de rama que no existe.
+#
+# La regla vive aqui y en ningun otro sitio: el seam de test y el clon la llaman.
+resolve_clone_ref() {
+  local ref
+  ref="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ "$ref" = "HEAD" ] || [ -z "$ref" ]; then
+    printf ''
+  else
+    printf '%s' "$ref"
+  fi
+}
+
+# `--print-clone-ref` imprime la rama que se pasaria a --branch, o nada, y sale
+# 0. Es lo que permite al contrato ejercitar esta resolucion sin pagar los 8-15
+# minutos del preflight completo. Va aqui, antes de cualquier `log`, porque `log`
+# escribe tambien en stdout con tee y contaminaria lo que el contrato lee.
+if [ "${1:-}" = "--print-clone-ref" ]; then
+  resolve_clone_ref
+  exit 0
+fi
+
 # --- Helpers -----------------------------------------------------------------
 
 log() {
@@ -124,8 +168,43 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 log "Stage 1/7: clone a $WORK_DIR (sparse, blobs only)"
 
+# Que rama nombrar en `git clone --branch`.
+#
+# MEDIDO 2026-10-03. La linea anterior era, entera:
+#
+#     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+#
+# En un checkout detached `git rev-parse --abbrev-ref HEAD` imprime la cadena
+# literal "HEAD" y sale con codigo 0, de modo que el `|| echo main` nunca se
+# ejecutaba: se pasaba `--branch HEAD` y el clon moria con
+#
+#     fatal: Rama remota HEAD no encontrada en upstream origin
+#
+# La lane `release-candidate` murio ahi en 0.3s al certificar desde el tag
+# v0.101.0, que es exactamente como se corta una release. El fallback existia
+# para cubrir el caso detached y no lo cubria, porque `--abbrev-ref` no falla
+# donde el fallback espera que falle: un guard que solo se activa ante un error
+# que no llega a producirse.
+#
+# El nombre de la rama es una optimizacion, no un requisito: dos lineas mas
+# abajo hacen `git fetch --depth 1 origin $TARGET_SHA` y
+# `git checkout $TARGET_SHA`, que es lo que fija el commit que se certifica. Asi
+# que cuando no hay rama que nombrar se omite `--branch` y el clon usa el HEAD
+# por defecto, en vez de pasar un nombre de rama que no existe.
+clone_ref="$(resolve_clone_ref)"
+
+if [ -z "$clone_ref" ]; then
+  log "  -> HEAD no resuelve a una rama (detached o unborn): se omite --branch"
+  log "  -> el commit certificado lo fija 'git checkout \$TARGET_SHA' mas abajo"
+fi
+
+clone_branch_args=()
+if [ -n "$clone_ref" ]; then
+  clone_branch_args=(--branch "$clone_ref")
+fi
+
 if ! git clone --no-tags --depth 1 --filter=blob:none \
-     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" \
+     ${clone_branch_args[@]+"${clone_branch_args[@]}"} \
      "$REPO_ROOT" "$WORK_DIR/clone" 2>>"$LOG_FILE"; then
   fail "git clone falló (ver $LOG_FILE)"
 fi
