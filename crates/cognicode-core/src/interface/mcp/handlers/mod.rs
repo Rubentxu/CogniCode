@@ -215,129 +215,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tracing::info;
-
-// =============================================================================
-// Capability Traits - Allow handlers to request only the services they need
-// =============================================================================
-
-/// Capability for handlers that need access to graph analysis services.
-/// Provides access to the analysis service and optional graph store.
-pub trait AnalysisAccess {
-    fn analysis_service(&self) -> Arc<AnalysisService>;
-    fn graph_store(&self) -> Arc<dyn GraphStore>;
-}
-
-impl AnalysisAccess for HandlerContext {
-    fn analysis_service(&self) -> Arc<AnalysisService> {
-        self.analysis_service.clone()
-    }
-
-    fn graph_store(&self) -> Arc<dyn GraphStore> {
-        if let Some(ref store) = self.graph_store {
-            store.clone()
-        } else {
-            Arc::new(InMemoryGraphStore::new())
-        }
-    }
-}
-
-/// Capability for handlers that need cancellation support.
-/// Allows checking if operation was cancelled.
-pub trait Cancellation {
-    fn cancellation_token(&self) -> Arc<AtomicBool>;
-    fn is_cancelled(&self) -> bool;
-}
-
-impl Cancellation for HandlerContext {
-    fn cancellation_token(&self) -> Arc<AtomicBool> {
-        self.cancellation_token.clone()
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancellation_token.load(Ordering::SeqCst)
-    }
-}
-
-/// Capability for handlers that need input validation and working directory access.
-/// This is a common combination for file-based operations.
-pub trait Validation {
-    fn validator(&self) -> Arc<InputValidator>;
-    fn working_dir(&self) -> PathBuf;
-}
-
-impl Validation for HandlerContext {
-    fn validator(&self) -> Arc<InputValidator> {
-        self.validator.clone()
-    }
-
-    fn working_dir(&self) -> PathBuf {
-        self.working_dir.clone()
-    }
-}
-
-/// Capability for handlers that need refactoring services.
-pub trait RefactorAccess {
-    fn refactor_service(&self) -> Arc<RefactorService>;
-    fn validator(&self) -> Arc<InputValidator>;
-    fn working_dir(&self) -> PathBuf;
-}
-
-impl RefactorAccess for HandlerContext {
-    fn refactor_service(&self) -> Arc<RefactorService> {
-        self.refactor_service.clone()
-    }
-
-    fn validator(&self) -> Arc<InputValidator> {
-        self.validator.clone()
-    }
-
-    fn working_dir(&self) -> PathBuf {
-        self.working_dir.clone()
-    }
-}
-
-/// Capability for handlers that need semantic search services.
-pub trait SemanticSearch {
-    fn semantic_search(&self) -> Arc<SemanticSearchService>;
-    fn symbol_code(&self) -> Arc<SymbolCodeService>;
-}
-
-impl SemanticSearch for HandlerContext {
-    fn semantic_search(&self) -> Arc<SemanticSearchService> {
-        self.semantic_search.clone()
-    }
-
-    fn symbol_code(&self) -> Arc<SymbolCodeService> {
-        self.symbol_code.clone()
-    }
-}
-
-/// Capability for handlers that need telemetry/logging support.
-pub trait Telemetry {
-    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>>;
-    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>>;
-    fn should_log(&self, level: tracing::Level) -> bool;
-}
-
-impl Telemetry for HandlerContext {
-    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>> {
-        self.log_level.clone()
-    }
-
-    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>> {
-        self.symbol_hotness.clone()
-    }
-
-    fn should_log(&self, level: tracing::Level) -> bool {
-        let stored_level = self
-            .log_level
-            .try_read()
-            .map(|g| *g)
-            .unwrap_or(tracing::Level::INFO);
-        level >= stored_level
-    }
-}
-
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]
 pub struct HandlerContext {
@@ -427,6 +304,16 @@ impl HandlerContext {
     /// ST-04: the per-context sub-handler timeout for composite tools.
     pub fn sub_handler_timeout(&self) -> std::time::Duration {
         self.sub_handler_timeout
+    }
+
+    /// ST-04: the configured log level for this context.
+    ///
+    /// This used to be reachable only through the now-removed `Telemetry`
+    /// trait, which had no other caller. A field that `handlers/*` reads
+    /// directly deserves an inherent accessor more than a capability trait
+    /// nobody imports.
+    pub fn log_level(&self) -> &Arc<tokio::sync::RwLock<tracing::Level>> {
+        &self.log_level
     }
 
     pub fn cancellation_token(&self) -> &Arc<AtomicBool> {
@@ -5854,6 +5741,66 @@ mod tests {
         assert_eq!(*anonymous.client(), ClientIdentity::unknown());
     }
 
+    // ST-04 slice 4. This module used to declare six capability traits —
+    // `AnalysisAccess`, `Cancellation`, `Validation`, `RefactorAccess`,
+    // `SemanticSearch`, `Telemetry` — under a header promising "allow
+    // handlers to request only the services they need", which is this
+    // action's own exit criterion. They were introduced by 7323bb37
+    // ("resolve workspace compilation errors", 2026-06-14) and had no
+    // caller for the 81 days that followed.
+    //
+    // They were not merely unused. `AnalysisAccess::graph_store` returned a
+    // freshly built `InMemoryGraphStore` on every call, discarding the
+    // memoized cache that `HandlerContext::get_graph_store` exists to
+    // preserve — so had anything used it, the trait would have introduced
+    // the bug it was written to abstract over. Dead code was masking a
+    // semantic difference, which is worse than dead code.
+    //
+    // Renaming all six compiled the whole workspace with zero errors,
+    // which is how dead they were. They are gone. If capability traits are
+    // ever wanted for real, the ratchet below should be replaced by the
+    // first test that consumes one — not by their reappearance.
+    //
+    // The check counts `pub trait` declarations and matches their impls to
+    // them by name. Naming the six dead traits literally would not work:
+    // this file contains the test, so a `contains("pub trait X")` assertion
+    // would match its own assertion text and could never pass. Counting and
+    // pairing avoids quoting any name.
+    #[test]
+    fn t_st04_no_capability_trait_exists_without_a_real_consumer() {
+        let source = include_str!("mod.rs");
+
+        let declared: Vec<&str> = source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("pub trait "))
+            .filter_map(|rest| rest.split([' ', '{', ':']).next())
+            .collect();
+
+        for name in &declared {
+            assert!(
+                source.contains(&format!("impl {name} for")),
+                "capability trait `{name}` is declared but has no \
+                 implementation on HandlerContext. A trait with no \
+                 implementation is a promise with no caller — the six that \
+                 were removed in this slice all had one, plus no caller."
+            );
+        }
+
+        // And no trait in this module may be implemented without also being
+        // consumed somewhere: that asymmetry is what let six of them sit
+        // here from 2026-06-14 until now.
+        for name in &declared {
+            let impls = source.matches(&format!("impl {name} for")).count();
+            let paths = source.matches(&format!("{name}::")).count();
+            assert!(
+                paths > 0,
+                "capability trait `{name}` has {impls} implementation(s) and \
+                 zero call sites. Delete it, or make the first caller in the \
+                 same commit that reintroduces it."
+            );
+        }
+    }
+
     // ST-04 slice 3: `read_only` and `cancellation_token` lost `pub`, which
     // required `rmcp_adapter.rs` to stop reassigning the finished context.
     // It configured both by hand — `ctx.read_only = Arc::new(...)` after
@@ -5931,19 +5878,10 @@ mod tests {
         assert_eq!(ctx.get_symbol_hotness("nothing_yet"), 0.0);
         ctx.record_symbol_access("hot", 3);
         assert_eq!(ctx.get_symbol_hotness("hot"), 1.0);
-        // The `Telemetry` trait is the other reader of these two fields, and
-        // it is what `handlers/*` uses. Privatizing must not have changed
-        // what that trait hands out. `log_level` is a tokio RwLock (awaited);
-        // `symbol_hotness` is a std Mutex (not).
+        // `log_level` is read through its own inherent accessor.
+        // Privatizing must not have changed what it returns. It is a tokio
+        // RwLock, so it is awaited.
         assert_eq!(*ctx.log_level().read().await, tracing::Level::DEBUG);
-        assert_eq!(
-            Telemetry::symbol_hotness(&ctx)
-                .lock()
-                .expect("hotness lock")
-                .get("hot")
-                .copied(),
-            Some(3)
-        );
 
         // graph_loaded: the /ready flag still starts false and still flips.
         assert!(!ctx.is_graph_loaded());
