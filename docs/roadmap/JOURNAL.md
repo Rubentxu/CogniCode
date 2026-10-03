@@ -12252,3 +12252,125 @@ archivados ni se reabre ninguna `C#` firmada.
    propiedad del repo o si el gate temprano es suficiente.
 4. **Convergencia estructural** — `execute_doctor`, superficie `multimodal`
    muerta, flake `claude_config_path_default`.
+
+## N+85 — Tres afirmaciones que la medición desmontó
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits**
+`85961eb3` (serialización del lector de `HOME`) · **Rama** `integrate/v1015` ·
+**Bloque** B5b.
+
+Este recibo existe por lo que corrige, no por lo que añade. Tres cosas escritas
+en recibos anteriores no resistieron la medición, y una de ellas estaba a punto
+de convertirse en una propuesta de borrado.
+
+### El flake no falla
+
+`ide::tests::claude_config_path_default` quedó registrado en N+82 con **4/10** y
+como «preexistente, fuera de este arreglo». MEDIDO hoy, antes de tocar nada:
+**0 fallos en 10** ejecuciones del módulo `ide` y **0 en 6** del paquete
+completo bajo carga. Dieciséis intentos, ninguno. La propia cifra del journal
+tampoco separaba señal de ruido: 1/4 con los cambios de B1 y 2/4 sin ellos.
+
+La tasa **no está establecida** y la afirmación previa era insostenible. Aun
+así se serializó, porque la carrera es real por construcción —el test lee
+`$HOME` en paralelo con treinta hermanos que lo mutan con `set_var`, todos bajo
+`#[serial]`, y era el único lector sin serializar—, la convención del fichero
+es inequívoca y serializar no cuesta nada. El comentario en el código lo dice
+para que no se cite como prueba de un fallo visto ocurrir. **Endurecimiento, no
+corrección demostrada.** No se añadió contrato: un guard dedicado a una sola
+función sería el patrón de «un test por un bug».
+
+### `multimodal` no era código muerto, y casi lo reabrí
+
+N+82 escribió: «Dos brazos son código muerto […] lo que es código muerto no se
+quita aquí», y el bloque siguiente propuso decidir entre eliminar, declarar o
+cablear la feature. **Eso reabría un hallazgo cerrado de PRF.**
+
+`docs/prf/TRACEABILITY.md`, fila **H4**, estado **CLOSED (F1.W5 — KEEP)**:
+
+> KEEP+MARK — el comportamiento actual (marcado con nota «Compiled in ONLY when
+> the `multimodal` Cargo feature is active») es honesto y útil. **No se debe
+> ocultar.**
+
+Y `docs/analysis/` más `.agent/TESTING-STATE.md` muestran la feature viva en el
+core: `cargo test -p cognicode-core --features evidence-kernel,multimodal`,
+`equivalence_harness`, `fact_bridge_benchmarks`, siete `EdgeKind` gated. Además
+usa `#[cfg(feature = "multimodal")]`, una feature de Cargo normal y **no** un
+cfg a pelo, y `cognicode-explorer` **sí** la declara y la cablea. Lo no
+alcanzable es solo el brazo de la CLI, porque `cognicode-cli` no la declara.
+
+La segunda afirmación falsa del mismo recibo: «`cognicode --help` no lista
+`docs-ingest`». El inventario de PRF documenta lo contrario, y la razón de que
+sea cierto es precisamente el defecto que queda abierto.
+
+### El defecto real que sí hay: la marca vive dentro de lo que marca
+
+Los doc-comments que dicen «Compiled in ONLY when the `multimodal` Cargo
+feature is active» están **dentro del propio `#[cfg]` que describen**. Compilan
+fuera, así que en un build por defecto no hay ni el comando ni su nota. No hay
+`after_help` en `commands.rs`. La marca solo puede verla quien ya tiene la
+feature, **justo cuando la nota no hace falta**. Eso es exactamente el
+«ocultar» que la fila H4 prohíbe.
+
+La acción correcta es **implementar una decisión ya firmada**, no discutarla:
+poner la nota en una parte incondicional de la superficie de la CLI, con un
+contrato que afirme que un build por defecto la menciona. No se ha hecho porque
+**cambia la salida publicada de `--help`**, y no hay en el repo criterio medido
+sobre si la ayuda debe anunciar comandos que el binario no trae.
+
+### La pregunta de aarch64 queda cerrada por medición
+
+Quedaba abierta si el enlace debía pasar a ser propiedad del repo. MEDIDO:
+
+1. **Precedencia** — con `.cargo/config.toml` declarando un linker y
+   `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER` en el entorno, **gana el
+   entorno**; sin entorno, gana el config. Declarar un valor por defecto en el
+   repo es por tanto **aditivo**: una máquina con la variable sigue igual, y una
+   que no la tiene deja de depender de ella.
+2. **El precedente del repo no sirve** — los dos targets musl declaran
+   `linker = "clang"`. Copiarlo para `aarch64-unknown-linux-gnu` **rompe la
+   lane**, medido: `clang` cae en el `ld.bfd` del host y falla con «Relocations
+   in generic ELF (EM: 183) […] file in wrong format». EM:183 es AArch64: los
+   objetos son correctos y el enlazador es de otra arquitectura.
+3. En esta máquina **no hay ningún gcc cruzado** (`aarch64-linux-gnu-gcc`,
+   `aarch64-linux-gnu-cc` y `aarch64-unknown-linux-gnu-gcc` no existen). El
+   wrapper de zig no es un adorno: trae su propio LLD y sabe apuntar a
+   aarch64-gnu.
+
+Conclusión: «que el enlace sea propiedad del repo» **no es un one-liner**.
+Exige un wrapper versionado —fichero nuevo, que este bloque no crea— o un
+requisito de toolchain documentado, que es lo que hay. El diseño actual, tres
+variables de entorno más el gate temprano de `toolchain-for-$target`, es el
+correcto; lo que le falta no es una línea de configuración sino que el requisito
+deje de ser conocimiento tribal. **Queda escrito aquí, que es lo que un recibo
+es.**
+
+### Lección 204
+
+Una feature no alcanzable desde un binario **no es código muerto**, y la
+diferencia la hace quién tomó la decisión y cuándo. `multimodal` parece muerta
+si se mira el binario de la CLI; está viva en el core, declarada y cableada en
+`cognicode-explorer`, y sus brazos de CLI son código condicionado, no
+abandonado. Antes de proponer eliminar superficie hay que abrir
+`docs/prf/TRACEABILITY.md` y mirar si la fila está CLOSED: allí están la
+decisión y su motivo, y una decisión cerrada no se reabre porque el código
+resultara incómodo.
+
+### Lección 205
+
+Un guard puede ser correcto y aun así tapar el defecto de detrás. El
+`planned != produced` de la lane era un guard verdadero, y su éxito hacía creer
+que nada podía publicar bytes de otra versión, cuando lo único que lo impedía
+era su posición en el orden. Y al revés: una corrección que nadie ha visto
+fallar no es una corrección, y su comentario debe decir cuál de las dos cosas
+es.
+
+### Lo que NO se ejecuta aquí
+
+No se declara `multimodal` en `cognicode-cli`: eso convertiría deuda
+condicionada en superficie pública, y la regla del mandate lo prohíbe. No se
+implementa la marca KEEP+MARK porque toca `--help` publicado. No se declara un
+linker por defecto en `.cargo/config.toml` porque la medición dice que el
+precedente del repo no funciona para ese target. No se toca `execute_doctor`.
+No se taguea, no se empuja y no se publica nada; `v0.101.5` sigue tagueado en
+`c7dba40c`.
