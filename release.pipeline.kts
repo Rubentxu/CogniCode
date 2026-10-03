@@ -285,6 +285,44 @@ pipeline {
                 """.trimIndent())
             }
 
+            // MEDIDO 2026-10-03. Ningun stage de esta lane miraba `latest`, y
+            // ese puntero es lo que resuelve `install.sh`:
+            //
+            //     curl -fsSL "$api/releases/latest" | sed -n 's/.*"tag_name"...'
+            //
+            // GitHub excluye drafts y prereleases de `/releases/latest`. Publicar
+            // la release no garantiza por si solo que ese puntero se mueva: si
+            // no se mueve, quedan los tres artefactos en su sitio —tag, release y
+            // manifest dicen 0.101.2— y todo usuario sin pin sigue recibiendo la
+            // release anterior. Es exactamente la incoherencia que R1 viene a
+            // cerrar, y medida en la auditoria inicial: el tag era v0.100.0 y
+            // `latest` servia v0.98.1.
+            //
+            // Se consulta el MISMO endpoint que install.sh, no `gh release view`,
+            // porque `gh` puede razonar sobre un notion distinta de "latest" y
+            // un gate que mide lo que el gate cree medir es peor que no medir.
+            stage("verify-latest-resolution") {
+                sh("""
+                    $cd || exit 1
+                    api="https://api.github.com/repos/${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}"
+                    resolved=$(curl -fsSL "${'$'}api/releases/latest" \
+                        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                        | head -n1)
+                    if [ -z "${'$'}resolved" ]; then
+                        echo "FAIL: /releases/latest no devolvio ningun tag; install.sh no podria instalar"
+                        exit 1
+                    fi
+                    if [ "${'$'}resolved" != "${'$'}RELEASE_TAG" ]; then
+                        echo "FAIL: la release publicada es ${'$'}RELEASE_TAG pero /releases/latest resuelve ${'$'}resolved"
+                        echo "      install.sh serviria ${'$'}resolved a quien no fije version: la release"
+                        echo "      existe y es invisible. Marcar ${'$'}RELEASE_TAG como prerelease, o"
+                        echo "      revisar si hay una release mas reciente, lo devuelve a la cola."
+                        exit 1
+                    fi
+                    echo "latest resuelto a ${'$'}resolved, el mismo tag recien publicado"
+                """.trimIndent())
+            }
+
             stage("verify-as-consumer") {
                 sh("""
                     $cd || exit 1
