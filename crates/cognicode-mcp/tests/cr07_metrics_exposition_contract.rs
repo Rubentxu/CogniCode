@@ -42,6 +42,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 /// Minimal `text/plain; version=0.0.4` scrape over raw HTTP.
@@ -93,10 +94,57 @@ fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
-/// A port the OS says is free. Binding it and releasing it before the
-/// server starts is not atomic, but the server is started immediately
-/// after and this is the only way to keep the test parallel-safe without
-/// pinning a port that a concurrent CI runner would collide with.
+/// Held for as long as a server is alive, so no two tests in this file can be
+/// holding the same port.
+///
+/// MEDIDO 2026-10-03. The lane de v0.101.5 cayo en `clean-clone` por esto:
+///
+///     thread 'the_exposition_reports_the_migrated_opentelemetry_sdk' panicked at
+///     crates/cognicode-mcp/tests/cr07_metrics_exposition_contract.rs:66:10:
+///     read status line: Os { code: 104, kind: ConnectionReset, message:
+///     "Connection reset by peer" }
+///
+/// No era `/metrics`: el handler es un axum normal, sin `SO_LINGER` ni accept
+/// manual, y no reinicia conexiones. Era esta linea. `free_port()` suelta el
+/// listener efimero ANTES de que el servidor haga bind, asi que entre los dos
+/// otro test del mismo fichero puede quedarse con ese puerto; cuando el
+/// dueño original mata su servidor, el que Scraped al suyo recibe RST.
+///
+/// MEDIDO, con la misma concurrencia en los dos lados —seis instancias del
+/// binario, doce rondas, 72 ejecuciones:
+///
+///     --test-threads=3, carga 21:  1 fallo de 72
+///     --test-threads=1, carga 45:  0 fallos de 72
+///
+/// La diferencia es exactamente la concurrencia dentro del binario. Y este
+/// fichero es el UNICO del workspace que suelta el puerto antes del bind:
+/// `installer_transaction.rs`, `lifecycle_resolver.rs` y
+/// `cp1_control_plane_endpoint.rs` sirven desde el listener que ya tienen
+/// abierto, asi que no pueden perderlo. Por eso la carrera es local aqui y un
+/// candado de modulo la cierra entera.
+///
+/// Sin candado el fallo es de reloj: sale en la lane, que compila con la
+/// maquina saturada, y no sale cuando se ejecuta a mano. Un gate que depende
+/// de la carga de la maquina no es un gate.
+///
+/// La reserva no distingue test: el candado se toma en `Scrape::fetch` y se
+/// suelta cuando el hijo muere, que es la ventana durante la cual el puerto
+/// puede ser robado. Un mutex envenenado se recupera en vez de propagar el
+/// panic a los otros dos tests, que fallarian con un mensaje que no dice nada
+/// del problema real.
+fn port_reservation() -> MutexGuard<'static, ()> {
+    static RESERVATION: OnceLock<Mutex<()>> = OnceLock::new();
+    RESERVATION
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// A port the OS says is free.
+///
+/// Binding it and releasing it before the server starts is not atomic — see
+/// `port_reservation` for the measurement of what that cost. Callers hold the
+/// reservation across the server's whole lifetime so the window is empty.
 fn free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
         .expect("bind ephemeral port")
@@ -149,7 +197,12 @@ struct Scrape {
 }
 
 impl Scrape {
-    fn fetch() -> (Self, Child) {
+    /// The guard is returned so the caller keeps the port reserved for the whole
+    /// time the child is alive. Binding it to `_reservation` is enough: the lock
+    /// is released when that binding goes out of scope, which the explicit
+    /// `child.wait()` above it has already made safe.
+    fn fetch() -> (Self, Child, MutexGuard<'static, ()>) {
+        let reservation = port_reservation();
         let port = free_port();
         let addr: std::net::SocketAddr = format!("127.0.0.1:{port}").parse().expect("addr");
 
@@ -172,13 +225,14 @@ impl Scrape {
                 body,
             },
             child,
+            reservation,
         )
     }
 }
 
 #[test]
 fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (scrape, mut child, _reservation) = Scrape::fetch();
     let _ = child.kill();
     let _ = child.wait();
 
@@ -215,7 +269,7 @@ fn metrics_endpoint_serves_the_pinned_prometheus_exposition() {
 
 #[test]
 fn the_exporter_is_actually_registered_and_rendering() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (scrape, mut child, _reservation) = Scrape::fetch();
     let _ = child.kill();
     let _ = child.wait();
 
@@ -238,7 +292,7 @@ fn the_exporter_is_actually_registered_and_rendering() {
 
 #[test]
 fn the_exposition_reports_the_migrated_opentelemetry_sdk() {
-    let (scrape, mut child) = Scrape::fetch();
+    let (scrape, mut child, _reservation) = Scrape::fetch();
     let _ = child.kill();
     let _ = child.wait();
 
