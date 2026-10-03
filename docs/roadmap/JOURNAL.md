@@ -11684,3 +11684,207 @@ custodia de la clave tomada por el maintainer y el hueco documentado en su ADR.
 No se mide todavía la cobertura de `perf-budget.toml`: la máquina está
 ejecutando la lane y un actor paralelo, y un número tomado bajo esa carga no es
 un presupuesto.
+
+## N+82 — Los ocho brazos que salían 0, y el UAT que pasaba sin ejecutar el brazo
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **ítem** `a1f961f6` ·
+**Commit** `fd746ff6` · **Rama** `fix/cli-exit-code-propagation` (aislada: un
+actor paralelo commitea en `verify/r0-exit-gate`) · **Alcance** el ciclo propio
+que N+81 le condicionó a `a1f961f6`. No publica la release ni toca R2.
+
+### Recuperación: la lane que seemed viva estaba terminalizada
+
+Al recuperar, HEAD era `d04013c9` y el último recibo era N+80, con cuatro
+commits por detrás sin recibo aparente. La lane `release-candidate` de
+`v0.101.2` estaba **corriendo** (PID 1404979, 18 min). El worktree de una
+release es inmutable mientras su lane corre (lección 190), así que el trabajo
+fue a otro sitio. La sesión anterior no había muerto a mitad: había terminado.
+
+Lo que encontró esa lane, y que es el resultado más importante de esta entrada:
+
+```
+[16:21:59Z] Stage 6/7: comparación con baseline
+             baseline: passed=5579 failed=0 ignored=37
+             observed: passed=5934 failed=0 ignored=30
+             diff:     passed=355 failed=0 ignored=-7 (tolerancia -2)
+             → battery dentro de tolerancia
+[16:21:59Z] Stage 7/7:Recibo emitido: /tmp/preflight-receipt-d04013c9cded.json
+[16:21:59Z] PREFLIGHT PASS
+```
+
+**El preflight de v0.101.2 PASÓ**: las 7 stages, `passed=5934 failed=0`, y el
+recibo emitido. El arreglo del signo del ratchet de `14b7fea3` funciona sobre el
+árbol real, no solo en su contrato: `+355` ya no se reporta como regresión.
+
+Y aun así la lane salió con `LANE_EXIT=1`, `shell exited with code 64`. La
+causa, en las cuatro líneas que prosiguen al `PREFLIGHT PASS`:
+
+```
+mavis-trash: refusing to trash protected path '.../cognicode-preflight-O2ZYbs'
+mavis-trash: '...' is the parent of the current working directory
+```
+
+El script hace `trap 'rm -rf "$WORK_DIR"' EXIT` y en el stage 5 se ha metido
+en `cd "$WORK_DIR/clone"`. **El trap se ejecutaba desde dentro del directorio
+que borra**; el guard del entorno se niega y devuelve 64, y el estado del trap
+sustituye al del script. Un preflight que certifica `PASS` sale con fallo por
+no haber limpiado. Es N+80 (§"el incidente", 34 G de clones huérfanos)
+repetido con la misma firma, y su arreglo —`scripts/ci/preflight-cleanup.sh`,
+`cognicode_preflight_cleanup` que sale del directorio antes de borrar y delega
+el resultado a un canal que no puede cambiar el veredicto— lo escribió el actor
+paralelo en `69186a1c` desde este mismo log, sin que hubiera que pedirle nada.
+
+Los dos clones huérfanos (17 G + 17 G) se han retirado desde fuera de ellos.
+
+### El defecto, medido sobre el binario y no leído
+
+El CHANGELOG de v0.101.2 lo declaraba sin medirlo ("de los 11 brazos
+`CliCommand`, solo `Analyze`, `Graph` y `FindUsages` propagan"). Medido sobre el
+`cognicode` 0.101.2:
+
+| Invocación | exit | stderr |
+|---|---|---|
+| `navigate references MySymbol` | **0** | `Invalid position 'MySymbol': expected file:line:column` |
+| `navigate definition MySymbol` | **0** | ídem |
+| `navigate hover MySymbol` | **0** | ídem |
+| `index build /nonexistent/zzz` | **0** | — |
+| `index query Zzz /nonexistent/zzz` | **0** | — |
+| `graph full /nonexistent/zzz` | **0** | `Warning: graph is PARTIAL: 1 file(s) skipped` |
+| `graph mermaid /nonexistent/zzz` | **0** | ídem |
+| `analyze /nonexistent/zzz` (control) | 1 | ✓ propaga |
+| `analyze <dir válido>` (control) | 0 | ✓ no se sobre-corrige |
+
+El primero es el caso que la skill `cognicode-pr-review` enseñaba y que N+81
+corrigió **en la documentación**. Corregir la skill sin corregir el brazo deja
+el fallo al alcance de cualquiera que teclee el comando: el mismo trabajo, otra
+vez, en la capa de debajo.
+
+### Tres capas, porque el default de cada una es distinto
+
+**1. Los ocho brazos.** `CommandExecutor::execute` imprime con `eprintln!` y
+deja que `execute` termine en `Ok(())`. Ahora propagan.
+
+Un brazo no podía hacerlo con la receta: `SymbolCodeService::get_symbol_code`
+devuelve `Result<_, String>`, y un `String` no implementa `std::error::Error`
+(`E0277`, el primer fallo de compilación). Se lleva como mensaje, no envuelto
+en `AppError::InvalidParameter`: envolverlo declararía un argumento inválido
+donde lo que hay es un fallo de lectura.
+
+**2. `AnalysisService::build_project_graph`.** El `Graph` brazo ya propagaba, y
+aun así `graph full /nonexistent` salía 0. La causa está un nivel más abajo:
+`project_dir` inexistente llegaba a `WalkBuilder … .filter_map(|e| e.ok())`, que
+descarta **exactamente** la entrada `Err` que produce una raíz ausente, y el
+build devolvía `Ok` con estado `Partial`. El handler MCP `build_graph` ya
+rechazaba ese caso (`handlers/mod.rs:1217`, "Directory does not exist"): dos
+interfaces respondiendo distinto a la misma pregunta, que es lo que AGENTS.md
+§6 prohíbe con dos fuentes de verdad. La respuesta va en el servicio que
+comparten.
+
+**3. `LightweightIndex::build_index`.** Mismo patrón con `WalkDir`, y por eso
+`index build /nonexistent` salía 0. La guarda va en la raíz del recorrido, no
+en el adaptador, para que todas las estrategias coincidan.
+
+`graph mermaid` recibe un `BuildReport`, no un `Result`, y registra una raíz
+ilegible como un *skipped file* más: eso describe un recorrido que falló a
+medias cuando aquí no empezó. Se comprueba en el punto de llamada.
+
+### El UAT que pasaba sin ejecutar el brazo
+
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invoca
+`cognicode graph full --path <inexistente>`. **`graph full` no tiene `--path`**:
+su firma es `graph full [PATH]`, positional, con `[default: .]`. Clap rechaza
+el flag con exit 2, el proceso muere antes del dispatch, y el test pasa. Su
+comentario dice "already the case; pins the contract": lo que mide es que clap
+conoce la aridad, no que el grafo se haya construido.
+
+El UAT **no se corrige en este commit**. Cambiar un UAT firmado y el arreglo
+del producto en el mismo commit hace irreconocible cuál de los dos cambió el
+resultado, y este es el mismo argumento que sostiene la regla de no mezclar
+`C#` firmadas. Queda registrado, y el contrato nuevo usa el positional real.
+
+### Dientes
+
+El contrato nuevo tiene las dos direcciones: 7 casos de error y **3 gemelos de
+éxito**. Un contrato que solo afirma "esto sale distinto de 0" pasa entero si
+el arreglo convierte *todo* en error, incluido el éxito.
+
+| Estado | Resultado |
+|---|---|
+| Sin el arreglo | 9 passed, **7 failed** |
+| Con el arreglo | **16 passed**, 0 failed |
+| Sin `return Err` en `Navigate` | 13 passed, **3 failed** (los 3 de navigate) |
+| Sin la guarda del servicio | 15 passed, **1 failed** (solo `graph_full`) |
+| Sin la guarda del índice | 14 passed, **2 failed** (los 2 de index) |
+
+Cada mutación cae solo en su capa, que es la propiedad que hace que las tres
+guardas sean necesarias y no una de más.
+
+### Dos hallazgos colaterales, medidos
+
+**Dos brazos son código muerto.** `DocsIngest` e `IssuesIngest` están bajo
+`#[cfg(feature = "multimodal")]`, y `multimodal` **no es una feature declarada
+de `cognicode-cli`** (su `[features]` solo tiene `ladybug` y `default`). Esos
+brazos no compilan nunca, y `cognicode --help` no lista `docs-ingest`. Sus
+`return Err` se han añadido igualmente, porque son la política correcta si la
+feature se llegara a declarar; lo que es código muerto no se quita aquí.
+
+**Un test inestable, y no es mío.** `ide::tests::claude_config_path_default`
+lee `$HOME` (`claude_config_path`) y corre en paralelo con hermanos `#[serial]`
+que la mutan con `set_var`. Medido **con estos cambios en el stash**: 1 FALLO de
+4 ejecuciones, y 2 de 4 con ellos. Preexistente, y por tanto fuera de este
+arreglo: se registra para que la suite completa no se cite como verde sin esta
+salvedad.
+
+### Lección 195
+
+El estado de salida de un `trap` sustituye al del script, así que un gate puede
+certificar `PASS` y salir con 64 sin que ninguna de sus stages haya fallado. La
+limpieza no es un efecto secundario del veredicto: es un paso más de la lane, y
+un paso que falla no puede reescribir la respuesta de los que pasaron. Por
+encima, el fallo ocurrió *después* de la evidencia: el recibo y el log ya
+estaban escritos cuando el proceso se volvió rojo, lo que hace que leer solo el
+código de salida de la lane produzca el diagnóstico exactamente invertido.
+
+### Lección 196
+
+Un UAT puede pasar sin ejecutar lo que dice ejecutar, y seguir siendo verde
+durante años, si la invocación tiene un error que clap detecta **antes** del
+dispatch. `graph full --path` no es "un test que no detecta la regresión": es
+un test que verifica la aridad de un flag inexistente. El comentario que lo
+describía como "pins the contract" era la afirmación que hacía falta medir, y
+la medición la refutó. El caso general: **un UAT que pasa por una vía que no
+era la suya necesita una aserción que distinga "rechazado por la interfaz" de
+"ejecutado y falló"** — y mientras no exista, un rojo real y un flag
+inventado son indistinguibles desde el log.
+
+### Riesgo de coordinación, registrado (segunda vez)
+
+Durante esta sesión un actor paralelo commiteó en `verify/r0-exit-gate`
+(`04d0fc7a`, `0ad20c0d`, `3b53d3b3`, `4f4b0e26`, `69186a1c`) mientras yo
+trabajaba en el mismo árbol de trabajo. N+81 ya había registrado esta
+coincidencia y se ve desde el otro lado: su nota de riesgo de coordinación
+nombra `commands.rs`, `analysis_service.rs`, `lightweight_index.rs` y
+`cli_exit_code_propagation.rs` como trabajo ajeno, y son exactamente los
+cuatro ficheros de este commit. Ninguna colisión de contenido: ellos tocaron
+`JOURNAL.md`, `release.pipeline.kts`, `scripts/ci/preflight-*` y su test de
+release; el arreglo de los brazos vive en `cognicode-core`.
+
+Este commit está en `fix/cli-exit-code-propagation` y **no está fusionado**.
+La regla que hay que mantener: un `git stash` en un checkout compartido mueve
+el trabajo de otra sesión, y su `pop` —dos veces en esta sesión— dejó el árbol
+del otro actor en un estado que no era suyo. Se workingó alrededor: la
+verificación de concurrencia se hizo con el stash propio, y se comprobó que
+`git stash list` no contenía trabajo ajeno tras el `pop`.
+
+### Lo que NO se ejecuta aquí
+
+No se publica `v0.101.2`: su candidato quedó certificado (recibo
+`/tmp/preflight-receipt-d04013c9cded.json`, `result: PASS`, 5934/0/30) pero la
+lane salió con 64 por el trap de limpieza, corregido en `69186a1c` por el actor
+paralelo. La republicación la decide el maintainer. No se implementa R2: la
+decisión de custodia de la clave es suya. No se corrige
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` (§"El UAT que
+pasaba sin ejecutar el brazo"). No se retira el `ide::tests::
+claude_config_path_default` inestable: es preexistente y pertenece a
+`MAINTENANCE.md`. No se hace la transición de `a1f961f6` en el ledger, que es
+operator-gated. No se tocan los ADRs archivados ni se reabre ninguna `C#`.
