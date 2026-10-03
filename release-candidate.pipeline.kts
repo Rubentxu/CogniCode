@@ -196,7 +196,21 @@ pipeline {
         // --------------------------------------------------------------- tools
         stage("toolchain") {
             stage("release-tool") {
-                sh("$cd && cargo build --release --bin cognicode-release")
+                sh("""
+                    $cd || exit 1
+                    cargo build --release --bin cognicode-release
+                    # MEDIDO 2026-10-03. Esta stage se quedaba con "cargo
+                    # build salio 0", y en una maquina con `build.target-dir`
+                    # compartido eso no dice de que checkout salio el binario.
+                    # La lane de v0.101.5 ejecuto una `cognicode-release` de
+                    # otro arbol y lo supo veinte minutos despues, en
+                    # `skill-bundles`, con "unrecognized subcommand 'skills'":
+                    # un subcomando que el arbol si tiene. Cargo compara
+                    # mtimes, y las fuentes de este checkout son mas antiguas
+                    # que un binario que otro checkout construyo despues.
+                    bash scripts/ci/check-built-binary.sh \
+                        "$(scripts/ci/target-dir.sh)/release/cognicode-release" .
+                """.trimIndent())
             }
         }
 
