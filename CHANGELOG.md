@@ -10,6 +10,70 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.0] — 2026-10-03
+
+Ventana `v0.100.0..44d0316a`: **34 commits** — 11 `docs`, 8 `fix`, 6 `test`,
+6 `ci`, y 3 merges. Medido con:
+
+```
+git rev-list --count v0.100.0..44d0316a
+git log --format='%s' v0.100.0..44d0316a \
+  | sed -E 's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.100.0..44d0316a | grep -cE '^BREAKING[ -]CHANGE'   # 0
+```
+
+**Sobre el bump.** La regla mecánica de este repositorio (regla 6) leería
+esta ventana como PATCH: no hay `feat` ni marcadores `BREAKING CHANGE`. Se
+publica como MINOR de todas formas, y la razón es que **la regla no puede
+ver el cambio**: la ventana estrecha la API pública, pero squash-mergeada bajo
+un título `fix`, el marcador `BREAKING CHANGE` nunca se escribió. Preferimos
+subprometer el bump antes que publicar como no-rompiendo algo que sí rompe:
+
+- `HandlerContext` pasa de 21 campos públicos a 0, con dos accesores en su
+  lugar. Cualquier construcción externa de ese contexto deja de compilar.
+- `OnDemandGraphBuilder::with_parser` y `::query_call_hierarchy` se borran: no
+  tenían un solo consumidor.
+
+El squash de #341 contiene además 25 commits que la regla habría medido por
+separado; el título del squash no los describe, y por eso la medición por tipo
+de commit no es fiable en esta ventana.
+
+### Corregido
+
+- `OnDemandGraphBuilder::build_index_from_sources` entregaba su texto al
+  índice pero no al builder, y el cache de parseo es la única fuente de
+  aristas. Toda consulta que necesita aristas después de esa llamada devolvía
+  vacío, dijera lo que dijera el fuente. Aislado comparando el mismo fixture en
+  memoria (`[]`) y en disco (`["b"]`).
+- `OnDemandGraphBuilder::build_for_symbol` emparejaba `Callers` con un brazo
+  vacío y solo traversaba callers bajo `Both`, así que una consulta de callers
+  devolvía siempre vacío. RED: `got [] right ["a"]`.
+
+### Seguridad de los tests
+
+- Las 16 aserciones `count >= 0` de `cognicode-core` eran ciertas por
+  construcción. Cada una pasa a fijar el valor que su fixture implica, y los 9
+  `allow(clippy::absurd_extreme_comparisons)` que las ocultaban —4 blankets y 5
+  por ítem, todos etiquetados "documents intent"— se retiran. Clippy acepta las
+  nueve eliminaciones, luego ninguna seguía guardando nada.
+- Dos de esas aserciones ocultaban defectos: `analyze_impact` recibía un símbolo
+  con un FQN que no coincidía con nada del grafo y devolvía cero dependientes
+  bajo un comentario que afirmaba lo contrario; y el fixture de
+  `suggest_context` no tenía ningún símbolo con `fan_in >= 2`, así que el
+  handler no tenía hot path que devolver.
+- `graph_benchmarks` cronometraba el builder con `let _ = result.entries.len()`
+  bajo el comentario "usize is always >= 0, just verify the result exists". Un
+  builder que no resolvía una sola arista daba un número limpio. Los tres sitios
+  usan ahora `black_box` y el setup compartido fija las aristas del fixture
+  fuera de todo bucle cronometrado.
+
+### CI
+
+- El orquestador pasa a ser PipelineK en solitario: `.github/workflows/` queda
+  vacío, y `test_no_actions_workflows.py` es el invariante que lo dice. El
+  merge-gate publica su propio veredicto porque PipelineK 0.46.0 no publica
+  commit status, y el puente vive en `scripts/ci/publish-merge-gate.sh`.
+
 ## [v0.100.0] — 2026-10-01
 
 **First tag since `v0.99.2`** (`37129dfd`). It publishes the whole
