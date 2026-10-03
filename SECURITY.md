@@ -82,7 +82,7 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.101.6 (current `main`, not yet released) | yes |
+| 0.101.7 (current `main`, not yet released) | yes |
 | 0.98.1 (latest published release, `v0.98.1`) | yes |
 
 Older lines are not patched. If you are on an older release and find a

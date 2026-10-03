@@ -12743,3 +12743,59 @@ lane que intente construir desde un commit que no sea el del tag falla **antes**
 de gastar el build, nombrando los dos commits. Es la lane la que ha estado a
 punto de producir un candidato mal etiquetado, y ahora lo dice en la stage de
 coherencia, que es la primera que corre.
+
+## N+90 — v0.101.7: el corte que lleva los dos arreglos dentro
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (re-corte).
+
+Decisión del maintainer: re-cortar a `v0.101.7` con el arreglo de la raíz
+dentro, y arreglar el gate de coherencia antes de la lane. El gate ya está
+hecho y es N+89; aquí queda el re-corte.
+
+`v0.101.6` queda tagueado, publicado y **sin candidato**: se cortó antes de que
+llegaran la limpieza de la raíz y la reparación del gate. Es el tercero del
+grupo `v0.99.2`, `v0.100.0`, `v0.101.5`, y su entrada en el CHANGELOG lo dice
+con esas palabras en vez de dejar que se lea como una release más.
+
+### El incidente del tag movido, anotado y no reparado
+
+El 2026-10-03 a las 23:03, `v0.101.5` se movió en el remoto de `65dcdba3` a
+`64370bbb`, después de estar publicado. Decisión del maintainer: **documentarlo
+y no tocar nada**. Se anota en el CHANGELOG y aquí, y la salida fue cortar desde
+la línea correcta en vez de reconstruir la identidad de una release anterior.
+Lo que no se hace es fingir que no pasó: un tag publicado identifica bytes, y
+moverlo rompe esa propiedad para quien ya lo haya clonado, y eso es un
+incidente de gobernanza con nombre propio aunque no tenga todavía gate.
+
+### Un error mío de edición que el contrato cogió
+
+Al escribir la entrada de `v0.101.7` inserté el bloque **debajo** de la entrada
+de `v0.101.6` que ya existía del corte anterior, con lo que el fichero acabó
+con dos entradas `v0.101.6` y la primera cabecera —la que el CHANGELOG anuncia
+— era la vieja. `test_release_truth_convergence` lo falló con un mensaje que
+decía exactamente qué era: *la release que se prepara no es la primera que el
+CHANGELOG anuncia*.
+
+Lo que lo hace notable no es que lo cometiera, sino que **el contrato lo
+cogiera y no yo**: la comprobación es de las que parecen tautológicas —una
+cabecera, una versión— y sin embargo es la que distingue un changelog que
+anuncia lo que se publica de uno que anuncia lo que se publicó hace una hora.
+La entrada obsoleta estaba entera, bien escrita y era cierta en el momento en
+que se escribió; lo que dejó de ser cierto fue el mundo.
+
+### Lección 212
+
+Un documento ordered por versión tiene un orden que es una **afirmación**, no
+una convención. Insertar una entrada nueva tiene que hacerse en el sitio
+correcto del fichero, y el criterio de "correcto" no es el texto sino la
+posición: la primera cabecera es la que dice qué se está publicando. Por eso el
+recibo va contra el fichero entero y no contra la versión.
+
+### Lo que queda
+
+La lane de `v0.101.7`, en worktree propio, cuando termine la del otro actor: su
+`CARGO_TARGET_DIR` es compartido, que es el hazard que este bloque lleva tres
+recibos midiendo. Con el gate de N+89 la lane ya no puede construirse desde un
+commit que no sea el tagueado sin que la stage de coherencia lo diga en la
+primera que corre.

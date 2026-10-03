@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.6`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.7`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.6`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.7`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -423,14 +423,16 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.6` — cut from this tree; **not yet published**, and
+- **Current release:** `v0.101.7` — cut from this tree; **not yet published**, and
   the last published release is still `v0.98.1`, which is what an unpinned
   `install.sh` serves today.
-- **Binaries report:** `0.101.6` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.6`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.6).
-- **Tags without a release:** `v0.99.2`, `v0.100.0` and `v0.101.5` exist and were
-  never published. Each has a changelog entry explaining why; `v0.101.5` points
-  at a line that diverged from this one and is superseded by this release.
+- **Binaries report:** `0.101.7` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.7`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.7).
+- **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.5` and `v0.101.6`
+  exist and were never published. Each has a changelog entry explaining why.
+  `v0.101.5` points at a line that diverged from this one; `v0.101.6` was cut
+  before the staging-root fix and the Release Truth gate repair landed, so this
+  release supersedes it.
 - **Tracking authority:** the `PRODUCT-1.0` row in [`docs/roadmap/ROADMAP.md` §2](docs/roadmap/ROADMAP.md).
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md).
 
