@@ -12374,3 +12374,98 @@ linker por defecto en `.cargo/config.toml` porque la medición dice que el
 precedente del repo no funciona para ese target. No se toca `execute_doctor`.
 No se taguea, no se empuja y no se publica nada; `v0.101.5` sigue tagueado en
 `c7dba40c`.
+
+## N+86 — La costura que faltaba: stage y ensamblador, juntos y con binarios reales
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B2.9 (verificación de cierre).
+
+El arreglo de N+84 se había probado **por mitades**. El contrato de packaging
+ejecuta el cuerpo real de `package-$target`, pero con un `cognicode-release` de
+mentira. Los UATs del ensamblador usan árboles sintéticos. Nadie había ejecutado
+las dos mitades **juntas**, y ese es exactamente el punto donde vivía el fallo
+original: una stage que produce y un ensamblador que elige.
+
+MEDIDO con el binario real `/var/home/rubentxu/cargo-targets/release/cognicode-release`
+—construido por la lane que murió— y los binarios reales de las dos
+plataformas:
+
+1. `package-$target` sale 0 para `x86_64-unknown-linux-gnu` y para
+   `aarch64-unknown-linux-gnu`, y cada lane dir contiene **exactamente** sus
+   tres payloads de `0.101.5` y nada más.
+2. `stage-platform-payloads.sh` real acepta esa salida y aplana los 6 payloads
+   y los 6 SBOMs.
+3. Con un `cognicode-0.101.4-…tar.gz` inyectado en el lane dir, el ensamblador
+   **rechaza y lo nombra** — y el guard que habla es el de ambigüedad, no el de
+   higiene de raíz.
+4. Reejecutar la stage sobre ese mismo lane dir sucio lo limpia, dice
+   `cleared staging/payloads-linux-x86-64 from a previous candidate` y sale 0.
+
+Las dos líneas de defensa funcionan, y la segunda muerde aunque la primera se
+desactive.
+
+### El ensamblador no es idempotente, y conviene saberlo
+
+La primera sonda de este bloque dio un falso negativo instructive. Al reejecutar
+el ensamblador sobre un staging **ya aplanado**, falló con:
+
+    ::error::unexpected file at staging root: cogh-aarch64-unknown-linux-gnu.cdx.json
+         only payloads-* lane directories and pre-staged skill bundles are allowed
+
+No era mi guard: era el de higiene de raíz, que ve los 6 SBOMs que el propio
+ensamblador había dejado allí en la pasada anterior. Es comportamiento
+preexistente, fail-closed y documentado en su cabecera («a previous flattened
+run that left orphan tarballs at the root»), pero conviene que quede escrito:
+**el aplanado tiene que correr una vez por árbol de staging**, y un re-corte que
+repita `payloads` después de `generate` falla ruidosamente en lugar de
+duplicar. La sonda se corrigió para devolver la raíz a su estado previo al
+aplanado, y entonces sí midió lo que pretendía.
+
+### Lección 206
+
+Un arreglo puede estar verde en sus mitades y seguir sin estar probado: el
+contrato de una stage usa un doble de la herramienta que la stage invoca, y los
+contratos de una herramienta usan entradas sintéticas. La costura entre ambas es
+la zona donde el defecto original vivía, y es la única que ninguno de los dos
+cubría. Ejecutar las dos con los binarios que la lane ya había construido costó
+minutos y confirmó lo que cuatro contratos separados no podían.
+
+### Nota sobre la sonda
+
+La sonda **no entra en el repo** como contrato: depende de `cognicode-release` en
+release y de los binarios por target, que solo existen después de una build de
+release. En el merge gate sería lenta y frágil. Lo que sí entra es el resultado,
+que es lo que un recibo es.
+
+### Lección 207 — «El tooling está roto» es una conclusión, y hay que medirla
+
+El cierre de este bloque se dio por bloqueado durante un rato largo: el recibo
+SDDK de `71f9f47c` se había emitido, el informe de alineación se regeneraba con
+el `STAGED_TREE` correcto, y aun así `alignment.env` no existía. La hipótesis
+falsa que se repetía era «el gate rechaza este recibo».
+
+Medido, el gate no rechazaba nada. Las cinco precondiciones del `--ack` pasaban
+una a una: `sddk` en PATH, modo `auto` con owner allowlisted, `ledger verify` con
+`rc=0`, work item derivable, y el propio `--ack` que terminaba con `rc=0` y
+escribía el fichero. La causa era **cómo se invocaba**: los valores del recibo
+llevaban acentos graves de Markdown y el alias de git (`!sddk-align`) los pasa
+por un shell adicional, donde `` `stage-platform-payloads.sh` `` se evalúa como
+*command substitution*. El valor se consumía ejecutando un binario inexistente,
+quedaba vacío, y el hook caía por el `exit 3` de «campo obligatorio», que se
+lee igual que un rechazo de trazabilidad.
+
+Dos reglas que se siguen de ahí:
+
+- **Un gate que no se ha medido no es un blocker, es una hipótesis.** La
+  diferencia entre «no funciona» y «no sé invocarlo» cuesta un commit entero si
+  se acepta la primera lectura.
+- **Los recibos se escriben en texto plano.** Sin acentos graves, sin
+  *command substitution* que pueda comerse el valor, y sin valores de una palabra
+  cuando el valor largo estorbe. El recibo es un artefacto que un humano lee; la
+  prosa completa sigue viviendo en el JOURNAL.
+
+También queda una consecuencia práctica: el recibo que acompaña a `71f9f47c`
+salió con los campos `summary`, `inputs`, `unknowns` y `discoveries` a `x`, por
+el mismo motivo. El commit es correcto y su prosa está íntegra en N+85, pero su
+recibo SDDK es un cascarón. La trazabilidad de esa entrada la sostiene el
+JOURNAL, no el recibo.
