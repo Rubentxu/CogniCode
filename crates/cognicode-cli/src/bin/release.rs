@@ -20,6 +20,7 @@
 //!     --version 0.95.0 --tag v0.95.0 --source-commit "$GITHUB_SHA"
 //! cognicode-release verify   --staging dist \
 //!     --version 0.95.0 --tag v0.95.0
+//! cognicode-release skills --published   # published skill bundle ids
 //! ```
 //!
 //! ## Lint policy
@@ -47,8 +48,8 @@ mod release_factory;
 
 use bundle_manifest::Platform;
 use release_contract::{
-    TIER1_PLATFORMS, artifact_filename, component_by_stem, parse_platform, platform_token,
-    published_components,
+    SKILL_BUNDLES, TIER1_PLATFORMS, artifact_filename, component_by_stem, parse_platform,
+    platform_token, published_components, published_skill_bundles,
 };
 
 #[derive(Parser, Debug)]
@@ -120,6 +121,20 @@ enum Command {
         tag: String,
         #[arg(long = "platform")]
         platforms: Vec<String>,
+    },
+    /// Print the skill bundle ids, one per line.
+    ///
+    /// MEDIDO 2026-10-03. `release-candidate.pipeline.kts` llama a este
+    /// subcomando desde la stage `skill-bundles`… que no existia. El binario
+    /// salia con 2 y "unrecognized subcommand", el `while read` no consumia
+    /// nada, la stage pasaba con **cero** bundles, y `verify` no exige que
+    /// esten: el candidato se certificaba sin las skills. La stage es correcta
+    /// —«which bundles are published is the contract's answer, not a list
+    /// written here»— lo que faltaba era la mitad ejecutable de esa respuesta.
+    Skills {
+        /// Only the bundles that are published.
+        #[arg(long)]
+        published: bool,
     },
 }
 
@@ -227,6 +242,23 @@ fn main() -> anyhow::Result<()> {
             let plats = resolve_platforms(&platforms)?;
             let report = release_factory::verify_release(&staging, &v, &tag, &plats)?;
             print!("{}", report.render());
+            Ok(())
+        }
+
+        Command::Skills { published } => {
+            // One id per line, in the table's stable order. The stage reads
+            // this with `while IFS= read -r id`, so the shape is the contract:
+            // `staging/<id>-<version>.tar.gz` is what `skill_bundle_filename`
+            // names, and `verify` has to be able to require it.
+            if published {
+                for spec in published_skill_bundles() {
+                    println!("{}", spec.id);
+                }
+            } else {
+                for spec in SKILL_BUNDLES {
+                    println!("{}", spec.id);
+                }
+            }
             Ok(())
         }
     }

@@ -169,6 +169,73 @@ def extract_stage_body(text: str, stage_name: str) -> str:
     return text[body_start:body_end]
 
 
+# `cognicode-release` de mentira para la stage de skills. GH_SKILLS_MODE
+# reproduce las tres respuestas que la stage tiene que distinguir:
+#   ok      -> imprime los bundles publicados
+#   empty   -> imprime nada, con salida 0
+#   error   -> sale 2 sin imprimir, como hacia el binario real cuando el
+#              subcommand no existia
+FAKE_SKILLS = """#!/usr/bin/env bash
+set -euo pipefail
+case "${GH_SKILLS_MODE:-ok}" in
+    ok) printf 'cognicode\\ncognicode-mcp\\n' ;;
+    empty) exit 0 ;;
+    error) echo "error: unrecognized subcommand 'skills'" >&2; exit 2 ;;
+    *) echo "unknown mode" >&2; exit 3 ;;
+esac
+"""
+
+
+def run_skill_stage(mode: str) -> subprocess.CompletedProcess:
+    """Ejecuta el cuerpo real de `skill-bundles` con un release de mentira."""
+    text = CANDIDATE.read_text(encoding="utf-8")
+    body = render(
+        extract_stage_body(text, "skill-bundles"), VERSION, TARGET, PLATFORM
+    )
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        target_dir = root / "cargo-targets"
+        bindir = target_dir / "release"
+        bindir.mkdir(parents=True)
+        tool = bindir / "cognicode-release"
+        tool.write_text(FAKE_SKILLS, encoding="utf-8")
+        tool.chmod(0o755)
+
+        for bundle in ("cognicode", "cognicode-mcp"):
+            skill = root / "skills" / bundle
+            skill.mkdir(parents=True)
+            (skill / "manifest.yaml").write_text("name: " + bundle + "\n", encoding="utf-8")
+        (root / "staging").mkdir()
+
+        script = root / "skill-stage.sh"
+        script.write_text(
+            f"#!/usr/bin/env bash\ncd {root}\n"
+            f'TARGET_DIR="{target_dir}"\n' + body,
+            encoding="utf-8",
+        )
+        script.chmod(0o755)
+
+        result = subprocess.run(
+            [str(script)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env={
+                "PATH": "/usr/bin:/bin",
+                "HOME": str(root),
+                "TMPDIR": str(root),
+                "GH_SKILLS_MODE": mode,
+            },
+        )
+        result.stdout = result.stdout.replace(str(root), "<tmp>")
+        result.stderr = result.stderr.replace(str(root), "<tmp>")
+        result.staged = sorted(
+            p.name for p in (root / "staging").glob("*.tar.gz")
+        )
+        return result
+
+
 def render(body: str, version: str, target: str, platform: str) -> str:
     """Convierte el cuerpo de la stage en el shell que PipelineK ejecutaria.
 
@@ -335,6 +402,51 @@ def test_the_component_strip_yields_the_component_not_the_archive() -> None:
     assert lines["unset"].strip() == f"cognicode-{VERSION}-{TARGET}.tar.gz", (
         f"sin valor, el recorte no hace nada: ese es el fallo medido.\n{done.stdout}"
     )
+
+
+# --- La stage de skills, y por que preguntar no es responder -----------------
+
+
+def test_the_skill_stage_stages_every_published_bundle() -> None:
+    """El camino que la stage deberia recorrer siempre."""
+    done = run_skill_stage("ok")
+    assert done.returncode == 0, (
+        f"la stage debe empaquetar los bundles y salir 0, y salio "
+        f"{done.returncode}.\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+    assert done.staged == [
+        f"cognicode-{VERSION}.tar.gz",
+        f"cognicode-mcp-{VERSION}.tar.gz",
+    ], f"un bundle por id publicado.\nobtenido: {done.staged}"
+
+
+def test_the_skill_stage_fails_when_the_tool_errors() -> None:
+    """La condicion exacta que se llevo la stage por delante.
+
+    El binario real salia con 2 y `unrecognized subcommand` porque el
+    subcommand no existia. La stage leia la respuesta por una tuberia, no
+    consumia nada, y terminaba el bucle con exito: cero bundles, stage verde.
+    """
+    done = run_skill_stage("error")
+    assert done.returncode != 0, (
+        f"una herramienta que falla tiene que tumbar la stage; antes salia "
+        f"{done.returncode} con cero bundles.\nstdout:\n{done.stdout}"
+    )
+    assert done.staged == [], f"no debe haber producido nada.\n{done.staged}"
+
+
+def test_the_skill_stage_fails_on_an_empty_answer() -> None:
+    """Salida 0 con la lista vacia tampoco es una respuesta valida.
+
+    El contrato publica bundles; una lista vacia significa que la herramienta
+    y el contrato discrepan, no que el producto no tenga skills.
+    """
+    done = run_skill_stage("empty")
+    assert done.returncode != 0, (
+        f"una lista vacia debe fallar; antes salia {done.returncode}.\n"
+        f"stdout:\n{done.stdout}"
+    )
+    assert done.staged == [], f"no debe haber producido nada.\n{done.staged}"
 
 
 # --- La clase entera, en todos los lanes -------------------------------------
