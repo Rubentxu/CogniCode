@@ -47,11 +47,11 @@ impl Default for SymbolSearchQuery {
 impl SymbolKind {
     /// The symbol kinds a search filter accepts, by label.
     ///
-    /// Narrower than [`SymbolKind::from_str`] on purpose, and the difference
-    /// is behaviour, not taste. `FromStr` knows twenty-four kinds; the search
-    /// tool documents nine. An unrecognised filter has always been dropped
-    /// silently rather than treated as an error, so widening this to match
-    /// `FromStr` would quietly start honouring filters nobody promised.
+    /// Narrower than [`std::str::FromStr::from_str`] on purpose, and the
+    /// difference is behaviour, not taste. `FromStr` knows twenty-four kinds;
+    /// the search tool documents nine. An unrecognised filter has always been
+    /// dropped silently rather than treated as an error, so widening this to
+    /// match `FromStr` would quietly start honouring filters nobody promised.
     /// Narrow it here rather than by accident in two call sites.
     pub fn from_search_label(label: &str) -> Option<Self> {
         match label.to_lowercase().as_str() {

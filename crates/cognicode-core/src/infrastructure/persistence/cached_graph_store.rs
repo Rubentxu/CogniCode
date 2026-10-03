@@ -1,6 +1,6 @@
 //! Cached `GraphStore` impl that delegates reads to a shared
-//! `Arc<GraphCache>` (lock-free `ArcSwap<CallGraph>`) and forwards
-//! writes/manifest operations to an inner `InMemoryGraphStore`.
+//! `Arc<dyn SharedGraph>` (lock-free `ArcSwap<CallGraph>` behind the port) and
+//! forwards writes/manifest operations to an inner `InMemoryGraphStore`.
 //!
 //! This makes `HandlerContext::get_graph_store()` return a `GraphStore`
 //! that is fast on the read path (~2× faster than the bincode path)
@@ -9,7 +9,7 @@
 //!
 //! ADR-035: this is the only `GraphStore` impl that exposes
 //! **real** versioned snapshot reads. It delegates to
-//! [`GraphCache::current_id`] and [`GraphCache::get_at`] which read
+//! [`SharedGraph::current_id`] and [`SharedGraph::get_at`] which read
 //! from the lock-free `VersionedGraphCache` ring inside the cache.
 //! The inner `InMemoryGraphStore` is single-version and reports id 1.
 
@@ -97,7 +97,7 @@ impl GraphStore for CachedGraphStore {
 
     /// Returns the [`CheckpointId`] of the current head, or `None` if
     /// no checkpoint has ever been published. Delegates to
-    /// [`GraphCache::current_id`].
+    /// [`SharedGraph::current_id`].
     fn current_checkpoint_id(&self) -> Option<CheckpointId> {
         SharedGraph::current_id(self.cache.as_ref())
     }
@@ -105,7 +105,7 @@ impl GraphStore for CachedGraphStore {
     /// Returns the `CallGraph` snapshot pinned to `id`. `Err(
     /// StoreError::CheckpointNotFound)` if the id is not (or no
     /// longer) in the cache's retention window. Delegates to
-    /// [`GraphCache::get_at`].
+    /// [`SharedGraph::get_at`].
     ///
     /// Note: the cache's `get_at` returns `None` when the ring is
     /// cold (no inserts yet), which is semantically distinct from
