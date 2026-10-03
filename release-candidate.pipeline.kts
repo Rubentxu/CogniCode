@@ -259,17 +259,57 @@ pipeline {
                         # component name is recovered by stripping the derived
                         # `-{version}-{token}.tar.gz` suffix. A third list of
                         # components written here would be a third place to forget.
+                        planned=0
                         for filename in $("${'$'}TARGET_DIR/release/cognicode-release" plan --platform "${'$'}platform" --version "$version"); do
-                            component="${'$'}{filename%-${'$'}version-*}"
+                            planned=$((planned + 1))
+                            # `$version` is the Kotlin value, not a shell one: it is
+                            # what `--version "$version"` above already used. Spelled
+                            # `${'$'}version` this is an *unset* shell variable, the
+                            # suffix pattern collapses to `---*`, matches nothing, and
+                            # `component` silently keeps the whole archive filename —
+                            # so `cp` looked for a file that does not exist and no
+                            # payload was produced. MEDIDO 2026-10-03, first candidate
+                            # to reach this stage since the lane existed.
+                            component="${'$'}{filename%-$version-*}"
                             filename=$("${'$'}TARGET_DIR/release/cognicode-release" name --component "${'$'}component" \
                                         --platform "${'$'}platform" --version "$version")
+                            if [ -z "${'$'}filename" ]; then
+                                echo "FAIL: name --component ${'$'}component produced no filename."
+                                echo "  A component with no name cannot be packaged, and an empty"
+                                echo "  name would make tar write to the dist/ directory itself."
+                                exit 1
+                            fi
                             stage=$(mktemp -d)
                             mkdir -p "${'$'}stage/bin"
-                            cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component"
-                            tar -czf "${'$'}lane/dist/${'$'}filename" -C "${'$'}stage" bin
+                            cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component" || {
+                                echo "FAIL: ${'$'}TARGET_DIR/$target/release/${'$'}component is missing."
+                                echo "  binaries-${'$'}target runs before this one and did not produce it."
+                                exit 1
+                            }
+                            tar -czf "${'$'}lane/dist/${'$'}filename" -C "${'$'}stage" bin || {
+                                echo "FAIL: could not package ${'$'}filename"
+                                exit 1
+                            }
                             echo "packaged ${'$'}filename for ${'$'}platform"
                             rm -rf "${'$'}stage"
                         done
+                        # `plan` answering with nothing is not an empty release, it
+                        # is a stage that cannot see the product surface. Without
+                        # this the loop above simply does not run and the stage
+                        # reports success having produced no payload at all — which
+                        # is how the defect above survived a whole candidate run and
+                        # only surfaced two stages later, in a message about the
+                        # archive rather than about packaging.
+                        if [ "${'$'}planned" -lt 1 ]; then
+                            echo "FAIL: cognicode-release plan produced no artifacts for ${'$'}platform."
+                            echo "  An empty candidate is not a candidate."
+                            exit 1
+                        fi
+                        produced=$(ls -1 "${'$'}lane/dist" | wc -l)
+                        if [ "${'$'}produced" -ne "${'$'}planned" ]; then
+                            echo "FAIL: planned ${'$'}planned artifacts for ${'$'}platform, produced ${'$'}produced."
+                            exit 1
+                        fi
                         # The SBOM belongs to the lane, not to the repository: the
                         # flatten script pairs `<component>-<triple>.cdx.json`
                         # with the payloads of the same lane, and a payload whose
@@ -279,7 +319,7 @@ pipeline {
                             if [ ! -f "${'$'}sbom" ]; then
                                 echo "FAIL: ${'$'}sbom is missing."
                                 echo "  build-sboms-for-lane.sh writes crates/<component>-<target>.cdx.json;"
-                                echo "  the sbom-${'$'}target stage runs before this one and did not produce it."
+                                echo "  the sbom-$target stage runs before this one and did not produce it."
                                 exit 1
                             fi
                             cp "${'$'}sbom" "${'$'}lane/crates/"
@@ -342,8 +382,8 @@ pipeline {
                             echo "FAIL: published skill bundle '${'$'}id' has no skills/${'$'}id/manifest.yaml"
                             exit 1
                         fi
-                        tar -czf "staging/${'$'}id-${'$'}version.tar.gz" -C "skills/${'$'}id" .
-                        echo "staged ${'$'}id-${'$'}version.tar.gz"
+                        tar -czf "staging/${'$'}id-$version.tar.gz" -C "skills/${'$'}id" .
+                        echo "staged ${'$'}id-$version.tar.gz"
                     done < <("${'$'}TARGET_DIR/release/cognicode-release" skills --published)
                     ls -la staging
                 """.trimIndent())

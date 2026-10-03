@@ -37,14 +37,24 @@ import java.io.File
 // -------------------------------------
 // `actions/attest-build-provenance` generates SLSA build provenance. It is an
 // action, and PipelineK has no action runtime, so there is nothing to port it
-// to. `gh attestation verify` — the consumer-facing half, which is what proves
-// the published bytes are the attested ones — is kept, because `gh` is a tool
-// this lane can call.
+// to. The consumer-facing half — the part that proves the published bytes are
+// the attested ones — is kept, because `gh` is a tool this lane can call.
 //
-// The generation half is an open item, not a silent drop: `provenance` below
-// fails closed when `RELEASE_REQUIRE_PROVENANCE=1` and no attestation exists,
-// and says what is missing. Until a replacement is chosen, publishing runs
-// without generated provenance and the lane does not pretend otherwise.
+// The generation half is an open item, not a silent drop. `scripts/ci/
+// verify-provenance.sh` holds the whole policy, and it is the only thing that
+// reads `RELEASE_REQUIRE_PROVENANCE`: the artifacts are still checked on every
+// run and the result is printed, but only an enforced run treats a missing
+// attestation as fatal. Until a replacement generator is chosen, publishing
+// runs without generated provenance and the lane says so out loud rather than
+// implying otherwise.
+//
+// MEDIDO 2026-10-03. This used to be two stages. `attestations` checked the
+// artifacts unconditionally and `provenance-required` implemented the switch
+// above, so the header described the second and the code did the first. With
+// nothing in this repository able to generate an attestation, the check
+// returned non-zero for every candidate and the lane died before `publish`:
+// not a release without provenance, an unreachable release. `scripts/ci/
+// test_provenance_gate.py` now holds that state red.
 //
 // `gh` is not an orchestrator mechanism. GitHub Releases is where the product
 // goes; PipelineK is what decides to call it.
@@ -229,39 +239,16 @@ pipeline {
         }
 
         // ----------------------------------------------------------- provenance
+        // One stage, one implementation. See `scripts/ci/verify-provenance.sh`
+        // and the header: the policy — enforced only when
+        // `RELEASE_REQUIRE_PROVENANCE=1` — lives in that script, and this
+        // stage only names the artifacts it must judge.
         stage("provenance") {
             stage("attestations") {
                 sh("""
                     $cd || exit 1
-                    for f in release/*.tar.gz; do
-                        gh attestation verify "${'$'}f" --repo "${'$'}GITHUB_REPOSITORY"
-                    done
-                    gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY"
-                """.trimIndent())
-            }
-
-            stage("provenance-required") {
-                sh("""
-                    $cd || exit 1
-                    # See the header: `actions/attest-build-provenance` is the one
-                    # capability in this lane with no PipelineK equivalent. The
-                    # operator decides whether its absence blocks a release, and
-                    # this stage says which way they decided rather than letting
-                    # the answer be implied by silence.
-                    if [ "${'$'}{RELEASE_REQUIRE_PROVENANCE:-0}" != "1" ]; then
-                        echo "provenance generation is NOT enforced for this run."
-                        echo "  actions/attest-build-provenance has no PipelineK equivalent yet."
-                        echo "  Set RELEASE_REQUIRE_PROVENANCE=1 to make its absence a failure."
-                        exit 0
-                    fi
-                    if ! gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                        echo "RELEASE_REQUIRE_PROVENANCE=1 but the candidate carries no attestation."
-                        echo "  Nothing in this lane can generate one: the generator was a GitHub"
-                        echo "  Action and PipelineK has no action runtime. Choose a replacement"
-                        echo "  before enforcing this."
-                        exit 1
-                    fi
-                    echo "provenance present and verified"
+                    scripts/ci/verify-provenance.sh "${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}" \
+                        release/*.tar.gz release/SHA256SUMS
                 """.trimIndent())
             }
         }
