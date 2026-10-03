@@ -104,20 +104,31 @@ fi
 echo "  C   : $cc_bin compiles a probe for $target"
 
 # --- C++ --------------------------------------------------------------------
-# Solo se exige si hay un C++ configurado: no todos los toolchain lo traen, y
-# exigirlo sin motivo seria un gate que bloquea por una herramienta que este
-# proyecto puede no necesitar. Si hay uno configurado y no funciona, eso si es
-# un fallo — el build lo encontraria igual.
-if cxx_bin=$(resolve cxx "CXX_$underscored" "CXX_$target" "${target%%-*}-linux-gnu-"); then
-    printf '#include <string>\nint main(){std::string s="x";return (int)s.size()-1;}\n' > "$work/probe.cpp"
-    if ! "$cxx_bin" -O0 --target="$target" -c "$work/probe.cpp" -o "$work/probe-cxx.o" >"$work/cxx.log" 2>&1; then
-        echo "  tried: $cxx_bin --target=$target (see below)"
-        sed 's/^/    /' "$work/cxx.log" | head -5
-        fail "a C++ compiler is configured for $target but does not work"
-    fi
-    echo "  C++ : $cxx_bin compiles a probe for $target"
-else
-    echo "  C++ : none configured for $target; required only by C++ build scripts"
+# MEDIDO 2026-10-03. Esto era opcional, con el motivo de que "no todos los
+# toolchain traen C++" y de que exigirlo sin razon seria un gate que bloquea
+# por una herramienta que este proyecto puede no necesitar. Ese motivo es
+# cierto en general y falso aqui: la lane de v0.101.4 cayo en
+# `binaries-aarch64` con
+#
+#     error occurred in cc-rs: failed to find tool "aarch64-linux-gnu-g++"
+#
+# `cc-rs` no eligio g++ por capricho, un build script del arbol lo pidio. La
+# consecuencia medida de dejarlo opcional era que la guarda pasaba con el
+# entorno exacto que hacia fracasar el build veinte minutos mas tarde: la
+# linea "C++ : none configured" era un aprobado para un fallo seguro.
+#
+# Para un target cruzado, C++ es precondicion. Y el fallo tiene que nombrar la
+# variable, porque un fallo que no dice cual configurar es un fallo que se
+# repite.
+if ! cxx_bin=$(resolve cxx "CXX_$underscored" "CXX_$target" "${target%%-*}-linux-gnu-"); then
+    fail "no C++ compiler for $target: set CXX_$underscored, or put a cross g++ on PATH"
 fi
+printf '#include <string>\nint main(){std::string s="x";return (int)s.size()-1;}\n' > "$work/probe.cpp"
+if ! "$cxx_bin" -O0 --target="$target" -c "$work/probe.cpp" -o "$work/probe-cxx.o" >"$work/cxx.log" 2>&1; then
+    echo "  tried: $cxx_bin --target=$target (see below)"
+    sed 's/^/    /' "$work/cxx.log" | head -5
+    fail "a C++ compiler is configured for $target but does not work"
+fi
+echo "  C++ : $cxx_bin compiles a probe for $target"
 
 echo "  native toolchain for $target answers"
