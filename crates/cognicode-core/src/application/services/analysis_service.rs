@@ -172,6 +172,23 @@ impl AnalysisService {
 
         info!("Building project graph for directory: {:?}", project_dir);
 
+        // A root that does not exist is not a project with zero files: it
+        // is a project that was never there. Without this, the walk below
+        // yields one `Err` entry that `.filter_map(|e| e.ok())` discards,
+        // `files` comes out empty, and the build reports `Ok` with a
+        // `Partial` status — so `cognicode graph full /nonexistent` exits
+        // 0 having built nothing. The MCP `build_graph` handler already
+        // rejects this case (`handlers/mod.rs`: "Directory does not exist"),
+        // and two interfaces answering the same question differently is the
+        // defect AGENTS.md §6 forbids; this puts the answer in the service
+        // they share.
+        if !project_dir.exists() {
+            return Err(AppError::InvalidParameter(format!(
+                "Directory does not exist: {}",
+                project_dir.display()
+            )));
+        }
+
         let mut store = PetGraphStore::new();
         // F2.W7: replace the legacy `name_lower → SymbolId` map with a
         // `GlobalSymbolIndex` that supports scope-aware resolution

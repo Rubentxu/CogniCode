@@ -511,11 +511,13 @@ impl CommandExecutor {
                     Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await
                 {
                     eprintln!("Refactor command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Index { command }) => {
                 if let Err(e) = Self::execute_index(command).await {
                     eprintln!("Index command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Graph { command }) => {
@@ -560,17 +562,20 @@ impl CommandExecutor {
             Some(CliCommand::Navigate { command }) => {
                 if let Err(e) = Self::execute_navigate(command).await {
                     eprintln!("Navigate command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Doctor { format, cwd }) => {
                 if let Err(e) = Self::execute_doctor(format, cwd).await {
                     eprintln!("Doctor command failed: {}", e);
+                    return Err(e);
                 }
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::DocsIngest { path, recursive }) => {
                 if let Err(e) = Self::execute_docs_ingest(path, *recursive).await {
                     eprintln!("docs-ingest command failed: {}", e);
+                    return Err(e);
                 }
             }
             #[cfg(feature = "multimodal")]
@@ -581,18 +586,21 @@ impl CommandExecutor {
             }) => {
                 if let Err(e) = Self::execute_issues_ingest(owner, repo, *include_git_log).await {
                     eprintln!("issues-ingest command failed: {}", e);
+                    return Err(e);
                 }
             }
             #[cfg(feature = "evidence-cli-ladybug")]
             Some(CliCommand::Evidence(cmd)) => {
                 if let Err(e) = Self::execute_evidence(cmd).await {
                     eprintln!("evidence command failed: {}", e);
+                    return Err(e);
                 }
             }
             Some(CliCommand::Capabilities { format, json }) => {
                 let effective = if *json { "json" } else { format.as_str() };
                 if let Err(e) = Self::execute_capabilities(effective).await {
                     eprintln!("capabilities command failed: {}", e);
+                    return Err(e);
                 }
             }
             None => {
@@ -704,6 +712,13 @@ impl CommandExecutor {
                     }
                     Err(e) => {
                         eprintln!("Error: {}", e);
+                        // `SymbolCodeService::get_symbol_code` returns
+                        // `Result<_, String>`, and a `String` does not
+                        // implement `std::error::Error`, so it is carried
+                        // as a message rather than boxed. Relabelling it
+                        // `AppError::InvalidParameter` would turn a read
+                        // failure into a bad-argument claim.
+                        return Err(e.into());
                     }
                 }
             }
@@ -1089,6 +1104,18 @@ impl CommandExecutor {
 
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
+
+                // `build_full_graph_report` returns a report, not a
+                // `Result`, and it records an unreadable root as one more
+                // *skipped file*. Reporting that as `PARTIAL` and exiting 0
+                // describes a walk that partially failed; here the walk
+                // never started. The root is checked before the walk so the
+                // failure is not disguised as partial coverage — the same
+                // answer `graph full` and the MCP `build_graph` handler
+                // already give.
+                if !dir.is_dir() {
+                    return Err(format!("Directory does not exist: {}", dir.display()).into());
+                }
 
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
