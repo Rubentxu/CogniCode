@@ -288,13 +288,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         ex(
             "application_no_infrastructure",
-            "application/ingest/scan.rs",
-            "infrastructure::parser::",
-            "team:st-04",
-            "ST-04: parser types via port (LanguageConfig).",
-        ),
-        ex(
-            "application_no_infrastructure",
             "application/ingest/extract_stage.rs",
             "infrastructure::parser::",
             "team:st-04",
@@ -607,13 +600,111 @@ mod tests {
         // `workspace_session.rs` now imports nothing from `infrastructure` on
         // any production line. `infrastructure::persistence::` stays as the
         // file's one test-only entry: its only import is inside `mod tests`.
+        //
+        // 34 -> 33, and the entry was not debt at all.
+        // `application/ingest/scan.rs` carried an exception for
+        // `infrastructure::parser::` and imported `LanguageConfig` for it —
+        // but never used the type. `classify_file` returns
+        // `Option<&'static str>` (a language *name*), not a config. The dead
+        // import was invisible because the module carries a module-level
+        // `#![allow(unused_imports)]` from an "e30.1 clippy baseline reset":
+        // a blanket suppression added to make clippy green rather than to fix
+        // what it reported. So the allowlist was counting a dependency the
+        // production build does not have. Both the import and the exception
+        // are gone, and the blanket allow went with the import it was
+        // hiding — the module now compiles warning-free without it.
         assert_eq!(
             list.len(),
-            34,
-            "expected exactly 34 entries; if you removed/added a drift \
+            33,
+            "expected exactly 33 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
+        );
+    }
+
+    /// A blanket lint suppression in `application/` is a hole in the
+    /// inventory, not a style preference.
+    ///
+    /// Four `application/ingest/` modules carried
+    /// `#![allow(unused_imports)]`, introduced under the banner of an
+    /// "e30.1 clippy baseline reset" — a suppression added to make clippy
+    /// pass rather than to fix what it reported. It was hiding a dead
+    /// `use crate::infrastructure::parser::LanguageConfig` in `scan.rs`,
+    /// which the allowlist above was counting as a production CR-06
+    /// exception. The production build has no such dependency; the
+    /// inventory said otherwise because nothing could see the import was
+    /// unused.
+    ///
+    /// All of them are gone and the modules compile warning-free without
+    /// them. Lifting the other two file-wide blankets found in
+    /// `application/` — `services/analytics_oracle_harness.rs` and
+    /// `investigation_service.rs` — surfaced two more dead imports, neither
+    /// of them an `infrastructure` one, and both are now removed too.
+    ///
+    /// One of the four ingest imports was moved into its `mod tests`,
+    /// because the test used the file-level one — which is the other way
+    /// this blanket hides things, by making a test-only dependency look
+    /// like a production one.
+    ///
+    /// The check matches the inner attribute only. An item-scoped
+    /// `#[allow(unused_imports)]` is a local decision about one item and
+    /// does not hide the rest of the file from the inventory; one exists
+    /// in `application/local_ci/mod.rs` and is deliberately left alone.
+    ///
+    /// The check is scoped to `application/` on purpose: `infrastructure/`
+    /// legitimately has places where an import is feature-gated, and a
+    /// blanket `allow` there is a different question.
+    #[test]
+    fn no_application_module_carries_a_blanket_unused_imports_allow() {
+        fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    collect(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push(p);
+                }
+            }
+        }
+
+        let cargo_manifest =
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let mut files = Vec::new();
+        collect(
+            &std::path::Path::new(&cargo_manifest).join("src/application"),
+            &mut files,
+        );
+        assert!(
+            !files.is_empty(),
+            "walked no Rust sources under application; the check would pass \
+             vacuously"
+        );
+
+        let mut offenders = Vec::new();
+        for f in &files {
+            let Ok(text) = std::fs::read_to_string(f) else {
+                continue;
+            };
+            for (i, line) in text.lines().enumerate() {
+                let t = line.trim();
+                // Only the inner attribute — a file-wide blanket. An
+                // item-scoped `#[allow(unused_imports)]` is a deliberate,
+                // local decision about one item and does not hide the
+                // rest of the file's imports from the inventory.
+                if t.starts_with("#![allow(unused_imports)]") {
+                    offenders.push(format!("{}:{}: {}", f.display(), i + 1, t));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "application/ modules must not silence unused_imports; each one \
+             hides a dead import from the CR-06 inventory:\n{}",
+            offenders.join("\n")
         );
     }
 

@@ -2,9 +2,6 @@
 //!
 //! Provides a use-case-level API for investigation operations.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_imports)]
-
-use std::sync::Arc;
 
 use time::OffsetDateTime;
 

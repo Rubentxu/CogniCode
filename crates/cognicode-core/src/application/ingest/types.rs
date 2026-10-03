@@ -5,12 +5,11 @@
 //! These types are the contract between pipeline stages. Each stage is a
 //! pure function that receives typed input and produces typed output.
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_imports)]
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use crate::domain::aggregates::{GraphEdge, GraphNode};
+use crate::domain::aggregates::GraphNode;
 use crate::domain::value_objects::Provenance;
 use cognicode_graph_algos::algorithms::Statement;
 use serde::{Deserialize, Serialize};

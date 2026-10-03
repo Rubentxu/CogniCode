@@ -4,9 +4,8 @@
 //! scans can emit `DependencyAdded`/`DependencyRemoved` events (not just
 //! symbol-level events).
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_imports)]
 
-use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
+use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::graph_event::{DependencyEvent, GraphEvent};
 use crate::domain::value_objects::DependencyType;
 
@@ -80,6 +79,7 @@ pub fn collect_edges_for_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::aggregates::SymbolId;
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::value_objects::{Location, SymbolKind};
 
