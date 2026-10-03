@@ -214,6 +214,15 @@ pipeline {
                             echo "binaries cannot link produces a candidate that looks built and is not."
                             exit 1
                         }
+                        # Having the target installed is half the toolchain. This tree
+                        # carries crates with C and C++ build scripts --`ring`,
+                        # `tree-sitter`, `link-cplusplus`-- so a target whose cross
+                        # compiler is missing, or present but unable to parse the
+                        # triple `cc-rs` appends, fails here in milliseconds instead
+                        # of twenty minutes later inside somebody else's build
+                        # script. MEDIDO 2026-10-03 on v0.101.4: the rustup check
+                        # passed, and `binaries-aarch64` then failed three ways.
+                        scripts/ci/check-cross-toolchain.sh '$target'
                     """.trimIndent())
                 }
 
