@@ -10,6 +10,56 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.3] — 2026-10-03
+
+Ventana `v0.101.2..69186a1c`: **5 commits** — 2 `fix`, 2 `docs`, 1 `test`, y 0
+marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.2..69186a1c                      # 5
+git log --format='%s' v0.101.2..69186a1c | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 2 fix, 2 docs, 1 test
+git log --format='%s%n%b' v0.101.2..69186a1c \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.3 y por qué v0.101.2 tampoco se publica.** El
+preflight de `v0.101.2` **certificó** —5934 passed, 0 failed, ratchet dentro de
+tolerancia, recibo `"result": "PASS"`— y la lane reportado fallo igualmente:
+
+```
+→ PREFLIGHT PASS
+mavis-trash: refusing to trash protected path '.../cognicode-preflight-O2ZYbs'
+mavis-trash: '...' is the parent of the current working directory
+Pipeline finished with FAILURE: shell exited with code 64
+```
+
+Todo el trabajo de certificar se había hecho bien. La lane falló por no haber
+borrado una carpeta temporal.
+
+### Corregido
+
+- `scripts/ci/preflight-cleanup.sh` (nuevo), cargado por
+  `preflight-clean-clone.sh`. El trap de salida borraba el directorio temporal
+  **desde dentro de sí mismo** —el script hace `cd "$WORK_DIR/clone"` en el
+  stage 5—, y en un entorno donde el borrado va envuelto en una comprobación de
+  seguridad esa comprobación se niega y devuelve 64. El estado del trap sustituye
+  al del script, y un PASS se convertía en exit 64. Ahora la limpieza sale del
+  directorio antes de borrar y, sobre todo, **no puede cambiar el veredicto**: un
+  PASS sigue siendo PASS aunque la limpieza falle, y un fallo real sigue siendo un
+  fallo.
+- `scripts/ci/test_preflight_cleanup.py` (nuevo). Reproduce la negativa con un
+  borrador de mentira que rechaza un directorio ancestro del cwd, que es
+  exactamente la regla que falló. Vive aparte porque el preflight entero cuesta
+  veinte minutos y 4G, y esta propiedad se observa en milisegundos. Suite de
+  contratos: 141 → 147.
+
+### Medido, y no arreglado aquí
+
+`a1f961f6` —de los 11 brazos `CliCommand`, solo `Analyze`, `Graph` y
+`FindUsages` propagan el error— sigue abierto y lo está trabajando otro actor en
+paralelo. Se deja constancia aquí porque es visible en este mismo corte.
+
 ## [v0.101.2] — 2026-10-03
 
 Ventana `v0.101.1..089be899`: **1 commit** — 1 `fix`, y 0 marcadores
