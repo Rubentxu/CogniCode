@@ -10,6 +10,88 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.4] — 2026-10-03
+
+Ventana `v0.101.3..f840df0c`: **2 commits** — 1 `fix`, 1 `test`, y 0 marcadores
+`BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.3..f840df0c                       # 2
+git log --format='%s' v0.101.3..f840df0c | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 1 test, 1 fix
+git log --format='%s%n%b' v0.101.3..f840df0c \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.4 y por qué v0.101.3 no se publica.** El candidato de
+`v0.101.3` **falló**. Nunca hubo candidate que publicar, y su tag se queda sin
+certificar:
+
+```
+package-x86_64-unknown-linux-gnu … Error: unknown component
+  `cognicode-0.101.3-x86_64-unknown-linux-gnu.tar.gz`
+cp: no se puede efectuar `stat' sobre '…/release/cognicode-0.101.3-…tar.gz'
+tar (child): staging/payloads-linux-x86-64/dist/: Es un directorio
+staging/payloads-linux-x86-64/dist:
+total 8                                    <- vacío, y la stage pasó
+→ (dos stages después) archive-standalone: cogh missing or not executable
+```
+
+### Corregido
+
+- `release-candidate.pipeline.kts`, `package-$target`: la línea
+  `component="${'$'}{filename%-${'$'}version-*}"` usaba una **variable de
+  shell** `version` que la lane nunca exporta, donde la línea de al lado usa el
+  valor de Kotlin. Vacía, el patrón `%--*` no casa con nada y `component` se
+  quedaba con el nombre completo del archivo: `cp` buscaba un binario llamado
+  `…tar.gz`, `name --component` recibía lo mismo y `tar` escribía sobre el
+  directorio `dist/`. La misma notación estaba mal en los bundles de skills
+  (`cognicode-.tar.gz`) y en el mensaje de la stage de SBOM (`the sbom- stage`).
+- `release-candidate.pipeline.kts`, `package-$target`: la stage **no fallaba**.
+  `cp` y `tar` no se comprobaban, así que salía 0 sin haber producido un solo
+  payload, y el defecto aparecía dos stages más tarde con un mensaje que
+  señalaba el archivo y no el empaquetado. Ahora un `plan` vacío, un nombre
+  vacío, un binario ausente, o un planificado distinto de lo producido, son
+  todos fallos — la misma guarda «An empty candidate is not a candidate» que la
+  lane de release ya tenía, puesta donde ocurre.
+- `release.pipeline.kts`, `provenance`: la stage verificaba atestaciones
+  **incondicionalmente** mientras su propio header describía una política
+  condicional por `RELEASE_REQUIRE_PROVENANCE`. Como nada en el repositorio
+  genera una atestation —el generador era una GitHub Action y PipelineK no
+  tiene runtime de actions— la lane moría antes de `publish`: no una release
+  sin provenance, una release inalcanzable. La política vive ahora en un único
+  script, `scripts/ci/verify-provenance.sh`, y una sola stage lo llama. Los
+  artefactos se comprueban siempre y el resultado se imprime; sólo un run que
+  exige provenance trata la ausencia como fatal.
+
+### Añadido
+
+- `scripts/ci/test_candidate_packaging.py` — ejecuta el cuerpo **real** de la
+  stage: extrae el `sh(...)` del pipeline, resuelve las dos notaciones de
+  interpolación y lo corre contra un `cognicode-release` de mentira. En rojo
+  contra el pipeline publicado: sale 0 produciendo `[]`.
+- `scripts/ci/test_provenance_gate.py` — corre el gate con un `gh` de mentira
+  que reproduce el 404 medido. Seis mutantes, ninguno sobrevive.
+- `test_no_kotlin_value_is_written_as_a_shell_variable` — cubre la clase
+  entera en todos los lanes, no sólo estos dos sitios.
+
+### Correcciones de contrato
+
+- Los dos contratos nuevos se declaraban **verdes sin ejecutar nada**: su
+  `main()` usaba `dir(globals())`, que devuelve los métodos del dict y no los
+  nombres del módulo, así que la lista salía vacía. Lo detectó el fallo-cercado
+  del runner («exposes no test_* function»). Corregido, y ambos se han
+ comprobados en rojo contra los pipelines que `v0.101.3` publicó.
+- `product/profiles.json` **no** se toca en este corte: su `source_commit` está
+  fijado a propósito a un baseline (`73235889`) y `test_profiles.py` lo
+  comprueba. Regenerarlo con el SHA de este commit rompe el contrato — un
+  `source_commit` obsoleto no es drift cuando alguien lo {_pin} deliberadamente.
+
+### Desconocido
+
+- La ruta de empaquetado de `aarch64-unknown-linux-gnu` no se ha ejecutado
+  nunca: la lane murió en `x86_64` antes de llegar a ella.
+
 ## [v0.101.3] — 2026-10-03
 
 Ventana `v0.101.2..69186a1c`: **5 commits** — 2 `fix`, 2 `docs`, 1 `test`, y 0
