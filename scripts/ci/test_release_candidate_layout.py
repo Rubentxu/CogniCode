@@ -44,12 +44,25 @@ Run:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 LANE = "release-candidate.pipeline.kts"
 FLATTEN = "scripts/ci/stage-platform-payloads.sh"
+
+# The two properties `stage-platform-payloads.sh` has to hold over a staging
+# tree, spelled the way the script itself spells them. Kept here rather than
+# imported so that a rename inside the script is a visible test failure instead
+# of a silent import.
+TIER1_TRIPLES = ("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
+SHORT = {
+    "x86_64-unknown-linux-gnu": "linux-x86-64",
+    "aarch64-unknown-linux-gnu": "linux-aarch64",
+}
+COMPONENTS = ("cogh", "cognicode", "cognicode-mcp")
 
 # Component tarballs written straight into a bare `dist/`. That is where the
 # lane packaged before the layout was fixed, and the string `staging/payloads-`
@@ -145,11 +158,165 @@ def test_the_flatten_script_still_declares_that_layout() -> None:
         )
 
 
+def build_staging(root: Path, version: str) -> Path:
+    """A staging tree the flatten script should accept, built from the contract.
+
+    Every Tier-1 platform is present with all three components and their SBOMs,
+    because the script's closing sanity requires exactly that: a fixture with a
+    single platform would exit non-zero for a reason that has nothing to do with
+    the property under test, and a contract that cannot tell those two failures
+    apart is not a contract.
+    """
+    staging = root / "staging"
+    for triple in TIER1_TRIPLES:
+        lane = staging / f"payloads-{SHORT[triple]}"
+        (lane / "dist").mkdir(parents=True)
+        (lane / "crates").mkdir(parents=True)
+        for comp in COMPONENTS:
+            (lane / "dist" / f"{comp}-{version}-{triple}.tar.gz").write_bytes(
+                f"{comp} {version} {triple}".encode()
+            )
+            (lane / "crates" / f"{comp}-{triple}.cdx.json").write_text("{}")
+    return staging
+
+
+def run_flatten(staging: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(REPO_ROOT / FLATTEN), str(staging)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_the_flatten_script_will_not_pick_between_two_candidate_payloads() -> None:
+    """Two payloads for one component is a question, and the script must ask it.
+
+    MEDIDO 2026-10-03, lane `v0.101.5`. El worktree que construye el candidato es
+    de larga vida y `package-$target` crea su directorio de lane con `mkdir -p`
+    sin limpiarlo, asi que la salida de la candidate anterior seguia ahi:
+
+        staging/payloads-linux-x86-64/dist/
+          cogh-0.101.4-...  cogh-0.101.5-...
+          cognicode-0.101.4-...  cognicode-0.101.5-...
+          cognicode-mcp-0.101.4-...  cognicode-mcp-0.101.5-...
+
+    La seleccion de este script es `find ... -name "${comp}-[0-9]*-${platform}
+    .tar.gz" -print -quit`: se queda con el primer archivo que encuentre, sin
+    preguntar. Reproduciendo esas dos lineas sobre ese directorio, `cognicode`
+    resolvio a `cognicode-0.101.4-x86_64-unknown-linux-gnu.tar.gz`, y el regex
+    defensivo de la linea siguiente lo **aprobo**, porque ese regex tampoco
+    menciona la version. `copy_unique` tampoco habria dicho nada: sus claves son
+    los nombres de archivo, y `0.101.4` y `0.101.5` no colisionan.
+
+    La unica razon por la que `v0.101.5` no se publico con el binario de
+    `0.101.4` fue que otra stage habia comparado antes un numero de archivos. Eso
+    es un accidente de orden, no una garantia: este script es la ultima cosa
+    entre un staging tree y una release publicada, y no puede elegir un candidato
+    sin decirlo.
+
+    La version no se pasa como argumento a proposito. La autoridad de "que
+    version es esta release" es del tag y de la lane, y la lane ya afirma que su
+    `dist/` no contiene nada de otra version. Este script no necesita conocerla
+    para poder rechazar la ambiguedad, y no conocerla le evita ser una segunda
+    fuente de verdad.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = build_staging(Path(tmp), "0.101.5")
+        for comp in COMPONENTS:
+            (staging / f"payloads-linux-x86-64/dist/{comp}-0.101.4-x86_64-unknown-linux-gnu.tar.gz").write_bytes(
+                f"{comp} 0.101.4".encode()
+            )
+
+        result = run_flatten(staging)
+
+        assert result.returncode != 0, (
+            "el script aplanó un staging tree con dos payloads por componente y "
+            "siguió adelante. Eso es elegir un release por orden de directorio, "
+            "y el release elegido puede ser el de la versión anterior.\n"
+            f"stdout:\n{result.stdout}"
+        )
+        assert "0.101.4" in result.stderr, (
+            "el rechazo no nombra el payload competidor, así que no se puede "
+            "distinguir este caso de cualquier otro fallo. stderr fue:\n"
+            f"{result.stderr}"
+        )
+        assert not (staging / "cognicode-0.101.4-x86_64-unknown-linux-gnu.tar.gz").exists(), (
+            "un payload de la versión antigua llegó a la raíz del staging antes "
+            "de que el script fallara"
+        )
+
+
+def test_the_flatten_script_still_flattens_a_clean_tree() -> None:
+    """The positive half, through the same invocation as the negative one.
+
+    Stated separately so that making the script refuse everything is not a way
+    to pass the contract above. It has to accept a tree where each component has
+    exactly one payload and put all of them at the staging root.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = build_staging(Path(tmp), "0.101.5")
+
+        result = run_flatten(staging)
+
+        assert result.returncode == 0, (
+            "un staging tree sin ambigüedad por componente fue rechazado.\n"
+            f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+        )
+        for triple in TIER1_TRIPLES:
+            for comp in COMPONENTS:
+                assert (staging / f"{comp}-0.101.5-{triple}.tar.gz").is_file(), (
+                    f"falta el payload aplanado de {comp} para {triple}"
+                )
+                assert (staging / f"{comp}-{triple}.cdx.json").is_file(), (
+                    f"falta el SBOM aplanado de {comp} para {triple}"
+                )
+
+
+def test_the_flatten_script_refuses_a_root_holding_two_versions() -> None:
+    """The same ambiguity, one level up, where it is easiest to miss.
+
+    The lane directories here are clean — one payload per component each — so
+    nothing above this line objects. The contamination is at the staging root,
+    which is where a previous *flatten* run leaves its output; the script's own
+    header names that case. And the root cannot filter a stray payload out by
+    shape: it accepts every `*-*.tar.gz` so that skill bundles
+    (`{id}-{version}.tar.gz`) pass through, and a component payload
+    (`{comp}-{version}-{token}.tar.gz`) matches the same glob. So a leftover
+    payload sits beside the right one, and a check that asks "is there a
+    `cognicode-*-<platform>.tar.gz` here?" is answered yes by both.
+
+    This is why the check is a count and not a presence test, and it is a
+    separate test because it is a different reachability: the lane-directory
+    refusal above happens earlier in the run, so a fixture that triggers only
+    this one has to keep the lanes clean.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        staging = build_staging(Path(tmp), "0.101.5")
+        (staging / "cognicode-0.101.4-x86_64-unknown-linux-gnu.tar.gz").write_bytes(
+            b"cognicode 0.101.4"
+        )
+
+        result = run_flatten(staging)
+
+        assert result.returncode != 0, (
+            "el script aplanó un staging root con dos versiones del mismo "
+            f"componente y siguió adelante.\nstdout:\n{result.stdout}"
+        )
+        assert "0.101.4" in result.stderr, (
+            "el rechazo no nombra el archivo competidor.\nstderr:\n"
+            f"{result.stderr}"
+        )
+
+
 def main() -> int:
     tests = [
         test_the_candidate_lane_produces_the_layout_the_flatten_script_reads,
         test_component_tarballs_are_not_written_into_a_bare_dist,
         test_the_flatten_script_still_declares_that_layout,
+        test_the_flatten_script_will_not_pick_between_two_candidate_payloads,
+        test_the_flatten_script_refuses_a_root_holding_two_versions,
+        test_the_flatten_script_still_flattens_a_clean_tree,
     ]
     for func in tests:
         try:

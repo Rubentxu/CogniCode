@@ -214,6 +214,101 @@ pipeline {
                             echo "binaries cannot link produces a candidate that looks built and is not."
                             exit 1
                         }
+                        # The block above names two requirements and checks one. The
+                        # requirement it does not check is the one that is machine
+                        # state, so it is the one that silently disappears.
+                        #
+                        # MEDIDO 2026-10-03, lane v0.101.4: the target WAS installed,
+                        # so this stage reported success, and `binaries-$target` died
+                        # two stages later with exit 101 and a parser error about the
+                        # target triple — cc-rs handing zig a `--target=` flag zig
+                        # cannot read. The diagnostic named the compiler. The thing
+                        # that was actually missing is the sentence this stage prints
+                        # when the target is absent.
+                        #
+                        # A linker is configured in `CC_<triple>`, in
+                        # `CARGO_TARGET_<TRIPLE>_LINKER`, or as `linker` in a
+                        # `[target.<triple>]` table of a cargo config. All three are
+                        # outside the repository, which is why this check exists and
+                        # is also why it cannot make the cross toolchain reproducible:
+                        # it can say whether one is configured and whether it runs,
+                        # and nothing more. Whether it understands this target is
+                        # `binaries-$target`'s to find out.
+                        # NOTE: only REFERENCES to a shell variable need the
+                        # `${'$'}` escape, so that Kotlin emits a literal `$`.
+                        # A definition needs no escape and must not have one:
+                        # `${'$'}host=...` renders to `$host=...`, and `$host=value`
+                        # is not an assignment in any POSIX shell — the name
+                        # contains `$`, so bash reads the word as a command and
+                        # runs `=value`, which is where "command not found" with
+                        # an `=` in it comes from. MEDIDO 2026-10-03: written the
+                        # escaped way, this block failed on the assignment and
+                        # every variable below it read as empty.
+                        #
+                        # And a reference glued to a suffix needs braces, for the
+                        # same reason: `$key_LINKER` is the variable `key_LINKER`,
+                        # not `key` followed by `_LINKER`. That is why every use
+                        # below is `${'$'}{key}` and never `${'$'}key`.
+                        host=$(rustc -vV | sed -n 's/^host: //p')
+                        if [ "${'$'}host" != "$target" ]; then
+                            key=$(printf '%s' "$target" | tr '[:lower:]-' '[:upper:]_')
+                            cc_key=$(printf '%s' "$target" | tr '-' '_')
+                            linker_var="CARGO_TARGET_${'$'}{key}_LINKER"
+                            cc_var="CC_${'$'}{cc_key}"
+                            # bash's indirect form takes the variable name directly,
+                            # so a `$` in front of it is a bad substitution, and a
+                            # `$` inside a parameter name is a second bad
+                            # substitution. Hence the two name variables above
+                            # instead of nesting the expansion inline.
+                            linker="${'$'}{!linker_var:-}"
+                            [ -n "${'$'}linker" ] || linker="${'$'}{!cc_var:-}"
+                            # `[target.<triple>]` followed by a `linker` line, in
+                            # either the repository's config or the user's. A missing
+                            # file is an absent answer, not an error here. The
+                            # section header is COMPARED, never matched as a regex:
+                            # a target triple is full of `-`, and `a-b` inside a
+                            # bracket expression is an invalid range, which is how
+                            # this first read the header as a fatal regexp error
+                            # and reported "no linker is configured" for a file that
+                            # had one.
+                            cfg_has_linker=no
+                            for cfg in "$repoRoot/.cargo/config.toml" "${'$'}{CARGO_HOME:-${'$'}HOME/.cargo}/config.toml"; do
+                                [ -f "${'$'}cfg" ] || continue
+                                if awk -v section="[target.$target]" '
+                                    {
+                                        line = $0
+                                        gsub(/^[[:space:]]+/, "", line)
+                                        gsub(/[[:space:]]+$/, "", line)
+                                        if (line == section) { inside = 1; next }
+                                        if (substr(line, 1, 1) == "[") { inside = 0 }
+                                        if (inside && line ~ /^linker[[:space:]]*=/) { found = 1 }
+                                    }
+                                    END { exit(found ? 0 : 1) }
+                                ' "${'$'}cfg"; then
+                                    cfg_has_linker=yes
+                                    break
+                                fi
+                            done
+                            if [ -z "${'$'}linker" ] && [ "${'$'}cfg_has_linker" != "yes" ]; then
+                                echo "cargo target '$target' is installed but no linker is configured for it."
+                                echo "  Host is '${'$'}host', so this is a cross build, and a cross build"
+                                echo "  that cannot link produces a candidate that looks built and is not."
+                                echo "  Configure one, either as:"
+                                echo "    .cargo/config.toml:   [target.$target]"
+                                echo "                          linker = \"<linker>\""
+                                echo "    or in the environment: CC_${'$'}{cc_key}=\"<linker>\""
+                                echo "                          CARGO_TARGET_${'$'}{key}_LINKER=\"<linker>\""
+                                exit 1
+                            fi
+                            if [ -n "${'$'}linker" ] && ! command -v "${'$'}linker" >/dev/null 2>&1 && [ ! -x "${'$'}linker" ]; then
+                                echo "the linker configured for '$target' does not resolve: ${'$'}linker"
+                                echo "  A linker that is not on PATH and not executable fails later inside"
+                                echo "  the build, where the error names the compiler instead of the tool"
+                                echo "  that is missing. Check CC_${'$'}{cc_key} and CARGO_TARGET_${'$'}{key}_LINKER."
+                                exit 1
+                            fi
+                            echo "cross target '$target' (host '${'$'}host'): linker configured and resolves"
+                        fi
                     """.trimIndent())
                 }
 
@@ -253,6 +348,37 @@ pipeline {
                     sh(releasePaths + "\n" + """
                         platform=${platformOf(target)}
                         lane="staging/payloads-${'$'}platform"
+                        # This directory is this stage's output, and this stage is
+                        # its owner. `mkdir -p` on a directory that already exists
+                        # is not an innocent no-op: it is the mechanism by which a
+                        # build directory inherits state from a previous run. The
+                        # worktree that builds the candidate is long lived, so
+                        # `mkdir -p` alone meant the previous candidate's payloads
+                        # were still in here. MEDIDO 2026-10-03, lane v0.101.5:
+                        #
+                        #     FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+                        #
+                        # Three of the six were 0.101.4. The lane is written to be
+                        # re-runnable in a worktree that already holds a candidate,
+                        # so it starts from a directory that is known to be its own.
+                        #
+                        # QW-04's "the cleanup cannot be the verdict" does not
+                        # apply here, and the difference is the whole point: that
+                        # rule is about what happens AFTER the stages have decided,
+                        # and this is before anything is decided. If the input
+                        # state cannot be established, there is no known state to
+                        # package into, and continuing would mean packaging into
+                        # whatever the previous lane happened to leave.
+                        if [ -e "${'$'}lane" ]; then
+                            if ! rm -rf -- "${'$'}lane"; then
+                                echo "FAIL: could not clear the lane directory ${'$'}lane"
+                                echo "  It exists from a previous candidate, and this lane cannot"
+                                echo "  promise that the payloads it produces are its own. Clear it"
+                                echo "  by hand, or run in a worktree without a previous candidate."
+                                exit 1
+                            fi
+                            echo "cleared ${'$'}lane from a previous candidate"
+                        fi
                         mkdir -p "${'$'}lane/dist" "${'$'}lane/crates"
                         # The published product surface is the contract's, not this
                         # script's: `plan` prints the canonical filenames, and the
@@ -307,7 +433,16 @@ pipeline {
                         fi
                         produced=$(ls -1 "${'$'}lane/dist" | wc -l)
                         if [ "${'$'}produced" -ne "${'$'}planned" ]; then
+                            # The count is still worth keeping as a last line of
+                            # defense, but it no longer tries to name the offender:
+                            # the directory is cleared above, so nothing can be in
+                            # here that this loop did not just write, and a message
+                            # that guesses would be a message that lies. The stage
+                            # that can name the files is the flatten script, which
+                            # refuses an ambiguous lane by name.
                             echo "FAIL: planned ${'$'}planned artifacts for ${'$'}platform, produced ${'$'}produced."
+                            echo "  ${'$'}lane is created fresh by this stage; if this fires, something"
+                            echo "  other than this loop wrote into it."
                             exit 1
                         fi
                         # The SBOM belongs to the lane, not to the repository: the

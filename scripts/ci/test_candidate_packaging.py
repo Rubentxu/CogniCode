@@ -160,16 +160,30 @@ def strip_comments(text: str) -> str:
 
 
 def extract_stage_body(text: str, stage_name: str) -> str:
-    """Saca el cuerpo de shell del `sh(...)` de una stage, sin editarlo."""
+    """Saca el cuerpo de shell del `sh(...)` de una stage, sin editarlo.
+
+    El `sh(` se busca y luego el raw string que abre, porque no todas las stages
+    tienen la misma forma: `package-$target` concatena `releasePaths` con un raw
+    string, y `toolchain-for-$target` pasa el raw string directamente. Buscando
+    la forma exacta de la primera, la busqueda caia en la stage equivocada —el
+    siguiente `sh(releasePaths` ya era el de empaquetado— y el contrato ejecutaba
+    el cuerpo de otra stage y informaba sobre lo que esa hacia.
+    """
     marker = f'stage("{stage_name}") {{'
     start = text.index(marker)
-    open_kotlin = 'sh(releasePaths + "\\n" + """'
-    body_start = text.index(open_kotlin, start) + len(open_kotlin)
-    body_end = text.index('""".trimIndent())', body_start)
-    return text[body_start:body_end]
+    sh_at = text.index("sh(", start)
+    open_quote = text.index('"""', sh_at) + len('"""')
+    body_end = text.index('""".trimIndent())', open_quote)
+    return text[open_quote:body_end]
 
 
-def render(body: str, version: str, target: str, platform: str) -> str:
+def render(
+    body: str,
+    version: str,
+    target: str,
+    platform: str,
+    repo_root: str = "/",
+) -> str:
     """Convierte el cuerpo de la stage en el shell que PipelineK ejecutaria.
 
     EL ORDEN ES LA PRUEBA, Y CAMBIARLO ROMPE EL CONTRATO.
@@ -185,18 +199,35 @@ def render(body: str, version: str, target: str, platform: str) -> str:
     En el orden correcto no hay colision: `${'$'}version` no contiene la
     subcadena `$version` —la preceden los signos de dollar y llave— asi que
     sobrevive intacta y llega a bash como la variable no definida que es.
+
+    `repoRoot` y `cd` tambien son `val` de Kotlin, y no son la misma cosa:
+    `val repoRoot` es la ruta y `val cd` es el fragmento `cd "$repoRoot"`. Una
+    stage que necesite el path de un repo tiene que usar el primero; si el
+    renderizador no conoce los dos, el cuerpo se ejecuta contra rutas que la
+    lane nunca ve —`cd /ruta || exit 1/.cargo/config.toml` no es un camino que
+    exista— y el contrato pasa o falla por una razon que no es la que dice.
     """
     out = body.replace("${platformOf(target)}", platform)
     out = out.replace("$version", version)
     out = out.replace("$target", target)
+    out = out.replace("$repoRoot", repo_root)
+    out = out.replace("$cd", f'cd "{repo_root}"')
     out = re.sub(r"\$\{'\$'\}", "$", out)
     return out
 
 
 def run_package_stage(
-    *, plan_empty: bool = False, binaries: tuple[str, ...] = COMPONENTS
+    *,
+    plan_empty: bool = False,
+    binaries: tuple[str, ...] = COMPONENTS,
+    stale: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess:
-    """Ejecuta el cuerpo real de `package-$target` con un release de mentira."""
+    """Ejecuta el cuerpo real de `package-$target` con un release de mentira.
+
+    `stale` son archivos que ya estan en `staging/payloads-<platform>/dist/`
+    antes de que corra la stage: lo que una lane anterior dejo en un worktree
+    que se reutiliza. MEDIDO 2026-10-03, lane `v0.101.5`.
+    """
     text = CANDIDATE.read_text(encoding="utf-8")
     body = render(
         extract_stage_body(text, "package-$target"), VERSION, TARGET, PLATFORM
@@ -226,7 +257,11 @@ def run_package_stage(
             sbom.parent.mkdir(parents=True, exist_ok=True)
             sbom.write_text("{}\n", encoding="utf-8")
 
-        (root / "staging").mkdir()
+        staging = root / "staging"
+        lane = staging / f"payloads-{PLATFORM}"
+        (lane / "dist").mkdir(parents=True)
+        for name in stale:
+            (lane / "dist" / name).write_bytes(b"payload de otra lane")
         script = root / "package-stage.sh"
         script.write_text(
             f"#!/usr/bin/env bash\n"
@@ -270,6 +305,41 @@ def test_packages_every_planned_component() -> None:
     assert done.produced == expected, (
         f"un archivo por componente.\nobtenido: {done.produced}\n"
         f"stdout:\n{done.stdout}"
+    )
+
+
+def test_the_lane_does_not_inherit_a_previous_candidate_payloads() -> None:
+    """Un directorio de salida de la lane se crea; no se hereda.
+
+    MEDIDO 2026-10-03, lane `v0.101.5`, que murio aqui:
+
+        package-x86_64-unknown-linux-gnu
+        packaged cogh-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+        packaged cognicode-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+        packaged cognicode-mcp-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+        FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+
+    Los otros tres eran de `0.101.4`. El worktree que construye el candidato es
+    de larga vida, y la stage creaba su directorio de lane con `mkdir -p` sin
+    limpiarlo nunca, asi que la salida de la lane anterior seguia ahi.
+
+    `mkdir -p` sobre un directorio que ya existe no es un no-op innocuo: es
+    exactamente el mecanismo por el que un directorio de build hereda estado
+    entre ejecuciones. La stage que escribe en el directorio es su duena, asi
+    que es la que tiene que empezar desde uno nuevo — no un script de limpieza
+    nuevo al que recourse cuando esto vuelva a pasar.
+    """
+    done = run_package_stage(stale=(f"cognicode-0.101.2-{TARGET}.tar.gz",))
+    expected = sorted(f"{c}-{VERSION}-{TARGET}.tar.gz" for c in COMPONENTS)
+    assert done.produced == expected, (
+        f"la lane empaqueto encima de lo que habia encontrado.\n"
+        f"obtenido: {done.produced}\n"
+        f"esperado: {expected}\n"
+        f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}\n"
+        f"  Un payload de otra version dentro de `dist/` no es ruido: el "
+        f"ensamblador elige por nombre de componente, asi que cualquier "
+        f"candidato que se arme sobre este directorio puede acabar "
+        f"publicando los binarios de la release anterior."
     )
 
 

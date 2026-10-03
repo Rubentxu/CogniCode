@@ -60,8 +60,17 @@ Run:
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+# The renderer's ORDER is the proof in `test_candidate_packaging.py`, and getting
+# it wrong makes a contract pass on a broken pipeline. Two contracts that
+# execute stage bodies have to agree on that order, so they share one renderer
+# instead of each re-deriving it. `run_contract_tests.py` puts a contract's own
+# directory on sys.path precisely so a suite can import a sibling.
+import test_candidate_packaging as packaging
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -185,12 +194,217 @@ def test_no_pipeline_hardcodes_a_cargo_artifact_path() -> None:
     )
 
 
+def run_toolchain_gate(
+    *,
+    target: str,
+    host: str = "x86_64-unknown-linux-gnu",
+    installed: tuple[str, ...] | None = None,
+    linker_env: str | None = None,
+    cargo_config: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Runs the real `toolchain-for-$target` body against stubbed rustup/rustc.
+
+    The stubs are the point: whether a linker exists is a property of the
+    machine, and a contract that reads the maintainer's machine states the
+    maintainer's configuration rather than the stage's decision. Everything the
+    body can see is therefore constructed here — which targets are installed,
+    which host it believes it is on, whether a linker is configured and whether
+    that linker resolves.
+    """
+    text = (REPO_ROOT / "release-candidate.pipeline.kts").read_text(encoding="utf-8")
+
+    with tempfile.TemporaryDirectory() as raw:
+        root = Path(raw)
+        repo = root / "repo"
+        bindir = root / "bin"
+        bindir.mkdir(parents=True)
+        repo.mkdir()
+        (repo / ".cargo").mkdir()
+
+        body = packaging.render(
+            packaging.extract_stage_body(text, "toolchain-for-$target"),
+            version="0.0.0",
+            target=target,
+            platform="unused",
+            repo_root=str(repo),
+        )
+
+        for name, script in (
+            (
+                "rustup",
+                "#!/usr/bin/env bash\n"
+                'if [ "${2:-}" = "list" ] && [ "${3:-}" = "--installed" ]; then\n'
+                f"  printf '%s\\n' {' '.join(installed if installed is not None else (target,))}\n"
+                "fi\n",
+            ),
+            ("rustc", '#!/usr/bin/env bash\necho "host: %s"\n' % host),
+        ):
+            tool = bindir / name
+            tool.write_text(script, encoding="utf-8")
+            tool.chmod(0o755)
+
+        if cargo_config is not None:
+            (repo / ".cargo/config.toml").write_text(cargo_config, encoding="utf-8")
+
+        # A real, executable linker. `command -v` accepts an executable path, so
+        # this is enough to be "configured and resolving" without needing a
+        # compiler on this machine.
+        linker = root / "some-linker"
+        linker.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        linker.chmod(0o755)
+
+        script = root / "stage.sh"
+        script.write_text(f"#!/usr/bin/env bash\n{body}", encoding="utf-8")
+        script.chmod(0o755)
+
+        env = {
+            "PATH": f"{bindir}:/usr/bin:/bin",
+            # A CARGO_HOME of its own, so the second config the body reads is
+            # this machine's file and not the one running the suite.
+            "CARGO_HOME": str(root / "cargo-home"),
+            "HOME": str(root / "home"),
+        }
+        (root / "cargo-home").mkdir()
+        (root / "home").mkdir()
+        if linker_env is not None:
+            key = linker_env.format(
+                triple=target.replace("-", "_"),
+                upper=target.upper().replace("-", "_"),
+                path=str(linker),
+            )
+            name, _, value = key.partition("=")
+            env[name] = value
+
+        return subprocess.run(
+            [str(script)], capture_output=True, text=True, timeout=60, env=env
+        )
+
+
+def test_a_cross_target_with_no_linker_is_refused_before_the_build() -> None:
+    """The stage names the requirement and has to check it.
+
+    MEDIDO 2026-10-03, lane v0.101.4: `rustup target list --installed` contained
+    `aarch64-unknown-linux-gnu`, so this stage reported success, and the build
+    failed two stages later with exit 101 and a parser error about the target
+    triple. The diagnostic named the compiler; the missing thing was the
+    sentence this stage prints when the target is ABSENT — "a cross target also
+    needs a linker for it". A guarantee that is printed on one branch and
+    checked on another is the shape of defect this file exists for.
+    """
+    done = run_toolchain_gate(
+        target="aarch64-unknown-linux-gnu", installed=("aarch64-unknown-linux-gnu",)
+    )
+    assert done.returncode != 0, (
+        "un target cruzado instalado y sin linker configurado pasó la stage.\n"
+        f"stdout:\n{done.stdout}"
+    )
+    assert "no linker is configured" in done.stdout, (
+        "el rechazo no dice qué falta, así que no se puede distinguir de un "
+        f"target no instalado.\nstdout:\n{done.stdout}"
+    )
+
+
+def test_a_cross_target_with_a_resolving_linker_passes() -> None:
+    """The positive half, so refusing everything is not a way to pass the above.
+
+    This is also the shape the maintainer's machine actually has: the linker
+    lives in the environment, not in the repository, and a lane that could not
+    run there would be a gate nobody can pass.
+    """
+    done = run_toolchain_gate(
+        target="aarch64-unknown-linux-gnu",
+        installed=("aarch64-unknown-linux-gnu",),
+        linker_env="CC_{triple}={path}",
+    )
+    assert done.returncode == 0, (
+        "un target cruzado con un linker que resuelve fue rechazado.\n"
+        f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+
+
+def test_a_linker_declared_in_cargo_config_is_enough() -> None:
+    """The third way a linker gets configured, and the one a repository owns.
+
+    `CC_<triple>` and `CARGO_TARGET_<TRIPLE>_LINKER` are both environment. A
+    `[target.<triple>]` table is the only one of the three that can be
+    committed, so it is the one that would make a cross build reproducible
+    rather than merely configured.
+    """
+    done = run_toolchain_gate(
+        target="aarch64-unknown-linux-gnu",
+        installed=("aarch64-unknown-linux-gnu",),
+        cargo_config=(
+            "[target.aarch64-unknown-linux-gnu]\n"
+            'linker = "aarch64-linux-gnu-gcc"\n'
+            "\n"
+            "[target.x86_64-unknown-linux-musl]\n"
+            'linker = "clang"\n'
+        ),
+    )
+    assert done.returncode == 0, (
+        "un linker declarado en .cargo/config.toml fue rechazado.\n"
+        f"stdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+
+
+def test_a_linker_that_does_not_resolve_is_named() -> None:
+    """Configured is not the same as usable, and the message says which."""
+    done = run_toolchain_gate(
+        target="aarch64-unknown-linux-gnu",
+        installed=("aarch64-unknown-linux-gnu",),
+        linker_env="CARGO_TARGET_{upper}_LINKER=/nonexistent/linker-for-this-test",
+    )
+    assert done.returncode != 0, (
+        "un linker configurado que no existe pasó la stage; fallaría dentro del "
+        f"build, donde el error culpa al compilador.\nstdout:\n{done.stdout}"
+    )
+    assert "does not resolve" in done.stdout, (
+        f"el rechazo no nombra el linker.\nstdout:\n{done.stdout}"
+    )
+
+
+def test_a_native_target_needs_no_linker_configuration() -> None:
+    """The gate must not fire on the leg that always worked.
+
+    A cross-build check written without a host comparison rejects every build
+    on a machine where the host triple happens to equal a target, and then the
+    release lane stops working for a reason that has nothing to do with the
+    release.
+    """
+    done = run_toolchain_gate(
+        target="x86_64-unknown-linux-gnu",
+        host="x86_64-unknown-linux-gnu",
+        installed=("x86_64-unknown-linux-gnu",),
+    )
+    assert done.returncode == 0, (
+        "un target nativo sin linker configurado fue rechazado; la comprobación "
+        f"no distingue host de cruzado.\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+
+
+def test_a_missing_target_still_fails_the_way_it_did() -> None:
+    """The pre-existing check keeps its behaviour and its message."""
+    done = run_toolchain_gate(
+        target="aarch64-unknown-linux-gnu", installed=("x86_64-unknown-linux-gnu",)
+    )
+    assert done.returncode != 0, "un target no instalado pasó la stage"
+    assert "is not installed" in done.stdout, (
+        f"el mensaje preexistente de target ausente cambió.\nstdout:\n{done.stdout}"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     tests = [
         test_the_target_dir_resolver_is_runnable,
         test_no_stage_contains_an_inert_cd_guard,
         test_no_pipeline_hardcodes_a_cargo_artifact_path,
+        test_a_cross_target_with_no_linker_is_refused_before_the_build,
+        test_a_cross_target_with_a_resolving_linker_passes,
+        test_a_linker_declared_in_cargo_config_is_enough,
+        test_a_linker_that_does_not_resolve_is_named,
+        test_a_native_target_needs_no_linker_configuration,
+        test_a_missing_target_still_fails_the_way_it_did,
     ]
     for func in tests:
         try:
