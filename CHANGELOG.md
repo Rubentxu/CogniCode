@@ -10,6 +10,114 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.5] — 2026-10-03
+
+Ventana `v0.101.4..HEAD`: **6 commits** — 1 `fix`, 2 `refactor`, 1 `test`,
+1 `integrate`, 1 `docs`, y 0 marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.4..HEAD                      # 6
+git log --format='%s' v0.101.4..HEAD | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.101.4..HEAD \
+  | grep -cE '^BREAKING[ -]CHANGE'                       # 0
+```
+
+**Por qué existe v0.101.5 y por qué v0.101.4 no se publica.** El tag
+`v0.101.4` existe y su candidato llegó a correr, pero se cortó en un árbol
+que **no contiene ninguno** de los cinco commits de este ciclo. Publicarlo
+habría publicado una release cuyo contrato de salida de la CLI seguía
+tragando errores en once de los doce brazos de `CommandExecutor::execute`:
+operaciones que no se realizaban devolviendo 0. El tag no se puede mover sin
+mutar una identidad ya existente, así que la salida limpia es v0.101.5.
+
+### Corregido
+
+- **Ocho de los once brazos de la CLI tragan el error y salen con 0.**
+  `Analyze`, `Graph` y `FindUsages` propagaban; `Refactor`, `Index`,
+  `Navigate`, `Doctor`, `DocsIngest`, `IssuesIngest`, `Evidence` y
+  `Capabilities` imprimían el fallo con `eprintln!` y dejaban que `execute`
+  terminara en `Ok(())`. El caso caro no era hipotético:
+  `cognicode navigate references <símbolo>` imprimía
+  `Invalid position` y salía con **0**, así que un agente que seguía la
+  skill `cognicode-pr-review` creía haber consultado las referencias y no
+  había consultado ninguna. N+81 ya había corregido la skill; corregir la
+  documentación sin corregir el brazo dejaba el fallo al alcance de
+  cualquiera que tecleara el comando.
+
+  MEDIDO sobre el binario v0.101.2, no leído: `navigate references`,
+  `navigate definition`, `navigate hover`, `index build`, `index query`,
+  `graph full` y `graph mermaid` salían todos con 0.
+
+- **Una raíz de proyecto inexistente se reportaba como un grafo vacío.**
+  `AnalysisService::build_project_graph` llegado a una ruta que no existe
+  devolvía `Ok` con estado `Partial`: el `WalkBuilder` entrega una entrada
+  `Err` por la raíz ausente y `.filter_map(|e| e.ok())` la descarta, que
+  es exactamente la que había que conservar. El handler MCP `build_graph`
+  ya rechazaba ese caso, así que las dos interfaces respondían distinto a la
+  misma pregunta. Lo mismo en `LightweightIndex::build_index` con `WalkDir`.
+
+- **Un UAT que pasaba sin ejecutar lo que decía medir.**
+  `prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invocaba
+  `graph full --path`, y `graph full` no tiene `--path`: su firma es
+  `graph full [PATH]`, un positional. Clap rechazaba el flag con exit 2 y
+  el proceso moría antes del dispatch, así que la aserción se cumplía sin
+  que el motor de grafos llegara a ejecutarse. Medido: la forma antigua
+  devolvía **exit 2 idéntico con el defecto presente y ausente**, o sea que
+  no podía detectar el bug que decía detectar.
+
+### Cambiado
+
+- **Los brazos propagan con `?` en lugar de imprimir y devolver.**
+  `main.rs` ya hacía `CommandExecutor::execute(cli).await?`, así que la
+  frontera de propagación existía y lo que la cortaba era cada brazo. La
+  forma destino es `Self::execute_navigate(command).await?`: −75 líneas
+  netas, sin tipos nuevos, y el `Result` que ya existía es el que llega a
+  `main`.
+
+- **La limpieza del preflight vive en el script que la usa.** El trap era
+  `rm -rf "$WORK_DIR"` y el script hace `cd "$WORK_DIR/clone"`, así que se
+  ejecutaba desde dentro del directorio que borraba; el estado del trap
+  sustituye al del script. MEDIDO: el preflight de v0.101.2 certificó
+  `passed=5934 failed=0` con `PREFLIGHT PASS` y la lane salió igualmente
+  con 64, dejando 34 GB de clones huérfanos. Ahora la función sale del
+  directorio antes de borrar y la limpieza no puede cambiar el veredicto.
+
+### Añadido
+
+- **`cli_exit_code_propagation`** (21 tests). Siete casos de error y **tres
+  gemelos de éxito**, porque un contrato que solo afirma "esto sale distinto
+  de 0" pasa entero si el arreglo convierte todo en error, incluido el
+  éxito. Y cuatro contratos que releen el `match` de `execute` y clasifican
+  cada brazo, de modo que un brazo nuevo que trague el error es un RED y no
+  una línea más de una lista escrita a mano.
+- **Siete contratos de limpieza en `qw04_preflight_contract`** (11 → 18).
+  El que faltaba es el que reproduce el incidente: un `rm` que se niega
+  cuando el target es ancestro del cwd —la envoltura real del entorno— y
+  tres aserciones a la vez, exit preservado, negativa que **no** llega a
+  producirse, y clon eliminado.
+
+### Medido, y no arreglado aquí
+
+- **`execute_doctor` también llama `std::process::exit`** y **es alcanzable**
+  desde el binario normal, a diferencia de `DocsIngest` e `IssuesIngest`.
+  Es una tercera violación de la misma frontera, y no se cambia aquí porque
+  su exit code es un contrato publicado —"1 = entorno poco sano"— y moverlo
+  a `Err` cambia el diagnóstico.
+- **`DocsIngest` e `IssuesIngest` son superficie muerta**: viven detrás de
+  `#[cfg(feature = "multimodal")]`, y `multimodal` no es una feature
+  declarada de `cognicode-cli`. Sus `return Err` están puestos y el
+  contrato los verifica en el fuente, pero nadie puede invocarlos.
+- **`ide::tests::claude_config_path_default` es inestable**: lee `$HOME`
+  mientras corre en paralelo con hermanos `#[serial]` que la mutan. Causa
+  raíz medida — 48 `set_var("HOME")` en el binario, todos serializados, y
+  este test no— y tasa medida: **4 fallos de 10 ejecuciones**. Preexistente
+  a este ciclo, y por tanto fuera de él.
+- **La provenance de esta release no existe.** Sin cambios respecto a
+  v0.101.2: `RELEASE_REQUIRE_PROVENANCE=0` y el hueco de R2 documentado en
+  `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md`, pendiente de la decisión
+  del maintainer sobre custodia de la clave.
+
 ## [v0.101.4] — 2026-10-03
 
 Ventana `v0.101.3..f840df0c`: **2 commits** — 1 `fix`, 1 `test`, y 0 marcadores
