@@ -44,8 +44,14 @@ instalacion de un consumidor sin que nada en el repositorio lo advierta.
 
 from __future__ import annotations
 
+import hashlib
+import io
+import platform
 import re
+import subprocess
 import sys
+import tarfile
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -320,6 +326,258 @@ def test_the_checksum_lookup_matches_the_asset_name() -> None:
     )
 
 
+# --- La mitad de ejecucion: lo que install.sh PROMETE y nadie comprueba ------
+# El encabezado de install.sh declara cinco posturas de seguridad, y hasta hoy
+# ninguna estaba probada:
+#     unsupported platform   -> fail loud
+#     missing checksum       -> fail closed
+#     checksum mismatch      -> fail closed
+#     partial download       -> never reaches the destination
+#     existing destination   -> replaced only AFTER the new binary verifies
+#
+# MEDIDO 2026-10-03: `COGNICODE_RELEASE_BASE` — el hook que install.sh declara
+# exactamente para esto, "so a local fake release can drive the checksum/tamper
+# tests" — no lo usa nadie en el repo. `scripts/e88-entry-gates.sh` si ejecuta
+# install.sh, pero esta clavado en la release publica v0.97.0, vive fuera de
+# scripts/ci/ y por tanto fuera del merge gate, y solo prueba el camino feliz.
+#
+# Con COGNICODE_VERSION y COGNICODE_RELEASE_BASE fijos, install.sh no hace
+# ninguna llamada a GitHub: el tag ya esta resuelto y la base es la que le
+# damos. Con `file://` el stage entero es hermetico —sin red y sin release
+# publicada— asi que estas posturas se comprueban en el merge gate y no en la
+# proxima release que salga por la puerta.
+#
+# Los tests viven aqui y no en un fichero nuevo porque este ya es el dueno del
+# contrato de install.sh, y porque un segundo fichero de pruebas de instalacion
+# seria una segunda puerta al mismo gate, que es la leccion que
+# scripts/ci/test_preflight_cleanup.sh ya dejo pagada.
+INSTALL_VERSION = "0.0.0-contract"
+
+
+def host_triple() -> str:
+    """El triple que install.sh deduciria en ESTA maquina, leido de su `case`."""
+    targets = installer_targets()
+    arch = platform.machine()
+    assert arch in targets, (
+        f"install.sh no deduce ningun triple para la arquitectura de esta maquina "
+        f"({arch!r}); sus alias son {sorted(targets)}"
+    )
+    return targets[arch]
+
+
+def _write_tarball(path: Path, entries: dict[str, str]) -> None:
+    with tarfile.open(path, "w:gz") as tar:
+        for name, body in entries.items():
+            data = body.encode()
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            info.mode = 0o755
+            tar.addfile(info, io.BytesIO(data))
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def stage_release(
+    release: Path,
+    triple: str,
+    *,
+    version: str = INSTALL_VERSION,
+    entries: dict[str, str] | None = None,
+    sums: str = "correct",
+) -> str:
+    """Deja en `release` lo que un GitHub release pondria, y devuelve la base.
+
+    `sums` decide que dice el SHA256SUMS: el digest real del tarball, un digest
+    equivocado, un digest de otro asset, o nada. El tarball se construye aqui
+    en vez de copiarse de un fixture porque cada caso negativo necesita un
+    tarball cuyo digest no coincida con lo que dice el manifiesto.
+    """
+    release.mkdir(parents=True, exist_ok=True)
+    asset = f"cogh-{version}-{triple}.tar.gz"
+    archive = release / asset
+    _write_tarball(
+        archive,
+        entries
+        if entries is not None
+        else {"bin/cogh": f'#!/bin/sh\necho "cogh {version}"\n'},
+    )
+    if sums == "correct":
+        (release / "SHA256SUMS").write_text(f"{_sha256(archive)}  {asset}\n")
+    elif sums == "wrong-digest":
+        (release / "SHA256SUMS").write_text(f"{'0' * 64}  {asset}\n")
+    elif sums == "other-asset-only":
+        (release / "SHA256SUMS").write_text(f"{'0' * 64}  otro-{triple}.tar.gz\n")
+    elif sums == "absent":
+        pass
+    else:
+        raise AssertionError(f"sums={sums!r} no es un modo conocido")
+    return f"file://{release}"
+
+
+def run_installer(
+    work: Path, base: str, *, version: str = INSTALL_VERSION
+) -> tuple[subprocess.CompletedProcess, Path]:
+    """install.sh con un HOME limpio, la version fijada y la base que le damos.
+
+    El destino se aparta del HOME a proposito: install.sh usa
+    `COGNICODE_INSTALL_DIR` y asi el test puede afirmar sobre el binario final
+    sin depender de donde Caen los shims de Layer 1.
+    """
+    home = work / "home"
+    dest = work / "dest"
+    tmp = work / "tmp"
+    for directory in (home, dest, tmp):
+        directory.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["sh", str(INSTALL_SH)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env={
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "HOME": str(home),
+            "TMPDIR": str(tmp),
+            "COGNICODE_VERSION": version,
+            "COGNICODE_RELEASE_BASE": base,
+            "COGNICODE_INSTALL_DIR": str(dest),
+        },
+    )
+    return result, dest
+
+
+def assert_refused(result: subprocess.CompletedProcess, expected: str, what: str) -> None:
+    """Que falle, por la razon declarada, y no por la primera que se encuentre.
+
+    Un `returncode != 0` sin mas seria el mismo falso verde que cerro el UAT de
+    `graph full`: probaria que algo fallo, no que install.sh detecto lo que dice
+    detectar. install.sh escribe por `log`, que va a stderr, asi que el mensaje
+    se busca ahi.
+    """
+    assert result.returncode != 0, f"{what}: install.sh salio 0 cuando deberia negarse"
+    assert expected in result.stderr, (
+        f"{what}: fallo, pero no por la razon declarada. Se esperaba {expected!r} "
+        f"en stderr.\nstderr:\n{result.stderr}"
+    )
+
+
+def test_a_verified_release_installs_the_binary_it_checksummed() -> None:
+    """La mitad positiva: sin esto, negarse a todo tambien pasaria el contrato."""
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(work / "release", triple)
+        result, dest = run_installer(work, base)
+        assert result.returncode == 0, (
+            f"una release coherente fue rechazada.\nstderr:\n{result.stderr}"
+        )
+        installed = dest / "cogh"
+        assert installed.is_file(), f"install.sh no dejo el binario en {installed}"
+        reported = subprocess.run(
+            [str(installed), "--version"], capture_output=True, text=True, timeout=30
+        )
+        assert reported.stdout.strip() == f"cogh {INSTALL_VERSION}", (
+            f"el binario instalado no es el que se comprobo: {reported.stdout!r}"
+        )
+
+
+def test_a_tampered_asset_is_refused_and_installs_nothing() -> None:
+    """checksum mismatch -> fail closed, y el destino no se toca."""
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(work / "release", triple, sums="wrong-digest")
+        result, dest = run_installer(work, base)
+        assert_refused(result, "checksum mismatch", "digest que no coincide")
+        assert not (dest / "cogh").exists(), (
+            "install.sh dejo un binario en el destino tras rechazar el checksum; "
+            "fail closed significa fail closed"
+        )
+
+
+def test_a_missing_checksum_entry_is_refused() -> None:
+    """missing checksum -> fail closed: un manifiesto sin nuestra linea no vale."""
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(work / "release", triple, sums="other-asset-only")
+        result, dest = run_installer(work, base)
+        assert_refused(result, "no checksum found", "manifiesto sin nuestra entrada")
+        assert not (dest / "cogh").exists()
+
+
+def test_a_missing_sha256sums_file_is_refused() -> None:
+    """Sin manifiesto no hay digest que consultar, y sin digest no se instala."""
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(work / "release", triple, sums="absent")
+        result, dest = run_installer(work, base)
+        assert_refused(
+            result, "refusing to install without a checksum", "manifiesto ausente"
+        )
+        assert not (dest / "cogh").exists()
+
+
+def test_a_refused_install_leaves_the_previous_binary_in_place() -> None:
+    """existing destination -> replaced only AFTER the new binary verifies.
+
+    La postura que mas cuesta: el binario anterior se conserva mientras se
+    descarga, se descomprime y se valida el nuevo. Un fallo en cualquier punto
+    anterior al `mv` tiene que dejar el anterior exactamente como estaba.
+    """
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        dest = work / "dest"
+        dest.mkdir()
+        sentinel = dest / "cogh"
+        sentinel.write_text("#!/bin/sh\necho 'cogh version-anterior'\n")
+        sentinel.chmod(0o755)
+
+        base = stage_release(work / "release", triple, sums="wrong-digest")
+        result, _ = run_installer(work, base)
+        assert_refused(result, "checksum mismatch", "installacion rechazada")
+        assert sentinel.is_file(), "un install fallido borro el binario anterior"
+        assert "version-anterior" in sentinel.read_text(), (
+            "un install fallido reemplazó el binario anterior"
+        )
+
+
+def test_an_archive_without_bin_cogh_is_refused() -> None:
+    """El asset se verifica y luego se abre; un tarball sin bin/cogh no instala."""
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(
+            work / "release", triple, entries={"bin/otro-cosa": "#!/bin/sh\ntrue\n"}
+        )
+        result, dest = run_installer(work, base)
+        assert_refused(result, "archive does not contain bin/cogh", "tarball sin cogh")
+        assert not (dest / "cogh").exists()
+
+
+def test_a_binary_reporting_another_version_is_refused() -> None:
+    """Un digest que cuadra no dice que el binario sea el que se pidio.
+
+    Este es el fallo que el checksum no puede ver: el tarball es autentico y el
+    digest coincide, pero lo que hay dentro no es la version que se esta
+    instalando. install.sh lo comprueba ejecutandolo antes de tocar el destino.
+    """
+    triple = host_triple()
+    with tempfile.TemporaryDirectory() as raw:
+        work = Path(raw)
+        base = stage_release(
+            work / "release",
+            triple,
+            entries={"bin/cogh": '#!/bin/sh\necho "cogh 9.9.9-otra"\n'},
+        )
+        result, dest = run_installer(work, base)
+        assert_refused(result, "failed validation", "binario de otra version")
+        assert not (dest / "cogh").exists()
+
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     failures: list[str] = []
@@ -335,7 +593,12 @@ def main() -> int:
         return 1
     print(
         "PASS - el asset que pide install.sh y el que publica la release se "
-        "derivan igual, y toda plataforma publicada es instalable por ese canal."
+        "derivan igual, toda plataforma publicada es instalable por ese canal, y "
+        "las cinco posturas que install.sh declara en su encabezado se han "
+        "ejercitado de verdad contra una release local: instala la verificada y "
+        "se niega, nombrando la razon, ante digest alterado, checksum ausente, "
+        "entrada ausente, tarball sin bin/cogh y binario de otra version, sin "
+        "tocar jamas un destino preexistente."
     )
     return 0
 
