@@ -82,8 +82,8 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.100.0 (current `main`, not yet released) | yes |
-| 0.99.2 (latest release, `v0.99.2`) | yes |
+| 0.101.0 (current `main`, not yet released) | yes |
+| 0.98.1 (latest published release, `v0.98.1`) | yes |
 
 Older lines are not patched. If you are on an older release and find a
 vulnerability, the report is still useful; tell us the version so the fix can
