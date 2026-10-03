@@ -38,6 +38,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RELEASE = REPO_ROOT / "release.pipeline.kts"
+CANDIDATE = REPO_ROOT / "release-candidate.pipeline.kts"
 
 # La forma en que el pipeline se refiere a la variable dentro de un raw string
 # de Kotlin. `${'$'}TARGET_DIR` es "TARGET_DIR" con un dollar literal delante;
@@ -121,6 +122,68 @@ def test_the_publication_lane_really_does_publish() -> None:
     assert create < text.index("stage(\"publish\")"), (
         "create-draft debe preceder al grupo publish; si el orden cambio, la "
         "conclusion sobre cuando se rompe la lane hay que volver a medirla"
+    )
+
+
+def test_every_verify_invocation_passes_both_required_flags() -> None:
+    """MEDIDO 2026-10-03. `cognicode-release verify` exige `--version` Y
+    `--tag`. La stage `verify` de release-candidate.pipeline.kts pasaba solo el
+    primero, y la lane lodijo al llegar por primera vez a esa stage:
+
+        error: the following required arguments were not provided:
+          --tag <TAG>
+
+    No lo habia visto nadie porque la stage no se habia ejecutado nunca. Y la
+    misma invocacion en release.pipeline.kts si lo pasaba, asi que el
+    precedente estaba dentro del repo y nadie lo comparo.
+
+    El invariante es mas amplio que ese caso: cualquier invocacion de `verify`
+    en cualquier lane tiene que pasar las dos banderas. Un subcomando que
+    exige N argumentos y una stage que pasa N-1 no se distinguen hasta que
+    corre, y para entonces la stage lleva RunsEntity minutos esperando.
+
+    MEDIDO 2026-10-03. La primera version de este test comprobaba el flag
+    sobre el cuerpo crudo de la stage, y paso verde con `--tag` eliminado del
+    comando. Dos veces por la misma razon:
+
+      - El cuerpo de la stage incluye el texto del raw string de Kotlin, y sus
+        comentarios empiezan por `#` — de shell — no por `//`. Filtrar solo
+        `//` deja dentro justo el texto que explica el fallo, que menciona
+        `--tag <TAG>`.
+      - Un comentario no ejecuta nada, ni sea de Kotlin ni de shell. Una
+        bandera que aparece en uno no es una bandera que la stage pase.
+
+    Asi que lo que se filtra son las dos formas de comentario, y lo que se
+    busca es el flag en lo que queda.
+    """
+    checked = 0
+    missing: list[str] = []
+    for pipeline in (CANDIDATE, RELEASE):
+        text = pipeline.read_text(encoding="utf-8")
+        for name, body in stage_blocks(text):
+            if "cognicode-release" not in body or " verify " not in body:
+                continue
+            # Un comentario no ejecuta nada, sea de Kotlin (`//`) o de shell
+            # (`#`, que es lo que hay dentro de un raw string). Sus palabras no
+            # son argumentos.
+            code = "\n".join(
+                line
+                for line in body.splitlines()
+                if not line.strip().startswith(("/", "#"))
+            )
+            checked += 1
+            where = f"{pipeline.name}:{name}"
+            for flag in ("--version", "--tag"):
+                if flag not in code:
+                    missing.append(f"{where} no pasa {flag}")
+
+    assert checked >= 2, (
+        f"se esperaban al menos 2 invocaciones de `verify` entre las dos lanes y "
+        f"se encontraron {checked}; si el extractor dejo de verlas, este test no "
+        f"esta midiendo nada"
+    )
+    assert not missing, (
+        f"`cognicode-release verify` exige --version y --tag. Faltan: {missing}"
     )
 
 

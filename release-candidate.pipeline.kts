@@ -522,7 +522,17 @@ pipeline {
             // about rebuilding anything.
             stage("verify") {
                 sh(releasePaths + "\n" + """
-                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version"
+                    # MEDIDO 2026-10-03. Esta stage llevaba `--version` y nada
+                    # mas, y `verify` exige tambien `--tag`:
+                    #
+                    #     error: the following required arguments were not provided:
+                    #       --tag <TAG>
+                    #
+                    # No se habia visto porque la stage no se habia ejecutado
+                    # nunca: es la primera vez que la lane llegaba aqui. La misma
+                    # invocacion en release.pipeline.kts si lo pasa, asi que el
+                    # precedente estaba dentro del repo.
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
 
