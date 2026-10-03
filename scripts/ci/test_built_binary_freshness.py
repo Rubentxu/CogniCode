@@ -35,23 +35,28 @@ CHECK = REPO_ROOT / "scripts" / "ci" / "check-built-binary.sh"
 CANDIDATE = REPO_ROOT / "release-candidate.pipeline.kts"
 
 
-def make_tree(directory: str) -> tuple[Path, Path]:
-    """Un arbol de mentira: un crate con un `.rs` y un binario junto."""
+def make_tree(directory: str) -> tuple[Path, Path, Path]:
+    """Un arbol de mentira: las fuentes que construyen el binario, y el binario."""
     root = Path(directory) / "repo"
     crate = root / "crates" / "thing"
     crate.mkdir(parents=True)
     source = crate / "lib.rs"
     source.write_text("fn main() {}\n", encoding="utf-8")
+    # Un fichero del mismo crate que NO entra en este binario. Existe para
+    #MEDIDO: con el barrido por `crates/` que hacia la primera version, este
+    # fichero hacia fallar la stage con un binario perfectamente fresco.
+    unrelated = crate / "otro.rs"
+    unrelated.write_text("pub fn otro() {}\n", encoding="utf-8")
     binary = root / "target" / "release" / "thing"
     binary.parent.mkdir(parents=True)
     binary.write_text("#!/bin/sh\n", encoding="utf-8")
     binary.chmod(0o755)
-    return root, binary
+    return root, source, unrelated
 
 
-def run_check(binary: Path, root: Path) -> subprocess.CompletedProcess:
+def run_check(binary: Path, root: Path, *sources: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["bash", str(CHECK), str(binary), str(root)],
+        ["bash", str(CHECK), str(binary), str(root), *[str(s) for s in sources]],
         capture_output=True,
         text=True,
         timeout=120,
@@ -63,24 +68,45 @@ def test_the_check_exists() -> None:
     assert os.access(CHECK, os.X_OK), f"{CHECK} no es ejecutable"
 
 
-def test_a_binary_built_from_this_tree_passes() -> None:
+def test_a_binary_built_from_these_sources_passes() -> None:
     with tempfile.TemporaryDirectory() as raw:
-        root, binary = make_tree(raw)
-        # El binario es mas nuevo que la fuente: el caso normal.
+        root, source, _ = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
         now = time.time()
         os.utime(binary, (now, now))
-        done = run_check(binary, root)
+        os.utime(source, (now - 10, now - 10))
+        done = run_check(binary, root, source)
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_a_binary_older_than_a_source_is_rejected() -> None:
-    """El caso medido: un binario de otro checkout, mas nuevo en reloj pero mas
-    viejo de contenido."""
+def test_a_source_that_is_not_named_cannot_trip_it() -> None:
+    """MEDIDO 2026-10-03: la guarda de la primera version comparaba contra
+    todos los `.rs` de `crates/` y rechazaba la stage porque habia cambiado
+    `ide.rs`, que no entra en `cognicode-release`. Un guard que rechaza lo que
+    no debe entrena a ignorar su veredicto."""
     with tempfile.TemporaryDirectory() as raw:
-        root, binary = make_tree(raw)
+        root, source, unrelated = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
+        now = time.time()
+        # El binario es fresco respecto a lo que lo construye, y `unrelated`
+        # es mas nuevo que el: la stage tiene que pasar igual.
+        os.utime(binary, (now, now))
+        os.utime(source, (now - 10, now - 10))
+        os.utime(unrelated, (now + 60, now + 60))
+        done = run_check(binary, root, source)
+    assert done.returncode == 0, (
+        f"un fichero que no construye el binario no puede rechazarlo.\n"
+        f"{done.stdout}{done.stderr}"
+    )
+
+
+def test_a_binary_older_than_a_source_is_rejected() -> None:
+    with tempfile.TemporaryDirectory() as raw:
+        root, source, _ = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
         old = time.time() - 3600
         os.utime(binary, (old, old))
-        done = run_check(binary, root)
+        done = run_check(binary, root, source)
     assert done.returncode != 0, done.stdout
     combined = done.stdout + done.stderr
     assert "CARGO_TARGET_DIR" in combined, (
@@ -88,27 +114,59 @@ def test_a_binary_older_than_a_source_is_rejected() -> None:
     )
 
 
+def test_naming_no_sources_fails_closed() -> None:
+    """Una guarda a la que no se le dice que vigilar no vigila nada."""
+    with tempfile.TemporaryDirectory() as raw:
+        root, _, _ = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
+        now = time.time()
+        os.utime(binary, (now, now))
+        done = run_check(binary, root)
+    assert done.returncode != 0, (
+        "sin fuentes nombradas la guarda tiene que negarse a dar un veredicto"
+    )
+
+
+def test_a_named_source_that_does_not_exist_fails() -> None:
+    with tempfile.TemporaryDirectory() as raw:
+        root, _, _ = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
+        done = run_check(binary, root, Path("crates/thing/no_existe.rs"))
+    assert done.returncode != 0, "una fuente que no existe no puede probar frescura"
+    assert "no existe" in (done.stdout + done.stderr)
+
+
 def test_a_missing_binary_is_not_a_pass() -> None:
     with tempfile.TemporaryDirectory() as raw:
-        root, binary = make_tree(raw)
+        root, source, _ = make_tree(raw)
+        binary = root / "target" / "release" / "thing"
         binary.unlink()
-        done = run_check(binary, root)
+        done = run_check(binary, root, source)
     assert done.returncode != 0, "un binario ausente no es un binario fresco"
     assert "no existe" in (done.stdout + done.stderr)
 
 
-def test_the_release_tool_stage_checks_the_tool_it_just_built() -> None:
-    """Si la stage no lo llama, la comprobacion no protege nada."""
+def test_the_release_tool_stage_names_the_sources_it_checks() -> None:
+    """Si la stage no lo llama, la comprobacion no protege nada; y si no nombra
+    las fuentes correctas, deja de proteger justo lo que queria."""
     text = CANDIDATE.read_text(encoding="utf-8")
     start = text.index('stage("release-tool")')
     nxt = text.find('stage("', start + 10)
     body = text[start : nxt if nxt != -1 else len(text)]
     assert "check-built-binary.sh" in body, (
         "la stage que construye la herramienta de release tiene que comprobar "
-        "que es de este arbol: un target dir compartido entre checkouts puede "
-        "dejarle una herramienta de otro, y el fallo sale veinte minutos "
-        "despues, en otra stage, blaming un subcomando que si existe"
+        "que es de este arbol"
     )
+    for source in (
+        "crates/cognicode-cli/src/bin/release.rs",
+        "crates/cognicode-cli/src/cmd/release_contract.rs",
+        "crates/cognicode-cli/src/cmd/release_factory.rs",
+    ):
+        assert source in body, (
+            f"la guarda tiene que mirar {source}: es una de las fuentes que "
+            f"construyen la herramienta, y es de donde salio el subcomando "
+            f"`skills` que la lane no encontraba"
+        )
 
 
 def main() -> int:

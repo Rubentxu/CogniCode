@@ -208,8 +208,17 @@ pipeline {
                     # un subcomando que el arbol si tiene. Cargo compara
                     # mtimes, y las fuentes de este checkout son mas antiguas
                     # que un binario que otro checkout construyo despues.
+                    #
+                    # MEDIDO TAMBIEN, en esta misma lane: la primera version de
+                    # esta guarda comparaba contra TODOS los `.rs` de `crates/`
+                    # y dio un falso positivo, porque `ide.rs` no entra en este
+                    # binario. Por eso el script no barre el arbol: se le dicen
+                    # las fuentes que lo construyen, y solo esas.
                     bash scripts/ci/check-built-binary.sh \
-                        "$(scripts/ci/target-dir.sh)/release/cognicode-release" .
+                        "$(scripts/ci/target-dir.sh)/release/cognicode-release" . \
+                        crates/cognicode-cli/src/bin/release.rs \
+                        crates/cognicode-cli/src/cmd/release_contract.rs \
+                        crates/cognicode-cli/src/cmd/release_factory.rs
                 """.trimIndent())
             }
         }
