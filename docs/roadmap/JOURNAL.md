@@ -12058,3 +12058,197 @@ de 10**): es deuda de test, no de arquitectura, y pertenece al bloque de
 convergencia estructural. No se decide el destino de la superficie
 `multimodal` muerta. No se implementa R2. No se tocan los ADRs archivados ni
 se reabre ninguna `C#` firmada.
+
+## N+84 — La candidate que heredó los binarios de la anterior, y el instalador que nadie ejecutaba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits** `d1f1c051`
+(lifecycle de lane + hermeticidad del enlace aarch64), `ac65233a` (la mitad de
+ejecución de `install.sh`) · **Rama** `integrate/v1015` · **Bloque** B2.9 y B4a.
+
+### La lane no falló donde yo esperaba
+
+`v0.101.5` pasó el preflight entero —`passed=5964 failed=0 ignored=30`, +385
+sobre el baseline `5579/0/37`, dentro de tolerancia—, y pasó `tag-coherence`,
+advisories, licenses, `release-tool`, `binaries-x86_64-unknown-linux-gnu` y
+`sbom-x86_64-unknown-linux-gnu`. Murió en la catorceava stage:
+
+    package-x86_64-unknown-linux-gnu
+    packaged cogh-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    packaged cognicode-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    packaged cognicode-mcp-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+
+Los otros tres eran de `0.101.4`. El worktree que construye el candidate es de
+larga vida y `package-$target` creaba su lane dir con `mkdir -p` sin limpiarlo
+nunca, así que la salida de la candidate anterior seguía dentro. La pierna
+aarch64 no llegó a ejecutarse. **No hay candidate, no hay certificación y no se
+publicó nada.**
+
+### El síntoma era lo de menos
+
+Lo que decidió si esto era higiene o un agujero de Release Truth fue medir el
+staging contaminado en vez de leer el código. La selección del ensamblador es
+
+    find "${dist_dir}" … -name "${comp}-[0-9]*-${platform}.tar.gz" -print -quit
+
+es decir **se queda con el primero que encuentra**, y el regex defensivo de la
+línea siguiente (`^${comp}-[0-9].*-${platform}\.tar\.gz$`) **no menciona la
+versión**. Reproduciendo esas dos líneas sobre el directorio real:
+
+    cogh              -> cogh-0.101.5-…              ACEPTA
+    cognicode         -> cognicode-0.101.4-…         ACEPTA   <-- la anterior
+    cognicode-mcp     -> cognicode-mcp-0.101.5-…     ACEPTA
+
+`copy_unique` tampoco decía nada: sus claves son los nombres de archivo, y
+`0.101.4` y `0.101.5` no colisionan. El script imprimió `OK`. **Lo único que
+impidió publicar los binarios de la release anterior fue que otra stage
+comparara antes un número de archivos**, y eso es un accidente de orden de
+stage, no una propiedad de nada.
+
+### Tres arreglos, cada uno con su dueño y su propiedad
+
+1. **`package-$target` crea su lane dir desde cero.** Aquí no aplica el «la
+   limpieza no puede ser el veredicto» de QW-04, y la diferencia es el punto:
+   esa regla es para lo que se borra *después* de decidir, y esto es antes. Si
+   el estado de entrada no se puede establecer, se dice y se para; si no se
+   puede limpiar, es fatal y no un aviso.
+2. **El ensamblador rechaza la ambigüedad en vez de resolverla**, en el lane dir
+   y también en la raíz del staging. En la raíz hace falta porque un payload
+   viejo es indistinguible de un bundle de skills: el root acepta todo
+   `*-*.tar.gz` y ambos nombres casan. Por eso ahí es un recuento y no una
+   prueba de presencia.
+3. **`toolchain-for-$target` comprueba el requisito que imprimía y no
+   verificaba.** En `v0.101.4` el target estaba instalado, la stage dio bien, y
+   `binaries-$target` murió dos stages después con exit 101 y un error de parser
+   sobre el triple, culpando al compilador.
+
+**La versión no se pasa al ensamblador, a propósito.** Habría roto los diez
+puntos de invocación de cuatro UATs de Rust, y habría creado una segunda fuente
+de verdad para algo que ya es autoridad del tag y de la lane. La ambigüedad se
+detecta sin conocer la versión.
+
+### El gate aarch64 hace el fallo temprano, no reproducible el toolchain
+
+El enlace aarch64 vivía en tres variables de entorno fuera del repo
+(`CC_aarch64_unknown_linux_gnu`, `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`,
+`AR_aarch64_unknown_linux_gnu`) y `~/.local/bin/zig-cc-aarch64` no se
+referenciaba en ningún `.kts`, `.sh` ni `.toml`. El gate se verificó contra el
+entorno real en sus tres ramas: con la configuración de la lane `rc=0`, sin
+linker `rc=1` con la remédica, y con un linker roto `rc=1` nombrando la ruta.
+**Un runner sin esas variables ahora falla en `toolchain-for-$target` en lugar
+de producir un candidate que parece construido y no lo está.** Si eso no es
+aceptable, el enlace tiene que pasar a ser propiedad del repo, y es otra
+decisión.
+
+### `install.sh`: cinco posturas declaradas y cero tests
+
+El encabezado de `install.sh` declara cinco posturas —unsupported platform,
+missing checksum, checksum mismatch, partial download, y existing destination
+replaced only after the new binary verifies— y ninguna estaba probada. El
+hook para poder hacerlo, `COGNICODE_RELEASE_BASE`, lleva muerto desde que se
+escribió, con el comentario explícito de que existe *«so a local fake release
+can drive the checksum/tamper tests»*. `scripts/e88-entry-gates.sh` sí ejecuta
+`install.sh` de extremo a extremo, pero está clavado en la release pública
+`v0.97.0`, vive fuera de `scripts/ci/` y por tanto fuera del merge gate, y solo
+prueba el camino feliz.
+
+Con `COGNICODE_VERSION` y `COGNICODE_RELEASE_BASE` fijos, `install.sh` no hace
+ninguna llamada a GitHub, así que con `file://` el stage es hermético: sin red y
+sin release publicada. Siete tests, uno positivo porque negarse a todo también
+pasaría el contrato, y cada negativo comprueba **la razón del rechazo** y no
+solo el código de salida — la distinción que hizo falso verde el UAT de
+`graph full`. Cubre también el fallo que el checksum no puede ver: un tarball
+auténtico cuyo digest coincide y cuyo binario responde con otra versión.
+
+### Corrección de una afirmación mía
+
+Dije que «mise no tiene manifiesto en el repo» como hueco. **Es falso, y la
+medida lo desmonta**: el README enseña
+`mise install "github:Rubentxu/CogniCode[matching=cogh-]"`, que es el backend de
+GitHub de mise y resuelve el asset desde el propio tag. No necesita manifiesto;
+su ausencia es el diseño, no un agujero. Lo que sí es verdad es que el recibo de
+identidad `docs/e87-mise-identity-receipt.md` está anclado a `v0.96.0` y es
+evidencia manual observada, no un gate, y que esa vía **no es hermética**: mise
+instala desde GitHub y necesita una release publicada.
+
+### Gates medidos sobre el árbol que se tagueará
+
+| Gate | Resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **passed=5968 failed=0 ignored=30**, 162 binarios `ok`, `CARGO_EXIT=0` |
+| `bash scripts/ci/run-all-contracts.sh` | **182 passed, 0 failed** (165 al empezar este bloque) |
+| UATs Rust que leen pipeline y ensamblador | **61 verdes** (9+11+11+30) |
+| Contratos nuevos | 17, todos con gemelo positivo y 6 mutaciones que muerden |
+| Der-risk vs baseline `5579/0/37` | +389 passed, −7 ignored, tolerancia ±2 |
+
+### Lección 199
+
+Un count-check puede ser un guard verdadero y aun así **enmascarar** el defecto
+que viene detrás. `planned != produced` es correcto y detectaba la contaminación,
+pero su éxito hacía creer que la lane no podía publicar los bytes de otra
+versión, cuando lo único que impedía esa publicación era que ese count saliera
+antes en el orden de stages. Un guard que se adelanta a la propiedad que de
+veras importa no es un guard: es un accidente favorable.
+
+### Lección 200
+
+Un directorio de salida de build que se crea con `mkdir -p` **hereda estado
+entre ejecuciones**, y el worktree de una lane de release vive mucho más que la
+lane. La forma no es neutra: `mkdir -p` sobre un directorio existente es
+exactamente el mecanismo por el que la candidate anterior sobrevive a la
+siguiente. Si un directorio es la salida de una stage, esa stage es su dueña y
+tiene que crearlo, no heredarlo.
+
+### Lección 201
+
+En shell, `$var=valor` **no es una asignación** en ningún shell POSIX: el
+nombre contiene `$`, así que bash lee la palabra como un comando y ejecuta
+`=valor`. Lo escribí así tres veces en un stage nuevo, y el síntoma —
+`command not found` con un `=` delante y todas las variables siguientes vacías
+— no señalaba el error. En la misma familia: `${!$var}` y `${CC_$var}` son
+*bad substitution*, `$key_LINKER` es el nombre `key_LINKER` y no `key` más un
+sufijo, y `[target.<triple>]` dentro de un regex de `awk` es un rango inválido
+por los guiones del triple.
+
+### Lección 202
+
+Los contratos existentes no solo vigilan el código del producto: **detectaron
+tres de mis propios errores antes de que llegaran a una lane**. Un valor de
+Kotlin escrito como variable de shell, dos veces, y una colisión con un `val`
+de Kotlin llamado `declared`. En un repositorio donde la regla es que un test
+que pasa sin ejecutar nada es peor que un test rojo, un contrato que muerde
+contra el autor de los cambios es parte de la red, no una molestia.
+
+### Lección 203
+
+Un hook de testabilidad declarado y nunca usado es **evidencia de una
+capacidad que el equipo-creyó tener y no tenía**. `COGNICODE_RELEASE_BASE`
+llevaba muerto desde que se escribió, con el propósito explícito en el
+comentario. Un hook sin consumidor no se nota: no rompe nada, simplemente
+nunca se exercise. Merece el mismo tratamiento que un stub: si nadie lo llama,
+no es una capacidad, es una intención.
+
+### Lo que NO se ejecuta aquí
+
+**No se taguea, no se empuja y no se corta candidate.** El operador eligió
+explícitamente commit con recibo SDDK y sin tag ni push, a la espera de revisar.
+`v0.101.5` sigue tagueado en `c7dba40c`, con el árbol que no podía producir un
+candidate, y eso es correcto: un tag identifica bytes, y esos bytes existen. El
+re-corte necesita un número de versión nuevo —v0.101.5 ya está ocupado— y esa
+es una decisión de identidad que es del operador, no una consecuencia de este
+recibo. No se modifica `execute_doctor`, que también llama
+`std::process::exit` y es alcanzable, porque su exit code es contrato
+publicado. No se arregla el flake `claude_config_path_default` (causa raíz y
+tasa 4/10 medidas en N+82): es deuda de test. No se decide el destino de la
+superficie `multimodal` muerta. No se implementa R2. No se tocan los ADRs
+archivados ni se reabre ninguna `C#` firmada.
+
+### Lo que queda
+
+1. **Re-corte** — version, tag, push y lane nueva desde `ac65233a`.
+2. **Identidad de mise** — no hermética; necesita una release publicada. Su
+   recibo sigue anclado a `v0.96.0`.
+3. **Hermeticidad real del enlace aarch64** — decidir si el enlace pasa a ser
+   propiedad del repo o si el gate temprano es suficiente.
+4. **Convergencia estructural** — `execute_doctor`, superficie `multimodal`
+   muerta, flake `claude_config_path_default`.
