@@ -2,7 +2,7 @@
   "schema_version": "cognicode.languages/v1",
   "product": "cognicode",
   "version": "0.100.0",
-  "source_commit": "b6986b95c1545f64acf0a81dea9eaa1459fcb9fe",
+  "source_commit": "3fe3c8a2924a5546e6c3bbf0219bce633ceb5acf",
   "languages": [
     {
       "id": "bash",
@@ -13,7 +13,7 @@
         "sh"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -27,7 +27,7 @@
         "h"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -44,7 +44,7 @@
         "hxx"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -57,7 +57,7 @@
         "cs"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -70,7 +70,7 @@
         "dart"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -84,7 +84,7 @@
         "exs"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -98,7 +98,7 @@
         "hrl"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -115,7 +115,7 @@
         "f95"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -128,7 +128,7 @@
         "go"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -142,7 +142,7 @@
         "groovy"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -155,7 +155,7 @@
         "hs"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -170,7 +170,7 @@
         "tfvars"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -183,7 +183,7 @@
         "java"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -199,7 +199,7 @@
         "mjs"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -212,7 +212,7 @@
         "json"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -225,7 +225,7 @@
         "jl"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -239,7 +239,7 @@
         "luau"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -252,7 +252,7 @@
         "php"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -266,7 +266,7 @@
         "psm1"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -280,7 +280,7 @@
         "pyw"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -294,7 +294,7 @@
         "r"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -307,7 +307,7 @@
         "rb"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -320,7 +320,7 @@
         "rs"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -333,7 +333,7 @@
         "scala"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -346,7 +346,7 @@
         "swift"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -359,7 +359,7 @@
         "sv"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -373,7 +373,7 @@
         "tsx"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -386,7 +386,7 @@
         "v"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -400,7 +400,7 @@
         "yml"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "Focused parser acceptance coverage in m06_acceptance.rs or m10_acceptance.rs"
       ]
@@ -413,7 +413,7 @@
         "zig"
       ],
       "evidence": [
-        "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+        "Language enum in domain/value_objects/language.rs; tree-sitter grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
         "LanguageConfig extension and symbol mapping in language_config.rs",
         "No focused acceptance scenario found in m06_acceptance.rs or m10_acceptance.rs"
       ]

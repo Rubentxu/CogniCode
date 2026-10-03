@@ -18,7 +18,9 @@ use crate::application::dto::{
     AnalyzeImpactResult, ComplexitySummaryDto, GetCallHierarchyResult, GraphStatsDto, HotPathDto,
     ProjectDiagnosticsDto, RefactorResult, RiskLevel, SourceLocation, SymbolDto, ValidationResult,
 };
-use crate::application::ports::PathPolicy;
+use crate::application::ports::{
+    ComplexityAnalysis, PathPolicy, SharedGraph, SymbolSearch, SymbolSource, SyntaxAnalysis,
+};
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
@@ -27,17 +29,14 @@ use crate::domain::events::GraphEvent;
 use crate::domain::traits::code_intelligence::{
     CodeIntelligenceError, CodeIntelligenceProvider, DocumentSymbol,
 };
+use crate::domain::traits::code_verifier::CodeVerifier;
 #[cfg(feature = "persistence")]
 use crate::domain::traits::graph_store::GraphStore;
+use crate::domain::value_objects::Language;
 use crate::domain::value_objects::Location;
-use crate::infrastructure::graph::GraphCache;
-use crate::infrastructure::graph::TraversalDirection;
-use crate::infrastructure::lsp::CompositeProvider;
-use crate::infrastructure::parser::Language;
-use crate::infrastructure::semantic::{
-    SearchQuery, SearchSymbolKind, SemanticSearchService, SymbolCodeService,
-};
-use crate::infrastructure::verification::RustVerifier;
+use crate::domain::value_objects::SymbolKind;
+use crate::domain::value_objects::SymbolSearchQuery;
+use crate::domain::value_objects::TraversalDirection;
 
 /// Error type for workspace operations
 #[derive(Debug, thiserror::Error)]
@@ -89,6 +88,42 @@ pub struct IncrementalResult {
     pub graph_updated: bool,
 }
 
+/// Everything a `WorkspaceSession` is assembled from that this layer is not
+/// allowed to name itself.
+///
+/// `application` sits below `infrastructure`, so a `use` of a concrete
+/// implementation is a CR-06 violation even when the thing being used is only
+/// a constructor call. `PathPolicy` already worked this way; this is the same
+/// convention one slice further along.
+///
+/// The important property is not that these are trait objects — they already
+/// were, inside `FileOperationsService` — but that **the construction happens
+/// in the interface layer**, which is the layer allowed to name both. A
+/// `dyn` that somebody in `application` builds with `ConcreteType::new()` has
+/// moved the type, not the coupling.
+/// No `new()`: at eight parts, four of them `Arc<dyn Trait>` with the same
+/// arity and similar names, positional arguments stop being readable and
+/// clippy is right about it. The fields are public, so a struct literal
+/// names each one — `default_capabilities` builds it that way.
+pub struct WorkspaceCapabilities {
+    /// Decides what a session is allowed to read and write.
+    pub path_policy: Arc<dyn PathPolicy>,
+    /// Verifies code, whatever the implementation turned out to be.
+    pub code_verifier: Arc<dyn CodeVerifier>,
+    /// Parses source, whatever the implementation turned out to be.
+    pub syntax: Arc<dyn SyntaxAnalysis>,
+    /// Answers document-symbol questions.
+    pub intelligence: Arc<dyn CodeIntelligenceProvider>,
+    /// Measures complexity, whatever walks the tree to do it.
+    pub complexity: Arc<dyn ComplexityAnalysis>,
+    /// The graph this session and its analysis service agree on.
+    pub graph: Arc<dyn SharedGraph>,
+    /// The symbol index, injected already built but filled lazily.
+    pub symbol_search: Arc<dyn SymbolSearch>,
+    /// Reads the source a symbol occupies.
+    pub symbol_source: Arc<dyn SymbolSource>,
+}
+
 /// Transport-neutral facade for CogniCode operations.
 ///
 /// Owns all service instances and cached state for a single workspace.
@@ -102,35 +137,47 @@ pub struct WorkspaceSession {
     refactor: Arc<RefactorService>,
     /// File operations service
     file_ops: Arc<FileOperationsService>,
-    /// Semantic search service (lazy initialized)
-    semantic_search: Arc<RwLock<Option<SemanticSearchService>>>,
+    /// Symbol index, injected already built.
+    symbol_search: Arc<dyn SymbolSearch>,
+    /// Whether the index has been populated for this workspace yet.
+    ///
+    /// A flag rather than an `Option<Arc<dyn SymbolSearch>>` slot, because
+    /// the index now arrives from outside: there is no instance to defer
+    /// constructing, only work to defer doing.
+    semantic_index_ready: Arc<RwLock<bool>>,
     /// Symbol code extraction service
-    symbol_code: Arc<SymbolCodeService>,
+    symbol_code: Arc<dyn SymbolSource>,
     /// Cached call graph (built on demand)
     graph: Arc<RwLock<Option<Arc<CallGraph>>>>,
-    /// LSP navigation provider (lazy initialized)
-    lsp: Arc<RwLock<Option<Arc<CompositeProvider>>>>,
     /// Code intelligence provider for document symbols
     intelligence: Arc<dyn CodeIntelligenceProvider>,
+    /// Complexity measurement (the tree walk lives in the adapter)
+    complexity: Arc<dyn ComplexityAnalysis>,
     /// Graph store for persistence (behind feature flag)
     #[cfg(feature = "persistence")]
     graph_store: Arc<RwLock<Option<Arc<dyn GraphStore>>>>,
 }
 
 impl WorkspaceSession {
-    /// Composition entry point that receives its path policy from the caller.
+    /// Composition entry point that receives everything it cannot build.
     ///
     /// `application` cannot name `interface::mcp::security::InputValidator`:
     /// that layer sits above us, and the CR-06 `application_no_interface`
-    /// fitness function is what enforces it. Deciding *which* validator to
-    /// build is composition, and composition belongs to the layer that is
-    /// allowed to name it — the interface layer, which calls this constructor
-    /// with the real thing (ST-02).
+    /// fitness function is what enforces it. The same reasoning now covers
+    /// `infrastructure`, and for a stronger reason: the layer that decides
+    /// *which* verifier, parser and intelligence provider a deployment runs is
+    /// the layer above, and a slim build and a full build do not want the same
+    /// ones (ST-02).
+    ///
+    /// What this constructor still owns is assembly: the graph cache is shared
+    /// between the session and `AnalysisService`, so the two have to be built
+    /// together, and the workspace root is canonicalised here because every
+    /// consumer assumes it is.
     ///
     /// The directory must exist and contain a codebase.
-    pub async fn with_path_policy(
+    pub async fn with_capabilities(
         workspace_root: impl AsRef<Path>,
-        path_policy: Arc<dyn PathPolicy>,
+        capabilities: WorkspaceCapabilities,
     ) -> WorkspaceResult<Self> {
         let root = workspace_root.as_ref();
         if !root.exists() || !root.is_dir() {
@@ -141,26 +188,25 @@ impl WorkspaceSession {
             WorkspaceError::Internal(anyhow::anyhow!("Failed to canonicalize path: {}", e))
         })?;
 
-        // Create a shared GraphCache that both WorkspaceSession and AnalysisService use
-        let graph_cache = Arc::new(GraphCache::new());
-
-        // Initialize services with shared graph cache
-        let analysis = Arc::new(AnalysisService::with_graph_cache(graph_cache.clone()));
+        // One graph, handed in already built, shared with the analysis service
+        // because two caches would mean two answers to "what does this repo
+        // look like" and a rebuild nobody could see.
+        let analysis = Arc::new(AnalysisService::with_graph_cache(capabilities.graph));
         let refactor = Arc::new(RefactorService::new());
         let file_ops = Arc::new(FileOperationsService::new(
             root.display().to_string(),
-            path_policy,
-            Arc::new(RustVerifier::new()),
-            Arc::new(
-                crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
-            ),
+            capabilities.path_policy,
+            capabilities.code_verifier,
+            capabilities.syntax,
         ));
-        let semantic_search = Arc::new(RwLock::new(None));
-        let symbol_code = Arc::new(SymbolCodeService::new());
+        // Both arrive built and shared with nothing else to construct. The
+        // index stays lazy because populating it walks the workspace.
+        let semantic_index_ready = Arc::new(RwLock::new(false));
+        let symbol_code = capabilities.symbol_source;
         let graph = Arc::new(RwLock::new(None));
-        let lsp = Arc::new(RwLock::new(None));
-        let intelligence: Arc<dyn CodeIntelligenceProvider> =
-            Arc::new(CompositeProvider::new(&root));
+        let intelligence = capabilities.intelligence;
+        let complexity = capabilities.complexity;
+        let symbol_search = capabilities.symbol_search;
 
         #[cfg(feature = "persistence")]
         let graph_store = Arc::new(RwLock::new(None));
@@ -170,31 +216,43 @@ impl WorkspaceSession {
             analysis,
             refactor,
             file_ops,
-            semantic_search,
+            symbol_search,
+            semantic_index_ready,
             symbol_code,
             graph,
-            lsp,
             intelligence,
+            complexity,
             #[cfg(feature = "persistence")]
             graph_store,
         })
     }
 
-    /// Test-only convenience constructor: composes the REAL `InputValidator`.
+    /// Test-only convenience constructor: composes the REAL implementations.
     ///
     /// The behavioural tests in this module need the real rules (traversal,
-    /// symlink, depth, workspace boundary). A permissive double would leave
-    /// them passing while no longer exercising the rejections they exist to
-    /// cover — a green suite that stopped meaning anything. So the interface
-    /// import is confined to `#[cfg(test)]` code, which is exactly the shape
-    /// the CR-06 allowlist guards against regressing onto production lines.
+    /// symlink, depth, workspace boundary) and the real verifier and parser. A
+    /// permissive double would leave them passing while no longer exercising
+    /// the rejections they exist to cover — a green suite that stopped meaning
+    /// anything.
+    ///
+    /// So it asks the interface layer to assemble, exactly as the CLI does,
+    /// rather than reaching for the constructors itself. That keeps the
+    /// `application` → `interface` import confined to `#[cfg(test)]`, which is
+    /// the shape the CR-06 allowlist guards against regressing onto production
+    /// lines, and it means the tests and production cannot drift apart in what
+    /// they consider the real thing.
     #[cfg(test)]
     pub(crate) async fn new(workspace_root: impl AsRef<Path>) -> WorkspaceResult<Self> {
+        use crate::interface::composition::default_capabilities;
         use crate::interface::mcp::security::InputValidator;
 
         let workspace = workspace_root.as_ref().to_path_buf();
         let policy = Arc::new(InputValidator::new().with_workspace(vec![workspace]));
-        Self::with_path_policy(workspace_root, policy).await
+        // The root is canonicalised by `with_capabilities`; composing against
+        // the un-canonicalised path only decides which provider gets built, and
+        // both spellings name the same directory.
+        let capabilities = default_capabilities(workspace_root.as_ref(), policy);
+        Self::with_capabilities(workspace_root, capabilities).await
     }
 
     /// Returns the workspace root path
@@ -299,8 +357,8 @@ impl WorkspaceSession {
     /// Save current graph to persistence store.
     #[cfg(feature = "persistence")]
     pub async fn save_to_store(&self) -> WorkspaceResult<()> {
+        use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use crate::infrastructure::parser::Language;
         use ignore::WalkBuilder;
 
         let graph_guard = self.graph.read().await;
@@ -372,8 +430,8 @@ impl WorkspaceSession {
     /// and re-parses only those files, updating the graph incrementally.
     #[cfg(feature = "persistence")]
     pub async fn incremental_reindex(&self) -> WorkspaceResult<IncrementalResult> {
+        use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use crate::infrastructure::parser::Language;
         use ignore::WalkBuilder;
         use std::collections::HashSet;
 
@@ -524,25 +582,22 @@ impl WorkspaceSession {
         if let Err(e) = self.ensure_semantic_search().await {
             tracing::warn!("Failed to initialize semantic search for FTS5 sync: {}", e);
         } else {
-            let search_guard = self.semantic_search.read().await;
-            if let Some(ref semantic_search) = *search_guard {
-                // Index new files
-                for rel_path in &new_files {
-                    let full_path = self.workspace_root.join(rel_path);
-                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
-                        tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
-                    }
+            // Index new files
+            for rel_path in &new_files {
+                let full_path = self.workspace_root.join(rel_path);
+                if let Err(e) = self.symbol_search.index_file(&full_path) {
+                    tracing::warn!("Failed to index new file {:?} to FTS5: {}", full_path, e);
                 }
-                // Index modified files
-                for rel_path in &modified_files {
-                    let full_path = self.workspace_root.join(rel_path);
-                    if let Err(e) = semantic_search.index_file_from_path(&full_path) {
-                        tracing::warn!(
-                            "Failed to index modified file {:?} to FTS5: {}",
-                            full_path,
-                            e
-                        );
-                    }
+            }
+            // Index modified files
+            for rel_path in &modified_files {
+                let full_path = self.workspace_root.join(rel_path);
+                if let Err(e) = self.symbol_search.index_file(&full_path) {
+                    tracing::warn!(
+                        "Failed to index modified file {:?} to FTS5: {}",
+                        full_path,
+                        e
+                    );
                 }
             }
         }
@@ -556,27 +611,18 @@ impl WorkspaceSession {
 
     /// Ensures semantic search is initialized
     async fn ensure_semantic_search(&self) -> WorkspaceResult<()> {
-        let mut search_guard = self.semantic_search.write().await;
-        if search_guard.is_none() {
-            let service = SemanticSearchService::new();
-            service
-                .populate_from_directory(&self.workspace_root)
+        let mut ready = self.semantic_index_ready.write().await;
+        if !*ready {
+            // The index is injected; only filling it is ours to do, and only
+            // now, because populating it walks the whole workspace.
+            self.symbol_search
+                .index_workspace(&self.workspace_root)
                 .map_err(|e| {
                     WorkspaceError::Internal(anyhow::anyhow!("Semantic search init failed: {}", e))
                 })?;
-            *search_guard = Some(service);
+            *ready = true;
         }
         Ok(())
-    }
-
-    /// Ensures the LSP provider is initialized
-    async fn ensure_lsp(&self) -> WorkspaceResult<Arc<CompositeProvider>> {
-        let mut lsp_guard = self.lsp.write().await;
-        if lsp_guard.is_none() {
-            let provider = CompositeProvider::new(&self.workspace_root);
-            *lsp_guard = Some(Arc::new(provider)); // Store Arc-wrapped provider
-        }
-        Ok(Arc::clone(lsp_guard.as_ref().unwrap()))
     }
 
     // =========================================================================
@@ -682,191 +728,19 @@ impl WorkspaceSession {
         file_path: &str,
         function_name: Option<&str>,
     ) -> WorkspaceResult<crate::application::dto::ComplexityResult> {
-        use crate::domain::services::ComplexityCalculator;
-
         let path = self.resolve_path(file_path)?;
         let source = std::fs::read_to_string(&path)
             .map_err(|e| WorkspaceError::InvalidInput(format!("Failed to read file: {}", e)))?;
 
+        // The one decision this layer still owns: which language a file is.
+        // `Language` is a domain value object, so classifying by extension is
+        // vocabulary rather than a reach into a parser.
         let language = Language::from_extension(path.extension())
             .ok_or_else(|| WorkspaceError::InvalidInput("Unsupported file type".to_string()))?;
 
-        let parser = crate::infrastructure::parser::TreeSitterParser::new(language)
-            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))?;
-
-        let calculator = ComplexityCalculator::new();
-        let tree = parser
-            .parse_tree(&source)
-            .map_err(|e| WorkspaceError::AnalysisFailed(format!("Parse error: {}", e)))?;
-
-        let function_node_type = parser.language().function_node_type();
-        let mut max_nesting = 0u32;
-        let mut decision_points = Vec::new();
-        let mut param_count = 0u32;
-        let mut func_start_line = 0u32;
-        let mut func_end_line = 0u32;
-
-        self.find_function_metrics(
-            tree.root_node(),
-            &source,
-            function_name,
-            function_node_type,
-            &mut max_nesting,
-            &mut decision_points,
-            &mut param_count,
-            &mut func_start_line,
-            &mut func_end_line,
-            0,
-        );
-
-        let cyclomatic = calculator.cyclomatic_complexity(&decision_points, 1);
-        let cognitive = calculator.cognitive_complexity(max_nesting, &decision_points, 0);
-        let lines_of_code = if func_end_line > func_start_line {
-            func_end_line - func_start_line
-        } else {
-            1
-        };
-
-        Ok(crate::application::dto::ComplexityResult {
-            cyclomatic,
-            cognitive,
-            lines_of_code,
-            parameter_count: param_count,
-            nesting_depth: max_nesting,
-            function_name: function_name.map(String::from),
-        })
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn find_function_metrics(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        target_name: Option<&str>,
-        function_type: &str,
-        max_nesting: &mut u32,
-        decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
-        param_count: &mut u32,
-        func_start_line: &mut u32,
-        func_end_line: &mut u32,
-        current_nesting: u32,
-    ) {
-        if node.kind() == function_type
-            && let Some(name) = self.find_identifier_in_node(node, source)
-        {
-            let should_process = match target_name {
-                Some(target) => name == target,
-                None => *func_start_line == 0,
-            };
-
-            if should_process {
-                *func_start_line = node.start_position().row as u32;
-                *func_end_line = node.end_position().row as u32;
-                *param_count = self.count_parameters(node, source);
-                self.process_decision_points(
-                    node,
-                    source,
-                    max_nesting,
-                    decision_points,
-                    current_nesting,
-                );
-            }
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                self.find_function_metrics(
-                    child,
-                    source,
-                    target_name,
-                    function_type,
-                    max_nesting,
-                    decision_points,
-                    param_count,
-                    func_start_line,
-                    func_end_line,
-                    current_nesting,
-                );
-            }
-        }
-    }
-
-    fn find_identifier_in_node(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                    return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
-                }
-                if let Some(id) = self.find_identifier_in_node(child, source) {
-                    return Some(id);
-                }
-            }
-        }
-        None
-    }
-
-    fn count_parameters(&self, node: tree_sitter::Node, _source: &str) -> u32 {
-        let mut count = 0u32;
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                if child.kind() == "parameters" {
-                    for j in 0..child.child_count() {
-                        if let Some(param) = child.child(j)
-                            && param.kind() == "identifier"
-                        {
-                            count += 1;
-                        }
-                    }
-                }
-                if child.kind() == "identifier" {
-                    count += 1;
-                }
-            }
-        }
-        count
-    }
-
-    fn process_decision_points(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-        max_nesting: &mut u32,
-        decision_points: &mut Vec<crate::domain::services::DecisionPoint>,
-        current_nesting: u32,
-    ) {
-        let kind = node.kind();
-
-        match kind {
-            "if_statement" | "if_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::If);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "while_statement" | "while_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::While);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "for_statement" | "for_in_statement" => {
-                decision_points.push(crate::domain::services::DecisionPoint::For);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            "case_clause" | "match_expression" => {
-                decision_points.push(crate::domain::services::DecisionPoint::Match);
-                *max_nesting = (*max_nesting).max(current_nesting + 1);
-            }
-            _ => {}
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i) {
-                self.process_decision_points(
-                    child,
-                    source,
-                    max_nesting,
-                    decision_points,
-                    current_nesting,
-                );
-            }
-        }
+        self.complexity
+            .measure(language.name(), &source, function_name)
+            .map_err(|e| WorkspaceError::AnalysisFailed(e.to_string()))
     }
 
     /// Semantic search for symbols (backward compatible, no kind filter)
@@ -894,49 +768,33 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<Vec<crate::application::dto::SymbolDto>> {
         self.ensure_semantic_search().await?;
 
-        let search_guard = self.semantic_search.read().await;
-        let service = search_guard.as_ref().ok_or_else(|| {
-            WorkspaceError::Internal(anyhow::anyhow!("Semantic search not initialized"))
-        })?;
-
         let search_kinds = kinds.map(Self::map_kind_strings).unwrap_or_default();
 
-        let search_query = SearchQuery {
+        let search_query = SymbolSearchQuery {
             query: query.to_string(),
             kinds: search_kinds,
             max_results,
         };
-        let results = service.search(search_query);
+        let results = self.symbol_search.search(&search_query);
         Ok(results
             .into_iter()
-            .map(|r| crate::application::dto::SymbolDto::from_symbol(&r.symbol))
+            .map(|symbol| crate::application::dto::SymbolDto::from_symbol(&symbol))
             .collect())
     }
 
-    /// Maps a vector of kind strings to SearchSymbolKind enums
+    /// Maps a vector of kind strings to domain symbol kinds
     /// Invalid kinds are silently ignored
-    fn map_kind_strings(kind_strings: Vec<String>) -> Vec<SearchSymbolKind> {
+    fn map_kind_strings(kind_strings: Vec<String>) -> Vec<SymbolKind> {
         kind_strings
             .into_iter()
             .filter_map(|k| Self::map_kind_string(&k))
             .collect()
     }
 
-    /// Maps a single kind string to SearchSymbolKind
+    /// Maps a single kind string to a domain symbol kind
     /// Returns None for invalid kinds (silently ignored)
-    fn map_kind_string(kind: &str) -> Option<SearchSymbolKind> {
-        match kind.to_lowercase().as_str() {
-            "function" => Some(SearchSymbolKind::Function),
-            "class" => Some(SearchSymbolKind::Class),
-            "method" => Some(SearchSymbolKind::Method),
-            "variable" => Some(SearchSymbolKind::Variable),
-            "trait" => Some(SearchSymbolKind::Trait),
-            "struct" => Some(SearchSymbolKind::Struct),
-            "enum" => Some(SearchSymbolKind::Enum),
-            "module" => Some(SearchSymbolKind::Module),
-            "constant" => Some(SearchSymbolKind::Constant),
-            _ => None,
-        }
+    fn map_kind_string(kind: &str) -> Option<SymbolKind> {
+        SymbolKind::from_search_label(kind)
     }
 
     /// Get the source code for a symbol at a specific location
@@ -948,12 +806,9 @@ impl WorkspaceSession {
     ) -> WorkspaceResult<String> {
         let path = self.resolve_path(file_path)?;
 
-        let result = self
-            .symbol_code
-            .get_symbol_code(&path.to_string_lossy(), line, column)
-            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Symbol code error: {}", e)))?;
-
-        Ok(result.code)
+        self.symbol_code
+            .source_at(&path, line, column)
+            .map_err(|e| WorkspaceError::Internal(anyhow::anyhow!("Symbol code error: {}", e)))
     }
 
     // =========================================================================
@@ -1361,7 +1216,7 @@ impl WorkspaceSession {
 
     /// Get statistics about the call graph
     pub async fn get_graph_stats(&self) -> WorkspaceResult<Option<GraphStatsDto>> {
-        use crate::infrastructure::parser::Language;
+        use crate::domain::value_objects::Language;
         use std::collections::HashMap;
 
         let graph_guard = self.graph.read().await;
@@ -1794,15 +1649,14 @@ impl WorkspaceSession {
         line: u32,
         column: u32,
     ) -> WorkspaceResult<Vec<SourceLocation>> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        match provider
-            .as_ref()
+        match self
+            .intelligence
             .get_definition(&location)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
@@ -1814,15 +1668,14 @@ impl WorkspaceSession {
 
     /// Get hover information
     pub async fn hover(&self, file: &str, line: u32, column: u32) -> WorkspaceResult<String> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        match provider
-            .as_ref()
+        match self
+            .intelligence
             .hover(&location)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?
@@ -1840,15 +1693,14 @@ impl WorkspaceSession {
         column: u32,
         include_decl: bool,
     ) -> WorkspaceResult<Vec<SourceLocation>> {
-        let provider = self.ensure_lsp().await?;
         let location = Location::new(
             self.resolve_path(file)?.to_string_lossy().to_string(),
             line.saturating_sub(1),
             column.saturating_sub(1),
         );
 
-        let refs = provider
-            .as_ref()
+        let refs = self
+            .intelligence
             .find_references(&location, include_decl)
             .await
             .map_err(|e| WorkspaceError::LspNotAvailable(e.to_string()))?;
@@ -2398,7 +2250,6 @@ pub const TEST_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_graph_stats_after_build_returns_stats() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2422,9 +2273,14 @@ pub const TEST_CONST: i32 = 42;
             "Expected symbol_count > 0, got {}",
             stats.symbol_count
         );
-        assert!(
-            stats.edge_count >= 0,
-            "Expected edge_count >= 0, got {}",
+        // The fixture is one function with an empty body, so the graph has no
+        // call edges at all. `edge_count >= 0` was true of every usize; the
+        // exact value is known here, and asserting it means a graph that
+        // invented edges out of nothing would fail.
+        assert_eq!(
+            stats.edge_count, 0,
+            "a single function with an empty body defines no call edge, so the \
+             graph must have none; got {}",
             stats.edge_count
         );
         assert!(
@@ -2944,7 +2800,6 @@ pub struct PublicStruct {}
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_project_diagnostics_complexity_has_expected_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -2959,8 +2814,22 @@ pub struct PublicStruct {}
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
         let complexity = diagnostics.complexity.unwrap();
-        assert!(complexity.total_cyclomatic >= 0);
-        assert!(complexity.functions_analyzed >= 0);
+        // The fixture defines one function, so something must have been
+        // analyzed and a cyclomatic total of zero would mean nothing was.
+        // Both assertions were `>= 0`, true of every usize, so they held even
+        // when complexity was computed over an empty set.
+        assert!(
+            complexity.functions_analyzed >= 1,
+            "the fixture defines pub fn test(), so at least one function must be \
+             analyzed; got {}",
+            complexity.functions_analyzed
+        );
+        assert!(
+            complexity.total_cyclomatic >= 1,
+            "a function has a cyclomatic complexity of at least 1, so the total \
+             cannot be 0 when a function was analyzed; got {}",
+            complexity.total_cyclomatic
+        );
         assert!(complexity.average_complexity >= 0.0);
     }
 
@@ -3779,19 +3648,28 @@ pub const MY_CONST: i32 = 42;
             "Should detect file modification"
         );
 
-        // Verify the semantic search index has the new symbol
-        // Access semantic_search through the internal method
-        let search_guard = session.semantic_search.read().await;
-        if let Some(ref semantic_search) = *search_guard {
-            // Check that the index has the new function
-            let index_len = semantic_search.index().len();
+        // Verify the semantic index can answer for both the original symbol
+        // and the one the reindex added.
+        //
+        // This used to read `index().len()` off the concrete service, which is
+        // no longer a thing the session holds. Counting entries asserted that
+        // something was stored; asking for the symbols asserts that the index
+        // is usable, which is what the caller actually depends on.
+        session.ensure_semantic_search().await.unwrap();
+        for name in ["original_function", "new_semantic_function"] {
+            let found = session
+                .symbol_search
+                .search(&SymbolSearchQuery {
+                    query: name.to_string(),
+                    kinds: vec![],
+                    max_results: 10,
+                })
+                .iter()
+                .any(|s| s.name() == name);
             assert!(
-                index_len >= 2,
-                "Should have at least 2 symbols in semantic index (original + new), got {}",
-                index_len
+                found,
+                "semantic index should answer for {name:?} after incremental_reindex"
             );
-        } else {
-            panic!("Semantic search should be initialized after incremental_reindex");
         }
     }
 
@@ -4451,7 +4329,6 @@ pub const MY_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_concurrent_analyze_impact_during_rebuild() {
         // Test impact analysis during concurrent graph rebuild
         let temp_dir = TempDir::new().unwrap();
@@ -4487,12 +4364,14 @@ pub const MY_CONST: i32 = 42;
             "Impact analysis should succeed"
         );
 
-        let impact = impact_result.unwrap().unwrap();
-        // Should find the dependent function
-        assert!(
-            impact.impacted_symbols.len() >= 0,
-            "Impact analysis should return (may be empty if timing is such that target isn't found)"
-        );
+        // No assertion on the contents: this test's contract is that a rebuild
+        // and an impact analysis racing each other both complete, and the
+        // contents legitimately depend on which one wins -- the `is_ok`
+        // assertions above are the whole contract. The old
+        // `impacted_symbols.len() >= 0` was not a weaker version of that, it
+        // was no check at all: true of every Vec, under a comment explaining
+        // why the result "may be empty".
+        let _ = impact_result.unwrap().unwrap();
     }
 
     #[tokio::test(flavor = "current_thread")]

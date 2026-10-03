@@ -43,6 +43,7 @@ Run:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -120,6 +121,197 @@ def test_runner_reports_failures_with_nonzero_exit() -> None:
     check(
         "2 passed" in proc.stdout,
         f"runner must count the passing tests; stdout was:\n{proc.stdout}",
+    )
+
+
+def test_runner_honours_the_accumulating_failures_pattern() -> None:
+    """The pattern ten of the twelve CI contracts actually use.
+
+    `test_runner_reports_failures_with_nonzero_exit` above proves the
+    runner catches a test that *raises*. That is the half that already
+    worked. These contracts do not raise: they append to a module-level
+    `failures` list and only `main()` turns that into an exit code. The
+    runner calls the test function and never calls `main()`, so every one
+    of them passed unconditionally.
+
+    The consequence is not a cosmetic reporting gap. This contract is
+    what stops `merge-gate.pipeline.kts` from losing its
+    `cargo deny check advisories` stage, and it could not report that loss
+    if it happened. Measured 2026-10-03: run through the runner,
+    `test_supply_chain_gate_contract.py` reported 4 passed / 0 failed
+    and exit 0, while running the same file directly reported exit 1 on
+    the same tree, in the same second.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        suite = Path(tmp) / "test_accumulating.py"
+        # The exact shape of the real contracts: a `check` helper that
+        # appends, a `test_` function that calls it, and a `main` that is
+        # never invoked by the runner.
+        suite.write_text(
+            "failures = []\n"
+            "\n"
+            "\n"
+            "def check(condition, message):\n"
+            "    if not condition:\n"
+            "        failures.append(message)\n"
+            "\n"
+            "\n"
+            "def test_violated():\n"
+            "    check(False, 'a dependency with an advisory merged unnoticed')\n"
+            "\n"
+            "\n"
+            "def test_satisfied():\n"
+            "    check(True, 'never recorded')\n"
+            "\n"
+            "\n"
+            "def main():\n"
+            "    return 1 if failures else 0\n",
+            encoding="utf-8",
+        )
+        proc = subprocess.run(
+            [sys.executable, str(RUNNER), str(suite)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    check(
+        proc.returncode != 0,
+        "a contract that records a violation in its `failures` list must fail "
+        f"the runner, got exit {proc.returncode}. The runner calls each test "
+        "function but never the module's main(), so a contract that reports "
+        "by accumulating rather than raising passes unconditionally. stdout "
+        f"was:\n{proc.stdout}",
+    )
+    check(
+        "a dependency with an advisory merged unnoticed" in (proc.stdout + proc.stderr),
+        "the runner must print the contract's own finding, not just a test "
+        "name; a maintainer reading the gate has to see what was violated. "
+        f"stdout was:\n{proc.stdout}",
+    )
+    check(
+        "test_satisfied" in proc.stdout,
+        "the runner must still report the tests that passed alongside a "
+        f"failure; stdout was:\n{proc.stdout}",
+    )
+
+
+def test_runner_calls_a_contract_setup_before_its_checks() -> None:
+    """A contract that must measure before it asserts has to be able to.
+
+    `test_cr06_ratchet.py` reads state its own `main()` populates first.
+    Run without that, three of its six checks reported that the CR-06
+    allowlist contained no entries -- describing a measurement that was
+    never taken as a corrupt inventory. The runner cannot know which
+    contracts need that, so it calls an optional module-level `setup()`
+    and a contract that needs one defines it. Without this guard the next
+    contract to grow a setup phase goes back to failing silently, which
+    is the defect the two checks above exist to prevent.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        suite = Path(tmp) / "test_needing_setup.py"
+        suite.write_text(
+            "state = []\n"
+            "\n"
+            "\n"
+            "def setup():\n"
+            "    state.append('measured')\n"
+            "\n"
+            "\n"
+            "def test_setup_ran():\n"
+            "    assert state == ['measured'], (\n"
+            "        'setup() was not called before the checks: '\n"
+            "        f'state={state}'\n"
+            "    )\n",
+            encoding="utf-8",
+        )
+        ran = subprocess.run(
+            [sys.executable, str(RUNNER), str(suite)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        # And the same fixture with a setup that fails must not be reported
+        # as a clean bill either.
+        broken = Path(tmp) / "test_broken_setup.py"
+        broken.write_text(
+            "def setup():\n"
+            "    raise RuntimeError('git is unavailable, cannot measure')\n"
+            "\n"
+            "\n"
+            "def test_never_runs():\n"
+            "    assert True\n",
+            encoding="utf-8",
+        )
+        failed = subprocess.run(
+            [sys.executable, str(RUNNER), str(broken)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    check(
+        ran.returncode == 0 and "PASS test_setup_ran" in ran.stdout,
+        "the runner must call a contract's setup() before its checks; stdout "
+        f"was:\n{ran.stdout}",
+    )
+    check(
+        failed.returncode != 0,
+        "a setup() that raises must fail the runner, not be swallowed into a "
+        f"green result; got exit {failed.returncode}. stdout was:\n{failed.stdout}",
+    )
+    check(
+        "git is unavailable" in (failed.stdout + failed.stderr),
+        "the runner must print why setup() failed; the operator sees the gate, "
+        f"not only its verdict. stdout was:\n{failed.stdout}",
+    )
+
+
+def test_every_ci_contract_is_reachable_by_the_runner() -> None:
+    """Anti-vacuity for the property above, measured over the real tree.
+
+    The check above proves the runner handles the accumulating shape. It
+    does not prove any real contract uses that shape, which would leave a
+    fix that passes its own fixture and governs nothing.
+
+    Measured 2026-10-03 over `scripts/ci/test_*.py`: 10 of 12 record
+    findings by appending to a module-level `failures` list, and 6 of
+    those contain no `assert` anywhere -- every assertion they have lives
+    in the accumulating helper, so nothing in them can ever raise. The two
+    that do raise (`test_pipeline_stage_bodies`,
+    `test_serial_env_contract`) are the only two the runner could fail
+    before this fix.
+
+    This asserts the direction, not the exact count: a contract that
+    accumulates is only meaningful if some runner can see it, and the
+    runner is the one the merge gate invokes. Every contract is allowed
+    to mix the two styles, so the assertion is that at least one exists
+    and that each one's own `main` turns its list into a non-zero exit --
+    which is what makes running it by hand a real option rather than a
+    thing that only works on a maintainer's machine.
+    """
+    accumulating: list[str] = []
+    silent: list[str] = []
+    for path in sorted((REPO_ROOT / "scripts" / "ci").glob("test_*.py")):
+        text = path.read_text(encoding="utf-8")
+        if "failures.append(" not in text:
+            continue
+        accumulating.append(path.name)
+        if not re.search(r"def main\(.*?\).*?return\s+1", text, re.DOTALL):
+            silent.append(path.name)
+    check(
+        len(accumulating) > 0,
+        "no contract under scripts/ci records findings by appending to a "
+        "`failures` list. If the style was migrated, this contract should be "
+        "deleted rather than left asserting a property nothing uses -- but do "
+        "not relax it to `>= 0`, which is the vacuous form",
+    )
+    check(
+        not silent,
+        "these contracts accumulate findings but their main() never returns a "
+        "non-zero exit, so running them by hand would report success too: "
+        f"{silent}",
     )
 
 

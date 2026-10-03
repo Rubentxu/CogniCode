@@ -1,7 +1,7 @@
 //! Per-function dominators on a CFG.
 //!
 //! This module is a thin façade over the existing
-//! [`crate::algorithms::dominators`] CHK implementation. It accepts a CFG
+//! [`crate::algorithms::dominators()`] CHK implementation. It accepts a CFG
 //! adjacency and a root block, and returns dominator info keyed by block
 //! id (the same indices used in the adjacency list).
 //!

@@ -142,7 +142,7 @@ impl fmt::Display for SymbolKind {
     }
 }
 
-/// Error type for [`SymbolKind::from_str`] failures.
+/// Error type for [`std::str::FromStr::from_str`] failures.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParseSymbolKindError {
     #[error("unknown symbol kind: {0}")]

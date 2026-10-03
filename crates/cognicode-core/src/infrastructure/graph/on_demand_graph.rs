@@ -6,7 +6,12 @@
     clippy::type_complexity,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone. Its
+// only beneficiary in this file was a test asserting `entries.len() >= 0`,
+// which cannot fail and was hiding two real bugs: in-memory sources never
+// reached the parse cache, and a callers query traversed nothing. Both are
+// fixed and pinned by tests that can fail. Leaving the blanket would only
+// make the next unfailable assertion compile silently again.
 //!
 //! This module provides graph construction that only builds the necessary
 //! portions of the graph based on the specific query. This is useful for
@@ -15,23 +20,13 @@
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
+use crate::domain::value_objects::TraversalDirection;
 use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
 use crate::infrastructure::graph::lightweight_index::{LightweightIndex, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::{Arc, RwLock};
-
-/// Direction for call hierarchy traversal
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TraversalDirection {
-    /// Traverse callees (outgoing edges - what does this symbol call)
-    Callees,
-    /// Traverse callers (incoming edges - what calls this symbol)
-    Callers,
-    /// Traverse both directions
-    Both,
-}
 
 /// Result of a call hierarchy query
 #[derive(Debug, Clone)]
@@ -229,10 +224,21 @@ impl OnDemandGraphBuilder {
     }
 
     /// Builds the index from in-memory sources
+    ///
+    /// The sources are parsed into the cache as well as handed to the index.
+    /// Indexing alone is not enough: every query that needs edges
+    /// (`build_for_symbol`, `build_for_path`, `recursive_expand`) resolves
+    /// them from the cache, and the cache is only ever filled by parsing.
+    /// Handing the index text this builder cannot read made those queries
+    /// return nothing no matter what the source said.
     pub fn build_index_from_sources<'a, I>(&mut self, sources: I)
     where
         I: IntoIterator<Item = (&'a str, &'a str)>,
     {
+        let sources: Vec<(&str, &str)> = sources.into_iter().collect();
+        for (file_path, source) in &sources {
+            self.parse_source_into_cache(file_path, source);
+        }
         self.index.write().unwrap().build_from_sources(sources);
     }
 
@@ -284,9 +290,11 @@ impl OnDemandGraphBuilder {
         let mut visited: HashSet<String> = HashSet::new();
         visited.insert(self.symbol_key(symbol_name, &root_loc.file, root_loc.line));
 
-        // Traverse based on direction
+        // Traverse based on direction. Each direction traverses its own way;
+        // `Callers` used to be an empty arm here and `traverse_callers` ran
+        // only under `Both`, so a callers query returned nothing at all.
         match direction {
-            TraversalDirection::Callees | TraversalDirection::Both => {
+            TraversalDirection::Callees => {
                 self.traverse_callees(
                     &root_symbol,
                     depth,
@@ -296,18 +304,34 @@ impl OnDemandGraphBuilder {
                     &mut visited,
                 );
             }
-            TraversalDirection::Callers => {}
-        }
-
-        if direction == TraversalDirection::Both {
-            self.traverse_callers(
-                &root_symbol,
-                depth,
-                1,
-                TraversalDirection::Callers,
-                &mut entries,
-                &mut visited,
-            );
+            TraversalDirection::Callers => {
+                self.traverse_callers(
+                    &root_symbol,
+                    depth,
+                    1,
+                    TraversalDirection::Callers,
+                    &mut entries,
+                    &mut visited,
+                );
+            }
+            TraversalDirection::Both => {
+                self.traverse_callees(
+                    &root_symbol,
+                    depth,
+                    1,
+                    TraversalDirection::Callees,
+                    &mut entries,
+                    &mut visited,
+                );
+                self.traverse_callers(
+                    &root_symbol,
+                    depth,
+                    1,
+                    TraversalDirection::Callers,
+                    &mut entries,
+                    &mut visited,
+                );
+            }
         }
 
         CallHierarchyResult {
@@ -695,6 +719,15 @@ impl OnDemandGraphBuilder {
             Err(_) => return,
         };
 
+        self.parse_source_into_cache(file_path, &source);
+    }
+
+    /// Parses in-memory source text and caches the results
+    ///
+    /// The single place where `file_cache` is written, so the on-disk and
+    /// in-memory routes produce the same cache instead of one of them
+    /// silently yielding none.
+    fn parse_source_into_cache(&mut self, file_path: &str, source: &str) {
         let language = match Language::from_extension(Path::new(file_path).extension()) {
             Some(lang) => lang,
             None => return,
@@ -706,11 +739,11 @@ impl OnDemandGraphBuilder {
         };
 
         let symbols = parser
-            .find_all_symbols_with_path(&source, file_path)
+            .find_all_symbols_with_path(source, file_path)
             .unwrap_or_default();
 
         let relationships = parser
-            .find_call_relationships(&source, file_path)
+            .find_call_relationships(source, file_path)
             .unwrap_or_default();
 
         self.file_cache
@@ -951,14 +984,55 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     fn test_on_demand_graph_builder_with_sources() {
         let mut builder = OnDemandGraphBuilder::new();
         builder
             .build_index_from_sources([("test.py", "def a():\n    b()\n\ndef b():\n    pass\n")]);
 
         let result = builder.build_for_symbol("a", 3, TraversalDirection::Callees);
-        assert!(result.entries.len() >= 0); // May or may not find callees depending on index state
+        // The fixture states the whole edge: `a` calls `b`. The old assertion
+        // was `entries.len() >= 0` on a `usize`, with a `#[allow]` and a
+        // comment saying it "may or may not find callees depending on index
+        // state" -- an assertion that cannot fail and a test whose name
+        // promises otherwise. If the index is not built from these sources,
+        // the callee edge the source declares is exactly what goes missing,
+        // so the names are what this pins.
+        let names: Vec<&str> = result.entries.iter().map(|e| e.symbol.name()).collect();
+        assert_eq!(
+            names,
+            vec!["b"],
+            "the callees of a, for a fixture whose text says a() calls b(), are b \
+             and nothing else; got {names:?}"
+        );
+        assert_eq!(result.root_symbol.name(), "a");
+        assert!(
+            result
+                .entries
+                .iter()
+                .all(|e| e.direction == TraversalDirection::Callees && e.depth == 1),
+            "every entry is a direct callee, so every depth is 1: {:?}",
+            result
+                .entries
+                .iter()
+                .map(|e| (e.symbol.name().to_string(), e.depth, e.direction))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_on_demand_graph_builder_callers_direction() {
+        let mut builder = OnDemandGraphBuilder::new();
+        builder
+            .build_index_from_sources([("test.py", "def a():\n    b()\n\ndef b():\n    pass\n")]);
+
+        let result = builder.build_for_symbol("b", 3, TraversalDirection::Callers);
+        let names: Vec<&str> = result.entries.iter().map(|e| e.symbol.name()).collect();
+        assert_eq!(
+            names,
+            vec!["a"],
+            "the callers of b, for a fixture whose text says a() calls b(), are a \
+             and nothing else; got {names:?}"
+        );
     }
 
     #[test]

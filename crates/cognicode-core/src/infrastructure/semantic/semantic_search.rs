@@ -7,65 +7,13 @@
 
 use crate::domain::aggregates::symbol::Symbol;
 use crate::domain::traits::Parser;
-use crate::domain::value_objects::{Location, SymbolKind};
+use crate::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
 use crate::infrastructure::parser::Language;
 use dashmap::DashMap;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::path::Path;
 use std::sync::Arc;
-
-/// Represents a search query with filters
-#[derive(Debug, Clone)]
-pub struct SearchQuery {
-    /// The search query string
-    pub query: String,
-    /// Optional filter for symbol kinds
-    pub kinds: Vec<SearchSymbolKind>,
-    /// Maximum number of results to return
-    pub max_results: usize,
-}
-
-impl Default for SearchQuery {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            kinds: Vec::new(),
-            max_results: 50,
-        }
-    }
-}
-
-/// Symbol kinds that can be filtered in search
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SearchSymbolKind {
-    Function,
-    Class,
-    Method,
-    Variable,
-    Trait,
-    Struct,
-    Enum,
-    Module,
-    Constant,
-}
-
-impl SearchSymbolKind {
-    /// Converts to domain SymbolKind
-    pub fn to_symbol_kind(&self) -> SymbolKind {
-        match self {
-            SearchSymbolKind::Function => SymbolKind::Function,
-            SearchSymbolKind::Class => SymbolKind::Class,
-            SearchSymbolKind::Method => SymbolKind::Method,
-            SearchSymbolKind::Variable => SymbolKind::Variable,
-            SearchSymbolKind::Trait => SymbolKind::Trait,
-            SearchSymbolKind::Struct => SymbolKind::Struct,
-            SearchSymbolKind::Enum => SymbolKind::Enum,
-            SearchSymbolKind::Module => SymbolKind::Module,
-            SearchSymbolKind::Constant => SymbolKind::Constant,
-        }
-    }
-}
 
 /// A search result with relevance scoring
 #[derive(Debug, Clone)]
@@ -198,7 +146,7 @@ impl SearchIndex {
     }
 
     /// Searches for symbols matching the query
-    pub fn search(&self, query: &SearchQuery) -> Vec<SearchResult> {
+    pub fn search(&self, query: &SymbolSearchQuery) -> Vec<SearchResult> {
         if query.query.is_empty() {
             return Vec::new();
         }
@@ -213,10 +161,7 @@ impl SearchIndex {
 
             // Apply kind filter
             if !query.kinds.is_empty() {
-                let kind_matches = query
-                    .kinds
-                    .iter()
-                    .any(|k| k.to_symbol_kind() == indexed.kind);
+                let kind_matches = query.kinds.contains(&indexed.kind);
                 if !kind_matches {
                     continue;
                 }
@@ -372,7 +317,7 @@ impl SemanticSearchService {
     /// The FTS5 + temporal-boost path was removed in the Graph
     /// Intelligence v2 cleanup; this implementation relies entirely
     /// on the in-memory `SearchIndex`.
-    pub fn search(&self, query: SearchQuery) -> Vec<SearchResult> {
+    pub fn search(&self, query: SymbolSearchQuery) -> Vec<SearchResult> {
         self.index.search(&query)
     }
 
@@ -420,6 +365,25 @@ impl Default for SemanticSearchService {
     }
 }
 
+impl crate::application::ports::SymbolSearch for SemanticSearchService {
+    fn index_workspace(&self, root: &Path) -> crate::application::AppResult<()> {
+        SemanticSearchService::populate_from_directory(self, root)
+            .map_err(|e| crate::application::ports::parser_failure("indexing the workspace", e))
+    }
+
+    fn index_file(&self, path: &Path) -> crate::application::AppResult<()> {
+        SemanticSearchService::index_file_from_path(self, path)
+            .map_err(|e| crate::application::ports::parser_failure("indexing a file", e))
+    }
+
+    fn search(&self, query: &SymbolSearchQuery) -> Vec<crate::domain::aggregates::symbol::Symbol> {
+        SemanticSearchService::search(self, query.clone())
+            .into_iter()
+            .map(|r| r.symbol)
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,7 +405,7 @@ mod tests {
             ],
         );
 
-        let query = SearchQuery {
+        let query = SymbolSearchQuery {
             query: "foo".to_string(),
             kinds: vec![],
             max_results: 10,
@@ -480,7 +444,7 @@ mod tests {
             ],
         );
 
-        let query = SearchQuery {
+        let query = SymbolSearchQuery {
             query: "get".to_string(),
             kinds: vec![],
             max_results: 10,
@@ -517,9 +481,9 @@ mod tests {
             ],
         );
 
-        let query = SearchQuery {
+        let query = SymbolSearchQuery {
             query: "my".to_string(),
-            kinds: vec![SearchSymbolKind::Function],
+            kinds: vec![SymbolKind::Function],
             max_results: 10,
         };
 
@@ -551,7 +515,7 @@ mod tests {
             ],
         );
 
-        let query = SearchQuery {
+        let query = SymbolSearchQuery {
             query: "calc".to_string(),
             kinds: vec![],
             max_results: 10,
@@ -579,7 +543,7 @@ mod tests {
 
         index.index_file("test.rs", symbols);
 
-        let query = SearchQuery {
+        let query = SymbolSearchQuery {
             query: "func".to_string(),
             kinds: vec![],
             max_results: 10,

@@ -17,14 +17,12 @@
 //! - Oracle is **feature-gated**: when `neo4j` feature is disabled or `NEO4J_URI`
 //!   is not set, `parity_check` returns `OracleError::NotConfigured`
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_imports)]
 
 use std::env;
 
 use crate::domain::analytics::oracle::{
     Divergence, OracleConfig, OracleError, OracleReport, OracleResult,
 };
-use crate::domain::plan::MoldPlan;
 
 /// Analytics Oracle Harness for CI parity checking.
 ///

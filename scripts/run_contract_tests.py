@@ -60,6 +60,30 @@ def load_module(path: Path) -> ModuleType:
     return module
 
 
+def recorded_findings(module: ModuleType) -> list:
+    """Findings a contract recorded without raising anything.
+
+    Measured 2026-10-03: 10 of the 12 contracts under `scripts/ci/`
+    report by appending to a module-level `failures` list and turning it
+    into an exit code in their own `main()`. The runner calls the test
+    function and never `main()`, so before this existed every one of them
+    passed unconditionally.
+
+    That is not a reporting nit. The supply-chain contract is the thing
+    that stops `cargo deny check advisories` from being deleted from the
+    merge authority unnoticed, and running it through this runner reported
+    `4 passed, 0 failed` and exit 0 on a tree where running the same file
+    directly reported exit 1. A gate that cannot fail is worse than no
+    gate, because it is reported as green.
+
+    The list is read after each test so the finding is attributed to the
+    test that recorded it, and a test that both raises and records is
+    still counted once.
+    """
+    findings = getattr(module, "failures", None)
+    return findings if isinstance(findings, list) else []
+
+
 def run_one(path: Path) -> tuple[int, int, list[str]]:
     """Return (passed, failed, failure descriptions) for one script."""
     module = load_module(path)
@@ -72,10 +96,35 @@ def run_one(path: Path) -> tuple[int, int, list[str]]:
 
     passed = 0
     failures: list[str] = []
+
+    # A contract may need to do work before its assertions are meaningful.
+    # `test_cr06_ratchet.py` reads `M.head_entries`, which its own main()
+    # populates with `M.resolve()`; run without that, three of its six
+    # checks report "no entries were parsed" -- a false alarm about a
+    # measurement that never happened. The runner has to reproduce what
+    # main() does, so `setup()` is the hook for it, and a contract that
+    # needs one has to say so by defining it.
+    setup = getattr(module, "setup", None)
+    if callable(setup):
+        try:
+            setup()
+        except Exception:  # noqa: BLE001 - a broken setup is a failure
+            detail = traceback.format_exc(limit=6).strip()
+            return 0, 1, [f"  FAIL setup() in {path.name}\n{detail}"]
+
     for name in tests:
         func = getattr(module, name)
+        before = len(recorded_findings(module))
         try:
             func()
+            new = recorded_findings(module)[before:]
+            if new:
+                raise AssertionError(
+                    f"recorded {len(new)} finding(s) instead of raising; "
+                    "the runner reads them so a contract that reports by "
+                    "accumulating still gates:\n  - "
+                    + "\n  - ".join(str(item) for item in new)
+                )
             passed += 1
             print(f"  PASS {name}")
         except Exception:  # noqa: BLE001 - a failing contract is data, not a crash

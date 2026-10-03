@@ -11,6 +11,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(unused_imports)]
 
+use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::events::GraphEvent;
 use crate::domain::value_objects::{RevisionId, WorkspaceId};
@@ -20,6 +21,36 @@ use arc_swap::ArcSwap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::sync::broadcast;
+
+/// The seam `application` programs against.
+///
+/// Four methods, chosen by counting the call sites that needed this type from
+/// a layer not allowed to name it. `get`, `replace` and `subscribe` mirror
+/// same-signature inherent methods, so a concrete call site still resolves to
+/// the inherent one and nothing changed behaviour; `replace` is the exception
+/// and deliberately drops the `CheckpointId` the inherent `set` returns, which
+/// no application-layer caller ever read.
+impl SharedGraph for GraphCache {
+    fn get(&self) -> Arc<CallGraph> {
+        GraphCache::get(self)
+    }
+
+    fn replace(&self, graph: CallGraph) {
+        GraphCache::set(self, graph);
+    }
+
+    fn current_id(&self) -> Option<CheckpointId> {
+        GraphCache::current_id(self)
+    }
+
+    fn get_at(&self, id: CheckpointId) -> Option<Arc<CallGraph>> {
+        GraphCache::get_at(self, id)
+    }
+
+    fn subscribe(&self) -> broadcast::Receiver<GraphEvent> {
+        GraphCache::subscribe(self)
+    }
+}
 
 /// Default checkpoint retention: keep the current head plus one previous
 /// version. This is enough for the common Explorer + MCP read pattern

@@ -15,6 +15,7 @@ from typing import Any
 # loaded by path from the test suite. Resolve it next to this file first.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_lane  # noqa: E402
+import language_source  # noqa: E402
 from check_semantics import check_provenance, content_mismatch  # noqa: E402
 
 SCHEMA_VERSION = "cognicode.product/v1"
@@ -80,15 +81,7 @@ def workspace_version(root: Path) -> str:
 
 
 def parser_languages(root: Path) -> list[str]:
-    source = (root / "crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs").read_text(
-        encoding="utf-8"
-    )
-    match = re.search(r"pub enum Language\s*\{(?P<body>.*?)^\}", source, re.MULTILINE | re.DOTALL)
-    if not match:
-        raise ValueError("Language enum is missing")
-    variants = re.findall(r"^\s*([A-Z][A-Za-z0-9_]*)\s*,", match.group("body"), re.MULTILINE)
-    if not variants:
-        raise ValueError("Language enum has no variants")
+    variants = language_source.language_variants(root)
     return [LANGUAGE_NAMES.get(variant, variant.lower()) for variant in variants]
 
 

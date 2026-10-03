@@ -54,12 +54,14 @@ pub use checkpoint::{CheckpointId, VersionedGraphCache};
 pub use generic_graph_projection::FactGenericGraphProjection;
 pub use graph_cache::{DEFAULT_RETENTION, GraphCache};
 pub use lightweight_index::{LightweightIndex, SymbolLocation};
-pub use on_demand_graph::{
-    CallHierarchyResult, HierarchyEntry, OnDemandGraphBuilder, TraversalDirection,
-};
+pub use on_demand_graph::{CallHierarchyResult, HierarchyEntry, OnDemandGraphBuilder};
 pub use per_file_graph::PerFileGraphCache;
 pub use pet_graph_store::PetGraphStore;
 pub use snapshot_provider::{SnapshotError, SnapshotEvent, SnapshotProvider};
+// `TraversalDirection` is a domain value object since ST-02 slice 3; this is a
+// re-export of the one definition, so the modules below that already spelled
+// it this way did not have to change.
+pub use crate::domain::value_objects::TraversalDirection;
 pub use strategy::{
     FullGraphStrategy, GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy,
     PerFileStrategy,

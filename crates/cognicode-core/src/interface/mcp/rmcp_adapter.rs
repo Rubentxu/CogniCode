@@ -47,28 +47,33 @@ impl CogniCodeHandler {
     /// PRF-SEC-02: create a handler in read-only mode. Mutating tools
     /// (write_file, edit_file, reparse_on_edit) are hidden from `tools/list`
     /// and rejected at dispatch with a typed error.
+    ///
+    /// ST-04: read-only and cancellation are both set through the builder.
+    /// They used to be reassigned onto the built context by hand, which is
+    /// only possible while the fields are `pub` — and a public `Arc` field
+    /// also permits swapping it later, which would let a live handler be
+    /// flipped into read-only (or out of it) after a client connected. That
+    /// is the property PRF-SEC-02 exists to deny. Fixing it by adding a
+    /// setter would have preserved the hole and dressed it up as an API.
     pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = Self::build_ctx(project_root);
-        ctx.cancellation_token = cancellation_token.clone();
-        ctx.read_only = Arc::new(AtomicBool::new(read_only));
+        let ctx = Self::build_ctx(
+            project_root,
+            Some(read_only),
+            Some(cancellation_token.clone()),
+        );
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
     }
 
-    /// Set of tools that mutate workspace state. Single source of truth
-    /// shared by `list_tools` filtering and `call_tool` rejection.
-    pub const MUTATING_TOOLS: &'static [&'static str] =
-        &["write_file", "edit_file", "reparse_on_edit"];
-
     /// M3.1: Creates a CogniCodeHandler wrapping a pre-built, shared
     /// `Arc<HandlerContext>`. Used by the HTTP server (cognicode-mcp)
     /// to share the same `graph_loaded` flag between the MCP dispatch
     /// and the `/ready` HTTP handler.
     pub fn from_ctx(ctx: Arc<HandlerContext>) -> Self {
-        let cancellation_token = ctx.cancellation_token.clone();
+        let cancellation_token = ctx.cancellation_token().clone();
         Self {
             ctx,
             cancellation_token,
@@ -81,7 +86,7 @@ impl CogniCodeHandler {
     /// `product/profiles.json` promises that a `mutating: false` profile
     /// cannot write, and this is the value that promise resolves to.
     pub fn is_read_only(&self) -> bool {
-        self.ctx.read_only.load(Ordering::SeqCst)
+        self.ctx.is_read_only()
     }
 
     /// Build a handler whose posture is derived from a public profile.
@@ -96,13 +101,35 @@ impl CogniCodeHandler {
     /// table the profile generator reads, so the published contract and the
     /// enforced behaviour cannot disagree.
     ///
-    /// An unknown profile id yields a permissive handler. Silently muting a
-    /// profile nobody has classified would break existing installations, and
-    /// the table is closed and test-pinned, so this is a compile-time
-    /// concern rather than a runtime surprise.
+    /// An unknown profile id is refused rather than assumed.
+    ///
+    /// This used to read `is_profile_read_only`, which returns `false` for
+    /// anything it cannot classify — correct for a predicate, wrong here,
+    /// because "I do not know this profile" was being turned into "this
+    /// profile may write". The module docs justified that on the grounds
+    /// that an unclassified profile is a compile-time concern; that holds
+    /// for the closed `PROFILE_POSTURES` table, but this function takes a
+    /// runtime `&str`, which is exactly the case the argument misses.
+    ///
+    /// Panicking is the intended outcome. A caller that cannot name the
+    /// profile it is running under has a bug, and starting writable would
+    /// let that bug reach the user's workspace. Refusing to start is loud,
+    /// immediate, and costs nobody but the caller with the bug. The known
+    /// ids in `PROFILE_POSTURES` are unaffected.
     pub fn for_profile(project_root: PathBuf, profile_id: &str) -> Self {
-        let read_only = crate::product::ProfilePosture::is_profile_read_only(profile_id);
-        Self::with_options(project_root, read_only)
+        match crate::product::ProfilePosture::for_profile(profile_id) {
+            Some(posture) => Self::with_options(project_root, posture.is_read_only()),
+            None => panic!(
+                "unknown profile id {profile_id:?}: not one of the published \
+                 profiles ({:?}). Refusing to start rather than assume a \
+                 writable posture. Use `with_options` directly if you \
+                 genuinely need an ad-hoc handler.",
+                crate::product::PROFILE_POSTURES
+                    .iter()
+                    .map(|(id, _)| *id)
+                    .collect::<Vec<_>>()
+            ),
+        }
     }
 
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
@@ -111,11 +138,11 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::builder()
+        let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
+            .with_cancellation_token(cancellation_token.clone())
             .build();
-        ctx.cancellation_token = cancellation_token.clone();
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
@@ -132,21 +159,33 @@ impl CogniCodeHandler {
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let mut ctx = HandlerContext::builder()
+        let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
-            .with_graph_store_arc(store);
-        if let Some(repo) = iac_repo {
-            ctx = ctx.with_iac_repo(repo);
-        }
-        let mut ctx = ctx.build();
-        ctx.cancellation_token = cancellation_token.clone();
+            .with_graph_store_arc(store)
+            .with_cancellation_token(cancellation_token.clone());
+        let ctx = match iac_repo {
+            Some(repo) => ctx.with_iac_repo(repo),
+            None => ctx,
+        };
+        let ctx = ctx.build();
         Self {
             ctx: Arc::new(ctx),
             cancellation_token,
         }
     }
 
-    fn build_ctx(project_root: PathBuf) -> HandlerContext {
+    /// ST-04: read-only and cancellation are configured here, through the
+    /// builder, instead of being reassigned onto the finished context. Both
+    /// used to be `pub` fields patched from outside, which is only possible
+    /// while the field is public — and a public `Arc` field also allows
+    /// swapping it later, letting a live handler be flipped into read-only
+    /// (or out of it) after a client connected. Denying that is the point of
+    /// PRF-SEC-02; adding a setter would have kept the hole and renamed it.
+    fn build_ctx(
+        project_root: PathBuf,
+        read_only: Option<bool>,
+        cancellation_token: Option<Arc<AtomicBool>>,
+    ) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
 
@@ -164,10 +203,16 @@ impl CogniCodeHandler {
             ),
         ));
 
-        HandlerContext::builder()
+        let mut builder = HandlerContext::builder()
             .with_working_dir(canonical_root)
-            .with_file_ops_service(file_ops_service)
-            .build()
+            .with_file_ops_service(file_ops_service);
+        if let Some(read_only) = read_only {
+            builder = builder.with_read_only(read_only);
+        }
+        if let Some(token) = cancellation_token {
+            builder = builder.with_cancellation_token(token);
+        }
+        builder.build()
     }
 
     /// Get the current CallGraph from the store
@@ -269,11 +314,10 @@ fn tool_category_map() -> &'static HashMap<String, String> {
 /// `cognicode_meta`. Derived from `build_all_tools` on first access
 /// and reused for the lifetime of the process.
 ///
-/// This map is the **primary authority oracle**. The legacy
-/// `CogniCodeHandler::MUTATING_TOOLS` list is retained as a defensive
-/// subset-floor for tools whose meta declaration is missing or stale;
-/// see `declared_authority_consistent` (line ~2632) for the cross-check
-/// that fails loudly if the two ever diverge.
+/// This map is the **primary authority oracle**, and the only one: the
+/// `mutates_workspace` flag published on each tool is computed from the same
+/// declaration, and an undeclared tool fails closed. There is no second list
+/// of tool names to keep in step with this one.
 pub fn tool_authority_map() -> &'static HashMap<String, String> {
     use std::sync::OnceLock;
     static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
@@ -292,25 +336,65 @@ pub fn tool_authority_map() -> &'static HashMap<String, String> {
     })
 }
 
-/// PRF-MCP-05: Resolve the authority for a tool by name, falling back
-/// to the legacy `MUTATING_TOOLS` list when the meta declaration is
-/// missing (defense in depth — keeps the legacy hardcoded list as a
-/// floor). Returns `"mutating"` for any tool in the legacy list, even
-/// if the meta declaration is absent or says "read".
+/// PRF-MCP-05: Resolve the authority for a tool by name, from its own
+/// declaration.
 ///
-/// FAIL-CLOSED (audit 2026-09-30, finding #5): a tool that is neither
-/// in the declared map nor in `MUTATING_TOOLS` resolves to
-/// `"mutating"`, so read-only mode refuses it. The previous default —
-/// `"read"` — was fail-open: an undeclared mutating tool would have
-/// sailed through read-only mode. Deny-by-default costs an undeclared
-/// read tool a refusal until it is declared, which is the correct
+/// A tool with no declaration resolves to `"mutating"`. This used to consult a
+/// second hardcoded list on the way there, which was not defence in depth but
+/// a duplicate: both that branch and the one after it returned `"mutating"`,
+/// so the list could not change the answer. It only existed to be
+/// cross-checked.
+///
+/// FAIL-CLOSED (audit 2026-09-30, finding #5): a tool that is not in the
+/// declared map resolves to `"mutating"`, so read-only mode refuses it. The
+/// previous default — `"read"` — was fail-open: an undeclared mutating tool
+/// would have sailed through read-only mode. Deny-by-default costs an
+/// undeclared read tool a refusal until it is declared, which is the correct
 /// direction for a security property.
+/// The authority a tool declares in its own `cognicode` meta, or `None` when
+/// it declares none.
+///
+/// Read straight off the tool rather than through `tool_authority_map()`,
+/// because `build_all_tools()` cannot consult the map: the map is built *from*
+/// `build_all_tools()`. That circularity is the only reason a second,
+/// hand-kept list of mutating tool names ever existed.
+fn declared_authority(tool: &Tool) -> Option<&str> {
+    tool.meta
+        .as_ref()?
+        .get("cognicode")?
+        .get("authority")?
+        .as_str()
+}
+
+/// Whether an authority value means "this tool changes something".
+fn authority_is_mutating(authority: &str) -> bool {
+    matches!(authority, "mutating" | "execute" | "network")
+}
+
+/// Every tool this build exposes that may change something.
+///
+/// Derived from the declarations `build_all_tools()` already carries, so a
+/// tool cannot be mutating in one place and read-only in another. This
+/// replaces `CogniCodeHandler::MUTATING_TOOLS`, a hand-kept list of names
+/// that had to be edited every time a tool was added or feature-gated — and
+/// that therefore went stale: `reparse_on_edit` is declared behind
+/// `#[cfg(feature = "persistence")]`, `persistence` is a default feature, and
+/// a `--no-default-features` build named it with no tool behind it.
+/// PRF-MCP-05 caught that at the integration lane's `core-no-default` stage.
+///
+/// Fail-closed, matching `resolve_tool_authority`: a tool that declares no
+/// authority is treated as mutating.
+pub fn mutating_tool_names() -> Vec<String> {
+    build_all_tools()
+        .iter()
+        .filter(|tool| declared_authority(tool).is_none_or(authority_is_mutating))
+        .map(|tool| tool.name.to_string())
+        .collect()
+}
+
 pub fn resolve_tool_authority(tool_name: &str) -> String {
     if let Some(declared) = tool_authority_map().get(tool_name) {
         return declared.clone();
-    }
-    if CogniCodeHandler::MUTATING_TOOLS.contains(&tool_name) {
-        return "mutating".to_string();
     }
     "mutating".to_string()
 }
@@ -318,8 +402,7 @@ pub fn resolve_tool_authority(tool_name: &str) -> String {
 /// PRF-MCP-05: True iff a tool is considered mutating under its
 /// declared authority. A tool is mutating when its authority is any of
 /// `"mutating"`, `"execute"`, or `"network"` (the three non-read values
-/// declared in `cognicode_meta`). The legacy `MUTATING_TOOLS` list is
-/// honoured as a floor: a tool in the legacy list is always considered
+/// declared in `cognicode_meta`). A tool with no declaration is always
 /// mutating regardless of meta.
 pub fn tool_is_mutating(tool_name: &str) -> bool {
     matches!(
@@ -1362,18 +1445,15 @@ pub fn build_all_tools() -> Vec<Tool> {
 
         // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission explicitly so
         // clients can distinguish mutating tools without hardcoding names.
-        // The declared `authority` field (cognicode_meta) is the primary oracle;
-        // `MUTATING_TOOLS` is a defensive subset-floor (see `resolve_tool_authority`).
         //
-        // NB: we cannot call `tool_is_mutating(&tool.name)` here because that
-        // would transitively call `tool_authority_map()` which iterates
-        // `build_all_tools()` — infinite recursion. The legacy check is a
-        // subset of the declared authority (pined by
-        // `test_prf_mcp_05_authority_declared_for_every_tool`), so it is safe
-        // to use it as the local mutates marker here. The runtime filter
-        // (below, in `list_tools`) uses `tool_is_mutating` correctly because
-        // it operates on the post-build `Vec<Tool>` name set.
-        let mutates = CogniCodeHandler::MUTATING_TOOLS.contains(&tool.name.as_ref());
+        // The declaration is right here, on the tool being built, so there is
+        // nothing to look up. `tool_is_mutating(&tool.name)` is deliberately
+        // NOT used: it reads `tool_authority_map()`, which iterates
+        // `build_all_tools()` — calling it from inside this function would
+        // recurse. That circularity is what the old hardcoded list was working
+        // around, and it was never needed, because the answer was already in
+        // hand.
+        let mutates = declared_authority(&tool).is_none_or(authority_is_mutating);
         if let Some(existing) = tool.meta.as_mut() {
             if let Some(c) = existing.get_mut("cognicode").and_then(|v| v.as_object_mut()) {
                 c.insert("mutates_workspace".to_string(), serde_json::json!(mutates));
@@ -1424,12 +1504,10 @@ impl ServerHandler for CogniCodeHandler {
 
             // PRF-SEC-02 + PRF-MCP-05: in read-only mode mutating tools are not advertised.
             // Authority comes from the declared `cognicode.authority` field (primary
-            // oracle), with `MUTATING_TOOLS` as a defensive subset-floor.
+            // oracle), with no second list to fall back to.
             let all_tools: Vec<_> = build_all_tools()
                 .into_iter()
-                .filter(|t| {
-                    !self.ctx.read_only.load(Ordering::SeqCst) || !tool_is_mutating(&t.name)
-                })
+                .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
                 .collect();
 
             // Paginate
@@ -1499,8 +1577,8 @@ async fn call_tool_handler(
     // PRF-SEC-02 + PRF-MCP-05: read-only mode rejects mutating tools before any handler
     // runs. Error is typed/honest (isError text), not a silent success.
     // Authority comes from the declared `cognicode.authority` field (primary oracle),
-    // with `MUTATING_TOOLS` as a defensive subset-floor.
-    if tool_is_mutating(tool_name) && ctx.read_only.load(Ordering::SeqCst) {
+    // with no second list to fall back to.
+    if tool_is_mutating(tool_name) && ctx.is_read_only() {
         return Err(InterfaceError::Internal(format!(
             "read_only_mode: tool `{tool_name}` mutates workspace state and is disabled; restart the server without --read-only to enable it"
         )));
@@ -1607,7 +1685,7 @@ async fn call_tool_handler(
 
                 // M2.1: Record graph statistics after successful build
                 if output.success {
-                    let graph = ctx.analysis_service.get_project_graph();
+                    let graph = ctx.analysis_service().get_project_graph();
                     let symbols = graph.symbol_count() as u64;
                     let edges = graph.edge_count() as u64;
                     let health_score =
@@ -1825,9 +1903,9 @@ async fn call_tool_handler(
                 let input: crate::interface::mcp::schemas::SymbolCodeInput =
                     serde_json::from_value(arguments.into())?;
                 let output = crate::interface::mcp::handlers::handle_get_symbol_code(
-                    ctx.symbol_code.clone(),
-                    ctx.validator.clone(),
-                    ctx.working_dir.clone(),
+                    ctx.symbol_code().clone(),
+                    ctx.validator().clone(),
+                    ctx.working_dir().to_path_buf(),
                     input,
                 )
                 .await?;
@@ -2489,7 +2567,7 @@ mod tests {
 
         // All handlers should have valid state
         for handler in handlers {
-            assert!(handler.ctx.working_dir.to_string_lossy().contains("test"));
+            assert!(handler.ctx.working_dir().to_string_lossy().contains("test"));
             let info = handler.get_info();
             assert_eq!(info.server_info.name, "cognicode");
         }
@@ -2631,7 +2709,13 @@ mod tests {
     fn test_cognicode_handler_creation() {
         let handler = CogniCodeHandler::new(PathBuf::from("/tmp/test"));
         // working_dir is canonicalized so may differ from input path
-        assert!(handler.ctx.working_dir.to_string_lossy().ends_with("test"));
+        assert!(
+            handler
+                .ctx
+                .working_dir()
+                .to_string_lossy()
+                .ends_with("test")
+        );
     }
 
     #[test]
@@ -2870,8 +2954,8 @@ mod tests {
     // This test pins two properties:
     //   1. Every tool has `cognicode_meta.authority` and the value is one
     //      of the four allowed strings.
-    //   2. The hardcoded `MUTATING_TOOLS` list is a *subset* of tools with
-    //      authority != "read": every name in MUTATING_TOOLS must declare
+    //   2. The published `mutates_workspace` flag agrees with the declared
+    //      authority — one derivation, no second list. Every tool must
     //      authority != "read". (The legacy list is allowed to be a strict
     //      subset — once a tool has authority declared, PRF-MCP-05 audits
     //      can promote additional tools into `mutating`/`execute`/
@@ -2911,15 +2995,33 @@ mod tests {
             }
         }
 
-        // The legacy `MUTATING_TOOLS` list is a subset of tools with
-        // authority != "read". This keeps the legacy list correct as a
-        // floor while letting audits add more tools to the mutating set.
-        for legacy_name in CogniCodeHandler::MUTATING_TOOLS {
-            assert!(
-                declared_non_read.iter().any(|n| n == legacy_name),
-                "PRF-MCP-05: legacy MUTATING_TOOLS name {legacy_name:?} declares authority='read'. \
-                 Either update the tool declaration to mutating/execute/network, \
-                 or remove the entry from MUTATING_TOOLS."
+        // The invariant that replaces the old `MUTATING_TOOLS` cross-check.
+        // That check asked whether a hand-kept list agreed with the
+        // declarations, which is a question about two lists and cannot fail
+        // for the reason we care about. This asks whether the flag we publish
+        // agrees with the declaration we read — one list, one derivation, and
+        // a disagreement means the published surface lies.
+        for tool in build_all_tools() {
+            let name = tool.name.to_string();
+            let declared = declared_authority(&tool).expect(
+                "every exposed tool declares cognicode.authority; an \
+                 undeclared tool would be published as mutating without \
+                 anyone having decided that",
+            );
+            let published = tool
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("cognicode"))
+                .and_then(|c| c.get("mutates_workspace"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or_else(|| {
+                    panic!("tool {name:?} publishes no cognicode.mutates_workspace flag")
+                });
+            assert_eq!(
+                published,
+                authority_is_mutating(declared),
+                "tool {name:?} declares authority {declared:?} but publishes \
+                 mutates_workspace={published}"
             );
         }
     }
@@ -2999,15 +3101,13 @@ mod tests {
 
     // PRF-MCP-05 (B2): The production enforcement now uses the
     // `tool_is_mutating(name)` helper as the primary oracle, with
-    // `MUTATING_TOOLS` as a defensive subset-floor. This test pins the
-    // helper's contract:
+    // any second list. This test pins the helper's contract:
     //
     // 1. Every tool whose declared `cognicode.authority` is one of
     //    "mutating" | "execute" | "network" must be reported mutating.
     // 2. Every tool whose declared authority is "read" must be reported
     //    NOT mutating.
-    // 3. The helper must agree with the legacy `MUTATING_TOOLS` list
-    //    (every legacy name is mutating per declaration).
+    // 3. The derived mutating set and the helper must agree.
     // 4. Unknown tool names must default to NOT mutating (safe default).
     #[test]
     fn test_prf_mcp_05_tool_is_mutating_helper() {
@@ -3026,11 +3126,13 @@ mod tests {
             );
         }
 
-        // 3: legacy MUTATING_TOOLS floor — every legacy name is mutating.
-        for legacy_name in CogniCodeHandler::MUTATING_TOOLS {
+        // 3: the derived set and the helper agree, since both read the same
+        // declarations. This is the check the legacy list used to provide,
+        // except it can no longer go stale: there is nothing to keep in step.
+        for name in mutating_tool_names() {
             assert!(
-                tool_is_mutating(legacy_name),
-                "PRF-MCP-05: legacy MUTATING_TOOLS entry {legacy_name:?} not reported mutating"
+                tool_is_mutating(&name),
+                "PRF-MCP-05: derived mutating tool {name:?} not reported mutating"
             );
         }
 
@@ -3049,23 +3151,17 @@ mod tests {
         );
     }
 
-    // PRF-MCP-05 (B2): Negative-control test for the enforcement gate.
-    // Synthesise a tool whose `authority` field declares "mutating" but
-    // whose name is NOT in `MUTATING_TOOLS`. The helper must report it
-    // mutating, proving the helper is not falling back to the legacy list
-    // (i.e. the declared authority is the primary oracle, not the floor).
+    // PRF-MCP-05 (B2): the declaration is the only oracle.
+    // Every tool whose `authority` declares "mutating" must be reported
+    // mutating, with no second list consulted on the way there.
     //
     // This test does not require any production code change beyond
     // `tool_is_mutating` itself — it pins the semantics directly.
     #[test]
     fn test_prf_mcp_05_declared_authority_is_primary_not_floor() {
         use super::tool_is_mutating;
-        // The MCP catalog includes several tools with authority != "read"
-        // that are NOT in the legacy `MUTATING_TOOLS` list. Pick any such
-        // name from the production catalog and assert it is mutating per
-        // declaration alone.
         let tools = build_all_tools();
-        let declared_mutating_not_in_legacy: Vec<String> = tools
+        let declared_mutating: Vec<String> = tools
             .iter()
             .filter_map(|t| {
                 let declared = t
@@ -3074,27 +3170,22 @@ mod tests {
                     .and_then(|m| m.get("cognicode"))
                     .and_then(|m| m.get("authority"))
                     .and_then(|v| v.as_str())?;
-                if matches!(declared, "mutating" | "execute" | "network")
-                    && !CogniCodeHandler::MUTATING_TOOLS.contains(&t.name.as_ref())
-                {
+                if matches!(declared, "mutating" | "execute" | "network") {
                     Some(t.name.to_string())
                 } else {
                     None
                 }
             })
             .collect();
-        // Positive test only when such a tool exists. The MCP catalog at
-        // the time of writing does include several (graph tools that write
-        // caches). If none exist the test is vacuously true (defended by
-        // `test_prf_mcp_05_tool_is_mutating_helper`).
-        if !declared_mutating_not_in_legacy.is_empty() {
-            for name in &declared_mutating_not_in_legacy {
-                assert!(
-                    tool_is_mutating(name),
-                    "PRF-MCP-05 (B2): declared-mutating tool {name:?} not reported mutating \
-                     (helper is falling back to MUTATING_TOOLS floor instead of declared authority)"
-                );
-            }
+        assert!(
+            !declared_mutating.is_empty(),
+            "no tool declares a non-read authority, so this test proves nothing"
+        );
+        for name in &declared_mutating {
+            assert!(
+                tool_is_mutating(name),
+                "PRF-MCP-05 (B2): declared-mutating tool {name:?} not reported mutating"
+            );
         }
     }
 }

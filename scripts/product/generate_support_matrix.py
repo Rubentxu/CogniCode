@@ -18,6 +18,7 @@ from typing import Any
 # the sibling explicitly so both paths behave the same.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_lane  # noqa: E402
+import language_source  # noqa: E402
 from check_semantics import check_provenance, content_mismatch  # noqa: E402
 
 LANGUAGE_SCHEMA_VERSION = "cognicode.languages/v1"
@@ -150,20 +151,18 @@ def workspace_version(root: Path) -> str:
 
 
 def parser_variants(root: Path) -> list[str]:
-    source = read_required(
-        root, "crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs"
-    )
-    match = re.search(r"pub enum Language\s*\{(?P<body>.*?)^\}", source, re.MULTILINE | re.DOTALL)
-    if not match:
-        raise ValueError("Language enum is missing")
-    variants = re.findall(r"^\s*([A-Z][A-Za-z0-9_]*)\s*,", match.group("body"), re.MULTILINE)
-    if not variants:
-        raise ValueError("Language enum has no variants")
+    """The `Language` enum's variants, checked against the grammar mappings.
+
+    The declaration and the mapping live in two files on purpose, so this
+    reads both. It used to read only the parser file, which is where the
+    enum was before it was lifted into the domain layer; see
+    `language_source.py` for why that is not a layering decision to preserve.
+    """
+    variants = language_source.language_variants(root)
     unknown = sorted(set(variants) - set(LANGUAGE_INFO))
     if unknown:
         raise ValueError(f"unmapped Language variants: {unknown}")
-    mappings = set(re.findall(r"Language::([A-Z][A-Za-z0-9_]*)\s*=>", source))
-    missing_mappings = sorted(set(variants) - mappings)
+    missing_mappings = language_source.unmapped_variants(root, variants)
     if missing_mappings:
         raise ValueError(f"Language variants without tree-sitter mappings: {missing_mappings}")
     return variants
@@ -261,7 +260,12 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
     for variant in variants:
         language_id, name = LANGUAGE_INFO[variant]
         evidence = [
-            "Language enum and tree-sitter mapping in tree_sitter_parser.rs",
+            # Both paths, because the declaration and the grammar mapping are
+            # in different layers on purpose. Citing only the parser file
+            # would point a reader at a file that no longer declares
+            # `Language` at all.
+            "Language enum in domain/value_objects/language.rs; tree-sitter "
+            "grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
             "LanguageConfig extension and symbol mapping in language_config.rs",
         ]
         if variant in accepted:

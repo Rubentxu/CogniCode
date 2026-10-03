@@ -10,7 +10,10 @@
     clippy::useless_vec,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
@@ -62,13 +65,12 @@ use crate::domain::aggregates::{CallGraph, Symbol};
 use crate::domain::services::CycleDetector;
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
+use crate::domain::value_objects::{ClientIdentity, SymbolKind};
 use crate::infrastructure::graph::{
     FullGraphStrategy, GraphStrategy, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
     TraversalDirection,
 };
-use crate::infrastructure::semantic::{
-    SearchSymbolKind, SemanticSearchService, SymbolCodeService, build_outline,
-};
+use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService, build_outline};
 use crate::interface::mcp::schemas::{
     AnalysisMetadata,
     // Existing schemas
@@ -216,182 +218,86 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tracing::info;
-
-// =============================================================================
-// Capability Traits - Allow handlers to request only the services they need
-// =============================================================================
-
-/// Capability for handlers that need access to graph analysis services.
-/// Provides access to the analysis service and optional graph store.
-pub trait AnalysisAccess {
-    fn analysis_service(&self) -> Arc<AnalysisService>;
-    fn graph_store(&self) -> Arc<dyn GraphStore>;
-}
-
-impl AnalysisAccess for HandlerContext {
-    fn analysis_service(&self) -> Arc<AnalysisService> {
-        self.analysis_service.clone()
-    }
-
-    fn graph_store(&self) -> Arc<dyn GraphStore> {
-        if let Some(ref store) = self.graph_store {
-            store.clone()
-        } else {
-            Arc::new(InMemoryGraphStore::new())
-        }
-    }
-}
-
-/// Capability for handlers that need cancellation support.
-/// Allows checking if operation was cancelled.
-pub trait Cancellation {
-    fn cancellation_token(&self) -> Arc<AtomicBool>;
-    fn is_cancelled(&self) -> bool;
-}
-
-impl Cancellation for HandlerContext {
-    fn cancellation_token(&self) -> Arc<AtomicBool> {
-        self.cancellation_token.clone()
-    }
-
-    fn is_cancelled(&self) -> bool {
-        self.cancellation_token.load(Ordering::SeqCst)
-    }
-}
-
-/// Capability for handlers that need input validation and working directory access.
-/// This is a common combination for file-based operations.
-pub trait Validation {
-    fn validator(&self) -> Arc<InputValidator>;
-    fn working_dir(&self) -> PathBuf;
-}
-
-impl Validation for HandlerContext {
-    fn validator(&self) -> Arc<InputValidator> {
-        self.validator.clone()
-    }
-
-    fn working_dir(&self) -> PathBuf {
-        self.working_dir.clone()
-    }
-}
-
-/// Capability for handlers that need refactoring services.
-pub trait RefactorAccess {
-    fn refactor_service(&self) -> Arc<RefactorService>;
-    fn validator(&self) -> Arc<InputValidator>;
-    fn working_dir(&self) -> PathBuf;
-}
-
-impl RefactorAccess for HandlerContext {
-    fn refactor_service(&self) -> Arc<RefactorService> {
-        self.refactor_service.clone()
-    }
-
-    fn validator(&self) -> Arc<InputValidator> {
-        self.validator.clone()
-    }
-
-    fn working_dir(&self) -> PathBuf {
-        self.working_dir.clone()
-    }
-}
-
-/// Capability for handlers that need semantic search services.
-pub trait SemanticSearch {
-    fn semantic_search(&self) -> Arc<SemanticSearchService>;
-    fn symbol_code(&self) -> Arc<SymbolCodeService>;
-}
-
-impl SemanticSearch for HandlerContext {
-    fn semantic_search(&self) -> Arc<SemanticSearchService> {
-        self.semantic_search.clone()
-    }
-
-    fn symbol_code(&self) -> Arc<SymbolCodeService> {
-        self.symbol_code.clone()
-    }
-}
-
-/// Capability for handlers that need telemetry/logging support.
-pub trait Telemetry {
-    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>>;
-    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>>;
-    fn should_log(&self, level: tracing::Level) -> bool;
-}
-
-impl Telemetry for HandlerContext {
-    fn log_level(&self) -> Arc<tokio::sync::RwLock<tracing::Level>> {
-        self.log_level.clone()
-    }
-
-    fn symbol_hotness(&self) -> Arc<Mutex<HashMap<String, usize>>> {
-        self.symbol_hotness.clone()
-    }
-
-    fn should_log(&self, level: tracing::Level) -> bool {
-        let stored_level = self
-            .log_level
-            .try_read()
-            .map(|g| *g)
-            .unwrap_or(tracing::Level::INFO);
-        level >= stored_level
-    }
-}
-
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]
 pub struct HandlerContext {
-    pub working_dir: PathBuf,
-    pub validator: Arc<InputValidator>,
-    pub analysis_service: Arc<AnalysisService>,
-    pub refactor_service: Arc<RefactorService>,
-    pub compressor: Arc<ContextCompressorService>,
-    pub semantic_search: Arc<SemanticSearchService>,
-    pub symbol_code: Arc<SymbolCodeService>,
-    pub client_protocol_version: Option<String>,
-    pub client_name: Option<String>,
-    pub client_version: Option<String>,
-    pub cancellation_token: Arc<AtomicBool>,
-    pub log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
+    /// The workspace root every path in this context is resolved against.
+    /// ST-04: read through `working_dir()`; the canonicalized value cannot
+    /// be swapped after construction, because a context whose root moved
+    /// underneath it would resolve two identical paths differently.
+    working_dir: PathBuf,
+    /// ST-04: read through `validator()`. Handlers validate; they do not
+    /// decide what counts as valid, so this is handed out by reference and
+    /// never replaced.
+    validator: Arc<InputValidator>,
+    /// ST-04: read through `analysis_service()`.
+    analysis_service: Arc<AnalysisService>,
+    /// ST-04: read only from modules inside `handlers`, which see this
+    /// private field directly. No accessor exists because no caller outside
+    /// the module needs one.
+    refactor_service: Arc<RefactorService>,
+    compressor: Arc<ContextCompressorService>,
+    /// ST-04: read only from modules inside `handlers`; see
+    /// `refactor_service` above.
+    semantic_search: Arc<SemanticSearchService>,
+    symbol_code: Arc<SymbolCodeService>,
+    /// ST-04: who is on the other end, if anyone announced themselves.
+    /// One value, not three independently-optional fields — see
+    /// [`ClientIdentity`] for why the distinction is load-bearing.
+    client: ClientIdentity,
+    cancellation_token: Arc<AtomicBool>,
+    log_level: Arc<tokio::sync::RwLock<tracing::Level>>,
     /// Tracks symbol access hotness for AI relevance learning
-    pub symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
+    symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
-    pub graph_store: Option<Arc<dyn GraphStore>>,
+    /// ST-04: read through `get_graph_store()`, which is the only reader
+    /// outside this module and which applies the memoized fallback. Direct
+    /// access to the configured value stays inside `handlers` — modules
+    /// nested here see the private field, and the tests that need to tell
+    /// "an explicit store was set" apart from "the fallback resolved" read
+    /// it from in here on purpose. A caller outside the module has no way to
+    /// observe the absence of a configured store, and does not need one:
+    /// the fallback is the contract, not the configuration.
+    graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
-    pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
-    pub file_ops_service:
+    /// ST-04: read through `file_ops_service()`. The accessor returns a
+    /// borrow, not the `Option` itself, so the service this context was
+    /// built with cannot be replaced from outside the module.
+    file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
-    pub iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
+    iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     /// Cached InMemoryGraphStore fallback, lazily created on first
     /// `get_graph_store()` call when no explicit `graph_store` is configured.
     /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
     /// `OnceLock` ensures thread-safe single initialization.
     /// See ADR-030.
-    pub fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
+    fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
     /// M3.1: Flag flipped to `true` after the first successful `build_graph`
     /// call completes through `call_tool_handler`. Used by the `/ready`
     /// HTTP endpoint to report graph-readiness distinct from process
     /// liveness (`/health`). Atomic + `Arc` so the flag can be observed
     /// by the HTTP readiness handler without going through the dispatch
     /// boundary.
-    pub graph_loaded: Arc<AtomicBool>,
+    graph_loaded: Arc<AtomicBool>,
     /// PRF-SEC-02: read-only mode. When `true`, mutating tools
     /// (write_file, edit_file, reparse_on_edit) are rejected at dispatch
     /// and filtered out of `tools/list`. Default `false` preserves the
     /// existing behavior for the HTTP server; the stdio binary exposes
     /// `--read-only`.
-    pub read_only: Arc<AtomicBool>,
+    read_only: Arc<AtomicBool>,
     /// PRF-F5.W4: per-sub-handler timeout for composite tools (e.g.
     /// `handle_smart_search`). Default `Duration::from_secs(60)`
     /// preserves the production behavior; tests can override it
     /// via `HandlerContextBuilder::with_sub_handler_timeout` to force
-    /// timeout paths in seconds rather than minutes. The field is part
-    /// of the public HandlerContext API so production callers that build
-    /// a context can tighten the budget explicitly if needed.
-    pub sub_handler_timeout: std::time::Duration,
+    /// timeout paths in seconds rather than minutes. Read through
+    /// `sub_handler_timeout()`. The field stopped being part of the public
+    /// `HandlerContext` API in ST-04: a context's request budget is fixed at
+    /// build time, so a caller cannot lengthen or shorten it once dispatch has
+    /// started.
+    sub_handler_timeout: std::time::Duration,
 }
 
 impl std::fmt::Debug for HandlerContext {
@@ -405,6 +311,90 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
+    /// ST-04: the connected client's identity, or [`ClientIdentity::unknown`].
+    ///
+    /// Read-only by construction. `ClientIdentity` owns the three attributes
+    /// and hands back `Option<&str>`, so no caller can install a name without
+    /// a version, and no caller can write the field back out.
+    pub fn client(&self) -> &ClientIdentity {
+        &self.client
+    }
+
+    /// ST-04: whether this context refuses workspace mutation.
+    ///
+    /// Read-only is fixed when the context is built and there is no setter.
+    /// That is deliberate: PRF-SEC-02 treats it as part of the posture a
+    /// client is admitted under, and a `pub` field would have allowed a live
+    /// handler to be flipped into or out of read-only after connecting.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only.load(Ordering::SeqCst)
+    }
+
+    /// ST-04: the per-context sub-handler timeout for composite tools.
+    pub fn sub_handler_timeout(&self) -> std::time::Duration {
+        self.sub_handler_timeout
+    }
+
+    /// ST-04: the symbol-code service, by reference.
+    ///
+    /// The only accessor this slice needed. `compressor`, `iac_repo` and
+    /// `code_intelligence_provider` are read exclusively from modules *inside*
+    /// `handlers`, and a child module reads its parent's private fields
+    /// directly — so those three needed no accessor at all. `symbol_code` is
+    /// also read by `rmcp_adapter`, which is a sibling of `handlers` rather
+    /// than a child, and cannot see private fields.
+    pub fn symbol_code(&self) -> &Arc<SymbolCodeService> {
+        &self.symbol_code
+    }
+
+    /// ST-04: the analysis service, by reference.
+    ///
+    /// Slice 7 needed this one. `analysis_service` is read from
+    /// `consolidated_handlers` and `aix_handlers` — both children of
+    /// `handlers`, so they see the private field with no help — and from
+    /// `rmcp_adapter`, which is a sibling and does not. The earlier estimate
+    /// of "~75 access sites" for this field counted every textual mention
+    /// across the crate; the number of sites that actually needed changing
+    /// is one.
+    pub fn analysis_service(&self) -> &Arc<AnalysisService> {
+        &self.analysis_service
+    }
+
+    /// ST-04: the shared file-operations service, if one was configured.
+    ///
+    /// Returned as `&Option<..>` rather than `Option<&..>` so the call sites
+    /// keep the shape they had against a public field
+    /// (`ctx.file_ops_service().clone().unwrap_or_else(..)`) while still
+    /// being unable to replace what the context was built with. A borrow
+    /// also cannot be held past the `&self` that produced it, which a
+    /// `clone()` accessor would not have prevented.
+    pub fn file_ops_service(
+        &self,
+    ) -> &Option<Arc<crate::application::services::file_operations::FileOperationsService>> {
+        &self.file_ops_service
+    }
+
+    /// ST-04: the workspace root, as `&Path` so callers cannot re-point the
+    /// context at another tree by mutating what they were handed.
+    pub fn working_dir(&self) -> &Path {
+        &self.working_dir
+    }
+
+    /// ST-04: the validator this context enforces with, by reference.
+    pub fn validator(&self) -> &Arc<InputValidator> {
+        &self.validator
+    }
+
+    /// ST-04: the configured log level for this context.
+    ///
+    /// This used to be reachable only through the now-removed `Telemetry`
+    /// trait, which had no other caller. A field that `handlers/*` reads
+    /// directly deserves an inherent accessor more than a capability trait
+    /// nobody imports.
+    pub fn log_level(&self) -> &Arc<tokio::sync::RwLock<tracing::Level>> {
+        &self.log_level
+    }
+
     pub fn cancellation_token(&self) -> &Arc<AtomicBool> {
         &self.cancellation_token
     }
@@ -513,9 +503,7 @@ pub struct HandlerContextBuilder {
     compressor: Option<Arc<ContextCompressorService>>,
     semantic_search: Option<Arc<SemanticSearchService>>,
     symbol_code: Option<Arc<SymbolCodeService>>,
-    client_protocol_version: Option<String>,
-    client_name: Option<String>,
-    client_version: Option<String>,
+    client: ClientIdentity,
     cancellation_token: Option<Arc<AtomicBool>>,
     log_level: Option<Arc<tokio::sync::RwLock<tracing::Level>>>,
     symbol_hotness: Option<Arc<Mutex<HashMap<String, usize>>>>,
@@ -588,20 +576,27 @@ impl HandlerContextBuilder {
     }
 
     /// Sets the client protocol version.
+    ///
+    /// ST-04: composes the existing [`ClientIdentity`] rather than assigning
+    /// a field of its own, so the builder keeps the API callers already use
+    /// while the context stops exposing the pieces.
     pub fn with_client_protocol_version(mut self, version: impl Into<String>) -> Self {
-        self.client_protocol_version = Some(version.into());
+        let version = version.into();
+        self.client = self.client.with_protocol_version(version);
         self
     }
 
     /// Sets the client name.
     pub fn with_client_name(mut self, name: impl Into<String>) -> Self {
-        self.client_name = Some(name.into());
+        let name = name.into();
+        self.client = self.client.with_name(name);
         self
     }
 
     /// Sets the client version.
     pub fn with_client_version(mut self, version: impl Into<String>) -> Self {
-        self.client_version = Some(version.into());
+        let version = version.into();
+        self.client = self.client.with_version(version);
         self
     }
 
@@ -728,9 +723,7 @@ impl HandlerContextBuilder {
             symbol_code: self
                 .symbol_code
                 .unwrap_or_else(|| Arc::new(SymbolCodeService::new())),
-            client_protocol_version: self.client_protocol_version,
-            client_name: self.client_name,
-            client_version: self.client_version,
+            client: self.client,
             cancellation_token: self
                 .cancellation_token
                 .unwrap_or_else(|| Arc::new(AtomicBool::new(false))),
@@ -1256,7 +1249,7 @@ pub async fn handle_build_graph(
         };
 
         if !is_stale && let Some((graph, manifest)) = snapshot {
-            ctx.analysis_service.graph_cache().set(graph);
+            ctx.analysis_service.graph_cache().replace(graph);
             let store = ctx.get_graph_store();
             let _ = store.save_manifest(&manifest);
             loaded_from_cache = true;
@@ -1608,10 +1601,12 @@ pub async fn handle_get_file_symbols(
     // If compression is requested, return a natural language summary
     if input.compressed {
         let graph_cache = ctx.analysis_service.graph_cache();
-        let graph = graph_cache.get_ref();
+        let graph = graph_cache.get();
         // Convert to DTO for compression
         let output_dto: GetFileSymbolsResult = output.into();
-        let summary = ctx.compressor.compress_symbols(&output_dto, Some(graph));
+        let summary = ctx
+            .compressor
+            .compress_symbols(&output_dto, Some(graph.as_ref()));
         Ok(serde_json::json!({
             "compressed": true,
             "summary": summary,
@@ -3742,32 +3737,23 @@ pub async fn handle_semantic_search(
     // Ensure the search index is populated before querying
     let _ensure = ensure_semantic_indexed_with_services(&semantic_search, &working_dir)?;
 
-    // Convert kind filters
-    let kinds: Vec<SearchSymbolKind> = input
+    // Convert kind filters. `from_search_label` is the same table this handler
+    // used to spell out inline and `WorkspaceSession` spelled out again; it
+    // lives in the domain once now.
+    let kinds: Vec<SymbolKind> = input
         .kinds
         .as_ref()
         .map(|kinds| {
             kinds
                 .iter()
-                .filter_map(|k| match k.to_lowercase().as_str() {
-                    "function" => Some(SearchSymbolKind::Function),
-                    "class" => Some(SearchSymbolKind::Class),
-                    "method" => Some(SearchSymbolKind::Method),
-                    "variable" => Some(SearchSymbolKind::Variable),
-                    "trait" => Some(SearchSymbolKind::Trait),
-                    "struct" => Some(SearchSymbolKind::Struct),
-                    "enum" => Some(SearchSymbolKind::Enum),
-                    "module" => Some(SearchSymbolKind::Module),
-                    "constant" => Some(SearchSymbolKind::Constant),
-                    _ => None,
-                })
+                .filter_map(|k| SymbolKind::from_search_label(k))
                 .collect()
         })
         .unwrap_or_default();
 
     // Build search query
     let query_text = input.query.clone();
-    let query = crate::infrastructure::semantic::SearchQuery {
+    let query = crate::domain::value_objects::SymbolSearchQuery {
         query: input.query,
         kinds,
         max_results: input.max_results,
@@ -5508,9 +5494,31 @@ mod tests {
         let input = GetEntryPointsInput { compressed: false };
         let result = handle_get_entry_points(&ctx, input).await.unwrap();
 
-        // Should succeed with auto-built graph
-        // (entry_points may be empty for simple files, but shouldn't error)
-        assert!(result.total >= 0);
+        // The point of the test is the auto-build, so it has to observe one.
+        // The fixture defines `main` and `helper`, so an auto-built graph has
+        // entry points to report. `total >= 0` used to stand here, which is
+        // true of every usize: the handler could return nothing and this test
+        // would still pass while claiming to prove the graph was built.
+        assert!(
+            result.total > 0,
+            "an auto-built graph over a fixture defining main and helper must \
+             report at least one entry point, got total={}",
+            result.total
+        );
+        assert_eq!(
+            result.total,
+            result.entry_points.len(),
+            "total must count the entry points actually reported"
+        );
+        let names: Vec<&str> = result
+            .entry_points
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        assert!(
+            names.contains(&"main"),
+            "main is the entry point this fixture declares; got {names:?}"
+        );
     }
 
     // =============================================================================
@@ -5747,8 +5755,15 @@ mod tests {
         // This may succeed or fail depending on path validity, but tests HandlerResult pattern
         match result {
             Ok(output) => {
-                // If success, verify structure
-                assert!(output.calls.len() >= 0);
+                // If it succeeded, the working dir is a path that does not
+                // exist, so there is nothing to resolve and the result must be
+                // empty. `calls.len() >= 0` held for every Vec and would have
+                // passed no matter what the handler returned.
+                assert!(
+                    output.calls.is_empty(),
+                    "a call hierarchy over a nonexistent working dir has no calls; got {:?}",
+                    output.calls
+                );
             }
             Err(e) => {
                 // If error, verify it's a proper HandlerError
@@ -5792,9 +5807,418 @@ mod tests {
             .with_log_level(tracing::Level::DEBUG)
             .build();
 
-        assert_eq!(ctx.client_name, Some("test-client".to_string()));
-        assert_eq!(ctx.client_version, Some("1.0.0".to_string()));
-        assert_eq!(ctx.client_protocol_version, Some("2024-01".to_string()));
+        assert_eq!(ctx.client().name(), Some("test-client"));
+        assert_eq!(ctx.client().version(), Some("1.0.0"));
+        assert_eq!(ctx.client().protocol_version(), Some("2024-01"));
+    }
+
+    // ST-04: the client identity used to be three independent public fields
+    // on `HandlerContext`. Three `Option<String>`s that are always set
+    // together and always mean one thing is not three optional values, it is
+    // one optional value with three attributes — and modelling it that way
+    // makes the impossible states unrepresentable. `ClientIdentity::unknown`
+    // is the only "no client" and there is no spelling that sets a name
+    // without a version.
+    #[test]
+    fn t_st04_client_identity_is_one_value_not_three_optional_fields() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let identified = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_client_name("cognicode-cli")
+            .with_client_version("0.98.1")
+            .with_client_protocol_version("2024-11")
+            .build();
+        let c = identified.client();
+        assert_eq!(c.name(), Some("cognicode-cli"));
+        assert_eq!(c.version(), Some("0.98.1"));
+        assert_eq!(c.protocol_version(), Some("2024-11"));
+        // A client that identifies itself is known, not half-known.
+        assert!(c.is_known());
+
+        // A context built without client metadata is unknown as a whole.
+        let anonymous = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(!anonymous.client().is_known());
+        assert_eq!(anonymous.client().name(), None);
+        assert_eq!(anonymous.client().version(), None);
+        assert_eq!(anonymous.client().protocol_version(), None);
+        // There is exactly one "no identity" value, so two anonymous
+        // contexts cannot disagree about not having one.
+        assert_eq!(*anonymous.client(), ClientIdentity::unknown());
+    }
+
+    // ST-04 slice 4. This module used to declare six capability traits —
+    // `AnalysisAccess`, `Cancellation`, `Validation`, `RefactorAccess`,
+    // `SemanticSearch`, `Telemetry` — under a header promising "allow
+    // handlers to request only the services they need", which is this
+    // action's own exit criterion. They were introduced by 7323bb37
+    // ("resolve workspace compilation errors", 2026-06-14) and had no
+    // caller for the 81 days that followed.
+    //
+    // They were not merely unused. `AnalysisAccess::graph_store` returned a
+    // freshly built `InMemoryGraphStore` on every call, discarding the
+    // memoized cache that `HandlerContext::get_graph_store` exists to
+    // preserve — so had anything used it, the trait would have introduced
+    // the bug it was written to abstract over. Dead code was masking a
+    // semantic difference, which is worse than dead code.
+    //
+    // Renaming all six compiled the whole workspace with zero errors,
+    // which is how dead they were. They are gone. If capability traits are
+    // ever wanted for real, the ratchet below should be replaced by the
+    // first test that consumes one — not by their reappearance.
+    //
+    // The check counts `pub trait` declarations and matches their impls to
+    // them by name. Naming the six dead traits literally would not work:
+    // this file contains the test, so a `contains("pub trait X")` assertion
+    // would match its own assertion text and could never pass. Counting and
+    // pairing avoids quoting any name.
+    #[test]
+    fn t_st04_no_capability_trait_exists_without_a_real_consumer() {
+        let source = include_str!("mod.rs");
+
+        let declared: Vec<&str> = source
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix("pub trait "))
+            .filter_map(|rest| rest.split([' ', '{', ':']).next())
+            .collect();
+
+        for name in &declared {
+            assert!(
+                source.contains(&format!("impl {name} for")),
+                "capability trait `{name}` is declared but has no \
+                 implementation on HandlerContext. A trait with no \
+                 implementation is a promise with no caller — the six that \
+                 were removed in this slice all had one, plus no caller."
+            );
+        }
+
+        // And no trait in this module may be implemented without also being
+        // consumed somewhere: that asymmetry is what let six of them sit
+        // here from 2026-06-14 until now.
+        for name in &declared {
+            let impls = source.matches(&format!("impl {name} for")).count();
+            let paths = source.matches(&format!("{name}::")).count();
+            assert!(
+                paths > 0,
+                "capability trait `{name}` has {impls} implementation(s) and \
+                 zero call sites. Delete it, or make the first caller in the \
+                 same commit that reintroduces it."
+            );
+        }
+    }
+
+    // ST-04 slice 6. Four fields lost `pub`: `compressor`, `iac_repo`,
+    // `symbol_code` and `code_intelligence_provider`. Only `symbol_code`
+    // needed an accessor, because it is the only one of the four read from
+    // outside the `handlers` module tree. This asserts the one that can be
+    // checked from here, and that it hands out the same `Arc` every time, so
+    // a caller cannot swap in a different service between two dispatches.
+    #[test]
+    fn t_st04_symbol_code_accessor_returns_the_same_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_symbol_code(crate::infrastructure::semantic::SymbolCodeService::new())
+            .build();
+
+        assert!(Arc::ptr_eq(ctx.symbol_code(), ctx.symbol_code()));
+        // The context is usable: the call goes through the `SymbolSource`
+        // port that the accessor hands out, not through a field that no
+        // longer exists. A miss is the honest result for a path that is not
+        // in the workspace, and it proves the service is wired, not stubbed.
+        use crate::application::ports::SymbolSource;
+        let missing = ctx
+            .symbol_code()
+            .source_at(&dir.path().join("nope.rs"), 0, 0);
+        assert!(
+            missing.is_err(),
+            "a missing path must not yield source text"
+        );
+    }
+
+    // ST-04 slice 5. `working_dir` and `validator` lost `pub`. Their readers
+    // were all reads — `clone`, `display`, `to_string_lossy` — including
+    // `cognicode-mcp/src/server.rs`, a different crate, so accessors were
+    // enough and no setter was needed. This asserts the values a handler
+    // actually depends on still arrive intact through the accessors.
+    #[test]
+    fn t_st04_working_dir_and_validator_are_readable_through_accessors() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_validator(crate::interface::mcp::security::InputValidator::new())
+            .build();
+
+        // The root is canonicalized at build time, so comparing against the
+        // raw temp path would be wrong on any platform where the temp dir is
+        // itself a symlink.
+        assert_eq!(
+            ctx.working_dir(),
+            dir.path().canonicalize().unwrap().as_path(),
+            "the accessor must hand out the same root the builder canonicalized"
+        );
+        // Reading it twice must not be able to drift: `working_dir()` returns
+        // `&Path`, so there is no owned copy for a caller to mutate.
+        assert_eq!(ctx.working_dir(), ctx.working_dir());
+
+        // The validator is handed out by reference, so the same Arc every
+        // time — a caller cannot substitute a laxer one mid-flight.
+        assert!(Arc::ptr_eq(ctx.validator(), ctx.validator()));
+    }
+
+    // ST-04 slice 3: `read_only` and `cancellation_token` lost `pub`, which
+    // required `rmcp_adapter.rs` to stop reassigning the finished context.
+    // It configured both by hand — `ctx.read_only = Arc::new(...)` after
+    // `build_ctx` — and `with_read_only` / `with_cancellation_token` already
+    // existed on the builder. A public `Arc` field permits swapping the flag
+    // on a live handler, which would let a connected client be moved out of
+    // read-only. This asserts the posture still holds after the change: it
+    // is decided at build time and survives independently of how it was set.
+    #[test]
+    fn t_st04_read_only_posture_is_decided_at_build_time_and_has_no_setter() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let read_only_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_read_only(true)
+            .build();
+        assert!(read_only_ctx.is_read_only());
+
+        let writable_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_read_only(false)
+            .build();
+        assert!(!writable_ctx.is_read_only());
+
+        // The default is writable, matching the pre-existing behaviour for
+        // the HTTP server; only the explicit opt-in is restricted.
+        let default_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(!default_ctx.is_read_only());
+
+        // Two contexts built differently do not share the flag. Before this
+        // slice both fields were reassigned from outside, so sharing or
+        // clobbering them was possible; now each context owns its own.
+        assert!(read_only_ctx.is_read_only());
+        assert!(!writable_ctx.is_read_only());
+    }
+
+    #[test]
+    fn t_st04_sub_handler_timeout_is_read_through_its_accessor() {
+        let dir = tempfile::tempdir().unwrap();
+        let default_ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert_eq!(
+            default_ctx.sub_handler_timeout(),
+            std::time::Duration::from_secs(60),
+            "the default budget must not drift when the field stops being public"
+        );
+
+        let tight = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_sub_handler_timeout(std::time::Duration::from_nanos(1))
+            .build();
+        assert_eq!(
+            tight.sub_handler_timeout(),
+            std::time::Duration::from_nanos(1)
+        );
+    }
+
+    // ST-04 slice 2: four fields went from `pub` to private because no
+    // reader existed outside this module. Privatizing is only safe if the
+    // behaviour each one carried is still reachable, so this asserts the
+    // accessors, not the visibility — the point is that nothing was lost,
+    // not that something became harder to reach.
+    #[tokio::test]
+    async fn t_st04_privatized_state_is_still_reachable_through_accessors() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_log_level(tracing::Level::DEBUG)
+            .build();
+
+        // symbol_hotness: recording and reading still work end to end.
+        assert_eq!(ctx.get_symbol_hotness("nothing_yet"), 0.0);
+        ctx.record_symbol_access("hot", 3);
+        assert_eq!(ctx.get_symbol_hotness("hot"), 1.0);
+        // `log_level` is read through its own inherent accessor.
+        // Privatizing must not have changed what it returns. It is a tokio
+        // RwLock, so it is awaited.
+        assert_eq!(*ctx.log_level().read().await, tracing::Level::DEBUG);
+
+        // graph_loaded: the /ready flag still starts false and still flips.
+        assert!(!ctx.is_graph_loaded());
+        ctx.mark_graph_loaded();
+        assert!(ctx.is_graph_loaded());
+
+        // fallback_store: the lazy cached store still resolves, and it
+        // resolves to the SAME store on a second call — memoizing is the
+        // whole reason `fallback_store` is a `OnceLock`.
+        let first = ctx.get_graph_store();
+        let second = ctx.get_graph_store();
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "fallback_store must memoize, not rebuild per call"
+        );
+    }
+
+    /// Slice 7 added two accessors and left three fields without one. This
+    /// pins the two that exist, because a wrong body here would compile and
+    /// the callers would not notice: `file_ops_service` has exactly one
+    /// possible value per context, so returning the wrong one still gives
+    /// the handlers a working service, and `analysis_service()` feeds
+    /// `get_project_graph()`, which is not covered by a lib test at all.
+    #[tokio::test]
+    async fn t_st04_service_accessors_hand_back_the_service_the_context_was_built_with() {
+        use crate::application::services::file_operations::FileOperationsService;
+        use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
+        use crate::infrastructure::verification::RustVerifier;
+        use crate::interface::mcp::security::InputValidator;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        // No file-ops service configured: the accessor must report absence
+        // rather than inventing a default. Call sites rely on this to build
+        // their own service.
+        let bare = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(
+            bare.file_ops_service().is_none(),
+            "a context built without a file-ops service must not hand one out"
+        );
+
+        // Built the way `rmcp_adapter` builds it, which is the only way it is
+        // ever built in production.
+        let root = dir.path().to_path_buf();
+        let validator = Arc::new(InputValidator::new().with_workspace(vec![root.clone()]));
+        let service = Arc::new(FileOperationsService::new(
+            root.to_string_lossy().as_ref(),
+            validator,
+            Arc::new(RustVerifier::new()),
+            Arc::new(TreeSitterSyntaxAnalysis::new()),
+        ));
+        let configured = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_file_ops_service(service.clone())
+            .build();
+        assert!(
+            Arc::ptr_eq(
+                configured
+                    .file_ops_service()
+                    .as_ref()
+                    .expect("just configured"),
+                &service
+            ),
+            "file_ops_service() must hand back the instance the context was built \
+             with, not a rebuild of it"
+        );
+
+        // `analysis_service` has a builder default, so the assertion is that
+        // the accessor and the field are the same value on every call.
+        let first = configured.analysis_service();
+        let second = configured.analysis_service();
+        assert!(
+            Arc::ptr_eq(first, second),
+            "analysis_service() must not rebuild the service per call"
+        );
+    }
+
+    // ST-04 KPI ratchet: `METRICS-AND-ACCEPTANCE.md` scores ST-04 as
+    // "campos públicos HandlerContext → tendencia a 0". A prose target that
+    // nothing measures is the same thing ST-02's ratchet found drift for, so
+    // the count is asserted here instead.
+    //
+    // This is a ratchet, not a proof of completion. It fails if the count
+    // goes UP (regression — the service-locator surface growing again) and
+    // also fails if it goes DOWN unexpectedly (a field was made private and
+    // something that depended on it silently lost meaning). To lower it, the
+    // number in the assert is lowered in the same commit that does the work.
+    //
+    // The count is read from this file's own source rather than reflected,
+    // because Rust cannot enumerate struct fields at run time.
+    //
+    // It started at 21. Slice 1 removed THREE public fields, not two:
+    // `client_protocol_version`, `client_name` and `client_version` were
+    // replaced by one private `client: ClientIdentity`. Slice 2 removed
+    // four more — `symbol_hotness`, `log_level`, `graph_loaded` and
+    // `fallback_store` — none of which had a single reader outside this
+    // module. Private fields do not count: that is the whole point of the
+    // metric, so a value reachable only through an accessor scores the same
+    // as no field at all.
+    //
+    // The next candidates are `read_only`, `cancellation_token` and
+    // `sub_handler_timeout`, which still have readers in `rmcp_adapter.rs`
+    // and `file_ops_handlers.rs` — two sibling modules that are NOT children
+    // of `handlers`, so unlike `handlers/*` they cannot see private fields.
+    // Those need accessors written first.
+    //
+    // Slice 3 did exactly that, 14 -> 11: `sub_handler_timeout()` and
+    // `is_read_only()` accessors plus `cancellation_token()` (which already
+    // existed). Removing `read_only`'s `pub` is not a pure visibility change:
+    // `rmcp_adapter` used to reassign the whole `Arc` after building, and it
+    // now configures through `with_read_only` instead, so a live handler can
+    // no longer be flipped into or out of read-only.
+    //
+    // Slice 5 is 11 -> 9: `working_dir` and `validator` are private behind
+    // `working_dir()` and `validator()`. Both were read-only everywhere —
+    // including from `cognicode-mcp/src/server.rs`, another crate — so
+    // neither needed a setter, only accessors. `working_dir()` returns
+    // `&Path` rather than `&PathBuf` on purpose: handing back the owned
+    // `PathBuf` would let a caller mutate the root through it, which is the
+    // same class of hole `read_only` had.
+    //
+    // Slice 6 is 9 -> 5: `compressor`, `iac_repo`, `symbol_code` and
+    // `code_intelligence_provider`. Only ONE accessor was needed. The other
+    // three are read exclusively from modules *inside* `handlers`, and a
+    // child module reads its parent's private fields directly, so they cost
+    // nothing. `symbol_code` is also read by `rmcp_adapter`, a sibling of
+    // `handlers` rather than a child, and cannot see private fields.
+    //
+    // Slice 7 is 5 -> 0, and it closes ST-04's field exposure: the last five
+    // are private, and two accessors were the whole cost. `refactor_service`
+    // and `semantic_search` are read only from `handlers` children, so Rust's
+    // child-reads-parent rule covers them with no accessor at all. `graph_store`
+    // already had `get_graph_store()`. That leaves `analysis_service` and
+    // `file_ops_service`, each read by exactly one sibling, which is why
+    // this slice is seven call sites rather than the ~75 that a textual
+    // count of `analysis_service` across the crate implied. No setter was
+    // needed: all six assignments to these fields are inside
+    // `HandlerContextBuilder`, and nothing outside the module mutates a
+    // built context.
+    //
+    // The count is now 0, and that is a real floor rather than a baseline:
+    // a new public field has to be argued for in the same commit that adds
+    // it, in a test whose only job is to notice.
+    #[test]
+    fn t_st04_handler_context_public_field_count_is_ratcheted() {
+        const CURRENT_PUBLIC_FIELDS: usize = 0;
+
+        let source = include_str!("mod.rs");
+        let start = source
+            .find("pub struct HandlerContext {")
+            .expect("HandlerContext declaration not found");
+        let body_start = start + "pub struct HandlerContext {".len();
+        let body_end = source[body_start..]
+            .find("\n}")
+            .expect("HandlerContext body end not found")
+            + body_start;
+
+        let public_fields = source[body_start..body_end]
+            .lines()
+            .filter(|l| l.trim_start().starts_with("pub "))
+            .count();
+
+        assert_eq!(
+            public_fields, CURRENT_PUBLIC_FIELDS,
+            "HandlerContext exposes {public_fields} public fields; the ST-04 \
+             ratchet expects {CURRENT_PUBLIC_FIELDS}. Raise it only in the same \
+             commit that lowers it, and say in the message why the count moved."
+        );
     }
 
     #[test]
@@ -5843,8 +6267,7 @@ mod tests {
 
         // Both should have canonicalized working_dir
         assert_eq!(ctx_new.working_dir, ctx_builder.working_dir);
-        assert_eq!(ctx_new.client_name, ctx_builder.client_name);
-        assert_eq!(ctx_new.client_version, ctx_builder.client_version);
+        assert_eq!(ctx_new.client(), ctx_builder.client());
     }
 
     #[test]

@@ -90,12 +90,27 @@ def test_the_supply_chain_gate_runs_in_the_merge_authority() -> None:
             f"the merge path, so a dependency with a published advisory merges "
             f"unnoticed and is first examined at tag time",
         )
-        outside = sorted(set(hosts) - {authority.MERGE_AUTHORITY})
+        # The property is that a merge cannot pass without the gate -- not
+        # that only one pipeline runs it. The previous form computed
+        # `hosts - {MERGE_AUTHORITY}` and failed when that was non-empty, so
+        # running the gate in `release-candidate` as well read as a
+        # violation. It is a violation of nothing: the same advisory check at
+        # tag time is defence in depth, and the module docstring has always
+        # said the stage is free to live in any pipeline "as long as a merge
+        # runs it".
+        #
+        # This was not visible until 2026-10-03. It arrived with b651774a
+        # (#338), the commit that re-anchored these contracts off `pr-ci.yml`
+        # onto the merge authority, and it failed on every run from then on
+        # without failing the gate: see the runner fix in the same commit.
         check(
-            not outside,
-            f"`{invocation}` runs only in {outside}, and the merge authority is "
-            f"{authority.MERGE_AUTHORITY}. A security gate in a lane no merge "
-            f"waits on is the A-013 failure applied to the supply chain",
+            authority.MERGE_AUTHORITY in hosts,
+            f"`{invocation}` does not run in the merge authority "
+            f"({authority.MERGE_AUTHORITY}); it runs in "
+            f"{sorted(hosts) or 'no pipeline'}. A merge can pass without a "
+            f"dependency with a published advisory being checked, and the "
+            f"first thing to look at it is whoever pushes the next version "
+            f"tag",
         )
 
 

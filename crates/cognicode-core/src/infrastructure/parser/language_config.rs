@@ -7,7 +7,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::empty_line_after_doc_comments, clippy::items_after_test_module)]
 
-use super::tree_sitter_parser::Language;
+use crate::domain::value_objects::Language;
 
 /// Data-driven configuration describing how to extract structural information
 /// from a specific programming language using tree-sitter.

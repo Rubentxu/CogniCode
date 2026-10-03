@@ -7,7 +7,6 @@
 //! 3. Diff: mtime-first (skip hash if mtime unchanged), then content
 //!    hash against the `scan_manifest`
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_imports)]
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -17,7 +16,6 @@ use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 
 use crate::application::ingest::types::{ChangeKind, FileChange, FileType};
-use crate::infrastructure::parser::LanguageConfig;
 
 /// Walk a directory, returning all source files (code, documents, config).
 /// Uses `ignore` crate for `.gitignore` awareness, with a WalkFilter-like

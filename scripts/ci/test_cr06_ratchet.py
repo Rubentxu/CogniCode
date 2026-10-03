@@ -132,32 +132,105 @@ def strip_rust_comments(text: str) -> str:
     The allowlist's module doc explains the format in prose and quotes tuples
     inside backticks. Scanning the raw text would count documentation as
     inventory, and this file's own header is longer than its inventory.
+
+    String- and char-literal aware, because the previous version had a real
+    failure mode rather than a theoretical one. A `/*` sequence inside a
+    string literal -- for example `"application/*.rs"` -- used to open a
+    block comment that swallowed the rest of the file. `GUARDED` then
+    vanished from this parser's view and the cross-check failed with
+    "cannot find the GUARDED constant": the ratchet's ability to check
+    itself was destroyed by an unrelated string. Writing that assertion
+    message inside `cr06_allowlist.rs` was enough to trigger it.
+
+    That particular failure was at least loud. A `//` inside a literal
+    would have been quieter: it truncates a single line, so a count can
+    come out wrong with nothing visibly broken. The old code documented
+    that as an acceptable trade on the grounds that the cost was "a
+    miscounted entry, not a wrong verdict" -- which the `/*` case above
+    disproves. Both are handled here rather than written down as fine.
     """
-    out_lines: list[str] = []
-    in_block = False
-    for line in text.splitlines():
-        if in_block:
-            if "*/" in line:
-                line = line.split("*/", 1)[1]
-                in_block = False
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    # 0 = code, 1 = line comment, 2 = block comment
+    state = 0
+    quote: str | None = None
+    # Number of `#` in a raw-string opener, so `r#"..."#` closes correctly.
+    raw_close = ""
+    while i < n:
+        ch = text[i]
+
+        if state == 1:  # line comment
+            if ch == "\n":
+                out.append(ch)
+                state = 0
             else:
-                out_lines.append("")
+                out.append(" ")
+            i += 1
+            continue
+
+        if state == 2:  # block comment
+            if ch == "*" and i + 1 < n and text[i + 1] == "/":
+                state = 0
+                out.append("  ")
+                i += 2
                 continue
-        while "/*" in line:
-            head, _, tail = line.partition("/*")
-            if "*/" in tail:
-                line = head + tail.split("*/", 1)[1]
-            else:
-                line = head
-                in_block = True
-                break
-        # A `//` inside a string literal would truncate a line that matters.
-        # None of the inventory lines contain one, and the cost of being wrong
-        # here is a miscounted entry, not a wrong verdict, so the simple split
-        # is the honest trade.
-        code = line.split("//", 1)[0]
-        out_lines.append(code)
-    return "\n".join(out_lines)
+            out.append("\n" if ch == "\n" else " ")
+            i += 1
+            continue
+
+        if quote is not None:
+            if ch == "\\" and not raw_close:  # escape, skipped in raw strings
+                out.append(ch)
+                i += 1
+                if i < n:
+                    out.append(text[i])
+                    i += 1
+                continue
+            if ch == '"' and text.startswith(quote, i):
+                out.append(quote)
+                i += len(quote)
+                quote = None
+                raw_close = ""
+                continue
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "r" and i + 1 < n and text[i + 1] in ('"', "#"):
+            j = i + 1
+            while j < n and text[j] == "#":
+                j += 1
+            if j < n and text[j] == '"':
+                closer = '"' + "#" * (j - i - 1)
+                out.append(text[i : j + 1])
+                i = j + 1
+                quote = closer
+                raw_close = closer
+                continue
+
+        if ch in ('"', "'"):
+            quote = ch
+            raw_close = ""
+            out.append(ch)
+            i += 1
+            continue
+
+        if ch == "/" and i + 1 < n:
+            if text[i + 1] == "/":
+                state = 1
+                out.append("  ")
+                i += 2
+                continue
+            if text[i + 1] == "*":
+                state = 2
+                out.append("  ")
+                i += 2
+                continue
+
+        out.append(ch)
+        i += 1
+    return "".join(out)
 
 
 def parse_entries(text: str) -> list[dict[str, str]]:
@@ -710,8 +783,22 @@ def test_a_relabelled_rationale_does_not_buy_an_exemption() -> None:
     )
 
 
-def main() -> int:
+def setup() -> None:
+    """Resolve the base and the head measurement before any check reads it.
+
+    This used to live as the first line of `main()`. `main()` is not what
+    the merge gate calls: `run-all-contracts.sh` hands this file to
+    `run_contract_tests.py`, which imports it and calls each `test_`
+    function directly. Without this, `M.head_entries` stayed empty and
+    `test_inventory_is_parsed` reported that the allowlist had no entries
+    -- a measurement that had never been taken, described as a corrupt
+    inventory. The runner calls `setup()` if a module defines it.
+    """
     M.resolve()
+
+
+def main() -> int:
+    setup()
 
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
@@ -750,5 +837,38 @@ def main() -> int:
     return 0
 
 
+def _selftest() -> int:
+    """strip_rust_comments must not treat comment syntax inside a literal.
+
+    Run with `--self-test`. This exists because the bug was real: a `/*`
+    inside a string in cr06_allowlist.rs made this parser lose the GUARDED
+    constant entirely, and the failure only shows up as a confusing message
+    much later.
+    """
+    cases = [
+        ("slash-star in a string", 'a();\nlet p = "application/*.rs";\nconst G = 1;\n'),
+        ("slashes in a string", 'a();\nlet p = "a//b";\nconst G = 1;\n'),
+        ("real block comment", 'a();\n/* gone */\nconst G = 1;\n'),
+        ("real line comment", "a(); // gone\nconst G = 1;\n"),
+        ("raw string with hash", 'let s = r#"x /* y"#;\nconst G = 1;\n'),
+        ("escaped quote", 'let s = "a\\"/*b";\nconst G = 1;\n'),
+    ]
+    bad = 0
+    for name, src in cases:
+        out = strip_rust_comments(src)
+        if "const G" not in out:
+            print(f"FAIL {name}")
+            bad += 1
+        else:
+            print(f"ok   {name}")
+    for name, src in cases:
+        if strip_rust_comments(src).count("\n") != src.count("\n"):
+            print(f"FAIL line numbering: {name}")
+            bad += 1
+    return 1 if bad else 0
+
+
 if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(_selftest())
     sys.exit(main())

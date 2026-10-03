@@ -10,7 +10,5 @@ pub mod semantic_search;
 pub mod symbol_code;
 
 pub use outline::{OutlineBuilder, OutlineNode, build_outline};
-pub use semantic_search::{
-    MatchType, SearchIndex, SearchQuery, SearchResult, SearchSymbolKind, SemanticSearchService,
-};
+pub use semantic_search::{MatchType, SearchIndex, SearchResult, SemanticSearchService};
 pub use symbol_code::{CachedSymbolCode, SymbolCodeCache, SymbolCodeKey, SymbolCodeService};

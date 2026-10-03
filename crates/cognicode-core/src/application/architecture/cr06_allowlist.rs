@@ -115,47 +115,16 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         // application_no_infrastructure — ST-02 (WorkspaceSession composition)
         // ====================================================================
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::graph::",
-            "team:st-02",
-            "ST-02: composition root injects GraphCache via port (covers GraphCache, TraversalDirection).",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::lsp",
-            "team:st-02",
-            "ST-02: composition root injects LSP provider via port (CompositeProvider).",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::parser::",
-            "team:st-02",
-            "ST-02: parser types via port (Language).",
-        ),
+        // `infrastructure::graph::` and `infrastructure::parser::` used to sit
+        // here and no longer do — slices 3 and 2 retired them. What each cost is
+        // written down in the inventory test, because a deleted entry with no
+        // record of why is indistinguishable from one deleted by accident.
         ex(
             "application_no_infrastructure",
             "application/workspace_session.rs",
             "infrastructure::persistence::",
             "team:st-02",
             "ST-02: persistence via port (InMemoryGraphStore).",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::semantic",
-            "team:st-02",
-            "ST-02: semantic module as a port.",
-        ),
-        ex(
-            "application_no_infrastructure",
-            "application/workspace_session.rs",
-            "infrastructure::verification::",
-            "team:st-02",
-            "ST-02: verifier via port (RustVerifier).",
         ),
         // ====================================================================
         // application_no_infrastructure — ST-03 (AnalysisService mega-split)
@@ -319,13 +288,6 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ),
         ex(
             "application_no_infrastructure",
-            "application/ingest/scan.rs",
-            "infrastructure::parser::",
-            "team:st-04",
-            "ST-04: parser types via port (LanguageConfig).",
-        ),
-        ex(
-            "application_no_infrastructure",
             "application/ingest/extract_stage.rs",
             "infrastructure::parser::",
             "team:st-04",
@@ -403,9 +365,9 @@ pub fn exceptions() -> Vec<TemporaryException> {
         ex(
             "application_no_interface",
             "application/workspace_session.rs",
-            "interface::mcp::security",
+            "interface::",
             "team:st-02",
-            "cfg(test)-only after ST-02 slice 1: the 75 behavioural tests in this module compose the real InputValidator by design. Production path validation goes through the PathPolicy port, wired by interface/cli/commands.rs. This gate CANNOT see line numbers, so it suppresses any import in this file; the real guard is `cfg_test_only_entries_really_have_no_production_import`.",
+            "cfg(test)-only after ST-02 slice 1: the 75 behavioural tests in this module compose the REAL validator, verifier and parser by design, and ask the interface layer to assemble them. Production path validation goes through the PathPolicy port, wired by interface/cli/commands.rs via interface/composition.rs. The prefix was widened from `interface::mcp::security` to `interface::` when the test constructor started calling `interface::composition::default_capabilities` instead of re-assembling the parts itself: this gate cannot see line numbers, so it suppresses any interface import in this file either way, and one entry for the file is truer than two that say the same thing. The real guard is `cfg_test_only_entries_really_have_no_production_import`.",
         ),
     ]
 }
@@ -567,13 +529,182 @@ mod tests {
         // those three as additions. It was arithmetic, not measurement;
         // the test below caught it, which is the only reason this file
         // still has a number worth trusting.
+        //
+        // 39 -> 38 -> 37 (ST-02 slices 1 and 2). Both are genuinely DELETED.
+        //
+        // Slice 1 removed `infrastructure::verification::`: `RustVerifier` was
+        // the one type only ever named to call `::new()` on it, and the choice
+        // moved to `interface/composition.rs`.
+        //
+        // Slice 2 removed `infrastructure::parser::`, which needed more than
+        // moving an enum. `Language` became a domain value object — a closed
+        // enumeration, the extensions that select it, the AST node kinds each
+        // one uses — with the single method that names a `tree_sitter_*` crate
+        // left behind as an inherent impl in the parser. But the entry could
+        // not be retired on that alone: `get_complexity` was still calling
+        // `TreeSitterParser::new` and then walking `tree_sitter::Node`s from
+        // application. A `dyn Parser` would have hidden the import and kept the
+        // coupling, so the walk itself moved behind a `ComplexityAnalysis` port
+        // and `get_complexity` shrank from 60 lines to 20.
+        //
+        // The two neighbours of the deleted pair stayed after slice 2, and
+        // saying why is the point: `infrastructure::lsp` is still reachable
+        // through the lazily built `lsp` field. Slice 3 retired
+        // `infrastructure::graph::` as well, so `infrastructure::semantic` is
+        // the last production neighbour this file has left.
+        //
+        // 39 -> 38 -> 37 -> 36. Slice 3 deleted `infrastructure::graph::`,
+        // and it was not a matter of moving two types. `TraversalDirection` —
+        // a three-variant enum with no methods, asked for by a query string —
+        // moved to `domain::value_objects` beside `NodeKind` and `EdgeKind`.
+        // `GraphCache` could not: it is an `ArcSwap` over a versioned ring with
+        // a pluggable snapshot provider, so it stayed in infrastructure and
+        // `application` reached it through a new `SharedGraph` port.
+        //
+        // The port has five methods because five is what the call sites use,
+        // counted rather than mirrored: `get`/`replace` in `AnalysisService`,
+        // `current_id`/`get_at` in `CachedGraphStore`, `subscribe` in the
+        // session. The concrete cache has seventeen; the other twelve belong to
+        // callers that are allowed to name the concrete type, and re-exporting
+        // all of them would have been a second copy of the class.
+        // 39 -> 38 -> 37 -> 36 -> 35. Slice 4 deleted
+        // `infrastructure::semantic`, and it was two problems wearing one
+        // name. `SemanticSearchService` and `SymbolCodeService` were built and
+        // held by the session, so both went behind ports (`SymbolSearch`,
+        // `SymbolSource`). And `SearchSymbolKind` was nine of `SymbolKind`'s
+        // twenty-four variants with a `to_symbol_kind()` that mapped each to
+        // itself — a second vocabulary kept in step by hand, now deleted in
+        // favour of the domain enum.
+        //
+        // The query type moved to `domain::value_objects::SymbolSearchQuery`
+        // rather than keeping its name: `domain::traits::search_provider`
+        // already defines a `SearchQuery` for text and regex search, and two
+        // types with one name and different meanings is a trap. The label
+        // table moved with it, because `"function" => Function` had been
+        // written out twice — once in this session's `map_kind_string` and
+        // again verbatim in the MCP handler.
+        //
+        // `infrastructure::lsp` is the last production entry this file has,
+        // and `infrastructure::persistence::` the last test-only one.
+        // 39 -> 34, and ST-02 is closed. Slice 5 deleted
+        // `infrastructure::lsp`, the last production entry, and it was smaller
+        // than the other four: `CodeIntelligenceProvider` already declared
+        // `find_references`, `get_definition` and `hover`, `CompositeProvider`
+        // already implemented it, and the session was already holding one
+        // injected as `intelligence`. The lazy `lsp` field existed to build a
+        // second provider on demand; with the first one arriving from the
+        // composition root there was nothing left to defer, so the field and
+        // `ensure_lsp` went rather than becoming a second handle to the same
+        // object.
+        //
+        // `workspace_session.rs` now imports nothing from `infrastructure` on
+        // any production line. `infrastructure::persistence::` stays as the
+        // file's one test-only entry: its only import is inside `mod tests`.
+        //
+        // 34 -> 33, and the entry was not debt at all.
+        // `application/ingest/scan.rs` carried an exception for
+        // `infrastructure::parser::` and imported `LanguageConfig` for it —
+        // but never used the type. `classify_file` returns
+        // `Option<&'static str>` (a language *name*), not a config. The dead
+        // import was invisible because the module carries a module-level
+        // `#![allow(unused_imports)]` from an "e30.1 clippy baseline reset":
+        // a blanket suppression added to make clippy green rather than to fix
+        // what it reported. So the allowlist was counting a dependency the
+        // production build does not have. Both the import and the exception
+        // are gone, and the blanket allow went with the import it was
+        // hiding — the module now compiles warning-free without it.
         assert_eq!(
             list.len(),
-            39,
-            "expected exactly 39 entries; if you removed/added a drift \
+            33,
+            "expected exactly 33 entries; if you removed/added a drift \
              without updating this counter, the allowlist is out of sync \
              with the source. Update both the allowlist and this test in \
              the same commit."
+        );
+    }
+
+    /// A blanket lint suppression in `application/` is a hole in the
+    /// inventory, not a style preference.
+    ///
+    /// Four `application/ingest/` modules carried
+    /// `#![allow(unused_imports)]`, introduced under the banner of an
+    /// "e30.1 clippy baseline reset" — a suppression added to make clippy
+    /// pass rather than to fix what it reported. It was hiding a dead
+    /// `use crate::infrastructure::parser::LanguageConfig` in `scan.rs`,
+    /// which the allowlist above was counting as a production CR-06
+    /// exception. The production build has no such dependency; the
+    /// inventory said otherwise because nothing could see the import was
+    /// unused.
+    ///
+    /// All of them are gone and the modules compile warning-free without
+    /// them. Lifting the other two file-wide blankets found in
+    /// `application/` — `services/analytics_oracle_harness.rs` and
+    /// `investigation_service.rs` — surfaced two more dead imports, neither
+    /// of them an `infrastructure` one, and both are now removed too.
+    ///
+    /// One of the four ingest imports was moved into its `mod tests`,
+    /// because the test used the file-level one — which is the other way
+    /// this blanket hides things, by making a test-only dependency look
+    /// like a production one.
+    ///
+    /// The check matches the inner attribute only. An item-scoped
+    /// `#[allow(unused_imports)]` is a local decision about one item and
+    /// does not hide the rest of the file from the inventory; one exists
+    /// in `application/local_ci/mod.rs` and is deliberately left alone.
+    ///
+    /// The check is scoped to `application/` on purpose: `infrastructure/`
+    /// legitimately has places where an import is feature-gated, and a
+    /// blanket `allow` there is a different question.
+    #[test]
+    fn no_application_module_carries_a_blanket_unused_imports_allow() {
+        fn collect(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            let Ok(rd) = std::fs::read_dir(dir) else {
+                return;
+            };
+            for e in rd.flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    collect(&p, out);
+                } else if p.extension().is_some_and(|x| x == "rs") {
+                    out.push(p);
+                }
+            }
+        }
+
+        let cargo_manifest =
+            std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
+        let mut files = Vec::new();
+        collect(
+            &std::path::Path::new(&cargo_manifest).join("src/application"),
+            &mut files,
+        );
+        assert!(
+            !files.is_empty(),
+            "walked no Rust sources under application; the check would pass \
+             vacuously"
+        );
+
+        let mut offenders = Vec::new();
+        for f in &files {
+            let Ok(text) = std::fs::read_to_string(f) else {
+                continue;
+            };
+            for (i, line) in text.lines().enumerate() {
+                let t = line.trim();
+                // Only the inner attribute — a file-wide blanket. An
+                // item-scoped `#[allow(unused_imports)]` is a deliberate,
+                // local decision about one item and does not hide the
+                // rest of the file's imports from the inventory.
+                if t.starts_with("#![allow(unused_imports)]") {
+                    offenders.push(format!("{}:{}: {}", f.display(), i + 1, t));
+                }
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "application/ modules must not silence unused_imports; each one \
+             hides a dead import from the CR-06 inventory:\n{}",
+            offenders.join("\n")
         );
     }
 
@@ -704,10 +835,16 @@ mod tests {
                 "application/services/file_operations.rs",
                 "interface::mcp::security",
             ),
-            (
-                "application/workspace_session.rs",
-                "interface::mcp::security",
-            ),
+            // Prefix widened from `interface::mcp::security` to `interface::`
+            // in ST-02 slice 1, in step with `exceptions()`. Two things caught
+            // that this pair has to be kept in step with: the Rust test walks
+            // these paths to prove they are genuinely test-only, and
+            // `scripts/ci/test_cr06_ratchet.py` parses this very constant and
+            // cross-checks it against the inventory. When only `exceptions()`
+            // was widened the ratchet went RED with "the Rust guard lists ...
+            // but this contract cannot find it in the inventory" — which is
+            // the drift it exists to report, caught on the commit that made it.
+            ("application/workspace_session.rs", "interface::"),
         ];
 
         let cargo_manifest =

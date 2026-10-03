@@ -7,7 +7,10 @@
     clippy::useless_vec,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
@@ -15,15 +18,13 @@ use crate::application::dto::{
     RelationCandidate, SymbolDto,
 };
 use crate::application::error::{AppError, AppResult};
+use crate::application::ports::SharedGraph;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::DependencyType;
-use crate::infrastructure::graph::{
-    CallHierarchyResult, GraphCache, LightweightIndex, OnDemandGraphBuilder, PetGraphStore,
-    SymbolLocation, TraversalDirection,
-};
+use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
 use std::path::Path;
@@ -35,9 +36,8 @@ pub struct AnalysisService {
     complexity_calculator: ComplexityCalculator,
     cycle_detector: CycleDetector,
     impact_analyzer: ImpactAnalyzer,
-    graph_cache: Arc<GraphCache>,
+    graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
-    on_demand_builder: Mutex<Option<OnDemandGraphBuilder>>,
     /// File cache: maps file path to (mtime, size, content_hash,
     /// symbols, relationships) — F2.W9 + PRF audit H-01. The
     /// content_hash field is SHA-256 of the file bytes at parse time,
@@ -76,31 +76,23 @@ impl AnalysisService {
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: Arc::new(GraphCache::new()),
             symbol_index: Mutex::new(None),
-            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
         }
     }
 
-    /// Creates a new AnalysisService with a parser for testing
-    #[allow(dead_code)]
-    pub fn with_parser() -> Self {
-        Self::new()
-    }
-
     /// Creates a new AnalysisService with a shared GraphCache
     ///
     /// This allows multiple services (e.g., WorkspaceSession and HandlerContext)
     /// to share the same graph cache, preventing duplicate builds.
-    pub fn with_graph_cache(cache: Arc<GraphCache>) -> Self {
+    pub fn with_graph_cache(cache: Arc<dyn SharedGraph>) -> Self {
         Self {
             complexity_calculator: ComplexityCalculator::new(),
             cycle_detector: CycleDetector::new(),
             impact_analyzer: ImpactAnalyzer::new(),
             graph_cache: cache,
             symbol_index: Mutex::new(None),
-            on_demand_builder: Mutex::new(None),
             file_cache: Arc::new(Mutex::new(std::collections::HashMap::new())),
             coverage_metrics: Mutex::new(None),
             last_build_report: Mutex::new(None),
@@ -108,7 +100,7 @@ impl AnalysisService {
     }
 
     /// Returns the graph cache for accessing the project graph
-    pub fn graph_cache(&self) -> Arc<GraphCache> {
+    pub fn graph_cache(&self) -> Arc<dyn SharedGraph> {
         self.graph_cache.clone()
     }
 
@@ -139,39 +131,6 @@ impl AnalysisService {
             *guard = Some(index);
         }
         guard.as_ref().unwrap().clone()
-    }
-
-    /// Queries the call hierarchy for a symbol using on-demand approach.
-    ///
-    /// This method builds only the necessary portion of the graph for the query,
-    /// making it efficient for deep call hierarchies.
-    ///
-    /// # Arguments
-    /// * `symbol` - The symbol name to query
-    /// * `depth` - Maximum traversal depth
-    /// * `direction` - Whether to look at callers, callees, or both
-    pub fn query_call_hierarchy(
-        &self,
-        symbol: &str,
-        depth: u32,
-        direction: TraversalDirection,
-    ) -> AppResult<CallHierarchyResult> {
-        let mut guard = self.on_demand_builder.lock().unwrap();
-        if guard.is_none() {
-            let mut builder = OnDemandGraphBuilder::new();
-            let project_root = std::env::current_dir().map_err(|e| {
-                AppError::AnalysisError(format!("Failed to get current dir: {}", e))
-            })?;
-            builder
-                .set_index(&project_root)
-                .map_err(|e| AppError::AnalysisError(format!("Failed to build index: {}", e)))?;
-            *guard = Some(builder);
-        }
-        let result = guard
-            .as_mut()
-            .unwrap()
-            .build_for_symbol(symbol, depth, direction);
-        Ok(result)
     }
 
     /// Builds the full project graph explicitly.
@@ -605,7 +564,7 @@ impl AnalysisService {
             );
         }
 
-        self.graph_cache.set(call_graph);
+        self.graph_cache.replace(call_graph);
 
         // Update coverage metrics
         let coverage_percent = if total_files > 0 {
@@ -674,7 +633,7 @@ impl AnalysisService {
             }
         }
         let graph = store.to_call_graph();
-        self.graph_cache.set(graph);
+        self.graph_cache.replace(graph);
         Ok(())
     }
 
@@ -703,7 +662,7 @@ impl AnalysisService {
         }
 
         let graph = cache.merge_all();
-        self.graph_cache.set(graph);
+        self.graph_cache.replace(graph);
         Ok(())
     }
 
@@ -1117,7 +1076,7 @@ impl AnalysisService {
                 }
 
                 let call_graph = store.into_inner().unwrap().to_call_graph();
-                graph_cache.set(call_graph);
+                graph_cache.replace(call_graph);
 
                 // Compute coverage
                 let coverage_percent = if total_files > 0 {
@@ -2082,7 +2041,6 @@ def d():
     }
 
     #[test]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     fn test_full_analysis_workflow() {
         use std::io::Write;
         use tempfile::TempDir;
@@ -2134,16 +2092,32 @@ def d():
         );
 
         // 4. TEST: analyze_impact - analyze impact of changing a symbol
-        let helper_symbol = crate::domain::aggregates::Symbol::new(
-            "helper_function",
-            crate::domain::value_objects::SymbolKind::Function,
-            crate::domain::value_objects::Location::new("test_lib.rs", 1, 4),
-        );
+        //
+        // Use the symbol the graph holds rather than constructing one by hand.
+        // FQN is the key analyze_impact looks up, and the graph records the
+        // absolute path and a 0-indexed line: this fixture's helper_function
+        // is keyed `/tmp/.../test_lib.rs:helper_function:0`, while a hand-built
+        // `Symbol::new("helper_function", ..., "test_lib.rs", 1, 4)` produces
+        // `test_lib.rs:helper_function:1` and matches nothing. The edge itself
+        // is fine -- the lookup key was wrong, which is why the old `>= 0`
+        // assertion hid it: it passed on a report that found no dependents at
+        // all, under a comment asserting the opposite.
+        let helper_symbol = graph
+            .symbols()
+            .find(|s| s.name() == "helper_function")
+            .cloned()
+            .expect("the graph must contain helper_function");
         let impact_report = service.analyze_impact(&helper_symbol, &graph);
-        // main_function calls helper_function, so it should be a dependent
+        assert_eq!(
+            impact_report.direct_dependents, 1,
+            "main_function is the only caller of helper_function in this fixture"
+        );
         assert!(
-            impact_report.direct_dependents >= 0,
-            "Should calculate direct dependents"
+            impact_report.transitive_dependents >= impact_report.direct_dependents,
+            "a direct dependent is also a transitive dependent; got transitive={} \
+             direct={}",
+            impact_report.transitive_dependents,
+            impact_report.direct_dependents
         );
 
         // 5. TEST: calculate_complexity - calculate cyclomatic complexity
@@ -2229,15 +2203,17 @@ def d():
         );
 
         // 4. Analyze impact of a real symbol
-        let symbol_for_impact = crate::domain::aggregates::Symbol::new(
-            &target_symbol.name,
-            crate::domain::value_objects::SymbolKind::Function,
-            crate::domain::value_objects::Location::new(
-                &target_symbol.file_path,
-                target_symbol.line,
-                target_symbol.column,
-            ),
-        );
+        //
+        // Take the symbol from the graph, not one rebuilt from the file-scan
+        // record. FQN is the key analyze_impact looks up, and it is assembled
+        // from the exact path and line the graph recorded; a symbol rebuilt
+        // from a separately-parsed location can key differently and silently
+        // match nothing, which is what the old `>= 0` assertion permitted.
+        let symbol_for_impact = graph
+            .symbols()
+            .find(|s| s.name() == "build_project_graph")
+            .cloned()
+            .expect("the project graph must contain build_project_graph");
         let impact_report = service.analyze_impact(&symbol_for_impact, &graph);
         println!(
             "[REAL CODE] Impact analysis: direct={}, transitive={}, level={:?}",
@@ -2246,10 +2222,26 @@ def d():
             impact_report.impact_level
         );
 
-        // Verify impact analysis worked (may or may not have dependents)
+        // Whether this real symbol has dependents depends on the real code, so
+        // pinning a count here would pin nothing. Two things must hold: the
+        // graph really is queryable by this symbol, and the transitive set
+        // contains the direct one. `>= 0` was true of every usize and held
+        // even if impact analysis returned an empty, incoherent report.
         assert!(
-            impact_report.transitive_dependents >= 0,
-            "Should calculate transitive dependents"
+            graph
+                .get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(
+                    symbol_for_impact.fully_qualified_name()
+                ))
+                .is_some(),
+            "a symbol taken from the graph must be resolvable in that graph; \
+             otherwise impact analysis is reporting on nothing"
+        );
+        assert!(
+            impact_report.transitive_dependents >= impact_report.direct_dependents,
+            "a direct dependent is also a transitive dependent, so the transitive \
+             count cannot be lower; got transitive={} direct={}",
+            impact_report.transitive_dependents,
+            impact_report.direct_dependents
         );
 
         // 5. Test safety check
