@@ -210,7 +210,17 @@ log "Baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE
 # --- Stage 1: clone ----------------------------------------------------------
 
 WORK_DIR="$(mktemp -d -t cognicode-preflight-XXXXXX)"
-trap 'rm -rf "$WORK_DIR"' EXIT
+# MEDIDO 2026-10-03. Era `trap 'rm -rf "$WORK_DIR"' EXIT`, y el script hace
+# `cd "$WORK_DIR/clone"` en el stage 5, asi que el trap se ejecutaba desde
+# dentro del directorio que borra. En un entorno donde `rm` envuelve el borrado
+# con una comprobacion de seguridad, esa comprobacion se niega y devuelve 64; el
+# estado del trap sustituye al del script, y el preflight de v0.101.2 —que
+# habia certificado passed=5934 failed=0 y PREFLIGHT PASS— salio con fallo.
+# Ver scripts/ci/preflight-cleanup.sh: sale del directorio antes de borrar y,
+# sobre todo, la limpieza no puede cambiar el veredicto.
+# shellcheck source=scripts/ci/preflight-cleanup.sh
+source "$SCRIPT_DIR/preflight-cleanup.sh"
+trap 'cognicode_preflight_cleanup "$WORK_DIR"' EXIT
 
 log "Stage 1/7: clone a $WORK_DIR (sparse, blobs only)"
 
