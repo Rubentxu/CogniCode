@@ -11653,6 +11653,27 @@ release se lanza desde ese worktree y nunca desde este checkout, porque
 publicar desde un árbol con cambios sin commitear de otro actor es publicar
 contenido no revisado.
 
+**Y el mismo error, otra vez, por mi parte.** Media hora después de escribir esa
+sección ejecuté un `git checkout --detach` sobre el worktree de la release
+**mientras su lane corría**, creyendo que era un dry-run: no lo era, y movió el
+worktree del tag `d04013c9` a `3b53d3b3` —tres commits por delante, con el
+candidato construido desde un árbol que el tag no contiene. Eso es exactamente
+la provenance falsa que R2 existe para impedir, y lo.metricsé con el mismo
+criterio con el que medí el resto del turno.
+
+Se restauró al tag de inmediato. El daño quedó contenido y medido: el preflight
+corre en un clon aparte, así que la ventana unlucky cayó entre stages, y ningún
+stage con `$cd` se había ejecutado todavía. Los tres árbol siguen donde deben:
+el clon de preflight en `d04013c9`, el worktree en `d04013c9`, la rama en
+`3b53d3b3`.
+
+La lección 190 no era difícil de recordar: estaba escrita cuarenta líneas más
+arriba en este mismo fichero. Lo que la incumplí no fue el contenido del
+trabajo, sino **la tentación de hacer un `git checkout` "para comprobar" algo en
+el directorio que estaba delante de mí**. Un dry-run de git no existe: o se
+anota con `--dry-run` explícito en el comando que se va a ejecutar de verdad, o
+no se toca.
+
 ### Lo que NO se ejecuta aquí
 
 No se arregla `a1f961f6`: los ocho brazos que tragan el error se miden y se
