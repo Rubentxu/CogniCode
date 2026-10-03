@@ -11888,3 +11888,173 @@ pasaba sin ejecutar el brazo"). No se retira el `ide::tests::
 claude_config_path_default` inestable: es preexistente y pertenece a
 `MAINTENANCE.md`. No se hace la transición de `a1f961f6` en el ledger, que es
 operator-gated. No se tocan los ADRs archivados ni se reabre ninguna `C#`.
+
+
+## N+83 — La frontera CLI converjada, el UAT que no ejecutaba el brazo, y el candidato que se cortó sin B1
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits** `94f44b49`
+(convergencia CLI + UAT), `79715d25` (convergencia del preflight), `4bd4ed15`
+(integración), `178b4b53` (corte v0.101.5) · **Rama** `integrate/v1015` ·
+**Bloque** B1 + B2 + B3 parcial. Cierra `a1f961f6` que N+82 dejó medido.
+
+### El mandate cambió la forma del arreglo, no su alcance
+
+El primer arreglo de `a1f961f6` (N+82) añadió `return Err(e)` a once brazos.
+La regla arquitectónica del mandate es más estricta: `main.rs` ya hace
+`CommandExecutor::execute(cli).await?`, así que **la frontera de propagación
+ya existía** y lo que la cortaba era cada brazo. La forma destino es
+`Self::execute_navigate(command).await?`. −75 líneas netas, cero tipos
+nuevos, y el `Result` que ya existía es el que llega a `main`.
+
+MEDIDO sobre el binario, y el diagnóstico sigue llegando:
+
+    navigate references MySymbol    exit=1  Error: "Invalid position 'MySymbol': expected file:line:column"
+    index build /nonexistent/zzz    exit=1  Error building index: Directory does not exist
+    graph full /nonexistent/zzz     exit=1  Error building full graph: Invalid parameter: Directory...
+    graph mermaid /nonexistent/zzz  exit=1  Error: "Directory does not exist"
+
+El error de `graph full` es `Invalid parameter`, que es la variante que
+existe de `AppError`. La primera versión de este arreglo usó
+`AppError::InvalidParameter` para el `String` de `SymbolCodeService`, y se
+corrigió: eso convertía un fallo de lectura en una afirmación de argumento
+inválido. Un `String` no implementa `std::error::Error`, así que viaja como
+mensaje.
+
+### El UAT que pasaba sin ejecutar el brazo, medido en dos estados
+
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invocaba
+`cognicode graph full --path <inexistente>`. **`graph full` no tiene
+`--path`**: su firma es `graph full [PATH]`, positional con `[default: .]`.
+Clap rechazaba el flag con exit 2 y el proceso moría antes del dispatch.
+
+La prueba de que no medía lo que decía medir, ejecutada con el binario
+real, no con una lectura del código:
+
+    forma antigua, con el arreglo PUESTO     exit=2   assert_ne!(code,0) PASSA
+    forma antigua, con el arreglo RETIRADO   exit=2   assert_ne!(code,0) PASSA
+
+El mismo código en los dos estados. Un UAT puede ser insensible al defecto
+que dice vigilar, y no por una razón exótica: por una vía de ejecución que
+no era la suya. El arreglo del argv no basta: el test comprueba ahora dos
+cosas que un `assert_ne!` no distingue — que el diagnóstico **no** sea de
+clap, y que nombre el directorio que falta. Y tiene un gemelo positivo que
+atraviesa el mismo camino y sale con 0.
+
+### La auditoría, como contrato y no como lista
+
+N+82 arregló los ocho brazos que midió. Lo que no respondió esa medición es
+"queda alguno igual", y una lista escrita a mano solo contesta hasta el día
+que alguien añade un brazo. `cli_exit_code_propagation` relee el `match` y
+clasifica cada brazo: 9 propagan, 1 exento con motivo escrito, 3 detrás de
+`#[cfg]` verificados en el fuente. El predicado mira la propiedad —un
+`if let Err` cuyo bloque no vuelve a emitir el error— y no la sintaxis, de
+modo que sobrevive al cambio de `return Err(e)` a `?`.
+
+**Dos extractores fallaron, y sus fallos eran los dos defectos que
+describían.** `Some(CliCommand::Evidence(cmd))` es forma tupla: un extractor
+que solo acepta `Some(CliCommand::X {` deja brazos fuera **en silencio**. Y
+sin acotar el enum, el extractor recoge `List` y `Search` de
+`EvidenceCommand` como si fueran subcomandos de `cognicode`.
+
+### B2: la limpieza del preflight, convergida al script que la usa
+
+`69186a1c` arregló el exit 64 —el trap `rm -rf "$WORK_DIR"` se ejecutaba
+desde dentro del directorio que borraba, porque el script hace
+`cd "$WORK_DIR/clone"`— pero lo hizo en dos ficheros nuevos:
+`preflight-cleanup.sh` con la función y `test_preflight_cleanup.py` con seis
+tests. Ambos se autodescriben por glob en `run-all-contracts.sh:47`, así que
+no eran un añadido inocuo: eran **una segunda puerta del gate** con su propia
+autoridad sobre la regla de limpieza, y la que podía quedarse sin ejecutar
+sin que nada lo dijera.
+
+Convergido: la función vive dentro de `preflight-clean-clone.sh`, los seis
+tests viven en `qw04_preflight_contract.rs`, y los dos ficheros se retiran.
+El contrato sube de 11 a 18, porque **faltaba el test que probaba el
+incidente**: los seis probaban por separado "un PASS sigue siendo PASS si
+la limpieza falla" y "el clon se borra", pero no la que las une —que la
+función salga del directorio antes de borrar—, que es exactamente lo que
+produjo el 64.
+
+Y hay un detalle que solo aparece al ejecutar: la función corre el `rm` con
+`2>/dev/null` **a propósito**, para que la salida de la herramienta de borrado
+no llene el stderr del gate. La prueba de que la limpieza se negó es el aviso
+propio de la función, no la salida del `rm`. La primera versión de este port
+afirmaba lo contrario y falló: el canal por el que se informa es parte del
+contrato.
+
+### El candidato que se cortó sin B1 ni B2
+
+Al integrar apareció el hecho que decide la versión: el corte de `v0.101.4`
+está en `e5abd3cf`, que es **ancestro común** y no contiene ninguno de los
+cinco commits de B1 y B2. Su candidato llegó a correr. Publicarlo habría
+publicado una release cuyo contrato de salida de la CLI seguía tragando
+errores en once de los doce brazos.
+
+La decisión del maintainer fue no publicarlo y cortar el siguiente. De ahí
+`v0.101.5`: el tag `v0.101.4` ya existe con otros bytes, y moverlo mutaría
+una identidad que ya existe.
+
+**El duplicado entre actores.** `03724ffd` (aquí) y `098ce9c0` (en la línea
+de release) producen byte a byte el mismo
+`scripts/ci/test_install_asset_agreement.py`:
+
+    03724ffd  sha256 481abf77ce4696e1914ccee57f4915c7af27b8840deb12ae2d8b6d8ad6be4b45
+    098ce9c0  sha256 481abf77ce4696e1914ccee57f4915c7af27b8840deb12ae2d8b6d8ad6be4b45
+
+La reconciliación no es por tanto una preferencia: los dos lados añaden el
+mismo fichero y git conserva una copia. Comprobado sobre el árbol fusionado,
+no supuesto — el fichero no aparece entre los cambios de la fusión. Lo que
+queda registrado es **por qué** existía: los dos actores llegaron al mismo
+defecto por separado.
+
+### `Cargo.lock` es la séptima autoridad
+
+El bump a `0.101.5` tocó `Cargo.toml`, los tres `product/*.json`, `README.md`
+y `SECURITY.md`. `Cargo.lock` seguía declarando `0.101.4` para los doce
+crates del workspace, y nada en el commit lo delata: es un fichero que no
+se lee. Lo delató `cargo metadata --offline`, que falla si el lock no
+cuadra. La misma clase de fallo que corrigió `2c4831ec` en su día.
+
+### Lección 197
+
+Un UAT puede ser insensible al defecto que dice vigilar, y la prueba de que
+lo es sale de ejecutarlo en los dos estados, no de leerlo. Aquí la forma del
+argv era inválida para el comando —`graph full` no tiene `--path`—, así que
+clap rechazaba antes del dispatch y el código de salida era 2 con el defecto
+presente y con el defecto ausente. La lección general es más ancha que los
+flags: **un test que pasa por una vía que no era la suya necesita una
+aserción que distinga "rechazado por la interfaz" de "ejecutado y falló"**, y
+mientras no exista, un rojo real y una invocación mal formada son
+indistinguibles desde el log.
+
+### Lección 198
+
+`Cargo.lock` es una autoridad de versión más, y es la única que no se lee.
+Un bump que actualiza manifiesto, manifest de producto, README y SECURITY
+puede dejar el lock atrás sin que ningún diff lo señale, y el síntoma no
+aparece hasta que algo resuelve dependencias. La comprobación cuesta un
+`cargo metadata` y encuentra en un segundo lo que un diff de seis ficheros
+no enseña.
+
+### Riesgo de coordinación (tercera vez)
+
+Un actor paralelo commiteó en `verify/r1-release-truth` y en
+`verify/r1-skillbundles` mientras este bloque corría, y hay **dos worktrees
+distintos** en el mismo commit `e5abd3cf`. La integración se hizo sobre
+`e5abd3cf` en una rama nueva, sin tocar ninguno de los dos worktrees ni el
+de la lane que estaba corriendo.
+
+### Lo que NO se ejecuta aquí
+
+No se taguea `v0.101.5` ni se corre la lane de candidato: la lane de
+`v0.101.4` sigue corriendo, y un worktree de release es inmutable mientras
+su lane corre. No se publica nada. No se cambia `execute_doctor`, que
+también llama `std::process::exit` y **es alcanzable** desde el binario
+normal —tercera instancia de la misma violación, y no estaba en la lista del
+mandate—, porque su exit code es un contrato publicado. No se arregla el
+flake `claude_config_path_default`, con causa raíz y tasa medidas (48
+`set_var("HOME")` todos `#[serial]`, este test sin serializarse, **4 fallos
+de 10**): es deuda de test, no de arquitectura, y pertenece al bloque de
+convergencia estructural. No se decide el destino de la superficie
+`multimodal` muerta. No se implementa R2. No se tocan los ADRs archivados ni
+se reabre ninguna `C#` firmada.
