@@ -10,6 +10,102 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.1] — 2026-10-03
+
+Ventana `v0.101.0..14b7fea3`: **6 commits** — 3 `fix`, 3 `docs`, y 0
+marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.0..14b7fea3
+git log --format='%s' v0.101.0..14b7fea3 \
+  | sed -E 's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.101.0..14b7fea3 | grep -cE '^BREAKING[ -]CHANGE'   # 0
+```
+
+**Por qué existe v0.101.1 y no se publica v0.101.0.** v0.101.0 está
+tagueado pero nunca publicado, y su candidato **no podía certificarse**: los dos
+defectos que esta versión arregla están en el propio camino de release, así que
+el árbol del tag no los contiene. Publicar v0.101.0 exigiría una de dos cosas
+que este repositorio no hace por su cuenta: saltarse el preflight, o re-baselinar
+con un override que el propio script marca como explícito del operador. Ninguna
+de las dos es automática. El tag tampoco se puede mover: la lane de publicación
+crea el release sin `--target` **justamente** para no mover una release a donde
+el nombre resuelva ahora.
+
+Ninguno de los dos defectos toca el producto: no hay cambios en `cogh`,
+`cognicode` ni `cognicode-mcp`, ni en la superficie de tools, ni en los
+contratos publicados. Es un PATCH por la regla mecánica del repositorio.
+
+### Fixed
+
+- **El invariante que cerró el cutover de CI leía el disco, no el índice.**
+  `test_no_actions_workflows.py` reportaba dos `action.yml` dentro de
+  `sandbox/repos/`, que está gitignored y contiene checkouts de terceros que
+  GitHub nunca parseó. El escaneo excluía directorios por nombre y `sandbox` no
+  estaba en la lista. La consecuencia era peor que un gate rojo: **verde en CI y
+  rojo en cualquier máquina que hubiera corrido una lane de sandbox**, porque
+  esos checkouts no existen en un runner. Ahora resuelve el índice con
+  `git ls-files` —que es lo que responde a "qué publica este repositorio"— y
+  un índice ilegible es un `None` explícito, no una lista vacía. Seis tests, y el
+  primero encontró un defecto en el segundo: la comprobación de autocableado
+  honraba una *mención* del runner en lugar de una *ejecución*, y quedaba verde
+  con la suite apagada.
+
+- **Una release no se podía certificar desde un tag.**
+  `preflight-clean-clone.sh` pasaba `--branch HEAD` a `git clone` en un checkout
+  detached, porque `git rev-parse --abbrev-ref HEAD` imprime la cadena literal
+  `HEAD` y sale con código **0**: el `|| echo main` de respaldo nunca se
+  disparaba. La lane moría en 0.3 s con `Remote HEAD branch not encontrada`, y un
+  tag es exactamente cómo se corta una release. Ahora se omite `--branch` cuando
+  no hay rama que nombrar —el commit certificado lo fijan `git fetch` y
+  `git checkout $TARGET_SHA`, no el nombre de la rama— con la regla en una
+  función compartida y un contrato de 5 tests.
+
+- **El preflight rechazaba el release por tener 355 tests más pasando.**
+  `passed=5934 failed=0` contra un baseline de `passed=5579`. La condición era
+  `if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]`, y `${PASSED_DIFF#-}` quita el
+  signo: comparaba el **valor absoluto**, así que +355 se reportaba como
+  `regresión de tests passed`. El guard y su propio mensaje se contradecían. Se
+  conserva la lectura que el mensaje describe —una regresión es que los tests
+  **bajen**— y el `failed > 0` ya cubría el otro caso. Contrato de 7 tests con el
+  caso medido.
+
+### Added
+
+- `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` — la vía de provenance sin
+  Actions, **medida**: cosign 3.1.3 firma y verifica un bundle SLSA v1 offline y
+  el digest del subject coincide con el `sha256sum` del artefacto. Queda
+  `proposed` porque lo que falta no es técnico: es dónde vive la clave privada.
+
+### Not fixed, deliberately
+
+- **La provenance de esta release no existe.** `actions/attest-build-provenance`
+  murió con Actions y no hay sustituto instalado; el gate es opt-in
+  (`RELEASE_REQUIRE_PROVENANCE=0`) y solo avisa. Medido además: `gh attestation`
+  no tiene verbo de generación, y el keyless de SLSA es un *consumidor* de un
+  token OIDC cuyo emisor era Actions — retirarlo quitó lo único del pipeline que
+  podía producir una identidad verificable. Es el hueco de R2, documentado, no
+  cerrado. Esta release se publica **sin attestation**, y el ADR dice por qué.
+- **El baseline del preflight sigue obsoleto** (`5579` contra `5934` reales).
+  Corregir el signo del ratchet no arregla eso, y con un baseline por debajo de
+  la realidad el ratchet queda débil: una caída grande de la suite real seguiría
+  dentro de tolerancia mientras el total no baje del baseline. Re-baselinar es
+  `PREFLIGHT_BASELINE_*`, decisión explícita del operador, y aquí no se toma.
+- **`v0.99.2` y `v0.100.0` quedan tagueados y sin publicar.** `v0.100.0` es
+  irrecuperable por la vía del lane: en su commit (`edd023b3`, #316) solo existen
+  `merge-gate` y `product-fast`, porque las lanes de release nacieron después
+  (#338, #340). Publicar con las lanes de hoy sobre un árbol que nunca las
+  contuvo produciría artefactos cuyo commit no incluye la herramienta que los
+  construyó, que es la provenance falsa que R2 existe para impedir.
+
+### Closed
+
+- **R0 — cutover de CI.** Verificado sobre `main`: 0 workflows de Actions, 6/6
+  lanes `pipelinek validate`, `check-release-matrix.sh` OK, layout del candidato
+  PASS, y los 14 contratos re-anclados con cero lecturas vivas de workflow. El
+  invariante que lo cierra es el primer "fixed" de esta entrada. Detalle en
+  `docs/roadmap/JOURNAL.md` N+79.
+
 ## [v0.101.0] — 2026-10-03
 
 Ventana `v0.100.0..44d0316a`: **34 commits** — 11 `docs`, 8 `fix`, 6 `test`,
