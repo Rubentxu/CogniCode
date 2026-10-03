@@ -431,7 +431,7 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 The product is in active community-productization phase. Releases are
 derived from `Cargo.toml` `[workspace.package] version` and gated by the
-tag/workspace coherence check in `.github/workflows/release.yml` (R8).
+tag/workspace coherence check in `release-candidate.pipeline.kts` (R8).
 
 ## License
 

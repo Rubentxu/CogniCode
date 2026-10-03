@@ -1,6 +1,10 @@
 # .github/dependabot.yml — QW-06 dependency updater
 #
-# Política QW-06: solo Cargo + GitHub Actions, con cadencia controlada.
+# Política QW-06: solo Cargo, con cadencia controlada.
+#
+# El bloque `github-actions` se retiró con los workflows. Dependabot no tiene
+# nada que actualizar sin ellos, y un ecosistema configurado sobre un
+# directorio vacío es una configuración que parece vigente y no lo está.
 # Otros ecosistemas (npm, pip) se gestionan manualmente o vía PRs
 # específicos, no por Dependabot (reduce ruido y permite revisión
 # dirigida por mantenimiento o por QW-08+ cuando se active).
@@ -46,29 +50,3 @@ updates:
           - "rust-toolchain*"
           - "tree-sitter*"
           - "tokio*"
-
-  # GitHub Actions: pineadas por SHA en workflows (QW-05), pero Dependabot
-  # puede sugerir nuevos pines cuando hay updates upstream.
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 3
-    labels:
-      - "dependencies"
-      - "github-actions"
-      - "qw-05"
-      - "qw-06"
-    commit-message:
-      prefix: "ci(actions)"
-      include: "scope"
-    groups:
-      first-party-actions:
-        patterns:
-          - "actions/*"
-      third-party-actions:
-        patterns:
-          - "*"

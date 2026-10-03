@@ -23,11 +23,10 @@ Two defects motivated this file, and both were invisible until CI ran:
 The contract this file pins: for every input class, the selector exits 0,
 emits parseable JSON, and the `strategy` matches what the documented
 policy requires. Orchestration files are an input class in their own right —
-a pipeline that decides what runs is exactly the thing a selective gate must
-re-validate completely, so both `*.pipeline.kts` and `.github/workflows/**`
-force the full battery. Parsing with `json.loads` is the assertion that would
-have caught defect 2; checking `strategy` is what catches a policy that
-silently stops selecting.
+a lane that decides what runs is exactly the thing a selective gate must
+re-validate completely, so `*.pipeline.kts` forces the full battery. Parsing
+with `json.loads` is the assertion that would have caught defect 2; checking
+`strategy` is what catches a policy that silently stops selecting.
 
 Run:
     python3 scripts/ci/test_select_suites.py
@@ -57,12 +56,12 @@ CASES: list[tuple[str, str, str]] = [
     # Cargo manifests and CI wiring force the full battery.
     ("Cargo.toml", "fallback", ""),
     ("Cargo.lock", "fallback", ""),
-    # Orchestration, by either spelling. PipelineK is the authority now, so a
-    # change to a pipeline is the case that has to force the full battery; the
-    # workflows stay in the selector until the directory is gone.
+    # Orchestration. PipelineK is the authority, so a change to a lane is the
+    # case that has to force the full battery. There is no second spelling: the
+    # `.github/workflows/ci.yml` case was here until the workflows were deleted,
+    # and then it described a directory that could no longer be touched.
     ("merge-gate.pipeline.kts", "fallback", ""),
     ("integration.pipeline.kts", "fallback", ""),
-    (".github/workflows/ci.yml", "fallback", ""),
     ("scripts/ci/select-suites.sh", "fallback", ""),
     # Nothing touched.
     ("", "fallback", ""),
@@ -98,7 +97,10 @@ def main() -> int:
             print(f"  - {failure}")
         return 1
 
-    print(f"PASS — {len(CASES)} input classes, JSON contract, and workflow wiring")
+    print(
+        f"PASS — {len(CASES)} input classes, the JSON contract, and the "
+        f"selector's own wiring"
+    )
     return 0
 
 

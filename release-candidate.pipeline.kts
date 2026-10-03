@@ -128,10 +128,10 @@ val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.rem
 //
 // Only the *directory* is resolved here, and each command still spells the tool
 // by name. Binding the whole path to a shell variable — `TOOL=…` then `$TOOL
-// verify …` — reads well and hides the program from
-// `scripts/ci/test_ci_orchestrator_gap.py`, which has to recognise this gate as
-// the one Actions runs. Resolving the directory is what the machine decides;
-// naming the binary is what the pipeline decides, and the second one is the gate.
+// verify …` — reads well and hides the program from the wiring contracts, which
+// have to recognise this gate as the one the lane runs. Resolving the directory
+// is what the machine decides; naming the binary is what the pipeline decides,
+// and the second one is the gate.
 //
 // `target/release/` is where cargo writes only when nothing else says otherwise,
 // and on this repository it does not: `~/.cargo/config.toml` sets
