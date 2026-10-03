@@ -15,9 +15,32 @@ test -f "$RELEASE_DIR/SHA256SUMS"
 
 TMP="$(mktemp -d)"
 SERVER_PID=""
+# MEDIDO 2026-10-03. Este UAT se certificaba entero y la stage aun asi salia
+# con 64:
+#
+#     PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+#     mavis-trash: refusing to trash protected path '.../tmp.XXXX'
+#     mavis-trash: '.../tmp.XXXX' is the parent of the home directory
+#
+# Install, update, reshim, uninstall y skills pasaron; lo que fallo fue la
+# limpieza. Y no fue suerte: el script exporta HOME="$TMP/home" para que la
+# instalacion no toque el HOME de quien la corre, de modo que cuando corre el
+# trap, $TMP contiene el HOME vigente y el envoltorio de borrado se niega a
+# llevar un arbol que contiene el directorio protegido. Medido: con HOME
+# dentro, el arbol sobrevive tanto si el cwd esta dentro como si no; restaurando
+# HOME antes de limpiar, se va.
+#
+# Un UAT que pasa y despues convierte su propio exito en un codigo de fallo no
+# es un UAT: es un test que se desmonta al recoger.
+ORIGINAL_HOME="$HOME"
 cleanup() {
-  if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; fi
-  rm -rf "$TMP"
+    if [ -n "$SERVER_PID" ]; then kill "$SERVER_PID" 2>/dev/null || true; wait "$SERVER_PID" 2>/dev/null || true; fi
+    # Salir del arbol y devolver HOME antes de borrar: son las dos condiciones
+    # que el envoltorio exige, y el orden importa — con HOME todavia dentro,
+    # cambiar de directorio no basta.
+    export HOME="$ORIGINAL_HOME"
+    cd / || true
+    rm -rf "$TMP"
 }
 trap cleanup EXIT
 
