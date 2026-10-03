@@ -7,7 +7,10 @@
     clippy::useless_vec,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 
 use crate::application::dto::{
     AnalysisMetadata, DeadCodeEntry, DeadCodeReason, DeadCodeResult, GraphCoverageMetrics,
@@ -2038,7 +2041,6 @@ def d():
     }
 
     #[test]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     fn test_full_analysis_workflow() {
         use std::io::Write;
         use tempfile::TempDir;
@@ -2090,16 +2092,32 @@ def d():
         );
 
         // 4. TEST: analyze_impact - analyze impact of changing a symbol
-        let helper_symbol = crate::domain::aggregates::Symbol::new(
-            "helper_function",
-            crate::domain::value_objects::SymbolKind::Function,
-            crate::domain::value_objects::Location::new("test_lib.rs", 1, 4),
-        );
+        //
+        // Use the symbol the graph holds rather than constructing one by hand.
+        // FQN is the key analyze_impact looks up, and the graph records the
+        // absolute path and a 0-indexed line: this fixture's helper_function
+        // is keyed `/tmp/.../test_lib.rs:helper_function:0`, while a hand-built
+        // `Symbol::new("helper_function", ..., "test_lib.rs", 1, 4)` produces
+        // `test_lib.rs:helper_function:1` and matches nothing. The edge itself
+        // is fine -- the lookup key was wrong, which is why the old `>= 0`
+        // assertion hid it: it passed on a report that found no dependents at
+        // all, under a comment asserting the opposite.
+        let helper_symbol = graph
+            .symbols()
+            .find(|s| s.name() == "helper_function")
+            .cloned()
+            .expect("the graph must contain helper_function");
         let impact_report = service.analyze_impact(&helper_symbol, &graph);
-        // main_function calls helper_function, so it should be a dependent
+        assert_eq!(
+            impact_report.direct_dependents, 1,
+            "main_function is the only caller of helper_function in this fixture"
+        );
         assert!(
-            impact_report.direct_dependents >= 0,
-            "Should calculate direct dependents"
+            impact_report.transitive_dependents >= impact_report.direct_dependents,
+            "a direct dependent is also a transitive dependent; got transitive={} \
+             direct={}",
+            impact_report.transitive_dependents,
+            impact_report.direct_dependents
         );
 
         // 5. TEST: calculate_complexity - calculate cyclomatic complexity
@@ -2185,15 +2203,17 @@ def d():
         );
 
         // 4. Analyze impact of a real symbol
-        let symbol_for_impact = crate::domain::aggregates::Symbol::new(
-            &target_symbol.name,
-            crate::domain::value_objects::SymbolKind::Function,
-            crate::domain::value_objects::Location::new(
-                &target_symbol.file_path,
-                target_symbol.line,
-                target_symbol.column,
-            ),
-        );
+        //
+        // Take the symbol from the graph, not one rebuilt from the file-scan
+        // record. FQN is the key analyze_impact looks up, and it is assembled
+        // from the exact path and line the graph recorded; a symbol rebuilt
+        // from a separately-parsed location can key differently and silently
+        // match nothing, which is what the old `>= 0` assertion permitted.
+        let symbol_for_impact = graph
+            .symbols()
+            .find(|s| s.name() == "build_project_graph")
+            .cloned()
+            .expect("the project graph must contain build_project_graph");
         let impact_report = service.analyze_impact(&symbol_for_impact, &graph);
         println!(
             "[REAL CODE] Impact analysis: direct={}, transitive={}, level={:?}",
@@ -2202,10 +2222,26 @@ def d():
             impact_report.impact_level
         );
 
-        // Verify impact analysis worked (may or may not have dependents)
+        // Whether this real symbol has dependents depends on the real code, so
+        // pinning a count here would pin nothing. Two things must hold: the
+        // graph really is queryable by this symbol, and the transitive set
+        // contains the direct one. `>= 0` was true of every usize and held
+        // even if impact analysis returned an empty, incoherent report.
         assert!(
-            impact_report.transitive_dependents >= 0,
-            "Should calculate transitive dependents"
+            graph
+                .get_symbol(&crate::domain::aggregates::call_graph::SymbolId::new(
+                    symbol_for_impact.fully_qualified_name()
+                ))
+                .is_some(),
+            "a symbol taken from the graph must be resolvable in that graph; \
+             otherwise impact analysis is reporting on nothing"
+        );
+        assert!(
+            impact_report.transitive_dependents >= impact_report.direct_dependents,
+            "a direct dependent is also a transitive dependent, so the transitive \
+             count cannot be lower; got transitive={} direct={}",
+            impact_report.transitive_dependents,
+            impact_report.direct_dependents
         );
 
         // 5. Test safety check

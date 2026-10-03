@@ -7,7 +7,10 @@
     dead_code,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 //!
 //! This module contains all 13 AIX MCP tool handlers:
 //! smart_overview, ranked_symbols, suggest_onboarding_plan, auto_diagnose,
@@ -2785,7 +2788,6 @@ fn main() { f15(); }
     }
 
     #[tokio::test]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_smart_overview_returns_data() {
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
@@ -2809,8 +2811,21 @@ fn main() { f15(); }
         let output = result.unwrap();
         // Should have basic stats
         assert!(output.total_symbols >= 2);
-        assert!(output.total_edges >= 0);
-        assert!(!output.languages.is_empty());
+        // The fixture has main calling helper, so the built graph has an edge
+        // to report. `total_edges >= 0` used to stand here, true of every
+        // usize, which meant this test passed on an overview that had indexed
+        // the symbols and resolved none of the calls between them.
+        assert!(
+            output.total_edges >= 1,
+            "the fixture declares main() calling helper(), so the graph has at \
+             least one call edge; got {}",
+            output.total_edges
+        );
+        assert!(
+            output.languages.contains_key("Rust"),
+            "the only source file is Rust; got {:?}",
+            output.languages
+        );
     }
 
     #[tokio::test]
@@ -2835,8 +2850,27 @@ fn main() { f15(); }
         let output = result.unwrap();
         // No baseline should be reported
         assert!(!output.has_baseline);
-        // When no baseline provided, all current symbols appear as "added" (compared to empty)
-        assert!(output.symbols_added.len() >= 0); // Valid response, symbols shown relative to empty baseline
+        // With no baseline the diff is taken against an empty symbol set, so
+        // every symbol the fixture declares shows up as added. The old
+        // assertion here was `symbols_added.len() >= 0`, true of every Vec,
+        // sitting directly under a comment stating the opposite. Pin it: the
+        // handler could have returned an empty diff and still passed.
+        assert!(
+            output.symbols_added.iter().any(|s| s == "main"),
+            "main is the only symbol this fixture declares, and with no baseline \
+             every current symbol is added; got {:?}",
+            output.symbols_added
+        );
+        assert!(
+            output.symbols_removed.is_empty(),
+            "nothing can be removed when there is no baseline; got {:?}",
+            output.symbols_removed
+        );
+        assert!(
+            output.edges_removed.is_empty(),
+            "nothing can be removed when there is no baseline; got {:?}",
+            output.edges_removed
+        );
     }
 
     #[tokio::test]
@@ -3205,8 +3239,13 @@ fn main() {}
         let output_no_baseline = result_no_baseline.unwrap();
 
         assert!(!output_no_baseline.has_baseline);
-        // When no baseline, shows current symbols as "added" relative to empty
-        assert!(output_no_baseline.symbols_added.len() >= 0);
+        // With no baseline the diff is against an empty symbol set, so every
+        // symbol the fixture declares (main and helper) is reported as added.
+        assert!(
+            !output_no_baseline.symbols_added.is_empty(),
+            "main and helper must both appear as added when there is no baseline; got {:?}",
+            output_no_baseline.symbols_added
+        );
         assert!(
             output_no_baseline.summary.contains("No baseline")
                 || !output_no_baseline.summary.is_empty()
@@ -3353,10 +3392,33 @@ fn y() {}
 
         // Verify output structure
         assert!(output.quality_score >= 0.0 && output.quality_score <= 100.0);
-        assert!(output.recommendations.len() >= 0);
-        // Deltas should be valid numeric values (isize is always finite)
-        assert!(output.coupling_delta >= 0);
-        assert!(output.cycle_delta >= 0);
+        // No baseline is given, so there is nothing to compare against and the
+        // deltas are all zero by construction. The old comment claimed they
+        // were checked because "isize is always finite" -- which is not why
+        // they are checked, and is not a statement about this input. These are
+        // isize, so `>= 0` was a real assertion, just a weak and unexplained
+        // one; with no baseline the exact value is known.
+        assert_eq!(
+            output.coupling_delta, 0,
+            "no baseline means no coupling change to report"
+        );
+        assert_eq!(
+            output.cycle_delta, 0,
+            "no baseline means no cycle change to report"
+        );
+        assert_eq!(
+            output.dead_code_delta, 0,
+            "no baseline means no dead-code change to report"
+        );
+        // `recommendations.len() >= 0` was true of every Vec. The fixture has
+        // a coupled cluster (b calls x and y) in a small graph, so there is
+        // something to recommend; assert it rather than assert nothing.
+        assert!(
+            !output.recommendations.is_empty(),
+            "a six-function graph with a coupled cluster should produce at least \
+             one recommendation; got {:?}",
+            output.recommendations
+        );
     }
 
     // =========================================================================
@@ -3368,10 +3430,17 @@ fn y() {}
         let temp = tempfile::tempdir().unwrap();
         let file_path = temp.path().join("src/main.rs");
         std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        // suggest_context seeds its search from hot paths, and a hot path is a
+        // symbol with fan_in >= 2. The old fixture was a straight line
+        // main -> helper -> another, where the most-called symbol has fan_in 1,
+        // so the handler correctly returned nothing (`hotpath_empty`). Give
+        // `helper` two callers so the fixture contains what the handler
+        // actually selects on.
         std::fs::write(
             &file_path,
             r#"
-fn main() { helper(); }
+fn main() { helper(); also_calls_helper(); }
+fn also_calls_helper() { helper(); }
 fn helper() { another(); }
 fn another() {}
 "#,
@@ -3398,12 +3467,24 @@ fn another() {}
         // Verify output structure
         assert!(output._meta.is_some(), "Should have _meta field");
         let meta = output._meta.unwrap();
-        assert!(
-            meta.estimated_tokens >= 0,
-            "estimated_tokens should be non-negative"
-        );
         assert_eq!(meta.detail_level, "suggest_context");
-        assert!(output.total >= 0);
+        // The fixture is a three-function call chain, so there is context to
+        // suggest. Both `estimated_tokens >= 0` and `total >= 0` were true of
+        // every usize and let a handler that returned nothing at all pass.
+        assert!(
+            output.total > 0,
+            "a fixture with main -> helper -> another has context to suggest; got {}",
+            output.total
+        );
+        assert!(
+            meta.estimated_tokens > 0,
+            "content was returned, so the token estimate cannot be zero"
+        );
+        assert_eq!(
+            output.total,
+            output.items.len(),
+            "total must count the items actually returned"
+        );
         assert!(!output.source.is_empty());
     }
 

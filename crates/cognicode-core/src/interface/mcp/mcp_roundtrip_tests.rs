@@ -1,7 +1,10 @@
 //! E2E MCP Protocol Roundtrip Tests
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(unused_comparisons, unused_imports)]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 //!
 //! Tests that verify the full MCP protocol roundtrip:
 //! 1. Serialize MCP request → JSON
@@ -342,7 +345,14 @@ mod tests {
 
             // Verify output fields
             assert!(output.success);
-            assert!(output.symbols_found >= 0);
+            // The fixture writes `fn main() {}` to src/main.rs, so a successful
+            // build found at least that one symbol. `>= 0` was true of every
+            // usize and made this roundtrip pass on an empty index.
+            assert!(
+                output.symbols_found >= 1,
+                "the fixture defines main(), so at least one symbol must be found; got {}",
+                output.symbols_found
+            );
         }
     }
 

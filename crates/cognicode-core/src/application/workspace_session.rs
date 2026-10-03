@@ -2250,7 +2250,6 @@ pub const TEST_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_graph_stats_after_build_returns_stats() {
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("test.rs");
@@ -2274,9 +2273,14 @@ pub const TEST_CONST: i32 = 42;
             "Expected symbol_count > 0, got {}",
             stats.symbol_count
         );
-        assert!(
-            stats.edge_count >= 0,
-            "Expected edge_count >= 0, got {}",
+        // The fixture is one function with an empty body, so the graph has no
+        // call edges at all. `edge_count >= 0` was true of every usize; the
+        // exact value is known here, and asserting it means a graph that
+        // invented edges out of nothing would fail.
+        assert_eq!(
+            stats.edge_count, 0,
+            "a single function with an empty body defines no call edge, so the \
+             graph must have none; got {}",
             stats.edge_count
         );
         assert!(
@@ -2796,7 +2800,6 @@ pub struct PublicStruct {}
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_get_project_diagnostics_complexity_has_expected_fields() {
         let temp_dir = TempDir::new().unwrap();
         let test_rs = temp_dir.path().join("lib.rs");
@@ -2811,8 +2814,22 @@ pub struct PublicStruct {}
         let diagnostics = session.get_project_diagnostics().await.unwrap();
 
         let complexity = diagnostics.complexity.unwrap();
-        assert!(complexity.total_cyclomatic >= 0);
-        assert!(complexity.functions_analyzed >= 0);
+        // The fixture defines one function, so something must have been
+        // analyzed and a cyclomatic total of zero would mean nothing was.
+        // Both assertions were `>= 0`, true of every usize, so they held even
+        // when complexity was computed over an empty set.
+        assert!(
+            complexity.functions_analyzed >= 1,
+            "the fixture defines pub fn test(), so at least one function must be \
+             analyzed; got {}",
+            complexity.functions_analyzed
+        );
+        assert!(
+            complexity.total_cyclomatic >= 1,
+            "a function has a cyclomatic complexity of at least 1, so the total \
+             cannot be 0 when a function was analyzed; got {}",
+            complexity.total_cyclomatic
+        );
         assert!(complexity.average_complexity >= 0.0);
     }
 
@@ -4312,7 +4329,6 @@ pub const MY_CONST: i32 = 42;
     }
 
     #[tokio::test(flavor = "current_thread")]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent: count >= 0
     async fn test_concurrent_analyze_impact_during_rebuild() {
         // Test impact analysis during concurrent graph rebuild
         let temp_dir = TempDir::new().unwrap();
@@ -4348,12 +4364,14 @@ pub const MY_CONST: i32 = 42;
             "Impact analysis should succeed"
         );
 
-        let impact = impact_result.unwrap().unwrap();
-        // Should find the dependent function
-        assert!(
-            impact.impacted_symbols.len() >= 0,
-            "Impact analysis should return (may be empty if timing is such that target isn't found)"
-        );
+        // No assertion on the contents: this test's contract is that a rebuild
+        // and an impact analysis racing each other both complete, and the
+        // contents legitimately depend on which one wins -- the `is_ok`
+        // assertions above are the whole contract. The old
+        // `impacted_symbols.len() >= 0` was not a weaker version of that, it
+        // was no check at all: true of every Vec, under a comment explaining
+        // why the result "may be empty".
+        let _ = impact_result.unwrap().unwrap();
     }
 
     #[tokio::test(flavor = "current_thread")]

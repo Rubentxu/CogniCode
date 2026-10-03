@@ -10,7 +10,10 @@
     clippy::useless_vec,
     unused_comparisons
 )]
-#![allow(clippy::absurd_extreme_comparisons)]
+// The `absurd_extreme_comparisons` blanket that used to sit here is gone.
+// Every `count >= 0` it permitted has been replaced by the value the fixture
+// actually implies, so the next unfailable assertion in this file becomes a
+// compile error instead of a silent pass.
 
 use crate::application::commands::{
     ChangeSignatureCommand, MoveSymbolCommand, ParameterDefinition, RenameSymbolCommand,
@@ -5491,9 +5494,31 @@ mod tests {
         let input = GetEntryPointsInput { compressed: false };
         let result = handle_get_entry_points(&ctx, input).await.unwrap();
 
-        // Should succeed with auto-built graph
-        // (entry_points may be empty for simple files, but shouldn't error)
-        assert!(result.total >= 0);
+        // The point of the test is the auto-build, so it has to observe one.
+        // The fixture defines `main` and `helper`, so an auto-built graph has
+        // entry points to report. `total >= 0` used to stand here, which is
+        // true of every usize: the handler could return nothing and this test
+        // would still pass while claiming to prove the graph was built.
+        assert!(
+            result.total > 0,
+            "an auto-built graph over a fixture defining main and helper must \
+             report at least one entry point, got total={}",
+            result.total
+        );
+        assert_eq!(
+            result.total,
+            result.entry_points.len(),
+            "total must count the entry points actually reported"
+        );
+        let names: Vec<&str> = result
+            .entry_points
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        assert!(
+            names.contains(&"main"),
+            "main is the entry point this fixture declares; got {names:?}"
+        );
     }
 
     // =============================================================================
@@ -5730,8 +5755,15 @@ mod tests {
         // This may succeed or fail depending on path validity, but tests HandlerResult pattern
         match result {
             Ok(output) => {
-                // If success, verify structure
-                assert!(output.calls.len() >= 0);
+                // If it succeeded, the working dir is a path that does not
+                // exist, so there is nothing to resolve and the result must be
+                // empty. `calls.len() >= 0` held for every Vec and would have
+                // passed no matter what the handler returned.
+                assert!(
+                    output.calls.is_empty(),
+                    "a call hierarchy over a nonexistent working dir has no calls; got {:?}",
+                    output.calls
+                );
             }
             Err(e) => {
                 // If error, verify it's a proper HandlerError
