@@ -60,6 +60,7 @@ Run:
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -119,6 +120,58 @@ def code_lines(source: str) -> list[tuple[int, str]]:
             continue
         out.append((number, line))
     return out
+
+
+def test_every_pipeline_compiles() -> None:
+    """El pipeline tiene que COMPILAR, no solo tener stages con forma.
+
+    MEDIDO 2026-10-04, lane v0.101.7. Dos parrafos de comentario de
+    `release-candidate.pipeline.kts` explicaban como escapar un signo de
+    dollar escribiendo el signo de dollar, y al compilar Kotlin leyo esos dos
+    signos como plantillas: `Unresolved reference 'key'` y `Unresolved
+    reference 'host'`. La lane murio en el minuto dos, antes de la primera
+    stage, con 212 contratos en verde.
+
+    Y ese es el punto: los contratos de este fichero EJECUTAN el cuerpo de una
+    stage, pero no compilan el script que la contiene. Renderizar un cuerpo y
+    ejecutarlo dice que el shell es correcto; no dice que el fichero que lo
+    contiene sea un programa de Kotlin. Un error de compilacion es
+    invisible a toda esta suite, y por eso la asercion vive aqui y no en otro
+    sitio: este es el fichero que ya vigila las stages.
+
+    `pipelinek validate` compila y comprueba el grafo de stages sin ejecutar
+    ninguna. Si no esta en el PATH, el contrato se degrada a "no se puede
+    responder" en vez de fingir que ha comprobado algo: la misma regla que ya
+    aplica el contrato de tags visibles.
+    """
+    if shutil.which("pipelinek") is None:
+        print("SKIP - pipelinek no esta en el PATH")
+        return
+    failures: list[str] = []
+    for pipeline in sorted(REPO_ROOT.glob("*.pipeline.kts")):
+        done = subprocess.run(
+            ["pipelinek", "validate", str(pipeline)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        # MEDIDO 2026-10-04: el veredicto va por stderr, no por stdout. Buscarlo
+        # en el stream equivocado hace que este contrato reporte cinco pipelines
+        # rotos que compilan bien, que es peor que no tener el contrato.
+        combined = done.stdout + done.stderr
+        if "VALIDATION SUCCESSFUL" not in combined:
+            # Los diagnostics vienen como JSON en una sola linea enorme, asi
+            # que se cortan al mensaje y la posicion: el detalle entero esta
+            # en la salida del comando.
+            errors = re.findall(
+                r'"severity":"ERROR","message":"([^"]+)","line":(\d+)', combined
+            )
+            detail = "; ".join(f"{msg} (linea {line})" for msg, line in errors[:5])
+            failures.append(
+                f"{pipeline.name}: {detail or 'validacion fallida sin diagnostics'}"
+            )
+    assert not failures, "estos pipelines no compilan:\n  " + "\n  ".join(failures)
 
 
 def test_the_target_dir_resolver_is_runnable() -> None:
@@ -413,6 +466,7 @@ def test_a_missing_target_still_fails_the_way_it_did() -> None:
 def main() -> int:
     failures: list[str] = []
     tests = [
+        test_every_pipeline_compiles,
         test_the_target_dir_resolver_is_runnable,
         test_no_stage_contains_an_inert_cd_guard,
         test_no_pipeline_hardcodes_a_cargo_artifact_path,

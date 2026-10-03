@@ -248,21 +248,40 @@ pipeline {
                         # it can say whether one is configured and whether it runs,
                         # and nothing more. Whether it understands this target is
                         # `binaries-$target`'s to find out.
-                        # NOTE: only REFERENCES to a shell variable need the
-                        # `${'$'}` escape, so that Kotlin emits a literal `$`.
-                        # A definition needs no escape and must not have one:
-                        # `${'$'}host=...` renders to `$host=...`, and `$host=value`
-                        # is not an assignment in any POSIX shell — the name
-                        # contains `$`, so bash reads the word as a command and
-                        # runs `=value`, which is where "command not found" with
-                        # an `=` in it comes from. MEDIDO 2026-10-03: written the
-                        # escaped way, this block failed on the assignment and
-                        # every variable below it read as empty.
+                        # NOTE ON DOLLAR SIGNS IN THIS BLOCK. Everything from here
+                        # to the end of the linker check is the body of a shell
+                        # script written inside a Kotlin raw string, and in a raw
+                        # string a dollar sign opens a template. That is true even
+                        # inside what looks like a comment: a hash opens a shell
+                        # comment, but the line is still content of the raw string,
+                        # so a dollar in it is still a template. Writing a dollar
+                        # in prose to illustrate a rule is what produces
+                        # `Unresolved reference` at compilation, before a single
+                        # stage runs. MEDIDO 2026-10-04: two paragraphs of this
+                        # comment, explaining how to escape a dollar, contained
+                        # unescaped ones and took the whole lane down in the first
+                        # two minutes.
                         #
-                        # And a reference glued to a suffix needs braces, for the
-                        # same reason: `$key_LINKER` is the variable `key_LINKER`,
-                        # not `key` followed by `_LINKER`. That is why every use
-                        # below is `${'$'}{key}` and never `${'$'}key`.
+                        # So this block states the rules without writing a dollar.
+                        # To emit one to the shell, the form is the Kotlin template
+                        # of a string literal holding a dollar, followed by braces
+                        # around the name when the name is glued to a suffix —
+                        # otherwise Kotlin reads name_PLUS_SUFFIX as one long
+                        # identifier. A DEFINITION takes no escape and must not
+                        # have one, because a dollar glued to the left of the
+                        # equals sign makes the name contain a dollar, and bash
+                        # reads the word as a command. MEDIDO 2026-10-03: written
+                        # the escaped way, that assignment failed and every
+                        # variable below it read as empty.
+                        #
+                        # The escaping examples are not written here on purpose.
+                        # The stage below is the specification, and
+                        # `test_pipeline_stage_bodies.py` renders and runs it for
+                        # real: three targets crossed, a linker from the
+                        # environment, a linker from a committed cargo config, a
+                        # linker that does not resolve, and the host case. What
+                        # this comment is for is the reader, and a reader who
+                        # needs the literal form can read it out of a rendering.
                         host=$(rustc -vV | sed -n 's/^host: //p')
                         if [ "${'$'}host" != "$target" ]; then
                             key=$(printf '%s' "$target" | tr '[:lower:]-' '[:upper:]_')

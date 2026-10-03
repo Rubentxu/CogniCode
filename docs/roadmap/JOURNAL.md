@@ -12799,3 +12799,82 @@ La lane de `v0.101.7`, en worktree propio, cuando termine la del otro actor: su
 recibos midiendo. Con el gate de N+89 la lane ya no puede construirse desde un
 commit que no sea el tagueado sin que la stage de coherencia lo diga en la
 primera que corre.
+
+## N+91 — El pipeline publicado no compilaba, y 212 contratos no lo veían
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.7).
+
+La lane de `v0.101.7` murió en el **minuto dos**, antes de la primera stage:
+
+    Pipeline finished with FAILURE: Unresolved reference 'key_LINKER'.
+
+No era un fallo de release. Era que **el fichero de la lane no es un programa
+de Kotlin válido**. Dos párrafos de comentario en
+`release-candidate.pipeline.kts` explicaban cómo escapar un signo de dólar
+escribiendo el signo de dólar, y al compilar, Kotlin leyó esos signos como
+plantillas. El comentario que explicaba el bug contenía el bug:
+
+    # `$key_LINKER` is the variable `key_LINKER`     <- esto rompe la compilacion
+
+Tres referencias sin resolver en total: `host` dos veces y `key_LINKER` una.
+Un `#` abre un comentario de shell, pero la línea sigue siendo contenido del
+raw string, y en un raw string un dólar abre plantilla se llame como se llame
+la línea.
+
+### El tag publicado estaba roto, y está medido
+
+`v0.101.7` se empujó **antes** de esto. Extraído del propio tag y validado:
+
+    $ git archive 'v0.101.7^{commit}' release-candidate.pipeline.kts | ...
+    $ pipelinek validate release-candidate.pipeline.kts
+    ERROR Unresolved reference 'host'.       (linea 254)
+    ERROR Unresolved reference 'host'.       (linea 254)
+    ERROR Unresolved reference 'key_LINKER'. (linea 263)
+    VALIDATION FAILED
+
+Es el **cuarto** tag sin candidato, y la causa es siempre la misma desde
+`v0.101.5`: el árbol pasa sus contratos y el pipeline no arranca. Un tag
+publicado no se mueve, así que la salida es otro corte, no una corrección.
+
+### Por qué 212 contratos no lo vieron
+
+Porque **ejecutan el cuerpo de una stage, y no compilan el fichero que la
+contiene**. Renderizar un cuerpo y pasarlo por bash demuestra que el shell es
+correcto; no dice nada de si el fichero que lo envuelve es Kotlin válido. El
+error estaba por encima del nivel que la suite alcanza: los 212 contratos
+miran *dentro* de las stages, y el defecto estaba en el *envoltorio*.
+
+El arreglo del contrato que faltaba no es sutil: `pipelinek validate` compila y
+comprueba el grafo de stages sin ejecutar ninguna, y ya se usaba en el
+`justfile`. No estaba en la suite por una razón que ya no tiene sentido.
+
+### Lección 213
+
+**Un contrato mide el nivel que alcanza, y no puede ver por encima de sí.** Una
+suite que ejecuta todo lo que hay debajo de un límite es sólida sobre ese
+límite y absolutamente ciega por encima. La pregunta que faltaba no era «¿el
+shell es correcto?» sino «¿el fichero que contiene ese shell es siquiera un
+programa?», y esa se responde compilándolo.
+
+Y una segunda, sobre el arreglo: primero escribí **dos** contratos. El segundo
+—un lint que prohibía cualquier signo de dólar en la prosa de los comentarios—
+lo borré porque la medición lo desmontó en un minuto: marcaba como error código
+que compila bien, porque un dólar escapado a propósito y uno escapado mal se
+parecen en un `grep`. Un lint que señala el código correcto es peor que no
+tener lint, porque entrena a desconfiar de él. El compilador ya distingue las
+dos mitades; un `grep` no puede.
+
+### El contrato que sí queda, y su mutación
+
+`test_every_pipeline_compiles` valida los seis `.kts` del repositorio. Mutado
+—devolviendo un signo de dólar a un comentario— falla con el mensaje exacto del
+fallo real:
+
+    FAIL test_every_pipeline_compiles: estos pipelines no compilan:
+      release-candidate.pipeline.kts: Unresolved reference 'key'. (linea 254)
+
+Y con dos errores propios que el contrato también me hizo pagar: buscaba el
+veredicto en `stdout` cuando `pipelinek` lo escribe en `stderr`, así que
+reportaba cinco pipelines rotos que compilan bien. Un contrato que miente es
+peor que un contrato ausente, porque ocupa el sitio del que avisa.
