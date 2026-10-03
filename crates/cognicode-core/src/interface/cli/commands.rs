@@ -477,10 +477,7 @@ impl CommandExecutor {
                 // a failed analyze must surface a non-zero exit code
                 // so scripts and CI can detect it (UAT:
                 // `crates/cognicode-cli/tests/prf_cli_01_uat.rs`).
-                if let Err(e) = Self::execute_analyze(path).await {
-                    eprintln!("Analyze command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_analyze(path).await?
             }
             Some(CliCommand::Serve { port }) => {
                 eprintln!("Use 'cognicode-mcp' binary to start the MCP server.");
@@ -507,19 +504,9 @@ impl CommandExecutor {
                     );
                     return Err("refactor --apply unsupported: no rollback path yet".into());
                 }
-                if let Err(e) =
-                    Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await
-                {
-                    eprintln!("Refactor command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?
             }
-            Some(CliCommand::Index { command }) => {
-                if let Err(e) = Self::execute_index(command).await {
-                    eprintln!("Index command failed: {}", e);
-                    return Err(e);
-                }
-            }
+            Some(CliCommand::Index { command }) => Self::execute_index(command).await?,
             Some(CliCommand::Graph { command }) => {
                 // PRF F2.W2: do NOT swallow the Graph error here.
                 // PerFileStrategy and FullGraphStrategy now surface read /
@@ -529,10 +516,7 @@ impl CommandExecutor {
                 // Other Graph subcommands that still match the legacy
                 // contract (OnDemand, HotPaths, …) return `Ok` and keep
                 // working unchanged.
-                if let Err(e) = Self::execute_graph(command).await {
-                    eprintln!("Graph command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_graph(command).await?
             }
             Some(CliCommand::FindUsages {
                 symbol,
@@ -551,57 +535,26 @@ impl CommandExecutor {
                 // (overrides_with en clap). Si ninguno aparece,
                 // include_declaration=true (default).
                 let include = !no_include_declaration && *include_declaration;
-                if let Err(e) =
-                    Self::execute_find_usages(symbol, cwd, include, *context_lines, format, *quiet)
-                        .await
-                {
-                    eprintln!("find-usages command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_find_usages(symbol, cwd, include, *context_lines, format, *quiet)
+                    .await?
             }
-            Some(CliCommand::Navigate { command }) => {
-                if let Err(e) = Self::execute_navigate(command).await {
-                    eprintln!("Navigate command failed: {}", e);
-                    return Err(e);
-                }
-            }
-            Some(CliCommand::Doctor { format, cwd }) => {
-                if let Err(e) = Self::execute_doctor(format, cwd).await {
-                    eprintln!("Doctor command failed: {}", e);
-                    return Err(e);
-                }
-            }
+            Some(CliCommand::Navigate { command }) => Self::execute_navigate(command).await?,
+            Some(CliCommand::Doctor { format, cwd }) => Self::execute_doctor(format, cwd).await?,
             #[cfg(feature = "multimodal")]
             Some(CliCommand::DocsIngest { path, recursive }) => {
-                if let Err(e) = Self::execute_docs_ingest(path, *recursive).await {
-                    eprintln!("docs-ingest command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_docs_ingest(path, *recursive).await?
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::IssuesIngest {
                 owner,
                 repo,
                 include_git_log,
-            }) => {
-                if let Err(e) = Self::execute_issues_ingest(owner, repo, *include_git_log).await {
-                    eprintln!("issues-ingest command failed: {}", e);
-                    return Err(e);
-                }
-            }
+            }) => Self::execute_issues_ingest(owner, repo, *include_git_log).await?,
             #[cfg(feature = "evidence-cli-ladybug")]
-            Some(CliCommand::Evidence(cmd)) => {
-                if let Err(e) = Self::execute_evidence(cmd).await {
-                    eprintln!("evidence command failed: {}", e);
-                    return Err(e);
-                }
-            }
+            Some(CliCommand::Evidence(cmd)) => Self::execute_evidence(cmd).await?,
             Some(CliCommand::Capabilities { format, json }) => {
                 let effective = if *json { "json" } else { format.as_str() };
-                if let Err(e) = Self::execute_capabilities(effective).await {
-                    eprintln!("capabilities command failed: {}", e);
-                    return Err(e);
-                }
+                Self::execute_capabilities(effective).await?
             }
             None => {
                 info!("CogniCode CLI initialized");
@@ -710,16 +663,13 @@ impl CommandExecutor {
                         );
                         println!("{}", code.code);
                     }
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
-                        // `SymbolCodeService::get_symbol_code` returns
-                        // `Result<_, String>`, and a `String` does not
-                        // implement `std::error::Error`, so it is carried
-                        // as a message rather than boxed. Relabelling it
-                        // `AppError::InvalidParameter` would turn a read
-                        // failure into a bad-argument claim.
-                        return Err(e.into());
-                    }
+                    // `SymbolCodeService::get_symbol_code` returns
+                    // `Result<_, String>`, and a `String` does not implement
+                    // `std::error::Error`, so it is carried as a message
+                    // rather than boxed. Relabelling it
+                    // `AppError::InvalidParameter` would turn a read failure
+                    // into a bad-argument claim.
+                    Err(e) => return Err(e.into()),
                 }
             }
         }
