@@ -10,6 +10,69 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.2] — 2026-10-03
+
+Ventana `v0.101.1..089be899`: **1 commit** — 1 `fix`, y 0 marcadores
+`BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.1..089be899                      # 1
+git log --format='%s' v0.101.1..089be899 | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 1 fix
+git log --format='%s%n%b' v0.101.1..089be899 \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.2 y por qué v0.101.1 tampoco se publica.** v0.101.1
+está tagueado y empujado, y su candidato se paró durante el preflight, ya en la
+compilación de release. La razón no fue un fallo de infraestructura: fue una
+auditoría del propio contenido que la release empaqueta.
+
+`release-candidate.pipeline.kts` empaqueta cada skill publicada en
+`staging/<id>-<version>.tar.gz`, y la release publica **exactamente** el
+candidato, sin recompilar. Es decir: un candidato cortado antes de corregir una
+skill publica esa skill rota de forma permanente, y corregirla después obliga a
+otro corte. La tabla `SKILL_BUNDLES` de `release_contract.rs` declara
+publicadas solo `cognicode` y `cognicode-mcp`; las tres invocaciones rotas
+estaban en el camino de publicación, dos de ellas en `cognicode-pr-review`, que
+no se empaqueta pero que si se distribuye con el repositorio.
+
+### Corregido
+
+- `skills/cognicode-pr-review/SKILL.md` enseñaba `cognicode navigate references
+  <symbol>` dos veces, siendo el paso central de la skill. La firma real es
+  `NavigateCommand::References { position: String }` y `position` es
+  `file:line:column`. El símbolo se enlaza a `position`, `parse_position()`
+  falla, y el brazo `Navigate` imprime el error en stderr **sin** hacer
+  `return Err`: el proceso sale con 0 y el agente cree que consultó las
+  referencias. La corrección no es mecánica: la intención declarada de la skill
+  es "find all usages of a symbol", que es exactamente lo que hace
+  `cognicode find-usages <symbol>`, que además propaga su error. `navigate
+  references` queda documentado con su firma real.
+- `skills/cognicode/SKILL.md` pasaba `MySymbol` a `cognicode index symbol-code`,
+  cuya firma es `SymbolCode { file: String, line: u32, column: u32 }`: tres
+  positionals requeridos, uno dado, y clap sale con 2.
+
+### Añadido
+
+- `scripts/ci/test_skill_cli_invocations.py`: contrasta cada invocación de CLI
+  de un bloque ```` ```bash ```` de las skills contra las firmas clap reales
+  leídas de `commands.rs` en cada ejecución. No es una lista mantenida a mano,
+  que es justamente lo que faltó: `validate_skills.py` ya contrastaba nombres de
+  tool MCP contra el catálogo, y no podía ver esto porque nunca mira invocaciones
+  de CLI ni aridad de argumentos. Se descubre por el glob de
+  `run-all-contracts.sh`, así que el propio preflight del candidato lo ejecuta.
+  Suite de contratos: 119 → 133.
+
+### Medido, y no arreglado aquí
+
+De los 11 brazos `CliCommand`, solo `Analyze`, `Graph` y `FindUsages` propagan
+el error con `return Err`. `Refactor`, `Index`, `Navigate`, `Doctor`,
+`DocsIngest`, `IssuesIngest`, `Evidence` y `Capabilities` imprimen el fallo y
+continúan, con lo que salen con 0. Es un defecto real y distinto del corregido
+aquí, que es el contenido publicado; queda registrado como
+`a1f961f6-dcec-45a4-8689-9900b0319f91` y no se mezcla aquí.
+
 ## [v0.101.1] — 2026-10-03
 
 Ventana `v0.101.0..14b7fea3`: **6 commits** — 3 `fix`, 3 `docs`, y 0
