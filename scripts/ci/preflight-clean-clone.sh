@@ -210,16 +210,58 @@ log "Baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE
 # --- Stage 1: clone ----------------------------------------------------------
 
 WORK_DIR="$(mktemp -d -t cognicode-preflight-XXXXXX)"
-# MEDIDO 2026-10-03. Era `trap 'rm -rf "$WORK_DIR"' EXIT`, y el script hace
-# `cd "$WORK_DIR/clone"` en el stage 5, asi que el trap se ejecutaba desde
-# dentro del directorio que borra. En un entorno donde `rm` envuelve el borrado
-# con una comprobacion de seguridad, esa comprobacion se niega y devuelve 64; el
-# estado del trap sustituye al del script, y el preflight de v0.101.2 —que
-# habia certificado passed=5934 failed=0 y PREFLIGHT PASS— salio con fallo.
-# Ver scripts/ci/preflight-cleanup.sh: sale del directorio antes de borrar y,
-# sobre todo, la limpieza no puede cambiar el veredicto.
-# shellcheck source=scripts/ci/preflight-cleanup.sh
-source "$SCRIPT_DIR/preflight-cleanup.sh"
+
+# --- La limpieza no puede cambiar el veredicto -------------------------------
+#
+# MEDIDO 2026-10-03. El trap era `trap 'rm -rf "$WORK_DIR"' EXIT`, y este
+# script hace `cd "$WORK_DIR/clone"` en el stage 5, asi que el trap se
+# ejecutaba desde dentro del directorio que borra. En un entorno donde `rm`
+# envuelve el borrado con una comprobacion de seguridad, esa comprobacion se
+# niega —es lo correcto: borrar el directorio que contiene tu propio cwd no
+# puede ser una operacion corriente— y devuelve 64. El estado del trap
+# sustituye al del script, y el preflight de v0.101.2 —que habia certificado
+# passed=5934 failed=0 y PREFLIGHT PASS— salio con fallo.
+#
+# Hay dos defectos distintos y ambos importan:
+#
+#   1. El trap borra el directorio desde dentro de si mismo. Salir antes no es
+#      cortesia, es lo que hace la operacion posible.
+#   2. Una limpieza puede fallar, y fallar la limpieza NO es fallar la
+#      certificacion. Un gate que muere en su propia limpieza no distingue
+#      "el codigo esta roto" de "no consegui borrar una carpeta temporal", y
+#      en cuanto ocurre lo segundo el gate entero deja de decir nada.
+#
+# La funcion vive aqui, en el script que la usa, y no en un fichero aparte:
+# su unico consumidor es este trap, y un contrato la ejercita extrayendola de
+# este mismo fuente (ver `qw04_preflight_contract.rs`). Un segundo fichero
+# seria un segundo sitio donde la regla de limpieza puede vivir.
+cognicode_preflight_cleanup() {
+    # `$?` tiene que leerse en la PRIMERA sentencia: cualquier comando
+    # anterior ya habria sobrescrito el estado de salida que se quiere
+    # conservar.
+    local incoming_status=$?
+    local work_dir="${1:-}"
+
+    if [ -n "$work_dir" ] && [ -d "$work_dir" ]; then
+        # Salir del directorio antes de borrarlo. `cd /` es el destino mas
+        # simple y no depende de que el arbol de trabajo siga existiendo.
+        cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
+
+        # El borrado no puede ser el veredicto. Si falla —envoltura de
+        # seguridad, permisos, un fichero abierto— se dice y se sigue con el
+        # estado que el script ya habia decidido.
+        if ! rm -rf -- "$work_dir" 2>/dev/null; then
+            printf 'aviso: no se pudo limpiar el clon temporal %s\n' \
+                "$work_dir" >&2
+            printf '       la certificacion no depende de la limpieza, y este\n' >&2
+            printf '       directorio se puede borrar a mano sin riesgo.\n' >&2
+        fi
+    fi
+
+    # El estado con el que el script ya habia decidido. Nunca el de la limpieza.
+    exit "$incoming_status"
+}
+
 trap 'cognicode_preflight_cleanup "$WORK_DIR"' EXIT
 
 log "Stage 1/7: clone a $WORK_DIR (sparse, blobs only)"
