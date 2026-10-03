@@ -60,6 +60,7 @@ RECEIPT_FILE="/tmp/preflight-receipt-${TARGET_SHA:0:12}.json"
 BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5579}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
 BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
+TOLERANCE="${PREFLIGHT_TOLERANCE:-2}"  # tests que pueden desaparecer por churn
 
 # --- La rama que el clon puede nombrar -----------------------------------------
 #
@@ -102,6 +103,51 @@ resolve_clone_ref() {
 # escribe tambien en stdout con tee y contaminaria lo que el contrato lee.
 if [ "${1:-}" = "--print-clone-ref" ]; then
   resolve_clone_ref
+  exit 0
+fi
+
+# ¿Ha perdido el workspace tests que antes pasaban?
+#
+# MEDIDO 2026-10-03, al certificar el tag v0.101.0. La condición original era
+#
+#     if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
+#       fail "regresión de tests passed: delta=$PASSED_DIFF ..."
+#     fi
+#
+# `${PASSED_DIFF#-}` quita el signo, así que era una comprobación de valor
+# absoluto: un delta de **+355** — 355 tests más pasando, cero fallando — la
+# hacía saltar con un mensaje que decía "regresión".
+#
+# El guard y su propio mensaje se contradecían, y las dos lecturas son
+# defendibles por separado, que es el problema:
+#
+#   * Si la intención era "el número de tests no debería moverse mucho", el
+#     mensaje dice otra cosa, y en un repositorio cuya agenda es añadir tests el
+#     guard queda rojo por el trabajo que se le pidió hacer.
+#   * Si la intención era "no perdemos tests", el fallo depende solo de tests que
+#     desaparecen, y `OBSERVED_FAILED > 0` cubre el otro caso dos lineas más
+#     abajo.
+#
+# Se conserva la lectura que el mensaje describe: una regresión es que el número
+# de tests **baje**. Un ratchet que dispara cuando la suite crece es un gate rojo
+# por nada.
+#
+# Vive en una función, y no en línea, porque un contrato tiene que poder
+# ejercitarlo sin pagar un clean clone de veinte minutos, y dos copias de un
+# guard es una de ellas equivocada dentro de un mes.
+passed_count_regressed() {
+  local baseline=$1 observed=$2 tolerance=${3:-${PREFLIGHT_TOLERANCE:-2}}
+  [ "$(( (observed - baseline) * -1 ))" -gt "$tolerance" ]
+}
+
+# `--print-passed-verdict <observed>` responde OK|REGRESSION y sale 0|1. Va
+# antes de cualquier `log` por el mismo motivo que el seam de arriba.
+if [ "${1:-}" = "--print-passed-verdict" ]; then
+  if passed_count_regressed "$BASELINE_PASSED" "${2:-$BASELINE_PASSED}" "$TOLERANCE"; then
+    printf 'REGRESSION\n'
+    exit 1
+  fi
+  printf 'OK\n'
   exit 0
 fi
 
@@ -330,7 +376,6 @@ OBSERVED_IGNORED=$(echo "$TEST_RESULT" | sed -n 's/.*ignored=\([0-9]*\).*/\1/p')
 
 log "Stage 6/7: comparación con baseline"
 
-TOLERANCE="${PREFLIGHT_TOLERANCE:-2}"  # ±2 tests por churn legítimo
 
 PASSED_DIFF=$((OBSERVED_PASSED - BASELINE_PASSED))
 FAILED_DIFF=$((OBSERVED_FAILED - BASELINE_FAILED))
@@ -338,10 +383,41 @@ IGNORED_DIFF=$((OBSERVED_IGNORED - BASELINE_IGNORED))
 
 log "  baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE_IGNORED"
 log "  observed: passed=$OBSERVED_PASSED failed=$OBSERVED_FAILED ignored=$OBSERVED_IGNORED"
-log "  diff:     passed=$PASSED_DIFF failed=$FAILED_DIFF ignored=$IGNORED_DIFF (tolerancia ±$TOLERANCE)"
+log "  diff:     passed=$PASSED_DIFF failed=$FAILED_DIFF ignored=$IGNORED_DIFF (tolerancia -$TOLERANCE)"
 
-if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
-  fail "regresión de tests passed: delta=$PASSED_DIFF > tolerancia=$TOLERANCE"
+# MEDIDO 2026-10-03, al certificar el tag v0.101.0. La condición era
+#
+#     if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
+#       fail "regresión de tests passed: delta=$PASSED_DIFF ..."
+#     fi
+#
+# `${PASSED_DIFF#-}` quita el signo, así que la comprobación era de valor
+# absoluto: un delta de **+355** — 355 tests más pasando, cero fallando — la
+# hacía saltar con un mensaje que decía "regresión".
+#
+# El guard y su propio mensaje se contradecían, y las dos lecturas son
+# defendibles por separado, que es el problema:
+#
+#   * Si la intención era "el número de tests no debería moverse mucho", el
+#     mensaje dice otra cosa, y en un proyecto cuya agenda es añadir tests el
+#     guard es rojo por el trabajo que se le pidió hacer.
+#   * Si la intención era "no perdemos tests", entonces el fallo tiene que
+#     depender solo de tests que desaparecen, y `OBSERVED_FAILED > 0` dos líneas
+#     más abajo ya cubre el otro caso.
+#
+# Un ratchet que dispara cuando la suite crece, en un repositorio que lleva
+# semanas deliberadamente lleno de tests, es un gate rojo por nada — el mismo
+# patrón que el sandbox gate que `certification.pipeline.kts` ya registra. Se
+# queda la lectura que el mensaje describe: la regresión es que el número de
+# tests **baje**, no que suba.
+#
+# Lo que NO se hace aquí, y conviene que quede dicho: el baseline sigue siendo
+# del operador. Con un baseline por debajo de la realidad, este ratchet es
+# débil — una caída grande de la suite real seguiría dentro de tolerancia si el
+# total stays por encima del baseline. Re-baselinar es una decisión explícita
+# (`PREFLIGHT_BASELINE_*`), no un efecto secundario de arreglar el signo.
+if passed_count_regressed "$BASELINE_PASSED" "$OBSERVED_PASSED" "$TOLERANCE"; then
+  fail "tests passed por debajo del baseline: delta=$PASSED_DIFF (bajan $((PASSED_DIFF * -1)) y la tolerancia es $TOLERANCE). Si es intencional, re-baseline con PREFLIGHT_BASELINE_PASSED=$OBSERVED_PASSED PREFLIGHT_BASELINE_IGNORED=$OBSERVED_IGNORED."
 fi
 
 if [ "$FAILED_DIFF" -gt 0 ]; then
