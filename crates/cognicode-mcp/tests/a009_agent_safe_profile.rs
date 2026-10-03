@@ -150,7 +150,59 @@ fn handler_for_a_read_only_profile_is_read_only() {
     }
 }
 
-// --- Behaviour level: what an adopter actually experiences -----------------
+// --- Unknown profile ids must not become writable -----------------------
+
+/// An id that is not a published profile must NOT resolve to a writable
+/// handler.
+///
+/// `ProfilePosture::is_profile_read_only` returns `false` for anything it
+/// cannot classify, which is correct for a predicate but wrong for the one
+/// caller that builds a security posture: `CogniCodeHandler::for_profile`
+/// turned "I do not know this profile" into "this profile may write".
+///
+/// The module docs justify the permissive default on the grounds that an
+/// unclassified profile is "a compile-time concern, not a runtime
+/// surprise". That is true of the `PROFILE_POSTURES` table, but
+/// `for_profile` takes a runtime `&str`, so it is exactly the case the
+/// argument does not cover. An agent-first tool that resolves a profile it
+/// does not recognise should refuse to start, not start writable.
+#[test]
+fn unknown_profile_never_yields_a_writable_handler() {
+    for unknown in ["nope", "CORE", "core ", "", "developer2"] {
+        assert_eq!(
+            ProfilePosture::for_profile(unknown),
+            None,
+            "{unknown:?} is expected to be unclassified"
+        );
+
+        let resolved = std::panic::catch_unwind(|| {
+            CogniCodeHandler::for_profile(PathBuf::from("/tmp"), unknown)
+        });
+
+        match resolved {
+            Err(_) => {} // refused outright: the fail-closed behaviour.
+            Ok(handler) => assert!(
+                handler.is_read_only(),
+                "unknown profile {unknown:?} produced a WRITABLE handler; an \
+                 unrecognised profile must not be able to mutate the workspace"
+            ),
+        }
+    }
+}
+
+/// A real profile keeps working. The fail-closed path must not have cost
+/// the published ids their posture.
+#[test]
+fn known_profiles_are_unaffected_by_the_fail_closed_path() {
+    for (id, posture) in PROFILE_POSTURES {
+        let handler = CogniCodeHandler::for_profile(PathBuf::from("/tmp"), id);
+        assert_eq!(
+            handler.is_read_only(),
+            posture.is_read_only(),
+            "profile {id} changed posture"
+        );
+    }
+}
 
 /// The real binary in read-only mode must not advertise or accept
 /// `write_file`, and must leave nothing on disk.

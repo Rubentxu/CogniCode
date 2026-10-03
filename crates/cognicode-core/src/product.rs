@@ -22,12 +22,24 @@
 //! enforced at runtime, and a posture duplicated in two places eventually
 //! disagrees with itself.
 //!
-//! Unknown profiles are **not** treated as read-only. The default is the
-//! permissive one on purpose: the CLI still has a `--read-only` flag a user
-//! can choose, and silently muting a profile nobody has classified yet
-//! would break existing installations. The set of known profiles is closed
-//! and asserted in tests, so an unclassified profile is a compile-time
-//! concern, not a runtime surprise.
+//! Unknown profiles are **not** treated as read-only here. This module is a
+//! lookup table plus a predicate, and both report what they know: an
+//! unclassified id has no posture, and the predicate says "not read-only"
+//! because it cannot say otherwise.
+//!
+//! That makes [`ProfilePosture::is_profile_read_only`] the wrong tool for
+//! anyone building a security posture out of a runtime string. It was used
+//! that way by `CogniCodeHandler::for_profile`, which turned "I do not know
+//! this profile" into "this profile may write". That caller now matches on
+//! [`ProfilePosture::for_profile`] and refuses an unclassified id instead,
+//! which is what this module's own doc comment on `for_profile` always
+//! asked callers to do.
+//!
+//! A profile id is a runtime string, so an unclassified one is a runtime
+//! surprise, not the compile-time concern it was previously described as.
+//! The set of known profiles is closed and asserted in tests, so the risk
+//! was never a bad table — it was an unknown key quietly inheriting the
+//! permissive answer.
 
 use serde::{Deserialize, Serialize};
 

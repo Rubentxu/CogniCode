@@ -101,13 +101,35 @@ impl CogniCodeHandler {
     /// table the profile generator reads, so the published contract and the
     /// enforced behaviour cannot disagree.
     ///
-    /// An unknown profile id yields a permissive handler. Silently muting a
-    /// profile nobody has classified would break existing installations, and
-    /// the table is closed and test-pinned, so this is a compile-time
-    /// concern rather than a runtime surprise.
+    /// An unknown profile id is refused rather than assumed.
+    ///
+    /// This used to read `is_profile_read_only`, which returns `false` for
+    /// anything it cannot classify — correct for a predicate, wrong here,
+    /// because "I do not know this profile" was being turned into "this
+    /// profile may write". The module docs justified that on the grounds
+    /// that an unclassified profile is a compile-time concern; that holds
+    /// for the closed `PROFILE_POSTURES` table, but this function takes a
+    /// runtime `&str`, which is exactly the case the argument misses.
+    ///
+    /// Panicking is the intended outcome. A caller that cannot name the
+    /// profile it is running under has a bug, and starting writable would
+    /// let that bug reach the user's workspace. Refusing to start is loud,
+    /// immediate, and costs nobody but the caller with the bug. The known
+    /// ids in `PROFILE_POSTURES` are unaffected.
     pub fn for_profile(project_root: PathBuf, profile_id: &str) -> Self {
-        let read_only = crate::product::ProfilePosture::is_profile_read_only(profile_id);
-        Self::with_options(project_root, read_only)
+        match crate::product::ProfilePosture::for_profile(profile_id) {
+            Some(posture) => Self::with_options(project_root, posture.is_read_only()),
+            None => panic!(
+                "unknown profile id {profile_id:?}: not one of the published \
+                 profiles ({:?}). Refusing to start rather than assume a \
+                 writable posture. Use `with_options` directly if you \
+                 genuinely need an ad-hoc handler.",
+                crate::product::PROFILE_POSTURES
+                    .iter()
+                    .map(|(id, _)| *id)
+                    .collect::<Vec<_>>()
+            ),
+        }
     }
 
     /// Creates a new CogniCodeHandler with a custom GraphStore (SQLite for persistence)
