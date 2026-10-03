@@ -783,8 +783,22 @@ def test_a_relabelled_rationale_does_not_buy_an_exemption() -> None:
     )
 
 
-def main() -> int:
+def setup() -> None:
+    """Resolve the base and the head measurement before any check reads it.
+
+    This used to live as the first line of `main()`. `main()` is not what
+    the merge gate calls: `run-all-contracts.sh` hands this file to
+    `run_contract_tests.py`, which imports it and calls each `test_`
+    function directly. Without this, `M.head_entries` stayed empty and
+    `test_inventory_is_parsed` reported that the allowlist had no entries
+    -- a measurement that had never been taken, described as a corrupt
+    inventory. The runner calls `setup()` if a module defines it.
+    """
     M.resolve()
+
+
+def main() -> int:
+    setup()
 
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
