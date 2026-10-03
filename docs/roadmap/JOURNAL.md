@@ -11180,3 +11180,282 @@ re-anclados **conserven la semántica** que tenían. Se comprobó que ninguno le
 un workflow como autoridad; no que cada aserción siga significando lo que
 significaba. Eso es revisión conductual, contrato por contrato, y es otra
 unidad con su propia evidencia.
+
+---
+
+## N+80 — Una release que no se podía certificar desde un tag, y un gate que yo mismo rompí
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` · **Commits** `e10dd334`,
+`28353c57` · **Rama** `verify/r0-exit-gate` · **Eje** R1 (coherencia de
+distribución) · **Alcance** publicar v0.101.0 y cerrar lo que bloqueó esa
+publicación. No incluye R2 implementado: solo su ADR medido.
+
+### La incoherencia que había que cerrar primero
+
+MEDIDO sobre `main` = `2c4831ec`, que es exactamente el tag `v0.101.0`:
+
+| Fuente | Versión |
+|---|---|
+| workspace `Cargo.toml` | 0.101.0 |
+| `product/product-manifest.json` | 0.101.0 |
+| tag `v0.101.0` | existe, y está en el remoto (anotado → `2c4831ec`) |
+| `CHANGELOG.md` | v0.101.0 |
+| `README.md` | v0.101.0, en tres sitios |
+| **GitHub Release latest** | **v0.98.1**, del 2026-09-24 |
+| `gh release view v0.101.0` | *release not found* |
+
+`install.sh` sin `COGNICODE_VERSION` resuelve `api/releases/latest`, y ese
+endpoint devuelve v0.98.1 — verificado también con `curl -sSI` sobre
+`/releases/latest`, que redirige a `/releases/tag/v0.98.1`. Una instalación
+nueva recibe un binario **tres minors** por detrás del repositorio, mientras el
+README afirma que "Both channels install the same published release asset".
+
+`v0.99.2` y `v0.100.0` también están tagueados y nunca publicados. `v0.100.0` es
+irrecuperable por la razón de la sección siguiente.
+
+`release-tag-coherence.sh` no lo detectaba, y no por descuido: cierra el
+parentesis **tag ↔ workspace**, que es una propiedad distinta de **existe una
+release publicada**. Son dos preguntas y el gate solo hacía una.
+
+### Por qué v0.100.0 no se publica, medido
+
+En el commit del tag `v0.100.0` (`edd023b3`, #316) existen **dos** lanes:
+`merge-gate.pipeline.kts` y `product-fast.pipeline.kts`. Las lanes de release
+nacieron en `b651774a` (#338) y `d3426966` (#340), después. No hay
+`release-candidate` ni `release` que ejecutar en ese tag, así que "publicar
+v0.100.0 vía la lane" no era una operación sino una frase. La alternativa —
+usar las lanes de hoy sobre un árbol que nunca las contuvo — produciría
+artefactos cuyo commit no incluye la herramienta que los construyó, que es
+exactamente la provenance falsa que R2 existe para impedir.
+
+### El bloqueante real: el preflight no se puede ejecutar desde un tag
+
+La lane murió en **0.3 s** en el stage `clean-clone`:
+
+```
+fatal: Rama remota HEAD no encontrada en upstream origin
+```
+
+Una línea, en `scripts/ci/preflight-clean-clone.sh`:
+
+```bash
+--branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+```
+
+En un checkout detached — que es lo que da `git checkout <tag>`, o sea **como se
+corta una release** — `git rev-parse --abbrev-ref HEAD` imprime la cadena literal
+`HEAD` y **sale con código 0**. El `|| echo main` depende de que el comando
+falle, y no falla. Se pasaba `--branch HEAD` a `git clone`, que busca una rama
+llamada `HEAD`, y el clon moría.
+
+El fallback estaba escrito para cubrir exactamente este caso y no cubría nada:
+un guard que solo se dispara ante un error que no llega a producirse. Un gate
+que solo se puede correr desde una rama es un gate que no sirve para publicar.
+
+El nombre de la rama es una optimización, no un requisito: dos líneas más abajo
+el script hace `git fetch --depth 1 origin $TARGET_SHA` y
+`git checkout $TARGET_SHA`, y eso es lo que fija el commit certificado. Así que
+cuando no hay rama que nombrar, `--branch` se omite. La regla vive en una
+función, `resolve_clone_ref`, llamada por la stage y por el seam de test, porque
+dos copias de una regla es una de ellas equivocada dentro de un mes.
+
+`--print-clone-ref` responde lo mismo y sale, para que un contrato pueda
+ejercitar la resolución sin pagar los 8-15 minutos que el propio preflight
+declara. Va antes de cualquier `log`, porque `log` hace `tee` a stdout y
+contaminaría lo que el contrato lee.
+
+### Dientes, por reversión y por mutación
+
+| Estado | Resultado |
+|---|---|
+| Sin el arreglo | 0 passed, **5 failed** |
+| Con el arreglo | 5 passed, 0 failed |
+| `resolve_clone_ref` siempre vacío | 3 passed, **2 failed** |
+| expansión de array sin guarda | 4 passed, **1 failed** |
+| segunda resolución inline | 4 passed, **1 failed** |
+| suite completa del repo | **112 passed, 0 failed** |
+
+El rojo sin el arreglo **reproduce** el fallo original en vez de aproximarlo: el
+script muere en `Stage 1/7` con `FAIL: git clone falló`, desde un repo temporal,
+en menos de un segundo.
+
+Dos cosas estaban mal antes de que el arreglo estuviera bien. La primera versión
+de `test_the_rule_is_written_once` contaba `--abbrev-ref` en todo el fichero, así
+que fallaba contra el comentario que cita la línea antigua a propósito: un
+linter que falla contra su propia documentación es un linter que se borra en vez
+de arreglarse. Ahora descarta comentarios primero, por el mismo motivo que
+existe `pipeline_authority.strip_line_comments`. Y la primera versión de la
+sonda ejecutaba el script aunque el seam no existiera: el script sin arreglar
+leía `--print-clone-ref` como un SHA, seguía su curso y **clonaba el
+repositorio cinco veces**. Un contrato cuyo estado rojo cuesta más que el gate
+que vigila es un contrato que nadie corre en un PR; ahora el seam se comprueba
+por inspección primero, y el rojo dura 0 s y no crea ni un clon ni un log.
+
+### El incidente: yo rompí la lane editando el script que estaba corriendo
+
+La segunda ejecución de `release-candidate` murió así:
+
+```
+scripts/ci/preflight-clean-clone.sh: línea 181: error de sintaxis cerca del
+elemento inesperado `('
+```
+
+No es un defecto del producto. Es mío. Estaba aplicando el arreglo **en el
+worktree de la release, mientras bash lo tenía abierto en ejecución**. Bash
+guarda el offset de lectura del script; cambiar bytes anteriores desplaza esa
+posición y al volver a leer se encuentra con mi edición a mitad de un
+`syntax`. Es exactamente el riesgo que había identificado dos llamadas antes y
+después ejecuté igual.
+
+Consecuencia adicional: la limpieza del clon de 1.6G no pudo hacerse, porque el
+CWD del script estaba dentro de él y el wrapper de borrado del entorno se niega
+a borrar un directorio que contenga el directorio de trabajo actual. Dos clones
+huérfanos (18 G) quedaron en el volumen hasta que los saqué a la papelera a mano.
+
+La lección operativa es más dura que la técnica: **un worktree de release es
+inmutable mientras su lane corre**, y todo el trabajo de desarrollo va en otro
+sitio. Se puede cambiar el fichero del que se hizo el worktree; el worktree de
+la release, no.
+
+### El entorno, medido, porque las dos cosas que bloqueaban no eran código
+
+**La pierna aarch64 no compilaba.** El stage `toolchain-for-<target>` hace
+`exit 1` si el target no está instalado, y un stage fallido aborta la lane
+entera: no existe "publicar solo x86_64" dentro de la lane. En esta máquina solo
+había `x86_64` y `wasm32`, y no había `aarch64-linux-gnu-gcc` ni `-ld`. Resuelto
+con `rustup target add` y un wrapper `zig cc -target aarch64-linux-gnu` en
+`~/.local/bin`, sin sudo y sin tocar la lane: la lane llama a `cargo build` a
+secas, así que basta con `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`. Sonda:
+un PIE ARM aarch64 real. La trampa: `rustup target add` **fuera** del repo
+instala en el toolchain por defecto y el 1.96.0 pineado se queda sin el target,
+porque `rust-toolchain.toml` solo aplica dentro del árbol.
+
+**`/tmp` es un tmpfs de 48 G con 13 G libres**, y el preflight compila el
+workspace entero en su propio clon. Sin `TMPDIR` apuntando al volumen grande,
+eso se llena. El log del propio preflight lo escribe en `/tmp` por código duro
+(`LOG_FILE="/tmp/preflight-clean-clone.${TIMESTAMP}.log"`), y `/tmp` fue
+recuperado por el sistema durante la sesión: **la evidencia de esa ejecución se
+perdió**. Por eso la segunda ejecución lleva su salida a un fichero durable en
+el volumen, no a un pipe.
+
+### La lane de publicación, leída antes de correrla
+
+Vale la pena porque es la que no dry-runea: `consume-candidate` →
+`candidate-present` → **`re-verify-candidate`** → las dos pruebas negativas
+(`verify-rejects-missing-artifact`, `verify-rejects-altered-artifact`) →
+`create-draft` (**draft**) → `upload-payloads` → **`confirm-uploaded-set`**
+(compara el conjunto subido con `release/*.tar.gz` y falla si no coincide) →
+`upload-manifests` → `provenance` → `publish` → `re-verify-after-upload` →
+`publish-draft` → `verify-as-consumer`.
+
+Dos propiedades que valen: el fallo a mitad deja un **draft**, no una release
+pública; y `confirm-uploaded-set` es la comprobación de que lo publicado es
+exactamente lo producido, que es la misma propiedad que el directorio candidato
+ya daba para los binarios.
+
+Precondición verificada antes de publicarlo: `v0.101.0` está en el remoto como
+tag anotado y desreferencia a `2c4831ec`, el árbol que se está construyendo.
+`create-draft` no pasa `--target`, así que si el tag no estuviera en el remoto la
+lane fallaría ya con la release a medio crear.
+
+### R2: medido, no supuesto
+
+`gh attestation` expone `download`, `trusted-root` y `verify`. **No hay verbo de
+generación.** Eso confirma la afirmación del ADR del cutover con precisión:
+la mitad que consume sobrevivió, la que produce no existe.
+
+Y el hallazgo que no está en ningún diff: el keyless de SLSA no es una función
+de cosign, es un **consumidor de un token OIDC**, y el emisor de ese token era
+Actions. Retirar Actions no quitó un paso: quitó lo único del pipeline que podía
+producir una **identidad verificable**. Cualquier sustituto tiene que responder
+desde fuera de Actions la pregunta que el token respondía, o la provenance
+degrada en silencio de "verificable por cualquiera, sin secreto" a "verificable
+contra una clave que tenemos".
+
+La ruta medida, en este host, cosign 3.1.3, con una clave desechable:
+
+```
+cosign attest-blob --key cosign.key --bundle att.bundle.json \
+    --predicate predicate.json --type https://slsa.dev/provenance/v1 artifact.bin
+Wrote bundle to file att.bundle.json
+
+cosign verify-blob --key cosign.pub --bundle att.bundle.json artifact.bin
+Verified OK
+```
+
+Y el exit gate de R2, comprobado y no afirmado:
+
+```
+subject.digest.sha256 : 0e02297fb55098e1f7c96e078707d0c4048d0dd3bda0fa2074bb7552cdb592de
+artifact sha256sum    : 0e02297fb55098e1f7c96e078707d0c4048d0dd3bda0fa2074bb7552cdb592de
+MATCH                 : True
+```
+
+Offline, sin transparency log, sin registry. Tres detalles de cosign 3.1.3 que
+solo aparecen al ejecutar: exige `--bundle`; el `verificationMaterial` del bundle
+decide cómo verificar, así que uno firmado con clave acepta `--key` **y nada
+más**; y el digest del subject es el sha256 **en hex, verbatim** — decodificarlo
+como base64, que es una suposición razonable, produce un desajuste que parece un
+fallo de firma y no lo es. Los tres los encontré por dos de mis errores, no
+leyendo.
+
+`docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` queda **`proposed`**, no
+aceptado, porque lo que queda no es una decisión técnica: es **dónde vive la
+clave privada**. El ADR recomienda la ruta de clave cosign y pone las tres
+opciones de custodia con lo que cada una arriesga. Perder la clave deja sin
+verificar, como firmadas con ella, todas las attestations futuras; esa decisión
+no es del agente.
+
+Un apunte de política que costó un paso: `docs/adr/` está en `.gitignore` por
+decisión declarada, y los ADRs se añaden con `git add -f`, con un contrato
+(`gitignore_negation_contract.rs`, 5/5) que fija esa política. El error de
+`git add` sin `-f` no era un bug del repo.
+
+### Lección 187
+
+Un guard que depende de un error para activarse, y cuyo error no se produce, no
+es un guard: es prosa con forma de condición. El `|| echo main` estaba ahí para
+el checkout detached y nunca se ejecutó, porque `--abbrev-ref` sale con 0. Un
+fallback se lee como una garantía, y lo que hay que preguntarse es **qué
+exactamente lo dispara**, no qué dice el comentario que lo acompaña.
+
+### Lección 188
+
+Un gate que solo se puede ejecutar desde una rama es un gate que no sirve para
+su propósito. Este certificaba "el repositorio compila desde un clon limpio" y
+no se podía ejecutar desde un tag, que es el estado en que se corta una release.
+La propiedad que había que comprobar no era "nombra una rama" sino **"la
+referencia que el clon va a nombrar existe en cualquier estado del checkout"**,
+y esa formulación admite la corrección sin trucos: cuando no hay rama que
+nombrar, se omite el flag y el clon usa el HEAD por defecto.
+
+### Lección 189
+
+Un contrato cuyo estado rojo es más caro que el gate que vigila no se corre en un
+PR. El mío clonaba el repositorio cinco veces, cada una de 1.6G, para describir
+un fallo que se ve leyendo un fichero. La corrección —comprobar el seam por
+inspección antes de ejecutarlo— no es una optimización: es lo que hace que el
+contrato sea utilizable. Un test que en verde tarda un segundo y en rojo media
+hora enseña a la gente a no correr tests.
+
+### Lección 190
+
+Identificar un riesgo no es haberlo identificado. Edité un script que bash tenía
+abierto en ejecución porque el arreglo era ese mismo fichero, y el daño no fue
+teórico: mató la lane con un error de sintaxis en una línea arbitraria. El
+worktree de una release es **inmutable mientras su lane corre**; el trabajo va en
+otro árbol. Y la segunda lección del mismo incidente: la evidencia de esa
+ejecución vivía en `/tmp`, un tmpfs que el sistema recuperó durante la sesión.
+Un artefacto de medición en almacenamiento volátil no es evidencia, y cuando se
+pierde no hay forma de reconstruirlo.
+
+### Lo que NO se ejecuta aquí
+
+Esta unidad publica v0.101.0 sin attestation — decisión explícita del
+maintainer, con el hueco de R2 medido y documentado en su ADR, no cerrado. No
+implementa la generación de provenance ni su contrato de tres digests: dependen
+de la decisión de custodia, que no es del agente. No arregla `sddk lint`, que
+arrastra 55 errores bajo `sandbox/repos/` por la misma clase de defecto que ya
+se corrigió en el invariante de cero Actions: un escáner que trata checkouts de
+terceros no versionados como si fueran del repositorio. No toca los ADRs
+archivados de PRF ni reabre ninguna `C#` firmada.
