@@ -19,10 +19,33 @@
 #
 # This script is the explicit bridge between those two contracts:
 #
-# 1. It refuses to start unless the only files present in the staging
-#    tree are the `payloads-*` lane dirs (no stray READMEs, no
-#    pre-existing flattened payloads that would silently overwrite
-#    fresh ones, no orphan SBOMs at the root).
+# 1. It refuses to start unless the staging root holds only the
+#    `payloads-*` lane directories and the portable skill bundle
+#    tarballs (`*-*.tar.gz`) that the `skill-bundles` stage produced
+#    in THIS run. Anything else at the root is refused: stray
+#    READMEs/Markdown, accidental top-level uploads, a previous
+#    flattened run that left orphan tarballs, or orphan SBOMs. The
+#    downstream release factory would silently include such files in
+#    the SHA256SUMS and break reproducibility.
+#
+#    Who owns the root, and why the guard is still here. Before
+#    2026-10-03 the root accumulated: a previous run's flattened
+#    payloads, its SBOMs, and its skill bundles all sat there, and this
+#    guard was the only thing that noticed. `skill-bundles` now clears
+#    the loose files at the root before it writes its own bundles, and
+#    `package-$target` creates its lane directory from scratch, so the
+#    root is clean by construction. The guard therefore no longer
+#    carries a property on its own — it is the second line, and it is
+#    kept because the cost of a false negative here is a release built
+#    from another run's bytes.
+#
+#    The `*-*.tar.gz` passthrough exists because the skill bundles ARE
+#    legitimate root content, not an exception: the flatten script
+#    cannot tell a bundle from a payload by name, which is why this is
+#    a count and not a presence test. MEDIDO 2026-10-03 (N+86): a
+#    payload of a previous release and a portable skill bundle have
+#    the same shape, so the two are only distinguishable by the count
+#    the whole staging tree must add up to.
 # 2. It scans each `payloads-<platform>/` dir for the canonical 3
 #    component tarballs (cogh, cognicode, cognicode-mcp) plus the 3
 #    matching CycloneDX SBOMs (crates/<component>-<platform>.cdx.json).
@@ -68,11 +91,13 @@ TIER1_TRIPLES=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
 COMPONENTS=(cogh cognicode cognicode-mcp)
 
 # Reject any file at the staging root other than the lane dirs and
-# pre-staged portable skill bundle tarballs. This catches: stray
-# READMEs/Markdown, accidental top-level uploads, or a previous
-# flattened run that left orphan tarballs at the root. The downstream
-# release factory would silently include such files in the SHA256SUMS
-# and break reproducibility.
+# the portable skill bundle tarballs this run produced. `skill-bundles`
+# clears the root's loose files before writing its bundles, so nothing
+# from a previous run should reach here; this guard is the second
+# line, and what it still catches is a stray README/Markdown, an
+# accidental top-level upload, or a root the owner did not clean. The
+# downstream release factory would silently include such files in the
+# SHA256SUMS and break reproducibility.
 shopt -s nullglob
 for entry in "${STAGING}"/*; do
   if [[ -f "${entry}" ]]; then

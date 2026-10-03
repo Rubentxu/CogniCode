@@ -318,6 +318,109 @@ def test_no_tag_visibility_degrades_instead_of_failing() -> None:
     assert named_tags_problems("nombra v0.1.2 y v0.3.4\n", "0.101.2", set()) == []
 
 
+# --- la mitad que comparaba la version y no los bytes ------------------------
+#
+# MEDIDO 2026-10-03. `release-tag-coherence.sh` comparaba la version del
+# workspace contra el nombre del tag y ahi terminaba. Con el tag `v0.101.6`
+# publicado y el workspace todavia en 0.101.6, `release-tag-coherence.sh
+# v0.101.6 HEAD` respondio OK con HEAD dos commits por delante del tag. La
+# version cuadraba y los bytes no: exactamente el incidente que el gate dice
+# existir para cerrar, con la mitad de la comparacion sin hacer.
+#
+# Estos contratos ejecutan el gate real contra un tag y un commit de este
+# repositorio, porque un gate que solo se puede razonar no se puede vigilar.
+
+COHERENCE = REPO_ROOT / "scripts" / "ci" / "release-tag-coherence.sh"
+
+
+def coherence_rc(*args: str) -> tuple[int, str]:
+    done = subprocess.run(
+        ["bash", str(COHERENCE), *args],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return done.returncode, done.stdout + done.stderr
+
+
+def _a_published_tag() -> str:
+    """El tag mas reciente que este clon puede resolver a un commit."""
+    listed = subprocess.run(
+        ["git", "tag", "--list", "--sort=-creatordate"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    for name in listed.stdout.split():
+        peeled = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{name}^{{commit}}"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if peeled.returncode == 0 and peeled.stdout.strip():
+            return name
+    raise AssertionError("este clon no resuelve ningun tag, y el contrato no puede medirse")
+
+
+def test_the_tag_commit_itself_passes_coherence() -> None:
+    """El caso bueno, primero: el commit del tag tiene que pasar."""
+    tag = _a_published_tag()
+    rc, output = coherence_rc(tag, f"{tag}^{{commit}}")
+    assert rc == 0, f"el commit del propio tag {tag} no pasa el gate:\n{output}"
+
+
+def test_a_commit_beyond_the_tag_is_refused_even_with_the_right_version() -> None:
+    """La brecha, medida contra el gate real y sin depender del estado del HEAD.
+
+    Importa por que NO se prueba con HEAD. En el momento en que se corta el tag,
+    HEAD ES el commit del tag, asi que un contrato que usara HEAD haria `return`
+    y no comprobaria nada: pasaria en verde con el gate roto. Este usa un commit
+    que se sabe distinto —el padre del tag— de modo que la asercion se ejecuta
+    siempre, o no que HEAD haya avanzado.
+
+    Y el orden importa: la identidad se comprueba ANTES que la version. Al pasar
+    un commit cuya version es distinta, un gate que solo mirase la version
+    fallaria igualmente, pero por el motivo equivocado. Por eso se exige el
+    mensaje de identidad: sin el, esta comprobacion no distingue las dos
+    mitades del gate.
+    """
+    tag = _a_published_tag()
+    tagged = subprocess.run(
+        ["git", "rev-parse", f"{tag}^{{commit}}"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    parent = subprocess.run(
+        ["git", "rev-parse", f"{tagged}^"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if parent == tagged:
+        raise AssertionError("el tag no tiene padre, y el caso no se puede construir")
+
+    rc, output = coherence_rc(tag, parent)
+    assert rc != 0, f"el gate acepto un commit que no es el de {tag}:\n{output}"
+    assert "is not the commit of tag" in output, (
+        "el fallo no es de identidad del commit, con lo que este contrato no "
+        f"distingue la mitad que falta.\n{output}"
+    )
+
+
+def test_an_unresolvable_tag_is_a_failure_not_a_skip() -> None:
+    """Un tag que no existe no es una respuesta ausente, es un fallo."""
+    rc, output = coherence_rc("v0.0.0-nonexistent", "HEAD")
+    assert rc == 1, f"un tag inexistente paso el gate:\n{output}"
+    assert "cannot resolve tag" in output, output
+
+
 def main() -> int:
     tests = [value for name, value in sorted(globals().items()) if name.startswith("test_")]
     failures: list[str] = []

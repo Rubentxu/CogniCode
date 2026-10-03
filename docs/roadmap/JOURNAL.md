@@ -12682,3 +12682,64 @@ release no está publicada— y **rompió** `test_release_truth_convergence`, qu
 preexistente a la divergencia y define la forma de esa sección. Se ajustó a la
 forma que el contrato exige, con el matiz dentro de la propia viñeta: la
 autoridad es el contrato, no la redacción.
+
+## N+89 — El gate de Release Truth comparaba la versión y no los bytes
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (antes de la lane).
+
+Aparece al traer `64370bbb`, que fue pedido **después** de que `v0.101.6`
+estuviera tagueado y empujado. El tag no lo contiene, y al medirlo salió esto:
+
+    tag v0.101.6 -> 935654ce
+    HEAD          -> eae6d330
+    $ release-tag-coherence.sh v0.101.6 HEAD
+    OK: tag v0.101.6 ↔ workspace.version 0.101.6      # rc=0
+
+**El gate daba `OK` con el árbol dos commits por delante del tag.** Comparaba
+`0.101.6` contra `v0.101.6` y ahí acababa: nunca comprobaba que el SHA fuera el
+commit que el tag nombra. Y ningún contrato del repositorio lo cubría, porque un
+contrato que pasara un SHA distinto del tag vería un fallo de versión y lo
+tomaría por el acierto que parecía.
+
+Es exactamente el incidente que el gate dice existir para cerrar, con la mitad
+de la comparación sin hacer. Un tag nombra **un** commit: si el build corre
+sobre otro, lo que se publica lleva una versión y no el código que se certificó
+para ella. Los números coinciden y los bytes no, que es la forma que toma aquí
+el fallo de `v0.98.0`.
+
+La comprobación va **antes** que la de versión, y por una razón que también es
+un contrato: si fuera después, un gate que solo mirase la versión fallaría
+igual, pero por el motivo equivocado, y el contrato no distinguiría las dos
+mitades. Por eso el test exige el mensaje de identidad y no solo el código de
+salida.
+
+### El contrato que no depende del estado del repo
+
+El primer contrato que escribí usaba `HEAD` como el commit distinto del tag.
+Cuando `HEAD` **es** el tag —que es justo después de cortar— hacía `return` y no
+comprobaba nada: verde con el gate roto, que es la forma más caro de tener un
+contrato. Lo que se ejecuta siempre es el **padre** del tag, que se sabe
+distinto por construcción. Mutado el bloque de identidad, el contrato falla
+diciendo que el fallo no es de identidad, que es exactamente lo que tiene que
+decir; restaurado, verde.
+
+### Lección 211
+
+Un gate que se enuncia sobre una propiedad tiene que comprobar **toda** la
+propiedad, y la parte que se omite no es la menos importante: aquí la versión se
+comprobaba y los bytes no, de modo que el gate era verde exactamente en el caso
+que existe para evitar. Lo delata una pregunta que no es de este repo: **¿qué
+afirmaba el nombre del script y no comprobaba?** El nombre dice *coherencia*
+entre tag y workspace, y solo comparaba la versión. Y un contrato que pasa
+argumentos variables no demuestra nada: un contrato que constructa su propio caso
+difiere de uno que hereda el caso del repositorio en el momento de ejecutarse.
+
+### Lo que este arreglo cambia en la lane
+
+`release-candidate.pipeline.kts` es el único llamador en producción, y llama
+`release-tag-coherence.sh "$RELEASE_TAG" "$RELEASE_SHA"`. Con este arreglo, una
+lane que intente construir desde un commit que no sea el del tag falla **antes**
+de gastar el build, nombrando los dos commits. Es la lane la que ha estado a
+punto de producir un candidato mal etiquetado, y ahora lo dice en la stage de
+coherencia, que es la primera que corre.
