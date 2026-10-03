@@ -1685,7 +1685,7 @@ async fn call_tool_handler(
 
                 // M2.1: Record graph statistics after successful build
                 if output.success {
-                    let graph = ctx.analysis_service.get_project_graph();
+                    let graph = ctx.analysis_service().get_project_graph();
                     let symbols = graph.symbol_count() as u64;
                     let edges = graph.edge_count() as u64;
                     let health_score =

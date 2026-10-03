@@ -227,10 +227,16 @@ pub struct HandlerContext {
     /// decide what counts as valid, so this is handed out by reference and
     /// never replaced.
     validator: Arc<InputValidator>,
-    pub analysis_service: Arc<AnalysisService>,
-    pub refactor_service: Arc<RefactorService>,
+    /// ST-04: read through `analysis_service()`.
+    analysis_service: Arc<AnalysisService>,
+    /// ST-04: read only from modules inside `handlers`, which see this
+    /// private field directly. No accessor exists because no caller outside
+    /// the module needs one.
+    refactor_service: Arc<RefactorService>,
     compressor: Arc<ContextCompressorService>,
-    pub semantic_search: Arc<SemanticSearchService>,
+    /// ST-04: read only from modules inside `handlers`; see
+    /// `refactor_service` above.
+    semantic_search: Arc<SemanticSearchService>,
     symbol_code: Arc<SymbolCodeService>,
     /// ST-04: who is on the other end, if anyone announced themselves.
     /// One value, not three independently-optional fields — see
@@ -241,11 +247,22 @@ pub struct HandlerContext {
     /// Tracks symbol access hotness for AI relevance learning
     symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
-    pub graph_store: Option<Arc<dyn GraphStore>>,
+    /// ST-04: read through `get_graph_store()`, which is the only reader
+    /// outside this module and which applies the memoized fallback. Direct
+    /// access to the configured value stays inside `handlers` — modules
+    /// nested here see the private field, and the tests that need to tell
+    /// "an explicit store was set" apart from "the fallback resolved" read
+    /// it from in here on purpose. A caller outside the module has no way to
+    /// observe the absence of a configured store, and does not need one:
+    /// the fallback is the contract, not the configuration.
+    graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
-    pub file_ops_service:
+    /// ST-04: read through `file_ops_service()`. The accessor returns a
+    /// borrow, not the `Option` itself, so the service this context was
+    /// built with cannot be replaced from outside the module.
+    file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
@@ -272,9 +289,11 @@ pub struct HandlerContext {
     /// `handle_smart_search`). Default `Duration::from_secs(60)`
     /// preserves the production behavior; tests can override it
     /// via `HandlerContextBuilder::with_sub_handler_timeout` to force
-    /// timeout paths in seconds rather than minutes. The field is part
-    /// of the public HandlerContext API so production callers that build
-    /// a context can tighten the budget explicitly if needed.
+    /// timeout paths in seconds rather than minutes. Read through
+    /// `sub_handler_timeout()`. The field stopped being part of the public
+    /// `HandlerContext` API in ST-04: a context's request budget is fixed at
+    /// build time, so a caller cannot lengthen or shorten it once dispatch has
+    /// started.
     sub_handler_timeout: std::time::Duration,
 }
 
@@ -323,6 +342,33 @@ impl HandlerContext {
     /// than a child, and cannot see private fields.
     pub fn symbol_code(&self) -> &Arc<SymbolCodeService> {
         &self.symbol_code
+    }
+
+    /// ST-04: the analysis service, by reference.
+    ///
+    /// Slice 7 needed this one. `analysis_service` is read from
+    /// `consolidated_handlers` and `aix_handlers` — both children of
+    /// `handlers`, so they see the private field with no help — and from
+    /// `rmcp_adapter`, which is a sibling and does not. The earlier estimate
+    /// of "~75 access sites" for this field counted every textual mention
+    /// across the crate; the number of sites that actually needed changing
+    /// is one.
+    pub fn analysis_service(&self) -> &Arc<AnalysisService> {
+        &self.analysis_service
+    }
+
+    /// ST-04: the shared file-operations service, if one was configured.
+    ///
+    /// Returned as `&Option<..>` rather than `Option<&..>` so the call sites
+    /// keep the shape they had against a public field
+    /// (`ctx.file_ops_service().clone().unwrap_or_else(..)`) while still
+    /// being unable to replace what the context was built with. A borrow
+    /// also cannot be held past the `&self` that produced it, which a
+    /// `clone()` accessor would not have prevented.
+    pub fn file_ops_service(
+        &self,
+    ) -> &Option<Arc<crate::application::services::file_operations::FileOperationsService>> {
+        &self.file_ops_service
     }
 
     /// ST-04: the workspace root, as `&Path` so callers cannot re-point the
@@ -5988,6 +6034,68 @@ mod tests {
         );
     }
 
+    /// Slice 7 added two accessors and left three fields without one. This
+    /// pins the two that exist, because a wrong body here would compile and
+    /// the callers would not notice: `file_ops_service` has exactly one
+    /// possible value per context, so returning the wrong one still gives
+    /// the handlers a working service, and `analysis_service()` feeds
+    /// `get_project_graph()`, which is not covered by a lib test at all.
+    #[tokio::test]
+    async fn t_st04_service_accessors_hand_back_the_service_the_context_was_built_with() {
+        use crate::application::services::file_operations::FileOperationsService;
+        use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
+        use crate::infrastructure::verification::RustVerifier;
+        use crate::interface::mcp::security::InputValidator;
+
+        let dir = tempfile::tempdir().unwrap();
+
+        // No file-ops service configured: the accessor must report absence
+        // rather than inventing a default. Call sites rely on this to build
+        // their own service.
+        let bare = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .build();
+        assert!(
+            bare.file_ops_service().is_none(),
+            "a context built without a file-ops service must not hand one out"
+        );
+
+        // Built the way `rmcp_adapter` builds it, which is the only way it is
+        // ever built in production.
+        let root = dir.path().to_path_buf();
+        let validator = Arc::new(InputValidator::new().with_workspace(vec![root.clone()]));
+        let service = Arc::new(FileOperationsService::new(
+            root.to_string_lossy().as_ref(),
+            validator,
+            Arc::new(RustVerifier::new()),
+            Arc::new(TreeSitterSyntaxAnalysis::new()),
+        ));
+        let configured = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_file_ops_service(service.clone())
+            .build();
+        assert!(
+            Arc::ptr_eq(
+                configured
+                    .file_ops_service()
+                    .as_ref()
+                    .expect("just configured"),
+                &service
+            ),
+            "file_ops_service() must hand back the instance the context was built \
+             with, not a rebuild of it"
+        );
+
+        // `analysis_service` has a builder default, so the assertion is that
+        // the accessor and the field are the same value on every call.
+        let first = configured.analysis_service();
+        let second = configured.analysis_service();
+        assert!(
+            Arc::ptr_eq(first, second),
+            "analysis_service() must not rebuild the service per call"
+        );
+    }
+
     // ST-04 KPI ratchet: `METRICS-AND-ACCEPTANCE.md` scores ST-04 as
     // "campos públicos HandlerContext → tendencia a 0". A prose target that
     // nothing measures is the same thing ST-02's ratchet found drift for, so
@@ -6039,12 +6147,24 @@ mod tests {
     // nothing. `symbol_code` is also read by `rmcp_adapter`, a sibling of
     // `handlers` rather than a child, and cannot see private fields.
     //
-    // The five left are the ones that do have cross-module writers:
-    // `analysis_service`, `refactor_service`, `semantic_search`, `graph_store`
-    // and `file_ops_service`. Each needs its own decision, not a sweep.
+    // Slice 7 is 5 -> 0, and it closes ST-04's field exposure: the last five
+    // are private, and two accessors were the whole cost. `refactor_service`
+    // and `semantic_search` are read only from `handlers` children, so Rust's
+    // child-reads-parent rule covers them with no accessor at all. `graph_store`
+    // already had `get_graph_store()`. That leaves `analysis_service` and
+    // `file_ops_service`, each read by exactly one sibling, which is why
+    // this slice is seven call sites rather than the ~75 that a textual
+    // count of `analysis_service` across the crate implied. No setter was
+    // needed: all six assignments to these fields are inside
+    // `HandlerContextBuilder`, and nothing outside the module mutates a
+    // built context.
+    //
+    // The count is now 0, and that is a real floor rather than a baseline:
+    // a new public field has to be argued for in the same commit that adds
+    // it, in a test whose only job is to notice.
     #[test]
     fn t_st04_handler_context_public_field_count_is_ratcheted() {
-        const CURRENT_PUBLIC_FIELDS: usize = 5;
+        const CURRENT_PUBLIC_FIELDS: usize = 0;
 
         let source = include_str!("mod.rs");
         let start = source
