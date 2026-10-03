@@ -186,8 +186,16 @@ esac
 """
 
 
-def run_skill_stage(mode: str) -> subprocess.CompletedProcess:
-    """Ejecuta el cuerpo real de `skill-bundles` con un release de mentira."""
+def run_skill_stage(
+    mode: str, *, stale_root: bool = False, keep_lane_dir: bool = False
+) -> subprocess.CompletedProcess:
+    """Ejecuta el cuerpo real de `skill-bundles` con un release de mentira.
+
+    `stale_root` siembra en la raiz de `staging/` lo que deja una corrida
+    anterior: el aplanado copia ahi sus payloads y sus SBOM, y la copia se
+    queda. `keep_lane_dir` siembra un directorio `payloads-*`, que en una lane
+    real acaba de producir `package-$target` en ESTA corrida.
+    """
     text = CANDIDATE.read_text(encoding="utf-8")
     body = render(
         extract_stage_body(text, "skill-bundles"), VERSION, TARGET, PLATFORM
@@ -207,6 +215,17 @@ def run_skill_stage(mode: str) -> subprocess.CompletedProcess:
             skill.mkdir(parents=True)
             (skill / "manifest.yaml").write_text("name: " + bundle + "\n", encoding="utf-8")
         (root / "staging").mkdir()
+        if stale_root:
+            # Lo que deja una corrida anterior en la raiz de staging: el
+            # aplanado copia ahi los payloads y los SBOM, y la copia se queda.
+            (root / "staging" / "cog-x86_64-unknown-linux-gnu.cdx.json").write_bytes(b"{}\n")
+            (root / "staging" / "cogh-0.99.99-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"x")
+        if keep_lane_dir:
+            # `package-$target` deja el directorio de la lane, y lo ha producido
+            # ESTA corrida unas stages antes: limpiarlo seria tirar el build.
+            lane_dir = root / "staging" / f"payloads-{PLATFORM}" / "dist"
+            lane_dir.mkdir(parents=True)
+            (lane_dir / "cogh-0.101.3-x86_64-unknown-linux-gnu.tar.gz").write_bytes(b"this-run")
 
         script = root / "skill-stage.sh"
         script.write_text(
@@ -233,6 +252,14 @@ def run_skill_stage(mode: str) -> subprocess.CompletedProcess:
         result.staged = sorted(
             p.name for p in (root / "staging").glob("*.tar.gz")
         )
+        result.stale_left = sorted(
+            p.name
+            for p in (root / "staging").iterdir()
+            if p.is_file() and p.suffix == ".json"
+        )
+        result.lane_dir_kept = (
+            root / "staging" / f"payloads-{PLATFORM}" / "dist"
+        ).is_dir()
         return result
 
 
@@ -388,6 +415,50 @@ def test_a_stale_lane_directory_does_not_count_as_production() -> None:
     assert done.produced == expected, (
         f"la lane debe contener solo lo que esta ejecucion produjo.\n"
         f"obtenido: {done.produced}\nstdout:\n{done.stdout}"
+    )
+
+
+def test_the_staging_root_does_not_carry_the_previous_run() -> None:
+    """MEDIDO 2026-10-03, en la lane de v0.101.5.
+
+    La corrida anterior si llego a `generate`, y el aplanado copia los payloads
+    y los SBOM de `staging/payloads-<plataforma>/` a la raiz de `staging/`. La
+    copia se queda. En la corrida siguiente, el propio aplanado rechaza su
+    salida de antes:
+
+        ::error::unexpected file at staging root:
+        cogh-aarch64-unknown-linux-gnu.cdx.json
+
+    y la lane cae en `payloads`, dos stages despues de haber exitado bien.
+    32fb1ff6 habia limpiado el directorio de la lane; lo que quedaba era la
+    raiz. El aplanado tiene razon en rechazar un fichero que no reconoce —es un
+    orphan de otra corrida, no parte de este candidato— asi que el arreglo no es
+    relajar esa guarda sino no dejar que exista el fichero.
+    """
+    done = run_skill_stage("ok", stale_root=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stale_left == [], (
+        f"la raiz de staging arrastra ficheros de la corrida anterior: "
+        f"{done.stale_left}"
+    )
+    expected = sorted(f"{b}-{VERSION}.tar.gz" for b in ("cognicode", "cognicode-mcp"))
+    assert done.staged == expected, f"los bundles siguen prepping:\n{done.staged}"
+
+
+def test_cleaning_the_root_does_not_throw_away_this_runs_build() -> None:
+    """El otro lado del mismo arreglo, que es donde puede hacer dano.
+
+    `package-$target` corre unas stages ANTES que `skill-bundles` y deja su
+    directorio en `staging/payloads-<plataforma>/`. Limpiar la raiz para quitar
+    un residuo de una corrida vieja no puede llevarse por delante lo que esta
+    corrida acaba de construir: eso seria arreglar un arbol sucio tirando el
+    trabajo del build.
+    """
+    done = run_skill_stage("ok", stale_root=True, keep_lane_dir=True)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.lane_dir_kept, (
+        "el directorio payloads-* lo ha producido package-$target en ESTA "
+        "corrida; la limpieza de la raiz no puede borrarlo"
     )
 
 
