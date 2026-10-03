@@ -184,9 +184,9 @@ pub fn generate_release(
         let src = staging.join(&name);
         anyhow::ensure!(
             src.is_file(),
-            "published skill bundle `{}` has no payload at {}; stage it via \
-             `just bundle-skills` — a release must not declare bundles it \
-             does not ship",
+            "published skill bundle `{}` has no payload at {}; it is staged by \
+             the candidate lane's `skill-bundles` stage (or `just bundle-skills` \
+             outside it) — a release must not declare bundles it does not ship",
             spec.id,
             src.display()
         );
