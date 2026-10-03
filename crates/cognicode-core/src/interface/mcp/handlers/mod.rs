@@ -218,8 +218,15 @@ use tracing::info;
 /// Context passed to all handlers containing shared services
 #[derive(Clone)]
 pub struct HandlerContext {
-    pub working_dir: PathBuf,
-    pub validator: Arc<InputValidator>,
+    /// The workspace root every path in this context is resolved against.
+    /// ST-04: read through `working_dir()`; the canonicalized value cannot
+    /// be swapped after construction, because a context whose root moved
+    /// underneath it would resolve two identical paths differently.
+    working_dir: PathBuf,
+    /// ST-04: read through `validator()`. Handlers validate; they do not
+    /// decide what counts as valid, so this is handed out by reference and
+    /// never replaced.
+    validator: Arc<InputValidator>,
     pub analysis_service: Arc<AnalysisService>,
     pub refactor_service: Arc<RefactorService>,
     pub compressor: Arc<ContextCompressorService>,
@@ -304,6 +311,17 @@ impl HandlerContext {
     /// ST-04: the per-context sub-handler timeout for composite tools.
     pub fn sub_handler_timeout(&self) -> std::time::Duration {
         self.sub_handler_timeout
+    }
+
+    /// ST-04: the workspace root, as `&Path` so callers cannot re-point the
+    /// context at another tree by mutating what they were handed.
+    pub fn working_dir(&self) -> &Path {
+        &self.working_dir
+    }
+
+    /// ST-04: the validator this context enforces with, by reference.
+    pub fn validator(&self) -> &Arc<InputValidator> {
+        &self.validator
     }
 
     /// ST-04: the configured log level for this context.
@@ -5801,6 +5819,36 @@ mod tests {
         }
     }
 
+    // ST-04 slice 5. `working_dir` and `validator` lost `pub`. Their readers
+    // were all reads — `clone`, `display`, `to_string_lossy` — including
+    // `cognicode-mcp/src/server.rs`, a different crate, so accessors were
+    // enough and no setter was needed. This asserts the values a handler
+    // actually depends on still arrive intact through the accessors.
+    #[test]
+    fn t_st04_working_dir_and_validator_are_readable_through_accessors() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_validator(crate::interface::mcp::security::InputValidator::new())
+            .build();
+
+        // The root is canonicalized at build time, so comparing against the
+        // raw temp path would be wrong on any platform where the temp dir is
+        // itself a symlink.
+        assert_eq!(
+            ctx.working_dir(),
+            dir.path().canonicalize().unwrap().as_path(),
+            "the accessor must hand out the same root the builder canonicalized"
+        );
+        // Reading it twice must not be able to drift: `working_dir()` returns
+        // `&Path`, so there is no owned copy for a caller to mutate.
+        assert_eq!(ctx.working_dir(), ctx.working_dir());
+
+        // The validator is handed out by reference, so the same Arc every
+        // time — a caller cannot substitute a laxer one mid-flight.
+        assert!(Arc::ptr_eq(ctx.validator(), ctx.validator()));
+    }
+
     // ST-04 slice 3: `read_only` and `cancellation_token` lost `pub`, which
     // required `rmcp_adapter.rs` to stop reassigning the finished context.
     // It configured both by hand — `ctx.read_only = Arc::new(...)` after
@@ -5934,9 +5982,17 @@ mod tests {
     // `rmcp_adapter` used to reassign the whole `Arc` after building, and it
     // now configures through `with_read_only` instead, so a live handler can
     // no longer be flipped into or out of read-only.
+    //
+    // Slice 5 is 11 -> 9: `working_dir` and `validator` are private behind
+    // `working_dir()` and `validator()`. Both were read-only everywhere —
+    // including from `cognicode-mcp/src/server.rs`, another crate — so
+    // neither needed a setter, only accessors. `working_dir()` returns
+    // `&Path` rather than `&PathBuf` on purpose: handing back the owned
+    // `PathBuf` would let a caller mutate the root through it, which is the
+    // same class of hole `read_only` had.
     #[test]
     fn t_st04_handler_context_public_field_count_is_ratcheted() {
-        const CURRENT_PUBLIC_FIELDS: usize = 11;
+        const CURRENT_PUBLIC_FIELDS: usize = 9;
 
         let source = include_str!("mod.rs");
         let start = source

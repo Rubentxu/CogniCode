@@ -47,8 +47,8 @@ pub async fn handle_read_file(
 ) -> HandlerResult<ReadFileOutput> {
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -103,8 +103,8 @@ pub async fn handle_write_file(
 ) -> HandlerResult<WriteFileOutput> {
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -156,8 +156,8 @@ pub async fn handle_edit_file(
 ) -> HandlerResult<EditFileOutput> {
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -214,8 +214,8 @@ pub async fn handle_search_content(
 ) -> HandlerResult<SearchContentOutput> {
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -270,8 +270,8 @@ pub async fn handle_list_files(
 ) -> HandlerResult<ListFilesOutput> {
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
@@ -331,8 +331,8 @@ pub async fn handle_retrieve_and_verify(
 
     let service = ctx.file_ops_service.clone().unwrap_or_else(|| {
         Arc::new(FileOperationsService::new(
-            ctx.working_dir.to_string_lossy().as_ref(),
-            ctx.validator.clone(),
+            ctx.working_dir().to_string_lossy().as_ref(),
+            ctx.validator().clone(),
             Arc::new(RustVerifier::new()),
             Arc::new(
                 crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),

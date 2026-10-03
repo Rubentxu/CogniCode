@@ -1904,8 +1904,8 @@ async fn call_tool_handler(
                     serde_json::from_value(arguments.into())?;
                 let output = crate::interface::mcp::handlers::handle_get_symbol_code(
                     ctx.symbol_code.clone(),
-                    ctx.validator.clone(),
-                    ctx.working_dir.clone(),
+                    ctx.validator().clone(),
+                    ctx.working_dir().to_path_buf(),
                     input,
                 )
                 .await?;
@@ -2567,7 +2567,7 @@ mod tests {
 
         // All handlers should have valid state
         for handler in handlers {
-            assert!(handler.ctx.working_dir.to_string_lossy().contains("test"));
+            assert!(handler.ctx.working_dir().to_string_lossy().contains("test"));
             let info = handler.get_info();
             assert_eq!(info.server_info.name, "cognicode");
         }
@@ -2709,7 +2709,13 @@ mod tests {
     fn test_cognicode_handler_creation() {
         let handler = CogniCodeHandler::new(PathBuf::from("/tmp/test"));
         // working_dir is canonicalized so may differ from input path
-        assert!(handler.ctx.working_dir.to_string_lossy().ends_with("test"));
+        assert!(
+            handler
+                .ctx
+                .working_dir()
+                .to_string_lossy()
+                .ends_with("test")
+        );
     }
 
     #[test]

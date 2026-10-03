@@ -90,7 +90,7 @@ async fn metrics_handler(
 async fn watch_handler(
     State((ctx, _registry)): State<(Arc<HandlerContext>, Arc<Registry>)>,
 ) -> impl IntoResponse {
-    let workspace = ctx.working_dir.display().to_string();
+    let workspace = ctx.working_dir().display().to_string();
     Json(serde_json::json!({
         "status": "active",
         "workspace": workspace,
