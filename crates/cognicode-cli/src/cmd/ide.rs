@@ -1703,7 +1703,21 @@ components:
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // MEDIDO 2026-10-03. Esta test leia el HOME del proceso sin `#[serial]`, y
+    // sus vecinas de este mismo modulo lo escriben y lo restauran. MEDIDO: con
+    // el bin completo paso 3 de 3 veces, y fallo una vez dentro de la lane de
+    // v0.101.5, con
+    //
+    //     assertion failed: p.ends_with(".claude")
+    //
+    // El resultado depende de si otra test esta escribiendo HOME en ese
+    // momento, no de lo que esta comprueba. Una test cuya correccion depende de
+    // como se programe no es una test: es una loteria que ademas certifica
+    // releases, que es donde un falso rojo mas caro.
+    //
+    // El `#[serial]` lo llevan ya las de alrededor; aqui faltaba.
     #[test]
+    #[serial]
     fn claude_config_path_default() {
         let p = claude_config_path();
         assert!(p.ends_with(".claude"));
