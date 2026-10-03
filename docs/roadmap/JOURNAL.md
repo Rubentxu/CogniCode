@@ -10975,3 +10975,208 @@ Esta unidad cierra el hueco de enforcement. No ejecuta A-033..A-036: no crea
 el skill que falta (`cognicode-quality-investigator` no está en `skills/`) ni
 escribe las eval suites que su criterio de aceptación pide. Ese es el siguiente
 ciclo, y ahora con un gate que lo va a mirar.
+
+---
+
+## N+79 — El invariante que cerró el cutover leía el disco, y el test del test
+
+**WorkItem** `5087ca29-8dbc-4f5b-8055-832a9ef46160` · **Commit** `b8afaab4`
+**Rama** `verify/r0-exit-gate` (base `main` = `2c4831ec`, v0.101.0) · **Eje** R0
+(cierre del cutover de CI) · **Alcance** verificar el exit gate de R0 sobre lo
+que hay en `main`, no añadir capacidad de CI.
+
+### Por qué esta unidad y no abrir R1
+
+La cola pedía cerrar R0 antes de tocar la distribución. R0 parecía cerrado: PR
+#340 `d3426966` se titula literalmente "cero workflows, y el invariante que lo
+dice — cierra el cutover", y `main` tiene 0 workflows. La divergencia aparece
+al reconciliar el checkout, no al mirar el roadmap.
+
+**La rama local tenía 3 commits sin pushear que ya estaban en `main`.** Los tres
+—`c731fbd2`, `d5c8ff90`, `ae468525`— son el trabajo que llegó a `main` como #340 por otro
+camino. No es una suposición: `scripts/product/release_lane.py`,
+`scripts/ci/test_release_candidate_layout.py` y el ADR son **byte a byte
+idénticos** entre la rama y `main`, y la única diferencia en
+`release-candidate.pipeline.kts` es un comentario reescrito después de que el
+gap tracker dejara de existir. `main` además había avanzado a v0.101.0 (#341,
+#342, #343). Verificar el exit gate exigía medir `main`, no la rama.
+
+### El exit gate de R0, medido
+
+| Puerta | Resultado |
+|---|---|
+| `.github/workflows/*.yml` | 0 (directorio inexistente) |
+| PipelineK lanes | 6/6 `pipelinek validate` exit 0 |
+| Invariante de cero Actions | **FAIL** ← esto es lo que encontró la unidad |
+| `check-release-matrix.sh` | RESULT: OK, 4 checks |
+| `test_release_candidate_layout.py` | PASS |
+| Los 14 contratos re-anclados | 0 lecturas vivas de workflow |
+
+El invariante, en el commit que lo introduce, sobre un repositorio con cero
+superficies de Actions:
+
+```
+FAIL — 1 problem(s):
+2 action manifest(s) in the tree:
+    sandbox/repos/elixir/elixir/.github/workflows/release_pre_built/action.yml
+    sandbox/repos/rust-analyzer/.github/actions/github-release/action.yml
+```
+
+### El defecto, y por qué la lista era el problema
+
+`test_no_actions_workflows.py` recorría el sistema de ficheros y excluía
+directorios por nombre. `SKIP_DIRS` era `{".git", "target", "node_modules",
+"odd", ".pipelinek"}`; `sandbox` no estaba. `sandbox/repos/` está en
+`.gitignore` y contiene checkouts de elixir y rust-analyzer: los proyectos que
+las lanes de sandbox analizan. GitHub nunca los parseó.
+
+La entrada que faltaba no era el defecto. Una lista de exclusiones hay que
+extenderla cada vez que alguien vendoriza un árbol nuevo, y una lista así vuelve
+a estar mal. La pregunta que el contrato hace no es "¿qué archivos hay en este
+disco" sino "¿qué publica este repositorio", y para eso git ya tiene la
+respuesta: `git ls-files`. Un archivo sin trackear no puede convertirse en
+superficie de Actions porque no se pushea.
+
+Los checkouts de terceros son el argumento **a favor** del índice, no en contra:
+son grandes, se espera que contengan workflows, y no son el CI de CogniCode.
+
+### La consecuencia era peor que un gate rojo
+
+Esos checkouts no existen en un runner de CI. El contrato era **verde en CI y
+rojo en cualquier máquina que hubiera corrido una lane de sandbox**. Un gate cuyo
+veredicto depende de la máquina y no del árbol falla por causas ajenas al cambio
+que evalúa — y pasa sobre los mismos commits que debería inspeccionar. La
+dirección del fallo importa: un gate rojo se investiga; uno que sólo se rompe en
+el escritorio de quien lo escribió se cuela y se muere con el contrato.
+
+### Un `None` explícito donde antes había una lista vacía
+
+Si el índice no se puede leer, la respuesta honesta es "desconocido". Una lista
+vacía ahí es un cero que no se ha medido (lección 182, la misma forma que
+tomó `tool-ref validation skipped` precediendo doce errores). `tracked_paths()`
+devuelve `None`; las dos aserciones que lo consumen fallan con un mensaje que
+dice que un repositorio ilegible no es un repositorio limpio.
+
+### Dientes, por mutación
+
+```
+baseline                          9 passed, 0 failed
+scan por disco (el bug)           2 failed  — la aserción real y la regresión
+scan vacuo, siempre []            3 failed  — los dos dientes + fail-closed
+error de git como lista vacía     1 failed  — fail-closed
+stage contracts deshabilitada     1 failed  — el cableado
+solo queda la mención PATHS=      1 failed  — la forma vacua
+suite completa del repo         107 passed, 0 failed
+```
+
+La regresión va contra un fixture y no contra `sandbox/repos/` a propósito: un
+test que dependiera de árboles gitignoreados pasaría en un checkout limpio y no
+probaría nada.
+
+### El test del cableado cometía el defecto que existía para impedir
+
+`test_the_invariant_is_executed_by_the_merge_authority` resuelve la cadena
+eslabón por eslabón: el merge authority **ejecuta** el runner, el runner
+descubre `test_*.py` por glob, este archivo está entre los que casa el glob.
+
+La primera versión usó `is_in_merge_authority(CONTRACT_RUNNER)`. La mutación la
+desmontó: al deshabilitar la stage `contracts`, el test seguía **verde**,
+porque la stage `selector` nombra el mismo archivo dentro de un
+`PATHS="scripts/ci/run-all-contracts.sh"` que alimenta el filtro de suites. Una
+mención no es una ejecución.
+
+Un gate que sigue verde con la suite apagada es exactamente lo que ese test
+existe para impedir. El defecto lo cometía el test, y sin la mutación habría
+quedado como contratofixed mientras afirmaba lo contrario (lección 182, otra
+vez, y por el mismo mecanismo). Ahora el camino tiene que estar precedido por
+algo que lo ejecute.
+
+### Lo que la reconciliación destapó: el gate de gobernanza se apagaba solo
+
+Al crear el work item de esta unidad lo pasé a `active` sin comprobar que
+`9dd23815` —que seguía `active` por inercia— dejara de serlo. Resultado: dos
+items activos, y
+
+```
+error: project_status error: multiple active work items:
+  ["5087ca29-…", "9dd23815-…"]
+```
+
+`sddk plan roadmap status` falla → `sddk_probe_project` falla → y
+`sddk_gate_enabled`, en modo `auto`, devuelve falso. El hook imprime
+`"[SDDK] attention gate is not active for this repository."` y **sale 0**. No
+bloquea nada. A partir de ahí, cualquier commit entra sin recibo de
+alineación, y el mensaje dice "not active", que se lee como una configuración y
+no como el fallo de gobernanza que es.
+
+Un gate que falla ruidosamente es debugging. Un gate que se desactiva en
+silencio es una pérdida de garantía que nadie va a notar, y ocurre justo en el
+momento en que el agente está haciendo algo mal —que es cuando más hace falta.
+
+`9dd23815` se transiciónó a `done` **tras verificar su entregable**: los 14
+contratos que nombra tienen 0 lecturas vivas de workflow (las referencias que
+quedan son docstrings y comentarios), la autoridad única declarada está en
+`scripts/ci/pipeline_authority.py` desde `b651774a` (#338), y los dos ficheros
+que ya no existen —`check-release-artifact-reachability.sh` y
+`qw09_release_artifact_reachability.rs`— se consolidaron en
+`scripts/ci/test_pipeline_artifact_reachability.py`, que existe. Cerrado por
+evidencia, no por inercia.
+
+### Drift de registro, medido
+
+`docs/roadmap/CURRENT.md` se declara obsoleto en su propia cabecera, y es
+cierto: su sección de "próximo trabajo" describe un programa que ya no es la
+agenda. `JOURNAL.md` terminaba en N+78 y **no mencionaba el trabajo R0 ya
+mergeado** en #338–#340. El registro de trabajo no describía el estado real de
+R0; esta entrada lo hace.
+
+### Lección 183
+
+Un gate cuyo veredicto depende de la máquina y no del árbol es peor que no
+tener gate. El de este archivo era verde en CI y rojo en el escritorio de quien
+lo escribió, por ficheros que no son suyos y que no puede pushear. La pregunta
+que hay que hacerle al redactar un escáner no es "qué directorios tengo que
+excluir" sino "qué conjunto afirmo que describe la propiedad": la
+primera produce una lista que hay que mantener, la segunda produce un criterio
+que se puede comprobar.
+
+### Lección 184
+
+Una denylist de exclusiones sólo sabe lo que alguien recuerda excluir. Ésta no
+recordaba `sandbox`, y no era un olvido aislado: era la forma del defecto, porque
+cada árbol vendorizado nuevo exige una entrada. Cuando una propiedad es "lo que
+este proyecto publica", la autoridad que ya la responde es el índice de git, y
+sustituir la lista por esa autoridad hace el contrato inmutable frente a la
+próxima vendorización.
+
+### Lección 185
+
+Un test puede cometer el defecto que existe para impedirlo, y una mutación es
+la única forma de saberlo. El test de autocableado —escrito precisamente
+contra el "un gate que pasa sin ejecutarse es un archivo"—onoraba una mención
+del nombre del runner en lugar de una ejecución, y quedaba verde con la suite
+apagada. Las aserciones de cableado se leen como correctas porque suenan
+estrictas: hay que preguntarse qué observería una *ausencia*, no sólo qué
+afirman cuando todo está.
+
+### Lección 186
+
+La gobernanza que se desactiva en silencio no es gobernanza. Dos work items
+activos convierte el gate en un no-op con un mensaje que parece una
+configuración, y sólo se descubre porque el hook se ejecutó en un commit que ya
+estaba fallando por otra razón. Un control que se apaga en vez de negar el paso
+deja al sistema exactamente en el estado que el control debía impedir.
+
+### Alcance que NO se ejecuta aquí
+
+Esta unidad verifica y repara el exit gate de R0. No abre R1 (Release Truth), no
+toca los 14 contratos re-anclados más allá de contar sus referencias, no reabre
+ni edita `9dd23815` más allá de transicionarlo con la evidencia verificada, y no
+publica la rama: el commit está en local y el push y el PR son decisión del
+maintainer, porque todo cambio a `main` exige PR + merge-gate verde.
+
+Queda sin verificar, y no se afirma lo contrario: que los 14 contratos
+re-anclados **conserven la semántica** que tenían. Se comprobó que ninguno lee
+un workflow como autoridad; no que cada aserción siga significando lo que
+significaba. Eso es revisión conductual, contrato por contrato, y es otra
+unidad con su propia evidencia.
