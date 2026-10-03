@@ -618,7 +618,11 @@ mod tests {
         "#;
         let bodies = sh_bodies_with_offsets(text);
         assert_eq!(bodies.len(), 1, "expected exactly one body, got {bodies:?}");
-        assert!(bodies[0].1.contains("run-the-thing --now"), "{:?}", bodies[0]);
+        assert!(
+            bodies[0].1.contains("run-the-thing --now"),
+            "{:?}",
+            bodies[0]
+        );
     }
 
     #[test]

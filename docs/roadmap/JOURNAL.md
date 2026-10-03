@@ -12591,3 +12591,94 @@ agentes, la segunda mitad no se puede sostener por mtime, y redactarla como si
 se pudiera convierte un resultado correcto en un recibo que miente. La
 comprobación que faltaba era de un segundo: no «¿este binario funciona?» sino
 «¿este binario es de este árbol?».
+
+## N+88 — Reconciliación de las dos líneas, y un agujero en el gate que la dejó pasar
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (reconciliación previa al re-corte).
+
+Decisión del maintainer: nuestra línea como base, cherry-pick de los defectos
+independientes del otro actor, `v0.101.5` intacto, corte a `v0.101.6`, y la lane
+ejecutada aquí hasta candidato.
+
+### Lo que entró, y lo que se dejó fuera
+
+De los diez commits de la línea del otro actor quedaron fuera **dos**, a
+propósito:
+
+- `32fb1ff6`, la limpieza del lane dir. Es el **mismo hecho** que ya tenemos en
+  `d1f1c051`, no dos caras de él. Se conserva la nuestra: `rm -rf` del
+  directorio completo y **fatal** si no se puede limpiar. La suya es más
+  quirúrgica —dos globs acotados con `|| true`— y también defendible; lo que no
+  cabe es tener las dos. Verificado después: queda una sola versión, la nuestra.
+- `d649d9ac`, un merge. Sus dos lados entran por separado, así que traerlo sería
+  traerlos dos veces.
+
+Los otros ocho entraron: el subcomando `skills` que la stage pedía y no existía,
+el toolchain nativo cruzado, la guarda que pasaba con el entorno que hace fallar
+la lane, la re-verificación posterior a la subida, el extractor de cuerpos
+`sh()` con preámbulo, `run-target-binary`, la frescura del binario de release, y
+el `--tag` que la stage `verify` nunca pasó. Fuente fijada a `60e60975`, **no** a
+la punta de la rama: el otro actor seguía trabajando y la rama avanzó durante la
+reconciliación.
+
+### Dos conflictos, y los dos eran de propiedad
+
+1. El helper `render` de los contratos de packaging. Nuestra línea lo había
+   extendido con `repoRoot` y `cd`; el otro actor lo desplazó al añadir su doble
+   de skills justo encima. Se conserva la firma de cinco parámetros, que acepta
+   el llamada de cuatro posicionales del otro.
+2. La stage `toolchain-for-$target`, donde los dos añadieron una guarda. Aquí no
+   hubo que elegir: **no se solapan**. La nuestra pregunta si hay linker de Rust
+   y si resuelve —que es estructura—; la del otro actor ejecuta una sonda con el
+   compilador nativo para el triple exacto que `cc-rs` añade —que es capacidad—.
+   Quedan las dos en serie, la más barata primero, y cada una sigue teniendo su
+   propio fichero de contratos.
+
+### El fallo que la reconciliación destapó
+
+Con las dos guardas en la stage, los tres contratos del linker de
+`test_pipeline_stage_bodies.py`fallen: el arnés renderiza la stage en un repo
+temporal, y la guarda nueva se llama por ruta relativa después del `cd`, así que
+en el sandbox no existía y las tres pruebas positivas/reportaban un problema de
+linker que no era de linker. **La lane real no estaba rota** —esa stage sí hace
+`$cd`—; lo roto era el arnés. Se corrigió poniendo la guarda **presente e
+inerte** en el sandbox, con el motivo escrito: este fichero prueba la guarda del
+linker, y la del toolchain nativo tiene el suyo, con sus propios stubs.
+
+### Lección 209 — un bump a mitad de suite produce un fallo que no es del producto
+
+`prf_f6_w1_clean_round_trip_generates_and_verifies` falló con
+`tag v0.101.6 must equal v0.101.5 (R8)`. No era un defecto: la suite de tres
+minutos había compilado el binario de test **antes** del bump, y el test lee `tag`
+y `version` de la misma función, que en un binario viejo lee el fichero y en el
+nuevo lleva la versión compilada. Reejecutado tras recompilar: 11 de 11. La
+regla que se sigue es la de siempre y con más motivo: **el número que decide es
+el de la suite entera sobre el árbol final**, no el de una ejecución que empezó
+antes de que el árbol quedara quieto.
+
+### Lección 210 — un gate de gobernanza no cubre todos los caminos
+
+Al intentar commitear el tercer cherry-pick sin recibo de alineación, el hook no
+pidió nada. Medido con contraste, no de memoria:
+
+    git commit  (mismo tipo de cambio)  -> bloqueado, rc=1, "Do not bypass"
+    git cherry-pick (mismo tipo)         -> rc=0, sin recibo, sin preguntar
+
+**`git cherry-pick` no dispara el `pre-commit`.** Tres de los ocho cherry-picks
+entaron sin recibo de alineamiento; su trazabilidad la sostienen los `sddk-close`
+posteriores, no un recibo. El gate cierra `commit` y no cierra el camino que usa
+una reconciliación, que es precisamente el momento en que más importa que
+alguien mire. No se arregla aquí porque el hook es de la instalación global y no
+del repositorio, pero queda medido y no es un problema hipotético: es el
+mecanismo por el que dos actores pudieron converger sin que el gate lo notara.
+
+### Gate del corte
+
+207 contratos, `6063` tests, `0` fallos, `30` ignorados, `CARGO_EXIT=0` leído del
+log y no de un pipe. `fmt` limpio y `clippy -D warnings` sin avisos. El primer
+borrador del bloque `Versioning` del README era más honesto —decía que la
+release no está publicada— y **rompió** `test_release_truth_convergence`, que es
+preexistente a la divergencia y define la forma de esa sección. Se ajustó a la
+forma que el contrato exige, con el matiz dentro de la propia viñeta: la
+autoridad es el contrato, no la redacción.

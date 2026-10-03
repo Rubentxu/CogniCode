@@ -221,6 +221,23 @@ def run_toolchain_gate(
         repo.mkdir()
         (repo / ".cargo").mkdir()
 
+        # The stage calls the native-toolchain guard by relative path, after
+        # `cd $repoRoot`, and that guard has its own file and its own stubs:
+        # `test_cross_toolchain_guard.py`. This harness tests the LINKER guard,
+        # and it must not depend on whether this machine can compile native code
+        # for a foreign triple — that is the property the other file owns.
+        #
+        # So the guard is present and inert here. Absent, the stage fails with
+        # "No such file or directory" and every positive test in this file
+        # reports a linker problem that is not a linker problem. This is not a
+        # fudge: a stage that stops calling the guard is caught by
+        # `test_the_candidate_stage_actually_calls_the_guard`, and the guard's
+        # own behaviour is caught by its own tests.
+        (repo / "scripts/ci").mkdir(parents=True)
+        native = repo / "scripts/ci/check-cross-toolchain.sh"
+        native.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        native.chmod(0o755)
+
         body = packaging.render(
             packaging.extract_stage_body(text, "toolchain-for-$target"),
             version="0.0.0",
