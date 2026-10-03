@@ -372,10 +372,29 @@ pipeline {
                         # `--target $target` puts cross output under the target
                         # subdirectory of whatever cargo's target dir is.
                         dir="${'$'}TARGET_DIR/$target/release"
-                        "${'$'}dir/cogh" --version
-                        "${'$'}dir/cogh" --help | head -5
-                        "${'$'}dir/cognicode" --version
-                        "${'$'}dir/cognicode-mcp" --version
+                        # MEDIDO 2026-10-03. Esto ejecutaba el binario tal cual.
+                        # En el host es ejecutarlo; en un target extranjero entra
+                        # binfmt_misc y sale
+                        #
+                        #     qemu-aarch64-static: Could not open
+                        #     '/lib/ld-linux-aarch64.so.1': No such file or directory
+                        #
+                        # que no dice que la maquina no tiene la libc invitada de
+                        # ese target. run-target-binary.sh dice COMO ejecuta, y
+                        # cuando falta el emulador o el sysroot lo dice antes de
+                        # intentarlo y nombra lo que falta.
+                        runner=scripts/ci/run-target-binary.sh
+                        for component in cogh cognicode cognicode-mcp; do
+                            test -x "${'$'}dir/${'$'}component" || {
+                                echo "FAIL: ${'$'}dir/${'$'}component no existe o no es ejecutable."
+                                echo "  binaries-${'$'}target corre antes de esta stage y no lo produjo."
+                                exit 1
+                            }
+                        done
+                        bash "${'$'}runner" $target "${'$'}dir/cogh" --version
+                        bash "${'$'}runner" $target "${'$'}dir/cogh" --help | head -5
+                        bash "${'$'}runner" $target "${'$'}dir/cognicode" --version
+                        bash "${'$'}runner" $target "${'$'}dir/cognicode-mcp" --version
                     """.trimIndent())
                 }
 
@@ -388,9 +407,14 @@ pipeline {
                         done
                         # No Rust toolchain and no repository files after extraction.
                         test -x "${'$'}work/bin/cogh" || { echo "cogh missing or not executable from the archive"; exit 1; }
-                        "${'$'}work/bin/cogh" --version
                         test -x "${'$'}work/bin/cognicode" || { echo "cognicode missing or not executable from the archive"; exit 1; }
-                        "${'$'}work/bin/cognicode" --version
+                        # MEDIDO 2026-10-03. El binario extraido se ejecutaba
+                        # directamente, con el mismo problema que binary-smoke:
+                        # en un target extranjero eso no es ejecutarlo, y el
+                        # fallo que sale no dice que falte la libc de ese target.
+                        runner=scripts/ci/run-target-binary.sh
+                        bash "${'$'}runner" $target "${'$'}work/bin/cogh" --version
+                        bash "${'$'}runner" $target "${'$'}work/bin/cognicode" --version
                     """.trimIndent())
                 }
             }
