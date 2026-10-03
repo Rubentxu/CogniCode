@@ -262,6 +262,32 @@ pipeline {
                     sh(releasePaths + "\n" + """
                         platform=${platformOf(target)}
                         lane="staging/payloads-${'$'}platform"
+                        # MEDIDO 2026-10-03. Este `mkdir -p` no limpiaba, y la
+                        # stage contaba con `ls -1 "${'$'}lane/dist" | wc -l`. La
+                        # lane de v0.101.5 fallo con
+                        #
+                        #     FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+                        #
+                        # porque el worktree conservaba el directorio de lane de la
+                        # lane de v0.101.4, que habia fallado antes: tres tarballs
+                        # de 0.101.4. El recuento era la defensa correcta contra
+                        # una stage que no empaqueta nada, asi que no se toca; lo
+                        # que estaba mal era la base de la que contaba. Un release
+                        # re-ejecutado sobre un arbol sucio tiene que partir del
+                        # estado que el produce, no del que le dejaron.
+                        #
+                        # Y el efecto no era solo un falso rojo: el aplanado de
+                        # `payloads` se lleva todo lo que haya en la lane, y
+                        # `generate` copia lo que encuentre, asi que los tarballs
+                        # de 0.101.4 habrian viajado en el candidato de 0.101.5.
+                        # Esta stage que falla hoy es la que lo impidia.
+                        #
+                        # Se borra solo el contenido de los dos subdirectorios que
+                        # esta stage escribe, con la misma forma `rm -f -- "${'$'}x"`
+                        # que ya usa build-sboms-for-lane.sh: acotado a la lane, no
+                        # puede tocar nada de fuera, y un glob sin coincidencias
+                        # es un argumento literal que `rm -f` ignora.
+                        rm -f -- "${'$'}lane"/dist/* "${'$'}lane"/crates/* 2>/dev/null || true
                         mkdir -p "${'$'}lane/dist" "${'$'}lane/crates"
                         # The published product surface is the contract's, not this
                         # script's: `plan` prints the canonical filenames, and the

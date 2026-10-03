@@ -261,9 +261,18 @@ def render(body: str, version: str, target: str, platform: str) -> str:
 
 
 def run_package_stage(
-    *, plan_empty: bool = False, binaries: tuple[str, ...] = COMPONENTS
+    *,
+    plan_empty: bool = False,
+    binaries: tuple[str, ...] = COMPONENTS,
+    stale: tuple[str, ...] = (),
 ) -> subprocess.CompletedProcess:
-    """Ejecuta el cuerpo real de `package-$target` con un release de mentira."""
+    """Ejecuta el cuerpo real de `package-$target` con un release de mentira.
+
+    `stale` son archivos que un intento anterior dejo en el directorio de la
+    lane, para poder reproducir la stage sobre un arbol sucio. No es una
+    hipotesis: asi estaba el worktree cuando la lane de v0.101.5 fallo con
+    "planned 3 artifacts, produced 6".
+    """
     text = CANDIDATE.read_text(encoding="utf-8")
     body = render(
         extract_stage_body(text, "package-$target"), VERSION, TARGET, PLATFORM
@@ -294,6 +303,11 @@ def run_package_stage(
             sbom.write_text("{}\n", encoding="utf-8")
 
         (root / "staging").mkdir()
+        if stale:
+            lane_dist = root / "staging" / f"payloads-{PLATFORM}" / "dist"
+            lane_dist.mkdir(parents=True)
+            for name in stale:
+                (lane_dist / name).write_bytes(b"stale-from-a-previous-run\n")
         script = root / "package-stage.sh"
         script.write_text(
             f"#!/usr/bin/env bash\n"
@@ -337,6 +351,43 @@ def test_packages_every_planned_component() -> None:
     assert done.produced == expected, (
         f"un archivo por componente.\nobtenido: {done.produced}\n"
         f"stdout:\n{done.stdout}"
+    )
+
+
+def test_a_stale_lane_directory_does_not_count_as_production() -> None:
+    """Un candidato no puede llevar los archivos de un intento anterior.
+
+    MEDIDO 2026-10-03, en la lane de v0.101.5 de la otra linea:
+
+        packaged cogh-0.101.5-x86_64-unknown-linux-gnu.tar.gz for linux-x86-64
+        packaged cognicode-0.101.5-x86_64-unknown-linux-gnu.tar.gz ...
+        packaged cognicode-mcp-0.101.5-x86_64-unknown-linux-gnu.tar.gz ...
+        FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+
+    El worktree llevaba `staging/payloads-linux-x86-64/dist` de la lane de
+    v0.101.4, que habia fallado antes: tres tarballs de 0.101.4. La stage
+    hace `mkdir -p` y luego `ls -1 | wc -l`, asi que contaba los seis y
+    declaraba que esta lane habia producido mas de lo que produce.
+
+    El recuento era la defensa correcta contra una stage que no empaqueta
+    nada, y por eso no se toca: lo que estaba mal era la base de la que
+    contaba. Un release re-ejecutado sobre un arbol sucio tiene que empezar
+    desde el estado que el produce, no desde el que le dejaron.
+
+    Y el efecto no era solo un falso rojo. `stage-platform-payloads.sh`
+    aplana `staging/` y `cognicode-release generate` copia lo que haya: los
+    tres tarballs de 0.101.4 habrían viajado en el candidato de 0.101.5. La
+    stage que falla hoy es la que impidia que la mezcla se publicara.
+    """
+    done = run_package_stage(stale=tuple(f"cogh-0.99.99-{TARGET}.tar.gz" for _ in range(3)))
+    assert done.returncode == 0, (
+        f"un intento anterior en el arbol no puede hacer fallar la stage; salio "
+        f"{done.returncode}.\nstdout:\n{done.stdout}\nstderr:\n{done.stderr}"
+    )
+    expected = sorted(f"{c}-{VERSION}-{TARGET}.tar.gz" for c in COMPONENTS)
+    assert done.produced == expected, (
+        f"la lane debe contener solo lo que esta ejecucion produjo.\n"
+        f"obtenido: {done.produced}\nstdout:\n{done.stdout}"
     )
 
 
