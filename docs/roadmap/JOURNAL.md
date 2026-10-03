@@ -12386,9 +12386,10 @@ mentira. Los UATs del ensamblador usan árboles sintéticos. Nadie había ejecut
 las dos mitades **juntas**, y ese es exactamente el punto donde vivía el fallo
 original: una stage que produce y un ensamblador que elige.
 
-MEDIDO con el binario real `/var/home/rubentxu/cargo-targets/release/cognicode-release`
-—construido por la lane que murió— y los binarios reales de las dos
-plataformas:
+MEDIDO con el binario real `cognicode-release` y los binarios reales de las dos
+plataformas. La procedencia de ese binario era la parte débil de este recibo y
+queda resuelta en N+87: es **byte-idéntico** a una build limpia de este árbol, y
+la sonda se reejecutó contra esa build con `TODO OK`:
 
 1. `package-$target` sale 0 para `x86_64-unknown-linux-gnu` y para
    `aarch64-unknown-linux-gnu`, y cada lane dir contiene **exactamente** sus
@@ -12469,3 +12470,124 @@ salió con los campos `summary`, `inputs`, `unknowns` y `discoveries` a `x`, por
 el mismo motivo. El commit es correcto y su prosa está íntegra en N+85, pero su
 recibo SDDK es un cascarón. La trazabilidad de esa entrada la sostiene el
 JOURNAL, no el recibo.
+
+## N+87 — Divergencia entre dos actores sobre el mismo corte, y una atribución mía que era falsa
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` @ `2ac871ae` · **Bloque** B3 (antes de re-cortar).
+
+Este recibo no arregla nada. Documenta un hecho que aparece al preparar el
+re-corte y que **no puede resolverse sin decisión del maintainer**, porque elegir
+en silencio un estado es exactamente lo que el procedimiento de recuperación
+prohíbe cuando hay un checkpoint contradictorio.
+
+### Lo que se ha medido
+
+Dos actores trabajaron sobre `c7dba40c` en paralelo, en worktrees distintos y
+sin converger:
+
+    nuestra linea            integrate/v1015       2ac871ae   (6 commits)
+    su linea                 verify/r1-integrated  65dcdba3   (9 commits)
+
+Y el tag **`v0.101.5` apunta a la línea del otro actor**, no a la nuestra:
+
+    git rev-parse 'v0.101.5^{commit}'  -> 65dcdba3
+    git ls-remote --tags origin        -> refs/tags/v0.101.5^{} 65dcdba3
+
+El tag está **publicado en el remoto**. Correcto: un tag identifica bytes, y esos
+bytes son los de su línea. Lo que sigue es un hecho distinto y más grave: **el
+remoto no tiene nuestra rama**, así que el arreglo de la ambigüedad del
+ensamblador y el gate de linker **no existen en ningún sitio publicado**.
+
+    origin/integrate/v1015  -> c7dba40c   (6 commits por detrás de HEAD local)
+
+### Ninguna línea es superconjunto de la otra
+
+Medido commit a commit, no es que una haya avanzado más que la otra: es que
+cubren defectos distintos.
+
+| defecto | nuestra línea | su línea |
+|---|---|---|
+| lane dir desde cero, fallo fatal al no poder limpiar | sí | no |
+| el ensamblador rechaza ambigüedad sin conocer la versión | sí | no |
+| `toolchain-for-$target` verifica que el linker resuelva | sí | no |
+| target instalado no es target que compila (cc/C++ cruzado) | no | sí |
+| el extractor de cuerpos `sh()` ve stages con preámbulo | no | sí |
+| la re-verificación posterior a la subida corre con preámbulo | no | sí |
+| una guard de CI que no pasa con el env que hace fallar la lane | no | sí |
+| el binario de release tiene que ser de **este** árbol | no | sí |
+| el subcomando `skills` existe | no | sí |
+
+Y su arreglo del binario stale **acaba de corregir una afirmación mía**. N+86
+decía que la costura se midió con «el binario real —construido por la lane que
+murió—». Esa frase era falsa: el binario es de las 20:13 y la lane corrió a las
+21:30, así que no lo construyó ninguna lane.
+
+El fondo del asunto es que `~/.cargo/config.toml` de esta máquina fija un
+`build.target-dir` **compartido entre checkouts y agentes**, y cargo decide si
+reconstruye comparando mtimes entre árboles sin historial común, lo cual no dice
+nada. Su commit lo mide así: su línea **sí** tiene el subcomando `skills`
+(`7d074fef`) y el binario no lo tenía, luego para su línea el binario era
+obsoleto. Esa medición es correcta y su arreglo entra por cherry-pick.
+
+Para nuestra línea la conclusión es la contraria, y había que medirla en vez de
+asumirla:
+
+    $ CARGO_TARGET_DIR=/tmp/n86-proven/target \
+        cargo build --release --bin cognicode-release      # 3m05s, desde 2ac871ae
+    $ cmp /tmp/n86-proven/target/release/cognicode-release \
+          /var/home/rubentxu/cargo-targets/release/cognicode-release
+    IDENTICOS
+    $ sha256sum  (ambos)  -> 8b8867c123bd338a333fe2fc08330576…
+
+**Byte-idéntico.** Nuestro árbol no tiene `skills` y el binario tampoco, así que
+el artefacto sí era de esta línea. Reejecutada la sonda contra esa build limpia,
+con los binarios por target copiados al target-dir aislado: **TODO OK**, los
+cinco pasos, incluidos el rechazo de ambigüedad nombrando el payload de
+`0.101.4` y la limpieza del lane dir al reejecutar la stage.
+
+Lo que queda impreciso, y se dice en vez de omitirlo: la procedencia de los
+**binarios por target** que la sonda empaqueta no está probada byte a byte como
+la del tool. No importa para lo que la costura mide —que es higiene de
+directorios y rechazo de ambigüedad, no contenido de binario— pero el recibo no
+debe insinuar lo contrario.
+
+Dos correcciones de estilo que conviene no volver a escribir: `cog-fix-skills`
+y `cog-integrated` son **worktrees**, no actores.
+
+### El solapamiento real es uno, y es duplicación
+
+Solo dos ficheros se tocan en ambas líneas, y en los dos el trabajo es el mismo
+hecho y no dos caras de él:
+
+1. `release-candidate.pipeline.kts`, limpieza del lane dir. Nosotros: `rm -rf`
+   del directorio completo, **fatal** si no se puede limpiar, y un mensaje que
+   nombra la causa. Suyo: `rm -f` de dos globs acotados a los subdirectorios que
+   la stage escribe, con `2>/dev/null || true`. Las dos son defendibles; la suya
+   es más quirúrgica y la nuestra más estricta. **Es una decisión de propiedad,
+   no una suma.**
+2. `scripts/ci/test_candidate_packaging.py`, y aquí sí es el mismo cambio con el
+   mismo nombre: los dos actores añadieron un parámetro `stale=` a
+   `run_package_stage` para reproducir la stage sobre un árbol sucio. En el
+   segundo caso no hay nada que reconciliar: hay que quedarse con **una** versión
+   del parámetro, no con las dos.
+
+### Lo que no se hace aquí
+
+No se fusiona, no se reescribe el tag, no se elige línea, no se taguea, no se
+empuja. Elegir en silencio entre dos líneas paralelas que arreglan defectos
+distintos es una decisión de producto, y este bloque no la toma.
+
+La reconciliación necesita del maintainer, por lo menos: cuál línea es la base,
+qué se hace con el tag `v0.101.5` ya publicado, y si el arreglo del binario
+stale entra por **cherry-pick** —que es lo que corresponde, porque es un defecto
+independiente de los dos— antes de cualquier re-corte.
+
+### Lección 208
+
+Un recibo de evidencia es una afirmación sobre **qué** se ejecutó y **de dónde
+salió**. Cuando el ejecutable viene de un `target-dir` compartido entre
+agentes, la segunda mitad no se puede sostener por mtime, y redactarla como si
+se pudiera convierte un resultado correcto en un recibo que miente. La
+comprobación que faltaba era de un segundo: no «¿este binario funciona?» sino
+«¿este binario es de este árbol?».
