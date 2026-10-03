@@ -258,51 +258,115 @@ pub fn pipeline_lines(pipeline: &str) -> Vec<String> {
 ///
 /// Kotlin's `${'$'}` is resolved, because the contract reads the `.kts` source
 /// rather than the emitted shell and the escape is an artefact of that.
-pub fn sh_bodies_with_offsets(text: &str) -> Vec<(usize, String)> {
+/// The end (exclusive) of the call whose argument list starts at `from`.
+///
+/// String literals are skipped rather than scanned for parentheses, so a `)`
+/// that belongs to a shell command cannot close the call early.
+fn call_end(text: &str, from: usize) -> Option<usize> {
     const RAW: &str = "\"\"\"";
     let bytes = text.as_bytes();
+    let mut depth = 0usize;
+    let mut i = from;
+    while i < bytes.len() {
+        if bytes[i] == b'"' {
+            if text[i..].starts_with(RAW) {
+                let after = i + RAW.len();
+                i = after + text[after..].find(RAW)? + RAW.len();
+                continue;
+            }
+            i += 1;
+            while i < bytes.len() {
+                match bytes[i] {
+                    b'\\' => i += 2,
+                    b'"' => break,
+                    _ => i += 1,
+                }
+            }
+            i += 1;
+            continue;
+        }
+        match bytes[i] {
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                if depth == 0 {
+                    return Some(i);
+                }
+                depth -= 1;
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// Every string literal between `from` and `to`, in source order, as
+/// `(absolute offset, contents)`.
+///
+/// Raw and regular literals alike, with Kotlin's `${'$'}` resolved and
+/// regular-string escapes dropped: the contracts read the `.kts` source rather
+/// than the shell it emits, and the escape is an artefact of that.
+fn string_literals_in(text: &str, from: usize, to: usize) -> Vec<(usize, String)> {
+    const RAW: &str = "\"\"\"";
+    let bytes = text.as_bytes();
+    let mut out: Vec<(usize, String)> = Vec::new();
+    let mut i = from;
+    while i < to {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        if text[i..to].starts_with(RAW) {
+            let start = i + RAW.len();
+            let Some(len) = text[start..to].find(RAW) else {
+                break;
+            };
+            out.push((start, text[start..start + len].replace("${'$'}", "$")));
+            i = start + len + RAW.len();
+            continue;
+        }
+        let start = i + 1;
+        let mut j = start;
+        let mut end = None;
+        while j < to {
+            match bytes[j] {
+                b'\\' => j += 2,
+                b'"' => {
+                    end = Some(j);
+                    break;
+                }
+                _ => j += 1,
+            }
+        }
+        let Some(end) = end else { break };
+        out.push((
+            start,
+            text[start..end].replace('\\', "").replace("${'$'}", "$"),
+        ));
+        i = end + 1;
+    }
+    out
+}
+
+pub fn sh_bodies_with_offsets(text: &str) -> Vec<(usize, String)> {
     let mut out: Vec<(usize, String)> = Vec::new();
     let mut cursor = 0usize;
 
     while let Some(offset) = text[cursor..].find("sh(") {
         let after = cursor + offset + 3;
-        let rest = text[after..].trim_start();
-        let body_start = after + (text[after..].len() - rest.len());
-
-        if rest.starts_with(RAW) {
-            let from = body_start + RAW.len();
-            let Some(end) = text[from..].find(RAW) else {
-                break;
-            };
-            out.push((from, text[from..from + end].replace("${'$'}", "$")));
-            cursor = from + end + RAW.len();
-            continue;
+        let Some(end) = call_end(text, after) else {
+            break;
+        };
+        // The LAST literal, not the first: a preamble such as
+        // `releasePaths + "\n"` puts a one-character separator ahead of the
+        // body, and a body of one character is a command that runs nothing.
+        if let Some(body) = string_literals_in(text, after, end).pop() {
+            out.push(body);
         }
-
-        if rest.starts_with('"') {
-            let from = body_start + 1;
-            let mut i = from;
-            let mut end = None;
-            while i < bytes.len() {
-                match bytes[i] {
-                    b'\\' => i += 2,
-                    b'"' => {
-                        end = Some(i);
-                        break;
-                    }
-                    _ => i += 1,
-                }
-            }
-            let Some(end) = end else { break };
-            out.push((
-                from,
-                text[from..end].replace('\\', "").replace("${'$'}", "$"),
-            ));
-            cursor = end + 1;
-            continue;
-        }
-
-        cursor = after;
+        cursor = end + 1;
     }
 
     out
@@ -520,6 +584,92 @@ pub fn pipeline_paths() -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// MEDIDO 2026-10-03. El extractor solo reconocia un cuerpo cuando la
+    /// cadena empieza INMEDIATAMENTE despues de `sh(`. Con la forma que la
+    /// lane usa en 10 de sus stages,
+    ///
+    ///     sh(releasePaths + "\n" + """
+    ///         ...cuerpo...
+    ///     """.trimIndent())
+    ///
+    /// lo que sigue a `sh(` es el identificador `releasePaths`, no una cadena,
+    /// asi que ninguna de las dos ramas lo aceptaba y la stage entera se
+    /// escapaba del extractor.
+    ///
+    /// No se noto como un fallo de la stage, sino como un fallo de un
+    /// contrato: `prf_f6_w3_bis_candidate_lane_stages_through_the_shared_flatten_script`
+    /// seguia verde porque la unica stage con forma `sh("""` que contenia
+    /// `verify --staging release` era `re-verify-after-upload`. Al darle a esa
+    /// stage el preambulo que le hacia falta de verdad —el mismo preambulo que
+    /// ya llevaban las otras tres— el contrato dejo de ver el comando. La stage
+    /// que hace el trabajo, `re-verify-candidate`, nunca fue visible para el.
+    ///
+    /// Estos dos tests fijan las dos formas. El primero es el caso que ya
+    /// funcionaba y se conserva como regresion.
+    #[test]
+    fn a_plain_sh_string_body_is_extracted() {
+        let text = r#"
+            stage("a") {
+                sh("""
+                    run-the-thing --now
+                """.trimIndent())
+            }
+        "#;
+        let bodies = sh_bodies_with_offsets(text);
+        assert_eq!(bodies.len(), 1, "expected exactly one body, got {bodies:?}");
+        assert!(bodies[0].1.contains("run-the-thing --now"), "{:?}", bodies[0]);
+    }
+
+    #[test]
+    fn a_sh_body_behind_a_preamble_expression_is_still_extracted() {
+        let text = r#"
+            stage("a") {
+                sh(releasePaths + "\n" + """
+                    run-the-thing --now
+                """.trimIndent())
+            }
+        "#;
+        let bodies = sh_bodies_with_offsets(text);
+        assert_eq!(
+            bodies.len(),
+            1,
+            "un preambulo antes del cuerpo no puede volver la stage invisible: \
+             got {bodies:?}"
+        );
+        assert!(
+            bodies[0].1.contains("run-the-thing --now"),
+            "el cuerpo es el ultimo literal de la llamada, no el primero: {:?}",
+            bodies[0]
+        );
+    }
+
+    /// El cuerpo es el ULTIMO literal porque un preambulo puede traer otro
+    /// delante —`releasePaths + "\n" + cuerpo`— y quedarse con el primero
+    /// devolveria la cadena de un caracter del separador, que no ejecuta nada.
+    #[test]
+    fn the_body_is_the_last_literal_not_the_first() {
+        let text = r#"
+            stage("a") {
+                sh(releasePaths + "\n" + """
+                    the-real-body
+                """.trimIndent())
+            }
+        "#;
+        let bodies = sh_bodies_with_offsets(text);
+        let body = &bodies[0].1;
+        assert!(
+            body.contains("the-real-body"),
+            "el cuerpo real tiene que estar: {body:?}"
+        );
+        // Quedarse con el PRIMER literal devuelve el separador `"\n"` del
+        // preambulo: un cuerpo de un caracter que no ejecuta nada, y que haria
+        // que un contrato creyera que la stage corre un comando.
+        assert_ne!(
+            body, "\n",
+            "el cuerpo extraido es el separador del preambulo, no el cuerpo"
+        );
+    }
 
     /// The repository already contains one honest example of each kind, so the
     /// classifier is checked against them rather than against fixtures written
