@@ -214,6 +214,15 @@ pipeline {
                             echo "binaries cannot link produces a candidate that looks built and is not."
                             exit 1
                         }
+                        # Having the target installed is half the toolchain. This tree
+                        # carries crates with C and C++ build scripts --`ring`,
+                        # `tree-sitter`, `link-cplusplus`-- so a target whose cross
+                        # compiler is missing, or present but unable to parse the
+                        # triple `cc-rs` appends, fails here in milliseconds instead
+                        # of twenty minutes later inside somebody else's build
+                        # script. MEDIDO 2026-10-03 on v0.101.4: the rustup check
+                        # passed, and `binaries-aarch64` then failed three ways.
+                        scripts/ci/check-cross-toolchain.sh '$target'
                     """.trimIndent())
                 }
 
@@ -376,15 +385,47 @@ pipeline {
                     # list written here. The workflow carried a python fallback
                     # for when the binary was absent; the candidate lane builds
                     # the tool two stages earlier and has no reason to.
+                    #
+                    # MEDIDO 2026-10-03. This read the answer through a pipe
+                    # (`done < <(... skills --published)`) and trusted that
+                    # reaching the end of the loop meant the tool had answered.
+                    # It had not: the subcommand did not exist, the binary exited
+                    # 2, the loop consumed nothing, and the stage passed with zero
+                    # bundles. `verify` could not catch it either — it recognised
+                    # skill bundles if present but never required them. So the
+                    # answer is fetched first and checked, and the count of what
+                    # was actually staged is asserted. Asking a question is not
+                    # the same as receiving an answer.
+                    bundles=$("${'$'}TARGET_DIR/release/cognicode-release" skills --published) || {
+                        echo "FAIL: the release tool could not report the published skill bundles."
+                        echo "  Without its answer this stage cannot know what to stage, and"
+                        echo "  staging nothing is not the same as having nothing to stage."
+                        exit 1
+                    }
+                    if [ -z "${'$'}bundles" ]; then
+                        echo "FAIL: the release tool reports no published skill bundles."
+                        echo "  The contract publishes them; an empty list means the tool and"
+                        echo "  the contract disagree."
+                        exit 1
+                    fi
+                    staged=0
                     while IFS= read -r id; do
                         [ -n "${'$'}id" ] || continue
                         if [ ! -f "skills/${'$'}id/manifest.yaml" ]; then
                             echo "FAIL: published skill bundle '${'$'}id' has no skills/${'$'}id/manifest.yaml"
                             exit 1
                         fi
-                        tar -czf "staging/${'$'}id-$version.tar.gz" -C "skills/${'$'}id" .
+                        tar -czf "staging/${'$'}id-$version.tar.gz" -C "skills/${'$'}id" . || {
+                            echo "FAIL: could not stage skill bundle '${'$'}id'"
+                            exit 1
+                        }
+                        staged=$((staged + 1))
                         echo "staged ${'$'}id-$version.tar.gz"
-                    done < <("${'$'}TARGET_DIR/release/cognicode-release" skills --published)
+                    done <<< "${'$'}bundles"
+                    if [ "${'$'}staged" -lt 1 ]; then
+                        echo "FAIL: nothing was staged from a non-empty bundle list."
+                        exit 1
+                    fi
                     ls -la staging
                 """.trimIndent())
             }
