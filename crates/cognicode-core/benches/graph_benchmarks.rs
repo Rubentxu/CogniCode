@@ -252,6 +252,37 @@ def deep_helper():
     ];
 
     builder.build_index_from_sources(sources);
+
+    // The three benchmarks below time this builder. Without this guard they
+    // measured a return value that was always empty: their "verification" was
+    // `let _ = result.entries.len()`, which cannot fail, so a builder that
+    // resolved no edges at all still produced a clean-looking number. Assert
+    // the fixture's own edges, once, outside any timed loop.
+    let callees: Vec<String> = builder
+        .build_for_symbol("outer_function", 3, TraversalDirection::Callees)
+        .entries
+        .iter()
+        .map(|e| e.symbol.name().to_string())
+        .collect();
+    assert_eq!(
+        callees.first().map(String::as_str),
+        Some("middle_function"),
+        "the fixture declares outer_function() calling middle_function(); a builder \
+         that resolves no edges would make every hot-path benchmark measure nothing"
+    );
+
+    let callers: Vec<String> = builder
+        .build_for_symbol("leaf_function", 3, TraversalDirection::Callers)
+        .entries
+        .iter()
+        .map(|e| e.symbol.name().to_string())
+        .collect();
+    assert!(
+        callers.iter().any(|c| c == "inner_function"),
+        "the fixture declares inner_function() calling leaf_function(); callers must \
+         resolve it, or the incoming-call benchmark measures nothing: {callers:?}"
+    );
+
     builder
 }
 
@@ -265,8 +296,9 @@ fn benchmark_hot_path_callees(c: &mut Criterion) {
                 black_box(3),
                 black_box(TraversalDirection::Callees),
             );
-            // usize is always >= 0, just verify the result exists
-            let _ = result.entries.len();
+            // black_box keeps the call from being optimized away. The real
+            // contract is pinned in setup_on_demand_builder.
+            black_box(result.entries.len());
         });
     });
 }
@@ -281,8 +313,9 @@ fn benchmark_hot_path_callers(c: &mut Criterion) {
                 black_box(3),
                 black_box(TraversalDirection::Callers),
             );
-            // usize is always >= 0, just verify the result exists
-            let _ = result.entries.len();
+            // black_box keeps the call from being optimized away. The real
+            // contract is pinned in setup_on_demand_builder.
+            black_box(result.entries.len());
         });
     });
 }
@@ -297,8 +330,9 @@ fn benchmark_hot_path_bidirectional(c: &mut Criterion) {
                 black_box(2),
                 black_box(TraversalDirection::Both),
             );
-            // usize is always >= 0, just verify the result exists
-            let _ = result.entries.len();
+            // black_box keeps the call from being optimized away. The real
+            // contract is pinned in setup_on_demand_builder.
+            black_box(result.entries.len());
         });
     });
 }
