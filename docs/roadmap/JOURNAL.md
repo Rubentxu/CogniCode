@@ -11459,3 +11459,207 @@ arrastra 55 errores bajo `sandbox/repos/` por la misma clase de defecto que ya
 se corrigió en el invariante de cero Actions: un escáner que trata checkouts de
 terceros no versionados como si fueran del repositorio. No toca los ADRs
 archivados de PRF ni reabre ninguna `C#` firmada.
+
+## N+81 — La skill que enseñaba un comando que sale con 0, y el puntero que nadie miraba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` · **Commits** `089be899`,
+`d04013c9`, `0ad20c0d`, `04d0fc7a` · **Rama** `verify/r0-exit-gate` · **Eje** R1
+(coherencia de distribución) · **Estado al cierre de este recibo**: `v0.101.2`
+tagueado y empujado, candidato **en curso**, release **no publicada**.
+
+### El corte se para por el contenido, no por la infraestructura
+
+La lane de candidato de `v0.101.1` llevaba nueve minutos en `cargo build
+--release` cuando se paró, y no hubo ningún fallo: el preflight había resuelto
+el clon desde el tag (`resolve_clone_ref` funcionando sobre el árbol real, no
+solo en el contrato) y estaba compilando. Se paró porque una auditoría del
+contenido que la release empaqueta encontró lo que viene a continuación, y
+`release-candidate.pipeline.kts` empaqueta cada skill publicada en
+`staging/<id>-<version>.tar.gz` mientras la release publica **exactamente** el
+candidato. Un candidato cortado antes de corregir una skill publica esa skill
+rota de forma permanente, y corregirla después obliga a otro corte completo.
+
+### Tres comandos que las skills enseñan y la CLI no acepta
+
+MEDIDO comparando estáticamente las firmas clap reales contra cada invocación de
+un bloque de shell de las skills.
+
+| Skill | Enseña | La firma real | Qué pasaba |
+|---|---|---|---|
+| `cognicode-pr-review` | `navigate references <symbol>` (×2) | `References { position }` = `file:line:column` | el símbolo se enlaza a `position`, `parse_position()` falla, y el brazo `Navigate` imprime en stderr **sin** `return Err` → **sale 0** |
+| `cognicode` | `index symbol-code MySymbol` | `SymbolCode { file, line, column }` | 1 de 3 positionals → clap sale 2 |
+| `cognicode-mcp` | `graph impact` (en prosa) | `Impact { symbol }` | falta el `symbol` requerido |
+
+La severidad no es la misma en los tres, y separarla evitó exagerar el
+alcance: `SKILL_BUNDLES` en `release_contract.rs` declara publicadas solo
+`cognicode` y `cognicode-mcp`, así que **`cognicode-pr-review` no se
+empaqueta** — sus dos apariciones no llegan al artefacto, aunque sí se
+distribuyen con el repositorio. Solo `index symbol-code` viaja en la release, y
+falla en voz alta. El que sale en silencio es el que no se empaqueta, que es
+justo lo que hacía el ítem `a1f961f6` caro de verdad.
+
+La corrección de `pr-review` no fue mecánica. La intención declarada de la skill
+es "find all usages of a symbol", y eso es exactamente lo que hace
+`cognicode find-usages <symbol>`, que además propaga su error. Sustituir
+`<symbol>` por `<file:line:column>` habría hecho el paso más difícil de
+seguir para arrancar un agente. `navigate references` queda documentado con su
+firma real, para cuando lo que se tiene es una posición.
+
+### El contrato, y los tres fallos que encontró en sí mismo
+
+`scripts/ci/test_skill_cli_invocations.py` contrasta cada invocación contra las
+firmas clap leídas de `commands.rs` en cada ejecución. No es una lista mantenida
+a mano, y esa es la parte que importa: `validate_skills.py` ya existía y estaba
+en verde, y no podía ver nada de esto porque contrasta nombres de tool MCP
+contra el catálogo, no invocaciones de CLI ni aridad de argumentos.
+
+Se escribió el contrato en verde sobre un árbol rojo y luego se rompió tres
+veces:
+
+- `--version` es un flag global, no un subcomando, y el patrón lo rechazaba —
+  precisamente el primer comando que enseña la skill publicada.
+- `Evidence(EvidenceCommand)` es una variante de **tupla**; si el parser solo
+  reconoce `Nombre {`, sus campos se cuelan en `FindUsages` y `find-usages` pasa
+  a parecer que cuelga de un subcomando. El síntoma era desconcertante: un
+  rechazo con la lista de subcomandos vacía.
+- un `bool` en la derivada de clap es un flag, no un positional ni un holder.
+
+Suite 119 → 133. Siete mutaciones; seis detectadas a la primera.
+
+### Dos mutaciones que "sobrevivieron" y dos huecos que sí eran reales
+
+Convertir `position` de References en flag sobrevivió: no comprobaba el
+**exceso** de positionals. Añadida esa comprobación detectó la mutación — y
+encontró a su vez que no estaba ignorando los comentarios de shell, que es
+justo como se anotan estas skills (`find-usages <symbol>  # look for test/`).
+Borrar los bloques de shell de una skill tampoco se detectó al principio: el
+suelo de fail-closed es **agregado**, y solo salta cuando ya no queda nada que
+auditar (medido: 0 invocaciones → rojo).
+
+Y dos veces una mutación sobrevivió porque **la mutación estaba mal**, no el
+guard: `v0.97.3` resultó ser un tag real de los 222 del repositorio, y la
+primera vez que `v0.9.9.9` no saltó fue porque la había insertado mal. Comprobar
+que la mutación se aplicó es parte de medir el guard.
+
+### La invariante que se enunciaba y nadie vigilaba
+
+R1 dice, literalmente, que debe ser *imposible* que `tag != published release`,
+que `README != install.sh latest` y que `manifest.version != binary
+--version`. La mitad vigilada era la de los documentos generados: los dos
+generadores declaran `--check`, la suite los ejecuta, y el drift salta en rojo.
+Eso ya estaba, y este turno **no lo repitió** — repetirlo sería una segunda
+fuente de verdad para lo mismo.
+
+Lo que no vigilaba nadie eran las superficies que un generador no produce: el
+bloque `## Versioning` del README, los pines que el usuario copia
+(`COGNICODE_VERSION=`, `@v`) y la cabecera del CHANGELOG. Un README anunciando
+`v0.98.1` mientras el manifiesto decía `0.101.2` habría tenido la suite entera
+en verde. Suite 133 → 141, con cinco mutaciones sobre los archivos de verdad,
+las cinco detectadas.
+
+### El eslabón que faltaba en la propia lane de release
+
+MEDIDO: **ningún** stage de `release.pipeline.kts` miraba `latest`, y ese
+puntero es lo único que decide qué recibe quien no fija versión —
+`install.sh` resuelve `api/releases/latest`, que excluye drafts y prereleases.
+Publicar la release no garantiza por sí solo que el puntero se mueva.
+
+Lo que ya estaba y este stage **no** duplica: `verify_release` comprueba
+tag == v{version}, digests recomputados, sin huérfanos ni componentes fantasma
+— pero contra **staging**; `confirm-uploaded-set` compara el conjunto producido
+contra los assets de GitHub; y `verify-as-consumer` redescarga y pasa
+`sha256sum -c SHA256SUMS` sobre los **bytes publicados**. El puntero era el
+único eslabón sin comprobar.
+
+El stage consulta el mismo endpoint que `install.sh`, no `gh release view`.
+Ejecutado contra la API real con `RELEASE_TAG=v0.101.2` resuelve `v0.98.1` y
+sale con 1 y el diagnóstico previsto: el hueco era real, medido, no teórico.
+
+### Cola reconciliada contra el árbol, no contra el documento
+
+Seis ítems cerrados por medición propia, tres de ellos **refutados** en vez de
+resueltos:
+
+- `3c7ab1ce` (OnDemandGraph sin `evidence-kernel`): hipótesis **refutada**.
+  `on_demand_graph.rs` no tiene ni una línea `#[cfg(feature)]`. El test **pasa**
+  en `e0361540`: 1 passed, 10.95s, 1 callee y 111 entrantes donde antes daba 0.
+  La causa real era la separación índice/cache que el propio doc-comment de
+  `build_index_from_sources` describe como el arreglo.
+  Al medirlo por primera vez se usó un nombre de test **parcial** con `--exact`:
+  0 tests ejecutados, exit 0. El paso vacío que este repositorio se niega a
+  aceptar, cometido en este turno y detectado al leer el recuento.
+- `a9937117` (perfil desconocido concede escritura): el llamador ya no concede.
+  `rmcp_adapter.rs:119-133` hace `panic!` explícito con "Refusing to start
+  rather than assume a writable posture". El helper sigue siendo permisivo y
+  está documentado como la herramienta equivocada para eso.
+- `94332dec` (checker sin puerta) y la mitad "sin cablear" de `bb604803`:
+  obsoletos. `certification.pipeline.kts:149` ejecuta
+  `scripts/perf-budget-check.sh` en el stage `perf-budget-verdict`. Cableado y
+  advisory no son lo contrario, y el ítem los tenía por una sola cosa.
+- `46ea2ecf` (rama `backup` sin pushear): obsoleto, no queda ninguna rama
+  `*backup*` en el repositorio de pipeline-kotlin.
+- Sigue **viva** la otra mitad de `bb604803`: 9 de 16 operaciones presupuestadas
+  sin benchmark. Un primer recuento de `perf-budget.toml` leyó 2
+  "operaciones" porque contaba secciones y no claves anidadas; el reparto real
+  es 7 en `graph.operations` (las únicas con benchmark), 5 en `mcp.tools` y 4 en
+  `explorerql`.
+
+### Lección 191
+
+La release publica el candidato **literalmente**. De ahí se sigue una regla de
+orden, no de contenido: un candidato se corta solo después de que su contenido
+empaquetado esté verificado, porque un arreglo posterior no es un parche, es
+otro corte con otra compilación completa. Auditar mientras el candidato todavía
+es barato de abandonar cuesta minutos; auditarlo después cuesta una release
+pública equivocada.
+
+### Lección 192
+
+Un validador para otra superficie no es cobertura parcial: es ceguera
+estructural. `validate_skills.py` estaba en verde, llevaba tiempo en verde, y no
+podía ver tres comandos rotos porque comparaba nombres de tool MCP contra un
+catálogo. La pregunta que sirve no es "¿este validador pasa?" sino "¿qué
+superficie mira, y cuál no está mirando nadie?".
+
+### Lección 193
+
+Un contrato al que nunca se le ha visto fallar no está probado: está escrito.
+Las mutaciones encontraron dos bugs propios que ningún test en verde podía
+encontrar — un lookahead que volvía undetectable una versión al final de una
+frase, y comentarios de shell contados como argumentos. Y dos veces una
+mutación "sobrevivió" porque la mutación estaba mal, no el guard.
+
+### Lección 194
+
+Un gate debe medir lo que el consumidor resuelve, no lo que el gate cree que
+resuelve. `gh release view` y `api/releases/latest` pueden razonar sobre
+nociones distintas de "latest"; consultar el segundo es la única forma de que
+el stage y `install.sh` compartan la misma definición.
+
+### Riesgo de coordinación, registrado
+
+Durante la lane apareció en este checkout un trabajo que no es de este turno:
+cambios en `commands.rs`, `analysis_service.rs` y `lightweight_index.rs`, y un
+test nuevo `cli_exit_code_propagation.rs`. El diff **añade `return Err(e)` a los
+ocho brazos** que se midieron como silenciosos, y su `cargo test` corre en este
+mismo directorio: otro actor está ejecutando `a1f961f6` en paralelo. No se ha
+commiteado ni revertido nada suyo.
+
+No es un bloqueo de la release y sí es un riesgo: el trabajo de este turno está
+commiteado y pusheado en `04d0fc7a`, y la lane corre en un worktree aislado
+pinneado al tag, cuyo clon de preflight **no** contiene el fichero nuevo —el
+candidato no está contaminado—. La regla que hay que mantener es que la lane de
+release se lanza desde ese worktree y nunca desde este checkout, porque
+publicar desde un árbol con cambios sin commitear de otro actor es publicar
+contenido no revisado.
+
+### Lo que NO se ejecuta aquí
+
+No se arregla `a1f961f6`: los ocho brazos que tragan el error se miden y se
+registran, y su arreglo cambia códigos de salida visibles, luego necesita su
+propio RED y su propio ciclo de suite completa, no un apéndice de una release.
+No se implementa R2: la release seguirá sin attestation, con la decisión de
+custodia de la clave tomada por el maintainer y el hueco documentado en su ADR.
+No se mide todavía la cobertura de `perf-budget.toml`: la máquina está
+ejecutando la lane y un actor paralelo, y un número tomado bajo esa carga no es
+un presupuesto.
