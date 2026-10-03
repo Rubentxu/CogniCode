@@ -553,6 +553,42 @@ pipeline {
             // missing part of what it publishes.
             stage("skill-bundles") {
                 sh(releasePaths + "\n" + """
+                    # MEDIDO 2026-10-03. Esto hacia `mkdir -p staging`, y la
+                    # raiz de `staging/` no se limpiaba. La lane de v0.101.5
+                    # llego aqui y se rompio en la stage siguiente:
+                    #
+                    #     ::error::unexpected file at staging root:
+                    #     cogh-aarch64-unknown-linux-gnu.cdx.json
+                    #
+                    # Esos ficheros los habia dejado la corrida ANTERIOR, que si
+                    # llego a `generate`: el aplanado copia de
+                    # `staging/payloads-<plataforma>/` a la raiz, y la copia se
+                    # queda. En la siguiente corrida el propio aplanado rechaza
+                    # su salida de antes —que es exactamente lo que debe hacer
+                    # con un fichero que no reconoce— y la lane cae.
+                    #
+                    # Es el mismo defecto que 32fb1ff6 arreglo un nivel mas
+                    # abajo, y con el mismo motivo: un release re-ejecutado
+                    # sobre un arbol sucio tiene que partir del estado que el
+                    # produce, no del que le dejaron. Aqui se limpian los
+                    # FICHEROS sueltos de la raiz, antes de preparar los
+                    # bundles, que es lo primero que esta lane escribe en ella.
+                    #
+                    # Solo ficheros, y a profundidad 1, por una razon que no es
+                    # cosmetica: los directorios `payloads-*` los acaba de
+                    # producir `package-<target>` en ESTA corrida, unas stages
+                    # antes. Borrarlos seria tirar el trabajo del build para
+                    # arreglar un arbol sucio.
+                    #
+                    # MEDIDO: escribir el nombre de esa stage con un dollar
+                    # delante rompe la compilacion. Un `#` abre un comentario
+                    # de shell, pero el texto sigue siendo el contenido de un
+                    # raw string de Kotlin, y para Kotlin un dollar abre una
+                    # plantilla. En `stage("skill-bundles")` no hay `target` en
+                    # ambito —esa stage esta fuera del `forEach` que lo
+                    # define— asi que el comentario no es un comentario: es una
+                    # referencia sin resolver. Hasta este parrafo lo decia.
+                    find staging -maxdepth 1 -type f -delete 2>/dev/null || true
                     mkdir -p staging
                     # Which bundles are published is the contract's answer, not a
                     # list written here. The workflow carried a python fallback
