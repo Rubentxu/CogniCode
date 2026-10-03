@@ -229,9 +229,9 @@ pub struct HandlerContext {
     validator: Arc<InputValidator>,
     pub analysis_service: Arc<AnalysisService>,
     pub refactor_service: Arc<RefactorService>,
-    pub compressor: Arc<ContextCompressorService>,
+    compressor: Arc<ContextCompressorService>,
     pub semantic_search: Arc<SemanticSearchService>,
-    pub symbol_code: Arc<SymbolCodeService>,
+    symbol_code: Arc<SymbolCodeService>,
     /// ST-04: who is on the other end, if anyone announced themselves.
     /// One value, not three independently-optional fields — see
     /// [`ClientIdentity`] for why the distinction is load-bearing.
@@ -243,12 +243,12 @@ pub struct HandlerContext {
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
     pub graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
-    pub code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
     pub file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     /// Optional IacRepository for IaC resource queries. Used by iac_query tool.
-    pub iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
+    iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     /// Cached InMemoryGraphStore fallback, lazily created on first
     /// `get_graph_store()` call when no explicit `graph_store` is configured.
     /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
@@ -311,6 +311,18 @@ impl HandlerContext {
     /// ST-04: the per-context sub-handler timeout for composite tools.
     pub fn sub_handler_timeout(&self) -> std::time::Duration {
         self.sub_handler_timeout
+    }
+
+    /// ST-04: the symbol-code service, by reference.
+    ///
+    /// The only accessor this slice needed. `compressor`, `iac_repo` and
+    /// `code_intelligence_provider` are read exclusively from modules *inside*
+    /// `handlers`, and a child module reads its parent's private fields
+    /// directly — so those three needed no accessor at all. `symbol_code` is
+    /// also read by `rmcp_adapter`, which is a sibling of `handlers` rather
+    /// than a child, and cannot see private fields.
+    pub fn symbol_code(&self) -> &Arc<SymbolCodeService> {
+        &self.symbol_code
     }
 
     /// ST-04: the workspace root, as `&Path` so callers cannot re-point the
@@ -5819,6 +5831,35 @@ mod tests {
         }
     }
 
+    // ST-04 slice 6. Four fields lost `pub`: `compressor`, `iac_repo`,
+    // `symbol_code` and `code_intelligence_provider`. Only `symbol_code`
+    // needed an accessor, because it is the only one of the four read from
+    // outside the `handlers` module tree. This asserts the one that can be
+    // checked from here, and that it hands out the same `Arc` every time, so
+    // a caller cannot swap in a different service between two dispatches.
+    #[test]
+    fn t_st04_symbol_code_accessor_returns_the_same_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(dir.path())
+            .with_symbol_code(crate::infrastructure::semantic::SymbolCodeService::new())
+            .build();
+
+        assert!(Arc::ptr_eq(ctx.symbol_code(), ctx.symbol_code()));
+        // The context is usable: the call goes through the `SymbolSource`
+        // port that the accessor hands out, not through a field that no
+        // longer exists. A miss is the honest result for a path that is not
+        // in the workspace, and it proves the service is wired, not stubbed.
+        use crate::application::ports::SymbolSource;
+        let missing = ctx
+            .symbol_code()
+            .source_at(&dir.path().join("nope.rs"), 0, 0);
+        assert!(
+            missing.is_err(),
+            "a missing path must not yield source text"
+        );
+    }
+
     // ST-04 slice 5. `working_dir` and `validator` lost `pub`. Their readers
     // were all reads — `clone`, `display`, `to_string_lossy` — including
     // `cognicode-mcp/src/server.rs`, a different crate, so accessors were
@@ -5990,9 +6031,20 @@ mod tests {
     // `&Path` rather than `&PathBuf` on purpose: handing back the owned
     // `PathBuf` would let a caller mutate the root through it, which is the
     // same class of hole `read_only` had.
+    //
+    // Slice 6 is 9 -> 5: `compressor`, `iac_repo`, `symbol_code` and
+    // `code_intelligence_provider`. Only ONE accessor was needed. The other
+    // three are read exclusively from modules *inside* `handlers`, and a
+    // child module reads its parent's private fields directly, so they cost
+    // nothing. `symbol_code` is also read by `rmcp_adapter`, a sibling of
+    // `handlers` rather than a child, and cannot see private fields.
+    //
+    // The five left are the ones that do have cross-module writers:
+    // `analysis_service`, `refactor_service`, `semantic_search`, `graph_store`
+    // and `file_ops_service`. Each needs its own decision, not a sweep.
     #[test]
     fn t_st04_handler_context_public_field_count_is_ratcheted() {
-        const CURRENT_PUBLIC_FIELDS: usize = 9;
+        const CURRENT_PUBLIC_FIELDS: usize = 5;
 
         let source = include_str!("mod.rs");
         let start = source

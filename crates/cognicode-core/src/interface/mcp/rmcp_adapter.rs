@@ -1903,7 +1903,7 @@ async fn call_tool_handler(
                 let input: crate::interface::mcp::schemas::SymbolCodeInput =
                     serde_json::from_value(arguments.into())?;
                 let output = crate::interface::mcp::handlers::handle_get_symbol_code(
-                    ctx.symbol_code.clone(),
+                    ctx.symbol_code().clone(),
                     ctx.validator().clone(),
                     ctx.working_dir().to_path_buf(),
                     input,
