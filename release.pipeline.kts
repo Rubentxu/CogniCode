@@ -259,8 +259,19 @@ pipeline {
             // upload, so a payload that changed in transit fails here rather
             // than at a consumer's install.
             stage("re-verify-after-upload") {
-                sh("""
-                    $cd || exit 1
+                // MEDIDO 2026-10-03. Esta stage usaba `$TARGET_DIR` sin el
+                // preambulo `releasePaths` que lo define, y como cada `sh` corre
+                // en su propio proceso (sonda de dos stages, pipelinek 0.46.0:
+                // la variable del stage 1 llega vacia al stage 2, el env del
+                // launcher si cruza) la ruta quedaba en "" y la lane ejecutaba
+                //
+                //     /release/cognicode-release verify ...
+                //
+                // que no existe. Y estaba aqui, DESPUES de `create-draft` y de
+                // `upload-payloads`: la lane dejaba un draft con todos los
+                // assets subidos y a partir de ahi no podia seguir. Las otras
+                // tres stages que nombran la variable si lo llevaban.
+                sh(releasePaths + "\n" + """
                     "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
