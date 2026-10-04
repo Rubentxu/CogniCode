@@ -12878,3 +12878,141 @@ Y con dos errores propios que el contrato también me hizo pagar: buscaba el
 veredicto en `stdout` cuando `pipelinek` lo escribe en `stderr`, así que
 reportaba cinco pipelines rotos que compilan bien. Un contrato que miente es
 peor que un contrato ausente, porque ocupa el sitio del que avisa.
+
+## N+92 — v0.101.8, y la segunda superficie de Release Truth que nadie vigilaba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.8) → B4 (Release Truth).
+
+`v0.101.8` es el corte que lleva dentro el arreglo de N+91. Commit `4488f199`, tag
+anotado publicado, rama y tag empujados. El tag remoto hace peel al mismo commit
+que la rama, que es la mitad de identidad que N+89 añadió y que nadie comprueba
+sino el propio contrato:
+
+    32a5b802…  refs/tags/v0.101.8
+    4488f199…  refs/tags/v0.101.8^{}     = origin/integrate/v1015
+
+### El gate, medido sobre ese commit exacto
+
+    contratos            219 passed, 0 failed   (213 previos + 6 nuevos)
+    cargo fmt --check    FMT_EXIT=0
+    cargo clippy -D…     CLIPPY_EXIT=0
+    cargo test --workspace  CARGO_EXIT=0
+                         6063 passed, 0 failed, 30 ignored   (163 bancos)
+    pipelinek validate   VALIDATION SUCCESSFUL, diagnostics: []
+    tag-coherence.sh     OK: tag v0.101.8 ↔ workspace.version 0.101.8
+
+Ninguna cifra heredada de un pipe: cada exit code se leyó del log de su comando.
+Los 6063 son los mismos de `d9630f7a` porque **ningún fuente Rust cambió** — lo
+verifiqué contando los `.rs` del árbol staged, que son cero. El bump de versión
+sí propagó: clippy compila `cognicode-cli v0.101.8`.
+
+### La segunda superficie: `SECURITY.md` nombraba una rama que no lleva la versión
+
+Leyendo el contenido en staging antes de commitear encontré esto:
+
+    | 0.101.8 (current `main`, not yet released) | yes |
+
+`origin/main` está en `2c4831ec`, que es **0.101.0**. El documento que declara
+la política de soporte afirmaba que la versión vigente vivía en una rama tres
+versiones atrasada. Y lo dice desde `v0.101.7`: la misma frase, dos cortes
+seguidos.
+
+Es **la misma clase de defecto que N+89** —una afirmación de Release Truth que
+nadie ata a nada— en una superficie que el contrato de coherencia no miraba.
+Vivió dos cortes porque la superficie estaba vigilada a medias: la **versión**
+de la tabla se leía, la **rama** no se leía, y el campo que mentía era
+precisamente el segundo.
+
+Lo corregí y **extendí el contrato que ya era el dueño**,
+`test_release_truth_convergence.py`. No hay fichero nuevo: el descubrimiento de
+contratos es por glob (`scripts/ci/test_*.py`), así que añadir una superficie es
+cambiar una función pura y sus tests, y ningún orquestador se entera. La función
+`security_supported_problems` degrada a `[]` cuando `origin/main` no resuelve,
+porque un clon que no puede mirar no puede afirmar — el mismo criterio que ya
+usaba `named_tags_problems` con la visibilidad de tags.
+
+El RED medido es el exacto, no el trivial. Con la fila diciendo `main` y main
+atrás:
+
+    FAIL - 1 fallo(s):
+    test_the_four_surfaces_agree_with_the_workspace: la release no es coherente
+    consigo misma:
+      SECURITY.md describe 0.101.8 como `main`, pero origin/main esta en
+      0.101.0. La fila afirma una rama que no lleva esa version: quien lea la
+      politica de soporte buscara un corte que no existe ahi.
+
+La primera vez que lo probé falló por el motivo **equivocado** —decía 0.101.7, no
+0.101.8— así que ese primer rojo no demostraba el defecto nuevo. Rehice el
+RED contra el defecto: el mensaje que importa es el de la rama.
+
+### Lección 214 — Un contrato que lee la mitad de una afirmación no vigila esa afirmación
+
+La tabla de versiones soportadas tenía **dos** hechos en una fila: qué versión
+está soportada, y dónde vive. El contrato leía el primero y aceptaba el
+segundo sin comprobarlo, porque era texto libre dentro de la celda. Y el texto
+libre es exactamente donde se cuela un `current main` que nadie mira.
+
+La regla que sale de aquí no es «lee más ficheros»: es que **cuando un contrato
+extrae un hecho de un documento que afirma varios, tiene que decir cuál
+comprueba y por qué los otros no importan aquí**. Y si puede, que la forma de la
+afirmación sea parseable —una columna con la rama, no un paréntesis— porque lo
+parseable es lo que se puede contrastar.
+
+### El gate de atención de SDDK está apagado, y ahora se sabe por qué
+
+Hasta aquí la causa era «el ledger está roto». **Eso era una hipótesis, y
+medirla la desmontó.** Lección 207 entera aplicada a un blocker que ya estaba
+aceptado como raro.
+
+Medido:
+
+- El ledger **no** está corrupto. La tabla `cycle_leases` existe, tiene su DDL
+  correcto, y `SELECT * FROM cycle_leases` responde vacío sin error. El propio
+  binario la crea: el ledger recién adoptado tiene 27 tablas y esa es una de
+  ellas.
+- **Ninguna base de datos de todo el home SDDK** tiene una tabla `cycle_leases`
+  que no sea la recién creada. La infraestructura está bien.
+- El fallo no es de versión: **2.5.3, 2.5.5 y 2.5.6 fallan con el mensaje
+  idéntico** y el mismo código de salida. `Invalid parameter name:
+  cycle_leases` es un parámetro que el binario vincula a una sentencia que no
+  lo declara — un defecto en el `LedgerFactory` de sddk, no en los datos.
+- La adopción **sí funciona** (`sddk adopt apply` → `status: complete`). Lo que
+  falla es la lectura de planificación, que es la que usa la sonda del gate.
+
+Consecuencia operativa, medida: el modo es `auto`, y en `auto` la sonda es
+`sddk plan roadmap status`, que muere por esto. El gate queda **off** y
+`pre-commit` pasa directo a su hook legado. **No lo forzé a `on`**: en ese modo
+el hook exigiría un recibo de alineamiento que este mismo ledger roto no puede
+producir, y bloquearía todos los commits del repositorio sin ganar nada. Un
+gate que se apaga solo porque no puede responder no se arregla encendiéndolo a
+fuerza.
+
+Mientras tanto, **este recibo lo escribe el JOURNAL y no SDDK**, porque el
+dueño está caído. Es la excepción, no el procedimiento: en cuanto el
+`LedgerFactory` vuelva a vincular bien, el recibo vuelve a su sitio.
+
+### La lane, en vuelo
+
+Sobre el tag real, en `cog-rel-v01011` en HEAD desligado `4488f199`, con los
+**6 tarballs de 0.101.4/0.101.5 intactos** — el árbol exacto donde murió la
+lane de `v0.101.5`, para que la prueba del arreglo de la raíz de staging sea
+sobre su propio caso y no sobre un árbol limpio. El launcher verifica *antes de
+construir* que el checkout es el commit del tag, y si no lo es sale con 42 en
+vez de producir un candidato que ningún tag nombra: la misma propiedad que N+89
+leerse en la stage, pero puesta en el lado que la evita.
+
+Medido hasta el momento de escribir este recibo: `PREFLIGHT PASS` (stage 1,
+clon limpio compilando el workspace desde cero) y 17 stages superadas; en la 18,
+el cross-build a aarch64, que es la que en `v0.101.4` mataba la lane veinte
+minutos después de darse por buena. Esta vez lleva las dos guardas de N+86 por
+delante, así que o pasa o falla nombrando el motivo.
+
+### Lo que queda, y por qué no se toca aquí
+
+Tres decisiones seguían esperando al operador y **no las abrí**: la marca
+KEEP+MARK de `multimodal` (toca `--help` publicado), el `process::exit` alcanzable
+en `execute_doctor` (el exit code es contrato publicado) y la hermeticidad del
+enlace aarch64. Son deuda tangencial a este bloque, y la regla del bloque es
+registrarla y no abrir otro frente. Publicar la GitHub Release es la única
+puerta irreversible que queda, y esa sí es puerta de operador.
