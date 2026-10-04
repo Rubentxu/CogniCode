@@ -163,6 +163,43 @@ def test_the_cargo_deny_version_is_fixed() -> None:
         )
 
 
+def test_the_gate_installs_the_lsp_server_it_needs() -> None:
+    """El gate tiene que dejar de saltarse los tests que necesitan un LSP.
+
+    MEDIDO 2026-10-04. `merge-gate.pipeline.kts` corre
+    `cargo test -p cognicode-core --lib`, y en esa suite vive
+    `test_hierarchy_falls_through_within_the_bounded_readiness`, que empieza
+    con un `println!` y un `return` cuando `rust-analyzer` no esta en el PATH.
+    El gate se saltaba el test y daba verde.
+
+    Y no era solo que faltara el binario: con rustup instalado, el shim
+    `~/.cargo/bin/rust-analyzer` es un symlink a `rustup` que responde
+    `Unknown binary` con codigo 1. Esta en el PATH, es ejecutable, y no
+    funciona. Un gate que lo comprobara con `command -v` pasaria el paso de
+    instalacion y se saltaria los tests igual, que es el defecto que se quiere
+    cerrar.
+
+    Por eso se afirman DOS cosas y no una: que el gate lo instala, y que
+    despues lo PREGUNTA. Preguntar es lo unico que distingue "instalado" de
+    "utilizable".
+    """
+    body = "\n".join(authority.pipeline_steps(authority.MERGE_AUTHORITY))
+    check(
+        "rustup component add rust-analyzer" in body,
+        f"{authority.MERGE_AUTHORITY} never installs rust-analyzer. The core suite "
+        f"contains a test that returns early when the binary is absent, so the "
+        f"gate reports green without ever running it. Measured: nobody in the "
+        f"pipeline, the CI scripts or the workflows installed it, and the rustup "
+        f"shim exits 1 while sitting in the PATH",
+    )
+    check(
+        body.count("rust-analyzer --version") >= 2,
+        "the gate installs rust-analyzer but never asks it whether it answers. "
+        "An install step that is not followed by a probe passes on a broken shim, "
+        "which is the exact failure this contract exists to catch",
+    )
+
+
 def test_the_merge_authority_exists() -> None:
     """Anti-vacuity: the pipeline every other test reads has to be there.
 
