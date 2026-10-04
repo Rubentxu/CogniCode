@@ -13500,3 +13500,93 @@ etapa SHA256 por construcción, que es el comportamiento correcto: no puedes
 instalar bytes que no descargaste". El `#[ignore]` es correcto, el fallo es el
 comportamiento, y dejarlo ignorado es lo honesto. Un test que verifica la
 integridad no debe pasar contra un hash inventado.
+
+## N+96 — Cuatro tests LSP que daban verde sin LSP
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4ter (calidad de los tests de integración).
+
+### Lo que se encontró, y cómo
+
+Auditando los `#[ignore]` del repo se vio que los cuatro tests de integración
+LSP estaban ignorados con el motivo "requires rust-analyzer binary". Corrieron
+con `--ignored` y **dieron verde**:
+
+    test test_rust_analyzer_goto_definition ... ok
+    test test_rust_analyzer_hover ... ok
+    test result: ok. 2 passed, 0 failed
+
+Verde no es lo mismo que midiendo, así que se miró si el servidor estaba
+realmente ahí:
+
+    $ ls -l ~/.cargo/bin/rust-analyzer
+    lrwxrwxrwx ... /home/rubentxu/.cargo/bin/rust-analyzer -> rustup
+    $ rust-analyzer --version
+    error: Unknown binary 'rust-analyzer' in official toolchain '1.96.0-x86_64-unknown-linux-gnu'
+    RA_EXIT=1
+
+El shim estaba en el PATH, era ejecutable, y **no servía para nada**. El
+`#[ignore]` era correcto por la conclusión equivocada: no faltaba el binario por
+el motivo que se suponía.
+
+Instalado de verdad, `rustup component add rust-analyzer` → `rust-analyzer
+1.96.0 (ac68faa 2026-05-25)`, los mismos dos tests volvieron a dar verde. **El
+mismo veredicto con y sin LSP**, que es la definición de un test que no
+ejercita lo que dice ejercitar.
+
+### Por que: el brazo que se tragaba todo
+
+Los cuatro tests tenían un brazo idéntico:
+
+    Ok(Ok(None)) => {
+        // This can happen if LSP didn't return anything useful
+        // but we shouldn't error
+    }
+
+Cuando el LSP no está, el servicio **degrada a tree-sitter y devuelve `Ok(None)`
+en vez de un error**. Ese `None` es el aviso de que el servidor no arrancó, y el
+test lo aceptaba con un comentario que lo hacía parecer normal. La degradación
+silenciosa es una decisión de diseño correcta —un `hover` que falla porque no
+hay LSP debe devolver lo que el parser sabe—; lo que no es correcto es que el
+test de integración no distinga una cosa de la otra.
+
+Se reemplaza el brazo por `none_is_not_a_verdict(operation, detail)`, que falla
+diciendo cuál de las dos cosas pasó y qué mirar. Y se añade
+`LspClient::is_lsp_server_usable`, porque `get_lsp_server` —lo que había—
+responde si un servidor está **configurado**, no si **funciona**: lleva
+`#[allow(dead_code)]`, no lo llama nadie en producción, y por eso nadie notó
+el hueco.
+
+### Mutaciones
+
+    sin servidor LSP registrado
+      FAILED, con el diagnostico exacto: "`hover` devolvio `None`. Eso NO es un
+      resultado aceptable: con el LSP disponible significa que el servidor
+      arranco y no respondio, y sin el LSP significa que el servicio degrado a
+      tree-sitter sin decirlo."
+    con rust-analyzer 1.96.0 real
+      ok (5.56 s, el tiempo de indexado del servidor)
+
+El commit anterior (`7b37a35e`) deja el otro extremo medido: hacer que el
+detector decida por el PATH en vez de preguntar al binario reproduce el fallo
+del shim, y los dos tests que solo hacían `println!` —"the test always passes -
+it just reports the status"— ahora afirman la propiedad que los hace existir.
+
+### Lección 219 — Un test que acepta el `None` no sabe qué está probando
+
+Hay una clase de test que es verde por construcción y no lo parece: el que
+acepta su propio modo de fallo como un resultado legítimo. Aquí el
+`Ok(Ok(None))` con su comentario tranquilizador. El test parece cubrir hover
+sobre una función; en realidad cubre *"el servicio no se rompe cuando el hover
+no tiene respuesta"*, que es otra cosa y no la que su nombre promete.
+
+La forma de cazarlo no fue leer el código, fue **cambiar el mundo y ver si el
+veredicto se movía**: instalar el componente que el shim mentía sobre, y
+comprobar que el test daba el mismo verde. Un test cuyo resultado no depende
+del sistema que dice ejercitar no lo está ejercitando, por muy elaborado que
+sea su `assert` de que el resultado es válido.
+
+Y el corolario que sale de los dos casos juntos, `execute_doctor` y estos tests:
+**aceptar un estado degradado como veredicto es una decisión, y toda decisión
+necesita un nombre**. El servicio degrade a tree-sitter a propósito; los tests
+no tienen por qué degradar en silencio al afirmar.
