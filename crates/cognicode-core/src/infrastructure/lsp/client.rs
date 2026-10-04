@@ -77,6 +77,32 @@ impl LspClient {
         self.lsp_servers.read().get(language).cloned()
     }
 
+    /// Whether a server is registered for `language` AND its command runs.
+    ///
+    /// MEDIDO 2026-10-04. existed `get_lsp_server`, que responde si un
+    /// servidor esta CONFIGURADO, y no si funciona. La diferencia no es
+    /// academica: el shim `~/.cargo/bin/rust-analyzer` de una instalacion con
+    /// rustup esta en el PATH y responde `Unknown binary` con codigo 1, y un
+    /// `LspServerConfig` puede apuntar a el sin que nadie lo note. Un test de
+    /// integracion que solo comprueba la configuracion pasa con un LSP que no
+    /// arranca, porque el servicio degrada a tree-sitter y devuelve `Ok(None)`
+    /// en vez de un error.
+    ///
+    /// Esto se lo pregunta al binario, por la misma razon que el detector de
+    /// `lsp_integration_test.rs`: lo que importa es si responde, no si esta en
+    /// el disco.
+    #[allow(dead_code)]
+    pub fn is_lsp_server_usable(&self, language: &str) -> bool {
+        let Some(config) = self.get_lsp_server(language) else {
+            return false;
+        };
+        std::process::Command::new(&config.command)
+            .arg("--version")
+            .output()
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    }
+
     /// Gets all registered LSP servers
     #[allow(dead_code)]
     pub fn get_all_servers(&self) -> HashMap<String, LspServerConfig> {

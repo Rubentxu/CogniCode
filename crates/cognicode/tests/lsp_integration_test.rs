@@ -35,6 +35,32 @@ fn pyright_available() -> bool {
     command_reports_version("pyright")
 }
 
+/// Por que `Ok(None)` ya no se acepta como veredicto.
+///
+/// MEDIDO 2026-10-04: los cuatro tests LSP de integracion tenian un brazo
+/// `Ok(Ok(None)) => {}` que no afirmaba nada, con el comentario "this can
+/// happen if the LSP did not return anything useful but we should not error".
+/// Medido lo que ese brazo escondia: los tests PASABAN con el shim de
+/// rust-analyzer roto (codigo 1) y PASABAN con rust-analyzer 1.96.0 instalado.
+/// El mismo resultado con y sin LSP, porque cuando el servidor no esta, el
+/// servicio degrada a tree-sitter y devuelve `None` en vez de un error.
+///
+/// Un test cuyo veredicto es el mismo con y sin el sistema que dice
+/// ejercitar, no ejercita nada. Ahora el `None` se explica: o el LSP no
+/// arranco, y eso se dice nombrando el binario, o arranco y no devolvio nada,
+/// que ya es un fallo que se puede mirar.
+fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
+    panic!(
+        "`{operation}` devolvio `None`. Eso NO es un resultado aceptable: con el \
+         LSP disponible significa que el servidor arranco y no respondio, y sin \
+         el LSP significa que el servicio degrado a tree-sitter sin decirlo.\n\
+         {detail}\n\
+         Un test que pasa igual con y sin el sistema que dice ejercitar no \
+         mide nada. Antes este brazo aceptaba `None` con un comentario, y por eso \
+         los cuatro tests LSP daban verde con el shim de rustup roto."
+    );
+}
+
 #[tokio::test]
 #[ignore = "requires rust-analyzer binary"]
 async fn test_rust_analyzer_hover() {
@@ -111,10 +137,12 @@ fn main() {
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // This can happen if LSP didn't return anything useful
-            // but we shouldn't error
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "hover",
+            "Si rust-analyzer esta instalado y devuelve None, el problema esta en el \
+             camino LSP, no en el test. Comprueba `rust-analyzer --version` y que el \
+             servicio tenga el servidor registrado para `rust`.",
+        ),
         Ok(Err(e)) => {
             panic!("Hover request failed: {}", e);
         }
@@ -201,9 +229,12 @@ fn main() {
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // LSP might not return anything in some cases
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "goto_definition",
+            "Con rust-analyzer instalado, `goto_definition` sobre la definicion de \
+             `greet` tiene que devolver algo. Si devuelve None, el servidor no \
+             arranco o no esta registrado para `rust`.",
+        ),
         Ok(Err(e)) => {
             panic!("Definition request failed: {}", e);
         }
@@ -270,9 +301,11 @@ print(result)
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // Pyright might not return anything
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "goto_definition (pyright)",
+            "Igual que el de rust-analyzer: si el servidor arranco, una \
+             definicion que existe tiene que aparecer.",
+        ),
         Ok(Err(e)) => {
             panic!("Definition request failed: {}", e);
         }
@@ -349,9 +382,11 @@ farewell()
                 refs.len()
             );
         }
-        Ok(Ok(None)) => {
-            // LSP might not return anything
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "find_references (pyright)",
+            "Si pyright arranco, las referencias de un simbolo declarado tienen que \
+             existir.",
+        ),
         Ok(Err(e)) => {
             panic!("Find references request failed: {}", e);
         }
