@@ -13822,3 +13822,83 @@ Y el cierre del circulo, que es lo que hace que este bloque valiera la pena: los
 arreglos de N+96 y N+97 eran correctos y **el gate no los ejecutaba**. Un test
 que el gate se salta no protege el arreglo que acabas de hacer. Arreglar tests
 sin cerrar el hueco del gate es dejar el trabajo a medias sin notarlo.
+
+## N+99 — La deteccion que preguntaba en una rama y suponia en la otra
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4quinies (extender la Leccion 221).
+
+### Donde se busco, y lo que se descarto
+
+La Leccion 221 dice que comprobar la presencia no es comprobar el uso. Antes de
+suponer que habia mas, se busco, y dos alertas resultaron falsas:
+
+- **30 suites de CLI y MCP "no nombradas" por el gate.** El gate nombra suites
+  una a una, pero tiene `cli-unrestricted-ladybug`, que corre
+  `cargo test -p cognicode-cli --features ladybug` sin selector. Las 28 de CLI
+  estan cubiertas por ahi. **Falsa alarma mia, por metodo**: laeria de leer el
+  fichero en vez de la topologia.
+- **`java_without_its_server_degrades_by_declaration`.** Se auto-salta si `jdtls`
+  esta en el PATH, y su nombre dice lo contrario de lo que hace. Leido: el doc
+  explica que la rama no aplica con servidor, y hay un test gemelo para el otro
+  caso. Correcto por diseno.
+
+### Lo que si era el defecto
+
+`locate_cargo_deny`, en `a015_licenses_gate.rs`, filtra distinto en sus dos
+ramas. La del PATH **pregunta**:
+
+    Command::new("cargo-deny").arg("--version").output()
+        .filter(|o| o.status.success())
+
+La del fallback —la que se usa cuando no esta en el PATH— **supone**:
+
+    .find(|p| p.is_file())
+
+Nueve lineas de la comprobacion correcta. MEDIDO con un `CARGO_HOME` de
+mentira, en las dos formas que importan:
+
+- un shim que existe y sale con codigo 1: `is_file()` da true, el test lo
+  ejecuta y falla al hacer spawn, con "No such file" o "Permission denied" en
+  vez de decir que la herramienta no sirve
+- un fichero de 21 bytes con permisos 644: tambien `is_file()` da true, y ahi ni
+  siquiera es ejecutable
+
+Las dos son el shim de rustup de N+96 por tercera vez: algo que esta donde
+deberia y no hace lo que su nombre promete.
+
+### El arreglo, y por que no se comparte
+
+`answers_to_version`, la misma distincion que ya existe en
+`is_lsp_server_usable` (cognicode-core) y `command_reports_version`
+(lsp_integration_test.rs). **Tres copias de la misma comprobacion en tres sitios
+ya es un hallazgo**, pero un helper compartido entre un test de CLI y dos de
+libreria distinta costaria mas de lo que ahorra: la forma son tres lineas y el
+acoplamiento seria un modulo nuevo. Se anota como observacion, no se fuerza.
+
+MEDIDO, ejecutando el binario de test con cada entorno:
+
+    cargo-deny 0.20.2 real       3 passed, 1.77s   (corre de verdad)
+    shim que sale con 1          3 passed, 0.00s   (skip: cargo-deny not on PATH)
+    fichero 21 bytes con 644     3 passed, 0.00s   (skip: cargo-deny not on PATH)
+
+MUTACION, volver a `.find(|p| p.is_file())`:
+
+    FAILED, 1 passed; 2 failed — el mismo escenario que ahora salta limpio
+    revienta con el error de spawn en vez de decir que la tool no sirve
+
+Y una nota de metodo que salio de aqui: la primera medicion dio `3 passed` para
+el shim roto, y parecia que el arreglo no funcionaba. Era el binario viejo en
+cache. Con `--nocapture` se ve el mensaje de skip correcto. **Un resultado que
+contradice la hipotesis se comprueba con la instrumentacion que lo muestra, no
+se reinterpreta hasta que cuadre** — que es la version de la Lección 219 para
+las mediciones, y la mas facil de violar cuando one's quiere que el arreglo
+funcione.
+
+### Lo que se reviso y NO se toco
+
+`layout.rs:947`, en `cmd_reshim`, tambien usa `is_file()` sobre un binario de
+componente, y es produccion. Se deja: ahi el `is_file()` responde a "el
+fichero esta", y quien reporta de que no sirve es `install_shim`, que ya lo
+hace con contexto. **No es el patron defectuoso**: el defecto es comprobar la
+presencia *en vez de* la ejecucion, no *ademas de* ella.
