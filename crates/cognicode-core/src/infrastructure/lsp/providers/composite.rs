@@ -1535,12 +1535,25 @@ mod tests {
         );
     }
 
-    /// W3 (task 3.2): with a lower tier enabled, `get_hierarchy` falls
-    /// through on the bound instead of paying the full S2 readiness wait
-    /// (`LspProcess::initialize` has its own 30s request timeout). PATH-gated
-    /// on the Rust server binary, like the e39 Java conformance branch:
-    /// without a spawnable server the gate fails immediately and cannot time
-    /// out.
+    /// W3 (task 3.2): con un tier inferior habilitado, `get_hierarchy` cae al
+    /// bound en vez de pagar la espera completa de readiness de S2
+    /// (`LspProcess::initialize` tiene su propio timeout de 30s).
+    ///
+    /// MEDIDO 2026-10-04, y por que este test cambio. Antes afirmaba que el
+    /// diagnostico de S2 tiene que ser `Unavailable` nombrando el
+    /// `bounded fallback`. Eso SOLO ocurre cuando el presupuesto se agota
+    /// mientras se espera el readiness del servidor. Con `rust-analyzer`
+    /// instalado el proceso ya esta caliente y el readiness se cumple dentro
+    /// de los 50 ms, asi que el gate PASA, y el S2 falla despues por su propia
+    /// cuenta con `Type hierarchy via LSP not yet implemented` —un `Error`,
+    /// no un `Unavailable`. El test era cierto en un mundo sin servidor y
+    /// falso en un mundo con servidor, y no por el codigo sino por el
+    /// entorno.
+    ///
+    /// La propiedad de W3 no es "que mensaje sale": es que la llamada TERMINA
+    /// y cae al tier inferior sin pagar los 30s. Eso se afirma aqui, y lo
+    /// que dependa del camino que tome el readiness se afirma en el test
+    /// hermano, que usa un readiness colgado y no depende del PATH.
     #[tokio::test]
     async fn test_hierarchy_falls_through_within_the_bounded_readiness() {
         if !binary_on_path("rust-analyzer") {
@@ -1578,19 +1591,59 @@ mod tests {
             "the bound must cut the wait far below the 30s request timeout: {elapsed:?}"
         );
         let diagnostics = outcome.diagnostics();
+        // S2 tiene que haber intentado yendo, sea cual sea el camino: o el
+        // bound lo corto y nombra el fallback acotado, o el servidor arranco a
+        // tiempo y fallo por su propia cuenta. Lo que NO vale es que S2 no
+        // aparezca, porque eso significaria que nadie lo intento.
         assert!(
-            diagnostics.iter().any(|d| {
-                d.attempted_tier == PrecisionTier::S2
-                    && d.outcome == ProviderOutcome::Unavailable
-                    && d.message.contains("bounded fallback")
-            }),
-            "S2 must record an Unavailable diagnostic naming the bounded fallback: {diagnostics:?}"
+            diagnostics
+                .iter()
+                .any(|d| d.attempted_tier == PrecisionTier::S2),
+            "S2 tiene que dejar diagnostico, por el bound o por su propia causa: \
+             {diagnostics:?}"
         );
+        // Y si lo que reporto fue el corte del bound, tiene que decirlo, para
+        // que quien lo lea sepa que fue una decision de politica y no un
+        // fallo del servidor.
+        let s2_diagnostic = diagnostics
+            .iter()
+            .find(|d| d.attempted_tier == PrecisionTier::S2)
+            .expect("el diagnostico de S2 existe por la asercion anterior");
+        if s2_diagnostic.outcome == ProviderOutcome::Unavailable {
+            assert!(
+                s2_diagnostic.message.contains("bounded fallback"),
+                "un `Unavailable` de S2 tiene que nombrar el fallback acotado, \
+                 si no parece un fallo de servidor: {:?}",
+                s2_diagnostic
+            );
+        }
         let status = provider.status();
         let s2 = status.tier(PrecisionTier::S2).expect("S2 counters present");
-        assert_eq!((s2.attempts, s2.unavailable), (1, 1));
+        // Lo que W3 exige es que S2 se INTENTE UNA VEZ y que su intento se
+        // contabilice como no servido. MEDIDO: con el servidor arrancando
+        // dentro del bound, el fallo de S2 es un `Error` propio
+        // (`not yet implemented`), no el `Unavailable` del corte, asi que el
+        // contador que se incrementa es `errors` y no `unavailable`. Afirmar
+        // `unavailable == 1` fijaba el entorno, no la propiedad.
+        assert_eq!(
+            s2.attempts, 1,
+            "S2 se intenta exactamente una vez por operacion"
+        );
+        assert_eq!(
+            s2.unavailable + s2.errors,
+            1,
+            "el unico intento de S2 tiene que quedar sin servir, y una sola vez: \
+             {:?}",
+            s2
+        );
         let s0 = status.tier(PrecisionTier::S0).expect("S0 counters present");
-        assert_eq!((s0.attempts, s0.errors), (1, 1));
+        assert_eq!(
+            (s0.attempts, s0.errors),
+            (1, 1),
+            "el tier de tree-sitter se intenta una vez y no puede servir \
+             jerarquia: {:?}",
+            s0
+        );
     }
 
     /// PATH scan (no spawn) for the bounded-readiness test: mirrors the
