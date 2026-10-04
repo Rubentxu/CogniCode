@@ -13262,3 +13262,147 @@ Es deuda real y el diagnóstico es preciso, pero arreglarla toca el camino del
 exit code, que es contrato publicado, y no hay daño activo hoy. Se registra y no
 se abre frente nuevo. Lo mismo con la marca KEEP+MARK de `multimodal` y con la
 hermeticidad del enlace aarch64.
+
+## N+94 — v0.101.9: el primer tag que se publica después de producir su candidato
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 cerrado (cadena CLI → UAT → candidato →
+certificación → release).
+
+Este es el cierre de la cadena que llevaba varios bloques abierta. Todo lo que
+sigue está medido, con el comando y el código de salida al lado.
+
+### El gate, sobre el árbol que se publica
+
+Ejecutado sobre `edf53822`, releído del log y no del exit del script:
+
+    HEAD=edf53822a613b896093cb2ab36f9d5c13235d766
+    FMT_EXIT=0
+    CLIPPY_EXIT=0        (cargo clippy -p cognicode-cli --all-targets -D warnings)
+    CONTRACTS_EXIT=0     TOTAL: 219 passed, 0 failed
+    CARGO_EXIT=0         6071 passed, 0 failed, 30 ignored (163 bancos)
+    COHERENCE_EXIT=0     OK: tag v0.101.9 ↔ workspace.version 0.101.9
+    GATE_END 2026-10-04T08:00:47Z
+
+Los 6071 son los 6069 de `7f7d087e` más los dos del ratchet nuevo. Ningún otro
+cambió. El gate entero tardó 20 min 17 s, casi todos en
+`workspace_documentation_is_warning_free`, que invoca `rustdoc` sobre cada crate
+del workspace.
+
+### El tag, y la regla que cambió
+
+`v0.101.9` estaba **creado en local** desde el corte, y su primer intento de
+candidatos falló. Al entrar la regla nueva —el tag local se puede mover, uno
+publicado no— el arreglo del `release/` fue un commit normal, el tag se movió
+encima con `git tag -f`, y la segunda lane corrió sobre el mismo worktree sucio
+que había provocado el fallo:
+
+    HEAD=4faa0138  TAGCOMMIT=4faa0138
+    STAGING_BEFORE=3 tarballs sucios
+    Pipeline finished with SUCCESS
+    LANE_EXIT=0
+    END 2026-10-04T07:20:43Z
+
+Once artefactos, y los **once de `0.101.9`**. Comprobado aparte del veredicto de
+la lane, que es la lesson de B2 aplicada: no se confía en el exit que la lane
+imprime sobre lo que la lane hizo.
+
+    $ cd release && sha256sum -c SHA256SUMS
+    11 líneas, todas "La suma coincide"
+
+Y solo entonces se empujó:
+
+    rama   4488f199..edf53822  integrate/v1015 -> integrate/v1015
+    tag    * [new tag] v0.101.9 -> v0.101.9
+
+El tag remoto hace peel a `4faa0138`, y se comprobó con `git ls-remote` en el
+momento, no de memoria:
+
+    4faa0138fd69b3439633674cdec11bdb4b908e43  refs/tags/v0.101.9^{}
+
+### La release, y lo que la hace distinta a las anteriores
+
+`gh` ya estaba autenticado con scope `repo`, así que no hubo bloqueo de
+credenciales. Dos cosas costaron un intento cada una y quedan escritas para no
+repetirlas:
+
+- `--target v0.101.9` falla con `HTTP 422: Release.target_commitish is invalid`.
+  La API de GitHub no acepta un **nombre de tag** ahí, solo una rama o un SHA.
+  Con el SHA del commit que el tag apunta, sí.
+- `gh release view --json assets` cuenta **10** después de subir 10 ficheros, y
+  eran 12 los que había que subir. Faltaban los dos `bundle-*.yaml`, que la
+  primera llamada no incluyó. Contar contra el `SHA256SUMS` y no contra el
+  `ls` del directorio es lo que lo caza: el directorio tenía 12, GitHub tenía 10,
+  y la diferencia era el número correcto.
+
+Publicado, con `isDraft=false` e `isPrerelease=false`, sobre
+`https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.9`, con los doce
+artefactos del candidato: seis tarballs por target, dos `src` de 2–5 KB, los dos
+bundles, el inventario y el `SHA256SUMS`.
+
+### El UAT, contra lo publicado y no contra el worktree
+
+El UAT de la lane leyó los tarballs del worktree. Eso prueba que el worktree
+está bien, **no que lo publicado esté bien**, que es la promesa que hace una
+GitHub Release. Así que se descargaron los doce assets desde GitHub y se pasó el
+UAT sobre esa copia:
+
+    $ sha256sum -c SHA256SUMS          # el SHA256SUMS descargado, no el local
+    12 líneas, todas "La suma coincide"
+    PUBLISHED_CHECK_EXIT=0
+
+    $ bash scripts/ci/release-install-smoke.sh 0.101.9 <descarga>
+    ✔ OpenCode integration complete
+    cognicode 0.101.9
+    cognicode-mcp 0.101.9
+    ==> cogh doctor (linux-x86-64 / linux / x86-64)
+      PASS Core health          home, bin/, shims/ present
+      PASS MCP                  cognicode-mcp shim present
+      PASS Native analysis      host-native, sin runtime de contenedores
+      PASS Isolation backend    podman detected (optional, host extras)
+    ==> overall: healthy
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+    SMOKE_EXIT=0
+
+Sin fuga: 18 temporales antes, 18 después, y el del UAT ya no existe. El
+`cognicode install` que se descarga de la URL instala, se actualiza, se
+reshimmea, se desinstala, y el `cogh doctor` del binario instalado dice
+**healthy**.
+
+### Lección 217 — Un asset que no se sube no se nota mirando el directorio
+
+Los doce artefactos estaban en `release/` antes de publicar, y el directorio
+sigue teniendo los doce después. La diferencia entre "publicado" y "no
+publicado" no se ve desde el lado que publica: solo se ve preguntándole a
+GitHub, y contando la respuesta. Lo mismo con el UAT: correrlo sobre el
+worktree es cómodo y es la mitad de la promesa.
+
+Las dos comprobaciones que hacen falta son baratas —un `gh release view
+--json assets | jq length` y un `sha256sum -c` sobre lo descargado— y las dos
+miden algo que el script de la lane no podía ver.
+
+### Lo que queda abierto, y por qué no se abre aquí
+
+Tres cosas quedan medidas, registradas y sin abrir, porque arreglarlas cuesta
+superficie publicada y no hay daño activo:
+
+- `std::process::exit` en `execute_doctor`, que es la única salida viva de
+  `cognicode-core`. Con el ratchet nuevo (`87844d7d`) la deuda es **enumerable y
+  acotada**, lo que era el objetivo: subirla a siete ahora falla el test.
+- La marca KEEP+MARK de `multimodal`, cuya ausencia en el binario publicado está
+  ya escrita en su propio `--help` y es cierta.
+- La hermeticidad del enlace aarch64: un runner sin los wrappers `zig-cc-aarch64`
+  falla en `toolchain-for-$target` nombrando el motivo, en vez de producir un
+  candidato que no compila. Falla temprano, que es lo correcto.
+
+### Estado del ledger al cerrar este bloque
+
+SDDK sigue sin dar el `PRE-FLIGHT` que exige la política, por el defecto del
+`LedgerFactory` medido en N+92 (`Invalid parameter name: cycle_leases` en
+2.5.3, 2.5.5 y 2.5.6). No es corrupción de datos: la tabla existe y `sddk adopt
+apply` responde `status: complete`. Lo que falla es la lectura de planificación.
+Bloqueante externo, binario compartido, y **no forzado**: el gate se dejó en su
+valor por defecto y estos recibos viven en el JOURNAL, que es append-only y no
+depende de él. `git.history_rewrite` sigue siendo `human_gate`: el
+`STAGED_TREE` equivocado de `7f7d087e` se corrige en N+93 añadiendo la verdad,
+no reescribiendo el commit.
