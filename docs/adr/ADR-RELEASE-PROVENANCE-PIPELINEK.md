@@ -172,6 +172,59 @@ not live in this repository, and the public half must be part of the release.
   download proves the *consumer's* path works, and only the second one is the
   property users depend on.
 
+## What has been built since this ADR was written
+
+B7 (2026-10-04) built the generation half and **left the decision open**. The
+`proposed` status is unchanged and is still correct: what is missing is the
+custody, not the mechanism.
+
+| Piece | Where | State |
+|---|---|---|
+| Generate an attestation | `scripts/ci/attest-provenance.sh` | works, measured |
+| SLSA/in-toto statement, DSSE envelope | inside the script | works, measured |
+| Public key travels with the release | script copies it to the candidate dir | works, measured |
+| First of the three digests checked | in the script, on every run | works, measured |
+| Third digest, consumer download | where publishing happens | still the release lane's `gh attestation verify` |
+| Custody | — | **open, unchanged** |
+| `RELEASE_REQUIRE_PROVENANCE` default | `verify-provenance.sh` | still `0`, deliberately |
+
+The generation stage lives in `release-candidate.pipeline.kts`, not in
+`release.pipeline.kts`, so the attestation covers the candidate that was
+certified. It is activated by the presence of a key (`RELEASE_PROVENANCE_KEY`),
+which is a capability and not a policy: `RELEASE_REQUIRE_PROVENANCE` still has
+exactly one reader.
+
+### Three measurements that qualify the section above
+
+The measurements in "Option B" were taken in an interactive terminal. Re-taken
+in the conditions a lane and a test actually run, on cosign 3.1.3:
+
+- `cosign generate-key-pair` **prompts for a password and has no TTY fallback**.
+  Without `COSIGN_PASSWORD` in the environment it dies with `inappropriate
+  ioctl for device`. The offline path is real; it is not the one that runs
+  unattended.
+- `generate-key-pair --output-key-prefix P` writes **`P.key` and `P.pub`** —
+  the same prefix. `P.key.pub` is not a thing, and assuming it is produces a
+  generator that refuses a perfectly good key pair.
+- `cosign verify-blob` prints `Verified OK` on **stderr**, not stdout. A test
+  that looks for it in stdout fails with an empty message, which reads as a
+  broken assertion rather than a wrong assumption.
+
+The third-digest claim is unchanged and re-confirmed: the bundle's
+`subject[0].digest.sha256` is the hex sha256 of the artifact, and
+`verify-blob` refuses a bundle presented against different bytes.
+
+### What is deliberately still not done
+
+- The release lane still verifies with `gh attestation verify`, which cannot
+  verify a cosign bundle. Migrating it changes the behaviour of a published
+  release and belongs behind the same custody decision.
+- `RELEASE_REQUIRE_PROVENANCE` is still `0`. Generation existing is not the
+  condition the ADR sets for flipping it; a key existing is.
+- No key was generated for production, and none will be improvised to close
+  this milestone. `attest-provenance.sh` contains no `cosign
+  generate-key-pair` call, and a contract fails if one appears.
+
 ## What is deliberately not decided here
 
 - Whether to migrate later to keyless once an OIDC issuer is available. The
