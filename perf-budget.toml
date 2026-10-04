@@ -19,14 +19,31 @@
 #   exit 1  a measured operation exceeded its budget
 #   exit 3  a budgeted operation had no benchmark at all
 #
-# Today 9 of the 16 entries below have no benchmark, so a manual run exits 3.
-# That is the honest answer, not a regression.
+# UNMEASURED: graph_nodes_100, graph_search, graph_subgraph, brain_open, brain_ask
 #
-# Measured 2026-10-02 against the real budget, not estimated: 7 entries were
-# benchmarked and all 7 are inside their ceiling. The tightest is
-# `shortest_path` at 299.171 us against 1000 us (3.3x of headroom); the loosest
-# is `subgraph_extraction_50_nodes` at 27.882 us against 2000 us (72x). What
-# decides the exit code is the other 9, which have no measurement at all.
+# That line is a declaration, and a test recomputes it from the benchmark
+# sources instead of trusting it. It fails in both directions: a budgeted
+# operation with no benchmark and no declaration is an undocumented hole, and
+# a declared operation that somebody has since measured is a stale exemption.
+# See `a_budgeted_operation_is_measured_or_declared_unmeasured`.
+#
+# The five above are the `mcp.tools` round-trips. They are not unmeasured for
+# lack of interest: they are repository round-trips, so benchmarking them
+# means a workspace fixture on disk. That is a different block of work and the
+# entry stays visible until it is done, rather than being deleted to make the
+# checker green.
+
+# Measured 2026-10-04 on the development machine, against this file, not
+# estimated. 11 of the 16 entries are benchmarked and all 11 are inside their
+# ceiling. The tightest is `shortest_path` at 302.46 us against 1000 us (3.3x of
+# headroom); the loosest is `execute_traverse` at 0.093 us against 10000 us
+# (107000x), and that gap is a finding rather than a comfort: those four
+# `explorerql` ceilings were written before anything was measured and are not
+# derived from the work, so they cannot fail. See the block below.
+#
+# A full run also measures 17 more benchmarks that have no budget entry. They are
+# exploratory, they are reported by name rather than dropped, and they are not a
+# failure — making them one would mean inventing a ceiling nobody derived.
 #
 # Failing the lane on exit 1 alone — a measured regression — while reporting the
 # unmeasured entries and continuing, is the honest shape for this checker, and
@@ -48,6 +65,7 @@ subgraph_extraction_50_nodes = 2000
 
 [mcp.tools]
 # MCP tool operations (includes repo round-trip)
+# NOT budget-enforceable yet: see the `# UNMEASURED:` declaration above.
 graph_nodes_100 = 5000
 graph_search = 10000
 graph_subgraph = 15000
@@ -56,6 +74,16 @@ brain_ask = 30000
 
 [explorerql]
 # ExplorerQL parsing and execution
+#
+# MEDIDO 2026-10-04 against the four benchmarks in
+# crates/cognicode-explorer/benches/explorerql_benchmarks.rs. These four
+# ceilings were declared before any benchmark existed and are orders of
+# magnitude off the measurement: `parse_simple` is 0.479 us against 100,
+# `execute_find` is 0.076 us against 5000, which is 65000x of headroom. They are
+# left as they are, and marked in the header, rather than tightened here:
+# retightening needs the variance across machines, which one development run
+# cannot produce, and a budget derived from a single run is a number that will
+# go red on somebody else's hardware for no reason anybody can act on.
 parse_simple = 100
 parse_complex = 500
 execute_find = 5000
