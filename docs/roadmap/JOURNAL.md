@@ -14407,3 +14407,225 @@ consumidor deduce que hay provenance.
 **Un directorio de salida tiene que ser todo o nada.** El orden de las
 escrituras no es estetica: es lo que hace que un fallo sea indistinguible de un
 exito a quien solo mira los nombres de fichero.
+## N+102 — Una afirmacion correcta por casualidad no es una afirmacion verificada
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B9-SKILLS (actor Skills de B9). Continua N+101,
+que cerro B7.
+
+### Por que este bloque y no B8
+
+La cadena del goal es `B8 documentacion -> B9 distribucion || skills -> B10`.
+B8 entero cuelga de **A-016**, que es "crear `Rubentxu/cognicode-site`", y
+MEDIDO:
+
+    $ gh repo view Rubentxu/cognicode-site
+    GraphQL: Could not resolve to a Repository with the name
+    'Rubentxu/cognicode-site'.
+
+Y de ahi depende toda la cadena del `16-ACTION-REGISTER.md`: A-017 (que depende
+de A-016), A-018 (que depende de A-016) y A-019..A-022, que ademas son un
+proyecto de Cloudflare, un dominio y un CNAME. Cuatro decisiones de cuenta
+externa mas un repo publico nuevo: eso es decision de operador, no trabajo de
+codigo, y no se puede resolver desde aqui.
+
+El goal escribe B9 con un `||` entre DISTRIBUTION y SKILLS, que es
+literalmente "dos actores independientes". El actor SKILLS es
+in-repo, no necesita cuentas, y el propio registro dice que A-015 **desbloqueo**
+A-033..A-036. Ahi estaba el trabajo.
+
+### Lo que hay, y lo que falta
+
+MEDIDO sobre `skills/`, que es lo que se empaqueta:
+
+    skills/cognicode/                  manifest.yaml + SKILL.md
+    skills/cognicode-agent-hardness/   manifest.yaml + SKILL.md
+    skills/cognicode-pr-review/        manifest.yaml + SKILL.md
+    skills/cognicode-developer/        manifest.yaml + SKILL.md
+    skills/cognicode-mcp/              manifest.yaml + SKILL.md
+    skills/cognicode-recommended/      SET.yaml
+
+Las skills de A-033, A-034 y A-035 **existen**. Lo que no existe es lo que sus
+filas piden: "eval suite PASS". No hay ningun eval suite, asi que el criterio de
+aceptacion no se puede cumplir ni en verde ni en rojo. Es el mismo patron que
+A-013 y A-015, donde el hueco resulto no ser la feature sino el gate.
+
+A-036 es distinta y queda medida, no arreglada:
+`cognicode-quality-investigator` **no esta en el repositorio**. Vive en
+`~/.agents/skills/cognicode-quality-investigator`. Una skill fuera del arbol no
+se versiona, no se empaqueta, no se publica y no se puede gatear, asi que "align
+cognicode-quality-investigator" con aceptacion "no stale tool assumptions" no
+tiene sobre que operar. Eso es una decision —vendorizarla al repo, o
+declararla externa y fuera del producto— y no se toma aqui.
+
+### El hueco, que era mas estrecho de lo que parecia
+
+Hay tres validadores de skills y cada uno ve una cosa:
+
+| Dueno | Que comprueba |
+|---|---|
+| `scripts/validate_skills.py` | nombres de tool MCP contra `product/tools.json`, frontmatter, YAML, rutas internas |
+| `scripts/ci/test_skill_cli_invocations.py` | que cada invocacion `cognicode <sub> ...` exista y tenga la aridad |
+| `scripts/ci/test_skills_gate_contract.py` | que el validador y el verificador esten cableados |
+
+Los tres comprueban que **lo que la skill nombra existe**. Ninguno comprueba que
+**lo que la skill dice de la superficie sea cierto**. Son dos preguntas
+distintas, y la segunda se puede responder mal sin que ninguna de las tres se
+entere.
+
+MEDIDO, cuatro afirmaciones en las skills que se publican:
+
+    skills/cognicode/SKILL.md:23          a 73-tool server
+    skills/cognicode-mcp/SKILL.md:4       Drive CogniCode's 73-tool MCP server
+    skills/cognicode-mcp/SKILL.md:32      Group the 73 tools by
+    skills/cognicode-mcp/SKILL.md:248     It does not list all 73 tools
+
+Las cuatro son ciertas hoy. Ese es precisamente el problema: entra la tool 74,
+el catalogo pasa a 74, los tres validadores siguen verdes porque las skills
+siguen nombrando tools que existen, y la release publica una skill que dice que
+el servidor tiene 73 tools. La frase viaja en el tar del candidato y se publica
+sin rebuild.
+
+Una skill que dice "a 60-tool server" habria pasado los tres validadores hoy.
+Eso no es hipotetico: es exactamente lo que hace el `validate_skills.py` que
+existe, comparar nombres contra el catalogo.
+
+### Lo que se anade
+
+`scripts/ci/test_skill_surface_claims.py`. Cada afirmacion `<N> <superficie>` se
+contrasta con el documento publicado que es su autoridad, y hay tres guardas
+para que el contrato no pueda pasar por no haber mirado nada:
+
+- el conjunto de skills publicadas se lee de `SKILL_BUNDLES` en
+  `release_contract.rs` —la misma tabla que gobierna que se empaqueta, leida
+  igual que en el contrato hermano, no una lista propia— y no puede estar vacio;
+- toda skill publicada esta cubierta;
+- **se ha encontrado al menos una afirmacion**.
+
+La tercera es la importante. Si las skills dejaran de afirmar el tamano de la
+superficie —que es una mejora, no un defecto— este contrato pasaria en verde sin
+vigilar nada. La guarda obliga a que ese cambio se mire a la cara en vez de
+aceptarse por omision.
+
+Una decision que parece un error y por eso queda escrita: `platforms` se ata a
+`platforms.json` y no a `product-manifest.json`. MEDIDO, el manifest declara 2
+plataformas y el documento de soporte declara 6. Casi se "corrige". No es una
+divergencia: `generate_product_manifest.py` construye `platforms` con
+`certified_platforms(root)` = `release_lane.release_targets(root)` —los targets
+que la lane construye— y su docstring explica que sustituyo la lectura de un
+fichero que el cutover borra. `validate_manifest` comprueba ademas que ese
+conjunto sea el esperado. El manifest responde a "que se publica" y el
+documento de soporte a "donde funciona". **Mirar al dueño antes de acusar a un
+artefacto** habria evitado un commit de docena.
+
+### Un recorte mio que se llevo por delante la cobertura que mas dolia
+
+El extractor saltaba el bloque de YAML del frontmatter. El motivo era que
+`metadata.version` no es una afirmacion de superficie. El motivo era **falso**:
+`version` no pertenece al vocabulario de este contrato, asi que nunca pudo
+colarse. Y el recorte se llevo por delante
+
+    skills/cognicode-mcp/SKILL.md:4   Drive CogniCode's 73-tool MCP server
+
+que esta **dentro de la `description`**, o sea la prosa que un agente lee para
+decidir si carga la skill. Una proteccion que no protegia nada, comprada con la
+cobertura que mas dolia. La regla que hace falta es "solo se compara lo que se
+sabe comparar", y esa no necesita excepciones.
+
+Dos mutaciones lo cazaron: volver a meter el recorte, y borrar la afirmacion
+del frontmatter a la vez.
+
+Antes, un test mio cayo con un mensaje que no explicaba nada util. Yo esperaba
+la linea 5 y la linea real era la 6. Cazar eso llevo a mirar el numerado, y el
+numerado estaba roto.
+
+El recorte ademas hacia que los numeros de linea se contaran desde el cuerpo
+recortado y no desde el fichero: todo diagnostico posterior al frontmatter
+mandaba al lector a una linea que no era la suya. Verificado contra el fichero
+real antes de darlo por bueno:
+
+    skills/cognicode/SKILL.md:23         73 tool
+    skills/cognicode-mcp/SKILL.md:4      73 tool
+    skills/cognicode-mcp/SKILL.md:32     73 tools
+    skills/cognicode-mcp/SKILL.md:248    73 tools
+
+### Mutaciones, todas vistas caer sobre ficheros reales
+
+    la skill afirma una superficie que no es la real      -> 1 test rojo
+    la verdad se mueve y la skill no                       -> 2 tests rojos
+    SKILL_BUNDLES vacio (fail-closed)                      -> 1 test rojo
+    ninguna skill afirma la superficie (guarda de suelo)   -> 1 test rojo
+    el extractor pasa a emparejar por prefijo              -> 1 test rojo
+    el extractor vuelve a saltarse el frontmatter          -> 1 test rojo
+    la afirmacion se comprueba contra si misma             -> 1 test rojo
+    la descripcion del frontmatter se salta de verdad      -> 1 test rojo
+    (control, sin mutacion)                                -> 8/8 verde
+
+Dos correcciones al guion de mutaciones que hacen falta decir, porque las dos
+meReported un verde que no era real:
+
+- **M4 no tumbo nada** en la primera pasada, porque quito las afirmaciones de
+  `cognicode-mcp` y `cognicode` seguia diciendo "a 73-tool server". El contrato
+  estaba bien; la mutacion no borraba lo que decia borrar. rehecha contra todas
+  las skills, cae.
+- **El control se ejecuto contra un arbol sucio**, porque el `trap` restaura al
+  salir y no entre mutaciones. El verde del control no valia. Ahora se restaura
+  explicitamente antes de cada paso.
+
+Reportar "7 mutaciones" sin haber comprobado la que no cayo habria sido
+exactamente el fallo que este bloque denuncia.
+
+### Lo que se dejo escrito y no se toco
+
+El limite del contrato: solo conoce los sustantivos de su tabla. Una
+afirmacion sobre una superficie que no esta en la tabla —o un sustantivo mal
+escrito— es **invisible** para el, porque no hay forma de saber que deberia
+mirar. No se disimula: esta en el docstring, con un test que fija que un
+cuasi-acierto de prefijo no se cuenta como superficie.
+
+### Estado del gate
+
+    bash scripts/ci/run-all-contracts.sh                     248
+    python3 scripts/ci/test_skill_surface_claims.py          8/8
+    python3 scripts/ci/test_skill_cli_invocations.py         (sin cambios)
+    python3 scripts/validate_skills.py                       (sin cambios)
+    git diff skills/ product/ crates/                        (vacio: intacto)
+
+Sin cambios de Rust, sin cambios de manifest y sin cambios en las skills: este
+commit solo anade el contrato que faltaba.
+
+### Leccion 229 — Mirar al dueno antes de acusar a un artefacto
+
+`product-manifest.json` declara 2 plataformas y `platforms.json` declara 6, con
+schemas distintos y nombres distintos. Un artefacto de un lado y el otro del
+otro parecian discrepar. El generador explica en su docstring que el manifest lleva
+`certified_platforms(root)` = los targets que la lane construye, y
+`validate_manifest` lo comprueba. La "discrepancia" era el contrato funcionando.
+
+**Un artefacto generado no se depura: se lee su generador.** El coste de no hacerlo es un commit que cambia un contrato publicado para
+convertir un comportamiento deliberado en un defecto con nombre.
+
+### Leccion 230 — Una proteccion que no protege nada se paga con cobertura
+
+El extractor saltaba el frontmatter para proteger un `metadata.version` que no
+podia colarse, porque `version` no estaba en el vocabulario. El recorte se llevo
+por delante la `description` de una skill, que es la primera prosa que se lee de
+un documento publicado.
+
+**Cada excepcion tiene que justificarse por lo que deja pasar, no por lo que
+teme que pase.** Un recorte que solo puede activarse ante algo que el contrato ya
+excluye no protege: se lleva cobertura por nada. Y la cobertura que se llevo no
+era una linea cualquiera, era la mas leida.
+
+### Leccion 231 — Una mutacion que no cae no ha midido nada
+
+La primera M4 quito las afirmaciones de una skill y el contrato paso en verde,
+porque otra skill seguia afirmando lo mismo. El contrato era correcto y la
+mutacion era mala. Lo grave no es la mutacion: es que el guion reportaba "6 de 7
+cayeron" sin haber comprobado que la septima cae.
+
+Igual con el control, que se ejecuto contra un arbol que el `trap` todavia no
+habia restaurado. Un verde de control sobre un arbol sucio no es un verde, es
+una cifra. **Toda afirmacion de que una mutacion cae tiene que estar
+acompanada de la razon por la que cae**, y si no cae, hay que averiguar si fallo el
+contrato o fallo la prueba antes de reportar el numero.
