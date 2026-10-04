@@ -560,3 +560,269 @@ fn the_cleanup_lives_in_the_preflight_and_not_in_a_sibling_script() {
         "el preflight vuelve a cargar la limpieza desde un fichero aparte."
     );
 }
+
+// ===========================================================================
+// El mismo defecto, un stage mas abajo: el UAT de instalacion.
+//
+// MEDIDO 2026-10-04. La lane de v0.101.8 buildo los dos targets, genero los
+// SBOM, aplo el staging —la limpieza de la raiz funciono: los seis tarballs
+// sucios de 0.101.4/0.101.5 desaparecieron y quedaron tres de 0.101.8— y
+// produjo un candidato cuyos once artefactos verifican contra SHA256SUMS. Luego
+// salio:
+//
+//     Pipeline finished with FAILURE: shell exited with code 64
+//
+// Y el UAT que lo precedia habia pasado:
+//
+//     PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+//
+// El script era `release-install-smoke.sh`, con el trap viejo:
+//
+//     cleanup() { ... rm -rf "$TMP"; }
+//     trap cleanup EXIT
+//
+// El script reexporta HOME y XDG_DATA_HOME dentro de `$TMP`, y corre el CLI con
+// el cwd ahi dentro. Asi que la limpieza se lanzaba desde el directorio que
+// borraba, con el HOME dentro del directorio que borraba, y con la papelera de
+// la envoltura de recuperacion DENTRO del temporal: un arbol de 70 MB que
+// contiene su propia basura y que ya no se puede mover. El 64 de la envoltura
+// sustituyo al veredicto, que era un PASS.
+//
+// Es el mismo defecto que el de arriba, en el hermano que B2 se dejo atras: la
+// stage 1 paso porque el preflight ya estaba arreglado, y esta murio porque el
+// otro no. Por eso los tests viven aqui y no en un fichero nuevo: la propiedad
+// —la limpieza no puede ser el veredicto— tiene un dueno, y este dueno vigila
+// los dos scripts que la implementan.
+// ===========================================================================
+
+fn install_smoke_script() -> PathBuf {
+    repo_root().join("scripts/ci/release-install-smoke.sh")
+}
+
+/// El texto de `cognicode_install_smoke_cleanup` tal y como vive en el script
+/// canonico. Mismo extractor que el del preflight, y por el mismo motivo: si
+/// alguien mueve o borra la funcion, el RED dice "no se encuentra" en vez de
+/// dar verde probando una copia.
+fn install_smoke_cleanup_source() -> String {
+    let text = fs::read_to_string(install_smoke_script()).expect("read install-smoke script");
+    let lines: Vec<&str> = text.lines().collect();
+
+    let start = lines
+        .iter()
+        .position(|l| l.starts_with("cognicode_install_smoke_cleanup()"))
+        .unwrap_or_else(|| {
+            panic!(
+                "release-install-smoke.sh no define `cognicode_install_smoke_cleanup`. \
+                 La funcion tiene que vivir en el script que la usa: un segundo \
+                 fichero seria un segundo sitio donde la regla de limpieza puede \
+                 quedar sin actualizar."
+            )
+        });
+
+    let mut depth = 0i32;
+    let mut started = false;
+    let mut out = String::new();
+    for line in &lines[start..] {
+        for c in line.chars() {
+            match c {
+                '{' => {
+                    depth += 1;
+                    started = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+        if started && depth == 0 {
+            break;
+        }
+    }
+    out
+}
+
+/// Reproduce la forma del UAT en la parte que importa: el trap corre con el
+/// cwd dentro de `$TMP`, con HOME y XDG_DATA_HOME dentro de `$TMP` — que es
+/// como estaba cuando la lane salio con 64— y el script sale con `status`.
+fn run_install_smoke_shape(status: i32, rm: RmMode) -> (i32, String, PathBuf) {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let root = tmp.path().to_path_buf();
+    fs::create_dir_all(root.join("home")).expect("home");
+    fs::create_dir_all(root.join("bin")).expect("bin");
+
+    if let Some(body) = rm.script() {
+        let path = root.join("bin/rm");
+        fs::write(&path, body).expect("write fake rm");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod rm");
+    }
+
+    let script = root.join("smoke-shape.sh");
+    let body = format!(
+        "#!/usr/bin/env bash\n\
+         set -uo pipefail\n\
+         {function}\n\
+         TMP=\"{work}\"\n\
+         SERVER_PID=\"\"\n\
+         ORIGINAL_HOME=\"{outer_home}\"\n\
+         ORIGINAL_XDG_DATA_HOME=\"{outer_home}/.local/share\"\n\
+         trap 'cognicode_install_smoke_cleanup' EXIT\n\
+         export HOME=\"$TMP/home\"\n\
+         export XDG_DATA_HOME=\"$HOME/.local/share\"\n\
+         cd \"$TMP/home\" || exit 1\n\
+         exit {status}\n",
+        function = install_smoke_cleanup_source(),
+        work = root.display(),
+        outer_home = root.join("outer-home").display(),
+        status = status,
+    );
+    fs::write(&script, body).expect("write shape");
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod");
+
+    let path = std::env::join_paths([
+        root.join("bin"),
+        PathBuf::from("/usr/bin"),
+        PathBuf::from("/bin"),
+    ])
+    .expect("PATH");
+    let out = Command::new("bash")
+        .arg(&script)
+        .env("PATH", path)
+        .env("HOME", root.join("outer-home"))
+        .env("XDG_DATA_HOME", root.join("outer-home/.local/share"))
+        .output()
+        .expect("run install-smoke shape");
+
+    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+    let code = out.status.code().unwrap_or(-1);
+    std::mem::forget(tmp);
+    (code, stderr, root)
+}
+
+#[test]
+fn a_passing_install_smoke_stays_passing_when_cleanup_refuses() {
+    let (code, stderr, root) = run_install_smoke_shape(0, RmMode::AlwaysRefuses);
+    assert_eq!(
+        code, 0,
+        "un UAT que pasa tiene que salir con 0 aunque la limpieza se niegue. \
+         Salir con 64 fue exactamente lo que mato la lane de v0.101.8. \
+         stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("no se pudo limpiar"),
+        "una limpieza que falla tiene que decirse en voz alta: es la unica \
+         evidencia que distingue 'el UAT fallo' de 'no borre una carpeta'. \
+         stderr:\n{stderr}"
+    );
+    assert!(
+        stderr.contains("FAKE_RM"),
+        "el motivo del borrado se imprime a proposito en este script, y es una \
+         diferencia deliberada con el preflight: alli el `rm` corre con \
+         `2>/dev/null` porque su stderr va al log de una stage que ya ha \
+         certificado. Aqui el UAT es lo que el operador lee cuando falla, y un \
+         aviso que no dice por que no se pudo borrar obliga a reproducir la \
+         corrida entera. stderr:\n{stderr}"
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn a_failing_install_smoke_stays_failing() {
+    let (code, _stderr, root) = run_install_smoke_shape(3, RmMode::Real);
+    assert_eq!(
+        code, 3,
+        "arreglar la limpieza no puede tapar un UAT que de verdad falla: ese es \
+         el otro lado de la misma propiedad."
+    );
+    fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn the_install_smoke_cleanup_reads_the_status_first() {
+    let f = install_smoke_cleanup_source();
+    let after_open = f.split_once('{').expect("la funcion abre su cuerpo").1;
+    let first = after_open
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with('#'))
+        .unwrap_or_default();
+
+    assert!(
+        first.contains("$?"),
+        "la primera sentencia tiene que leer `$?`: el `kill` del servidor MCP va \
+         justo despues y sobrescribiria el estado que se quiere conservar. \
+         Primera sentencia: {first:?}"
+    );
+}
+
+#[test]
+fn the_install_smoke_removal_cannot_become_the_verdict() {
+    let f = install_smoke_cleanup_source();
+    let rm_line = f
+        .lines()
+        .find(|l| l.contains("rm -rf"))
+        .unwrap_or_else(|| panic!("la funcion deberia borrar el temporal: {f}"));
+
+    assert!(
+        rm_line.contains("if !"),
+        "el borrado tiene que ir dentro de un `if !`: a pelo, con `set -e`, su \
+         estado seria el del script. Linea: {rm_line:?}"
+    );
+    assert!(
+        f.contains("no se pudo limpiar"),
+        "un borrado que falla tiene que dejar aviso: sin el, 70 MB por corrida \
+         se acumulan sin que nadie lo note."
+    );
+}
+
+#[test]
+fn the_install_smoke_cleanup_puts_the_trash_back_outside_the_temporary() {
+    // La segunda mitad del defecto, y la que no hacia falta ver para arreglar.
+    //
+    // Devolver solo el HOME no basta. Con HOME fuera pero XDG_DATA_HOME
+    // todavia dentro del temporal, la envoltura deja de negarse y pasa a
+    // fallar con `failed to trash`: el arbol contiene su propio
+    // `.local/share/Trash`, y un arbol que contiene su propia papelera no se
+    // puede mover. MEDIDO: con las dos variables fuera, `rc=0` y BORRADO; con
+    // una sola, el temporal sobrevive.
+    let f = install_smoke_cleanup_source();
+
+    assert!(
+        f.contains("HOME=\"$ORIGINAL_HOME\""),
+        "la limpieza tiene que devolver HOME: mientras apunte dentro del \
+         temporal, la envoltura se niega a moverlo por ser su ancestro."
+    );
+    assert!(
+        f.contains("XDG_DATA_HOME=\"$ORIGINAL_XDG_DATA_HOME\"")
+            || f.contains("unset XDG_DATA_HOME"),
+        "la limpieza tiene que devolver XDG_DATA_HOME, no solo HOME: la \
+         envoltura trastera en `$XDG_DATA_HOME/Trash`, y si esa variable sigue \
+         dentro del temporal, el temporal contiene su propia basura y no se \
+         puede borrar. De ahi los 70 MB por corrida."
+    );
+}
+
+#[test]
+fn the_install_smoke_trap_calls_the_function_and_not_a_bare_rm() {
+    let text = fs::read_to_string(install_smoke_script()).expect("read install-smoke script");
+    let live = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        live.contains("trap 'cognicode_install_smoke_cleanup' EXIT"),
+        "el trap debe llamar a la funcion de cleanup, no a un `rm` directo: el \
+         `rm` directo es el defecto que salio con 64."
+    );
+    assert!(
+        !live.contains("trap cleanup EXIT"),
+        "el trap crudo ha vuelto: borra el temporal desde dentro de si mismo y \
+         su estado sustituye al del script."
+    );
+    assert!(
+        live.contains("cognicode_install_smoke_cleanup() {"),
+        "la funcion de cleanup deberia estar definida en release-install-smoke.sh."
+    );
+}
