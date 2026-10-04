@@ -756,6 +756,47 @@ pipeline {
                     echo "candidate hashes: $(wc -l < release/SHA256SUMS) line(s)"
                 """.trimIndent())
             }
+
+            // La mitad de GENERACION de provenance, que faltaba desde que
+            // `actions/attest-build-provenance` dejo de existir con el runtime de
+            // Actions. Va aqui y no en `release.pipeline.kts` porque la
+            // atestation tiene que cubrir **el candidato que fue certificado**:
+            // generarla en la lane de publicacion describiría un artefacto que
+            // nadie certifico, que es la misma propiedad rota que el candidato
+            // inmutable previene para los binarios.
+            //
+            // La condicion es "hay una clave con la que firmar", que es una
+            // CAPACIDAD, no una politica. La politica —que una atestation
+            // faltante sea fatal— sigue siendo de `verify-provenance.sh`, que
+            // es el unico que lee `RELEASE_REQUIRE_PROVENANCE`. Poner el switch
+            // aqui crearia la segunda fuente de verdad que
+            // `test_provenance_gate.py` prohibe, y que ya costo una release
+            // inalcanzable (v0.101.3).
+            //
+            // MEDIDO 2026-10-04, cosign 3.1.3: sin clave, `attest-provenance.sh`
+            // falla y NO genera ninguna. Por eso la etapa se salta en silencio
+            // en vez de llamar al script: llamar sin clave seria un fallo
+            // deliberado, y el fallo deliberado de una etapa opcional es una
+            // release rota. Lo que no es opcional es decirlo, asi que la etapa
+            // anuncia por que no firmo.
+            stage("provenance") {
+                sh("""
+                    $cd || exit 1
+                    if [ -z "${'$'}{RELEASE_PROVENANCE_KEY:-}" ]; then
+                        echo "provenance: NOT generated — no RELEASE_PROVENANCE_KEY on this host."
+                        echo "  This is the open custody decision, not a defect: see"
+                        echo "  docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md, 'Open decision'."
+                        echo "  The release ships without attestation and says so here, which is"
+                        echo "  what verify-provenance.sh reports downstream."
+                        exit 0
+                    fi
+                    echo "provenance: signing with the key named by RELEASE_PROVENANCE_KEY"
+                    scripts/ci/attest-provenance.sh \
+                        --key "${'$'}{RELEASE_PROVENANCE_KEY}" \
+                        --out-dir release \
+                        release/*.tar.gz release/SHA256SUMS
+                """.trimIndent())
+            }
         }
     }
 }
