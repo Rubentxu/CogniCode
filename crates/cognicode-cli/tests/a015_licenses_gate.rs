@@ -70,10 +70,39 @@ fn locate_cargo_deny() -> Option<PathBuf> {
             .join("bin")
             .join("cargo-deny")
     });
+    // La rama del PATH PREGUNTA (`--version` + `status.success()`); esta
+    // comprobaba `p.is_file()`, que es la comprobacion que la Lección 221
+    // demuestra insuficiente. MEDIDO en las dos formas que importan, con un
+    // `CARGO_HOME` de mentira:
+    //
+    //   - un shim que existe y sale con 1: `is_file()` da true, y el test
+    //     luego lo ejecuta y falla al hacer spawn, con un error que dice
+    //     "No such file" o "Permission denied" en vez de decir que la
+    //     herramienta no sirve.
+    //   - un fichero de 21 bytes con permisos 644: tambien `is_file()` da
+    //     true, y ahi ni siquiera es ejecutable.
+    //
+    // Las dos son el shim de rustup de N+96 otra vez: un binario que esta en
+    // el sitio donde deberia y no hace lo que su nombre promete. Preguntar es
+    // lo unico que las separa de una herramienta real, y el coste es un
+    // `--version` que esta tool ya responde en milisegundos.
     [cargo_home, home_bin]
         .into_iter()
         .flatten()
-        .find(|p| p.is_file())
+        .find(|p| p.is_file() && answers_to_version(p))
+}
+
+/// Si el binario responde a `--version` con salida correcta.
+///
+/// Misma distincion que `is_lsp_server_usable` en `cognicode-core` y que
+/// `command_reports_version` en `lsp_integration_test.rs`: lo que importa es
+/// si responde, no si esta en el disco.
+fn answers_to_version(binary: &Path) -> bool {
+    Command::new(binary)
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 #[test]
