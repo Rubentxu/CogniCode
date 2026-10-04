@@ -13902,3 +13902,274 @@ componente, y es produccion. Se deja: ahi el `is_file()` responde a "el
 fichero esta", y quien reporta de que no sirve es `install_shim`, que ya lo
 hace con contexto. **No es el patron defectuoso**: el defecto es comprobar la
 presencia *en vez de* la ejecucion, no *ademas de* ella.
+## N+100 — El gate que midio y no lo vio
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B6 (HARD contract / performance). Encadena con
+el work item `6e1bb51a-09df-456b-9287-fdfedba835c1`, que sigue abierto.
+
+### El punto de partida, medido
+
+Siete de las dieciseis entradas del presupuesto tenian benchmark. Las nueve
+restantes salian `UNMEASURED` y el checker terminaba con 3. De las nueve, cinco
+son de `mcp.tools` (round-trips de repositorio) y cuatro de `explorerql`
+(funciones puras de un crate que ya expone su API publica). Las cuatro de
+`explorerql` eran alcanzables sin montar nada: otro bloque de trabajo, no una
+limitación del inventario.
+
+### Lo que se escribió, y lo que pasó al medirlo
+
+`crates/cognicode-explorer/benches/explorerql_benchmarks.rs`, cuatro benches
+contra la gramática real de `moldql/parser_explorerql.rs`. La API se verificó
+antes de escribir, y al verificarla apareció que `lower_intent` toma `&str` y
+devuelve `Option<Result<MoldQLQuery, ParseError>>`, no un `&MoldQLQuery` como
+sugiere el nombre. Un benchmark escrito contra una API imaginada mide la
+imaginación.
+
+Primera medición del bench, aislada: `parse_simple` 495 ns, `parse_complex`
+1472 ns, `execute_find` 82 ns, `execute_traverse` 99 ns. Las cuatro dentro de
+techo, con un margen de 200x a 100000x.
+
+Después se registró el target en `BENCH_SPECS` y se relanzó el checker entero.
+El bench se ejecuto, produjo un numero, y el checker lo tiro a la basura: las
+cuatro claves seguian apareciendo como `UNMEASURED` en la tabla final.
+
+### Por que
+
+El parser comparaba `name = $2` —el nombre entero de Criterion— contra la clave
+del presupuesto. Criterion nombra un benchmark declarado dentro de un
+`benchmark_group` como `grupo/funcion`:
+
+    test explorerql_parse_simple/parse_simple ... bench:      495 ns/iter
+
+Eso se comparaba con la clave `parse_simple`, no encontraba nada, y la
+operacion salia `UNMEASURED`. El mensaje que acompanaba decia:
+
+    either write the benchmark or delete the entry
+
+para un benchmark que existia y acababa de correr. El informe no era
+incompleto: **senalaba el remedio equivocado**, que es peor que no informar,
+porque el que lo lee escribe codigo para arreglar algo que ya funcionaba.
+
+Los siete de `graph.operations` usan `c.bench_function` sin grupo, y por eso
+seguian funcionando. Un test escrito solo contra nombres desnudos no podia ver
+esto. Hizo falta escribir el segundo grupo del workspace para descubrirlo.
+
+La segunda mitad del defecto estaba al lado: una medicion cuyo nombre no casaba
+con ninguna clave se descartaba con un `continue` mudo. Ese silencio es
+justo lo que permitio que un fallo de parser se leyera como "no existe el
+benchmark" en lugar de "el parser esta mal".
+
+### Lo que se corrige
+
+    segments = split(name, parts, "/")
+    name = parts[segments]
+
+La comparacion pasa a ser por el ultimo segmento de la ruta. Los nombres
+exploratorios sin presupuesto se cuentan y se nombran, sin ser fallo —un
+benchmark exploratorio fuera del presupuesto no es un fallo, y hacerlo fallo
+seria inventar un techo— pero sin desaparecer. Y el mensaje de `UNMEASURED`
+dejo de decir "escribe el benchmark" para decir las tres cosas que pueden ser:
+que no existe, que su target no esta en `BENCH_SPECS`, o que el nombre de
+`bench_function` no coincide con la clave.
+
+Corrida real completa, sobre el presupuesto real:
+
+    OPERATION                           BUDGET (us)    ACTUAL (us)     STATUS
+    add_node                                     50         2.6310       PASS
+    add_edge                                     50         0.4310       PASS
+    get_node                                    100         0.0310       PASS
+    get_neighbors                              200        11.9590       PASS
+    bfs_traversal_100_nodes                     500        52.3150       PASS
+    shortest_path                             1000       302.4600       PASS
+    subgraph_extraction_50_nodes              2000        28.2630       PASS
+    parse_simple                               100         0.4790       PASS
+    parse_complex                              500         1.3760       PASS
+    execute_find                              5000         0.0760       PASS
+    execute_traverse                          10000         0.0930       PASS
+    graph_nodes_100                            5000      (missing) UNMEASURED
+    graph_search                              10000      (missing) UNMEASURED
+    graph_subgraph                            15000      (missing) UNMEASURED
+    brain_open                                 5000      (missing) UNMEASURED
+    brain_ask                                 30000      (missing) UNMEASURED
+
+    === 17 benchmark(s) measured without a budget entry ===
+    === 5 budgeted operation(s) were never measured ===
+    PERF_EXIT=3
+
+Once de dieciseis medidas, las once dentro de techo. La corrida real tambien
+mide diecisiete benchmarks mas que no tienen entrada en el presupuesto, y ahora
+salen nombrados en vez de borrados en silencio.
+
+### El defecto que me comi yo
+
+Al insertar el `[[bench]]` en `crates/cognicode-explorer/Cargo.toml` se quedo
+**en medio de `[dev-dependencies]`**:
+
+    [dev-dependencies]
+    criterion.workspace = true
+    [[bench]]
+    name = "explorerql_benchmarks"
+    harness = false
+    tokio-test.workspace = true
+    async-trait.workspace = true
+    tempfile = "3.27"
+    ...
+
+En TOML una tabla nueva se traga las claves que la siguen. Las siete
+dev-dependencies de despues (`tokio-test`, `async-trait`, `tempfile`, `tower`,
+`uuid`, `regex`, `reqwest`) dejaron de ser dev-dependencies del crate y
+pasaron a ser claves desconocidas del target de bench. Cargo avisa, compila, y
+cualquier test de integracion del explorer que use `tempfile` o `reqwest`
+reventaba por una linea movida en un manifiesto.
+
+MEDIDO con `cargo metadata --no-deps`, sobre la lista de dev-dependencies de
+`cognicode-explorer`:
+
+    antes:   async-trait, criterion, regex, reqwest, tempfile,
+             tokio-test, tower, uuid
+
+Es decir, `criterion` estaba y las otras siete no. El `[package]` era correcto;
+lo que habia desaparecido eran las claves de la seccion siguiente.
+
+El arreglo es dejar el `[[bench]]` al final del fichero, y el porque queda
+escrito en el propio manifiesto, que es donde se va a volver a mirar.
+
+### El instrumento tambien puede ser el defecto
+
+El primer test escrito en este bloque salio **ROJO en su primera ejecucion**, y
+no por el repositorio. El lector de manifiestos del propio test conservaba solo
+el ULTIMO `[[bench]]` de cada crate, asi que reportaba `graph_benchmarks` como
+no declarado cuando `cognicode-core` declara dos targets:
+
+    BENCH_SPECS runs `cognicode-core/graph_benchmarks`, which no manifest declares.
+    Declared targets are: [BenchTarget { krate: "cognicode-core",
+      name: "fact_bridge_benchmarks", ... }]
+
+El manifiesto estaba bien. El que leia estaba mal, y su primer rojo lo demostro.
+Es la Lección 215 en su forma mas comoda —arreglar la mitad de una causa: el
+lector sabia tratar varias claves por tabla, y no savia que un crate pudiera
+declarar varias tablas— y queda anotada en el propio lector.
+
+### Los cinco contratos, y como se que muerden
+
+El fichero `perf_budget_checker_contract.rs` tenia tres tests, y los tres usaban
+entradas sinteticas: ejercitaban la logica de decision del script, que es
+correcta, y no dicen nada sobre si las dieciseis entradas del presupuesto
+corresponden a benchmarks que existen. Se anaden cinco que leen el
+repositorio real.
+
+  1. `a_benchmark_inside_a_group_is_matched_by_its_function_name` — el bug de
+     este bloque, RED antes del fix y GREEN despues.
+  2. `a_measured_benchmark_with_no_budget_key_is_named_not_dropped` — una
+     medicion descartada se nombra, sin ser fallo.
+  3. `a_budgeted_operation_is_measured_or_declared_unmeasured` — recalcula el
+     conjunto real de lo no medido desde los fuentes de los benches y lo
+     compara con la linea `# UNMEASURED:` del toml.
+  4. `every_registered_bench_target_exists_and_really_measures` — cada entrada de
+     `BENCH_SPECS` existe y declara `harness = false`.
+  5. `a_benchmark_written_for_a_budgeted_operation_is_registered` — el espejo:
+     un benchmark que mide una clave presupuestada tiene que estar en un target
+     que el checker ejecute.
+
+El tercero es el que cambia la naturaleza de la cabecera. `# UNMEASURED:` no es
+prosa: es una declaracion que un test recalcula desde el codigo. Y falla en las
+DOS direcciones, que es lo que lo convierte en puerta y no en nota:
+
+  * clave presupuestada sin bench y sin declaracion -> agujero sin documentar
+  * operacion declarada que alguien ya midio -> exencion caducada
+
+La segunda direccion es la que importa cuando alguien escriba por fin los
+benches de `mcp.tools`: escribirlos obliga a borrar la declaracion, que es
+exactamente el orden correcto.
+
+El cuarto existe por la tolerancia del bucle. El checker continua cuando un
+target falla a proposito —perder las mediciones de los otros porque uno rompio
+seria peor que un `UNMEASURED` mas— y esa tolerancia tiene un precio: un target
+renombrado es un `UNMEASURED` permanente y silencioso dentro de una corrida de
+457 s que nadie vuelve a lanzar. El test paga el precio.
+
+MUTACIONES, todas sobre ficheros reales, todas restauradas despues:
+
+    BENCH_SPECS apunta a un target inexistente   -> 3 tests rojos
+    el bench existe pero sin harness = false      -> 1 test rojo
+    el parser vuelve a comparar solo $2           -> 1 test rojo
+    clave nueva sin bench ni declaracion          -> 1 test rojo
+    la declaracion no se encoge al medir lo suyo  -> 1 test rojo
+    (control, sin mutacion)                       -> 18/18 verde
+
+### Lo que se descubrio y NO se toco
+
+Los techos de `explorerql` no derivan de nada. `execute_find` mide 0.076 us
+contra un techo de 5000: **65000x de margen, un techo que no puede fallar y por
+lo tanto no es un techo.** Los cuatro se escribieron antes de que existiera una
+sola medicion. No se ajustan aqui, y la razon es que ajustarlos exige la varianza
+entre maquinas, que una unica corrida de desarrollo no produce. Un presupuesto
+derivado de una sola corrida es un numero que se pondra rojo en el hardware de
+otra persona por una razon que nadie puede accionar. Se dejan como estan y se
+dicen, que es lo unico honesto que se puede hacer con ellos hoy.
+
+Las cinco de `mcp.tools` siguen declaradas. Borrarlas haria que el checker
+saliera 0 y el presupuesto diria algo que no es cierto. El contrato obliga a
+borrarlas el dia que exista el benchmark.
+
+`fact_bridge_benchmarks` no entra en `BENCH_SPECS`, y su ausencia es
+deliberada: todo su cuerpo esta tras `#[cfg(feature = "evidence-kernel")]`, asi
+que con las features por defecto el target no tiene `criterion_main!` y no
+enlaza. Anadirlo produciria un fallo de enlizado en cada corrida. El quinto
+contrato lo cubre: si alguien presupuestara alguna vez
+`fact_commit_1000_files` sin registrar el target, el test lo dice.
+
+### Estado del gate
+
+    cargo fmt --check                                        0
+    cargo clippy -p cognicode-core -p cognicode-cli \
+        -p cognicode -p cognicode-explorer --all-targets
+        -- -D warnings                                       0
+    cargo test -p cognicode-cli --test perf_budget_checker_contract
+                                                              18/18
+    bash scripts/ci/run-all-contracts.sh                     227
+    ./scripts/perf-budget-check.sh                           PERF_EXIT=3
+
+Salida 3 y no 0 es el estado correcto: quedan cinco entradas sin medir, estan
+declaradas, y el gate dice exactamente eso. Convertirlo en 0 borrando entradas
+seria fabricar una cobertura que no existe.
+
+### Lección 222 — Un `UNMEASURED` puede ser un nombre, no un agujero
+
+El informe decia "no hay benchmark" y habia uno que habia producido un numero.
+Lo que no puede ver una medicion que el gate ya pago no es una laguna de
+cobertura: es un fallo de parser, y su sintoma se parece tanto al primero que
+manda a escribir codigo que ya funciona. La 214 ("una comprobacion que lee la
+mitad de lo que ocurre") tiene aqui una variante peor: **no leer nada y reportar
+el sintoma del defecto contrario**. Un informe que no puede diagnosticarse tiene
+que contar al menos lo que midio y lo que descarto, que es lo que hace ahora la
+linea de "17 benchmark(s) measured without a budget entry".
+
+### Lección 223 — En TOML una tabla nueva se traga las claves que la siguen
+
+Insertar `[[bench]]` en mitad de `[dev-dependencies]` no añade una tabla al
+final: mueve las claves siguientes a la tabla nueva. Cargo avisa pero compila, y
+el daño aparece lejos, en un test de integracion de otro crate que usa
+`tempfile`. **El sitio de una tabla en un manifiesto es semantica, no
+estilistica**, y el porque queda escrito en el manifiesto, que es donde se va a
+mirar la proxima vez.
+
+### Lección 224 — El primer rojo de un instrumento nuevo es sobre el instrumento
+
+Cinco contratos nuevos, y el primero salio rojo en su primera ejecucion
+encontrando un defecto en el lector de los propios tests, no en el
+repositorio. Es la 215 —arreglar la mitad de una causa— en su forma mas barata
+de descubrir: un lector que sabia tratar varias claves por tabla y no savia que
+un crate pudiera declarar varias tablas. **Un gate nuevo se valida primero
+contra si mismo**, porque su primer rojo no dice nada del mundo hasta que se ha
+comprobado que el instrumento sabe mirar.
+
+### Lección 225 — No se corrige un guion que se esta ejecutando
+
+Bash lee los guiones incrementalmente: no los carga enteros en memoria. Editar
+`perf-budget-check.sh` mientras corria desplazo el offset por el que iba a
+reanudar, y la corrida podia terminar ejecutando basura o perdiendo la mitad
+del informe. Se mato y se relanzo limpia, perdiendo dos minutos de compilacion
+que ya estaban pagados y aceptando la perdida. **Un fichero que se esta
+ejecutando es de solo lectura**, aunque el gate de permisos no lo sepa.
