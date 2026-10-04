@@ -13016,3 +13016,249 @@ en `execute_doctor` (el exit code es contrato publicado) y la hermeticidad del
 enlace aarch64. Son deuda tangencial a este bloque, y la regla del bloque es
 registrarla y no abrir otro frente. Publicar la GitHub Release es la única
 puerta irreversible que queda, y esa sí es puerta de operador.
+
+## N+93 — El UAT que perdió su propio veredicto, y el hermano que B2 dejó atrás
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.8 → v0.101.9) → B4 (Release Truth).
+
+La lane de `v0.101.8` construyó el candidato entero y salió con fallo. Estas dos
+líneas son la misma corrida, y en este orden:
+
+    Pipeline finished with FAILURE: shell exited with code 64
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+
+Antes del 64 estaba el PASS. Es decir: dos targets compilados, SBOM generados,
+la raíz del staging limpia —los seis tarballs de `0.101.4` y `0.101.5` que la
+lane tenía que eliminar, eliminados— y un candidato cuyos **once artefactos
+verifican contra su `SHA256SUMS`**, comprobado aparte:
+
+    $ sha256sum -c SHA256SUMS
+    bundle-0.101.8-aarch64-…: La suma coincide
+    …  (11 líneas, todas "La suma coincide")
+    VERIFY_EXIT=0
+
+El trabajo estaba bien. El veredicto no.
+
+### El defecto, y por qué llevaba dos bloques escondido
+
+`release-install-smoke.sh` tenía el trap viejo:
+
+    cleanup() { ...; rm -rf "$TMP"; }
+    trap cleanup EXIT
+
+Es **el mismo defecto que B2 resolvió en `preflight-clean-clone.sh`**, en el
+hermano que se quedó atrás. Por eso la stage 1 pasaba y esta moría: la propiedad
+—la limpieza no puede ser el veredicto— la implementaban dos scripts y solo uno
+la tenía. La lección de entonces ("un fallo al limpiar es aviso, no veredicto")
+se aplicó al script que se estaba mirando, no a la propiedad.
+
+### La causa tenía dos capas, y la segunda solo se ve si la primera ya no muerde
+
+1. El script corre con `HOME` y `XDG_DATA_HOME` dentro de `$TMP`, y con el cwd
+   ahí dentro. La envoltura de recuperación rechaza un directorio que sea
+   ancestro de `$HOME`. Salir del directorio y devolver `HOME` lo resuelve.
+
+2. **Devuelto solo el `HOME`, la envoltura deja de negarse y pasa a fallar con
+   `failed to trash`.** Lo que trastera es `$XDG_DATA_HOME/Trash`, que seguía
+   dentro del temporal: el árbol contenía su propia papelera, **70 MB anidados**,
+   y un árbol que contiene su papelera no se puede mover. Cada corrida fugaba
+   70 MB a `/tmp`.
+
+La segunda capa se midió con sondas antes de tocar el código, no después: con las
+dos variables fuera `rc=0` y `BORRADO`; con una sola, el temporal sobrevive. Sin
+esa medición, el arreglo "devolver `HOME`" habría pareado funcionar y seguido
+habría seguido fugando.
+
+### Lección 215 — Arreglar la mitad de una causa produce un arreglo que parece completo
+
+El primer arreglo —salir del directorio y devolver `HOME`— pasó el UAT entero:
+`SMOKE2_EXIT=0`, con el `PASS` del smoke y todo. La razón por la que pasó es
+precisamente la razón por la que seguía roto: **la limpieza ya no era el
+veredicto**, que era el daño. El daño de la fuga —70 MB por corrida— es
+silencioso, y un arreglo que arregla el síntoma ruidoso se siente terminado.
+
+El aviso ayudó: el `if ! rm` seguía imprimiendo que no podía limpiar. Ese aviso
+que en B2 era correcto se convirtió aquí en la señal de que faltaba algo. La
+regla que sale de ahí es que **"el script ya no falla" no es "la causa está
+cerrada"**, y que un resto que se anuncia en stderr es información, no ruido: la
+misma línea que se podía descartar tranquilamente era la que faltaba leer.
+
+También salió de aquí una diferencia deliberada entre los dos scripts. El
+preflight descarta la salida del `rm` con `2>/dev/null`, porque su stderr va al
+log de una stage que ya ha certificado. El UAT **la imprime**, porque es lo que
+el operador lee cuando algo falla, y un aviso que no dice por qué obliga a
+reproducir la corrida entera. Los contratos fijan cada política por separado.
+
+### El arreglo, y dónde viven los contratos
+
+La misma forma que la del preflight, a propósito: la función vive en el script
+que la usa, lee el estado de salida en la primera sentencia, sale del directorio,
+y el borrado va dentro de un condicional cuyo fallo avisa. Los seis contratos
+nuevos están en `qw04_preflight_contract.rs`, el dueño ya existente de la
+propiedad, y no en un fichero nuevo: una propiedad, un dueño, dos scripts.
+
+MEDIDO, ejecutando el UAT contra el candidato real de v0.101.8:
+
+    antes   SMOKE_EXIT=64   6 temporales antes, 7 después   (fuga)
+    ahora   SMOKE5_EXIT=0   8 temporales antes, 8 después   (sin fuga)
+    contrato  27 passed, 0 failed   (eran 21)
+    suite     219 passed, 0 failed
+    fmt 0, clippy -D warnings 0
+
+Mutación comprobada: volver el trap a la forma vieja hace fallar
+`the_install_smoke_trap_calls_the_function_and_not_a_bare_rm`.
+
+### `v0.101.9`, y un cambio de procedimiento que sí importa
+
+`7f7d087e`, tag local `v0.101.9`. Gate medido sobre ese árbol:
+
+    contratos  219 passed, 0 failed
+    fmt        FMT_EXIT=0
+    clippy     CLIPPY_EXIT=0
+    tests      CARGO_EXIT=0 — 6069 passed, 0 failed, 30 ignored (163 bancos)
+    coherencia OK: tag v0.101.9 ↔ workspace.version 0.101.9
+
+Los 6069 son los 6063 de `d9630f7a` más los seis contratos nuevos. Ningún otro
+cambió.
+
+El cambio de procedimiento: **`v0.101.8` se publicó antes de correr la lane**, y
+por eso acabó siendo un tag correcto sin candidato certificado — y sin poder
+corregirse, porque un tag publicado no se mueve. Esta vez el tag se crea en
+local, la lane corre sobre él, y **solo se empuja si la lane sale con 0**. Un tag
+que no ha producido candidato todavía se puede corregir; uno publicado, no.
+
+### La lane, en dos corridas, y el `release/` que heredaba
+
+Primera corrida sobre `7f7d087e`, con el tag local ya puesto:
+
+    STAGING_BEFORE=3 tarballs sucios
+    Error: artifact cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz declares
+      version 0.101.8 but the release version is 0.101.9
+    LANE_EXIT=1
+
+El gate hizo bien su trabajo. La causa: la stage `generate` escribía en `release/`
+sin establecerlo desde cero, así que en un worktree de larga vida el directorio
+heredaba los artefactos de la corrida anterior — once ficheros, seis de ellos de
+`0.101.8`—. El veredicto estaba bien; lo que no era correcto es que un directorio
+de salida de stage dependiera de lo que hubiera antes.
+
+`4faa0138` lo arregla, y **con fallo fatal**, no con aviso: la limpieza de un
+directorio de salida de stage es lo contrario de la limpieza posterior a decidir
+—el QW-04 de B2, donde el aviso sí es lo correcto, porque la decisión ya está
+tomada—. Aquí la stage no ha decidido nada todavía, así que no poder establecer
+su directorio de salida es un fallo de la stage.
+
+El contrato vive en `test_pipeline_stage_bodies.py`, el dueño ya existente de los
+cuerpos de las stages, con `OWNED_OUTPUT_DIRS` por si mañana hay más directorios
+que la stage deba establecer desde cero:
+
+    antes   FAIL — release-candidate.pipeline.kts:703: se escribe en release/
+           sin limpiarlo antes
+    ahora   PASS — 6 pipelines
+    validate VALIDATION SUCCESSFUL, diagnostics: []
+
+### Lección 216 — Un ratchet con un número inventado es peor que no tener ratchet
+
+Quedaba un ratchet a medio hacer sobre los `std::process::exit` de
+`cognicode-core`: seis llamadas, cinco detrás de `#[cfg(feature =
+"multimodal")]`, una viva. La afirmación correcta es que un `cogh` publicado solo
+puede salir con un código elegido por la biblioteca en `doctor`. La forma de
+medirlo escrita en el test era comparar el número de salidas **antes y después de
+la primera anotación `multimodal` del fichero**. Esa forma estaba mal, y daba
+números que parecían medidos:
+
+- Una versión contaba llaves y daba **4** salidas antes de la anotación cuando hay
+  exactamente **1**.
+- La reescritura por posición daba **0**, porque la primera anotación
+  `#[cfg(feature = "multimodal")]` de `commands.rs` está en la **línea 95**, sobre
+  las variantes del enum de subcomandos, muy por encima de las seis salidas. Todas
+  las salidas quedan "después".
+
+Ninguna de las dos formas habría fallado en el fichero bueno de una manera
+distinta de como fallaba en uno roto, que es la definición de un test que no
+vigila. Lo que sí responde a la pregunta es **la función dueña de cada salida** y
+**si la declaración de esa función está cerrada por la feature** —el atributo
+adyacente, no el primero del fichero—. MEDIDO: no hay ninguna `fn` declarada a más
+de cuatro espacios en todo `commands.rs`, así que subir hasta la declaración más
+cercana no puede acabar atribuyendo a una función anidada; y si alguien anida
+una, el test lo dice en vez de mentir en silencio.
+
+El ratchet final afirma tres cosas, cada una con su fallo: el total, el recuento
+**por función**, y que no haya ninguna función con salidas que no esté en la
+tabla. Un total que cuadra no dice de quién son las llamadas.
+
+MEDIDO, tres mutaciones:
+
+    1. quitar el cfg de execute_docs_ingest   NO es una mutación válida del
+       ratchet: rompe la compilación (E0432/E0433, `extraction` y
+       `source_extractor` también están gated). El compilador es la garantía
+       fuerte; el test afirma la disposición del fuente.
+    2. la lista declara mal una dueña          FAILED, con MEDIDO y DECLARADO
+                                                  uno a uno
+    3. una septima salida viva en
+       execute_capabilities                    FAILED en los dos tests, nombrando
+                                                  la funcion y la linea
+
+Y un cuarto fallo que encontró el gate y no la medición: `///` dentro del cuerpo de
+un test no genera documentación, y `-D warnings` lo rechaza. El ratchet llevaba
+varios commits sin pasar por clippy.
+
+        test    26 passed, 0 failed
+        fmt 0, clippy -D warnings 0
+        suite  219 passed, 0 failed
+
+### La segunda corrida, y el candidato que sí se certifica
+
+`4faa0138` con el tag local `v0.101.9` movido encima —nunca publicado, y por eso
+movible—, sobre un worktree de lane cuyo `release/` tenía 23 ficheros, once de ellos
+de `0.101.8`. Justo el lecho sucio que provocó el fallo anterior:
+
+    HEAD=4faa0138  TAGCOMMIT=4faa0138
+    STAGING_BEFORE=3 tarballs sucios
+    Pipeline finished with SUCCESS
+    LANE_EXIT=0
+    END 2026-10-04T07:20:43Z
+
+Y el candidato, comprobado aparte del veredicto de la lane:
+
+    $ cd release && sha256sum -c SHA256SUMS
+    11 líneas, todas "La suma coincide"
+    CHECK_EXIT=0
+
+Once artefactos, **los once de `0.101.9`**, ninguno heredado. Los once del
+directorio `release/` de la corrida previa ya no están.
+
+El tag se empuja ahora, con `LANE_EXIT=0` como condición, y es la primera vez que
+un tag de este repositorio se publica **después** de producir su candidato y no
+antes.
+
+### Una corrección a un recibo mío
+
+El mensaje de `7f7d087e` dice "STAGED_TREE c91ec382…", y ese hash es el árbol de
+`5d0ab729`, el commit **anterior**. Lo medí con `git write-tree` antes del
+`git add`, así que el índice no contenía todavía los cambios del corte. El árbol
+real del commit es `c029ca7b9ff343a08f8154f23cf8b8685d398fca`.
+
+No se reescribe el commit: `git.history_rewrite` es `human_gate` por ley, y
+cambiar el mensaje de un commit para que cuadre no vale lo que cuesta. La
+corrección vive aquí, que es para lo que está el JOURNAL: append-only, y un
+recibo que afirma algo falso se corrige añadiendo la verdad, no editando la
+mentira.
+
+### Lo medido sobre `execute_doctor`, y por qué no se toca
+
+Quedaba pendiente una decisión sobre `std::process::exit` en
+`commands.rs:1503`. Medido antes de decidir:
+
+- La rama `exit(1)` **es viva**: `overall_status()` devuelve `Missing` si alguna
+  de las secciones core/lsp/parsers está missing.
+- El brazo de dispatch (línea 542) propaga con `?` como los que B1 arregló, así
+  que **el `?` es código muerto** y la firma `Result` del miente: la función
+  nunca retorna.
+- **Solo la CLI la llama.** No hay consumidor en proceso que sufra el `exit`.
+
+Es deuda real y el diagnóstico es preciso, pero arreglarla toca el camino del
+exit code, que es contrato publicado, y no hay daño activo hoy. Se registra y no
+se abre frente nuevo. Lo mismo con la marca KEEP+MARK de `multimodal` y con la
+hermeticidad del enlace aarch64.
