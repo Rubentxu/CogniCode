@@ -30,6 +30,12 @@ authors = ["CogniCode Team"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+# Benchmarks. MEDIDO 2026-10-04: `criterion = "0.5"` vivia solo en
+# cognicode-core, y el segundo bench del workspace (ExplorerQL) no podia
+# declararlo sin duplicar la version. Dos copias de una version de
+# dependencia es una segunda fuente de verdad sobre la toolchain de
+# medicion, y la que se desincroniza sin que nada falle.
+criterion = "0.5"
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
 cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }

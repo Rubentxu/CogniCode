@@ -78,6 +78,7 @@ name = "cognicode-control-plane"
 path = "src/bin/control_plane.rs"
 
 [dev-dependencies]
+criterion.workspace = true
 tokio-test.workspace = true
 async-trait.workspace = true
 tempfile = "3.27"
@@ -88,3 +89,22 @@ regex = "1"
 # TCP listener and call it via reqwest. `json` is required to parse
 # the response body; default-features=false keeps the dep tree lean.
 reqwest = { workspace = true }
+
+# MEDIDO 2026-10-04: sin `harness = false`, Cargo compila el bench con el
+# harness de `libtest` y `criterion_main!` no llega a ejecutarse nunca. El
+# binario arranca, acepta `--output-format`, responde "0 tests, 0 benchmarks"
+# y sale 0: un benchmark que parece correr y no mide nada. Es el mismo
+# patron que la Lección 214 del JOURNAL —una comprobacion que lee la mitad de
+# lo que ocurre— aplicado a un harness.
+#
+# Va AL FINAL del fichero y no pegado a `criterion` a proposito. Insertado en
+# medio de `[dev-dependencies]`, TOML no distingue "siguiente clave" de
+# "siguiente tabla": las siete dev-dependencies que venian despues
+# (`tokio-test`, `async-trait`, `tempfile`, `tower`, `uuid`, `regex`,
+# `reqwest`) dejaron de ser dev-dependencies y pasaron a ser claves
+# desconocidas de este `[[bench]]`. Cargo no se queja: avisa, compila, y
+# cualquier test de integracion del explorer que use `tempfile` o `reqwest`
+# revienta por una linea movida en un manifiesto.
+[[bench]]
+name = "explorerql_benchmarks"
+harness = false
