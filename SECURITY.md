@@ -82,8 +82,8 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.101.9 (cut from `integrate/v1015`, not yet released) | yes |
-| 0.98.1 (latest published release, `v0.98.1`) | yes |
+| 0.101.9 (latest published release, `v0.101.9`, cut from `integrate/v1015`) | yes |
+| 0.98.1 (previous release, `v0.98.1`) | yes |
 
 Older lines are not patched. If you are on an older release and find a
 vulnerability, the report is still useful; tell us the version so the fix can

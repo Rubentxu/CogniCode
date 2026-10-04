@@ -203,7 +203,7 @@ def changelog_problems(changelog: str, current: str) -> list[str]:
 
 
 def security_supported_problems(
-    security: str, current: str, main_version: str | None
+    security: str, current: str, main_version: str | None, published: str | None = None
 ) -> list[str]:
     """La politica de soporte de SECURITY.md, y la rama que dice tener.
 
@@ -217,6 +217,14 @@ def security_supported_problems(
     el mismo criterio que `main` lleve o no la version: es que la respuesta no
     existe, y un contrato que no puede mirar no puede afirmar. Se degrada y lo
     dice, igual que hace `named_tags_problems` con la visibilidad de tags.
+
+    `published` es la version mas alta que existe como tag remoto, y vigila una
+    segunda afirmacion de la misma fila: `not yet released` sobre una version
+    que ya se publico. La fila entonces no miente sobre la rama —la rama
+    sigue siendo `integrate/v1015`— pero miente sobre el mundo, y eso manda a
+    quien lea la politica a esperar un aviso que no va a llegar. Es el mismo
+    defecto que el de la rama, una instruccion mas alla: **la superficie
+    vigilaba la mitad de la afirmacion**.
     """
     block = re.search(
         r"^##\s+Supported versions\s*$(.*?)(?=^##\s|\Z)", security, re.MULTILINE | re.DOTALL
@@ -246,6 +254,18 @@ def security_supported_problems(
             f"SECURITY.md describe {current} como `main`, pero origin/main esta en "
             f"{main_version}. La fila afirma una rama que no lleva esa version: quien "
             "lea la politica de soporte buscara un corte que no existe ahi."
+        ]
+
+    if (
+        published is not None
+        and published == current
+        and re.search(r"not yet released", row, re.IGNORECASE)
+    ):
+        return [
+            f"SECURITY.md dice que {current} no esta publicada, y el tag v{current} "
+            "ya existe en el remoto. Una politica que manda esperar un aviso de "
+            "seguridad que no va a llegar es peor que no tener politica: consume la "
+            "confianza de quien la lee y la gasta en una mentira."
         ]
     return []
 
@@ -298,6 +318,56 @@ def main_version() -> str | None:
         return None
 
 
+def _highest_remote_tag(ls_remote_stdout: str) -> str | None:
+    """La version mas alta de un `git ls-remote --tags`, o None si no hay.
+
+    Se ignoran las lineas de peel (`refs/tags/vX.Y.Z^{}`): describen el MISMO
+    tag que la linea sin `^{}`, y contarlas como dos seria una segunda fuente
+    de verdad sobre que existe. Un nucleo con un solo filtro, y una sola razon
+    para el filtro.
+
+    None cuando no hay ningun tag semver. Mismo criterio que el resto del
+    fichero: una respuesta ausente se degrada y se dice.
+    """
+    versions = {
+        m.group(1)
+        for m in re.finditer(r"refs/tags/v(\d+\.\d+\.\d+)$", ls_remote_stdout, re.MULTILINE)
+    }
+    if not versions:
+        return None
+    return max(versions, key=lambda v: tuple(int(p) for p in v.split(".")))
+
+
+def published_version() -> str | None:
+    """La version mas alta publicada como tag remoto, o None si no responde.
+
+    MEDIDO 2026-10-04: publicar `v0.101.9` dejo `SECURITY.md` diciendo
+    `0.101.9 (cut from integrate/v1015, not yet released)` cuando la release
+    existia. La fila era correcta en la rama y falsa en el mundo, y ningun
+    contrato lo miraba: los cuatro que vigilan Release Truth vigilan la
+    version, la rama, la etiqueta y el changelog. Ninguno vigila si el corte
+    salio de su tarima.
+
+    Se pregunta al remoto por `git ls-remote --tags`, que no necesita
+    credenciales ni red autenticada. Da igual que la version mas alta del
+    remoto no sea la que se esta cortando: la pregunta es "hay algo mas alto
+    publicado que esta fila", y si lo hay, esta fila deberia hablar de el.
+
+    None cuando el remoto no responde. Mismo criterio que `main_version` y que
+    la visibilidad de tags: una respuesta ausente no es un veredicto.
+    """
+    out = subprocess.run(
+        ["git", "ls-remote", "--tags", "origin"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if out.returncode != 0 or not out.stdout.strip():
+        return None
+    return _highest_remote_tag(out.stdout)
+
+
 def known_tags() -> set[str]:
     """Tags visibles, locales o del remoto; vacio si el clon no puede responder."""
     local = subprocess.run(
@@ -332,7 +402,7 @@ def test_the_four_surfaces_agree_with_the_workspace() -> None:
         release_block_problems(readme, current)
         + pin_problems(readme, current)
         + changelog_problems(changelog, current)
-        + security_supported_problems(security, current, main_version())
+        + security_supported_problems(security, current, main_version(), published_version())
     )
     assert not problems, "la release no es coherente consigo misma:\n  " + "\n  ".join(problems)
 
@@ -448,6 +518,104 @@ def test_an_unresolvable_main_degrades_instead_of_failing() -> None:
     """
     table = _security_table("| 0.101.8 (current `main`, not yet released) | yes |")
     assert security_supported_problems(table, "0.101.8", None) == []
+
+
+# ---------------------------------------------------------------------------
+# La segunda mitad de la misma fila: no solo donde vive, sino si salio
+# ---------------------------------------------------------------------------
+def test_a_support_row_saying_not_yet_released_is_rejected_once_it_is_published() -> None:
+    """La fila que sobrevive a la rama y muere a la publicacion.
+
+    MEDIDO 2026-10-04. Publicar `v0.101.9` no cambio ni una linea de
+    `SECURITY.md`, que seguia diciendo `not yet released`. La fila era
+    correcta sobre la rama —el corte segue viniendo de `integrate/v1015`— y
+    falsa sobre el mundo. Los cuatro contratos que vigilan Release Truth
+    vigilan version, rama, etiqueta y changelog; ninguno vigilaba si el corte
+    habia salido de su tarima.
+
+    Y la consecuencia no es cosmetica: una politica de soporte que dice
+    `not yet released` sobre algo publicado manda a quien reporte una
+    vulnerabilidad a esperar un aviso que no va a llegar. Es peor que no
+    declarar nada, porque gasta la confianza de quien lee.
+    """
+    table = _security_table(
+        "| 0.101.9 (cut from `integrate/v1015`, not yet released) | yes |"
+    )
+    problems = security_supported_problems(table, "0.101.9", "0.101.0", published="0.101.9")
+    assert problems, "una fila que dice `not yet released` sobre un tag ya publicado tiene que fallar"
+    assert "no esta publicada" in problems[0], problems
+
+
+def test_a_published_version_may_name_the_branch_it_was_cut_from() -> None:
+    """Lo que hay que decir AL publicar: la rama, sin la etiqueta temporal.
+
+    La fila sigue nombrando `integrate/v1015` porque es de ahi de donde sale
+    el corte, y eso no cambia por publicar. Lo que cambia es que ya no hay
+    release pendiente: quitar `not yet released` y el contrato pasa.
+    """
+    table = _security_table("| 0.101.9 (cut from `integrate/v1015`) | yes |")
+    assert security_supported_problems(table, "0.101.9", "0.101.0", published="0.101.9") == []
+
+
+def test_a_pending_cut_may_still_say_it_is_not_released() -> None:
+    """La afirmacion opuesta: mientras no haya tag remoto, la frase es cierta.
+
+    Sin este caso, un contrato que prohibe `not yet released` estaria
+    prohibiendo tambien la verdad, y la forma correcta de arreglar un ratchet
+    asi no es borrarlo: es darle el otro lado.
+    """
+    table = _security_table(
+        "| 0.102.0 (cut from `integrate/v1015`, not yet released) | yes |"
+    )
+    assert (
+        security_supported_problems(table, "0.102.0", "0.101.0", published="0.101.9") == []
+    ), "un corte que aun no existe como tag si puede decir que no esta publicado"
+
+
+def test_an_unresolvable_remote_degrades_instead_of_failing() -> None:
+    """Sin `origin` no se puede saber que hay publicado, y sin saber no se afirma.
+
+    Mismo criterio que `main_version` y que la visibilidad de tags: una
+    respuesta ausente se degrada y se dice. Un clon sin remoto no tiene por
+    que aprobar la fila, pero tampoco tiene por que reprobarla.
+    """
+    table = _security_table(
+        "| 0.101.9 (cut from `integrate/v1015`, not yet released) | yes |"
+    )
+    assert security_supported_problems(table, "0.101.9", "0.101.0", published=None) == []
+
+
+def test_published_version_ignores_a_tag_that_only_exists_locally() -> None:
+    """Un tag local sin remoto no cuenta como publicado.
+
+    La distincion importa justo en esta cadena: `v0.101.9` se creo en local
+    mucho antes de empujarse, precisamente para poder moverlo si la lane
+    fallaba. Durante esa ventana el tag existia y no estaba publicado, y un
+    contrato que lo tomara por publicado haria fallar la fila de `SECURITY.md`
+    en el momento de cortar, que es cuando el corte todavia puede corregirse.
+    """
+    # Salida de `ls-remote` de un remoto sin v0.101.9: solo esta la linea sin
+    # peel, porque `--tags` devuelve las dos y la que importa es la simple.
+    out = "a1b2c3\trefs/tags/v0.101.8\nd4e5f6\trefs/tags/v0.101.8^{}\n"
+    assert _highest_remote_tag(out) == "0.101.8", "el peel no es un tag distinto"
+
+
+def test_published_version_reads_the_higher_remote_tag_not_the_lower() -> None:
+    """El maximo, no el ultimo de la lista.
+
+    `git ls-remote` no ordena. Una rama vieja puede haber dejado
+    `v0.101.0` en el remoto mientras la linea publicada es `v0.98.1`, y el
+    orden de salida no dice nada. La unica forma de saber cual manda es
+    comparar componente a componente, que es lo que hace la clave.
+    """
+    out = "a1b2c3\trefs/tags/v0.98.1\nd4e5f6\trefs/tags/v0.101.0\n"
+    assert _highest_remote_tag(out) == "0.101.0", "101 es mayor que 98 aunque vaya despues"
+
+
+def test_published_version_degrades_on_an_empty_or_unparsable_remote() -> None:
+    """Sin tags semver no hay respuesta, y sin respuesta no hay veredicto."""
+    assert _highest_remote_tag("") is None
+    assert _highest_remote_tag("a1b2c3\trefs/tags/release-candidate\n") is None
 
 
 def test_a_missing_supported_versions_table_is_not_a_clean_bill() -> None:
