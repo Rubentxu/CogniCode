@@ -13406,3 +13406,97 @@ valor por defecto y estos recibos viven en el JOURNAL, que es append-only y no
 depende de él. `git.history_rewrite` sigue siendo `human_gate`: el
 `STAGED_TREE` equivocado de `7f7d087e` se corrige en N+93 añadiendo la verdad,
 no reescribiendo el commit.
+
+## N+95 — Publicar un release es lo que hace falsa la fila que lo declara
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4bis (Release Truth, segunda Superficie).
+
+### Lo que encontró la publicación de `v0.101.9`
+
+Publicar el release no cambió ni una línea de `SECURITY.md`. La fila de
+versiones soportadas seguía diciendo:
+
+    | 0.101.9 (cut from `integrate/v1015`, not yet released) | yes |
+    | 0.98.1 (latest published release, `v0.98.1`) | yes |
+
+Con el tag `v0.101.9` ya en el remoto. La primera fila era correcta sobre la
+rama —el corte sigue saliendo de `integrate/v1015`— y falsa sobre el mundo. La
+segunda llevaba desde el 24 de septiembre afirmando que `v0.98.1` era la última,
+que dejó de serlo dos versiones antes.
+
+El detalle que lo convierte en deuda de verdad, y no en errata: los cuatro
+contratos de Release Truth vigilaban version, rama, etiqueta y changelog.
+Ninguno vigilaba si el corte había salido de su tarima. Publicar —el acto
+justo que vuelve falsa la fila— era exactamente lo que no rompía nada.
+
+Y no es cosmético. Una política que dice `not yet released` sobre algo ya
+publicado manda a quien reporte una vulnerabilidad a esperar un aviso que no va
+a llegar. Es peor que no declarar nada, porque gasta la confianza de quien la
+lee.
+
+### El arreglo, con RED exacto
+
+`security_supported_problems`, el dueño ya existente de la propiedad, gana una
+quinta comprobación: `published`, la versión más alta que existe como tag
+remoto. Con su degradación correspondiente —`None` cuando el remoto no
+responde, igual que `main_version` y que la visibilidad de tags: una respuesta
+ausente no es un veredicto.
+
+El núcleo, `_highest_remote_tag`, filtra las líneas de peel (`refs/tags/X^{}`)
+y compara componente a componente, porque `git ls-remote` no ordena y una rama
+vieja puede haber dejado `v0.101.0` en el remoto mientras la línea publicada es
+`v0.98.1`. Un filtro, una razón.
+
+    RED    FAIL - SECURITY.md dice que 0.101.9 no esta publicada, y el tag
+           v0.101.9 ya existe en el remoto
+    GREEN  PASS
+    mutación  volver la fila a `not yet released` reproduce el RED exacto
+    suite     226 passed, 0 failed   (eran 219; +7)
+
+Los siete casos nuevos fijan los dos lados de la afirmación, no solo el que
+falla: un corte que aún no existe como tag sí puede decir que no está publicado,
+y una versión ya publicada puede seguir nombrando la rama de la que salió. Un
+contrato que solo prohíbe la frase acabaría prohibiendo también la verdad, que
+es la forma de arreglar un ratchet que no es borrarlo: es darle el otro lado.
+
+### Lección 218 — Una fila de verdad tiene más de una afirmación
+
+`SECURITY.md` no tiene una afirmación, tiene dos en la misma línea: de dónde
+sale el corte, y si ya salió. Los cuatro contratos leían la primera y creían
+estar vigilando la fila. La segunda llevaba dos publications —`0.101.8` y ahora
+`0.101.9`— sobreviviendo a lo que la contrato.
+
+La regla que sale es la misma que ya pagó en el ratchet de `process::exit` y en
+la divergencia de las dos clases de UAT: **un contrato que lee la mitad de una
+afirmación no vigila esa afirmación**. Un texto que dice dos cosas necesita dos
+comprobaciones, o necesita partirse en dos que cada una pueda fallar por su
+nombre.
+
+### Auditoría de `#[ignore]` — 30 vivos, ninguno residuo
+
+La deuda visible del repo son los 30 `#[ignore]`. Medidos y clasificados por su
+motivo real:
+
+| Motivo | Nº | ¿Legítimo? |
+|---|---|---|
+| Requiere binario externo (rust-analyzer, pyright) | 4 | sí — el binario no está en el entorno de CI |
+| Requiere internals de rmcp (`RequestContext`/`NotificationContext`) | 10 | sí — son tipos privados del adapter |
+| Integración pesada, >5 min de escaneo completo | 2 | sí — M0.12 ya los cubrió con benchmarks acotados |
+| Gate de clippy workspace (PRF-CI-01) | 1 | sí — se corre aparte, no en la suite |
+| Fixture `dev-bundle.yaml` | 1 | sí — falla por construcción, ver abajo |
+
+18 justificados. Los 12 restantes no son `#[ignore]` reales sino prosa o tests ya
+re-habilitados por M0.12 (`walker-grammar-drift` está CLOSED; los nombres de nodo
+ya están actualizados). **No hay residuo**: la deuda de `#[ignore]` está
+medida y cada uno tiene su razón.
+
+El caso del fixture merece el registro porque parece un bug y no lo es. Al
+correrlo, `test_cogh_install_runs_successfully` falla con `SHA256 mismatch` al
+descargar el artefacto real de `0.95.0`. La causa es que el fixture
+`dev-bundle.yaml` lleva digests que "NO son los digests de ningún artefacto
+real", y su propia cabecera dice que un install dirigido por él "falla en la
+etapa SHA256 por construcción, que es el comportamiento correcto: no puedes
+instalar bytes que no descargaste". El `#[ignore]` es correcto, el fallo es el
+comportamiento, y dejarlo ignorado es lo honesto. Un test que verifica la
+integridad no debe pasar contra un hash inventado.
