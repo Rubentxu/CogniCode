@@ -13682,3 +13682,37 @@ Y el orden importa: si `rust-analyzer` se hubiera instalado antes de que este
 test existiera, habria escrito el `Error` y nunca habria habria escrito el
 `Unavailable`. **El codigo de test no es independiente del entorno en el que se
 escribe**, y eso solo se ve cuando el entorno cambia.
+
+### Lo que un gate tiene que instalado para no mentir
+
+El defecto se Midió en la maquina del operador porque ahi `rust-analyzer` esta
+instalado. En el gate oficial no lo esta, y MEDIDO:
+
+    $ grep -n 'component add' merge-gate.pipeline.kts scripts/ci/*.sh .github/**/*.yml
+    (vacio — nadie instala el componente)
+    $ grep -n 'cargo test' merge-gate.pipeline.kts
+    310:  sh("$cd && cargo test -p cognicode-core --lib --quiet")
+
+O sea: el gate corre la suite completa de `cognicode-core` —donde vive el test
+que affirmaba el entorno— y en un runner sin el componente, ese test se salta y
+da verde. **El gate no puede detectar lo que solo aparece cuando el entorno
+esta completo**, que es exactamente la clase de defecto que este test era.
+
+No se corrige aqui, y el motivo importa: `merge-gate` es la autoridad y
+cambiar su cadena de herramientas para que un test de integración vea un LSP es
+decidir que el gate de merge necesita un servidor de lenguaje, que es una
+decision de producto y no una consecuencia de este arreglo. Se registra como
+candidata: o el gate instala el componente, o los tests que lo requieren se
+declaran de nivel superior y se ejecutan en un job aparte que si lo tenga. Las
+dos son legítimas; ninguna se elige sin medir cuanto cuesta cada una.
+
+Lo que si queda claro, y es la leccion operativa de este bloque: **un gate que
+se salta lo que su entorno no tiene, no vigila el entorno**. Ejecuta la suite
+completa, y aun asi el camino que importa —el que toca un binario real— no se
+recorre. La cifra "6071 tests verdes" no dice si ninguno estaba saltandose.
+
+Un recordatorio de por que esto no es un defecto del gate: los workflows de
+GitHub se eliminaron A PROPOSITO, con su invariante
+(`scripts/ci/test_no_actions_workflows.py`) y `merge-gate.pipeline.kts` tomo su
+lugar (`d3426966`: "ci(actions): cero workflows, y el invariante que lo dice").
+Cero workflows es la decision, no su ausencia.
