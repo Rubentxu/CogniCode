@@ -1,8 +1,8 @@
 {
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
-  "version": "0.101.7",
-  "source_commit": "017460b82b8846ec53c3e6f4ec758238738ec23f",
+  "version": "0.101.8",
+  "source_commit": "d9630f7abe4379c2a2e8836dfa01e3d159dd005e",
   "public_surface": {
     "binaries": [
       {

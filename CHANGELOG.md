@@ -10,98 +10,68 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
-## [v0.101.7] — 2026-10-04
+## [v0.101.8] — 2026-10-04
 
-**Por qué existe v0.101.7, y qué pasa con `v0.101.6`.** `v0.101.6` está
-publicado y **no se mueve**: un tag identifica bytes. Se cortó antes de que
-llegaran dos arreglos, así que no produce candidato y queda como el tercero
-del grupo `v0.99.2`, `v0.100.0` y `v0.101.5`. Esta release los lleva dentro.
+**Por qué existe v0.101.8, y qué pasa con `v0.101.7`.** `v0.101.7` está
+publicado y **no se mueve**: un tag identifica bytes. Se cortó con el árbol
+completo, pero **su pipeline de candidate no compilaba**, así que su lane murió
+en el minuto dos sin llegar a la primera stage. Esta release es la primera cuyo
+pipeline está probado, y lleva dentro tanto el arreglo como el contrato que lo
+vigila.
 
-Los dos arreglos que la motivan:
-
-- **La raíz de `staging/` arrastraba la salida de la corrida anterior.** El
-  aplanado copia de `staging/payloads-<plataforma>/` a la raíz y la copia se
-  queda, así que la siguiente corrida se rompía en su propia salida:
-  `::error::unexpected file at staging root: cogh-aarch64-….cdx.json`. Ahora
-  `skill-bundles` limpia los ficheros sueltos de la raíz **antes** de escribir
-  sus bundles, y `package-$target` crea su directorio de lane desde cero. El
-  orden es lo que lo hace seguro: `package` produce los directorios
-  `payloads-*`, que sobreviven a un borrado de solo ficheros, y el aplanado va
-  el último, de modo que escribe después de la limpieza.
-
-- **El gate de Release Truth comparaba la versión y no los bytes.** Este es el
-  hallazgo grande del corte, y se encontró por casualidad al toparse con la
-  divergencia de arriba. `release-tag-coherence.sh v0.101.6 HEAD` respondía
-  **`OK`** con el árbol dos commits por delante del tag, porque comparaba
-  `0.101.6` contra `v0.101.6` y ahí terminaba: nunca comprobaba que el SHA
-  fuera el commit que el tag nombra. Es el incidente de `v0.98.0` con la mitad
-  de la comparación sin hacer — los números coinciden y los bytes no — y ningún
-  contrato lo cubría. Ahora comprueba la identidad **antes** que la versión, y
-  lo comprueba en la stage de coherencia, que es la primera que corre: una lane
-  que intente construir desde un commit que no sea el del tag falla ahí, antes
-  de gastar el build, nombrando los dos commits.
+Es la cuarta vez que un corte pasa sus contratos y su pipeline no arranca. La
+causa es la misma desde `v0.101.5` y es una sola: **la suite ejecutaba el
+cuerpo de las stages y no compilaba el fichero que las contiene**.
 
 ### Corregido
 
-- **La candidate podía llevar los binarios de la release anterior.** El
-  ensamblador elegía payload con `find … -print -quit` —el primero que
-  encontraba— y su regex de defensa no mencionaba la versión. Reproducido sobre
-  el staging real: resolvía `cognicode` a `cognicode-0.101.4-…` y el regex lo
-  aprobaba. Lo único que impedía publicar binarios viejos era que otra stage
-  comparase antes un número de archivos, que es un accidente de orden de stage.
-  Ahora rechaza la ambigüedad y **nombra el archivo**, sin conocer la versión:
-  la autoridad de qué versión es esta release es del tag, y meterla aquí crearía
-  una segunda fuente de verdad.
-- **Un target instalado no es un target que compila.** `toolchain-for-$target`
-  comprobaba `rustup target list --installed` y nada más, mientras su comentario
-  prometía que un target sin linker no produce un candidate. En `v0.101.4` el
-  target estaba instalado, la stage dio bien, y `binaries-aarch64` murió veinte
-  minutos después culpando al compilador. Ahora hay dos guardas en serie: que el
-  linker esté configurado y resuelva, y que el toolchain **nativo** compile una
-  sonda para el triple exacto que `cc-rs` añade.
-- **La herramienta de release podía ser de otro checkout.** El
-  `build.target-dir` de esta máquina está compartido entre checkouts y agentes, y
-  cargo compara mtimes entre árboles sin historial común. La lane lo supo veinte
-  minutos después, con `unrecognized subcommand 'skills'` — un subcomando que el
-  árbol sí tiene. Ahora la stage comprueba que el binario que va a usar es de
-  este árbol.
-- **El extractor de cuerpos `sh()` no veía las stages con preámbulo**, así que
-  los contratos de packaging se ejecutaban contra un cuerpo recortado que no es
-  el que la lane ejecuta.
-- **La stage de skills preguntaba a un subcomando que no existía** en el árbol
-  desde el que se ejecutaba, y **la stage `verify` no pasaba `--tag`**: nunca se
-  había ejecutado.
-- **Ocho de los once brazos de `CommandExecutor::execute` tragan el error** y
-  salen con 0. Detalle en la entrada de `v0.101.5`.
-- **`install.sh` declaraba cinco posturas de seguridad y ninguna estaba probada.**
-  Su hook `COGNICODE_RELEASE_BASE`, declarado para que un release local pudiera
-  dirigir las pruebas de checksum, no lo usaba nadie. Ahora se ejecutan las cinco
-  en HOME limpio, sin red, y cada negativo comprueba **la razón** del rechazo.
+- **El pipeline de candidate no compilaba.** Dos párrafos de comentario en la
+  guarda del linker explicaban cómo escapar un signo de dólar escribiendo el
+  signo de dólar, y Kotlin los leyó como plantillas:
 
-### Verificado, no solo escrito
+  ```
+  ERROR Unresolved reference 'host'.       (línea 254)
+  ERROR Unresolved reference 'host'.       (línea 254)
+  ERROR Unresolved reference 'key_LINKER'. (línea 263)
+  VALIDATION FAILED
+  ```
 
-- **La costura entre la stage que produce y el ensamblador que elige** se
-  ejecutó junta por primera vez, con el binario real y los binarios reales de las
-  dos plataformas. Antes, el contrato de packaging usaba un doble de la
-  herramienta y los contratos del ensamblador usaban árboles sintéticos: la
-  costura, que es donde vivía el defecto, no la cubría nadie. El binario se
-  comprobó **byte-idéntico** a una build limpia de este árbol, porque un mtime
-  no puede demostrar de qué checkout salió un binario.
-- 212 contratos de comportamiento, `cargo fmt` limpio, `clippy -D warnings` sin
-  avisos, y el workspace completo en verde.
+  Un `#` abre un comentario de shell, pero la línea sigue siendo contenido del
+  raw string, y en un raw string un dólar abre plantilla se llame como se
+  llame la línea. El comentario que explicaba el bug contenía el bug. El bloque
+  se reescribió **sin un solo signo de dólar** en la prosa, porque la prosa no
+  lo necesita: los ejemplos de escapado están en la stage de abajo, que es la
+  especificación.
+
+- **Un contrato mide el nivel que alcanza, y no puede ver por encima de sí.**
+  Los 213 contratos anteriores ejecutaban el cuerpo de una stage; ninguno
+  compilaba el script que la contiene. Renderizar un cuerpo y pasarlo por bash
+  demuestra que el shell es correcto, no que el envoltorio sea un programa.
+  `test_every_pipeline_compiles` valida ahora los seis `.kts` del repositorio
+  con `pipelinek validate`, que compila y comprueba el grafo de stages sin
+  ejecutar ninguna. Mutado —devolviendo un dólar a un comentario— falla con el
+  mensaje exacto del fallo real.
 
 ### Excepciones que este corte registra
 
-`v0.101.6` queda tagueado, publicado, y **sin candidato**: se cortó antes de que
-llegaran la limpieza de la raíz y la reparación del gate. Se suma a `v0.99.2`,
-`v0.100.0` y `v0.101.5` como tags sin release.
+`v0.101.7` queda tagueado, publicado y **sin candidato**, por el motivo de
+compilación de arriba. Se suma a `v0.99.2`, `v0.100.0` y `v0.101.6`.
 
-Y una que no es un tag: **`v0.101.5` se movió en el remoto** el 2026-10-03 a las
-23:03, después de estar publicado, de `65dcdba3` a `64370bbb`. Un tag publicado
-identifica bytes, y moverlo rompe esa propiedad para quien ya lo haya clonado.
-Queda anotado como incidente de gobernanza, y no se ha hecho nada sobre él: la
-salida fue cortar `v0.101.7` desde la línea correcta en vez de reconstruir la
-identidad de una release anterior.
+Y un incidente de gobernanza que aquí no se repara: **`v0.101.5` se ha movido
+dos veces en el remoto** tras publicarse. Empezó apuntando a `65dcdba3`, pasó a
+`64370bbb` y ahora a `188c3a52`. Un tag publicado identifica bytes, y cambiarlo
+rompe esa propiedad para quien ya lo haya clonado. Se anota; la salida de este
+corte es construir desde la línea correcta, no reconstruir la identidad de una
+release anterior.
+
+## [v0.101.7] — 2026-10-04
+
+**Corte sin candidato.** El árbol estaba completo —la reconciliación de las dos
+líneas, los ocho cherry-picks, la limpieza de la raíz de staging y la
+reparación del gate de coherencia—, pero **el pipeline de candidate no
+compilaba**, por un signo de dólar escrito dentro de un comentario para
+explicar cómo escapar un signo de dólar. Su lane murió en el minuto dos. El
+arreglo y su contrato están en `v0.101.8`.
 
 ## [v0.101.6] — 2026-10-03
 

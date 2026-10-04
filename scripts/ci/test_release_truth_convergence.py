@@ -22,13 +22,22 @@ Lo que no vigilaba nadie son las superficies que un generador no produce:
   reportan los binarios y el tag;
 - las instrucciones de pin del propio README (`COGNICODE_VERSION=v...`, `@v...`),
   que son lo que un usuario copia para fijar version;
-- la cabecera mas reciente del CHANGELOG.
+- la cabecera mas reciente del CHANGELOG;
+- la tabla "Supported versions" de SECURITY.md, que declara en que rama vive la
+  version vigente.
 
-Las tres son afirmaciones verificables sobre el estado del repositorio, y
-ninguna estaba atada a nada. Un README que siguiera anunciando `v0.98.1`
+Las tres primeras son afirmaciones verificables sobre el estado del repositorio,
+y ninguna estaba atada a nada. Un README que siguiera anunciando `v0.98.1`
 mientras el manifiesto dice `0.101.2` habria tenido la suite de contratos en
 verde: los generadores comparan contra la version del workspace, y el README no
 es un documento generado.
+
+La cuarta es la que sobrevivio dos cortes. MEDIDO 2026-10-04: la fila de
+SECURITY.md decia `0.101.7 (current main, not yet released)` y `0.101.8
+(current main, not yet released)`, mientras `origin/main` estaba en `0.101.0`.
+El documento de seguridad afirmaba una rama que no lleva esa version, y ningun
+contrato lo miraba: la suite entera verde. Una politica de soporte que nombra la
+rama equivocada no es una politica de soporte.
 
 ## Que NO comprueba este contrato
 
@@ -49,7 +58,9 @@ no haya tres versiones distintas que puedan confundirse entre si.
 - el CHANGELOG con una cabecera mas reciente que la version del workspace;
 - un README que nombre un tag que no existe y no es el corte en curso;
 - un README sin bloque "Versioning": la invariante deja de enunciarse, y eso
-  tampoco es un pasillo limpio.
+  tampoco es un pasillo limpio;
+- una fila de SECURITY.md que atribuya la version vigente a `main` cuando
+  `origin/main` no lleva esa version.
 """
 
 from __future__ import annotations
@@ -62,6 +73,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 README = REPO_ROOT / "README.md"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+SECURITY = REPO_ROOT / "SECURITY.md"
 CARGO = REPO_ROOT / "Cargo.toml"
 
 SEMVER = r"\d+\.\d+\.\d+"
@@ -190,6 +202,54 @@ def changelog_problems(changelog: str, current: str) -> list[str]:
     return []
 
 
+def security_supported_problems(
+    security: str, current: str, main_version: str | None
+) -> list[str]:
+    """La politica de soporte de SECURITY.md, y la rama que dice tener.
+
+    Se comprueba una sola cosa, y es la que fallo dos veces: si la fila de la
+    version vigente menciona `main`, `main` tiene que llevar esa version. La
+    fila no afirma "el release"; afirma "donde vive y quien la parchea", y una
+    fila que dice `current main` cuando main va tres versiones atras envia a
+    quien reporte un fallo a una linea que no existe.
+
+    `main_version` es None cuando el clon no puede resolver `origin/main`. No es
+    el mismo criterio que `main` lleve o no la version: es que la respuesta no
+    existe, y un contrato que no puede mirar no puede afirmar. Se degrada y lo
+    dice, igual que hace `named_tags_problems` con la visibilidad de tags.
+    """
+    block = re.search(
+        r"^##\s+Supported versions\s*$(.*?)(?=^##\s|\Z)", security, re.MULTILINE | re.DOTALL
+    )
+    if block is None:
+        return [
+            "SECURITY.md no tiene seccion `## Supported versions`: el documento de "
+            "seguridad ya no declara que versiones reciben soporte, y una politica "
+            "que no se enuncia no se aplica"
+        ]
+
+    row: str | None = None
+    for line in block.group(1).splitlines():
+        found = re.match(rf"^\|\s*({SEMVER})\b(.*)$", line.strip())
+        if found is not None and found.group(1) == current:
+            row = found.group(2)
+            break
+
+    if row is None:
+        return [
+            f"SECURITY.md no declara la version vigente ({current}) en la tabla de "
+            "versiones soportadas: la version que se corta no dice si recibe soporte"
+        ]
+
+    if main_version is not None and main_version != current and re.search(r"`main`", row):
+        return [
+            f"SECURITY.md describe {current} como `main`, pero origin/main esta en "
+            f"{main_version}. La fila afirma una rama que no lleva esa version: quien "
+            "lea la politica de soporte buscara un corte que no existe ahi."
+        ]
+    return []
+
+
 def named_tags_problems(readme: str, current: str, known: set[str]) -> list[str]:
     """Todo tag que nombra el README existe, o es el corte en curso.
 
@@ -213,6 +273,29 @@ def named_tags_problems(readme: str, current: str, known: set[str]) -> list[str]
         f"README.md nombra v{version}, que no es ningun tag de este repositorio"
         for version in invented
     ]
+
+
+def main_version() -> str | None:
+    """La version de [workspace.package] en `origin/main`, o None si no responde.
+
+    Se lee del arbol remoto directamente, no del checkout: la pregunta que hace
+    este contrato es "que lleva main", y el checkout puede estar tres commits
+    por delante o por detras. Un `main` que no existe todavia en un clon nuevo
+    no es un fallo: es una respuesta ausente, y se degrada.
+    """
+    shown = subprocess.run(
+        ["git", "show", "origin/main:Cargo.toml"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if shown.returncode != 0 or not shown.stdout.strip():
+        return None
+    try:
+        return workspace_version(shown.stdout)
+    except AssertionError:
+        return None
 
 
 def known_tags() -> set[str]:
@@ -241,14 +324,15 @@ def known_tags() -> set[str]:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
-def test_the_three_surfaces_agree_with_the_workspace() -> None:
+def test_the_four_surfaces_agree_with_the_workspace() -> None:
     """La asercion de verdad, sobre los archivos de verdad."""
     current = workspace_version()
-    readme, changelog = read(README), read(CHANGELOG)
+    readme, changelog, security = read(README), read(CHANGELOG), read(SECURITY)
     problems = (
         release_block_problems(readme, current)
         + pin_problems(readme, current)
         + changelog_problems(changelog, current)
+        + security_supported_problems(security, current, main_version())
     )
     assert not problems, "la release no es coherente consigo misma:\n  " + "\n  ".join(problems)
 
@@ -316,6 +400,69 @@ def test_the_pending_cut_is_not_an_invented_tag() -> None:
 def test_no_tag_visibility_degrades_instead_of_failing() -> None:
     """Un clon sin tags no puede responder; no puede tampoco mentir."""
     assert named_tags_problems("nombra v0.1.2 y v0.3.4\n", "0.101.2", set()) == []
+
+
+# --- la cuarta superficie: donde dice vivir la version que se corta ----------
+#
+# MEDIDO 2026-10-04. SECURITY.md declaro `0.101.7 (current main, not yet
+# released)` y despues `0.101.8 (current main, not yet released)`, con
+# origin/main en `0.101.0`. Sobrevive a dos cortes porque ningun contrato leia
+# el fichero: la superficie estaba vigilada, la rama no.
+
+
+def _security_table(row: str) -> str:
+    return f"## Supported versions\n\n| Version | Supported |\n|---|---|\n{row}\n"
+
+
+def test_a_support_row_claiming_main_is_rejected_when_main_is_behind() -> None:
+    """La regresion que motivo esta superficie: la rama equivocada.
+
+    Con `main_version` por detras de la version vigente, una fila que dice
+    `current main` esta mintiendo sobre donde vive la release. Es exactamente
+    lo que hacia SECURITY.md desde `v0.101.7`.
+    """
+    table = _security_table("| 0.101.8 (current `main`, not yet released) | yes |")
+    problems = security_supported_problems(table, "0.101.8", "0.101.0")
+    assert problems, "una fila que atribuye la version a main, cuando main no la lleva, tiene que fallar"
+    assert "origin/main" in problems[0], problems
+
+
+def test_a_support_row_naming_a_real_branch_is_accepted() -> None:
+    """El caso bueno: la fila nombra la rama que de verdad lleva la version."""
+    table = _security_table("| 0.101.8 (cut from `integrate/v1015`, not yet released) | yes |")
+    assert security_supported_problems(table, "0.101.8", "0.101.0") == []
+
+
+def test_a_support_row_is_accepted_when_main_carries_the_version() -> None:
+    """`main` lleva la version: la fila es cierta y no hay nada que senalar."""
+    table = _security_table("| 0.101.8 (current `main`, not yet released) | yes |")
+    assert security_supported_problems(table, "0.101.8", "0.101.8") == []
+
+
+def test_an_unresolvable_main_degrades_instead_of_failing() -> None:
+    """Sin `origin/main` no hay respuesta, y sin respuesta no hay veredicto.
+
+    Es el mismo criterio que la visibilidad de tags: un clon que no puede
+    resolver la referencia se degrada y lo dice, en vez de aprobar por no haber
+    mirado nada.
+    """
+    table = _security_table("| 0.101.8 (current `main`, not yet released) | yes |")
+    assert security_supported_problems(table, "0.101.8", None) == []
+
+
+def test_a_missing_supported_versions_table_is_not_a_clean_bill() -> None:
+    """Sin tabla, la politica de soporte deja de enunciarse."""
+    problems = security_supported_problems("# SECURITY\n\nSin politica.\n", "0.101.8", "0.101.0")
+    assert problems, "un SECURITY.md sin tabla de versiones soportadas tiene que fallar"
+    assert "Supported versions" in problems[0], problems
+
+
+def test_a_support_table_without_the_current_version_is_rejected() -> None:
+    """Una tabla que no menciona la version que se corta no dice si la sostiene."""
+    table = _security_table("| 0.98.1 (latest published release) | yes |")
+    problems = security_supported_problems(table, "0.101.8", "0.101.0")
+    assert problems, "una tabla sin la version vigente tiene que fallar"
+    assert "0.101.8" in problems[0], problems
 
 
 # --- la mitad que comparaba la version y no los bytes ------------------------
