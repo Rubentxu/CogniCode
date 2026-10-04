@@ -12,8 +12,15 @@
 # and was invoked by no workflow at all.
 #
 # A glob removes the second step. `scripts/ci/test_*.py` was verified to match
-# exactly the eight files the hand-written list named, so discovery by glob is
-# not a loosening — it is the same set, with no opportunity to forget one.
+# exactly the files the hand-written list named, so discovery by glob is not a
+# loosening — it is the same set, with no opportunity to forget one.
+#
+# The count is not written down here on purpose. It used to read "the eight
+# files", which was true on 2026-10-02 and quietly became a claim about today
+# the moment a ninth contract was added — the same way `perf-budget.toml` came
+# to say "9 of 16 have no benchmark" long after the number stopped being true.
+# The glob is the authority; the number is whatever it matches, and the runner
+# fails closed if that is nothing.
 #
 # The orchestrators are GitHub Actions today and PipelineK once the migration
 # closes. Both call this file. Adding a third orchestrator must not mean
