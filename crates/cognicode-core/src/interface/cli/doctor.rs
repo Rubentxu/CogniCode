@@ -273,30 +273,103 @@ fn check_core_section() -> DoctorSection {
 }
 
 /// Check the LSP servers section
+///
+/// MEDIDO 2026-10-04 sobre el binario de v0.101.9 publicado. Esto iteraba por
+/// **lenguaje**, y varios lenguajes comparten binario a proposito
+/// (`language.rs:328` y `:331`: `TypeScript | JavaScript` a
+/// `typescript-language-server`, `C | Cpp` a `clangd`). El reparto es
+/// correcto; informar de lo mismo dos veces no lo es, y el doctor mostraba:
+///
+/// ```
+///   ❌ typescript-language-server
+///   ❌ typescript-language-server
+///   ✅ clangd  Homebrew clangd version 23.1.0
+///   Features: linux
+///   Platform: x86_64-unknown-linux-gnu
+///   ✅ clangd  Homebrew clangd version 23.1.0
+/// ```
+///
+/// Dos arreglos, y el segundo es el que no se ve mirando el codigo:
+///
+/// 1. **Un binario, una linea.** Se recorre por binario unico, no por
+///    lenguaje. El nombre de la fila es el del SERVIDOR (`lsp_server_name`),
+///    que es lo que el usuario tiene que instalar; el lenguaje ya aparece en
+///    la fila de "not yet supported" de cada uno que no tiene servidor.
+///    `lsp_server_name` y `lsp_install_command` coinciden para un mismo
+///    binario —el primer lenguaje elige el mismo par para los que comparten—,
+///    asi que la fila no pierde informacion al deduplicar.
+///
+/// 2. **Una version, una linea.** `clangd --version` responde en tres lineas
+///    y se imprimian las tres, con `Features:` y `Platform:` sin sangrar, de
+///    modo que se leian como si fueran datos del doctor. Se toma la primera
+///    linea no vacia, que es la que trae la version; el resto es la salida
+///    del binario, no del doctor.
+///
+/// Lo que NO cambia: los lenguajes sin servidor siguen saliendo uno a uno
+/// como `not yet supported`. Eso es informacion distinta por lenguaje —cada
+/// uno es un lenguaje que el producto reconoce y no tiene servidor— y
+/// deduplicarlo dejaria a veinte filas iguales.
 fn check_lsp_section(_detected_languages: &[Language]) -> DoctorSection {
     let mut section = DoctorSection::new("Language Servers (LSP)");
 
+    // Los servidores van PRIMERO, y los lenguajes sin servidor despues. El
+    // orden es el de antes: lo que el usuario puede usar ahora esta arriba, y
+    // lo que el producto reconoce pero no tiene servidor es informacion de
+    // fondo, veinte filas identicas. Invertirlo hacia los "not yet supported"
+    // hacia lo que el lector busca es una mejora de forma que es una
+    // regresion de uso.
+    //
+    // Un binario unico, un `check_binary`. Se recorre `all_languages` en orden
+    // para que cada fila salga en la posicion que le corresponde, y el primer
+    // lenguaje que declara un binario aporta su nombre y su comando de
+    // instalacion —que para los que comparten binario son los mismos.
+    let mut seen: Vec<&str> = Vec::new();
     for lang in Language::all_languages() {
         let binary = lang.lsp_server_binary();
-
-        // Go and Java don't have LSP servers yet
-        if binary.is_empty() {
-            section.add_check(DoctorCheck::info(lang.name(), "not yet supported"));
+        if binary.is_empty() || seen.contains(&binary) {
             continue;
         }
+        seen.push(binary);
 
         let install_cmd = lang.lsp_install_command();
         let (found, version, _path) = check_binary(binary, &["--version"]);
 
         if found {
-            let version_str = version.unwrap_or_else(|| "found".to_string());
-            section.add_check(DoctorCheck::ok(lang.lsp_server_name(), &version_str));
+            section.add_check(DoctorCheck::ok(
+                lang.lsp_server_name(),
+                &first_line(&version),
+            ));
         } else {
             section.add_check(DoctorCheck::missing(lang.lsp_server_name(), install_cmd));
         }
     }
 
+    // Y despues, los lenguajes que el producto reconoce y para los que no hay
+    // servidor. Una fila por lenguaje, porque la fila dice que lenguaje
+    // reconoce el producto: deduplicarlos por binario vacio dejaria veinte
+    // filas identicas y el usuario no veria que el producto los soporta.
+    for lang in Language::all_languages() {
+        if lang.lsp_server_binary().is_empty() {
+            section.add_check(DoctorCheck::info(lang.name(), "not yet supported"));
+        }
+    }
+
     section
+}
+
+/// La primera linea no vacia de la salida de `--version`.
+///
+/// MEDIDO 2026-10-04: `clangd --version` responde
+/// `Homebrew clangd version 23.1.0 / Features: linux / Platform: x86_64...`.
+/// Imprimir las tres en una fila de tabla mete lineas que el usuario lee como
+/// informacion del doctor. `None` devuelve "found", que es lo que se
+/// mostraba antes y sigue siendo cierto: el binario esta.
+fn first_line(version: &Option<String>) -> String {
+    version
+        .as_deref()
+        .and_then(|raw| raw.lines().map(str::trim).find(|l| !l.is_empty()))
+        .unwrap_or("found")
+        .to_string()
 }
 
 /// Check the built-in parsers section (always green since tree-sitter grammars are bundled)
@@ -501,6 +574,95 @@ pub fn format_doctor_json(report: &DoctorReport) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Un servidor de lenguaje, una linea.
+    ///
+    /// MEDIDO 2026-10-04 sobre el binario de v0.101.9 publicado, no sobre el
+    /// fuente:
+    ///
+    /// ```
+    /// ❌ Language Servers (LSP)
+    ///   ✅ rust-analyzer  rust-analyzer 1.96.0 (ac68faa 2026-05-25)
+    ///   ❌ pyright
+    ///   ❌ typescript-language-server
+    ///   ❌ typescript-language-server     <-- la misma linea, dos veces
+    ///   ✅ gopls  found
+    ///   ❌ eclipse-jdtls
+    ///   ✅ clangd  Homebrew clangd version 23.1.0
+    ///   Features: linux                    <-- el bloque de clangd, dos veces
+    ///   Platform: x86_64-unknown-linux-gnu
+    ///   ✅ clangd  Homebrew clangd version 23.1.0
+    ///   ❌ omnisharp
+    ///   ℹ️  HCL  not yet supported
+    /// ```
+    ///
+    /// La causa: `check_lsp_section` itera por **lenguaje**, y varios
+    /// lenguajes comparten binario a proposito — `TypeScript | JavaScript` a
+    /// `typescript-language-server`, `C | Cpp` a `clangd` (verificado en
+    /// `language.rs:328` y `:331`). El reparto es correcto; lo que no lo es es
+    /// informar de lo mismo dos veces.
+    ///
+    /// Y la segunda mitad de la salida es peor que la duplicacion: cuando
+    /// `clangd` responde, su `--version` multi-linea se imprime entero, y el
+    /// usuario lee `Features:` y `Platform:` como si fueran informacion del
+    /// doctor y no de la salida de `clangd --version`.
+    ///
+    /// MEDIDO el alcance: 7 lenguajes con servidor, 6 binarios unicos. Las
+    /// dos colisiones son TypeScript/JavaScript y C/Cpp. El resto de los
+    /// lenguajes caen en `_ => ""` y salen como `not yet supported`, que es
+    /// correcto y se queda.
+    #[test]
+    fn the_lsp_section_reports_each_server_once() {
+        let section = check_lsp_section(&[]);
+        let rendered = format!("{:?}", section);
+
+        let mut servers: Vec<String> = section
+            .checks
+            .iter()
+            .filter(|c| !matches!(c.status, DoctorStatus::Info))
+            .map(|c| c.name.clone())
+            .collect();
+        let total = servers.len();
+        servers.sort();
+        servers.dedup();
+
+        assert_eq!(
+            servers.len(),
+            total,
+            "la seccion LSP repite un servidor: {rendered}\n\
+             `check_lsp_section` recorre lenguajes, y TypeScript/JavaScript y \
+             C/Cpp comparten binario. Hay que informar por binario unico, no \
+             por lenguaje."
+        );
+    }
+
+    /// Un `--version` que devuelve varias lineas se muestra en una.
+    ///
+    /// MEDIDO 2026-10-04 sobre el binario publicado: `clangd --version`
+    /// responde
+    ///
+    /// ```
+    /// Homebrew clangd version 23.1.0
+    /// Features: linux
+    /// Platform: x86_64-unknown-linux-gnu
+    /// ```
+    ///
+    /// y el doctor imprimia las tres, con `Features:` y `Platform:` fuera de
+    /// indentacion, de modo que se leian como si fueran suyas. Se toma la
+    /// primera linea no vacia, que es la que trae la version.
+    #[test]
+    fn a_multi_line_version_is_reported_on_one_line() {
+        let section = check_lsp_section(&[]);
+        for check in &section.checks {
+            let detail = &check.detail;
+            assert!(
+                !detail.contains('\n'),
+                "el detalle de `{}` tiene saltos de linea y se imprime entero, \
+                 y sus lineas siguientes se leen como informacion del doctor: {detail:?}",
+                check.name
+            );
+        }
+    }
 
     #[test]
     fn test_doctor_status_as_str() {
