@@ -13716,3 +13716,109 @@ GitHub se eliminaron A PROPOSITO, con su invariante
 (`scripts/ci/test_no_actions_workflows.py`) y `merge-gate.pipeline.kts` tomo su
 lugar (`d3426966`: "ci(actions): cero workflows, y el invariante que lo dice").
 Cero workflows es la decision, no su ausencia.
+
+## N+98 — El gate se saltaba los tests que necesitan un LSP
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4quater (la candidata que N+97 dejo anotada).
+
+### Lo que estaba abierto, y lo que midio al abrirse
+
+N+97 dejo anotada una candidata sin decidir: el gate oficial no instala
+`rust-analyzer`, y por eso los tests LSP se saltan ahi. La nota decia que no se
+elegia sin medir cuanto costaba cada salida. Medido:
+
+    $ grep -rn 'component add' merge-gate.pipeline.kts scripts/ci/ .github/
+    (vacio — nadie lo instalaba)
+    $ grep -n 'cargo test' merge-gate.pipeline.kts
+    310:  sh("$cd && cargo test -p cognicode-core --lib --quiet")
+
+Y el binario no era que faltara en un runner: era que **existia y no
+funcionaba**.
+
+    $ ls -l ~/.cargo/bin/rust-analyzer
+    ... -> rustup
+    $ rust-analyzer --version
+    error: Unknown binary 'rust-analyzer' in official toolchain '1.96.0'
+    RA_EXIT=1
+
+### El coste, en las dos direcciones
+
+    gate completo SIN el componente    20m17s
+    gate completo CON el componente    22m48s
+
+Dos minutos y medio. Ese es el precio de que un test que hoy **no se ejecuta**
+se ejecute, y con el numero delante la decision deja de ser una preferencia.
+
+### Lo que se anadio, y por ahi
+
+`lsp-toolchain`, en `merge-gate.pipeline.kts`, con dos etapas y no una:
+
+1. `install-rust-analyzer`, que es `rustup component add` y no `cargo install`
+   porque es un binario de rustup, idempotente y sin compilar. El patron no es
+   nuevo: es el de `install-cargo-deny`, que ya existe en `supply-chain`.
+2. `rust-analyzer-answers`, que **pregunta** al binario.
+
+La segunda etapa es la que cuesta y la que importa. Sin ella, "instale" y
+"responde" son la misma palabra, y el shim de rustup las confunde: esta en el
+PATH, es ejecutable, y sale con 1. Un gate que solo instalara volveria a saltarse
+los tests, que es exactamente el defecto que esto cierra.
+
+MEDIDO, los dos cuerpos de la etapa extraidos del fichero y ejecutados:
+
+    INSTALL_EXIT=0   "rust-analyzer already present, skipping install"
+    PROBE_EXIT=0     "rust-analyzer 1.96.0 (ac68faa 2026-05-25)"
+
+    con un shim roto delante del PATH:
+    PROBE_CON_SHIM_EXIT=1
+      "FAIL: rust-analyzer esta en el PATH pero no responde. Si responde con
+       error, el shim es de rustup y el componente no esta instalado: los tests
+       LSP se saltarian en silencio, que es lo que este paso existe para evitar."
+
+### El contrato, en el dueno que ya era
+
+`test_the_gate_installs_the_lsp_server_it_needs` va en
+`test_supply_chain_gate_contract.py`, que es el dueno de "el gate instala la
+tool que necesita" — el mismo que afirma que `cargo-deny` este instalado y con
+version fijada. Lee el cuerpo del `sh()` con `authority.pipeline_steps`, que es
+lo que hace que un comentario no pueda satisfacerlo, y afirma **dos** cosas: que
+lo instala, y que despues lo pregunta.
+
+MUTACIONES, las dos vistas caer:
+
+- cambiar el `component add rust-analyzer` por otra cosa
+
+      FAILED — "merge-gate.pipeline.kts never installs rust-analyzer. The core
+      suite contains a test that returns early when the binary is absent, so
+      the gate reports green without ever running it."
+
+- dejar la instalacion y quitar la sonda
+
+      FAILED — "the gate installs rust-analyzer but never asks it whether it
+      answers. An install step that is not followed by a probe passes on a
+      broken shim, which is the exact failure this contract exists to catch"
+
+    pipelinek validate  VALIDATION SUCCESSFUL, diagnostics: []
+    contratos          227 passed, 0 failed   (eran 226)
+
+### Lección 221 — Instalar no es usar, y un gate que no lo comprueba no vigila
+
+La cadena entera de N+96 a N+98 es el mismo defecto en tres sitios: una cosa
+existe, y por existir se la da por buena.
+
+El shim `rust-analyzer` existe en el PATH y no arranca. El test de W3 existe en
+la suite y se saltaba. El gate existe y daba verde. **En los tres casos,
+comprobar la presencia sustituyo a comprobar el uso**, y cada comprobacion
+parecia razonable.
+
+La regla que sale, y que es la misma que ya pagamos con el `dev-bundle.yaml` y
+con el test que se tragaba su propio `Ok(None)`: **la verificacion que importa
+es la que se puede equivocar**. `command -v` no se puede equivocar sobre un
+shim. `rust-analyzer --version >/dev/null` si. Y la segunda vale mas que la
+primera solo cuando hay un shim, que es exactamente el caso de un toolchain de
+rustup.
+
+Y el cierre del circulo, que es lo que hace que este bloque valiera la pena: los
+arreglos de N+96 y N+97 eran correctos y **el gate no los ejecutaba**. Un test
+que el gate se salta no protege el arreglo que acabas de hacer. Arreglar tests
+sin cerrar el hueco del gate es dejar el trabajo a medias sin notarlo.
