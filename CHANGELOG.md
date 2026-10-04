@@ -52,6 +52,24 @@ script.
   vigilaba, la rama no. El contrato de Release Truth ahora cubre esa cuarta
   superficie.
 
+- **El directorio del candidato heredaba la corrida anterior.** `staging/` se
+  limpia —la stage de payloads crea su directorio desde cero y la de skills
+  borra los ficheros sueltos de la raíz— y `release/`, que es la salida de
+  `generate`, no. La lane de `v0.101.9`, corriendo en el worktree donde
+  `v0.101.8` había dejado su candidato, llegó hasta `verify` y murió ahí:
+
+  ```
+  Error: artifact `cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz`
+  declares version `0.101.8` but the release version is `0.101.9`
+  ```
+
+  El gate hizo bien su trabajo —un artefacto de la release anterior dentro del
+  candidato es justo lo que R1 prohíbe— pero una lane no debería depender de que
+  un gate posterior lo detecte. `generate` es la dueña de `release/` y ahora
+  establece ese directorio desde cero, con **fallo fatal** si no puede: no es un
+  aviso, es un estado de entrada que no se conoce. Es el mismo caso que la
+  limpieza de la raíz de `staging/`, un directorio más allá.
+
 ### La forma del arreglo
 
 Es la misma que la del preflight, a propósito: la función vive en el script que

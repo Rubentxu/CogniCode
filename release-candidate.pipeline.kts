@@ -664,6 +664,43 @@ pipeline {
 
             stage("generate") {
                 sh(releasePaths + "\n" + """
+                    # MEDIDO 2026-10-04. `release/` es la salida de esta stage y
+                    # esta stage es su duena, y no lo era: se creaba con lo que
+                    # hubiera. La lane v0.101.9, que corre en el worktree donde
+                    # la v0.101.8 habia dejado su candidato, llego hasta aqui y
+                    # murio en la stage siguiente:
+                    #
+                    #     Error: artifact `cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz`
+                    #     declares version `0.101.8` but the release version is `0.101.9`
+                    #
+                    # El gate de `verify` hizo bien su trabajo —eso es un artefacto
+                    # de la release anterior dentro del candidato, que es
+                    # exactamente lo que R1 prohibe— pero la lane no deberia llegar
+                    # a depender de que un gate posterior lo detecte.
+                    #
+                    # Es el mismo caso que la stage `package`, y que la limpieza
+                    # de la raiz de `staging/`, un directorio mas alla: un
+                    # `mkdir -p` sobre un directorio que ya existe es el mecanismo
+                    # por el que un directorio de build hereda estado de una
+                    # corrida anterior. El worktree que construye el candidato es
+                    # de larga vida, y la lane esta escrita para poder repetirse
+                    # en el.
+                    #
+                    # Y el mismo matiz de QW-04, por el mismo motivo: esa regla es
+                    # sobre lo que pasa DESPUES de que las stages han decidido;
+                    # esto es antes de decidir nada. Si no se puede establecer el
+                    # estado de entrada, no hay estado conocido donde generar.
+                    if [ -e release ]; then
+                        if ! rm -rf -- release; then
+                            echo "FAIL: could not clear the release directory"
+                            echo "  It exists from a previous candidate, and this lane cannot"
+                            echo "  promise that the candidate it produces is its own. Clear it"
+                            echo "  by hand, or run in a worktree without a previous candidate."
+                            exit 1
+                        fi
+                        echo "cleared release/ from a previous candidate"
+                    fi
+
                     # `--tag` and `--source-commit` are not decoration:
                     # `source_commit` is a required field of the release
                     # inventory, and `prf_dist_01_06_release_candidate_uat`

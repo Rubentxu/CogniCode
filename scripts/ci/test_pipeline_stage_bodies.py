@@ -93,6 +93,11 @@ HARDCODED_ARTIFACT = re.compile(
 # The Kotlin escape for a shell variable, applied to a shell builtin.
 INERT_CD = re.compile(r"\$\{'\$'\}cd\b")
 
+# Output directories a stage owns and therefore has to establish before writing.
+# The second element names the writer that has to do it, and is only here so the
+# pair reads as the claim it is: this directory, written by that stage.
+OWNED_OUTPUT_DIRS = (("release", "cognicode-release generate"),)
+
 
 def pipelines() -> list[Path]:
     return sorted(p for p in REPO_ROOT.glob(PIPELINE_GLOB) if p.is_file())
@@ -463,6 +468,68 @@ def test_a_missing_target_still_fails_the_way_it_did() -> None:
     )
 
 
+def a_build_output_directory_starts_from_itself() -> None:
+    """A directory a stage OWNS does not survive from the previous run.
+
+    MEDIDO 2026-10-04. `staging/` se limpia —`skill-bundles` borra los ficheros
+    sueltos de la raiz antes de escribir, y la stage `package` crea su lane
+    desde cero— y `release/`, que es la salida de `generate`, no se limpiaba.
+    La lane v0.101.9, que corre en el worktree donde la v0.101.8 habia dejado
+    su candidato, llego hasta `verify` y murio ahi:
+
+        Error: artifact `cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz`
+        declares version `0.101.8` but the release version is `0.101.9`
+
+    El gate hizo bien su trabajo, y aun asi la lane no deberia depender de que
+    un gate posterior lo detecte: `generate` es la duena de `release/`, y una
+    duena que escribe sobre lo que encontro no es duena de nada.
+
+    Y el fallo tiene que ser FATAL, no un aviso. QW-04 ("la limpieza no puede ser
+    el veredicto") no aplica aqui, y la diferencia es el punto: esa regla es
+    sobre lo que pasa DESPUES de decidir; esto es antes de decidir. Si no se
+    puede establecer el estado de entrada, no hay estado conocido donde
+    generar, y seguir seria generar sobre lo que la lane anterior dejo por
+    casualidad.
+    """
+    offenders: list[str] = []
+    for path in pipelines():
+        text = path.read_text(encoding="utf-8")
+        body = code_lines(text)
+        for index, (number, line) in enumerate(body):
+            for directory, _writer in OWNED_OUTPUT_DIRS:
+                # Anchored on `--out <dir>`, not on the invocation: the command
+                # is a shell continuation, so `generate` and its `--out` are on
+                # different lines and a test that needs both on one line never
+                # fires.
+                if f"--out {directory}" not in line:
+                    continue
+                # The window is over INDICES into the code lines, not over line
+                # numbers: `code_lines` drops commentary, so a slice taken with a
+                # line number would walk a different distance than it looks and
+                # silently look at the wrong place.
+                window = "\n".join(entry for _, entry in body[max(0, index - 40) : index])
+                if f"rm -rf -- {directory}" not in window:
+                    offenders.append(
+                        f"  {path.name}:{number}: se escribe en "
+                        f"`{directory}/` sin limpiarlo antes. Un `mkdir -p` "
+                        f"sobre un directorio que ya existe es el mecanismo "
+                        f"por el que un directorio de build hereda estado de "
+                        f"una corrida anterior, y el worktree que construye "
+                        f"el candidato es de larga vida."
+                    )
+                elif "exit 1" not in window:
+                    offenders.append(
+                        f"  {path.name}:{number}: `{directory}/` se limpia pero "
+                        f"sin fallo fatal si no se puede. Un directorio de "
+                        f"salida que no se pudo establecer no es un aviso, es "
+                        f"un estado que no se conoce."
+                    )
+    assert not offenders, (
+        f"{len(offenders)} directorio(s) de salida sin estado propio:\n"
+        + "\n".join(offenders)
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     tests = [
@@ -476,6 +543,7 @@ def main() -> int:
         test_a_linker_that_does_not_resolve_is_named,
         test_a_native_target_needs_no_linker_configuration,
         test_a_missing_target_still_fails_the_way_it_did,
+        a_build_output_directory_starts_from_itself,
     ]
     for func in tests:
         try:
