@@ -14173,3 +14173,237 @@ reanudar, y la corrida podia terminar ejecutando basura o perdiendo la mitad
 del informe. Se mato y se relanzo limpia, perdiendo dos minutos de compilacion
 que ya estaban pagados y aceptando la perdida. **Un fichero que se esta
 ejecutando es de solo lectura**, aunque el gate de permisos no lo sepa.
+## N+101 — La mitad de provenance que faltaba, y lo que cuesta no tener clave
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B7 (R2 provenance mechanism). Continua N+100, que
+cerró B6.
+
+### El hueco, con las dos mitades
+
+`docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` (proposed, 2026-10-03) lo deja
+dicho y medido:
+
+| Half | Status |
+|---|---|
+| Verify an artifact has provenance | present (`gh attestation verify`) |
+| Fail closed when provenance is required | present (`RELEASE_REQUIRE_PROVENANCE=1`) |
+| **Generate an attestation** | **absent** (was `actions/attest-build-provenance`) |
+
+La lane puede exigir provenance, negarse correctamente cuando no lo hay, y no
+tener ninguna forma de conseguirlo. Este bloque construye esa forma y **no toca
+la politica**, que sigue siendo de `scripts/ci/verify-provenance.sh` y cuyo
+contrato (`test_provenance_gate.py`) se dejo intacto.
+
+La frontera la fija el ADR y no se negocia: *"Provenance belongs to the release
+infrastructure boundary: the lanes and `scripts/`. It does not enter
+`cognicode-core`, and nothing about it should be reachable from the MCP tool
+surface."* No se ha tocado ni una linea de `cognicode-core` ni de la superficie
+MCP.
+
+### MEDIDO antes de escribir: cosign 3.1.3 en este host
+
+El ADR afirma que cosign 3.1.3 produce un bundle verificable offline con un par
+de claves. Es cierto, y aun asi la primera ejecucion dio:
+
+    $ cosign generate-key-pair
+    Enter password for private key: Error: inappropriate ioctl for device
+
+El ADR midio la forma **interactiva**. Una lane y un test reciben la forma **no
+interactiva**, que es la que necesita `COSIGN_PASSWORD` en el entorno. Sin eso,
+el mecanismo no es ejecutable en ningun runner, y un mecanismo que no se puede
+ejecutar no existe.
+
+Con `COSIGN_PASSWORD` el camino entero se midio:
+
+    generate-key-pair                -> k.key, k.pub
+    attest-blob --bundle ...         -> Wrote bundle to file att.bundle.json
+    verify-blob --key k.pub          -> Verified OK
+    subject.digest.sha256            -> aee8e44a...4ef
+    sha256sum artifact.bin           -> aee8e44a...4ef     MATCH
+    verify-blob con OTRA clave       -> exit 1
+    verify-blob con OTRO artefacto   -> exit 1
+
+Las dos negativas tambien, porque un gate que solo pasa no distingue nada.
+
+### El generador
+
+`scripts/ci/attest-provenance.sh`. Lo unico que hace es firmar lo que se le pasa
+con la clave que se le pasa.
+
+Lo que **no** hace, y por que esta escrito en el fichero y no en un comentario
+aparte:
+
+- **No fabrica claves.** No hay ninguna llamada a `cosign generate-key-pair` en el
+  script, y hay un contrato que falla si aparece una. Una release con
+  provenance que nadie puede verificar es peor que una release sin
+  provenance: al consumidor le estan diciendo que esos bytes estan atestiguados.
+- **Una clave ausente es un error con nombre**, no algo que se sortee.
+- **El directorio de salida es todo o nada.** La clave publica se copia DESPUES
+  del bucle, no antes. La primera version la copiaba antes, y una corrida que
+  moria en un artefacto ausente dejaba una clave publica en el directorio de
+  salida sin ningun bundle al lado: un directorio que parece atestiguado a lo
+  que lo liste, y no lo esta.
+- **El primer digito de los tres se comprueba aqui, en cada corrida.** El bundle
+  se relee despues de que cosign lo escriba y su `subject[0].digest.sha256` se
+  compara con el `sha256sum` del artefacto. Un generador que escribe una
+  atestation sobre un artefacto nombrando otro es exactamente el fallo que
+  provenance existe para impedir, y seria invisible a cualquier consumidor que
+  solo compruebe "hay un bundle al lado".
+
+El digest lo calcula el script desde los bytes del disco, no lo acepta del
+llamante: un digest que pasara el llamante hace circular la comprobacion, y un
+llamante que lo calcula mal produce un bundle que concuerda con su propio error.
+
+### La conexion, y el orden que no se invierte
+
+`release-candidate.pipeline.kts` gana una stage `provenance` **al final**, junto
+a las demas del candidato. No en `release.pipeline.kts`, y hay contrato que lo
+comprueba: la atestion tiene que cubrir *el candidato que fue certificado*.
+Generarla en la lane de publicacion describiría un artefacto que nadie
+certifico, que es la misma propiedad rota que el candidato inmutable previene
+para los binarios.
+
+La stage se activa por `RELEASE_PROVENANCE_KEY`. Esa es una **capacidad**, no una
+politica. `RELEASE_REQUIRE_PROVENANCE` no se toca y no aparece en ninguna lane:
+la politica sigue siendo de `verify-provenance.sh`, que es su unico lector, y
+un contrato lo exige en las dos lanes.
+
+Sin clave, la stage **anuncia que no firma y sale con 0**. Llamar al generador
+sin clave seria un fallo deliberado, y un fallo deliberado en una etapa
+opcional es una release rota. Lo que no es opcional es decirlo.
+
+El ADR es explicito sobre la secuencia —*"Flip the default only once generation
+exists in the same lane — inverting this order breaks releases"*— y el orden
+anterior es como se rompio `v0.101.3`, que llego a esa etapa sin poder publicar
+nunca. Hay contrato que vigila que la rama sin clave termine en exito y que lo
+diga en voz alta.
+
+### El contrato: 13 tests, 7 mutaciones vistas caer
+
+`scripts/ci/test_provenance_generation.py`. Genera un par de claves
+**desechable, en un temporal, con una contrasena de prueba escrita en el
+fichero** — no es un secreto, no protege nada, y por eso puede estar a la vista
+en cualquier sitio donde se revisen contratos. Lo que se prueba es el mecanismo;
+la custodia sigue siendo de `Open decision, and it is the whole decision`.
+
+MUTACIONES, todas sobre ficheros reales, todas restauradas:
+
+    el generador fabrica su propia clave                     -> 4 tests rojos
+    la rama sin clave de MI stage falla en vez de salir      -> 1 test rojo
+    la generacion se mueve a la lane de publicacion          -> 1 test rojo
+    la stage desaparece (codigo muerto)                      -> 1 test rojo
+    el generador deja la clave publica en un fallo parcial   -> 1 test rojo
+    la stage existe y anuncia pero NO invoca al generador    -> 1 test rojo
+    la rama sin clave se salta sin decirlo                   -> 1 test rojo
+    (control, sin mutacion)                                  -> 13/13 verde
+
+### Un gate mio que se dejaba Satisfacer con un comentario
+
+La sexta mutacion existia porque la cuarta no habia tumba nada, y esa es la
+parte que vale la pena.
+
+La asercion de "la generacion esta conectada a la lane" buscaba
+`attest-provenance.sh` en el **fichero entero**. La mutacion que borra la stage
+no la tumbo, porque el bloque de comentario que explica la stage menciona el
+mismo nombre. Es decir: **el gate pasaba con prosa y sin codigo**.
+
+Es el defecto exacto que `ADR-RELEASE-PROVENANCE-PIPELINEK` documenta para
+`release.pipeline.kts` —el header describia una politica y el codigo aplicaba
+otra— repetido en el contrato que vigila al header. Un gate que puede pasar con
+un comentario no vigila el codigo.
+
+Ahora los dos tests de la stage recortan el **cuerpo** de la stage, desde
+`stage("provenance") {` hasta el cierre del `sh(...)`, con el comentario fuera
+por construccion. Y la rama sin clave se recorta buscando su `fi` con sangria,
+no la subcadena `"fi"`, que aparece dentro de palabras.
+
+### El otro defecto, mio tambien
+
+Al ejercitar el generador por primera vez con un par de claves real fallo:
+
+    FAIL: the public key 'keys/probe.key.pub' does not exist
+
+Derivaba la publica como `${KEY}.pub`, o sea `probe.key.pub`. cosign 3.1.3
+escribe `probe.key` y `probe.pub`, **con el mismo prefijo**. El comportamiento
+correcto aplicado al nombre equivocado. Se aceptan las dos formas, y el
+comentario deja la medicion a la vista.
+
+Y un tercero, mas tonto: el docstring del extractor de stage
+contenia `sh("""`, y tres comillas seguidas cierran un docstring. El contrato no
+importaba, y por eso las tres mutaciones dirigidos salieron sin una sola linea de
+salida en vez de con un fallo. Fallar con un mensaje vacio parece un aserto roto
+en vez de una suposicion equivocada, y es la forma mas cara de perder tiempo.
+
+### Lo que queda, y no se puede cerrar aqui
+
+**La custodia de la clave.** Es la decision que el ADR deja abierta y la unica
+que B7 no toca. Lo que este bloque deja es todo lo demas en su sitio:
+
+    artefacto
+       -> sha256
+       -> statement in-toto / SLSA v1
+       -> envelope DSSE
+       -> bundle firmado
+       -> clave publica que viaja con la release
+       -> verificacion con la clave descargada
+       -> contrato de los tres digests
+
+Cuando el operador decida donde vive la clave, queda un `sign()` que enchufar y
+la stage que ya esta conectada. Lo que **no** se ha hecho, y no se haria sin
+decision: fabricar una clave para "cerrar" el milestone, o poner
+`RELEASE_REQUIRE_PROVENANCE=1` sin ella.
+
+Tampoco se ha migrado `release.pipeline.kts` a verificar bundles con cosign. Ese
+cambio altera el comportamiento de una release publicada, y el ADR lo coloca
+detras de la misma decision de custodia. `gh attestation verify` sigue siendo lo
+que la lane ejecuta hoy, y sigue siendo cierto que no puede verificar un bundle
+de cosign: son dos mecanismos y solo uno esta conectado.
+
+### Estado del gate
+
+    bash scripts/ci/run-all-contracts.sh                     240
+    pipelinek validate release-candidate.pipeline.kts        VALIDATION SUCCESSFUL
+    bash -n scripts/ci/attest-provenance.sh                  SYNTAX_OK
+    ./scripts/ci/attest-provenance.sh (con clave de sonda)   2 artefactos, digests MATCH
+    ./scripts/ci/attest-provenance.sh (sin clave)            exit 1, 0 claves creadas
+    python3 scripts/ci/test_provenance_generation.py         13/13
+
+Sin cambios de Rust en este bloque, asi que `fmt` y `clippy` no tienen nada nuevo
+que validar.
+
+### Lección 226 — Un gate que puede pasar con un comentario no vigila el codigo
+
+La asercion buscaba un nombre de script en el fichero entero, y el comentario de
+arriba de la stage lo mencionaba. Borrar la stage entera no la tumbo. El gate
+verificaba que *alguien hubiera escrito sobre* la generacion, no que la
+generacion *existiera*.
+
+Es el mismo defecto que el ADR senala en `release.pipeline.kts` —el header
+describia una politica, el codigo aplicaba otra— y aqui estaba en el contrato
+que vigila al header, que es donde nadie mira. **Un gate tiene que leer el
+codigo, y un comentario al lado de un codigo no es codigo.** Cuando la
+asercion se pueda satisfacer con prosa, hay que recortar al bloque que ejecuta.
+
+### Lección 227 — Un medido en una terminal no es un medido en una lane
+
+`cosign generate-key-pair` funciona, y el ADR lo midio funcionando. En una lane
+muere con `inappropriate ioctl for device` porque pide contrasena por TTY. Las
+dos afirmaciones son ciertas y la segunda es la que decide si el mecanismo existe.
+
+Es la version generalizable de "instalar no es usar" (Lección 221): aqui el paso
+anterior es "funciona en mi consola". Un mecanismo de CI se mide **en las
+condiciones en las que va a correr**, y una TTY es una condicion mas que un
+runner no tiene. Cuando la medicion previa y la ejecucion real no comparten
+entorno, la medicion no dice nada sobre la ejecucion.
+
+### Lección 228 — Un directorio de salida parcial parece entero
+
+Copiar la clave publica antes de firmar dejaba, tras un fallo, un directorio con
+clave y sin bundles. Nada lo marca como invalido: un listado lo ve completo, y
+"hay una clave publica al lado" es exactamente la forma debil de la que un
+consumidor deduce que hay provenance.
+
+**Un directorio de salida tiene que ser todo o nada.** El orden de las
+escrituras no es estetica: es lo que hace que un fallo sea indistinguible de un
+exito a quien solo mira los nombres de fichero.
