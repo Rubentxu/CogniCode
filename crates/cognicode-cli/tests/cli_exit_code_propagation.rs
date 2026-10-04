@@ -629,3 +629,276 @@ fn index_build_on_real_empty_dir_still_exits_zero() {
         stderr_of(&out)
     );
 }
+
+// ===========================================================================
+// Ratchet: `std::process::exit` dentro de la libreria.
+//
+// MEDIDO 2026-10-04. B1 hizo que los brazos de `CommandExecutor::execute`
+// propaguen `Result` hasta el limite del proceso, y esa cadena solo tiene
+// sentido si la libreria no mata el proceso a mitad. Hay seis llamadas, todas
+// en `commands.rs`, y se dividen en dos grupos que no valen lo mismo:
+//
+//   * UNA viva: `execute_doctor` (linea 1503). Calcula el codigo desde
+//     `DoctorStatus::Missing` y sale. MEDIDO: la rama es alcanzable —
+//     `overall_status()` devuelve `Missing` si core, lsp o parsers esta
+//     missing— y el binario publicado sale con 1 en ese caso. El brazo de
+//     dispatch (linea 542) propaga con `?` como los que B1 arreglo, asi que ese
+//     `?` es codigo muerto y la firma `Result` de la funcion miente: nunca
+//     retorna.
+//
+//   * CINCO tras `#[cfg(feature = "multimodal")]`, que el binario publicado no
+//     habilita. MEDIDO sobre el binario real del candidato:
+//     `cognicode docs-ingest` responde `unrecognized subcommand`. Solo existen
+//     en un build de workspace, donde la unificacion de features de Cargo los
+//     enciende desde otro crate.
+//
+// Este test no arregla nada: hace la deuda ENUMERABLE y la acota. Un ratchet
+// que solo puede bajar convierte "hay seis" en un hecho que se puede revisar, y
+// sobre todo impide que pasen a siete. Un numero que se puede subir en la misma
+// respiracion en que se escribe no es un ratchet: es un changelog — que es
+// exactamente el defecto del ratchet de CR-06, y alli esta escrito.
+//
+// Por que la deuda de doctor NO se arregla aqui, medido y no supuesto: el
+// contrato publicado es "informe en stdout, salida 1, stderr vacio", y
+// `main` es `async fn main() -> Result<..>` con `?`, con lo que enrutar por `Err`
+// anade una linea `Error: ..` a stderr. Para que el codigo llegue a `main` sin
+// cambiar eso hay que cambiar la firma de `CommandExecutor::execute` y sus
+// ~20 brazos, que es superficie publicada, en mitad de un corte. El contrato de
+// usuario se cumple hoy. Lo que no se cumple es que la libreria sea una
+// libreria.
+// ===========================================================================
+
+/// Las seis llamadas, agrupadas por la funcion que las contiene, y por que
+/// cada grupo esta donde esta.
+///
+/// Una fila por FUNCION, no por llamada: las cinco llamadas de
+/// `multimodal` comparten la misma razon, y repetirla cinco veces no la
+/// hace mas cierta, solo mas largo de mantener —`cargo fmt` la despliega a
+/// once lineas para que las seis quepan en una pantalla—.
+///
+/// Subir cualquiera de estos numeros exige la razon de la nueva, en el mismo
+/// commit. Un `process::exit` nuevo en la libreria que no aparece aqui es un
+/// fallo de este test, no una excepcion nueva.
+const CORE_PROCESS_EXITS: [(&str, usize, &str); 3] = [
+    (
+        "execute_doctor",
+        1,
+        "vivo: el codigo de salida de `cogh doctor` es contrato publicado",
+    ),
+    (
+        "execute_docs_ingest",
+        2,
+        "cfg(multimodal): ausente en el binario publicado",
+    ),
+    (
+        "execute_issues_ingest",
+        3,
+        "cfg(multimodal): ausente en el binario publicado",
+    ),
+];
+
+/// El nombre de la funcion dueña de la linea `line`, o `None` si la linea
+/// esta antes de la primera declaracion `fn` del fichero.
+///
+/// Se resuelve subiendo hasta la declaracion `fn` mas cercana, no contando
+/// llaves. El conteo de llaves abre, aplica y cierra en la primera llave que
+/// encuentra, asi que produce un numero que PARECE medido y no lo esta: esa
+/// version de este test dio 4 salidas antes de la region `multimodal` cuando
+/// hay exactamente 1, y un ratchet con un numero inventado es peor que no
+/// tener ratchet.
+///
+/// Sube hasta la declaracion y no mas porque MEDIDO: en todo `commands.rs` no
+/// hay ninguna `fn` declarada a mas de cuatro espacios de indentacion, asi
+/// que "la `fn` mas reciente por encima" no puede ser una `fn` anidada. Si
+/// alguien anida una, este test dice que no encuentra la dueña en vez de
+/// atribuir la salida a la funcion equivocada en silencio.
+fn enclosing_function(lines: &[&str], line: usize) -> Option<String> {
+    for candidate in (0..line).rev() {
+        let trimmed = lines[candidate].trim_start();
+        let rest = trimmed.strip_prefix("fn ").or_else(|| {
+            trimmed
+                .strip_prefix("async fn ")
+                .or_else(|| trimmed.strip_prefix("pub fn "))
+                .or_else(|| trimmed.strip_prefix("pub async fn "))
+        });
+        if let Some(rest) = rest {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Si la declaracion de `function` esta cerrada por
+/// `#[cfg(feature = "multimodal")]`, caminando hacia arriba por el bloque de
+/// atributos y doc que la precede.
+///
+/// Se mide el atributo ADYACENTE a la declaracion, no "el primero del
+/// fichero". MEDIDO: `commands.rs` abre con `#[cfg(feature = "multimodal")]`
+/// en la linea 95, sobre las variantes del enum de subcomandos, muy por
+/// encima de las seis salidas. Comparar contra la PRIMERA anotacion del
+/// fichero no mide nada: da 0 salidas vivas cuando hay 1. La anotacion que
+/// apaga una funcion es la suya, la que esta pegada a su declaracion.
+fn is_multimodal_gated(lines: &[&str], declaration: usize) -> bool {
+    for candidate in (0..declaration).rev() {
+        let trimmed = lines[candidate].trim();
+        if trimmed == "#[cfg(feature = \"multimodal\")]" {
+            return true;
+        }
+        // Se sigue subiendo por atributos y documentacion; cualquier otra cosa
+        // es el final del bloque de atributos.
+        if !(trimmed.starts_with("#[") || trimmed.starts_with("///") || trimmed.is_empty()) {
+            return false;
+        }
+    }
+    false
+}
+
+/// Las seis llamadas, con la funcion que las contiene y si esa funcion esta
+/// cerrada por la feature que el binario publicado no enciende.
+fn measured_process_exits() -> Vec<(usize, String, bool)> {
+    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read commands.rs: {e}"));
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if !line.contains("std::process::exit") {
+            continue;
+        }
+        let owner = enclosing_function(&lines, i)
+            .unwrap_or_else(|| panic!("`std::process::exit` en la linea {} esta antes de la primera `fn` del fichero; este test ya no sabe atribuirla.", i + 1));
+        let declaration = (0..=i)
+            .rev()
+            .find(|c| {
+                let trimmed = lines[*c].trim_start();
+                trimmed.starts_with("fn ")
+                    || trimmed.starts_with("async fn ")
+                    || trimmed.starts_with("pub fn ")
+                    || trimmed.starts_with("pub async fn ")
+            })
+            .expect("la funcion dueña existe por construccion");
+        let gated = is_multimodal_gated(&lines, declaration);
+        found.push((i + 1, owner, gated));
+    }
+    found
+}
+
+#[test]
+fn the_library_terminates_the_process_only_where_the_ratchet_says() {
+    let found = measured_process_exits();
+    let total: usize = CORE_PROCESS_EXITS.iter().map(|(_, count, _)| count).sum();
+
+    assert_eq!(
+        found.len(),
+        total,
+        "cognicode-core tiene {} llamadas a `std::process::exit` y la tabla de este \
+         ratchet suma {}.\n\
+         Si BAJA, corrige la tabla: es una buena noticia.\n\
+         Si SUBE, no basta con subir el numero: anade la funcion y la razon de la \
+         nueva en el mismo commit, o explica por que una libreria puede matar el \
+         proceso.\n\
+         Medido: {found:?}",
+        found.len(),
+        total
+    );
+
+    // El total puede cuadrar y las/wiki funciones estar mal. Se comprueba cada
+    // grupo: un recuento agregado no dice de quien son las llamadas.
+    for (function, declared, reason) in CORE_PROCESS_EXITS {
+        let owned: Vec<usize> = found
+            .iter()
+            .filter(|(_, owner, _)| owner == function)
+            .map(|(line, _, _)| *line)
+            .collect();
+        assert_eq!(
+            owned.len(),
+            declared,
+            "`{function}` declara {declared} salidas a `std::process::exit` y este \
+             ratchet dice {owned:?} ({reason}).\n\
+             Si BAJA, corrige el numero de la fila. Si SUBE, no hay atajo: la nueva \
+             salida tiene que justificar por que una libreria puede matar el proceso."
+        );
+    }
+
+    // Y ninguna funcion no declarada puede tener salidas.
+    let undeclared: Vec<&String> = found
+        .iter()
+        .map(|(_, owner, _)| owner)
+        .filter(|owner| !CORE_PROCESS_EXITS.iter().any(|(name, _, _)| name == *owner))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "estas funciones matan el proceso y no estan en el ratchet: {undeclared:?}.\n\
+         Anadelas con su razon, o quita el `std::process::exit`."
+    );
+}
+
+#[test]
+fn the_live_exit_is_doctor_and_only_doctor() {
+    // Una llamada viva, y es `execute_doctor`. Las otras cinco viven en
+    // funciones cerradas por `#[cfg(feature = \"multimodal\")]`, que el binario
+    // publicado no habilita —MEDIDO sobre el binario del candidato:
+    // `cognicode docs-ingest` responde `unrecognized subcommand`— asi que la
+    // unica razon por la que un `cogh` publicado puede salir con un codigo que
+    // la libreria eligio es `doctor`.
+    //
+    // Y por que se mide por duena y no por posicion: comparar con la primera
+    // anotacion `multimodal` del fichero no mide nada. MEDIDO: la primera esta
+    // en la linea 95, sobre las variantes del enum de subcomandos, muy por
+    // encima de las seis salidas, y da 0 salidas vivas cuando hay 1. Un
+    // contador de llaves tampoco: abre, aplica y cierra en la primera llave
+    // que encuentra, asi que produce un numero que PARECE medido y no lo esta
+    // —esa version dio 4 en vez de 1—, y un ratchet con un numero inventado es
+    // peor que no tener ratchet. La anotacion que apaga una funcion es la que
+    // esta pegada a su declaracion. Ese es el unico dato que responde a la
+    // pregunta.
+    //
+    // Y el limite real de la cuenta: lo que se afirma aqui es la disposicion
+    // del FUENTE. Si esa declaracion esta cerrada o no, y quien contiene cada
+    // salida. Lo que de verdad se compila lo mide `release-install-smoke.sh`
+    // sobre el artefacto publicado, porque un binario puede llevar una
+    // combinacion de features que ningun test sobre texto predice. Lo que este
+    // test puede afirmar sin mentir es lo mas fuerte que el fuente sostiene:
+    // hay exactamente una salida alcanzable sin `multimodal`, y es la de
+    // `doctor`.
+    let measured = measured_process_exits();
+
+    let live: Vec<&str> = measured
+        .iter()
+        .filter(|(_, _, gated)| !gated)
+        .map(|(_, owner, _)| owner.as_str())
+        .collect();
+
+    assert_eq!(
+        live,
+        vec!["execute_doctor"],
+        "se esperaba UNA sola llamada a `std::process::exit` alcanzable sin la feature \
+         `multimodal`, y que fuera la de `execute_doctor`. Hay {live:?}.\n\
+         Medido entero: {measured:?}.\n\
+         Si anades una salida nueva fuera de una funcion cerrada por la feature, \
+         anadela a `CORE_PROCESS_EXITS` CON SU RAZON en el mismo commit. Si lo que \
+         hay es una septima, esto no es una excepcion nueva: es este test fallando."
+    );
+
+    // Y la tabla del ratchet tiene que seguir nombrando las funciones que
+    // existen. Un recuento que no comprueba la dueña cuenta llamadas sin saber
+    // de quien son.
+    let attributed: Vec<&str> = measured
+        .iter()
+        .map(|(_, owner, _)| owner.as_str())
+        .collect();
+    for (function, _, _) in CORE_PROCESS_EXITS {
+        assert!(
+            attributed.contains(&function),
+            "la tabla del ratchet declara `{function}`, y MEDIDO no hay ninguna \
+             `std::process::exit` en esa funcion.\n\
+             Medido entero: {measured:?}.\n\
+         Si quitaste las salidas de esa funcion, baja su numero en la tabla: es una \
+             buena noticia y hay que reflejarla."
+        );
+    }
+}
