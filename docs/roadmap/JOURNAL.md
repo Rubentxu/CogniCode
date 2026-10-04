@@ -13590,3 +13590,95 @@ Y el corolario que sale de los dos casos juntos, `execute_doctor` y estos tests:
 **aceptar un estado degradado como veredicto es una decisión, y toda decisión
 necesita un nombre**. El servicio degrade a tree-sitter a propósito; los tests
 no tienen por qué degradar en silencio al afirmar.
+
+## N+97 — El test que afirmaba el entorno, y lo que lo destapó
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4ter (consecuencia de N+96).
+
+### Lo que pasó, en orden
+
+N+96 terminó con `rust-analyzer` instalado de verdad, porque el shim que hacia
+de binario mentia sobre su propia existencia. Instalar el componente arrastro un
+test que llevaba años en verde:
+
+    test_hierarchy_falls_through_within_the_bounded_readiness ... FAILED
+    S2 must record an Unavailable diagnostic naming the bounded fallback:
+      [ProviderDiagnostic { provider: "lsp", attempted_tier: S2, outcome: Error,
+        message: "get_hierarchy: Internal error: Type hierarchy via LSP not yet
+        implemented" }, ...]
+
+Lo primero que hacia falta era no llamarlo mio. MEDIDO:
+
+    git log -1 --oneline -- crates/cognicode-core/src/.../composite.rs
+    d2358bcf fix(lsi): provider UX hardening — error propagation + bounded
+                        readiness (e39.1)
+
+Y `git show --stat` de los cinco commits de este bloque: ninguno toca
+`composite.rs`. El defecto es de `d2358bcf`, anterior al corte. Lo que lo
+destapo fue **cambiar el mundo**, no tocar el codigo.
+
+### Por que fallaba
+
+El test afirmaba dos cosas que solo son ciertas si el servidor NO esta:
+
+    diagnostics.iter().any(|d| d.attempted_tier == S2
+        && d.outcome == Unavailable
+        && d.message.contains("bounded fallback"))
+    assert_eq!((s2.attempts, s2.unavailable), (1, 1));
+
+Ese `Unavailable` con `bounded fallback` lo emite una sola rama
+(`composite.rs:466`), la del presupuesto agotado esperando el readiness. Con el
+servidor real, el proceso ya esta caliente, el readiness se cumple dentro de
+los 50 ms del bound, el gate PASA, y el S2 falla despues por su propia cuenta
+con `not yet implemented` —`Error`, no `Unavailable`.
+
+El test era cierto en un mundo sin servidor y falso en un mundo con servidor.
+El codigo no habia cambiado. **El resultado dependia de la maquina.**
+
+### Lo que se afirma ahora
+
+La propiedad de W3 no es "que mensaje sale": es que la llamada TERMINA y cae al
+tier inferior sin pagar los 30s de `initialize`. Eso es lo que queda:
+
+- S2 tiene que dejar diagnostico, por el bound o por su propia causa. Si nadie
+  lo intenta, no hay propiedad que sostener.
+- Si lo que reporto fue `Unavailable`, tiene que nombrar el fallback acotado,
+  para que se distinga de un fallo de servidor.
+- `s2.attempts == 1` y `unavailable + errors == 1`: un intento, sin servir.
+  Afirmar `unavailable == 1` fijaba el camino, no la regla.
+
+Lo que dependa de que el readiness se cuelgue lo afirma el hermano,
+`test_bounded_readiness_cuts_a_hanging_readiness`, con un future colgado y sin
+tocar el PATH: determinista en cualquier maquina.
+
+    antes     FAILED, 0.08 s
+    ahora     ok, 0.04 s
+    mutacion  desactivar el intento S2 -> FAILED nombrando que nadie lo intento
+    suite     los 16 de composite, 16 passed / 0 failed
+    clippy -D warnings 0, fmt 0
+
+El otro test que se auto-saltea por PATH, el de Java en
+`provider_conformance.rs:276`, se reviso y **se queda como esta**: con servidor
+usa `fallback_readiness: 30s` y verifica la conformidad real, y sin servidor se
+salta. Es el comportamiento correcto, y la diferencia con el de Rust es que no
+afirma nada que dependa de que el servidor este roto.
+
+### Lección 220 — Un test verde sin binario no es cobertura
+
+`#[ignore]` y "se salta si no hay X" son la misma defensa con distinto disfraz:
+evitan que el entornoensible rompa el gate, y a cambio QuietTurnRound deja de
+cubrir. El de Rust lleva años sin ejecutarse de verdad porque en la maquina de
+los que lo escribieron no habia `rust-analyzer`, y **nadie se dio cuenta de que
+"verde" y "ejecutado" no son lo mismo**.
+
+La segunda mitad es la que cuesta: cuando el test vuelve a correr, no falla por
+el defecto que el cambio ha traido, falla por su propia expectativa de entorno. Un
+`Unavailable` con un mensaje concreto es una afirmacion sobre **un camino**, y
+el camino depende de si el servidor arranca a tiempo. La propiedad —el bound
+corta la espera— no depende de nada externo y es la que hay que afirmar.
+
+Y el orden importa: si `rust-analyzer` se hubiera instalado antes de que este
+test existiera, habria escrito el `Error` y nunca habria habria escrito el
+`Unavailable`. **El codigo de test no es independiente del entorno en el que se
+escribe**, y eso solo se ve cuando el entorno cambia.
