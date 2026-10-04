@@ -10,7 +10,69 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.9] — 2026-10-04
+
+**Por qué existe v0.101.9, y qué pasó con `v0.101.8`.** `v0.101.8` está
+publicado y **no se mueve**. Su lane construyó el candidato entero y salió con
+fallo. Esta release lleva el arreglo.
+
+Lo importante del caso es que **el trabajo estaba bien y el veredicto no**:
+
+    Pipeline finished with FAILURE: shell exited with code 64
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+
+Esas dos líneas, en ese orden, son la misma corrida. Antes del 64 estaba el
+PASS del UAT de instalador. La lane había compilado los dos targets, generado
+los SBOM, limpiado la raíz del staging —los seis tarballs de `0.101.4` y
+`0.101.5` que la lane tenía que eliminar, eliminados— y producido un candidato
+cuyos **once artefactos verifican contra su `SHA256SUMS`**. Después, la limpieza
+no pudo borrar su directorio temporal y su código de salida sustituyó al del
+script.
+
+### Corregido
+
+- **La limpieza del UAT de instalación podía ser su propio veredicto.** El trap
+  era `rm -rf "$TMP"` sin salir del directorio que borraba, y sin fijar estado,
+  de modo que el código de la envoltura de recuperación reemplazaba al del
+  script. Es el mismo defecto que B2 resolvió en `preflight-clean-clone.sh`, en
+  el hermano que se quedó atrás: la stage 1 pasaba porque el preflight ya
+  estaba arreglado, y esta moría porque el otro no.
+
+- **Cada corrida del UAT dejaba 70 MB huérfanos.** Con la primera mitad
+  arreglada se veía la segunda: el script corre con `HOME` y `XDG_DATA_HOME`
+  dentro del temporal, y la envoltura trastera lo que borra en
+  `$XDG_DATA_HOME/Trash`. El temporal acababa conteniendo su propia papelera, y
+  un árbol que contiene su papelera no se puede mover. Devolver las dos
+  variables antes de borrar lo cierra.
+
+- **La política de soporte nombraba una rama que no lleva la versión.**
+  `SECURITY.md` decía `0.101.8 (current main, not yet released)` con
+  `origin/main` en `0.101.0`, y lo decía igual desde `v0.101.7`. Sobrevivió dos
+  cortes porque ningún contrato leía el fichero: la versión de la tabla se
+  vigilaba, la rama no. El contrato de Release Truth ahora cubre esa cuarta
+  superficie.
+
+### La forma del arreglo
+
+Es la misma que la del preflight, a propósito: la función vive en el script que
+la usa, lee el estado de salida en la primera sentencia, sale del directorio
+antes de borrar, y el borrado va dentro de un condicional cuyo fallo avisa en vez
+de decidir. Los seis contratos nuevos están en `qw04_preflight_contract.rs`, que
+ya era el dueño de esa propiedad, y no en un fichero nuevo.
+
+Una diferencia deliberada: en el UAT el motivo del borrado se **imprime**, y en
+el preflight se descarta. El preflight escribe en el log de una stage que ya ha
+certificado; el UAT es lo que el operador lee cuando algo falla, y un aviso que
+no dice por qué obliga a reproducir la corrida entera.
+
 ## [v0.101.8] — 2026-10-04
+
+**Estado de su lane, medido después de publicarlo.** Construyó el candidato
+entero —dos targets, SBOM, once artefactos que verifican contra `SHA256SUMS`— y
+salió con `LANE_EXIT=1` porque el UAT de instalación perdió su veredicto en la
+limpieza. El candidato de este corte es por tanto íntegro y reproducible, pero la
+lane no lo certificó. El arreglo va en `v0.101.9`, porque un tag publicado no se
+mueve.
 
 **Por qué existe v0.101.8, y qué pasa con `v0.101.7`.** `v0.101.7` está
 publicado y **no se mueve**: un tag identifica bytes. Se cortó con el árbol
