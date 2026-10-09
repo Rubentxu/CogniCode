@@ -1,6 +1,6 @@
 //! Schemas module — shared data types for MCP tools.
 //!
-//! Re-exports built-in view descriptors from [`builtin_descriptors`].
+//! Re-exports built-in view descriptors from [`mod@builtin_descriptors`].
 //! The 8 built-in descriptors are the single source of truth shared
 //! between MCP handlers and the explorer registry.
 
