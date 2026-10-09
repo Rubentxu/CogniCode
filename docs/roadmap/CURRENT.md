@@ -9,11 +9,11 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-10, sobre `integrate/v1015` HEAD~1
-> `9d33cb622dc8429d23240e751bb8ef83d2514c91` (HEAD actual:
-> `554777fb463fb5cdf4223bbf9db8383bfe13bdbd` que es el fix del
-> ratchet; este snapshot describe el commit padre). Regenerar
-> antes de citar.
+> **Snapshot**: 2026-10-10, sobre `integrate/v1015` HEAD
+> `e5e2788ca299672d0f7d97c423bc057441adc93b`. El contenido de
+> esta rama ha sido squash-merged a main como PR #344 el
+> 2026-10-09T22:35:37Z (merge commit `3203bc75`); el SHA local
+> describe el estado pre-merge. Regenerar antes de citar.
 >
 > El ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` ya disparó
 > una vez (2026-10-09, justo despues de anadirlo): los 6 commits de la sesion
