@@ -91,6 +91,51 @@ surfacing el bug**, no seguir silenciando.
 | `which pyright` | (ausente) |
 | `cargo test --workspace` | Incluye el RED como senal al operador; el resto del workspace sigue verde |
 
+## Diagnostico adicional 2026-10-09
+
+Tracing desde `composite::attempt_lsp_definition` (line 576):
+
+  1. `gate_lsp_for_location` pasa (rust-analyzer esta registrado, binario
+     responde a `--version`).
+  2. `self.lsp.get_definition(location)` se ejecuta.
+  3. `process_manager.request(language, "textDocument/definition", params)`
+     envia la peticion JSON-RPC.
+  4. **Aqui se sospecha el bug**: `proc.request` en `process.rs:163` hace
+     `Ok(result.result.unwrap_or(Value::Null))`. Si rust-analyzer
+     responde con `result: null`, esto devuelve `Ok(Value::Null)`.
+  5. `lsp.rs:177` mapea `Value::Null` → `Ok(None)` y termina.
+  6. `attempt_lsp_definition:587` trata `Ok(None)` como `Attempt::Served(None)`
+     con el comentario historico: 'LSP Ok(None) is an authoritative
+     unresolved answer: no lower tier may second-guess it'.
+  7. La chain retorna Served(None) en S2.
+  8. `get_definition` retorna `Ok(None)` al caller.
+
+**Comparacion con `attempt_lsp_hover`** (line 627): trata `Ok(None)` como
+`Degraded`, cae a S1. Esa es la diferencia: hover degrada, goto_definition
+"sirve" el None. Inconsistente y la causa del RED.
+
+**Causa raiz probable (no confirmada)**: rust-analyzer arranca en cold
+start, primer goto_definition llega antes de que el index este completo
+(~10s), responde con null. El test da 30s pero el LSP server puede
+haberse "estancado" sin reintentar. Hover pasa porque no requiere
+resolucion semantica (solo signature del nodo actual).
+
+**Hipotesis del fix** (a validar antes de aplicar):
+
+  (A) En `attempt_lsp_definition`, mapear `Ok(None)` → `Attempt::Degraded`
+      como hace hover. Cae a S1 (local resolver). Cambio pequeno, pero
+      rompe la regla historica "LSP None es autoritativo".
+
+  (B) Agregar warmup: esperar a que rust-analyzer termine el index antes
+      del primer goto_definition. Cambia el LSP startup, no la chain.
+
+  (C) Aumentar el timeout del test a 60s para dar tiempo al cold start.
+      Workaround, no fix.
+
+Recomendacion: empezar con (A) que es el cambio coherente con hover,
+validar que los otros consumers de `get_definition` aceptan el cambio de
+semantica (deben mirar la chain outcome en vez de None directo).
+
 ## Out of scope
 
 - Re-arquitectura del LSP stack.
