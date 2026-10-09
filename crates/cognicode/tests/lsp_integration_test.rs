@@ -6,26 +6,62 @@
 use std::sync::Arc;
 use tempfile::TempDir;
 
-/// Checks if rust-analyzer binary is available on the system
-fn rust_analyzer_available() -> bool {
-    std::process::Command::new("rust-analyzer")
+/// Si `binary` responde a `--version` con salida correcta.
+///
+/// MEDIDO 2026-10-04: esto no es un detalle. En una maquina con rustup, el
+/// shim `~/.cargo/bin/rust-analyzer` es un symlink a `rustup`, y si el
+/// componente no esta instalado responde `Unknown binary 'rust-analyzer' in
+/// official toolchain` con **codigo 1**. El fichero existe, esta en el PATH, y
+/// no sirve para nada. Un detector que mirara solo "¿esta en el PATH?" diria
+/// que el LSP esta disponible y arrancaria un servidor que no existe.
+///
+/// Por eso se pregunta al binario, no al sistema de ficheros: lo que importa
+/// es si responde, no si tiene permisos de ejecucion.
+fn command_reports_version(binary: &str) -> bool {
+    std::process::Command::new(binary)
         .arg("--version")
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+/// Checks if rust-analyzer binary is available on the system
+fn rust_analyzer_available() -> bool {
+    command_reports_version("rust-analyzer")
 }
 
 /// Checks if pyright binary is available on the system
 fn pyright_available() -> bool {
-    std::process::Command::new("pyright")
-        .arg("--version")
-        .output()
-        .map(|output| output.status.success())
-        .unwrap_or(false)
+    command_reports_version("pyright")
+}
+
+/// Por que `Ok(None)` ya no se acepta como veredicto.
+///
+/// MEDIDO 2026-10-04: los cuatro tests LSP de integracion tenian un brazo
+/// `Ok(Ok(None)) => {}` que no afirmaba nada, con el comentario "this can
+/// happen if the LSP did not return anything useful but we should not error".
+/// Medido lo que ese brazo escondia: los tests PASABAN con el shim de
+/// rust-analyzer roto (codigo 1) y PASABAN con rust-analyzer 1.96.0 instalado.
+/// El mismo resultado con y sin LSP, porque cuando el servidor no esta, el
+/// servicio degrada a tree-sitter y devuelve `None` en vez de un error.
+///
+/// Un test cuyo veredicto es el mismo con y sin el sistema que dice
+/// ejercitar, no ejercita nada. Ahora el `None` se explica: o el LSP no
+/// arranco, y eso se dice nombrando el binario, o arranco y no devolvio nada,
+/// que ya es un fallo que se puede mirar.
+fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
+    panic!(
+        "`{operation}` devolvio `None`. Eso NO es un resultado aceptable: con el \
+         LSP disponible significa que el servidor arranco y no respondio, y sin \
+         el LSP significa que el servicio degrado a tree-sitter sin decirlo.\n\
+         {detail}\n\
+         Un test que pasa igual con y sin el sistema que dice ejercitar no \
+         mide nada. Antes este brazo aceptaba `None` con un comentario, y por eso \
+         los cuatro tests LSP daban verde con el shim de rustup roto."
+    );
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer binary"]
 async fn test_rust_analyzer_hover() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
@@ -100,10 +136,12 @@ fn main() {
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // This can happen if LSP didn't return anything useful
-            // but we shouldn't error
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "hover",
+            "Si rust-analyzer esta instalado y devuelve None, el problema esta en el \
+             camino LSP, no en el test. Comprueba `rust-analyzer --version` y que el \
+             servicio tenga el servidor registrado para `rust`.",
+        ),
         Ok(Err(e)) => {
             panic!("Hover request failed: {}", e);
         }
@@ -114,7 +152,6 @@ fn main() {
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer binary"]
 async fn test_rust_analyzer_goto_definition() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
@@ -190,9 +227,12 @@ fn main() {
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // LSP might not return anything in some cases
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "goto_definition",
+            "Con rust-analyzer instalado, `goto_definition` sobre la definicion de \
+             `greet` tiene que devolver algo. Si devuelve None, el servidor no \
+             arranco o no esta registrado para `rust`.",
+        ),
         Ok(Err(e)) => {
             panic!("Definition request failed: {}", e);
         }
@@ -259,9 +299,11 @@ print(result)
                 response_str
             );
         }
-        Ok(Ok(None)) => {
-            // Pyright might not return anything
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "goto_definition (pyright)",
+            "Igual que el de rust-analyzer: si el servidor arranco, una \
+             definicion que existe tiene que aparecer.",
+        ),
         Ok(Err(e)) => {
             panic!("Definition request failed: {}", e);
         }
@@ -338,9 +380,11 @@ farewell()
                 refs.len()
             );
         }
-        Ok(Ok(None)) => {
-            // LSP might not return anything
-        }
+        Ok(Ok(None)) => none_is_not_a_verdict(
+            "find_references (pyright)",
+            "Si pyright arranco, las referencias de un simbolo declarado tienen que \
+             existir.",
+        ),
         Ok(Err(e)) => {
             panic!("Find references request failed: {}", e);
         }
@@ -351,23 +395,79 @@ farewell()
 }
 
 #[test]
-fn test_rust_analyzer_available_detection() {
-    // This test just verifies the detection function works
-    // It doesn't require rust-analyzer to be installed
-    let available = rust_analyzer_available();
-    println!("rust-analyzer available: {}", available);
+fn test_availability_detection_asks_the_binary_and_not_the_filesystem() {
+    // Un test que no puede fallar no es un test, y este lo decia en su
+    // propio cuerpo: "the test always passes - it just reports the status".
+    // Una linea verde que no mide nada es peor que no tener el test: ocupa
+    // sitio en la suite y quien lo lee cuenta con una cobertura que no existe.
+    //
+    // Lo que se afirma es la propiedad que hace que estos tests sirvan de
+    // algo: la disponibilidad se decide PREGUNTANDO al binario. Un comando
+    // inexistente no esta disponible. Un comando que existe y falla tampoco
+    // —que es el caso del shim de rustup—. Y un comando que responde, si.
+    //
+    // MEDIDO 2026-10-04: en la maquina de corte el shim
+    // `~/.cargo/bin/rust-analyzer` es un symlink a `rustup`, existe, esta en
+    // el PATH, y responde `Unknown binary` con codigo 1.
+    assert!(
+        !command_reports_version("cognicode-no-existe-este-binario"),
+        "un comando que no existe no puede estar disponible"
+    );
 
-    // The test always passes - it just reports the status
-    // In CI, this can be used to determine which tests to run
+    // `sh` existe en cualquier POSIX y responde a `--version` con 0: el caso
+    // positivo control. Sin esto, "no disponible" seria el unico veredicto
+    // posible y el detector no distinguiria nada.
+    assert!(
+        command_reports_version("sh"),
+        "`sh` responde a `--version`: el detector tiene que verlo disponible"
+    );
+
+    // Y el caso que motivo todo esto: un shim que existe y no sirve. Se
+    // construye en un temporal, se marca ejecutable, y aun asi no puede
+    // contarse como disponible.
+    let shim_dir = TempDir::new().expect("tmp para el shim");
+    let shim = shim_dir.path().join("cognicode-broken-lsp-shim");
+    std::fs::write(&shim, "#!/bin/sh\necho \"Unknown binary\" >&2\nexit 1\n")
+        .expect("escribir el shim");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(&shim)
+            .expect("stat del shim")
+            .permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&shim, perms).expect("chmod del shim");
+    }
+    assert!(
+        !command_reports_version(shim.to_str().expect("ruta del shim en utf-8")),
+        "un shim ejecutable que sale con codigo 1 NO esta disponible, por muy \
+         presente que este en el disco: arrancarlo seria arrancar un servidor \
+         que no responde"
+    );
 }
 
 #[test]
-fn test_pyright_available_detection() {
-    // This test just verifies the detection function works
-    let available = pyright_available();
-    println!("pyright available: {}", available);
-
-    // The test always passes - it just reports the status
+fn test_availability_detection_of_the_lsp_servers_agrees_with_the_binaries() {
+    // Los dos detectores concretos, medidos y publicados en vez de supuestos.
+    //
+    // Que este test afirme el valor exacto del entorno seria una trampa: en
+    // otra maquina rust-analyzer si esta instalado y la afirmacion
+    // fallaria sin que nada este roto. Lo que se afirma es la COHERENCIA
+    // entre lo que el detector dice y lo que el binario hace, que es lo
+    // unico que vale en cualquier parte.
+    for (name, detected) in [
+        ("rust-analyzer", rust_analyzer_available()),
+        ("pyright", pyright_available()),
+    ] {
+        let real = command_reports_version(name);
+        assert_eq!(
+            detected, real,
+            "{name}: la deteccion y el binario discrepan. Si la deteccion dice \
+             que hay servidor y el binario no responde, el servicio degrada a \
+             tree-sitter en silencio y el test que lo ejercita pasa sin haber \
+             ejercitado el LSP."
+        );
+    }
 }
 
 #[tokio::test]

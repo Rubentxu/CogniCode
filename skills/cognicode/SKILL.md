@@ -103,7 +103,8 @@ For a symbol you can name:
 
 ```bash
 cognicode index query MySymbol
-cognicode index symbol-code MySymbol
+# symbol-code takes a position, not a symbol name:
+cognicode index symbol-code <file> <line> <column>
 ```
 
 Or via MCP:

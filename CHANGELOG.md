@@ -10,6 +10,557 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.9] — 2026-10-04
+
+**Por qué existe v0.101.9, y qué pasó con `v0.101.8`.** `v0.101.8` está
+publicado y **no se mueve**. Su lane construyó el candidato entero y salió con
+fallo. Esta release lleva el arreglo.
+
+Lo importante del caso es que **el trabajo estaba bien y el veredicto no**:
+
+    Pipeline finished with FAILURE: shell exited with code 64
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+
+Esas dos líneas, en ese orden, son la misma corrida. Antes del 64 estaba el
+PASS del UAT de instalador. La lane había compilado los dos targets, generado
+los SBOM, limpiado la raíz del staging —los seis tarballs de `0.101.4` y
+`0.101.5` que la lane tenía que eliminar, eliminados— y producido un candidato
+cuyos **once artefactos verifican contra su `SHA256SUMS`**. Después, la limpieza
+no pudo borrar su directorio temporal y su código de salida sustituyó al del
+script.
+
+### Corregido
+
+- **La limpieza del UAT de instalación podía ser su propio veredicto.** El trap
+  era `rm -rf "$TMP"` sin salir del directorio que borraba, y sin fijar estado,
+  de modo que el código de la envoltura de recuperación reemplazaba al del
+  script. Es el mismo defecto que B2 resolvió en `preflight-clean-clone.sh`, en
+  el hermano que se quedó atrás: la stage 1 pasaba porque el preflight ya
+  estaba arreglado, y esta moría porque el otro no.
+
+- **Cada corrida del UAT dejaba 70 MB huérfanos.** Con la primera mitad
+  arreglada se veía la segunda: el script corre con `HOME` y `XDG_DATA_HOME`
+  dentro del temporal, y la envoltura trastera lo que borra en
+  `$XDG_DATA_HOME/Trash`. El temporal acababa conteniendo su propia papelera, y
+  un árbol que contiene su papelera no se puede mover. Devolver las dos
+  variables antes de borrar lo cierra.
+
+- **La política de soporte nombraba una rama que no lleva la versión.**
+  `SECURITY.md` decía `0.101.8 (current main, not yet released)` con
+  `origin/main` en `0.101.0`, y lo decía igual desde `v0.101.7`. Sobrevivió dos
+  cortes porque ningún contrato leía el fichero: la versión de la tabla se
+  vigilaba, la rama no. El contrato de Release Truth ahora cubre esa cuarta
+  superficie.
+
+- **El directorio del candidato heredaba la corrida anterior.** `staging/` se
+  limpia —la stage de payloads crea su directorio desde cero y la de skills
+  borra los ficheros sueltos de la raíz— y `release/`, que es la salida de
+  `generate`, no. La lane de `v0.101.9`, corriendo en el worktree donde
+  `v0.101.8` había dejado su candidato, llegó hasta `verify` y murió ahí:
+
+  ```
+  Error: artifact `cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz`
+  declares version `0.101.8` but the release version is `0.101.9`
+  ```
+
+  El gate hizo bien su trabajo —un artefacto de la release anterior dentro del
+  candidato es justo lo que R1 prohíbe— pero una lane no debería depender de que
+  un gate posterior lo detecte. `generate` es la dueña de `release/` y ahora
+  establece ese directorio desde cero, con **fallo fatal** si no puede: no es un
+  aviso, es un estado de entrada que no se conoce. Es el mismo caso que la
+  limpieza de la raíz de `staging/`, un directorio más allá.
+
+### La forma del arreglo
+
+Es la misma que la del preflight, a propósito: la función vive en el script que
+la usa, lee el estado de salida en la primera sentencia, sale del directorio
+antes de borrar, y el borrado va dentro de un condicional cuyo fallo avisa en vez
+de decidir. Los seis contratos nuevos están en `qw04_preflight_contract.rs`, que
+ya era el dueño de esa propiedad, y no en un fichero nuevo.
+
+Una diferencia deliberada: en el UAT el motivo del borrado se **imprime**, y en
+el preflight se descarta. El preflight escribe en el log de una stage que ya ha
+certificado; el UAT es lo que el operador lee cuando algo falla, y un aviso que
+no dice por qué obliga a reproducir la corrida entera.
+
+## [v0.101.8] — 2026-10-04
+
+**Estado de su lane, medido después de publicarlo.** Construyó el candidato
+entero —dos targets, SBOM, once artefactos que verifican contra `SHA256SUMS`— y
+salió con `LANE_EXIT=1` porque el UAT de instalación perdió su veredicto en la
+limpieza. El candidato de este corte es por tanto íntegro y reproducible, pero la
+lane no lo certificó. El arreglo va en `v0.101.9`, porque un tag publicado no se
+mueve.
+
+**Por qué existe v0.101.8, y qué pasa con `v0.101.7`.** `v0.101.7` está
+publicado y **no se mueve**: un tag identifica bytes. Se cortó con el árbol
+completo, pero **su pipeline de candidate no compilaba**, así que su lane murió
+en el minuto dos sin llegar a la primera stage. Esta release es la primera cuyo
+pipeline está probado, y lleva dentro tanto el arreglo como el contrato que lo
+vigila.
+
+Es la cuarta vez que un corte pasa sus contratos y su pipeline no arranca. La
+causa es la misma desde `v0.101.5` y es una sola: **la suite ejecutaba el
+cuerpo de las stages y no compilaba el fichero que las contiene**.
+
+### Corregido
+
+- **El pipeline de candidate no compilaba.** Dos párrafos de comentario en la
+  guarda del linker explicaban cómo escapar un signo de dólar escribiendo el
+  signo de dólar, y Kotlin los leyó como plantillas:
+
+  ```
+  ERROR Unresolved reference 'host'.       (línea 254)
+  ERROR Unresolved reference 'host'.       (línea 254)
+  ERROR Unresolved reference 'key_LINKER'. (línea 263)
+  VALIDATION FAILED
+  ```
+
+  Un `#` abre un comentario de shell, pero la línea sigue siendo contenido del
+  raw string, y en un raw string un dólar abre plantilla se llame como se
+  llame la línea. El comentario que explicaba el bug contenía el bug. El bloque
+  se reescribió **sin un solo signo de dólar** en la prosa, porque la prosa no
+  lo necesita: los ejemplos de escapado están en la stage de abajo, que es la
+  especificación.
+
+- **Un contrato mide el nivel que alcanza, y no puede ver por encima de sí.**
+  Los 213 contratos anteriores ejecutaban el cuerpo de una stage; ninguno
+  compilaba el script que la contiene. Renderizar un cuerpo y pasarlo por bash
+  demuestra que el shell es correcto, no que el envoltorio sea un programa.
+  `test_every_pipeline_compiles` valida ahora los seis `.kts` del repositorio
+  con `pipelinek validate`, que compila y comprueba el grafo de stages sin
+  ejecutar ninguna. Mutado —devolviendo un dólar a un comentario— falla con el
+  mensaje exacto del fallo real.
+
+### Excepciones que este corte registra
+
+`v0.101.7` queda tagueado, publicado y **sin candidato**, por el motivo de
+compilación de arriba. Se suma a `v0.99.2`, `v0.100.0` y `v0.101.6`.
+
+Y un incidente de gobernanza que aquí no se repara: **`v0.101.5` se ha movido
+dos veces en el remoto** tras publicarse. Empezó apuntando a `65dcdba3`, pasó a
+`64370bbb` y ahora a `188c3a52`. Un tag publicado identifica bytes, y cambiarlo
+rompe esa propiedad para quien ya lo haya clonado. Se anota; la salida de este
+corte es construir desde la línea correcta, no reconstruir la identidad de una
+release anterior.
+
+## [v0.101.7] — 2026-10-04
+
+**Corte sin candidato.** El árbol estaba completo —la reconciliación de las dos
+líneas, los ocho cherry-picks, la limpieza de la raíz de staging y la
+reparación del gate de coherencia—, pero **el pipeline de candidate no
+compilaba**, por un signo de dólar escrito dentro de un comentario para
+explicar cómo escapar un signo de dólar. Su lane murió en el minuto dos. El
+arreglo y su contrato están en `v0.101.8`.
+
+## [v0.101.6] — 2026-10-03
+
+**Corte sin candidato.** Se cortó con la reconciliación de las dos líneas
+completa, y antes de que llegaran la limpieza de la raíz de `staging/` y la
+reparación del gate de coherencia. La ventana honesta es `c7dba40c..HEAD`: 15
+commits, 8 `fix`, 4 `docs`, 3 `test`, 0 `BREAKING CHANGE`, de los cuales cinco
+`fix` entraron por cherry-pick desde la línea del otro actor. La divergencia y
+el mapa están en la entrada de `v0.101.7`, que es la que produce candidato.
+
+## [v0.101.5] — 2026-10-03
+
+Ventana `v0.101.4..HEAD`: **6 commits** — 1 `fix`, 2 `refactor`, 1 `test`,
+1 `integrate`, 1 `docs`, y 0 marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.4..HEAD                      # 6
+git log --format='%s' v0.101.4..HEAD | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.101.4..HEAD \
+  | grep -cE '^BREAKING[ -]CHANGE'                       # 0
+```
+
+**Por qué existe v0.101.5 y por qué v0.101.4 no se publica.** El tag
+`v0.101.4` existe y su candidato llegó a correr, pero se cortó en un árbol
+que **no contiene ninguno** de los cinco commits de este ciclo. Publicarlo
+habría publicado una release cuyo contrato de salida de la CLI seguía
+tragando errores en once de los doce brazos de `CommandExecutor::execute`:
+operaciones que no se realizaban devolviendo 0. El tag no se puede mover sin
+mutar una identidad ya existente, así que la salida limpia es v0.101.5.
+
+### Corregido
+
+- **Ocho de los once brazos de la CLI tragan el error y salen con 0.**
+  `Analyze`, `Graph` y `FindUsages` propagaban; `Refactor`, `Index`,
+  `Navigate`, `Doctor`, `DocsIngest`, `IssuesIngest`, `Evidence` y
+  `Capabilities` imprimían el fallo con `eprintln!` y dejaban que `execute`
+  terminara en `Ok(())`. El caso caro no era hipotético:
+  `cognicode navigate references <símbolo>` imprimía
+  `Invalid position` y salía con **0**, así que un agente que seguía la
+  skill `cognicode-pr-review` creía haber consultado las referencias y no
+  había consultado ninguna. N+81 ya había corregido la skill; corregir la
+  documentación sin corregir el brazo dejaba el fallo al alcance de
+  cualquiera que tecleara el comando.
+
+  MEDIDO sobre el binario v0.101.2, no leído: `navigate references`,
+  `navigate definition`, `navigate hover`, `index build`, `index query`,
+  `graph full` y `graph mermaid` salían todos con 0.
+
+- **Una raíz de proyecto inexistente se reportaba como un grafo vacío.**
+  `AnalysisService::build_project_graph` llegado a una ruta que no existe
+  devolvía `Ok` con estado `Partial`: el `WalkBuilder` entrega una entrada
+  `Err` por la raíz ausente y `.filter_map(|e| e.ok())` la descarta, que
+  es exactamente la que había que conservar. El handler MCP `build_graph`
+  ya rechazaba ese caso, así que las dos interfaces respondían distinto a la
+  misma pregunta. Lo mismo en `LightweightIndex::build_index` con `WalkDir`.
+
+- **Un UAT que pasaba sin ejecutar lo que decía medir.**
+  `prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invocaba
+  `graph full --path`, y `graph full` no tiene `--path`: su firma es
+  `graph full [PATH]`, un positional. Clap rechazaba el flag con exit 2 y
+  el proceso moría antes del dispatch, así que la aserción se cumplía sin
+  que el motor de grafos llegara a ejecutarse. Medido: la forma antigua
+  devolvía **exit 2 idéntico con el defecto presente y ausente**, o sea que
+  no podía detectar el bug que decía detectar.
+
+### Cambiado
+
+- **Los brazos propagan con `?` en lugar de imprimir y devolver.**
+  `main.rs` ya hacía `CommandExecutor::execute(cli).await?`, así que la
+  frontera de propagación existía y lo que la cortaba era cada brazo. La
+  forma destino es `Self::execute_navigate(command).await?`: −75 líneas
+  netas, sin tipos nuevos, y el `Result` que ya existía es el que llega a
+  `main`.
+
+- **La limpieza del preflight vive en el script que la usa.** El trap era
+  `rm -rf "$WORK_DIR"` y el script hace `cd "$WORK_DIR/clone"`, así que se
+  ejecutaba desde dentro del directorio que borraba; el estado del trap
+  sustituye al del script. MEDIDO: el preflight de v0.101.2 certificó
+  `passed=5934 failed=0` con `PREFLIGHT PASS` y la lane salió igualmente
+  con 64, dejando 34 GB de clones huérfanos. Ahora la función sale del
+  directorio antes de borrar y la limpieza no puede cambiar el veredicto.
+
+### Añadido
+
+- **`cli_exit_code_propagation`** (21 tests). Siete casos de error y **tres
+  gemelos de éxito**, porque un contrato que solo afirma "esto sale distinto
+  de 0" pasa entero si el arreglo convierte todo en error, incluido el
+  éxito. Y cuatro contratos que releen el `match` de `execute` y clasifican
+  cada brazo, de modo que un brazo nuevo que trague el error es un RED y no
+  una línea más de una lista escrita a mano.
+- **Siete contratos de limpieza en `qw04_preflight_contract`** (11 → 18).
+  El que faltaba es el que reproduce el incidente: un `rm` que se niega
+  cuando el target es ancestro del cwd —la envoltura real del entorno— y
+  tres aserciones a la vez, exit preservado, negativa que **no** llega a
+  producirse, y clon eliminado.
+
+### Medido, y no arreglado aquí
+
+- **`execute_doctor` también llama `std::process::exit`** y **es alcanzable**
+  desde el binario normal, a diferencia de `DocsIngest` e `IssuesIngest`.
+  Es una tercera violación de la misma frontera, y no se cambia aquí porque
+  su exit code es un contrato publicado —"1 = entorno poco sano"— y moverlo
+  a `Err` cambia el diagnóstico.
+- **`DocsIngest` e `IssuesIngest` son superficie muerta**: viven detrás de
+  `#[cfg(feature = "multimodal")]`, y `multimodal` no es una feature
+  declarada de `cognicode-cli`. Sus `return Err` están puestos y el
+  contrato los verifica en el fuente, pero nadie puede invocarlos.
+- **`ide::tests::claude_config_path_default` es inestable**: lee `$HOME`
+  mientras corre en paralelo con hermanos `#[serial]` que la mutan. Causa
+  raíz medida — 48 `set_var("HOME")` en el binario, todos serializados, y
+  este test no— y tasa medida: **4 fallos de 10 ejecuciones**. Preexistente
+  a este ciclo, y por tanto fuera de él.
+- **La provenance de esta release no existe.** Sin cambios respecto a
+  v0.101.2: `RELEASE_REQUIRE_PROVENANCE=0` y el hueco de R2 documentado en
+  `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md`, pendiente de la decisión
+  del maintainer sobre custodia de la clave.
+
+## [v0.101.4] — 2026-10-03
+
+Ventana `v0.101.3..f840df0c`: **2 commits** — 1 `fix`, 1 `test`, y 0 marcadores
+`BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.3..f840df0c                       # 2
+git log --format='%s' v0.101.3..f840df0c | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 1 test, 1 fix
+git log --format='%s%n%b' v0.101.3..f840df0c \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.4 y por qué v0.101.3 no se publica.** El candidato de
+`v0.101.3` **falló**. Nunca hubo candidate que publicar, y su tag se queda sin
+certificar:
+
+```
+package-x86_64-unknown-linux-gnu … Error: unknown component
+  `cognicode-0.101.3-x86_64-unknown-linux-gnu.tar.gz`
+cp: no se puede efectuar `stat' sobre '…/release/cognicode-0.101.3-…tar.gz'
+tar (child): staging/payloads-linux-x86-64/dist/: Es un directorio
+staging/payloads-linux-x86-64/dist:
+total 8                                    <- vacío, y la stage pasó
+→ (dos stages después) archive-standalone: cogh missing or not executable
+```
+
+### Corregido
+
+- `release-candidate.pipeline.kts`, `package-$target`: la línea
+  `component="${'$'}{filename%-${'$'}version-*}"` usaba una **variable de
+  shell** `version` que la lane nunca exporta, donde la línea de al lado usa el
+  valor de Kotlin. Vacía, el patrón `%--*` no casa con nada y `component` se
+  quedaba con el nombre completo del archivo: `cp` buscaba un binario llamado
+  `…tar.gz`, `name --component` recibía lo mismo y `tar` escribía sobre el
+  directorio `dist/`. La misma notación estaba mal en los bundles de skills
+  (`cognicode-.tar.gz`) y en el mensaje de la stage de SBOM (`the sbom- stage`).
+- `release-candidate.pipeline.kts`, `package-$target`: la stage **no fallaba**.
+  `cp` y `tar` no se comprobaban, así que salía 0 sin haber producido un solo
+  payload, y el defecto aparecía dos stages más tarde con un mensaje que
+  señalaba el archivo y no el empaquetado. Ahora un `plan` vacío, un nombre
+  vacío, un binario ausente, o un planificado distinto de lo producido, son
+  todos fallos — la misma guarda «An empty candidate is not a candidate» que la
+  lane de release ya tenía, puesta donde ocurre.
+- `release.pipeline.kts`, `provenance`: la stage verificaba atestaciones
+  **incondicionalmente** mientras su propio header describía una política
+  condicional por `RELEASE_REQUIRE_PROVENANCE`. Como nada en el repositorio
+  genera una atestation —el generador era una GitHub Action y PipelineK no
+  tiene runtime de actions— la lane moría antes de `publish`: no una release
+  sin provenance, una release inalcanzable. La política vive ahora en un único
+  script, `scripts/ci/verify-provenance.sh`, y una sola stage lo llama. Los
+  artefactos se comprueban siempre y el resultado se imprime; sólo un run que
+  exige provenance trata la ausencia como fatal.
+
+### Añadido
+
+- `scripts/ci/test_candidate_packaging.py` — ejecuta el cuerpo **real** de la
+  stage: extrae el `sh(...)` del pipeline, resuelve las dos notaciones de
+  interpolación y lo corre contra un `cognicode-release` de mentira. En rojo
+  contra el pipeline publicado: sale 0 produciendo `[]`.
+- `scripts/ci/test_provenance_gate.py` — corre el gate con un `gh` de mentira
+  que reproduce el 404 medido. Seis mutantes, ninguno sobrevive.
+- `test_no_kotlin_value_is_written_as_a_shell_variable` — cubre la clase
+  entera en todos los lanes, no sólo estos dos sitios.
+
+### Correcciones de contrato
+
+- Los dos contratos nuevos se declaraban **verdes sin ejecutar nada**: su
+  `main()` usaba `dir(globals())`, que devuelve los métodos del dict y no los
+  nombres del módulo, así que la lista salía vacía. Lo detectó el fallo-cercado
+  del runner («exposes no test_* function»). Corregido, y ambos se han
+ comprobados en rojo contra los pipelines que `v0.101.3` publicó.
+- `product/profiles.json` **no** se toca en este corte: su `source_commit` está
+  fijado a propósito a un baseline (`73235889`) y `test_profiles.py` lo
+  comprueba. Regenerarlo con el SHA de este commit rompe el contrato — un
+  `source_commit` obsoleto no es drift cuando alguien lo {_pin} deliberadamente.
+
+### Desconocido
+
+- La ruta de empaquetado de `aarch64-unknown-linux-gnu` no se ha ejecutado
+  nunca: la lane murió en `x86_64` antes de llegar a ella.
+
+## [v0.101.3] — 2026-10-03
+
+Ventana `v0.101.2..69186a1c`: **5 commits** — 2 `fix`, 2 `docs`, 1 `test`, y 0
+marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.2..69186a1c                      # 5
+git log --format='%s' v0.101.2..69186a1c | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 2 fix, 2 docs, 1 test
+git log --format='%s%n%b' v0.101.2..69186a1c \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.3 y por qué v0.101.2 tampoco se publica.** El
+preflight de `v0.101.2` **certificó** —5934 passed, 0 failed, ratchet dentro de
+tolerancia, recibo `"result": "PASS"`— y la lane reportado fallo igualmente:
+
+```
+→ PREFLIGHT PASS
+mavis-trash: refusing to trash protected path '.../cognicode-preflight-O2ZYbs'
+mavis-trash: '...' is the parent of the current working directory
+Pipeline finished with FAILURE: shell exited with code 64
+```
+
+Todo el trabajo de certificar se había hecho bien. La lane falló por no haber
+borrado una carpeta temporal.
+
+### Corregido
+
+- `scripts/ci/preflight-cleanup.sh` (nuevo), cargado por
+  `preflight-clean-clone.sh`. El trap de salida borraba el directorio temporal
+  **desde dentro de sí mismo** —el script hace `cd "$WORK_DIR/clone"` en el
+  stage 5—, y en un entorno donde el borrado va envuelto en una comprobación de
+  seguridad esa comprobación se niega y devuelve 64. El estado del trap sustituye
+  al del script, y un PASS se convertía en exit 64. Ahora la limpieza sale del
+  directorio antes de borrar y, sobre todo, **no puede cambiar el veredicto**: un
+  PASS sigue siendo PASS aunque la limpieza falle, y un fallo real sigue siendo un
+  fallo.
+- `scripts/ci/test_preflight_cleanup.py` (nuevo). Reproduce la negativa con un
+  borrador de mentira que rechaza un directorio ancestro del cwd, que es
+  exactamente la regla que falló. Vive aparte porque el preflight entero cuesta
+  veinte minutos y 4G, y esta propiedad se observa en milisegundos. Suite de
+  contratos: 141 → 147.
+
+### Medido, y no arreglado aquí
+
+`a1f961f6` —de los 11 brazos `CliCommand`, solo `Analyze`, `Graph` y
+`FindUsages` propagan el error— sigue abierto y lo está trabajando otro actor en
+paralelo. Se deja constancia aquí porque es visible en este mismo corte.
+
+## [v0.101.2] — 2026-10-03
+
+Ventana `v0.101.1..089be899`: **1 commit** — 1 `fix`, y 0 marcadores
+`BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.1..089be899                      # 1
+git log --format='%s' v0.101.1..089be899 | sed -E \
+  's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn # 1 fix
+git log --format='%s%n%b' v0.101.1..089be899 \
+  | grep -cE '^BREAKING[ -]CHANGE'                            # 0
+```
+
+**Por qué existe v0.101.2 y por qué v0.101.1 tampoco se publica.** v0.101.1
+está tagueado y empujado, y su candidato se paró durante el preflight, ya en la
+compilación de release. La razón no fue un fallo de infraestructura: fue una
+auditoría del propio contenido que la release empaqueta.
+
+`release-candidate.pipeline.kts` empaqueta cada skill publicada en
+`staging/<id>-<version>.tar.gz`, y la release publica **exactamente** el
+candidato, sin recompilar. Es decir: un candidato cortado antes de corregir una
+skill publica esa skill rota de forma permanente, y corregirla después obliga a
+otro corte. La tabla `SKILL_BUNDLES` de `release_contract.rs` declara
+publicadas solo `cognicode` y `cognicode-mcp`; las tres invocaciones rotas
+estaban en el camino de publicación, dos de ellas en `cognicode-pr-review`, que
+no se empaqueta pero que si se distribuye con el repositorio.
+
+### Corregido
+
+- `skills/cognicode-pr-review/SKILL.md` enseñaba `cognicode navigate references
+  <symbol>` dos veces, siendo el paso central de la skill. La firma real es
+  `NavigateCommand::References { position: String }` y `position` es
+  `file:line:column`. El símbolo se enlaza a `position`, `parse_position()`
+  falla, y el brazo `Navigate` imprime el error en stderr **sin** hacer
+  `return Err`: el proceso sale con 0 y el agente cree que consultó las
+  referencias. La corrección no es mecánica: la intención declarada de la skill
+  es "find all usages of a symbol", que es exactamente lo que hace
+  `cognicode find-usages <symbol>`, que además propaga su error. `navigate
+  references` queda documentado con su firma real.
+- `skills/cognicode/SKILL.md` pasaba `MySymbol` a `cognicode index symbol-code`,
+  cuya firma es `SymbolCode { file: String, line: u32, column: u32 }`: tres
+  positionals requeridos, uno dado, y clap sale con 2.
+
+### Añadido
+
+- `scripts/ci/test_skill_cli_invocations.py`: contrasta cada invocación de CLI
+  de un bloque ```` ```bash ```` de las skills contra las firmas clap reales
+  leídas de `commands.rs` en cada ejecución. No es una lista mantenida a mano,
+  que es justamente lo que faltó: `validate_skills.py` ya contrastaba nombres de
+  tool MCP contra el catálogo, y no podía ver esto porque nunca mira invocaciones
+  de CLI ni aridad de argumentos. Se descubre por el glob de
+  `run-all-contracts.sh`, así que el propio preflight del candidato lo ejecuta.
+  Suite de contratos: 119 → 133.
+
+### Medido, y no arreglado aquí
+
+De los 11 brazos `CliCommand`, solo `Analyze`, `Graph` y `FindUsages` propagan
+el error con `return Err`. `Refactor`, `Index`, `Navigate`, `Doctor`,
+`DocsIngest`, `IssuesIngest`, `Evidence` y `Capabilities` imprimen el fallo y
+continúan, con lo que salen con 0. Es un defecto real y distinto del corregido
+aquí, que es el contenido publicado; queda registrado como
+`a1f961f6-dcec-45a4-8689-9900b0319f91` y no se mezcla aquí.
+
+## [v0.101.1] — 2026-10-03
+
+Ventana `v0.101.0..14b7fea3`: **6 commits** — 3 `fix`, 3 `docs`, y 0
+marcadores `BREAKING CHANGE`. Medido con:
+
+```
+git rev-list --count v0.101.0..14b7fea3
+git log --format='%s' v0.101.0..14b7fea3 \
+  | sed -E 's/^([a-z]+)(\(.*\))?!?:.*/\1/' | sort | uniq -c | sort -rn
+git log --format='%s%n%b' v0.101.0..14b7fea3 | grep -cE '^BREAKING[ -]CHANGE'   # 0
+```
+
+**Por qué existe v0.101.1 y no se publica v0.101.0.** v0.101.0 está
+tagueado pero nunca publicado, y su candidato **no podía certificarse**: los dos
+defectos que esta versión arregla están en el propio camino de release, así que
+el árbol del tag no los contiene. Publicar v0.101.0 exigiría una de dos cosas
+que este repositorio no hace por su cuenta: saltarse el preflight, o re-baselinar
+con un override que el propio script marca como explícito del operador. Ninguna
+de las dos es automática. El tag tampoco se puede mover: la lane de publicación
+crea el release sin `--target` **justamente** para no mover una release a donde
+el nombre resuelva ahora.
+
+Ninguno de los dos defectos toca el producto: no hay cambios en `cogh`,
+`cognicode` ni `cognicode-mcp`, ni en la superficie de tools, ni en los
+contratos publicados. Es un PATCH por la regla mecánica del repositorio.
+
+### Fixed
+
+- **El invariante que cerró el cutover de CI leía el disco, no el índice.**
+  `test_no_actions_workflows.py` reportaba dos `action.yml` dentro de
+  `sandbox/repos/`, que está gitignored y contiene checkouts de terceros que
+  GitHub nunca parseó. El escaneo excluía directorios por nombre y `sandbox` no
+  estaba en la lista. La consecuencia era peor que un gate rojo: **verde en CI y
+  rojo en cualquier máquina que hubiera corrido una lane de sandbox**, porque
+  esos checkouts no existen en un runner. Ahora resuelve el índice con
+  `git ls-files` —que es lo que responde a "qué publica este repositorio"— y
+  un índice ilegible es un `None` explícito, no una lista vacía. Seis tests, y el
+  primero encontró un defecto en el segundo: la comprobación de autocableado
+  honraba una *mención* del runner en lugar de una *ejecución*, y quedaba verde
+  con la suite apagada.
+
+- **Una release no se podía certificar desde un tag.**
+  `preflight-clean-clone.sh` pasaba `--branch HEAD` a `git clone` en un checkout
+  detached, porque `git rev-parse --abbrev-ref HEAD` imprime la cadena literal
+  `HEAD` y sale con código **0**: el `|| echo main` de respaldo nunca se
+  disparaba. La lane moría en 0.3 s con `Remote HEAD branch not encontrada`, y un
+  tag es exactamente cómo se corta una release. Ahora se omite `--branch` cuando
+  no hay rama que nombrar —el commit certificado lo fijan `git fetch` y
+  `git checkout $TARGET_SHA`, no el nombre de la rama— con la regla en una
+  función compartida y un contrato de 5 tests.
+
+- **El preflight rechazaba el release por tener 355 tests más pasando.**
+  `passed=5934 failed=0` contra un baseline de `passed=5579`. La condición era
+  `if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]`, y `${PASSED_DIFF#-}` quita el
+  signo: comparaba el **valor absoluto**, así que +355 se reportaba como
+  `regresión de tests passed`. El guard y su propio mensaje se contradecían. Se
+  conserva la lectura que el mensaje describe —una regresión es que los tests
+  **bajen**— y el `failed > 0` ya cubría el otro caso. Contrato de 7 tests con el
+  caso medido.
+
+### Added
+
+- `docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` — la vía de provenance sin
+  Actions, **medida**: cosign 3.1.3 firma y verifica un bundle SLSA v1 offline y
+  el digest del subject coincide con el `sha256sum` del artefacto. Queda
+  `proposed` porque lo que falta no es técnico: es dónde vive la clave privada.
+
+### Not fixed, deliberately
+
+- **La provenance de esta release no existe.** `actions/attest-build-provenance`
+  murió con Actions y no hay sustituto instalado; el gate es opt-in
+  (`RELEASE_REQUIRE_PROVENANCE=0`) y solo avisa. Medido además: `gh attestation`
+  no tiene verbo de generación, y el keyless de SLSA es un *consumidor* de un
+  token OIDC cuyo emisor era Actions — retirarlo quitó lo único del pipeline que
+  podía producir una identidad verificable. Es el hueco de R2, documentado, no
+  cerrado. Esta release se publica **sin attestation**, y el ADR dice por qué.
+- **El baseline del preflight sigue obsoleto** (`5579` contra `5934` reales).
+  Corregir el signo del ratchet no arregla eso, y con un baseline por debajo de
+  la realidad el ratchet queda débil: una caída grande de la suite real seguiría
+  dentro de tolerancia mientras el total no baje del baseline. Re-baselinar es
+  `PREFLIGHT_BASELINE_*`, decisión explícita del operador, y aquí no se toma.
+- **`v0.99.2` y `v0.100.0` quedan tagueados y sin publicar.** `v0.100.0` es
+  irrecuperable por la vía del lane: en su commit (`edd023b3`, #316) solo existen
+  `merge-gate` y `product-fast`, porque las lanes de release nacieron después
+  (#338, #340). Publicar con las lanes de hoy sobre un árbol que nunca las
+  contuvo produciría artefactos cuyo commit no incluye la herramienta que los
+  construyó, que es la provenance falsa que R2 existe para impedir.
+
+### Closed
+
+- **R0 — cutover de CI.** Verificado sobre `main`: 0 workflows de Actions, 6/6
+  lanes `pipelinek validate`, `check-release-matrix.sh` OK, layout del candidato
+  PASS, y los 14 contratos re-anclados con cero lecturas vivas de workflow. El
+  invariante que lo cierra es el primer "fixed" de esta entrada. Detalle en
+  `docs/roadmap/JOURNAL.md` N+79.
+
 ## [v0.101.0] — 2026-10-03
 
 Ventana `v0.100.0..44d0316a`: **34 commits** — 11 `docs`, 8 `fix`, 6 `test`,

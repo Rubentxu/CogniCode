@@ -37,14 +37,24 @@ import java.io.File
 // -------------------------------------
 // `actions/attest-build-provenance` generates SLSA build provenance. It is an
 // action, and PipelineK has no action runtime, so there is nothing to port it
-// to. `gh attestation verify` — the consumer-facing half, which is what proves
-// the published bytes are the attested ones — is kept, because `gh` is a tool
-// this lane can call.
+// to. The consumer-facing half — the part that proves the published bytes are
+// the attested ones — is kept, because `gh` is a tool this lane can call.
 //
-// The generation half is an open item, not a silent drop: `provenance` below
-// fails closed when `RELEASE_REQUIRE_PROVENANCE=1` and no attestation exists,
-// and says what is missing. Until a replacement is chosen, publishing runs
-// without generated provenance and the lane does not pretend otherwise.
+// The generation half is an open item, not a silent drop. `scripts/ci/
+// verify-provenance.sh` holds the whole policy, and it is the only thing that
+// reads `RELEASE_REQUIRE_PROVENANCE`: the artifacts are still checked on every
+// run and the result is printed, but only an enforced run treats a missing
+// attestation as fatal. Until a replacement generator is chosen, publishing
+// runs without generated provenance and the lane says so out loud rather than
+// implying otherwise.
+//
+// MEDIDO 2026-10-03. This used to be two stages. `attestations` checked the
+// artifacts unconditionally and `provenance-required` implemented the switch
+// above, so the header described the second and the code did the first. With
+// nothing in this repository able to generate an attestation, the check
+// returned non-zero for every candidate and the lane died before `publish`:
+// not a release without provenance, an unreachable release. `scripts/ci/
+// test_provenance_gate.py` now holds that state red.
 //
 // `gh` is not an orchestrator mechanism. GitHub Releases is where the product
 // goes; PipelineK is what decides to call it.
@@ -229,39 +239,16 @@ pipeline {
         }
 
         // ----------------------------------------------------------- provenance
+        // One stage, one implementation. See `scripts/ci/verify-provenance.sh`
+        // and the header: the policy — enforced only when
+        // `RELEASE_REQUIRE_PROVENANCE=1` — lives in that script, and this
+        // stage only names the artifacts it must judge.
         stage("provenance") {
             stage("attestations") {
                 sh("""
                     $cd || exit 1
-                    for f in release/*.tar.gz; do
-                        gh attestation verify "${'$'}f" --repo "${'$'}GITHUB_REPOSITORY"
-                    done
-                    gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY"
-                """.trimIndent())
-            }
-
-            stage("provenance-required") {
-                sh("""
-                    $cd || exit 1
-                    # See the header: `actions/attest-build-provenance` is the one
-                    # capability in this lane with no PipelineK equivalent. The
-                    # operator decides whether its absence blocks a release, and
-                    # this stage says which way they decided rather than letting
-                    # the answer be implied by silence.
-                    if [ "${'$'}{RELEASE_REQUIRE_PROVENANCE:-0}" != "1" ]; then
-                        echo "provenance generation is NOT enforced for this run."
-                        echo "  actions/attest-build-provenance has no PipelineK equivalent yet."
-                        echo "  Set RELEASE_REQUIRE_PROVENANCE=1 to make its absence a failure."
-                        exit 0
-                    fi
-                    if ! gh attestation verify release/SHA256SUMS --repo "${'$'}GITHUB_REPOSITORY" >/dev/null 2>&1; then
-                        echo "RELEASE_REQUIRE_PROVENANCE=1 but the candidate carries no attestation."
-                        echo "  Nothing in this lane can generate one: the generator was a GitHub"
-                        echo "  Action and PipelineK has no action runtime. Choose a replacement"
-                        echo "  before enforcing this."
-                        exit 1
-                    fi
-                    echo "provenance present and verified"
+                    scripts/ci/verify-provenance.sh "${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}" \
+                        release/*.tar.gz release/SHA256SUMS
                 """.trimIndent())
             }
         }
@@ -272,8 +259,19 @@ pipeline {
             // upload, so a payload that changed in transit fails here rather
             // than at a consumer's install.
             stage("re-verify-after-upload") {
-                sh("""
-                    $cd || exit 1
+                // MEDIDO 2026-10-03. Esta stage usaba `$TARGET_DIR` sin el
+                // preambulo `releasePaths` que lo define, y como cada `sh` corre
+                // en su propio proceso (sonda de dos stages, pipelinek 0.46.0:
+                // la variable del stage 1 llega vacia al stage 2, el env del
+                // launcher si cruza) la ruta quedaba en "" y la lane ejecutaba
+                //
+                //     /release/cognicode-release verify ...
+                //
+                // que no existe. Y estaba aqui, DESPUES de `create-draft` y de
+                // `upload-payloads`: la lane dejaba un draft con todos los
+                // assets subidos y a partir de ahi no podia seguir. Las otras
+                // tres stages que nombran la variable si lo llevaban.
+                sh(releasePaths + "\n" + """
                     "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
@@ -282,6 +280,44 @@ pipeline {
                 sh("""
                     $cd || exit 1
                     gh release edit "${'$'}RELEASE_TAG" --draft=false
+                """.trimIndent())
+            }
+
+            // MEDIDO 2026-10-03. Ningun stage de esta lane miraba `latest`, y
+            // ese puntero es lo que resuelve `install.sh`:
+            //
+            //     curl -fsSL "$api/releases/latest" | sed -n 's/.*"tag_name"...'
+            //
+            // GitHub excluye drafts y prereleases de `/releases/latest`. Publicar
+            // la release no garantiza por si solo que ese puntero se mueva: si
+            // no se mueve, quedan los tres artefactos en su sitio —tag, release y
+            // manifest dicen 0.101.2— y todo usuario sin pin sigue recibiendo la
+            // release anterior. Es exactamente la incoherencia que R1 viene a
+            // cerrar, y medida en la auditoria inicial: el tag era v0.100.0 y
+            // `latest` servia v0.98.1.
+            //
+            // Se consulta el MISMO endpoint que install.sh, no `gh release view`,
+            // porque `gh` puede razonar sobre un notion distinta de "latest" y
+            // un gate que mide lo que el gate cree medir es peor que no medir.
+            stage("verify-latest-resolution") {
+                sh("""
+                    $cd || exit 1
+                    api="https://api.github.com/repos/${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}"
+                    resolved=$(curl -fsSL "${'$'}api/releases/latest" \
+                        | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                        | head -n1)
+                    if [ -z "${'$'}resolved" ]; then
+                        echo "FAIL: /releases/latest no devolvio ningun tag; install.sh no podria instalar"
+                        exit 1
+                    fi
+                    if [ "${'$'}resolved" != "${'$'}RELEASE_TAG" ]; then
+                        echo "FAIL: la release publicada es ${'$'}RELEASE_TAG pero /releases/latest resuelve ${'$'}resolved"
+                        echo "      install.sh serviria ${'$'}resolved a quien no fije version: la release"
+                        echo "      existe y es invisible. Marcar ${'$'}RELEASE_TAG como prerelease, o"
+                        echo "      revisar si hay una release mas reciente, lo devuelve a la cola."
+                        exit 1
+                    fi
+                    echo "latest resuelto a ${'$'}resolved, el mismo tag recien publicado"
                 """.trimIndent())
             }
 

@@ -22,7 +22,7 @@ members = [
 exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
-version = "0.101.0"
+version = "0.101.9"
 edition = "2024"
 authors = ["CogniCode Team"]
 # ADR-011 (CP1.1): license of record, formalising the deferral M0.9 left open.
@@ -30,6 +30,12 @@ authors = ["CogniCode Team"]
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+# Benchmarks. MEDIDO 2026-10-04: `criterion = "0.5"` vivia solo en
+# cognicode-core, y el segundo bench del workspace (ExplorerQL) no podia
+# declararlo sin duplicar la version. Dos copias de una version de
+# dependencia es una segunda fuente de verdad sobre la toolchain de
+# medicion, y la que se desincroniza sin que nada falle.
+criterion = "0.5"
 # Internal
 cognicode-core = { path = "crates/cognicode-core" }
 cognicode-graph-algos = { path = "crates/cognicode-graph-algos" }

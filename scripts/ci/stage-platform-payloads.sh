@@ -19,10 +19,33 @@
 #
 # This script is the explicit bridge between those two contracts:
 #
-# 1. It refuses to start unless the only files present in the staging
-#    tree are the `payloads-*` lane dirs (no stray READMEs, no
-#    pre-existing flattened payloads that would silently overwrite
-#    fresh ones, no orphan SBOMs at the root).
+# 1. It refuses to start unless the staging root holds only the
+#    `payloads-*` lane directories and the portable skill bundle
+#    tarballs (`*-*.tar.gz`) that the `skill-bundles` stage produced
+#    in THIS run. Anything else at the root is refused: stray
+#    READMEs/Markdown, accidental top-level uploads, a previous
+#    flattened run that left orphan tarballs, or orphan SBOMs. The
+#    downstream release factory would silently include such files in
+#    the SHA256SUMS and break reproducibility.
+#
+#    Who owns the root, and why the guard is still here. Before
+#    2026-10-03 the root accumulated: a previous run's flattened
+#    payloads, its SBOMs, and its skill bundles all sat there, and this
+#    guard was the only thing that noticed. `skill-bundles` now clears
+#    the loose files at the root before it writes its own bundles, and
+#    `package-$target` creates its lane directory from scratch, so the
+#    root is clean by construction. The guard therefore no longer
+#    carries a property on its own — it is the second line, and it is
+#    kept because the cost of a false negative here is a release built
+#    from another run's bytes.
+#
+#    The `*-*.tar.gz` passthrough exists because the skill bundles ARE
+#    legitimate root content, not an exception: the flatten script
+#    cannot tell a bundle from a payload by name, which is why this is
+#    a count and not a presence test. MEDIDO 2026-10-03 (N+86): a
+#    payload of a previous release and a portable skill bundle have
+#    the same shape, so the two are only distinguishable by the count
+#    the whole staging tree must add up to.
 # 2. It scans each `payloads-<platform>/` dir for the canonical 3
 #    component tarballs (cogh, cognicode, cognicode-mcp) plus the 3
 #    matching CycloneDX SBOMs (crates/<component>-<platform>.cdx.json).
@@ -68,11 +91,13 @@ TIER1_TRIPLES=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
 COMPONENTS=(cogh cognicode cognicode-mcp)
 
 # Reject any file at the staging root other than the lane dirs and
-# pre-staged portable skill bundle tarballs. This catches: stray
-# READMEs/Markdown, accidental top-level uploads, or a previous
-# flattened run that left orphan tarballs at the root. The downstream
-# release factory would silently include such files in the SHA256SUMS
-# and break reproducibility.
+# the portable skill bundle tarballs this run produced. `skill-bundles`
+# clears the root's loose files before writing its bundles, so nothing
+# from a previous run should reach here; this guard is the second
+# line, and what it still catches is a stray README/Markdown, an
+# accidental top-level upload, or a root the owner did not clean. The
+# downstream release factory would silently include such files in the
+# SHA256SUMS and break reproducibility.
 shopt -s nullglob
 for entry in "${STAGING}"/*; do
   if [[ -f "${entry}" ]]; then
@@ -202,13 +227,46 @@ for lane in "${LANES[@]}"; do
   # error. The `[0-9]` anchor prevents the over-match by demanding
   # the version token (digits) immediately after the component stem.
   for comp in "${COMPONENTS[@]}"; do
-    found_payload="$(find "${dist_dir}" -mindepth 1 -maxdepth 1 \
-      -name "${comp}-[0-9]*-${platform}.tar.gz" -print -quit || true)"
-    if [[ -z "${found_payload}" ]]; then
+    # Every payload that could serve this component on this platform, not just
+    # the first one. The find pattern requires a digit right after `${comp}-`
+    # for the same reason it always has: semver versions start with a digit, and
+    # without the anchor the glob is greedy in the wrong direction —
+    # `cognicode-*-<platform>` ALSO matches `cognicode-mcp-<version>-<platform>`,
+    # because `cognicode-mcp` starts with the `cognicode` prefix.
+    #
+    # What changed is `-print -quit` becoming "all of them, then decide". Taking
+    # the first match is a silent choice between two releases, and the loser of
+    # that choice is a release nobody chose. MEDIDO 2026-10-03, lane v0.101.5:
+    # a long-lived worktree left 0.101.4's payloads in the lane directory, and
+    # replaying the old `-print -quit` line against it resolved `cognicode` to
+    # `cognicode-0.101.4-x86_64-unknown-linux-gnu.tar.gz` — the defensive regex
+    # below approved it, because that regex never mentions a version either, and
+    # `copy_unique` stayed silent because 0.101.4 and 0.101.5 are different
+    # filenames, not duplicates. Only an earlier stage comparing a count
+    # happened to stop the release, and that is an accident of stage order, not
+    # a property of this script.
+    mapfile -t candidates < <(
+      find "${dist_dir}" -mindepth 1 -maxdepth 1 \
+        -name "${comp}-[0-9]*-${platform}.tar.gz" | sort
+    )
+    if (( ${#candidates[@]} == 0 )); then
       echo "::error::lane ${lane_name} (platform ${platform}) missing payload for component ${comp}" >&2
       echo "       expected: ${dist_dir}/${comp}-[0-9]*-${platform}.tar.gz" >&2
+      echo "       dist/ holds: $(ls -1 "${dist_dir}" 2>/dev/null | tr '\n' ' ')" >&2
       exit 1
     fi
+    if (( ${#candidates[@]} > 1 )); then
+      echo "::error::lane ${lane_name} (platform ${platform}) has ${#candidates[@]} candidate payloads for component ${comp}" >&2
+      echo "       Choosing one of them by directory order is how a release ships" >&2
+      echo "       the previous version's binaries under this version's name, so" >&2
+      echo "       the ambiguity is refused rather than resolved:" >&2
+      printf '         %s\n' "${candidates[@]}" >&2
+      echo "       A lane directory holds exactly one payload per component. The" >&2
+      echo "       staging tree is rebuilt per candidate; a leftover here is the" >&2
+      echo "       defect this is reporting, not something to pick around." >&2
+      exit 1
+    fi
+    found_payload="${candidates[0]}"
     payload_basename="$(basename "${found_payload}")"
     # Defensive: the tarball's embedded triple must agree with the
     # resolved lane platform, AND the component stem must be the
@@ -255,8 +313,21 @@ for platform in "${TIER1_TRIPLES[@]}"; do
     # satisfying the pattern). Anchoring on `[0-9]` after the component
     # stem prevents the over-match, so this check stays a true
     # second line of defense.
-    if ! compgen -G "${STAGING}/${comp}-[0-9]*-${platform}.tar.gz" > /dev/null; then
-      echo "::error::after flatten, missing ${comp}-[0-9]*-${platform}.tar.gz at staging root" >&2
+    # A count and not a presence test, for the same reason the lane directory
+    # is: a component tarball sitting at the staging root is indistinguishable
+    # from a skill bundle, because the root accepts every `*-*.tar.gz` and a
+    # bundle is `{id}-{version}.tar.gz` while a payload is
+    # `{comp}-{version}-{token}.tar.gz`. Both match. So a leftover payload from
+    # another candidate can reach the root, sit beside the right one, and
+    # satisfy a presence test while the release carries two versions of the
+    # same binary. Exactly one, or the root is not describing one candidate.
+    mapfile -t root_candidates < <(
+      compgen -G "${STAGING}/${comp}-[0-9]*-${platform}.tar.gz" || true
+    )
+    if (( ${#root_candidates[@]} != 1 )); then
+      echo "::error::after flatten, the staging root holds ${#root_candidates[@]} files matching ${comp}-[0-9]*-${platform}.tar.gz; expected exactly 1" >&2
+      printf '         %s\n' "${root_candidates[@]:-}" >&2
+      echo "       More than one means two versions of the same component are staged." >&2
       exit 1
     fi
   done

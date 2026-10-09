@@ -81,8 +81,12 @@ For each changed symbol, find where it is used.
 Use CogniCode's navigation tools:
 
 ```bash
-# find all usages of a symbol
-cognicode navigate references <symbol>
+# find all usages of a symbol (takes a name, and fails loudly if it cannot)
+cognicode find-usages <symbol>
+
+# find usages of whatever is at a position: navigate references takes
+# file:line:column, not a symbol name
+cognicode navigate references <file:line:column>
 
 # trace call hierarchy
 cognicode graph hierarchy <symbol>
@@ -163,7 +167,7 @@ Locate and examine tests that cover the changed symbols:
 
 ```bash
 # find test files that reference a changed symbol
-cognicode navigate references <symbol>  # look for test/ or _test files
+cognicode find-usages <symbol>  # look for test/ or _test files
 ```
 
 Read the actual test content to verify:

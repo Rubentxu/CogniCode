@@ -1,0 +1,904 @@
+//! PRF-CLI-01 (extensión): todo brazo de `CommandExecutor::execute` que
+//! recibe un `Err` debe propagarlo, no imprimirlo y continuar.
+//!
+//! ## El defecto que este contrato mide
+//!
+//! `CommandExecutor::execute` despacha sobre `CliCommand`. Tres brazos
+//! propagan el error con `return Err(e)` — `Analyze`, `Graph`,
+//! `FindUsages` — y ocho lo tragan: imprimen con `eprintln!` y dejan que
+//! `execute` termine en `Ok(())`. El proceso sale con **0**, así que un
+//! script o un agente lee "terminó bien" de una operación que no se
+//! hizo. El caso más caro no es imaginario: `cognicode navigate
+//! references <symbol>` imprimía
+//!
+//!     Navigate command failed: Invalid position 'MySymbol': expected file:line:column
+//!
+//! y salía con 0. Un agente que seguía la skill `cognicode-pr-review`
+//! creía haber consultado las referencias del símbolo y no había
+//! consultado ninguna.
+//!
+//! `FindUsages` documenta la política en su propio comentario ("exit 0:
+//! éxito; exit 2 (via Err): uso inválido o error de backend"). Este
+//! contrato la convierte de prosa en aserción para el resto de la
+//! superficie.
+//!
+//! ## Por qué el argv es lo que es
+//!
+//! `prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` pasa
+//! `--path /nonexistent/...`, y `graph full` no tiene `--path`: su
+//! firma real es `graph full [PATH]`. Clap rechaza el flag con exit 2
+//! y el test pasa **sin ejecutar el brazo**. Su comentario dice "already
+//! the case; pins the contract", y lo que realmente mide es que clap
+//! conoce la aridad. Aquí se usa el positional, que sí llega al brazo.
+//! ## Los dos sentidos
+//!
+//! Un contrato que solo afirma "esto sale distinto de 0" pasa entero si
+//! el arreglo convierte *todo* en error, incluido el éxito. Por eso cada
+//! caso de error tiene su gemelo de éxito: el mismo comando con
+//! entrada válida, que debe seguir saliendo con 0. Si un arreglo rompe
+//! el caso feliz, cae esta suite, no la próxima.
+
+use std::path::PathBuf;
+use std::process::{Command, Output};
+
+mod common;
+
+fn cognicode_bin() -> PathBuf {
+    common::binary_path("cognicode")
+}
+
+fn run(args: &[&str]) -> Output {
+    Command::new(cognicode_bin())
+        .args(args)
+        .output()
+        .expect("spawn cognicode binary")
+}
+
+fn exit_code(out: &Output) -> i32 {
+    out.status.code().unwrap_or(-1)
+}
+
+fn stderr_of(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).to_string()
+}
+
+/// Un directorio inexistente, con una ruta que ningún sandbox puede tener.
+const MISSING: &str = "/nonexistent/prf_cli_01_exit_propagation/missing";
+
+// ---------------------------------------------------------------------------
+// 1. Navigate: el caso que la skill `cognicode-pr-review` enseñaba mal.
+// ---------------------------------------------------------------------------
+
+/// `navigate` recibe un `position` que no es `file:line:column`.
+/// `parse_position` falla, el error se imprime y el proceso sale con 0.
+#[test]
+fn navigate_references_propagates_invalid_position() {
+    let out = run(&["navigate", "references", "MySymbol"]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`navigate references <symbol>` debe salir distinto de 0: la posición \
+         es inválida y la consulta NO se hizo. Salir con 0 hace creer al \
+         agente que consultó las referencias. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+/// El mismo defecto por el brazo `Definition`, que comparte `parse_position`.
+#[test]
+fn navigate_definition_propagates_invalid_position() {
+    let out = run(&["navigate", "definition", "MySymbol"]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`navigate definition <symbol>` debe salir distinto de 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+/// `Hover` es el tercer brazo de `Navigate` y el mismo `parse_position`.
+#[test]
+fn navigate_hover_propagates_invalid_position() {
+    let out = run(&["navigate", "hover", "MySymbol"]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`navigate hover <symbol>` debe salir distinto de 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 2. Index: `build_index` sobre un directorio inexistente.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn index_build_propagates_missing_directory() {
+    let out = run(&["index", "build", MISSING]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`index build <inexistente>` debe salir distinto de 0: el índice no \
+         se construyó. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+#[test]
+fn index_query_propagates_missing_directory() {
+    let out = run(&["index", "query", "ZzzNope", MISSING]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`index query <símbolo> <inexistente>` debe salir distinto de 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 3. Graph: el caso que el UAT existente no llegaba a ejecutar.
+// ---------------------------------------------------------------------------
+
+/// `graph full` con la ruta como **positional**, que es la firma real.
+/// Un grafo sobre un directorio inexistente no es un grafo: sale con 0 y
+/// un `Warning: PARTIAL` que ningún script lee.
+#[test]
+fn graph_full_propagates_missing_directory() {
+    let out = run(&["graph", "full", MISSING]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`graph full <inexistente>` debe salir distinto de 0. Un `PARTIAL` \
+         que se emite con exit 0 es indistinguible del éxito para un \
+         pipeline. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+/// `graph mermaid` sobre la misma ruta: mismo PARTIAL, mismo brazo.
+#[test]
+fn graph_mermaid_propagates_missing_directory() {
+    let out = run(&["graph", "mermaid", MISSING]);
+    assert_ne!(
+        exit_code(&out),
+        0,
+        "`graph mermaid <inexistente>` debe salir distinto de 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 4. El gemelo de éxito: la mitad que impide "arreglar" exiting con 0.
+//
+// ---------------------------------------------------------------------------
+
+/// `analyze` sobre un directorio válido y vacío es una operación
+/// realizada: debe seguir saliendo con 0. Si un arreglo de propagación
+/// lo rompe, esta aserción cae.
+#[test]
+fn analyze_valid_empty_dir_still_exits_zero() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = run(&["analyze", tmp.path().to_str().unwrap()]);
+    assert_eq!(
+        exit_code(&out),
+        0,
+        "`analyze <dir válido>` debe salir con 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+/// El caso feliz del mismo brazo que los tests de error atacan: una
+/// posición bien formada llega al backend y sale con 0 aunque no
+/// encuentre nada. "Sin resultados" es un resultado, no un error.
+///
+/// La firma real es `navigate definition <POSITION> [PATH]`: el workspace
+/// es un **positional**, no `--path`. Usar `--path` haría que clap
+/// rechazara el comando con exit 2 y el test pasaría sin ejecutar el brazo
+/// — que es exactamente el defecto que este fichero documenta arriba
+/// encuentra en `prf_cli_01_uat`.
+#[test]
+fn navigate_with_wellformed_position_does_not_fail_on_missing_definition() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join("lib.rs");
+    std::fs::write(&file, "pub fn alpha() -> u32 { 1 }\n").expect("write fixture");
+
+    // `lib.rs:1:8` es una posición bien formada: el parseo pasa y el
+    // fallo, si lo hay, viene del backend LSP, no de la invocación.
+    let position = format!("{}:1:8", file.display());
+    let out = Command::new(cognicode_bin())
+        .args([
+            "navigate",
+            "definition",
+            &position,
+            tmp.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("spawn cognicode binary");
+
+    let err = stderr_of(&out);
+    assert!(
+        !err.contains("Invalid position"),
+        "una posición bien formada no debe fallar en `parse_position`: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 5. La auditoría, como contrato y no como prosa.
+//
+// N+82 midió los 8 brazos que tragan el `Err` y los arregló. La pregunta que
+// queda no es "los arreglé todos" sino "queda alguno igual", y una lista
+// escrita a mano responde a la primera pregunta solo hasta el día que alguien
+// añade un brazo nuevo. Estas aserciones releen el `match` de
+// `CommandExecutor::execute` y clasifican cada brazo, de modo que un brazo
+// nuevo sin `return Err` es un RED y no una línea más de la enumeración.
+// ---------------------------------------------------------------------------
+
+/// El cuerpo de `CommandExecutor::execute`, entre el `match &cli.command` y
+/// el `Ok(())` que lo cierra.
+fn dispatch_source() -> String {
+    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read commands.rs: {e}"));
+
+    let start = text
+        .find("match &cli.command {")
+        .expect("CommandExecutor::execute no hace match sobre &cli.command");
+    let tail = &text[start..];
+    let end = tail
+        .rfind("\n        Ok(())")
+        .expect("no se encuentra el Ok(()) final de execute");
+    tail[..end].to_string()
+}
+
+/// El nombre de cada brazo `Some(CliCommand::X ...)` del dispatch, en orden.
+fn dispatch_arm_names(source: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in source.lines() {
+        let Some(rest) = line.trim().strip_prefix("Some(CliCommand::") else {
+            continue;
+        };
+        let name: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        if !name.is_empty() {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// El índice de la línea de cabecera de un brazo, o `None` si no está.
+///
+/// Se aceptan las dos formas de un variant de clap: con campos
+/// (`Some(CliCommand::Index { command })`) y de tupla
+/// (`Some(CliCommand::Evidence(cmd))`). Buscar solo la primera deja fuera el
+/// brazo `Evidence` sin avisar, que es como un extractor se convierte en una
+/// lista que miente.
+fn arm_header_line(lines: &[&str], name: &str) -> Option<usize> {
+    lines.iter().position(|l| {
+        let Some(rest) = l.trim().strip_prefix("Some(CliCommand::") else {
+            return false;
+        };
+        let head: String = rest
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric())
+            .collect();
+        head == name
+    })
+}
+
+/// El cuerpo de un brazo: desde su línea de cabecera hasta la línea que cierra
+/// el brazo, por conteo de llaves.
+fn arm_body(source: &str, name: &str) -> String {
+    let lines: Vec<&str> = source.lines().collect();
+    let start = arm_header_line(&lines, name)
+        .unwrap_or_else(|| panic!("no se encuentra el brazo CliCommand::{name} en el dispatch"));
+
+    let mut depth = 0i32;
+    let mut started = false;
+    let mut out = String::new();
+    for line in &lines[start..] {
+        for c in line.chars() {
+            match c {
+                '{' => {
+                    depth += 1;
+                    started = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+        if started && depth == 0 {
+            return out;
+        }
+    }
+    panic!("el brazo CliCommand::{name} no cierra");
+}
+
+/// Brazos que se declaran exentos, cada uno con su motivo, porque el
+/// predicado "contiene `return Err`" no puede ser cierto para ellos.
+///
+/// Una exención sin motivo escrito es exactamente el hueco que este contrato
+/// cierra, así que la lista es corta a propósito: añadir una entrada es una
+/// decisión que hay que defender en la revisión.
+const EXEMPT: &[(&str, &str)] = &[(
+    "Serve",
+    "no puede fallar: imprime por stderr que el servidor MCP va aparte, y \
+     descarta el puerto con `let _ = port`",
+)];
+
+/// Brazos que el build por defecto no compila, porque viven detrás de un
+/// `#[cfg(feature = …)]` que `cognicode-cli` no declara.
+///
+/// No son exentos por merced: el `return Err` se les puso en N+82, y lo que
+/// no se puede comprobar desde el build por defecto es **su existencia**, que
+/// es justo lo que este contrato documenta. Se listan con su feature para que
+/// un día que la feature se declare, alguien sepa que hay dos brazos que
+/// aparecen de golpe y hay que revisarlos.
+const FEATURE_GATED: &[(&str, &str)] = &[
+    ("DocsIngest", "multimodal"),
+    ("IssuesIngest", "multimodal"),
+    ("Evidence", "evidence-cli-ladybug"),
+];
+
+#[test]
+fn every_dispatch_arm_is_accounted_for() {
+    let arms = dispatch_arm_names(&dispatch_source());
+
+    // La enumeración viene del código, no de una lista mantenida a mano: si
+    // mañana hay 13 brazos, este test ve 13. Los tres detrás de `#[cfg]` no
+    // aparecen en el build por defecto, así que se cuentan aparte.
+    let gated: Vec<&str> = FEATURE_GATED.iter().map(|(n, _)| *n).collect();
+    let compiled = arms.iter().filter(|a| !gated.contains(&a.as_str())).count();
+
+    assert_eq!(
+        compiled, 9,
+        "se esperaban 9 brazos CliCommand compilados en el build por defecto; \
+         se encontraron {arms:?}. Si has añadido uno, clasifícalo aquí o exímelo \
+         con un motivo."
+    );
+    assert!(
+        !arms.is_empty() && arms.iter().all(|n| !n.is_empty()),
+        "no se pudo extraer ningún nombre de brazo: el formato del match cambió"
+    );
+}
+
+/// Cada brazo `#[cfg]` que este contrato da por ausente tiene que estar
+/// detrás de un `#[cfg]` de verdad, y su `return Err` tiene que estar escrito.
+///
+/// Es la versión estática de lo que el build por defecto no puede ver: si
+/// alguien borrase el `return Err` de un brazo que solo compila con una
+/// feature, aquí se nota, porque se lee el fichero entero.
+#[test]
+fn feature_gated_arms_still_propagate_in_source() {
+    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let text = std::fs::read_to_string(&path).expect("read commands.rs");
+    let dispatch = dispatch_source();
+
+    for (name, feature) in FEATURE_GATED {
+        // El brazo existe en el fichero, aunque el build no lo compile.
+        let whole = arm_body_anywhere(&text, name)
+            .unwrap_or_else(|| panic!("CliCommand::{name} no aparece en commands.rs"));
+        assert!(
+            arm_propagates(&whole),
+            "CliCommand::{name} (feature {feature}) traga el error en el código fuente: \
+             aunque hoy no compile, sería el mismo fallo el día que la feature se declare."
+        );
+    }
+
+    // Y el dispatch los menciona, aunque el cfg los Quite del build.
+    for (name, _) in FEATURE_GATED {
+        assert!(
+            dispatch.contains(name),
+            "CliCommand::{name} figura en FEATURE_GATED pero ya no aparece en el \
+             dispatch: la lista describe un brazo que se movió o se eliminó."
+        );
+    }
+}
+
+/// Como `arm_body`, pero busca en el fichero entero en vez de en el tramo del
+/// dispatch, para poder leer brazos que un `#[cfg]` deja fuera del build.
+fn arm_body_anywhere(text: &str, name: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+    let start = arm_header_line(&lines, name)?;
+
+    let mut depth = 0i32;
+    let mut started = false;
+    let mut out = String::new();
+    for line in &lines[start..] {
+        for c in line.chars() {
+            match c {
+                '{' => {
+                    depth += 1;
+                    started = true;
+                }
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+        if started && depth == 0 {
+            return Some(out);
+        }
+    }
+    None
+}
+
+#[test]
+fn every_dispatch_arm_propagates_or_is_exempt_with_a_reason() {
+    let source = dispatch_source();
+    for name in dispatch_arm_names(&source) {
+        if EXEMPT.iter().any(|(n, _)| *n == name) {
+            continue;
+        }
+        let body = arm_body(&source, &name);
+        assert!(
+            arm_propagates(&body),
+            "el brazo CliCommand::{name} no propaga el error: captura el Err, lo \
+             imprime y continúa, así que el proceso sale con 0 de una operación que \
+             no se hizo. Escribe `Self::execute_{name}(..).await?`, o devuelve el \
+             error, o decláralo exento con un motivo real."
+        );
+    }
+}
+
+/// Si un brazo traga el error.
+///
+/// La forma buena es `?` (`Self::execute_index(command).await?`), que deja que
+/// `main` termine el proceso. La forma mala es `if let Err(e) = … { eprintln!(..) }`
+/// **sin** devolver: el error se imprime, se olvida, y `execute` acaba en
+/// `Ok(())`.
+///
+/// El predicado mira el `if let Err` y exige que su cuerpo mencione el error.
+/// No comprueba sintaxis concreta —`return Err(e)`, `Err(e)`, `e?`— porque la
+/// propiedad que importa es "el error capturado no se pierde", y enumerar las
+/// formas válidas sería una lista mantenida a mano.
+fn arm_propagates(body: &str) -> bool {
+    // Sin captura de error: o hay `?`, o no hay nada que propagar.
+    if !body.contains("if let Err") {
+        return true;
+    }
+    // Con captura: cada bloque `if let Err` tiene que reemitir el error.
+    for block in if_let_err_blocks(body) {
+        if !block.contains("Err") {
+            return false;
+        }
+    }
+    true
+}
+
+/// Los cuerpos de todos los `if let Err(...) = … { … }` de un fragmento.
+fn if_let_err_blocks(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let chars: Vec<char> = body.chars().collect();
+    let mut i = 0usize;
+    while let Some(pos) = body[i..].find("if let Err") {
+        let at = i + pos;
+        // Buscar la llave que abre el cuerpo del `if`.
+        let Some(open_rel) = body[at..].find('{') else {
+            break;
+        };
+        let open = at + open_rel;
+        let mut depth = 0i32;
+        let mut j = open;
+        while j < chars.len() {
+            match chars[j] {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        out.push(chars[open..=j].iter().collect());
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            j += 1;
+        }
+        if j >= chars.len() {
+            break;
+        }
+        i = j + 1;
+    }
+    out
+}
+
+/// El otro sentido de la auditoría: un brazo puede quedar exento por
+/// sorpresa. Si un brazo pasa a estar exento, tiene que estar en la lista.
+#[test]
+fn no_arm_is_exempt_that_does_not_exist() {
+    let arms = dispatch_arm_names(&dispatch_source());
+    for (name, _) in EXEMPT {
+        assert!(
+            arms.iter().any(|a| a == name),
+            "{name} está en EXEMPT pero no es un brazo del dispatch. Una exención \
+             de un brazo que ya no existe esconde el motivo de por qué se añadió."
+        );
+    }
+}
+
+/// El enum y el dispatch no pueden separarse: un `CliCommand` sin brazo
+/// aceptaría argumentos y no ejecutaría nada, saliendo con 0.
+///
+/// Es la misma clase de defecto que el resto de este fichero, un paso más
+/// arriba: no es que el brazo trague el error, es que **no hay brazo**.
+#[test]
+fn every_cli_command_variant_has_a_dispatch_arm() {
+    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let text = std::fs::read_to_string(&path).expect("read commands.rs");
+
+    let enum_start = text
+        .find("pub enum CliCommand {")
+        .expect("no se encuentra el enum CliCommand");
+    let enum_text = &text[enum_start..];
+
+    // El enum se recorta en **su** llave de cierre. Sin este corte, el
+    // recorrido sigue hasta el final del fichero y recoge las variantes de
+    // `EvidenceCommand` (`List`, `Search`), que no son subcomandos de
+    // `cognicode`: son subcomandos de `cognicode evidence`, y un día de
+    // estos dos se separan en ficheros distintos. Es el mismo error que
+    // cometió N+81 al medir por prosa lo que el código ya decidía.
+    let mut depth = 0i32;
+    let mut enum_end = enum_text.len();
+    for (i, line) in enum_text.lines().enumerate() {
+        for c in line.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        enum_end = enum_text
+                            .lines()
+                            .take(i + 1)
+                            .map(|l| l.len() + 1)
+                            .sum::<usize>();
+                    }
+                }
+                _ => {}
+            }
+        }
+        if depth == 0 && i > 0 {
+            break;
+        }
+    }
+    let enum_text = &enum_text[..enum_end];
+
+    // Un subcomando de clap es una variante del enum. Se identifican por su
+    // **nombre de variante a profundidad de llaves 1**, no por "la línea que
+    // sigue a un `#[arg]`": dentro de una variante, `#[arg(long)]` precede a
+    // cada *campo*, y caminar por atributos encuentra nombres de campo
+    // (`path`, `recursive`) que no son subcomandos. La profundidad separa las
+    // dos cosas sin depender del formato del atributo.
+    let mut variants: Vec<String> = Vec::new();
+    let mut depth = 0i32;
+    for line in enum_text.lines() {
+        let before = depth;
+        for c in line.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+        }
+        // `Foo {` abre la variante: antes de la llave había profundidad 1.
+        let opens_variant = before == 1 && depth == 2 && line.trim_end().ends_with('{');
+        if opens_variant {
+            let t = line.trim();
+            let name: String = t
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                variants.push(name);
+            }
+        }
+    }
+
+    assert!(
+        variants.len() >= 10,
+        "solo se extrajeron {} variantes de CliCommand: el extractor del enum se \
+         ha quedado atrás de su formato. Variantes: {variants:?}",
+        variants.len()
+    );
+
+    let arms = dispatch_arm_names(&dispatch_source());
+    let gated: Vec<&str> = FEATURE_GATED.iter().map(|(n, _)| *n).collect();
+    for v in &variants {
+        assert!(
+            arms.iter().any(|a| a == v) || gated.contains(&v.as_str()),
+            "CliCommand::{v} acepta argv de clap pero no tiene brazo en el dispatch: \
+             el comando se acepta, no hace nada, y sale con 0."
+        );
+    }
+}
+
+/// Un `index build` sobre un directorio real y vacío sí es una operación
+/// realizada: el gemelo positivo del `index_build_propagates_missing_directory`.
+#[test]
+fn index_build_on_real_empty_dir_still_exits_zero() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let out = run(&["index", "build", tmp.path().to_str().unwrap()]);
+    assert_eq!(
+        exit_code(&out),
+        0,
+        "`index build <dir válido>` debe salir con 0. stderr: {}",
+        stderr_of(&out)
+    );
+}
+
+// ===========================================================================
+// Ratchet: `std::process::exit` dentro de la libreria.
+//
+// MEDIDO 2026-10-04. B1 hizo que los brazos de `CommandExecutor::execute`
+// propaguen `Result` hasta el limite del proceso, y esa cadena solo tiene
+// sentido si la libreria no mata el proceso a mitad. Hay seis llamadas, todas
+// en `commands.rs`, y se dividen en dos grupos que no valen lo mismo:
+//
+//   * UNA viva: `execute_doctor` (linea 1503). Calcula el codigo desde
+//     `DoctorStatus::Missing` y sale. MEDIDO: la rama es alcanzable —
+//     `overall_status()` devuelve `Missing` si core, lsp o parsers esta
+//     missing— y el binario publicado sale con 1 en ese caso. El brazo de
+//     dispatch (linea 542) propaga con `?` como los que B1 arreglo, asi que ese
+//     `?` es codigo muerto y la firma `Result` de la funcion miente: nunca
+//     retorna.
+//
+//   * CINCO tras `#[cfg(feature = "multimodal")]`, que el binario publicado no
+//     habilita. MEDIDO sobre el binario real del candidato:
+//     `cognicode docs-ingest` responde `unrecognized subcommand`. Solo existen
+//     en un build de workspace, donde la unificacion de features de Cargo los
+//     enciende desde otro crate.
+//
+// Este test no arregla nada: hace la deuda ENUMERABLE y la acota. Un ratchet
+// que solo puede bajar convierte "hay seis" en un hecho que se puede revisar, y
+// sobre todo impide que pasen a siete. Un numero que se puede subir en la misma
+// respiracion en que se escribe no es un ratchet: es un changelog — que es
+// exactamente el defecto del ratchet de CR-06, y alli esta escrito.
+//
+// Por que la deuda de doctor NO se arregla aqui, medido y no supuesto: el
+// contrato publicado es "informe en stdout, salida 1, stderr vacio", y
+// `main` es `async fn main() -> Result<..>` con `?`, con lo que enrutar por `Err`
+// anade una linea `Error: ..` a stderr. Para que el codigo llegue a `main` sin
+// cambiar eso hay que cambiar la firma de `CommandExecutor::execute` y sus
+// ~20 brazos, que es superficie publicada, en mitad de un corte. El contrato de
+// usuario se cumple hoy. Lo que no se cumple es que la libreria sea una
+// libreria.
+// ===========================================================================
+
+/// Las seis llamadas, agrupadas por la funcion que las contiene, y por que
+/// cada grupo esta donde esta.
+///
+/// Una fila por FUNCION, no por llamada: las cinco llamadas de
+/// `multimodal` comparten la misma razon, y repetirla cinco veces no la
+/// hace mas cierta, solo mas largo de mantener —`cargo fmt` la despliega a
+/// once lineas para que las seis quepan en una pantalla—.
+///
+/// Subir cualquiera de estos numeros exige la razon de la nueva, en el mismo
+/// commit. Un `process::exit` nuevo en la libreria que no aparece aqui es un
+/// fallo de este test, no una excepcion nueva.
+const CORE_PROCESS_EXITS: [(&str, usize, &str); 3] = [
+    (
+        "execute_doctor",
+        1,
+        "vivo: el codigo de salida de `cogh doctor` es contrato publicado",
+    ),
+    (
+        "execute_docs_ingest",
+        2,
+        "cfg(multimodal): ausente en el binario publicado",
+    ),
+    (
+        "execute_issues_ingest",
+        3,
+        "cfg(multimodal): ausente en el binario publicado",
+    ),
+];
+
+/// El nombre de la funcion dueña de la linea `line`, o `None` si la linea
+/// esta antes de la primera declaracion `fn` del fichero.
+///
+/// Se resuelve subiendo hasta la declaracion `fn` mas cercana, no contando
+/// llaves. El conteo de llaves abre, aplica y cierra en la primera llave que
+/// encuentra, asi que produce un numero que PARECE medido y no lo esta: esa
+/// version de este test dio 4 salidas antes de la region `multimodal` cuando
+/// hay exactamente 1, y un ratchet con un numero inventado es peor que no
+/// tener ratchet.
+///
+/// Sube hasta la declaracion y no mas porque MEDIDO: en todo `commands.rs` no
+/// hay ninguna `fn` declarada a mas de cuatro espacios de indentacion, asi
+/// que "la `fn` mas reciente por encima" no puede ser una `fn` anidada. Si
+/// alguien anida una, este test dice que no encuentra la dueña en vez de
+/// atribuir la salida a la funcion equivocada en silencio.
+fn enclosing_function(lines: &[&str], line: usize) -> Option<String> {
+    for candidate in (0..line).rev() {
+        let trimmed = lines[candidate].trim_start();
+        let rest = trimmed.strip_prefix("fn ").or_else(|| {
+            trimmed
+                .strip_prefix("async fn ")
+                .or_else(|| trimmed.strip_prefix("pub fn "))
+                .or_else(|| trimmed.strip_prefix("pub async fn "))
+        });
+        if let Some(rest) = rest {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            return Some(name);
+        }
+    }
+    None
+}
+
+/// Si la declaracion de `function` esta cerrada por
+/// `#[cfg(feature = "multimodal")]`, caminando hacia arriba por el bloque de
+/// atributos y doc que la precede.
+///
+/// Se mide el atributo ADYACENTE a la declaracion, no "el primero del
+/// fichero". MEDIDO: `commands.rs` abre con `#[cfg(feature = "multimodal")]`
+/// en la linea 95, sobre las variantes del enum de subcomandos, muy por
+/// encima de las seis salidas. Comparar contra la PRIMERA anotacion del
+/// fichero no mide nada: da 0 salidas vivas cuando hay 1. La anotacion que
+/// apaga una funcion es la suya, la que esta pegada a su declaracion.
+fn is_multimodal_gated(lines: &[&str], declaration: usize) -> bool {
+    for candidate in (0..declaration).rev() {
+        let trimmed = lines[candidate].trim();
+        if trimmed == "#[cfg(feature = \"multimodal\")]" {
+            return true;
+        }
+        // Se sigue subiendo por atributos y documentacion; cualquier otra cosa
+        // es el final del bloque de atributos.
+        if !(trimmed.starts_with("#[") || trimmed.starts_with("///") || trimmed.is_empty()) {
+            return false;
+        }
+    }
+    false
+}
+
+/// Las seis llamadas, con la funcion que las contiene y si esa funcion esta
+/// cerrada por la feature que el binario publicado no enciende.
+fn measured_process_exits() -> Vec<(usize, String, bool)> {
+    let path = common::repo_root().join("crates/cognicode-core/src/interface/cli/commands.rs");
+    let text =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read commands.rs: {e}"));
+    let lines: Vec<&str> = text.lines().collect();
+    let mut found = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        if !line.contains("std::process::exit") {
+            continue;
+        }
+        let owner = enclosing_function(&lines, i)
+            .unwrap_or_else(|| panic!("`std::process::exit` en la linea {} esta antes de la primera `fn` del fichero; este test ya no sabe atribuirla.", i + 1));
+        let declaration = (0..=i)
+            .rev()
+            .find(|c| {
+                let trimmed = lines[*c].trim_start();
+                trimmed.starts_with("fn ")
+                    || trimmed.starts_with("async fn ")
+                    || trimmed.starts_with("pub fn ")
+                    || trimmed.starts_with("pub async fn ")
+            })
+            .expect("la funcion dueña existe por construccion");
+        let gated = is_multimodal_gated(&lines, declaration);
+        found.push((i + 1, owner, gated));
+    }
+    found
+}
+
+#[test]
+fn the_library_terminates_the_process_only_where_the_ratchet_says() {
+    let found = measured_process_exits();
+    let total: usize = CORE_PROCESS_EXITS.iter().map(|(_, count, _)| count).sum();
+
+    assert_eq!(
+        found.len(),
+        total,
+        "cognicode-core tiene {} llamadas a `std::process::exit` y la tabla de este \
+         ratchet suma {}.\n\
+         Si BAJA, corrige la tabla: es una buena noticia.\n\
+         Si SUBE, no basta con subir el numero: anade la funcion y la razon de la \
+         nueva en el mismo commit, o explica por que una libreria puede matar el \
+         proceso.\n\
+         Medido: {found:?}",
+        found.len(),
+        total
+    );
+
+    // El total puede cuadrar y las/wiki funciones estar mal. Se comprueba cada
+    // grupo: un recuento agregado no dice de quien son las llamadas.
+    for (function, declared, reason) in CORE_PROCESS_EXITS {
+        let owned: Vec<usize> = found
+            .iter()
+            .filter(|(_, owner, _)| owner == function)
+            .map(|(line, _, _)| *line)
+            .collect();
+        assert_eq!(
+            owned.len(),
+            declared,
+            "`{function}` declara {declared} salidas a `std::process::exit` y este \
+             ratchet dice {owned:?} ({reason}).\n\
+             Si BAJA, corrige el numero de la fila. Si SUBE, no hay atajo: la nueva \
+             salida tiene que justificar por que una libreria puede matar el proceso."
+        );
+    }
+
+    // Y ninguna funcion no declarada puede tener salidas.
+    let undeclared: Vec<&String> = found
+        .iter()
+        .map(|(_, owner, _)| owner)
+        .filter(|owner| !CORE_PROCESS_EXITS.iter().any(|(name, _, _)| name == *owner))
+        .collect();
+    assert!(
+        undeclared.is_empty(),
+        "estas funciones matan el proceso y no estan en el ratchet: {undeclared:?}.\n\
+         Anadelas con su razon, o quita el `std::process::exit`."
+    );
+}
+
+#[test]
+fn the_live_exit_is_doctor_and_only_doctor() {
+    // Una llamada viva, y es `execute_doctor`. Las otras cinco viven en
+    // funciones cerradas por `#[cfg(feature = \"multimodal\")]`, que el binario
+    // publicado no habilita —MEDIDO sobre el binario del candidato:
+    // `cognicode docs-ingest` responde `unrecognized subcommand`— asi que la
+    // unica razon por la que un `cogh` publicado puede salir con un codigo que
+    // la libreria eligio es `doctor`.
+    //
+    // Y por que se mide por duena y no por posicion: comparar con la primera
+    // anotacion `multimodal` del fichero no mide nada. MEDIDO: la primera esta
+    // en la linea 95, sobre las variantes del enum de subcomandos, muy por
+    // encima de las seis salidas, y da 0 salidas vivas cuando hay 1. Un
+    // contador de llaves tampoco: abre, aplica y cierra en la primera llave
+    // que encuentra, asi que produce un numero que PARECE medido y no lo esta
+    // —esa version dio 4 en vez de 1—, y un ratchet con un numero inventado es
+    // peor que no tener ratchet. La anotacion que apaga una funcion es la que
+    // esta pegada a su declaracion. Ese es el unico dato que responde a la
+    // pregunta.
+    //
+    // Y el limite real de la cuenta: lo que se afirma aqui es la disposicion
+    // del FUENTE. Si esa declaracion esta cerrada o no, y quien contiene cada
+    // salida. Lo que de verdad se compila lo mide `release-install-smoke.sh`
+    // sobre el artefacto publicado, porque un binario puede llevar una
+    // combinacion de features que ningun test sobre texto predice. Lo que este
+    // test puede afirmar sin mentir es lo mas fuerte que el fuente sostiene:
+    // hay exactamente una salida alcanzable sin `multimodal`, y es la de
+    // `doctor`.
+    let measured = measured_process_exits();
+
+    let live: Vec<&str> = measured
+        .iter()
+        .filter(|(_, _, gated)| !gated)
+        .map(|(_, owner, _)| owner.as_str())
+        .collect();
+
+    assert_eq!(
+        live,
+        vec!["execute_doctor"],
+        "se esperaba UNA sola llamada a `std::process::exit` alcanzable sin la feature \
+         `multimodal`, y que fuera la de `execute_doctor`. Hay {live:?}.\n\
+         Medido entero: {measured:?}.\n\
+         Si anades una salida nueva fuera de una funcion cerrada por la feature, \
+         anadela a `CORE_PROCESS_EXITS` CON SU RAZON en el mismo commit. Si lo que \
+         hay es una septima, esto no es una excepcion nueva: es este test fallando."
+    );
+
+    // Y la tabla del ratchet tiene que seguir nombrando las funciones que
+    // existen. Un recuento que no comprueba la dueña cuenta llamadas sin saber
+    // de quien son.
+    let attributed: Vec<&str> = measured
+        .iter()
+        .map(|(_, owner, _)| owner.as_str())
+        .collect();
+    for (function, _, _) in CORE_PROCESS_EXITS {
+        assert!(
+            attributed.contains(&function),
+            "la tabla del ratchet declara `{function}`, y MEDIDO no hay ninguna \
+             `std::process::exit` en esa funcion.\n\
+             Medido entero: {measured:?}.\n\
+         Si quitaste las salidas de esa funcion, baja su numero en la tabla: es una \
+             buena noticia y hay que reflejarla."
+        );
+    }
+}

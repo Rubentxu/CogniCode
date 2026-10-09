@@ -10975,3 +10975,3657 @@ Esta unidad cierra el hueco de enforcement. No ejecuta A-033..A-036: no crea
 el skill que falta (`cognicode-quality-investigator` no está en `skills/`) ni
 escribe las eval suites que su criterio de aceptación pide. Ese es el siguiente
 ciclo, y ahora con un gate que lo va a mirar.
+
+---
+
+## N+79 — El invariante que cerró el cutover leía el disco, y el test del test
+
+**WorkItem** `5087ca29-8dbc-4f5b-8055-832a9ef46160` · **Commit** `b8afaab4`
+**Rama** `verify/r0-exit-gate` (base `main` = `2c4831ec`, v0.101.0) · **Eje** R0
+(cierre del cutover de CI) · **Alcance** verificar el exit gate de R0 sobre lo
+que hay en `main`, no añadir capacidad de CI.
+
+### Por qué esta unidad y no abrir R1
+
+La cola pedía cerrar R0 antes de tocar la distribución. R0 parecía cerrado: PR
+#340 `d3426966` se titula literalmente "cero workflows, y el invariante que lo
+dice — cierra el cutover", y `main` tiene 0 workflows. La divergencia aparece
+al reconciliar el checkout, no al mirar el roadmap.
+
+**La rama local tenía 3 commits sin pushear que ya estaban en `main`.** Los tres
+—`c731fbd2`, `d5c8ff90`, `ae468525`— son el trabajo que llegó a `main` como #340 por otro
+camino. No es una suposición: `scripts/product/release_lane.py`,
+`scripts/ci/test_release_candidate_layout.py` y el ADR son **byte a byte
+idénticos** entre la rama y `main`, y la única diferencia en
+`release-candidate.pipeline.kts` es un comentario reescrito después de que el
+gap tracker dejara de existir. `main` además había avanzado a v0.101.0 (#341,
+#342, #343). Verificar el exit gate exigía medir `main`, no la rama.
+
+### El exit gate de R0, medido
+
+| Puerta | Resultado |
+|---|---|
+| `.github/workflows/*.yml` | 0 (directorio inexistente) |
+| PipelineK lanes | 6/6 `pipelinek validate` exit 0 |
+| Invariante de cero Actions | **FAIL** ← esto es lo que encontró la unidad |
+| `check-release-matrix.sh` | RESULT: OK, 4 checks |
+| `test_release_candidate_layout.py` | PASS |
+| Los 14 contratos re-anclados | 0 lecturas vivas de workflow |
+
+El invariante, en el commit que lo introduce, sobre un repositorio con cero
+superficies de Actions:
+
+```
+FAIL — 1 problem(s):
+2 action manifest(s) in the tree:
+    sandbox/repos/elixir/elixir/.github/workflows/release_pre_built/action.yml
+    sandbox/repos/rust-analyzer/.github/actions/github-release/action.yml
+```
+
+### El defecto, y por qué la lista era el problema
+
+`test_no_actions_workflows.py` recorría el sistema de ficheros y excluía
+directorios por nombre. `SKIP_DIRS` era `{".git", "target", "node_modules",
+"odd", ".pipelinek"}`; `sandbox` no estaba. `sandbox/repos/` está en
+`.gitignore` y contiene checkouts de elixir y rust-analyzer: los proyectos que
+las lanes de sandbox analizan. GitHub nunca los parseó.
+
+La entrada que faltaba no era el defecto. Una lista de exclusiones hay que
+extenderla cada vez que alguien vendoriza un árbol nuevo, y una lista así vuelve
+a estar mal. La pregunta que el contrato hace no es "¿qué archivos hay en este
+disco" sino "¿qué publica este repositorio", y para eso git ya tiene la
+respuesta: `git ls-files`. Un archivo sin trackear no puede convertirse en
+superficie de Actions porque no se pushea.
+
+Los checkouts de terceros son el argumento **a favor** del índice, no en contra:
+son grandes, se espera que contengan workflows, y no son el CI de CogniCode.
+
+### La consecuencia era peor que un gate rojo
+
+Esos checkouts no existen en un runner de CI. El contrato era **verde en CI y
+rojo en cualquier máquina que hubiera corrido una lane de sandbox**. Un gate cuyo
+veredicto depende de la máquina y no del árbol falla por causas ajenas al cambio
+que evalúa — y pasa sobre los mismos commits que debería inspeccionar. La
+dirección del fallo importa: un gate rojo se investiga; uno que sólo se rompe en
+el escritorio de quien lo escribió se cuela y se muere con el contrato.
+
+### Un `None` explícito donde antes había una lista vacía
+
+Si el índice no se puede leer, la respuesta honesta es "desconocido". Una lista
+vacía ahí es un cero que no se ha medido (lección 182, la misma forma que
+tomó `tool-ref validation skipped` precediendo doce errores). `tracked_paths()`
+devuelve `None`; las dos aserciones que lo consumen fallan con un mensaje que
+dice que un repositorio ilegible no es un repositorio limpio.
+
+### Dientes, por mutación
+
+```
+baseline                          9 passed, 0 failed
+scan por disco (el bug)           2 failed  — la aserción real y la regresión
+scan vacuo, siempre []            3 failed  — los dos dientes + fail-closed
+error de git como lista vacía     1 failed  — fail-closed
+stage contracts deshabilitada     1 failed  — el cableado
+solo queda la mención PATHS=      1 failed  — la forma vacua
+suite completa del repo         107 passed, 0 failed
+```
+
+La regresión va contra un fixture y no contra `sandbox/repos/` a propósito: un
+test que dependiera de árboles gitignoreados pasaría en un checkout limpio y no
+probaría nada.
+
+### El test del cableado cometía el defecto que existía para impedir
+
+`test_the_invariant_is_executed_by_the_merge_authority` resuelve la cadena
+eslabón por eslabón: el merge authority **ejecuta** el runner, el runner
+descubre `test_*.py` por glob, este archivo está entre los que casa el glob.
+
+La primera versión usó `is_in_merge_authority(CONTRACT_RUNNER)`. La mutación la
+desmontó: al deshabilitar la stage `contracts`, el test seguía **verde**,
+porque la stage `selector` nombra el mismo archivo dentro de un
+`PATHS="scripts/ci/run-all-contracts.sh"` que alimenta el filtro de suites. Una
+mención no es una ejecución.
+
+Un gate que sigue verde con la suite apagada es exactamente lo que ese test
+existe para impedir. El defecto lo cometía el test, y sin la mutación habría
+quedado como contratofixed mientras afirmaba lo contrario (lección 182, otra
+vez, y por el mismo mecanismo). Ahora el camino tiene que estar precedido por
+algo que lo ejecute.
+
+### Lo que la reconciliación destapó: el gate de gobernanza se apagaba solo
+
+Al crear el work item de esta unidad lo pasé a `active` sin comprobar que
+`9dd23815` —que seguía `active` por inercia— dejara de serlo. Resultado: dos
+items activos, y
+
+```
+error: project_status error: multiple active work items:
+  ["5087ca29-…", "9dd23815-…"]
+```
+
+`sddk plan roadmap status` falla → `sddk_probe_project` falla → y
+`sddk_gate_enabled`, en modo `auto`, devuelve falso. El hook imprime
+`"[SDDK] attention gate is not active for this repository."` y **sale 0**. No
+bloquea nada. A partir de ahí, cualquier commit entra sin recibo de
+alineación, y el mensaje dice "not active", que se lee como una configuración y
+no como el fallo de gobernanza que es.
+
+Un gate que falla ruidosamente es debugging. Un gate que se desactiva en
+silencio es una pérdida de garantía que nadie va a notar, y ocurre justo en el
+momento en que el agente está haciendo algo mal —que es cuando más hace falta.
+
+`9dd23815` se transiciónó a `done` **tras verificar su entregable**: los 14
+contratos que nombra tienen 0 lecturas vivas de workflow (las referencias que
+quedan son docstrings y comentarios), la autoridad única declarada está en
+`scripts/ci/pipeline_authority.py` desde `b651774a` (#338), y los dos ficheros
+que ya no existen —`check-release-artifact-reachability.sh` y
+`qw09_release_artifact_reachability.rs`— se consolidaron en
+`scripts/ci/test_pipeline_artifact_reachability.py`, que existe. Cerrado por
+evidencia, no por inercia.
+
+### Drift de registro, medido
+
+`docs/roadmap/CURRENT.md` se declara obsoleto en su propia cabecera, y es
+cierto: su sección de "próximo trabajo" describe un programa que ya no es la
+agenda. `JOURNAL.md` terminaba en N+78 y **no mencionaba el trabajo R0 ya
+mergeado** en #338–#340. El registro de trabajo no describía el estado real de
+R0; esta entrada lo hace.
+
+### Lección 183
+
+Un gate cuyo veredicto depende de la máquina y no del árbol es peor que no
+tener gate. El de este archivo era verde en CI y rojo en el escritorio de quien
+lo escribió, por ficheros que no son suyos y que no puede pushear. La pregunta
+que hay que hacerle al redactar un escáner no es "qué directorios tengo que
+excluir" sino "qué conjunto afirmo que describe la propiedad": la
+primera produce una lista que hay que mantener, la segunda produce un criterio
+que se puede comprobar.
+
+### Lección 184
+
+Una denylist de exclusiones sólo sabe lo que alguien recuerda excluir. Ésta no
+recordaba `sandbox`, y no era un olvido aislado: era la forma del defecto, porque
+cada árbol vendorizado nuevo exige una entrada. Cuando una propiedad es "lo que
+este proyecto publica", la autoridad que ya la responde es el índice de git, y
+sustituir la lista por esa autoridad hace el contrato inmutable frente a la
+próxima vendorización.
+
+### Lección 185
+
+Un test puede cometer el defecto que existe para impedirlo, y una mutación es
+la única forma de saberlo. El test de autocableado —escrito precisamente
+contra el "un gate que pasa sin ejecutarse es un archivo"—onoraba una mención
+del nombre del runner en lugar de una ejecución, y quedaba verde con la suite
+apagada. Las aserciones de cableado se leen como correctas porque suenan
+estrictas: hay que preguntarse qué observería una *ausencia*, no sólo qué
+afirman cuando todo está.
+
+### Lección 186
+
+La gobernanza que se desactiva en silencio no es gobernanza. Dos work items
+activos convierte el gate en un no-op con un mensaje que parece una
+configuración, y sólo se descubre porque el hook se ejecutó en un commit que ya
+estaba fallando por otra razón. Un control que se apaga en vez de negar el paso
+deja al sistema exactamente en el estado que el control debía impedir.
+
+### Alcance que NO se ejecuta aquí
+
+Esta unidad verifica y repara el exit gate de R0. No abre R1 (Release Truth), no
+toca los 14 contratos re-anclados más allá de contar sus referencias, no reabre
+ni edita `9dd23815` más allá de transicionarlo con la evidencia verificada, y no
+publica la rama: el commit está en local y el push y el PR son decisión del
+maintainer, porque todo cambio a `main` exige PR + merge-gate verde.
+
+Queda sin verificar, y no se afirma lo contrario: que los 14 contratos
+re-anclados **conserven la semántica** que tenían. Se comprobó que ninguno lee
+un workflow como autoridad; no que cada aserción siga significando lo que
+significaba. Eso es revisión conductual, contrato por contrato, y es otra
+unidad con su propia evidencia.
+
+---
+
+## N+80 — Una release que no se podía certificar desde un tag, y un gate que yo mismo rompí
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` · **Commits** `e10dd334`,
+`28353c57` · **Rama** `verify/r0-exit-gate` · **Eje** R1 (coherencia de
+distribución) · **Alcance** publicar v0.101.0 y cerrar lo que bloqueó esa
+publicación. No incluye R2 implementado: solo su ADR medido.
+
+### La incoherencia que había que cerrar primero
+
+MEDIDO sobre `main` = `2c4831ec`, que es exactamente el tag `v0.101.0`:
+
+| Fuente | Versión |
+|---|---|
+| workspace `Cargo.toml` | 0.101.0 |
+| `product/product-manifest.json` | 0.101.0 |
+| tag `v0.101.0` | existe, y está en el remoto (anotado → `2c4831ec`) |
+| `CHANGELOG.md` | v0.101.0 |
+| `README.md` | v0.101.0, en tres sitios |
+| **GitHub Release latest** | **v0.98.1**, del 2026-09-24 |
+| `gh release view v0.101.0` | *release not found* |
+
+`install.sh` sin `COGNICODE_VERSION` resuelve `api/releases/latest`, y ese
+endpoint devuelve v0.98.1 — verificado también con `curl -sSI` sobre
+`/releases/latest`, que redirige a `/releases/tag/v0.98.1`. Una instalación
+nueva recibe un binario **tres minors** por detrás del repositorio, mientras el
+README afirma que "Both channels install the same published release asset".
+
+`v0.99.2` y `v0.100.0` también están tagueados y nunca publicados. `v0.100.0` es
+irrecuperable por la razón de la sección siguiente.
+
+`release-tag-coherence.sh` no lo detectaba, y no por descuido: cierra el
+parentesis **tag ↔ workspace**, que es una propiedad distinta de **existe una
+release publicada**. Son dos preguntas y el gate solo hacía una.
+
+### Por qué v0.100.0 no se publica, medido
+
+En el commit del tag `v0.100.0` (`edd023b3`, #316) existen **dos** lanes:
+`merge-gate.pipeline.kts` y `product-fast.pipeline.kts`. Las lanes de release
+nacieron en `b651774a` (#338) y `d3426966` (#340), después. No hay
+`release-candidate` ni `release` que ejecutar en ese tag, así que "publicar
+v0.100.0 vía la lane" no era una operación sino una frase. La alternativa —
+usar las lanes de hoy sobre un árbol que nunca las contuvo — produciría
+artefactos cuyo commit no incluye la herramienta que los construyó, que es
+exactamente la provenance falsa que R2 existe para impedir.
+
+### El bloqueante real: el preflight no se puede ejecutar desde un tag
+
+La lane murió en **0.3 s** en el stage `clean-clone`:
+
+```
+fatal: Rama remota HEAD no encontrada en upstream origin
+```
+
+Una línea, en `scripts/ci/preflight-clean-clone.sh`:
+
+```bash
+--branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+```
+
+En un checkout detached — que es lo que da `git checkout <tag>`, o sea **como se
+corta una release** — `git rev-parse --abbrev-ref HEAD` imprime la cadena literal
+`HEAD` y **sale con código 0**. El `|| echo main` depende de que el comando
+falle, y no falla. Se pasaba `--branch HEAD` a `git clone`, que busca una rama
+llamada `HEAD`, y el clon moría.
+
+El fallback estaba escrito para cubrir exactamente este caso y no cubría nada:
+un guard que solo se dispara ante un error que no llega a producirse. Un gate
+que solo se puede correr desde una rama es un gate que no sirve para publicar.
+
+El nombre de la rama es una optimización, no un requisito: dos líneas más abajo
+el script hace `git fetch --depth 1 origin $TARGET_SHA` y
+`git checkout $TARGET_SHA`, y eso es lo que fija el commit certificado. Así que
+cuando no hay rama que nombrar, `--branch` se omite. La regla vive en una
+función, `resolve_clone_ref`, llamada por la stage y por el seam de test, porque
+dos copias de una regla es una de ellas equivocada dentro de un mes.
+
+`--print-clone-ref` responde lo mismo y sale, para que un contrato pueda
+ejercitar la resolución sin pagar los 8-15 minutos que el propio preflight
+declara. Va antes de cualquier `log`, porque `log` hace `tee` a stdout y
+contaminaría lo que el contrato lee.
+
+### Dientes, por reversión y por mutación
+
+| Estado | Resultado |
+|---|---|
+| Sin el arreglo | 0 passed, **5 failed** |
+| Con el arreglo | 5 passed, 0 failed |
+| `resolve_clone_ref` siempre vacío | 3 passed, **2 failed** |
+| expansión de array sin guarda | 4 passed, **1 failed** |
+| segunda resolución inline | 4 passed, **1 failed** |
+| suite completa del repo | **112 passed, 0 failed** |
+
+El rojo sin el arreglo **reproduce** el fallo original en vez de aproximarlo: el
+script muere en `Stage 1/7` con `FAIL: git clone falló`, desde un repo temporal,
+en menos de un segundo.
+
+Dos cosas estaban mal antes de que el arreglo estuviera bien. La primera versión
+de `test_the_rule_is_written_once` contaba `--abbrev-ref` en todo el fichero, así
+que fallaba contra el comentario que cita la línea antigua a propósito: un
+linter que falla contra su propia documentación es un linter que se borra en vez
+de arreglarse. Ahora descarta comentarios primero, por el mismo motivo que
+existe `pipeline_authority.strip_line_comments`. Y la primera versión de la
+sonda ejecutaba el script aunque el seam no existiera: el script sin arreglar
+leía `--print-clone-ref` como un SHA, seguía su curso y **clonaba el
+repositorio cinco veces**. Un contrato cuyo estado rojo cuesta más que el gate
+que vigila es un contrato que nadie corre en un PR; ahora el seam se comprueba
+por inspección primero, y el rojo dura 0 s y no crea ni un clon ni un log.
+
+### El incidente: yo rompí la lane editando el script que estaba corriendo
+
+La segunda ejecución de `release-candidate` murió así:
+
+```
+scripts/ci/preflight-clean-clone.sh: línea 181: error de sintaxis cerca del
+elemento inesperado `('
+```
+
+No es un defecto del producto. Es mío. Estaba aplicando el arreglo **en el
+worktree de la release, mientras bash lo tenía abierto en ejecución**. Bash
+guarda el offset de lectura del script; cambiar bytes anteriores desplaza esa
+posición y al volver a leer se encuentra con mi edición a mitad de un
+`syntax`. Es exactamente el riesgo que había identificado dos llamadas antes y
+después ejecuté igual.
+
+Consecuencia adicional: la limpieza del clon de 1.6G no pudo hacerse, porque el
+CWD del script estaba dentro de él y el wrapper de borrado del entorno se niega
+a borrar un directorio que contenga el directorio de trabajo actual. Dos clones
+huérfanos (18 G) quedaron en el volumen hasta que los saqué a la papelera a mano.
+
+La lección operativa es más dura que la técnica: **un worktree de release es
+inmutable mientras su lane corre**, y todo el trabajo de desarrollo va en otro
+sitio. Se puede cambiar el fichero del que se hizo el worktree; el worktree de
+la release, no.
+
+### El entorno, medido, porque las dos cosas que bloqueaban no eran código
+
+**La pierna aarch64 no compilaba.** El stage `toolchain-for-<target>` hace
+`exit 1` si el target no está instalado, y un stage fallido aborta la lane
+entera: no existe "publicar solo x86_64" dentro de la lane. En esta máquina solo
+había `x86_64` y `wasm32`, y no había `aarch64-linux-gnu-gcc` ni `-ld`. Resuelto
+con `rustup target add` y un wrapper `zig cc -target aarch64-linux-gnu` en
+`~/.local/bin`, sin sudo y sin tocar la lane: la lane llama a `cargo build` a
+secas, así que basta con `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`. Sonda:
+un PIE ARM aarch64 real. La trampa: `rustup target add` **fuera** del repo
+instala en el toolchain por defecto y el 1.96.0 pineado se queda sin el target,
+porque `rust-toolchain.toml` solo aplica dentro del árbol.
+
+**`/tmp` es un tmpfs de 48 G con 13 G libres**, y el preflight compila el
+workspace entero en su propio clon. Sin `TMPDIR` apuntando al volumen grande,
+eso se llena. El log del propio preflight lo escribe en `/tmp` por código duro
+(`LOG_FILE="/tmp/preflight-clean-clone.${TIMESTAMP}.log"`), y `/tmp` fue
+recuperado por el sistema durante la sesión: **la evidencia de esa ejecución se
+perdió**. Por eso la segunda ejecución lleva su salida a un fichero durable en
+el volumen, no a un pipe.
+
+### La lane de publicación, leída antes de correrla
+
+Vale la pena porque es la que no dry-runea: `consume-candidate` →
+`candidate-present` → **`re-verify-candidate`** → las dos pruebas negativas
+(`verify-rejects-missing-artifact`, `verify-rejects-altered-artifact`) →
+`create-draft` (**draft**) → `upload-payloads` → **`confirm-uploaded-set`**
+(compara el conjunto subido con `release/*.tar.gz` y falla si no coincide) →
+`upload-manifests` → `provenance` → `publish` → `re-verify-after-upload` →
+`publish-draft` → `verify-as-consumer`.
+
+Dos propiedades que valen: el fallo a mitad deja un **draft**, no una release
+pública; y `confirm-uploaded-set` es la comprobación de que lo publicado es
+exactamente lo producido, que es la misma propiedad que el directorio candidato
+ya daba para los binarios.
+
+Precondición verificada antes de publicarlo: `v0.101.0` está en el remoto como
+tag anotado y desreferencia a `2c4831ec`, el árbol que se está construyendo.
+`create-draft` no pasa `--target`, así que si el tag no estuviera en el remoto la
+lane fallaría ya con la release a medio crear.
+
+### R2: medido, no supuesto
+
+`gh attestation` expone `download`, `trusted-root` y `verify`. **No hay verbo de
+generación.** Eso confirma la afirmación del ADR del cutover con precisión:
+la mitad que consume sobrevivió, la que produce no existe.
+
+Y el hallazgo que no está en ningún diff: el keyless de SLSA no es una función
+de cosign, es un **consumidor de un token OIDC**, y el emisor de ese token era
+Actions. Retirar Actions no quitó un paso: quitó lo único del pipeline que podía
+producir una **identidad verificable**. Cualquier sustituto tiene que responder
+desde fuera de Actions la pregunta que el token respondía, o la provenance
+degrada en silencio de "verificable por cualquiera, sin secreto" a "verificable
+contra una clave que tenemos".
+
+La ruta medida, en este host, cosign 3.1.3, con una clave desechable:
+
+```
+cosign attest-blob --key cosign.key --bundle att.bundle.json \
+    --predicate predicate.json --type https://slsa.dev/provenance/v1 artifact.bin
+Wrote bundle to file att.bundle.json
+
+cosign verify-blob --key cosign.pub --bundle att.bundle.json artifact.bin
+Verified OK
+```
+
+Y el exit gate de R2, comprobado y no afirmado:
+
+```
+subject.digest.sha256 : 0e02297fb55098e1f7c96e078707d0c4048d0dd3bda0fa2074bb7552cdb592de
+artifact sha256sum    : 0e02297fb55098e1f7c96e078707d0c4048d0dd3bda0fa2074bb7552cdb592de
+MATCH                 : True
+```
+
+Offline, sin transparency log, sin registry. Tres detalles de cosign 3.1.3 que
+solo aparecen al ejecutar: exige `--bundle`; el `verificationMaterial` del bundle
+decide cómo verificar, así que uno firmado con clave acepta `--key` **y nada
+más**; y el digest del subject es el sha256 **en hex, verbatim** — decodificarlo
+como base64, que es una suposición razonable, produce un desajuste que parece un
+fallo de firma y no lo es. Los tres los encontré por dos de mis errores, no
+leyendo.
+
+`docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` queda **`proposed`**, no
+aceptado, porque lo que queda no es una decisión técnica: es **dónde vive la
+clave privada**. El ADR recomienda la ruta de clave cosign y pone las tres
+opciones de custodia con lo que cada una arriesga. Perder la clave deja sin
+verificar, como firmadas con ella, todas las attestations futuras; esa decisión
+no es del agente.
+
+Un apunte de política que costó un paso: `docs/adr/` está en `.gitignore` por
+decisión declarada, y los ADRs se añaden con `git add -f`, con un contrato
+(`gitignore_negation_contract.rs`, 5/5) que fija esa política. El error de
+`git add` sin `-f` no era un bug del repo.
+
+### Lección 187
+
+Un guard que depende de un error para activarse, y cuyo error no se produce, no
+es un guard: es prosa con forma de condición. El `|| echo main` estaba ahí para
+el checkout detached y nunca se ejecutó, porque `--abbrev-ref` sale con 0. Un
+fallback se lee como una garantía, y lo que hay que preguntarse es **qué
+exactamente lo dispara**, no qué dice el comentario que lo acompaña.
+
+### Lección 188
+
+Un gate que solo se puede ejecutar desde una rama es un gate que no sirve para
+su propósito. Este certificaba "el repositorio compila desde un clon limpio" y
+no se podía ejecutar desde un tag, que es el estado en que se corta una release.
+La propiedad que había que comprobar no era "nombra una rama" sino **"la
+referencia que el clon va a nombrar existe en cualquier estado del checkout"**,
+y esa formulación admite la corrección sin trucos: cuando no hay rama que
+nombrar, se omite el flag y el clon usa el HEAD por defecto.
+
+### Lección 189
+
+Un contrato cuyo estado rojo es más caro que el gate que vigila no se corre en un
+PR. El mío clonaba el repositorio cinco veces, cada una de 1.6G, para describir
+un fallo que se ve leyendo un fichero. La corrección —comprobar el seam por
+inspección antes de ejecutarlo— no es una optimización: es lo que hace que el
+contrato sea utilizable. Un test que en verde tarda un segundo y en rojo media
+hora enseña a la gente a no correr tests.
+
+### Lección 190
+
+Identificar un riesgo no es haberlo identificado. Edité un script que bash tenía
+abierto en ejecución porque el arreglo era ese mismo fichero, y el daño no fue
+teórico: mató la lane con un error de sintaxis en una línea arbitraria. El
+worktree de una release es **inmutable mientras su lane corre**; el trabajo va en
+otro árbol. Y la segunda lección del mismo incidente: la evidencia de esa
+ejecución vivía en `/tmp`, un tmpfs que el sistema recuperó durante la sesión.
+Un artefacto de medición en almacenamiento volátil no es evidencia, y cuando se
+pierde no hay forma de reconstruirlo.
+
+### Lo que NO se ejecuta aquí
+
+Esta unidad publica v0.101.0 sin attestation — decisión explícita del
+maintainer, con el hueco de R2 medido y documentado en su ADR, no cerrado. No
+implementa la generación de provenance ni su contrato de tres digests: dependen
+de la decisión de custodia, que no es del agente. No arregla `sddk lint`, que
+arrastra 55 errores bajo `sandbox/repos/` por la misma clase de defecto que ya
+se corrigió en el invariante de cero Actions: un escáner que trata checkouts de
+terceros no versionados como si fueran del repositorio. No toca los ADRs
+archivados de PRF ni reabre ninguna `C#` firmada.
+
+## N+81 — La skill que enseñaba un comando que sale con 0, y el puntero que nadie miraba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` · **Commits** `089be899`,
+`d04013c9`, `0ad20c0d`, `04d0fc7a` · **Rama** `verify/r0-exit-gate` · **Eje** R1
+(coherencia de distribución) · **Estado al cierre de este recibo**: `v0.101.2`
+tagueado y empujado, candidato **en curso**, release **no publicada**.
+
+### El corte se para por el contenido, no por la infraestructura
+
+La lane de candidato de `v0.101.1` llevaba nueve minutos en `cargo build
+--release` cuando se paró, y no hubo ningún fallo: el preflight había resuelto
+el clon desde el tag (`resolve_clone_ref` funcionando sobre el árbol real, no
+solo en el contrato) y estaba compilando. Se paró porque una auditoría del
+contenido que la release empaqueta encontró lo que viene a continuación, y
+`release-candidate.pipeline.kts` empaqueta cada skill publicada en
+`staging/<id>-<version>.tar.gz` mientras la release publica **exactamente** el
+candidato. Un candidato cortado antes de corregir una skill publica esa skill
+rota de forma permanente, y corregirla después obliga a otro corte completo.
+
+### Tres comandos que las skills enseñan y la CLI no acepta
+
+MEDIDO comparando estáticamente las firmas clap reales contra cada invocación de
+un bloque de shell de las skills.
+
+| Skill | Enseña | La firma real | Qué pasaba |
+|---|---|---|---|
+| `cognicode-pr-review` | `navigate references <symbol>` (×2) | `References { position }` = `file:line:column` | el símbolo se enlaza a `position`, `parse_position()` falla, y el brazo `Navigate` imprime en stderr **sin** `return Err` → **sale 0** |
+| `cognicode` | `index symbol-code MySymbol` | `SymbolCode { file, line, column }` | 1 de 3 positionals → clap sale 2 |
+| `cognicode-mcp` | `graph impact` (en prosa) | `Impact { symbol }` | falta el `symbol` requerido |
+
+La severidad no es la misma en los tres, y separarla evitó exagerar el
+alcance: `SKILL_BUNDLES` en `release_contract.rs` declara publicadas solo
+`cognicode` y `cognicode-mcp`, así que **`cognicode-pr-review` no se
+empaqueta** — sus dos apariciones no llegan al artefacto, aunque sí se
+distribuyen con el repositorio. Solo `index symbol-code` viaja en la release, y
+falla en voz alta. El que sale en silencio es el que no se empaqueta, que es
+justo lo que hacía el ítem `a1f961f6` caro de verdad.
+
+La corrección de `pr-review` no fue mecánica. La intención declarada de la skill
+es "find all usages of a symbol", y eso es exactamente lo que hace
+`cognicode find-usages <symbol>`, que además propaga su error. Sustituir
+`<symbol>` por `<file:line:column>` habría hecho el paso más difícil de
+seguir para arrancar un agente. `navigate references` queda documentado con su
+firma real, para cuando lo que se tiene es una posición.
+
+### El contrato, y los tres fallos que encontró en sí mismo
+
+`scripts/ci/test_skill_cli_invocations.py` contrasta cada invocación contra las
+firmas clap leídas de `commands.rs` en cada ejecución. No es una lista mantenida
+a mano, y esa es la parte que importa: `validate_skills.py` ya existía y estaba
+en verde, y no podía ver nada de esto porque contrasta nombres de tool MCP
+contra el catálogo, no invocaciones de CLI ni aridad de argumentos.
+
+Se escribió el contrato en verde sobre un árbol rojo y luego se rompió tres
+veces:
+
+- `--version` es un flag global, no un subcomando, y el patrón lo rechazaba —
+  precisamente el primer comando que enseña la skill publicada.
+- `Evidence(EvidenceCommand)` es una variante de **tupla**; si el parser solo
+  reconoce `Nombre {`, sus campos se cuelan en `FindUsages` y `find-usages` pasa
+  a parecer que cuelga de un subcomando. El síntoma era desconcertante: un
+  rechazo con la lista de subcomandos vacía.
+- un `bool` en la derivada de clap es un flag, no un positional ni un holder.
+
+Suite 119 → 133. Siete mutaciones; seis detectadas a la primera.
+
+### Dos mutaciones que "sobrevivieron" y dos huecos que sí eran reales
+
+Convertir `position` de References en flag sobrevivió: no comprobaba el
+**exceso** de positionals. Añadida esa comprobación detectó la mutación — y
+encontró a su vez que no estaba ignorando los comentarios de shell, que es
+justo como se anotan estas skills (`find-usages <symbol>  # look for test/`).
+Borrar los bloques de shell de una skill tampoco se detectó al principio: el
+suelo de fail-closed es **agregado**, y solo salta cuando ya no queda nada que
+auditar (medido: 0 invocaciones → rojo).
+
+Y dos veces una mutación sobrevivió porque **la mutación estaba mal**, no el
+guard: `v0.97.3` resultó ser un tag real de los 222 del repositorio, y la
+primera vez que `v0.9.9.9` no saltó fue porque la había insertado mal. Comprobar
+que la mutación se aplicó es parte de medir el guard.
+
+### La invariante que se enunciaba y nadie vigilaba
+
+R1 dice, literalmente, que debe ser *imposible* que `tag != published release`,
+que `README != install.sh latest` y que `manifest.version != binary
+--version`. La mitad vigilada era la de los documentos generados: los dos
+generadores declaran `--check`, la suite los ejecuta, y el drift salta en rojo.
+Eso ya estaba, y este turno **no lo repitió** — repetirlo sería una segunda
+fuente de verdad para lo mismo.
+
+Lo que no vigilaba nadie eran las superficies que un generador no produce: el
+bloque `## Versioning` del README, los pines que el usuario copia
+(`COGNICODE_VERSION=`, `@v`) y la cabecera del CHANGELOG. Un README anunciando
+`v0.98.1` mientras el manifiesto decía `0.101.2` habría tenido la suite entera
+en verde. Suite 133 → 141, con cinco mutaciones sobre los archivos de verdad,
+las cinco detectadas.
+
+### El eslabón que faltaba en la propia lane de release
+
+MEDIDO: **ningún** stage de `release.pipeline.kts` miraba `latest`, y ese
+puntero es lo único que decide qué recibe quien no fija versión —
+`install.sh` resuelve `api/releases/latest`, que excluye drafts y prereleases.
+Publicar la release no garantiza por sí solo que el puntero se mueva.
+
+Lo que ya estaba y este stage **no** duplica: `verify_release` comprueba
+tag == v{version}, digests recomputados, sin huérfanos ni componentes fantasma
+— pero contra **staging**; `confirm-uploaded-set` compara el conjunto producido
+contra los assets de GitHub; y `verify-as-consumer` redescarga y pasa
+`sha256sum -c SHA256SUMS` sobre los **bytes publicados**. El puntero era el
+único eslabón sin comprobar.
+
+El stage consulta el mismo endpoint que `install.sh`, no `gh release view`.
+Ejecutado contra la API real con `RELEASE_TAG=v0.101.2` resuelve `v0.98.1` y
+sale con 1 y el diagnóstico previsto: el hueco era real, medido, no teórico.
+
+### Cola reconciliada contra el árbol, no contra el documento
+
+Seis ítems cerrados por medición propia, tres de ellos **refutados** en vez de
+resueltos:
+
+- `3c7ab1ce` (OnDemandGraph sin `evidence-kernel`): hipótesis **refutada**.
+  `on_demand_graph.rs` no tiene ni una línea `#[cfg(feature)]`. El test **pasa**
+  en `e0361540`: 1 passed, 10.95s, 1 callee y 111 entrantes donde antes daba 0.
+  La causa real era la separación índice/cache que el propio doc-comment de
+  `build_index_from_sources` describe como el arreglo.
+  Al medirlo por primera vez se usó un nombre de test **parcial** con `--exact`:
+  0 tests ejecutados, exit 0. El paso vacío que este repositorio se niega a
+  aceptar, cometido en este turno y detectado al leer el recuento.
+- `a9937117` (perfil desconocido concede escritura): el llamador ya no concede.
+  `rmcp_adapter.rs:119-133` hace `panic!` explícito con "Refusing to start
+  rather than assume a writable posture". El helper sigue siendo permisivo y
+  está documentado como la herramienta equivocada para eso.
+- `94332dec` (checker sin puerta) y la mitad "sin cablear" de `bb604803`:
+  obsoletos. `certification.pipeline.kts:149` ejecuta
+  `scripts/perf-budget-check.sh` en el stage `perf-budget-verdict`. Cableado y
+  advisory no son lo contrario, y el ítem los tenía por una sola cosa.
+- `46ea2ecf` (rama `backup` sin pushear): obsoleto, no queda ninguna rama
+  `*backup*` en el repositorio de pipeline-kotlin.
+- Sigue **viva** la otra mitad de `bb604803`: 9 de 16 operaciones presupuestadas
+  sin benchmark. Un primer recuento de `perf-budget.toml` leyó 2
+  "operaciones" porque contaba secciones y no claves anidadas; el reparto real
+  es 7 en `graph.operations` (las únicas con benchmark), 5 en `mcp.tools` y 4 en
+  `explorerql`.
+
+### Lección 191
+
+La release publica el candidato **literalmente**. De ahí se sigue una regla de
+orden, no de contenido: un candidato se corta solo después de que su contenido
+empaquetado esté verificado, porque un arreglo posterior no es un parche, es
+otro corte con otra compilación completa. Auditar mientras el candidato todavía
+es barato de abandonar cuesta minutos; auditarlo después cuesta una release
+pública equivocada.
+
+### Lección 192
+
+Un validador para otra superficie no es cobertura parcial: es ceguera
+estructural. `validate_skills.py` estaba en verde, llevaba tiempo en verde, y no
+podía ver tres comandos rotos porque comparaba nombres de tool MCP contra un
+catálogo. La pregunta que sirve no es "¿este validador pasa?" sino "¿qué
+superficie mira, y cuál no está mirando nadie?".
+
+### Lección 193
+
+Un contrato al que nunca se le ha visto fallar no está probado: está escrito.
+Las mutaciones encontraron dos bugs propios que ningún test en verde podía
+encontrar — un lookahead que volvía undetectable una versión al final de una
+frase, y comentarios de shell contados como argumentos. Y dos veces una
+mutación "sobrevivió" porque la mutación estaba mal, no el guard.
+
+### Lección 194
+
+Un gate debe medir lo que el consumidor resuelve, no lo que el gate cree que
+resuelve. `gh release view` y `api/releases/latest` pueden razonar sobre
+nociones distintas de "latest"; consultar el segundo es la única forma de que
+el stage y `install.sh` compartan la misma definición.
+
+### Riesgo de coordinación, registrado
+
+Durante la lane apareció en este checkout un trabajo que no es de este turno:
+cambios en `commands.rs`, `analysis_service.rs` y `lightweight_index.rs`, y un
+test nuevo `cli_exit_code_propagation.rs`. El diff **añade `return Err(e)` a los
+ocho brazos** que se midieron como silenciosos, y su `cargo test` corre en este
+mismo directorio: otro actor está ejecutando `a1f961f6` en paralelo. No se ha
+commiteado ni revertido nada suyo.
+
+No es un bloqueo de la release y sí es un riesgo: el trabajo de este turno está
+commiteado y pusheado en `04d0fc7a`, y la lane corre en un worktree aislado
+pinneado al tag, cuyo clon de preflight **no** contiene el fichero nuevo —el
+candidato no está contaminado—. La regla que hay que mantener es que la lane de
+release se lanza desde ese worktree y nunca desde este checkout, porque
+publicar desde un árbol con cambios sin commitear de otro actor es publicar
+contenido no revisado.
+
+**Y el mismo error, otra vez, por mi parte.** Media hora después de escribir esa
+sección ejecuté un `git checkout --detach` sobre el worktree de la release
+**mientras su lane corría**, creyendo que era un dry-run: no lo era, y movió el
+worktree del tag `d04013c9` a `3b53d3b3` —tres commits por delante, con el
+candidato construido desde un árbol que el tag no contiene. Eso es exactamente
+la provenance falsa que R2 existe para impedir, y lo.metricsé con el mismo
+criterio con el que medí el resto del turno.
+
+Se restauró al tag de inmediato. El daño quedó contenido y medido: el preflight
+corre en un clon aparte, así que la ventana unlucky cayó entre stages, y ningún
+stage con `$cd` se había ejecutado todavía. Los tres árbol siguen donde deben:
+el clon de preflight en `d04013c9`, el worktree en `d04013c9`, la rama en
+`3b53d3b3`.
+
+La lección 190 no era difícil de recordar: estaba escrita cuarenta líneas más
+arriba en este mismo fichero. Lo que la incumplí no fue el contenido del
+trabajo, sino **la tentación de hacer un `git checkout` "para comprobar" algo en
+el directorio que estaba delante de mí**. Un dry-run de git no existe: o se
+anota con `--dry-run` explícito en el comando que se va a ejecutar de verdad, o
+no se toca.
+
+### Lo que NO se ejecuta aquí
+
+No se arregla `a1f961f6`: los ocho brazos que tragan el error se miden y se
+registran, y su arreglo cambia códigos de salida visibles, luego necesita su
+propio RED y su propio ciclo de suite completa, no un apéndice de una release.
+No se implementa R2: la release seguirá sin attestation, con la decisión de
+custodia de la clave tomada por el maintainer y el hueco documentado en su ADR.
+No se mide todavía la cobertura de `perf-budget.toml`: la máquina está
+ejecutando la lane y un actor paralelo, y un número tomado bajo esa carga no es
+un presupuesto.
+
+## N+82 — Los ocho brazos que salían 0, y el UAT que pasaba sin ejecutar el brazo
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **ítem** `a1f961f6` ·
+**Commit** `fd746ff6` · **Rama** `fix/cli-exit-code-propagation` (aislada: un
+actor paralelo commitea en `verify/r0-exit-gate`) · **Alcance** el ciclo propio
+que N+81 le condicionó a `a1f961f6`. No publica la release ni toca R2.
+
+### Recuperación: la lane que seemed viva estaba terminalizada
+
+Al recuperar, HEAD era `d04013c9` y el último recibo era N+80, con cuatro
+commits por detrás sin recibo aparente. La lane `release-candidate` de
+`v0.101.2` estaba **corriendo** (PID 1404979, 18 min). El worktree de una
+release es inmutable mientras su lane corre (lección 190), así que el trabajo
+fue a otro sitio. La sesión anterior no había muerto a mitad: había terminado.
+
+Lo que encontró esa lane, y que es el resultado más importante de esta entrada:
+
+```
+[16:21:59Z] Stage 6/7: comparación con baseline
+             baseline: passed=5579 failed=0 ignored=37
+             observed: passed=5934 failed=0 ignored=30
+             diff:     passed=355 failed=0 ignored=-7 (tolerancia -2)
+             → battery dentro de tolerancia
+[16:21:59Z] Stage 7/7:Recibo emitido: /tmp/preflight-receipt-d04013c9cded.json
+[16:21:59Z] PREFLIGHT PASS
+```
+
+**El preflight de v0.101.2 PASÓ**: las 7 stages, `passed=5934 failed=0`, y el
+recibo emitido. El arreglo del signo del ratchet de `14b7fea3` funciona sobre el
+árbol real, no solo en su contrato: `+355` ya no se reporta como regresión.
+
+Y aun así la lane salió con `LANE_EXIT=1`, `shell exited with code 64`. La
+causa, en las cuatro líneas que prosiguen al `PREFLIGHT PASS`:
+
+```
+mavis-trash: refusing to trash protected path '.../cognicode-preflight-O2ZYbs'
+mavis-trash: '...' is the parent of the current working directory
+```
+
+El script hace `trap 'rm -rf "$WORK_DIR"' EXIT` y en el stage 5 se ha metido
+en `cd "$WORK_DIR/clone"`. **El trap se ejecutaba desde dentro del directorio
+que borra**; el guard del entorno se niega y devuelve 64, y el estado del trap
+sustituye al del script. Un preflight que certifica `PASS` sale con fallo por
+no haber limpiado. Es N+80 (§"el incidente", 34 G de clones huérfanos)
+repetido con la misma firma, y su arreglo —`scripts/ci/preflight-cleanup.sh`,
+`cognicode_preflight_cleanup` que sale del directorio antes de borrar y delega
+el resultado a un canal que no puede cambiar el veredicto— lo escribió el actor
+paralelo en `69186a1c` desde este mismo log, sin que hubiera que pedirle nada.
+
+Los dos clones huérfanos (17 G + 17 G) se han retirado desde fuera de ellos.
+
+### El defecto, medido sobre el binario y no leído
+
+El CHANGELOG de v0.101.2 lo declaraba sin medirlo ("de los 11 brazos
+`CliCommand`, solo `Analyze`, `Graph` y `FindUsages` propagan"). Medido sobre el
+`cognicode` 0.101.2:
+
+| Invocación | exit | stderr |
+|---|---|---|
+| `navigate references MySymbol` | **0** | `Invalid position 'MySymbol': expected file:line:column` |
+| `navigate definition MySymbol` | **0** | ídem |
+| `navigate hover MySymbol` | **0** | ídem |
+| `index build /nonexistent/zzz` | **0** | — |
+| `index query Zzz /nonexistent/zzz` | **0** | — |
+| `graph full /nonexistent/zzz` | **0** | `Warning: graph is PARTIAL: 1 file(s) skipped` |
+| `graph mermaid /nonexistent/zzz` | **0** | ídem |
+| `analyze /nonexistent/zzz` (control) | 1 | ✓ propaga |
+| `analyze <dir válido>` (control) | 0 | ✓ no se sobre-corrige |
+
+El primero es el caso que la skill `cognicode-pr-review` enseñaba y que N+81
+corrigió **en la documentación**. Corregir la skill sin corregir el brazo deja
+el fallo al alcance de cualquiera que teclee el comando: el mismo trabajo, otra
+vez, en la capa de debajo.
+
+### Tres capas, porque el default de cada una es distinto
+
+**1. Los ocho brazos.** `CommandExecutor::execute` imprime con `eprintln!` y
+deja que `execute` termine en `Ok(())`. Ahora propagan.
+
+Un brazo no podía hacerlo con la receta: `SymbolCodeService::get_symbol_code`
+devuelve `Result<_, String>`, y un `String` no implementa `std::error::Error`
+(`E0277`, el primer fallo de compilación). Se lleva como mensaje, no envuelto
+en `AppError::InvalidParameter`: envolverlo declararía un argumento inválido
+donde lo que hay es un fallo de lectura.
+
+**2. `AnalysisService::build_project_graph`.** El `Graph` brazo ya propagaba, y
+aun así `graph full /nonexistent` salía 0. La causa está un nivel más abajo:
+`project_dir` inexistente llegaba a `WalkBuilder … .filter_map(|e| e.ok())`, que
+descarta **exactamente** la entrada `Err` que produce una raíz ausente, y el
+build devolvía `Ok` con estado `Partial`. El handler MCP `build_graph` ya
+rechazaba ese caso (`handlers/mod.rs:1217`, "Directory does not exist"): dos
+interfaces respondiendo distinto a la misma pregunta, que es lo que AGENTS.md
+§6 prohíbe con dos fuentes de verdad. La respuesta va en el servicio que
+comparten.
+
+**3. `LightweightIndex::build_index`.** Mismo patrón con `WalkDir`, y por eso
+`index build /nonexistent` salía 0. La guarda va en la raíz del recorrido, no
+en el adaptador, para que todas las estrategias coincidan.
+
+`graph mermaid` recibe un `BuildReport`, no un `Result`, y registra una raíz
+ilegible como un *skipped file* más: eso describe un recorrido que falló a
+medias cuando aquí no empezó. Se comprueba en el punto de llamada.
+
+### El UAT que pasaba sin ejecutar el brazo
+
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invoca
+`cognicode graph full --path <inexistente>`. **`graph full` no tiene `--path`**:
+su firma es `graph full [PATH]`, positional, con `[default: .]`. Clap rechaza
+el flag con exit 2, el proceso muere antes del dispatch, y el test pasa. Su
+comentario dice "already the case; pins the contract": lo que mide es que clap
+conoce la aridad, no que el grafo se haya construido.
+
+El UAT **no se corrige en este commit**. Cambiar un UAT firmado y el arreglo
+del producto en el mismo commit hace irreconocible cuál de los dos cambió el
+resultado, y este es el mismo argumento que sostiene la regla de no mezclar
+`C#` firmadas. Queda registrado, y el contrato nuevo usa el positional real.
+
+### Dientes
+
+El contrato nuevo tiene las dos direcciones: 7 casos de error y **3 gemelos de
+éxito**. Un contrato que solo afirma "esto sale distinto de 0" pasa entero si
+el arreglo convierte *todo* en error, incluido el éxito.
+
+| Estado | Resultado |
+|---|---|
+| Sin el arreglo | 9 passed, **7 failed** |
+| Con el arreglo | **16 passed**, 0 failed |
+| Sin `return Err` en `Navigate` | 13 passed, **3 failed** (los 3 de navigate) |
+| Sin la guarda del servicio | 15 passed, **1 failed** (solo `graph_full`) |
+| Sin la guarda del índice | 14 passed, **2 failed** (los 2 de index) |
+
+Cada mutación cae solo en su capa, que es la propiedad que hace que las tres
+guardas sean necesarias y no una de más.
+
+### Dos hallazgos colaterales, medidos
+
+**Dos brazos son código muerto.** `DocsIngest` e `IssuesIngest` están bajo
+`#[cfg(feature = "multimodal")]`, y `multimodal` **no es una feature declarada
+de `cognicode-cli`** (su `[features]` solo tiene `ladybug` y `default`). Esos
+brazos no compilan nunca, y `cognicode --help` no lista `docs-ingest`. Sus
+`return Err` se han añadido igualmente, porque son la política correcta si la
+feature se llegara a declarar; lo que es código muerto no se quita aquí.
+
+**Un test inestable, y no es mío.** `ide::tests::claude_config_path_default`
+lee `$HOME` (`claude_config_path`) y corre en paralelo con hermanos `#[serial]`
+que la mutan con `set_var`. Medido **con estos cambios en el stash**: 1 FALLO de
+4 ejecuciones, y 2 de 4 con ellos. Preexistente, y por tanto fuera de este
+arreglo: se registra para que la suite completa no se cite como verde sin esta
+salvedad.
+
+### Lección 195
+
+El estado de salida de un `trap` sustituye al del script, así que un gate puede
+certificar `PASS` y salir con 64 sin que ninguna de sus stages haya fallado. La
+limpieza no es un efecto secundario del veredicto: es un paso más de la lane, y
+un paso que falla no puede reescribir la respuesta de los que pasaron. Por
+encima, el fallo ocurrió *después* de la evidencia: el recibo y el log ya
+estaban escritos cuando el proceso se volvió rojo, lo que hace que leer solo el
+código de salida de la lane produzca el diagnóstico exactamente invertido.
+
+### Lección 196
+
+Un UAT puede pasar sin ejecutar lo que dice ejecutar, y seguir siendo verde
+durante años, si la invocación tiene un error que clap detecta **antes** del
+dispatch. `graph full --path` no es "un test que no detecta la regresión": es
+un test que verifica la aridad de un flag inexistente. El comentario que lo
+describía como "pins the contract" era la afirmación que hacía falta medir, y
+la medición la refutó. El caso general: **un UAT que pasa por una vía que no
+era la suya necesita una aserción que distinga "rechazado por la interfaz" de
+"ejecutado y falló"** — y mientras no exista, un rojo real y un flag
+inventado son indistinguibles desde el log.
+
+### Riesgo de coordinación, registrado (segunda vez)
+
+Durante esta sesión un actor paralelo commiteó en `verify/r0-exit-gate`
+(`04d0fc7a`, `0ad20c0d`, `3b53d3b3`, `4f4b0e26`, `69186a1c`) mientras yo
+trabajaba en el mismo árbol de trabajo. N+81 ya había registrado esta
+coincidencia y se ve desde el otro lado: su nota de riesgo de coordinación
+nombra `commands.rs`, `analysis_service.rs`, `lightweight_index.rs` y
+`cli_exit_code_propagation.rs` como trabajo ajeno, y son exactamente los
+cuatro ficheros de este commit. Ninguna colisión de contenido: ellos tocaron
+`JOURNAL.md`, `release.pipeline.kts`, `scripts/ci/preflight-*` y su test de
+release; el arreglo de los brazos vive en `cognicode-core`.
+
+Este commit está en `fix/cli-exit-code-propagation` y **no está fusionado**.
+La regla que hay que mantener: un `git stash` en un checkout compartido mueve
+el trabajo de otra sesión, y su `pop` —dos veces en esta sesión— dejó el árbol
+del otro actor en un estado que no era suyo. Se workingó alrededor: la
+verificación de concurrencia se hizo con el stash propio, y se comprobó que
+`git stash list` no contenía trabajo ajeno tras el `pop`.
+
+### Lo que NO se ejecuta aquí
+
+No se publica `v0.101.2`: su candidato quedó certificado (recibo
+`/tmp/preflight-receipt-d04013c9cded.json`, `result: PASS`, 5934/0/30) pero la
+lane salió con 64 por el trap de limpieza, corregido en `69186a1c` por el actor
+paralelo. La republicación la decide el maintainer. No se implementa R2: la
+decisión de custodia de la clave es suya. No se corrige
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` (§"El UAT que
+pasaba sin ejecutar el brazo"). No se retira el `ide::tests::
+claude_config_path_default` inestable: es preexistente y pertenece a
+`MAINTENANCE.md`. No se hace la transición de `a1f961f6` en el ledger, que es
+operator-gated. No se tocan los ADRs archivados ni se reabre ninguna `C#`.
+
+
+## N+83 — La frontera CLI converjada, el UAT que no ejecutaba el brazo, y el candidato que se cortó sin B1
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits** `94f44b49`
+(convergencia CLI + UAT), `79715d25` (convergencia del preflight), `4bd4ed15`
+(integración), `178b4b53` (corte v0.101.5) · **Rama** `integrate/v1015` ·
+**Bloque** B1 + B2 + B3 parcial. Cierra `a1f961f6` que N+82 dejó medido.
+
+### El mandate cambió la forma del arreglo, no su alcance
+
+El primer arreglo de `a1f961f6` (N+82) añadió `return Err(e)` a once brazos.
+La regla arquitectónica del mandate es más estricta: `main.rs` ya hace
+`CommandExecutor::execute(cli).await?`, así que **la frontera de propagación
+ya existía** y lo que la cortaba era cada brazo. La forma destino es
+`Self::execute_navigate(command).await?`. −75 líneas netas, cero tipos
+nuevos, y el `Result` que ya existía es el que llega a `main`.
+
+MEDIDO sobre el binario, y el diagnóstico sigue llegando:
+
+    navigate references MySymbol    exit=1  Error: "Invalid position 'MySymbol': expected file:line:column"
+    index build /nonexistent/zzz    exit=1  Error building index: Directory does not exist
+    graph full /nonexistent/zzz     exit=1  Error building full graph: Invalid parameter: Directory...
+    graph mermaid /nonexistent/zzz  exit=1  Error: "Directory does not exist"
+
+El error de `graph full` es `Invalid parameter`, que es la variante que
+existe de `AppError`. La primera versión de este arreglo usó
+`AppError::InvalidParameter` para el `String` de `SymbolCodeService`, y se
+corrigió: eso convertía un fallo de lectura en una afirmación de argumento
+inválido. Un `String` no implementa `std::error::Error`, así que viaja como
+mensaje.
+
+### El UAT que pasaba sin ejecutar el brazo, medido en dos estados
+
+`prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` invocaba
+`cognicode graph full --path <inexistente>`. **`graph full` no tiene
+`--path`**: su firma es `graph full [PATH]`, positional con `[default: .]`.
+Clap rechazaba el flag con exit 2 y el proceso moría antes del dispatch.
+
+La prueba de que no medía lo que decía medir, ejecutada con el binario
+real, no con una lectura del código:
+
+    forma antigua, con el arreglo PUESTO     exit=2   assert_ne!(code,0) PASSA
+    forma antigua, con el arreglo RETIRADO   exit=2   assert_ne!(code,0) PASSA
+
+El mismo código en los dos estados. Un UAT puede ser insensible al defecto
+que dice vigilar, y no por una razón exótica: por una vía de ejecución que
+no era la suya. El arreglo del argv no basta: el test comprueba ahora dos
+cosas que un `assert_ne!` no distingue — que el diagnóstico **no** sea de
+clap, y que nombre el directorio que falta. Y tiene un gemelo positivo que
+atraviesa el mismo camino y sale con 0.
+
+### La auditoría, como contrato y no como lista
+
+N+82 arregló los ocho brazos que midió. Lo que no respondió esa medición es
+"queda alguno igual", y una lista escrita a mano solo contesta hasta el día
+que alguien añade un brazo. `cli_exit_code_propagation` relee el `match` y
+clasifica cada brazo: 9 propagan, 1 exento con motivo escrito, 3 detrás de
+`#[cfg]` verificados en el fuente. El predicado mira la propiedad —un
+`if let Err` cuyo bloque no vuelve a emitir el error— y no la sintaxis, de
+modo que sobrevive al cambio de `return Err(e)` a `?`.
+
+**Dos extractores fallaron, y sus fallos eran los dos defectos que
+describían.** `Some(CliCommand::Evidence(cmd))` es forma tupla: un extractor
+que solo acepta `Some(CliCommand::X {` deja brazos fuera **en silencio**. Y
+sin acotar el enum, el extractor recoge `List` y `Search` de
+`EvidenceCommand` como si fueran subcomandos de `cognicode`.
+
+### B2: la limpieza del preflight, convergida al script que la usa
+
+`69186a1c` arregló el exit 64 —el trap `rm -rf "$WORK_DIR"` se ejecutaba
+desde dentro del directorio que borraba, porque el script hace
+`cd "$WORK_DIR/clone"`— pero lo hizo en dos ficheros nuevos:
+`preflight-cleanup.sh` con la función y `test_preflight_cleanup.py` con seis
+tests. Ambos se autodescriben por glob en `run-all-contracts.sh:47`, así que
+no eran un añadido inocuo: eran **una segunda puerta del gate** con su propia
+autoridad sobre la regla de limpieza, y la que podía quedarse sin ejecutar
+sin que nada lo dijera.
+
+Convergido: la función vive dentro de `preflight-clean-clone.sh`, los seis
+tests viven en `qw04_preflight_contract.rs`, y los dos ficheros se retiran.
+El contrato sube de 11 a 18, porque **faltaba el test que probaba el
+incidente**: los seis probaban por separado "un PASS sigue siendo PASS si
+la limpieza falla" y "el clon se borra", pero no la que las une —que la
+función salga del directorio antes de borrar—, que es exactamente lo que
+produjo el 64.
+
+Y hay un detalle que solo aparece al ejecutar: la función corre el `rm` con
+`2>/dev/null` **a propósito**, para que la salida de la herramienta de borrado
+no llene el stderr del gate. La prueba de que la limpieza se negó es el aviso
+propio de la función, no la salida del `rm`. La primera versión de este port
+afirmaba lo contrario y falló: el canal por el que se informa es parte del
+contrato.
+
+### El candidato que se cortó sin B1 ni B2
+
+Al integrar apareció el hecho que decide la versión: el corte de `v0.101.4`
+está en `e5abd3cf`, que es **ancestro común** y no contiene ninguno de los
+cinco commits de B1 y B2. Su candidato llegó a correr. Publicarlo habría
+publicado una release cuyo contrato de salida de la CLI seguía tragando
+errores en once de los doce brazos.
+
+La decisión del maintainer fue no publicarlo y cortar el siguiente. De ahí
+`v0.101.5`: el tag `v0.101.4` ya existe con otros bytes, y moverlo mutaría
+una identidad que ya existe.
+
+**El duplicado entre actores.** `03724ffd` (aquí) y `098ce9c0` (en la línea
+de release) producen byte a byte el mismo
+`scripts/ci/test_install_asset_agreement.py`:
+
+    03724ffd  sha256 481abf77ce4696e1914ccee57f4915c7af27b8840deb12ae2d8b6d8ad6be4b45
+    098ce9c0  sha256 481abf77ce4696e1914ccee57f4915c7af27b8840deb12ae2d8b6d8ad6be4b45
+
+La reconciliación no es por tanto una preferencia: los dos lados añaden el
+mismo fichero y git conserva una copia. Comprobado sobre el árbol fusionado,
+no supuesto — el fichero no aparece entre los cambios de la fusión. Lo que
+queda registrado es **por qué** existía: los dos actores llegaron al mismo
+defecto por separado.
+
+### `Cargo.lock` es la séptima autoridad
+
+El bump a `0.101.5` tocó `Cargo.toml`, los tres `product/*.json`, `README.md`
+y `SECURITY.md`. `Cargo.lock` seguía declarando `0.101.4` para los doce
+crates del workspace, y nada en el commit lo delata: es un fichero que no
+se lee. Lo delató `cargo metadata --offline`, que falla si el lock no
+cuadra. La misma clase de fallo que corrigió `2c4831ec` en su día.
+
+### Lección 197
+
+Un UAT puede ser insensible al defecto que dice vigilar, y la prueba de que
+lo es sale de ejecutarlo en los dos estados, no de leerlo. Aquí la forma del
+argv era inválida para el comando —`graph full` no tiene `--path`—, así que
+clap rechazaba antes del dispatch y el código de salida era 2 con el defecto
+presente y con el defecto ausente. La lección general es más ancha que los
+flags: **un test que pasa por una vía que no era la suya necesita una
+aserción que distinga "rechazado por la interfaz" de "ejecutado y falló"**, y
+mientras no exista, un rojo real y una invocación mal formada son
+indistinguibles desde el log.
+
+### Lección 198
+
+`Cargo.lock` es una autoridad de versión más, y es la única que no se lee.
+Un bump que actualiza manifiesto, manifest de producto, README y SECURITY
+puede dejar el lock atrás sin que ningún diff lo señale, y el síntoma no
+aparece hasta que algo resuelve dependencias. La comprobación cuesta un
+`cargo metadata` y encuentra en un segundo lo que un diff de seis ficheros
+no enseña.
+
+### Riesgo de coordinación (tercera vez)
+
+Un actor paralelo commiteó en `verify/r1-release-truth` y en
+`verify/r1-skillbundles` mientras este bloque corría, y hay **dos worktrees
+distintos** en el mismo commit `e5abd3cf`. La integración se hizo sobre
+`e5abd3cf` en una rama nueva, sin tocar ninguno de los dos worktrees ni el
+de la lane que estaba corriendo.
+
+### Lo que NO se ejecuta aquí
+
+No se taguea `v0.101.5` ni se corre la lane de candidato: la lane de
+`v0.101.4` sigue corriendo, y un worktree de release es inmutable mientras
+su lane corre. No se publica nada. No se cambia `execute_doctor`, que
+también llama `std::process::exit` y **es alcanzable** desde el binario
+normal —tercera instancia de la misma violación, y no estaba en la lista del
+mandate—, porque su exit code es un contrato publicado. No se arregla el
+flake `claude_config_path_default`, con causa raíz y tasa medidas (48
+`set_var("HOME")` todos `#[serial]`, este test sin serializarse, **4 fallos
+de 10**): es deuda de test, no de arquitectura, y pertenece al bloque de
+convergencia estructural. No se decide el destino de la superficie
+`multimodal` muerta. No se implementa R2. No se tocan los ADRs archivados ni
+se reabre ninguna `C#` firmada.
+
+## N+84 — La candidate que heredó los binarios de la anterior, y el instalador que nadie ejecutaba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits** `d1f1c051`
+(lifecycle de lane + hermeticidad del enlace aarch64), `ac65233a` (la mitad de
+ejecución de `install.sh`) · **Rama** `integrate/v1015` · **Bloque** B2.9 y B4a.
+
+### La lane no falló donde yo esperaba
+
+`v0.101.5` pasó el preflight entero —`passed=5964 failed=0 ignored=30`, +385
+sobre el baseline `5579/0/37`, dentro de tolerancia—, y pasó `tag-coherence`,
+advisories, licenses, `release-tool`, `binaries-x86_64-unknown-linux-gnu` y
+`sbom-x86_64-unknown-linux-gnu`. Murió en la catorceava stage:
+
+    package-x86_64-unknown-linux-gnu
+    packaged cogh-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    packaged cognicode-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    packaged cognicode-mcp-0.101.5-x86_64-unknown-linux-gnu.tar.gz
+    FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+
+Los otros tres eran de `0.101.4`. El worktree que construye el candidate es de
+larga vida y `package-$target` creaba su lane dir con `mkdir -p` sin limpiarlo
+nunca, así que la salida de la candidate anterior seguía dentro. La pierna
+aarch64 no llegó a ejecutarse. **No hay candidate, no hay certificación y no se
+publicó nada.**
+
+### El síntoma era lo de menos
+
+Lo que decidió si esto era higiene o un agujero de Release Truth fue medir el
+staging contaminado en vez de leer el código. La selección del ensamblador es
+
+    find "${dist_dir}" … -name "${comp}-[0-9]*-${platform}.tar.gz" -print -quit
+
+es decir **se queda con el primero que encuentra**, y el regex defensivo de la
+línea siguiente (`^${comp}-[0-9].*-${platform}\.tar\.gz$`) **no menciona la
+versión**. Reproduciendo esas dos líneas sobre el directorio real:
+
+    cogh              -> cogh-0.101.5-…              ACEPTA
+    cognicode         -> cognicode-0.101.4-…         ACEPTA   <-- la anterior
+    cognicode-mcp     -> cognicode-mcp-0.101.5-…     ACEPTA
+
+`copy_unique` tampoco decía nada: sus claves son los nombres de archivo, y
+`0.101.4` y `0.101.5` no colisionan. El script imprimió `OK`. **Lo único que
+impidió publicar los binarios de la release anterior fue que otra stage
+comparara antes un número de archivos**, y eso es un accidente de orden de
+stage, no una propiedad de nada.
+
+### Tres arreglos, cada uno con su dueño y su propiedad
+
+1. **`package-$target` crea su lane dir desde cero.** Aquí no aplica el «la
+   limpieza no puede ser el veredicto» de QW-04, y la diferencia es el punto:
+   esa regla es para lo que se borra *después* de decidir, y esto es antes. Si
+   el estado de entrada no se puede establecer, se dice y se para; si no se
+   puede limpiar, es fatal y no un aviso.
+2. **El ensamblador rechaza la ambigüedad en vez de resolverla**, en el lane dir
+   y también en la raíz del staging. En la raíz hace falta porque un payload
+   viejo es indistinguible de un bundle de skills: el root acepta todo
+   `*-*.tar.gz` y ambos nombres casan. Por eso ahí es un recuento y no una
+   prueba de presencia.
+3. **`toolchain-for-$target` comprueba el requisito que imprimía y no
+   verificaba.** En `v0.101.4` el target estaba instalado, la stage dio bien, y
+   `binaries-$target` murió dos stages después con exit 101 y un error de parser
+   sobre el triple, culpando al compilador.
+
+**La versión no se pasa al ensamblador, a propósito.** Habría roto los diez
+puntos de invocación de cuatro UATs de Rust, y habría creado una segunda fuente
+de verdad para algo que ya es autoridad del tag y de la lane. La ambigüedad se
+detecta sin conocer la versión.
+
+### El gate aarch64 hace el fallo temprano, no reproducible el toolchain
+
+El enlace aarch64 vivía en tres variables de entorno fuera del repo
+(`CC_aarch64_unknown_linux_gnu`, `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER`,
+`AR_aarch64_unknown_linux_gnu`) y `~/.local/bin/zig-cc-aarch64` no se
+referenciaba en ningún `.kts`, `.sh` ni `.toml`. El gate se verificó contra el
+entorno real en sus tres ramas: con la configuración de la lane `rc=0`, sin
+linker `rc=1` con la remédica, y con un linker roto `rc=1` nombrando la ruta.
+**Un runner sin esas variables ahora falla en `toolchain-for-$target` en lugar
+de producir un candidate que parece construido y no lo está.** Si eso no es
+aceptable, el enlace tiene que pasar a ser propiedad del repo, y es otra
+decisión.
+
+### `install.sh`: cinco posturas declaradas y cero tests
+
+El encabezado de `install.sh` declara cinco posturas —unsupported platform,
+missing checksum, checksum mismatch, partial download, y existing destination
+replaced only after the new binary verifies— y ninguna estaba probada. El
+hook para poder hacerlo, `COGNICODE_RELEASE_BASE`, lleva muerto desde que se
+escribió, con el comentario explícito de que existe *«so a local fake release
+can drive the checksum/tamper tests»*. `scripts/e88-entry-gates.sh` sí ejecuta
+`install.sh` de extremo a extremo, pero está clavado en la release pública
+`v0.97.0`, vive fuera de `scripts/ci/` y por tanto fuera del merge gate, y solo
+prueba el camino feliz.
+
+Con `COGNICODE_VERSION` y `COGNICODE_RELEASE_BASE` fijos, `install.sh` no hace
+ninguna llamada a GitHub, así que con `file://` el stage es hermético: sin red y
+sin release publicada. Siete tests, uno positivo porque negarse a todo también
+pasaría el contrato, y cada negativo comprueba **la razón del rechazo** y no
+solo el código de salida — la distinción que hizo falso verde el UAT de
+`graph full`. Cubre también el fallo que el checksum no puede ver: un tarball
+auténtico cuyo digest coincide y cuyo binario responde con otra versión.
+
+### Corrección de una afirmación mía
+
+Dije que «mise no tiene manifiesto en el repo» como hueco. **Es falso, y la
+medida lo desmonta**: el README enseña
+`mise install "github:Rubentxu/CogniCode[matching=cogh-]"`, que es el backend de
+GitHub de mise y resuelve el asset desde el propio tag. No necesita manifiesto;
+su ausencia es el diseño, no un agujero. Lo que sí es verdad es que el recibo de
+identidad `docs/e87-mise-identity-receipt.md` está anclado a `v0.96.0` y es
+evidencia manual observada, no un gate, y que esa vía **no es hermética**: mise
+instala desde GitHub y necesita una release publicada.
+
+### Gates medidos sobre el árbol que se tagueará
+
+| Gate | Resultado |
+|---|---|
+| `cargo test --workspace --no-fail-fast` | **passed=5968 failed=0 ignored=30**, 162 binarios `ok`, `CARGO_EXIT=0` |
+| `bash scripts/ci/run-all-contracts.sh` | **182 passed, 0 failed** (165 al empezar este bloque) |
+| UATs Rust que leen pipeline y ensamblador | **61 verdes** (9+11+11+30) |
+| Contratos nuevos | 17, todos con gemelo positivo y 6 mutaciones que muerden |
+| Der-risk vs baseline `5579/0/37` | +389 passed, −7 ignored, tolerancia ±2 |
+
+### Lección 199
+
+Un count-check puede ser un guard verdadero y aun así **enmascarar** el defecto
+que viene detrás. `planned != produced` es correcto y detectaba la contaminación,
+pero su éxito hacía creer que la lane no podía publicar los bytes de otra
+versión, cuando lo único que impedía esa publicación era que ese count saliera
+antes en el orden de stages. Un guard que se adelanta a la propiedad que de
+veras importa no es un guard: es un accidente favorable.
+
+### Lección 200
+
+Un directorio de salida de build que se crea con `mkdir -p` **hereda estado
+entre ejecuciones**, y el worktree de una lane de release vive mucho más que la
+lane. La forma no es neutra: `mkdir -p` sobre un directorio existente es
+exactamente el mecanismo por el que la candidate anterior sobrevive a la
+siguiente. Si un directorio es la salida de una stage, esa stage es su dueña y
+tiene que crearlo, no heredarlo.
+
+### Lección 201
+
+En shell, `$var=valor` **no es una asignación** en ningún shell POSIX: el
+nombre contiene `$`, así que bash lee la palabra como un comando y ejecuta
+`=valor`. Lo escribí así tres veces en un stage nuevo, y el síntoma —
+`command not found` con un `=` delante y todas las variables siguientes vacías
+— no señalaba el error. En la misma familia: `${!$var}` y `${CC_$var}` son
+*bad substitution*, `$key_LINKER` es el nombre `key_LINKER` y no `key` más un
+sufijo, y `[target.<triple>]` dentro de un regex de `awk` es un rango inválido
+por los guiones del triple.
+
+### Lección 202
+
+Los contratos existentes no solo vigilan el código del producto: **detectaron
+tres de mis propios errores antes de que llegaran a una lane**. Un valor de
+Kotlin escrito como variable de shell, dos veces, y una colisión con un `val`
+de Kotlin llamado `declared`. En un repositorio donde la regla es que un test
+que pasa sin ejecutar nada es peor que un test rojo, un contrato que muerde
+contra el autor de los cambios es parte de la red, no una molestia.
+
+### Lección 203
+
+Un hook de testabilidad declarado y nunca usado es **evidencia de una
+capacidad que el equipo-creyó tener y no tenía**. `COGNICODE_RELEASE_BASE`
+llevaba muerto desde que se escribió, con el propósito explícito en el
+comentario. Un hook sin consumidor no se nota: no rompe nada, simplemente
+nunca se exercise. Merece el mismo tratamiento que un stub: si nadie lo llama,
+no es una capacidad, es una intención.
+
+### Lo que NO se ejecuta aquí
+
+**No se taguea, no se empuja y no se corta candidate.** El operador eligió
+explícitamente commit con recibo SDDK y sin tag ni push, a la espera de revisar.
+`v0.101.5` sigue tagueado en `c7dba40c`, con el árbol que no podía producir un
+candidate, y eso es correcto: un tag identifica bytes, y esos bytes existen. El
+re-corte necesita un número de versión nuevo —v0.101.5 ya está ocupado— y esa
+es una decisión de identidad que es del operador, no una consecuencia de este
+recibo. No se modifica `execute_doctor`, que también llama
+`std::process::exit` y es alcanzable, porque su exit code es contrato
+publicado. No se arregla el flake `claude_config_path_default` (causa raíz y
+tasa 4/10 medidas en N+82): es deuda de test. No se decide el destino de la
+superficie `multimodal` muerta. No se implementa R2. No se tocan los ADRs
+archivados ni se reabre ninguna `C#` firmada.
+
+### Lo que queda
+
+1. **Re-corte** — version, tag, push y lane nueva desde `ac65233a`.
+2. **Identidad de mise** — no hermética; necesita una release publicada. Su
+   recibo sigue anclado a `v0.96.0`.
+3. **Hermeticidad real del enlace aarch64** — decidir si el enlace pasa a ser
+   propiedad del repo o si el gate temprano es suficiente.
+4. **Convergencia estructural** — `execute_doctor`, superficie `multimodal`
+   muerta, flake `claude_config_path_default`.
+
+## N+85 — Tres afirmaciones que la medición desmontó
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Commits**
+`85961eb3` (serialización del lector de `HOME`) · **Rama** `integrate/v1015` ·
+**Bloque** B5b.
+
+Este recibo existe por lo que corrige, no por lo que añade. Tres cosas escritas
+en recibos anteriores no resistieron la medición, y una de ellas estaba a punto
+de convertirse en una propuesta de borrado.
+
+### El flake no falla
+
+`ide::tests::claude_config_path_default` quedó registrado en N+82 con **4/10** y
+como «preexistente, fuera de este arreglo». MEDIDO hoy, antes de tocar nada:
+**0 fallos en 10** ejecuciones del módulo `ide` y **0 en 6** del paquete
+completo bajo carga. Dieciséis intentos, ninguno. La propia cifra del journal
+tampoco separaba señal de ruido: 1/4 con los cambios de B1 y 2/4 sin ellos.
+
+La tasa **no está establecida** y la afirmación previa era insostenible. Aun
+así se serializó, porque la carrera es real por construcción —el test lee
+`$HOME` en paralelo con treinta hermanos que lo mutan con `set_var`, todos bajo
+`#[serial]`, y era el único lector sin serializar—, la convención del fichero
+es inequívoca y serializar no cuesta nada. El comentario en el código lo dice
+para que no se cite como prueba de un fallo visto ocurrir. **Endurecimiento, no
+corrección demostrada.** No se añadió contrato: un guard dedicado a una sola
+función sería el patrón de «un test por un bug».
+
+### `multimodal` no era código muerto, y casi lo reabrí
+
+N+82 escribió: «Dos brazos son código muerto […] lo que es código muerto no se
+quita aquí», y el bloque siguiente propuso decidir entre eliminar, declarar o
+cablear la feature. **Eso reabría un hallazgo cerrado de PRF.**
+
+`docs/prf/TRACEABILITY.md`, fila **H4**, estado **CLOSED (F1.W5 — KEEP)**:
+
+> KEEP+MARK — el comportamiento actual (marcado con nota «Compiled in ONLY when
+> the `multimodal` Cargo feature is active») es honesto y útil. **No se debe
+> ocultar.**
+
+Y `docs/analysis/` más `.agent/TESTING-STATE.md` muestran la feature viva en el
+core: `cargo test -p cognicode-core --features evidence-kernel,multimodal`,
+`equivalence_harness`, `fact_bridge_benchmarks`, siete `EdgeKind` gated. Además
+usa `#[cfg(feature = "multimodal")]`, una feature de Cargo normal y **no** un
+cfg a pelo, y `cognicode-explorer` **sí** la declara y la cablea. Lo no
+alcanzable es solo el brazo de la CLI, porque `cognicode-cli` no la declara.
+
+La segunda afirmación falsa del mismo recibo: «`cognicode --help` no lista
+`docs-ingest`». El inventario de PRF documenta lo contrario, y la razón de que
+sea cierto es precisamente el defecto que queda abierto.
+
+### El defecto real que sí hay: la marca vive dentro de lo que marca
+
+Los doc-comments que dicen «Compiled in ONLY when the `multimodal` Cargo
+feature is active» están **dentro del propio `#[cfg]` que describen**. Compilan
+fuera, así que en un build por defecto no hay ni el comando ni su nota. No hay
+`after_help` en `commands.rs`. La marca solo puede verla quien ya tiene la
+feature, **justo cuando la nota no hace falta**. Eso es exactamente el
+«ocultar» que la fila H4 prohíbe.
+
+La acción correcta es **implementar una decisión ya firmada**, no discutarla:
+poner la nota en una parte incondicional de la superficie de la CLI, con un
+contrato que afirme que un build por defecto la menciona. No se ha hecho porque
+**cambia la salida publicada de `--help`**, y no hay en el repo criterio medido
+sobre si la ayuda debe anunciar comandos que el binario no trae.
+
+### La pregunta de aarch64 queda cerrada por medición
+
+Quedaba abierta si el enlace debía pasar a ser propiedad del repo. MEDIDO:
+
+1. **Precedencia** — con `.cargo/config.toml` declarando un linker y
+   `CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER` en el entorno, **gana el
+   entorno**; sin entorno, gana el config. Declarar un valor por defecto en el
+   repo es por tanto **aditivo**: una máquina con la variable sigue igual, y una
+   que no la tiene deja de depender de ella.
+2. **El precedente del repo no sirve** — los dos targets musl declaran
+   `linker = "clang"`. Copiarlo para `aarch64-unknown-linux-gnu` **rompe la
+   lane**, medido: `clang` cae en el `ld.bfd` del host y falla con «Relocations
+   in generic ELF (EM: 183) […] file in wrong format». EM:183 es AArch64: los
+   objetos son correctos y el enlazador es de otra arquitectura.
+3. En esta máquina **no hay ningún gcc cruzado** (`aarch64-linux-gnu-gcc`,
+   `aarch64-linux-gnu-cc` y `aarch64-unknown-linux-gnu-gcc` no existen). El
+   wrapper de zig no es un adorno: trae su propio LLD y sabe apuntar a
+   aarch64-gnu.
+
+Conclusión: «que el enlace sea propiedad del repo» **no es un one-liner**.
+Exige un wrapper versionado —fichero nuevo, que este bloque no crea— o un
+requisito de toolchain documentado, que es lo que hay. El diseño actual, tres
+variables de entorno más el gate temprano de `toolchain-for-$target`, es el
+correcto; lo que le falta no es una línea de configuración sino que el requisito
+deje de ser conocimiento tribal. **Queda escrito aquí, que es lo que un recibo
+es.**
+
+### Lección 204
+
+Una feature no alcanzable desde un binario **no es código muerto**, y la
+diferencia la hace quién tomó la decisión y cuándo. `multimodal` parece muerta
+si se mira el binario de la CLI; está viva en el core, declarada y cableada en
+`cognicode-explorer`, y sus brazos de CLI son código condicionado, no
+abandonado. Antes de proponer eliminar superficie hay que abrir
+`docs/prf/TRACEABILITY.md` y mirar si la fila está CLOSED: allí están la
+decisión y su motivo, y una decisión cerrada no se reabre porque el código
+resultara incómodo.
+
+### Lección 205
+
+Un guard puede ser correcto y aun así tapar el defecto de detrás. El
+`planned != produced` de la lane era un guard verdadero, y su éxito hacía creer
+que nada podía publicar bytes de otra versión, cuando lo único que lo impedía
+era su posición en el orden. Y al revés: una corrección que nadie ha visto
+fallar no es una corrección, y su comentario debe decir cuál de las dos cosas
+es.
+
+### Lo que NO se ejecuta aquí
+
+No se declara `multimodal` en `cognicode-cli`: eso convertiría deuda
+condicionada en superficie pública, y la regla del mandate lo prohíbe. No se
+implementa la marca KEEP+MARK porque toca `--help` publicado. No se declara un
+linker por defecto en `.cargo/config.toml` porque la medición dice que el
+precedente del repo no funciona para ese target. No se toca `execute_doctor`.
+No se taguea, no se empuja y no se publica nada; `v0.101.5` sigue tagueado en
+`c7dba40c`.
+
+## N+86 — La costura que faltaba: stage y ensamblador, juntos y con binarios reales
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B2.9 (verificación de cierre).
+
+El arreglo de N+84 se había probado **por mitades**. El contrato de packaging
+ejecuta el cuerpo real de `package-$target`, pero con un `cognicode-release` de
+mentira. Los UATs del ensamblador usan árboles sintéticos. Nadie había ejecutado
+las dos mitades **juntas**, y ese es exactamente el punto donde vivía el fallo
+original: una stage que produce y un ensamblador que elige.
+
+MEDIDO con el binario real `cognicode-release` y los binarios reales de las dos
+plataformas. La procedencia de ese binario era la parte débil de este recibo y
+queda resuelta en N+87: es **byte-idéntico** a una build limpia de este árbol, y
+la sonda se reejecutó contra esa build con `TODO OK`:
+
+1. `package-$target` sale 0 para `x86_64-unknown-linux-gnu` y para
+   `aarch64-unknown-linux-gnu`, y cada lane dir contiene **exactamente** sus
+   tres payloads de `0.101.5` y nada más.
+2. `stage-platform-payloads.sh` real acepta esa salida y aplana los 6 payloads
+   y los 6 SBOMs.
+3. Con un `cognicode-0.101.4-…tar.gz` inyectado en el lane dir, el ensamblador
+   **rechaza y lo nombra** — y el guard que habla es el de ambigüedad, no el de
+   higiene de raíz.
+4. Reejecutar la stage sobre ese mismo lane dir sucio lo limpia, dice
+   `cleared staging/payloads-linux-x86-64 from a previous candidate` y sale 0.
+
+Las dos líneas de defensa funcionan, y la segunda muerde aunque la primera se
+desactive.
+
+### El ensamblador no es idempotente, y conviene saberlo
+
+La primera sonda de este bloque dio un falso negativo instructive. Al reejecutar
+el ensamblador sobre un staging **ya aplanado**, falló con:
+
+    ::error::unexpected file at staging root: cogh-aarch64-unknown-linux-gnu.cdx.json
+         only payloads-* lane directories and pre-staged skill bundles are allowed
+
+No era mi guard: era el de higiene de raíz, que ve los 6 SBOMs que el propio
+ensamblador había dejado allí en la pasada anterior. Es comportamiento
+preexistente, fail-closed y documentado en su cabecera («a previous flattened
+run that left orphan tarballs at the root»), pero conviene que quede escrito:
+**el aplanado tiene que correr una vez por árbol de staging**, y un re-corte que
+repita `payloads` después de `generate` falla ruidosamente en lugar de
+duplicar. La sonda se corrigió para devolver la raíz a su estado previo al
+aplanado, y entonces sí midió lo que pretendía.
+
+### Lección 206
+
+Un arreglo puede estar verde en sus mitades y seguir sin estar probado: el
+contrato de una stage usa un doble de la herramienta que la stage invoca, y los
+contratos de una herramienta usan entradas sintéticas. La costura entre ambas es
+la zona donde el defecto original vivía, y es la única que ninguno de los dos
+cubría. Ejecutar las dos con los binarios que la lane ya había construido costó
+minutos y confirmó lo que cuatro contratos separados no podían.
+
+### Nota sobre la sonda
+
+La sonda **no entra en el repo** como contrato: depende de `cognicode-release` en
+release y de los binarios por target, que solo existen después de una build de
+release. En el merge gate sería lenta y frágil. Lo que sí entra es el resultado,
+que es lo que un recibo es.
+
+### Lección 207 — «El tooling está roto» es una conclusión, y hay que medirla
+
+El cierre de este bloque se dio por bloqueado durante un rato largo: el recibo
+SDDK de `71f9f47c` se había emitido, el informe de alineación se regeneraba con
+el `STAGED_TREE` correcto, y aun así `alignment.env` no existía. La hipótesis
+falsa que se repetía era «el gate rechaza este recibo».
+
+Medido, el gate no rechazaba nada. Las cinco precondiciones del `--ack` pasaban
+una a una: `sddk` en PATH, modo `auto` con owner allowlisted, `ledger verify` con
+`rc=0`, work item derivable, y el propio `--ack` que terminaba con `rc=0` y
+escribía el fichero. La causa era **cómo se invocaba**: los valores del recibo
+llevaban acentos graves de Markdown y el alias de git (`!sddk-align`) los pasa
+por un shell adicional, donde `` `stage-platform-payloads.sh` `` se evalúa como
+*command substitution*. El valor se consumía ejecutando un binario inexistente,
+quedaba vacío, y el hook caía por el `exit 3` de «campo obligatorio», que se
+lee igual que un rechazo de trazabilidad.
+
+Dos reglas que se siguen de ahí:
+
+- **Un gate que no se ha medido no es un blocker, es una hipótesis.** La
+  diferencia entre «no funciona» y «no sé invocarlo» cuesta un commit entero si
+  se acepta la primera lectura.
+- **Los recibos se escriben en texto plano.** Sin acentos graves, sin
+  *command substitution* que pueda comerse el valor, y sin valores de una palabra
+  cuando el valor largo estorbe. El recibo es un artefacto que un humano lee; la
+  prosa completa sigue viviendo en el JOURNAL.
+
+También queda una consecuencia práctica: el recibo que acompaña a `71f9f47c`
+salió con los campos `summary`, `inputs`, `unknowns` y `discoveries` a `x`, por
+el mismo motivo. El commit es correcto y su prosa está íntegra en N+85, pero su
+recibo SDDK es un cascarón. La trazabilidad de esa entrada la sostiene el
+JOURNAL, no el recibo.
+
+## N+87 — Divergencia entre dos actores sobre el mismo corte, y una atribución mía que era falsa
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` @ `2ac871ae` · **Bloque** B3 (antes de re-cortar).
+
+Este recibo no arregla nada. Documenta un hecho que aparece al preparar el
+re-corte y que **no puede resolverse sin decisión del maintainer**, porque elegir
+en silencio un estado es exactamente lo que el procedimiento de recuperación
+prohíbe cuando hay un checkpoint contradictorio.
+
+### Lo que se ha medido
+
+Dos actores trabajaron sobre `c7dba40c` en paralelo, en worktrees distintos y
+sin converger:
+
+    nuestra linea            integrate/v1015       2ac871ae   (6 commits)
+    su linea                 verify/r1-integrated  65dcdba3   (9 commits)
+
+Y el tag **`v0.101.5` apunta a la línea del otro actor**, no a la nuestra:
+
+    git rev-parse 'v0.101.5^{commit}'  -> 65dcdba3
+    git ls-remote --tags origin        -> refs/tags/v0.101.5^{} 65dcdba3
+
+El tag está **publicado en el remoto**. Correcto: un tag identifica bytes, y esos
+bytes son los de su línea. Lo que sigue es un hecho distinto y más grave: **el
+remoto no tiene nuestra rama**, así que el arreglo de la ambigüedad del
+ensamblador y el gate de linker **no existen en ningún sitio publicado**.
+
+    origin/integrate/v1015  -> c7dba40c   (6 commits por detrás de HEAD local)
+
+### Ninguna línea es superconjunto de la otra
+
+Medido commit a commit, no es que una haya avanzado más que la otra: es que
+cubren defectos distintos.
+
+| defecto | nuestra línea | su línea |
+|---|---|---|
+| lane dir desde cero, fallo fatal al no poder limpiar | sí | no |
+| el ensamblador rechaza ambigüedad sin conocer la versión | sí | no |
+| `toolchain-for-$target` verifica que el linker resuelva | sí | no |
+| target instalado no es target que compila (cc/C++ cruzado) | no | sí |
+| el extractor de cuerpos `sh()` ve stages con preámbulo | no | sí |
+| la re-verificación posterior a la subida corre con preámbulo | no | sí |
+| una guard de CI que no pasa con el env que hace fallar la lane | no | sí |
+| el binario de release tiene que ser de **este** árbol | no | sí |
+| el subcomando `skills` existe | no | sí |
+
+Y su arreglo del binario stale **acaba de corregir una afirmación mía**. N+86
+decía que la costura se midió con «el binario real —construido por la lane que
+murió—». Esa frase era falsa: el binario es de las 20:13 y la lane corrió a las
+21:30, así que no lo construyó ninguna lane.
+
+El fondo del asunto es que `~/.cargo/config.toml` de esta máquina fija un
+`build.target-dir` **compartido entre checkouts y agentes**, y cargo decide si
+reconstruye comparando mtimes entre árboles sin historial común, lo cual no dice
+nada. Su commit lo mide así: su línea **sí** tiene el subcomando `skills`
+(`7d074fef`) y el binario no lo tenía, luego para su línea el binario era
+obsoleto. Esa medición es correcta y su arreglo entra por cherry-pick.
+
+Para nuestra línea la conclusión es la contraria, y había que medirla en vez de
+asumirla:
+
+    $ CARGO_TARGET_DIR=/tmp/n86-proven/target \
+        cargo build --release --bin cognicode-release      # 3m05s, desde 2ac871ae
+    $ cmp /tmp/n86-proven/target/release/cognicode-release \
+          /var/home/rubentxu/cargo-targets/release/cognicode-release
+    IDENTICOS
+    $ sha256sum  (ambos)  -> 8b8867c123bd338a333fe2fc08330576…
+
+**Byte-idéntico.** Nuestro árbol no tiene `skills` y el binario tampoco, así que
+el artefacto sí era de esta línea. Reejecutada la sonda contra esa build limpia,
+con los binarios por target copiados al target-dir aislado: **TODO OK**, los
+cinco pasos, incluidos el rechazo de ambigüedad nombrando el payload de
+`0.101.4` y la limpieza del lane dir al reejecutar la stage.
+
+Lo que queda impreciso, y se dice en vez de omitirlo: la procedencia de los
+**binarios por target** que la sonda empaqueta no está probada byte a byte como
+la del tool. No importa para lo que la costura mide —que es higiene de
+directorios y rechazo de ambigüedad, no contenido de binario— pero el recibo no
+debe insinuar lo contrario.
+
+Dos correcciones de estilo que conviene no volver a escribir: `cog-fix-skills`
+y `cog-integrated` son **worktrees**, no actores.
+
+### El solapamiento real es uno, y es duplicación
+
+Solo dos ficheros se tocan en ambas líneas, y en los dos el trabajo es el mismo
+hecho y no dos caras de él:
+
+1. `release-candidate.pipeline.kts`, limpieza del lane dir. Nosotros: `rm -rf`
+   del directorio completo, **fatal** si no se puede limpiar, y un mensaje que
+   nombra la causa. Suyo: `rm -f` de dos globs acotados a los subdirectorios que
+   la stage escribe, con `2>/dev/null || true`. Las dos son defendibles; la suya
+   es más quirúrgica y la nuestra más estricta. **Es una decisión de propiedad,
+   no una suma.**
+2. `scripts/ci/test_candidate_packaging.py`, y aquí sí es el mismo cambio con el
+   mismo nombre: los dos actores añadieron un parámetro `stale=` a
+   `run_package_stage` para reproducir la stage sobre un árbol sucio. En el
+   segundo caso no hay nada que reconciliar: hay que quedarse con **una** versión
+   del parámetro, no con las dos.
+
+### Lo que no se hace aquí
+
+No se fusiona, no se reescribe el tag, no se elige línea, no se taguea, no se
+empuja. Elegir en silencio entre dos líneas paralelas que arreglan defectos
+distintos es una decisión de producto, y este bloque no la toma.
+
+La reconciliación necesita del maintainer, por lo menos: cuál línea es la base,
+qué se hace con el tag `v0.101.5` ya publicado, y si el arreglo del binario
+stale entra por **cherry-pick** —que es lo que corresponde, porque es un defecto
+independiente de los dos— antes de cualquier re-corte.
+
+### Lección 208
+
+Un recibo de evidencia es una afirmación sobre **qué** se ejecutó y **de dónde
+salió**. Cuando el ejecutable viene de un `target-dir` compartido entre
+agentes, la segunda mitad no se puede sostener por mtime, y redactarla como si
+se pudiera convierte un resultado correcto en un recibo que miente. La
+comprobación que faltaba era de un segundo: no «¿este binario funciona?» sino
+«¿este binario es de este árbol?».
+
+## N+88 — Reconciliación de las dos líneas, y un agujero en el gate que la dejó pasar
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (reconciliación previa al re-corte).
+
+Decisión del maintainer: nuestra línea como base, cherry-pick de los defectos
+independientes del otro actor, `v0.101.5` intacto, corte a `v0.101.6`, y la lane
+ejecutada aquí hasta candidato.
+
+### Lo que entró, y lo que se dejó fuera
+
+De los diez commits de la línea del otro actor quedaron fuera **dos**, a
+propósito:
+
+- `32fb1ff6`, la limpieza del lane dir. Es el **mismo hecho** que ya tenemos en
+  `d1f1c051`, no dos caras de él. Se conserva la nuestra: `rm -rf` del
+  directorio completo y **fatal** si no se puede limpiar. La suya es más
+  quirúrgica —dos globs acotados con `|| true`— y también defendible; lo que no
+  cabe es tener las dos. Verificado después: queda una sola versión, la nuestra.
+- `d649d9ac`, un merge. Sus dos lados entran por separado, así que traerlo sería
+  traerlos dos veces.
+
+Los otros ocho entraron: el subcomando `skills` que la stage pedía y no existía,
+el toolchain nativo cruzado, la guarda que pasaba con el entorno que hace fallar
+la lane, la re-verificación posterior a la subida, el extractor de cuerpos
+`sh()` con preámbulo, `run-target-binary`, la frescura del binario de release, y
+el `--tag` que la stage `verify` nunca pasó. Fuente fijada a `60e60975`, **no** a
+la punta de la rama: el otro actor seguía trabajando y la rama avanzó durante la
+reconciliación.
+
+### Dos conflictos, y los dos eran de propiedad
+
+1. El helper `render` de los contratos de packaging. Nuestra línea lo había
+   extendido con `repoRoot` y `cd`; el otro actor lo desplazó al añadir su doble
+   de skills justo encima. Se conserva la firma de cinco parámetros, que acepta
+   el llamada de cuatro posicionales del otro.
+2. La stage `toolchain-for-$target`, donde los dos añadieron una guarda. Aquí no
+   hubo que elegir: **no se solapan**. La nuestra pregunta si hay linker de Rust
+   y si resuelve —que es estructura—; la del otro actor ejecuta una sonda con el
+   compilador nativo para el triple exacto que `cc-rs` añade —que es capacidad—.
+   Quedan las dos en serie, la más barata primero, y cada una sigue teniendo su
+   propio fichero de contratos.
+
+### El fallo que la reconciliación destapó
+
+Con las dos guardas en la stage, los tres contratos del linker de
+`test_pipeline_stage_bodies.py`fallen: el arnés renderiza la stage en un repo
+temporal, y la guarda nueva se llama por ruta relativa después del `cd`, así que
+en el sandbox no existía y las tres pruebas positivas/reportaban un problema de
+linker que no era de linker. **La lane real no estaba rota** —esa stage sí hace
+`$cd`—; lo roto era el arnés. Se corrigió poniendo la guarda **presente e
+inerte** en el sandbox, con el motivo escrito: este fichero prueba la guarda del
+linker, y la del toolchain nativo tiene el suyo, con sus propios stubs.
+
+### Lección 209 — un bump a mitad de suite produce un fallo que no es del producto
+
+`prf_f6_w1_clean_round_trip_generates_and_verifies` falló con
+`tag v0.101.6 must equal v0.101.5 (R8)`. No era un defecto: la suite de tres
+minutos había compilado el binario de test **antes** del bump, y el test lee `tag`
+y `version` de la misma función, que en un binario viejo lee el fichero y en el
+nuevo lleva la versión compilada. Reejecutado tras recompilar: 11 de 11. La
+regla que se sigue es la de siempre y con más motivo: **el número que decide es
+el de la suite entera sobre el árbol final**, no el de una ejecución que empezó
+antes de que el árbol quedara quieto.
+
+### Lección 210 — un gate de gobernanza no cubre todos los caminos
+
+Al intentar commitear el tercer cherry-pick sin recibo de alineación, el hook no
+pidió nada. Medido con contraste, no de memoria:
+
+    git commit  (mismo tipo de cambio)  -> bloqueado, rc=1, "Do not bypass"
+    git cherry-pick (mismo tipo)         -> rc=0, sin recibo, sin preguntar
+
+**`git cherry-pick` no dispara el `pre-commit`.** Tres de los ocho cherry-picks
+entaron sin recibo de alineamiento; su trazabilidad la sostienen los `sddk-close`
+posteriores, no un recibo. El gate cierra `commit` y no cierra el camino que usa
+una reconciliación, que es precisamente el momento en que más importa que
+alguien mire. No se arregla aquí porque el hook es de la instalación global y no
+del repositorio, pero queda medido y no es un problema hipotético: es el
+mecanismo por el que dos actores pudieron converger sin que el gate lo notara.
+
+### Gate del corte
+
+207 contratos, `6063` tests, `0` fallos, `30` ignorados, `CARGO_EXIT=0` leído del
+log y no de un pipe. `fmt` limpio y `clippy -D warnings` sin avisos. El primer
+borrador del bloque `Versioning` del README era más honesto —decía que la
+release no está publicada— y **rompió** `test_release_truth_convergence`, que es
+preexistente a la divergencia y define la forma de esa sección. Se ajustó a la
+forma que el contrato exige, con el matiz dentro de la propia viñeta: la
+autoridad es el contrato, no la redacción.
+
+## N+89 — El gate de Release Truth comparaba la versión y no los bytes
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (antes de la lane).
+
+Aparece al traer `64370bbb`, que fue pedido **después** de que `v0.101.6`
+estuviera tagueado y empujado. El tag no lo contiene, y al medirlo salió esto:
+
+    tag v0.101.6 -> 935654ce
+    HEAD          -> eae6d330
+    $ release-tag-coherence.sh v0.101.6 HEAD
+    OK: tag v0.101.6 ↔ workspace.version 0.101.6      # rc=0
+
+**El gate daba `OK` con el árbol dos commits por delante del tag.** Comparaba
+`0.101.6` contra `v0.101.6` y ahí acababa: nunca comprobaba que el SHA fuera el
+commit que el tag nombra. Y ningún contrato del repositorio lo cubría, porque un
+contrato que pasara un SHA distinto del tag vería un fallo de versión y lo
+tomaría por el acierto que parecía.
+
+Es exactamente el incidente que el gate dice existir para cerrar, con la mitad
+de la comparación sin hacer. Un tag nombra **un** commit: si el build corre
+sobre otro, lo que se publica lleva una versión y no el código que se certificó
+para ella. Los números coinciden y los bytes no, que es la forma que toma aquí
+el fallo de `v0.98.0`.
+
+La comprobación va **antes** que la de versión, y por una razón que también es
+un contrato: si fuera después, un gate que solo mirase la versión fallaría
+igual, pero por el motivo equivocado, y el contrato no distinguiría las dos
+mitades. Por eso el test exige el mensaje de identidad y no solo el código de
+salida.
+
+### El contrato que no depende del estado del repo
+
+El primer contrato que escribí usaba `HEAD` como el commit distinto del tag.
+Cuando `HEAD` **es** el tag —que es justo después de cortar— hacía `return` y no
+comprobaba nada: verde con el gate roto, que es la forma más caro de tener un
+contrato. Lo que se ejecuta siempre es el **padre** del tag, que se sabe
+distinto por construcción. Mutado el bloque de identidad, el contrato falla
+diciendo que el fallo no es de identidad, que es exactamente lo que tiene que
+decir; restaurado, verde.
+
+### Lección 211
+
+Un gate que se enuncia sobre una propiedad tiene que comprobar **toda** la
+propiedad, y la parte que se omite no es la menos importante: aquí la versión se
+comprobaba y los bytes no, de modo que el gate era verde exactamente en el caso
+que existe para evitar. Lo delata una pregunta que no es de este repo: **¿qué
+afirmaba el nombre del script y no comprobaba?** El nombre dice *coherencia*
+entre tag y workspace, y solo comparaba la versión. Y un contrato que pasa
+argumentos variables no demuestra nada: un contrato que constructa su propio caso
+difiere de uno que hereda el caso del repositorio en el momento de ejecutarse.
+
+### Lo que este arreglo cambia en la lane
+
+`release-candidate.pipeline.kts` es el único llamador en producción, y llama
+`release-tag-coherence.sh "$RELEASE_TAG" "$RELEASE_SHA"`. Con este arreglo, una
+lane que intente construir desde un commit que no sea el del tag falla **antes**
+de gastar el build, nombrando los dos commits. Es la lane la que ha estado a
+punto de producir un candidato mal etiquetado, y ahora lo dice en la stage de
+coherencia, que es la primera que corre.
+
+## N+90 — v0.101.7: el corte que lleva los dos arreglos dentro
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (re-corte).
+
+Decisión del maintainer: re-cortar a `v0.101.7` con el arreglo de la raíz
+dentro, y arreglar el gate de coherencia antes de la lane. El gate ya está
+hecho y es N+89; aquí queda el re-corte.
+
+`v0.101.6` queda tagueado, publicado y **sin candidato**: se cortó antes de que
+llegaran la limpieza de la raíz y la reparación del gate. Es el tercero del
+grupo `v0.99.2`, `v0.100.0`, `v0.101.5`, y su entrada en el CHANGELOG lo dice
+con esas palabras en vez de dejar que se lea como una release más.
+
+### El incidente del tag movido, anotado y no reparado
+
+El 2026-10-03 a las 23:03, `v0.101.5` se movió en el remoto de `65dcdba3` a
+`64370bbb`, después de estar publicado. Decisión del maintainer: **documentarlo
+y no tocar nada**. Se anota en el CHANGELOG y aquí, y la salida fue cortar desde
+la línea correcta en vez de reconstruir la identidad de una release anterior.
+Lo que no se hace es fingir que no pasó: un tag publicado identifica bytes, y
+moverlo rompe esa propiedad para quien ya lo haya clonado, y eso es un
+incidente de gobernanza con nombre propio aunque no tenga todavía gate.
+
+### Un error mío de edición que el contrato cogió
+
+Al escribir la entrada de `v0.101.7` inserté el bloque **debajo** de la entrada
+de `v0.101.6` que ya existía del corte anterior, con lo que el fichero acabó
+con dos entradas `v0.101.6` y la primera cabecera —la que el CHANGELOG anuncia
+— era la vieja. `test_release_truth_convergence` lo falló con un mensaje que
+decía exactamente qué era: *la release que se prepara no es la primera que el
+CHANGELOG anuncia*.
+
+Lo que lo hace notable no es que lo cometiera, sino que **el contrato lo
+cogiera y no yo**: la comprobación es de las que parecen tautológicas —una
+cabecera, una versión— y sin embargo es la que distingue un changelog que
+anuncia lo que se publica de uno que anuncia lo que se publicó hace una hora.
+La entrada obsoleta estaba entera, bien escrita y era cierta en el momento en
+que se escribió; lo que dejó de ser cierto fue el mundo.
+
+### Lección 212
+
+Un documento ordered por versión tiene un orden que es una **afirmación**, no
+una convención. Insertar una entrada nueva tiene que hacerse en el sitio
+correcto del fichero, y el criterio de "correcto" no es el texto sino la
+posición: la primera cabecera es la que dice qué se está publicando. Por eso el
+recibo va contra el fichero entero y no contra la versión.
+
+### Lo que queda
+
+La lane de `v0.101.7`, en worktree propio, cuando termine la del otro actor: su
+`CARGO_TARGET_DIR` es compartido, que es el hazard que este bloque lleva tres
+recibos midiendo. Con el gate de N+89 la lane ya no puede construirse desde un
+commit que no sea el tagueado sin que la stage de coherencia lo diga en la
+primera que corre.
+
+## N+91 — El pipeline publicado no compilaba, y 212 contratos no lo veían
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.7).
+
+La lane de `v0.101.7` murió en el **minuto dos**, antes de la primera stage:
+
+    Pipeline finished with FAILURE: Unresolved reference 'key_LINKER'.
+
+No era un fallo de release. Era que **el fichero de la lane no es un programa
+de Kotlin válido**. Dos párrafos de comentario en
+`release-candidate.pipeline.kts` explicaban cómo escapar un signo de dólar
+escribiendo el signo de dólar, y al compilar, Kotlin leyó esos signos como
+plantillas. El comentario que explicaba el bug contenía el bug:
+
+    # `$key_LINKER` is the variable `key_LINKER`     <- esto rompe la compilacion
+
+Tres referencias sin resolver en total: `host` dos veces y `key_LINKER` una.
+Un `#` abre un comentario de shell, pero la línea sigue siendo contenido del
+raw string, y en un raw string un dólar abre plantilla se llame como se llame
+la línea.
+
+### El tag publicado estaba roto, y está medido
+
+`v0.101.7` se empujó **antes** de esto. Extraído del propio tag y validado:
+
+    $ git archive 'v0.101.7^{commit}' release-candidate.pipeline.kts | ...
+    $ pipelinek validate release-candidate.pipeline.kts
+    ERROR Unresolved reference 'host'.       (linea 254)
+    ERROR Unresolved reference 'host'.       (linea 254)
+    ERROR Unresolved reference 'key_LINKER'. (linea 263)
+    VALIDATION FAILED
+
+Es el **cuarto** tag sin candidato, y la causa es siempre la misma desde
+`v0.101.5`: el árbol pasa sus contratos y el pipeline no arranca. Un tag
+publicado no se mueve, así que la salida es otro corte, no una corrección.
+
+### Por qué 212 contratos no lo vieron
+
+Porque **ejecutan el cuerpo de una stage, y no compilan el fichero que la
+contiene**. Renderizar un cuerpo y pasarlo por bash demuestra que el shell es
+correcto; no dice nada de si el fichero que lo envuelve es Kotlin válido. El
+error estaba por encima del nivel que la suite alcanza: los 212 contratos
+miran *dentro* de las stages, y el defecto estaba en el *envoltorio*.
+
+El arreglo del contrato que faltaba no es sutil: `pipelinek validate` compila y
+comprueba el grafo de stages sin ejecutar ninguna, y ya se usaba en el
+`justfile`. No estaba en la suite por una razón que ya no tiene sentido.
+
+### Lección 213
+
+**Un contrato mide el nivel que alcanza, y no puede ver por encima de sí.** Una
+suite que ejecuta todo lo que hay debajo de un límite es sólida sobre ese
+límite y absolutamente ciega por encima. La pregunta que faltaba no era «¿el
+shell es correcto?» sino «¿el fichero que contiene ese shell es siquiera un
+programa?», y esa se responde compilándolo.
+
+Y una segunda, sobre el arreglo: primero escribí **dos** contratos. El segundo
+—un lint que prohibía cualquier signo de dólar en la prosa de los comentarios—
+lo borré porque la medición lo desmontó en un minuto: marcaba como error código
+que compila bien, porque un dólar escapado a propósito y uno escapado mal se
+parecen en un `grep`. Un lint que señala el código correcto es peor que no
+tener lint, porque entrena a desconfiar de él. El compilador ya distingue las
+dos mitades; un `grep` no puede.
+
+### El contrato que sí queda, y su mutación
+
+`test_every_pipeline_compiles` valida los seis `.kts` del repositorio. Mutado
+—devolviendo un signo de dólar a un comentario— falla con el mensaje exacto del
+fallo real:
+
+    FAIL test_every_pipeline_compiles: estos pipelines no compilan:
+      release-candidate.pipeline.kts: Unresolved reference 'key'. (linea 254)
+
+Y con dos errores propios que el contrato también me hizo pagar: buscaba el
+veredicto en `stdout` cuando `pipelinek` lo escribe en `stderr`, así que
+reportaba cinco pipelines rotos que compilan bien. Un contrato que miente es
+peor que un contrato ausente, porque ocupa el sitio del que avisa.
+
+## N+92 — v0.101.8, y la segunda superficie de Release Truth que nadie vigilaba
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.8) → B4 (Release Truth).
+
+`v0.101.8` es el corte que lleva dentro el arreglo de N+91. Commit `4488f199`, tag
+anotado publicado, rama y tag empujados. El tag remoto hace peel al mismo commit
+que la rama, que es la mitad de identidad que N+89 añadió y que nadie comprueba
+sino el propio contrato:
+
+    32a5b802…  refs/tags/v0.101.8
+    4488f199…  refs/tags/v0.101.8^{}     = origin/integrate/v1015
+
+### El gate, medido sobre ese commit exacto
+
+    contratos            219 passed, 0 failed   (213 previos + 6 nuevos)
+    cargo fmt --check    FMT_EXIT=0
+    cargo clippy -D…     CLIPPY_EXIT=0
+    cargo test --workspace  CARGO_EXIT=0
+                         6063 passed, 0 failed, 30 ignored   (163 bancos)
+    pipelinek validate   VALIDATION SUCCESSFUL, diagnostics: []
+    tag-coherence.sh     OK: tag v0.101.8 ↔ workspace.version 0.101.8
+
+Ninguna cifra heredada de un pipe: cada exit code se leyó del log de su comando.
+Los 6063 son los mismos de `d9630f7a` porque **ningún fuente Rust cambió** — lo
+verifiqué contando los `.rs` del árbol staged, que son cero. El bump de versión
+sí propagó: clippy compila `cognicode-cli v0.101.8`.
+
+### La segunda superficie: `SECURITY.md` nombraba una rama que no lleva la versión
+
+Leyendo el contenido en staging antes de commitear encontré esto:
+
+    | 0.101.8 (current `main`, not yet released) | yes |
+
+`origin/main` está en `2c4831ec`, que es **0.101.0**. El documento que declara
+la política de soporte afirmaba que la versión vigente vivía en una rama tres
+versiones atrasada. Y lo dice desde `v0.101.7`: la misma frase, dos cortes
+seguidos.
+
+Es **la misma clase de defecto que N+89** —una afirmación de Release Truth que
+nadie ata a nada— en una superficie que el contrato de coherencia no miraba.
+Vivió dos cortes porque la superficie estaba vigilada a medias: la **versión**
+de la tabla se leía, la **rama** no se leía, y el campo que mentía era
+precisamente el segundo.
+
+Lo corregí y **extendí el contrato que ya era el dueño**,
+`test_release_truth_convergence.py`. No hay fichero nuevo: el descubrimiento de
+contratos es por glob (`scripts/ci/test_*.py`), así que añadir una superficie es
+cambiar una función pura y sus tests, y ningún orquestador se entera. La función
+`security_supported_problems` degrada a `[]` cuando `origin/main` no resuelve,
+porque un clon que no puede mirar no puede afirmar — el mismo criterio que ya
+usaba `named_tags_problems` con la visibilidad de tags.
+
+El RED medido es el exacto, no el trivial. Con la fila diciendo `main` y main
+atrás:
+
+    FAIL - 1 fallo(s):
+    test_the_four_surfaces_agree_with_the_workspace: la release no es coherente
+    consigo misma:
+      SECURITY.md describe 0.101.8 como `main`, pero origin/main esta en
+      0.101.0. La fila afirma una rama que no lleva esa version: quien lea la
+      politica de soporte buscara un corte que no existe ahi.
+
+La primera vez que lo probé falló por el motivo **equivocado** —decía 0.101.7, no
+0.101.8— así que ese primer rojo no demostraba el defecto nuevo. Rehice el
+RED contra el defecto: el mensaje que importa es el de la rama.
+
+### Lección 214 — Un contrato que lee la mitad de una afirmación no vigila esa afirmación
+
+La tabla de versiones soportadas tenía **dos** hechos en una fila: qué versión
+está soportada, y dónde vive. El contrato leía el primero y aceptaba el
+segundo sin comprobarlo, porque era texto libre dentro de la celda. Y el texto
+libre es exactamente donde se cuela un `current main` que nadie mira.
+
+La regla que sale de aquí no es «lee más ficheros»: es que **cuando un contrato
+extrae un hecho de un documento que afirma varios, tiene que decir cuál
+comprueba y por qué los otros no importan aquí**. Y si puede, que la forma de la
+afirmación sea parseable —una columna con la rama, no un paréntesis— porque lo
+parseable es lo que se puede contrastar.
+
+### El gate de atención de SDDK está apagado, y ahora se sabe por qué
+
+Hasta aquí la causa era «el ledger está roto». **Eso era una hipótesis, y
+medirla la desmontó.** Lección 207 entera aplicada a un blocker que ya estaba
+aceptado como raro.
+
+Medido:
+
+- El ledger **no** está corrupto. La tabla `cycle_leases` existe, tiene su DDL
+  correcto, y `SELECT * FROM cycle_leases` responde vacío sin error. El propio
+  binario la crea: el ledger recién adoptado tiene 27 tablas y esa es una de
+  ellas.
+- **Ninguna base de datos de todo el home SDDK** tiene una tabla `cycle_leases`
+  que no sea la recién creada. La infraestructura está bien.
+- El fallo no es de versión: **2.5.3, 2.5.5 y 2.5.6 fallan con el mensaje
+  idéntico** y el mismo código de salida. `Invalid parameter name:
+  cycle_leases` es un parámetro que el binario vincula a una sentencia que no
+  lo declara — un defecto en el `LedgerFactory` de sddk, no en los datos.
+- La adopción **sí funciona** (`sddk adopt apply` → `status: complete`). Lo que
+  falla es la lectura de planificación, que es la que usa la sonda del gate.
+
+Consecuencia operativa, medida: el modo es `auto`, y en `auto` la sonda es
+`sddk plan roadmap status`, que muere por esto. El gate queda **off** y
+`pre-commit` pasa directo a su hook legado. **No lo forzé a `on`**: en ese modo
+el hook exigiría un recibo de alineamiento que este mismo ledger roto no puede
+producir, y bloquearía todos los commits del repositorio sin ganar nada. Un
+gate que se apaga solo porque no puede responder no se arregla encendiéndolo a
+fuerza.
+
+Mientras tanto, **este recibo lo escribe el JOURNAL y no SDDK**, porque el
+dueño está caído. Es la excepción, no el procedimiento: en cuanto el
+`LedgerFactory` vuelva a vincular bien, el recibo vuelve a su sitio.
+
+### La lane, en vuelo
+
+Sobre el tag real, en `cog-rel-v01011` en HEAD desligado `4488f199`, con los
+**6 tarballs de 0.101.4/0.101.5 intactos** — el árbol exacto donde murió la
+lane de `v0.101.5`, para que la prueba del arreglo de la raíz de staging sea
+sobre su propio caso y no sobre un árbol limpio. El launcher verifica *antes de
+construir* que el checkout es el commit del tag, y si no lo es sale con 42 en
+vez de producir un candidato que ningún tag nombra: la misma propiedad que N+89
+leerse en la stage, pero puesta en el lado que la evita.
+
+Medido hasta el momento de escribir este recibo: `PREFLIGHT PASS` (stage 1,
+clon limpio compilando el workspace desde cero) y 17 stages superadas; en la 18,
+el cross-build a aarch64, que es la que en `v0.101.4` mataba la lane veinte
+minutos después de darse por buena. Esta vez lleva las dos guardas de N+86 por
+delante, así que o pasa o falla nombrando el motivo.
+
+### Lo que queda, y por qué no se toca aquí
+
+Tres decisiones seguían esperando al operador y **no las abrí**: la marca
+KEEP+MARK de `multimodal` (toca `--help` publicado), el `process::exit` alcanzable
+en `execute_doctor` (el exit code es contrato publicado) y la hermeticidad del
+enlace aarch64. Son deuda tangencial a este bloque, y la regla del bloque es
+registrarla y no abrir otro frente. Publicar la GitHub Release es la única
+puerta irreversible que queda, y esa sí es puerta de operador.
+
+## N+93 — El UAT que perdió su propio veredicto, y el hermano que B2 dejó atrás
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 (lane v0.101.8 → v0.101.9) → B4 (Release Truth).
+
+La lane de `v0.101.8` construyó el candidato entero y salió con fallo. Estas dos
+líneas son la misma corrida, y en este orden:
+
+    Pipeline finished with FAILURE: shell exited with code 64
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+
+Antes del 64 estaba el PASS. Es decir: dos targets compilados, SBOM generados,
+la raíz del staging limpia —los seis tarballs de `0.101.4` y `0.101.5` que la
+lane tenía que eliminar, eliminados— y un candidato cuyos **once artefactos
+verifican contra su `SHA256SUMS`**, comprobado aparte:
+
+    $ sha256sum -c SHA256SUMS
+    bundle-0.101.8-aarch64-…: La suma coincide
+    …  (11 líneas, todas "La suma coincide")
+    VERIFY_EXIT=0
+
+El trabajo estaba bien. El veredicto no.
+
+### El defecto, y por qué llevaba dos bloques escondido
+
+`release-install-smoke.sh` tenía el trap viejo:
+
+    cleanup() { ...; rm -rf "$TMP"; }
+    trap cleanup EXIT
+
+Es **el mismo defecto que B2 resolvió en `preflight-clean-clone.sh`**, en el
+hermano que se quedó atrás. Por eso la stage 1 pasaba y esta moría: la propiedad
+—la limpieza no puede ser el veredicto— la implementaban dos scripts y solo uno
+la tenía. La lección de entonces ("un fallo al limpiar es aviso, no veredicto")
+se aplicó al script que se estaba mirando, no a la propiedad.
+
+### La causa tenía dos capas, y la segunda solo se ve si la primera ya no muerde
+
+1. El script corre con `HOME` y `XDG_DATA_HOME` dentro de `$TMP`, y con el cwd
+   ahí dentro. La envoltura de recuperación rechaza un directorio que sea
+   ancestro de `$HOME`. Salir del directorio y devolver `HOME` lo resuelve.
+
+2. **Devuelto solo el `HOME`, la envoltura deja de negarse y pasa a fallar con
+   `failed to trash`.** Lo que trastera es `$XDG_DATA_HOME/Trash`, que seguía
+   dentro del temporal: el árbol contenía su propia papelera, **70 MB anidados**,
+   y un árbol que contiene su papelera no se puede mover. Cada corrida fugaba
+   70 MB a `/tmp`.
+
+La segunda capa se midió con sondas antes de tocar el código, no después: con las
+dos variables fuera `rc=0` y `BORRADO`; con una sola, el temporal sobrevive. Sin
+esa medición, el arreglo "devolver `HOME`" habría pareado funcionar y seguido
+habría seguido fugando.
+
+### Lección 215 — Arreglar la mitad de una causa produce un arreglo que parece completo
+
+El primer arreglo —salir del directorio y devolver `HOME`— pasó el UAT entero:
+`SMOKE2_EXIT=0`, con el `PASS` del smoke y todo. La razón por la que pasó es
+precisamente la razón por la que seguía roto: **la limpieza ya no era el
+veredicto**, que era el daño. El daño de la fuga —70 MB por corrida— es
+silencioso, y un arreglo que arregla el síntoma ruidoso se siente terminado.
+
+El aviso ayudó: el `if ! rm` seguía imprimiendo que no podía limpiar. Ese aviso
+que en B2 era correcto se convirtió aquí en la señal de que faltaba algo. La
+regla que sale de ahí es que **"el script ya no falla" no es "la causa está
+cerrada"**, y que un resto que se anuncia en stderr es información, no ruido: la
+misma línea que se podía descartar tranquilamente era la que faltaba leer.
+
+También salió de aquí una diferencia deliberada entre los dos scripts. El
+preflight descarta la salida del `rm` con `2>/dev/null`, porque su stderr va al
+log de una stage que ya ha certificado. El UAT **la imprime**, porque es lo que
+el operador lee cuando algo falla, y un aviso que no dice por qué obliga a
+reproducir la corrida entera. Los contratos fijan cada política por separado.
+
+### El arreglo, y dónde viven los contratos
+
+La misma forma que la del preflight, a propósito: la función vive en el script
+que la usa, lee el estado de salida en la primera sentencia, sale del directorio,
+y el borrado va dentro de un condicional cuyo fallo avisa. Los seis contratos
+nuevos están en `qw04_preflight_contract.rs`, el dueño ya existente de la
+propiedad, y no en un fichero nuevo: una propiedad, un dueño, dos scripts.
+
+MEDIDO, ejecutando el UAT contra el candidato real de v0.101.8:
+
+    antes   SMOKE_EXIT=64   6 temporales antes, 7 después   (fuga)
+    ahora   SMOKE5_EXIT=0   8 temporales antes, 8 después   (sin fuga)
+    contrato  27 passed, 0 failed   (eran 21)
+    suite     219 passed, 0 failed
+    fmt 0, clippy -D warnings 0
+
+Mutación comprobada: volver el trap a la forma vieja hace fallar
+`the_install_smoke_trap_calls_the_function_and_not_a_bare_rm`.
+
+### `v0.101.9`, y un cambio de procedimiento que sí importa
+
+`7f7d087e`, tag local `v0.101.9`. Gate medido sobre ese árbol:
+
+    contratos  219 passed, 0 failed
+    fmt        FMT_EXIT=0
+    clippy     CLIPPY_EXIT=0
+    tests      CARGO_EXIT=0 — 6069 passed, 0 failed, 30 ignored (163 bancos)
+    coherencia OK: tag v0.101.9 ↔ workspace.version 0.101.9
+
+Los 6069 son los 6063 de `d9630f7a` más los seis contratos nuevos. Ningún otro
+cambió.
+
+El cambio de procedimiento: **`v0.101.8` se publicó antes de correr la lane**, y
+por eso acabó siendo un tag correcto sin candidato certificado — y sin poder
+corregirse, porque un tag publicado no se mueve. Esta vez el tag se crea en
+local, la lane corre sobre él, y **solo se empuja si la lane sale con 0**. Un tag
+que no ha producido candidato todavía se puede corregir; uno publicado, no.
+
+### La lane, en dos corridas, y el `release/` que heredaba
+
+Primera corrida sobre `7f7d087e`, con el tag local ya puesto:
+
+    STAGING_BEFORE=3 tarballs sucios
+    Error: artifact cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz declares
+      version 0.101.8 but the release version is 0.101.9
+    LANE_EXIT=1
+
+El gate hizo bien su trabajo. La causa: la stage `generate` escribía en `release/`
+sin establecerlo desde cero, así que en un worktree de larga vida el directorio
+heredaba los artefactos de la corrida anterior — once ficheros, seis de ellos de
+`0.101.8`—. El veredicto estaba bien; lo que no era correcto es que un directorio
+de salida de stage dependiera de lo que hubiera antes.
+
+`4faa0138` lo arregla, y **con fallo fatal**, no con aviso: la limpieza de un
+directorio de salida de stage es lo contrario de la limpieza posterior a decidir
+—el QW-04 de B2, donde el aviso sí es lo correcto, porque la decisión ya está
+tomada—. Aquí la stage no ha decidido nada todavía, así que no poder establecer
+su directorio de salida es un fallo de la stage.
+
+El contrato vive en `test_pipeline_stage_bodies.py`, el dueño ya existente de los
+cuerpos de las stages, con `OWNED_OUTPUT_DIRS` por si mañana hay más directorios
+que la stage deba establecer desde cero:
+
+    antes   FAIL — release-candidate.pipeline.kts:703: se escribe en release/
+           sin limpiarlo antes
+    ahora   PASS — 6 pipelines
+    validate VALIDATION SUCCESSFUL, diagnostics: []
+
+### Lección 216 — Un ratchet con un número inventado es peor que no tener ratchet
+
+Quedaba un ratchet a medio hacer sobre los `std::process::exit` de
+`cognicode-core`: seis llamadas, cinco detrás de `#[cfg(feature =
+"multimodal")]`, una viva. La afirmación correcta es que un `cogh` publicado solo
+puede salir con un código elegido por la biblioteca en `doctor`. La forma de
+medirlo escrita en el test era comparar el número de salidas **antes y después de
+la primera anotación `multimodal` del fichero**. Esa forma estaba mal, y daba
+números que parecían medidos:
+
+- Una versión contaba llaves y daba **4** salidas antes de la anotación cuando hay
+  exactamente **1**.
+- La reescritura por posición daba **0**, porque la primera anotación
+  `#[cfg(feature = "multimodal")]` de `commands.rs` está en la **línea 95**, sobre
+  las variantes del enum de subcomandos, muy por encima de las seis salidas. Todas
+  las salidas quedan "después".
+
+Ninguna de las dos formas habría fallado en el fichero bueno de una manera
+distinta de como fallaba en uno roto, que es la definición de un test que no
+vigila. Lo que sí responde a la pregunta es **la función dueña de cada salida** y
+**si la declaración de esa función está cerrada por la feature** —el atributo
+adyacente, no el primero del fichero—. MEDIDO: no hay ninguna `fn` declarada a más
+de cuatro espacios en todo `commands.rs`, así que subir hasta la declaración más
+cercana no puede acabar atribuyendo a una función anidada; y si alguien anida
+una, el test lo dice en vez de mentir en silencio.
+
+El ratchet final afirma tres cosas, cada una con su fallo: el total, el recuento
+**por función**, y que no haya ninguna función con salidas que no esté en la
+tabla. Un total que cuadra no dice de quién son las llamadas.
+
+MEDIDO, tres mutaciones:
+
+    1. quitar el cfg de execute_docs_ingest   NO es una mutación válida del
+       ratchet: rompe la compilación (E0432/E0433, `extraction` y
+       `source_extractor` también están gated). El compilador es la garantía
+       fuerte; el test afirma la disposición del fuente.
+    2. la lista declara mal una dueña          FAILED, con MEDIDO y DECLARADO
+                                                  uno a uno
+    3. una septima salida viva en
+       execute_capabilities                    FAILED en los dos tests, nombrando
+                                                  la funcion y la linea
+
+Y un cuarto fallo que encontró el gate y no la medición: `///` dentro del cuerpo de
+un test no genera documentación, y `-D warnings` lo rechaza. El ratchet llevaba
+varios commits sin pasar por clippy.
+
+        test    26 passed, 0 failed
+        fmt 0, clippy -D warnings 0
+        suite  219 passed, 0 failed
+
+### La segunda corrida, y el candidato que sí se certifica
+
+`4faa0138` con el tag local `v0.101.9` movido encima —nunca publicado, y por eso
+movible—, sobre un worktree de lane cuyo `release/` tenía 23 ficheros, once de ellos
+de `0.101.8`. Justo el lecho sucio que provocó el fallo anterior:
+
+    HEAD=4faa0138  TAGCOMMIT=4faa0138
+    STAGING_BEFORE=3 tarballs sucios
+    Pipeline finished with SUCCESS
+    LANE_EXIT=0
+    END 2026-10-04T07:20:43Z
+
+Y el candidato, comprobado aparte del veredicto de la lane:
+
+    $ cd release && sha256sum -c SHA256SUMS
+    11 líneas, todas "La suma coincide"
+    CHECK_EXIT=0
+
+Once artefactos, **los once de `0.101.9`**, ninguno heredado. Los once del
+directorio `release/` de la corrida previa ya no están.
+
+El tag se empuja ahora, con `LANE_EXIT=0` como condición, y es la primera vez que
+un tag de este repositorio se publica **después** de producir su candidato y no
+antes.
+
+### Una corrección a un recibo mío
+
+El mensaje de `7f7d087e` dice "STAGED_TREE c91ec382…", y ese hash es el árbol de
+`5d0ab729`, el commit **anterior**. Lo medí con `git write-tree` antes del
+`git add`, así que el índice no contenía todavía los cambios del corte. El árbol
+real del commit es `c029ca7b9ff343a08f8154f23cf8b8685d398fca`.
+
+No se reescribe el commit: `git.history_rewrite` es `human_gate` por ley, y
+cambiar el mensaje de un commit para que cuadre no vale lo que cuesta. La
+corrección vive aquí, que es para lo que está el JOURNAL: append-only, y un
+recibo que afirma algo falso se corrige añadiendo la verdad, no editando la
+mentira.
+
+### Lo medido sobre `execute_doctor`, y por qué no se toca
+
+Quedaba pendiente una decisión sobre `std::process::exit` en
+`commands.rs:1503`. Medido antes de decidir:
+
+- La rama `exit(1)` **es viva**: `overall_status()` devuelve `Missing` si alguna
+  de las secciones core/lsp/parsers está missing.
+- El brazo de dispatch (línea 542) propaga con `?` como los que B1 arregló, así
+  que **el `?` es código muerto** y la firma `Result` del miente: la función
+  nunca retorna.
+- **Solo la CLI la llama.** No hay consumidor en proceso que sufra el `exit`.
+
+Es deuda real y el diagnóstico es preciso, pero arreglarla toca el camino del
+exit code, que es contrato publicado, y no hay daño activo hoy. Se registra y no
+se abre frente nuevo. Lo mismo con la marca KEEP+MARK de `multimodal` y con la
+hermeticidad del enlace aarch64.
+
+## N+94 — v0.101.9: el primer tag que se publica después de producir su candidato
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B3 cerrado (cadena CLI → UAT → candidato →
+certificación → release).
+
+Este es el cierre de la cadena que llevaba varios bloques abierta. Todo lo que
+sigue está medido, con el comando y el código de salida al lado.
+
+### El gate, sobre el árbol que se publica
+
+Ejecutado sobre `edf53822`, releído del log y no del exit del script:
+
+    HEAD=edf53822a613b896093cb2ab36f9d5c13235d766
+    FMT_EXIT=0
+    CLIPPY_EXIT=0        (cargo clippy -p cognicode-cli --all-targets -D warnings)
+    CONTRACTS_EXIT=0     TOTAL: 219 passed, 0 failed
+    CARGO_EXIT=0         6071 passed, 0 failed, 30 ignored (163 bancos)
+    COHERENCE_EXIT=0     OK: tag v0.101.9 ↔ workspace.version 0.101.9
+    GATE_END 2026-10-04T08:00:47Z
+
+Los 6071 son los 6069 de `7f7d087e` más los dos del ratchet nuevo. Ningún otro
+cambió. El gate entero tardó 20 min 17 s, casi todos en
+`workspace_documentation_is_warning_free`, que invoca `rustdoc` sobre cada crate
+del workspace.
+
+### El tag, y la regla que cambió
+
+`v0.101.9` estaba **creado en local** desde el corte, y su primer intento de
+candidatos falló. Al entrar la regla nueva —el tag local se puede mover, uno
+publicado no— el arreglo del `release/` fue un commit normal, el tag se movió
+encima con `git tag -f`, y la segunda lane corrió sobre el mismo worktree sucio
+que había provocado el fallo:
+
+    HEAD=4faa0138  TAGCOMMIT=4faa0138
+    STAGING_BEFORE=3 tarballs sucios
+    Pipeline finished with SUCCESS
+    LANE_EXIT=0
+    END 2026-10-04T07:20:43Z
+
+Once artefactos, y los **once de `0.101.9`**. Comprobado aparte del veredicto de
+la lane, que es la lesson de B2 aplicada: no se confía en el exit que la lane
+imprime sobre lo que la lane hizo.
+
+    $ cd release && sha256sum -c SHA256SUMS
+    11 líneas, todas "La suma coincide"
+
+Y solo entonces se empujó:
+
+    rama   4488f199..edf53822  integrate/v1015 -> integrate/v1015
+    tag    * [new tag] v0.101.9 -> v0.101.9
+
+El tag remoto hace peel a `4faa0138`, y se comprobó con `git ls-remote` en el
+momento, no de memoria:
+
+    4faa0138fd69b3439633674cdec11bdb4b908e43  refs/tags/v0.101.9^{}
+
+### La release, y lo que la hace distinta a las anteriores
+
+`gh` ya estaba autenticado con scope `repo`, así que no hubo bloqueo de
+credenciales. Dos cosas costaron un intento cada una y quedan escritas para no
+repetirlas:
+
+- `--target v0.101.9` falla con `HTTP 422: Release.target_commitish is invalid`.
+  La API de GitHub no acepta un **nombre de tag** ahí, solo una rama o un SHA.
+  Con el SHA del commit que el tag apunta, sí.
+- `gh release view --json assets` cuenta **10** después de subir 10 ficheros, y
+  eran 12 los que había que subir. Faltaban los dos `bundle-*.yaml`, que la
+  primera llamada no incluyó. Contar contra el `SHA256SUMS` y no contra el
+  `ls` del directorio es lo que lo caza: el directorio tenía 12, GitHub tenía 10,
+  y la diferencia era el número correcto.
+
+Publicado, con `isDraft=false` e `isPrerelease=false`, sobre
+`https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.9`, con los doce
+artefactos del candidato: seis tarballs por target, dos `src` de 2–5 KB, los dos
+bundles, el inventario y el `SHA256SUMS`.
+
+### El UAT, contra lo publicado y no contra el worktree
+
+El UAT de la lane leyó los tarballs del worktree. Eso prueba que el worktree
+está bien, **no que lo publicado esté bien**, que es la promesa que hace una
+GitHub Release. Así que se descargaron los doce assets desde GitHub y se pasó el
+UAT sobre esa copia:
+
+    $ sha256sum -c SHA256SUMS          # el SHA256SUMS descargado, no el local
+    12 líneas, todas "La suma coincide"
+    PUBLISHED_CHECK_EXIT=0
+
+    $ bash scripts/ci/release-install-smoke.sh 0.101.9 <descarga>
+    ✔ OpenCode integration complete
+    cognicode 0.101.9
+    cognicode-mcp 0.101.9
+    ==> cogh doctor (linux-x86-64 / linux / x86-64)
+      PASS Core health          home, bin/, shims/ present
+      PASS MCP                  cognicode-mcp shim present
+      PASS Native analysis      host-native, sin runtime de contenedores
+      PASS Isolation backend    podman detected (optional, host extras)
+    ==> overall: healthy
+    PASS: published-layout CLI + MCP + skills install/update/reshim/uninstall
+    SMOKE_EXIT=0
+
+Sin fuga: 18 temporales antes, 18 después, y el del UAT ya no existe. El
+`cognicode install` que se descarga de la URL instala, se actualiza, se
+reshimmea, se desinstala, y el `cogh doctor` del binario instalado dice
+**healthy**.
+
+### Lección 217 — Un asset que no se sube no se nota mirando el directorio
+
+Los doce artefactos estaban en `release/` antes de publicar, y el directorio
+sigue teniendo los doce después. La diferencia entre "publicado" y "no
+publicado" no se ve desde el lado que publica: solo se ve preguntándole a
+GitHub, y contando la respuesta. Lo mismo con el UAT: correrlo sobre el
+worktree es cómodo y es la mitad de la promesa.
+
+Las dos comprobaciones que hacen falta son baratas —un `gh release view
+--json assets | jq length` y un `sha256sum -c` sobre lo descargado— y las dos
+miden algo que el script de la lane no podía ver.
+
+### Lo que queda abierto, y por qué no se abre aquí
+
+Tres cosas quedan medidas, registradas y sin abrir, porque arreglarlas cuesta
+superficie publicada y no hay daño activo:
+
+- `std::process::exit` en `execute_doctor`, que es la única salida viva de
+  `cognicode-core`. Con el ratchet nuevo (`87844d7d`) la deuda es **enumerable y
+  acotada**, lo que era el objetivo: subirla a siete ahora falla el test.
+- La marca KEEP+MARK de `multimodal`, cuya ausencia en el binario publicado está
+  ya escrita en su propio `--help` y es cierta.
+- La hermeticidad del enlace aarch64: un runner sin los wrappers `zig-cc-aarch64`
+  falla en `toolchain-for-$target` nombrando el motivo, en vez de producir un
+  candidato que no compila. Falla temprano, que es lo correcto.
+
+### Estado del ledger al cerrar este bloque
+
+SDDK sigue sin dar el `PRE-FLIGHT` que exige la política, por el defecto del
+`LedgerFactory` medido en N+92 (`Invalid parameter name: cycle_leases` en
+2.5.3, 2.5.5 y 2.5.6). No es corrupción de datos: la tabla existe y `sddk adopt
+apply` responde `status: complete`. Lo que falla es la lectura de planificación.
+Bloqueante externo, binario compartido, y **no forzado**: el gate se dejó en su
+valor por defecto y estos recibos viven en el JOURNAL, que es append-only y no
+depende de él. `git.history_rewrite` sigue siendo `human_gate`: el
+`STAGED_TREE` equivocado de `7f7d087e` se corrige en N+93 añadiendo la verdad,
+no reescribiendo el commit.
+
+## N+95 — Publicar un release es lo que hace falsa la fila que lo declara
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4bis (Release Truth, segunda Superficie).
+
+### Lo que encontró la publicación de `v0.101.9`
+
+Publicar el release no cambió ni una línea de `SECURITY.md`. La fila de
+versiones soportadas seguía diciendo:
+
+    | 0.101.9 (cut from `integrate/v1015`, not yet released) | yes |
+    | 0.98.1 (latest published release, `v0.98.1`) | yes |
+
+Con el tag `v0.101.9` ya en el remoto. La primera fila era correcta sobre la
+rama —el corte sigue saliendo de `integrate/v1015`— y falsa sobre el mundo. La
+segunda llevaba desde el 24 de septiembre afirmando que `v0.98.1` era la última,
+que dejó de serlo dos versiones antes.
+
+El detalle que lo convierte en deuda de verdad, y no en errata: los cuatro
+contratos de Release Truth vigilaban version, rama, etiqueta y changelog.
+Ninguno vigilaba si el corte había salido de su tarima. Publicar —el acto
+justo que vuelve falsa la fila— era exactamente lo que no rompía nada.
+
+Y no es cosmético. Una política que dice `not yet released` sobre algo ya
+publicado manda a quien reporte una vulnerabilidad a esperar un aviso que no va
+a llegar. Es peor que no declarar nada, porque gasta la confianza de quien la
+lee.
+
+### El arreglo, con RED exacto
+
+`security_supported_problems`, el dueño ya existente de la propiedad, gana una
+quinta comprobación: `published`, la versión más alta que existe como tag
+remoto. Con su degradación correspondiente —`None` cuando el remoto no
+responde, igual que `main_version` y que la visibilidad de tags: una respuesta
+ausente no es un veredicto.
+
+El núcleo, `_highest_remote_tag`, filtra las líneas de peel (`refs/tags/X^{}`)
+y compara componente a componente, porque `git ls-remote` no ordena y una rama
+vieja puede haber dejado `v0.101.0` en el remoto mientras la línea publicada es
+`v0.98.1`. Un filtro, una razón.
+
+    RED    FAIL - SECURITY.md dice que 0.101.9 no esta publicada, y el tag
+           v0.101.9 ya existe en el remoto
+    GREEN  PASS
+    mutación  volver la fila a `not yet released` reproduce el RED exacto
+    suite     226 passed, 0 failed   (eran 219; +7)
+
+Los siete casos nuevos fijan los dos lados de la afirmación, no solo el que
+falla: un corte que aún no existe como tag sí puede decir que no está publicado,
+y una versión ya publicada puede seguir nombrando la rama de la que salió. Un
+contrato que solo prohíbe la frase acabaría prohibiendo también la verdad, que
+es la forma de arreglar un ratchet que no es borrarlo: es darle el otro lado.
+
+### Lección 218 — Una fila de verdad tiene más de una afirmación
+
+`SECURITY.md` no tiene una afirmación, tiene dos en la misma línea: de dónde
+sale el corte, y si ya salió. Los cuatro contratos leían la primera y creían
+estar vigilando la fila. La segunda llevaba dos publications —`0.101.8` y ahora
+`0.101.9`— sobreviviendo a lo que la contrato.
+
+La regla que sale es la misma que ya pagó en el ratchet de `process::exit` y en
+la divergencia de las dos clases de UAT: **un contrato que lee la mitad de una
+afirmación no vigila esa afirmación**. Un texto que dice dos cosas necesita dos
+comprobaciones, o necesita partirse en dos que cada una pueda fallar por su
+nombre.
+
+### Auditoría de `#[ignore]` — 30 vivos, ninguno residuo
+
+La deuda visible del repo son los 30 `#[ignore]`. Medidos y clasificados por su
+motivo real:
+
+| Motivo | Nº | ¿Legítimo? |
+|---|---|---|
+| Requiere binario externo (rust-analyzer, pyright) | 4 | sí — el binario no está en el entorno de CI |
+| Requiere internals de rmcp (`RequestContext`/`NotificationContext`) | 10 | sí — son tipos privados del adapter |
+| Integración pesada, >5 min de escaneo completo | 2 | sí — M0.12 ya los cubrió con benchmarks acotados |
+| Gate de clippy workspace (PRF-CI-01) | 1 | sí — se corre aparte, no en la suite |
+| Fixture `dev-bundle.yaml` | 1 | sí — falla por construcción, ver abajo |
+
+18 justificados. Los 12 restantes no son `#[ignore]` reales sino prosa o tests ya
+re-habilitados por M0.12 (`walker-grammar-drift` está CLOSED; los nombres de nodo
+ya están actualizados). **No hay residuo**: la deuda de `#[ignore]` está
+medida y cada uno tiene su razón.
+
+El caso del fixture merece el registro porque parece un bug y no lo es. Al
+correrlo, `test_cogh_install_runs_successfully` falla con `SHA256 mismatch` al
+descargar el artefacto real de `0.95.0`. La causa es que el fixture
+`dev-bundle.yaml` lleva digests que "NO son los digests de ningún artefacto
+real", y su propia cabecera dice que un install dirigido por él "falla en la
+etapa SHA256 por construcción, que es el comportamiento correcto: no puedes
+instalar bytes que no descargaste". El `#[ignore]` es correcto, el fallo es el
+comportamiento, y dejarlo ignorado es lo honesto. Un test que verifica la
+integridad no debe pasar contra un hash inventado.
+
+## N+96 — Cuatro tests LSP que daban verde sin LSP
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4ter (calidad de los tests de integración).
+
+### Lo que se encontró, y cómo
+
+Auditando los `#[ignore]` del repo se vio que los cuatro tests de integración
+LSP estaban ignorados con el motivo "requires rust-analyzer binary". Corrieron
+con `--ignored` y **dieron verde**:
+
+    test test_rust_analyzer_goto_definition ... ok
+    test test_rust_analyzer_hover ... ok
+    test result: ok. 2 passed, 0 failed
+
+Verde no es lo mismo que midiendo, así que se miró si el servidor estaba
+realmente ahí:
+
+    $ ls -l ~/.cargo/bin/rust-analyzer
+    lrwxrwxrwx ... /home/rubentxu/.cargo/bin/rust-analyzer -> rustup
+    $ rust-analyzer --version
+    error: Unknown binary 'rust-analyzer' in official toolchain '1.96.0-x86_64-unknown-linux-gnu'
+    RA_EXIT=1
+
+El shim estaba en el PATH, era ejecutable, y **no servía para nada**. El
+`#[ignore]` era correcto por la conclusión equivocada: no faltaba el binario por
+el motivo que se suponía.
+
+Instalado de verdad, `rustup component add rust-analyzer` → `rust-analyzer
+1.96.0 (ac68faa 2026-05-25)`, los mismos dos tests volvieron a dar verde. **El
+mismo veredicto con y sin LSP**, que es la definición de un test que no
+ejercita lo que dice ejercitar.
+
+### Por que: el brazo que se tragaba todo
+
+Los cuatro tests tenían un brazo idéntico:
+
+    Ok(Ok(None)) => {
+        // This can happen if LSP didn't return anything useful
+        // but we shouldn't error
+    }
+
+Cuando el LSP no está, el servicio **degrada a tree-sitter y devuelve `Ok(None)`
+en vez de un error**. Ese `None` es el aviso de que el servidor no arrancó, y el
+test lo aceptaba con un comentario que lo hacía parecer normal. La degradación
+silenciosa es una decisión de diseño correcta —un `hover` que falla porque no
+hay LSP debe devolver lo que el parser sabe—; lo que no es correcto es que el
+test de integración no distinga una cosa de la otra.
+
+Se reemplaza el brazo por `none_is_not_a_verdict(operation, detail)`, que falla
+diciendo cuál de las dos cosas pasó y qué mirar. Y se añade
+`LspClient::is_lsp_server_usable`, porque `get_lsp_server` —lo que había—
+responde si un servidor está **configurado**, no si **funciona**: lleva
+`#[allow(dead_code)]`, no lo llama nadie en producción, y por eso nadie notó
+el hueco.
+
+### Mutaciones
+
+    sin servidor LSP registrado
+      FAILED, con el diagnostico exacto: "`hover` devolvio `None`. Eso NO es un
+      resultado aceptable: con el LSP disponible significa que el servidor
+      arranco y no respondio, y sin el LSP significa que el servicio degrado a
+      tree-sitter sin decirlo."
+    con rust-analyzer 1.96.0 real
+      ok (5.56 s, el tiempo de indexado del servidor)
+
+El commit anterior (`7b37a35e`) deja el otro extremo medido: hacer que el
+detector decida por el PATH en vez de preguntar al binario reproduce el fallo
+del shim, y los dos tests que solo hacían `println!` —"the test always passes -
+it just reports the status"— ahora afirman la propiedad que los hace existir.
+
+### Lección 219 — Un test que acepta el `None` no sabe qué está probando
+
+Hay una clase de test que es verde por construcción y no lo parece: el que
+acepta su propio modo de fallo como un resultado legítimo. Aquí el
+`Ok(Ok(None))` con su comentario tranquilizador. El test parece cubrir hover
+sobre una función; en realidad cubre *"el servicio no se rompe cuando el hover
+no tiene respuesta"*, que es otra cosa y no la que su nombre promete.
+
+La forma de cazarlo no fue leer el código, fue **cambiar el mundo y ver si el
+veredicto se movía**: instalar el componente que el shim mentía sobre, y
+comprobar que el test daba el mismo verde. Un test cuyo resultado no depende
+del sistema que dice ejercitar no lo está ejercitando, por muy elaborado que
+sea su `assert` de que el resultado es válido.
+
+Y el corolario que sale de los dos casos juntos, `execute_doctor` y estos tests:
+**aceptar un estado degradado como veredicto es una decisión, y toda decisión
+necesita un nombre**. El servicio degrade a tree-sitter a propósito; los tests
+no tienen por qué degradar en silencio al afirmar.
+
+## N+97 — El test que afirmaba el entorno, y lo que lo destapó
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4ter (consecuencia de N+96).
+
+### Lo que pasó, en orden
+
+N+96 terminó con `rust-analyzer` instalado de verdad, porque el shim que hacia
+de binario mentia sobre su propia existencia. Instalar el componente arrastro un
+test que llevaba años en verde:
+
+    test_hierarchy_falls_through_within_the_bounded_readiness ... FAILED
+    S2 must record an Unavailable diagnostic naming the bounded fallback:
+      [ProviderDiagnostic { provider: "lsp", attempted_tier: S2, outcome: Error,
+        message: "get_hierarchy: Internal error: Type hierarchy via LSP not yet
+        implemented" }, ...]
+
+Lo primero que hacia falta era no llamarlo mio. MEDIDO:
+
+    git log -1 --oneline -- crates/cognicode-core/src/.../composite.rs
+    d2358bcf fix(lsi): provider UX hardening — error propagation + bounded
+                        readiness (e39.1)
+
+Y `git show --stat` de los cinco commits de este bloque: ninguno toca
+`composite.rs`. El defecto es de `d2358bcf`, anterior al corte. Lo que lo
+destapo fue **cambiar el mundo**, no tocar el codigo.
+
+### Por que fallaba
+
+El test afirmaba dos cosas que solo son ciertas si el servidor NO esta:
+
+    diagnostics.iter().any(|d| d.attempted_tier == S2
+        && d.outcome == Unavailable
+        && d.message.contains("bounded fallback"))
+    assert_eq!((s2.attempts, s2.unavailable), (1, 1));
+
+Ese `Unavailable` con `bounded fallback` lo emite una sola rama
+(`composite.rs:466`), la del presupuesto agotado esperando el readiness. Con el
+servidor real, el proceso ya esta caliente, el readiness se cumple dentro de
+los 50 ms del bound, el gate PASA, y el S2 falla despues por su propia cuenta
+con `not yet implemented` —`Error`, no `Unavailable`.
+
+El test era cierto en un mundo sin servidor y falso en un mundo con servidor.
+El codigo no habia cambiado. **El resultado dependia de la maquina.**
+
+### Lo que se afirma ahora
+
+La propiedad de W3 no es "que mensaje sale": es que la llamada TERMINA y cae al
+tier inferior sin pagar los 30s de `initialize`. Eso es lo que queda:
+
+- S2 tiene que dejar diagnostico, por el bound o por su propia causa. Si nadie
+  lo intenta, no hay propiedad que sostener.
+- Si lo que reporto fue `Unavailable`, tiene que nombrar el fallback acotado,
+  para que se distinga de un fallo de servidor.
+- `s2.attempts == 1` y `unavailable + errors == 1`: un intento, sin servir.
+  Afirmar `unavailable == 1` fijaba el camino, no la regla.
+
+Lo que dependa de que el readiness se cuelgue lo afirma el hermano,
+`test_bounded_readiness_cuts_a_hanging_readiness`, con un future colgado y sin
+tocar el PATH: determinista en cualquier maquina.
+
+    antes     FAILED, 0.08 s
+    ahora     ok, 0.04 s
+    mutacion  desactivar el intento S2 -> FAILED nombrando que nadie lo intento
+    suite     los 16 de composite, 16 passed / 0 failed
+    clippy -D warnings 0, fmt 0
+
+El otro test que se auto-saltea por PATH, el de Java en
+`provider_conformance.rs:276`, se reviso y **se queda como esta**: con servidor
+usa `fallback_readiness: 30s` y verifica la conformidad real, y sin servidor se
+salta. Es el comportamiento correcto, y la diferencia con el de Rust es que no
+afirma nada que dependa de que el servidor este roto.
+
+### Lección 220 — Un test verde sin binario no es cobertura
+
+`#[ignore]` y "se salta si no hay X" son la misma defensa con distinto disfraz:
+evitan que el entornoensible rompa el gate, y a cambio QuietTurnRound deja de
+cubrir. El de Rust lleva años sin ejecutarse de verdad porque en la maquina de
+los que lo escribieron no habia `rust-analyzer`, y **nadie se dio cuenta de que
+"verde" y "ejecutado" no son lo mismo**.
+
+La segunda mitad es la que cuesta: cuando el test vuelve a correr, no falla por
+el defecto que el cambio ha traido, falla por su propia expectativa de entorno. Un
+`Unavailable` con un mensaje concreto es una afirmacion sobre **un camino**, y
+el camino depende de si el servidor arranca a tiempo. La propiedad —el bound
+corta la espera— no depende de nada externo y es la que hay que afirmar.
+
+Y el orden importa: si `rust-analyzer` se hubiera instalado antes de que este
+test existiera, habria escrito el `Error` y nunca habria habria escrito el
+`Unavailable`. **El codigo de test no es independiente del entorno en el que se
+escribe**, y eso solo se ve cuando el entorno cambia.
+
+### Lo que un gate tiene que instalado para no mentir
+
+El defecto se Midió en la maquina del operador porque ahi `rust-analyzer` esta
+instalado. En el gate oficial no lo esta, y MEDIDO:
+
+    $ grep -n 'component add' merge-gate.pipeline.kts scripts/ci/*.sh .github/**/*.yml
+    (vacio — nadie instala el componente)
+    $ grep -n 'cargo test' merge-gate.pipeline.kts
+    310:  sh("$cd && cargo test -p cognicode-core --lib --quiet")
+
+O sea: el gate corre la suite completa de `cognicode-core` —donde vive el test
+que affirmaba el entorno— y en un runner sin el componente, ese test se salta y
+da verde. **El gate no puede detectar lo que solo aparece cuando el entorno
+esta completo**, que es exactamente la clase de defecto que este test era.
+
+No se corrige aqui, y el motivo importa: `merge-gate` es la autoridad y
+cambiar su cadena de herramientas para que un test de integración vea un LSP es
+decidir que el gate de merge necesita un servidor de lenguaje, que es una
+decision de producto y no una consecuencia de este arreglo. Se registra como
+candidata: o el gate instala el componente, o los tests que lo requieren se
+declaran de nivel superior y se ejecutan en un job aparte que si lo tenga. Las
+dos son legítimas; ninguna se elige sin medir cuanto cuesta cada una.
+
+Lo que si queda claro, y es la leccion operativa de este bloque: **un gate que
+se salta lo que su entorno no tiene, no vigila el entorno**. Ejecuta la suite
+completa, y aun asi el camino que importa —el que toca un binario real— no se
+recorre. La cifra "6071 tests verdes" no dice si ninguno estaba saltandose.
+
+Un recordatorio de por que esto no es un defecto del gate: los workflows de
+GitHub se eliminaron A PROPOSITO, con su invariante
+(`scripts/ci/test_no_actions_workflows.py`) y `merge-gate.pipeline.kts` tomo su
+lugar (`d3426966`: "ci(actions): cero workflows, y el invariante que lo dice").
+Cero workflows es la decision, no su ausencia.
+
+## N+98 — El gate se saltaba los tests que necesitan un LSP
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4quater (la candidata que N+97 dejo anotada).
+
+### Lo que estaba abierto, y lo que midio al abrirse
+
+N+97 dejo anotada una candidata sin decidir: el gate oficial no instala
+`rust-analyzer`, y por eso los tests LSP se saltan ahi. La nota decia que no se
+elegia sin medir cuanto costaba cada salida. Medido:
+
+    $ grep -rn 'component add' merge-gate.pipeline.kts scripts/ci/ .github/
+    (vacio — nadie lo instalaba)
+    $ grep -n 'cargo test' merge-gate.pipeline.kts
+    310:  sh("$cd && cargo test -p cognicode-core --lib --quiet")
+
+Y el binario no era que faltara en un runner: era que **existia y no
+funcionaba**.
+
+    $ ls -l ~/.cargo/bin/rust-analyzer
+    ... -> rustup
+    $ rust-analyzer --version
+    error: Unknown binary 'rust-analyzer' in official toolchain '1.96.0'
+    RA_EXIT=1
+
+### El coste, en las dos direcciones
+
+    gate completo SIN el componente    20m17s
+    gate completo CON el componente    22m48s
+
+Dos minutos y medio. Ese es el precio de que un test que hoy **no se ejecuta**
+se ejecute, y con el numero delante la decision deja de ser una preferencia.
+
+### Lo que se anadio, y por ahi
+
+`lsp-toolchain`, en `merge-gate.pipeline.kts`, con dos etapas y no una:
+
+1. `install-rust-analyzer`, que es `rustup component add` y no `cargo install`
+   porque es un binario de rustup, idempotente y sin compilar. El patron no es
+   nuevo: es el de `install-cargo-deny`, que ya existe en `supply-chain`.
+2. `rust-analyzer-answers`, que **pregunta** al binario.
+
+La segunda etapa es la que cuesta y la que importa. Sin ella, "instale" y
+"responde" son la misma palabra, y el shim de rustup las confunde: esta en el
+PATH, es ejecutable, y sale con 1. Un gate que solo instalara volveria a saltarse
+los tests, que es exactamente el defecto que esto cierra.
+
+MEDIDO, los dos cuerpos de la etapa extraidos del fichero y ejecutados:
+
+    INSTALL_EXIT=0   "rust-analyzer already present, skipping install"
+    PROBE_EXIT=0     "rust-analyzer 1.96.0 (ac68faa 2026-05-25)"
+
+    con un shim roto delante del PATH:
+    PROBE_CON_SHIM_EXIT=1
+      "FAIL: rust-analyzer esta en el PATH pero no responde. Si responde con
+       error, el shim es de rustup y el componente no esta instalado: los tests
+       LSP se saltarian en silencio, que es lo que este paso existe para evitar."
+
+### El contrato, en el dueno que ya era
+
+`test_the_gate_installs_the_lsp_server_it_needs` va en
+`test_supply_chain_gate_contract.py`, que es el dueno de "el gate instala la
+tool que necesita" — el mismo que afirma que `cargo-deny` este instalado y con
+version fijada. Lee el cuerpo del `sh()` con `authority.pipeline_steps`, que es
+lo que hace que un comentario no pueda satisfacerlo, y afirma **dos** cosas: que
+lo instala, y que despues lo pregunta.
+
+MUTACIONES, las dos vistas caer:
+
+- cambiar el `component add rust-analyzer` por otra cosa
+
+      FAILED — "merge-gate.pipeline.kts never installs rust-analyzer. The core
+      suite contains a test that returns early when the binary is absent, so
+      the gate reports green without ever running it."
+
+- dejar la instalacion y quitar la sonda
+
+      FAILED — "the gate installs rust-analyzer but never asks it whether it
+      answers. An install step that is not followed by a probe passes on a
+      broken shim, which is the exact failure this contract exists to catch"
+
+    pipelinek validate  VALIDATION SUCCESSFUL, diagnostics: []
+    contratos          227 passed, 0 failed   (eran 226)
+
+### Lección 221 — Instalar no es usar, y un gate que no lo comprueba no vigila
+
+La cadena entera de N+96 a N+98 es el mismo defecto en tres sitios: una cosa
+existe, y por existir se la da por buena.
+
+El shim `rust-analyzer` existe en el PATH y no arranca. El test de W3 existe en
+la suite y se saltaba. El gate existe y daba verde. **En los tres casos,
+comprobar la presencia sustituyo a comprobar el uso**, y cada comprobacion
+parecia razonable.
+
+La regla que sale, y que es la misma que ya pagamos con el `dev-bundle.yaml` y
+con el test que se tragaba su propio `Ok(None)`: **la verificacion que importa
+es la que se puede equivocar**. `command -v` no se puede equivocar sobre un
+shim. `rust-analyzer --version >/dev/null` si. Y la segunda vale mas que la
+primera solo cuando hay un shim, que es exactamente el caso de un toolchain de
+rustup.
+
+Y el cierre del circulo, que es lo que hace que este bloque valiera la pena: los
+arreglos de N+96 y N+97 eran correctos y **el gate no los ejecutaba**. Un test
+que el gate se salta no protege el arreglo que acabas de hacer. Arreglar tests
+sin cerrar el hueco del gate es dejar el trabajo a medias sin notarlo.
+
+## N+99 — La deteccion que preguntaba en una rama y suponia en la otra
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B4quinies (extender la Leccion 221).
+
+### Donde se busco, y lo que se descarto
+
+La Leccion 221 dice que comprobar la presencia no es comprobar el uso. Antes de
+suponer que habia mas, se busco, y dos alertas resultaron falsas:
+
+- **30 suites de CLI y MCP "no nombradas" por el gate.** El gate nombra suites
+  una a una, pero tiene `cli-unrestricted-ladybug`, que corre
+  `cargo test -p cognicode-cli --features ladybug` sin selector. Las 28 de CLI
+  estan cubiertas por ahi. **Falsa alarma mia, por metodo**: laeria de leer el
+  fichero en vez de la topologia.
+- **`java_without_its_server_degrades_by_declaration`.** Se auto-salta si `jdtls`
+  esta en el PATH, y su nombre dice lo contrario de lo que hace. Leido: el doc
+  explica que la rama no aplica con servidor, y hay un test gemelo para el otro
+  caso. Correcto por diseno.
+
+### Lo que si era el defecto
+
+`locate_cargo_deny`, en `a015_licenses_gate.rs`, filtra distinto en sus dos
+ramas. La del PATH **pregunta**:
+
+    Command::new("cargo-deny").arg("--version").output()
+        .filter(|o| o.status.success())
+
+La del fallback —la que se usa cuando no esta en el PATH— **supone**:
+
+    .find(|p| p.is_file())
+
+Nueve lineas de la comprobacion correcta. MEDIDO con un `CARGO_HOME` de
+mentira, en las dos formas que importan:
+
+- un shim que existe y sale con codigo 1: `is_file()` da true, el test lo
+  ejecuta y falla al hacer spawn, con "No such file" o "Permission denied" en
+  vez de decir que la herramienta no sirve
+- un fichero de 21 bytes con permisos 644: tambien `is_file()` da true, y ahi ni
+  siquiera es ejecutable
+
+Las dos son el shim de rustup de N+96 por tercera vez: algo que esta donde
+deberia y no hace lo que su nombre promete.
+
+### El arreglo, y por que no se comparte
+
+`answers_to_version`, la misma distincion que ya existe en
+`is_lsp_server_usable` (cognicode-core) y `command_reports_version`
+(lsp_integration_test.rs). **Tres copias de la misma comprobacion en tres sitios
+ya es un hallazgo**, pero un helper compartido entre un test de CLI y dos de
+libreria distinta costaria mas de lo que ahorra: la forma son tres lineas y el
+acoplamiento seria un modulo nuevo. Se anota como observacion, no se fuerza.
+
+MEDIDO, ejecutando el binario de test con cada entorno:
+
+    cargo-deny 0.20.2 real       3 passed, 1.77s   (corre de verdad)
+    shim que sale con 1          3 passed, 0.00s   (skip: cargo-deny not on PATH)
+    fichero 21 bytes con 644     3 passed, 0.00s   (skip: cargo-deny not on PATH)
+
+MUTACION, volver a `.find(|p| p.is_file())`:
+
+    FAILED, 1 passed; 2 failed — el mismo escenario que ahora salta limpio
+    revienta con el error de spawn en vez de decir que la tool no sirve
+
+Y una nota de metodo que salio de aqui: la primera medicion dio `3 passed` para
+el shim roto, y parecia que el arreglo no funcionaba. Era el binario viejo en
+cache. Con `--nocapture` se ve el mensaje de skip correcto. **Un resultado que
+contradice la hipotesis se comprueba con la instrumentacion que lo muestra, no
+se reinterpreta hasta que cuadre** — que es la version de la Lección 219 para
+las mediciones, y la mas facil de violar cuando one's quiere que el arreglo
+funcione.
+
+### Lo que se reviso y NO se toco
+
+`layout.rs:947`, en `cmd_reshim`, tambien usa `is_file()` sobre un binario de
+componente, y es produccion. Se deja: ahi el `is_file()` responde a "el
+fichero esta", y quien reporta de que no sirve es `install_shim`, que ya lo
+hace con contexto. **No es el patron defectuoso**: el defecto es comprobar la
+presencia *en vez de* la ejecucion, no *ademas de* ella.
+## N+100 — El gate que midio y no lo vio
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B6 (HARD contract / performance). Encadena con
+el work item `6e1bb51a-09df-456b-9287-fdfedba835c1`, que sigue abierto.
+
+### El punto de partida, medido
+
+Siete de las dieciseis entradas del presupuesto tenian benchmark. Las nueve
+restantes salian `UNMEASURED` y el checker terminaba con 3. De las nueve, cinco
+son de `mcp.tools` (round-trips de repositorio) y cuatro de `explorerql`
+(funciones puras de un crate que ya expone su API publica). Las cuatro de
+`explorerql` eran alcanzables sin montar nada: otro bloque de trabajo, no una
+limitación del inventario.
+
+### Lo que se escribió, y lo que pasó al medirlo
+
+`crates/cognicode-explorer/benches/explorerql_benchmarks.rs`, cuatro benches
+contra la gramática real de `moldql/parser_explorerql.rs`. La API se verificó
+antes de escribir, y al verificarla apareció que `lower_intent` toma `&str` y
+devuelve `Option<Result<MoldQLQuery, ParseError>>`, no un `&MoldQLQuery` como
+sugiere el nombre. Un benchmark escrito contra una API imaginada mide la
+imaginación.
+
+Primera medición del bench, aislada: `parse_simple` 495 ns, `parse_complex`
+1472 ns, `execute_find` 82 ns, `execute_traverse` 99 ns. Las cuatro dentro de
+techo, con un margen de 200x a 100000x.
+
+Después se registró el target en `BENCH_SPECS` y se relanzó el checker entero.
+El bench se ejecuto, produjo un numero, y el checker lo tiro a la basura: las
+cuatro claves seguian apareciendo como `UNMEASURED` en la tabla final.
+
+### Por que
+
+El parser comparaba `name = $2` —el nombre entero de Criterion— contra la clave
+del presupuesto. Criterion nombra un benchmark declarado dentro de un
+`benchmark_group` como `grupo/funcion`:
+
+    test explorerql_parse_simple/parse_simple ... bench:      495 ns/iter
+
+Eso se comparaba con la clave `parse_simple`, no encontraba nada, y la
+operacion salia `UNMEASURED`. El mensaje que acompanaba decia:
+
+    either write the benchmark or delete the entry
+
+para un benchmark que existia y acababa de correr. El informe no era
+incompleto: **senalaba el remedio equivocado**, que es peor que no informar,
+porque el que lo lee escribe codigo para arreglar algo que ya funcionaba.
+
+Los siete de `graph.operations` usan `c.bench_function` sin grupo, y por eso
+seguian funcionando. Un test escrito solo contra nombres desnudos no podia ver
+esto. Hizo falta escribir el segundo grupo del workspace para descubrirlo.
+
+La segunda mitad del defecto estaba al lado: una medicion cuyo nombre no casaba
+con ninguna clave se descartaba con un `continue` mudo. Ese silencio es
+justo lo que permitio que un fallo de parser se leyera como "no existe el
+benchmark" en lugar de "el parser esta mal".
+
+### Lo que se corrige
+
+    segments = split(name, parts, "/")
+    name = parts[segments]
+
+La comparacion pasa a ser por el ultimo segmento de la ruta. Los nombres
+exploratorios sin presupuesto se cuentan y se nombran, sin ser fallo —un
+benchmark exploratorio fuera del presupuesto no es un fallo, y hacerlo fallo
+seria inventar un techo— pero sin desaparecer. Y el mensaje de `UNMEASURED`
+dejo de decir "escribe el benchmark" para decir las tres cosas que pueden ser:
+que no existe, que su target no esta en `BENCH_SPECS`, o que el nombre de
+`bench_function` no coincide con la clave.
+
+Corrida real completa, sobre el presupuesto real:
+
+    OPERATION                           BUDGET (us)    ACTUAL (us)     STATUS
+    add_node                                     50         2.6310       PASS
+    add_edge                                     50         0.4310       PASS
+    get_node                                    100         0.0310       PASS
+    get_neighbors                              200        11.9590       PASS
+    bfs_traversal_100_nodes                     500        52.3150       PASS
+    shortest_path                             1000       302.4600       PASS
+    subgraph_extraction_50_nodes              2000        28.2630       PASS
+    parse_simple                               100         0.4790       PASS
+    parse_complex                              500         1.3760       PASS
+    execute_find                              5000         0.0760       PASS
+    execute_traverse                          10000         0.0930       PASS
+    graph_nodes_100                            5000      (missing) UNMEASURED
+    graph_search                              10000      (missing) UNMEASURED
+    graph_subgraph                            15000      (missing) UNMEASURED
+    brain_open                                 5000      (missing) UNMEASURED
+    brain_ask                                 30000      (missing) UNMEASURED
+
+    === 17 benchmark(s) measured without a budget entry ===
+    === 5 budgeted operation(s) were never measured ===
+    PERF_EXIT=3
+
+Once de dieciseis medidas, las once dentro de techo. La corrida real tambien
+mide diecisiete benchmarks mas que no tienen entrada en el presupuesto, y ahora
+salen nombrados en vez de borrados en silencio.
+
+### El defecto que me comi yo
+
+Al insertar el `[[bench]]` en `crates/cognicode-explorer/Cargo.toml` se quedo
+**en medio de `[dev-dependencies]`**:
+
+    [dev-dependencies]
+    criterion.workspace = true
+    [[bench]]
+    name = "explorerql_benchmarks"
+    harness = false
+    tokio-test.workspace = true
+    async-trait.workspace = true
+    tempfile = "3.27"
+    ...
+
+En TOML una tabla nueva se traga las claves que la siguen. Las siete
+dev-dependencies de despues (`tokio-test`, `async-trait`, `tempfile`, `tower`,
+`uuid`, `regex`, `reqwest`) dejaron de ser dev-dependencies del crate y
+pasaron a ser claves desconocidas del target de bench. Cargo avisa, compila, y
+cualquier test de integracion del explorer que use `tempfile` o `reqwest`
+reventaba por una linea movida en un manifiesto.
+
+MEDIDO con `cargo metadata --no-deps`, sobre la lista de dev-dependencies de
+`cognicode-explorer`:
+
+    antes:   async-trait, criterion, regex, reqwest, tempfile,
+             tokio-test, tower, uuid
+
+Es decir, `criterion` estaba y las otras siete no. El `[package]` era correcto;
+lo que habia desaparecido eran las claves de la seccion siguiente.
+
+El arreglo es dejar el `[[bench]]` al final del fichero, y el porque queda
+escrito en el propio manifiesto, que es donde se va a volver a mirar.
+
+### El instrumento tambien puede ser el defecto
+
+El primer test escrito en este bloque salio **ROJO en su primera ejecucion**, y
+no por el repositorio. El lector de manifiestos del propio test conservaba solo
+el ULTIMO `[[bench]]` de cada crate, asi que reportaba `graph_benchmarks` como
+no declarado cuando `cognicode-core` declara dos targets:
+
+    BENCH_SPECS runs `cognicode-core/graph_benchmarks`, which no manifest declares.
+    Declared targets are: [BenchTarget { krate: "cognicode-core",
+      name: "fact_bridge_benchmarks", ... }]
+
+El manifiesto estaba bien. El que leia estaba mal, y su primer rojo lo demostro.
+Es la Lección 215 en su forma mas comoda —arreglar la mitad de una causa: el
+lector sabia tratar varias claves por tabla, y no savia que un crate pudiera
+declarar varias tablas— y queda anotada en el propio lector.
+
+### Los cinco contratos, y como se que muerden
+
+El fichero `perf_budget_checker_contract.rs` tenia tres tests, y los tres usaban
+entradas sinteticas: ejercitaban la logica de decision del script, que es
+correcta, y no dicen nada sobre si las dieciseis entradas del presupuesto
+corresponden a benchmarks que existen. Se anaden cinco que leen el
+repositorio real.
+
+  1. `a_benchmark_inside_a_group_is_matched_by_its_function_name` — el bug de
+     este bloque, RED antes del fix y GREEN despues.
+  2. `a_measured_benchmark_with_no_budget_key_is_named_not_dropped` — una
+     medicion descartada se nombra, sin ser fallo.
+  3. `a_budgeted_operation_is_measured_or_declared_unmeasured` — recalcula el
+     conjunto real de lo no medido desde los fuentes de los benches y lo
+     compara con la linea `# UNMEASURED:` del toml.
+  4. `every_registered_bench_target_exists_and_really_measures` — cada entrada de
+     `BENCH_SPECS` existe y declara `harness = false`.
+  5. `a_benchmark_written_for_a_budgeted_operation_is_registered` — el espejo:
+     un benchmark que mide una clave presupuestada tiene que estar en un target
+     que el checker ejecute.
+
+El tercero es el que cambia la naturaleza de la cabecera. `# UNMEASURED:` no es
+prosa: es una declaracion que un test recalcula desde el codigo. Y falla en las
+DOS direcciones, que es lo que lo convierte en puerta y no en nota:
+
+  * clave presupuestada sin bench y sin declaracion -> agujero sin documentar
+  * operacion declarada que alguien ya midio -> exencion caducada
+
+La segunda direccion es la que importa cuando alguien escriba por fin los
+benches de `mcp.tools`: escribirlos obliga a borrar la declaracion, que es
+exactamente el orden correcto.
+
+El cuarto existe por la tolerancia del bucle. El checker continua cuando un
+target falla a proposito —perder las mediciones de los otros porque uno rompio
+seria peor que un `UNMEASURED` mas— y esa tolerancia tiene un precio: un target
+renombrado es un `UNMEASURED` permanente y silencioso dentro de una corrida de
+457 s que nadie vuelve a lanzar. El test paga el precio.
+
+MUTACIONES, todas sobre ficheros reales, todas restauradas despues:
+
+    BENCH_SPECS apunta a un target inexistente   -> 3 tests rojos
+    el bench existe pero sin harness = false      -> 1 test rojo
+    el parser vuelve a comparar solo $2           -> 1 test rojo
+    clave nueva sin bench ni declaracion          -> 1 test rojo
+    la declaracion no se encoge al medir lo suyo  -> 1 test rojo
+    (control, sin mutacion)                       -> 18/18 verde
+
+### Lo que se descubrio y NO se toco
+
+Los techos de `explorerql` no derivan de nada. `execute_find` mide 0.076 us
+contra un techo de 5000: **65000x de margen, un techo que no puede fallar y por
+lo tanto no es un techo.** Los cuatro se escribieron antes de que existiera una
+sola medicion. No se ajustan aqui, y la razon es que ajustarlos exige la varianza
+entre maquinas, que una unica corrida de desarrollo no produce. Un presupuesto
+derivado de una sola corrida es un numero que se pondra rojo en el hardware de
+otra persona por una razon que nadie puede accionar. Se dejan como estan y se
+dicen, que es lo unico honesto que se puede hacer con ellos hoy.
+
+Las cinco de `mcp.tools` siguen declaradas. Borrarlas haria que el checker
+saliera 0 y el presupuesto diria algo que no es cierto. El contrato obliga a
+borrarlas el dia que exista el benchmark.
+
+`fact_bridge_benchmarks` no entra en `BENCH_SPECS`, y su ausencia es
+deliberada: todo su cuerpo esta tras `#[cfg(feature = "evidence-kernel")]`, asi
+que con las features por defecto el target no tiene `criterion_main!` y no
+enlaza. Anadirlo produciria un fallo de enlizado en cada corrida. El quinto
+contrato lo cubre: si alguien presupuestara alguna vez
+`fact_commit_1000_files` sin registrar el target, el test lo dice.
+
+### Estado del gate
+
+    cargo fmt --check                                        0
+    cargo clippy -p cognicode-core -p cognicode-cli \
+        -p cognicode -p cognicode-explorer --all-targets
+        -- -D warnings                                       0
+    cargo test -p cognicode-cli --test perf_budget_checker_contract
+                                                              18/18
+    bash scripts/ci/run-all-contracts.sh                     227
+    ./scripts/perf-budget-check.sh                           PERF_EXIT=3
+
+Salida 3 y no 0 es el estado correcto: quedan cinco entradas sin medir, estan
+declaradas, y el gate dice exactamente eso. Convertirlo en 0 borrando entradas
+seria fabricar una cobertura que no existe.
+
+### Lección 222 — Un `UNMEASURED` puede ser un nombre, no un agujero
+
+El informe decia "no hay benchmark" y habia uno que habia producido un numero.
+Lo que no puede ver una medicion que el gate ya pago no es una laguna de
+cobertura: es un fallo de parser, y su sintoma se parece tanto al primero que
+manda a escribir codigo que ya funciona. La 214 ("una comprobacion que lee la
+mitad de lo que ocurre") tiene aqui una variante peor: **no leer nada y reportar
+el sintoma del defecto contrario**. Un informe que no puede diagnosticarse tiene
+que contar al menos lo que midio y lo que descarto, que es lo que hace ahora la
+linea de "17 benchmark(s) measured without a budget entry".
+
+### Lección 223 — En TOML una tabla nueva se traga las claves que la siguen
+
+Insertar `[[bench]]` en mitad de `[dev-dependencies]` no añade una tabla al
+final: mueve las claves siguientes a la tabla nueva. Cargo avisa pero compila, y
+el daño aparece lejos, en un test de integracion de otro crate que usa
+`tempfile`. **El sitio de una tabla en un manifiesto es semantica, no
+estilistica**, y el porque queda escrito en el manifiesto, que es donde se va a
+mirar la proxima vez.
+
+### Lección 224 — El primer rojo de un instrumento nuevo es sobre el instrumento
+
+Cinco contratos nuevos, y el primero salio rojo en su primera ejecucion
+encontrando un defecto en el lector de los propios tests, no en el
+repositorio. Es la 215 —arreglar la mitad de una causa— en su forma mas barata
+de descubrir: un lector que sabia tratar varias claves por tabla y no savia que
+un crate pudiera declarar varias tablas. **Un gate nuevo se valida primero
+contra si mismo**, porque su primer rojo no dice nada del mundo hasta que se ha
+comprobado que el instrumento sabe mirar.
+
+### Lección 225 — No se corrige un guion que se esta ejecutando
+
+Bash lee los guiones incrementalmente: no los carga enteros en memoria. Editar
+`perf-budget-check.sh` mientras corria desplazo el offset por el que iba a
+reanudar, y la corrida podia terminar ejecutando basura o perdiendo la mitad
+del informe. Se mato y se relanzo limpia, perdiendo dos minutos de compilacion
+que ya estaban pagados y aceptando la perdida. **Un fichero que se esta
+ejecutando es de solo lectura**, aunque el gate de permisos no lo sepa.
+## N+101 — La mitad de provenance que faltaba, y lo que cuesta no tener clave
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B7 (R2 provenance mechanism). Continua N+100, que
+cerró B6.
+
+### El hueco, con las dos mitades
+
+`docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md` (proposed, 2026-10-03) lo deja
+dicho y medido:
+
+| Half | Status |
+|---|---|
+| Verify an artifact has provenance | present (`gh attestation verify`) |
+| Fail closed when provenance is required | present (`RELEASE_REQUIRE_PROVENANCE=1`) |
+| **Generate an attestation** | **absent** (was `actions/attest-build-provenance`) |
+
+La lane puede exigir provenance, negarse correctamente cuando no lo hay, y no
+tener ninguna forma de conseguirlo. Este bloque construye esa forma y **no toca
+la politica**, que sigue siendo de `scripts/ci/verify-provenance.sh` y cuyo
+contrato (`test_provenance_gate.py`) se dejo intacto.
+
+La frontera la fija el ADR y no se negocia: *"Provenance belongs to the release
+infrastructure boundary: the lanes and `scripts/`. It does not enter
+`cognicode-core`, and nothing about it should be reachable from the MCP tool
+surface."* No se ha tocado ni una linea de `cognicode-core` ni de la superficie
+MCP.
+
+### MEDIDO antes de escribir: cosign 3.1.3 en este host
+
+El ADR afirma que cosign 3.1.3 produce un bundle verificable offline con un par
+de claves. Es cierto, y aun asi la primera ejecucion dio:
+
+    $ cosign generate-key-pair
+    Enter password for private key: Error: inappropriate ioctl for device
+
+El ADR midio la forma **interactiva**. Una lane y un test reciben la forma **no
+interactiva**, que es la que necesita `COSIGN_PASSWORD` en el entorno. Sin eso,
+el mecanismo no es ejecutable en ningun runner, y un mecanismo que no se puede
+ejecutar no existe.
+
+Con `COSIGN_PASSWORD` el camino entero se midio:
+
+    generate-key-pair                -> k.key, k.pub
+    attest-blob --bundle ...         -> Wrote bundle to file att.bundle.json
+    verify-blob --key k.pub          -> Verified OK
+    subject.digest.sha256            -> aee8e44a...4ef
+    sha256sum artifact.bin           -> aee8e44a...4ef     MATCH
+    verify-blob con OTRA clave       -> exit 1
+    verify-blob con OTRO artefacto   -> exit 1
+
+Las dos negativas tambien, porque un gate que solo pasa no distingue nada.
+
+### El generador
+
+`scripts/ci/attest-provenance.sh`. Lo unico que hace es firmar lo que se le pasa
+con la clave que se le pasa.
+
+Lo que **no** hace, y por que esta escrito en el fichero y no en un comentario
+aparte:
+
+- **No fabrica claves.** No hay ninguna llamada a `cosign generate-key-pair` en el
+  script, y hay un contrato que falla si aparece una. Una release con
+  provenance que nadie puede verificar es peor que una release sin
+  provenance: al consumidor le estan diciendo que esos bytes estan atestiguados.
+- **Una clave ausente es un error con nombre**, no algo que se sortee.
+- **El directorio de salida es todo o nada.** La clave publica se copia DESPUES
+  del bucle, no antes. La primera version la copiaba antes, y una corrida que
+  moria en un artefacto ausente dejaba una clave publica en el directorio de
+  salida sin ningun bundle al lado: un directorio que parece atestiguado a lo
+  que lo liste, y no lo esta.
+- **El primer digito de los tres se comprueba aqui, en cada corrida.** El bundle
+  se relee despues de que cosign lo escriba y su `subject[0].digest.sha256` se
+  compara con el `sha256sum` del artefacto. Un generador que escribe una
+  atestation sobre un artefacto nombrando otro es exactamente el fallo que
+  provenance existe para impedir, y seria invisible a cualquier consumidor que
+  solo compruebe "hay un bundle al lado".
+
+El digest lo calcula el script desde los bytes del disco, no lo acepta del
+llamante: un digest que pasara el llamante hace circular la comprobacion, y un
+llamante que lo calcula mal produce un bundle que concuerda con su propio error.
+
+### La conexion, y el orden que no se invierte
+
+`release-candidate.pipeline.kts` gana una stage `provenance` **al final**, junto
+a las demas del candidato. No en `release.pipeline.kts`, y hay contrato que lo
+comprueba: la atestion tiene que cubrir *el candidato que fue certificado*.
+Generarla en la lane de publicacion describiría un artefacto que nadie
+certifico, que es la misma propiedad rota que el candidato inmutable previene
+para los binarios.
+
+La stage se activa por `RELEASE_PROVENANCE_KEY`. Esa es una **capacidad**, no una
+politica. `RELEASE_REQUIRE_PROVENANCE` no se toca y no aparece en ninguna lane:
+la politica sigue siendo de `verify-provenance.sh`, que es su unico lector, y
+un contrato lo exige en las dos lanes.
+
+Sin clave, la stage **anuncia que no firma y sale con 0**. Llamar al generador
+sin clave seria un fallo deliberado, y un fallo deliberado en una etapa
+opcional es una release rota. Lo que no es opcional es decirlo.
+
+El ADR es explicito sobre la secuencia —*"Flip the default only once generation
+exists in the same lane — inverting this order breaks releases"*— y el orden
+anterior es como se rompio `v0.101.3`, que llego a esa etapa sin poder publicar
+nunca. Hay contrato que vigila que la rama sin clave termine en exito y que lo
+diga en voz alta.
+
+### El contrato: 13 tests, 7 mutaciones vistas caer
+
+`scripts/ci/test_provenance_generation.py`. Genera un par de claves
+**desechable, en un temporal, con una contrasena de prueba escrita en el
+fichero** — no es un secreto, no protege nada, y por eso puede estar a la vista
+en cualquier sitio donde se revisen contratos. Lo que se prueba es el mecanismo;
+la custodia sigue siendo de `Open decision, and it is the whole decision`.
+
+MUTACIONES, todas sobre ficheros reales, todas restauradas:
+
+    el generador fabrica su propia clave                     -> 4 tests rojos
+    la rama sin clave de MI stage falla en vez de salir      -> 1 test rojo
+    la generacion se mueve a la lane de publicacion          -> 1 test rojo
+    la stage desaparece (codigo muerto)                      -> 1 test rojo
+    el generador deja la clave publica en un fallo parcial   -> 1 test rojo
+    la stage existe y anuncia pero NO invoca al generador    -> 1 test rojo
+    la rama sin clave se salta sin decirlo                   -> 1 test rojo
+    (control, sin mutacion)                                  -> 13/13 verde
+
+### Un gate mio que se dejaba Satisfacer con un comentario
+
+La sexta mutacion existia porque la cuarta no habia tumba nada, y esa es la
+parte que vale la pena.
+
+La asercion de "la generacion esta conectada a la lane" buscaba
+`attest-provenance.sh` en el **fichero entero**. La mutacion que borra la stage
+no la tumbo, porque el bloque de comentario que explica la stage menciona el
+mismo nombre. Es decir: **el gate pasaba con prosa y sin codigo**.
+
+Es el defecto exacto que `ADR-RELEASE-PROVENANCE-PIPELINEK` documenta para
+`release.pipeline.kts` —el header describia una politica y el codigo aplicaba
+otra— repetido en el contrato que vigila al header. Un gate que puede pasar con
+un comentario no vigila el codigo.
+
+Ahora los dos tests de la stage recortan el **cuerpo** de la stage, desde
+`stage("provenance") {` hasta el cierre del `sh(...)`, con el comentario fuera
+por construccion. Y la rama sin clave se recorta buscando su `fi` con sangria,
+no la subcadena `"fi"`, que aparece dentro de palabras.
+
+### El otro defecto, mio tambien
+
+Al ejercitar el generador por primera vez con un par de claves real fallo:
+
+    FAIL: the public key 'keys/probe.key.pub' does not exist
+
+Derivaba la publica como `${KEY}.pub`, o sea `probe.key.pub`. cosign 3.1.3
+escribe `probe.key` y `probe.pub`, **con el mismo prefijo**. El comportamiento
+correcto aplicado al nombre equivocado. Se aceptan las dos formas, y el
+comentario deja la medicion a la vista.
+
+Y un tercero, mas tonto: el docstring del extractor de stage
+contenia `sh("""`, y tres comillas seguidas cierran un docstring. El contrato no
+importaba, y por eso las tres mutaciones dirigidos salieron sin una sola linea de
+salida en vez de con un fallo. Fallar con un mensaje vacio parece un aserto roto
+en vez de una suposicion equivocada, y es la forma mas cara de perder tiempo.
+
+### Lo que queda, y no se puede cerrar aqui
+
+**La custodia de la clave.** Es la decision que el ADR deja abierta y la unica
+que B7 no toca. Lo que este bloque deja es todo lo demas en su sitio:
+
+    artefacto
+       -> sha256
+       -> statement in-toto / SLSA v1
+       -> envelope DSSE
+       -> bundle firmado
+       -> clave publica que viaja con la release
+       -> verificacion con la clave descargada
+       -> contrato de los tres digests
+
+Cuando el operador decida donde vive la clave, queda un `sign()` que enchufar y
+la stage que ya esta conectada. Lo que **no** se ha hecho, y no se haria sin
+decision: fabricar una clave para "cerrar" el milestone, o poner
+`RELEASE_REQUIRE_PROVENANCE=1` sin ella.
+
+Tampoco se ha migrado `release.pipeline.kts` a verificar bundles con cosign. Ese
+cambio altera el comportamiento de una release publicada, y el ADR lo coloca
+detras de la misma decision de custodia. `gh attestation verify` sigue siendo lo
+que la lane ejecuta hoy, y sigue siendo cierto que no puede verificar un bundle
+de cosign: son dos mecanismos y solo uno esta conectado.
+
+### Estado del gate
+
+    bash scripts/ci/run-all-contracts.sh                     240
+    pipelinek validate release-candidate.pipeline.kts        VALIDATION SUCCESSFUL
+    bash -n scripts/ci/attest-provenance.sh                  SYNTAX_OK
+    ./scripts/ci/attest-provenance.sh (con clave de sonda)   2 artefactos, digests MATCH
+    ./scripts/ci/attest-provenance.sh (sin clave)            exit 1, 0 claves creadas
+    python3 scripts/ci/test_provenance_generation.py         13/13
+
+Sin cambios de Rust en este bloque, asi que `fmt` y `clippy` no tienen nada nuevo
+que validar.
+
+### Lección 226 — Un gate que puede pasar con un comentario no vigila el codigo
+
+La asercion buscaba un nombre de script en el fichero entero, y el comentario de
+arriba de la stage lo mencionaba. Borrar la stage entera no la tumbo. El gate
+verificaba que *alguien hubiera escrito sobre* la generacion, no que la
+generacion *existiera*.
+
+Es el mismo defecto que el ADR senala en `release.pipeline.kts` —el header
+describia una politica, el codigo aplicaba otra— y aqui estaba en el contrato
+que vigila al header, que es donde nadie mira. **Un gate tiene que leer el
+codigo, y un comentario al lado de un codigo no es codigo.** Cuando la
+asercion se pueda satisfacer con prosa, hay que recortar al bloque que ejecuta.
+
+### Lección 227 — Un medido en una terminal no es un medido en una lane
+
+`cosign generate-key-pair` funciona, y el ADR lo midio funcionando. En una lane
+muere con `inappropriate ioctl for device` porque pide contrasena por TTY. Las
+dos afirmaciones son ciertas y la segunda es la que decide si el mecanismo existe.
+
+Es la version generalizable de "instalar no es usar" (Lección 221): aqui el paso
+anterior es "funciona en mi consola". Un mecanismo de CI se mide **en las
+condiciones en las que va a correr**, y una TTY es una condicion mas que un
+runner no tiene. Cuando la medicion previa y la ejecucion real no comparten
+entorno, la medicion no dice nada sobre la ejecucion.
+
+### Lección 228 — Un directorio de salida parcial parece entero
+
+Copiar la clave publica antes de firmar dejaba, tras un fallo, un directorio con
+clave y sin bundles. Nada lo marca como invalido: un listado lo ve completo, y
+"hay una clave publica al lado" es exactamente la forma debil de la que un
+consumidor deduce que hay provenance.
+
+**Un directorio de salida tiene que ser todo o nada.** El orden de las
+escrituras no es estetica: es lo que hace que un fallo sea indistinguible de un
+exito a quien solo mira los nombres de fichero.
+## N+102 — Una afirmacion correcta por casualidad no es una afirmacion verificada
+
+**WorkItem** `3a3dd4b6-236d-4592-a7ba-ded4f5b992c0` (R1) · **Rama**
+`integrate/v1015` · **Bloque** B9-SKILLS (actor Skills de B9). Continua N+101,
+que cerro B7.
+
+### Por que este bloque y no B8
+
+La cadena del goal es `B8 documentacion -> B9 distribucion || skills -> B10`.
+B8 entero cuelga de **A-016**, que es "crear `Rubentxu/cognicode-site`", y
+MEDIDO:
+
+    $ gh repo view Rubentxu/cognicode-site
+    GraphQL: Could not resolve to a Repository with the name
+    'Rubentxu/cognicode-site'.
+
+Y de ahi depende toda la cadena del `16-ACTION-REGISTER.md`: A-017 (que depende
+de A-016), A-018 (que depende de A-016) y A-019..A-022, que ademas son un
+proyecto de Cloudflare, un dominio y un CNAME. Cuatro decisiones de cuenta
+externa mas un repo publico nuevo: eso es decision de operador, no trabajo de
+codigo, y no se puede resolver desde aqui.
+
+El goal escribe B9 con un `||` entre DISTRIBUTION y SKILLS, que es
+literalmente "dos actores independientes". El actor SKILLS es
+in-repo, no necesita cuentas, y el propio registro dice que A-015 **desbloqueo**
+A-033..A-036. Ahi estaba el trabajo.
+
+### Lo que hay, y lo que falta
+
+MEDIDO sobre `skills/`, que es lo que se empaqueta:
+
+    skills/cognicode/                  manifest.yaml + SKILL.md
+    skills/cognicode-agent-hardness/   manifest.yaml + SKILL.md
+    skills/cognicode-pr-review/        manifest.yaml + SKILL.md
+    skills/cognicode-developer/        manifest.yaml + SKILL.md
+    skills/cognicode-mcp/              manifest.yaml + SKILL.md
+    skills/cognicode-recommended/      SET.yaml
+
+Las skills de A-033, A-034 y A-035 **existen**. Lo que no existe es lo que sus
+filas piden: "eval suite PASS". No hay ningun eval suite, asi que el criterio de
+aceptacion no se puede cumplir ni en verde ni en rojo. Es el mismo patron que
+A-013 y A-015, donde el hueco resulto no ser la feature sino el gate.
+
+A-036 es distinta y queda medida, no arreglada:
+`cognicode-quality-investigator` **no esta en el repositorio**. Vive en
+`~/.agents/skills/cognicode-quality-investigator`. Una skill fuera del arbol no
+se versiona, no se empaqueta, no se publica y no se puede gatear, asi que "align
+cognicode-quality-investigator" con aceptacion "no stale tool assumptions" no
+tiene sobre que operar. Eso es una decision —vendorizarla al repo, o
+declararla externa y fuera del producto— y no se toma aqui.
+
+### El hueco, que era mas estrecho de lo que parecia
+
+Hay tres validadores de skills y cada uno ve una cosa:
+
+| Dueno | Que comprueba |
+|---|---|
+| `scripts/validate_skills.py` | nombres de tool MCP contra `product/tools.json`, frontmatter, YAML, rutas internas |
+| `scripts/ci/test_skill_cli_invocations.py` | que cada invocacion `cognicode <sub> ...` exista y tenga la aridad |
+| `scripts/ci/test_skills_gate_contract.py` | que el validador y el verificador esten cableados |
+
+Los tres comprueban que **lo que la skill nombra existe**. Ninguno comprueba que
+**lo que la skill dice de la superficie sea cierto**. Son dos preguntas
+distintas, y la segunda se puede responder mal sin que ninguna de las tres se
+entere.
+
+MEDIDO, cuatro afirmaciones en las skills que se publican:
+
+    skills/cognicode/SKILL.md:23          a 73-tool server
+    skills/cognicode-mcp/SKILL.md:4       Drive CogniCode's 73-tool MCP server
+    skills/cognicode-mcp/SKILL.md:32      Group the 73 tools by
+    skills/cognicode-mcp/SKILL.md:248     It does not list all 73 tools
+
+Las cuatro son ciertas hoy. Ese es precisamente el problema: entra la tool 74,
+el catalogo pasa a 74, los tres validadores siguen verdes porque las skills
+siguen nombrando tools que existen, y la release publica una skill que dice que
+el servidor tiene 73 tools. La frase viaja en el tar del candidato y se publica
+sin rebuild.
+
+Una skill que dice "a 60-tool server" habria pasado los tres validadores hoy.
+Eso no es hipotetico: es exactamente lo que hace el `validate_skills.py` que
+existe, comparar nombres contra el catalogo.
+
+### Lo que se anade
+
+`scripts/ci/test_skill_surface_claims.py`. Cada afirmacion `<N> <superficie>` se
+contrasta con el documento publicado que es su autoridad, y hay tres guardas
+para que el contrato no pueda pasar por no haber mirado nada:
+
+- el conjunto de skills publicadas se lee de `SKILL_BUNDLES` en
+  `release_contract.rs` —la misma tabla que gobierna que se empaqueta, leida
+  igual que en el contrato hermano, no una lista propia— y no puede estar vacio;
+- toda skill publicada esta cubierta;
+- **se ha encontrado al menos una afirmacion**.
+
+La tercera es la importante. Si las skills dejaran de afirmar el tamano de la
+superficie —que es una mejora, no un defecto— este contrato pasaria en verde sin
+vigilar nada. La guarda obliga a que ese cambio se mire a la cara en vez de
+aceptarse por omision.
+
+Una decision que parece un error y por eso queda escrita: `platforms` se ata a
+`platforms.json` y no a `product-manifest.json`. MEDIDO, el manifest declara 2
+plataformas y el documento de soporte declara 6. Casi se "corrige". No es una
+divergencia: `generate_product_manifest.py` construye `platforms` con
+`certified_platforms(root)` = `release_lane.release_targets(root)` —los targets
+que la lane construye— y su docstring explica que sustituyo la lectura de un
+fichero que el cutover borra. `validate_manifest` comprueba ademas que ese
+conjunto sea el esperado. El manifest responde a "que se publica" y el
+documento de soporte a "donde funciona". **Mirar al dueño antes de acusar a un
+artefacto** habria evitado un commit de docena.
+
+### Un recorte mio que se llevo por delante la cobertura que mas dolia
+
+El extractor saltaba el bloque de YAML del frontmatter. El motivo era que
+`metadata.version` no es una afirmacion de superficie. El motivo era **falso**:
+`version` no pertenece al vocabulario de este contrato, asi que nunca pudo
+colarse. Y el recorte se llevo por delante
+
+    skills/cognicode-mcp/SKILL.md:4   Drive CogniCode's 73-tool MCP server
+
+que esta **dentro de la `description`**, o sea la prosa que un agente lee para
+decidir si carga la skill. Una proteccion que no protegia nada, comprada con la
+cobertura que mas dolia. La regla que hace falta es "solo se compara lo que se
+sabe comparar", y esa no necesita excepciones.
+
+Dos mutaciones lo cazaron: volver a meter el recorte, y borrar la afirmacion
+del frontmatter a la vez.
+
+Antes, un test mio cayo con un mensaje que no explicaba nada util. Yo esperaba
+la linea 5 y la linea real era la 6. Cazar eso llevo a mirar el numerado, y el
+numerado estaba roto.
+
+El recorte ademas hacia que los numeros de linea se contaran desde el cuerpo
+recortado y no desde el fichero: todo diagnostico posterior al frontmatter
+mandaba al lector a una linea que no era la suya. Verificado contra el fichero
+real antes de darlo por bueno:
+
+    skills/cognicode/SKILL.md:23         73 tool
+    skills/cognicode-mcp/SKILL.md:4      73 tool
+    skills/cognicode-mcp/SKILL.md:32     73 tools
+    skills/cognicode-mcp/SKILL.md:248    73 tools
+
+### Mutaciones, todas vistas caer sobre ficheros reales
+
+    la skill afirma una superficie que no es la real      -> 1 test rojo
+    la verdad se mueve y la skill no                       -> 2 tests rojos
+    SKILL_BUNDLES vacio (fail-closed)                      -> 1 test rojo
+    ninguna skill afirma la superficie (guarda de suelo)   -> 1 test rojo
+    el extractor pasa a emparejar por prefijo              -> 1 test rojo
+    el extractor vuelve a saltarse el frontmatter          -> 1 test rojo
+    la afirmacion se comprueba contra si misma             -> 1 test rojo
+    la descripcion del frontmatter se salta de verdad      -> 1 test rojo
+    (control, sin mutacion)                                -> 8/8 verde
+
+Dos correcciones al guion de mutaciones que hacen falta decir, porque las dos
+meReported un verde que no era real:
+
+- **M4 no tumbo nada** en la primera pasada, porque quito las afirmaciones de
+  `cognicode-mcp` y `cognicode` seguia diciendo "a 73-tool server". El contrato
+  estaba bien; la mutacion no borraba lo que decia borrar. rehecha contra todas
+  las skills, cae.
+- **El control se ejecuto contra un arbol sucio**, porque el `trap` restaura al
+  salir y no entre mutaciones. El verde del control no valia. Ahora se restaura
+  explicitamente antes de cada paso.
+
+Reportar "7 mutaciones" sin haber comprobado la que no cayo habria sido
+exactamente el fallo que este bloque denuncia.
+
+### Lo que se dejo escrito y no se toco
+
+El limite del contrato: solo conoce los sustantivos de su tabla. Una
+afirmacion sobre una superficie que no esta en la tabla —o un sustantivo mal
+escrito— es **invisible** para el, porque no hay forma de saber que deberia
+mirar. No se disimula: esta en el docstring, con un test que fija que un
+cuasi-acierto de prefijo no se cuenta como superficie.
+
+### Estado del gate
+
+    bash scripts/ci/run-all-contracts.sh                     248
+    python3 scripts/ci/test_skill_surface_claims.py          8/8
+    python3 scripts/ci/test_skill_cli_invocations.py         (sin cambios)
+    python3 scripts/validate_skills.py                       (sin cambios)
+    git diff skills/ product/ crates/                        (vacio: intacto)
+
+Sin cambios de Rust, sin cambios de manifest y sin cambios en las skills: este
+commit solo anade el contrato que faltaba.
+
+### Leccion 229 — Mirar al dueno antes de acusar a un artefacto
+
+`product-manifest.json` declara 2 plataformas y `platforms.json` declara 6, con
+schemas distintos y nombres distintos. Un artefacto de un lado y el otro del
+otro parecian discrepar. El generador explica en su docstring que el manifest lleva
+`certified_platforms(root)` = los targets que la lane construye, y
+`validate_manifest` lo comprueba. La "discrepancia" era el contrato funcionando.
+
+**Un artefacto generado no se depura: se lee su generador.** El coste de no hacerlo es un commit que cambia un contrato publicado para
+convertir un comportamiento deliberado en un defecto con nombre.
+
+### Leccion 230 — Una proteccion que no protege nada se paga con cobertura
+
+El extractor saltaba el frontmatter para proteger un `metadata.version` que no
+podia colarse, porque `version` no estaba en el vocabulario. El recorte se llevo
+por delante la `description` de una skill, que es la primera prosa que se lee de
+un documento publicado.
+
+**Cada excepcion tiene que justificarse por lo que deja pasar, no por lo que
+teme que pase.** Un recorte que solo puede activarse ante algo que el contrato ya
+excluye no protege: se lleva cobertura por nada. Y la cobertura que se llevo no
+era una linea cualquiera, era la mas leida.
+
+### Leccion 231 — Una mutacion que no cae no ha midido nada
+
+La primera M4 quito las afirmaciones de una skill y el contrato paso en verde,
+porque otra skill seguia afirmando lo mismo. El contrato era correcto y la
+mutacion era mala. Lo grave no es la mutacion: es que el guion reportaba "6 de 7
+cayeron" sin haber comprobado que la septima cae.
+
+Igual con el control, que se ejecuto contra un arbol que el `trap` todavia no
+habia restaurado. Un verde de control sobre un arbol sucio no es un verde, es
+una cifra. **Toda afirmacion de que una mutacion cae tiene que estar
+acompanada de la razon por la que cae**, y si no cae, hay que averiguar si fallo el
+contrato o fallo la prueba antes de reportar el numero.

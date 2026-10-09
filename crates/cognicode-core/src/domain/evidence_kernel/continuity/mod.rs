@@ -14,7 +14,7 @@
 //!
 //! - [`view`] — [`EntityFacts`] + [`SnapshotEntityView::from_facts`]:
 //!   identity/kind/name/relations recovered from the fact grammar.
-//! - [`fingerprint`] — semantic fingerprint v1 (tagged multiset) and its
+//! - [`mod@fingerprint`] — semantic fingerprint v1 (tagged multiset) and its
 //!   kind-gated multiset Jaccard similarity.
 //! - [`matcher`] — the tiered T0–T3 deterministic matcher with pinned
 //!   thresholds, fail-closed ambiguity, and `StableEntityId` threading

@@ -181,7 +181,7 @@ tokio-test.workspace = true
 serial_test.workspace = true
 mockall.workspace = true
 tempfile.workspace = true
-criterion = "0.5"
+criterion.workspace = true
 
 [[bench]]
 name = "graph_benchmarks"

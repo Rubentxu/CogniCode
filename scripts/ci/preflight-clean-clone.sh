@@ -60,6 +60,96 @@ RECEIPT_FILE="/tmp/preflight-receipt-${TARGET_SHA:0:12}.json"
 BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5579}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
 BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
+TOLERANCE="${PREFLIGHT_TOLERANCE:-2}"  # tests que pueden desaparecer por churn
+
+# --- La rama que el clon puede nombrar -----------------------------------------
+#
+# MEDIDO 2026-10-03. La linea original era, entera:
+#
+#     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+#
+# En un checkout detached `git rev-parse --abbrev-ref HEAD` imprime la cadena
+# literal "HEAD" y sale con codigo 0, de modo que el `|| echo main` nunca se
+# ejecutaba: se pasaba `--branch HEAD` y el clon moria con
+#
+#     fatal: Rama remota HEAD no encontrada en upstream origin
+#
+# La lane `release-candidate` murio ahi en 0.3s al certificar desde el tag
+# v0.101.0, que es exactamente como se corta una release. El fallback existia
+# para cubrir el caso detached y no lo cubria, porque `--abbrev-ref` no falla
+# donde el fallback espera que falle: un guard que solo se dispara ante un error
+# que no llega a producirse.
+#
+# El nombre de la rama es una optimizacion, no un requisito. Dos lineas mas abajo
+# hacen `git fetch --depth 1 origin $TARGET_SHA` y `git checkout $TARGET_SHA`, y
+# eso es lo que fija el commit que se certifica. Asi que cuando no hay rama que
+# nombrar, se omite `--branch` y el clon usa el HEAD por defecto, en vez de pasar
+# un nombre de rama que no existe.
+#
+# La regla vive aqui y en ningun otro sitio: el seam de test y el clon la llaman.
+resolve_clone_ref() {
+  local ref
+  ref="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ "$ref" = "HEAD" ] || [ -z "$ref" ]; then
+    printf ''
+  else
+    printf '%s' "$ref"
+  fi
+}
+
+# `--print-clone-ref` imprime la rama que se pasaria a --branch, o nada, y sale
+# 0. Es lo que permite al contrato ejercitar esta resolucion sin pagar los 8-15
+# minutos del preflight completo. Va aqui, antes de cualquier `log`, porque `log`
+# escribe tambien en stdout con tee y contaminaria lo que el contrato lee.
+if [ "${1:-}" = "--print-clone-ref" ]; then
+  resolve_clone_ref
+  exit 0
+fi
+
+# ¿Ha perdido el workspace tests que antes pasaban?
+#
+# MEDIDO 2026-10-03, al certificar el tag v0.101.0. La condición original era
+#
+#     if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
+#       fail "regresión de tests passed: delta=$PASSED_DIFF ..."
+#     fi
+#
+# `${PASSED_DIFF#-}` quita el signo, así que era una comprobación de valor
+# absoluto: un delta de **+355** — 355 tests más pasando, cero fallando — la
+# hacía saltar con un mensaje que decía "regresión".
+#
+# El guard y su propio mensaje se contradecían, y las dos lecturas son
+# defendibles por separado, que es el problema:
+#
+#   * Si la intención era "el número de tests no debería moverse mucho", el
+#     mensaje dice otra cosa, y en un repositorio cuya agenda es añadir tests el
+#     guard queda rojo por el trabajo que se le pidió hacer.
+#   * Si la intención era "no perdemos tests", el fallo depende solo de tests que
+#     desaparecen, y `OBSERVED_FAILED > 0` cubre el otro caso dos lineas más
+#     abajo.
+#
+# Se conserva la lectura que el mensaje describe: una regresión es que el número
+# de tests **baje**. Un ratchet que dispara cuando la suite crece es un gate rojo
+# por nada.
+#
+# Vive en una función, y no en línea, porque un contrato tiene que poder
+# ejercitarlo sin pagar un clean clone de veinte minutos, y dos copias de un
+# guard es una de ellas equivocada dentro de un mes.
+passed_count_regressed() {
+  local baseline=$1 observed=$2 tolerance=${3:-${PREFLIGHT_TOLERANCE:-2}}
+  [ "$(( (observed - baseline) * -1 ))" -gt "$tolerance" ]
+}
+
+# `--print-passed-verdict <observed>` responde OK|REGRESSION y sale 0|1. Va
+# antes de cualquier `log` por el mismo motivo que el seam de arriba.
+if [ "${1:-}" = "--print-passed-verdict" ]; then
+  if passed_count_regressed "$BASELINE_PASSED" "${2:-$BASELINE_PASSED}" "$TOLERANCE"; then
+    printf 'REGRESSION\n'
+    exit 1
+  fi
+  printf 'OK\n'
+  exit 0
+fi
 
 # --- Helpers -----------------------------------------------------------------
 
@@ -120,12 +210,99 @@ log "Baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE
 # --- Stage 1: clone ----------------------------------------------------------
 
 WORK_DIR="$(mktemp -d -t cognicode-preflight-XXXXXX)"
-trap 'rm -rf "$WORK_DIR"' EXIT
+
+# --- La limpieza no puede cambiar el veredicto -------------------------------
+#
+# MEDIDO 2026-10-03. El trap era `trap 'rm -rf "$WORK_DIR"' EXIT`, y este
+# script hace `cd "$WORK_DIR/clone"` en el stage 5, asi que el trap se
+# ejecutaba desde dentro del directorio que borra. En un entorno donde `rm`
+# envuelve el borrado con una comprobacion de seguridad, esa comprobacion se
+# niega —es lo correcto: borrar el directorio que contiene tu propio cwd no
+# puede ser una operacion corriente— y devuelve 64. El estado del trap
+# sustituye al del script, y el preflight de v0.101.2 —que habia certificado
+# passed=5934 failed=0 y PREFLIGHT PASS— salio con fallo.
+#
+# Hay dos defectos distintos y ambos importan:
+#
+#   1. El trap borra el directorio desde dentro de si mismo. Salir antes no es
+#      cortesia, es lo que hace la operacion posible.
+#   2. Una limpieza puede fallar, y fallar la limpieza NO es fallar la
+#      certificacion. Un gate que muere en su propia limpieza no distingue
+#      "el codigo esta roto" de "no consegui borrar una carpeta temporal", y
+#      en cuanto ocurre lo segundo el gate entero deja de decir nada.
+#
+# La funcion vive aqui, en el script que la usa, y no en un fichero aparte:
+# su unico consumidor es este trap, y un contrato la ejercita extrayendola de
+# este mismo fuente (ver `qw04_preflight_contract.rs`). Un segundo fichero
+# seria un segundo sitio donde la regla de limpieza puede vivir.
+cognicode_preflight_cleanup() {
+    # `$?` tiene que leerse en la PRIMERA sentencia: cualquier comando
+    # anterior ya habria sobrescrito el estado de salida que se quiere
+    # conservar.
+    local incoming_status=$?
+    local work_dir="${1:-}"
+
+    if [ -n "$work_dir" ] && [ -d "$work_dir" ]; then
+        # Salir del directorio antes de borrarlo. `cd /` es el destino mas
+        # simple y no depende de que el arbol de trabajo siga existiendo.
+        cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
+
+        # El borrado no puede ser el veredicto. Si falla —envoltura de
+        # seguridad, permisos, un fichero abierto— se dice y se sigue con el
+        # estado que el script ya habia decidido.
+        if ! rm -rf -- "$work_dir" 2>/dev/null; then
+            printf 'aviso: no se pudo limpiar el clon temporal %s\n' \
+                "$work_dir" >&2
+            printf '       la certificacion no depende de la limpieza, y este\n' >&2
+            printf '       directorio se puede borrar a mano sin riesgo.\n' >&2
+        fi
+    fi
+
+    # El estado con el que el script ya habia decidido. Nunca el de la limpieza.
+    exit "$incoming_status"
+}
+
+trap 'cognicode_preflight_cleanup "$WORK_DIR"' EXIT
 
 log "Stage 1/7: clone a $WORK_DIR (sparse, blobs only)"
 
+# Que rama nombrar en `git clone --branch`.
+#
+# MEDIDO 2026-10-03. La linea anterior era, entera:
+#
+#     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)"
+#
+# En un checkout detached `git rev-parse --abbrev-ref HEAD` imprime la cadena
+# literal "HEAD" y sale con codigo 0, de modo que el `|| echo main` nunca se
+# ejecutaba: se pasaba `--branch HEAD` y el clon moria con
+#
+#     fatal: Rama remota HEAD no encontrada en upstream origin
+#
+# La lane `release-candidate` murio ahi en 0.3s al certificar desde el tag
+# v0.101.0, que es exactamente como se corta una release. El fallback existia
+# para cubrir el caso detached y no lo cubria, porque `--abbrev-ref` no falla
+# donde el fallback espera que falle: un guard que solo se activa ante un error
+# que no llega a producirse.
+#
+# El nombre de la rama es una optimizacion, no un requisito: dos lineas mas
+# abajo hacen `git fetch --depth 1 origin $TARGET_SHA` y
+# `git checkout $TARGET_SHA`, que es lo que fija el commit que se certifica. Asi
+# que cuando no hay rama que nombrar se omite `--branch` y el clon usa el HEAD
+# por defecto, en vez de pasar un nombre de rama que no existe.
+clone_ref="$(resolve_clone_ref)"
+
+if [ -z "$clone_ref" ]; then
+  log "  -> HEAD no resuelve a una rama (detached o unborn): se omite --branch"
+  log "  -> el commit certificado lo fija 'git checkout \$TARGET_SHA' mas abajo"
+fi
+
+clone_branch_args=()
+if [ -n "$clone_ref" ]; then
+  clone_branch_args=(--branch "$clone_ref")
+fi
+
 if ! git clone --no-tags --depth 1 --filter=blob:none \
-     --branch "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" \
+     ${clone_branch_args[@]+"${clone_branch_args[@]}"} \
      "$REPO_ROOT" "$WORK_DIR/clone" 2>>"$LOG_FILE"; then
   fail "git clone falló (ver $LOG_FILE)"
 fi
@@ -251,7 +428,6 @@ OBSERVED_IGNORED=$(echo "$TEST_RESULT" | sed -n 's/.*ignored=\([0-9]*\).*/\1/p')
 
 log "Stage 6/7: comparación con baseline"
 
-TOLERANCE="${PREFLIGHT_TOLERANCE:-2}"  # ±2 tests por churn legítimo
 
 PASSED_DIFF=$((OBSERVED_PASSED - BASELINE_PASSED))
 FAILED_DIFF=$((OBSERVED_FAILED - BASELINE_FAILED))
@@ -259,10 +435,41 @@ IGNORED_DIFF=$((OBSERVED_IGNORED - BASELINE_IGNORED))
 
 log "  baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE_IGNORED"
 log "  observed: passed=$OBSERVED_PASSED failed=$OBSERVED_FAILED ignored=$OBSERVED_IGNORED"
-log "  diff:     passed=$PASSED_DIFF failed=$FAILED_DIFF ignored=$IGNORED_DIFF (tolerancia ±$TOLERANCE)"
+log "  diff:     passed=$PASSED_DIFF failed=$FAILED_DIFF ignored=$IGNORED_DIFF (tolerancia -$TOLERANCE)"
 
-if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
-  fail "regresión de tests passed: delta=$PASSED_DIFF > tolerancia=$TOLERANCE"
+# MEDIDO 2026-10-03, al certificar el tag v0.101.0. La condición era
+#
+#     if [ "${PASSED_DIFF#-}" -gt "$TOLERANCE" ]; then
+#       fail "regresión de tests passed: delta=$PASSED_DIFF ..."
+#     fi
+#
+# `${PASSED_DIFF#-}` quita el signo, así que la comprobación era de valor
+# absoluto: un delta de **+355** — 355 tests más pasando, cero fallando — la
+# hacía saltar con un mensaje que decía "regresión".
+#
+# El guard y su propio mensaje se contradecían, y las dos lecturas son
+# defendibles por separado, que es el problema:
+#
+#   * Si la intención era "el número de tests no debería moverse mucho", el
+#     mensaje dice otra cosa, y en un proyecto cuya agenda es añadir tests el
+#     guard es rojo por el trabajo que se le pidió hacer.
+#   * Si la intención era "no perdemos tests", entonces el fallo tiene que
+#     depender solo de tests que desaparecen, y `OBSERVED_FAILED > 0` dos líneas
+#     más abajo ya cubre el otro caso.
+#
+# Un ratchet que dispara cuando la suite crece, en un repositorio que lleva
+# semanas deliberadamente lleno de tests, es un gate rojo por nada — el mismo
+# patrón que el sandbox gate que `certification.pipeline.kts` ya registra. Se
+# queda la lectura que el mensaje describe: la regresión es que el número de
+# tests **baje**, no que suba.
+#
+# Lo que NO se hace aquí, y conviene que quede dicho: el baseline sigue siendo
+# del operador. Con un baseline por debajo de la realidad, este ratchet es
+# débil — una caída grande de la suite real seguiría dentro de tolerancia si el
+# total stays por encima del baseline. Re-baselinar es una decisión explícita
+# (`PREFLIGHT_BASELINE_*`), no un efecto secundario de arreglar el signo.
+if passed_count_regressed "$BASELINE_PASSED" "$OBSERVED_PASSED" "$TOLERANCE"; then
+  fail "tests passed por debajo del baseline: delta=$PASSED_DIFF (bajan $((PASSED_DIFF * -1)) y la tolerancia es $TOLERANCE). Si es intencional, re-baseline con PREFLIGHT_BASELINE_PASSED=$OBSERVED_PASSED PREFLIGHT_BASELINE_IGNORED=$OBSERVED_IGNORED."
 fi
 
 if [ "$FAILED_DIFF" -gt 0 ]; then

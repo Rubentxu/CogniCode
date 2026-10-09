@@ -117,6 +117,21 @@ impl LightweightIndex {
         };
 
         let project_dir = project_dir.as_ref();
+
+        // The root must exist before the walk is meaningful. `WalkDir`
+        // reports a missing root as its single `Err` entry, and the
+        // `.filter_map(|e| e.ok())` below discards exactly that entry —
+        // so `index build /nonexistent` used to return `Ok(())` having
+        // indexed nothing, and the CLI exited 0. Validating the root here
+        // is what makes every strategy that walks a project agree on the
+        // same answer, instead of each one deciding on its own.
+        if !project_dir.is_dir() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Directory does not exist: {}", project_dir.display()),
+            ));
+        }
+
         for entry in WalkDir::new(project_dir)
             .follow_links(true)
             .into_iter()

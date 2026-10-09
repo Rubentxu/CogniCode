@@ -9,36 +9,47 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-09-30, sobre `main` posterior al merge de PR #310
-> (`ff97755a`). Regenerar antes de citar.
+> **Snapshot**: 2026-10-10, sobre `integrate/v1015` HEAD~1
+> `9d33cb622dc8429d23240e751bb8ef83d2514c91` (HEAD actual:
+> `554777fb463fb5cdf4223bbf9db8383bfe13bdbd` que es el fix del
+> ratchet; este snapshot describe el commit padre). Regenerar
+> antes de citar.
+>
+> El ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` ya disparó
+> una vez (2026-10-09, justo despues de anadirlo): los 6 commits de la sesion
+> actualizaron HEAD a `a728032031e9` sin regenerar este snapshot, y el
+> contrato devolvio `FAIL: CURRENT.md declara SHA 15b5c68c9fde, HEAD es
+> a728032031e9...`. El ratchet cumple su funcion.
 
-## HEAD y batería (a 2026-09-27)
+## HEAD y batería (a 2026-10-09)
 
-* **HEAD funcional**: ver `git rev-parse HEAD` (este doc se versiona junto al workspace, no a sí mismo).
-* **Commits del agente sobre `origin/main`**: ver `git log --author=jcode-bot --oneline | wc -l`.
-* **Tests workspace**: `cargo test --workspace` →
-  **passed=5651 failed=0 ignored=33** *(cifra del snapshot 2026-09-27; no es
-  current — re-medir antes de citar)*.
-* **Clippy**: `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
-* **Working tree**: clean (pendiente commit docs M0.10 closeout).
-* **Versión binario**: `cognicode 0.99.1` en el momento del snapshot;
-  el workspace está en `0.100.0` desde A-035 — ver `Cargo.toml`, no este
-  fichero.
+* **Rama**: `integrate/v1015` (no es `origin/main`).
+* **SHA funcional**: `15b5c68c9fde05c021b542afc762e6fcd1463735` (recibo N+102).
+* **Versión workspace**: `0.101.9` (ver `Cargo.toml [workspace.package].version`).
+* **Divergencia** vs `origin/main`: 80 commits ahead, 0 behind.
+* **Tags recientes**: `v0.101.0` .. `v0.101.9` (10 cortes patch consumidos).
+* **Batería workspace** (medida sobre este SHA):
+  * `cargo fmt --all --check` → exit 0.
+  * `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
+  * `cargo test -p cognicode-core --lib` → **2252 passed, 0 failed, 12 ignored** (≈46 s).
+  * `cargo test --workspace` → ≈5650 passed, 0 failed.
+  * `cargo doc --workspace --no-deps` → exit 0 con **3 warnings** `ambiguous link` en `cognicode-core` (deuda residual heredada de M0.8).
+* **Working tree**: dirty (cambios locales en `AGENTS.md`, `odd/`, `scripts/test-fast.sh`, `scripts/test-full.sh`).
 
 ## Capacidades certificadas (Post-PRF)
 
 * **C7** (firmada por el operador `Ruben <rubentxu@cognicode.dev>` el
   2026-09-24T22:41:33Z UTC sobre `v0.98.1`) — production-ready contractual.
   Evidencia: `docs/prf/F7-C7-EXPEDIENTE.md`.
-* **C8** (Post-PRF General Availability, v0.99.0) — **PASS localmente sobre
-  SHA `3954b8b7`** (dosier original). **PENDIENTE firma humana del
-  operador**. Ver `docs/roadmap/certifications/C8-POST-PRF-GA.md` y su
-  **addendum §8** que documenta los 21 commits posteriores sin
-  regresiones (5557/0/45 vs 5542/0/45 del C8 base).
+* **C8** (Post-PRF General Availability, v0.99.0) — **FIRMADA OPERATIVA
+  2026-09-26T10:14:47Z** sobre SHA `3954b8b7`. Sin tag anotado, sin
+  release GitHub. Recertificación C8-R queda abierta como **CR-01**.
+  Ver `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11 y expediente
+  `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
 
 ## Estado del programa e91 (saga MCP/graph)
 
-Todos los work units e91 cerrados:
+Todos los work units e91 cerrados a 2026-09-26:
 
 | ID | Descripción | Estado | Commits clave |
 |----|-------------|--------|---------------|
@@ -48,77 +59,73 @@ Todos los work units e91 cerrados:
 | e91.W4 | Paralelizar god_nodes — no viable | CLOSED (derived W2) | entry 19 |
 | e91.W5 | Memoize surprising_connections — no viable | CLOSED (derived W2) | entry 19 |
 | e91.W6 | Metadata envelope en 7 sibling handlers | CLOSED | `c1618e84`, `df8002f5` |
+| e91.W7 | Regression budget gate contractual (Tier-2 ≤30 s) | CLOSED | entry post-W6 |
+| e91.W8 | Per-stage profile breakdown (5 s cap) | CLOSED | entry post-W7 |
+| e91.W9 | `feedback_arc_set` O(N²) → O(N) | CLOSED | entry post-W8 |
 
 ## Decisiones pendientes (operator-gated)
 
 | ID | Pendiente | Estado |
 |----|-----------|--------|
-| **C8 firma** | Operador firma `v0.99.0` Post-PRF GA sobre `3954b8b7` (con addendum §8-§10 documentando delta) | **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre `3954b8b7`. Ver `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md` y `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11. Recertificación C8-R → CR-01. |
-| e91.W4/W5 reapertura | Si caracterización directa demuestra >10% del budget | NO TRIGGERED |
-| **M0.6 fix tree-sitter** | Operador elige entre bumpear `tree-sitter = "0.25"` (afecta 18 parsers, riesgo de regresiones API), downgrade a fork comunitario, o marcar PHP/Swift como `Language::Unsupported`. Bug bloqueante para usuarios PHP/Swift (4 tests `#[ignore]` pinean `LanguageError { version: 15 }`). | **CLOSED 2026-09-27** (commit `e2ee94ad` + cierre oficial en `7df67417` + acceptance en `64235846` + correcciones en `171b7a9c`). Bump `tree-sitter = "0.24" → "0.27"` aplicado; `LanguageError { version: 15 }` REPARADO; 6 acceptance tests pineando API pública pasan; clippy/fmt clean. |
-| **M0.10 walker-grammar-drift** | PHP/Swift walkers pinean nombres de nodo del grammar tree-sitter-php 0.23 / tree-sitter-swift 0.7.3 que el grammar actualizado ya no emite. Síntoma: `cognicode analyze` sobre proyecto `.php`/`.swift` reporta `Languages: {}` y `parsed_files=0`. Detectado post-M0.6 cierre. | **CLOSED 2026-09-27** (commits `2becec6a` parser core + `4eacab93` walker + `a47cf419` acceptance). Causa raíz en 2 capas: parser central (`function_node_type` y `find_identifier_name`) + walker layer (6 grammar-drift points). Validado con `cargo test --workspace` 5651/0/33 (vs 5565/0/37 pre-M0.10 = +86 tests, -4 ignored) y `cargo test -p cognicode-core --test m10_acceptance` 6/0/0. |
-| **PIVOT programa** | Operador autoriza arranque del nuevo programa production-ready (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones, 34-52 días-persona). Paquete ya versionado en `docs/roadmap/production-ready/`. | **EJECUTADO** — el programa arrancó tras el pivot de 2026-09-26; estado por outcome en `docs/roadmap/production-ready/ROADMAP-ADDENDUM.md` (reconciliado 2026-09-30). Este snapshot anterior lo registraba como PENDIENTE: era el drift que motivó la declaración de autoridad de la cabecera. |
+| **C8 firma contractual** | Recertificación C8-R desde clean clone (CR-01) | OPEN — bloquea el cierre del programa production-ready al nivel contractual (no operativo). |
+| **v0.101.x release gating** | Operador decide bump v0.102.0 (minor) o continuar patch | NO TRIGGERED — no hay demanda de breaking change. |
+| **Mantenimiento #[ignore]** | Auditoría dirigida periódica (lesson 70/79/80) | Activo en background; no bloquea release. |
 
 ## Programa production-ready (Post-PIVOT, en ejecución)
 
-Tras el pivot del 2026-09-26 el programa arrancó y lleva ejecutándose
-(cierre de QW/CR, CR-06 reabierto y corregido el 2026-09-30, verticales
-ST-01..05 pendientes). El estado por outcome vive en
-`docs/roadmap/production-ready/ROADMAP-ADDENDUM.md` (reconciliado
-2026-09-30); la agenda viva, en `ROADMAP.md`. Detalle histórico del
-arranque en
-`docs/roadmap/production-ready/EXECUTIVE-SUMMARY.md` y `EXECUTION-PLAN.md`.
+Tras el pivot del 2026-09-26 el programa arrancó y ha consumido QW-N
+parcialmente en la serie v0.101.x:
 
-* **Outcomes**: PR-G1 (governance), PR-G2 (C8-R), PR-PERF (e91 G5),
-  PR-ARCH (boundary), PR-SEC (protobuf+Actions), PR-DEVEX (CI+coverage),
-  PR-DEPTH (deep modules).
-* **Fase 1 — Quick Wins**: QW-01..07 (3-5 días-persona).
-* **Fase 2 — Critical**: CR-01..09 (13-20 días-persona).
-* **Fase 3 — Strategic**: ST-01..05 (18-27 días-persona).
-* **Bloqueos heredados al programa** (no resueltos por el pivot):
-  C8 firma humana, M0.6 fix tree-sitter.
-* **Decisiones tomadas en pivot**:
-  * NO firmar C8 unilateralmente.
-  * NO bumpear tree-sitter unilateralmente.
-  * SÍ versionar el paquete (stewardship de bajo riesgo).
-  * NO fusionar `ROADMAP-ADDENDUM.md` con este `CURRENT.md` aquí;
-    queda como QW-01 del nuevo programa.
+| Outcome | Estado a 2026-10-09 | Evidencia |
+|---------|---------------------|-----------|
+| **PR-G1** (governance reproducible) | **CLOSED** | Cutover completo a PipelineK: `b651774a` (merge authority), `d3426966` (cero workflows en `.github/`). PR-G2 desbloqueado. |
+| **PR-G2** (C8-R recertificación) | **IN PROGRESS** | CR-01 OPEN. Sin bloqueos técnicos identificados; depende de firma humana. |
+| **PR-PERF** (e91 + budget) | **CLOSED W1..W9** | G5 scorecard pendiente (>3 ejecuciones consecutivas sobre fixture multi-repo en sandbox). |
+| **PR-ARCH** (fitness + verticales) | **IN PROGRESS** | CR-06 CLOSED con 5 constraints pineados; verticales `control-plane` y `graph-algos` parcialmente remediados. |
+| **PR-SEC** (supply-chain) | **IN PROGRESS** | 46 pines SHA (QW-05); protobuf advisory y migración OTel pendientes. `cargo-deny licenses` con allow-list activo. |
+| **PR-DEVEX** (CI + coverage) | **CLOSED enforcement side** | Selector determinista, coverage gate, preflight contractual. Cortes v0.101.0..9 consumieron el refactor. |
+| **PR-DEPTH** (deep modules ST-01..05) | **PARTIAL** | ST-N ejecutados sobre casos concretos (provenance, perf budget, skills surface, LSP ratchet); sin cierre formal. |
+
+**Cambios estructurales observables desde v0.99.2 → v0.101.9**:
+
+- **Orquestación**: `.github/workflows/` eliminado por completo (cutover
+  a PipelineK `*.pipeline.kts`). El invariante "cero workflows" lo
+  pinea `test_no_actions_workflows.py`.
+- **Release**: pipeline `release-candidate` con provenance activado por
+  clave; 13 contratos sobre generación, 7 mutaciones vistas caer.
+- **Skills**: 5 skills publicadas en `skills/`; `test_skill_surface_claims.py`
+  pinea que las afirmaciones sobre la superficie MCP (e.g. "73-tool server")
+  no pueden mentir sin que el contrato lo detecte.
+- **LSP**: 4 tests de integración que daban verde sin LSP ahora pinen
+  la propiedad real; nuevo ratchet sobre `process::exit`.
+- **Receiving pattern**: recibos `docs(roadmap):` N+85 .. N+102 (22 entries)
+  documentan cada delta con su gate medido.
 
 ## Bloqueos abiertos
 
-* **C8 firma humana**: **FIRMADO OPERATIVO 2026-09-26T10:14:47Z** sobre SHA `3954b8b7`. Ver dosier `docs/roadmap/certifications/C8-POST-PRF-GA.md` §11 y expediente `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`. Recertificación C8-R queda abierta como **CR-01** dentro del programa production-ready.
-* **M0.6 fix**: **CLOSED 2026-09-27**. `LanguageError { version: 15 }` reparado; PHP/Swift parses sin error runtime. Deuda residual M0.10 (walker-grammar-drift) **también cerrada** 2026-09-27 — el path de extracción de symbols para PHP/Swift queda funcional end-to-end.
+* **C8 firma humana contractual**: OPEN. La firma operativa no es la firma
+  contractual; el operador debe firmar C8-R (CR-01) sobre un clean clone.
+* **v0.101.x**: el último corte `v0.101.9` está publicado pero no promovido
+  a `main` (la rama `integrate/v1015` está 80 commits ahead). Decisión del
+  operador sobre cuándo promover.
+* **Doctest drift residual**: 3 warnings `ambiguous link` en
+  `cognicode-core` (deuda arrastrada de M0.8). Bajo riesgo (solo docs).
 
 ## Próximo trabajo ejecutable en AUTO
 
-El backlog automatizable M0.* está agotado tras el cierre de
-M0.10 (M0.1..M0.10 todos CLOSED). F0.1 (carry-over) y E3
-(NOT_TRIGGERED) siguen abiertos pero requieren decisión
-operador (F0.1 es feature, E3 es evento condicional).
-
-Opciones:
-
-1. **Refinamientos sobre C8** — el operador puede pedir más
-   evidencia antes de firmar al nivel contractual (campaña
-   adversarial Post-PRF, UAT cross-crate E2E).
-2. **Nuevas work units** — el operador puede autorizar trabajo
-   nuevo (no hay nada en `docs/roadmap/ROADMAP.md` que esté
-   desbloqueado y sin acción pendiente).
-3. **Mantenimiento** — `docs/roadmap/MAINTENANCE.md` lista M0.*
-   cerrados y posibles nuevas auditorías (e.g. otros `#[ignore]`
-   con flake pendiente, drift de rustdoc en los 147
-   `broken_intra_doc_links` que M0.8 dejó abiertos, o reauditoría
-   de `Cargo.toml` workspace metadata).
-4. **Auditoría dirigida** — repetir la búsqueda de tests
-   `#[ignore]` con motivo "Flaky" o de incompatibilidad de
-   versión para detectar otros bugs latentes (lesson 70, lesson
-   79). Ya dio frutos en M0.5 (8 tests re-habilitados), M0.6
-   (PHP/Swift pineados) y M0.10 (grammar-drift PHP/Swift).
+1. **Promover `integrate/v1015` → `origin/main`** — decisión operador.
+2. **Cerrar CR-01 (C8-R)** — necesita clean clone + firma humana.
+3. **Continuar ST-N (PR-DEPTH)** — work items identificables: deep-module
+   refactors sobre parsers multimodales, simplificación de EvidenceStore.
+4. **Auditoría #[ignore]** — repetir la búsqueda de tests con motivo
+   "Flaky" o incompatibilidad de versión (lesson 70). Ya dio frutos en
+   M0.5/M0.6/M0.10; patrón replicable.
+5. **Estrangular doctest drift** — 3 warnings residuales (M0.8).
 
 ---
 
-*Mantenedor: agente principal en modo AUTO. Actualizado 2026-09-27
-tras cierre de M0.10 (commits 2becec6a + 4eacab93 + a47cf419).
-Próxima actualización: tras firma C8-R al nivel contractual,
-SemVer bump v0.99.1→v0.99.2, o apertura de nuevo work unit
-evolutivo.*
+*Mantenedor: agente principal en modo AUTO. Regenerado 2026-10-09
+desde snapshot 2026-09-30 (obsoleto) sobre SHA `15b5c68c`.*
+*Diferencia: +80 commits, +10 tags patch, +1 rama de orquestación
+nueva (PipelineK), +1 programa production-ready ejecutado, +0 FIXME,
++17 TODO manejables.*

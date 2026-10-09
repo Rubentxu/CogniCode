@@ -196,7 +196,21 @@ pipeline {
         // --------------------------------------------------------------- tools
         stage("toolchain") {
             stage("release-tool") {
-                sh("$cd && cargo build --release --bin cognicode-release")
+                sh("""
+                    $cd || exit 1
+                    cargo build --release --bin cognicode-release
+                    # MEDIDO 2026-10-03. Esta stage se quedaba con "cargo
+                    # build salio 0", y en una maquina con `build.target-dir`
+                    # compartido eso no dice de que checkout salio el binario.
+                    # La lane de v0.101.5 ejecuto una `cognicode-release` de
+                    # otro arbol y lo supo veinte minutos despues, en
+                    # `skill-bundles`, con "unrecognized subcommand 'skills'":
+                    # un subcomando que el arbol si tiene. Cargo compara
+                    # mtimes, y las fuentes de este checkout son mas antiguas
+                    # que un binario que otro checkout construyo despues.
+                    bash scripts/ci/check-built-binary.sh \
+                        "$(scripts/ci/target-dir.sh)/release/cognicode-release" .
+                """.trimIndent())
             }
         }
 
@@ -214,6 +228,129 @@ pipeline {
                             echo "binaries cannot link produces a candidate that looks built and is not."
                             exit 1
                         }
+                        # The block above names two requirements and checks one. The
+                        # requirement it does not check is the one that is machine
+                        # state, so it is the one that silently disappears.
+                        #
+                        # MEDIDO 2026-10-03, lane v0.101.4: the target WAS installed,
+                        # so this stage reported success, and `binaries-$target` died
+                        # two stages later with exit 101 and a parser error about the
+                        # target triple — cc-rs handing zig a `--target=` flag zig
+                        # cannot read. The diagnostic named the compiler. The thing
+                        # that was actually missing is the sentence this stage prints
+                        # when the target is absent.
+                        #
+                        # A linker is configured in `CC_<triple>`, in
+                        # `CARGO_TARGET_<TRIPLE>_LINKER`, or as `linker` in a
+                        # `[target.<triple>]` table of a cargo config. All three are
+                        # outside the repository, which is why this check exists and
+                        # is also why it cannot make the cross toolchain reproducible:
+                        # it can say whether one is configured and whether it runs,
+                        # and nothing more. Whether it understands this target is
+                        # `binaries-$target`'s to find out.
+                        # NOTE ON DOLLAR SIGNS IN THIS BLOCK. Everything from here
+                        # to the end of the linker check is the body of a shell
+                        # script written inside a Kotlin raw string, and in a raw
+                        # string a dollar sign opens a template. That is true even
+                        # inside what looks like a comment: a hash opens a shell
+                        # comment, but the line is still content of the raw string,
+                        # so a dollar in it is still a template. Writing a dollar
+                        # in prose to illustrate a rule is what produces
+                        # `Unresolved reference` at compilation, before a single
+                        # stage runs. MEDIDO 2026-10-04: two paragraphs of this
+                        # comment, explaining how to escape a dollar, contained
+                        # unescaped ones and took the whole lane down in the first
+                        # two minutes.
+                        #
+                        # So this block states the rules without writing a dollar.
+                        # To emit one to the shell, the form is the Kotlin template
+                        # of a string literal holding a dollar, followed by braces
+                        # around the name when the name is glued to a suffix —
+                        # otherwise Kotlin reads name_PLUS_SUFFIX as one long
+                        # identifier. A DEFINITION takes no escape and must not
+                        # have one, because a dollar glued to the left of the
+                        # equals sign makes the name contain a dollar, and bash
+                        # reads the word as a command. MEDIDO 2026-10-03: written
+                        # the escaped way, that assignment failed and every
+                        # variable below it read as empty.
+                        #
+                        # The escaping examples are not written here on purpose.
+                        # The stage below is the specification, and
+                        # `test_pipeline_stage_bodies.py` renders and runs it for
+                        # real: three targets crossed, a linker from the
+                        # environment, a linker from a committed cargo config, a
+                        # linker that does not resolve, and the host case. What
+                        # this comment is for is the reader, and a reader who
+                        # needs the literal form can read it out of a rendering.
+                        host=$(rustc -vV | sed -n 's/^host: //p')
+                        if [ "${'$'}host" != "$target" ]; then
+                            key=$(printf '%s' "$target" | tr '[:lower:]-' '[:upper:]_')
+                            cc_key=$(printf '%s' "$target" | tr '-' '_')
+                            linker_var="CARGO_TARGET_${'$'}{key}_LINKER"
+                            cc_var="CC_${'$'}{cc_key}"
+                            # bash's indirect form takes the variable name directly,
+                            # so a `$` in front of it is a bad substitution, and a
+                            # `$` inside a parameter name is a second bad
+                            # substitution. Hence the two name variables above
+                            # instead of nesting the expansion inline.
+                            linker="${'$'}{!linker_var:-}"
+                            [ -n "${'$'}linker" ] || linker="${'$'}{!cc_var:-}"
+                            # `[target.<triple>]` followed by a `linker` line, in
+                            # either the repository's config or the user's. A missing
+                            # file is an absent answer, not an error here. The
+                            # section header is COMPARED, never matched as a regex:
+                            # a target triple is full of `-`, and `a-b` inside a
+                            # bracket expression is an invalid range, which is how
+                            # this first read the header as a fatal regexp error
+                            # and reported "no linker is configured" for a file that
+                            # had one.
+                            cfg_has_linker=no
+                            for cfg in "$repoRoot/.cargo/config.toml" "${'$'}{CARGO_HOME:-${'$'}HOME/.cargo}/config.toml"; do
+                                [ -f "${'$'}cfg" ] || continue
+                                if awk -v section="[target.$target]" '
+                                    {
+                                        line = $0
+                                        gsub(/^[[:space:]]+/, "", line)
+                                        gsub(/[[:space:]]+$/, "", line)
+                                        if (line == section) { inside = 1; next }
+                                        if (substr(line, 1, 1) == "[") { inside = 0 }
+                                        if (inside && line ~ /^linker[[:space:]]*=/) { found = 1 }
+                                    }
+                                    END { exit(found ? 0 : 1) }
+                                ' "${'$'}cfg"; then
+                                    cfg_has_linker=yes
+                                    break
+                                fi
+                            done
+                            if [ -z "${'$'}linker" ] && [ "${'$'}cfg_has_linker" != "yes" ]; then
+                                echo "cargo target '$target' is installed but no linker is configured for it."
+                                echo "  Host is '${'$'}host', so this is a cross build, and a cross build"
+                                echo "  that cannot link produces a candidate that looks built and is not."
+                                echo "  Configure one, either as:"
+                                echo "    .cargo/config.toml:   [target.$target]"
+                                echo "                          linker = \"<linker>\""
+                                echo "    or in the environment: CC_${'$'}{cc_key}=\"<linker>\""
+                                echo "                          CARGO_TARGET_${'$'}{key}_LINKER=\"<linker>\""
+                                exit 1
+                            fi
+                            if [ -n "${'$'}linker" ] && ! command -v "${'$'}linker" >/dev/null 2>&1 && [ ! -x "${'$'}linker" ]; then
+                                echo "the linker configured for '$target' does not resolve: ${'$'}linker"
+                                echo "  A linker that is not on PATH and not executable fails later inside"
+                                echo "  the build, where the error names the compiler instead of the tool"
+                                echo "  that is missing. Check CC_${'$'}{cc_key} and CARGO_TARGET_${'$'}{key}_LINKER."
+                                exit 1
+                            fi
+                            echo "cross target '$target' (host '${'$'}host'): linker configured and resolves"
+                        fi
+                        # Having the target installed is half the toolchain. This tree
+                        # carries crates with C and C++ build scripts --`ring`,
+                        # `tree-sitter`, `link-cplusplus`-- so a target whose cross
+                        # compiler is missing, or present but unable to parse the
+                        # triple `cc-rs` appends, fails here in milliseconds instead
+                        # of twenty minutes later inside somebody else's build
+                        # script. MEDIDO 2026-10-03 on v0.101.4: the rustup check
+                        # passed, and `binaries-aarch64` then failed three ways.
+                        scripts/ci/check-cross-toolchain.sh '$target'
                     """.trimIndent())
                 }
 
@@ -253,23 +390,103 @@ pipeline {
                     sh(releasePaths + "\n" + """
                         platform=${platformOf(target)}
                         lane="staging/payloads-${'$'}platform"
+                        # This directory is this stage's output, and this stage is
+                        # its owner. `mkdir -p` on a directory that already exists
+                        # is not an innocent no-op: it is the mechanism by which a
+                        # build directory inherits state from a previous run. The
+                        # worktree that builds the candidate is long lived, so
+                        # `mkdir -p` alone meant the previous candidate's payloads
+                        # were still in here. MEDIDO 2026-10-03, lane v0.101.5:
+                        #
+                        #     FAIL: planned 3 artifacts for linux-x86-64, produced 6.
+                        #
+                        # Three of the six were 0.101.4. The lane is written to be
+                        # re-runnable in a worktree that already holds a candidate,
+                        # so it starts from a directory that is known to be its own.
+                        #
+                        # QW-04's "the cleanup cannot be the verdict" does not
+                        # apply here, and the difference is the whole point: that
+                        # rule is about what happens AFTER the stages have decided,
+                        # and this is before anything is decided. If the input
+                        # state cannot be established, there is no known state to
+                        # package into, and continuing would mean packaging into
+                        # whatever the previous lane happened to leave.
+                        if [ -e "${'$'}lane" ]; then
+                            if ! rm -rf -- "${'$'}lane"; then
+                                echo "FAIL: could not clear the lane directory ${'$'}lane"
+                                echo "  It exists from a previous candidate, and this lane cannot"
+                                echo "  promise that the payloads it produces are its own. Clear it"
+                                echo "  by hand, or run in a worktree without a previous candidate."
+                                exit 1
+                            fi
+                            echo "cleared ${'$'}lane from a previous candidate"
+                        fi
                         mkdir -p "${'$'}lane/dist" "${'$'}lane/crates"
                         # The published product surface is the contract's, not this
                         # script's: `plan` prints the canonical filenames, and the
                         # component name is recovered by stripping the derived
                         # `-{version}-{token}.tar.gz` suffix. A third list of
                         # components written here would be a third place to forget.
+                        planned=0
                         for filename in $("${'$'}TARGET_DIR/release/cognicode-release" plan --platform "${'$'}platform" --version "$version"); do
-                            component="${'$'}{filename%-${'$'}version-*}"
+                            planned=$((planned + 1))
+                            # `$version` is the Kotlin value, not a shell one: it is
+                            # what `--version "$version"` above already used. Spelled
+                            # `${'$'}version` this is an *unset* shell variable, the
+                            # suffix pattern collapses to `---*`, matches nothing, and
+                            # `component` silently keeps the whole archive filename —
+                            # so `cp` looked for a file that does not exist and no
+                            # payload was produced. MEDIDO 2026-10-03, first candidate
+                            # to reach this stage since the lane existed.
+                            component="${'$'}{filename%-$version-*}"
                             filename=$("${'$'}TARGET_DIR/release/cognicode-release" name --component "${'$'}component" \
                                         --platform "${'$'}platform" --version "$version")
+                            if [ -z "${'$'}filename" ]; then
+                                echo "FAIL: name --component ${'$'}component produced no filename."
+                                echo "  A component with no name cannot be packaged, and an empty"
+                                echo "  name would make tar write to the dist/ directory itself."
+                                exit 1
+                            fi
                             stage=$(mktemp -d)
                             mkdir -p "${'$'}stage/bin"
-                            cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component"
-                            tar -czf "${'$'}lane/dist/${'$'}filename" -C "${'$'}stage" bin
+                            cp "${'$'}TARGET_DIR/$target/release/${'$'}component" "${'$'}stage/bin/${'$'}component" || {
+                                echo "FAIL: ${'$'}TARGET_DIR/$target/release/${'$'}component is missing."
+                                echo "  binaries-${'$'}target runs before this one and did not produce it."
+                                exit 1
+                            }
+                            tar -czf "${'$'}lane/dist/${'$'}filename" -C "${'$'}stage" bin || {
+                                echo "FAIL: could not package ${'$'}filename"
+                                exit 1
+                            }
                             echo "packaged ${'$'}filename for ${'$'}platform"
                             rm -rf "${'$'}stage"
                         done
+                        # `plan` answering with nothing is not an empty release, it
+                        # is a stage that cannot see the product surface. Without
+                        # this the loop above simply does not run and the stage
+                        # reports success having produced no payload at all — which
+                        # is how the defect above survived a whole candidate run and
+                        # only surfaced two stages later, in a message about the
+                        # archive rather than about packaging.
+                        if [ "${'$'}planned" -lt 1 ]; then
+                            echo "FAIL: cognicode-release plan produced no artifacts for ${'$'}platform."
+                            echo "  An empty candidate is not a candidate."
+                            exit 1
+                        fi
+                        produced=$(ls -1 "${'$'}lane/dist" | wc -l)
+                        if [ "${'$'}produced" -ne "${'$'}planned" ]; then
+                            # The count is still worth keeping as a last line of
+                            # defense, but it no longer tries to name the offender:
+                            # the directory is cleared above, so nothing can be in
+                            # here that this loop did not just write, and a message
+                            # that guesses would be a message that lies. The stage
+                            # that can name the files is the flatten script, which
+                            # refuses an ambiguous lane by name.
+                            echo "FAIL: planned ${'$'}planned artifacts for ${'$'}platform, produced ${'$'}produced."
+                            echo "  ${'$'}lane is created fresh by this stage; if this fires, something"
+                            echo "  other than this loop wrote into it."
+                            exit 1
+                        fi
                         # The SBOM belongs to the lane, not to the repository: the
                         # flatten script pairs `<component>-<triple>.cdx.json`
                         # with the payloads of the same lane, and a payload whose
@@ -279,7 +496,7 @@ pipeline {
                             if [ ! -f "${'$'}sbom" ]; then
                                 echo "FAIL: ${'$'}sbom is missing."
                                 echo "  build-sboms-for-lane.sh writes crates/<component>-<target>.cdx.json;"
-                                echo "  the sbom-${'$'}target stage runs before this one and did not produce it."
+                                echo "  the sbom-$target stage runs before this one and did not produce it."
                                 exit 1
                             fi
                             cp "${'$'}sbom" "${'$'}lane/crates/"
@@ -297,10 +514,29 @@ pipeline {
                         # `--target $target` puts cross output under the target
                         # subdirectory of whatever cargo's target dir is.
                         dir="${'$'}TARGET_DIR/$target/release"
-                        "${'$'}dir/cogh" --version
-                        "${'$'}dir/cogh" --help | head -5
-                        "${'$'}dir/cognicode" --version
-                        "${'$'}dir/cognicode-mcp" --version
+                        # MEDIDO 2026-10-03. Esto ejecutaba el binario tal cual.
+                        # En el host es ejecutarlo; en un target extranjero entra
+                        # binfmt_misc y sale
+                        #
+                        #     qemu-aarch64-static: Could not open
+                        #     '/lib/ld-linux-aarch64.so.1': No such file or directory
+                        #
+                        # que no dice que la maquina no tiene la libc invitada de
+                        # ese target. run-target-binary.sh dice COMO ejecuta, y
+                        # cuando falta el emulador o el sysroot lo dice antes de
+                        # intentarlo y nombra lo que falta.
+                        runner=scripts/ci/run-target-binary.sh
+                        for component in cogh cognicode cognicode-mcp; do
+                            test -x "${'$'}dir/${'$'}component" || {
+                                echo "FAIL: ${'$'}dir/${'$'}component no existe o no es ejecutable."
+                                echo "  binaries-${'$'}target corre antes de esta stage y no lo produjo."
+                                exit 1
+                            }
+                        done
+                        bash "${'$'}runner" $target "${'$'}dir/cogh" --version
+                        bash "${'$'}runner" $target "${'$'}dir/cogh" --help | head -5
+                        bash "${'$'}runner" $target "${'$'}dir/cognicode" --version
+                        bash "${'$'}runner" $target "${'$'}dir/cognicode-mcp" --version
                     """.trimIndent())
                 }
 
@@ -313,9 +549,14 @@ pipeline {
                         done
                         # No Rust toolchain and no repository files after extraction.
                         test -x "${'$'}work/bin/cogh" || { echo "cogh missing or not executable from the archive"; exit 1; }
-                        "${'$'}work/bin/cogh" --version
                         test -x "${'$'}work/bin/cognicode" || { echo "cognicode missing or not executable from the archive"; exit 1; }
-                        "${'$'}work/bin/cognicode" --version
+                        # MEDIDO 2026-10-03. El binario extraido se ejecutaba
+                        # directamente, con el mismo problema que binary-smoke:
+                        # en un target extranjero eso no es ejecutarlo, y el
+                        # fallo que sale no dice que falte la libc de ese target.
+                        runner=scripts/ci/run-target-binary.sh
+                        bash "${'$'}runner" $target "${'$'}work/bin/cogh" --version
+                        bash "${'$'}runner" $target "${'$'}work/bin/cognicode" --version
                     """.trimIndent())
                 }
             }
@@ -331,20 +572,88 @@ pipeline {
             // missing part of what it publishes.
             stage("skill-bundles") {
                 sh(releasePaths + "\n" + """
+                    # MEDIDO 2026-10-03. Esto hacia `mkdir -p staging`, y la
+                    # raiz de `staging/` no se limpiaba. La lane de v0.101.5
+                    # llego aqui y se rompio en la stage siguiente:
+                    #
+                    #     ::error::unexpected file at staging root:
+                    #     cogh-aarch64-unknown-linux-gnu.cdx.json
+                    #
+                    # Esos ficheros los habia dejado la corrida ANTERIOR, que si
+                    # llego a `generate`: el aplanado copia de
+                    # `staging/payloads-<plataforma>/` a la raiz, y la copia se
+                    # queda. En la siguiente corrida el propio aplanado rechaza
+                    # su salida de antes —que es exactamente lo que debe hacer
+                    # con un fichero que no reconoce— y la lane cae.
+                    #
+                    # Es el mismo defecto que 32fb1ff6 arreglo un nivel mas
+                    # abajo, y con el mismo motivo: un release re-ejecutado
+                    # sobre un arbol sucio tiene que partir del estado que el
+                    # produce, no del que le dejaron. Aqui se limpian los
+                    # FICHEROS sueltos de la raiz, antes de preparar los
+                    # bundles, que es lo primero que esta lane escribe en ella.
+                    #
+                    # Solo ficheros, y a profundidad 1, por una razon que no es
+                    # cosmetica: los directorios `payloads-*` los acaba de
+                    # producir `package-<target>` en ESTA corrida, unas stages
+                    # antes. Borrarlos seria tirar el trabajo del build para
+                    # arreglar un arbol sucio.
+                    #
+                    # MEDIDO: escribir el nombre de esa stage con un dollar
+                    # delante rompe la compilacion. Un `#` abre un comentario
+                    # de shell, pero el texto sigue siendo el contenido de un
+                    # raw string de Kotlin, y para Kotlin un dollar abre una
+                    # plantilla. En `stage("skill-bundles")` no hay `target` en
+                    # ambito —esa stage esta fuera del `forEach` que lo
+                    # define— asi que el comentario no es un comentario: es una
+                    # referencia sin resolver. Hasta este parrafo lo decia.
+                    find staging -maxdepth 1 -type f -delete 2>/dev/null || true
                     mkdir -p staging
                     # Which bundles are published is the contract's answer, not a
                     # list written here. The workflow carried a python fallback
                     # for when the binary was absent; the candidate lane builds
                     # the tool two stages earlier and has no reason to.
+                    #
+                    # MEDIDO 2026-10-03. This read the answer through a pipe
+                    # (`done < <(... skills --published)`) and trusted that
+                    # reaching the end of the loop meant the tool had answered.
+                    # It had not: the subcommand did not exist, the binary exited
+                    # 2, the loop consumed nothing, and the stage passed with zero
+                    # bundles. `verify` could not catch it either — it recognised
+                    # skill bundles if present but never required them. So the
+                    # answer is fetched first and checked, and the count of what
+                    # was actually staged is asserted. Asking a question is not
+                    # the same as receiving an answer.
+                    bundles=$("${'$'}TARGET_DIR/release/cognicode-release" skills --published) || {
+                        echo "FAIL: the release tool could not report the published skill bundles."
+                        echo "  Without its answer this stage cannot know what to stage, and"
+                        echo "  staging nothing is not the same as having nothing to stage."
+                        exit 1
+                    }
+                    if [ -z "${'$'}bundles" ]; then
+                        echo "FAIL: the release tool reports no published skill bundles."
+                        echo "  The contract publishes them; an empty list means the tool and"
+                        echo "  the contract disagree."
+                        exit 1
+                    fi
+                    staged=0
                     while IFS= read -r id; do
                         [ -n "${'$'}id" ] || continue
                         if [ ! -f "skills/${'$'}id/manifest.yaml" ]; then
                             echo "FAIL: published skill bundle '${'$'}id' has no skills/${'$'}id/manifest.yaml"
                             exit 1
                         fi
-                        tar -czf "staging/${'$'}id-${'$'}version.tar.gz" -C "skills/${'$'}id" .
-                        echo "staged ${'$'}id-${'$'}version.tar.gz"
-                    done < <("${'$'}TARGET_DIR/release/cognicode-release" skills --published)
+                        tar -czf "staging/${'$'}id-$version.tar.gz" -C "skills/${'$'}id" . || {
+                            echo "FAIL: could not stage skill bundle '${'$'}id'"
+                            exit 1
+                        }
+                        staged=$((staged + 1))
+                        echo "staged ${'$'}id-$version.tar.gz"
+                    done <<< "${'$'}bundles"
+                    if [ "${'$'}staged" -lt 1 ]; then
+                        echo "FAIL: nothing was staged from a non-empty bundle list."
+                        exit 1
+                    fi
                     ls -la staging
                 """.trimIndent())
             }
@@ -355,6 +664,43 @@ pipeline {
 
             stage("generate") {
                 sh(releasePaths + "\n" + """
+                    # MEDIDO 2026-10-04. `release/` es la salida de esta stage y
+                    # esta stage es su duena, y no lo era: se creaba con lo que
+                    # hubiera. La lane v0.101.9, que corre en el worktree donde
+                    # la v0.101.8 habia dejado su candidato, llego hasta aqui y
+                    # murio en la stage siguiente:
+                    #
+                    #     Error: artifact `cogh-0.101.8-x86_64-unknown-linux-gnu.tar.gz`
+                    #     declares version `0.101.8` but the release version is `0.101.9`
+                    #
+                    # El gate de `verify` hizo bien su trabajo —eso es un artefacto
+                    # de la release anterior dentro del candidato, que es
+                    # exactamente lo que R1 prohibe— pero la lane no deberia llegar
+                    # a depender de que un gate posterior lo detecte.
+                    #
+                    # Es el mismo caso que la stage `package`, y que la limpieza
+                    # de la raiz de `staging/`, un directorio mas alla: un
+                    # `mkdir -p` sobre un directorio que ya existe es el mecanismo
+                    # por el que un directorio de build hereda estado de una
+                    # corrida anterior. El worktree que construye el candidato es
+                    # de larga vida, y la lane esta escrita para poder repetirse
+                    # en el.
+                    #
+                    # Y el mismo matiz de QW-04, por el mismo motivo: esa regla es
+                    # sobre lo que pasa DESPUES de que las stages han decidido;
+                    # esto es antes de decidir nada. Si no se puede establecer el
+                    # estado de entrada, no hay estado conocido donde generar.
+                    if [ -e release ]; then
+                        if ! rm -rf -- release; then
+                            echo "FAIL: could not clear the release directory"
+                            echo "  It exists from a previous candidate, and this lane cannot"
+                            echo "  promise that the candidate it produces is its own. Clear it"
+                            echo "  by hand, or run in a worktree without a previous candidate."
+                            exit 1
+                        fi
+                        echo "cleared release/ from a previous candidate"
+                    fi
+
                     # `--tag` and `--source-commit` are not decoration:
                     # `source_commit` is a required field of the release
                     # inventory, and `prf_dist_01_06_release_candidate_uat`
@@ -377,7 +723,17 @@ pipeline {
             // about rebuilding anything.
             stage("verify") {
                 sh(releasePaths + "\n" + """
-                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version"
+                    # MEDIDO 2026-10-03. Esta stage llevaba `--version` y nada
+                    # mas, y `verify` exige tambien `--tag`:
+                    #
+                    #     error: the following required arguments were not provided:
+                    #       --tag <TAG>
+                    #
+                    # No se habia visto porque la stage no se habia ejecutado
+                    # nunca: es la primera vez que la lane llegaba aqui. La misma
+                    # invocacion en release.pipeline.kts si lo pasa, asi que el
+                    # precedente estaba dentro del repo.
+                    "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
 
@@ -398,6 +754,47 @@ pipeline {
                     }
                     echo "candidate: $(ls -1 release/*.tar.gz 2>/dev/null | wc -l) archive(s)"
                     echo "candidate hashes: $(wc -l < release/SHA256SUMS) line(s)"
+                """.trimIndent())
+            }
+
+            // La mitad de GENERACION de provenance, que faltaba desde que
+            // `actions/attest-build-provenance` dejo de existir con el runtime de
+            // Actions. Va aqui y no en `release.pipeline.kts` porque la
+            // atestation tiene que cubrir **el candidato que fue certificado**:
+            // generarla en la lane de publicacion describiría un artefacto que
+            // nadie certifico, que es la misma propiedad rota que el candidato
+            // inmutable previene para los binarios.
+            //
+            // La condicion es "hay una clave con la que firmar", que es una
+            // CAPACIDAD, no una politica. La politica —que una atestation
+            // faltante sea fatal— sigue siendo de `verify-provenance.sh`, que
+            // es el unico que lee `RELEASE_REQUIRE_PROVENANCE`. Poner el switch
+            // aqui crearia la segunda fuente de verdad que
+            // `test_provenance_gate.py` prohibe, y que ya costo una release
+            // inalcanzable (v0.101.3).
+            //
+            // MEDIDO 2026-10-04, cosign 3.1.3: sin clave, `attest-provenance.sh`
+            // falla y NO genera ninguna. Por eso la etapa se salta en silencio
+            // en vez de llamar al script: llamar sin clave seria un fallo
+            // deliberado, y el fallo deliberado de una etapa opcional es una
+            // release rota. Lo que no es opcional es decirlo, asi que la etapa
+            // anuncia por que no firmo.
+            stage("provenance") {
+                sh("""
+                    $cd || exit 1
+                    if [ -z "${'$'}{RELEASE_PROVENANCE_KEY:-}" ]; then
+                        echo "provenance: NOT generated — no RELEASE_PROVENANCE_KEY on this host."
+                        echo "  This is the open custody decision, not a defect: see"
+                        echo "  docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md, 'Open decision'."
+                        echo "  The release ships without attestation and says so here, which is"
+                        echo "  what verify-provenance.sh reports downstream."
+                        exit 0
+                    fi
+                    echo "provenance: signing with the key named by RELEASE_PROVENANCE_KEY"
+                    scripts/ci/attest-provenance.sh \
+                        --key "${'$'}{RELEASE_PROVENANCE_KEY}" \
+                        --out-dir release \
+                        release/*.tar.gz release/SHA256SUMS
                 """.trimIndent())
             }
         }

@@ -221,6 +221,67 @@ pipeline {
             }
         }
 
+        // ── El binario LSP del gate, y por que tiene que estar aqui ────────
+        //
+        // MEDIDO 2026-10-04. El gate corre `cargo test -p cognicode-core
+        // --lib`, y en esa suite vive
+        // `test_hierarchy_falls_through_within_the_bounded_readiness`, que se
+        // auto-salta con un `println!` cuando `rust-analyzer` no esta en el
+        // PATH. Es decir: el gate se saltaba el test y daba verde. Y no era
+        // solo que faltara el binario: el shim de rustup lo hace existir sin
+        // funcionar (`~/.cargo/bin/rust-analyzer` es un symlink a `rustup`, y
+        // responde `Unknown binary` con codigo 1), de modo que un
+        // `command -v` habria dado la respuesta equivocada. Medido con
+        // `grep 'component add'` sobre este pipeline, los scripts de CI y los
+        // workflows: nadie lo instalaba.
+        //
+        // El coste de no tenerlo esta medido en las dos direcciones, y por eso
+        // la decision es facil: el gate completo tardaba 20m17s sin el
+        // componente y 22m48s con el. Dos minutos y medio para que un test que
+        // hoy no se ejecuta, se ejecute.
+        //
+        // Se instala como componente del toolchain y no como `cargo install`:
+        // es un binario de rustup, `rustup component add` es idempotente y no
+        // compila nada. El `if` evita el trabajo cuando ya esta, y la
+        // comprobacion posterior convierte "lo instale" en "responde", que es
+        // la distincion que el shim rompia.
+        stage("lsp-toolchain") {
+            stage("install-rust-analyzer") {
+                sh(
+                    """
+                    $cd || exit 1
+                    if rust-analyzer --version >/dev/null 2>&1; then
+                        echo "rust-analyzer already present, skipping install"
+                    else
+                        rustup component add rust-analyzer
+                    fi
+                    """.trimIndent(),
+                )
+            }
+
+            stage("rust-analyzer-answers") {
+                sh(
+                    """
+                    $cd || exit 1
+                    # Un shim en el PATH que sale con 1 haria que el paso
+                    # anterior pasara y los tests se saltaran igual. Preguntar
+                    # al binario es lo unico que distingue "instalado" de
+                    # "utilizable", y es la misma distincion que hace
+                    # `command_reports_version` en lsp_integration_test.rs.
+                    if ! rust-analyzer --version >/dev/null 2>&1; then
+                        echo "FAIL: rust-analyzer esta en el PATH pero no responde." >&2
+                        echo "Si responde con error, el shim es de rustup y el" >&2
+                        echo "componente no esta instalado: los tests LSP se" >&2
+                        echo "saltarian en silencio, que es lo que este paso" >&2
+                        echo "existe para evitar." >&2
+                        exit 1
+                    fi
+                    rust-analyzer --version
+                    """.trimIndent(),
+                )
+            }
+        }
+
         // ---------------------------------------------------------- build-binary
         stage("build-binary") {
             // pr-ci.yml:127 and :141. Both binaries are release builds because the

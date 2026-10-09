@@ -1,8 +1,8 @@
 {
   "schema_version": "cognicode.platforms/v1",
   "product": "cognicode",
-  "version": "0.100.0",
-  "source_commit": "3fe3c8a2924a5546e6c3bbf0219bce633ceb5acf",
+  "version": "0.101.9",
+  "source_commit": "5d0ab72932b1e462ae8568579d23c21b538e2629",
   "platforms": [
     {
       "id": "linux-aarch64",

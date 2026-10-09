@@ -93,7 +93,15 @@ Cada unidad se cierra SOLO si:
 - Revisión operador 2026-09-25: rechazo del modelo "PRF como roadmap activo"; PRF cerrado, este documento nace.
 - Sesión actual: §154.H.G0.*
 
-## 8. Programa production-ready (Post-PRF stabilization, 2026-09-26)
+## 8. Programa production-ready (Post-PRF stabilization, 2026-09-26) — **HISTÓRICO**
+
+> **Sello 2026-10-09**: este programa se selló como **histórico** tras el
+> cutover GitHub Actions → PipelineK (commits `b651774a`, `d3426966`),
+> la consumición de 9 releases patch (v0.101.0..9) y la ejecución de
+> los outcomes PR-G1, PR-PERF (W1..W9), PR-ARCH (parcial) y PR-DEVEX.
+> El detalle operativo vive en `docs/roadmap/production-ready/`. Esta
+> sección se conserva como rastro del pivote que dio origen a la serie
+> v0.101.x; **no es agenda viva** (la agenda viva está en §9).
 
 El 2026-09-26 el operador autoriza un nuevo programa de **estabilización
 production-ready** (QW-01..07 + CR-01..09 + ST-01..05, 21 acciones,
@@ -165,3 +173,84 @@ su cierre técnico está verificado. Ver
 * Este §8 NO sustituye al `docs/roadmap/production-ready/` ni al
   OpenSpec del programa: son artefactos vivos del programa, este §8
   es solo el **puntero de agenda** dentro del ROADMAP vigente.
+
+## 9. Serie v0.101.x — agenda viva (2026-10-09)
+
+> **Estado**: agenda activa. Esta sección reemplaza a §8 como puntero
+> de trabajo en curso. El ROADMAP completo sigue siendo la autoridad;
+> `docs/roadmap/CURRENT.md` es el snapshot puntual.
+> Contrato de coherencia: `python3 scripts/ci/test_roadmap_version_ratchet.py`
+> pinea que la versión del workspace aparece aquí o en `JOURNAL.md` reciente,
+> y que `CURRENT.md` no tiene más de 14 días sin regenerarse.
+
+### 9.1 Versión actual y rama
+
+| Item | Valor |
+|---|---|
+| Workspace version | `0.101.9` (`Cargo.toml [workspace.package].version`) |
+| Rama activa | `integrate/v1015` |
+| SHA de trabajo | `15b5c68c9fde05c021b542afc762e6fcd1463735` |
+| Divergencia vs `origin/main` | 80 commits ahead, 0 behind |
+| Tags publicados | `v0.101.0` .. `v0.101.9` (10 cortes patch) |
+
+### 9.2 Outcomes production-ready (estado a 2026-10-09)
+
+| Outcome | Estado | Evidencia en `integrate/v1015` |
+|---------|--------|---------------------------------|
+| **PR-G1** governance reproducible | **CLOSED** | `b651774a` (merge authority declarada una vez), `d3426966` (cero workflows en `.github/`) |
+| **PR-G2** C8-R recertificación | **IN PROGRESS** | CR-01 OPEN; bloquea cierre contractual del programa |
+| **PR-PERF** e91 + budget | **CLOSED W1..W9** | G5 scorecard pendiente (>3 ejecuciones consecutivas en sandbox) |
+| **PR-ARCH** fitness + verticales | **IN PROGRESS** | CR-06 CLOSED (5 constraints pineados); verticales `control-plane` y `graph-algos` parciales |
+| **PR-SEC** supply-chain | **IN PROGRESS** | 46 pines SHA (QW-05); protobuf advisory **CLOSED** vía CR-07 (commit migrando 0.27→0.29.1, contrato `cr07_protobuf_advisory_closed.rs` 3/3 verde); migración OTel completa. Pendiente: otros advisory scanning futuros. |
+| **PR-DEVEX** CI + coverage | **CLOSED enforcement side** | Selector determinista, coverage gate, preflight contractual |
+| **PR-DEPTH** deep modules ST-01..05 | **PARTIAL** | Ejecutado en provenance, perf budget, skills surface, LSP ratchet; sin cierre formal |
+
+### 9.3 Cambios estructurales consumidos por la serie v0.101.x
+
+* **Orquestación**: `.github/workflows/` eliminado (cutover PipelineK). El
+  invariante "cero workflows" lo pinea `test_no_actions_workflows.py`.
+* **Release pipeline**: provenance activado por clave; 13 contratos sobre
+  generación, 7 mutaciones vistas caer (`test_provenance_generation.py`).
+* **Skills surface**: `test_skill_surface_claims.py` (8/8 verde) pinea que
+  las afirmaciones "73-tool server" / "60 languages" en `skills/*/SKILL.md`
+  no pueden mentir sin que el contrato lo detecte.
+* **LSP ratchet**: 4 tests de integración que daban verde sin LSP ahora
+  pinen la propiedad real; `process::exit` ratchet añadido.
+* **Doctest drift residual**: 3 warnings `ambiguous link` en `cognicode-core`
+  (heredados de M0.8). Bajo riesgo, pendiente de M-N.
+
+### 9.4 Work items abiertos (orden de criticidad)
+
+1. **CR-01 (C8-R)** — firma humana contractual sobre clean clone.
+2. **Promover `integrate/v1015` → `origin/main`** — decisión operador.
+3. **G5 scorecard** (PR-PERF cierre formal) — >3 ejecuciones consecutivas
+   sobre fixture multi-repo en sandbox.
+4. **ST-N (PR-DEPTH)** — deep-module refactors sobre parsers multimodales,
+   simplificación de EvidenceStore. Sin contratos abiertos.
+5. **Protobuf advisory + OTel migration** (PR-SEC) — **CLOSED** vía CR-07
+   (commit migrando `opentelemetry` 0.27 → 0.29.1 + bump `prometheus` 0.13
+   → 0.14 que resuelve RUSTSEC-2024-0437). Contrato
+   `cr07_protobuf_advisory_closed.rs` 3/3 verde. Inventario realizado
+   2026-10-09 sobre HEAD `a728032031e9`: `opentelemetry = "0.29.1"`,
+   `opentelemetry-prometheus = "0.29.1"`, `opentelemetry-otlp = "0.29.0"`
+   (last de la línea), `prometheus = "0.14"`. Solo `cognicode-core` y
+   `cognicode-mcp` declaran las deps OTel; `cognicode-cli` solo el test
+   del contrato. Quedan advisory scanning futuros como trabajo general
+   de supply-chain, no bloqueante para esta unidad.
+
+### 9.5 Decisiones pendientes (operator-gated)
+
+| Decisión | Estado |
+|---|---|
+| Bump a `v0.102.0` (minor) vs continuar patch | NO TRIGGERED — no hay demanda de breaking change |
+| Promoción de `integrate/v1015` a `main` | NO TRIGGERED — branch ahead 80 commits, esperando operador |
+| Cierre formal de CR-01 (C8-R) | OPEN — bloquea firma contractual del programa |
+
+### 9.6 Cómo NO se reabre esta serie
+
+* No se reabre PRF como evidencia.
+* No se reabren certificaciones `C#` (C7) anteriores para "incluir" trabajo nuevo.
+* Las nuevas certificaciones (C8-R) usan el patrón de §5 con prefijo distinto.
+* Esta §9 NO sustituye a `docs/roadmap/production-ready/`: siguen siendo
+  artefactos vivos del programa; §9 es el puntero de agenda dentro del ROADMAP.
+

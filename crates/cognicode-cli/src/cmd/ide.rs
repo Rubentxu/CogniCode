@@ -1703,7 +1703,20 @@ components:
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    // `claude_config_path()` reads process-global state: `$CLAUDE_CONFIG` if
+    // set, else `$HOME`. Thirty siblings in this file mutate `$HOME` with
+    // `set_var`, and every one of them is `#[serial]`; this test was the only
+    // reader that was not, so it could observe a `HOME` pointing at another
+    // test's tempdir and fail on a `.claude` that is not there.
+    //
+    // MEDIDO 2026-10-03 at this HEAD: 0 failures in 16 attempts (10 of this
+    // module, 6 of the whole package under load), and the JOURNAL's earlier
+    // 1/4-with-changes vs 2/4-without does not separate signal from noise
+    // either. So this is NOT a demonstrated fix: the race is real by
+    // construction and this is the file's own convention, but the rate was
+    // not established. Serialising costs nothing and removes the window.
     #[test]
+    #[serial]
     fn claude_config_path_default() {
         let p = claude_config_path();
         assert!(p.ends_with(".claude"));

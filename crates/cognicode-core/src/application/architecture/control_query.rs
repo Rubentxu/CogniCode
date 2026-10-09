@@ -218,7 +218,7 @@ pub fn source_from_files(files: Vec<(String, Option<String>, String)>) -> Archit
 ///
 /// ## Why this lives here
 ///
-/// * The constraints themselves live in [`crate::application::architecture::canonical_constraints`]
+/// * The constraints themselves live in [`mod@crate::application::architecture::canonical_constraints`]
 ///   as a single source of truth (shared with the self-hosting E2E
 ///   test).
 /// * The admission flow lives in

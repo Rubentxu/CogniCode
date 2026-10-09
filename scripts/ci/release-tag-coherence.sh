@@ -9,15 +9,22 @@
 # Usage:
 #   release-tag-coherence.sh                         → reads GITHUB_REF_NAME / tag at HEAD
 #   release-tag-coherence.sh <tag>                   → checks against <tag> (e.g. v0.98.0)
-#   release-tag-coherence.sh <tag> <sha>             → checks against the cargo workspace
-#                                                     at <sha> (CI: $GITHUB_SHA)
+#   release-tag-coherence.sh <tag> <sha>             → checks the tag against the cargo
+#                                                     workspace at <sha>, AND that <sha>
+#                                                     IS the commit the tag names
+#                                                     (CI: $GITHUB_SHA). The identity
+#                                                     check is what makes the version
+#                                                     check mean anything: the numbers can
+#                                                     agree while the bytes do not.
 #   release-tag-coherence.sh --from-version <v> <sha>
 #                                                     → release-validate mode: checks
 #                                                     the workspace at <sha> against the
 #                                                     bare version <v> (no 'v' prefix
 #                                                     required; used when the operator
 #                                                     validates a prospective tag without
-#                                                     having pushed the tag yet)
+#                                                     having pushed the tag yet). No tag
+#                                                     exists to compare identity against,
+#                                                     so only the version is checked.
 #
 # Exit codes:
 #   0  workspace version == tag version (or --from-version value)
@@ -56,6 +63,42 @@ fi
 
 if [ -z "$SHA" ]; then
   SHA="$(git rev-parse HEAD)"
+fi
+
+# The commit identity, before the version string.
+#
+# MEDIDO 2026-10-03. This gate used to compare the workspace version against
+# the tag name and stop there, so `release-tag-coherence.sh v0.101.6 HEAD`
+# answered OK with HEAD two commits ahead of the tag, as long as the workspace
+# still said 0.101.6. That is the same class of incident the gate exists to
+# catch: the numbers agree and the bytes do not. A tag names one commit, so
+# the commit the build runs from has to BE that commit — otherwise what gets
+# published carries a version and not the code that was certified for it.
+#
+# `^{commit}` peels an annotated tag, which is why this cannot be a plain
+# `git rev-parse <tag>`. An unresolvable tag is not an absent answer here: the
+# caller named a tag and it is not there, so it is a failure.
+if [ -n "$TAG" ] && [ -z "$EXPECTED_VERSION" ]; then
+  if ! TAG_COMMIT="$(git rev-parse --verify --quiet "${TAG}^{commit}" 2>/dev/null)"; then
+    echo "::error::release-tag-coherence: cannot resolve tag '$TAG' to a commit." >&2
+    echo "::error::A tag must name the commit that is built, so an unresolvable" >&2
+    echo "::error::tag is a failure and not a missing optional input." >&2
+    exit 1
+  fi
+  RESOLVED_SHA="$(git rev-parse --verify --quiet "${SHA}^{commit}" 2>/dev/null || true)"
+  if [ -z "$RESOLVED_SHA" ]; then
+    echo "::error::release-tag-coherence: cannot resolve sha '$SHA' to a commit." >&2
+    exit 1
+  fi
+  if [ "$TAG_COMMIT" != "$RESOLVED_SHA" ]; then
+    echo "::error::release-tag-coherence: sha ${SHA:0:12} is not the commit of tag '$TAG'." >&2
+    echo "::error::  tag  '$TAG' -> ${TAG_COMMIT:0:12}" >&2
+    echo "::error::  build $RESOLVED_SHA" >&2
+    echo "::error::The version can match and the bytes still differ, which is the" >&2
+    echo "::error::incident this gate exists for. Build from the tagged commit, or" >&2
+    echo "::error::cut a new tag: a published one is not moved." >&2
+    exit 1
+  fi
 fi
 
 if [ -n "$EXPECTED_VERSION" ]; then

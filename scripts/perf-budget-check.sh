@@ -59,15 +59,53 @@ echo "=== Running benchmarks (this may take a few minutes) ==="
 # libtest "Testing X / Success" stub that ignores --output-format).
 # We just need to add `--output-format bencher` so each result prints
 # a parseable "test <name> ... bench: <value> <unit>/iter" line.
-if ! cargo bench \
-        -p cognicode-core \
-        --bench graph_benchmarks \
-        -- --output-format bencher \
-        >"${BENCH_OUTPUT}" 2>&1; then
-    echo "ERROR: cargo bench failed. Tail of output:" >&2
-    tail -n 40 "${BENCH_OUTPUT}" >&2
-    exit 2
-fi
+#
+# MEDIDO 2026-10-04. Este bucle corria UN bench, el de `cognicode-core`, y por
+# eso solo media 7 de las 16 entradas del presupuesto. Con el segundo target
+# (ExplorerQL) son 11. Las cinco que faltan son las de `mcp.tools`, que son
+# round-trips de repositorio y necesitan un fixture de workspace en disco: son
+# otro bloque y no se fingen aqui.
+#
+# `fact_bridge_benchmarks` NO entra, y su ausencia es deliberada: todo su
+# cuerpo esta tras `#[cfg(feature = "evidence-kernel")]`, asi que con las
+# features por defecto el target no tiene `criterion_main!` y no enlaza. Es un
+# baseline advisory sin umbral en `perf-budget.toml`, y su cabecera dice como
+# se ejecuta. Anadirlo aqui produciria un fallo de enlizado en cada corrida.
+#
+# La lista es de ahi en adelante, no porque se amplie a mano: cada entrada es
+# un `(crate, bench)` que existe, y anadir un benchmark nuevo sin anadirlo
+# aqui es la forma de que el presupuesto crezca sin cobertura. El nombre del
+# benchmark tiene que coincidir con la clave de `perf-budget.toml`, porque el
+# emparejamiento es por nombre —y, si el bench va dentro de un
+# `benchmark_group`, por el ULTIMO segmento de `grupo/funcion`.
+#
+# Un bench que falla NO tumba la corrida: se registra y se sigue. Perder las
+# mediciones de los otros benches porque uno rompio seria peor que reportar un
+# `UNMEASURED` mas, que es exactamente lo que se informa al final.
+#
+# La tolerancia tiene un coste, y por eso la cubre un contrato: si un target se
+# renombra o se borra de aqui, `cargo bench` falla para el y el script sigue,
+# de modo que sus claves pasan a UNMEASURED para siempre sin que nadie mire.
+# `perf_budget_checker_contract` exige que cada entrada exista de verdad.
+BENCH_SPECS=(
+    "cognicode-core graph_benchmarks"
+    "cognicode-explorer explorerql_benchmarks"
+)
+
+: > "${BENCH_OUTPUT}"
+for spec in "${BENCH_SPECS[@]}"; do
+    read -r bench_crate bench_name <<<"${spec}"
+    echo "  -- ${bench_crate} / ${bench_name}"
+    if ! cargo bench \
+            -p "${bench_crate}" \
+            --bench "${bench_name}" \
+            -- --output-format bencher \
+            >>"${BENCH_OUTPUT}" 2>&1
+    then
+        echo "  !! ${bench_crate}/${bench_name} fallo; se sigue con el resto." >&2
+        echo "!! bench ${bench_crate}/${bench_name} fallo" >> "${BENCH_OUTPUT}"
+    fi
+done
 fi
 
 # --- 3. Parse benchmark output ---------------------------------------------
@@ -82,8 +120,23 @@ trap 'rm -f "${BENCH_OUTPUT}" "${PARSED}"' EXIT
 
 awk '
     /bench:/ {
-        # Extract name (first field after "test")
+        # Criterion reports the benchmark name as field 2 after `test`.
         name = $2
+        # ...and names a benchmark inside a group `group/function`. The budget
+        # keys are the bare function names, so the last path segment is what has
+        # to match.
+        #
+        # MEDIDO 2026-10-04. This used to stop at `name = $2` and nothing else.
+        # The four `explorerql` benchmarks were written inside
+        # `benchmark_group`s, they RAN, and every one of them was reported as
+        # UNMEASURED because the parser compared
+        # "explorerql_parse_simple/parse_simple" against the budget key
+        # "parse_simple". The script then told the reader to "write the
+        # benchmark" for a benchmark that existed and had produced a number
+        # seconds earlier. A parser that cannot see a measurement is how a
+        # budget reports a hole where there is none.
+        segments = split(name, parts, "/")
+        name = parts[segments]
         # Iterate over tokens to find a "<number> <unit>/iter" pair
         for (i = 1; i <= NF; i++) {
             if ($i == "bench:") {
@@ -147,12 +200,20 @@ printf -- "-%.0s" {1..75}; printf "\n"
 # Track which budget entries were checked
 declare -A CHECKED
 
+# Benchmarks that produced a measurement but have no budget entry. They are
+# not a failure — the graph suite alone runs ~20 exploratory benchmarks — but
+# they used to vanish with a bare `continue`, so a benchmark whose name drifted
+# away from the budget keys was indistinguishable from a benchmark that was
+# never run. Counting them makes the two readable apart.
+unbudgeted_count=0
+declare -a unbudgeted_names=()
+
 while IFS=$'\t' read -r bench_name actual_us; do
     [[ -z "${bench_name}" ]] && continue
     budget_us="$(awk -F'\t' -v n="${bench_name}" '$1 == n { print $2; exit }' "${BUDGETS}")"
     if [[ -z "${budget_us}" ]]; then
-        # No budget for this benchmark — skip silently (other benches may
-        # be exploratory and out of scope for the budget gate).
+        unbudgeted_count=$((unbudgeted_count + 1))
+        unbudgeted_names+=("${bench_name}")
         continue
     fi
     CHECKED["${bench_name}"]=1
@@ -197,6 +258,14 @@ fail_count="$(awk -F'\t' '
 
 echo
 
+if [[ "${unbudgeted_count}" -gt 0 ]]; then
+    echo "=== ${unbudgeted_count} benchmark(s) measured without a budget entry ==="
+    echo "Not a failure, and not a pass either: these numbers were taken and"
+    echo "discarded. Listed so a name that drifted off its budget key is not"
+    echo "mistaken for a benchmark that never ran."
+    printf '  %s\n' "${unbudgeted_names[@]}"
+fi
+
 # A budgeted operation with no measurement is Unknown, not clean. Reporting it
 # as within budget is how this script came to print "All benchmarks within
 # budget" while 9 of 16 operations had never been run at all.
@@ -207,8 +276,10 @@ echo
 # codes.
 if [[ "${unmeasured_count}" -gt 0 ]]; then
     echo "=== ${unmeasured_count} budgeted operation(s) were never measured ==="
-    echo "They are listed above as UNMEASURED. A budget nobody measures is not a budget:"
-    echo "either write the benchmark or delete the entry. This is NOT a pass."
+    echo "They are listed above as UNMEASURED. No registered bench produced a"
+    echo "measurement under these names, which is one of three things: the"
+    echo "benchmark does not exist, its target is missing from BENCH_SPECS, or"
+    echo "its bench_function name does not match the key. This is NOT a pass."
 fi
 
 if [[ "${fail_count}" -gt 0 ]]; then

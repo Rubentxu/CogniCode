@@ -68,15 +68,77 @@ fn analyze_nonexistent_path_does_not_exit_zero() {
 }
 
 /// PRF-CLI-01 scenario: nonexistent path passed to `graph full` must
-/// NOT exit 0 (already the case; pins the contract).
+/// NOT exit 0.
+///
+/// **Este test estaba midiendo otra cosa.** Invocaba
+/// `graph full --path <inexistente>`, y `graph full` no tiene `--path`: su
+/// firma es `graph full [PATH]`, un **positional** con `[default: .]`. Clap
+/// rechazaba el flag con exit 2, el proceso moría antes del dispatch, y la
+/// aserción `assert_ne!(code, 0)` se cumplía sin que el motor de grafos
+/// llegara a ejecutarse. Su comentario decía "already the case; pins the
+/// contract": lo que fijaba era la aridad de un flag inexistente.
+///
+/// Por eso el test no se limita a comprobar el código de salida. Un
+/// `assert_ne!(code, 0)` que acaba de ser verde por una vía que no era la
+/// suya puede volver a serlo, y la única forma de distinguir "el grafo falló"
+/// de "clap no entendió el argv" es mirar **qué** dice el diagnóstico. Un
+/// error de clap empieza por `error: unexpected argument` o
+/// `error: unrecognized subcommand`; el fallo del motor de grafos nombra el
+/// directorio. Las dos aserciones de abajo son lo que convierte esto en una
+/// prueba del comportamiento y no una del analizador de argumentos.
 #[test]
 fn graph_full_nonexistent_path_does_not_exit_zero() {
-    let out = run(&["graph", "full", "--path", "/nonexistent/prf_cli_01/missing"]);
+    let out = run(&["graph", "full", "/nonexistent/prf_cli_01/missing"]);
+    let code = exit_code(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
     assert_ne!(
-        exit_code(&out),
-        0,
-        "`graph full --path <nonexistent>` must not exit 0. stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
+        code, 0,
+        "`graph full <inexistente>` must not exit 0. stderr: {stderr}"
+    );
+
+    // Evidencia de alcance: el fallo viene del motor de grafos, no de clap.
+    assert!(
+        !stderr.contains("unexpected argument") && !stderr.contains("unrecognized subcommand"),
+        "clap rechazó el argv, así que el brazo nunca llegó a ejecutarse y este \
+         test no midió lo que dice medir. stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("Directory does not exist"),
+        "el diagnóstico no nombra el directorio que falta: el comando se aceptó y \
+         falló por otro motivo, o falló antes de llegar al grafo. stderr: {stderr}"
+    );
+}
+
+/// El gemelo positivo del anterior, y tiene que atravesar **el mismo**
+/// camino: mismo binario, mismo clap, mismo `CommandExecutor`, misma
+/// estrategia de grafo. La única diferencia es la entrada.
+///
+/// Sin este gemelo, un arreglo que hiciera fallar `graph full` siempre —
+/// por ejemplo, rechazando cualquier ruta — seguiría dejando el test anterior
+/// en verde. El error y el éxito se certifican en la misma aserción.
+#[test]
+fn graph_full_on_a_real_directory_exits_zero_through_the_same_path() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::write(
+        tmp.path().join("main.rs"),
+        "pub fn a() { b(); }\npub fn b() {}\n",
+    )
+    .expect("write fixture");
+
+    let out = run(&["graph", "full", tmp.path().to_str().unwrap()]);
+    let code = exit_code(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert_eq!(
+        code, 0,
+        "`graph full <dir real>` debe salir con 0: el grafo se construyó. \
+         stderr: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Directory does not exist"),
+        "un directorio real y existente no puede fallar por no existir: el \
+         camino de éxito no está usando la misma comprobación que el de error."
     );
 }
 
