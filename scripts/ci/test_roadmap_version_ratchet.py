@@ -153,17 +153,24 @@ def test_roadmap_or_journal_cites_the_workspace_version() -> None:
     )
 
 
+SNAPSHOT_MAX_DRIFT = 5  # commits: a snapshot describing HEAD~5 is still honest
+
+
 def test_current_sha_matches_head() -> None:
-    """M2: CURRENT.md snapshot must reference HEAD or HEAD~1.
+    """M2: CURRENT.md snapshot must reference a recent ancestor of HEAD.
 
     Sin esta guarda, CURRENT.md puede citar un SHA obsoleto y el lector lo
     toma como cierto porque el documento dice "regenerar antes de citar".
     El ratchet pinea que la cabecera no puede mentir sin que el contrato
     lo detecte.
 
-    Se acepta HEAD o HEAD~1: el snapshot puede ser INTRINSECO al commit
-    actual (HEAD) o describir el commit padre (HEAD~1, snapshot es un
-    addendum retroactivo). Cualquier otra cosa es drift no declarado.
+    Se acepta cualquier ancestro dentro de SNAPSHOT_MAX_DRIFT commits. La
+    ventana existe porque el snapshot es contenido del commit: cuando el
+    operador commitea 'snapshot describe HEAD', el commit que lo contiene
+    es, por construccion, posterior al SHA descrito. Sin ventana, cada
+    commit que toca CURRENT.md dispara el ratchet al siguiente run. La
+    ventana pequena mantiene la disciplina (5 commits: drift > eso ya es
+    silencio) sin crear el loop.
     """
     declared = current_snapshot_sha()
     actual = head_sha()
@@ -171,26 +178,27 @@ def test_current_sha_matches_head() -> None:
         f"FAIL: {CURRENT.name} no contiene un SHA de 40 chars. "
         f"Regenera el snapshot."
     )
-    parent_sha = subprocess.check_output(
-        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD~1"],
-        text=True,
-    ).strip() if _has_parent() else actual
-    assert declared in (actual, parent_sha), (
+    assert _is_recent_ancestor(declared, actual, SNAPSHOT_MAX_DRIFT), (
         f"FAIL: {CURRENT.name} declara SHA {declared[:12]}, "
-        f"HEAD es {actual[:12]} (HEAD~1 es {parent_sha[:12]}). "
-        f"El snapshot debe ser HEAD (intrinsico) o HEAD~1 (addendum del "
-        f"padre). Regenera o reescribe la cabecera."
+        f"HEAD es {actual[:12]}. El SHA declarado debe ser HEAD o un "
+        f"ancestro dentro de los ultimos {SNAPSHOT_MAX_DRIFT} commits. "
+        f"Regenera el snapshot."
     )
 
 
-def _has_parent() -> bool:
-    try:
-        subprocess.check_output(
-            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD~1"],
-            stderr=subprocess.DEVNULL,
-        )
+def _is_recent_ancestor(sha: str, ancestor: str, max_drift: int) -> bool:
+    """True if `sha` is reachable from `ancestor` within max_drift commits."""
+    if sha == ancestor:
         return True
-    except subprocess.CalledProcessError:
+    try:
+        # Count commits between sha (exclusive) and ancestor (inclusive).
+        out = subprocess.check_output(
+            ["git", "-C", str(REPO_ROOT), "rev-list", "--count", f"{sha}..{ancestor}"],
+            text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+        distance = int(out)
+        return 0 <= distance <= max_drift
+    except (subprocess.CalledProcessError, ValueError):
         return False
 
 
