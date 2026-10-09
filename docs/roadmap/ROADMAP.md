@@ -201,7 +201,7 @@ su cierre técnico está verificado. Ver
 | **PR-G2** C8-R recertificación | **IN PROGRESS** | CR-01 OPEN; bloquea cierre contractual del programa |
 | **PR-PERF** e91 + budget | **CLOSED W1..W9** | G5 scorecard pendiente (>3 ejecuciones consecutivas en sandbox) |
 | **PR-ARCH** fitness + verticales | **IN PROGRESS** | CR-06 CLOSED (5 constraints pineados); verticales `control-plane` y `graph-algos` parciales |
-| **PR-SEC** supply-chain | **IN PROGRESS** | 46 pines SHA (QW-05); protobuf advisory + migración OTel pendientes |
+| **PR-SEC** supply-chain | **IN PROGRESS** | 46 pines SHA (QW-05); protobuf advisory **CLOSED** vía CR-07 (commit migrando 0.27→0.29.1, contrato `cr07_protobuf_advisory_closed.rs` 3/3 verde); migración OTel completa. Pendiente: otros advisory scanning futuros. |
 | **PR-DEVEX** CI + coverage | **CLOSED enforcement side** | Selector determinista, coverage gate, preflight contractual |
 | **PR-DEPTH** deep modules ST-01..05 | **PARTIAL** | Ejecutado en provenance, perf budget, skills surface, LSP ratchet; sin cierre formal |
 
@@ -227,8 +227,16 @@ su cierre técnico está verificado. Ver
    sobre fixture multi-repo en sandbox.
 4. **ST-N (PR-DEPTH)** — deep-module refactors sobre parsers multimodales,
    simplificación de EvidenceStore. Sin contratos abiertos.
-5. **Protobuf advisory + OTel migration** (PR-SEC) — depende de inventario
-   de crates afectadas.
+5. **Protobuf advisory + OTel migration** (PR-SEC) — **CLOSED** vía CR-07
+   (commit migrando `opentelemetry` 0.27 → 0.29.1 + bump `prometheus` 0.13
+   → 0.14 que resuelve RUSTSEC-2024-0437). Contrato
+   `cr07_protobuf_advisory_closed.rs` 3/3 verde. Inventario realizado
+   2026-10-09 sobre HEAD `a728032031e9`: `opentelemetry = "0.29.1"`,
+   `opentelemetry-prometheus = "0.29.1"`, `opentelemetry-otlp = "0.29.0"`
+   (last de la línea), `prometheus = "0.14"`. Solo `cognicode-core` y
+   `cognicode-mcp` declaran las deps OTel; `cognicode-cli` solo el test
+   del contrato. Quedan advisory scanning futuros como trabajo general
+   de supply-chain, no bloqueante para esta unidad.
 
 ### 9.5 Decisiones pendientes (operator-gated)
 
