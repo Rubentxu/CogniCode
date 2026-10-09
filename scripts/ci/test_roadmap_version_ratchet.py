@@ -154,12 +154,16 @@ def test_roadmap_or_journal_cites_the_workspace_version() -> None:
 
 
 def test_current_sha_matches_head() -> None:
-    """M2: CURRENT.md snapshot must reference the real HEAD.
+    """M2: CURRENT.md snapshot must reference HEAD or HEAD~1.
 
     Sin esta guarda, CURRENT.md puede citar un SHA obsoleto y el lector lo
     toma como cierto porque el documento dice "regenerar antes de citar".
     El ratchet pinea que la cabecera no puede mentir sin que el contrato
     lo detecte.
+
+    Se acepta HEAD o HEAD~1: el snapshot puede ser INTRINSECO al commit
+    actual (HEAD) o describir el commit padre (HEAD~1, snapshot es un
+    addendum retroactivo). Cualquier otra cosa es drift no declarado.
     """
     declared = current_snapshot_sha()
     actual = head_sha()
@@ -167,10 +171,27 @@ def test_current_sha_matches_head() -> None:
         f"FAIL: {CURRENT.name} no contiene un SHA de 40 chars. "
         f"Regenera el snapshot."
     )
-    assert declared == actual, (
+    parent_sha = subprocess.check_output(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD~1"],
+        text=True,
+    ).strip() if _has_parent() else actual
+    assert declared in (actual, parent_sha), (
         f"FAIL: {CURRENT.name} declara SHA {declared[:12]}, "
-        f"HEAD es {actual[:12]}. Regenera el snapshot."
+        f"HEAD es {actual[:12]} (HEAD~1 es {parent_sha[:12]}). "
+        f"El snapshot debe ser HEAD (intrinsico) o HEAD~1 (addendum del "
+        f"padre). Regenera o reescribe la cabecera."
     )
+
+
+def _has_parent() -> bool:
+    try:
+        subprocess.check_output(
+            ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD~1"],
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
 
 
 def test_current_snapshot_is_fresh() -> None:
