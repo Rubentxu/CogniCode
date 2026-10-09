@@ -280,7 +280,7 @@ fn check_core_section() -> DoctorSection {
 /// `typescript-language-server`, `C | Cpp` a `clangd`). El reparto es
 /// correcto; informar de lo mismo dos veces no lo es, y el doctor mostraba:
 ///
-/// ```
+/// ```text
 ///   ❌ typescript-language-server
 ///   ❌ typescript-language-server
 ///   ✅ clangd  Homebrew clangd version 23.1.0
