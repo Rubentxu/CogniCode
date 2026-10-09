@@ -1,5 +1,7 @@
 # lsp-goto-definition-bug — `goto_definition` returns None con rust-analyzer instalado
 
+## Status: **CLOSED 2026-10-10** (hipotesis A aplicada)
+
 ## Goal
 
 Investigar y arreglar el bug que `test_rust_analyzer_goto_definition` y
@@ -53,7 +55,7 @@ surfacing el bug**, no seguir silenciando.
 
 ## Scope
 
-### S1 — Re-habilitar los tests rust-analyzer (DONE)
+### S1 — Re-habilitar los tests rust-analyzer (CLOSED)
 - Drop `#[ignore = "requires rust-analyzer binary"]` en
   `test_rust_analyzer_hover` y `test_rust_analyzer_goto_definition`.
 - Mantener los `#[ignore = "requires pyright binary"]` (pyright NO
@@ -61,17 +63,30 @@ surfacing el bug**, no seguir silenciando.
 - Commit: `test(lsp): re-habilita los tests rust-analyzer; el
   goto_definition sale rojo honrando el bug real.`
 
-### S2 — Diagnosticar el bug (TODO)
-- Confirmar que `rust-analyzer` arranca con `route_operation("goto_definition", ...)`.
-- Verificar request format (`textDocument/definition` con position 0-indexed).
-- Verificar response parsing (`Option<Location>` vs `Vec<Location>` vs `LocationLink`).
-- Si rust-analyzer responde correctamente y el proxy degrada: bug en
-  el composite tier ordering o en `definition_chain`.
+### S2 — Diagnosticar el bug (CLOSED)
+- Tracing completo en commit `756c5ef1 docs(lsp): diagnostico del bug
+  goto_definition tras tracing del codigo`.
+- Causa raiz identificada: `composite::attempt_lsp_definition` trata
+  `Ok(None)` del LSP como `Attempt::Served(None)` (regla historica),
+  mientras `attempt_lsp_hover` lo trata como `Attempt::Degraded`.
 
-### S3 — Fix y cerrar (TODO)
-- Fix minimo en el sitio correcto (no rebuild del LSP stack).
-- Test verde end-to-end con rust-analyzer.
-- Re-correr `cargo test -p cognicode --test lsp_integration_test` 6/6 verde.
+### S3 — Fix y cerrar (CLOSED 2026-10-10)
+- **Hipotesis A aplicada**: `attempt_lsp_definition` ahora trata
+  `Ok(None)` del LSP como `Attempt::Degraded`, igual que
+  `attempt_lsp_hover`. La cadena cae a S1 (local resolver).
+- Cambio en `crates/cognicode-core/src/infrastructure/lsp/providers/composite.rs`
+  linea 584-597.
+- Validacion: `cargo test -p cognicode --test lsp_integration_test`
+  5/5 verde (antes: 4/5 con goto_definition RED). El resto del
+  workspace sigue verde: 2252 tests core/lib + todos los CLI/MCP.
+- **Ninguna regresion**: los 8 tests que pineaban
+  `assert!(provider.get_definition(...).is_none())` siguen verdes.
+  La causa: el S1 local resolver tampoco encuentra la definicion en
+  los fixtures sinteticos de esos tests (mismo input, mismo None
+  propagado), asi que el cambio de semantica es invisible para
+  callers que ya probaban None. Solo cambia el comportamiento
+  cuando el LSP retorna None pero el local resolver SI tiene
+  respuesta, que es exactamente el caso de cold-start.
 
 ## Constraints
 

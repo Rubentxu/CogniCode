@@ -582,9 +582,23 @@ impl CompositeProvider {
             return Attempt::Failed(diagnostic, None);
         }
         match self.lsp.get_definition(location).await {
-            // LSP `Ok(None)` is an authoritative unresolved answer: no
-            // lower tier may second-guess it (composite.rs historical rule).
-            Ok(definition) => Attempt::Served(definition),
+            // LSP returning Some is the S2 answer: serve and stop.
+            Ok(Some(location)) => Attempt::Served(Some(location)),
+            // LSP returning None is indistinguishable from 'server crashed
+            // mid-request' or 'server hasn't indexed yet' from the proxy's
+            // perspective. Treat as Degraded (same as attempt_lsp_hover does)
+            // and let S1 local resolver try. Without this, a cold-start race
+            // silently returns Ok(None) to callers that expect 'definition'
+            // or 'explicit failure', not 'definition-or-none'. Surfaced by
+            // commit 0cd0a49 re-enabling the rust-analyzer integration test;
+            // behavior change is intentional and the LSP semantics rule is
+            // revised: from now on None is 'no S2 answer', not 'no answer'.
+            Ok(None) => Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S2,
+                LspIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Degraded,
+                "get_definition: LSP returned no definition (treated as degraded; S1 will retry)",
+            )),
             Err(error) => Attempt::Failed(
                 Self::diagnostic(
                     PrecisionTier::S2,

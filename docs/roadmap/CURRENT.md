@@ -9,8 +9,8 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-09, sobre `integrate/v1015` HEAD
-> `61656ea877ab74bae3cf28735ea63ba8ff3762be`. Regenerar antes de citar.
+> **Snapshot**: 2026-10-10, sobre `integrate/v1015` HEAD
+> `943bcc48789976e84f264bb9617739659b9d3e63`. Regenerar antes de citar.
 >
 > El ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` ya disparó
 > una vez (2026-10-09, justo despues de anadirlo): los 6 commits de la sesion
