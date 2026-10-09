@@ -10,7 +10,13 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-09, sobre `integrate/v1015` HEAD
-> `15b5c68c9fde05c021b542afc762e6fcd1463735`. Regenerar antes de citar.
+> `a728032031e99d65bc097e0822c0410f0236d350`. Regenerar antes de citar.
+>
+> El ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` ya disparó
+> una vez (2026-10-09, justo despues de anadirlo): los 6 commits de la sesion
+> actualizaron HEAD a `a728032031e9` sin regenerar este snapshot, y el
+> contrato devolvio `FAIL: CURRENT.md declara SHA 15b5c68c9fde, HEAD es
+> a728032031e9...`. El ratchet cumple su funcion.
 
 ## HEAD y batería (a 2026-10-09)
 
