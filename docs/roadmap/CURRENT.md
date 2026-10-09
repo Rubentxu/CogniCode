@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-10, sobre `integrate/v1015` HEAD
-> `a52b00c8dafd513ca6ed46d9f9ebaaae5574bc36`. Regenerar antes de citar.
+> `abb1ad516948b517429575125c77d8eb78cbb58b`. Regenerar antes de citar.
 >
 > El ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` ya disparó
 > una vez (2026-10-09, justo despues de anadirlo): los 6 commits de la sesion
