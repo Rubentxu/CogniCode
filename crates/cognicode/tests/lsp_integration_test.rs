@@ -62,7 +62,6 @@ fn none_is_not_a_verdict(operation: &str, detail: &str) -> ! {
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer binary"]
 async fn test_rust_analyzer_hover() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
@@ -153,7 +152,6 @@ fn main() {
 }
 
 #[tokio::test]
-#[ignore = "requires rust-analyzer binary"]
 async fn test_rust_analyzer_goto_definition() {
     use cognicode::application::services::analysis_service::AnalysisService;
     use cognicode::application::services::lsp_proxy_service::LspProxyService;
