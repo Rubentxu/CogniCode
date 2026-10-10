@@ -825,3 +825,61 @@ pub fn present_graph_hierarchy(
     }
     Ok(())
 }
+
+/// T1-5.4k — text format for `GraphResult::Full` (stdout only).
+///
+/// Pre-migration stdout (commands.rs:898, 985..987):
+///   Building full project graph at: {path}{ (rebuild) ? }
+///   Full graph built in {elapsed}ms
+///     Total symbols: {n}
+///     Total dependencies: {n}
+///
+/// The 'Skipped: {file}: {reason}' lines go to STDERR
+/// (pre-migration eprintln! at commands.rs:989). They are
+/// NOT part of this presenter's output (same pattern as
+/// the 'Warning: graph is PARTIAL' eprintln! in the other
+/// sub-commands: stderr side-channel, not data-side output).
+/// The data side still carries `skipped_files` for the
+/// JSON dispatch (T1-5.5); the eprintln! stays in
+/// commands.rs.
+///
+/// The json branch in commands.rs uses a `FullGraphJson`
+/// ad-hoc struct that the bin serializes separately; T1-5.5
+/// will consolidate.
+pub fn present_graph_full(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::Full {
+        path,
+        rebuild,
+        elapsed_ms,
+        symbols,
+        dependencies,
+        status: _,
+        skipped_files: _,
+    } = result
+    {
+        // Progress line (stdout in text mode; in json
+        // mode this is suppressed and goes to stderr —
+        // the dispatch in commands.rs handles that).
+        writeln!(
+            w,
+            "Building full project graph at: {}{}",
+            path,
+            if *rebuild { " (rebuild)" } else { "" }
+        )?;
+        // Result block.
+        writeln!(w, "Full graph built in {}ms", elapsed_ms)?;
+        writeln!(w, "  Total symbols: {}", symbols)?;
+        writeln!(w, "  Total dependencies: {}", dependencies)?;
+        // Skipped lines NOT emitted here — see the doc
+        // comment above.
+    } else {
+        panic!(
+            "present_graph_full called with non-Full GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}

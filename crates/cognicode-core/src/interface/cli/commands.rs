@@ -981,44 +981,78 @@ impl CommandExecutor {
                                     .collect(),
                             };
                             println!("{}", serde_json::to_string(&doc)?);
+                            // T1-5.4k: build the GraphResult
+                            // for the bin (T1-5.5 will use it
+                            // for the consolidated JSON
+                            // dispatch). For now the json
+                            // branch emits the legacy JSON
+                            // shape via the ad-hoc struct.
+                            let skipped_files: Vec<SkippedFile> = skipped
+                                .iter()
+                                .filter_map(|s| {
+                                    let (p, r) = s.split_once(": ")?;
+                                    Some(SkippedFile {
+                                        path: p.to_string(),
+                                        reason: r.to_string(),
+                                    })
+                                })
+                                .collect();
+                            Ok(GR::Full {
+                                path: path.clone(),
+                                rebuild: *rebuild,
+                                elapsed_ms: elapsed,
+                                symbols,
+                                dependencies: edges,
+                                status: if skipped.is_empty() {
+                                    "complete".to_string()
+                                } else {
+                                    "partial".to_string()
+                                },
+                                skipped_files,
+                            })
                         } else {
-                            println!("Full graph built in {}ms", elapsed);
-                            println!("  Total symbols: {}", symbols);
-                            println!("  Total dependencies: {}", edges);
+                            // T1-5.4k: text formatting is in
+                            // the presenter. The 'Skipped:'
+                            // lines (eprintln!) stay in the
+                            // function — they go to stderr and
+                            // are not part of the presenter's
+                            // stdout output.
+                            let skipped_files: Vec<SkippedFile> = skipped
+                                .iter()
+                                .filter_map(|s| {
+                                    let (p, r) = s.split_once(": ")?;
+                                    Some(SkippedFile {
+                                        path: p.to_string(),
+                                        reason: r.to_string(),
+                                    })
+                                })
+                                .collect();
+                            let result = GR::Full {
+                                path: path.clone(),
+                                rebuild: *rebuild,
+                                elapsed_ms: elapsed,
+                                symbols,
+                                dependencies: edges,
+                                status: if skipped.is_empty() {
+                                    "complete".to_string()
+                                } else {
+                                    "partial".to_string()
+                                },
+                                skipped_files,
+                            };
+                            // Emit the Skipped lines to stderr
+                            // (matches pre-migration eprintln!).
                             for s in &skipped {
                                 eprintln!("  Skipped: {}", s);
                             }
+                            let mut stdout = std::io::stdout();
+                            crate::interface::cli::presenter::present_graph_full(
+                                &result,
+                                &mut stdout,
+                            )
+                            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                            Ok(result)
                         }
-                        // T1-5.4b: return the data side. The text
-                        // output above is preserved (T1-5.5 will
-                        // move it to the bin's presenter). Build
-                        // the SkippedFile list from the in-scope
-                        // 'skipped' Vec<String> ("path: reason"
-                        // format) using the same split logic the
-                        // json branch used.
-                        let skipped_files: Vec<SkippedFile> = skipped
-                            .iter()
-                            .filter_map(|s| {
-                                let (p, r) = s.split_once(": ")?;
-                                Some(SkippedFile {
-                                    path: p.to_string(),
-                                    reason: r.to_string(),
-                                })
-                            })
-                            .collect();
-                        Ok(GR::Full {
-                            path: path.clone(),
-                            rebuild: *rebuild,
-                            elapsed_ms: elapsed,
-                            symbols,
-                            dependencies: edges,
-                            status: if skipped.is_empty() {
-                                "complete".to_string()
-                            } else {
-                                "partial".to_string()
-                            },
-                            skipped_files,
-                        })
                     }
                     Err(e) => {
                         eprintln!("Error building full graph: {}", e);
