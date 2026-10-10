@@ -279,3 +279,38 @@ fn gap_carries_reason_and_optional_detail() {
     // detail es opcional; en el sample es None.
     assert!(gap.detail.is_none());
 }
+
+// ----- constructores seguros (defensa en profundidad contra consumer contract) -----
+
+/// El consumer DTO exige `Partial.gaps.isNotEmpty()`. El constructor
+/// `CapabilityCompleteness::partial` lo pinea en el lado producer: si
+/// alguien lo construye con gaps vacíos, panic en debug+release. Test
+/// RED: el panic debe ser no-recuperable, no un resultado que ignore
+/// el caller.
+#[test]
+#[should_panic(expected = "Partial expone al menos un gap")]
+fn partial_rejects_empty_gaps() {
+    let _ = CapabilityCompleteness::partial(vec![]);
+}
+
+/// El consumer DTO exige `Unsupported.reason.isNotBlank()`. El constructor
+/// `CapabilityCompleteness::unsupported` lo pinea.
+#[test]
+#[should_panic(expected = "Unsupported requiere reason no vacío")]
+fn unsupported_rejects_blank_reason() {
+    let _ = CapabilityCompleteness::unsupported("   ");
+}
+
+/// El happy path: el constructor acepta inputs válidos. Sanity check de
+/// que el assert no dispara en el camino normal.
+#[test]
+fn partial_accepts_non_empty_gaps() {
+    let gap = CapabilityGap {
+        capability: "architecture".into(),
+        reason: "Tarjan SCC no se calcula en v1".into(),
+        detail: None,
+    };
+    let cc = CapabilityCompleteness::partial(vec![gap]);
+    assert!(matches!(cc, CapabilityCompleteness::Partial { .. }));
+    assert!(cc.is_producing());
+}

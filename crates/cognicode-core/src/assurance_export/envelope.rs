@@ -243,6 +243,34 @@ pub enum CapabilityCompleteness {
 }
 
 impl CapabilityCompleteness {
+    /// Constructor seguro de `Partial`.
+    ///
+    /// El consumer (`pipelinek-assurance/.../CogniCodeEvidenceExportDto.kt`)
+    /// exige en su `init {}` que `Partial.gaps.isNotEmpty()`. Sin este guard
+    /// aquí, un `Partial { gaps: vec![] }` se serializa sin error en el
+    /// producer y el consumer falla cerrado en runtime. El assert lo atrapa
+    /// en el lado que introduce el error, no en el lado que lo detecta.
+    pub fn partial(gaps: Vec<CapabilityGap>) -> Self {
+        assert!(
+            !gaps.is_empty(),
+            "Partial expone al menos un gap, o deja de ser Partial (consumer DTO contract)"
+        );
+        Self::Partial { gaps }
+    }
+
+    /// Constructor seguro de `Unsupported`.
+    ///
+    /// El consumer exige `reason.isNotBlank()` (regla C4 del workstream:
+    /// "Capabilities no soportadas = gap honesto con motivo, nunca vacío").
+    pub fn unsupported(reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        assert!(
+            !reason.trim().is_empty(),
+            "Unsupported requiere reason no vacío (consumer DTO contract)"
+        );
+        Self::Unsupported { reason }
+    }
+
     /// Nombre estable de la capability, útil para mensajes de error y
     /// para mapear a la versión string del consumer (`"complete"`,
     /// `"partial"`, `"unknown"`, `"unsupported"`).

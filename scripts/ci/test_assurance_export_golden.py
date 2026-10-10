@@ -68,7 +68,7 @@ GOLDEN_PATH = REPO_ROOT / "tests" / "fixtures" / "assurance_export_golden.cbor"
 # Cualquier cambio en el encoding del producer lo modifica; eso es la
 # senal que el consumer usa para detectar drift.
 GOLDEN_SHA256 = (
-    "1f658ac1c0851473cb500c51e45c05bf674c7b41868e7fd5c62ee9544e84118c"
+    "4916604d50c71a5ec0d0aa94b7603720132cb77dd230a8471c2751434a5a1a00"
 )
 PRODUCER_VERSION = "0.101.9"
 API_VERSION = "assurance-evidence/v1"

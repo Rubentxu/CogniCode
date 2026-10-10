@@ -164,9 +164,7 @@ pub fn extract_from_workspace(
                 Err(reason) => {
                     capability_completeness.insert(
                         cap.to_string(),
-                        CapabilityCompleteness::Unsupported {
-                            reason: reason.clone(),
-                        },
+                        CapabilityCompleteness::unsupported(reason.clone()),
                     );
                     gaps.push(CapabilityGap {
                         capability: cap.to_string(),
@@ -185,9 +183,7 @@ pub fn extract_from_workspace(
                 Err(reason) => {
                     capability_completeness.insert(
                         cap.to_string(),
-                        CapabilityCompleteness::Unsupported {
-                            reason: reason.clone(),
-                        },
+                        CapabilityCompleteness::unsupported(reason.clone()),
                     );
                     gaps.push(CapabilityGap {
                         capability: cap.to_string(),
@@ -199,9 +195,9 @@ pub fn extract_from_workspace(
             CAP_RELATIONS => {
                 capability_completeness.insert(
                     cap.to_string(),
-                    CapabilityCompleteness::Unsupported {
-                        reason: "Tarjan SCC no se calcula en v1 (no reimplementa analisis)".into(),
-                    },
+                    CapabilityCompleteness::unsupported(
+                        "Tarjan SCC no se calcula en v1 (no reimplementa analisis)",
+                    ),
                 );
                 gaps.push(CapabilityGap {
                     capability: cap.to_string(),
@@ -217,9 +213,9 @@ pub fn extract_from_workspace(
             CAP_SIGNALS => {
                 capability_completeness.insert(
                     cap.to_string(),
-                    CapabilityCompleteness::Unsupported {
-                        reason: "SOLID heuristic scoring no se exporta en v1".into(),
-                    },
+                    CapabilityCompleteness::unsupported(
+                        "SOLID heuristic scoring no se exporta en v1",
+                    ),
                 );
                 gaps.push(CapabilityGap {
                     capability: cap.to_string(),
@@ -234,9 +230,9 @@ pub fn extract_from_workspace(
             CAP_ARCHITECTURE => {
                 capability_completeness.insert(
                     cap.to_string(),
-                    CapabilityCompleteness::Unsupported {
-                        reason: "Architecture constraints no se exportan en v1".into(),
-                    },
+                    CapabilityCompleteness::unsupported(
+                        "Architecture constraints no se exportan en v1",
+                    ),
                 );
                 gaps.push(CapabilityGap {
                     capability: cap.to_string(),
@@ -252,9 +248,9 @@ pub fn extract_from_workspace(
             other => {
                 capability_completeness.insert(
                     other.to_string(),
-                    CapabilityCompleteness::Unsupported {
-                        reason: format!("capability desconocida por v1: {other}"),
-                    },
+                    CapabilityCompleteness::unsupported(format!(
+                        "capability desconocida por v1: {other}"
+                    )),
                 );
                 gaps.push(CapabilityGap {
                     capability: other.to_string(),
