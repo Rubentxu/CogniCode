@@ -60,12 +60,26 @@ the managed `~/.cognicode/shims/cognicode-mcp` path installed by `cogh`.
 
 ### From source
 
+> **Not the recommended path.** Use `install.sh` (Layer 0) + `cogh install mcp-server` (Layer 1)
+> for normal use. From source is for contributors and reproducible builds.
+
 ```bash
 git clone https://github.com/Rubentxu/CogniCode.git
 cd CogniCode
+# CLI binaries (cogh, cognicode, cognicode-release)
+cargo build --release -p cognicode-cli --features cognicode-core/evidence-kernel
+# MCP daemon
 cargo build --release -p cognicode-mcp
-./target/release/cognicode-mcp --cwd /path/to/your/project
+./target/release/cogh --version         # expect: cogh 0.101.10
+./target/release/cognicode --version    # expect: cognicode 0.101.10
+./target/release/cognicode-mcp --version # expect: cognicode-mcp 0.101.10
 ```
+
+> **Note:** the published binaries also include the binaries for the cross-toolchain
+> the host does not natively run (e.g. `aarch64-unknown-linux-gnu`); those are produced
+> by the release pipeline. Building them locally needs the matching target via
+> `rustup target add <triple>` and a configured linker. From-source builds are
+> host-native by default.
 
 ### Claude Desktop / Cursor / Windsurf
 
