@@ -1196,6 +1196,11 @@ impl CommandExecutor {
             }
             GraphCommand::TracePath { from, to, path } => {
                 let start = Instant::now();
+                // Progress line stays in the function: the
+                // TracePathFound/NotFound variants don't carry
+                // the project path, so the presenter (T1-5.4g)
+                // can't reproduce it. T1-5.5 may move this
+                // progress to a tracing event.
                 println!("Tracing path from '{}' to '{}' in: {}", from, to, path);
 
                 let dir = PathBuf::from(path);
@@ -1226,17 +1231,9 @@ impl CommandExecutor {
 
                 let path_result = match graph.find_path(&source_id, &target_id) {
                     Some(path_ids) => {
-                        println!("\nPath found ({} hops):", path_ids.len());
                         let mut hops: Vec<PathHop> = Vec::new();
                         for (i, id) in path_ids.iter().enumerate() {
                             if let Some(sym) = graph.get_symbol(id) {
-                                println!(
-                                    "  {}. {} at {}:{}",
-                                    i + 1,
-                                    sym.name(),
-                                    sym.location().file(),
-                                    sym.location().line()
-                                );
                                 hops.push(PathHop {
                                     position: (i + 1) as u32,
                                     name: sym.name().to_string(),
@@ -1252,19 +1249,15 @@ impl CommandExecutor {
                             elapsed_ms: 0, // filled in below
                         }
                     }
-                    None => {
-                        println!("\nNo path found between '{}' and '{}'", from, to);
-                        GR::TracePathNotFound {
-                            from: from.clone(),
-                            to: to.clone(),
-                            elapsed_ms: 0, // filled in below
-                        }
-                    }
+                    None => GR::TracePathNotFound {
+                        from: from.clone(),
+                        to: to.clone(),
+                        elapsed_ms: 0, // filled in below
+                    },
                 };
                 let elapsed = start.elapsed().as_millis();
-                println!("\nTrace completed in {}ms", elapsed);
                 // T1-5.4b: fill elapsed_ms in the result we just built.
-                Ok(match path_result {
+                let final_result = match path_result {
                     GR::TracePathFound { from, to, hops, .. } => GR::TracePathFound {
                         from,
                         to,
@@ -1277,7 +1270,29 @@ impl CommandExecutor {
                         elapsed_ms: elapsed,
                     },
                     _ => unreachable!(),
-                })
+                };
+                // T1-5.4g: result block + summary in the
+                // presenter. The progress line above is NOT
+                // part of the snapshot (it can't be: the
+                // variant doesn't carry the project path).
+                let mut stdout = std::io::stdout();
+                match &final_result {
+                    GR::TracePathFound { .. } => {
+                        crate::interface::cli::presenter::present_graph_tracepath_found(
+                            &final_result,
+                            &mut stdout,
+                        )
+                    }
+                    GR::TracePathNotFound { .. } => {
+                        crate::interface::cli::presenter::present_graph_tracepath_notfound(
+                            &final_result,
+                            &mut stdout,
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(final_result)
             }
             GraphCommand::Mermaid { path, format } => {
                 let start = Instant::now();

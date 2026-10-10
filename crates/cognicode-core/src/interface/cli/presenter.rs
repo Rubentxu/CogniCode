@@ -499,3 +499,97 @@ pub fn present_graph_complexity(
     }
     Ok(())
 }
+
+/// T1-5.4g — text format for `GraphResult::TracePathFound`.
+///
+/// Pre-migration text (commands.rs:1107, 1131..1148, 1155):
+///   Tracing path from '{from}' to '{to}' in: {path}
+///   [Warning: graph is PARTIAL: ...]   ← stderr, no snapshot
+///   [blank line]
+///   Path found ({N} hops):
+///     1. {name} at {file}:{line}
+///     2. {name} at {file}:{line}
+///     ...
+///   [blank line]
+///   Trace completed in {elapsed}ms
+///
+/// The hop list is 1-indexed (the pre-migration code does
+/// `i + 1` in the format string; the data side carries
+/// `position: (i+1) as u32` so consumers don't have to
+/// re-compute). The path has no leading '→ ' or similar
+/// arrow; just a number prefix.
+pub fn present_graph_tracepath_found(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::TracePathFound {
+        from: _,
+        to: _,
+        hops,
+        elapsed_ms,
+    } = result
+    {
+        // The 'Tracing path from X to Y in: PATH' progress
+        // line is NOT emitted by the presenter. The
+        // TracePathFound variant doesn't carry the project
+        // path (it's a side-channel in the function; the
+        // data side cares only about from/to/hops), so the
+        // presenter can't reproduce it. The progress line
+        // stays in commands.rs as a println! (T1-5.5 will
+        // move it to the bin's text path or a tracing event).
+        //
+        // The presenter emits only the result block + summary.
+        writeln!(w)?;
+        writeln!(w, "Path found ({} hops):", hops.len())?;
+        for hop in hops {
+            writeln!(
+                w,
+                "  {}. {} at {}:{}",
+                hop.position, hop.name, hop.file, hop.line
+            )?;
+        }
+        writeln!(w)?;
+        writeln!(w, "Trace completed in {}ms", elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_tracepath_found called with non-TracePathFound GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
+
+/// T1-5.4g — text format for `GraphResult::TracePathNotFound`.
+///
+/// Pre-migration text (commands.rs:1151, 1155):
+///   [blank line]
+///   No path found between '{from}' and '{to}'
+///   [blank line]
+///   Trace completed in {elapsed}ms
+///
+/// The progress line 'Tracing path from ...' stays in the
+/// function (same reason as TracePathFound: the project
+/// path is not in the data side's variant). The presenter
+/// emits the result block + summary.
+pub fn present_graph_tracepath_notfound(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::TracePathNotFound {
+        from,
+        to,
+        elapsed_ms,
+    } = result
+    {
+        writeln!(w)?;
+        writeln!(w, "No path found between '{}' and '{}'", from, to)?;
+        writeln!(w)?;
+        writeln!(w, "Trace completed in {}ms", elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_tracepath_notfound called with non-TracePathNotFound GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
