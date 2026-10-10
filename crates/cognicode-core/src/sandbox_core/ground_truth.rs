@@ -8,6 +8,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::domain::value_objects::SymbolKind as CanonicalSymbolKind;
+
 /// A symbol extracted from source code with its metadata.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ExpectedSymbol {
@@ -39,6 +41,44 @@ pub enum SymbolKind {
     Parameter,
     Variable,
     Other(String),
+}
+
+/// Convert ground-truth symbol kinds into the canonical
+/// [`crate::domain::value_objects::SymbolKind`].
+///
+/// Most variants are direct renames (`Const` → `Constant`,
+/// `Variant` → `EnumVariant`); the four Rust-specific
+/// orphans (`Impl`, `Static`, `Macro`, plus the
+/// `Other(String)` escape hatch) collapse to canonical `Unknown`
+/// because the canonical doesn't carry Rust-only semantics.
+/// Consumers that need the original string preserved should
+/// stay on `ground_truth::SymbolKind` directly and use
+/// `as_str()` to retrieve it; this `From` is the lossless
+/// round-trip path for the 16 directly-mappable variants.
+impl From<SymbolKind> for CanonicalSymbolKind {
+    fn from(g: SymbolKind) -> Self {
+        match g {
+            SymbolKind::Function => CanonicalSymbolKind::Function,
+            SymbolKind::Struct => CanonicalSymbolKind::Struct,
+            SymbolKind::Impl => CanonicalSymbolKind::Unknown,
+            SymbolKind::Module => CanonicalSymbolKind::Module,
+            SymbolKind::Enum => CanonicalSymbolKind::Enum,
+            SymbolKind::Trait => CanonicalSymbolKind::Trait,
+            SymbolKind::Method => CanonicalSymbolKind::Method,
+            SymbolKind::Field => CanonicalSymbolKind::Field,
+            SymbolKind::Const => CanonicalSymbolKind::Constant,
+            SymbolKind::Static => CanonicalSymbolKind::Unknown,
+            SymbolKind::TypeAlias => CanonicalSymbolKind::TypeAlias,
+            SymbolKind::Macro => CanonicalSymbolKind::Unknown,
+            SymbolKind::Variant => CanonicalSymbolKind::EnumVariant,
+            SymbolKind::Property => CanonicalSymbolKind::Property,
+            SymbolKind::Class => CanonicalSymbolKind::Class,
+            SymbolKind::Interface => CanonicalSymbolKind::Interface,
+            SymbolKind::Parameter => CanonicalSymbolKind::Parameter,
+            SymbolKind::Variable => CanonicalSymbolKind::Variable,
+            SymbolKind::Other(_) => CanonicalSymbolKind::Unknown,
+        }
+    }
 }
 
 impl SymbolKind {
