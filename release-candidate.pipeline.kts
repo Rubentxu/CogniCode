@@ -68,17 +68,19 @@ val cd = "cd \"$repoRoot\""
 // below, so that adding a platform is one edit rather than a hunt for the four
 // places a target name appears.
 //
-// 2026-10-10: v0.101.10 candidate scoped to x86_64-only. The host (Bazzite
-// x86_64) has no aarch64-linux-gnu cross toolchain installed and Bazzite is
-// an immutable distro (rpm-ostree only, no sudo), so a working aarch64
-// build needs either a CI runner with the cross toolchain or a follow-up
-// release. Tracked as TF-6 in
-// `odd/tasks/v1015-consolidation-and-promote.md`. To re-enable: restore
-// the aarch64 entry to the list AND make sure the cross toolchain is
-// present (rustup target add aarch64-unknown-linux-gnu + linker in
-// .cargo/config.toml or env CC_aarch64_unknown_linux_gnu /
-// CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER).
-val targets = listOf("x86_64-unknown-linux-gnu")
+// 2026-10-10: v0.101.10 candidate was scoped to x86_64-only (commit 451d0b7,
+// TF-5b in v1015-consolidation-and-promote) because the local host (Bazzite
+// x86_64) had no aarch64-linux-gnu cross toolchain. The operator authorized
+// TF-6.0 / TF-7.0 (commit 8c6d0f7): the next release runs in CI with
+// pipelinek 0.48.0-rc and the cross toolchain pre-installed in the same
+// runner image. This re-enables aarch64; the candidate builds for both
+// Tier 1 platforms.
+//
+// The `toolchain-for-$target` stage (line ~220) verifies a linker is
+// configured for cross targets before `binaries-$target` runs, so the
+// pipeline fails closed (not silent) if the CI image regresses on the
+// aarch64 cross toolchain.
+val targets = listOf("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
 
 // The version the workspace declares, read the way the workflows read it: the
 // first `version = "..."` line of the root manifest.
