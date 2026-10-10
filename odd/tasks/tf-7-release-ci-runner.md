@@ -139,5 +139,7 @@ canónica detecte una regresión que el humano no vería.
 
 | Fecha | WU | Commit | Notas |
 |-------|----|--------|-------|
-| _pendiente_ | TF-7.1 | _pendiente_ | diagnóstico del Studio bloqueado |
-| _pendiente_ | TF-7.2..5 | _pendiente_ | entorno + merge-gate + release factory |
+| 2026-10-10 | TF-7.0 | (decisión operador) | **El operador autoriza CI con pipelinek 0.48.0-rc** hasta que la release 0.48.0 esté disponible. La decisión cierra el debate TF-7.1: el CI no tiene el Studio local bloqueado (es entorno fresco cada run), y 0.48.0-rc incluye los fixes que el Studio local necesitaría re-registrar. Probe local con 0.48.0-rc2: PASS (stages comparten filesystem y cwd como se espera, failure propagation correcto). `pipelinek run test.pipeline.kts` con 0.48.0-rc2: SUCCESS, pero la `studio.db` local sigue sin aceptar runs nuevos (último entry 04:34:31) — confirma que el bloqueo es del Studio app local, no del binario pipelinek. Local se queda en 0.47.0; el CI usa 0.48.0-rc. |
+| 2026-10-10 | TF-7.1 | (sin commit, recibo arriba) | diagnóstico completo: Studio app local bloqueado desde 2026-10-10T04:34:31Z; el binario pipelinek 0.47.0/0.48.0-rc2 funciona correctamente en local; el bloqueo es del control plane (Studio en `--port 18778` con `--db /tmp/studio-app-uat-1028572.db`) que rechaza runs nuevos por estado interno. En el CI este bloqueo no existe (entorno fresco). |
+| _pendiente_ | TF-7.2 | _pendiente_ | provisionar el CI runner con pipelinek 0.48.0-rc + cross toolchain (cierra TF-6 también) |
+| _pendiente_ | TF-7.3..5 | _pendiente_ | release factory completa + merge-gate re-enabled |

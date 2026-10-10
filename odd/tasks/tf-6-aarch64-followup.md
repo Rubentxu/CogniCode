@@ -127,5 +127,6 @@ el README y el install.sh dicen una cosa y la realidad es otra.
 
 | Fecha | WU | Commit | Notas |
 |-------|----|--------|-------|
-| _pendiente_ | TF-6.1 | _pendiente_ | entorno del toolchain |
-| _pendiente_ | TF-6.2..5 | _pendiente_ | restore targets + build + verify + publish |
+| 2026-10-10 | TF-6.0 | (decisión operador, registrada en TF-7) | **El operador autoriza CI con pipelinek 0.48.0-rc + cross toolchain `gcc-aarch64-linux-gnu` hasta que 0.48.0 esté disponible**. Esto cierra TF-6.1 y TF-6.2: el CI runner dedicado (mismo que TF-7) tiene el toolchain pre-instalado, y el `release-candidate.pipeline.kts` corre con `val targets = listOf("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")` restaurado. TF-6.3..5 son trabajo de la release factory que se ejecuta en el CI. |
+| _pendiente_ | TF-6.1 | _pendiente_ | restaurar `val targets = listOf(...)` en `release-candidate.pipeline.kts` (re-commit sobre `451d0b7` con ambas targets; ver `odd/tasks/v1015-consolidation-and-promote.md` TF-5b) |
+| _pendiente_ | TF-6.2..5 | _pendiente_ | build aarch64 en CI + package + verify + publish |
