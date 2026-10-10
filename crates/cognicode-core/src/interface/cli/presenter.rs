@@ -682,3 +682,64 @@ pub fn present_graph_mermaid(
     }
     Ok(())
 }
+
+/// T1-5.4i — text format for `GraphResult::OnDemand`.
+///
+/// Pre-migration text (commands.rs:795..826):
+///   Building on-demand subgraph for '{symbol}' (depth={depth}, direction={direction})
+///   [blank line]
+///   Subgraph built in {elapsed}ms
+///   Root: {root_name} ({file}:{line}:{column})
+///   Entries: {entries_len}
+///
+/// The progress line includes the depth and direction
+/// (pre-migration uses '{symbol}' with single quotes — pin
+/// that in the snapshot). The result block has 3 lines: a
+/// timing line, a 'Root:' line with the symbol's name and
+/// 3-tuple location, and an 'Entries:' line with the
+/// count.
+///
+/// The 'Root:' line uses 'name (file:line:column)' — note
+/// the space-separated format (not 'name@file:line:col' or
+/// 'name at file:line:col' as in other sub-commands). This
+/// is the only sub-command that uses the parenthesized
+/// 3-tuple form; the snapshot pins it.
+pub fn present_graph_ondemand(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::OnDemand {
+        symbol,
+        depth,
+        direction,
+        elapsed_ms,
+        root_name,
+        root_file,
+        root_line,
+        root_column,
+        entries_len,
+    } = result
+    {
+        // Progress line — commands.rs:795.
+        writeln!(
+            w,
+            "Building on-demand subgraph for '{}' (depth={}, direction={})",
+            symbol, depth, direction
+        )?;
+        // Blank + result block — commands.rs:817..825.
+        writeln!(w)?;
+        writeln!(w, "Subgraph built in {}ms", elapsed_ms)?;
+        writeln!(
+            w,
+            "Root: {} ({}:{}:{})",
+            root_name, root_file, root_line, root_column
+        )?;
+        writeln!(w, "Entries: {}", entries_len)?;
+    } else {
+        panic!(
+            "present_graph_ondemand called with non-OnDemand GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}

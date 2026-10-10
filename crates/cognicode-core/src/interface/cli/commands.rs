@@ -804,10 +804,15 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
-                println!(
-                    "Building on-demand subgraph for '{}' (depth={}, direction={})",
-                    symbol, depth, direction
-                );
+                // Progress line — same text as the
+                // pre-migration println!; the presenter
+                // re-emits it (T1-5.4i). The println! here
+                // is removed.
+                //
+                // (Note: we DON'T call the presenter's
+                // progress line from inside this function;
+                // the presenter writes the whole stdout
+                // byte stream when called.)
 
                 let dir = PathBuf::from(path);
                 let mut strategy = OnDemandStrategy::new();
@@ -826,16 +831,7 @@ impl CommandExecutor {
                 let result = strategy.build_subgraph(symbol, *depth, dir_enum);
                 let elapsed = start.elapsed().as_millis();
 
-                println!("Subgraph built in {}ms", elapsed);
-                println!(
-                    "Root: {} ({}:{}:{})",
-                    result.root_symbol.name(),
-                    result.root_symbol.location().file(),
-                    result.root_symbol.location().line(),
-                    result.root_symbol.location().column()
-                );
-                println!("Entries: {}", result.entries.len());
-                Ok(GR::OnDemand {
+                let final_result = GR::OnDemand {
                     symbol: symbol.clone(),
                     depth: *depth,
                     direction: direction.clone(),
@@ -845,7 +841,15 @@ impl CommandExecutor {
                     root_line: result.root_symbol.location().line(),
                     root_column: result.root_symbol.location().column(),
                     entries_len: result.entries.len(),
-                })
+                };
+                // T1-5.4i: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_ondemand(
+                    &final_result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(final_result)
             }
             GraphCommand::PerFile { file } => {
                 let strategy = PerFileStrategy::new();
