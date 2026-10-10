@@ -11,6 +11,20 @@
 //! consumidor espera, hay que ajustar el modelo, no el codec (que es
 //! externo y está contractual).
 //!
+//! **El orden de declaración de los campos importa para M-D01.**
+//! El consumer (`CogniCodeEvidenceExportCodec.digestOf`) re-codifica el
+//! DTO con `digest = ""` y aplica SHA-256 sobre los bytes resultantes.
+//! Si el orden de los campos en el envelope del producer (Rust/ciborium)
+//! difiere del orden en el re-codificado del consumer (kotlinx-serialization-cbor),
+//! los bytes difieren y la verificación M-D01 falla cerrado.
+//!
+//! Por construcción, `ciborium::ser::into_writer` y `kotlinx-serialization-cbor`
+//! ambos preservan el orden de declaración de los campos en el map de salida.
+//! Esto exige que el orden de los campos en cada `struct` Rust de este
+//! fichero sea **idéntico** al orden de los campos en el `data class`
+//! Kotlin del consumer. Cambiar el orden de campos aquí sin cambiarlo
+//! allá rompe M-D01 silenciosamente.
+//!
 //! Visibilidad: este módulo es público dentro de `cognicode-core` porque el
 //! CLI lo consume; desde fuera del crate, el boundary es el `cognicode
 //! export assurance` CLI + el archivo CBOR/JSON.
