@@ -354,30 +354,21 @@ pub async fn handle_retrieve_and_verify(
         .await
         .map_err(HandlerError::App)?;
 
-    // Convert DTO result to MCP output
+    // Convert DTO result to MCP output. After T1-3, the dto and the
+    // schema share a single canonical `VerificationStatus` (re-export);
+    // the previous match was a no-op identity conversion.
     let output = RetrieveAndVerifyOutput {
         results: dto_result
             .results
             .into_iter()
             .map(|r| {
-                let status = match r.status {
-                    crate::application::dto::VerificationStatus::Verified => {
-                        crate::interface::mcp::schemas::VerificationStatus::Verified
-                    }
-                    crate::application::dto::VerificationStatus::Rejected => {
-                        crate::interface::mcp::schemas::VerificationStatus::Rejected
-                    }
-                    crate::application::dto::VerificationStatus::Skipped => {
-                        crate::interface::mcp::schemas::VerificationStatus::Skipped
-                    }
-                };
                 crate::interface::mcp::schemas::VerifiedMatch {
                     file: r.file,
                     line: r.line,
                     col: r.col,
                     matched_text: r.matched_text,
                     context: r.context,
-                    status,
+                    status: r.status,
                     check_output: r.check_output,
                     error_snippet: r.error_snippet,
                     reason: r.reason,
