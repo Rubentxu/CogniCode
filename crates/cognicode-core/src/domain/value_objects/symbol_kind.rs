@@ -18,7 +18,7 @@ pub enum SymbolKind {
     /// Parameter
     Parameter,
     /// Type alias or interface
-    Type,
+    TypeAlias,
     /// Method within a class
     Method,
     /// Property or field
@@ -70,7 +70,7 @@ impl SymbolKind {
                 | SymbolKind::Struct
                 | SymbolKind::Enum
                 | SymbolKind::Trait
-                | SymbolKind::Type
+                | SymbolKind::TypeAlias
                 | SymbolKind::Interface
         )
     }
@@ -83,7 +83,7 @@ impl SymbolKind {
             SymbolKind::Module => "module",
             SymbolKind::Variable => "variable",
             SymbolKind::Parameter => "parameter",
-            SymbolKind::Type => "type",
+            SymbolKind::TypeAlias => "type_alias",
             SymbolKind::Method => "method",
             SymbolKind::Property => "property",
             SymbolKind::Field => "field",
@@ -120,7 +120,7 @@ impl SymbolKind {
             12 => SymbolKind::Function,
             13 => SymbolKind::Variable,
             14 => SymbolKind::Constant,
-            15 => SymbolKind::Type,
+            15 => SymbolKind::TypeAlias,
             16 => SymbolKind::Struct,
             17 => SymbolKind::Enum,
             18 => SymbolKind::Interface,
@@ -163,7 +163,7 @@ impl FromStr for SymbolKind {
             "module" => Ok(SymbolKind::Module),
             "variable" => Ok(SymbolKind::Variable),
             "parameter" => Ok(SymbolKind::Parameter),
-            "type" => Ok(SymbolKind::Type),
+            "type" | "type_alias" => Ok(SymbolKind::TypeAlias),
             "method" => Ok(SymbolKind::Method),
             "property" => Ok(SymbolKind::Property),
             "field" => Ok(SymbolKind::Field),
@@ -233,7 +233,7 @@ mod tests {
         assert_eq!(SymbolKind::from_lsp_kind(4), SymbolKind::Package);
         // Constant=14, Type=15, Struct=16
         assert_eq!(SymbolKind::from_lsp_kind(14), SymbolKind::Constant);
-        assert_eq!(SymbolKind::from_lsp_kind(15), SymbolKind::Type);
+        assert_eq!(SymbolKind::from_lsp_kind(15), SymbolKind::TypeAlias);
         assert_eq!(SymbolKind::from_lsp_kind(16), SymbolKind::Struct);
         // 0 and very large values → Unknown
         assert_eq!(SymbolKind::from_lsp_kind(0), SymbolKind::Unknown);
@@ -249,7 +249,7 @@ mod tests {
             (SymbolKind::Module, "module"),
             (SymbolKind::Variable, "variable"),
             (SymbolKind::Parameter, "parameter"),
-            (SymbolKind::Type, "type"),
+            (SymbolKind::TypeAlias, "type_alias"),
             (SymbolKind::Method, "method"),
             (SymbolKind::Property, "property"),
             (SymbolKind::Field, "field"),

@@ -357,7 +357,7 @@ fn classify_class_type(node_type: &str) -> SymbolKind {
         "impl_item" => SymbolKind::Class, // Rust impl maps to Class
         "union_item" => SymbolKind::Class,
         "class_declaration" | "class_definition" => SymbolKind::Class,
-        "type_declaration" => SymbolKind::Type,
+        "type_declaration" => SymbolKind::TypeAlias,
         _ => SymbolKind::Class,
     }
 }

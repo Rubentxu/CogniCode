@@ -212,7 +212,7 @@ impl OutlineBuilder {
                 self.find_name_in_node(node, "identifier"),
             ),
             "type_alias" | "type_item" => (
-                SymbolKind::Type,
+                SymbolKind::TypeAlias,
                 self.find_name_in_node(node, "type_identifier"),
             ),
             "method_definition" | "function_declaration" => (

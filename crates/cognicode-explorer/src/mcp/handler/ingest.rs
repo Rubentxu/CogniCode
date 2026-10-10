@@ -260,7 +260,7 @@ impl ToolHandler for GraphSearchHandler {
                             NodeKind::Symbol(SymbolKind::Module),
                             NodeKind::Symbol(SymbolKind::Variable),
                             NodeKind::Symbol(SymbolKind::Parameter),
-                            NodeKind::Symbol(SymbolKind::Type),
+                            NodeKind::Symbol(SymbolKind::TypeAlias),
                             NodeKind::Symbol(SymbolKind::Property),
                             NodeKind::Symbol(SymbolKind::Field),
                             NodeKind::Symbol(SymbolKind::Import),
