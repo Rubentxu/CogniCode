@@ -10,12 +10,12 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-10, sobre `main` HEAD
-> `4f1bb291937ec4e468ec3d785de4b9e593778e92` (PR #345 squash-merged).
-> Regenerado para reflejar el cierre del goal `v1015-consolidation-and-promote`
-> y el bypass del `merge-gate` per `MAINTENANCE.md` lesson 85 (infra
-> pipelinek bloqueada en `durable-shell` con code 101 en el stage
-> `core-unrestricted-evidence-kernel`; el mismo comando pasa local con
-> 3158/0/7). El bypass re-habilitó el required check tras el merge.
+> `2bef276330eadc39f155614e1d35f2891e9417be` (post-T1-5.3a design;
+> 14 commits ahead de `4f1bb29` PR #345 squash, todos en `main`).
+> Regenerado tras el cierre del goal `v1015-consolidation-and-promote`
+> y la publicación de `v0.101.10` end-to-end (8 assets en GitHub
+> Release, `install.sh` cierra los 7 pasos, R1 invariant
+> `/releases/latest` resuelve a `v0.101.10`).
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
@@ -23,10 +23,16 @@
 
 ## HEAD y batería (a 2026-10-10)
 
-* **Rama**: `main` (PR #345 squash-merged el 2026-10-10T10:45:22Z).
-* **SHA funcional**: `4f1bb291937ec4e468ec3d785de4b9e593778e92`.
-* **Versión workspace**: `0.101.9` (sin bump a `v0.101.10` en este
-  PR; el bump queda como work item TF-2 en el goal).
+* **Rama**: `main` (PR #345 squash-merged el 2026-10-10T10:45:22Z;
+  14 commits ahead del squash: 8 Tier 0/1 cleanups vía merge
+  `30980a9d`, bump `217d1638`, tag `ad45583e`, release factory
+  output `98d85bc` + `197722e` + `318b5a3`, 6 doc-debt cleanups
+  `7caed6e`, T1-5.1 snapshot `0182595`, T1-5.2 classification
+  `679d0f5`, T1-5.3a design `2bef276`).
+* **SHA funcional**: `2bef276330eadc39f155614e1d35f2891e9417be`.
+* **Versión workspace**: `0.101.10` (bump `217d1638`, tag anotado
+  `ad45583e`, release page en GitHub, 8 assets adjuntos tras la
+  publicación manual del 2026-10-10).
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
   * `cargo test -p cognicode-core --lib` → **2252 passed, 2 ignored** (106 s).

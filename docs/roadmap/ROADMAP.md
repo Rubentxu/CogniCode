@@ -187,11 +187,12 @@ su cierre técnico está verificado. Ver
 
 | Item | Valor |
 |---|---|
-| Workspace version | `0.101.9` (`Cargo.toml [workspace.package].version`) |
-| Rama activa | `integrate/v1015` |
-| SHA de trabajo | `15b5c68c9fde05c021b542afc762e6fcd1463735` |
-| Divergencia vs `origin/main` | 80 commits ahead, 0 behind |
-| Tags publicados | `v0.101.0` .. `v0.101.9` (10 cortes patch) |
+| Workspace version | `0.101.10` (`Cargo.toml [workspace.package].version`) |
+| Rama activa | `main` (post-merge PR #345 `4f1bb29` + Tier 0/1 cleanup vía merge `30980a9d` + bump + release + post-release hygiene) |
+| SHA de trabajo | ver `git rev-parse HEAD` (snapshot CURRENT.md) |
+| Divergencia vs `origin/main` | 0 commits ahead, 0 behind |
+| Tags publicados | `v0.101.0` .. `v0.101.10` (11 cortes patch) |
+| Release más reciente | `v0.101.10` (x86_64-only; 8 assets en GitHub Release; instalable vía `install.sh` / `mise`) |
 
 ### 9.2 Outcomes production-ready (estado a 2026-10-09)
 
@@ -227,12 +228,29 @@ su cierre técnico está verificado. Ver
 ### 9.4 Work items abiertos (orden de criticidad)
 
 1. **CR-01 (C8-R)** — firma humana contractual sobre clean clone.
-2. **Promover `integrate/v1015` → `origin/main`** — decisión operador.
-3. **G5 scorecard** (PR-PERF cierre formal) — >3 ejecuciones consecutivas
+   Operator-gated; bloquea el cierre formal del programa production-ready.
+2. **T1-5.3b..6** (Tier 1 connascence) — mover 194 `println!` de
+   `cognicode-core/src/interface/cli/commands.rs` al presenter de
+   `cognicode-cli`. T1-5.1 (snapshot baseline `0182595`), T1-5.2
+   (clasificación `679d0f5`) y T1-5.3a (design sobre `execute_index`
+   `2bef276`) DONE. Implementación: T1-5.3b..d sobre `execute_index`
+   (~2 días), replica T1-5.4..6 sobre los otros 9 sub-comandos
+   (multi-día). Tracking: `odd/tasks/t1-5-presenter-move.md` y
+   sub-docs.
+3. **TF-6 (aarch64 follow-up)** — bloqueado por el CI. Trigger para
+   reabrir: CI runner provisionado con pipelinek 0.48.0-rc +
+   `gcc-aarch64-linux-gnu` (decisión operador en `8c6d0f7`), y
+   v0.101.11 publicado como smoke test sin aarch64. Tracking:
+   `odd/tasks/tf-6-aarch64-followup.md`.
+4. **TF-7 (release CI runner con pipelinek sano)** — provision
+   del CI runner. Operator-gated (platform team). La decisión
+   tomada (`8c6d0f7`): usar 0.48.0-rc hasta que 0.48.0 final
+   esté disponible. Tracking: `odd/tasks/tf-7-release-ci-runner.md`.
+5. **G5 scorecard** (PR-PERF cierre formal) — >3 ejecuciones consecutivas
    sobre fixture multi-repo en sandbox.
-4. **ST-N (PR-DEPTH)** — deep-module refactors sobre parsers multimodales,
+6. **ST-N (PR-DEPTH)** — deep-module refactors sobre parsers multimodales,
    simplificación de EvidenceStore. Sin contratos abiertos.
-5. **Protobuf advisory + OTel migration** (PR-SEC) — **CLOSED** vía CR-07
+7. **Protobuf advisory + OTel migration** (PR-SEC) — **CLOSED** vía CR-07
    (commit migrando `opentelemetry` 0.27 → 0.29.1 + bump `prometheus` 0.13
    → 0.14 que resuelve RUSTSEC-2024-0437). Contrato
    `cr07_protobuf_advisory_closed.rs` 3/3 verde. Inventario realizado
