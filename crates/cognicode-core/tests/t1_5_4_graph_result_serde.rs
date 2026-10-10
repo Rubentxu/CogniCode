@@ -110,8 +110,8 @@ fn graph_result_hotpaths_serializes_entries_array() {
         min_fan_in: 1,
         entries: vec![HotPathEntry {
             name: "alpha".to_string(),
-            fan_in: 5,
-            fan_out: 2,
+            fan_in: 5_usize,
+            fan_out: 2_usize,
             file: "/lib/foo.rs".to_string(),
             line: 10,
         }],

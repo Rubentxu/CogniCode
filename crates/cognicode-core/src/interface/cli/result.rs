@@ -199,12 +199,14 @@ pub struct SymbolRef {
 
 /// One row of the hot-paths table (Function, Fan-in, Fan-out,
 /// Location). The presenter renders with `:<40` / `:>8` / `:>8`
-/// formatting.
+/// formatting. `fan_in` / `fan_out` are usize to match the
+/// underlying analyzer's `HotPath` struct (avoids a narrowing
+/// conversion at the migration site).
 #[derive(Debug, Clone, Serialize)]
 pub struct HotPathEntry {
     pub name: String,
-    pub fan_in: u32,
-    pub fan_out: u32,
+    pub fan_in: usize,
+    pub fan_out: usize,
     pub file: String,
     pub line: u32,
 }

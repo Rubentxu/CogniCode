@@ -10,7 +10,7 @@ use crate::infrastructure::graph::{
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
-use crate::interface::cli::result::{IndexError, IndexResult};
+use crate::interface::cli::result::{GraphResult, IndexError, IndexResult};
 use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -591,10 +591,16 @@ impl CommandExecutor {
                 // parse / unsupported-extension failures as `Err`, and the
                 // UAT (see `w2_uat_tests` below) requires those to
                 // propagate so that scripts and CI can detect them.
-                // Other Graph subcommands that still match the legacy
-                // contract (OnDemand, HotPaths, …) return `Ok` and keep
-                // working unchanged.
-                Self::execute_graph(command).await?
+                // T1-5.4b: execute_graph now returns GraphResult.
+                // The bin (cognicode-cli) does not consume the result
+                // yet (text output still comes from the in-function
+                // println! calls). T1-5.5 will move text formatting
+                // to the bin and start consuming the result. For now
+                // the GraphResult is bound to `_result` so the
+                // `must_use` warning doesn't fail the build but the
+                // data is still returned and can be inspected in
+                // tests.
+                let _result = Self::execute_graph(command).await?;
             }
             Some(CliCommand::FindUsages {
                 symbol,
@@ -783,7 +789,13 @@ impl CommandExecutor {
     }
 
     /// Execute graph subcommand
-    async fn execute_graph(command: &GraphCommand) -> Result<(), Box<dyn std::error::Error>> {
+    async fn execute_graph(
+        command: &GraphCommand,
+    ) -> Result<GraphResult, Box<dyn std::error::Error>> {
+        use crate::interface::cli::result::{
+            DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SkippedFile,
+            SymbolRef,
+        };
         match command {
             GraphCommand::OnDemand {
                 symbol,
@@ -823,6 +835,17 @@ impl CommandExecutor {
                     result.root_symbol.location().column()
                 );
                 println!("Entries: {}", result.entries.len());
+                Ok(GR::OnDemand {
+                    symbol: symbol.clone(),
+                    depth: *depth,
+                    direction: direction.clone(),
+                    elapsed_ms: elapsed,
+                    root_name: result.root_symbol.name().to_string(),
+                    root_file: result.root_symbol.location().file().to_string(),
+                    root_line: result.root_symbol.location().line(),
+                    root_column: result.root_symbol.location().column(),
+                    entries_len: result.entries.len(),
+                })
             }
             GraphCommand::PerFile { file } => {
                 println!("Getting per-file graph for: {}", file);
@@ -837,6 +860,11 @@ impl CommandExecutor {
                         println!("Per-file graph for {}:", file);
                         println!("  Symbols: {}", symbols);
                         println!("  Dependencies: {}", edges);
+                        Ok(GR::PerFile {
+                            file: file.clone(),
+                            symbols,
+                            dependencies: edges,
+                        })
                     }
                     Err(e) => {
                         eprintln!("Error building per-file graph: {}", e);
@@ -950,6 +978,36 @@ impl CommandExecutor {
                                 eprintln!("  Skipped: {}", s);
                             }
                         }
+                        // T1-5.4b: return the data side. The text
+                        // output above is preserved (T1-5.5 will
+                        // move it to the bin's presenter). Build
+                        // the SkippedFile list from the in-scope
+                        // 'skipped' Vec<String> ("path: reason"
+                        // format) using the same split logic the
+                        // json branch used.
+                        let skipped_files: Vec<SkippedFile> = skipped
+                            .iter()
+                            .filter_map(|s| {
+                                let (p, r) = s.split_once(": ")?;
+                                Some(SkippedFile {
+                                    path: p.to_string(),
+                                    reason: r.to_string(),
+                                })
+                            })
+                            .collect();
+                        Ok(GR::Full {
+                            path: path.clone(),
+                            rebuild: *rebuild,
+                            elapsed_ms: elapsed,
+                            symbols,
+                            dependencies: edges,
+                            status: if skipped.is_empty() {
+                                "complete".to_string()
+                            } else {
+                                "partial".to_string()
+                            },
+                            skipped_files,
+                        })
                     }
                     Err(e) => {
                         eprintln!("Error building full graph: {}", e);
@@ -1015,6 +1073,22 @@ impl CommandExecutor {
 
                 let elapsed = start.elapsed().as_millis();
                 println!("\nFound {} hot paths in {}ms", filtered.len(), elapsed);
+                Ok(GR::HotPaths {
+                    path: path.clone(),
+                    limit: *limit,
+                    min_fan_in: *min_fan_in,
+                    entries: filtered
+                        .iter()
+                        .map(|hp| HotPathEntry {
+                            name: hp.symbol_name.clone(),
+                            fan_in: hp.fan_in,
+                            fan_out: hp.fan_out,
+                            file: hp.file.clone(),
+                            line: hp.line,
+                        })
+                        .collect(),
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::EntryPoints { path } => {
                 let start = Instant::now();
@@ -1045,6 +1119,7 @@ impl CommandExecutor {
 
                 let entry_ids = graph.roots();
                 println!("\nEntry points (no incoming edges):");
+                let mut entry_refs: Vec<SymbolRef> = Vec::new();
                 for id in entry_ids.iter().take(20) {
                     if let Some(sym) = graph.get_symbol(id) {
                         println!(
@@ -1054,10 +1129,22 @@ impl CommandExecutor {
                             sym.location().line(),
                             sym.location().column()
                         );
+                        entry_refs.push(SymbolRef {
+                            name: sym.name().to_string(),
+                            file: sym.location().file().to_string(),
+                            line: sym.location().line(),
+                            column: sym.location().column(),
+                        });
                     }
                 }
                 let elapsed = start.elapsed().as_millis();
                 println!("\nFound {} entry points in {}ms", entry_ids.len(), elapsed);
+                Ok(GR::EntryPoints {
+                    path: path.clone(),
+                    symbols: entry_refs,
+                    total: entry_ids.len(),
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::LeafFunctions { path } => {
                 let start = Instant::now();
@@ -1088,6 +1175,7 @@ impl CommandExecutor {
 
                 let leaf_ids = graph.leaves();
                 println!("\nLeaf functions (no outgoing edges):");
+                let mut leaf_refs: Vec<SymbolRef> = Vec::new();
                 for id in leaf_ids.iter().take(20) {
                     if let Some(sym) = graph.get_symbol(id) {
                         println!(
@@ -1097,10 +1185,22 @@ impl CommandExecutor {
                             sym.location().line(),
                             sym.location().column()
                         );
+                        leaf_refs.push(SymbolRef {
+                            name: sym.name().to_string(),
+                            file: sym.location().file().to_string(),
+                            line: sym.location().line(),
+                            column: sym.location().column(),
+                        });
                     }
                 }
                 let elapsed = start.elapsed().as_millis();
                 println!("\nFound {} leaf functions in {}ms", leaf_ids.len(), elapsed);
+                Ok(GR::LeafFunctions {
+                    path: path.clone(),
+                    symbols: leaf_refs,
+                    total: leaf_ids.len(),
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::TracePath { from, to, path } => {
                 let start = Instant::now();
@@ -1132,9 +1232,10 @@ impl CommandExecutor {
                 let source_id = crate::domain::aggregates::call_graph::SymbolId::new(from.clone());
                 let target_id = crate::domain::aggregates::call_graph::SymbolId::new(to.clone());
 
-                match graph.find_path(&source_id, &target_id) {
+                let path_result = match graph.find_path(&source_id, &target_id) {
                     Some(path_ids) => {
                         println!("\nPath found ({} hops):", path_ids.len());
+                        let mut hops: Vec<PathHop> = Vec::new();
                         for (i, id) in path_ids.iter().enumerate() {
                             if let Some(sym) = graph.get_symbol(id) {
                                 println!(
@@ -1144,15 +1245,47 @@ impl CommandExecutor {
                                     sym.location().file(),
                                     sym.location().line()
                                 );
+                                hops.push(PathHop {
+                                    position: (i + 1) as u32,
+                                    name: sym.name().to_string(),
+                                    file: sym.location().file().to_string(),
+                                    line: sym.location().line(),
+                                });
                             }
+                        }
+                        GR::TracePathFound {
+                            from: from.clone(),
+                            to: to.clone(),
+                            hops,
+                            elapsed_ms: 0, // filled in below
                         }
                     }
                     None => {
                         println!("\nNo path found between '{}' and '{}'", from, to);
+                        GR::TracePathNotFound {
+                            from: from.clone(),
+                            to: to.clone(),
+                            elapsed_ms: 0, // filled in below
+                        }
                     }
-                }
+                };
                 let elapsed = start.elapsed().as_millis();
                 println!("\nTrace completed in {}ms", elapsed);
+                // T1-5.4b: fill elapsed_ms in the result we just built.
+                Ok(match path_result {
+                    GR::TracePathFound { from, to, hops, .. } => GR::TracePathFound {
+                        from,
+                        to,
+                        hops,
+                        elapsed_ms: elapsed,
+                    },
+                    GR::TracePathNotFound { from, to, .. } => GR::TracePathNotFound {
+                        from,
+                        to,
+                        elapsed_ms: elapsed,
+                    },
+                    _ => unreachable!(),
+                })
             }
             GraphCommand::Mermaid { path, format } => {
                 let start = Instant::now();
@@ -1210,6 +1343,15 @@ impl CommandExecutor {
                 }
                 let elapsed = start.elapsed().as_millis();
                 println!("\nExport completed in {}ms", elapsed);
+                // T1-5.4b: Mermaid variant.
+                let truncated = format != "svg" && format != "png" && mermaid.len() > 2000;
+                Ok(GR::Mermaid {
+                    path: path.clone(),
+                    diagram_len: mermaid.len(),
+                    format: format.clone(),
+                    truncated,
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::Hierarchy {
                 symbol,
@@ -1255,21 +1397,46 @@ impl CommandExecutor {
                 for entry in &result.entries {
                     by_depth.entry(entry.depth).or_default().push(entry);
                 }
+                let mut buckets: Vec<DepthBucket> = Vec::new();
                 for depth in 1..=*depth {
                     if let Some(entries) = by_depth.get(&depth) {
                         println!("  Depth {}: {} entries", depth, entries.len());
+                        let mut depth_entries: Vec<DepthEntry> = Vec::new();
                         for entry in entries.iter().take(5) {
+                            let dir_str =
+                                format!("{:?}", entry.direction).to_lowercase();
                             println!(
                                 "    - {} ({}) at {}:{}",
                                 entry.symbol.name(),
-                                format!("{:?}", entry.direction).to_lowercase(),
+                                dir_str,
                                 entry.symbol.location().file(),
                                 entry.symbol.location().line()
                             );
+                            depth_entries.push(DepthEntry {
+                                name: entry.symbol.name().to_string(),
+                                direction: dir_str,
+                                file: entry.symbol.location().file().to_string(),
+                                line: entry.symbol.location().line(),
+                            });
                         }
+                        buckets.push(DepthBucket {
+                            depth,
+                            entries: depth_entries,
+                        });
                     }
                 }
                 println!("\nTotal entries: {} in {}ms", result.entries.len(), elapsed);
+                Ok(GR::Hierarchy {
+                    symbol: symbol.clone(),
+                    depth: *depth,
+                    direction: direction.clone(),
+                    root_file: result.root_symbol.location().file().to_string(),
+                    root_line: result.root_symbol.location().line(),
+                    root_column: result.root_symbol.location().column(),
+                    buckets,
+                    total_entries: result.entries.len(),
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::Complexity { path } => {
                 let start = Instant::now();
@@ -1320,6 +1487,22 @@ impl CommandExecutor {
 
                 let elapsed = start.elapsed().as_millis();
                 println!("\nAnalysis completed in {}ms", elapsed);
+                use crate::interface::cli::result::ComplexityMetrics;
+                Ok(GR::Complexity {
+                    path: path.clone(),
+                    metrics: ComplexityMetrics {
+                        total_symbols: complexity.total_symbols,
+                        total_edges: complexity.total_edges,
+                        max_depth: complexity.max_depth,
+                        cyclomatic_complexity: complexity.cyclomatic_complexity,
+                        high_fan_out_count: complexity.high_fan_out_count,
+                        medium_fan_out_count: complexity.medium_fan_out_count,
+                        low_fan_out_count: complexity.low_fan_out_count,
+                        entry_point_count: complexity.entry_point_count,
+                        leaf_function_count: complexity.leaf_function_count,
+                    },
+                    elapsed_ms: elapsed,
+                })
             }
             GraphCommand::Impact { symbol, path } => {
                 let start = Instant::now();
@@ -1369,7 +1552,16 @@ impl CommandExecutor {
 
                 if symbol_ids.is_empty() {
                     println!("\nNo symbols found matching '{}'", symbol);
-                    return Ok(());
+                    return Ok(GR::Impact {
+                        symbol: symbol.clone(),
+                        risk_level: "NONE".to_string(),
+                        direct_dependents: 0,
+                        total_impacted_symbols: 0,
+                        impacted_files_count: 0,
+                        impacted_symbols: vec![],
+                        impacted_files: vec![],
+                        elapsed_ms: start.elapsed().as_millis(),
+                    });
                 }
 
                 println!(
@@ -1436,9 +1628,18 @@ impl CommandExecutor {
 
                 let elapsed = start.elapsed().as_millis();
                 println!("\nAnalysis completed in {}ms", elapsed);
+                Ok(GR::Impact {
+                    symbol: symbol.clone(),
+                    risk_level: risk_level.to_string(),
+                    direct_dependents: symbol_ids.len(),
+                    total_impacted_symbols: impacted_symbols.len(),
+                    impacted_files_count: impacted_files.len(),
+                    impacted_symbols,
+                    impacted_files,
+                    elapsed_ms: elapsed,
+                })
             }
         }
-        Ok(())
     }
 
     /// Parse a "file:line:column" position string into parts
