@@ -1555,6 +1555,10 @@ impl CommandExecutor {
             }
             GraphCommand::Impact { symbol, path } => {
                 let start = Instant::now();
+                // Progress line stays in the function (the
+                // Impact variant doesn't carry the project
+                // path; same pattern as TracePath, Mermaid,
+                // Hierarchy).
                 println!("Analyzing impact of changing '{}' in: {}", symbol, path);
 
                 let dir = PathBuf::from(path);
@@ -1599,9 +1603,13 @@ impl CommandExecutor {
                     })
                     .collect();
 
+                let elapsed = start.elapsed().as_millis();
+
                 if symbol_ids.is_empty() {
-                    println!("\nNo symbols found matching '{}'", symbol);
-                    return Ok(GR::Impact {
+                    // Empty case: the presenter renders the
+                    // 'No symbols found' message + summary
+                    // based on direct_dependents == 0.
+                    let result = GR::Impact {
                         symbol: symbol.clone(),
                         risk_level: "NONE".to_string(),
                         direct_dependents: 0,
@@ -1609,15 +1617,16 @@ impl CommandExecutor {
                         impacted_files_count: 0,
                         impacted_symbols: vec![],
                         impacted_files: vec![],
-                        elapsed_ms: start.elapsed().as_millis(),
-                    });
+                        elapsed_ms: elapsed,
+                    };
+                    let mut stdout = std::io::stdout();
+                    crate::interface::cli::presenter::present_graph_impact(
+                        &result,
+                        &mut stdout,
+                    )
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                    return Ok(result);
                 }
-
-                println!(
-                    "\nFound {} symbol(s) matching '{}'",
-                    symbol_ids.len(),
-                    symbol
-                );
 
                 let mut impacted_symbols_set = std::collections::HashSet::new();
                 let mut impacted_files_set = std::collections::HashSet::new();
@@ -1649,35 +1658,7 @@ impl CommandExecutor {
                     "NONE"
                 };
 
-                println!("\nImpact Analysis for '{}':", symbol);
-                println!("  Risk Level: {}", risk_level);
-                println!("  Direct dependents: {}", symbol_ids.len());
-                println!("  Total impacted symbols: {}", impacted_symbols.len());
-                println!("  Impacted files: {}", impacted_files.len());
-
-                if !impacted_symbols.is_empty() {
-                    println!("\nImpacted symbols (first 20):");
-                    for (i, s) in impacted_symbols.iter().enumerate().take(20) {
-                        println!("  {}. {}", i + 1, s);
-                    }
-                    if impacted_symbols.len() > 20 {
-                        println!("  ... and {} more", impacted_symbols.len() - 20);
-                    }
-                }
-
-                if !impacted_files.is_empty() {
-                    println!("\nImpacted files (first 10):");
-                    for (i, f) in impacted_files.iter().enumerate().take(10) {
-                        println!("  {}. {}", i + 1, f);
-                    }
-                    if impacted_files.len() > 10 {
-                        println!("  ... and {} more", impacted_files.len() - 10);
-                    }
-                }
-
-                let elapsed = start.elapsed().as_millis();
-                println!("\nAnalysis completed in {}ms", elapsed);
-                Ok(GR::Impact {
+                let result = GR::Impact {
                     symbol: symbol.clone(),
                     risk_level: risk_level.to_string(),
                     direct_dependents: symbol_ids.len(),
@@ -1686,7 +1667,16 @@ impl CommandExecutor {
                     impacted_symbols,
                     impacted_files,
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4l: text formatting is in the
+                // presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_impact(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
         }
     }

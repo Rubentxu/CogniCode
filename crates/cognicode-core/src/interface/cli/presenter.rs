@@ -883,3 +883,123 @@ pub fn present_graph_full(
     }
     Ok(())
 }
+
+/// T1-5.4l — text format for `GraphResult::Impact`.
+///
+/// Two cases, branched on `direct_dependents == 0`:
+///
+/// Case A (no matching symbols): pre-migration text
+/// (commands.rs:1603):
+///   [blank line]
+///   No symbols found matching '{symbol}'
+///   [blank line]
+///   Analysis completed in {elapsed}ms
+///
+/// Case B (matches found): pre-migration text
+/// (commands.rs:1616..1679):
+///   Analyzing impact of changing '{symbol}' in: {path}
+///   [blank line]
+///   Found {N} symbol(s) matching '{symbol}'
+///   [blank line]
+///   Impact Analysis for '{symbol}':
+///     Risk Level: {RISK}
+///     Direct dependents: {N}
+///     Total impacted symbols: {N}
+///     Impacted files: {N}
+///   [blank line]
+///   Impacted symbols (first 20):
+///     1. {name}
+///     ...
+///   ... and {N} more
+///   [blank line]
+///   Impacted files (first 10):
+///     1. {path}
+///     ...
+///   ... and {N} more
+///   [blank line]
+///   Analysis completed in {elapsed}ms
+///
+/// The progress line 'Analyzing impact of changing X in: PATH'
+/// is NOT emitted by the presenter (the Impact variant
+/// doesn't carry the project path; same pattern as
+/// TracePath, Mermaid, Hierarchy).
+///
+/// The data side carries the FULL impacted_symbols/files
+/// lists (not truncated to 20/10). The presenter applies
+/// the truncation in the rendering pass: show first 20
+/// symbols + '... and N more' if N > 20, first 10 files +
+/// '... and N more' if N > 10.
+pub fn present_graph_impact(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::Impact {
+        symbol,
+        risk_level,
+        direct_dependents,
+        total_impacted_symbols,
+        impacted_files_count,
+        impacted_symbols,
+        impacted_files,
+        elapsed_ms,
+    } = result
+    {
+        if *direct_dependents == 0 {
+            // Case A: no matching symbols.
+            writeln!(w)?;
+            writeln!(w, "No symbols found matching '{}'", symbol)?;
+            writeln!(w)?;
+            writeln!(w, "Analysis completed in {}ms", elapsed_ms)?;
+        } else {
+            // Case B: matches found.
+            //
+            // The 'Found N symbol(s) matching X' line is
+            // pre-migration output that the data side can
+            // reconstruct from direct_dependents.
+            writeln!(w)?;
+            writeln!(
+                w,
+                "Found {} symbol(s) matching '{}'",
+                direct_dependents, symbol
+            )?;
+            writeln!(w)?;
+            writeln!(w, "Impact Analysis for '{}':", symbol)?;
+            writeln!(w, "  Risk Level: {}", risk_level)?;
+            writeln!(w, "  Direct dependents: {}", direct_dependents)?;
+            writeln!(
+                w,
+                "  Total impacted symbols: {}",
+                total_impacted_symbols
+            )?;
+            writeln!(w, "  Impacted files: {}", impacted_files_count)?;
+            if !impacted_symbols.is_empty() {
+                writeln!(w)?;
+                writeln!(w, "Impacted symbols (first 20):")?;
+                for (i, s) in impacted_symbols.iter().enumerate().take(20) {
+                    writeln!(w, "  {}. {}", i + 1, s)?;
+                }
+                if impacted_symbols.len() > 20 {
+                    writeln!(w, "  ... and {} more", impacted_symbols.len() - 20)?;
+                }
+            }
+            if !impacted_files.is_empty() {
+                writeln!(w)?;
+                writeln!(w, "Impacted files (first 10):")?;
+                for (i, f) in impacted_files.iter().enumerate().take(10) {
+                    writeln!(w, "  {}. {}", i + 1, f)?;
+                }
+                if impacted_files.len() > 10 {
+                    writeln!(w, "  ... and {} more", impacted_files.len() - 10)?;
+                }
+            }
+            writeln!(w)?;
+            writeln!(w, "Analysis completed in {}ms", elapsed_ms)?;
+        }
+    } else {
+        panic!(
+            "present_graph_impact called with non-Impact GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
