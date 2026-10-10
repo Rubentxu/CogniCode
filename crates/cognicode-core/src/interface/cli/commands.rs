@@ -848,8 +848,6 @@ impl CommandExecutor {
                 })
             }
             GraphCommand::PerFile { file } => {
-                println!("Getting per-file graph for: {}", file);
-
                 let strategy = PerFileStrategy::new();
                 let file_path = PathBuf::from(file);
 
@@ -857,14 +855,23 @@ impl CommandExecutor {
                     Ok(graph) => {
                         let symbols = graph.symbol_count();
                         let edges = graph.edge_count();
-                        println!("Per-file graph for {}:", file);
-                        println!("  Symbols: {}", symbols);
-                        println!("  Dependencies: {}", edges);
-                        Ok(GR::PerFile {
+                        let result = GR::PerFile {
                             file: file.clone(),
                             symbols,
                             dependencies: edges,
-                        })
+                        };
+                        // T1-5.4c: text formatting is in the
+                        // presenter. The function still emits
+                        // the text (T1-5.5 will move it to the
+                        // bin); the snapshot test pins the
+                        // byte stream.
+                        let mut stdout = std::io::stdout();
+                        crate::interface::cli::presenter::present_graph_perfile(
+                            &result,
+                            &mut stdout,
+                        )
+                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                        Ok(result)
                     }
                     Err(e) => {
                         eprintln!("Error building per-file graph: {}", e);

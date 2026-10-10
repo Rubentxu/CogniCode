@@ -170,3 +170,84 @@ pub mod test_helpers {
         }
     }
 }
+
+// ===================================================================
+// T1-5.4c — Presenter for `GraphResult` (text format).
+// ===================================================================
+//
+// Estado pre-T1-5.4c:
+//   - T1-5.4b migrated execute_graph to return GraphResult,
+//     but the in-function println! calls still emit text. The
+//     data side and the text side are produced together; the
+//     bin currently discards the GraphResult via `let _result =
+//     ...` because the text already happened inside the
+//     function.
+//   - T1-5.5 will move the text formatting to the bin (where
+//     the JSON dispatch lives). For now the function emits text
+//     AND returns the data; the snapshot tests pin the text so
+//     a future presenter change in the bin is forced to match
+//     the existing shape.
+//
+// Política:
+//   - One function per GraphResult variant. Single-shot: takes
+//     the data, writes the text. No progress lines (those are
+//     tracing::info! candidates, not user-facing text).
+//   - `&mut dyn Write` for testability (matches the index
+//     presenter signature). The function callsite uses
+//     `&mut std::io::stdout()`.
+//
+// T1-5.4c adds the first of the 11 presenters: `present_graph_perfile`.
+// The other 10 are added in T1-5.4d..m, one per commit, each
+// following the same flow:
+//   1. Add `present_graph_<variant>(result, &mut dyn Write)` here.
+//   2. Replace the println! block in execute_graph with a call
+//      to the presenter (stdout).
+//   3. Add a snapshot test in tests/t1_5_4_<x>_presenter_snapshot.rs.
+
+// (no import needed: the presenter uses the fully-qualified
+// `crate::interface::cli::result::GraphResult` path in its
+// signature. A `use ... as _` import would also work but adds
+// noise; the fully-qualified path is short enough.)
+
+/// T1-5.4c pilot — text format for `GraphResult::PerFile`.
+///
+/// Pre-migration text (commands.rs:851 + 860..862):
+///   Getting per-file graph for: {file}
+///   Per-file graph for {file}:
+///     Symbols: {n}
+///     Dependencies: {n}
+///
+/// Four lines: one progress line (preserved as stdout, NOT
+/// moved to tracing::info!, because the snapshot test pins the
+/// user-visible byte stream) and a three-line result block.
+/// No trailing blank line. The header has no indent; the two
+/// counts are indented with two spaces (matches the other
+/// graph sub-commands' bullet-style output).
+pub fn present_graph_perfile(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::PerFile {
+        file,
+        symbols,
+        dependencies,
+    } = result
+    {
+        // Progress line — same text as the pre-migration
+        // println! at commands.rs:851.
+        writeln!(w, "Getting per-file graph for: {}", file)?;
+        // Result block — same three lines as commands.rs:860..862.
+        writeln!(w, "Per-file graph for {}:", file)?;
+        writeln!(w, "  Symbols: {}", symbols)?;
+        writeln!(w, "  Dependencies: {}", dependencies)?;
+    } else {
+        // The presenter is paired with a specific variant. A
+        // mismatch is a programming error, not a runtime error;
+        // the panic surfaces in tests, not in user code.
+        panic!(
+            "present_graph_perfile called with non-PerFile GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
