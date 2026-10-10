@@ -128,15 +128,18 @@ pub struct ManifestSection {
 
 /// Entidad estática de CogniCode (módulo, símbolo, archivo, etc.).
 ///
-/// `layer` opcional: no toda entidad tiene capa arquitectónica. Cuando
-/// falta, se omite (serde `skip_serializing_if = "Option::is_none"`).
+/// `layer` opcional: no toda entidad tiene capa arquitectónica. Se
+/// serializa como `"layer": null` cuando falta, NO se omite: el consumer
+/// (`CogniCodeEvidenceExportCodec` con `encodeDefaults = true`) emite
+/// el campo siempre, aunque sea null, y re-codifica para verificar el
+/// M-D01 digest. Si el producer omite, los bytes del envelope difieren
+/// de los que el consumer re-emite, y la verificación fail-closed.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Entity {
     pub id: String,
     pub kind: String,
     pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub layer: Option<String>,
 }
 
@@ -152,10 +155,10 @@ pub struct Fact {
     pub id: String,
     pub entity_ref: String,
     pub predicate: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // objectValue y sourceAnchorRef se emiten aunque sean null: el
+    // consumer usa `encodeDefaults = true` y re-codifica para M-D01.
     pub object_value: Option<String>,
     pub authority: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_anchor_ref: Option<String>,
 }
 
@@ -199,9 +202,9 @@ pub struct Signal {
 pub struct SourceAnchor {
     pub file: String,
     pub line: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // column y symbolRef se emiten aunque sean null: misma razon que
+    // Entity.layer arriba.
     pub column: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub symbol_ref: Option<String>,
 }
 
@@ -217,9 +220,9 @@ pub struct Provenance {
     pub producer_version: String,
     pub subject_revision: String,
     pub capability: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // artifactRef y artifactDigest se emiten aunque sean null: misma
+    // razon que Entity.layer arriba.
     pub artifact_ref: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub artifact_digest: Option<String>,
 }
 
@@ -298,6 +301,6 @@ impl CapabilityCompleteness {
 pub struct CapabilityGap {
     pub capability: String,
     pub reason: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    // detail se emite aunque sea null: misma razon que Entity.layer.
     pub detail: Option<String>,
 }

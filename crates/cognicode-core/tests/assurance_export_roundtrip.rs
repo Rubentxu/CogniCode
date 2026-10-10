@@ -314,3 +314,146 @@ fn partial_accepts_non_empty_gaps() {
     assert!(matches!(cc, CapabilityCompleteness::Partial { .. }));
     assert!(cc.is_producing());
 }
+
+// ----- paridad de encoding con el consumer (M-D01) ----------------------------
+
+/// El consumer (`CogniCodeEvidenceExportCodec`) configura
+/// `encodeDefaults = true` en su encoder CBOR, lo que significa que
+/// emite TODOS los campos con su valor por defecto — incluyendo
+/// `null` para `String? = null`. Cuando el consumer re-codifica el
+/// DTO para verificar el M-D01 digest, emite los mismos campos.
+///
+/// Si el producer Rust usa `#[serde(skip_serializing_if =
+/// "Option::is_none")]`, omite el campo y los bytes del envelope
+/// difieren de los que el consumer re-emite. M-D01 fallaría cerrado
+/// sin motivo.
+///
+/// Este test pinea que el producer emite `"field": null` (no omite)
+/// para todos los `Option::None` del envelope: `entity.layer`,
+/// `fact.objectValue`, `fact.sourceAnchorRef`, `sourceAnchor.column`,
+/// `sourceAnchor.symbolRef`, `provenance.artifactRef`,
+/// `provenance.artifactDigest`, `capabilityGap.detail`.
+#[test]
+fn optional_none_serializes_as_null_not_omitted() {
+    // Construimos un envelope con TODOS los campos opcionales en None.
+    let envelope = EvidenceExport {
+        api_version: API_VERSION.into(),
+        kind: KIND_EVIDENCE_EXPORT.into(),
+        producer: cognicode_core::assurance_export::envelope::ProducerInfo {
+            id: "cognicode".into(),
+            version: "0.101.9".into(),
+            schema_version: API_VERSION.into(),
+        },
+        subject: cognicode_core::assurance_export::envelope::SubjectRef {
+            revision: "HEAD".into(),
+            kind: "rust-workspace".into(),
+        },
+        manifest: cognicode_core::assurance_export::envelope::ManifestSection {
+            requested_capabilities: vec![],
+            produced_capabilities: vec![],
+            completeness_by_capability: std::collections::BTreeMap::new(),
+            schema_version: API_VERSION.into(),
+            digest: String::new(),
+        },
+        entities: vec![cognicode_core::assurance_export::envelope::Entity {
+            id: "file://x".into(),
+            kind: "file".into(),
+            name: "x".into(),
+            layer: None, // <-- debe serializarse como null
+        }],
+        facts: vec![cognicode_core::assurance_export::envelope::Fact {
+            id: "f".into(),
+            entity_ref: "file://x".into(),
+            predicate: "p".into(),
+            object_value: None, // <-- null
+            authority: "DeterministicAnalyzer".into(),
+            source_anchor_ref: None, // <-- null
+        }],
+        relations: vec![],
+        signals: vec![],
+        source_anchors: vec![cognicode_core::assurance_export::envelope::SourceAnchor {
+            file: "x".into(),
+            line: 0,
+            column: None,     // <-- null
+            symbol_ref: None, // <-- null
+        }],
+        provenance: cognicode_core::assurance_export::envelope::Provenance {
+            producer_id: "cognicode".into(),
+            producer_version: "0.101.9".into(),
+            subject_revision: "HEAD".into(),
+            capability: "assurance-export".into(),
+            artifact_ref: None,    // <-- null
+            artifact_digest: None, // <-- null
+        },
+        capability_completeness: std::collections::BTreeMap::new(),
+        gaps: vec![cognicode_core::assurance_export::envelope::CapabilityGap {
+            capability: "x".into(),
+            reason: "r".into(),
+            detail: None, // <-- null
+        }],
+        digest: String::new(),
+    };
+    let bytes = encode_to_cbor(&envelope).expect("encode");
+    // Decodifica a CborValue y verifica que las keys existen con valor null.
+    use ciborium::value::Value as CborValue;
+    let value: CborValue = ciborium::de::from_reader(&bytes[..]).expect("decode to Value");
+    let CborValue::Map(entries) = value else {
+        panic!("root no es map")
+    };
+    let get_str = |key: &str| -> &CborValue {
+        entries
+            .iter()
+            .find(|(k, _)| matches!(k, CborValue::Text(t) if t == key))
+            .map(|(_, v)| v)
+            .expect(&format!("key {key} debe existir"))
+    };
+    // entities[0].layer: null
+    let CborValue::Array(entities) = get_str("entities") else {
+        panic!("entities no es array")
+    };
+    let CborValue::Map(entity) = &entities[0] else {
+        panic!("entity no es map")
+    };
+    let layer = entity
+        .iter()
+        .find(|(k, _)| matches!(k, CborValue::Text(t) if t == "layer"))
+        .map(|(_, v)| v)
+        .expect("entity.layer debe existir");
+    assert!(
+        matches!(layer, CborValue::Null),
+        "entity.layer con None debe ser CBOR null, encontrado {:?}",
+        layer
+    );
+    // gaps[0].detail: null
+    let CborValue::Array(gaps) = get_str("gaps") else {
+        panic!("gaps no es array")
+    };
+    let CborValue::Map(gap) = &gaps[0] else {
+        panic!("gap no es map")
+    };
+    let detail = gap
+        .iter()
+        .find(|(k, _)| matches!(k, CborValue::Text(t) if t == "detail"))
+        .map(|(_, v)| v)
+        .expect("gap.detail debe existir");
+    assert!(
+        matches!(detail, CborValue::Null),
+        "gap.detail con None debe ser CBOR null"
+    );
+    // sourceAnchors[0].column: null
+    let CborValue::Array(anchors) = get_str("sourceAnchors") else {
+        panic!("sourceAnchors no es array")
+    };
+    let CborValue::Map(anchor) = &anchors[0] else {
+        panic!("anchor no es map")
+    };
+    let column = anchor
+        .iter()
+        .find(|(k, _)| matches!(k, CborValue::Text(t) if t == "column"))
+        .map(|(_, v)| v)
+        .expect("anchor.column debe existir");
+    assert!(
+        matches!(column, CborValue::Null),
+        "anchor.column con None debe ser CBOR null"
+    );
+}

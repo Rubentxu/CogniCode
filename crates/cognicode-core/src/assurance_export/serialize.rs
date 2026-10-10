@@ -721,6 +721,11 @@ fn optional_field(
 ) -> Result<Option<String>, SerializeError> {
     match map.iter().find(|(k, _)| k == key) {
         None => Ok(None),
+        // `Option::None` se serializa como CBOR null (no se omite con
+        // `skip_serializing_if` — ver comentario en `envelope.rs`). El
+        // null no es string; lo aceptamos como `None` para que el
+        // roundtrip de un campo opcional nulo funcione.
+        Some((_, CborValue::Null)) => Ok(None),
         Some((_, v)) => require_string_of(v.clone()).map(Some),
     }
 }
@@ -753,6 +758,8 @@ fn optional_int_field(
 ) -> Result<Option<i64>, SerializeError> {
     match map.iter().find(|(k, _)| k == key) {
         None => Ok(None),
+        // Ver `optional_field`: `Option::None` es CBOR null, no Integer.
+        Some((_, CborValue::Null)) => Ok(None),
         Some((_, v)) => match v {
             CborValue::Integer(i) => match i64::try_from(*i) {
                 Ok(v) => Ok(Some(v)),
