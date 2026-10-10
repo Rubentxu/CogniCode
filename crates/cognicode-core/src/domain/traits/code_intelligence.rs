@@ -458,7 +458,7 @@ impl DocumentSymbolKind {
             DocumentSymbolKind::Interface => SymbolKind::Interface,
             DocumentSymbolKind::Constructor => SymbolKind::Constructor,
             DocumentSymbolKind::Module | DocumentSymbolKind::Namespace => SymbolKind::Module,
-            DocumentSymbolKind::TypeParameter => SymbolKind::Type,
+            DocumentSymbolKind::TypeParameter => SymbolKind::TypeAlias,
             _ => SymbolKind::Variable,
         }
     }

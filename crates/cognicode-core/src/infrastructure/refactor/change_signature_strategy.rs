@@ -994,9 +994,6 @@ def calculate_total(items: list, tax_rate: float, discount: float) -> float:
 
         let func_info = func_info.unwrap();
         assert_eq!(func_info.name, "calculate_total");
-        // Parameters may or may not be parsed depending on parser implementation
-        // Just verify we found the function
-        assert!(true);
     }
 
     #[test]

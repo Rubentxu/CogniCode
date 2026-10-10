@@ -146,6 +146,13 @@ base64 = "0.22"
 # Hex encoding (used by edge-emitter for SHA256 spec hashes).
 hex = "0.4"
 
+# CBOR determinista (RFC 8949, canonical encoding) para el export
+# `assurance-evidence/v1`. La salida binaria es compatible con
+# `kotlinx-serialization-cbor` del consumidor (pipelinek-assurance).
+# Cobertura de la verificacion de digest del lado consumer: ver
+# `crates/cognicode-core/src/assurance_export/serialize.rs`.
+ciborium = "0.2"
+
 # Constant-time comparison (M3.5 Bearer-token auth middleware).
 # `subtle` is a tiny `no_std`-friendly crate that gives us
 # `ConstantTimeEq` to compare Bearer tokens without leaking length or

@@ -141,25 +141,21 @@ pub enum RiskLevel {
     Critical,
 }
 
-/// Kind of symbol in source code
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum SymbolKind {
-    Module,
-    Class,
-    Struct,
-    Enum,
-    Trait,
-    Function,
-    Method,
-    Field,
-    Variable,
-    Constant,
-    Constructor,
-    Interface,
-    TypeAlias,
-    Parameter,
-    Unknown,
-}
+/// Kind of symbol in source code.
+///
+/// Re-export of the canonical [`crate::domain::value_objects::SymbolKind`]
+/// (the 22-variant value object that owns `is_callable`, `is_type_definition`,
+/// `name`, `from_lsp_kind`, `Display`, `FromStr`).
+///
+/// **Wire format**: PascalCase (e.g. `"Function"`, `"Class"`) — identical to
+/// the canonical's `Serialize` output, so the 15 variants the DTO used to
+/// carry are a strict subset of the canonical's 22 and the migration is
+/// lossless. The variant name `TypeAlias` (canonical) maps to the same wire
+/// string as the previous hand-rolled `TypeAlias` (DTO) — no rename needed
+/// after canonical `Type` was renamed to `TypeAlias` for parity.
+///
+/// **History**: T1-1a in `odd/tasks/v1015-consolidation-and-promote.md`.
+pub use crate::domain::value_objects::SymbolKind;
 
 /// Summary of a symbol for display purposes
 #[derive(Debug, Clone, Serialize, Deserialize)]

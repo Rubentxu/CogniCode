@@ -1973,14 +1973,21 @@ fn default_rv_verify() -> bool {
     true
 }
 
-/// Verification status for a matched file
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum VerificationStatus {
-    Verified,
-    Rejected,
-    Skipped,
-}
+/// Verification status for a matched file.
+///
+/// Re-export of the canonical
+/// [`crate::application::dto::file_ops::VerificationStatus`]
+/// (3 variants: `Verified`, `Rejected`, `Skipped`; `#[serde(rename_all =
+/// "lowercase")]`; same wire format as the previous hand-rolled
+/// definition).
+///
+/// **History**: T1-3 in `odd/tasks/v1015-consolidation-and-promote.md`.
+/// Previously a byte-identical duplicate of the DTO type. The
+/// explicit `From`-style match at
+/// `interface/mcp/file_ops_handlers.rs:363-373` is now an identity
+/// conversion (same type on both sides) and is preserved as a no-op
+/// adapter pattern.
+pub use crate::dto::VerificationStatus;
 
 /// A single verified match result
 #[derive(Debug, Clone, Serialize, Deserialize)]
