@@ -28,7 +28,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use super::digest::with_declared_digest;
 use super::envelope::{
     API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
     KIND_EVIDENCE_EXPORT, MEDIA_TYPE_CBOR, ManifestSection, ProducerInfo, Provenance, Relation,
@@ -483,9 +482,4 @@ pub fn export_to_file(
 /// Devuelve el media type que este exporter publica (para CLI/headers).
 pub fn cbor_media_type() -> &'static str {
     MEDIA_TYPE_CBOR
-}
-
-#[allow(dead_code)]
-fn _suppress_unused_with_declared_digest() {
-    let _ = with_declared_digest;
 }
