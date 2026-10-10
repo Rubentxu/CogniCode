@@ -341,3 +341,76 @@ pub fn present_graph_leaffunctions(
     }
     Ok(())
 }
+
+/// T1-5.4e — text format for `GraphResult::HotPaths`.
+///
+/// Pre-migration text (commands.rs:1031..1082):
+///   Finding hot paths in: {path} (limit={limit}, min_fan_in={min_fan_in})
+///   [Warning: graph is PARTIAL: N file(s) skipped (...)]   ← stderr, no snapshot
+///   [blank line]
+///   Hot paths (most called functions):
+///   {Function:<40} {Fan-in:>8} {Fan-out:>8}  Location
+///   --------------------------------------------------------------------------------
+///   {name:<40} {fan_in:>8} {fan_out:>8}  {file}:{line}
+///   ...
+///   [blank line]
+///   Found {N} hot paths in {elapsed_ms}ms
+///
+/// The column widths (40 / 8 / 8) and the 80-dash separator
+/// are part of the contract — downstream consumers (notably
+/// `cogh | column -t` and similar) depend on the alignment.
+/// Pinning them in the snapshot catches a refactor that
+/// changes the column widths.
+///
+/// The data is the `entries` Vec (already filtered by
+/// min_fan_in in execute_graph). The presenter iterates
+/// without further filtering. `limit` is shown in the
+/// progress line but is not used in the table (the analyzer
+/// returns at most `limit` rows; the data side already has
+/// at most that many).
+pub fn present_graph_hotpaths(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::HotPaths {
+        path,
+        limit,
+        min_fan_in,
+        entries,
+        elapsed_ms,
+    } = result
+    {
+        // Progress line — commands.rs:1031.
+        writeln!(
+            w,
+            "Finding hot paths in: {} (limit={}, min_fan_in={})",
+            path, limit, min_fan_in
+        )?;
+        // Blank + header — commands.rs:1067.
+        writeln!(w)?;
+        writeln!(w, "Hot paths (most called functions):")?;
+        // Column header — commands.rs:1068..1071. The widths
+        // are part of the contract; pin them in the snapshot.
+        write!(w, "{:<40} {:>8} {:>8}  ", "Function", "Fan-in", "Fan-out")?;
+        writeln!(w, "Location")?;
+        // 80-dash separator — commands.rs:1072.
+        writeln!(w, "{}", "-".repeat(80))?;
+        // Data rows — commands.rs:1074..1079.
+        for hp in entries {
+            writeln!(
+                w,
+                "{:<40} {:>8} {:>8}  {}:{}",
+                hp.name, hp.fan_in, hp.fan_out, hp.file, hp.line
+            )?;
+        }
+        // Summary — commands.rs:1082.
+        writeln!(w)?;
+        writeln!(w, "Found {} hot paths in {}ms", entries.len(), elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_hotpaths called with non-HotPaths GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}

@@ -1028,10 +1028,6 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
-                println!(
-                    "Finding hot paths in: {} (limit={}, min_fan_in={})",
-                    path, limit, min_fan_in
-                );
 
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
@@ -1064,23 +1060,8 @@ impl CommandExecutor {
                     .filter(|h| h.fan_in >= *min_fan_in)
                     .collect();
 
-                println!("\nHot paths (most called functions):");
-                println!(
-                    "{:<40} {:>8} {:>8}  Location",
-                    "Function", "Fan-in", "Fan-out"
-                );
-                println!("{}", "-".repeat(80));
-
-                for hp in &filtered {
-                    println!(
-                        "{:<40} {:>8} {:>8}  {}:{}",
-                        hp.symbol_name, hp.fan_in, hp.fan_out, hp.file, hp.line
-                    );
-                }
-
                 let elapsed = start.elapsed().as_millis();
-                println!("\nFound {} hot paths in {}ms", filtered.len(), elapsed);
-                Ok(GR::HotPaths {
+                let result = GR::HotPaths {
                     path: path.clone(),
                     limit: *limit,
                     min_fan_in: *min_fan_in,
@@ -1095,7 +1076,15 @@ impl CommandExecutor {
                         })
                         .collect(),
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4e: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_hotpaths(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
             GraphCommand::EntryPoints { path } => {
                 let start = Instant::now();
