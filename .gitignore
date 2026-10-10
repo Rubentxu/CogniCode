@@ -6,6 +6,12 @@
 **/*.lib
 **/*.rlib
 
+# Release-pipeline staging and output directories (release-candidate.pipeline.kts
+# writes to staging/, release.pipeline.kts uploads from release/; neither is
+# ever tracked — the published artifacts live on GitHub Releases, not in git).
+/staging/
+/release/
+
 # IDE
 /.idea/
 /.vscode/
