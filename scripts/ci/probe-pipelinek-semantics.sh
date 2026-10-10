@@ -15,7 +15,18 @@
 #
 #   bash scripts/ci/probe-pipelinek-semantics.sh
 #
-# Measured 2026-10-02 under pipelinek 0.46.0.
+# Probe 1 reads the sh() output via a file the reader stage writes, NOT
+# from `pipelinek run` stdout: the orchestrator emits a NDJSON event stream
+# to its own stdout, and the sh() step output goes to a separate channel
+# (the step's `output` field on `StepFinished` / the control plane). A check
+# that greps for the sh() string in `pipelinek run` stdout always reports
+# "CHANGED" even when the stages do share filesystem — which is why this
+# script reported failure on every version from 0.43.0 through 0.47.0 until
+# the read-via-file fix landed (commit fixing this on 2026-10-10).
+#
+# Measured 2026-10-10 under pipelinek 0.47.0; stages share filesystem and
+# cwd as recorded; cross-pipeline state on the host filesystem survives
+# between separate `pipelinek run` invocations.
 
 set -euo pipefail
 
@@ -56,10 +67,13 @@ write_probe() {
 pipeline {
     stages {
         stage("writer") {
-            sh("pwd > pwd-writer.txt && echo hello > shared.txt && echo WROTE")
+            sh("pwd > pwd-writer.txt && printf 'WRITER-WROTE-HELLO\\n' > shared.txt")
         }
         stage("reader") {
-            sh("pwd > pwd-reader.txt && test -f shared.txt && echo SHARED || echo NOT_SHARED")
+            // Read via file: pipelinek's sh() stdout does not reach the
+            // orchestrator's stdout (NDJSON events only), so the check
+            // observes the shared state on the host filesystem instead.
+            sh("pwd > pwd-reader.txt && if [ -f shared.txt ] && [ \"\$(cat shared.txt)\" = 'WRITER-WROTE-HELLO' ]; then printf 'READER-SAW\\n' > reader-result.txt; else printf 'READER-NOT-SAW\\n' > reader-result.txt; fi")
         }
     }
 }
@@ -67,17 +81,21 @@ EOF
 }
 
 write_probe share.pipeline.kts
+# `pipelinek run` NDJSON is captured for diagnostics; the verdict comes
+# from the files the stages wrote, not from its stdout.
 share_out="$(cd "$WORK" && pipelinek run share.pipeline.kts 2>&1 || true)"
 
 writer_pwd="$(cat "$WORK/pwd-writer.txt" 2>/dev/null || echo '<missing>')"
 reader_pwd="$(cat "$WORK/pwd-reader.txt" 2>/dev/null || echo '<missing>')"
+reader_verdict="$(cat "$WORK/reader-result.txt" 2>/dev/null || echo '<missing>')"
 
 echo
 echo "probe 1 — filesystem and cwd sharing"
 echo "  writer pwd : $writer_pwd"
 echo "  reader pwd : $reader_pwd"
+echo "  reader verdict: $reader_verdict"
 
-if grep -q 'SHARED' <<<"$share_out" && ! grep -q 'NOT_SHARED' <<<"$share_out"; then
+if [ "$reader_verdict" = "READER-SAW" ]; then
     echo "  RESULT: shared, as recorded"
 else
     echo "  RESULT: CHANGED — stages no longer share a filesystem."
