@@ -2546,17 +2546,12 @@ mod tests {
     // ============================================================================
     // Concurrent Request Tests
     // ============================================================================
-    // NOTE: Tests using RequestContext::default() are marked as #[ignore]
-    // because rmcp's RequestContext requires internal APIs (Peer::new is pub(crate))
-    // to construct a valid context. These tests need to be moved to an integration
-    // test within the rmcp crate or rewritten to use a test helper from rmcp.
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_concurrent_list_tools_requests() {
-        // TODO: Rewrite using proper rmcp context creation when test utilities are available
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
+    // NOTE: The original `test_concurrent_list_tools_requests` and
+    // `test_concurrent_shared_handler` are removed: they were `#[ignore]`d
+    // because rmcp's RequestContext requires internal APIs (Peer::new is
+    // pub(crate)) and would have panicked with `unimplemented!()` if
+    // ever un-ignored. Reintroducing them requires a test helper from
+    // rmcp itself or moving them to a sibling integration test crate.
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_concurrent_handler_creation() {
@@ -2593,50 +2588,14 @@ mod tests {
         }
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_concurrent_shared_handler() {
-        // TODO: Rewrite using proper rmcp context creation when test utilities are available
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
-
-    // ============================================================================
-    // Request Cancellation Tests
-    // ============================================================================
-
-    #[tokio::test]
-    #[ignore = "requires rmcp internals to create NotificationContext"]
-    async fn test_cancellation_token_set() {
-        unimplemented!("requires rmcp::service::NotificationContext::default() which doesn't exist")
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create NotificationContext"]
-    async fn test_concurrent_cancellation_notifications() {
-        unimplemented!("requires rmcp::service::NotificationContext::default() which doesn't exist")
-    }
-
-    #[tokio::test]
-    #[ignore = "requires rmcp internals to create NotificationContext"]
-    async fn test_cancellation_token_reset_on_new_handler() {
-        unimplemented!("requires rmcp::service::NotificationContext::default() which doesn't exist")
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create NotificationContext"]
-    async fn test_multiple_cancellation_tokens_independent() {
-        unimplemented!("requires rmcp::service::NotificationContext::default() which doesn't exist")
-    }
-
     // ============================================================================
     // Adapter State Management Tests
     // ============================================================================
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_handler_state_preserved_across_concurrent_requests() {
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
+    // NOTE: `test_handler_state_preserved_across_concurrent_requests` is
+    // removed: it was `#[ignore]`d because rmcp's RequestContext requires
+    // internal APIs (Peer::new is pub(crate)) and would have panicked with
+    // `unimplemented!()` if ever un-ignored. See comment in the
+    // "Concurrent Request Tests" section above.
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_capability_exchange_concurrent() {
@@ -2677,33 +2636,16 @@ mod tests {
     }
 
     // ============================================================================
-    // Error Handling Under Load Tests
-    // ============================================================================
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_pagination_consistent_under_concurrent_access() {
-        // TODO: Rewrite using proper rmcp context creation when test utilities are available
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_high_concurrency_stress() {
-        // TODO: Rewrite using proper rmcp context creation when test utilities are available
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "requires rmcp internals to create RequestContext"]
-    async fn test_concurrent_requests_with_different_pagination() {
-        // TODO: Rewrite using proper rmcp context creation when test utilities are available
-        unimplemented!("requires rmcp::service::Peer::new (pub(crate)) to create RequestContext")
-    }
-
-    // ============================================================================
     // Original Basic Tests (preserved)
     // ============================================================================
+    // NOTE: The "Error Handling Under Load Tests" section is removed
+    // entirely: its three `#[ignore]` tests
+    // (`test_pagination_consistent_under_concurrent_access`,
+    // `test_high_concurrency_stress`,
+    // `test_concurrent_requests_with_different_pagination`) all panicked
+    // with `unimplemented!()` because they require rmcp's RequestContext
+    // (Peer::new is pub(crate)) and would never run even if un-ignored.
+    // See comment in the "Concurrent Request Tests" section above.
 
     #[test]
     fn test_cognicode_handler_creation() {
