@@ -2,6 +2,7 @@
 
 pub mod commands;
 pub mod doctor;
+pub mod presenter;
 pub mod result;
 
 #[cfg(feature = "evidence-cli-ladybug")]

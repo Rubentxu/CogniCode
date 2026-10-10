@@ -9,7 +9,7 @@ use crate::infrastructure::graph::{
     PerFileStrategy, TraversalDirection,
 };
 use crate::infrastructure::parser::Language;
-use crate::infrastructure::semantic::{OutlineNode, SymbolCodeService};
+use crate::infrastructure::semantic::SymbolCodeService;
 use crate::interface::cli::result::{IndexError, IndexResult};
 use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::Value;
@@ -576,12 +576,14 @@ impl CommandExecutor {
                 Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?
             }
             Some(CliCommand::Index { command }) => {
-                // T1-5.3c: the data side is `IndexResult`; the
-                // presentation stays here for now (T1-5.5 moves
-                // it to the bin's own presenter module, where
-                // text/JSON dispatch lives).
+                // T1-5.3d: presentation lives in `interface::cli::presenter`
+                // (text-only for now; T1-5.5 will add JSON dispatch
+                // when the presenter moves to the bin's own module).
                 let result = Self::execute_index(command).await.map_err(Box::new)?;
-                present_index_result(&result);
+                use crate::interface::cli::presenter;
+                let mut stdout = std::io::stdout();
+                presenter::present_index_result(&result, &mut stdout)
+                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
             }
             Some(CliCommand::Graph { command }) => {
                 // PRF F2.W2: do NOT swallow the Graph error here.
@@ -2441,96 +2443,20 @@ fn render_evidence_rows(
 }
 
 /// Prints the outline tree with indentation
-fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
-    for (i, node) in nodes.iter().enumerate() {
-        let is_last = i == nodes.len() - 1;
-        let prefix = if indent == 0 {
-            "".to_string()
-        } else {
-            "  ".repeat(indent - 1) + if is_last { "└── " } else { "├── " }
-        };
-
-        let sig_info = node
-            .signature
-            .as_ref()
-            .map(|s| format!(": {}", s))
-            .unwrap_or_default();
-
-        println!("{}{} ({}){sig_info}", prefix, node.name, node.kind);
-
-        if !node.children.is_empty() {
-            print_outline_tree(&node.children, indent + 1);
-        }
-    }
-}
+/// T1-5.3d: removed — moved to `crate::interface::cli::presenter`
+/// alongside `present_index_result`, where the snapshot test can
+/// exercise the same recursion the bin does. The migration kept
+/// the byte-identical output; see `tests/t1_5_3d_index_presenter_snapshot.rs`.
 
 /// T1-5.3c — present an `IndexResult` to stdout.
 ///
-/// This is the bridge between the data side (in `execute_index`)
-/// and the visible output. For T1-5.3c it lives here and emits
-/// text byte-identical to the pre-migration `println!` calls
-/// (so the snapshot test in T1-5.1 stays green and T1-5.3d
-/// can add an index-specific snapshot on top). T1-5.5 will move
-/// this to the bin's own presenter module and add JSON dispatch
-/// (the `IndexResult` enum is already `Serialize`, so the JSON
-/// path is `serde_json::to_string_pretty(&result)` plus the
-/// `format` flag from the CLI).
-fn present_index_result(result: &IndexResult) {
-    use crate::interface::cli::result::IndexResult as R;
-    match result {
-        R::Build {
-            path: _,
-            strategy,
-            elapsed_ms,
-        } => {
-            println!(
-                "Index built successfully in {}ms using {} strategy",
-                elapsed_ms, strategy
-            );
-        }
-        R::Query {
-            symbol: _,
-            path: _,
-            locations,
-        } => {
-            println!("Found {} location(s):", locations.len());
-            for loc in locations {
-                println!(
-                    "  {}:{}:{} ({})",
-                    loc.file,
-                    loc.line,
-                    loc.column,
-                    format_args!("{:?}", loc.symbol_kind)
-                );
-            }
-        }
-        R::QueryEmpty { symbol, path: _ } => {
-            println!("No locations found for symbol '{}'", symbol);
-        }
-        R::Outline { file: _, symbols } => {
-            println!("Found {} top-level symbols:", symbols.len());
-            print_outline_tree(symbols, 0);
-        }
-        R::SymbolCode {
-            file: _,
-            line: _,
-            column: _,
-            start_line,
-            end_line,
-            doc,
-            code,
-        } => {
-            if let Some(d) = doc {
-                println!("\n/// Docstring:\n{}", d);
-            }
-            println!(
-                "\n/// Symbol code (lines {} - {}):",
-                start_line, end_line
-            );
-            println!("{}", code);
-        }
-    }
-}
+/// T1-5.3d moved the implementation to
+/// `crate::interface::cli::presenter::present_index_result`
+/// (a `&mut dyn Write` parameter makes it testable from
+/// `tests/t1_5_3d_index_presenter_snapshot.rs`). The call site
+/// in `execute()` is the only caller in this file; T1-5.5 will
+/// move the whole presenter to the bin's own module and add
+/// JSON dispatch.
 
 /// L1.4 / F0.1 — Render human-readable text output for `find-usages`.
 ///
