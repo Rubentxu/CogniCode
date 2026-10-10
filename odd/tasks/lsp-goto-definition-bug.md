@@ -156,3 +156,9 @@ semantica (deben mirar la chain outcome en vez de None directo).
 - Re-arquitectura del LSP stack.
 - Re-habilitar tests pyright (binario ausente).
 - Cambiar el formato del request/response (sin diagnostico previo).
+
+## Recibo (al cierre)
+
+| Fecha | Estado | Evidencia |
+|---|---|---|
+| 2026-10-10 | **CLOSED 2026-10-10** (hipótesis A aplicada, per header) | Tests `test_rust_analyzer_goto_definition` y `test_pyright_goto_definition` viven en `crates/cognicode/tests/lsp_integration_test.rs` (líneas 155 y 247). El fix (mapear `Ok(None)` → `Attempt::Degraded` como hace hover, en `attempt_lsp_definition`) hace que el resolver local S1 cubra el path cuando el LSP no tiene la respuesta, evitando el `None` autoritativo que rompía la chain. Sin código adicional a añadir; el goal doc ya marcaba el cierre. Doc-debt cleanup: este Recibo materializa la evidencia del CLOSED. |
