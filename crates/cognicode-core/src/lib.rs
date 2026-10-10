@@ -1,6 +1,7 @@
 //! CogniCode Core - Code intelligence library for AI agents
 
 pub mod application;
+pub mod assurance_export;
 pub mod domain;
 pub mod infrastructure;
 pub mod interface;

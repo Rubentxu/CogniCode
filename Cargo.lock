@@ -520,6 +520,7 @@ dependencies = [
  "bincode",
  "blake3",
  "chrono",
+ "ciborium",
  "clap",
  "cognicode-graph-algos",
  "cognicode-macros",

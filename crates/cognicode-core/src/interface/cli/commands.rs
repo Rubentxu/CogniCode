@@ -163,6 +163,32 @@ pub enum CliCommand {
         quiet: bool,
     },
 
+    /// Export `assurance-evidence/v1` para pipelinek-assurance.
+    ///
+    /// Produce un envelope CBOR (canónico) o JSON (debug) que el
+    /// `CogniCodeArtifactProvider` de pipelinek-assurance consume. El
+    /// shape es `assurance-evidence/v1` (ver `assurance_export::envelope`).
+    ///
+    /// El digest M-D01-style (fail-closed) se calcula sobre los bytes
+    /// CBOR con `digest = ""` placeholder; el SHA-256 hex se incluye en
+    /// el campo `digest` del envelope. El consumer verifica re-codificando.
+    ///
+    /// Capabilities no soportadas se declaran como
+    /// `CapabilityCompleteness::Unsupported { reason }` con motivo, no
+    /// como `items: []` (regla C4 del workstream). Esto significa que
+    /// en v1 `architecture`, `relations`, `signals` siempre seran
+    /// Unsupported: todavia no se calcula el grafo de dependencias, el
+    /// SCC ni los signals heuristicos.
+    #[command(name = "export")]
+    ExportAssurance {
+        /// Subcomando unico en v1: `cognicode export assurance`. El
+        /// parser de clap exige este nivel aunque el binario CLI vive
+        /// en `cognicode-cli`; aqui solo se modela la variante del
+        /// enum y el binario `cognicode` lo expone.
+        #[command(subcommand)]
+        command: ExportAssuranceCommand,
+    },
+
     /// E1.W3 — Query the LadybugDB-backed EvidenceStore. Mirrors the
     /// `list_evidence` / `search_evidence` MCP tool family so the CLI
     /// and the MCP surface stay in lockstep (see equivalence test in
@@ -197,6 +223,48 @@ pub enum CliCommand {
         #[arg(long, conflicts_with = "format")]
         json: bool,
     },
+}
+
+/// Subcomandos de `cognicode export`. v1 solo expone `assurance`; el
+/// shape es `assurance-evidence/v1` (ver `assurance_export::envelope`).
+/// Cambios incompatibles al shape bumpan a `assurance-evidence/v2`.
+#[derive(clap::Subcommand, Debug)]
+pub enum ExportAssuranceCommand {
+    /// Produce el envelope `assurance-evidence/v1` con la forma
+    /// exacta que `CogniCodeArtifactProvider` consume (ver
+    /// `pipelinek-assurance/.../CogniCodeEvidenceExportDto.kt`).
+    #[command(name = "assurance")]
+    Assurance {
+        /// Workspace raiz del que se extrae la evidencia.
+        #[arg(short = 'C', long, default_value = ".")]
+        workspace: String,
+
+        /// Capabilities a incluir. Si no se pasa ninguna, se piden
+        /// todas las conocidas (modo "produce lo que puedas"). Las
+        /// capabilities no soportadas en v1 se declaran `Unsupported`
+        /// con motivo en `gaps[]`, NO `items: []` (regla C4 del
+        /// workstream).
+        #[arg(short = 'c', long = "capability")]
+        capability: Vec<String>,
+
+        /// Path de salida del envelope. El sufijo determina el formato:
+        /// `.cbor` produce CBOR canonical, `.json` produce JSON debug.
+        #[arg(short = 'o', long)]
+        output: String,
+
+        /// Forzar formato de salida (`cbor` o `json`). Sobreescribe la
+        /// decision basada en el sufijo del path.
+        #[arg(long, value_enum)]
+        format: Option<ExportFormat>,
+    },
+}
+
+/// Formato del envelope. `cbor` es canónico (lo consume el provider de
+/// pipelinek-assurance); `json` es solo debug / inspeccion humana.
+#[derive(clap::ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum ExportFormat {
+    Cbor,
+    Json,
 }
 
 /// E1.W3 — `cognicode evidence <list|search>`.
@@ -540,6 +608,9 @@ impl CommandExecutor {
             }
             Some(CliCommand::Navigate { command }) => Self::execute_navigate(command).await?,
             Some(CliCommand::Doctor { format, cwd }) => Self::execute_doctor(format, cwd).await?,
+            Some(CliCommand::ExportAssurance { command }) => {
+                Self::execute_export_assurance(command).await?
+            }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::DocsIngest { path, recursive }) => {
                 Self::execute_docs_ingest(path, *recursive).await?
@@ -1469,6 +1540,148 @@ impl CommandExecutor {
     }
 
     /// Execute doctor subcommand — check LSP server availability
+    /// `cognicode export assurance` — produce un envelope
+    /// `assurance-evidence/v1` para pipelinek-assurance. Ver
+    /// `assurance_export::envelope` para el shape contractual.
+    ///
+    /// Flujo:
+    /// 1. `WorkspaceInfo::detect(workspace)` resuelve la revision (git
+    ///    HEAD o fallback al nombre del directorio) y el kind
+    ///    (rust-workspace si hay Cargo.toml).
+    /// 2. `ProducerInfo` declara id=cognicode, version=workspace
+    ///    version, schemaVersion=assurance-evidence/v1.
+    /// 3. `ExtractionCapabilities::from_flags(&capability)` normaliza la
+    ///    lista; sin flags, se piden todas las conocidas.
+    /// 4. `extract_from_workspace` produce entities/facts/anchors y
+    ///    declara capabilities no soportadas como Unsupported con gaps
+    ///    honestos (regla C4 del workstream).
+    /// 5. `encode_to_cbor_with_digest` (o JSON) serializa con SHA-256
+    ///    hex en el campo `digest` (M-D01-style, fail-closed).
+    /// 6. Se escribe a `output`. Si el formato se infiere por el sufijo
+    ///    y no coincide con el path, error honesto.
+    async fn execute_export_assurance(
+        command: &ExportAssuranceCommand,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::assurance_export::{
+            API_VERSION, ExtractionCapabilities, MEDIA_TYPE_CBOR as COBOR_MEDIA_TYPE, ProducerInfo,
+            WorkspaceInfo, encode_to_cbor_with_digest, encode_to_json_with_digest,
+            extract_from_workspace,
+        };
+
+        let (workspace, capabilities, output, format) = match command {
+            ExportAssuranceCommand::Assurance {
+                workspace,
+                capability,
+                output,
+                format,
+            } => (
+                workspace.clone(),
+                capability.clone(),
+                output.clone(),
+                format.clone(),
+            ),
+        };
+
+        // Formato: el sufijo del path es la fuente canonica; --format
+        // lo sobreescribe si se da explicitamente.
+        let resolved_format = format.unwrap_or_else(|| {
+            let lower = output.to_lowercase();
+            if lower.ends_with(".cbor") {
+                ExportFormat::Cbor
+            } else if lower.ends_with(".json") {
+                ExportFormat::Json
+            } else {
+                // Default: cbor (canonico para el consumer).
+                ExportFormat::Cbor
+            }
+        });
+
+        let workspace_path = std::path::PathBuf::from(&workspace);
+        let info = WorkspaceInfo::detect(workspace_path);
+        let caps = ExtractionCapabilities::from_flags(&capabilities);
+
+        // Producer info: id=cognicode, version=workspace version,
+        // schemaVersion=API_VERSION. Version tomada de Cargo.toml via env
+        // CARGO_PKG_VERSION del binario que ejecuta el CLI. Esto
+        // garantiza que el SHA-256 del golden export sea estable cuando
+        // el binario viene de la misma revision del workspace.
+        let producer = ProducerInfo {
+            id: "cognicode".into(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            schema_version: API_VERSION.into(),
+        };
+
+        let envelope = extract_from_workspace(&info, &caps, &producer)
+            .map_err(|e| -> Box<dyn std::error::Error> { format!("extract fallo: {e}").into() })?;
+
+        let path = std::path::PathBuf::from(&output);
+        match resolved_format {
+            ExportFormat::Cbor => {
+                let bytes = encode_to_cbor_with_digest(&envelope).map_err(
+                    |e| -> Box<dyn std::error::Error> { format!("encode CBOR fallo: {e}").into() },
+                )?;
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, &bytes)?;
+                eprintln!(
+                    "assurance-evidence/v1 escrito en {} ({} bytes, media type {}, schema {})",
+                    path.display(),
+                    bytes.len(),
+                    COBOR_MEDIA_TYPE,
+                    API_VERSION,
+                );
+            }
+            ExportFormat::Json => {
+                let text = encode_to_json_with_digest(&envelope).map_err(
+                    |e| -> Box<dyn std::error::Error> { format!("encode JSON fallo: {e}").into() },
+                )?;
+                if let Some(parent) = path.parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, text)?;
+                eprintln!(
+                    "assurance-evidence/v1 escrito en {} (JSON debug, schema {})",
+                    path.display(),
+                    API_VERSION,
+                );
+            }
+        }
+        // Imprime un resumen del envelope en stderr para inspeccion
+        // humana (capabilities producidas, gaps, digest). El digest se
+        // computa aqui porque `envelope.digest` es vacio hasta que
+        // `encode_to_cbor_with_digest` lo asigna en una copia interna.
+        use crate::assurance_export::digest_of;
+        let digest_display = digest_of(&envelope);
+        eprintln!(
+            "schema: {} producer: {} v{} workspace: {} (rev {})",
+            envelope.api_version,
+            envelope.producer.id,
+            envelope.producer.version,
+            envelope.subject.kind,
+            envelope.subject.revision,
+        );
+        eprintln!("digest: {}", digest_display);
+        eprintln!(
+            "capabilities: {} produced, {} unsupported, {} gaps",
+            envelope.manifest.produced_capabilities.len(),
+            envelope
+                .capability_completeness
+                .values()
+                .filter(|c| matches!(
+                    c,
+                    crate::assurance_export::CapabilityCompleteness::Unsupported { .. }
+                ))
+                .count(),
+            envelope.gaps.len(),
+        );
+        Ok(())
+    }
+
     async fn execute_doctor(format: &str, cwd: &str) -> Result<(), Box<dyn std::error::Error>> {
         use crate::interface::cli::doctor::{
             format_doctor_json, format_doctor_text, run_doctor_checks,
