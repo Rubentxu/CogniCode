@@ -1432,7 +1432,6 @@ impl CommandExecutor {
             }
             GraphCommand::Complexity { path } => {
                 let start = Instant::now();
-                println!("Calculating complexity metrics for: {}", path);
 
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
@@ -1460,27 +1459,9 @@ impl CommandExecutor {
                 let analyzer = CallGraphAnalyzer::new();
                 let complexity = analyzer.calculate_complexity(&graph);
 
-                println!("\nComplexity Metrics:");
-                println!("  Total symbols: {}", complexity.total_symbols);
-                println!("  Total edges: {}", complexity.total_edges);
-                println!("  Max depth: {}", complexity.max_depth);
-                println!(
-                    "  Cyclomatic complexity: {}",
-                    complexity.cyclomatic_complexity
-                );
-                println!("  High fan-out (>=10): {}", complexity.high_fan_out_count);
-                println!(
-                    "  Medium fan-out (5-9): {}",
-                    complexity.medium_fan_out_count
-                );
-                println!("  Low fan-out (<5): {}", complexity.low_fan_out_count);
-                println!("  Entry points: {}", complexity.entry_point_count);
-                println!("  Leaf functions: {}", complexity.leaf_function_count);
-
                 let elapsed = start.elapsed().as_millis();
-                println!("\nAnalysis completed in {}ms", elapsed);
                 use crate::interface::cli::result::ComplexityMetrics;
-                Ok(GR::Complexity {
+                let result = GR::Complexity {
                     path: path.clone(),
                     metrics: ComplexityMetrics {
                         total_symbols: complexity.total_symbols,
@@ -1494,7 +1475,15 @@ impl CommandExecutor {
                         leaf_function_count: complexity.leaf_function_count,
                     },
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4f: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_complexity(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
             GraphCommand::Impact { symbol, path } => {
                 let start = Instant::now();

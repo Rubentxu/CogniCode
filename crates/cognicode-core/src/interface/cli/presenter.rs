@@ -414,3 +414,88 @@ pub fn present_graph_hotpaths(
     }
     Ok(())
 }
+
+/// T1-5.4f — text format for `GraphResult::Complexity`.
+///
+/// Pre-migration text (commands.rs:1304..1322):
+///   Calculating complexity metrics for: {path}
+///   [Warning: graph is PARTIAL: ...]   ← stderr, no snapshot
+///   [blank line]
+///   Complexity Metrics:
+///     Total symbols: {n}
+///     Total edges: {n}
+///     Max depth: {n}
+///     Cyclomatic complexity: {n}
+///     High fan-out (>=10): {n}
+///     Medium fan-out (5-9): {n}
+///     Low fan-out (<5): {n}
+///     Entry points: {n}
+///     Leaf functions: {n}
+///   [blank line]
+///   Analysis completed in {elapsed}ms
+///
+/// All nine metrics are pinned. The fan-out buckets
+/// (>=10, 5-9, <5) are easy to swap in a refactor (e.g. someone
+/// renames '>=10' to '>=8' because the threshold was wrong);
+/// the snapshot catches that.
+///
+/// The progress line is the only one without a leading blank
+/// line; the section header 'Complexity Metrics:' is preceded
+/// by a blank line (after the warning goes to stderr).
+pub fn present_graph_complexity(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::Complexity {
+        path,
+        metrics,
+        elapsed_ms,
+    } = result
+    {
+        // Progress line — commands.rs:1276.
+        writeln!(w, "Calculating complexity metrics for: {}", path)?;
+        // Blank + section header — commands.rs:1304.
+        writeln!(w)?;
+        writeln!(w, "Complexity Metrics:")?;
+        // 9 metric lines — commands.rs:1305..1319. Two-space
+        // indent matches the pre-migration output exactly.
+        writeln!(w, "  Total symbols: {}", metrics.total_symbols)?;
+        writeln!(w, "  Total edges: {}", metrics.total_edges)?;
+        writeln!(w, "  Max depth: {}", metrics.max_depth)?;
+        writeln!(
+            w,
+            "  Cyclomatic complexity: {}",
+            metrics.cyclomatic_complexity
+        )?;
+        writeln!(
+            w,
+            "  High fan-out (>=10): {}",
+            metrics.high_fan_out_count
+        )?;
+        writeln!(
+            w,
+            "  Medium fan-out (5-9): {}",
+            metrics.medium_fan_out_count
+        )?;
+        writeln!(
+            w,
+            "  Low fan-out (<5): {}",
+            metrics.low_fan_out_count
+        )?;
+        writeln!(w, "  Entry points: {}", metrics.entry_point_count)?;
+        writeln!(
+            w,
+            "  Leaf functions: {}",
+            metrics.leaf_function_count
+        )?;
+        // Summary — commands.rs:1322.
+        writeln!(w)?;
+        writeln!(w, "Analysis completed in {}ms", elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_complexity called with non-Complexity GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
