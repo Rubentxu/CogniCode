@@ -99,4 +99,9 @@ deberían existir.
 
 | Fecha | WU | Commit | Notas |
 |-------|----|--------|-------|
-| _pendiente_ | T1-1c.1..4 | _pendiente_ | migrate + verify |
+| 2026-10-10 | T1-1c.1 | (pendiente commit) | **No había 3 call-sites que migrar**. El grep `SymbolKind::Impl\|Static\|Macro` en `crates/cognicode-core/src/` solo encuentra 9 ocurrencias, **todas dentro de `ground_truth.rs` mismo**: las 3 en el `From<SymbolKind> for CanonicalSymbolKind` (líneas 63, 70, 72) y las 6 en `from_str`/`as_str` (líneas 90, 97, 99, 115, 122, 124) que son el round-trip string-intentional del local `SymbolKind`. **El commit `21fe4e5d` (T1-1c parcial) ya hizo la migración** — los 4 orphans (`Impl`, `Static`, `Macro`, `Other(_)`) se mapean a `CanonicalSymbolKind::Unknown` con string preservado en `SymbolKind::Other(s)`. No quedan sitios fuera de `ground_truth.rs` que comparen contra variantes legacy del canónico. |
+| 2026-10-10 | T1-1c.2 | (pendiente commit) | Contract test `t1_1c_ground_truth_orphan_mapping` creado (4/4 verde). Pinea: (1) los 4 orphans colapsan a `CanonicalSymbolKind::Unknown`; (2) los 11 directos van a su variante canónica específica; (3) los 3 "extras" (Variant→EnumVariant, Property→Property, Variable→Variable) van a su contraparte; (4) `Other("...")` preserva el string en el `ground_truth` space. Si este RED, el mapping drift cambia los scores de scoring silenciosamente. |
+
+**Estado**: T1-1c DONE — la migración ya estaba hecha en `21fe4e5d`; este goal solo añadía el contract test que pinea el mapping. Sin código de producción que cambiar.
+
+**Diferencia con el goal doc original**: el goal doc asumía 3 call-sites específicos a 2183, 2188, 2559 que había que migrar. Esos números correspondían al snapshot de líneas en el momento de escribir el goal doc, pero en ese momento los sites ya habían sido migrados (o nunca existieron como tales — la decisión "consolidación con pérdida acotada" en T1-1c.original ya preveía que los 4 orphans van a `Unknown` desde el From, no que habría que migrar matches uno a uno). El work real era el contract test, que ahora existe.
