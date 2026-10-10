@@ -743,3 +743,85 @@ pub fn present_graph_ondemand(
     }
     Ok(())
 }
+
+/// T1-5.4j — text format for `GraphResult::Hierarchy`.
+///
+/// Pre-migration text (commands.rs:1221..1272):
+///   Getting call hierarchy for 'SYMBOL' (depth=N, direction=DIR) in: PATH
+///   [blank line]
+///   Call hierarchy for 'SYMBOL':
+///   Root: NAME at FILE:LINE:COL
+///   [blank line]
+///   Entries by depth:
+///     Depth 1: N entries
+///       - NAME (callers|callees) at FILE:LINE
+///       - ...
+///     Depth 2: N entries
+///       - ...
+///   [blank line]
+///   Total entries: N in Xms
+///
+/// The 'Root:' line uses 'name at file:line:col' (4-tuple
+/// form, with the trailing column), NOT the 'name (file:line:column)'
+/// 3-tuple form used by OnDemand. Pin that distinction.
+///
+/// The per-depth entry lines are 2-space indented under the
+/// '  Depth N: M entries' line. The 2-space indent is part
+/// of the contract (a downstream consumer like 'cogh |
+/// grep' depends on it).
+///
+/// The recursion is bounded by `depth` (the user-supplied
+/// arg), and each depth's entries are bounded to 5
+/// (matches the pre-migration iter().take(5) slice). The
+/// data side already has these slices applied; the
+/// presenter just iterates `buckets`.
+pub fn present_graph_hierarchy(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::Hierarchy {
+        symbol,
+        depth: _,
+        direction: _,
+        root_file,
+        root_line,
+        root_column,
+        buckets,
+        total_entries,
+        elapsed_ms,
+    } = result
+    {
+        // The 'Getting call hierarchy for X (depth=N, direction=DIR)
+        // in: PATH' progress line is NOT emitted by the
+        // presenter. The Hierarchy variant doesn't carry the
+        // project path (same pattern as TracePath/Mermaid);
+        // the function emits the progress line. The presenter
+        // emits the result block + summary.
+        //
+        // Result block + per-depth entries.
+        writeln!(w)?;
+        writeln!(w, "Call hierarchy for '{}':", symbol)?;
+        writeln!(w, "Root: {} at {}:{}:{}", symbol, root_file, root_line, root_column)?;
+        writeln!(w)?;
+        writeln!(w, "Entries by depth:")?;
+        for bucket in buckets {
+            writeln!(w, "  Depth {}: {} entries", bucket.depth, bucket.entries.len())?;
+            for entry in &bucket.entries {
+                writeln!(
+                    w,
+                    "    - {} ({}) at {}:{}",
+                    entry.name, entry.direction, entry.file, entry.line
+                )?;
+            }
+        }
+        // Summary.
+        writeln!(w)?;
+        writeln!(w, "Total entries: {} in {}ms", total_entries, elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_hierarchy called with non-Hierarchy GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}

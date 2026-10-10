@@ -1392,6 +1392,9 @@ impl CommandExecutor {
                 path,
             } => {
                 let start = Instant::now();
+                // Progress line stays in the function: the
+                // Hierarchy variant doesn't carry the project
+                // path (same pattern as TracePath, Mermaid).
                 println!(
                     "Getting call hierarchy for '{}' (depth={}, direction={}) in: {}",
                     symbol, depth, direction, path
@@ -1414,16 +1417,6 @@ impl CommandExecutor {
                 let result = strategy.build_subgraph(symbol, *depth, dir_enum);
                 let elapsed = start.elapsed().as_millis();
 
-                println!("\nCall hierarchy for '{}':", result.root_symbol.name());
-                println!(
-                    "Root: {} at {}:{}:{}",
-                    result.root_symbol.name(),
-                    result.root_symbol.location().file(),
-                    result.root_symbol.location().line(),
-                    result.root_symbol.location().column()
-                );
-
-                println!("\nEntries by depth:");
                 let mut by_depth: std::collections::HashMap<u32, Vec<_>> =
                     std::collections::HashMap::new();
                 for entry in &result.entries {
@@ -1432,18 +1425,10 @@ impl CommandExecutor {
                 let mut buckets: Vec<DepthBucket> = Vec::new();
                 for depth in 1..=*depth {
                     if let Some(entries) = by_depth.get(&depth) {
-                        println!("  Depth {}: {} entries", depth, entries.len());
                         let mut depth_entries: Vec<DepthEntry> = Vec::new();
                         for entry in entries.iter().take(5) {
                             let dir_str =
                                 format!("{:?}", entry.direction).to_lowercase();
-                            println!(
-                                "    - {} ({}) at {}:{}",
-                                entry.symbol.name(),
-                                dir_str,
-                                entry.symbol.location().file(),
-                                entry.symbol.location().line()
-                            );
                             depth_entries.push(DepthEntry {
                                 name: entry.symbol.name().to_string(),
                                 direction: dir_str,
@@ -1457,8 +1442,7 @@ impl CommandExecutor {
                         });
                     }
                 }
-                println!("\nTotal entries: {} in {}ms", result.entries.len(), elapsed);
-                Ok(GR::Hierarchy {
+                let final_result = GR::Hierarchy {
                     symbol: symbol.clone(),
                     depth: *depth,
                     direction: direction.clone(),
@@ -1468,7 +1452,17 @@ impl CommandExecutor {
                     buckets,
                     total_entries: result.entries.len(),
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4j: text formatting is in the
+                // presenter (the result block + summary; the
+                // progress line above stays in the function).
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_hierarchy(
+                    &final_result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(final_result)
             }
             GraphCommand::Complexity { path } => {
                 let start = Instant::now();
