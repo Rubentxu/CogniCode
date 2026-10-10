@@ -124,5 +124,8 @@ Estimación total: **7-10 días persona**. Substancial.
 
 | Fecha | WU | Commit | Notas |
 |-------|----|--------|-------|
-| _pendiente_ | T1-5.1 | _pendiente_ | snapshot test del output actual |
-| _pendiente_ | T1-5.2..6 | _pendiente_ | migrate + presenter + verify |
+| 2026-10-10 | T1-5.1 | (pendiente commit) | Snapshot test `crates/cognicode-cli/tests/t1_5_snapshot.rs` (4/4 verde). Captura el output actual de `cogh --version` (exact byte match: `"cogh {CARGO_PKG_VERSION}"`), `cogh current` (structural: single line, contains digits), `cogh doctor` (structural: `==> cogh doctor` header, `PASS`/`FAIL`/`UNAVAILABLE` subsystem lines, `==> overall:` final), y `cogh --help` (structural: `Usage:` + `Commands:`). El test usa `env!("CARGO_BIN_EXE_cogh")` para localizar el binario que cargo construye por test. Cuando T1-5.3..6 migre los `println!` de `cognicode-core::interface::cli::commands.rs` al presenter de `cognicode-cli`, este test RED si el output observable cambia (incluso un byte), forzando una decisión explícita sobre cada cambio. |
+| _pendiente_ | T1-5.2 | _pendiente_ | clasificar los 194 `println!` en categorías (structured-result / tracing-event / error). Bounded 1 día, lectura pura. |
+| _pendiente_ | T1-5.3..6 | _pendiente_ | migrate + presenter + verify. Multi-día; substancial. Fuera de scope de una sesión. |
+
+**Estado**: T1-5.1 DONE — baseline pineado. T1-5.2..6 quedan como bounded work items que el `/loop` puede iterar uno a uno en sesiones futuras.
