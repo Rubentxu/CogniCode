@@ -1296,6 +1296,9 @@ impl CommandExecutor {
             }
             GraphCommand::Mermaid { path, format } => {
                 let start = Instant::now();
+                // Progress line stays in the function: the
+                // Mermaid variant doesn't carry the project
+                // path (same pattern as TracePath, T1-5.4g).
                 println!("Exporting to Mermaid format from: {}", path);
 
                 let dir = PathBuf::from(path);
@@ -1334,31 +1337,49 @@ impl CommandExecutor {
                 let graph = report.graph;
 
                 let mermaid = graph.to_mermaid("Call Graph");
-                println!("\nMermaid diagram ({} chars):", mermaid.len());
-
-                match format.as_str() {
-                    "svg" | "png" => {
-                        println!("\nNote: SVG/PNG export requires mermaid-cli");
-                        println!("Run: cat << 'EOF' | mermaid -s\n{}\nEOF", mermaid);
-                    }
-                    _ => {
-                        println!("\n{}", &mermaid[..mermaid.len().min(2000)]);
-                        if mermaid.len() > 2000 {
-                            println!("\n... (truncated, full output in file)");
-                        }
-                    }
-                }
                 let elapsed = start.elapsed().as_millis();
-                println!("\nExport completed in {}ms", elapsed);
-                // T1-5.4b: Mermaid variant.
+                // T1-5.4b: Mermaid variant. T1-5.4h added
+                // the `diagram` field (the presenter needs
+                // the full content to reproduce the
+                // pre-migration text byte-identical).
                 let truncated = format != "svg" && format != "png" && mermaid.len() > 2000;
-                Ok(GR::Mermaid {
+                let result = GR::Mermaid {
                     path: path.clone(),
-                    diagram_len: mermaid.len(),
+                    diagram: mermaid,
+                    diagram_len: 0, // filled in below
                     format: format.clone(),
                     truncated,
                     elapsed_ms: elapsed,
-                })
+                };
+                // Fill diagram_len from the diagram itself.
+                let result = if let GR::Mermaid {
+                    path,
+                    diagram,
+                    diagram_len: _,
+                    format,
+                    truncated,
+                    elapsed_ms,
+                } = result
+                {
+                    GR::Mermaid {
+                        path,
+                        diagram_len: diagram.len(),
+                        diagram,
+                        format,
+                        truncated,
+                        elapsed_ms,
+                    }
+                } else {
+                    unreachable!()
+                };
+                // T1-5.4h: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_mermaid(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
             GraphCommand::Hierarchy {
                 symbol,

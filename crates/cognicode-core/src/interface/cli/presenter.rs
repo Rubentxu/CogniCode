@@ -593,3 +593,92 @@ pub fn present_graph_tracepath_notfound(
     }
     Ok(())
 }
+
+/// T1-5.4h — text format for `GraphResult::Mermaid`.
+///
+/// Pre-migration text (commands.rs:1159, 1197..1212):
+///   Exporting to Mermaid format from: {path}
+///   [Warning: graph is PARTIAL: ...]   ← stderr, no snapshot
+///   [blank line]
+///   Mermaid diagram ({N} chars):
+///   [blank line]
+///   {format-specific block}
+///   [blank line]
+///   Export completed in {elapsed}ms
+///
+/// Three format cases:
+///   - 'svg' / 'png': emits a 'requires mermaid-cli' hint
+///     and a 'Run: cat << EOF | mermaid -s' shell snippet.
+///   - 'txt' (default) with diagram_len <= 2000: emits the
+///     full diagram.
+///   - 'txt' with diagram_len > 2000: emits the first 2000
+///     chars + a '... (truncated, full output in file)'
+///     line.
+///
+/// The 'truncated' field in the data side is computed in
+/// commands.rs (not in the presenter) so the data side
+/// carries the binary decision. The presenter uses the
+/// flag to choose between the full-diagram and truncated
+/// branches.
+///
+/// The 'Mermaid diagram (N chars):' header uses the full
+/// diagram length (NOT the truncated length); the user
+/// always sees the real size.
+pub fn present_graph_mermaid(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::Mermaid {
+        path: _,
+        diagram,
+        diagram_len,
+        format,
+        truncated,
+        elapsed_ms,
+    } = result
+    {
+        // Progress line stays in the function: the Mermaid
+        // variant doesn't carry the project path (same
+        // pattern as TracePath, T1-5.4g).
+        //
+        // Result block header.
+        writeln!(w)?;
+        writeln!(w, "Mermaid diagram ({} chars):", diagram_len)?;
+        writeln!(w)?;
+        // Format-specific block.
+        match format.as_str() {
+            "svg" | "png" => {
+                writeln!(w, "Note: SVG/PNG export requires mermaid-cli")?;
+                writeln!(
+                    w,
+                    "Run: cat << 'EOF' | mermaid -s\n{}\nEOF",
+                    diagram
+                )?;
+            }
+            _ => {
+                // The 'truncated' flag drives whether we
+                // show the full diagram or the
+                // 2000-char + 'truncated' notice. The data
+                // side has already computed the flag based
+                // on diagram_len > 2000.
+                if *truncated {
+                    let slice_end = diagram.len().min(2000);
+                    writeln!(w, "{}", &diagram[..slice_end])?;
+                    writeln!(w)?;
+                    writeln!(w, "... (truncated, full output in file)")?;
+                } else {
+                    writeln!(w, "{}", diagram)?;
+                }
+            }
+        }
+        // Summary.
+        writeln!(w)?;
+        writeln!(w, "Export completed in {}ms", elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_mermaid called with non-Mermaid GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}

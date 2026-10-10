@@ -235,7 +235,8 @@ fn graph_result_tracepath_notfound_is_its_own_variant() {
 fn graph_result_mermaid_serializes_truncated_flag() {
     let result = GraphResult::Mermaid {
         path: "/work/repo".to_string(),
-        diagram_len: 3500,
+        diagram: "graph TD\n  A --> B".to_string(),
+        diagram_len: 18,
         format: "txt".to_string(),
         truncated: true,
         elapsed_ms: 40,
@@ -243,10 +244,14 @@ fn graph_result_mermaid_serializes_truncated_flag() {
     let json: Value =
         serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "mermaid");
-    assert_eq!(json["diagram_len"], 3500);
+    assert_eq!(json["diagram_len"], 18);
     assert_eq!(json["format"], "txt");
     assert_eq!(json["truncated"], true, "truncated flag is a stable signal for consumers");
     assert_eq!(json["elapsed_ms"], 40);
+    // T1-5.4h: the diagram field is part of the data side
+    // (the presenter needs the full content to reproduce
+    // the pre-migration text).
+    assert_eq!(json["diagram"], "graph TD\n  A --> B");
 }
 
 #[test]

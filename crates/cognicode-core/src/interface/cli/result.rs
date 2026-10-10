@@ -349,8 +349,16 @@ pub enum GraphResult {
     },
     /// `cognicode graph mermaid <path> [--format svg|png|txt]`
     /// `truncated` is `true` when the diagram exceeded 2000 chars.
+    /// `diagram` is the full Mermaid source (the presenter slices
+    /// it to 2000 chars when `truncated` is true; for svg/png
+    /// it embeds the full source in a shell snippet regardless
+    /// of length). The full content is in the data side because
+    /// the text output must reproduce the diagram verbatim for
+    /// downstream consumers (piping `cogh graph mermaid | head
+    /// -30` to extract a preview, etc.).
     Mermaid {
         path: String,
+        diagram: String,
         diagram_len: usize,
         format: String,
         truncated: bool,
