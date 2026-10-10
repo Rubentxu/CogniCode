@@ -216,8 +216,13 @@ su cierre técnico está verificado. Ver
   no pueden mentir sin que el contrato lo detecte.
 * **LSP ratchet**: 4 tests de integración que daban verde sin LSP ahora
   pinen la propiedad real; `process::exit` ratchet añadido.
-* **Doctest drift residual**: 3 warnings `ambiguous link` en `cognicode-core`
-  (heredados de M0.8). Bajo riesgo, pendiente de M-N.
+* **Doctest drift**: **CERRADO 2026-10-10** vía M0.11 (ciclo
+  `m011-rustdoc-intra-doc-links`, gate `m011_rustdoc_gate` 2/2 verde).
+  La auditoría semántica de M0.11 cerró los 147 `broken_intra_doc_links`
+  Y los 3 `ambiguous link` que esta línea mencionaba como residuo de
+  M0.8. `cargo doc --workspace --no-deps` ahora sale con 0 warnings.
+  Re-detección pineada por el gate automático; reintroducir la deuda
+  rompe el gate.
 
 ### 9.4 Work items abiertos (orden de criticidad)
 

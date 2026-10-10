@@ -33,7 +33,9 @@
   * `cargo clippy --workspace --all-targets -- -D warnings` → exit 0.
   * `cargo test -p cognicode-core --lib` → **2252 passed, 0 failed, 12 ignored** (≈46 s).
   * `cargo test --workspace` → ≈5650 passed, 0 failed.
-  * `cargo doc --workspace --no-deps` → exit 0 con **3 warnings** `ambiguous link` en `cognicode-core` (deuda residual heredada de M0.8).
+  * `cargo doc --workspace --no-deps` → exit 0, **0 warnings** (deuda residual
+    de M0.8 cerrada por M0.11 el 2026-09-27; reintroducirla rompe
+    `m011_rustdoc_gate`).
 * **Working tree**: dirty (cambios locales en `AGENTS.md`, `odd/`, `scripts/test-fast.sh`, `scripts/test-full.sh`).
 
 ## Capacidades certificadas (Post-PRF)
@@ -108,8 +110,8 @@ parcialmente en la serie v0.101.x:
 * **v0.101.x**: el último corte `v0.101.9` está publicado pero no promovido
   a `main` (la rama `integrate/v1015` está 80 commits ahead). Decisión del
   operador sobre cuándo promover.
-* **Doctest drift residual**: 3 warnings `ambiguous link` en
-  `cognicode-core` (deuda arrastrada de M0.8). Bajo riesgo (solo docs).
+* **Doctest drift residual**: **CERRADO 2026-10-10** vía M0.11 (ver
+  `ROADMAP §9.3`). Reintroducirlo rompe `m011_rustdoc_gate`.
 
 ## Próximo trabajo ejecutable en AUTO
 
@@ -120,7 +122,6 @@ parcialmente en la serie v0.101.x:
 4. **Auditoría #[ignore]** — repetir la búsqueda de tests con motivo
    "Flaky" o incompatibilidad de versión (lesson 70). Ya dio frutos en
    M0.5/M0.6/M0.10; patrón replicable.
-5. **Estrangular doctest drift** — 3 warnings residuales (M0.8).
 
 ---
 
