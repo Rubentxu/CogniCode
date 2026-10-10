@@ -10,6 +10,7 @@ use crate::infrastructure::graph::{
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::{OutlineNode, SymbolCodeService};
+use crate::interface::cli::result::{IndexError, IndexResult};
 use clap::{CommandFactory, Parser, Subcommand};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -574,7 +575,14 @@ impl CommandExecutor {
                 }
                 Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?
             }
-            Some(CliCommand::Index { command }) => Self::execute_index(command).await?,
+            Some(CliCommand::Index { command }) => {
+                // T1-5.3c: the data side is `IndexResult`; the
+                // presentation stays here for now (T1-5.5 moves
+                // it to the bin's own presenter module, where
+                // text/JSON dispatch lives).
+                let result = Self::execute_index(command).await.map_err(Box::new)?;
+                present_index_result(&result);
+            }
             Some(CliCommand::Graph { command }) => {
                 // PRF F2.W2: do NOT swallow the Graph error here.
                 // PerFileStrategy and FullGraphStrategy now surface read /
@@ -640,55 +648,67 @@ impl CommandExecutor {
     }
 
     /// Execute index subcommand
-    async fn execute_index(command: &IndexCommand) -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// T1-5.3c migration: returns `Result<IndexResult, IndexError>`
+    /// instead of `Result<(), Box<dyn Error>>`. The function no
+    /// longer prints to stdout; the caller in `execute()` invokes
+    /// the presenter (T1-5.5 will move that into the bin's own
+    /// module, but for T1-5.3c it lives here so the output
+    /// remains byte-identical with the pre-migration version).
+    async fn execute_index(
+        command: &IndexCommand,
+    ) -> Result<IndexResult, IndexError> {
         match command {
             IndexCommand::Build { path, strategy } => {
+                tracing::info!(
+                    target: "cli.index.build",
+                    strategy = %strategy,
+                    path = %path,
+                    "building index"
+                );
                 let start = Instant::now();
-                println!("Building {} index at: {}", strategy, path);
-
                 let mut strategy_box = GraphStrategyFactory::create(strategy);
                 let dir = PathBuf::from(path);
 
-                match strategy_box.build_index(&dir) {
-                    Ok(()) => {
-                        let elapsed = start.elapsed().as_millis();
-                        println!(
-                            "Index built successfully in {}ms using {} strategy",
-                            elapsed,
-                            strategy_box.name()
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("Error building index: {}", e);
-                        return Err(Box::new(e));
-                    }
-                }
+                strategy_box.build_index(&dir).map_err(|e| IndexError::Build {
+                    path: dir.clone(),
+                    strategy: strategy.to_string(),
+                    source: Box::new(e),
+                })?;
+                let elapsed_ms = start.elapsed().as_millis();
+                Ok(IndexResult::Build {
+                    path: dir,
+                    strategy: strategy.to_string(),
+                    elapsed_ms,
+                })
             }
             IndexCommand::Query { symbol, path } => {
-                println!("Querying symbol '{}' in: {}", symbol, path);
-
+                tracing::info!(
+                    target: "cli.index.query",
+                    symbol = %symbol,
+                    path = %path,
+                    "querying symbol"
+                );
                 let mut strategy = LightweightStrategy::new();
                 let dir = PathBuf::from(path);
 
-                if let Err(e) = strategy.build_index(&dir) {
-                    eprintln!("Error building index: {}", e);
-                    return Err(Box::new(e));
-                }
-
+                strategy.build_index(&dir).map_err(|e| IndexError::Query {
+                    symbol: symbol.clone(),
+                    path: dir.clone(),
+                    source: Box::new(e),
+                })?;
                 let locations = strategy.query_symbols(symbol);
                 if locations.is_empty() {
-                    println!("No locations found for symbol '{}'", symbol);
+                    Ok(IndexResult::QueryEmpty {
+                        symbol: symbol.clone(),
+                        path: dir,
+                    })
                 } else {
-                    println!("Found {} location(s):", locations.len());
-                    for loc in locations {
-                        println!(
-                            "  {}:{}:{} ({})",
-                            loc.file,
-                            loc.line,
-                            loc.column,
-                            format_args!("{:?}", loc.symbol_kind)
-                        );
-                    }
+                    Ok(IndexResult::Query {
+                        symbol: symbol.clone(),
+                        path: dir,
+                        locations,
+                    })
                 }
             }
             IndexCommand::Outline {
@@ -696,11 +716,18 @@ impl CommandExecutor {
                 include_private,
                 include_tests,
             } => {
-                println!("Getting outline for: {}", file);
-
-                let source = std::fs::read_to_string(file)?;
-                let language = Language::from_extension(std::path::Path::new(file).extension())
-                    .unwrap_or(Language::Rust);
+                tracing::info!(
+                    target: "cli.index.outline",
+                    file = %file,
+                    "getting outline"
+                );
+                let source = std::fs::read_to_string(file).map_err(|e| IndexError::Outline {
+                    file: PathBuf::from(file),
+                    source: e,
+                })?;
+                let language =
+                    Language::from_extension(std::path::Path::new(file).extension())
+                        .unwrap_or(Language::Rust);
 
                 let outline = crate::infrastructure::semantic::build_outline(
                     &source,
@@ -710,8 +737,10 @@ impl CommandExecutor {
                     *include_tests,
                 );
 
-                println!("Found {} top-level symbols:", outline.len());
-                print_outline_tree(&outline, 0);
+                Ok(IndexResult::Outline {
+                    file: file.clone().into(),
+                    symbols: outline,
+                })
             }
             IndexCommand::SymbolCode {
                 file,
@@ -719,32 +748,36 @@ impl CommandExecutor {
                 column,
                 include_doc: _,
             } => {
-                println!("Getting symbol code for: {}:{}:{}", file, line, column);
-
+                tracing::info!(
+                    target: "cli.index.symbol_code",
+                    file = %file,
+                    line = line,
+                    column = column,
+                    "getting symbol code"
+                );
                 let service = SymbolCodeService::new();
 
-                match service.get_symbol_code(file, *line, *column) {
-                    Ok(code) => {
-                        if let Some(doc) = &code.docstring {
-                            println!("\n/// Docstring:\n{}", doc);
-                        }
-                        println!(
-                            "\n/// Symbol code (lines {} - {}):",
-                            code.start_line, code.end_line
-                        );
-                        println!("{}", code.code);
-                    }
-                    // `SymbolCodeService::get_symbol_code` returns
-                    // `Result<_, String>`, and a `String` does not implement
-                    // `std::error::Error`, so it is carried as a message
-                    // rather than boxed. Relabelling it
-                    // `AppError::InvalidParameter` would turn a read failure
-                    // into a bad-argument claim.
-                    Err(e) => return Err(e.into()),
-                }
+                let code = service
+                    .get_symbol_code(file, *line, *column)
+                    .map_err(|e| IndexError::SymbolCode {
+                        file: file.clone().into(),
+                        line: *line,
+                        column: *column,
+                        source: Box::<dyn std::error::Error + Send + Sync>::from(
+                            std::io::Error::new(std::io::ErrorKind::Other, e),
+                        ),
+                    })?;
+                Ok(IndexResult::SymbolCode {
+                    file: file.clone().into(),
+                    line: *line,
+                    column: *column,
+                    start_line: code.start_line,
+                    end_line: code.end_line,
+                    doc: code.docstring,
+                    code: code.code,
+                })
             }
         }
-        Ok(())
     }
 
     /// Execute graph subcommand
@@ -2427,6 +2460,74 @@ fn print_outline_tree(nodes: &[OutlineNode], indent: usize) {
 
         if !node.children.is_empty() {
             print_outline_tree(&node.children, indent + 1);
+        }
+    }
+}
+
+/// T1-5.3c — present an `IndexResult` to stdout.
+///
+/// This is the bridge between the data side (in `execute_index`)
+/// and the visible output. For T1-5.3c it lives here and emits
+/// text byte-identical to the pre-migration `println!` calls
+/// (so the snapshot test in T1-5.1 stays green and T1-5.3d
+/// can add an index-specific snapshot on top). T1-5.5 will move
+/// this to the bin's own presenter module and add JSON dispatch
+/// (the `IndexResult` enum is already `Serialize`, so the JSON
+/// path is `serde_json::to_string_pretty(&result)` plus the
+/// `format` flag from the CLI).
+fn present_index_result(result: &IndexResult) {
+    use crate::interface::cli::result::IndexResult as R;
+    match result {
+        R::Build {
+            path: _,
+            strategy,
+            elapsed_ms,
+        } => {
+            println!(
+                "Index built successfully in {}ms using {} strategy",
+                elapsed_ms, strategy
+            );
+        }
+        R::Query {
+            symbol: _,
+            path: _,
+            locations,
+        } => {
+            println!("Found {} location(s):", locations.len());
+            for loc in locations {
+                println!(
+                    "  {}:{}:{} ({})",
+                    loc.file,
+                    loc.line,
+                    loc.column,
+                    format_args!("{:?}", loc.symbol_kind)
+                );
+            }
+        }
+        R::QueryEmpty { symbol, path: _ } => {
+            println!("No locations found for symbol '{}'", symbol);
+        }
+        R::Outline { file: _, symbols } => {
+            println!("Found {} top-level symbols:", symbols.len());
+            print_outline_tree(symbols, 0);
+        }
+        R::SymbolCode {
+            file: _,
+            line: _,
+            column: _,
+            start_line,
+            end_line,
+            doc,
+            code,
+        } => {
+            if let Some(d) = doc {
+                println!("\n/// Docstring:\n{}", d);
+            }
+            println!(
+                "\n/// Symbol code (lines {} - {}):",
+                start_line, end_line
+            );
+            println!("{}", code);
         }
     }
 }
