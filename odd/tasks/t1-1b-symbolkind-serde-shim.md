@@ -98,5 +98,10 @@ MCP, sin contaminar el canónico con conocimiento del transporte.
 
 | Fecha | WU | Commit | Notas |
 |-------|----|--------|-------|
-| _pendiente_ | T1-1b.1 | _pendiente_ | RED test del shim |
-| _pendiente_ | T1-1b.2..4 | _pendiente_ | implement + migrate + verify |
+| 2026-10-10 | T1-1b.1 | (pendiente) | RED test del shim creado (`tests/t1_1b_symbolkind_wire_format.rs`): pinea wire format lowercase/snake_case para las 15 variantes; pinea la conversión `McpSymbolKind → CanonicalSymbolKind` vía `From` impl en `dto_mapping.rs:186`; pinea que el wire format del canónico (después del `From`) sigue siendo PascalCase (separación de los dos espacios de wire format). |
+| 2026-10-10 | T1-1b.bugfix | (pendiente) | **El test RED pilló un bug real** antes de pasar: `SymbolKind::TypeAlias` se serializaba como `"typealias"` (no `"type_alias"`) porque `#[serde(rename_all = "lowercase")]` no añade separador para nombres compuestos. Cambio mínimo en `schemas.rs:136`: `rename_all = "lowercase"` → `rename_all = "snake_case"`. Single-word variants (Module, Class, Function, etc.) sin cambio; `TypeAlias` ahora `"type_alias"`. El fix alinea el wire format MCP con el resto del codebase (`ground_truth.rs:98,123` y `outline.rs:214` ya usaban `"type_alias"`). 4/4 tests verde. |
+| 2026-10-10 | T1-1b.2..4 | (pendiente) | Shim ya existía como `schemas::SymbolKind` (enum paralelo con `rename_all`, no newtype — el goal doc asumía newtype pero el diseño real es equivalente y válido). `From<McpSymbolKind> for SymbolKind` en `dto_mapping.rs:186` ya cubría las 15 variantes. Migración de call-sites no era necesaria: `schemas.rs` usa su propio `SymbolKind` (MCP wire format), y el dto `common.rs:SymbolKind` reexporta el canónico. Los dos viven en paralelo. |
+
+**Estado**: T1-1b DONE — wire format MCP pineado por 4 tests, bug preexistente corregido, sin breaking change (el wire format correcto es `"type_alias"`, no `"typealias"`; cualquier consumer que dependiera de `"typealias"` estaba leyendo mal el contrato).
+
+**Nota sobre el diseño**: el T1-1b original proponía un newtype dedicado para el shim. La inspección del código mostró que el diseño real es un **enum paralelo** (`schemas::SymbolKind` 15 variantes, `rename_all = "snake_case"`) en vez de un newtype. Funcionalmente equivalente y más simple (no requiere `McpSymbolKind` en cada campo `kind: SymbolKind` de los structs MCP). Se acepta este diseño; el goal doc queda como está para que la decisión esté documentada.
