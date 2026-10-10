@@ -1099,7 +1099,6 @@ impl CommandExecutor {
             }
             GraphCommand::EntryPoints { path } => {
                 let start = Instant::now();
-                println!("Finding entry points in: {}", path);
 
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
@@ -1125,17 +1124,9 @@ impl CommandExecutor {
                 let graph = report.graph;
 
                 let entry_ids = graph.roots();
-                println!("\nEntry points (no incoming edges):");
                 let mut entry_refs: Vec<SymbolRef> = Vec::new();
                 for id in entry_ids.iter().take(20) {
                     if let Some(sym) = graph.get_symbol(id) {
-                        println!(
-                            "  {} at {}:{}:{}",
-                            sym.name(),
-                            sym.location().file(),
-                            sym.location().line(),
-                            sym.location().column()
-                        );
                         entry_refs.push(SymbolRef {
                             name: sym.name().to_string(),
                             file: sym.location().file().to_string(),
@@ -1145,17 +1136,23 @@ impl CommandExecutor {
                     }
                 }
                 let elapsed = start.elapsed().as_millis();
-                println!("\nFound {} entry points in {}ms", entry_ids.len(), elapsed);
-                Ok(GR::EntryPoints {
+                let result = GR::EntryPoints {
                     path: path.clone(),
                     symbols: entry_refs,
                     total: entry_ids.len(),
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4d: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_entrypoints(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
             GraphCommand::LeafFunctions { path } => {
                 let start = Instant::now();
-                println!("Finding leaf functions in: {}", path);
 
                 let dir = PathBuf::from(path);
                 let strategy = FullGraphStrategy::new();
@@ -1181,17 +1178,9 @@ impl CommandExecutor {
                 let graph = report.graph;
 
                 let leaf_ids = graph.leaves();
-                println!("\nLeaf functions (no outgoing edges):");
                 let mut leaf_refs: Vec<SymbolRef> = Vec::new();
                 for id in leaf_ids.iter().take(20) {
                     if let Some(sym) = graph.get_symbol(id) {
-                        println!(
-                            "  {} at {}:{}:{}",
-                            sym.name(),
-                            sym.location().file(),
-                            sym.location().line(),
-                            sym.location().column()
-                        );
                         leaf_refs.push(SymbolRef {
                             name: sym.name().to_string(),
                             file: sym.location().file().to_string(),
@@ -1201,13 +1190,20 @@ impl CommandExecutor {
                     }
                 }
                 let elapsed = start.elapsed().as_millis();
-                println!("\nFound {} leaf functions in {}ms", leaf_ids.len(), elapsed);
-                Ok(GR::LeafFunctions {
+                let result = GR::LeafFunctions {
                     path: path.clone(),
                     symbols: leaf_refs,
                     total: leaf_ids.len(),
                     elapsed_ms: elapsed,
-                })
+                };
+                // T1-5.4d: text formatting is in the presenter.
+                let mut stdout = std::io::stdout();
+                crate::interface::cli::presenter::present_graph_leaffunctions(
+                    &result,
+                    &mut stdout,
+                )
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(result)
             }
             GraphCommand::TracePath { from, to, path } => {
                 let start = Instant::now();

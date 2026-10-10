@@ -251,3 +251,93 @@ pub fn present_graph_perfile(
     }
     Ok(())
 }
+
+/// T1-5.4d — text format for `GraphResult::EntryPoints`.
+///
+/// Pre-migration text (commands.rs:1021, 1047..1058, 1060):
+///   Finding entry points in: {path}
+///   [blank line]
+///   Entry points (no incoming edges):
+///     {name} at {file}:{line}:{column}    (max 20)
+///   [blank line]
+///   Found {total} entry points in {elapsed_ms}ms
+///
+/// The 'Warning: graph is PARTIAL' eprintln! at commands.rs:1034
+/// goes to stderr and is NOT part of this presenter's output
+/// (snapshot tests pin stdout only; the warning stays inline
+/// per the T1-5.4 decision in odd/tasks/t1-5-4-decision-partial-warning.md).
+///
+/// `total` is the un-truncated count (the data side carries
+/// the FULL list even though the loop takes 20). The summary
+/// line uses `total`, not `symbols.len()`, so the user sees
+/// "Found 47 entry points" even when only 20 are listed.
+pub fn present_graph_entrypoints(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::EntryPoints {
+        path,
+        symbols,
+        total,
+        elapsed_ms,
+    } = result
+    {
+        // Progress line — same text as commands.rs:1021.
+        writeln!(w, "Finding entry points in: {}", path)?;
+        // Blank line + header — commands.rs:1047.
+        writeln!(w)?;
+        writeln!(w, "Entry points (no incoming edges):")?;
+        // Data lines (up to 20) — commands.rs:1048..1058. The
+        // data side already has at most 20 entries (built with
+        // iter().take(20) at commands.rs:1116), so we just
+        // iterate `symbols` without a slice.
+        for s in symbols {
+            writeln!(w, "  {} at {}:{}:{}", s.name, s.file, s.line, s.column)?;
+        }
+        // Summary line — commands.rs:1060.
+        writeln!(w)?;
+        writeln!(w, "Found {} entry points in {}ms", total, elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_entrypoints called with non-EntryPoints GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
+
+/// T1-5.4d — text format for `GraphResult::LeafFunctions`.
+///
+/// Identical shape to EntryPoints; the only differences are
+/// the progress label ("leaf functions" vs "entry points")
+/// and the section header ("no outgoing edges" vs "no
+/// incoming edges"). One presenter per variant keeps the
+/// `match` in the caller a one-liner and lets each presenter's
+/// snapshot test pin its exact text independently.
+pub fn present_graph_leaffunctions(
+    result: &crate::interface::cli::result::GraphResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let crate::interface::cli::result::GraphResult::LeafFunctions {
+        path,
+        symbols,
+        total,
+        elapsed_ms,
+    } = result
+    {
+        writeln!(w, "Finding leaf functions in: {}", path)?;
+        writeln!(w)?;
+        writeln!(w, "Leaf functions (no outgoing edges):")?;
+        for s in symbols {
+            writeln!(w, "  {} at {}:{}:{}", s.name, s.file, s.line, s.column)?;
+        }
+        writeln!(w)?;
+        writeln!(w, "Found {} leaf functions in {}ms", total, elapsed_ms)?;
+    } else {
+        panic!(
+            "present_graph_leaffunctions called with non-LeafFunctions GraphResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
