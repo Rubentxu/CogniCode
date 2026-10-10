@@ -64,10 +64,21 @@ import java.io.File
 val repoRoot: String = File(".").canonicalPath
 val cd = "cd \"$repoRoot\""
 
-// The two platforms release.yml builds for. Declared once, used by every stage
+// The platforms release.yml builds for. Declared once, used by every stage
 // below, so that adding a platform is one edit rather than a hunt for the four
 // places a target name appears.
-val targets = listOf("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
+//
+// 2026-10-10: v0.101.10 candidate scoped to x86_64-only. The host (Bazzite
+// x86_64) has no aarch64-linux-gnu cross toolchain installed and Bazzite is
+// an immutable distro (rpm-ostree only, no sudo), so a working aarch64
+// build needs either a CI runner with the cross toolchain or a follow-up
+// release. Tracked as TF-6 in
+// `odd/tasks/v1015-consolidation-and-promote.md`. To re-enable: restore
+// the aarch64 entry to the list AND make sure the cross toolchain is
+// present (rustup target add aarch64-unknown-linux-gnu + linker in
+// .cargo/config.toml or env CC_aarch64_unknown_linux_gnu /
+// CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER).
+val targets = listOf("x86_64-unknown-linux-gnu")
 
 // The version the workspace declares, read the way the workflows read it: the
 // first `version = "..."` line of the root manifest.

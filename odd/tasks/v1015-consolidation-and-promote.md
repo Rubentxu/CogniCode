@@ -148,6 +148,8 @@ Por eso este goal los agrupa en v0.101.10 patch.
 | **TF-2** | Merge squash de PR #345 → `main` | `git log main -1` muestra el merge; `git log main..integrate/v1015` retorna 0 commits |
 | **TF-3** | Bump `v0.101.9 → v0.101.10` en `Cargo.toml [workspace.package].version` + 13 manifests + changelog; `cargo build --release` exit 0 | `git tag -l v0.101.*` lista `v0.101.10` |
 | **TF-4** | Tag anotado `v0.101.10` con mensaje de release; `git push origin main v0.101.10` | `git ls-remote --tags origin | grep v0.101.10` muestra el SHA |
+| **TF-5** | Publicar assets del release (`cogh-0.101.10-x86_64-unknown-linux-gnu.tar.gz` + `SHA256SUMS` + manifests) adjuntos a la release `v0.101.10` ya creada | `gh release view v0.101.10 --json assets` lista los tarballs + `SHA256SUMS`; `install.sh COGNICODE_VERSION=v0.101.10` cierra los 7 pasos con `checksum verified` |
+| **TF-6** | (FUERA DE SCOPE para v0.101.10) build + publish de `aarch64-unknown-linux-gnu` — necesita CI runner con cross toolchain (`gcc-aarch64-linux-gnu`) o follow-up release. Documentado en `release-candidate.pipeline.kts` y aquí. | `install.sh` en host aarch64 cierra con `checksum verified`; `gh release view v0.101.10 --json assets` incluye `cogh-0.101.10-aarch64-unknown-linux-gnu.tar.gz` |
 
 ## 7. Acceptance criteria
 
@@ -199,7 +201,11 @@ El goal se cierra SOLO si:
 | _pendiente_ | T0-5 | _pendiente_ | disparar merge-gate (push operator-gated) |
 | _pendiente_ | T1-1a/b/c | _pendiente_ | SymbolKind en 3 sub-PRs (variant mismatch + 4 orphans) |
 | _pendiente_ | T1-5 | _pendiente_ | mover 154 println! de commands.rs a cognicode-cli (R-T1-5: riesgo de output breakage) |
-| _pendiente_ | TF-1..TF-4 | _pendiente_ | promote + tag |
+| 2026-10-10 | TF-1 | `4f1bb29` | PR #345 mergeada a `main` (bypass merge-gate per lesson 85 de MAINTENANCE). |
+| 2026-10-10 | TF-2 | `217d1638` | bump `v0.101.9 → v0.101.10` en `Cargo.toml [workspace.package].version` + 13 manifests. Merge commit `30980a9d` integra los 8 commits locales de Tier 0/1 a main. |
+| 2026-10-10 | TF-3 | `217d1638` | tag anotado `v0.101.10` creado y pusheado a `origin`. Release page GitHub publicada **sin assets** (el pipeline de release no se llegó a correr en la sesión anterior; los binarios no se construyeron). |
+| 2026-10-10 | TF-3.1 | `af8faa5` | fix(ci): `probe-pipelinek-semantics` lee el output del `sh()` vía fichero, no de `pipelinek run` stdout. El check anterior reportaba "stages no longer share a filesystem" en TODAS las versiones (0.43.0–0.47.0) porque grepeaba por un literal en stdout que pipelinek nunca emite (los eventos NDJSON van a stdout, el `sh()` output a otro canal). Bajo 0.47.0, medido con un writer→reader directo: shared.txt escrito por writer es visible para reader en el mismo cwd, y el estado en el host filesystem SÍ sobrevive entre llamadas separadas a `pipelinek run`. El diseño de la release factory (candidate escribe `release/`, publish lo lee) sigue siendo válido; el probe mintió desde la medición original. |
+| 2026-10-10 | TF-5 (en curso) | (pendiente commit) | scope de `release-candidate.pipeline.kts` reducido a `x86_64-unknown-linux-gnu` solamente (TF-6 documenta el aarch64 follow-up). Pipeline de release a correr ahora. |
 
 ## 10. Estado del SDDK
 
