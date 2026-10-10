@@ -144,10 +144,19 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // nothing re-checked it. Like the suite above, it asserts properties of
     // a file the project governs rather than running a suite, so it belongs
     // in the anchor set.
+    // 40 -> 41 with `assurance_export_roundtrip` (2026-10-09, the
+    // assurance-evidence/v1 producer merge). 14 tests in this suite cover
+    // the roundtrip CBOR encode → decode → equal-fields contract for the
+    // envelope, bounded decoding (MAX_INPUT_BYTES, MAX_COLLECTION_SIZE,
+    // MAX_STRING_LENGTH, MAX_NESTING_DEPTH), and digest stability. The
+    // pre-existing assertion was not updated when the suite landed, so the
+    // gate started failing on the post-merge state with exit 101. This is
+    // the same kind of stale pin as the previous two bumps: an off-by-one
+    // in the contract, not a regression in the suite itself.
     assert_eq!(
         suites.len(),
-        40,
-        "expected exactly 40 cognicode-core integration suites, found {}. \
+        41,
+        "expected exactly 41 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
