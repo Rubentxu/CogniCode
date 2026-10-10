@@ -6,12 +6,13 @@
 
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use walkdir::WalkDir;
 
 /// Represents a location of a symbol in source code
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SymbolLocation {
     /// Path to the source file
     pub file: String,

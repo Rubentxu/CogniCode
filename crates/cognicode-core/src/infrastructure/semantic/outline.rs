@@ -5,11 +5,12 @@
 
 use crate::domain::value_objects::{Location, SymbolKind};
 use crate::infrastructure::parser::Language;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tree_sitter::Node;
 
 /// Represents a node in the hierarchical symbol outline
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OutlineNode {
     /// Symbol name
     pub name: String,

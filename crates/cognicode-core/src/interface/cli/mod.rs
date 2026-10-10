@@ -2,11 +2,13 @@
 
 pub mod commands;
 pub mod doctor;
+pub mod result;
 
 #[cfg(feature = "evidence-cli-ladybug")]
 pub mod evidence_backend;
 
 pub use commands::{Cli, CommandExecutor};
+pub use result::{IndexError, IndexResult};
 
 /// E1.W3 — `EvidenceCommand` is gated behind `evidence-cli-ladybug`
 /// (same cfg as the variant in `CliCommand`). Re-exported here so
