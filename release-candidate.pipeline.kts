@@ -68,19 +68,20 @@ val cd = "cd \"$repoRoot\""
 // below, so that adding a platform is one edit rather than a hunt for the four
 // places a target name appears.
 //
-// 2026-10-10: v0.101.10 candidate was scoped to x86_64-only (commit 451d0b7,
-// TF-5b in v1015-consolidation-and-promote) because the local host (Bazzite
-// x86_64) had no aarch64-linux-gnu cross toolchain. The operator authorized
-// TF-6.0 / TF-7.0 (commit 8c6d0f7): the next release runs in CI with
-// pipelinek 0.48.0-rc and the cross toolchain pre-installed in the same
-// runner image. This re-enables aarch64; the candidate builds for both
-// Tier 1 platforms.
+// 2026-10-10: scope = x86_64-only for THIS release (v0.101.10 was published
+// x86_64-only per commit 451d0b7, TF-5b). The operator decision to use the
+// CI with pipelinek 0.48.0-rc + cross toolchain (commit 8c6d0f7, TF-6.0 /
+// TF-7.0) is for a FUTURE release, not this one: aarch64 stays out until
+// the CI runner is fully provisioned AND end-to-end tested with a
+// no-op v0.101.11 first. Tracking: `odd/tasks/tf-6-aarch64-followup.md`.
 //
-// The `toolchain-for-$target` stage (line ~220) verifies a linker is
-// configured for cross targets before `binaries-$target` runs, so the
-// pipeline fails closed (not silent) if the CI image regresses on the
-// aarch64 cross toolchain.
-val targets = listOf("x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu")
+// To re-enable aarch64 for a future release:
+//   1. Confirm the CI runner is provisioned (TF-7.2) and the cross
+//      toolchain is pre-installed.
+//   2. Restore the aarch64 entry to the list below.
+//   3. Verify the candidate builds in the CI with both targets.
+//   4. Then run the release-candidate + release pipelines against the CI.
+val targets = listOf("x86_64-unknown-linux-gnu")
 
 // The version the workspace declares, read the way the workflows read it: the
 // first `version = "..."` line of the root manifest.
