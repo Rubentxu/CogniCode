@@ -1976,7 +1976,7 @@ fn default_rv_verify() -> bool {
 /// Verification status for a matched file.
 ///
 /// Re-export of the canonical
-/// [`crate::application::dto::file_ops::VerificationStatus`]
+/// [`crate::application::dto::VerificationStatus`]
 /// (3 variants: `Verified`, `Rejected`, `Skipped`; `#[serde(rename_all =
 /// "lowercase")]`; same wire format as the previous hand-rolled
 /// definition).
