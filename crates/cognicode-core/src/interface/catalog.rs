@@ -100,12 +100,13 @@ pub fn load_tool_catalog_active() -> Vec<ToolDescriptor> {
 
 /// Load the tool catalog from `product/tools.json`.
 ///
-/// Walks the same anchors as
-/// [`crate::interface::cli::commands::resolve_product_assets_root`]:
-/// cwd and its parents first, then `CARGO_MANIFEST_DIR` and its
-/// parents. Returns an empty vector when the file cannot be found or
-/// fails to deserialise; callers that need a fail-closed signal should
-/// log their own diagnostics.
+/// Walks the same anchors as the private
+/// `resolve_product_assets_root` helper in
+/// `crate::interface::cli::commands`: cwd and its parents first,
+/// then `CARGO_MANIFEST_DIR` and its parents. Returns an empty
+/// vector when the file cannot be found or fails to deserialise;
+/// callers that need a fail-closed signal should log their own
+/// diagnostics.
 pub fn load_tool_catalog() -> Vec<ToolDescriptor> {
     for path in catalog_candidate_paths() {
         if let Ok(text) = std::fs::read_to_string(&path)
