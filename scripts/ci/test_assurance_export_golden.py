@@ -55,6 +55,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -63,14 +64,48 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 GOLDEN_PATH = REPO_ROOT / "tests" / "fixtures" / "assurance_export_golden.cbor"
+
+
+def workspace_version() -> str:
+    """Lee `[workspace.package].version` de Cargo.toml.
+
+    B1.W1 — T1-5.5+ y siguientes bump-ean la version del workspace
+    (v0.101.10 → v0.101.11 → ...). Hardcodearla en este script (la
+    fuente del regression detector) era exactamente el anti-patron
+    que el goal doc de B1 senala: cuando el binario cambia su
+    `producer.version`, el assertion fallaba por una constante obsoleta,
+    no por una regresion real. Derivarla del producto elimina esa
+    clase de falso rojo y mantiene el contrato: cualquier drift del
+    encoding o del campo `version` se sigue pineando contra el
+    golden SHA-256 (regression detector separado).
+    """
+    text = (REPO_ROOT / "Cargo.toml").read_text()
+    m = re.search(
+        r'^\[workspace\.package\].*?^version\s*=\s*"([^"]+)"',
+        text, flags=re.MULTILINE | re.DOTALL,
+    )
+    if not m:
+        raise SystemExit(
+            f"FAIL: no se encontro [workspace.package].version en {REPO_ROOT / 'Cargo.toml'}"
+        )
+    return m.group(1)
+
+
 # SHA-256 pinned del golden generado sobre integrate/v1015
 # d0abbdf4932a0b7c4d03b9d5e0caf1458334267a con workspace=.
 # Cualquier cambio en el encoding del producer lo modifica; eso es la
 # senal que el consumer usa para detectar drift.
+# SHA-256 pinned del golden. Cambia con cada regeneracion intencionada
+# (refactor del encoding del producer o bump de producer version).
+# Anteriores:
+#   - 3ac84ea7de366e5b39e0e2316e0f2a06127b9d77cb10248dfbb16c14c09429da (v0.101.10, regenerate 2026-10-11 al bump 0.101.9 → 0.101.10)
+#   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
+# El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
+# actualizar su pin tras cada regeneracion.
 GOLDEN_SHA256 = (
-    "45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35"
+    "3ac84ea7de366e5b39e0e2316e0f2a06127b9d77cb10248dfbb16c14c09429da"
 )
-PRODUCER_VERSION = "0.101.9"
+PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
 KIND = "EvidenceExport"
 # Capabilities que produce el golden. Si el CLI se invoca con un subset
