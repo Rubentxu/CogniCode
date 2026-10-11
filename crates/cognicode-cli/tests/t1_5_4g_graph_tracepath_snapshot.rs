@@ -35,7 +35,7 @@
 //!     side solo necesita from/to/hops). T1-5.5 decidirá
 //!     si moverlo a tracing::info! o dejarlo en commands.rs.
 
-use cognicode_core::interface::cli::presenter::{
+use cognicode_cli::presenter::{
     present_graph_tracepath_found, present_graph_tracepath_notfound,
 };
 use cognicode_core::interface::cli::result::{GraphResult, PathHop};

@@ -34,8 +34,8 @@
 
 use cognicode_core::domain::value_objects::SymbolKind;
 use cognicode_core::infrastructure::graph::SymbolLocation;
-use cognicode_core::interface::cli::presenter::present_index_result;
-use cognicode_core::interface::cli::presenter::test_helpers::outline_node;
+use cognicode_cli::presenter::present_index_result;
+use cognicode_cli::presenter::test_helpers::outline_node;
 use cognicode_core::interface::cli::result::IndexResult;
 use std::path::PathBuf;
 

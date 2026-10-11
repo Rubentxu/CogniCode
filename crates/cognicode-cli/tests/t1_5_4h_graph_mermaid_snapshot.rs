@@ -34,7 +34,7 @@
 //!     line (mismo patrón que TracePath: el variant no carga
 //!     el project path).
 
-use cognicode_core::interface::cli::presenter::present_graph_mermaid;
+use cognicode_cli::presenter::present_graph_mermaid;
 use cognicode_core::interface::cli::result::GraphResult;
 
 fn render(result: &GraphResult) -> String {

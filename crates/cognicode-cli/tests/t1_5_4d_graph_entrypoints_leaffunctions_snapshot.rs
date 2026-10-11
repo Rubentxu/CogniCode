@@ -34,7 +34,7 @@
 //!     es parte de estos snapshots (decisión documentada en
 //!     odd/tasks/t1-5-4-decision-partial-warning.md).
 
-use cognicode_core::interface::cli::presenter::{
+use cognicode_cli::presenter::{
     present_graph_entrypoints, present_graph_leaffunctions,
 };
 use cognicode_core::interface::cli::result::GraphResult;

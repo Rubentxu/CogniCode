@@ -25,7 +25,7 @@
 //!   - The per-depth entry count truncation at 5 (the data
 //!     side has at most 5 entries per bucket).
 
-use cognicode_core::interface::cli::presenter::present_graph_hierarchy;
+use cognicode_cli::presenter::present_graph_hierarchy;
 use cognicode_core::interface::cli::result::{DepthBucket, DepthEntry, GraphResult};
 
 fn render(result: &GraphResult) -> String {

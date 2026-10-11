@@ -24,7 +24,7 @@
 //! because the two concepts are easy to confuse. The snapshot
 //! pins the exact wording.
 
-use cognicode_core::interface::cli::presenter::present_graph_complexity;
+use cognicode_cli::presenter::present_graph_complexity;
 use cognicode_core::interface::cli::result::{ComplexityMetrics, GraphResult};
 
 fn render(result: &GraphResult) -> String {

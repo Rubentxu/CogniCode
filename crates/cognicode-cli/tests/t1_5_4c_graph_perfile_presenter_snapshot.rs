@@ -41,7 +41,7 @@
 //!     function. T1-5.4d..m follows the same flow: add a
 //!     presenter, replace the inline println! block, snapshot.
 
-use cognicode_core::interface::cli::presenter::present_graph_perfile;
+use cognicode_cli::presenter::present_graph_perfile;
 use cognicode_core::interface::cli::result::GraphResult;
 
 fn render(result: &GraphResult) -> String {

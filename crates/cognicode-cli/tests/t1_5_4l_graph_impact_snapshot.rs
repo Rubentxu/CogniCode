@@ -29,7 +29,7 @@
 //!     the 10-item truncation in 'Impacted files', with
 //!     the '... and N more' line for overflow.
 
-use cognicode_core::interface::cli::presenter::present_graph_impact;
+use cognicode_cli::presenter::present_graph_impact;
 use cognicode_core::interface::cli::result::GraphResult;
 
 fn render(result: &GraphResult) -> String {

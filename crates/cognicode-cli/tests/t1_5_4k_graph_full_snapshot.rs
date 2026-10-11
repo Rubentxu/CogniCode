@@ -29,7 +29,7 @@
 //!     this snapshot test; it has its own integration test
 //!     coverage via the existing `prf_cli_*` UAT suite.
 
-use cognicode_core::interface::cli::presenter::present_graph_full;
+use cognicode_cli::presenter::present_graph_full;
 use cognicode_core::interface::cli::result::{GraphResult, SkippedFile};
 
 fn render(result: &GraphResult) -> String {

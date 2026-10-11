@@ -21,7 +21,7 @@
 //!   - The 'Root: {name} ({file}:{line}:{column})' form
 //!     (note: parens, not 'at', not '@').
 
-use cognicode_core::interface::cli::presenter::present_graph_ondemand;
+use cognicode_cli::presenter::present_graph_ondemand;
 use cognicode_core::interface::cli::result::GraphResult;
 
 fn render(result: &GraphResult) -> String {

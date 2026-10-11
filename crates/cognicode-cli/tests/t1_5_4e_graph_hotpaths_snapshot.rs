@@ -29,7 +29,7 @@
 //!     `limit`); the analyzer already applied the limit, so
 //!     `entries.len()` is the post-filter count.
 
-use cognicode_core::interface::cli::presenter::present_graph_hotpaths;
+use cognicode_cli::presenter::present_graph_hotpaths;
 use cognicode_core::interface::cli::result::{GraphResult, HotPathEntry};
 
 fn render(result: &GraphResult) -> String {
