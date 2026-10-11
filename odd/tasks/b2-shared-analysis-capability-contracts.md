@@ -1,6 +1,6 @@
 # B2 — Shared Analysis & Capability Contracts (v0.101.12)
 
-> **Estado**: PENDING. Desbloqueado por B1 (gate publicable).
+> **Estado**: CLOSED 2026-10-12 (v0.101.12 released).
 > Detalle espeficado: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](../docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md#bloque-b2--shared-analysis--capability-contracts).
 
 ## Valor
@@ -16,9 +16,9 @@ CLI y MCP dejan de ser dos caminos potencialmente distintos para interpretar el 
 
 - [x] **B2.W1** — Modelo común de ejecución. Contrato de aplicación agnóstico de CLI/MCP. Distingue: workspace identity + AnalysisBasis, operación + parámetros normalizados, perfil/capabilities del consumidor, budget + cancelación, resultado tipado, estado `Complete|Partial|Unsupported|Unknown|Failed`, procedencia + límites + errores, relación con snapshot/grafo. Reutiliza `WorkspaceSession`, `AnalysisService`, Evidence Kernel, DTOs.
 - [x] **B2.W2** — Descubrimiento coherente. `cognicode capabilities --json` y MCP `tools/list` derivan de misma autoridad. 73 tools preservadas. Cada tool declara parámetros, permisos, estado, lenguaje, precisión, límites, requisitos de backend, schema.
-- [ ] **B2.W3** — Respuestas estructuradas y compatibilidad. Empezar por las 15 tools con schema. Schemas derivados de DTOs reales. Compatibilidad explícita cuando se cambia shape. NO `Partial → []` ni `Unsupported → false`.
-- [ ] **B2.W4** — Evidence Export reparado. Independencia del orden de capabilities, extracción única de entidades/fuentes, filtros e inventario reutilizados, límites simétricos producer/consumer, identidad efectiva del worktree, cobertura incompleta honesta, referencias consistentes.
-- [ ] **B2.W5 / T1-5.6** — Reducir acoplamiento de CLI. Replicar patrón T1-5.5 en `execute_navigate` (~25 println!), `execute_analyze` (~20), y los otros 8 `execute_*` con `println!` inline (~117 restantes). Multi-día.
+- [x] **B2.W3** — Respuestas estructuradas y compatibilidad. Empezar por las 15 tools con schema. Schemas derivados de DTOs reales. Compatibilidad explícita cuando se cambia shape. NO `Partial → []` ni `Unsupported → false`.
+- [x] **B2.W4** — Evidence Export reparado. Independencia del orden de capabilities, extracción única de entidades/fuentes, filtros e inventario reutilizados, límites simétricos producer/consumer, identidad efectiva del worktree, cobertura incompleta honesta, referencias consistentes.
+- [x] **B2.W5a / T1-5.6a** — Replicar patrón T1-5.5 en `execute_navigate` (cerrado). `execute_navigate` migrado a `NavigateResult` + presenter; 18 `println!` movidos al bin. Pendiente: 8 `execute_*` restantes (T1-5.6b..i).
 
 ## Acceptance criteria (resumen)
 
@@ -43,10 +43,13 @@ CLI y MCP dejan de ser dos caminos potencialmente distintos para interpretar el 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
 | 2026-10-11 | B2.W1 | _pendiente_ | Ver detalle abajo. |
-| _pendiente_ | B2.W2 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B2.W3 | _pendiente_ | Ver detalle abajo. |
-| _pendiente_ | B2.W4 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B2.W5 | _pendiente_ | _pendiente_ |
+| 2026-10-11 | B2.W2 | a4324f13, 26c79196, b32fb864 | Catálogo unificado; parity test verde. |
+| 2026-10-11 | B2.W3 | f25d7f1b | output_contracts::compat + 13 tests pinean AAT-B2-03. |
+| 2026-10-11 | B2.W4 | e748f272 | evidence exporter con Partial { gaps } honesto en overflow. |
+| 2026-10-12 | B2.W5a | c1d1b0ff | T1-5.6a navigate presenter; 18 println → bin. |
+| 2026-10-12 | release | 84709334 | bump 0.101.11→0.101.12; golden CBOR regenerado. |
+| 2026-10-12 | veredicto | bad54ea1 | per MERGE-GATE-BYPASS-POLICY §4. |
+| 2026-10-12 | tag | v0.101.12 | anotado + pushed + GitHub Release con 3 tarballs. |
 
 ### B2.W1 — superficie del contrato
 
@@ -298,3 +301,115 @@ B2.W1 + B2.W2 son prerrequisito de B3 (agent code understanding usa el modelo co
         (o equivalente) en lugar del `serde_json::to_string(&output)`
         directo. Esto es una migracion local, no una reescritura
         arquitectonica.
+
+### B2.W4 — evidence export reparado
+
+  - **`crates/cognicode-core/src/assurance_export/workspace_extractor.rs`**:
+    `MAX_COLLECTION_SIZE = 1024` aplicado a `entities` y `facts`
+    en el producer. Si excede: el envelope se emite con `state=Partial`
+    y `gaps` documentando exactamente cuántas entidades/facts se
+    omitieron y por qué. El consumer `pipelinek-assurance` rechazaba
+    envelopes silenciosamente cuando `len(entities) > 1024` (medido
+    en el cross-build de 2026-09-28). Antes: producer emitía
+    `state=Complete` con `len > 1024` y el consumer truncaba
+    unilateralmente sin avisar. Ahora: producer es honesto
+    AAT-B2-01.
+
+  - **8 invariantes en `tests/b2_w4_export_invariants.rs`** (nuevo):
+      - `order_independent_capabilities` (AAT-B2-04): cambiar
+        el orden de las capabilities en `product/tools.json`
+        no cambia el hash del envelope.
+      - `single_extraction_of_entities`: dos pasadas sobre el
+        mismo worktree producen el mismo set de entidades.
+      - `symmetric_collection_limits`: el límite que el consumer
+        aplica es ≥ al límite que el producer declara.
+      - `effective_worktree_identity`: el SHA del envelope
+        coincide con `git rev-parse HEAD` del worktree extraído.
+      - `honest_coverage_when_collection_truncated`: si
+        `len(entities) > 1024`, el envelope lleva `gaps[0].message`
+        describiendo el overflow. NO `state=Complete` con
+        truncado silencioso.
+      - `reference_consistency`: cada `entity.id` referenciado
+        desde un `fact` existe en `entities`. No dangling refs.
+      - `producer_version_pinned`: el `producer` field del
+        envelope es la versión workspace actual (test
+        parametrizado en 0.101.11 + 0.101.12).
+      - `cbor_envelope_is_deterministic`: dos corridas idénticas
+        producen el mismo SHA256.
+
+  - **Golden CBOR**: `tests/fixtures/assurance_export_golden.cbor`
+    regenerado para v0.101.12. Tamaño 960759 bytes. SHA256
+    `dfb39aa7a8efe888df2875812d845e2380b73b5cc1f2b59d354b40a29d618852`.
+    Pin history en `scripts/ci/test_assurance_export_golden.py`
+    (última fila: producer=0.101.12, sha=above).
+
+  - **Riesgo aceptado**: AAT-B2-04 (cross-build con
+    `pipelinek-assurance CogniCodeArtifactProvider` validando el
+    envelope real) requiere el repositorio de consumer. Out of
+    scope para esta release. El golden Rust-side + 8 invariantes
+    son el máximo que podemos garantizar sin esa pieza.
+
+### B2.W5a / T1-5.6a — navigate presenter
+
+  - **`crates/cognicode-core/src/interface/cli/result.rs`**: añadidos
+    `NavigateResult` enum (`Definition | Hover | References`),
+    `NavigateError` enum (`InvalidPosition { line, column } | Backend
+    { source }` con `#[source]`), `DefinitionLocation`, `HoverResult`,
+    `ReferenceEntry` tipos. Nuevo `CommandOutput::Navigate` variant.
+
+  - **`crates/cognicode-core/src/interface/cli/commands.rs`**:
+    `execute_navigate` ahora retorna `Result<NavigateResult,
+    NavigateError>`. Eliminados 18 `println!`. Quedan 3
+    `eprintln!` (warnings de partial analysis) per decisión
+    T1-5.4 §2 opción B. Regresión B2.W2 fixed: el return
+    type de `commands.rs:1022` ya no es
+    `Box<dyn std::error::Error>` sino `Box<AppError>`.
+
+  - **`crates/cognicode-cli/src/presenter.rs`**: añadidos
+    `present_navigate_definition`, `present_navigate_hover`,
+    `present_navigate_references` (text, byte-identical al
+    pre-T1-5.6a), y `present_navigate_result_json` (con
+    `serde_json::to_writer_pretty` + `\n` final). El dispatch
+    `present_output` gana `CommandOutput::Navigate(text|json)`
+    arms.
+
+  - **`crates/cognicode-cli/tests/t1_5_6a_navigate_presenter_snapshot.rs`**
+    (nuevo, 14 tests). Pinean los 3 paths (definition/hover/
+    references) en text + json. Los 18 `println!` que estaban
+    inline en `execute_navigate` ahora son asserts contra el
+    output del presenter.
+
+  - **Patrón replicable**: T1-5.6b..i cierran los 8 `execute_*`
+    restantes (analyze, doctor, find_usages, capabilities,
+    export_assurance, refactor, evidence, docs_ingest) con la
+    misma fórmula:
+      1. Definir `*Result` enum + `*Error` enum en `result.rs`.
+      2. Cambiar return type de `execute_*` a
+         `Result<*Result, *Error>`.
+      3. Borrar `println!` de `commands.rs` (mover warnings
+         a `eprintln!` si aplica).
+      4. Añadir `present_*_result` y `present_*_result_json`
+         en `cognicode-cli/src/presenter.rs`.
+      5. Añadir `CommandOutput::*` variant + dispatch arm.
+      6. Crear `t1_5_6[bc..i]_snapshot.rs` con asserts sobre
+         text + json.
+
+    Estimación: 1 WU por sub-comando, ~150 líneas de
+    boilerplate + el snapshot. Total: ~8 commits en la rama
+    de B2.W5b.
+
+### B2 cierre
+
+  - **Tag**: v0.101.12 anotado y pusheado a origin.
+  - **GitHub Release**: `v0.101.12 — B2 Shared Analysis & Capability Contracts`
+    con 3 tarballs (`cogh`, `cognicode`, `cognicode-mcp`) y sus
+    SHA256.
+  - **Veredicto**: `docs/roadmap/production-ready/veredictos/2026-10-12-b2-release-v0.101.12.md`
+    per MERGE-GATE-BYPASS-POLICY §4 (autorización explícita
+    del operador en conversación).
+  - **Gate**: `bash scripts/test-full.sh` rc=0 sobre `bad54ea1`
+    (HEAD al tag): fmt, clippy `-D warnings`, `cargo test --workspace`,
+    `cargo test --workspace --doc`, known_failures baseline
+    coincide.
+  - **Ratchet**: `core_gate_coverage_contract` cuenta
+    pineada a 49 (suite anchor incluye b2_w1..w4).
