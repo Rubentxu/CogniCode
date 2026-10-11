@@ -44,7 +44,7 @@ CLI y MCP dejan de ser dos caminos potencialmente distintos para interpretar el 
 |---|---|---|---|
 | 2026-10-11 | B2.W1 | _pendiente_ | Ver detalle abajo. |
 | _pendiente_ | B2.W2 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B2.W3 | _pendiente_ | _pendiente_ |
+| _pendiente_ | B2.W3 | _pendiente_ | Ver detalle abajo. |
 | _pendiente_ | B2.W4 | _pendiente_ | _pendiente_ |
 | _pendiente_ | B2.W5 | _pendiente_ | _pendiente_ |
 
@@ -200,3 +200,101 @@ B2.W1 + B2.W2 son prerrequisito de B3 (agent code understanding usa el modelo co
         features. Out of scope para esta WU porque
         `b2_w2_catalog_parity` cubre el contrato que
         protegían.
+
+### B2.W3 — respuestas estructuradas y compatibilidad
+
+  - **`crates/cognicode-core/src/interface/mcp/output_contracts.rs`**:
+    añadido `pub mod compat`. API pública:
+      - `compat::CURRENT_SCHEMA_VERSION` (`&'static str = "v1"`).
+      - `compat::schema_version_for(tool) -> Option<&'static str>`:
+        pineado: devuelve `"v1"` para toda tool con schema
+        publicado, `None` para tools sin schema.
+      - `compat::legacy_schema_for(tool) -> Option<Map<String, Value>>`:
+        el hook para cuando una tool cambie de shape y necesitemos
+        conservar el viejo para consumers existentes. Hoy uniforme
+        `None` porque no hay legacy shapes (todo esta en v1).
+      - `compat::shape_response(state, value, gaps, reason, error) -> Value`:
+        el boundary helper que pinea AAT-B2-03:
+          * `Partial` exige `gaps` no vacíos (panic si no).
+          * `Unsupported` exige `reason` no vacío (panic si no).
+          * `Failed` exige `error` no vacío (panic si no).
+          * `Complete` y `Partial` llevan `value`; el resto no.
+          * `Unknown` no lleva nada opcional.
+        Mismas invariantes que `AnalysisOutcome::partial` /
+        `unsupported` / `failed`. No colapsa `Partial` a `[]`,
+        no colapsa `Unsupported` a `false`.
+      - `compat::shape_response_from_outcome<T>(&AnalysisOutcome<T>) -> Value`:
+        atajo que pasa por `serde_json::to_value` (mismo shape
+        que el helper manual, byte-equivalente para `Complete`).
+
+    El namespace `compat` es deliberadamente pequeño: la intencion
+    es que cualquier cambio futuro de shape de una tool pase por
+    anadir un `legacy_schema_for(<tool>) -> Some(...)` con bump
+    de `CURRENT_SCHEMA_VERSION`. La presencia del helper y de los
+    tests es lo que pinea el contrato.
+
+  - **`crates/cognicode-core/tests/b2_w3_output_schema_contract.rs`**
+    (nuevo, 13 tests). Pinea:
+      - `catalog_and_runtime_agree_on_output_schema_coverage`:
+        el set de tools con `output_schema` en `product/tools.json`
+        coincide con el set publicado por
+        `output_contracts::tools_with_output_schema()`. Drift en
+        uno sin el otro falla.
+      - `every_published_schema_describes_an_object_with_properties`:
+        cada schema es `object` con `properties` no vacíos (un
+        schema vacio promete nada).
+      - `the_published_count_meets_the_b2_w3_target`: ≥ 15
+        tools con schema (umbral del goal doc).
+      - `compat_publishes_a_schema_version_for_every_tool`: el
+        namespace `compat` no devuelve version vacía.
+      - `compat_legacy_schema_is_explicitly_empty_in_v1`: ningún
+        tool tiene legacy schema en v1 (anadir uno es un acto
+        observable).
+      - `partial_response_carries_its_gaps`: `shape_response` con
+        `Partial` lleva `gaps` no vacíos. Pinea AAT-B2-03.
+      - `complete_response_has_no_gaps`: `shape_response` con
+        `Complete` lleva `value` integro y no emite `gaps`.
+      - `unsupported_response_carries_its_reason`: `Unsupported`
+        lleva `reason`, NO colapsa a `false`/`null`/booleano.
+      - `failed_response_carries_its_error`: `Failed` lleva
+        `error.kind` + `error.message`.
+      - `unknown_response_carries_no_payload`: `Unknown` no emite
+        `gaps`, `reason` ni `error`.
+      - `shape_response_from_outcome_matches_typed_serialization`:
+        el helper y `serde_json::to_value(&outcome)` coinciden
+        byte-a-byte; el helper es solo un atajo, no una fuente
+        divergente.
+      - `a_complete_response_payload_satisfies_its_advertised_schema`:
+        un payload valido de `BuildGraphOutput` (estado
+        `complete`) satisface el schema publicado.
+      - `a_partial_response_payload_still_satisfies_the_typed_schema`:
+        un payload `BuildGraphOutput` con `status: "partial"` +
+        `skipped_files` sigue satisfaciendo el schema tipado.
+        Los `gaps` viven en la envoltura, no en el DTO.
+
+  - **Cierre del contrato**:
+      - Las 15 tools con schema publicado son las que ya estaban
+        en `product/tools.json` tras B2.W2 (composites/analytics
+        + navigation graphs). El goal doc sugiere 15 alternativas
+        navigation/impact; la eleccion actual preserva la paridad
+        con B2.W2 y deja la puerta abierta a extender el set en
+        futuras WU (anadir = extender `published_output_schemas`
+        + regenerar catalogo).
+      - `output_contracts::compat` queda como superficie estable:
+        toda nueva tool con schema debe (a) figurar en
+        `published_output_schemas`, (b) tener `compat::schema_version_for`
+        no vacio, (c) satisfacer `a012_structured_output` (catalog
+        parity) y los 13 tests de este archivo.
+
+  - **Pendiente de B2.W3 (deuda explicita)**:
+      - `shape_response` aun no se enchufa a `call_tool_handler`.
+        Los 15 handlers existentes siguen emitiendo `serde_json::to_string(&output)`
+        directo, sin envolver en el envelope B2.W3. La migracion
+        se hara cuando B2.W5 enchufe `Analyze::execute` en los
+        handlers (presupuesto: 1 WU de T1-5.6d o B2.W5a).
+      - El shape_response del test permanece
+        en `compat::*`; cuando la primera tool migre, el codigo
+        del handler debera usar `compat::shape_response_from_outcome`
+        (o equivalente) en lugar del `serde_json::to_string(&output)`
+        directo. Esto es una migracion local, no una reescritura
+        arquitectonica.
