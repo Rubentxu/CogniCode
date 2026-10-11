@@ -609,17 +609,12 @@ impl CommandExecutor {
                 Ok(CommandOutput::Other)
             }
             Some(CliCommand::Index { command }) => {
-                // T1-5.3d: presentation lives in `interface::cli::presenter`
-                // (text-only for now; T1-5.5 will move it to the bin's own
-                // module and add JSON dispatch).
-                // The inline presenter call below is the temporary bridge —
-                // it stays for now so the byte stream is unchanged; T1-5.5d
-                // will remove it and the bin will own formatting.
+                // T1-5.5d: the presenter has moved to
+                // `cognicode_cli::presenter` (in the bin crate).
+                // The library returns `IndexResult`; the bin
+                // formats it (text or JSON per `--format`). No
+                // presentation logic remains here.
                 let result = Self::execute_index(command).await.map_err(Box::new)?;
-                use crate::interface::cli::presenter;
-                let mut stdout = std::io::stdout();
-                presenter::present_index_result(&result, &mut stdout)
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(CommandOutput::Index(result))
             }
             Some(CliCommand::Graph { command }) => {
@@ -892,12 +887,6 @@ impl CommandExecutor {
                     entries_len: result.entries.len(),
                 };
                 // T1-5.4i: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_ondemand(
-                    &final_result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(final_result)
             }
             GraphCommand::PerFile { file } => {
@@ -918,12 +907,6 @@ impl CommandExecutor {
                         // the text (T1-5.5 will move it to the
                         // bin); the snapshot test pins the
                         // byte stream.
-                        let mut stdout = std::io::stdout();
-                        crate::interface::cli::presenter::present_graph_perfile(
-                            &result,
-                            &mut stdout,
-                        )
-                        .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                         Ok(result)
                     }
                     Err(e) => {
@@ -934,27 +917,19 @@ impl CommandExecutor {
             }
             GraphCommand::Full {
                 rebuild,
-                format,
+                format: _format,
                 path,
             } => {
                 let start = Instant::now();
-                // PRF-CLI-02: in json mode stdout carries ONLY the
-                // schema-versioned JSON document; progress text stays on
-                // stderr. Text mode preserves the historical human output.
-                let json_mode = format == "json";
-                if !json_mode {
-                    println!(
-                        "Building full project graph at: {}{}",
-                        path,
-                        if *rebuild { " (rebuild)" } else { "" }
-                    );
-                } else {
-                    eprintln!(
-                        "Building full project graph at: {}{}",
-                        path,
-                        if *rebuild { " (rebuild)" } else { "" }
-                    );
-                }
+                // T1-5.5d: the per-subcommand --format on
+                // GraphCommand::Full is now ignored; the top-level
+                // --format on Cli is canonical. Progress always goes
+                // to stderr so stdout stays clean for `cogh ... | jq`.
+                eprintln!(
+                    "Building full project graph at: {}{}",
+                    path,
+                    if *rebuild { " (rebuild)" } else { "" }
+                );
 
                 // PRF-EXT-02 / H-03: `graph full` must go through the
                 // same application service (`AnalysisService`) as the
@@ -990,118 +965,48 @@ impl CommandExecutor {
                             }
                             })
                             .unwrap_or_default();
-                        if json_mode {
-                            #[derive(serde::Serialize)]
-                            struct SkippedJson {
-                                path: String,
-                                reason: String,
-                            }
-                            #[derive(serde::Serialize)]
-                            struct FullGraphJson<'a> {
-                                schema_version: &'a str,
-                                path: &'a str,
-                                elapsed_ms: u128,
-                                symbols: usize,
-                                dependencies: usize,
-                                status: &'a str,
-                                #[serde(skip_serializing_if = "Vec::is_empty")]
-                                skipped_files: Vec<SkippedJson>,
-                            }
-                            let doc = FullGraphJson {
-                                schema_version: "cognicode.graph.full/v1",
-                                path,
-                                elapsed_ms: elapsed,
-                                symbols,
-                                dependencies: edges,
-                                status: if skipped.is_empty() {
-                                    "complete"
-                                } else {
-                                    "partial"
-                                },
-                                skipped_files: skipped
-                                    .iter()
-                                    .filter_map(|s| {
-                                        let (p, r) = s.split_once(": ")?;
-                                        Some(SkippedJson {
-                                            path: p.to_string(),
-                                            reason: r.to_string(),
-                                        })
-                                    })
-                                    .collect(),
-                            };
-                            println!("{}", serde_json::to_string(&doc)?);
-                            // T1-5.4k: build the GraphResult
-                            // for the bin (T1-5.5 will use it
-                            // for the consolidated JSON
-                            // dispatch). For now the json
-                            // branch emits the legacy JSON
-                            // shape via the ad-hoc struct.
-                            let skipped_files: Vec<SkippedFile> = skipped
-                                .iter()
-                                .filter_map(|s| {
-                                    let (p, r) = s.split_once(": ")?;
-                                    Some(SkippedFile {
-                                        path: p.to_string(),
-                                        reason: r.to_string(),
-                                    })
+                        let skipped_files: Vec<SkippedFile> = skipped
+                            .iter()
+                            .filter_map(|s| {
+                                let (p, r) = s.split_once(": ")?;
+                                Some(SkippedFile {
+                                    path: p.to_string(),
+                                    reason: r.to_string(),
                                 })
-                                .collect();
-                            Ok(GR::Full {
-                                path: path.clone(),
-                                rebuild: *rebuild,
-                                elapsed_ms: elapsed,
-                                symbols,
-                                dependencies: edges,
-                                status: if skipped.is_empty() {
-                                    "complete".to_string()
-                                } else {
-                                    "partial".to_string()
-                                },
-                                skipped_files,
                             })
-                        } else {
-                            // T1-5.4k: text formatting is in
-                            // the presenter. The 'Skipped:'
-                            // lines (eprintln!) stay in the
-                            // function — they go to stderr and
-                            // are not part of the presenter's
-                            // stdout output.
-                            let skipped_files: Vec<SkippedFile> = skipped
-                                .iter()
-                                .filter_map(|s| {
-                                    let (p, r) = s.split_once(": ")?;
-                                    Some(SkippedFile {
-                                        path: p.to_string(),
-                                        reason: r.to_string(),
-                                    })
-                                })
-                                .collect();
-                            let result = GR::Full {
-                                path: path.clone(),
-                                rebuild: *rebuild,
-                                elapsed_ms: elapsed,
-                                symbols,
-                                dependencies: edges,
-                                status: if skipped.is_empty() {
-                                    "complete".to_string()
-                                } else {
-                                    "partial".to_string()
-                                },
-                                skipped_files,
-                            };
-                            // Emit the Skipped lines to stderr
-                            // (matches pre-migration eprintln!).
-                            for s in &skipped {
-                                eprintln!("  Skipped: {}", s);
-                            }
-                            let mut stdout = std::io::stdout();
-                            crate::interface::cli::presenter::present_graph_full(
-                                &result,
-                                &mut stdout,
-                            )
-                            .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
-                            Ok(result)
+                            .collect();
+                        // T1-5.5d: text formatting is in the bin's
+                        // presenter (cognicode_cli::presenter). The
+                        // legacy ad-hoc FullGraphJson envelope
+                        // (`schema_version: "cognicode.graph.full/v1"`)
+                        // is gone — the bin emits the unified JSON
+                        // via `serde_json::to_writer_pretty(&GR::Full)`
+                        // which carries `kind: "full"`, `rebuild`, the
+                        // counts, `status`, and `skipped_files`.
+                        let result = GR::Full {
+                            path: path.clone(),
+                            rebuild: *rebuild,
+                            elapsed_ms: elapsed,
+                            symbols,
+                            dependencies: edges,
+                            status: if skipped.is_empty() {
+                                "complete".to_string()
+                            } else {
+                                "partial".to_string()
+                            },
+                            skipped_files,
+                        };
+                        // Skipped lines go to stderr (matches the
+                        // pre-migration eprintln!). The bin's text
+                        // presenter emits them too via the `status`
+                        // and `skipped_files` fields; keeping them
+                        // here preserves the historical stderr stream
+                        // for shell pipelines that grep "Building ..."
+                        // or "Skipped:" independently of stdout.
+                        for s in &skipped {
+                            eprintln!("  Skipped: {}", s);
                         }
+                        Ok(result)
                     }
                     Err(e) => {
                         eprintln!("Error building full graph: {}", e);
@@ -1165,12 +1070,6 @@ impl CommandExecutor {
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4e: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_hotpaths(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
             GraphCommand::EntryPoints { path } => {
@@ -1219,12 +1118,6 @@ impl CommandExecutor {
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4d: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_entrypoints(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
             GraphCommand::LeafFunctions { path } => {
@@ -1273,12 +1166,6 @@ impl CommandExecutor {
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4d: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_leaffunctions(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
             GraphCommand::TracePath { from, to, path } => {
@@ -1359,26 +1246,10 @@ impl CommandExecutor {
                     _ => unreachable!(),
                 };
                 // T1-5.4g: result block + summary in the
-                // presenter. The progress line above is NOT
-                // part of the snapshot (it can't be: the
-                // variant doesn't carry the project path).
-                let mut stdout = std::io::stdout();
-                match &final_result {
-                    GR::TracePathFound { .. } => {
-                        crate::interface::cli::presenter::present_graph_tracepath_found(
-                            &final_result,
-                            &mut stdout,
-                        )
-                    }
-                    GR::TracePathNotFound { .. } => {
-                        crate::interface::cli::presenter::present_graph_tracepath_notfound(
-                            &final_result,
-                            &mut stdout,
-                        )
-                    }
-                    _ => unreachable!(),
-                }
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                // presenter (now lives in cognicode-cli::presenter).
+                // The progress line above is NOT part of the
+                // snapshot (it can't be: the variant doesn't
+                // carry the project path).
                 Ok(final_result)
             }
             GraphCommand::Mermaid { path, format } => {
@@ -1460,12 +1331,6 @@ impl CommandExecutor {
                     unreachable!()
                 };
                 // T1-5.4h: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_mermaid(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
             GraphCommand::Hierarchy {
@@ -1539,12 +1404,6 @@ impl CommandExecutor {
                 // T1-5.4j: text formatting is in the
                 // presenter (the result block + summary; the
                 // progress line above stays in the function).
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_hierarchy(
-                    &final_result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(final_result)
             }
             GraphCommand::Complexity { path } => {
@@ -1594,12 +1453,6 @@ impl CommandExecutor {
                     elapsed_ms: elapsed,
                 };
                 // T1-5.4f: text formatting is in the presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_complexity(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
             GraphCommand::Impact { symbol, path } => {
@@ -1668,12 +1521,6 @@ impl CommandExecutor {
                         impacted_files: vec![],
                         elapsed_ms: elapsed,
                     };
-                    let mut stdout = std::io::stdout();
-                    crate::interface::cli::presenter::present_graph_impact(
-                        &result,
-                        &mut stdout,
-                    )
-                    .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                     return Ok(result);
                 }
 
@@ -1719,12 +1566,6 @@ impl CommandExecutor {
                 };
                 // T1-5.4l: text formatting is in the
                 // presenter.
-                let mut stdout = std::io::stdout();
-                crate::interface::cli::presenter::present_graph_impact(
-                    &result,
-                    &mut stdout,
-                )
-                .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
                 Ok(result)
             }
         }
@@ -2742,10 +2583,12 @@ fn render_evidence_rows(
 /// T1-5.3d moved the implementation to
 /// `crate::interface::cli::presenter::present_index_result`
 /// (a `&mut dyn Write` parameter makes it testable from
-/// `tests/t1_5_3d_index_presenter_snapshot.rs`). The call site
-/// in `execute()` is the only caller in this file; T1-5.5 will
-/// move the whole presenter to the bin's own module and add
-/// JSON dispatch.
+/// `tests/t1_5_3d_index_presenter_snapshot.rs`). T1-5.5
+/// moved the whole presenter to `cognicode_cli::presenter`
+/// (the bin crate) and added JSON dispatch via
+/// `present_index_result_json` + `present_output`. The
+/// `*Result` enum still lives here in the lib; only the
+/// formatting moved.
 
 /// L1.4 / F0.1 — Render human-readable text output for `find-usages`.
 ///
