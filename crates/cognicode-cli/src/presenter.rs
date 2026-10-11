@@ -99,7 +99,11 @@ pub fn present_index_result(result: &IndexResult, w: &mut dyn Write) -> std::io:
             if let Some(d) = doc {
                 writeln!(w, "\n/// Docstring:\n{}", d)?;
             }
-            writeln!(w, "\n/// Symbol code (lines {} - {}):", start_line, end_line)?;
+            writeln!(
+                w,
+                "\n/// Symbol code (lines {} - {}):",
+                start_line, end_line
+            )?;
             writeln!(w, "{}", code)?;
         }
     }
@@ -112,13 +116,21 @@ pub fn present_index_result(result: &IndexResult, w: &mut dyn Write) -> std::io:
 /// (indent unit, branch characters, kind/signature formatting)
 /// matches the pre-migration version byte-for-byte; the T1-5.3d
 /// test pins the `Outline` variant end-to-end.
-fn write_outline_tree(nodes: &[OutlineNode], indent: usize, w: &mut dyn Write) -> std::io::Result<()> {
+fn write_outline_tree(
+    nodes: &[OutlineNode],
+    indent: usize,
+    w: &mut dyn Write,
+) -> std::io::Result<()> {
     for (i, node) in nodes.iter().enumerate() {
         let is_last = i == nodes.len() - 1;
         let prefix = if indent == 0 {
             String::new()
         } else {
-            format!("{}{}", "  ".repeat(indent - 1), if is_last { "└── " } else { "├── " })
+            format!(
+                "{}{}",
+                "  ".repeat(indent - 1),
+                if is_last { "└── " } else { "├── " }
+            )
         };
 
         let sig_info = node
@@ -468,27 +480,15 @@ pub fn present_graph_complexity(
             "  Cyclomatic complexity: {}",
             metrics.cyclomatic_complexity
         )?;
-        writeln!(
-            w,
-            "  High fan-out (>=10): {}",
-            metrics.high_fan_out_count
-        )?;
+        writeln!(w, "  High fan-out (>=10): {}", metrics.high_fan_out_count)?;
         writeln!(
             w,
             "  Medium fan-out (5-9): {}",
             metrics.medium_fan_out_count
         )?;
-        writeln!(
-            w,
-            "  Low fan-out (<5): {}",
-            metrics.low_fan_out_count
-        )?;
+        writeln!(w, "  Low fan-out (<5): {}", metrics.low_fan_out_count)?;
         writeln!(w, "  Entry points: {}", metrics.entry_point_count)?;
-        writeln!(
-            w,
-            "  Leaf functions: {}",
-            metrics.leaf_function_count
-        )?;
+        writeln!(w, "  Leaf functions: {}", metrics.leaf_function_count)?;
         // Summary — commands.rs:1322.
         writeln!(w)?;
         writeln!(w, "Analysis completed in {}ms", elapsed_ms)?;
@@ -650,11 +650,7 @@ pub fn present_graph_mermaid(
         match format.as_str() {
             "svg" | "png" => {
                 writeln!(w, "Note: SVG/PNG export requires mermaid-cli")?;
-                writeln!(
-                    w,
-                    "Run: cat << 'EOF' | mermaid -s\n{}\nEOF",
-                    diagram
-                )?;
+                writeln!(w, "Run: cat << 'EOF' | mermaid -s\n{}\nEOF", diagram)?;
             }
             _ => {
                 // The 'truncated' flag drives whether we
@@ -802,11 +798,20 @@ pub fn present_graph_hierarchy(
         // Result block + per-depth entries.
         writeln!(w)?;
         writeln!(w, "Call hierarchy for '{}':", symbol)?;
-        writeln!(w, "Root: {} at {}:{}:{}", symbol, root_file, root_line, root_column)?;
+        writeln!(
+            w,
+            "Root: {} at {}:{}:{}",
+            symbol, root_file, root_line, root_column
+        )?;
         writeln!(w)?;
         writeln!(w, "Entries by depth:")?;
         for bucket in buckets {
-            writeln!(w, "  Depth {}: {} entries", bucket.depth, bucket.entries.len())?;
+            writeln!(
+                w,
+                "  Depth {}: {} entries",
+                bucket.depth,
+                bucket.entries.len()
+            )?;
             for entry in &bucket.entries {
                 writeln!(
                     w,
@@ -967,11 +972,7 @@ pub fn present_graph_impact(
             writeln!(w, "Impact Analysis for '{}':", symbol)?;
             writeln!(w, "  Risk Level: {}", risk_level)?;
             writeln!(w, "  Direct dependents: {}", direct_dependents)?;
-            writeln!(
-                w,
-                "  Total impacted symbols: {}",
-                total_impacted_symbols
-            )?;
+            writeln!(w, "  Total impacted symbols: {}", total_impacted_symbols)?;
             writeln!(w, "  Impacted files: {}", impacted_files_count)?;
             if !impacted_symbols.is_empty() {
                 writeln!(w)?;
@@ -1047,10 +1048,7 @@ pub fn present_graph_impact(
 /// Trailing newline so `cogh --format json index ... | jq .kind`
 /// works out of the box (jq tolerates trailing whitespace but the
 /// line-based consumers in CI scripts do not).
-pub fn present_index_result_json(
-    result: &IndexResult,
-    w: &mut dyn Write,
-) -> io::Result<()> {
+pub fn present_index_result_json(result: &IndexResult, w: &mut dyn Write) -> io::Result<()> {
     serde_json::to_writer_pretty(&mut *w, result)?;
     w.write_all(b"\n")
 }
@@ -1059,10 +1057,7 @@ pub fn present_index_result_json(
 ///
 /// `#[serde(tag = "kind", rename_all = "snake_case")]` gives each of
 /// the 11 variants its own `"kind": "<variant>"|"` discriminator.
-pub fn present_graph_result_json(
-    result: &GraphResult,
-    w: &mut dyn Write,
-) -> io::Result<()> {
+pub fn present_graph_result_json(result: &GraphResult, w: &mut dyn Write) -> io::Result<()> {
     serde_json::to_writer_pretty(&mut *w, result)?;
     w.write_all(b"\n")
 }

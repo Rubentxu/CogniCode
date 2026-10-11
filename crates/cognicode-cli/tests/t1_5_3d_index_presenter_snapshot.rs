@@ -32,17 +32,16 @@
 //!   - The test fails with a diff that shows the expected vs actual
 //!     byte sequence — that is exactly the failure mode we want.
 
-use cognicode_core::domain::value_objects::SymbolKind;
-use cognicode_core::infrastructure::graph::SymbolLocation;
 use cognicode_cli::presenter::present_index_result;
 use cognicode_cli::presenter::test_helpers::outline_node;
+use cognicode_core::domain::value_objects::SymbolKind;
+use cognicode_core::infrastructure::graph::SymbolLocation;
 use cognicode_core::interface::cli::result::IndexResult;
 use std::path::PathBuf;
 
 fn render(result: &IndexResult) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    present_index_result(result, &mut buf)
-        .expect("presenter write to Vec<u8> is infallible");
+    present_index_result(result, &mut buf).expect("presenter write to Vec<u8> is infallible");
     String::from_utf8(buf).expect("presenter emits UTF-8 text")
 }
 
@@ -117,12 +116,7 @@ fn snapshot_outline_two_level_recursion() {
     // every code path (root, intermediate child with children,
     // terminal child) to be exercised.
     let leaf = outline_node("inner", SymbolKind::Function, 5, vec![]);
-    let mid = outline_node(
-        "outer",
-        SymbolKind::Class,
-        1,
-        vec![leaf],
-    );
+    let mid = outline_node("outer", SymbolKind::Class, 1, vec![leaf]);
     let result = IndexResult::Outline {
         file: PathBuf::from("/lib/foo.rs"),
         symbols: vec![mid],

@@ -84,7 +84,9 @@ fn snapshot_cogh_current() {
         "cogh current exited non-zero: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8_lossy(&output.stdout).trim_end().to_string();
+    let stdout = String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_string();
     // The exact format from this baseline run.
     // The expected output here is whatever `cogh current` emits
     // today (with the println!s in the library). It will become
@@ -120,10 +122,7 @@ fn snapshot_cogh_doctor_structure() {
     // The T1-5 migration must preserve this structure (the
     // doctor output is parsed by `cogh where` and similar
     // commands downstream).
-    let output = cogh()
-        .arg("doctor")
-        .output()
-        .expect("cogh doctor must run");
+    let output = cogh().arg("doctor").output().expect("cogh doctor must run");
     assert!(
         output.status.success(),
         "cogh doctor exited non-zero: stderr={}",
@@ -160,9 +159,7 @@ fn snapshot_cogh_doctor_structure() {
     let subsystem_count = lines
         .iter()
         .filter(|l| {
-            l.starts_with("  PASS ")
-                || l.starts_with("  FAIL ")
-                || l.starts_with("  UNAVAILABLE ")
+            l.starts_with("  PASS ") || l.starts_with("  FAIL ") || l.starts_with("  UNAVAILABLE ")
         })
         .count();
     assert!(
@@ -176,10 +173,7 @@ fn snapshot_cogh_help_structure() {
     // `cogh --help` and `cogh <subcommand> --help` produce the
     // standard clap-generated help. The structure is preserved
     // by T1-5 as long as the binary still uses clap derive.
-    let output = cogh()
-        .arg("--help")
-        .output()
-        .expect("cogh --help must run");
+    let output = cogh().arg("--help").output().expect("cogh --help must run");
     // clap --help exits 0 on success.
     assert!(
         output.status.success(),

@@ -117,8 +117,7 @@ fn mcp_symbolkind_does_not_serialize_as_pascalcase() {
     // Negative test: a wire format change to PascalCase (the canonical's
     // format) would silently make the MCP layer indistinguishable from
     // the canonical. Pin that the MCP layer does NOT use PascalCase.
-    let json = serde_json::to_string(&McpSymbolKind::Function)
-        .expect("SymbolKind must serialize");
+    let json = serde_json::to_string(&McpSymbolKind::Function).expect("SymbolKind must serialize");
     assert_eq!(
         json, "\"function\"",
         "MCP SymbolKind::Function must serialize as \"function\" (lowercase), got: {json}"
@@ -131,8 +130,7 @@ fn mcp_symbolkind_does_not_serialize_as_snake_case_for_compound_names() {
     // attribute were `lowercase` alone (without `snake_case` fallback for
     // compound names), it would serialize as `typealias`. Pin the exact
     // form.
-    let json = serde_json::to_string(&McpSymbolKind::TypeAlias)
-        .expect("SymbolKind must serialize");
+    let json = serde_json::to_string(&McpSymbolKind::TypeAlias).expect("SymbolKind must serialize");
     assert_eq!(
         json, "\"type_alias\"",
         "MCP SymbolKind::TypeAlias must serialize as \"type_alias\" (snake_case compound), got: {json}"

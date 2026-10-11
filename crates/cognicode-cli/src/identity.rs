@@ -129,9 +129,7 @@ mod tests {
         // Si no, "unknown".
         assert!(
             s == "unknown"
-                || (s.len() >= 7
-                    && s.len() <= 12
-                    && s.chars().all(|c| c.is_ascii_hexdigit())),
+                || (s.len() >= 7 && s.len() <= 12 && s.chars().all(|c| c.is_ascii_hexdigit())),
             "source_sha must be 'unknown' or 7-12 hex chars; got {s:?}"
         );
     }

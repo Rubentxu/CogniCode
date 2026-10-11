@@ -18,5 +18,5 @@
 
 pub use cognicode_core;
 
-pub mod presenter;
 pub mod identity;
+pub mod presenter;

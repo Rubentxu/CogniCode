@@ -43,10 +43,10 @@
 //!   swapped, kind discriminator removed from the enum) would
 //!   pass the serde tests but fail here.
 
+use cognicode_cli::presenter::test_helpers::outline_node;
 use cognicode_cli::presenter::{
     present_graph_result_json, present_index_result_json, present_output,
 };
-use cognicode_cli::presenter::test_helpers::outline_node;
 use cognicode_core::domain::value_objects::SymbolKind;
 use cognicode_core::infrastructure::graph::SymbolLocation;
 use cognicode_core::interface::cli::commands::Format;
@@ -63,9 +63,10 @@ fn render_json(emit: impl FnOnce(&mut Vec<u8>) -> std::io::Result<()>) -> String
 fn assert_kind(out: &str, expected: &str) {
     let parsed: Value = serde_json::from_str(out)
         .unwrap_or_else(|e| panic!("presenter output must be parseable JSON: {e}; got {out:?}"));
-    let kind = parsed.get("kind").and_then(|v| v.as_str()).unwrap_or_else(|| {
-        panic!("presenter JSON must carry a 'kind' discriminator; got {out:?}")
-    });
+    let kind = parsed
+        .get("kind")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| panic!("presenter JSON must carry a 'kind' discriminator; got {out:?}"));
     assert_eq!(kind, expected, "kind mismatch in {out:?}");
 }
 

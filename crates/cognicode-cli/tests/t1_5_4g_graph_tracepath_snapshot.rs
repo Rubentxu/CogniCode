@@ -35,22 +35,18 @@
 //!     side solo necesita from/to/hops). T1-5.5 decidirá
 //!     si moverlo a tracing::info! o dejarlo en commands.rs.
 
-use cognicode_cli::presenter::{
-    present_graph_tracepath_found, present_graph_tracepath_notfound,
-};
+use cognicode_cli::presenter::{present_graph_tracepath_found, present_graph_tracepath_notfound};
 use cognicode_core::interface::cli::result::{GraphResult, PathHop};
 
 fn render_found(result: &GraphResult) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    present_graph_tracepath_found(result, &mut buf)
-        .expect("presenter to Vec<u8> infallible");
+    present_graph_tracepath_found(result, &mut buf).expect("presenter to Vec<u8> infallible");
     String::from_utf8(buf).expect("UTF-8 text")
 }
 
 fn render_notfound(result: &GraphResult) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    present_graph_tracepath_notfound(result, &mut buf)
-        .expect("presenter to Vec<u8> infallible");
+    present_graph_tracepath_notfound(result, &mut buf).expect("presenter to Vec<u8> infallible");
     String::from_utf8(buf).expect("UTF-8 text")
 }
 

@@ -361,18 +361,16 @@ pub async fn handle_retrieve_and_verify(
         results: dto_result
             .results
             .into_iter()
-            .map(|r| {
-                crate::interface::mcp::schemas::VerifiedMatch {
-                    file: r.file,
-                    line: r.line,
-                    col: r.col,
-                    matched_text: r.matched_text,
-                    context: r.context,
-                    status: r.status,
-                    check_output: r.check_output,
-                    error_snippet: r.error_snippet,
-                    reason: r.reason,
-                }
+            .map(|r| crate::interface::mcp::schemas::VerifiedMatch {
+                file: r.file,
+                line: r.line,
+                col: r.col,
+                matched_text: r.matched_text,
+                context: r.context,
+                status: r.status,
+                check_output: r.check_output,
+                error_snippet: r.error_snippet,
+                reason: r.reason,
             })
             .collect(),
         total: dto_result.total,

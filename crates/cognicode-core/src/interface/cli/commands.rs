@@ -719,9 +719,7 @@ impl CommandExecutor {
     /// the presenter (T1-5.5 will move that into the bin's own
     /// module, but for T1-5.3c it lives here so the output
     /// remains byte-identical with the pre-migration version).
-    async fn execute_index(
-        command: &IndexCommand,
-    ) -> Result<IndexResult, IndexError> {
+    async fn execute_index(command: &IndexCommand) -> Result<IndexResult, IndexError> {
         match command {
             IndexCommand::Build { path, strategy } => {
                 tracing::info!(
@@ -734,11 +732,13 @@ impl CommandExecutor {
                 let mut strategy_box = GraphStrategyFactory::create(strategy);
                 let dir = PathBuf::from(path);
 
-                strategy_box.build_index(&dir).map_err(|e| IndexError::Build {
-                    path: dir.clone(),
-                    strategy: strategy.to_string(),
-                    source: Box::new(e),
-                })?;
+                strategy_box
+                    .build_index(&dir)
+                    .map_err(|e| IndexError::Build {
+                        path: dir.clone(),
+                        strategy: strategy.to_string(),
+                        source: Box::new(e),
+                    })?;
                 let elapsed_ms = start.elapsed().as_millis();
                 Ok(IndexResult::Build {
                     path: dir,
@@ -789,9 +789,8 @@ impl CommandExecutor {
                     file: PathBuf::from(file),
                     source: e,
                 })?;
-                let language =
-                    Language::from_extension(std::path::Path::new(file).extension())
-                        .unwrap_or(Language::Rust);
+                let language = Language::from_extension(std::path::Path::new(file).extension())
+                    .unwrap_or(Language::Rust);
 
                 let outline = crate::infrastructure::semantic::build_outline(
                     &source,
@@ -821,16 +820,16 @@ impl CommandExecutor {
                 );
                 let service = SymbolCodeService::new();
 
-                let code = service
-                    .get_symbol_code(file, *line, *column)
-                    .map_err(|e| IndexError::SymbolCode {
+                let code = service.get_symbol_code(file, *line, *column).map_err(|e| {
+                    IndexError::SymbolCode {
                         file: file.clone().into(),
                         line: *line,
                         column: *column,
                         source: Box::<dyn std::error::Error + Send + Sync>::from(
                             std::io::Error::other(e),
                         ),
-                    })?;
+                    }
+                })?;
                 Ok(IndexResult::SymbolCode {
                     file: file.clone().into(),
                     line: *line,
@@ -1387,8 +1386,7 @@ impl CommandExecutor {
                     if let Some(entries) = by_depth.get(&depth) {
                         let mut depth_entries: Vec<DepthEntry> = Vec::new();
                         for entry in entries.iter().take(5) {
-                            let dir_str =
-                                format!("{:?}", entry.direction).to_lowercase();
+                            let dir_str = format!("{:?}", entry.direction).to_lowercase();
                             depth_entries.push(DepthEntry {
                                 name: entry.symbol.name().to_string(),
                                 direction: dir_str,

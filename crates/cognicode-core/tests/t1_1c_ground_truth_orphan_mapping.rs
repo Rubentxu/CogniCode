@@ -63,7 +63,10 @@ fn eleven_direct_variants_map_to_their_canonical_counterpart() {
     // a future refactor decides Method → Function in canonical),
     // this test RED and forces a deliberate decision.
     let pairs: &[(GroundTruthSymbolKind, CanonicalSymbolKind)] = &[
-        (GroundTruthSymbolKind::Function, CanonicalSymbolKind::Function),
+        (
+            GroundTruthSymbolKind::Function,
+            CanonicalSymbolKind::Function,
+        ),
         (GroundTruthSymbolKind::Struct, CanonicalSymbolKind::Struct),
         (GroundTruthSymbolKind::Module, CanonicalSymbolKind::Module),
         (GroundTruthSymbolKind::Enum, CanonicalSymbolKind::Enum),
@@ -71,9 +74,15 @@ fn eleven_direct_variants_map_to_their_canonical_counterpart() {
         (GroundTruthSymbolKind::Method, CanonicalSymbolKind::Method),
         (GroundTruthSymbolKind::Field, CanonicalSymbolKind::Field),
         (GroundTruthSymbolKind::Const, CanonicalSymbolKind::Constant),
-        (GroundTruthSymbolKind::TypeAlias, CanonicalSymbolKind::TypeAlias),
+        (
+            GroundTruthSymbolKind::TypeAlias,
+            CanonicalSymbolKind::TypeAlias,
+        ),
         (GroundTruthSymbolKind::Class, CanonicalSymbolKind::Class),
-        (GroundTruthSymbolKind::Interface, CanonicalSymbolKind::Interface),
+        (
+            GroundTruthSymbolKind::Interface,
+            CanonicalSymbolKind::Interface,
+        ),
     ];
     assert_eq!(
         pairs.len(),
@@ -108,10 +117,22 @@ fn three_extra_variants_map_to_their_specific_canonical() {
     // If any of these change, the scoring weights for these
     // categories will change silently. Pin the mapping.
     let pairs: &[(GroundTruthSymbolKind, CanonicalSymbolKind)] = &[
-        (GroundTruthSymbolKind::Variant, CanonicalSymbolKind::EnumVariant),
-        (GroundTruthSymbolKind::Property, CanonicalSymbolKind::Property),
-        (GroundTruthSymbolKind::Parameter, CanonicalSymbolKind::Parameter),
-        (GroundTruthSymbolKind::Variable, CanonicalSymbolKind::Variable),
+        (
+            GroundTruthSymbolKind::Variant,
+            CanonicalSymbolKind::EnumVariant,
+        ),
+        (
+            GroundTruthSymbolKind::Property,
+            CanonicalSymbolKind::Property,
+        ),
+        (
+            GroundTruthSymbolKind::Parameter,
+            CanonicalSymbolKind::Parameter,
+        ),
+        (
+            GroundTruthSymbolKind::Variable,
+            CanonicalSymbolKind::Variable,
+        ),
     ];
     for (gt, expected) in pairs {
         let canonical: CanonicalSymbolKind = gt.clone().into();

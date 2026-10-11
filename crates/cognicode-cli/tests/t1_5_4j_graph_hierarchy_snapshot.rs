@@ -193,10 +193,7 @@ fn snapshot_hierarchy_per_depth_count_includes_truncated_entries() {
         "Per-depth count uses entries.len() (5 in this case): {out:?}"
     );
     // The 5 per-depth entry lines should follow.
-    let entry_lines: Vec<&str> = out
-        .lines()
-        .filter(|l| l.starts_with("    - "))
-        .collect();
+    let entry_lines: Vec<&str> = out.lines().filter(|l| l.starts_with("    - ")).collect();
     assert_eq!(
         entry_lines.len(),
         5,

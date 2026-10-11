@@ -67,10 +67,7 @@ pub enum IndexResult {
     /// Variante separada de `Query { locations: vec![] }` para
     /// que el JSON distinga entre "found zero" (raro pero
     /// posible) y "didn't find" (lo normal cuando no hay match).
-    QueryEmpty {
-        symbol: String,
-        path: PathBuf,
-    },
+    QueryEmpty { symbol: String, path: PathBuf },
     /// `cognicode index outline <file>` — outline extracted.
     Outline {
         file: PathBuf,

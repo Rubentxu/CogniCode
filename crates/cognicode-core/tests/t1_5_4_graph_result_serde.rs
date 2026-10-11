@@ -46,9 +46,11 @@ fn graph_result_ondemand_serializes_with_kind_ondemand() {
         root_column: 1,
         entries_len: 5,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
-    assert_eq!(json["kind"], "on_demand", "wire format must have kind=on_demand");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    assert_eq!(
+        json["kind"], "on_demand",
+        "wire format must have kind=on_demand"
+    );
     assert_eq!(json["symbol"], "alpha");
     assert_eq!(json["depth"], 3);
     assert_eq!(json["direction"], "both");
@@ -67,9 +69,11 @@ fn graph_result_perfile_serializes_with_kind_perfile() {
         symbols: 7,
         dependencies: 3,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
-    assert_eq!(json["kind"], "per_file", "wire format must have kind=per_file");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    assert_eq!(
+        json["kind"], "per_file",
+        "wire format must have kind=per_file"
+    );
     assert_eq!(json["file"], "/lib/foo.rs");
     assert_eq!(json["symbols"], 7);
     assert_eq!(json["dependencies"], 3);
@@ -89,8 +93,7 @@ fn graph_result_full_serializes_with_status_and_skipped() {
             reason: "ParseError".to_string(),
         }],
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "full");
     assert_eq!(json["path"], "/work/repo");
     assert_eq!(json["rebuild"], true);
@@ -117,8 +120,7 @@ fn graph_result_hotpaths_serializes_entries_array() {
         }],
         elapsed_ms: 50,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "hot_paths");
     assert_eq!(json["limit"], 10);
     assert_eq!(json["min_fan_in"], 1);
@@ -146,10 +148,12 @@ fn graph_result_entrypoints_serializes_with_total_above_truncated_symbols() {
         total: 47,
         elapsed_ms: 30,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "entry_points");
-    assert_eq!(json["total"], 47, "total must reflect the untruncated count");
+    assert_eq!(
+        json["total"], 47,
+        "total must reflect the untruncated count"
+    );
     assert_eq!(json["symbols"][0]["name"], "main");
     assert_eq!(json["symbols"][0]["file"], "/lib/main.rs");
     assert_eq!(json["symbols"][0]["line"], 1);
@@ -167,8 +171,7 @@ fn graph_result_leaffunctions_serializes_with_kind_leaf_functions() {
         total: 0,
         elapsed_ms: 25,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "leaf_functions");
     assert_eq!(json["total"], 0);
     assert!(json["symbols"].as_array().unwrap().is_empty());
@@ -199,12 +202,14 @@ fn graph_result_tracepath_found_serializes_hops_with_1indexed_position() {
         ],
         elapsed_ms: 8,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "trace_path_found");
     assert_eq!(json["from"], "alpha");
     assert_eq!(json["to"], "beta");
-    assert_eq!(json["hops"][0]["position"], 1, "PathHop.position is 1-indexed");
+    assert_eq!(
+        json["hops"][0]["position"], 1,
+        "PathHop.position is 1-indexed"
+    );
     assert_eq!(json["hops"][0]["name"], "alpha");
     assert_eq!(json["hops"][1]["position"], 2);
     assert_eq!(json["elapsed_ms"], 8);
@@ -220,8 +225,7 @@ fn graph_result_tracepath_notfound_is_its_own_variant() {
         to: "ghost".to_string(),
         elapsed_ms: 3,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "trace_path_not_found");
     assert_eq!(json["from"], "alpha");
     assert_eq!(json["to"], "ghost");
@@ -241,12 +245,14 @@ fn graph_result_mermaid_serializes_truncated_flag() {
         truncated: true,
         elapsed_ms: 40,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "mermaid");
     assert_eq!(json["diagram_len"], 18);
     assert_eq!(json["format"], "txt");
-    assert_eq!(json["truncated"], true, "truncated flag is a stable signal for consumers");
+    assert_eq!(
+        json["truncated"], true,
+        "truncated flag is a stable signal for consumers"
+    );
     assert_eq!(json["elapsed_ms"], 40);
     // T1-5.4h: the diagram field is part of the data side
     // (the presenter needs the full content to reproduce
@@ -279,8 +285,7 @@ fn graph_result_hierarchy_serializes_recursive_buckets() {
         total_entries: 1,
         elapsed_ms: 12,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "hierarchy");
     assert_eq!(json["symbol"], "alpha");
     assert_eq!(json["depth"], 2);
@@ -315,8 +320,7 @@ fn graph_result_complexity_serializes_all_nine_metrics() {
         },
         elapsed_ms: 60,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "complexity");
     assert_eq!(json["metrics"]["total_symbols"], 100);
     assert_eq!(json["metrics"]["total_edges"], 200);
@@ -346,8 +350,7 @@ fn graph_result_impact_serializes_risk_and_untruncated_lists() {
         impacted_files: vec!["/lib/a.rs".to_string(), "/lib/b.rs".to_string()],
         elapsed_ms: 70,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "impact");
     assert_eq!(json["risk_level"], "HIGH");
     assert_eq!(json["direct_dependents"], 3);

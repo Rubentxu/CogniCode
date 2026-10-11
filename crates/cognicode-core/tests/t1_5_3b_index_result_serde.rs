@@ -20,11 +20,11 @@
 //!   - Adding a new variant without declaring its wire
 //!     form is caught (the test enumerates the known kinds).
 
+use cognicode_core::domain::value_objects::Location;
 use cognicode_core::domain::value_objects::symbol_kind::SymbolKind;
-use cognicode_core::interface::cli::result::{IndexError, IndexResult};
 use cognicode_core::infrastructure::graph::SymbolLocation;
 use cognicode_core::infrastructure::semantic::outline::OutlineNode;
-use cognicode_core::domain::value_objects::Location;
+use cognicode_core::interface::cli::result::{IndexError, IndexResult};
 use serde_json::Value;
 use std::path::PathBuf;
 
@@ -40,8 +40,7 @@ fn index_result_query_with_locations_serializes_with_kind_query() {
             symbol_kind: SymbolKind::Function,
         }],
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
     assert_eq!(json["kind"], "query", "wire format must have kind=query");
     assert_eq!(json["symbol"], "main");
     assert_eq!(json["path"], "/tmp/proj");
@@ -60,9 +59,11 @@ fn index_result_query_empty_serializes_with_kind_query_empty() {
         symbol: "missing_xyz".to_string(),
         path: PathBuf::from("."),
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
-    assert_eq!(json["kind"], "query_empty", "QueryEmpty must be its own kind");
+    let json: Value = serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
+    assert_eq!(
+        json["kind"], "query_empty",
+        "QueryEmpty must be its own kind"
+    );
     assert_eq!(json["symbol"], "missing_xyz");
     assert_eq!(json["path"], ".");
     // Pin the absence of `locations` — QueryEmpty is
@@ -81,8 +82,7 @@ fn index_result_build_serializes_with_elapsed_ms() {
         strategy: "lightweight".to_string(),
         elapsed_ms: 1234,
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
     assert_eq!(json["kind"], "build");
     assert_eq!(json["path"], "/work/repo");
     assert_eq!(json["strategy"], "lightweight");
@@ -112,8 +112,7 @@ fn index_result_outline_serializes_recursive_tree() {
             is_private: false,
         }],
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
     assert_eq!(json["kind"], "outline");
     assert_eq!(json["symbols"][0]["name"], "outer");
     assert_eq!(json["symbols"][0]["children"][0]["name"], "inner");
@@ -130,8 +129,7 @@ fn index_result_symbol_code_serializes_doc_as_optional() {
         doc: Some("/// A doc".to_string()),
         code: "fn foo() {}".to_string(),
     };
-    let json: Value =
-        serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
+    let json: Value = serde_json::to_value(&result).expect("IndexResult must serialize to JSON");
     assert_eq!(json["kind"], "symbol_code");
     assert_eq!(json["doc"], "/// A doc");
 
@@ -163,9 +161,10 @@ fn index_error_build_display_includes_strategy_and_path() {
     let err = IndexError::Build {
         path: PathBuf::from("/work/missing"),
         strategy: "lightweight".to_string(),
-        source: Box::<dyn std::error::Error + Send + Sync>::from(
-            std::io::Error::new(std::io::ErrorKind::NotFound, "no such file"),
-        ),
+        source: Box::<dyn std::error::Error + Send + Sync>::from(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "no such file",
+        )),
     };
     let msg = err.to_string();
     assert!(
@@ -187,11 +186,18 @@ fn index_error_query_display_includes_symbol() {
     let err = IndexError::Query {
         symbol: "ghost".to_string(),
         path: PathBuf::from("."),
-        source: Box::<dyn std::error::Error + Send + Sync>::from(
-            std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
-        ),
+        source: Box::<dyn std::error::Error + Send + Sync>::from(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "denied",
+        )),
     };
     let msg = err.to_string();
-    assert!(msg.contains("ghost"), "error Display must include the symbol: {msg}");
-    assert!(msg.contains("denied"), "error Display must include the source: {msg}");
+    assert!(
+        msg.contains("ghost"),
+        "error Display must include the symbol: {msg}"
+    );
+    assert!(
+        msg.contains("denied"),
+        "error Display must include the source: {msg}"
+    );
 }
