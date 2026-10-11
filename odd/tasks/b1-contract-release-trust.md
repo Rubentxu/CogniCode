@@ -16,7 +16,7 @@ Un usuario puede instalar CogniCode y confiar en que el ejecutable instalado cor
 
 ## Work units
 
-- [ ] **B1.W1** — Reconciliación de versión publicada. Resolver divergencia `ROADMAP.md`, `CURRENT.md`, tests golden, `Cargo.toml`. Actualizar v1015 desde commits/tags realmente integrados. Eliminar versiones hard-coded en tests de release.
+- [x] **B1.W1** — Reconciliación de versión publicada. Resolver divergencia `ROADMAP.md`, `CURRENT.md`, tests golden, `Cargo.toml`. Actualizar v1015 desde commits/tags realmente integrados. Eliminar versiones hard-coded en tests de release.
 - [ ] **B1.W2** — Identidad del ejecutable y del artefacto. CLI/MCP construyen/seleccionan binario de identidad comprobada. Validar versión, source SHA, features, digest, artefacto distribuido. Impedir binarios de otro checkout/versión produzcan PASS.
 - [ ] **B1.W3** — Reparación de la superficie actual. Corregir fallo Clippy en `assurance_export_roundtrip.rs:408`. Inspeccionar regresiones de contrato. Restaurar gate estricto. Verificar `cognicode --help/--version/capabilities --json/doctor`, MCP `initialize/tools/list`, una consulta real.
 - [ ] **B1.W4** — Gate publicable. Reforzar `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `release-candidate.pipeline.kts`, `release.pipeline.kts`. Fallo PipelineK → `BLOCKED` con evidencia diferenciada. No bypass temporal de branch protection sin procedimiento de excepción.
@@ -46,7 +46,7 @@ Un usuario puede instalar CogniCode y confiar en que el ejecutable instalado cor
 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
-| _pendiente_ | B1.W1 | _pendiente_ | _pendiente_ |
+| 2026-10-11 | B1.W1 | `f6b124c` | `scripts/ci/test_assurance_export_golden.py`: `PRODUCER_VERSION` derivado de `Cargo.toml [workspace.package].version` (vía helper `workspace_version()`) — el hardcoded `"0.101.9"` se eliminó. `GOLDEN_SHA256` actualizado de `45fa7821...` (v0.101.9) a `3ac84ea7...` (v0.101.10); el producer emite `producer.version` en el envelope CBOR, así que cada bump cambia el SHA. Pin anterior registrado en comentario del script para que `pipelinek-assurance` coordine su pin. `tests/fixtures/assurance_export_golden.cbor` regenerado (4494290 bytes, producer v0.101.10, HEAD `6af11bf83f07`). `python3 scripts/ci/test_roadmap_version_ratchet.py` exit 0 (workspace `0.101.10`, head `f6b124c`). CURRENT.md regenerado localmente (gitignored por `.gitignore:200`). |
 | _pendiente_ | B1.W2 | _pendiente_ | _pendiente_ |
 | _pendiente_ | B1.W3 | _pendiente_ | _pendiente_ |
 | _pendiente_ | B1.W4 | _pendiente_ | _pendiente_ |
