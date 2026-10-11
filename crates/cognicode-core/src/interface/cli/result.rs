@@ -42,7 +42,10 @@ pub use crate::infrastructure::semantic::outline::OutlineNode;
 /// `#[serde(tag = "kind")]` permite serializar a JSON con un
 /// campo discriminador (`"build"`, `"query"`, etc.) sin
 /// anidamiento extra. El bin formatea text o JSON desde esta
-/// misma estructura.
+/// misma estructura. T1-5.5 JSON dispatch tests (en
+/// `cognicode-cli/tests/t1_5_5_json_dispatch.rs`) parsean a
+/// `serde_json::Value` para verificar shape (no round-trip
+/// directo: u128 elapsed_ms no es soportado por serde_json).
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum IndexResult {
