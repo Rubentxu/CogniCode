@@ -136,6 +136,51 @@ impl IndexResult {
 }
 
 // ===================================================================
+// T1-5.5 — `CommandOutput`
+// ===================================================================
+//
+// Estado pre-T1-5.5:
+//   - `CommandExecutor::execute` devolvía `Result<(), _>` con la
+//     información del éxito comunicada por stdout/stderr en sitio.
+//   - El bin no recibía datos del éxito; solo podía re-imprimir lo
+//     que la librería había decidido emitir.
+//
+// Lo que T1-5.5 aporta:
+//   - `CommandOutput` es el dato estructurado que cruza la frontera
+//     library → bin. Hoy solo `Index` y `Graph` tienen variantes
+//     tipadas (T1-5.3c + T1-5.4); el resto de sub-comandos sigue
+//     emitiendo texto inline y se marca como `Other`.
+//   - El bin (cognicode-cli) inspecciona este enum y decide el
+//     formato (text o JSON) sin que la librería sepa nada del
+//     transporte.
+//
+// Política T1-5.5:
+//   - La librería NO formatea. Solo emite datos.
+//   - El bin es dueño del presenter (text + JSON dispatch).
+//   - Añadir un `*Result` para un sub-comando nuevo implica
+//     añadir la variante correspondiente a `CommandOutput`.
+
+/// Output estructurado de cualquier `cogh <subcommand>`.
+///
+/// El bin (cognicode-cli) consume este enum para decidir qué
+/// presenter invocar y con qué formato. Las variantes con dato
+/// tipado (`Index`, `Graph`) permiten dispatch `--format text|json`;
+/// `Other` cubre los sub-comandos no migrados aún (Navigate, Doctor,
+/// FindUsages, Capabilities, ExportAssurance, Refactor, Evidence,
+/// DocsIngest, IssuesIngest, Analyze) que ya emitieron su output
+/// internamente vía `println!` y no necesitan presenter.
+#[derive(Debug)]
+pub enum CommandOutput {
+    /// `cogh index <subcommand>` — ver `IndexResult` para variantes.
+    Index(IndexResult),
+    /// `cogh graph <subcommand>` — ver `GraphResult` para 11 variantes.
+    Graph(GraphResult),
+    /// Sub-comando no migrado a `*Result` aún. El texto ya fue
+    /// emitido internamente por `execute_*`; el bin no hace nada.
+    Other,
+}
+
+// ===================================================================
 // T1-5.4 — `GraphResult` + `GraphError`
 // ===================================================================
 //

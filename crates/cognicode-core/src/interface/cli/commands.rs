@@ -10,8 +10,8 @@ use crate::infrastructure::graph::{
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
-use crate::interface::cli::result::{GraphResult, IndexError, IndexResult};
-use clap::{CommandFactory, Parser, Subcommand};
+use crate::interface::cli::result::{CommandOutput, GraphResult, IndexError, IndexResult};
+use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -26,9 +26,30 @@ pub struct Cli {
     #[arg(short, long)]
     pub verbose: bool,
 
+    /// Output format for structured commands (index, graph, and other
+    /// commands that expose a `--format` flag). Sub-commands with their
+    /// own per-variant `--format` (Capabilities, Doctor, FindUsages,
+    /// Refactor, Graph::Full, Graph::Mermaid) keep their own flag and
+    /// ignore this top-level one.
+    #[arg(long, value_enum, default_value_t = Format::Text)]
+    pub format: Format,
+
     /// The command to execute
     #[command(subcommand)]
     pub command: Option<CliCommand>,
+}
+
+/// T1-5.5 — Output format dispatch.
+///
+/// The bin (cognicode-cli) inspects `CommandOutput` together with this
+/// value to decide text vs JSON. `Text` is the default and preserves
+/// byte-identical output with the pre-T1-5.5 behavior; `Json` emits
+/// the structured `*Result` via `serde_json::to_writer_pretty`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "lower")]
+pub enum Format {
+    Text,
+    Json,
 }
 
 /// Available CLI commands
@@ -532,7 +553,16 @@ pub struct CommandExecutor;
 
 impl CommandExecutor {
     /// Execute the given CLI command
-    pub async fn execute(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// T1-5.5: returns `Result<CommandOutput, _>` so the bin
+    /// (cognicode-cli) can dispatch `--format text|json` against
+    /// the structured `*Result` without the library doing the
+    /// formatting itself. Sub-commands that still emit text inline
+    /// (Navigate, Analyze, Doctor, FindUsages, Capabilities,
+    /// ExportAssurance, Refactor, Evidence, DocsIngest,
+    /// IssuesIngest) return `CommandOutput::Other` and the bin
+    /// passes them through unchanged.
+    pub async fn execute(cli: Cli) -> Result<CommandOutput, Box<dyn std::error::Error>> {
         if cli.verbose {
             // SAFETY: Setting RUST_LOG env var during CLI verbose mode is safe
             // as this runs in a single-threaded CLI context at startup.
@@ -546,13 +576,15 @@ impl CommandExecutor {
                 // a failed analyze must surface a non-zero exit code
                 // so scripts and CI can detect it (UAT:
                 // `crates/cognicode-cli/tests/prf_cli_01_uat.rs`).
-                Self::execute_analyze(path).await?
+                Self::execute_analyze(path).await?;
+                Ok(CommandOutput::Other)
             }
             Some(CliCommand::Serve { port }) => {
                 eprintln!("Use 'cognicode-mcp' binary to start the MCP server.");
                 eprintln!("The MCP server uses stdio transport, not TCP ports.");
                 eprintln!("Run: cognicode-mcp --cwd <workspace>");
                 let _ = port;
+                Ok(CommandOutput::Other)
             }
             Some(CliCommand::Refactor {
                 operation,
@@ -573,17 +605,22 @@ impl CommandExecutor {
                     );
                     return Err("refactor --apply unsupported: no rollback path yet".into());
                 }
-                Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?
+                Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?;
+                Ok(CommandOutput::Other)
             }
             Some(CliCommand::Index { command }) => {
                 // T1-5.3d: presentation lives in `interface::cli::presenter`
-                // (text-only for now; T1-5.5 will add JSON dispatch
-                // when the presenter moves to the bin's own module).
+                // (text-only for now; T1-5.5 will move it to the bin's own
+                // module and add JSON dispatch).
+                // The inline presenter call below is the temporary bridge —
+                // it stays for now so the byte stream is unchanged; T1-5.5d
+                // will remove it and the bin will own formatting.
                 let result = Self::execute_index(command).await.map_err(Box::new)?;
                 use crate::interface::cli::presenter;
                 let mut stdout = std::io::stdout();
                 presenter::present_index_result(&result, &mut stdout)
                     .map_err(|e| Box::new(e) as Box<dyn std::error::Error>)?;
+                Ok(CommandOutput::Index(result))
             }
             Some(CliCommand::Graph { command }) => {
                 // PRF F2.W2: do NOT swallow the Graph error here.
@@ -592,15 +629,12 @@ impl CommandExecutor {
                 // UAT (see `w2_uat_tests` below) requires those to
                 // propagate so that scripts and CI can detect them.
                 // T1-5.4b: execute_graph now returns GraphResult.
-                // The bin (cognicode-cli) does not consume the result
-                // yet (text output still comes from the in-function
-                // println! calls). T1-5.5 will move text formatting
-                // to the bin and start consuming the result. For now
-                // the GraphResult is bound to `_result` so the
-                // `must_use` warning doesn't fail the build but the
-                // data is still returned and can be inspected in
-                // tests.
-                let _result = Self::execute_graph(command).await?;
+                // T1-5.5: bind the result (was `let _result`) so the bin
+                // can consume it. The inline presenter calls inside
+                // `execute_graph` (12 sites) still emit text; T1-5.5d
+                // removes them and the bin takes over.
+                let result = Self::execute_graph(command).await?;
+                Ok(CommandOutput::Graph(result))
             }
             Some(CliCommand::FindUsages {
                 symbol,
@@ -620,28 +654,44 @@ impl CommandExecutor {
                 // include_declaration=true (default).
                 let include = !no_include_declaration && *include_declaration;
                 Self::execute_find_usages(symbol, cwd, include, *context_lines, format, *quiet)
-                    .await?
+                    .await?;
+                Ok(CommandOutput::Other)
             }
-            Some(CliCommand::Navigate { command }) => Self::execute_navigate(command).await?,
-            Some(CliCommand::Doctor { format, cwd }) => Self::execute_doctor(format, cwd).await?,
+            Some(CliCommand::Navigate { command }) => {
+                Self::execute_navigate(command).await?;
+                Ok(CommandOutput::Other)
+            }
+            Some(CliCommand::Doctor { format, cwd }) => {
+                Self::execute_doctor(format, cwd).await?;
+                Ok(CommandOutput::Other)
+            }
             Some(CliCommand::ExportAssurance { command }) => {
-                Self::execute_export_assurance(command).await?
+                Self::execute_export_assurance(command).await?;
+                Ok(CommandOutput::Other)
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::DocsIngest { path, recursive }) => {
-                Self::execute_docs_ingest(path, *recursive).await?
+                Self::execute_docs_ingest(path, *recursive).await?;
+                Ok(CommandOutput::Other)
             }
             #[cfg(feature = "multimodal")]
             Some(CliCommand::IssuesIngest {
                 owner,
                 repo,
                 include_git_log,
-            }) => Self::execute_issues_ingest(owner, repo, *include_git_log).await?,
+            }) => {
+                Self::execute_issues_ingest(owner, repo, *include_git_log).await?;
+                Ok(CommandOutput::Other)
+            }
             #[cfg(feature = "evidence-cli-ladybug")]
-            Some(CliCommand::Evidence(cmd)) => Self::execute_evidence(cmd).await?,
+            Some(CliCommand::Evidence(cmd)) => {
+                Self::execute_evidence(cmd).await?;
+                Ok(CommandOutput::Other)
+            }
             Some(CliCommand::Capabilities { format, json }) => {
                 let effective = if *json { "json" } else { format.as_str() };
-                Self::execute_capabilities(effective).await?
+                Self::execute_capabilities(effective).await?;
+                Ok(CommandOutput::Other)
             }
             None => {
                 info!("CogniCode CLI initialized");
@@ -649,10 +699,9 @@ impl CommandExecutor {
                 let mut cmd = Cli::command();
                 cmd.print_help()?;
                 println!();
+                Ok(CommandOutput::Other)
             }
         }
-
-        Ok(())
     }
 
     /// Execute index subcommand
@@ -2944,6 +2993,7 @@ mod w2_uat_tests {
         let good = w2_corpus().join("src/good.rs");
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::Graph {
                 command: GraphCommand::PerFile {
                     file: good.to_string_lossy().to_string(),
@@ -2968,6 +3018,7 @@ mod w2_uat_tests {
         let broken = w2_corpus().join("src/broken_syntax.rs");
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::Graph {
                 command: GraphCommand::PerFile {
                     file: broken.to_string_lossy().to_string(),
@@ -2990,6 +3041,7 @@ mod w2_uat_tests {
         let missing = w2_corpus().join("src/does_not_exist.rs");
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::Graph {
                 command: GraphCommand::PerFile {
                     file: missing.to_string_lossy().to_string(),
@@ -3045,6 +3097,7 @@ mod f0_1_find_usages_tests {
 
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::FindUsages {
                 symbol: "alpha".to_string(),
                 cwd: dir.path().to_string_lossy().to_string(),
@@ -3075,6 +3128,7 @@ mod f0_1_find_usages_tests {
 
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::FindUsages {
                 symbol: "alpha".to_string(),
                 cwd: dir.path().to_string_lossy().to_string(),
@@ -3099,6 +3153,7 @@ mod f0_1_find_usages_tests {
     async fn uat_cli_find_usages_invalid_cwd_returns_error() {
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::FindUsages {
                 symbol: "alpha".to_string(),
                 cwd: "/this/path/does/not/exist/anywhere_42".to_string(),
@@ -3123,6 +3178,7 @@ mod f0_1_find_usages_tests {
         let dir = tempfile::tempdir().expect("create tempdir");
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::FindUsages {
                 symbol: "alpha".to_string(),
                 cwd: dir.path().to_string_lossy().to_string(),
@@ -3151,6 +3207,7 @@ mod f0_1_find_usages_tests {
 
         let cli = Cli {
             verbose: false,
+            format: Format::Text,
             command: Some(CliCommand::FindUsages {
                 symbol: "no_existe_este_symbol_en_ningun_lado".to_string(),
                 cwd: dir.path().to_string_lossy().to_string(),
