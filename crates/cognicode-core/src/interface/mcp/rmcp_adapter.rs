@@ -330,8 +330,22 @@ pub fn tool_authority_map() -> &'static HashMap<String, String> {
     static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
     MAP.get_or_init(|| {
         let mut m: HashMap<String, String> = HashMap::new();
-        for d in crate::interface::catalog::load_tool_catalog() {
-            m.insert(d.name.clone(), d.authority.clone());
+        // B2.W2 (post-merge): the oracle is the **active** catalog so the
+        // map agrees with `build_all_tools()`, which also consumes the
+        // active view. Before this fix, the map was built from the full
+        // `load_tool_catalog()` and the 3 feature-gated tools
+        // (`interproc_summary` on `program-analysis-server`,
+        // `list_evidence`/`search_evidence` on `evidence-cli-ladybug`)
+        // showed up in the map regardless of the current build's
+        // features. The A-010 audit then reported a phantom-runtime
+        // mismatch: the catalogue said 76, the runtime said 73, and
+        // the test panicked with `runtime-only=[...]`. Filtering the
+        // map to the active subset keeps the runtime contract intact
+        // (`mutates_workspace == authority_is_mutating(declared)`)
+        // and matches the same active subset that
+        // `build_all_tools()` advertises via `tools/list`.
+        for d in crate::interface::catalog::load_tool_catalog_active() {
+            m.insert(d.name, d.authority);
         }
         m
     })

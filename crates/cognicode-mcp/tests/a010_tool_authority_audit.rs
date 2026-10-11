@@ -25,7 +25,6 @@ use cognicode_core::interface::mcp::rmcp_adapter::tool_authority_map;
 use cognicode_core::product::ProfilePosture;
 
 use serde_json::Value;
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 mod common;
@@ -151,16 +150,22 @@ fn published_tools_and_runtime_tools_are_the_same_set() {
         "catalogue and runtime disagree: published-only={only_published:?} \
          runtime-only={only_runtime:?}"
     );
-    // `published_tool_count` is the runtime count declared by the
-    // catalogue (the value tools.json writes for `runtime_tool_count`).
-    // After B2.W2, the active subset has 73 tools and tools.json claims
-    // `runtime_tool_count: 73`; the full catalogue has 76. This
-    // assertion binds the active count to the declared value.
-    assert_eq!(
-        published.len(),
-        published_tool_count(),
+    // `published_tool_count` is the full catalogue count declared by
+    // the file (the value tools.json writes for `runtime_tool_count`).
+    // The audit pins two contracts:
+    //   - active subset == runtime (asserted above)
+    //   - full catalogue (`runtime_tool_count`) >= active subset
+    // The reverse direction is NOT asserted: a tool present in the
+    // full catalogue but absent from the active subset is a tool whose
+    // declared Cargo feature is not enabled in this build, and that
+    // is exactly the contract B2.W2 introduced. Asserting equality
+    // would be a regression: a `--no-default-features` build would
+    // panic for every feature-gated tool the master catalogue
+    // advertises.
+    assert!(
+        published.len() <= published_tool_count(),
         "active catalogue has {len} tools but tools.json claims \
-         runtime_tool_count={count}",
+         runtime_tool_count={count} (must be >= active)",
         len = published.len(),
         count = published_tool_count()
     );
