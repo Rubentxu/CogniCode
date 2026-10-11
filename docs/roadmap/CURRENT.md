@@ -9,54 +9,62 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-10, sobre `main` HEAD
-> `2bef276330eadc39f155614e1d35f2891e9417be` (post-T1-5.3a design;
-> 14 commits ahead de `4f1bb29` PR #345 squash, todos en `main`).
-> Regenerado tras el cierre del goal `v1015-consolidation-and-promote`
-> y la publicación de `v0.101.10` end-to-end (8 assets en GitHub
-> Release, `install.sh` cierra los 7 pasos, R1 invariant
-> `/releases/latest` resuelve a `v0.101.10`).
+> **Snapshot**: 2026-10-11, sobre `main` HEAD
+> `6af11bf83f07ecf8b337379fd0df413cda73572e` (post-T1-5.5g +
+> B1..B6 block goals + work-loop + B1.W1 partial commit `f6b124c`;
+> 40 commits ahead de `origin/main`).
+> Regenerado al cierre de **B1.W1** (reconciliación de versión
+> publicada: `PRODUCER_VERSION` derivado de `Cargo.toml`,
+> `GOLDEN_SHA256` actualizado a `3ac84ea7...` para v0.101.10,
+> workspace sigue en `0.101.10` per `Cargo.toml` y tag `v0.101.10`).
+> R1 invariant `/releases/latest` sigue resolviendo a `v0.101.10`.
+>
+> Próxima release objetivo: `v0.101.11` (cierre de B1 + bump) per
+> [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
 > drift es reintroducir el problema; el ratchet es la red.
 
-## HEAD y batería (a 2026-10-10)
+## HEAD y batería (a 2026-10-11)
 
 * **Rama**: `main` (PR #345 squash-merged el 2026-10-10T10:45:22Z;
-  14 commits ahead del squash: 8 Tier 0/1 cleanups vía merge
-  `30980a9d`, bump `217d1638`, tag `ad45583e`, release factory
-  output `98d85bc` + `197722e` + `318b5a3`, 6 doc-debt cleanups
-  `7caed6e`, T1-5.1 snapshot `0182595`, T1-5.2 classification
-  `679d0f5`, T1-5.3a design `2bef276`).
-* **SHA funcional**: `2bef276330eadc39f155614e1d35f2891e9417be`.
-* **Versión workspace**: `0.101.10` (bump `217d1638`, tag anotado
-  `ad45583e`, release page en GitHub, 8 assets adjuntos tras la
-  publicación manual del 2026-10-10).
+  40 commits ahead del squash: T1-5.5 cerrado `810396a..f187be7`
+  + B1..B6 goal docs `6af11bf` + B1.W1 partial `f6b124c`).
+* **SHA funcional**: `6af11bf83f07ecf8b337379fd0df413cda73572e`.
+* **Versión workspace**: `0.101.10` (sin cambio desde 2026-10-10;
+  el siguiente bump es `v0.101.11` al cierre de B1).
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
-  * `cargo test -p cognicode-core --lib` → **2252 passed, 2 ignored** (106 s).
-  * `cargo test -p cognicode-core --features evidence-kernel --quiet` → **3158 passed, 0 failed, 7 ignored** (43 suites, 351 s).
-  * `cargo test -p cognicode-core --test assurance_export_roundtrip` → 14/0.
-  * `cargo test -p cognicode-core --lib change_signature_strategy` → 13/0.
-  * `cargo test -p cognicode-core --lib rmcp_adapter` → 21/0.
-  * `cargo test -p cognicode-core --test core_gate_coverage_contract` → 10/0.
-  * `cargo build -p cognicode-core --tests` → 0 errors, 1 warning
-    (graph-wasm profile warning, no introducido por T0-N).
-  * `cargo doc --workspace --no-deps` → exit 0, **0 warnings**.
-  * `python3 scripts/ci/test_assurance_export_golden.py` → exit 0
-    (golden SHA `45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35`).
-  * `python3 scripts/ci/test_roadmap_version_ratchet.py` → exit 0.
-* **Working tree**: clean (`git status` confirma 0 modificaciones
-  uncommitted al cierre de este snapshot).
-* **Pre-existing clippy issue (no de T0-N)**: `cargo clippy
-  --workspace --all-targets -- -D warnings` falla en
-  `crates/cognicode-core/tests/assurance_export_roundtrip.rs:408`
-  (`clippy::expect_fun_call` sobre `.expect(&format!(...))`).
-  El lint está activo en rustc 1.96; el código es pre-existente.
-  Workaround en WU futuro (no bloquea release).
-* **Branch protection**: re-habilitada tras el bypass.
-  `required_status_checks: ['merge-gate']`, `enforce_admins: True`.
+  * `cargo build -p cognicode-core` → 0 errors (T1-5.5).
+  * `cargo build -p cognicode-cli --bins` → 0 errors (T1-5.5c + 5e).
+  * `cargo test -p cognicode-cli --test t1_5_3d_index_presenter_snapshot` → 6 passed.
+  * `cargo test -p cognicode-cli --test t1_5_4c_graph_perfile_presenter_snapshot` → 4 passed.
+  * `cargo test -p cognicode-cli --test t1_5_4k_graph_full_snapshot` → 3 passed.
+  * `cargo test -p cognicode-cli --test t1_5_4l_graph_impact_snapshot` → 4 passed.
+  * `cargo test -p cognicode-cli --test t1_5_5_json_dispatch` → **22 passed** (T1-5.5f).
+  * `cargo test -p cognicode-cli --test t1_5_snapshot` → 4 passed (binary smoke).
+  * `cargo test -p cognicode-core --test t1_5_3b_index_result_serde` → 7 passed.
+  * `cargo test -p cognicode-core --test t1_5_4_graph_result_serde` → 12 passed.
+  * `cargo build --workspace` → 0 errors (16 crates).
+  * `cargo build --release --bin cognicode` → 0 errors (v0.101.10 binary built).
+  * `python3 scripts/ci/test_assurance_export_golden.py` → **exit 0**
+    (golden SHA `3ac84ea7de366e5b39e0e2316e0f2a06127b9d77cb10248dfbb16c14c09429da`,
+    producer v0.101.10). B1.W1 partial.
+  * `python3 scripts/ci/test_roadmap_version_ratchet.py` → exit 0 (post B1.W1 partial).
+* **Working tree**: clean post-`f6b124c` (modificaciones locales en
+  `docs/roadmap/ROADMAP.md` no se commitean — `docs/roadmap/*` está
+  excluido por `.gitignore:200` por decisión del operador 2026-06-24).
+* **Smoke E2E (T1-5.5)**: `cognicode --format json index build /tmp/repo`
+  emite `{ "kind": "build", ... }`. `cognicode --format json graph
+  per-file <file>` emite `{ "kind": "per_file", ... }`. `--format`
+  flag visible en help.
+* **Pre-existing clippy issue**: igual que snapshot 2026-10-10,
+  `assurance_export_roundtrip.rs:408` (`clippy::expect_fun_call`).
+  No introducido por T1-5 ni B1.W1. Workaround en B1.W3 (reparación
+  de superficie actual).
+* **Branch protection**: `required_status_checks: ['merge-gate']`,
+  `enforce_admins: True`. Sin bypass activo.
 
 ## Capacidades certificadas (Post-PRF)
 

@@ -174,14 +174,15 @@ su cierre técnico está verificado. Ver
   OpenSpec del programa: son artefactos vivos del programa, este §8
   es solo el **puntero de agenda** dentro del ROADMAP vigente.
 
-## 9. Serie v0.101.x — agenda viva (2026-10-09)
+## 9. Serie v0.101.x — agenda (2026-10-09 → 2026-10-11)
 
-> **Estado**: agenda activa. Esta sección reemplaza a §8 como puntero
-> de trabajo en curso. El ROADMAP completo sigue siendo la autoridad;
-> `docs/roadmap/CURRENT.md` es el snapshot puntual.
-> Contrato de coherencia: `python3 scripts/ci/test_roadmap_version_ratchet.py`
-> pinea que la versión del workspace aparece aquí o en `JOURNAL.md` reciente,
-> y que `CURRENT.md` no tiene más de 14 días sin regenerarse.
+> **Estado**: HISTÓRICO (sellado 2026-10-11 al arranque de B1). Esta
+> sección cubría el tramo v0.101.0..v0.101.10 (11 cortes patch, 7
+> outcomes cerrados: PR-G1, PR-PERF W1..W9, PR-ARCH CR-06,
+> PR-DEVEX, PR-SEC CR-07). La autoridad de agenda pasa a **§10
+> (Programa CLI/MCP 2026, B1..B6, v0.101.11..v0.101.16)**. El detalle
+> se conserva como rastro del pivote que dio origen a la
+> continuación; **no es agenda viva** (la agenda viva está en §10).
 
 ### 9.1 Versión actual y rama
 
@@ -276,4 +277,71 @@ su cierre técnico está verificado. Ver
 * Las nuevas certificaciones (C8-R) usan el patrón de §5 con prefijo distinto.
 * Esta §9 NO sustituye a `docs/roadmap/production-ready/`: siguen siendo
   artefactos vivos del programa; §9 es el puntero de agenda dentro del ROADMAP.
+
+---
+
+## 10. Programa CLI/MCP 2026 — B1..B6 (2026-10-11)
+
+> **Estado**: agenda activa. Esta sección reemplaza a §9 como puntero
+> de trabajo en curso (sello 2026-10-11 sobre v0.101.10 → arranque de B1
+> hacia v0.101.11). El ROADMAP completo sigue siendo la autoridad;
+> `docs/roadmap/CURRENT.md` es el snapshot puntual; `JOURNAL.md` registra
+> los hechos atómicos.
+>
+> **Especificación del programa**: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
+> Este §10 es **solo el puntero** dentro del ROADMAP; el detalle operativo
+> (WUs, UAT/AAT, referencias, criterios de cierre) vive en el documento
+> enlazado.
+>
+> Contrato de coherencia: `python3 scripts/ci/test_roadmap_version_ratchet.py`
+> pinea que la versión del workspace aparece aquí o en `JOURNAL.md` reciente,
+> y que `CURRENT.md` no tiene más de 14 días sin regenerarse.
+
+### 10.1 Resumen ejecutivo
+
+Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado + merge-gate verde + tag anotado + GitHub Release + evidencia en este ROADMAP.
+
+| Bloque | Release | Foco |
+|---|---|---|
+| **B1** | **v0.101.11** | Contract & Release Trust: identidad binario, gate publicable, superficie CLI/MCP coherente |
+| **B2** | **v0.101.12** | Shared Analysis & Capability Contracts: modelo común de ejecución, capabilities coherentes, assurance export reparado, **T1-5 (connascence) cerrando en W5** |
+| **B3** | **v0.101.13** | Agent Code Understanding: navegación semántica unificada, contexto progresivo, catálogo agent-friendly, análisis incremental fiable |
+| **B4** | **v0.101.14** | Impact, Architecture & Quality Intelligence: grafo de impacto, arquitectura como diagnóstico, hallazgos normalizados, evidence export enriquecido |
+| **B5** | **v0.101.15** | Safe Refactoring & Authorized Changes: plan verificable, preview sin mutación, apply con autoridad y rollback, revalidación posterior |
+| **B6** | **v0.101.16** | Agent-Ready Runtime & Portable Distribution: MCP robusto, perf reproducible, lifecycle cogh, skills, cert distribución, cierre arquitectónico (C8-R) |
+
+### 10.2 Baseline y prerrequisitos
+
+| Item | Valor |
+|---|---|
+| Workspace version (arranque) | `0.101.10` (`Cargo.toml [workspace.package].version`) |
+| Baseline remota verificada | `main@217d16383eefa27a655baeb1f196cfe4cec607bc` |
+| HEAD local al cierre de T1-5.5 | `f187be7` (post-merge PR #345 + Tier 0/1 cleanup + T1-5.5 cerrado) |
+| T1-5.5 cerrado | `810396a` (5a+b), `9456136` (5c), `1b8add5` (5f-prep), `0e51d7a` (5d), `7bb8c3b` (5e), `c2383a9` (5f), `f187be7` (5g) |
+| Divergencia vs `origin/main` | 38 commits ahead al cierre de T1-5.5 |
+| Tags publicados | `v0.101.0` .. `v0.101.10` (11 cortes patch) |
+| Próximo release | `v0.101.11` (B1.W1..B1.W4) |
+
+### 10.3 Work items abiertos (orden de criticidad)
+
+1. **B1** — Contract & Release Trust. Arrancar con reconciliación de versión (B1.W1) → identidad binario (B1.W2) → superficie (B1.W3) → gate (B1.W4). PREREQUISITO de los demás bloques.
+2. **B2.W5 / T1-5.6** — Continuar Tier 1 connascence: replicar patrón de presenter en `execute_navigate`, `execute_analyze`, y otros 8 `execute_*` con `println!` inline (~117 println! restantes). Multi-día, fuera del scope de una sesión.
+3. **B3..B6** — Desbloqueados tras B1 + B2.
+
+### 10.4 Decisiones pendientes (operator-gated)
+
+| Decisión | Estado |
+|---|---|
+| Push de los 38 commits ahead a `origin/main` | NO TRIGGERED — branch protection con `merge-gate` estricto exige PR, no fast-forward |
+| Bump a `v0.101.11` al cierre de B1 | OPEN — depende de B1.W1..B1.W4 |
+| Cierre contractual de C8-R (B6.W6) | OPEN — bloquea la firma humana del programa |
+
+### 10.5 Cómo NO se reabre este programa
+
+* No se reabre PRF como evidencia.
+* No se reabren certificaciones `C#` (C7) anteriores para "incluir" trabajo nuevo.
+* Esta §10 NO sustituye a la especificación detallada en
+  [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md):
+  el documento enlazado es la autoridad del programa; §10 es solo el
+  puntero dentro del ROADMAP.
 
