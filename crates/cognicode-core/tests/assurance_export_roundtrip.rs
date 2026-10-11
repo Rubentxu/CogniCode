@@ -401,11 +401,12 @@ fn optional_none_serializes_as_null_not_omitted() {
         panic!("root no es map")
     };
     let get_str = |key: &str| -> &CborValue {
+        let msg = format!("key {key} debe existir");
         entries
             .iter()
             .find(|(k, _)| matches!(k, CborValue::Text(t) if t == key))
             .map(|(_, v)| v)
-            .expect(&format!("key {key} debe existir"))
+            .expect(&msg)
     };
     // entities[0].layer: null
     let CborValue::Array(entities) = get_str("entities") else {

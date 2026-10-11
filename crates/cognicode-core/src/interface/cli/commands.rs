@@ -828,7 +828,7 @@ impl CommandExecutor {
                         line: *line,
                         column: *column,
                         source: Box::<dyn std::error::Error + Send + Sync>::from(
-                            std::io::Error::new(std::io::ErrorKind::Other, e),
+                            std::io::Error::other(e),
                         ),
                     })?;
                 Ok(IndexResult::SymbolCode {
@@ -923,7 +923,7 @@ impl CommandExecutor {
                     }
                     Err(e) => {
                         eprintln!("Error building per-file graph: {}", e);
-                        return Err(Box::new(e));
+                        Err(Box::new(e))
                     }
                 }
             }
@@ -1022,7 +1022,7 @@ impl CommandExecutor {
                     }
                     Err(e) => {
                         eprintln!("Error building full graph: {}", e);
-                        return Err(Box::new(e));
+                        Err(Box::new(e))
                     }
                 }
             }
@@ -2589,7 +2589,6 @@ fn render_evidence_rows(
 /// alongside `present_index_result`, where the snapshot test can
 /// exercise the same recursion the bin does. The migration kept
 /// the byte-identical output; see `tests/t1_5_3d_index_presenter_snapshot.rs`.
-
 /// T1-5.3c — present an `IndexResult` to stdout.
 ///
 /// T1-5.3d moved the implementation to
@@ -2601,7 +2600,6 @@ fn render_evidence_rows(
 /// `present_index_result_json` + `present_output`. The
 /// `*Result` enum still lives here in the lib; only the
 /// formatting moved.
-
 /// L1.4 / F0.1 — Render human-readable text output for `find-usages`.
 ///
 /// Format:

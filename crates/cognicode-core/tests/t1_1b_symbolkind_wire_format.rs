@@ -106,7 +106,7 @@ fn from_mcp_to_canonical_preserves_all_15_variants() {
         );
         let inner = &canonical_json[1..canonical_json.len() - 1];
         assert!(
-            inner.chars().next().map_or(false, |c| c.is_ascii_uppercase()),
+            inner.chars().next().is_some_and(|c| c.is_ascii_uppercase()),
             "canonical SymbolKind wire format must be PascalCase, got: {inner}"
         );
     }
