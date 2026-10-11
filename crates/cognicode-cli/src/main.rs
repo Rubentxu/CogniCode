@@ -78,8 +78,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Execute the command
-    CommandExecutor::execute(cli).await?;
+    // T1-5.5e: the lib's executor returns `CommandOutput` (an
+    // `IndexResult`, `GraphResult`, or `Other`). The bin is now
+    // responsible for picking text vs JSON and dispatching to the
+    // presenter.
+    //
+    // `CommandOutput::Other` covers every sub-command that still
+    // emits text inline (Capabilities, Doctor, FindUsages,
+    // Refactor, Navigate, Analyze, ExportAssurance, Evidence,
+    // DocsIngest, IssuesIngest). For those, `execute_*` has
+    // already written stdout; the bin is a no-op.
+    //
+    // For `Index` and `Graph` (including `Graph::Full` and
+    // `Graph::Mermaid` — their per-subcommand --format flag is
+    // now ignored; top-level --format is canonical), the bin
+    // calls `presenter::present_output` with the user-chosen
+    // `cli.format`.
+    let cli_format = cli.format;
+    let output = CommandExecutor::execute(cli).await?;
+
+    use cognicode_core::interface::cli::result::CommandOutput;
+    if !matches!(output, CommandOutput::Other) {
+        let mut stdout = std::io::stdout();
+        cognicode_cli::presenter::present_output(&output, cli_format, &mut stdout)?;
+    }
 
     Ok(())
 }
