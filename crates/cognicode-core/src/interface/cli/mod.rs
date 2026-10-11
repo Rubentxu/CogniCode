@@ -8,7 +8,10 @@ pub mod result;
 pub mod evidence_backend;
 
 pub use commands::{Cli, CommandExecutor, Format};
-pub use result::{CommandOutput, GraphError, GraphResult, IndexError, IndexResult};
+pub use result::{
+    CommandOutput, DefinitionLocation, GraphError, GraphResult, HoverResult, IndexError,
+    IndexResult, NavigateError, NavigateResult, ReferenceEntry,
+};
 
 /// E1.W3 — `EvidenceCommand` is gated behind `evidence-cli-ladybug`
 /// (same cfg as the variant in `CliCommand`). Re-exported here so

@@ -10,7 +10,9 @@ use crate::infrastructure::graph::{
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
-use crate::interface::cli::result::{CommandOutput, GraphResult, IndexError, IndexResult};
+use crate::interface::cli::result::{
+    CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
+};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde_json::Value;
 use std::path::PathBuf;
@@ -665,8 +667,11 @@ impl CommandExecutor {
                 Ok(CommandOutput::Other)
             }
             Some(CliCommand::Navigate { command }) => {
-                Self::execute_navigate(command).await?;
-                Ok(CommandOutput::Other)
+                // T1-5.6a: execute_navigate returns NavigateResult so
+                // the bin can dispatch text/JSON. Pre-T1-5.6a this
+                // returned Other; the bin ignored the typed result.
+                let result = Self::execute_navigate(command).await.map_err(Box::new)?;
+                Ok(CommandOutput::Navigate(result))
             }
             Some(CliCommand::Doctor { format, cwd }) => {
                 Self::execute_doctor(format, cwd).await?;
@@ -1603,115 +1608,169 @@ impl CommandExecutor {
     }
 
     /// Execute navigate subcommand
-    async fn execute_navigate(command: &NavigateCommand) -> Result<(), Box<dyn std::error::Error>> {
+    ///
+    /// T1-5.6a: returns `Result<NavigateResult, NavigateError>` so the
+    /// bin (cognicode-cli) can dispatch text/JSON via the presenter.
+    /// Before T1-5.6a this returned `Result<(), Box<dyn Error>>` and
+    /// the text was emitted by ~25 inline `println!` calls; the bin
+    /// had no way to choose `--format json` for navigate.
+    ///
+    /// El `eprintln!("Error: {}", e)` se mantiene inline en cada brazo
+    /// (decisión T1-5.4: los warnings tipo partial-warning van a
+    /// stderr). El error estructurado que el bin recibe sigue siendo
+    /// `NavigateError::Backend { operation, file, line, column,
+    /// workspace, source }` (preserva la chain vía `#[source]`).
+    async fn execute_navigate(command: &NavigateCommand) -> Result<NavigateResult, NavigateError> {
+        use crate::domain::traits::code_intelligence::Reference as DomainReference;
         use crate::domain::value_objects::Location;
         use crate::infrastructure::lsp::providers::CompositeProvider;
+        use crate::interface::cli::result::{
+            DefinitionLocation, HoverResult, NavigateResult, ReferenceEntry,
+        };
         use std::path::Path;
 
         match command {
             NavigateCommand::Definition { position, path } => {
-                let (file, line, column) = Self::parse_position(position)?;
-                println!(
-                    "Go to definition: {}:{}:{} (workspace: {})",
-                    file, line, column, path
-                );
-                println!("Connecting to LSP server...");
+                let (file, line, column) =
+                    Self::parse_position(position).map_err(|_| NavigateError::InvalidPosition {
+                        position: position.clone(),
+                    })?;
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
                 let location = Location::new(file.clone(), line.saturating_sub(1), column);
 
-                match provider.get_definition(&location).await {
-                    Ok(Some(def)) => {
-                        println!("Definition found:");
-                        println!("  File:   {}", def.file());
-                        println!("  Line:   {}", def.line() + 1);
-                        println!("  Column: {}", def.column());
-                    }
-                    Ok(None) => {
-                        println!("No definition found for {}:{}", file, line);
-                    }
+                let def_location = match provider.get_definition(&location).await {
+                    Ok(Some(def)) => Some(DefinitionLocation {
+                        file: def.file().to_string(),
+                        // Storage is 0-indexed; CLI is 1-indexed.
+                        // The data side carries 1-indexed so the
+                        // presenter doesn't have to do arithmetic.
+                        line: def.line() + 1,
+                        column: def.column(),
+                    }),
+                    Ok(None) => None,
                     Err(e) => {
+                        // Decisión T1-5.4: los errores del backend
+                        // van a stderr como partial-warning. El
+                        // caller aún recibe el error estructurado
+                        // para formatear la salida de error en el
+                        // bin y propagarlo como exit code != 0.
                         eprintln!("Error: {}", e);
-                        return Err(Box::new(e));
+                        return Err(NavigateError::Backend {
+                            operation: "definition",
+                            file: file.clone(),
+                            line,
+                            column,
+                            workspace: path.clone(),
+                            source: Box::new(e),
+                        });
                     }
-                }
+                };
+
+                Ok(NavigateResult::Definition {
+                    file,
+                    line,
+                    column,
+                    workspace: path.clone(),
+                    location: def_location,
+                })
             }
             NavigateCommand::Hover { position, path } => {
-                let (file, line, column) = Self::parse_position(position)?;
-                println!(
-                    "Hover info: {}:{}:{} (workspace: {})",
-                    file, line, column, path
-                );
-                println!("Connecting to LSP server...");
+                let (file, line, column) =
+                    Self::parse_position(position).map_err(|_| NavigateError::InvalidPosition {
+                        position: position.clone(),
+                    })?;
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
                 let location = Location::new(file.clone(), line.saturating_sub(1), column);
 
-                match provider.hover(&location).await {
-                    Ok(Some(info)) => {
-                        println!("Hover information:");
-                        println!("  Type:    {}", info.content);
-                        if let Some(doc) = &info.documentation {
-                            println!("  Docs:    {}", doc);
-                        }
-                    }
-                    Ok(None) => {
-                        println!("No hover information found for {}:{}", file, line);
-                    }
+                let hover_info = match provider.hover(&location).await {
+                    Ok(Some(info)) => Some(HoverResult {
+                        type_info: info.content,
+                        documentation: info.documentation,
+                    }),
+                    Ok(None) => None,
                     Err(e) => {
                         eprintln!("Error: {}", e);
-                        return Err(Box::new(e));
+                        return Err(NavigateError::Backend {
+                            operation: "hover",
+                            file: file.clone(),
+                            line,
+                            column,
+                            workspace: path.clone(),
+                            source: Box::new(e),
+                        });
                     }
-                }
+                };
+
+                Ok(NavigateResult::Hover {
+                    file,
+                    line,
+                    column,
+                    workspace: path.clone(),
+                    info: hover_info,
+                })
             }
             NavigateCommand::References {
                 position,
                 include_declaration,
                 path,
             } => {
-                let (file, line, column) = Self::parse_position(position)?;
-                println!(
-                    "Find references: {}:{}:{} (workspace: {})",
-                    file, line, column, path
-                );
-                println!("Connecting to LSP server...");
+                let (file, line, column) =
+                    Self::parse_position(position).map_err(|_| NavigateError::InvalidPosition {
+                        position: position.clone(),
+                    })?;
 
                 let workspace = Path::new(path);
                 let provider = CompositeProvider::new(workspace);
                 let location = Location::new(file.clone(), line.saturating_sub(1), column);
 
-                match provider
+                let refs: Vec<DomainReference> = match provider
                     .find_references(&location, *include_declaration)
                     .await
                 {
-                    Ok(refs) => {
-                        if refs.is_empty() {
-                            println!("No references found for {}:{}", file, line);
-                        } else {
-                            println!("Found {} reference(s):", refs.len());
-                            for r in &refs {
-                                let container = r.container.as_deref().unwrap_or("(unknown)");
-                                println!(
-                                    "  {}:{}:{} [{:?}] in {}",
-                                    r.location.file(),
-                                    r.location.line() + 1,
-                                    r.location.column(),
-                                    r.reference_kind,
-                                    container
-                                );
-                            }
-                        }
-                    }
+                    Ok(refs) => refs,
                     Err(e) => {
                         eprintln!("Error: {}", e);
-                        return Err(Box::new(e));
+                        return Err(NavigateError::Backend {
+                            operation: "references",
+                            file: file.clone(),
+                            line,
+                            column,
+                            workspace: path.clone(),
+                            source: Box::new(e),
+                        });
                     }
-                }
+                };
+
+                // The data side carries the container as a String
+                // (not Option<String>) so the presenter doesn't have
+                // to substitute "(unknown)". The substitution lives
+                // here, in the function that knows what the LSP
+                // returned.
+                let entries: Vec<ReferenceEntry> = refs
+                    .into_iter()
+                    .map(|r| ReferenceEntry {
+                        file: r.location.file().to_string(),
+                        line: r.location.line() + 1,
+                        column: r.location.column(),
+                        kind: r.reference_kind,
+                        container: r.container.unwrap_or_else(|| "(unknown)".to_string()),
+                    })
+                    .collect();
+
+                Ok(NavigateResult::References {
+                    file,
+                    line,
+                    column,
+                    workspace: path.clone(),
+                    include_declaration: *include_declaration,
+                    references: entries,
+                })
             }
         }
-        Ok(())
     }
 
     /// Execute doctor subcommand — check LSP server availability

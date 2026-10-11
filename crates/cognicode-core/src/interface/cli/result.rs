@@ -34,6 +34,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
+pub use crate::domain::traits::code_intelligence::ReferenceKind;
 pub use crate::infrastructure::graph::SymbolLocation;
 pub use crate::infrastructure::semantic::outline::OutlineNode;
 
@@ -164,17 +165,21 @@ impl IndexResult {
 ///
 /// El bin (cognicode-cli) consume este enum para decidir qué
 /// presenter invocar y con qué formato. Las variantes con dato
-/// tipado (`Index`, `Graph`) permiten dispatch `--format text|json`;
-/// `Other` cubre los sub-comandos no migrados aún (Navigate, Doctor,
-/// FindUsages, Capabilities, ExportAssurance, Refactor, Evidence,
-/// DocsIngest, IssuesIngest, Analyze) que ya emitieron su output
-/// internamente vía `println!` y no necesitan presenter.
+/// tipado (`Index`, `Graph`, `Navigate`) permiten dispatch
+/// `--format text|json`; `Other` cubre los sub-comandos no migrados
+/// aún (Doctor, FindUsages, Capabilities, ExportAssurance, Refactor,
+/// Evidence, DocsIngest, IssuesIngest, Analyze) que ya emitieron su
+/// output internamente vía `println!` y no necesitan presenter.
 #[derive(Debug)]
 pub enum CommandOutput {
     /// `cogh index <subcommand>` — ver `IndexResult` para variantes.
     Index(IndexResult),
     /// `cogh graph <subcommand>` — ver `GraphResult` para 11 variantes.
     Graph(GraphResult),
+    /// `cognicode navigate <subcommand>` — T1-5.6a. Ver `NavigateResult`.
+    /// Antes de T1-5.6a el bin recibía `Other`; el presenter nuevo
+    /// emite text y JSON desde esta variante.
+    Navigate(NavigateResult),
     /// Sub-comando no migrado a `*Result` aún. El texto ya fue
     /// emitido internamente por `execute_*`; el bin no hace nada.
     Other,
@@ -465,6 +470,183 @@ pub enum GraphError {
     #[error("Error building full graph at {path}: {source}")]
     Full {
         path: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+}
+
+// ===================================================================
+// T1-5.6a — `NavigateResult` + `NavigateError`
+// ===================================================================
+//
+// Estado pre-T1-5.6a:
+//   - `execute_navigate` (3 sub-commands: Definition, Hover, References)
+//     emitted ~25 `println!` and ~3 `eprintln!` calls scattered across
+//     its match arms.
+//   - The text side and the data side were produced together inside
+//     `execute_navigate`: each arm re-computed the same `file:line:column`
+//     progress line from the parsed position, then branched on the LSP
+//     outcome and printed either the "found" block or the "not found"
+//     single-liner.
+//   - The bin could not switch the navigate text to JSON; `format.json`
+//     was silently ignored (the library printed its inline text and
+//     returned).
+//   - The `eprintln!("Error: {}", e)` in each arm sent the LSP error
+//     message to stderr and bubbled it up via `Box<dyn Error>`. T1-5.6a
+//     keeps the eprintln side-channel (T1-5.4 decision: partial-style
+//     warnings stay on stderr) and bubbles the same error up via
+//     `NavigateError::Backend` for the bin to format if it wants.
+//
+// Política T1-5.3 (sin cambios):
+//   - La librería NO formatea. Solo emite datos.
+//   - El bin (cognicode-cli) tiene el presenter (text + JSON).
+//   - Los variants se diseñan pensando en JSON canónico
+//     (`#[serde(tag = "kind")]`) para que T1-5.5 ya consolidó el
+//     dispatch text/JSON. T1-5.6a solo añade una variante de
+//     `CommandOutput` y dos funciones en el presenter.
+//
+// Lo que T1-5.6a aporta:
+//   - `DefinitionLocation`, `HoverResult`, `ReferenceEntry`: tipos
+//     auxiliares que dan forma a los variants. `ReferenceKind` se
+//     re-exporta al inicio del módulo y se serializa vía su derive
+//     (PascalCase Debug para `[KIND]` en el text path; mismo string
+//     en el JSON path — `Read`, `Call`, `Import`, `Write`, `Type`).
+//   - `NavigateResult`: 3 variants, uno por `NavigateCommand`. Cada
+//     uno lleva `(file, line, column, workspace)` ya parseados para
+//     reconstruir la progress line en el presenter; los datos del
+//     resultado van en `location` / `info` / `references`.
+//   - `NavigateError`: errores tipados con `#[source]`, paralelo a
+//     `IndexError` / `GraphError`. `InvalidPosition` para el fallo
+//     del parseo de `file:line:column`; `Backend` para los errores
+//     que devuelve el LSP (CadeIntelligenceError envuelto en Box).
+//
+// Decisión de modelo (1-indexed line):
+//   El pre-migration code almacena `Location { line: 0-indexed }` y
+//   luego imprime `line + 1`. Para que el presenter no tenga que
+//   hacer aritmética, el data side guarda `line: 1-indexed` (el
+//   formato que ve el usuario en el CLI). El bin nunca ve el 0
+//   interno — coincide con el contrato de `IndexResult::SymbolCode`
+//   y de los snapshots de graph (que también llevan `line` 1-indexed).
+
+/// Location devuelta por `cognicode navigate definition`.
+///
+/// `line` es 1-indexed (lo que el CLI imprime: el interno 0-indexed
+/// de `Location::line()` se suma 1 en `execute_navigate` antes de
+/// guardarse aquí). El presenter text emite
+/// `  File:   {file}\n  Line:   {line}\n  Column: {column}\n` con la
+/// indentación de 2 espacios y las anchuras pinneadas por el snapshot.
+#[derive(Debug, Clone, Serialize)]
+pub struct DefinitionLocation {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+}
+
+/// Hover info devuelta por `cognicode navigate hover`.
+///
+/// `type_info` es el `content` del `HoverInfo` del LSP
+/// (`fn() -> u32`, `i32`, etc.). `documentation` es opcional: cuando
+/// es `None` el presenter text omite la línea `Docs:` (no la emite
+/// vacía) y el JSON serializa `null`.
+#[derive(Debug, Clone, Serialize)]
+pub struct HoverResult {
+    pub type_info: String,
+    pub documentation: Option<String>,
+}
+
+/// Una referencia individual en `cognicode navigate references`.
+///
+/// `container` ya viene con la sustitución `(unknown)` aplicada
+/// cuando el LSP devolvió `None` (el presenter text no necesita
+/// conocer el `Option`); el caller lo decide en `execute_navigate`.
+/// `kind` se serializa con su derive Debug (PascalCase).
+#[derive(Debug, Clone, Serialize)]
+pub struct ReferenceEntry {
+    pub file: String,
+    pub line: u32,
+    pub column: u32,
+    pub kind: ReferenceKind,
+    pub container: String,
+}
+
+/// Resultado exitoso de un `cognicode navigate <subcommand>`.
+///
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` da a cada
+/// variant un discriminador (`"definition"`, `"hover"`, `"references"`)
+/// que el bin switch-ea con un `match` en el presenter. Cada variant
+/// lleva `file/line/column/workspace` ya parseados para reconstruir
+/// la progress line en el text path (byte-identical con el
+/// pre-migration), y el resultado del LSP va en `location` /
+/// `info` / `references`.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum NavigateResult {
+    /// `cognicode navigate definition <file>:<line>:<col>`.
+    /// `location: Some` cuando el LSP devolvió una `Location`; `None`
+    /// cuando devolvió `None` (no se encontró definición). El text
+    /// path emite "Definition found:\n  File: ..." o
+    /// "No definition found for {file}:{line}".
+    Definition {
+        file: String,
+        line: u32,
+        column: u32,
+        workspace: String,
+        location: Option<DefinitionLocation>,
+    },
+    /// `cognicode navigate hover <file>:<line>:<col>`.
+    /// `info: Some` cuando el LSP devolvió `HoverInfo`; `None` cuando
+    /// devolvió `None`. El text path emite "Hover information:\n  Type:
+    /// ..." (+ "Docs:" si documentation está presente) o
+    /// "No hover information found for {file}:{line}".
+    Hover {
+        file: String,
+        line: u32,
+        column: u32,
+        workspace: String,
+        info: Option<HoverResult>,
+    },
+    /// `cognicode navigate references <file>:<line>:<col>`.
+    /// Vec vacía ⇒ "No references found for {file}:{line}"; no
+    /// distinta variante (vs. `IndexResult::QueryEmpty`) porque la
+    /// emptiness es esperada y no aporta semántica distinta.
+    References {
+        file: String,
+        line: u32,
+        column: u32,
+        workspace: String,
+        include_declaration: bool,
+        references: Vec<ReferenceEntry>,
+    },
+}
+
+/// Error tipado de un `cognicode navigate <subcommand>`.
+///
+/// `#[source]` preserva la chain para que el bin pueda formatear el
+/// error (`"Navigate 'definition' failed for ...: {source}"`). El
+/// error del LSP se bubble-a como `Box<dyn Error + Send + Sync>`
+/// (mismo patrón que `GraphError::Full`).
+#[derive(Debug, thiserror::Error)]
+pub enum NavigateError {
+    /// `parse_position` falló: el argumento `position` no tiene la
+    /// forma `file:line:column`. El caller (CLI parser) no debería
+    /// llegar aquí con errores tipo "empty string" porque clap lo
+    /// rechaza antes; pero el `rsplitn(3, ':')` del parser puede
+    /// recibir `foo:bar` (sin columna) o `foo:1:bar` (columna no
+    /// numérica).
+    #[error("Invalid position '{position}': expected file:line:column (e.g. src/main.rs:42:10)")]
+    InvalidPosition { position: String },
+    /// El LSP devolvió un error o el provider local no pudo resolver
+    /// la posición. `operation` identifica el brazo ("definition" /
+    /// "hover" / "references"). El `Box<dyn Error + Send + Sync>`
+    /// preserva el `CodeIntelligenceError` original (downcasteable
+    /// por el caller si quiere inspeccionar la variant).
+    #[error("Navigate '{operation}' failed for {file}:{line}:{column} in {workspace}: {source}")]
+    Backend {
+        operation: &'static str,
+        file: String,
+        line: u32,
+        column: u32,
+        workspace: String,
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },

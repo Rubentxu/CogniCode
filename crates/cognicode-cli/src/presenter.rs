@@ -44,7 +44,9 @@ use std::io::{self, Write};
 
 use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
-use cognicode_core::interface::cli::result::{CommandOutput, GraphResult, IndexResult};
+use cognicode_core::interface::cli::result::{
+    CommandOutput, GraphResult, HoverResult, IndexResult, NavigateResult, ReferenceEntry,
+};
 
 /// Render an `IndexResult` as text into `w`.
 ///
@@ -1007,6 +1009,225 @@ pub fn present_graph_impact(
 }
 
 // ===================================================================
+// T1-5.6a — Presenter for `NavigateResult` (text format).
+// ===================================================================
+//
+// Estado pre-T1-5.6a:
+//   - `cognicode navigate ...` emitió ~25 `println!` y ~3 `eprintln!`
+//     calls dentro de `execute_navigate` (commands.rs:1606..1714). El
+//     bin no podía cambiar la salida a JSON: el library formateaba
+//     directamente y descartaba datos en `let _ = ...`.
+//   - T1-5.5 ya consolidó el patrón "data side en core, presenter
+//     en bin" para Index y Graph. T1-5.6a replica ese patrón para
+//     Navigate: tres variants (Definition / Hover / References),
+//     tres funciones `present_navigate_*` aquí, una rama en
+//     `present_output`, y el JSON dispatch vía `present_navigate_result_json`.
+//
+// Política T1-5.3 (sin cambios):
+//   - Text byte-identical con el pre-migration `commands.rs` execute_navigate
+//     (los snapshot tests en `tests/t1_5_6a_navigate_presenter_snapshot.rs`
+//     pinean cada variant). Si cambia el wording, la indentación, las
+//     anchuras de columna o el formato Debug de `[KIND]`, esos tests
+//     fallan y fuerzan una actualización consciente.
+//
+// Detalles preservados:
+//   - Las progress lines ("Go to definition: {file}:{line}:{col}
+//     (workspace: {workspace})" + "Connecting to LSP server...")
+//     se emiten en el presenter (eran inline en el pre-migration).
+//     El data side lleva `file/line/column/workspace` ya parseados
+//     para reconstruir esa línea.
+//   - Las references se imprimen como
+//     `  {file}:{line}:{col} [{kind:?}] in {container}` — el Debug
+//     format de `ReferenceKind` da PascalCase ("Read" / "Call" /
+//     "Import" / "Write" / "Type"); la substitución `(unknown)` se
+//     aplica ya en `execute_navigate` antes de guardar el entry.
+
+/// T1-5.6a — text format for `NavigateResult::Definition`.
+///
+/// Pre-migration text (commands.rs:1614..1632):
+///   Go to definition: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   Definition found:
+///     File:   {def.file}
+///     Line:   {def.line}  (1-indexed; pre-migration did def.line() + 1)
+///     Column: {def.column}
+/// — or — when the LSP returns None:
+///   Go to definition: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   No definition found for {file}:{line}
+///
+/// The `  File:   ` / `  Line:   ` / `  Column: ` two-space indent
+/// and column widths (4 / 4 / 6) are part of the contract (downstream
+/// `column -t` consumers depend on the alignment).
+pub fn present_navigate_definition(
+    result: &cognicode_core::interface::cli::result::NavigateResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let cognicode_core::interface::cli::result::NavigateResult::Definition {
+        file,
+        line,
+        column,
+        workspace,
+        location,
+    } = result
+    {
+        // Progress lines — same as commands.rs:1614..1618.
+        writeln!(
+            w,
+            "Go to definition: {}:{}:{} (workspace: {})",
+            file, line, column, workspace
+        )?;
+        writeln!(w, "Connecting to LSP server...")?;
+        // Result block — either the 4-line "found" block or the
+        // 1-line "not found" message.
+        match location {
+            Some(def) => {
+                writeln!(w, "Definition found:")?;
+                writeln!(w, "  File:   {}", def.file)?;
+                writeln!(w, "  Line:   {}", def.line)?;
+                writeln!(w, "  Column: {}", def.column)?;
+            }
+            None => {
+                writeln!(w, "No definition found for {}:{}", file, line)?;
+            }
+        }
+    } else {
+        panic!(
+            "present_navigate_definition called with non-Definition NavigateResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
+
+/// T1-5.6a — text format for `NavigateResult::Hover`.
+///
+/// Pre-migration text (commands.rs:1642..1661):
+///   Hover info: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   Hover information:
+///     Type:    {type_info}
+///     [Docs:    {documentation}]   ← solo si documentation.is_some()
+/// — or — when the LSP returns None:
+///   Hover info: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   No hover information found for {file}:{line}
+///
+/// The 4-space gap after `Type:` / `Docs:` is part of the contract
+/// (visually aligns the two field labels despite "Docs" being
+/// shorter than "Type").
+pub fn present_navigate_hover(
+    result: &cognicode_core::interface::cli::result::NavigateResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let cognicode_core::interface::cli::result::NavigateResult::Hover {
+        file,
+        line,
+        column,
+        workspace,
+        info,
+    } = result
+    {
+        writeln!(
+            w,
+            "Hover info: {}:{}:{} (workspace: {})",
+            file, line, column, workspace
+        )?;
+        writeln!(w, "Connecting to LSP server...")?;
+        match info {
+            Some(HoverResult {
+                type_info,
+                documentation,
+            }) => {
+                writeln!(w, "Hover information:")?;
+                writeln!(w, "  Type:    {}", type_info)?;
+                // Documentation optional: None => no "Docs:" line.
+                // The data side already serializes documentation as
+                // `Option<String>`; the JSON path makes the absence
+                // explicit as `null`, the text path just omits the
+                // line entirely.
+                if let Some(doc) = documentation {
+                    writeln!(w, "  Docs:    {}", doc)?;
+                }
+            }
+            None => {
+                writeln!(w, "No hover information found for {}:{}", file, line)?;
+            }
+        }
+    } else {
+        panic!(
+            "present_navigate_hover called with non-Hover NavigateResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
+
+/// T1-5.6a — text format for `NavigateResult::References`.
+///
+/// Pre-migration text (commands.rs:1675..1704):
+///   Find references: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   Found {n} reference(s):
+///     {file}:{line}:{col} [{KIND}] in {container}
+///     ...
+/// — or — when the LSP returns an empty Vec:
+///   Find references: {file}:{line}:{column} (workspace: {workspace})
+///   Connecting to LSP server...
+///   No references found for {file}:{line}
+///
+/// `{KIND}` uses the Debug format of `ReferenceKind` (PascalCase:
+/// "Read" / "Call" / "Import" / "Write" / "Type"). The `(unknown)`
+/// substitution happens in `execute_navigate` so the data side
+/// carries a `String`, not `Option<String>`.
+pub fn present_navigate_references(
+    result: &cognicode_core::interface::cli::result::NavigateResult,
+    w: &mut dyn std::io::Write,
+) -> std::io::Result<()> {
+    if let cognicode_core::interface::cli::result::NavigateResult::References {
+        file,
+        line,
+        column,
+        workspace,
+        include_declaration: _,
+        references,
+    } = result
+    {
+        writeln!(
+            w,
+            "Find references: {}:{}:{} (workspace: {})",
+            file, line, column, workspace
+        )?;
+        writeln!(w, "Connecting to LSP server...")?;
+        if references.is_empty() {
+            writeln!(w, "No references found for {}:{}", file, line)?;
+        } else {
+            writeln!(w, "Found {} reference(s):", references.len())?;
+            for ReferenceEntry {
+                file: rfile,
+                line: rline,
+                column: rcol,
+                kind,
+                container,
+            } in references
+            {
+                writeln!(
+                    w,
+                    "  {}:{}:{} [{:?}] in {}",
+                    rfile, rline, rcol, kind, container
+                )?;
+            }
+        }
+    } else {
+        panic!(
+            "present_navigate_references called with non-References NavigateResult: {:?}",
+            result
+        );
+    }
+    Ok(())
+}
+
+// ===================================================================
 // T1-5.5 — JSON dispatch + top-level output dispatcher
 // ===================================================================
 //
@@ -1062,6 +1283,50 @@ pub fn present_graph_result_json(result: &GraphResult, w: &mut dyn Write) -> io:
     w.write_all(b"\n")
 }
 
+// ===================================================================
+// T1-5.6a — JSON dispatch + dispatch top-level for `NavigateResult`
+// ===================================================================
+//
+// Estado pre-T1-5.6a:
+//   - `cognicode navigate ...` no tenía JSON dispatch (T1-5.5 lo
+//     consolidó para Index y Graph pero Navigate se quedó en
+//     `CommandOutput::Other`). El bin ignoraba `--format json` para
+//     navigate silenciosamente.
+//
+// Lo que este bloque aporta:
+//   - `present_navigate_result_json`: wrapper de `serde_json::to_writer_pretty`
+//     con newline final, paralelo a `present_index_result_json`.
+//   - `present_navigate_result`: dispatch interno de `&NavigateResult`
+//     a la función text correcta (sustituye a los 3 brazos del
+//     `match` inline que vivía en `commands.rs::execute_navigate`).
+//   - Rama `CommandOutput::Navigate(r)` en `present_output`.
+
+/// Emit `NavigateResult` as JSON (pretty-printed, newline-terminated).
+///
+/// `#[serde(tag = "kind", rename_all = "snake_case")]` gives each of
+/// the 3 variants (`"definition"` / `"hover"` / `"references"`) its
+/// own `"kind": "<variant>"` discriminator. `DefinitionLocation`,
+/// `HoverResult`, and `ReferenceEntry` are serialized via their
+/// own `Serialize` derives — `ReferenceKind` uses its Debug-derived
+/// PascalCase variant name in the JSON (matching the text path's
+/// `[KIND]` form, kept consistent so a single consumer can switch
+/// between text and JSON without surprises).
+pub fn present_navigate_result_json(result: &NavigateResult, w: &mut dyn Write) -> io::Result<()> {
+    serde_json::to_writer_pretty(&mut *w, result)?;
+    w.write_all(b"\n")
+}
+
+/// Dispatch a `&NavigateResult` to the text presenter for its variant.
+/// Replaces the 3 inline `match` arms that lived in
+/// `commands.rs::execute_navigate` pre-T1-5.6a.
+fn present_navigate_result(result: &NavigateResult, w: &mut dyn Write) -> io::Result<()> {
+    match result {
+        NavigateResult::Definition { .. } => present_navigate_definition(result, w),
+        NavigateResult::Hover { .. } => present_navigate_hover(result, w),
+        NavigateResult::References { .. } => present_navigate_references(result, w),
+    }
+}
+
 /// Dispatch a `&GraphResult` to the text presenter for its variant.
 /// Replaces the 12 inline `match` arms that lived in
 /// `commands.rs::execute_graph` during T1-5.4.
@@ -1099,6 +1364,8 @@ pub fn present_output(
         (CommandOutput::Index(r), CliFormat::Json) => present_index_result_json(r, w),
         (CommandOutput::Graph(r), CliFormat::Text) => present_graph_result(r, w),
         (CommandOutput::Graph(r), CliFormat::Json) => present_graph_result_json(r, w),
+        (CommandOutput::Navigate(r), CliFormat::Text) => present_navigate_result(r, w),
+        (CommandOutput::Navigate(r), CliFormat::Json) => present_navigate_result_json(r, w),
         (CommandOutput::Other, _) => Ok(()),
     }
 }
