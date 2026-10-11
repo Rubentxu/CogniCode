@@ -31,10 +31,15 @@ fn corpus() -> PathBuf {
     common::repo_root().join("docs/prf/fixtures/equivalence_full_vs_perfile")
 }
 
-/// Ruta CLI: `cognicode graph full <dir>` — JSON en stdout.
+/// Ruta CLI: `cognicode --format json graph full <dir>` — JSON en stdout.
 fn cli_full_json(ws: &Path) -> Value {
+    // T1-5.5: el flag --format paso a ser top-level en Cli. La forma
+    // pre-1.5.5 (`graph full <dir> --format json`) sigue siendo parseable
+    // por clap pero ya no controla el output: el sub-comando ignora su
+    // propio --format y delega en el top-level. Por eso la posicion
+    // importa: --format tiene que ir antes del sub-comando.
     let out = Command::new(cli_bin())
-        .args(["graph", "full", ws.to_str().unwrap(), "--format", "json"])
+        .args(["--format", "json", "graph", "full", ws.to_str().unwrap()])
         .stdin(Stdio::null())
         .output()
         .expect("spawn cognicode");
