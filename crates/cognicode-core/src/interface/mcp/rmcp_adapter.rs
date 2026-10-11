@@ -458,1015 +458,116 @@ pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
 /// Public so the A-012 contract suite can compare what the catalog advertises
 /// against what the derive produces. Read-only: it rebuilds the vector.
 pub fn build_all_tools() -> Vec<Tool> {
-    vec![
-                    Tool::new(
-                        "build_graph",
-                        "Build the call graph for a project directory. Must be called before get_call_hierarchy, analyze_impact, or check_architecture.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "directory": {
-                                    "type": "string",
-                                    "description": "Path to project directory to analyze (default: current working directory)"
-                                }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", false, false, 300, "read")),
-                    Tool::new(
-                        "get_file_symbols",
-                        "Extract symbols (functions, classes, variables) from a source file. Set compressed=true for natural language summary. Set hierarchical=true for tree output.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string", "description": "Path to the source file" },
-                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" },
-                                "hierarchical": { "type": "boolean", "description": "Group symbols by nesting (parent→children tree) (default: false)" }
-                            },
-                            "required": ["file_path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 15, "read")),
-                    Tool::new(
-                        "get_call_hierarchy",
-                        "Traverse call graph to find callers (incoming) or callees (outgoing). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol_name": { "type": "string", "description": "Fully qualified symbol name" },
-                                "direction": { "type": "string", "enum": ["incoming", "outgoing"], "description": "Traverse direction" },
-                                "depth": { "type": "integer", "description": "Traversal depth (default: 1)" },
-                                "compressed": { "type": "boolean", "description": "Return compressed summary" }
-                            },
-                            "required": ["symbol_name", "direction"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
-                    Tool::new(
-                        "analyze_impact",
-                        "Analyze the impact of changing a symbol. Returns impacted files and risk level.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol_name": { "type": "string", "description": "Symbol to analyze" },
-                                "compressed": { "type": "boolean", "description": "Return compressed summary" }
-                            },
-                            "required": ["symbol_name"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
-                    Tool::new(
-                        "find_usages",
-                        "Find all usages of a symbol across the project.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol_name": { "type": "string", "description": "Symbol to search" },
-                                "include_declaration": { "type": "boolean", "description": "Include definition (default: true)" },
-                                "context_lines": { "type": "integer", "description": "Number of surrounding source lines to include per usage (default: none)" }
-                            },
-                            "required": ["symbol_name"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 40, "read")),
-                    // E1.W3 — EvidenceStore tools (mirror `cognicode evidence list|search`).
-                    // Gated behind `evidence-cli-ladybug` because the
-                    // backend lookup goes through the same registry as
-                    // the CLI subcommand. Default build compiles to a
-                    // no-op (the tool is omitted from `tools/list`).
-                    #[cfg(feature = "evidence-cli-ladybug")]
-                    Tool::new(
-                        "list_evidence",
-                        "List evidence rows for a workspace, optionally filtered by kind. \
-                         Mirrors the `cognicode evidence list` CLI subcommand; see \
-                         `cognicode-cli/tests/evidence_cli_mcp_equivalence.rs` for the \
-                         JSON equivalence contract.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "workspace": { "type": "string", "description": "Workspace identifier (default: \"\")" },
-                                "kind": { "type": "string", "description": "Filter by kind: log | trace | measurement | external (optional)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "evidence", true, false, 30, "read")),
-                    #[cfg(feature = "evidence-cli-ladybug")]
-                    Tool::new(
-                        "search_evidence",
-                        "Full-text search across evidence titles and excerpts. \
-                         Mirrors the `cognicode evidence search` CLI subcommand.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "workspace": { "type": "string", "description": "Workspace identifier (default: \"\")" },
-                                "query": { "type": "string", "description": "Substring query against title + excerpt" },
-                                "limit": { "type": "integer", "description": "Max rows returned (default: 25)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "evidence", true, false, 30, "read")),
-                    Tool::new(
-                        "get_complexity",
-                        "Calculate code complexity metrics (cyclomatic, cognitive, nesting).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string", "description": "Path to source file" },
-                                "function_name": { "type": "string", "description": "Optional specific function" }
-                            },
-                            "required": ["file_path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "quality", false, false, 20, "read")),
-                    Tool::new(
-                        "get_entry_points",
-                        "Find symbols with no incoming edges (entry points in the call graph). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 15, "read")),
-                    Tool::new(
-                        "get_leaf_functions",
-                        "Find symbols with no outgoing edges (leaf functions in the call graph). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "compressed": { "type": "boolean", "description": "Return compressed natural language summary instead of JSON (default: false)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 15, "read")),
-                    Tool::new(
-                        "trace_path",
-                        "Find execution path between two symbols using BFS.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "source": { "type": "string", "description": "Source symbol name (function or method)" },
-                                "target": { "type": "string", "description": "Target symbol name (function or method)" },
-                                "max_depth": { "type": "integer", "description": "Maximum depth for path search (default: 10)" },
-                                "all": { "type": "boolean", "description": "If true, return ALL paths (BFS exhaustive). If false, return only the shortest path (default: false)" }
-                            },
-                            "required": ["source", "target"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 30, "read")),
-                    Tool::new(
-                        "export_mermaid",
-                        "Export call graph or subgraph as Mermaid flowchart. Optionally render to SVG with a theme.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "root_symbol": { "type": "string", "description": "Subgraph root symbol (optional - if not provided, exports entire graph)" },
-                                "max_depth": { "type": "integer", "description": "Maximum depth for traversal (default: 3)" },
-                                "include_external": { "type": "boolean", "description": "Include external dependencies (default: false)" },
-                                "theme": { "type": "string", "description": "Theme for SVG rendering" },
-                                "format": { "type": "string", "enum": ["code", "svg"], "description": "Output format" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 40, "read")),
-                    Tool::new(
-                        "get_hot_paths",
-                        "Find functions with highest fan-in (most called functions).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "limit": { "type": "integer", "description": "Number of hot paths to return (default: 10)" },
-                                "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 2)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
-                    Tool::new(
-                        "query_symbol_index",
-                        "Query the symbol index to find locations of a symbol by name (case-insensitive).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol_name": { "type": "string", "description": "Symbol name to query (case-insensitive)" },
-                                "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
-                            },
-                            "required": ["symbol_name"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 30, "read")),
-                    Tool::new(
-                        "build_call_subgraph",
-                        "Build an on-demand call subgraph centered on a symbol.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol_name": { "type": "string", "description": "Symbol name to build subgraph around" },
-                                "depth": { "type": "integer", "description": "Traversal depth (default: 3)" },
-                                "direction": { "type": "string", "enum": ["in", "out", "both"], "description": "Traversal direction (default: both)" },
-                                "directory": { "type": "string", "description": "Directory to search in (default: current working directory)" }
-                            },
-                            "required": ["symbol_name"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
-                    Tool::new(
-                        "get_per_file_graph",
-                        "Get the call graph for a specific file.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string", "description": "File path to get graph for" }
-                            },
-                            "required": ["file_path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
-                    Tool::new(
-                        "get_symbol_code",
-                        "Get the full source code of a symbol at a given location, including docstrings.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file": { "type": "string", "description": "Path to the source file" },
-                                "line": { "type": "integer", "description": "Line number (1-indexed)" },
-                                "col": { "type": "integer", "description": "Column number (0-indexed)" }
-                            },
-                            "required": ["file", "line", "col"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "read")),
-                    // LSP Navigation tools
-                    Tool::new(
-                        "go_to_definition",
-                        "Navigate to the definition of a symbol using LSP.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string" },
-                                "line": { "type": "integer" },
-                                "column": { "type": "integer" }
-                            },
-                            "required": ["file_path", "line", "column"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 15, "read")),
-                    Tool::new(
-                        "hover",
-                        "Get type information and documentation for a symbol at a position using LSP.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string" },
-                                "line": { "type": "integer" },
-                                "column": { "type": "integer" }
-                            },
-                            "required": ["file_path", "line", "column"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 15, "read")),
-                    Tool::new(
-                        "find_references",
-                        "Find all references to a symbol using LSP.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": { "type": "string" },
-                                "line": { "type": "integer" },
-                                "column": { "type": "integer" },
-                                "include_declaration": { "type": "boolean", "default": true }
-                            },
-                            "required": ["file_path", "line", "column"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "navigation", false, false, 30, "read")),
-                    // File operation tools
-                    Tool::new(
-                        "read_file",
-                        "Smart file reader with semantic modes.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "path": { "type": "string", "description": "Path to the file to read (required)" },
-                                "start_line": { "type": "integer", "description": "Start line for partial read (1-indexed, default: 1)" },
-                                "end_line": { "type": "integer", "description": "End line for partial read (1-indexed, default: last line)" },
-                                "mode": { "type": "string", "enum": ["raw", "outline", "symbols", "compressed"], "description": "Read mode" },
-                                "chunk_size": { "type": "integer", "description": "Chunk size for streaming reads (optional)" },
-                                "continuation_token": { "type": "string", "description": "Continuation token for pagination (optional)" }
-                            },
-                            "required": ["path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "read")),
-                    Tool::new(
-                        "search_content",
-                        "Search file contents with .gitignore awareness.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "pattern": { "type": "string", "description": "Search pattern (required)" },
-                                "path": { "type": "string", "description": "Path to search within (optional, defaults to workspace root)" },
-                                "file_glob": { "type": "string", "description": "Glob pattern to filter files (e.g., '*.rs')" },
-                                "regex": { "type": "boolean", "description": "Whether to treat pattern as regex (default: true)" },
-                                "case_insensitive": { "type": "boolean", "description": "Case insensitive search (default: false)" },
-                                "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 50)" },
-                                "context_lines": { "type": "integer", "description": "Number of context lines around matches (default: 2)" }
-                            },
-                            "required": ["pattern"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 40, "read")),
-                    Tool::new(
-                        "list_files",
-                        "List project files with .gitignore awareness.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "path": { "type": "string", "description": "Path to list (optional, defaults to workspace root)" },
-                                "glob": { "type": "string", "description": "Glob pattern to filter results (e.g., '**/*.rs')" },
-                                "offset": { "type": "integer", "description": "Pagination offset (default: 0)" },
-                                "limit": { "type": "integer", "description": "Maximum number of results (default: 100)" },
-                                "recursive": { "type": "boolean", "description": "Whether to list files recursively (default: true)" },
-                                "max_depth": { "type": "integer", "description": "Maximum depth for recursive traversal" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 20, "read")),
-                    Tool::new(
-                        "retrieve_and_verify",
-                        "Search for code matching a query and verify Rust files via sandboxed rustc compilation. Combines lexical search with compile-check verification.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "query": { "type": "string", "description": "Search query string (required)" },
-                                "language": { "type": "string", "description": "Language filter (reserved for future use, defaults to 'rust')" },
-                                "max_results": { "type": "integer", "description": "Maximum number of results to return (default: 20)" },
-                                "verify": { "type": "boolean", "description": "Whether to verify Rust files via rustc compilation (default: true)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", false, false, 80, "read")),
-                    // Modification tools (destructive)
-                    Tool::new(
-                        "write_file",
-                        "Create or overwrite files within the workspace.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "path": { "type": "string", "description": "Path to the file to write (required)" },
-                                "content": { "type": "string", "description": "Content to write (required)" },
-                                "create_dirs": { "type": "boolean", "description": "Whether to create parent directories if they don't exist (default: false)" }
-                            },
-                            "required": ["path", "content"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 10, "mutating")),
-                    Tool::new(
-                        "edit_file",
-                        "Edit files with syntax validation.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "path": { "type": "string", "description": "Path to the file to edit (required)" },
-                                "edits": {
-                                    "type": "array",
-                                    "description": "Edits to apply (required)",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "oldString": { "type": "string", "description": "The exact text to replace (required)" },
-                                            "newString": { "type": "string", "description": "The replacement text (required)" }
-                                        },
-                                        "required": ["oldString", "newString"]
-                                    }
-                                }
-                            },
-                            "required": ["path", "edits"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "file", false, false, 20, "mutating")),
-                    Tool::new(
-                        "safe_refactor",
-                        "Perform safe refactoring with validation and preview.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "action": { "type": "string", "enum": ["rename", "extract", "inline", "move", "change_signature"], "description": "Refactor action" },
-                                "target": { "type": "string", "description": "Target symbol name" },
-                                "params": { "type": "object", "description": "Action-specific parameters" }
-                            },
-                            "required": ["action", "target"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "refactor", false, false, 100, "read")),
-                    // AIX-1: Smart Overview & Ranked Symbols
-                    // AIX-2: Onboarding Plan & Auto Diagnose & Refactor Plan
-                    // AIX-3: NL to Symbol & Ask About Code & Find Pattern
-                    Tool::new(
-                        "ask_about_code",
-                        "Answer questions about code flow by tracing execution paths between symbols.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "question": { "type": "string", "description": "Question about code flow" },
-                                "limit": { "type": "integer", "description": "Maximum number of answers (default: 10)" }
-                            },
-                            "required": ["question"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "aix", true, false, 500, "read")),
-                    Tool::new(
-                        "find_pattern_by_intent",
-                        "Match natural language intent descriptions to known code patterns.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "intent": { "type": "string", "description": "Natural language intent description" },
-                                "list_patterns": { "type": "boolean", "description": "Whether to list all available patterns" }
-                            },
-                            "required": ["intent"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "aix", true, false, 500, "read")),
-                    Tool::new(
-                        "nl_to_symbol",
-                        "Convert natural language descriptions to symbol matches using keyword extraction and semantic search.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "query": { "type": "string", "description": "Natural language description of symbol to find" },
-                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", true, false, 50, "read")),
-                    // AIX-4: Compare Call Graphs & Detect API Breaks
-                    // AIX-5: System Prompt Context & God Functions & Long Params
-                    Tool::new(
-                        "detect_god_functions",
-                        "Find overly large or complex functions (god functions) that should be refactored.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "min_lines": { "type": "integer", "description": "Minimum lines of code threshold (default: 50)" },
-                                "min_complexity": { "type": "integer", "description": "Minimum cyclomatic complexity threshold (default: 15)" },
-                                "min_fan_in": { "type": "integer", "description": "Minimum fan-in threshold (default: 5)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 100, "read")),
-                    Tool::new(
-                        "detect_long_parameter_lists",
-                        "Find functions with too many parameters that should be consolidated into structs.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "max_params": { "type": "integer", "description": "Maximum number of parameters allowed (default: 5)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 60, "read")),
-                    // PL3: Symbol Hotness Tracking
-                    // AVC: Agent-Verifiable Context tools
-                    Tool::new(
-                        "generate_contract",
-                        "Generate an AVC truth contract from an existing function. Returns syntax, semantic, and safety constraints.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "function_name": { "type": "string", "description": "Name of the function to generate a contract for" },
-                                "file_path": { "type": "string", "description": "Path to the source file containing the function" }
-                            },
-                            "required": ["function_name", "file_path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("gated", "composite", false, true, 50, "read")),
-                    Tool::new(
-                        "validate_contract",
-                        "Validate generated code against an AVC truth contract. Returns pass/fail with violations and fix suggestions.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "contract_id": { "type": "string", "description": "ID of the contract to validate against" },
-                                "generated_code": { "type": "string", "description": "The code to validate" }
-                            },
-                            "required": ["contract_id", "generated_code"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", false, false, 30, "read")),
-                    // Phase 4b: Graph Analytics (PageRank, paths, condensation, god nodes, reduction, FAS)
-                    // These tools operate on the in-memory call graph that
-                    // `build_graph` populates, so they all require a prior
-                    // build. They are always available (not feature-gated)
-                    // because the underlying petgraph algorithms are pure.
-                    Tool::new(
-                        "graph_pagerank",
-                        "Compute PageRank importance scores for all symbols in the call graph. Returns a ranked list of symbols by dependency importance. High-scoring symbols are 'god nodes' (heavily depended-upon). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "alpha": { "type": "number", "description": "Damping factor (default: 0.85). Must be in (0.0, 1.0]." },
-                                "max_iterations": { "type": "integer", "description": "Max fixed-point iterations (default: 100)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250, "read")),
-                    Tool::new(
-                        "graph_all_paths",
-                        "Find all simple paths between two symbols in the call graph. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "from_symbol": { "type": "string", "description": "Source symbol name (substring match, case-insensitive)" },
-                                "to_symbol": { "type": "string", "description": "Target symbol name (substring match, case-insensitive)" },
-                                "max_hops": { "type": "integer", "description": "Maximum number of intermediate nodes (default: 5)" }
-                            },
-                            "required": ["from_symbol", "to_symbol"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 150, "read")),
-                    Tool::new(
-                        "graph_condensed",
-                        "Compute the SCC condensation of the call graph: every strongly connected component is collapsed into a single node, producing an acyclic condensation DAG. Use to spot circular dependency clusters. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
-                    Tool::new(
-                        "graph_god_nodes",
-                        "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "percentile": { "type": "number", "description": "Percentile threshold in [0.0, 1.0] (default: 0.95). Symbols at or above this PageRank percentile are returned." }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 100, "read")),
-                    Tool::new(
-                        "graph_reduced",
-                        "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
-                    Tool::new(
-                        "graph_feedback_arcs",
-                        "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 100, "read")),
-                    // Phase 5: Community Detection (Label Propagation).
-                    //
-                    // `graph_communities` runs Label Propagation over the
-                    // in-memory call graph and returns deterministic
-                    // community labels. `graph_community_detail` drills
-                    // into a single community, and `graph_surprising_
-                    // connections` highlights edges that cross community
-                    // boundaries (often a sign of unwanted coupling).
-                    // Phase 6: IDF-weighted Search & Unified Insights.
-                    //
-                    // `graph_search_idf` ranks symbols by an information-
-                    // retrieval-style score (rare tokens count more) and
-                    // includes a hub-bypass step that demotes the
-                    // 95th-percentile-degree nodes. The remaining two
-                    // tools, `graph_insights` and `graph_suggest_questions`,
-                    // consolidate god-nodes + cycles + communities +
-                    // cross-community edges + a 0-100 health score into a
-                    // single payload.
-                    Tool::new(
-                        "graph_communities",
-                        "Detect code communities using Label Propagation. Groups symbols that are tightly coupled into clusters. Returns communities with cohesion scores. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 250, "read")),
-                    Tool::new(
-                        "graph_community_detail",
-                        "Get details for a specific community detected by graph_communities (members, internal/external edge counts, cohesion score, and top god nodes within the community). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "community_id": { "type": "integer", "description": "Sequential community id from graph_communities output" },
-                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations used to re-detect communities (default: 100)" }
-                            },
-                            "required": ["community_id"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
-                    Tool::new(
-                        "graph_surprising_connections",
-                        "Find surprising cross-community connections. These are edges between symbols in different communities, indicating unexpected coupling. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "top_n": { "type": "integer", "description": "Max connections to return (default: 20)" },
-                                "max_iterations": { "type": "integer", "description": "Max label propagation iterations (default: 100)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 120, "read")),
-                    Tool::new(
-                        "graph_search_idf",
-                        "Search symbols ranked by IDF (Inverse Document Frequency) importance. Rare terms score higher. Includes hub bypass for cleaner results. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "query": { "type": "string", "description": "Search query (symbol name or partial)" },
-                                "max_results": { "type": "integer", "description": "Max results (default: 20)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "search", true, false, 40, "read")),
-                    Tool::new(
-                        "graph_insights",
-                        "Get a complete architecture health report: god nodes, circular dependencies, community overview, surprising cross-module connections, and a health score (0-100). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 200, "read")),
-                    Tool::new(
-                        "graph_suggest_questions",
-                        "Generate intelligent questions about the codebase architecture based on graph analysis. Helps identify areas that need attention. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 500, "read")),
-                    // Sprint 2: Graphify-style tools (ADR-026)
-                    Tool::new(
-                        "graph_query",
-                        "Natural language graph topology query. Ask 'what connects X to Y?' and get a subgraph with provenance. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "question": { "type": "string", "description": "Natural language question about the graph topology" },
-                                "max_depth": { "type": "integer", "description": "Maximum BFS depth from seed nodes (default: 3)" },
-                                "budget": { "type": "integer", "description": "Maximum nodes to collect (default: 1500)" }
-                            },
-                            "required": ["question"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 80, "read")),
-                    Tool::new(
-                        "graph_explain",
-                        "Composite deep-dive on a symbol: callers, callees, fan-in/out, complexity. Saves multiple tool calls. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "symbol": { "type": "string", "description": "Symbol name to explain" },
-                                "depth": { "type": "integer", "description": "Neighbor depth (default: 2)" }
-                            },
-                            "required": ["symbol"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 100, "read")),
-                    // Phase 3A: Proactive Tools
-                    #[cfg(feature = "persistence")]
-                    // Detect Drift tool (S7000-S7003 intent drift detection)
-                    Tool::new(
-                        "detect_drift",
-                        "Analyze a source file for intent drift (S7000: docstring-body mismatch), AVC violations (S7001: unsafe/panic/unwrap), obsolete patterns (S7002: try! macro), and forbidden terms (S7003). Persists high-drift findings to the drift_events store.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_path": {
-                                    "type": "string",
-                                    "description": "Path to the source file to analyze (required)"
-                                },
-                                "threshold": {
-                                    "type": "number",
-                                    "description": "Minimum drift score threshold (default: 0.5). Only findings with drift_score >= threshold are included."
-                                },
-                                "function_name": {
-                                    "type": "string",
-                                    "description": "Optional function name to scope analysis to a single function"
-                                }
-                            },
-                            "required": ["file_path"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "quality", false, true, 150, "read")),
-                    Tool::new(
-                        "get_type_references",
-                        "List type annotation references for a symbol (param types, return types, field types). Uses References edges from type-ref extraction. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"symbol_name":{"type":"string","description":"Symbol name"}},"required":["symbol_name"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
-                    Tool::new(
-                        "get_imports",
-                        "List all imports for a file. Uses Imports edges from the ingest pipeline. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"file_path":{"type":"string","description":"File path"}},"required":["file_path"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
-                    Tool::new(
-                        "get_implementors",
-                        "Find all types that implement a given trait/interface. Uses Implements edges. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"trait_name":{"type":"string","description":"Trait or interface name"}},"required":["trait_name"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 40, "read")),
-                    Tool::new(
-                        "get_members",
-                        "List methods and fields of a class/struct. Uses Contains edges. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"class_name":{"type":"string","description":"Class or struct name"}},"required":["class_name"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 25, "read")),
-                    Tool::new(
-                        "graph_query_filtered",
-                        "Graph query with provenance, node kind, and community filters. Requires build_graph first.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"question":{"type":"string"},"limit":{"type":"integer"},"filters":{"type":"object","properties":{"provenance":{"type":"array","items":{"type":"string"}},"node_kinds":{"type":"array","items":{"type":"string"}},"community_id":{"type":"integer"},"exclude_kinds":{"type":"array","items":{"type":"string"}}}}},"required":["question"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 80, "read")),
-                    Tool::new(
-                        "export_callflow",
-                        "Export a community-level Mermaid architecture call-flow diagram. Shows module-level relationships.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"max_sections":{"type":"integer","description":"Max architecture sections (default: 8)"},"format":{"type":"string","enum":["code"]}}}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 60, "read")),
-                    // SOLID Audit tool — heuristic-based SOLID principle analysis
-                    Tool::new(
-                        "solid_audit",
-                        "Analyze code for SOLID principle violations (SRP, OCP, LSP, ISP, DIP). Returns violations with severity, location, and suggestions. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "quality", true, false, 200, "read")),
-
-    // Batch D: Agent Task Tools (bidirectional interaction)
-                    Tool::new(
-                        "graph_analyze",
-                        "Run advanced graph algorithms: scc, reduced, or feedback_arcs.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"mode":{"type":"string","enum":["scc","reduced","feedback_arcs"]}}}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 150, "read")),
-                    Tool::new(
-                        "project_overview",
-                        "Get a comprehensive project overview at quick, medium, or detailed levels.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"detail":{"type":"string","enum":["quick","medium","detailed"]}}}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 300, "read")),
-                    Tool::new(
-                        "codebase_map",
-                        "Generate a compact, LLM-optimized codebase map. Format: compact (~400 tokens) or detailed (~2000).",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"format":{"type":"string","enum":["compact","detailed"]}}}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 100, "read")),
-                    Tool::new(
-                        "project_insights",
-                        "Dashboard in a single call: symbols, edges, entry points, dead code, health score, hot paths.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{}}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "composite", true, false, 300, "read")),
-                    Tool::new(
-                        "smart_search",
-                        "Run semantic_search + ranked_symbols + graph_search_idf in parallel with deduplication. Returns merged results ranked by combined score.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "query": { "type": "string", "description": "Search query string" },
-                                "limit": { "type": "integer", "description": "Maximum number of results (default: 20)" }
-                            },
-                            "required": ["query"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", true, false, 200, "read")),
-                    Tool::new(
-                        "check_architecture",
-                        "Detect cycles and architecture violations using Tarjan SCC algorithm. Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "scope": { "type": "string", "description": "Optional scope to filter analysis (e.g., module name)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 20, "read")),
-                    Tool::new(
-                        "graph_checkpoint",
-                        "Manage graph checkpoints: create (build+checkpoint), current (get latest), restore (get by id), list (list all). Requires build_graph first.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "operation": { "type": "string", "description": "Operation: create, current, restore, list (default: create)" },
-                                "checkpoint_id": { "type": "integer", "description": "Checkpoint ID for restore operation" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 50, "read")),
-                    Tool::new(
-                        "merge_graphs",
-                        "Merge per-file call graphs into a consolidated project graph.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_paths": { "type": "array", "items": {"type": "string"}, "description": "List of source file paths to merge" }
-                            },
-                            "required": ["file_paths"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", false, false, 50, "read")),
-                    Tool::new(
-                        "build_lightweight_index",
-                        "Build a lightweight symbol index for fast lookups. Supports strategies: lightweight, on_demand, per_file, full.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "directory": { "type": "string", "description": "Directory to index (default: cwd)" },
-                                "strategy": { "type": "string", "enum": ["lightweight", "on_demand", "per_file", "full"], "description": "Indexing strategy (default: lightweight)" }
-                            }
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "graph", true, false, 30, "read")),
-                    #[cfg(feature = "persistence")]
-                    Tool::new(
-                        "reparse_on_edit",
-                        "Incrementally reindex changed files without rebuilding the full graph. Much faster than full rebuild for small edits. Requires persistence feature.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "file_paths": { "type": "array", "items": {"type": "string"}, "description": "List of changed file paths to reindex" }
-                            },
-                            "required": ["file_paths"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, true, 20, "mutating")),
-                    Tool::new(
-                        "iac_query",
-                        "Query infrastructure-as-code resources (Terraform, Ansible) and their dependencies from the graph. Requires build_graph first. Accepts bare resource names (aws_instance.web) or canonical IDs (tf:main.tf:aws_instance.web). Returns resource type, dependencies, and dependents. Uses the in-memory graph (ladybug persistence is wired at the runtime layer).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "resource_id": { "type": "string", "description": "Resource ID: bare name (aws_instance.web) or canonical (tf:main.tf:aws_instance.web)" },
-                                "depth": { "type": "integer", "description": "Max traversal depth (default: 2)", "default": 2 }
-                            },
-                            "required": ["resource_id"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "infra", true, true, 50, "read")),
-                    Tool::new(
-                        "review_pr",
-                        "Analyze PR impact: provide changed files, get risk level, impacted files, and breaking changes.",
-                        Arc::new(serde_json::json!({"type":"object","properties":{"files":{"type":"array","items":{"type":"string"},"description":"Changed file paths"}},"required":["files"]}).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "composite", false, false, 200, "read")),
-                    Tool::new(
-                        "list_view_specs",
-                        "List all ViewSpecs visible to the current workspace (built-in + persisted runtime). Returns descriptors (id, title, is_builtin, source). Use read_view_spec to fetch the full 13-field JSON for any spec.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {}
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "view", false, false, 10, "read")),
-                    Tool::new(
-                        "read_view_spec",
-                        "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "id": { "type": "string", "description": "ViewSpec id (built-in kebab id or UUID)" }
-                            },
-                            "required": ["id"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("stable", "view", false, false, 10, "read")),
-
-                    // M5.2 WU2: M5 program-analysis algorithm IDs.
-                    Tool::new(
-                        "cfg_per_function",
-                        "Build the CFG (control flow graph) for one function given adjacency, root, and exits.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object", "description": "Per-tool parameters (see conformance corpus)" },
-                                "limits": { "type": "object", "description": "Optional PlanLimits override" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-                    Tool::new(
-                        "dominators_cfg",
-                        "Compute per-function dominators over a CFG adjacency slice.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object" },
-                                "limits": { "type": "object" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-                    Tool::new(
-                        "slice_forward",
-                        "Forward slice from a (variable, definition_site) criterion.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object" },
-                                "limits": { "type": "object" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-                    Tool::new(
-                        "slice_backward",
-                        "Backward slice from a (variable, use_sites[]) criterion.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object" },
-                                "limits": { "type": "object" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-                    Tool::new(
-                        "taint_flow",
-                        "Forward taint analysis over a DFG (declarative Rust patterns).",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object" },
-                                "limits": { "type": "object" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-                    #[cfg(feature = "program-analysis-server")]
-                    Tool::new(
-                        "interproc_summary",
-                        "Interprocedural summary: bottom-up reads/writes + fixed-point on recursive SCCs.",
-                        Arc::new(serde_json::json!({
-                            "type": "object",
-                            "properties": {
-                                "algorithm_params": { "type": "object" },
-                                "limits": { "type": "object" }
-                            },
-                            "required": ["algorithm_params"]
-                        }).as_object().cloned().unwrap()),
-                    )
-                    .with_meta(cognicode_meta("experimental", "graph", false, false, 500, "read")),
-    ]
-    .into_iter()
-    .map(|mut tool| {
-        // CP2.3 / A-012 (structured output): announce the published output
-        // contract. The schema is derived from the very type that serialises
-        // the result, so `tools/list` cannot describe a shape the handler
-        // does not produce. Tools without a concrete output type keep `None`,
-        // which is the honest answer: "no contract", not "any shape".
-        if let Some(schema) = super::output_contracts::output_schema_for(tool.name.as_ref()) {
-            tool = tool.with_raw_output_schema(Arc::new(schema));
-        }
-
-        // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission explicitly so
-        // clients can distinguish mutating tools without hardcoding names.
-        //
-        // The declaration is right here, on the tool being built, so there is
-        // nothing to look up. `tool_is_mutating(&tool.name)` is deliberately
-        // NOT used: it reads `tool_authority_map()`, which iterates
-        // `build_all_tools()` — calling it from inside this function would
-        // recurse. That circularity is what the old hardcoded list was working
-        // around, and it was never needed, because the answer was already in
-        // hand.
-        let mutates = declared_authority(&tool).is_none_or(authority_is_mutating);
-        if let Some(existing) = tool.meta.as_mut() {
-            if let Some(c) = existing.get_mut("cognicode").and_then(|v| v.as_object_mut()) {
-                c.insert("mutates_workspace".to_string(), serde_json::json!(mutates));
-                c.insert(
-                    "tool_version".to_string(),
-                    serde_json::json!(env!("CARGO_PKG_VERSION")),
-                );
+    // B2.W2: the catalog is the single source of truth. The previous
+    // implementation was a 970-line inline `vec![Tool::new(...)...]`
+    // that listed every tool in code; any drift between this list and
+    // `product/tools.json` was silent and only the parity test could
+    // see it (and it didn't, because there was no parity test). The
+    // catalog loader reads `product/tools.json`, deserialises each
+    // entry into a typed `ToolDescriptor`, filters out tools whose
+    // declared Cargo feature is not enabled in the current build, and
+    // `descriptor_to_tool` projects each remaining entry into the
+    // 5-field MCP meta block. The handlers in `call_tool_handler`
+    // below still hold their `#[cfg(feature = "...")]` gates, so a
+    // feature-gated tool that slipped past the catalog filter would
+    // still fail to dispatch — defence in depth, not a single point
+    // of failure.
+    crate::interface::catalog::load_tool_catalog_active()
+        .into_iter()
+        .map(descriptor_to_tool)
+        .map(|mut tool| {
+            // CP2.3 / A-012 (structured output): announce the published
+            // output contract. The schema is derived from the very type
+            // that serialises the result, so `tools/list` cannot
+            // describe a shape the handler does not produce. Tools
+            // without a concrete output type keep `None`, which is the
+            // honest answer: "no contract", not "any shape".
+            //
+            // `descriptor_to_tool` has already populated the
+            // cognicode meta block (mutates_workspace, tool_version);
+            // `with_raw_output_schema` does not touch meta, so the
+            // order is independent of the meta side.
+            if let Some(schema) = super::output_contracts::output_schema_for(tool.name.as_ref()) {
+                tool = tool.with_raw_output_schema(Arc::new(schema));
             }
-        }
-        tool
-    })
-    .collect()
+            tool
+        })
+        .collect()
 }
+
+/// Project a `ToolDescriptor` into the rmcp `Tool` model.
+///
+/// The projection keeps the wire-side 5-field meta block
+/// (`stability`, `category`, `requires_graph`, `requires_persistence`,
+/// `estimated_latency_ms`, `authority`) plus the derived
+/// `mutates_workspace` and `tool_version` injected at the same site.
+/// All other fields the catalog carries (`requirements`,
+/// `requirements_status`, `public_profiles`, `runtime_metadata`, ...)
+/// stay in the on-disk JSON, accessible via
+/// `cognicode capabilities --json`; the catalog is the source of
+/// truth, the MCP projection is a strict subset for the wire.
+fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
+    let input_schema = if let Some(obj) = d.input_schema.as_object() {
+        obj.clone()
+    } else {
+        // input_schema is null/missing for tools that take no args.
+        // rmcp requires an object map; empty map is the contract.
+        serde_json::Map::new()
+    };
+
+    // PRF-MCP-05: authority is the primary oracle. `mutates_workspace`
+    // is derived (not declared) so the flag cannot lie about the
+    // declaration that produced it.
+    let mutates = matches!(d.authority.as_str(), "mutating" | "execute" | "network");
+
+    // requires_graph / requires_persistence are pinned on each entry
+    // by `product/tools.json`'s `runtime_metadata` block; fall back to
+    // false when the field is absent (older catalog revisions, ad-hoc
+    // additions) so a missing field never silently claims a
+    // dependency that isn't there.
+    let requires_graph = d
+        .runtime_metadata
+        .get("requires_graph")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let requires_persistence = d
+        .runtime_metadata
+        .get("requires_persistence")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let meta = cognicode_meta(
+        d.stability.as_str(),
+        d.category.as_str(),
+        requires_graph,
+        requires_persistence,
+        d.estimated_latency_ms,
+        d.authority.as_str(),
+    );
+
+    let mut tool = Tool::new(d.name, d.description, Arc::new(input_schema)).with_meta(meta);
+
+    // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission
+    // explicitly so clients can distinguish mutating tools without
+    // hardcoding names. `mutates` is derived from `d.authority`
+    // *here*, not by calling `tool_is_mutating(&tool.name)` — that
+    // would recurse through `tool_authority_map()` which iterates
+    // `build_all_tools()`.
+    if let Some(c) = tool
+        .meta
+        .as_mut()
+        .and_then(|m| m.get_mut("cognicode"))
+        .and_then(|v| v.as_object_mut())
+    {
+        c.insert("mutates_workspace".to_string(), serde_json::json!(mutates));
+        c.insert(
+            "tool_version".to_string(),
+            serde_json::json!(env!("CARGO_PKG_VERSION")),
+        );
+    }
+    tool
+}
+
 impl ServerHandler for CogniCodeHandler {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(

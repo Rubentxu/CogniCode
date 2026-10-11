@@ -1,5 +1,6 @@
 //! Interface Layer - External interfaces (CLI, MCP, LSP)
 
+pub mod catalog;
 pub mod cli;
 pub mod composition;
 pub mod lsp;

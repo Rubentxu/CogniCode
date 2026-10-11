@@ -2696,15 +2696,21 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
     }
     doc["profiles"] = Value::Array(profiles_arr);
 
-    let mut tools_arr: Vec<Value> = Vec::new();
-    if let Ok(text) = std::fs::read_to_string(&tools_path)
-        && let Ok(parsed) = serde_json::from_str::<Value>(&text)
-        && let Some(arr) = parsed.get("tools").and_then(|v| v.as_array())
-    {
-        for t in arr {
-            tools_arr.push(t.clone());
-        }
-    }
+    // Tools: the typed catalog is the single source of truth. B2.W2
+    // replaces the manual `serde_json::Value` clone-loop with a round
+    // trip through `ToolDescriptor`. Every public field the schema
+    // promises (name, title, description, category, authority,
+    // stability, input_schema, output_schema, requirements,
+    // requirements_status, estimated_latency_ms, public_profiles,
+    // runtime_metadata) is carried by the struct, so the JSON output
+    // stays shape-compatible with `product/tools.json` and the
+    // parity test can compare the CLI document to the MCP catalog
+    // field-for-field.
+    let catalog = crate::interface::catalog::load_tool_catalog();
+    let tools_arr: Vec<Value> = catalog
+        .iter()
+        .map(|d| serde_json::to_value(d).expect("ToolDescriptor is serialisable"))
+        .collect();
     if tools_arr.is_empty() && !json_emission {
         eprintln!(
             "warning: {} not found; emitting empty tools array",

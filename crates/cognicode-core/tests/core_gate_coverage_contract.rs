@@ -153,10 +153,17 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // gate started failing on the post-merge state with exit 101. This is
     // the same kind of stale pin as the previous two bumps: an off-by-one
     // in the contract, not a regression in the suite itself.
+    // 41 -> 43 with `b2_w1_analysis_outcome_contract` and
+    // `b2_w2_catalog_parity` (B2.W1, B2.W2). Both are anchor suites:
+    // they pin a contract on a struct / catalog that no workflow names and
+    // no script exercises, so a silent rename or removal would not break
+    // anything else. B2.W1 added its suite without bumping the count or
+    // adding itself to ANCHOR_SUITES, so the gate was already red before
+    // B2.W2; B2.W2 closes both that oversight and its own.
     assert_eq!(
         suites.len(),
-        45,
-        "expected exactly 45 cognicode-core integration suites, found {}. \
+        47,
+        "expected exactly 47 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -271,6 +278,8 @@ const ANCHOR_SUITES: &[&str] = &[
     "architecture_e77_1_wu0_gap_characterization_e2e",
     "architecture_e77_1_wu3_canonical_grounding_e2e",
     "architecture_self_host_e2e",
+    "b2_w1_analysis_outcome_contract",
+    "b2_w2_catalog_parity",
     "behavior_authority_e2e",
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
