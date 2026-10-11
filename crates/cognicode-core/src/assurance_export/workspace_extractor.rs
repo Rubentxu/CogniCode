@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use super::envelope::{
     API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
-    KIND_EVIDENCE_EXPORT, MEDIA_TYPE_CBOR, ManifestSection, ProducerInfo, Provenance, Relation,
-    Signal, SourceAnchor, SubjectRef,
+    KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MEDIA_TYPE_CBOR, ManifestSection, ProducerInfo,
+    Provenance, Relation, Signal, SourceAnchor, SubjectRef,
 };
 use super::serialize::{SerializeError, encode_to_cbor_with_digest};
 
@@ -139,11 +139,56 @@ impl ExtractionCapabilities {
 /// - Capabilities parciales se marcan con `Partial { gaps: [...] }` y
 ///   `reason = PartialProduced(coveredFraction)` (string semánticamente
 ///   honesto; el consumer parsea contra `EvidenceGap.GapReason`).
+///
+/// B2.W4 — invariantes adicionales que este extractor pinea:
+///
+/// - **Single extraction**: el walk del workspace se hace una sola vez,
+///   antes de procesar las capabilities. El orden de `--capability` ya no
+///   determina si el walk ocurre antes o después del procesamiento de
+///   cada capability.
+/// - **Order independence**: las capabilities se canonicalizan (dedup +
+///   sort por nombre) antes de procesarlas, así el envelope es byte-
+///   estable para el mismo conjunto de capabilities en cualquier orden.
+/// - **Symmetric limits**: `entities` y `facts` se truncan a
+///   `MAX_COLLECTION_SIZE` con un gap honesto (`Partial`), igual que el
+///   consumer rechaza al mismo número.
+/// - **Honest coverage**: una capability marcada `Complete` exige
+///   colección no-vacía; si el walk tuvo éxito pero no encontró
+///   archivos, se marca `Partial` en vez de mentir con `Complete`.
+/// - **Reference consistency**: `facts` se deriva de las `entities` que
+///   van en el envelope (post-truncación), así cada `fact.entity_ref`
+///   resuelve a un `entity` presente y cada `fact.source_anchor_ref`
+///   resuelve a un `SourceAnchor` generado en el mismo pass.
 pub fn extract_from_workspace(
     info: &WorkspaceInfo,
     caps: &ExtractionCapabilities,
     producer: &ProducerInfo,
 ) -> Result<EvidenceExport, SerializeError> {
+    // B2.W4 — single extraction. Sólo caminamos el workspace si una
+    // capability que lo necesita fue solicitada: entities o facts. El
+    // resto son Unsupported estáticas y no requieren filesystem.
+    let needs_walk = caps
+        .requested
+        .iter()
+        .any(|c| matches!(c.as_str(), CAP_ENTITIES | CAP_FACTS));
+
+    let mut walked_entities: Vec<Entity> = Vec::new();
+    let mut walk_failure: Option<String> = None;
+    if needs_walk {
+        match collect_entities(&info.root) {
+            Ok(e) => walked_entities = e,
+            Err(reason) => walk_failure = Some(reason),
+        }
+    }
+
+    // B2.W4 — order independence. Canonicalizamos (dedup + sort) las
+    // capabilities pedidas antes de procesarlas. Así el orden del
+    // usuario no afecta al envelope: dos pedidos con el mismo conjunto
+    // producen el mismo envelope byte-a-byte.
+    let mut canonical: Vec<&str> = caps.requested.iter().map(String::as_str).collect();
+    canonical.sort_unstable();
+    canonical.dedup();
+
     let mut entities: Vec<Entity> = Vec::new();
     let mut facts: Vec<Fact> = Vec::new();
     let relations: Vec<Relation> = Vec::new();
@@ -152,115 +197,142 @@ pub fn extract_from_workspace(
     let mut capability_completeness: BTreeMap<String, CapabilityCompleteness> = BTreeMap::new();
     let mut gaps: Vec<CapabilityGap> = Vec::new();
 
-    for cap in &caps.requested {
-        match cap.as_str() {
-            CAP_ENTITIES => match collect_entities(&info.root) {
-                Ok(e) => {
-                    entities = e;
-                    capability_completeness
-                        .insert(cap.to_string(), CapabilityCompleteness::Complete);
+    for cap in canonical.iter().copied() {
+        match cap {
+            CAP_ENTITIES => {
+                if let Some(reason) = &walk_failure {
+                    record_walk_unsupported(cap, reason, &mut capability_completeness, &mut gaps);
+                } else {
+                    let (truncated, gap) = truncate_entities_to_limit(walked_entities.clone());
+                    entities = truncated;
+                    match gap {
+                        Some(g) => {
+                            capability_completeness.insert(
+                                cap.to_string(),
+                                CapabilityCompleteness::partial(vec![g.clone()]),
+                            );
+                            gaps.push(g);
+                        }
+                        None => {
+                            // B2.W4 — honest coverage. Walk OK pero 0
+                            // entidades: marcamos Partial con gap
+                            // honesto en vez de mentir con Complete.
+                            if entities.is_empty() {
+                                let g = CapabilityGap {
+                                    capability: cap.to_string(),
+                                    reason:
+                                        "PartialProduced(workspace contains no Rust source files)"
+                                            .into(),
+                                    detail: Some(
+                                        "Solo se exportan archivos .rs en v1; \
+                                         otros lenguajes se anaden en versiones \
+                                         futuras sin cambiar el shape del envelope."
+                                            .into(),
+                                    ),
+                                };
+                                capability_completeness.insert(
+                                    cap.to_string(),
+                                    CapabilityCompleteness::partial(vec![g.clone()]),
+                                );
+                                gaps.push(g);
+                            } else {
+                                capability_completeness
+                                    .insert(cap.to_string(), CapabilityCompleteness::Complete);
+                            }
+                        }
+                    }
                 }
-                Err(reason) => {
-                    capability_completeness.insert(
-                        cap.to_string(),
-                        CapabilityCompleteness::unsupported(reason.clone()),
-                    );
-                    gaps.push(CapabilityGap {
-                        capability: cap.to_string(),
-                        reason: format!("UnsupportedProduced({reason})"),
-                        detail: None,
-                    });
+            }
+            CAP_FACTS => {
+                if let Some(reason) = &walk_failure {
+                    record_walk_unsupported(cap, reason, &mut capability_completeness, &mut gaps);
+                } else {
+                    // facts se deriva de `entities` (el envelope field,
+                    // post-truncación). Esto pinea reference consistency:
+                    // cada fact.entity_ref resuelve a un entity presente
+                    // y cada fact.source_anchor_ref resuelve a un anchor
+                    // generado en el mismo pass.
+                    let (raw_facts, raw_anchors) = collect_facts_and_anchors(&entities);
+                    let (truncated_facts, gap) = truncate_facts_to_limit(raw_facts);
+                    facts = truncated_facts;
+                    source_anchors = truncate_anchors_to_limit(raw_anchors, facts.len());
+                    match gap {
+                        Some(g) => {
+                            capability_completeness.insert(
+                                cap.to_string(),
+                                CapabilityCompleteness::partial(vec![g.clone()]),
+                            );
+                            gaps.push(g);
+                        }
+                        None => {
+                            if facts.is_empty() {
+                                let g = CapabilityGap {
+                                    capability: cap.to_string(),
+                                    reason: "PartialProduced(no entities para derivar facts)"
+                                        .into(),
+                                    detail: Some(
+                                        "facts se deriva de entities; si entities \
+                                         no fue solicitada o esta vacia, no hay \
+                                         facts que producir."
+                                            .into(),
+                                    ),
+                                };
+                                capability_completeness.insert(
+                                    cap.to_string(),
+                                    CapabilityCompleteness::partial(vec![g.clone()]),
+                                );
+                                gaps.push(g);
+                            } else {
+                                capability_completeness
+                                    .insert(cap.to_string(), CapabilityCompleteness::Complete);
+                            }
+                        }
+                    }
                 }
-            },
-            CAP_FACTS => match collect_facts(&info.root, &entities) {
-                Ok(f) => {
-                    facts = f;
-                    source_anchors = collect_source_anchors(&info.root, &facts);
-                    capability_completeness
-                        .insert(cap.to_string(), CapabilityCompleteness::Complete);
-                }
-                Err(reason) => {
-                    capability_completeness.insert(
-                        cap.to_string(),
-                        CapabilityCompleteness::unsupported(reason.clone()),
-                    );
-                    gaps.push(CapabilityGap {
-                        capability: cap.to_string(),
-                        reason: format!("UnsupportedProduced({reason})"),
-                        detail: None,
-                    });
-                }
-            },
-            CAP_RELATIONS => {
-                capability_completeness.insert(
-                    cap.to_string(),
-                    CapabilityCompleteness::unsupported(
-                        "Tarjan SCC no se calcula en v1 (no reimplementa analisis)",
-                    ),
-                );
-                gaps.push(CapabilityGap {
-                    capability: cap.to_string(),
-                    reason: "UnsupportedProduced(Tarjan SCC no se calcula en v1)".into(),
-                    detail: Some(
-                        "COGNICODE_WORKSTREAM C1: el export NO reimplementa Tarjan; \
-                         la capability estara disponible cuando CogniCode exponga el \
-                         grafo de dependencias como puerto reutilizable."
-                            .into(),
-                    ),
-                });
             }
-            CAP_SIGNALS => {
-                capability_completeness.insert(
-                    cap.to_string(),
-                    CapabilityCompleteness::unsupported(
-                        "SOLID heuristic scoring no se exporta en v1",
-                    ),
-                );
-                gaps.push(CapabilityGap {
-                    capability: cap.to_string(),
-                    reason: "UnsupportedProduced(heuristic scoring no implementado)".into(),
-                    detail: Some(
-                        "COGNICODE_WORKSTREAM C5: heuristic signals iran como Signal \
-                         con algorithmId/version/config; no se transforma en Fact."
-                            .into(),
-                    ),
-                });
-            }
-            CAP_ARCHITECTURE => {
-                capability_completeness.insert(
-                    cap.to_string(),
-                    CapabilityCompleteness::unsupported(
-                        "Architecture constraints no se exportan en v1",
-                    ),
-                );
-                gaps.push(CapabilityGap {
-                    capability: cap.to_string(),
-                    reason: "UnsupportedProduced(architecture constraints no expuestas)".into(),
-                    detail: Some(
-                        "COGNICODE_WORKSTREAM C6: las ArchitectureConstraint admitidas \
-                         pueden exportarse como evidence/metadata pero no imponen verdict; \
-                         la capability estara disponible cuando se exponga el puerto."
-                            .into(),
-                    ),
-                });
-            }
-            other => {
-                capability_completeness.insert(
-                    other.to_string(),
-                    CapabilityCompleteness::unsupported(format!(
-                        "capability desconocida por v1: {other}"
-                    )),
-                );
-                gaps.push(CapabilityGap {
-                    capability: other.to_string(),
-                    reason: format!("UnsupportedProduced(capability desconocida: {other})"),
-                    detail: None,
-                });
-            }
+            CAP_RELATIONS => record_static_unsupported(
+                cap,
+                "Tarjan SCC no se calcula en v1 (no reimplementa analisis)",
+                "UnsupportedProduced(Tarjan SCC no se calcula en v1)",
+                "COGNICODE_WORKSTREAM C1: el export NO reimplementa Tarjan; \
+                 la capability estara disponible cuando CogniCode exponga el \
+                 grafo de dependencias como puerto reutilizable.",
+                &mut capability_completeness,
+                &mut gaps,
+            ),
+            CAP_SIGNALS => record_static_unsupported(
+                cap,
+                "SOLID heuristic scoring no se exporta en v1",
+                "UnsupportedProduced(heuristic scoring no implementado)",
+                "COGNICODE_WORKSTREAM C5: heuristic signals iran como Signal \
+                 con algorithmId/version/config; no se transforma en Fact.",
+                &mut capability_completeness,
+                &mut gaps,
+            ),
+            CAP_ARCHITECTURE => record_static_unsupported(
+                cap,
+                "Architecture constraints no se exportan en v1",
+                "UnsupportedProduced(architecture constraints no expuestas)",
+                "COGNICODE_WORKSTREAM C6: las ArchitectureConstraint admitidas \
+                 pueden exportarse como evidence/metadata pero no imponen verdict; \
+                 la capability estara disponible cuando se exponga el puerto.",
+                &mut capability_completeness,
+                &mut gaps,
+            ),
+            other => record_walk_unsupported(
+                other,
+                &format!("capability desconocida por v1: {other}"),
+                &mut capability_completeness,
+                &mut gaps,
+            ),
         }
     }
 
-    let manifest = build_manifest(producer, &caps.requested, &capability_completeness);
+    let manifest = build_manifest(
+        producer,
+        &canonical_strings(&canonical),
+        &capability_completeness,
+    );
     let provenance = Provenance {
         producer_id: producer.id.clone(),
         producer_version: producer.version.clone(),
@@ -291,6 +363,142 @@ pub fn extract_from_workspace(
     })
 }
 
+// ----- extraction helpers (B2.W4) ----------------------------------------
+
+/// Registra una capability como `Unsupported` con motivo derivado del
+/// walk failure (o de un cap desconocido). El gap lleva el prefijo
+/// `UnsupportedProduced(...)` que el consumer parsea.
+fn record_walk_unsupported(
+    cap: &str,
+    reason: &str,
+    completeness: &mut BTreeMap<String, CapabilityCompleteness>,
+    gaps: &mut Vec<CapabilityGap>,
+) {
+    completeness.insert(cap.to_string(), CapabilityCompleteness::unsupported(reason));
+    gaps.push(CapabilityGap {
+        capability: cap.to_string(),
+        reason: format!("UnsupportedProduced({reason})"),
+        detail: None,
+    });
+}
+
+/// Variante con `reason` y `detail` ya prefijados para las
+/// capabilities estáticas (relations, signals, architecture). Mantiene
+/// la paridad exacta con el formato que el consumer espera
+/// (`UnsupportedProduced(<motivo canon>)` + `detail` con cita al
+/// workstream).
+fn record_static_unsupported(
+    cap: &str,
+    reason: &str,
+    gap_reason: &str,
+    detail: &str,
+    completeness: &mut BTreeMap<String, CapabilityCompleteness>,
+    gaps: &mut Vec<CapabilityGap>,
+) {
+    completeness.insert(cap.to_string(), CapabilityCompleteness::unsupported(reason));
+    gaps.push(CapabilityGap {
+        capability: cap.to_string(),
+        reason: gap_reason.into(),
+        detail: Some(detail.into()),
+    });
+}
+
+/// Trunca `entities` a `MAX_COLLECTION_SIZE`. Devuelve la colección
+/// truncada y, si truncó, un `CapabilityGap` honesto con motivo
+/// `PartialProduced(N truncadas a M)`. Constante compartida con el
+/// consumer (`MAX_COLLECTION_SIZE`) — invariante 3 (symmetric limits).
+fn truncate_entities_to_limit(entities: Vec<Entity>) -> (Vec<Entity>, Option<CapabilityGap>) {
+    if entities.len() > MAX_COLLECTION_SIZE {
+        let gap = CapabilityGap {
+            capability: CAP_ENTITIES.into(),
+            reason: format!(
+                "PartialProduced({} entities truncadas a {})",
+                entities.len(),
+                MAX_COLLECTION_SIZE
+            ),
+            detail: Some(
+                "AAT-B2-01: el envelope no excede MAX_COLLECTION_SIZE del \
+                 consumer; el resto se omite. Para procesar más entidades, \
+                 divide el workspace en chunks más pequenos."
+                    .into(),
+            ),
+        };
+        let truncated = entities.into_iter().take(MAX_COLLECTION_SIZE).collect();
+        (truncated, Some(gap))
+    } else {
+        (entities, None)
+    }
+}
+
+/// Trunca `facts` a `MAX_COLLECTION_SIZE`, mismo contrato que
+/// `truncate_entities_to_limit`. Los anchors derivados se truncan en
+/// `truncate_anchors_to_limit` para mantener la paridad fact↔anchor.
+fn truncate_facts_to_limit(facts: Vec<Fact>) -> (Vec<Fact>, Option<CapabilityGap>) {
+    if facts.len() > MAX_COLLECTION_SIZE {
+        let gap = CapabilityGap {
+            capability: CAP_FACTS.into(),
+            reason: format!(
+                "PartialProduced({} facts truncados a {})",
+                facts.len(),
+                MAX_COLLECTION_SIZE
+            ),
+            detail: Some(
+                "AAT-B2-01: el envelope no excede MAX_COLLECTION_SIZE del \
+                 consumer; el resto se omite."
+                    .into(),
+            ),
+        };
+        let truncated = facts.into_iter().take(MAX_COLLECTION_SIZE).collect();
+        (truncated, Some(gap))
+    } else {
+        (facts, None)
+    }
+}
+
+/// Trunca `anchors` al `limit` dado. Usado por el path de facts para
+/// mantener 1:1 la cardinalidad fact↔anchor después de truncar facts.
+fn truncate_anchors_to_limit(anchors: Vec<SourceAnchor>, limit: usize) -> Vec<SourceAnchor> {
+    anchors.into_iter().take(limit).collect()
+}
+
+/// Genera facts y source anchors en un solo pass por `entities`. Cada
+/// entity produce exactamente un fact (`exists_at_path`) y un anchor
+/// (file + line 0). Sin dedup: el walk ya garantiza entidades únicas.
+///
+/// Sustituye a las funciones separadas `collect_facts` y
+/// `collect_source_anchors` que duplicaban el recorrido sobre la misma
+/// colección (single extraction).
+fn collect_facts_and_anchors(entities: &[Entity]) -> (Vec<Fact>, Vec<SourceAnchor>) {
+    let mut facts = Vec::with_capacity(entities.len());
+    let mut anchors = Vec::with_capacity(entities.len());
+    for entity in entities {
+        let path = entity.id.strip_prefix("file://").unwrap_or(&entity.id);
+        let anchor_id = format!("anchor:{path}");
+        facts.push(Fact {
+            id: format!("fact:exists:{}", entity.id),
+            entity_ref: entity.id.clone(),
+            predicate: "exists_at_path".into(),
+            object_value: Some(path.to_string()),
+            authority: "DeterministicAnalyzer".into(),
+            source_anchor_ref: Some(anchor_id),
+        });
+        anchors.push(SourceAnchor {
+            file: path.to_string(),
+            line: 0,
+            column: None,
+            symbol_ref: None,
+        });
+    }
+    (facts, anchors)
+}
+
+/// Adapta la lista canónica de `&str` a `Vec<String>` para el campo
+/// `requested_capabilities` del manifest. Evita alocaciones duplicadas
+/// en el path caliente (la canonicalización ya ocurrió arriba).
+fn canonical_strings(canonical: &[&str]) -> Vec<String> {
+    canonical.iter().map(|s| (*s).to_string()).collect()
+}
+
 // ----- collectors ---------------------------------------------------------
 
 /// Recorre el workspace y devuelve una entidad por archivo fuente Rust
@@ -314,63 +522,6 @@ fn collect_entities(root: &Path) -> Result<Vec<Entity>, String> {
     })
     .map_err(|e| format!("filesystem walk fallo: {e}"))?;
     Ok(out)
-}
-
-/// Hechos deterministas: un fact `exists_at_path` por cada entidad de
-/// archivo, con la autoridad `DeterministicAnalyzer`. El fact usa
-/// `sourceAnchorRef` para apuntar al anchor que se crea abajo.
-fn collect_facts(root: &Path, entities: &[Entity]) -> Result<Vec<Fact>, String> {
-    let mut out = Vec::new();
-    let mut seen_anchors: BTreeMap<String, String> = BTreeMap::new();
-    let mut anchor_seq = 0u64;
-    for entity in entities {
-        // Resolver el path real del file desde el id del entity.
-        let path = entity.id.strip_prefix("file://").unwrap_or(&entity.id);
-        let metadata = match std::fs::metadata(path) {
-            Ok(m) => m,
-            Err(e) => return Err(format!("metadata de {path} fallo: {e}")),
-        };
-        let anchor_id = format!("anchor:{}", path);
-        if !seen_anchors.contains_key(&anchor_id) {
-            anchor_seq += 1;
-            seen_anchors.insert(anchor_id.clone(), format!("{}", anchor_seq));
-        }
-        out.push(Fact {
-            id: format!("fact:exists:{}", entity.id),
-            entity_ref: entity.id.clone(),
-            predicate: "exists_at_path".into(),
-            object_value: Some(path.to_string()),
-            authority: "DeterministicAnalyzer".into(),
-            source_anchor_ref: Some(anchor_id),
-        });
-        let _ = metadata;
-    }
-    let _ = root;
-    Ok(out)
-}
-
-/// Genera los source anchors correspondientes a los facts. Para v1
-/// cada anchor es solo el path + línea 0 (no se calcula offset preciso
-/// para no reimplementar tree-sitter).
-fn collect_source_anchors(_root: &Path, _facts: &[Fact]) -> Vec<SourceAnchor> {
-    // SourceAnchor por entity_ref único (path). Line 0 = "archivo
-    // existe"; precisión adicional vendria con tree-sitter parse.
-    let mut seen: BTreeMap<String, ()> = BTreeMap::new();
-    let mut anchors = Vec::new();
-    for fact in _facts {
-        if let Some(anchor_ref) = &fact.source_anchor_ref
-            && seen.insert(anchor_ref.clone(), ()).is_none()
-        {
-            let path = anchor_ref.strip_prefix("anchor:").unwrap_or(anchor_ref);
-            anchors.push(SourceAnchor {
-                file: path.to_string(),
-                line: 0,
-                column: None,
-                symbol_ref: None,
-            });
-        }
-    }
-    anchors
 }
 
 /// Detecta la capa arquitectónica del path relativo a la raíz.
