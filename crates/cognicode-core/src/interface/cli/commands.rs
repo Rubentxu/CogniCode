@@ -2706,7 +2706,16 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
     // stays shape-compatible with `product/tools.json` and the
     // parity test can compare the CLI document to the MCP catalog
     // field-for-field.
-    let catalog = crate::interface::catalog::load_tool_catalog();
+    //
+    // We use `load_tool_catalog_active()` (feature-filtered) so the
+    // CLI document matches the MCP `tools/list` exactly: both are the
+    // *live* surface, not the universe of all possible tools. The
+    // catalogue file remains the source of truth on disk; the
+    // `feature` field tells the loader which entries are live in this
+    // build. A `cognicode capabilities --json` consumer sees the same
+    // 73 (default build) tools that MCP advertises; a
+    // `--features evidence-cli-ladybug` build sees 74.
+    let catalog = crate::interface::catalog::load_tool_catalog_active();
     let tools_arr: Vec<Value> = catalog
         .iter()
         .map(|d| serde_json::to_value(d).expect("ToolDescriptor is serialisable"))

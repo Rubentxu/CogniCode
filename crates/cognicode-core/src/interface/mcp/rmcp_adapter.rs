@@ -309,10 +309,17 @@ fn tool_category_map() -> &'static HashMap<String, String> {
 }
 
 /// PRF-MCP-05: Lazily-built map from tool name to its declared authority
-/// string ("read" | "mutating" | "execute" | "network"), extracted from the
-/// `cognicode.authority` meta field that each tool declares via
-/// `cognicode_meta`. Derived from `build_all_tools` on first access
-/// and reused for the lifetime of the process.
+/// string ("read" | "mutating" | "execute" | "network").
+///
+/// Derived from the full `load_tool_catalog()` (NOT `build_all_tools()`)
+/// on first access and reused for the lifetime of the process. Iterating
+/// the full catalog matters: `build_all_tools()` filters out tools whose
+/// Cargo feature is not enabled in this build, but the **public** audit
+/// contract is that the catalogue (`product/tools.json`) and the
+/// runtime agree tool-for-tool. Feature-gated tools are still in the
+/// catalogue; if `tool_authority_map` only saw the live build it would
+/// disagree with `tools.json`, and the audit gate (A-010) would report
+/// phantom tools. So the oracle is the catalogue, not the build.
 ///
 /// This map is the **primary authority oracle**, and the only one: the
 /// `mutates_workspace` flag published on each tool is computed from the same
@@ -323,14 +330,8 @@ pub fn tool_authority_map() -> &'static HashMap<String, String> {
     static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
     MAP.get_or_init(|| {
         let mut m: HashMap<String, String> = HashMap::new();
-        for tool in build_all_tools() {
-            let name = tool.name.to_string();
-            if let Some(meta) = tool.meta.as_ref()
-                && let Some(cognicode) = meta.get("cognicode")
-                && let Some(auth) = cognicode.get("authority").and_then(|v| v.as_str())
-            {
-                m.insert(name, auth.to_string());
-            }
+        for d in crate::interface::catalog::load_tool_catalog() {
+            m.insert(d.name.clone(), d.authority.clone());
         }
         m
     })

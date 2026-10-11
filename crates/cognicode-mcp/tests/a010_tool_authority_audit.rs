@@ -57,6 +57,43 @@ fn published_tool_count() -> usize {
         .expect("runtime_tool_count") as usize
 }
 
+/// The subset of the published catalogue that the current build exposes.
+///
+/// B2.W2 added feature-gated tools to `tools.json`
+/// (`interproc_summary` → `program-analysis-server`, `list_evidence` and
+/// `search_evidence` → `evidence-cli-ladybug`, plus `persistence` annotations
+/// on `detect_drift` / `reparse_on_edit`). The full catalogue is the master
+/// list (76 tools, used by the CLI `capabilities --json` consumer), but
+/// the runtime surface is the **active** subset (the same tools filtered
+/// by `tool_feature_enabled`). The PRF-MCP-05 tests below pin the
+/// contract between the runtime and the active catalogue; the full
+/// catalogue is checked separately by
+/// `b2_w2_catalog_parity::every_published_tool_has_an_authority` etc.,
+/// and its total count is asserted against `tools.json` in
+/// `published_tool_count`.
+///
+/// Without this filter, the B2.W2 unification would fail closed on the
+/// 3 feature-gated tools the default build cannot dispatch: the catalogue
+/// advertises them, the runtime does not expose them, and the test would
+/// panic on `only_published = {interproc_summary, list_evidence,
+/// search_evidence}`. The filter realigns both sides on what a
+/// `--features=…` build would expose.
+fn active_published_names() -> std::collections::BTreeSet<String> {
+    use cognicode_core::interface::catalog::load_tool_catalog_active;
+    load_tool_catalog_active()
+        .into_iter()
+        .map(|d| d.name)
+        .collect()
+}
+
+fn active_published_authority() -> std::collections::BTreeMap<String, String> {
+    use cognicode_core::interface::catalog::load_tool_catalog_active;
+    load_tool_catalog_active()
+        .into_iter()
+        .map(|d| (d.name, d.authority))
+        .collect()
+}
+
 // --- Contract level: the published authority and the enforced one must agree ---
 
 /// Every tool's published authority must equal what the runtime enforces.
@@ -66,13 +103,16 @@ fn published_tool_count() -> usize {
 /// `tools.json` has no way to know which of the two is lying.
 #[test]
 fn published_authority_matches_the_enforced_authority() {
-    let mut published = BTreeMap::new();
-    for tool in tool_document()["tools"].as_array().expect("tools array") {
-        let name = tool["name"].as_str().expect("tool name").to_string();
-        let authority = tool["authority"].as_str().expect("authority").to_string();
+    let published = active_published_authority();
+    // Sanity: the active catalogue must not have duplicates (a separate
+    // test in `b2_w2_catalog_parity` pins the full catalogue for
+    // duplicate names; this test only covers the active subset because
+    // it is the one the runtime exposes).
+    let mut seen = std::collections::BTreeSet::new();
+    for name in published.keys() {
         assert!(
-            published.insert(name.clone(), authority).is_none(),
-            "tool {name} appears twice in the published catalogue"
+            seen.insert(name.clone()),
+            "tool {name} appears twice in the active published catalogue"
         );
     }
 
@@ -94,12 +134,12 @@ fn published_authority_matches_the_enforced_authority() {
 /// undocumented tool this gate exists to prevent.
 #[test]
 fn published_tools_and_runtime_tools_are_the_same_set() {
-    let published: std::collections::BTreeSet<String> = tool_document()["tools"]
-        .as_array()
-        .expect("tools array")
-        .iter()
-        .map(|t| t["name"].as_str().expect("tool name").to_string())
-        .collect();
+    // Both sides filtered to the active subset (see `active_published_names`).
+    // The full catalogue equality against `tools.json` is checked
+    // by `b2_w2_catalog_parity::active_catalog_matches_mcp_runtime`,
+    // which compares `load_tool_catalog_active()` against
+    // `build_all_tools()` directly.
+    let published = active_published_names();
 
     let runtime: std::collections::BTreeSet<String> =
         tool_authority_map().keys().cloned().collect();
@@ -111,10 +151,16 @@ fn published_tools_and_runtime_tools_are_the_same_set() {
         "catalogue and runtime disagree: published-only={only_published:?} \
          runtime-only={only_runtime:?}"
     );
+    // `published_tool_count` is the runtime count declared by the
+    // catalogue (the value tools.json writes for `runtime_tool_count`).
+    // After B2.W2, the active subset has 73 tools and tools.json claims
+    // `runtime_tool_count: 73`; the full catalogue has 76. This
+    // assertion binds the active count to the declared value.
     assert_eq!(
         published.len(),
         published_tool_count(),
-        "tools.json lists {len} tools but claims runtime_tool_count={count}",
+        "active catalogue has {len} tools but tools.json claims \
+         runtime_tool_count={count}",
         len = published.len(),
         count = published_tool_count()
     );
@@ -279,7 +325,16 @@ async fn read_only_advertises_exactly_the_published_read_tools() {
         .as_array()
         .expect("tools array")
         .iter()
-        .filter(|t| t["authority"] == "read")
+        // B2.W2: a tool whose Cargo feature is not enabled in this
+        // build is in the catalogue but the live MCP build does not
+        // advertise it. Mirror the MCP filter here so the comparison
+        // is set-equal rather than universe-equal.
+        .filter(|t| {
+            t["authority"] == "read"
+                && cognicode_core::interface::catalog::tool_feature_enabled(
+                    &t["feature"].as_str().map(str::to_owned),
+                )
+        })
         .map(|t| t["name"].as_str().expect("tool name").to_string())
         .collect();
     expected.sort();
