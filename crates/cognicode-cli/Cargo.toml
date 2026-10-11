@@ -7,6 +7,15 @@ authors.workspace = true
 license = "MIT OR Apache-2.0"
 autobins = false
 
+[lib]
+# T1-5.5: `cognicode-cli` was historically a bin-only crate.
+# Adding `[lib]` makes `src/lib.rs` (with `pub mod presenter`) the
+# library target, which lets integration tests under
+# `crates/cognicode-cli/tests/` import `cognicode_cli::presenter::*`
+# to pin the byte stream and JSON shape.
+name = "cognicode_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "cognicode"
 path = "src/main.rs"
