@@ -10,8 +10,8 @@
 //!
 //! B1.W2 aporta:
 //!   - `cognicode identity` emite el envelope:
-//!       `cognicode-cli {version} sha={sha} features={f1,f2,...}`
-//!       `source: {git_remote_url}`
+//!     `cognicode-cli {version} sha={sha} features={f1,f2,...}`
+//!     `source: {git_remote_url}`
 //!     La SHA viene de `build.rs` que corre `git rev-parse --short HEAD`
 //!     al compilar y emite `cargo:rustc-env=GIT_SHA=...`.
 //!   - `--version` se preserva byte-a-byte (snapshot T1-5.1).
@@ -53,7 +53,10 @@ fn identity_first_line_declares_identity() {
         .output()
         .expect("cognicode identity must run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let first = stdout.lines().next().expect("identity must emit at least one line");
+    let first = stdout
+        .lines()
+        .next()
+        .expect("identity must emit at least one line");
     assert!(
         first.starts_with("cognicode-cli "),
         "first line should start with 'cognicode-cli '; got {first:?}"
@@ -90,9 +93,7 @@ fn identity_sha_is_real_or_unknown() {
         .expect("sha= prefix should be present");
     assert!(
         sha == "unknown"
-            || (sha.len() >= 7
-                && sha.len() <= 12
-                && sha.chars().all(|c| c.is_ascii_hexdigit())),
+            || (sha.len() >= 7 && sha.len() <= 12 && sha.chars().all(|c| c.is_ascii_hexdigit())),
         "sha must be 'unknown' or 7-12 hex chars; got {sha:?}"
     );
 }
@@ -117,10 +118,7 @@ fn identity_second_line_declares_source() {
     let url = lines[1]
         .strip_prefix("source: ")
         .expect("source: prefix should be present");
-    assert!(
-        !url.is_empty(),
-        "source URL must not be empty; got {url:?}"
-    );
+    assert!(!url.is_empty(), "source URL must not be empty; got {url:?}");
 }
 
 #[test]
@@ -142,11 +140,7 @@ fn version_is_unchanged_after_b1_w2() {
         first.starts_with("cognicode "),
         "--version line should start with 'cognicode '; got {first:?}"
     );
-    let version_token = first
-        .strip_prefix("cognicode ")
-        .unwrap()
-        .trim()
-        .to_string();
+    let version_token = first.strip_prefix("cognicode ").unwrap().trim().to_string();
     assert!(
         version_token.contains('.'),
         "--version should emit a semver-like string; got {version_token:?}"

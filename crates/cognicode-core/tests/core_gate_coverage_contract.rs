@@ -155,8 +155,8 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // in the contract, not a regression in the suite itself.
     assert_eq!(
         suites.len(),
-        41,
-        "expected exactly 41 cognicode-core integration suites, found {}. \
+        45,
+        "expected exactly 45 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -292,6 +292,10 @@ const ANCHOR_SUITES: &[&str] = &[
     "provider_conformance",
     "read_set_e2e",
     "roadmap_claims_contract",
+    "t1_1b_symbolkind_wire_format",
+    "t1_1c_ground_truth_orphan_mapping",
+    "t1_5_3b_index_result_serde",
+    "t1_5_4_graph_result_serde",
 ];
 
 /// The count alone cannot see a rename: renaming a suite keeps `len()`
