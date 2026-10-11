@@ -421,25 +421,83 @@ pub trait Analyze: Send + Sync {
 /// delega en `Analyze::execute`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnalysisOp {
-    IndexBuild { path: PathBuf, strategy: String },
-    IndexQuery { symbol: String, path: PathBuf },
-    IndexOutline { file: PathBuf },
-    IndexSymbolCode { file: PathBuf, line: u32, column: u32 },
-    GraphFull { path: PathBuf, rebuild: bool },
-    GraphOnDemand { symbol: String, depth: usize },
-    GraphPerFile { file: PathBuf },
-    GraphHotPaths { path: PathBuf, limit: usize, min_fan_in: usize },
-    GraphEntryPoints { path: PathBuf },
-    GraphLeafFunctions { path: PathBuf },
-    GraphTracePath { from: String, to: String, max_depth: usize },
-    GraphMermaid { path: PathBuf, format: String },
-    GraphHierarchy { symbol: String, depth: usize, direction: String },
-    GraphComplexity { path: PathBuf },
-    GraphImpact { symbol: String },
-    NavigateHover { file: PathBuf, line: u32, column: u32 },
-    NavigateDefinition { file: PathBuf, line: u32, column: u32 },
-    NavigateReferences { file: PathBuf, line: u32, column: u32 },
-    FindUsages { symbol: String, scope: Option<PathBuf> },
+    IndexBuild {
+        path: PathBuf,
+        strategy: String,
+    },
+    IndexQuery {
+        symbol: String,
+        path: PathBuf,
+    },
+    IndexOutline {
+        file: PathBuf,
+    },
+    IndexSymbolCode {
+        file: PathBuf,
+        line: u32,
+        column: u32,
+    },
+    GraphFull {
+        path: PathBuf,
+        rebuild: bool,
+    },
+    GraphOnDemand {
+        symbol: String,
+        depth: usize,
+    },
+    GraphPerFile {
+        file: PathBuf,
+    },
+    GraphHotPaths {
+        path: PathBuf,
+        limit: usize,
+        min_fan_in: usize,
+    },
+    GraphEntryPoints {
+        path: PathBuf,
+    },
+    GraphLeafFunctions {
+        path: PathBuf,
+    },
+    GraphTracePath {
+        from: String,
+        to: String,
+        max_depth: usize,
+    },
+    GraphMermaid {
+        path: PathBuf,
+        format: String,
+    },
+    GraphHierarchy {
+        symbol: String,
+        depth: usize,
+        direction: String,
+    },
+    GraphComplexity {
+        path: PathBuf,
+    },
+    GraphImpact {
+        symbol: String,
+    },
+    NavigateHover {
+        file: PathBuf,
+        line: u32,
+        column: u32,
+    },
+    NavigateDefinition {
+        file: PathBuf,
+        line: u32,
+        column: u32,
+    },
+    NavigateReferences {
+        file: PathBuf,
+        line: u32,
+        column: u32,
+    },
+    FindUsages {
+        symbol: String,
+        scope: Option<PathBuf>,
+    },
     /// Captura generica para operaciones que B2.W1 aun no
     /// especializa. La primera WU en cubrirla es B2.W3
     /// (respuestas estructuradas); mientras tanto el
@@ -487,7 +545,9 @@ pub enum AnalysisValue {
     /// Valor textual estructurado (lo que actualmente sale por
     /// `println!` inline en execute_navigate, execute_doctor,
     /// etc.). B2.W3+ lo migrara a DTOs tipados.
-    Text { summary: String },
+    Text {
+        summary: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -63,7 +63,10 @@ fn outcome_state_serializes_as_discriminator() {
         let actual = parsed
             .as_str()
             .unwrap_or_else(|| panic!("OutcomeState no serializa como string: {json}"));
-        assert_eq!(actual, expected, "discriminante drift: {actual:?} vs {expected:?}");
+        assert_eq!(
+            actual, expected,
+            "discriminante drift: {actual:?} vs {expected:?}"
+        );
         assert!(
             seen.insert(actual.to_string()),
             "dos OutcomeState colapsan al mismo discriminante: {actual}"
@@ -85,7 +88,10 @@ fn complete_outcome_carries_value_without_gaps() {
 fn partial_outcome_carries_value_and_non_empty_gaps() {
     let outcome: AnalysisOutcome<u32> = AnalysisOutcome::partial(
         42,
-        vec![AnalysisError::gap("relations", "Tarjan SCC no se calcula en v1")],
+        vec![AnalysisError::gap(
+            "relations",
+            "Tarjan SCC no se calcula en v1",
+        )],
     );
     assert_eq!(outcome.state(), OutcomeState::Partial);
     assert_eq!(outcome.value(), Some(&42));
@@ -127,9 +133,8 @@ fn unknown_outcome_has_no_value_no_gaps() {
 
 #[test]
 fn failed_outcome_carries_error_no_value() {
-    let outcome: AnalysisOutcome<u32> = AnalysisOutcome::failed(AnalysisError::io_failure(
-        "no se pudo leer el snapshot",
-    ));
+    let outcome: AnalysisOutcome<u32> =
+        AnalysisOutcome::failed(AnalysisError::io_failure("no se pudo leer el snapshot"));
     assert_eq!(outcome.state(), OutcomeState::Failed);
     assert!(outcome.value().is_none());
     assert!(outcome.error().is_some());
@@ -166,12 +171,9 @@ fn analysis_basis_canonicalizes_workspace_root() {
 
 #[test]
 fn provenance_carries_workspace_operation_elapsed() {
-    let provenance = AnalysisProvenance::new(
-        PathBuf::from("/work/repo"),
-        "index.build",
-        "entities",
-    )
-    .with_elapsed_ms(123);
+    let provenance =
+        AnalysisProvenance::new(PathBuf::from("/work/repo"), "index.build", "entities")
+            .with_elapsed_ms(123);
     assert_eq!(provenance.workspace, Some(PathBuf::from("/work/repo")));
     assert_eq!(provenance.operation.as_deref(), Some("index.build"));
     assert_eq!(provenance.capability.as_deref(), Some("entities"));
