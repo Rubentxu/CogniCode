@@ -14,6 +14,12 @@ pub mod ai;
 // e68 WU2 — affected-work planner over WU1 FactDelta + e66 ReadSet.
 #[cfg(feature = "evidence-kernel")]
 pub mod change_tracking;
+// B2.W1 — common execution model: AnalysisBasis + AnalysisOutcome<T> +
+// AnalysisOp + Analyze trait. Un solo trait, un solo metodo; el impl
+// concreto lo cubre B2.W2+. No es un service locator: el caller
+// inyecta el `&dyn Analyze` que quiera, el contrato solo pinea la
+// superficie.
+pub mod analysis_basis;
 // M7.4 Behavior Runtime adapters — Clock port + SystemClock (application, not domain).
 pub mod commands;
 pub mod dto;
