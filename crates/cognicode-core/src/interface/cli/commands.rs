@@ -245,6 +245,12 @@ pub enum CliCommand {
         #[arg(long, conflicts_with = "format")]
         json: bool,
     },
+    /// B1.W2 — Print full identity: workspace version, baked-in
+    /// source SHA (from `git rev-parse HEAD` at build time), compiled
+    /// features, and the git remote URL. Used to verify a binary
+    /// against its intended release artifact. Does NOT mutate state
+    /// or print to stderr.
+    Identity,
 }
 
 /// Subcomandos de `cognicode export`. v1 solo expone `assurance`; el
@@ -579,6 +585,12 @@ impl CommandExecutor {
                 Self::execute_analyze(path).await?;
                 Ok(CommandOutput::Other)
             }
+            // B1.W2 — `cognicode identity` returns Other; the bin
+            // detects the variant from a clone of cli.command (in
+            // main.rs) and dispatches to identity::print before the
+            // presenter runs. Identity is a read-only inspection
+            // surface; no execute_* function needed here.
+            Some(CliCommand::Identity) => Ok(CommandOutput::Other),
             Some(CliCommand::Serve { port }) => {
                 eprintln!("Use 'cognicode-mcp' binary to start the MCP server.");
                 eprintln!("The MCP server uses stdio transport, not TCP ports.");

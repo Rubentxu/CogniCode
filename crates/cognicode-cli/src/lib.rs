@@ -14,7 +14,9 @@
 //!
 //! Public surface (intentionally minimal):
 //! - `presenter`: text + JSON dispatch for `CommandOutput`.
+//! - `identity`: B1.W2 — version + source SHA + compiled features.
 
 pub use cognicode_core;
 
 pub mod presenter;
+pub mod identity;

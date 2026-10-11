@@ -94,7 +94,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // now ignored; top-level --format is canonical), the bin
     // calls `presenter::present_output` with the user-chosen
     // `cli.format`.
+    //
+    // B1.W2 — `cognicode identity` short-circuits before the executor
+    // because it does not need CommandOutput dispatch (the identity
+    // envelope comes from `cognicode_cli::identity::print` reading
+    // env vars baked by build.rs). Avoiding the executor also avoids
+    // cloning `CliCommand` (which is not Clone-derived).
     let cli_format = cli.format;
+    if matches!(&cli.command, Some(CliCommand::Identity)) {
+        let mut stdout = std::io::stdout();
+        cognicode_cli::identity::print(&mut stdout)?;
+        return Ok(());
+    }
     let output = CommandExecutor::execute(cli).await?;
 
     use cognicode_core::interface::cli::result::CommandOutput;
