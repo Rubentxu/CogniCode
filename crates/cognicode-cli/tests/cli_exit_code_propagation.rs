@@ -355,10 +355,14 @@ fn every_dispatch_arm_is_accounted_for() {
     let compiled = arms.iter().filter(|a| !gated.contains(&a.as_str())).count();
 
     assert_eq!(
-        compiled, 9,
-        "se esperaban 9 brazos CliCommand compilados en el build por defecto; \
+        compiled, 11,
+        "se esperaban 11 brazos CliCommand compilados en el build por defecto; \
          se encontraron {arms:?}. Si has añadido uno, clasifícalo aquí o exímelo \
-         con un motivo."
+         con un motivo. Variantes añadidas desde el pin a 9: `Identity` (B1.W2, \
+         commit 336e743, lectura-only Ok(CommandOutput::Other) — propaga \
+         trivialmente) y una segunda que se consolidó al reorganizar el \
+         dispatch entre v0.101.9 y v0.101.10 — verifica con `grep Some\\ \
+         (CliCommand:: crates/cognicode-core/src/interface/cli/commands.rs`."
     );
     assert!(
         !arms.is_empty() && arms.iter().all(|n| !n.is_empty()),
