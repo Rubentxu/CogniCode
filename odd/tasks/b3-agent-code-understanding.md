@@ -79,8 +79,8 @@ proporcionan distintas experiencias de usuario sobre los mismos servicios.
 | 2026-10-12 | post-merge | `6d0d1e4` | clippy + fmt: Precision::default derive, parse_intent_args collapse, b3_w3 cycle check, b3_w4 git_in deref, find_usages parity. |
 | 2026-10-12 | ratchet | `a547bf5`, `8619ad5` | dispatch-arm 11→12 (Inspect); coverage 49→53 + ANCHOR_SUITES += b3_w1..w4. |
 | 2026-10-12 | doctest | `52e8522` | Inspect doc comment simplificado para no disparar rustdoc code parse. |
-| 2026-10-12 | release | _pendiente_ | bump 0.101.12 → 0.101.13; golden CBOR regen. |
-| 2026-10-12 | veredicto | _pendiente_ | per MERGE-GATE-BYPASS-POLICY §4. |
+| 2026-10-12 | release | `e496cd5a` | bump 0.101.12 → 0.101.13; golden CBOR regen. |
+| 2026-10-12 | veredicto | `af2b9077` | per MERGE-GATE-BYPASS-POLICY §4. |
 | 2026-10-12 | tag | v0.101.13 | anotado + pushed + GitHub Release con 3 tarballs. |
 
 ### B3 cierre
