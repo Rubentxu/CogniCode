@@ -282,11 +282,14 @@ su cierre técnico está verificado. Ver
 
 ## 10. Programa CLI/MCP 2026 — B1..B6 (2026-10-11)
 
-> **Estado**: agenda activa. Esta sección reemplaza a §9 como puntero
-> de trabajo en curso (sello 2026-10-11 sobre v0.101.10 → arranque de B1
-> hacia v0.101.11). El ROADMAP completo sigue siendo la autoridad;
-> `docs/roadmap/CURRENT.md` es el snapshot puntual; `JOURNAL.md` registra
-> los hechos atómicos.
+> **Estado**: B1..B6 **TÉCNICAMENTE CERRADOS** (releases v0.101.11..v0.101.16
+> pushed a `main` y `origin/main`, tags anotados, GitHub Releases publicadas).
+> C8-R queda `PENDING_HUMAN_SIGNATURE` por el operador Ruben
+> (analogía con C7 firmado el 2026-09-24T22:41:33Z) — la firma contractual
+> del operador cierra el programa de forma efectiva. Esta sección
+> reemplaza a §9 como puntero de trabajo en curso; el ROADMAP completo
+> sigue siendo la autoridad; `docs/roadmap/CURRENT.md` es el snapshot
+> puntual; `JOURNAL.md` registra los hechos atómicos.
 >
 > **Especificación del programa**: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
 > Este §10 es **solo el puntero** dentro del ROADMAP; el detalle operativo
@@ -332,9 +335,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 
 | Decisión | Estado |
 |---|---|
-| Push de los 38 commits ahead a `origin/main` | NO TRIGGERED — branch protection con `merge-gate` estricto exige PR, no fast-forward |
-| Bump a `v0.101.11` al cierre de B1 | OPEN — depende de B1.W1..B1.W4 |
-| Cierre contractual de C8-R (B6.W6) | OPEN — bloquea la firma humana del programa |
+| Push de los 38 commits ahead a `origin/main` | **RESUELTO** (B1..B6 pushes via `merge-gate:success` manual per MERGE-GATE-BYPASS-POLICY §4) |
+| Bump a `v0.101.11` al cierre de B1 | **RESUELTO** (B1 cerrado sobre v0.101.11; B2..B6 v0.101.12..v0.101.16) |
+| Cierre contractual de C8-R (B6.W6) | **OPEN — `PENDING_HUMAN_SIGNATURE`** — bloquea la firma humana del programa. Cierre técnico completo; el operador Ruben firma per `docs/roadmap/production-ready/runbooks/C8-RECERTIFICATION-RUNBOOK.md` para cerrar el programa |
 
 ### 10.5 Cómo NO se reabre este programa
 
@@ -344,4 +347,21 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
   [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md):
   el documento enlazado es la autoridad del programa; §10 es solo el
   puntero dentro del ROADMAP.
+
+### 10.6 Releases del programa (a 2026-10-12)
+
+| Bloque | Release | Tag SHA | Veredicto |
+|---|---|---|---|
+| **B1** | **v0.101.11** | `b1-release` (ver veredicto) | [`2026-10-11-b1-release-v0.101.11.md`](production-ready/veredictos/2026-10-11-b1-release-v0.101.11.md) |
+| **B2** | **v0.101.12** | `b2-release` (ver veredicto) | [`2026-10-12-b2-release-v0.101.12.md`](production-ready/veredictos/2026-10-12-b2-release-v0.101.12.md) |
+| **B3** | **v0.101.13** | `b3-release` (ver veredicto) | [`2026-10-12-b3-release-v0.101.13.md`](production-ready/veredictos/2026-10-12-b3-release-v0.101.13.md) |
+| **B4** | **v0.101.14** | `b4-release` (ver veredicto) | [`2026-10-12-b4-release-v0.101.14.md`](production-ready/veredictos/2026-10-12-b4-release-v0.101.14.md) |
+| **B5** | **v0.101.15** | `b5-release` (ver veredicto) | [`2026-10-12-b5-release-v0.101.15.md`](production-ready/veredictos/2026-10-12-b5-release-v0.101.15.md) |
+| **B6** | **v0.101.16** | `b5a4fa53af7b366640566eec7ebe9862fd965b0f` | [`2026-10-12-b6-release-v0.101.16.md`](production-ready/veredictos/2026-10-12-b6-release-v0.101.16.md) + [`-C8-R.md`](production-ready/veredictos/2026-10-12-b6-release-v0.101.16-C8-R.md) (PENDING_HUMAN_SIGNATURE) |
+
+**HEAD `main` post-programa**: `30eb89b90bbea4d2393cf23f5a646ef1a21e13da`
+(`docs(c8-r): fill SHAs + gate statuses (G1..G6) for v0.101.16 cierre`).
+**HEAD `main` pre-B6 (B5 cierre)**: `3e9fddc3ae4c1d29fc281a0fbd3d1bcd1189092f`
+(`docs(odd): close B5 — release receipts + veredicto + tag SHAs`).
+**Commits B6**: 8 (W1..W6 + close + release) + 2 follow-up (recibo + C8-R fill).
 
