@@ -113,7 +113,8 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
         | "graph_analyze"
         | "graph_explain"
         | "graph_insights"
-        | "graph_suggest_questions" => ToolCapabilities {
+        | "graph_suggest_questions"
+        | "composite_impact_query" => ToolCapabilities {
             langs: ALL_TREE_SITTER_LANGS,
             precision: "AST",
         },

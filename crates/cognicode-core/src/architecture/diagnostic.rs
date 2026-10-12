@@ -37,11 +37,11 @@ use crate::interface::symbol_identity::SymbolId;
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
-    Error,
-    Warning,
+    Hint,
     #[default]
     Info,
-    Hint,
+    Warning,
+    Error,
 }
 
 impl Severity {

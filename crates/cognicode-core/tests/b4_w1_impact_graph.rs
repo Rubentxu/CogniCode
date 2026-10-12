@@ -79,9 +79,13 @@ fn provenance_field_is_present_on_every_impact_edge() {
 #[test]
 fn partial_graph_does_not_claim_no_path() {
     let limits = ImpactLimits { max_depth: 10, max_nodes: 3, direction: Direction::CallerToCallee };
-    let edges: Vec<ImpactEdge> = (0..5)
-        .map(|i| edge("a", if i == 0 { "b" } else { "c" }, Direction::CallerToCallee, Provenance::Observed, 0.1))
-        .collect();
+    let edges: Vec<ImpactEdge> = vec![
+        edge("a", "b", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "c", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "d", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "e", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "f", Direction::CallerToCallee, Provenance::Observed, 0.1),
+    ];
     let result = build_impact_result(edges, &limits);
     assert!(result.truncated);
     let json = serde_json::to_value(&result).expect("serialize");
@@ -202,9 +206,18 @@ fn single_edge_single_path_marks_complete_when_limits_loose() {
 
 #[test]
 fn coverage_is_bounded_in_unit_interval() {
-    let edges: Vec<ImpactEdge> = (0..10)
-        .map(|i| edge("a", if i == 0 { "b" } else { "c" }, Direction::CallerToCallee, Provenance::Observed, 0.1))
-        .collect();
+    let edges: Vec<ImpactEdge> = vec![
+        edge("a", "b", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "c", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "d", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "e", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "f", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "g", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "h", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "i", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "j", Direction::CallerToCallee, Provenance::Observed, 0.1),
+        edge("a", "k", Direction::CallerToCallee, Provenance::Observed, 0.1),
+    ];
     let limits = ImpactLimits { max_depth: 10, max_nodes: 4, direction: Direction::CallerToCallee };
     let result = build_impact_result(edges, &limits);
     assert!(result.truncated);

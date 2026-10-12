@@ -882,6 +882,7 @@ fn simple_function() {
                 "cfg_per_function",
                 "check_architecture",
                 "codebase_map",
+                "composite_impact_query",
                 #[cfg(feature = "persistence")]
                 "detect_drift",
                 "detect_god_functions",
