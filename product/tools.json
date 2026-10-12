@@ -525,6 +525,14 @@
       "limitations": [
         "requires build_graph to be current",
         "Tarjan SCC results depend on graph completeness"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
       ]
     },
     {
@@ -714,6 +722,14 @@
       "limitations": [
         "requires build_graph to be current",
         "thresholds are heuristic"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
       ]
     },
     {
@@ -760,6 +776,14 @@
       "limitations": [
         "requires build_graph to be current",
         "threshold-driven; tunable"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
       ]
     },
     {
@@ -1384,6 +1408,14 @@
       ],
       "limitations": [
         "file must be parseable by the AST provider"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
       ]
     },
     {
@@ -4662,6 +4694,14 @@
       "limitations": [
         "requires build_graph to be current",
         "heuristic; SRP/OCP/LSP/ISP/DIP rules"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
       ]
     },
     {
