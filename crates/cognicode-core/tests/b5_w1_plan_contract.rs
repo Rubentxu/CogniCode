@@ -15,7 +15,7 @@
 
 use std::collections::BTreeSet;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use clap::Parser;
 
@@ -177,12 +177,17 @@ fn cli_refactor_without_plan_file_errors_cleanly() {
             new_name,
             apply,
             plan_file,
+            authorization_token,
             format: _,
         }) => {
             assert_eq!(symbol, "foo");
             assert_eq!(new_name.as_deref(), Some("bar"));
             assert!(!apply);
             assert!(plan_file.is_none(), "plan_file must default to None");
+            assert!(
+                authorization_token.is_none(),
+                "authorization_token must default to None"
+            );
         }
         other => panic!("expected Refactor variant, got {other:?}"),
     }

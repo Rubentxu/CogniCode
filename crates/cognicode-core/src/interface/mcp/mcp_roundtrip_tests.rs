@@ -948,6 +948,8 @@ fn simple_function() {
                 "retrieve_and_verify",
                 "review_pr",
                 "safe_refactor",
+                "safe_refactor_preview",
+                "safe_refactor_revalidate",
                 "search_content",
                 "slice_backward",
                 "slice_forward",

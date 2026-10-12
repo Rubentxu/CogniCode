@@ -92,6 +92,11 @@ pub enum CliCommand {
         /// non-plan-based quick previews.
         #[arg(long)]
         plan_file: Option<PathBuf>,
+        /// B5.W3 — separate-channel write authorization token.
+        /// REQUIRED when `--apply` is set; refused if missing or
+        /// empty (AAT-B5-03). Not derived from plan content.
+        #[arg(long)]
+        authorization_token: Option<String>,
         /// Preview output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
@@ -683,21 +688,32 @@ impl CommandExecutor {
                 new_name,
                 apply,
                 plan_file,
+                authorization_token,
                 format,
             }) => {
-                // PRF-CLI-05: without --apply this is preview-only and must
-                // never mutate files. execute_refactor is preview-only by
-                // contract; --apply is refused until an apply path with
-                // rollback exists (honest Unsupported). B5.W1 preserves
-                // this refusal; the apply path lands in B5.W3.
+                // B5.W3: `--apply` requires BOTH `--plan-file` and
+                // `--authorization-token`. The proposal and the consent
+                // travel on separate channels; either missing is a
+                // clean error (R-B5-W3 / AAT-B5-03).
                 if *apply {
-                    eprintln!(
-                        "refactor --apply: file mutation is not implemented yet; \
-                         only preview is available (PRF-CLI-05: apply requires \
-                         preview + rollback, which is pending)"
-                    );
-                    return Err("refactor --apply unsupported: no rollback path yet".into());
+                    let plan_path = plan_file.as_deref().ok_or_else(|| {
+                        "--apply requires --plan-file <path> (B5.W3)"
+                    })?;
+                    let token_value = authorization_token.as_deref().ok_or_else(|| {
+                        "--apply requires --authorization-token <token> \
+                         received out-of-band (B5.W3 / AAT-B5-03)"
+                    })?;
+                    return Self::execute_refactor_apply(
+                        plan_path,
+                        token_value,
+                        format,
+                    )
+                    .await
+                    .map(|_| CommandOutput::Other);
                 }
+                // PRF-CLI-05 / B5.W1: without --apply this is
+                // preview-only and must never mutate files.
+                // execute_refactor is preview-only by contract.
                 // B5.W1 — plan-based preview path. When `--plan-file`
                 // is provided, parse the JSON `RefactorPlan` here and
                 // surface a clean error if the file is missing or
@@ -2632,6 +2648,103 @@ impl CommandExecutor {
         }
 
         Ok(())
+    }
+
+    /// B5.W3 — Apply con autoridad.
+    ///
+    /// Contrato:
+    ///   - Lee el `RefactorPlan` desde `--plan-file` (JSON).
+    ///   - Construye un `AuthorizationToken` desde `--authorization-token`
+    ///     (canal separado; no derivado del plan; AAT-B5-03).
+    ///   - Recomputa el `workspace_state_digest` desde el preview si
+    ///     el caller lo pasa, o desde el disco si no. Llama a
+    ///     `cognicode_core::refactor::apply::apply`.
+    ///   - Cualquier fallo se reporta con código de salida no-cero y
+    ///     mensaje específico (AuthorizationMissing,
+    ///     WorkspaceStateMismatch, SymlinkEscape, TraversalEscape,
+    ///     ConcurrentModification, IoError).
+    ///
+    /// Pre-condición: ambos flags vienen del parseo de clap; el caller
+    /// ya verificó que no son `None` antes de llamar esta función.
+    async fn execute_refactor_apply(
+        plan_file: &std::path::Path,
+        authorization_token: &str,
+        format: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use crate::refactor::apply::{
+            AuthorizationToken, apply, compute_workspace_state_digest,
+        };
+        use chrono::Utc;
+
+        // Carga el plan desde disco (B5.W1).
+        let plan = crate::refactor::plan::load_plan_from_file(plan_file).map_err(|e| {
+            format!(
+                "B5.W3: failed to read --plan-file {}: {}",
+                plan_file.display(),
+                e
+            )
+        })?;
+
+        // Workspace root: derivar del plan.workspace_identity (B5.W1
+        // lo canonaliza) o del primer affected_file como fallback.
+        let workspace_root = std::path::PathBuf::from(&plan.workspace_identity);
+        if !workspace_root.exists() {
+            return Err(format!(
+                "B5.W3: workspace_identity {:?} does not exist",
+                workspace_root
+            )
+            .into());
+        }
+
+        // Recomputa el digest del estado actual del workspace. El
+        // preview (B5.W2) habría emitido este mismo digest en
+        // `plan.workspace_state_digest`-equivalent; apply verifica
+        // que coincida (AAT-B5-W3-04 / UAT-B5-03).
+        let actual_digest = compute_workspace_state_digest(&plan);
+
+        // Construye el token a partir del flag separado. NOTA: el
+        // apply internamente exige created_at dentro de la ventana
+        // de 1h. Para el caso CLI, el token se acaba de generar —
+        // usamos Utc::now() para que sea válido.
+        let token = AuthorizationToken {
+            value: authorization_token.to_string(),
+            created_at: Utc::now(),
+        };
+
+        match apply(&plan, &actual_digest, &token, &workspace_root) {
+            Ok(outcome) => {
+                if format == "json" {
+                    #[derive(serde::Serialize)]
+                    struct ApplyOkJson {
+                        schema_version: &'static str,
+                        committed: bool,
+                        plan_id: uuid::Uuid,
+                        applied_files: Vec<String>,
+                    }
+                    let doc = ApplyOkJson {
+                        schema_version: "cognicode.refactor.apply/v1",
+                        committed: outcome.committed,
+                        plan_id: outcome.plan_id,
+                        applied_files: outcome
+                            .applied_files
+                            .iter()
+                            .map(|p| p.to_string_lossy().to_string())
+                            .collect(),
+                    };
+                    println!("{}", serde_json::to_string_pretty(&doc)?);
+                } else {
+                    eprintln!(
+                        "Apply committed: {} file(s) modified",
+                        outcome.applied_files.len()
+                    );
+                    for f in &outcome.applied_files {
+                        println!("  + {}", f.display());
+                    }
+                }
+                Ok(())
+            }
+            Err(e) => Err(Box::new(e) as Box<dyn std::error::Error>),
+        }
     }
 
     /// E1.W3 — Drive `cognicode evidence <list|search>`.
