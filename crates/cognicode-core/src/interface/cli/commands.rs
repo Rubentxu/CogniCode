@@ -272,8 +272,8 @@ pub enum CliCommand {
     ///   - `inspect summary <scope>`            -> Summarize
     ///   - `inspect verify <claim>`             -> Verify
     ///   - anything else                        -> fallback to Locate
-    ///                                            with the joined args as
-    ///                                            the symbol (last-ditch).
+    ///   -                                          with the joined args as
+    ///   -                                          the symbol (last-ditch).
     Inspect {
         /// Free-text arguments the user typed after `inspect`.
         /// Parsed best-effort into an `Intent`; never panics.
@@ -2263,13 +2263,9 @@ impl CommandExecutor {
             // precision + provider so the JSON presenter emits them in
             // the same shape as the MCP wire. The CLI text path ignores
             // these fields; the JSON path is the one that needs them.
-            precision: crate::interface::symbol_identity::precision_floor_for_tool(
-                "find_usages",
-            ),
-            provider: crate::interface::symbol_identity::default_provider_for_tool(
-                "find_usages",
-            )
-            .to_string(),
+            precision: crate::interface::symbol_identity::precision_floor_for_tool("find_usages"),
+            provider: crate::interface::symbol_identity::default_provider_for_tool("find_usages")
+                .to_string(),
         };
 
         // 4) Format output to stdout.
@@ -3017,7 +3013,7 @@ fn parse_intent_args(args: &[String]) -> crate::interface::intent::Intent {
     if args.len() == 1 {
         let only = &args[0];
         if only.contains('/') || only.contains('.') {
-            return parse_read(&[only.clone()]);
+            return parse_read(std::slice::from_ref(only));
         }
         return Intent::Locate {
             symbol: only.clone(),
@@ -3045,15 +3041,14 @@ fn parse_read(args: &[String]) -> crate::interface::intent::Intent {
     use std::ops::Range;
 
     let joined = args.join(" ");
-    if let Some((path, range)) = joined.split_once(':') {
-        if let Some((s, e)) = range.split_once('-') {
-            if let (Ok(start), Ok(end)) = (s.parse::<usize>(), e.parse::<usize>()) {
-                return Intent::Read {
-                    path: path.to_string(),
-                    range: Some(Range { start, end }),
-                };
-            }
-        }
+    if let Some((path, range)) = joined.split_once(':')
+        && let Some((s, e)) = range.split_once('-')
+        && let (Ok(start), Ok(end)) = (s.parse::<usize>(), e.parse::<usize>())
+    {
+        return Intent::Read {
+            path: path.to_string(),
+            range: Some(Range { start, end }),
+        };
     }
     Intent::Read {
         path: joined,

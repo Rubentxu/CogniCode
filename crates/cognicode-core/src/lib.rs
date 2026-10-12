@@ -1,10 +1,10 @@
 //! CogniCode Core - Code intelligence library for AI agents
 
 // B3.W4 — análisis incremental fiable (BLAKE3 + CacheStore por sesión).
-pub mod incremental;
 pub mod application;
 pub mod assurance_export;
 pub mod domain;
+pub mod incremental;
 pub mod infrastructure;
 pub mod interface;
 pub mod product;

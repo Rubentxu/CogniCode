@@ -47,7 +47,7 @@
 //!     `Intent::Locate { .. }.then(Intent::Read { .. })`).
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::ops::Range;
 
 /// Intencion del agente. El conjunto de variantes es el vocabulario
@@ -290,9 +290,7 @@ mod tests {
 
     #[test]
     fn summarize_routes_to_codebase_map() {
-        let route = route_intent(&Intent::Summarize {
-            scope: ".".into(),
-        });
+        let route = route_intent(&Intent::Summarize { scope: ".".into() });
         assert!(route.iter().any(|r| r.tool == "codebase_map"));
     }
 
@@ -343,12 +341,8 @@ mod tests {
         // nothing to call; that's a contract failure.
         let cases = vec![
             Intent::Locate { symbol: "x".into() },
-            Intent::Summarize {
-                scope: ".".into(),
-            },
-            Intent::Verify {
-                claim: "c".into(),
-            },
+            Intent::Summarize { scope: ".".into() },
+            Intent::Verify { claim: "c".into() },
             Intent::Read {
                 path: "f.rs".into(),
                 range: None,
@@ -377,15 +371,9 @@ mod tests {
             "retrieve_and_verify",
         ];
         let intents = vec![
-            Intent::Locate {
-                symbol: "x".into(),
-            },
-            Intent::Summarize {
-                scope: ".".into(),
-            },
-            Intent::Verify {
-                claim: "c".into(),
-            },
+            Intent::Locate { symbol: "x".into() },
+            Intent::Summarize { scope: ".".into() },
+            Intent::Verify { claim: "c".into() },
             Intent::Read {
                 path: "f.rs".into(),
                 range: None,
@@ -411,9 +399,7 @@ mod tests {
         // `kind: "locate" | "summarize" | "verify" | "read"`.
         // The bin CLI uses this to deserialize intent strings from
         // the user without a custom parser per variant.
-        let locate = Intent::Locate {
-            symbol: "X".into(),
-        };
+        let locate = Intent::Locate { symbol: "X".into() };
         let v = serde_json::to_value(&locate).expect("serialise Locate");
         assert_eq!(v["kind"], "locate");
         assert_eq!(v["symbol"], "X");

@@ -35,9 +35,9 @@
 //! reales (workspace de smoke-test). El test pina que el
 //! scaffold compila, no panic, y honra el status `PROPOSED`.
 
-use cognicode_core::interface::catalog::{load_tool_catalog, ToolDescriptor};
-use cognicode_core::interface::intent::{route_intent, Intent};
-use serde_json::{json, Value};
+use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
+use cognicode_core::interface::intent::{Intent, route_intent};
+use serde_json::{Value, json};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -112,9 +112,7 @@ fn route_intent_returns_non_empty_for_every_variant() {
     // route that returns an empty Vec would leave the agent with
     // nothing to call; that is a contract failure (B3.W2 §Riesgos).
     let cases = vec![
-        Intent::Locate {
-            symbol: "X".into(),
-        },
+        Intent::Locate { symbol: "X".into() },
         Intent::Summarize {
             scope: "src".into(),
         },
@@ -155,15 +153,9 @@ fn all_six_tools_appear_in_at_least_one_route_intent_branch() {
     ];
 
     let intents = vec![
-        Intent::Locate {
-            symbol: "x".into(),
-        },
-        Intent::Summarize {
-            scope: ".".into(),
-        },
-        Intent::Verify {
-            claim: "c".into(),
-        },
+        Intent::Locate { symbol: "x".into() },
+        Intent::Summarize { scope: ".".into() },
+        Intent::Verify { claim: "c".into() },
         Intent::Read {
             path: "f.rs".into(),
             range: None,
@@ -210,20 +202,13 @@ fn intent_tags_in_catalog_match_route_intent() {
          catalog file must be present for this test to mean anything"
     );
 
-    let by_name: std::collections::HashMap<&str, &ToolDescriptor> = catalog
-        .iter()
-        .map(|d| (d.name.as_str(), d))
-        .collect();
+    let by_name: std::collections::HashMap<&str, &ToolDescriptor> =
+        catalog.iter().map(|d| (d.name.as_str(), d)).collect();
 
     // Map every routing into ("intent variant label", "tool name").
     let intents_and_labels: &[(&str, Intent)] = &[
         ("Locate", Intent::Locate { symbol: "s".into() }),
-        (
-            "Summarize",
-            Intent::Summarize {
-                scope: ".".into(),
-            },
-        ),
+        ("Summarize", Intent::Summarize { scope: ".".into() }),
         ("Verify", Intent::Verify { claim: "c".into() }),
         (
             "Read",
@@ -247,10 +232,7 @@ fn intent_tags_in_catalog_match_route_intent() {
                     continue;
                 }
             };
-            let tags_present = descriptor
-                .intent_tags
-                .iter()
-                .any(|t| t.as_str() == *label);
+            let tags_present = descriptor.intent_tags.iter().any(|t| t.as_str() == *label);
             if !tags_present {
                 violations.push(format!(
                     "route_intent({label}) -> {} but catalog entry has \
@@ -306,11 +288,17 @@ fn cognicode_bin() -> Option<PathBuf> {
         .map(PathBuf::from)
         .unwrap_or_default();
     let workspace_root = manifest_dir.join("..").join("..");
-    let release = workspace_root.join("target").join("release").join("cognicode");
+    let release = workspace_root
+        .join("target")
+        .join("release")
+        .join("cognicode");
     if release.exists() {
         return Some(release.canonicalize().ok().unwrap_or(release));
     }
-    let debug = workspace_root.join("target").join("debug").join("cognicode");
+    let debug = workspace_root
+        .join("target")
+        .join("debug")
+        .join("cognicode");
     if debug.exists() {
         return Some(debug.canonicalize().ok().unwrap_or(debug));
     }
@@ -395,10 +383,7 @@ fn route_intent_locate_args_include_symbol_name() {
 fn route_intent_read_args_include_path() {
     let route = route_intent(&Intent::Read {
         path: "src/lib.rs".to_string(),
-        range: Some(std::ops::Range {
-            start: 10,
-            end: 20,
-        }),
+        range: Some(std::ops::Range { start: 10, end: 20 }),
     });
     let reader = route
         .iter()

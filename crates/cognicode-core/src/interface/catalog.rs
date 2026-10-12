@@ -326,7 +326,8 @@ mod tests {
         assert_eq!(v["follow_ups"][0], "get_symbol_code");
         assert_eq!(v["required_args"][0], "symbol_name");
         assert_eq!(
-            v["limitations"][0], "requires build_graph to have run first"
+            v["limitations"][0],
+            "requires build_graph to have run first"
         );
     }
 

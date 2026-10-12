@@ -216,8 +216,7 @@ mod tests {
     #[test]
     fn nonexistent_file_returns_io_error() {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let err = content_hash(&tmp.path().join("never.rs"))
-            .expect_err("missing file must error");
+        let err = content_hash(&tmp.path().join("never.rs")).expect_err("missing file must error");
         assert_eq!(err.kind(), io::ErrorKind::NotFound);
     }
 

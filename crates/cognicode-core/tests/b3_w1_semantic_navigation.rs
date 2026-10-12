@@ -148,9 +148,7 @@ fn precision_field_is_present_on_every_navigation_result() {
              without it (R-B3-W1)"
         );
         let precision = obj["precision"].as_str().unwrap_or_else(|| {
-            panic!(
-                "{tool}: precision must be a string (one of lsp|ast-heuristic|index)"
-            )
+            panic!("{tool}: precision must be a string (one of lsp|ast-heuristic|index)")
         });
         assert!(
             ["lsp", "ast-heuristic", "index"].contains(&precision),
@@ -285,7 +283,9 @@ fn symbol_reference_carries_id_precision_and_provider() {
     assert!(!reference.provider.is_empty());
 
     let json = serde_json::to_value(&reference).unwrap();
-    let obj = json.as_object().expect("SymbolReference serialises as object");
+    let obj = json
+        .as_object()
+        .expect("SymbolReference serialises as object");
     assert!(obj.contains_key("id"));
     assert!(obj.contains_key("precision"));
     assert!(obj.contains_key("provider"));

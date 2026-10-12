@@ -81,7 +81,11 @@ fn required_args_in_catalog_match_input_schema() {
             .get("input_schema")
             .and_then(|s| s.get("required"))
             .and_then(|r| r.as_array())
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let d = by_name
             .get(name)
@@ -89,8 +93,7 @@ fn required_args_in_catalog_match_input_schema() {
 
         match (&d.required_args, schema_required.is_empty()) {
             (Some(catalog_args), false) => {
-                let catalog_set: HashSet<&str> =
-                    catalog_args.iter().map(|s| s.as_str()).collect();
+                let catalog_set: HashSet<&str> = catalog_args.iter().map(|s| s.as_str()).collect();
                 let schema_set: HashSet<&str> =
                     schema_required.iter().map(|s| s.as_str()).collect();
                 assert_eq!(
@@ -150,7 +153,8 @@ fn prerequisites_and_follow_ups_refer_to_known_tools() {
                     "tool {tool_name:?}: follow_up {f:?} is not a known tool"
                 );
                 assert_ne!(
-                    f.as_str(), tool_name,
+                    f.as_str(),
+                    tool_name,
                     "tool {tool_name:?}: follow_up points to itself"
                 );
             }
@@ -192,10 +196,7 @@ fn catalog_follow_ups_chain_is_acyclic() {
             for f in follows {
                 match colour.get(f).cloned() {
                     Some(Colour::Grey) => {
-                        let cycle_start = stack
-                            .iter()
-                            .position(|n| n == f)
-                            .unwrap_or(0);
+                        let cycle_start = stack.iter().position(|n| n == f).unwrap_or(0);
                         let cycle: Vec<String> = stack[cycle_start..].to_vec();
                         return Err(format!(
                             "cycle in follow_ups: {} -> {}",
@@ -227,10 +228,10 @@ fn catalog_follow_ups_chain_is_acyclic() {
     }
     let mut stack: Vec<String> = Vec::new();
     for d in &catalog {
-        if matches!(colour.get(&d.name), Some(Colour::White) | None) {
-            if let Err(cycle) = dfs(&d.name, &by_name, &mut colour, &mut stack) {
-                panic!("{cycle}");
-            }
+        if matches!(colour.get(&d.name), Some(Colour::White) | None)
+            && let Err(cycle) = dfs(&d.name, &by_name, &mut colour, &mut stack)
+        {
+            panic!("{cycle}");
         }
     }
 }
@@ -249,10 +250,7 @@ fn limitations_field_is_nonempty_for_tools_with_known_constraints() {
 
     let mut checked = 0usize;
     for d in &catalog {
-        let is_mutating = matches!(
-            d.authority.as_str(),
-            "mutating" | "execute" | "network"
-        );
+        let is_mutating = matches!(d.authority.as_str(), "mutating" | "execute" | "network");
         let requires_graph = d
             .runtime_metadata
             .get("requires_graph")
@@ -288,8 +286,7 @@ fn limitations_field_is_nonempty_for_tools_with_known_constraints() {
             }
             if needs_graph_prereq {
                 assert!(
-                    joined.contains("build_graph")
-                        || joined.contains("graph"),
+                    joined.contains("build_graph") || joined.contains("graph"),
                     "tool {:?}: requires_graph tool should mention the graph dependency (got {lims:?})",
                     d.name
                 );
@@ -316,8 +313,7 @@ fn capabilities_json_includes_new_fields_and_matches_catalog() {
         .expect("`tools` must be a JSON array");
 
     let catalog = load_tool_catalog_active();
-    let mut catalog_names: HashSet<String> =
-        catalog.iter().map(|d| d.name.clone()).collect();
+    let mut catalog_names: HashSet<String> = catalog.iter().map(|d| d.name.clone()).collect();
     let mut doc_names: HashSet<String> = tools
         .iter()
         .filter_map(|t| t["name"].as_str().map(String::from))
@@ -343,11 +339,7 @@ fn capabilities_json_includes_new_fields_and_matches_catalog() {
     let _ = (&mut catalog_names, &mut doc_names);
 }
 
-fn assert_field_matches(
-    entry: &serde_json::Value,
-    key: &str,
-    expected: Option<&[String]>,
-) {
+fn assert_field_matches(entry: &serde_json::Value, key: &str, expected: Option<&[String]>) {
     match expected {
         Some(values) => {
             let arr = entry

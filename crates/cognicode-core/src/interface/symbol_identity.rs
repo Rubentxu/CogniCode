@@ -52,27 +52,14 @@ use std::path::PathBuf;
 /// from being silently upgraded to LSP-grade — which is exactly the
 /// regression AAT-B3-01 forbids.
 #[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    schemars::JsonSchema,
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Precision {
     Lsp,
+    #[default]
     AstHeuristic,
     Index,
-}
-
-impl Default for Precision {
-    fn default() -> Self {
-        Precision::AstHeuristic
-    }
 }
 
 impl Precision {
@@ -155,11 +142,7 @@ pub struct SymbolReference {
 }
 
 impl SymbolReference {
-    pub fn new(
-        id: SymbolId,
-        precision: Precision,
-        provider: impl Into<String>,
-    ) -> Self {
+    pub fn new(id: SymbolId, precision: Precision, provider: impl Into<String>) -> Self {
         Self {
             id,
             precision,
@@ -188,9 +171,7 @@ pub fn precision_floor_for_tool(tool: &str) -> Precision {
         "get_file_symbols" => Precision::Lsp,
         // Graph-store tools operate on the CogniCode project index. The
         // floor reflects that they are NOT LSP-backed.
-        "get_call_hierarchy" | "get_implementors" | "get_type_references" => {
-            Precision::Index
-        }
+        "get_call_hierarchy" | "get_implementors" | "get_type_references" => Precision::Index,
         // Tree-sitter heuristics only; no LSP path.
         "query_symbol_index" | "find_usages" => Precision::AstHeuristic,
         _ => Precision::AstHeuristic,
@@ -311,20 +292,13 @@ mod tests {
     /// (e.g. drop the entry) instead of fabricating a name.
     #[test]
     fn from_ast_node_returns_none_for_missing_qualified_name() {
-        let id = SymbolId::from_ast_node(
-            None,
-            PathBuf::from("src/x.rs"),
-            0..10,
-        );
+        let id = SymbolId::from_ast_node(None, PathBuf::from("src/x.rs"), 0..10);
         assert!(
             id.is_none(),
             "ambiguous AST node without qualified_name must fail-soft (None)"
         );
-        let id_ok = SymbolId::from_ast_node(
-            Some("x::y".to_string()),
-            PathBuf::from("src/x.rs"),
-            0..10,
-        );
+        let id_ok =
+            SymbolId::from_ast_node(Some("x::y".to_string()), PathBuf::from("src/x.rs"), 0..10);
         assert!(id_ok.is_some(), "AST node with qualified_name round-trips");
     }
 
@@ -356,18 +330,9 @@ mod tests {
     /// backend, the catalog AND this test must change together.
     #[test]
     fn precision_floor_for_tool_distinguishes_lsp_tools() {
-        assert_eq!(
-            precision_floor_for_tool("go_to_definition"),
-            Precision::Lsp
-        );
-        assert_eq!(
-            precision_floor_for_tool("find_references"),
-            Precision::Lsp
-        );
-        assert_eq!(
-            precision_floor_for_tool("get_file_symbols"),
-            Precision::Lsp
-        );
+        assert_eq!(precision_floor_for_tool("go_to_definition"), Precision::Lsp);
+        assert_eq!(precision_floor_for_tool("find_references"), Precision::Lsp);
+        assert_eq!(precision_floor_for_tool("get_file_symbols"), Precision::Lsp);
         assert_eq!(
             precision_floor_for_tool("get_call_hierarchy"),
             Precision::Index

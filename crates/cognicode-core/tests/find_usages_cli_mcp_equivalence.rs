@@ -19,6 +19,7 @@ use cognicode_core::application::services::analysis_service::{AnalysisService, U
 use cognicode_core::interface::mcp::handlers::{HandlerContext, handle_find_usages};
 use cognicode_core::interface::mcp::schemas::FindUsagesInput;
 use cognicode_core::interface::mcp::schemas::FindUsagesOutput;
+use cognicode_core::interface::symbol_identity::Precision;
 
 /// Construye un workspace temporal con código fuente de muestra donde
 /// `alpha` está definido una vez (línea 1) y usado dos veces (líneas 5 y 6).
@@ -86,6 +87,11 @@ async fn run_service(cwd: &std::path::Path, symbol: &str, include_decl: bool) ->
                 }),
             })
             .collect(),
+        // B3.W1: parity test mirrors what the MCP handler returns.
+        // Service-side path doesn't have an LSP backend, so the
+        // honest precision is ast-heuristic.
+        precision: Precision::AstHeuristic,
+        provider: "tree-sitter-rust".to_string(),
     }
 }
 

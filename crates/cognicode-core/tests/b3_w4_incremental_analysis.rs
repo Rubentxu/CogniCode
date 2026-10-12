@@ -21,7 +21,7 @@
 //!   - `Display` produce hex en minúsculas.
 //!   - No se introduce estado global: cada `CacheStore` es propio.
 
-use cognicode_core::incremental::content_hash::{content_hash, CacheStore, ContentHash};
+use cognicode_core::incremental::content_hash::{CacheStore, ContentHash, content_hash};
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -148,21 +148,21 @@ fn branch_switch_invalidates_cache() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let repo = tmp.path();
 
-    git_in(&repo, &["init", "-q", "--initial-branch=main"]);
-    git_in(&repo, &["checkout", "-q", "-b", "main"]);
-    git_in(&repo, &["config", "user.email", "b3@test.invalid"]);
-    git_in(&repo, &["config", "user.name", "B3 Tester"]);
+    git_in(repo, &["init", "-q", "--initial-branch=main"]);
+    git_in(repo, &["checkout", "-q", "-b", "main"]);
+    git_in(repo, &["config", "user.email", "b3@test.invalid"]);
+    git_in(repo, &["config", "user.name", "B3 Tester"]);
 
     let subject = repo.join("subject.txt");
     fs::write(&subject, "branch A content\n").expect("write A");
-    git_in(&repo, &["add", "subject.txt"]);
-    git_in(&repo, &["commit", "-q", "-m", "A"]);
+    git_in(repo, &["add", "subject.txt"]);
+    git_in(repo, &["commit", "-q", "-m", "A"]);
 
     let mut store = CacheStore::new();
     store.observe(&subject).expect("observe A");
     assert!(!store.is_stale(&subject).expect("stale A"));
 
-    git_in(&repo, &["checkout", "-q", "-b", "feature"]);
+    git_in(repo, &["checkout", "-q", "-b", "feature"]);
     fs::write(&subject, "branch B content that is different\n").expect("write B");
 
     assert!(
@@ -272,7 +272,9 @@ fn unicode_path_with_spaces_does_not_break_content_hash() {
     assert_eq!(h1, h2, "blake3 must be deterministic across calls");
     assert_eq!(h1.to_string().len(), 64, "blake3 hex is 64 lowercase chars");
     assert!(
-        h1.to_string().chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        h1.to_string()
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
         "Display must be lowercase hex: {:?}",
         h1.to_string()
     );
