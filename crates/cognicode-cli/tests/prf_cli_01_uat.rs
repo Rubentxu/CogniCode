@@ -172,9 +172,10 @@ fn analyze_valid_empty_dir_exits_zero() {
 
 /// PRF-CLI-05: the refactor command must parse cleanly (a former clap
 /// debug-assert bug aborted the process), default to preview-only, refuse
-/// `--apply` (no rollback path yet), and never mutate source files.
+/// `--apply` requires `--plan-file` + `--authorization-token` (B5.W3
+/// contract), and the preview path must never mutate source files.
 #[test]
-fn cli05_refactor_is_preview_only_and_refuses_apply() {
+fn cli05_refactor_is_preview_only_and_refuses_apply_without_authority() {
     let tmp = tempfile::tempdir().unwrap();
     let src = tmp.path().join("lib.rs");
     std::fs::write(&src, "pub fn original_name() -> u32 { 42 }\n").unwrap();
@@ -194,7 +195,9 @@ fn cli05_refactor_is_preview_only_and_refuses_apply() {
         "preview must never mutate source files"
     );
 
-    // 2. --apply must be refused with a non-zero exit and a clear reason.
+    // 2. --apply without --plan-file must be refused with a non-zero
+    // exit and a clear reason (B5.W3 contract: --apply requires
+    // --plan-file <path> + --authorization-token <token>).
     let out = std::process::Command::new(&bin)
         .args(["refactor", "original_name", "renamed_thing", "--apply"])
         .current_dir(tmp.path())
@@ -202,12 +205,12 @@ fn cli05_refactor_is_preview_only_and_refuses_apply() {
         .expect("refactor --apply must execute");
     assert!(
         !out.status.success(),
-        "--apply must be refused (no rollback path yet)"
+        "--apply without --plan-file must be refused (B5.W3 contract)"
     );
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("--apply") && err.contains("not implemented"),
-        "refusal must explain the missing apply path; got: {err}"
+        err.contains("--apply") && err.contains("--plan-file"),
+        "refusal must explain the missing --plan-file requirement; got: {err}"
     );
     assert_eq!(
         std::fs::read(&src).unwrap(),
