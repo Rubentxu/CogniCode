@@ -98,6 +98,7 @@ def workspace_version() -> str:
 # SHA-256 pinned del golden. Cambia con cada regeneracion intencionada
 # (refactor del encoding del producer o bump de producer version).
 # Anteriores:
+#   - 9a30921eda60beb44f6c3a5db7cb78c43e4d01174db8a57c7e43d8cb5d7a55b3 (v0.101.16, regenerate 2026-10-12 al bump 0.101.15 → 0.101.16; cierre B6)
 #   - ce7d61168c125ed3450183241d30ab56f4803ed9fe95f710dfe6b0d3f8627c98 (v0.101.15, regenerate 2026-10-12 al bump 0.101.14 → 0.101.15; cierre B5)
 #   - ff35e199408b8ecf88ae0def0614f24dbfd3e22bd1fd4ce9185e557959bbe537 (v0.101.14, regenerate 2026-10-12 al bump 0.101.13 → 0.101.14; cierre B4)
 #   - 1fd8f7fcb5854bdcf0d036be6da6238fe122582da4ba8974d2f9d5e43756f9be (v0.101.13, regenerate 2026-10-12 al bump 0.101.12 → 0.101.13; cierre B3)
@@ -109,7 +110,7 @@ def workspace_version() -> str:
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
 GOLDEN_SHA256 = (
-    "ce7d61168c125ed3450183241d30ab56f4803ed9fe95f710dfe6b0d3f8627c98"
+    "9a30921eda60beb44f6c3a5db7cb78c43e4d01174db8a57c7e43d8cb5d7a55b3"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
