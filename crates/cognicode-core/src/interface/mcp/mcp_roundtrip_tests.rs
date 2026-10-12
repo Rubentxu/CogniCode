@@ -949,6 +949,7 @@ fn simple_function() {
                 "review_pr",
                 "safe_refactor",
                 "safe_refactor_preview",
+                "safe_refactor_apply",
                 "safe_refactor_revalidate",
                 "search_content",
                 "slice_backward",
