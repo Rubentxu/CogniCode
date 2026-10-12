@@ -1,0 +1,60 @@
+{
+  "skill": "cognicode-quality",
+  "description": "Agent-first evaluations for the quality skill: questions an agent must answer about quality findings, severity, and where the catalog places the report.",
+  "evaluations": [
+    {
+      "id": "Q-01",
+      "question": "Which functions in `crates/cognicode-cli/src/skills.rs` qualify as god functions?",
+      "expected_tools": ["detect_god_functions"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "detect_god_functions returns a normalized FindingsReport naming the functions in skills.rs that exceed the god-function threshold",
+        "Returns the god-function findings for skills.rs"
+      ]
+    },
+    {
+      "id": "Q-02",
+      "question": "What is the cyclomatic complexity of `validate_skill_against_catalog`?",
+      "expected_tools": ["get_complexity"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "get_complexity returns the per-function complexity for skills.rs; the function in question is well under the threshold",
+        "Returns ComplexityMetrics for the function"
+      ]
+    },
+    {
+      "id": "Q-03",
+      "question": "Run a SOLID audit on the file `crates/cognicode-cli/src/skills.rs`.",
+      "expected_tools": ["solid_audit"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "solid_audit returns the SOLID audit findings for the file",
+        "Returns FindingsReport with the SOLID-relevant categories"
+      ]
+    },
+    {
+      "id": "Q-04",
+      "question": "Does any function in this workspace have a long parameter list?",
+      "expected_tools": ["detect_long_parameter_lists"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "detect_long_parameter_lists returns the findings list; if empty, the answer is 'no'",
+        "Returns the long-parameter-list findings; an empty list means no offenders"
+      ]
+    },
+    {
+      "id": "Q-05",
+      "question": "Give me a unified quality report for `crates/cognicode-cli/src/skills.rs` (god functions + long parameter lists + complexity).",
+      "expected_tools": [
+        "detect_god_functions",
+        "detect_long_parameter_lists",
+        "get_complexity"
+      ],
+      "expected_outcome": "partial",
+      "acceptable_answers": [
+        "Run detect_god_functions, detect_long_parameter_lists, and get_complexity in sequence and merge the FindingsReports; the catalog does not provide a single-shot aggregate for this combination",
+        "There is no single tool that aggregates those three; compose the answers from each"
+      ]
+    }
+  ]
+}

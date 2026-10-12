@@ -1,0 +1,56 @@
+{
+  "skill": "cognicode-navigate",
+  "description": "Agent-first evaluations for the navigate skill: questions an agent must answer about symbol lookup, references, and definition resolution.",
+  "evaluations": [
+    {
+      "id": "N-01",
+      "question": "Where is the symbol `ToolDescriptor` defined and what file holds it?",
+      "expected_tools": ["query_symbol_index", "go_to_definition", "get_symbol_code"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "Defined in crates/cognicode-core/src/interface/catalog.rs; query_symbol_index returns the file path, go_to_definition confirms the location, get_symbol_code returns the byte source",
+        "ToolDescriptor lives in catalog.rs at crates/cognicode-core/src/interface/catalog.rs"
+      ]
+    },
+    {
+      "id": "N-02",
+      "question": "Who calls `load_tool_catalog`?",
+      "expected_tools": ["find_references", "query_symbol_index"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "find_references returns the callers of load_tool_catalog across the workspace; the symbol must already be indexed (build_lightweight_index or build_graph first)",
+        "Callers include rmcp_adapter and the CLI capabilities command; check find_references after indexing"
+      ]
+    },
+    {
+      "id": "N-03",
+      "question": "Show me the body of `validate_skill_against_catalog`.",
+      "expected_tools": ["get_symbol_code"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "get_symbol_code returns the function source; the function lives in crates/cognicode-cli/src/skills.rs",
+        "Returns the byte source of the function from skills.rs"
+      ]
+    },
+    {
+      "id": "N-04",
+      "question": "What is the type-reference for `ToolDescriptor`?",
+      "expected_tools": ["get_type_references"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "get_type_references returns every place that names ToolDescriptor as a type (not a call site)",
+        "Returns the type-reference set for ToolDescriptor"
+      ]
+    },
+    {
+      "id": "N-05",
+      "question": "Navigate to the import graph of `cognicode-cli/src/skills.rs`.",
+      "expected_tools": ["get_per_file_graph"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "get_per_file_graph on skills.rs returns the imports/exports for that file",
+        "Returns the per-file graph centred on skills.rs"
+      ]
+    }
+  ]
+}

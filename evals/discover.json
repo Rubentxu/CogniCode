@@ -1,0 +1,56 @@
+{
+  "skill": "cognicode-discover",
+  "description": "Agent-first evaluations for the discover skill: questions an agent must answer using only the catalog of available tools, before deciding which one to invoke.",
+  "evaluations": [
+    {
+      "id": "D-01",
+      "question": "What CogniCode tools are available in this workspace for navigating a Python codebase?",
+      "expected_tools": ["codebase_map", "query_symbol_index"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "codebase_map and query_symbol_index are both available, both stability=stable, both authority=read",
+        "Available: codebase_map (composite, read, stable) and query_symbol_index (search, read, stable)"
+      ]
+    },
+    {
+      "id": "D-02",
+      "question": "Is the tool `safe_refactor_apply` available here, and what feature gates it?",
+      "expected_tools": ["safe_refactor_apply"],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "safe_refactor_apply is available, stability=stable, authority=mutating, feature=None (no gate required)",
+        "Available with no feature gate; mutates the workspace"
+      ]
+    },
+    {
+      "id": "D-03",
+      "question": "Is `interproc_summary` available? If not, why?",
+      "expected_tools": ["interproc_summary"],
+      "expected_outcome": "unsupported",
+      "acceptable_answers": [
+        "interproc_summary requires the `program-analysis-server` cargo feature, which is not enabled in this build; not available",
+        "Gated behind `program-analysis-server`; not in this build"
+      ]
+    },
+    {
+      "id": "D-04",
+      "question": "Which graph tools can I run without first calling `build_graph`?",
+      "expected_tools": [],
+      "expected_outcome": "partial",
+      "acceptable_answers": [
+        "Most graph tools declare `build_graph` as a prerequisite; tools without that prerequisite include the lightweight index tools; check the catalog's prerequisites field for each one",
+        "None — every graph tool lists build_graph (or build_lightweight_index) as a prerequisite in the catalog"
+      ]
+    },
+    {
+      "id": "D-05",
+      "question": "Show me the experimental tools in this build, if any.",
+      "expected_tools": [],
+      "expected_outcome": "complete",
+      "acceptable_answers": [
+        "Experimental tools include ask_about_code, cfg_per_function, detect_drift, dominators_cfg, find_pattern_by_intent, graph_suggest_questions, iac_query, project_insights, project_overview, reparse_on_edit, slice_backward, slice_forward, taint_flow, interproc_summary",
+        "The catalog declares stability=experimental on the tools listed; do not use them as if they were stable"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "cognicode.skills/v1",
+  "product": "cognicode",
+  "skills": [
+    {
+      "name": "cognicode-discover",
+      "description": "Discover the CogniCode capabilities available in a workspace: which tools are exposed, what they cover, and which stability tier each one belongs to. Use this before any code-analysis question so the agent can answer 'what can I do here' from the catalog, not from guesses.",
+      "tools_used": ["codebase_map", "query_symbol_index"],
+      "feature_gates": [],
+      "evaluation": "evals/discover.json"
+    },
+    {
+      "name": "cognicode-navigate",
+      "description": "Resolve a symbol to its code, find where it is used, and trace references across the workspace. Use this when the agent must answer 'where is X defined', 'who calls X', or 'which file holds symbol Y'.",
+      "tools_used": [
+        "query_symbol_index",
+        "find_references",
+        "get_symbol_code",
+        "go_to_definition"
+      ],
+      "feature_gates": [],
+      "evaluation": "evals/navigate.json"
+    },
+    {
+      "name": "cognicode-quality",
+      "description": "Surface quality findings (god functions, long parameter lists, complexity hotspots, SOLID audits) so the agent can answer 'what is wrong with this code' from the catalog of normalized findings.",
+      "tools_used": [
+        "detect_god_functions",
+        "detect_long_parameter_lists",
+        "get_complexity",
+        "solid_audit"
+      ],
+      "feature_gates": [],
+      "evaluation": "evals/quality.json"
+    },
+    {
+      "name": "cognicode-refactor",
+      "description": "Preview a safe refactor, apply it with explicit authority, and revalidate after the change. The refactor is always read-first (preview shows what will change), the apply step requires authority, and revalidation reports evidence (never a verdict) about the post-apply state.",
+      "tools_used": [
+        "safe_refactor_preview",
+        "safe_refactor_apply",
+        "safe_refactor_revalidate"
+      ],
+      "feature_gates": [],
+      "evaluation": "evals/refactor.json"
+    }
+  ]
+}
