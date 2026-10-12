@@ -91,7 +91,7 @@ impl Precision {
 /// `qualified_name` is the LSP-grade FQ name (e.g. `module::Type::method`).
 /// `byte_range` is half-open in bytes of the source (start inclusive,
 /// end exclusive), matching LSP's `Range` semantics.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct SymbolId {
     pub qualified_name: String,
     pub file_path: PathBuf,

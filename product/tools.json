@@ -61,7 +61,8 @@
       ],
       "limitations": [
         "requires build_graph to be current"
-      ]
+      ],
+      "impact_direction_floor": "observed"
     },
     {
       "name": "ask_about_code",
@@ -513,7 +514,9 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
+        "tool_version": "0.99.2",
+        "gate_authority": false,
+        "produces_observations_only": true
       },
       "prerequisites": [
         "build_graph"
@@ -2590,7 +2593,8 @@
       ],
       "limitations": [
         "requires build_graph to be current"
-      ]
+      ],
+      "impact_direction_floor": "observed"
     },
     {
       "name": "graph_feedback_arcs",
@@ -2921,7 +2925,8 @@
       "limitations": [
         "requires build_graph to be current",
         "natural-language parser; may miss ambiguous phrasing"
-      ]
+      ],
+      "impact_direction_floor": "inferred"
     },
     {
       "name": "graph_query_filtered",
@@ -3098,7 +3103,8 @@
       ],
       "limitations": [
         "requires build_graph to be current"
-      ]
+      ],
+      "impact_direction_floor": "inferred"
     },
     {
       "name": "graph_reduced",
@@ -4818,7 +4824,8 @@
       "limitations": [
         "requires build_graph to be current",
         "BFS; depth-bounded"
-      ]
+      ],
+      "impact_direction_floor": "observed"
     },
     {
       "name": "validate_contract",

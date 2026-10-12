@@ -1,5 +1,7 @@
 //! CogniCode Core - Code intelligence library for AI agents
 
+// B4.W2 — architecture as diagnostic (read-only surface, no gate authority).
+pub mod architecture;
 // B3.W4 — análisis incremental fiable (BLAKE3 + CacheStore por sesión).
 pub mod application;
 pub mod assurance_export;
@@ -8,6 +10,8 @@ pub mod domain;
 // quality tools (complexity, long_parameter_lists, god_functions,
 // solid_audit, relationship_cycle). Pure data; no I/O.
 pub mod findings;
+// B4.W5 — Composite impact query for agents (evidence, not verdict).
+pub mod impact;
 pub mod incremental;
 pub mod infrastructure;
 pub mod interface;

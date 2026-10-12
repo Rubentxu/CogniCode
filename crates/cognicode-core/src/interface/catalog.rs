@@ -110,6 +110,14 @@ pub struct ToolDescriptor {
     /// blocks progress" affordance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limitations: Option<Vec<String>>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed
+    /// to carry. One of `"observed"`, `"inferred"`, `"heuristic"`.
+    /// Required for the 5 impact tools consolidated by B4.W1
+    /// (`analyze_impact`, `graph_explain`, `trace_path`, `graph_query`,
+    /// `graph_query_filtered`). AAT-B4-03 disallows silently upgrading
+    /// an absent field to `"observed"`.
+    #[serde(default = "default_impact_direction_floor")]
+    pub impact_direction_floor: String,
     // Note: the spec's `intent_routing` (question 1 / 2 — "what can I
     // do" / "which intent resolves here") is covered by B3.W2's
     // `intent_tags` field above. The two were planned as separate
@@ -129,6 +137,13 @@ fn default_requirements_status() -> String {
 /// silently upgraded to LSP-grade (AAT-B3-01).
 fn default_precision_floor() -> String {
     "ast-heuristic".to_string()
+}
+
+/// B4.W1 — default impact direction floor when the catalog omits the
+/// field. Conservative: `"inferred"`. Tools that genuinely observe
+/// every edge declare `"observed"` explicitly in `product/tools.json`.
+fn default_impact_direction_floor() -> String {
+    "inferred".to_string()
 }
 
 /// Resolve the gate for a `feature` value declared in the catalog.
@@ -259,6 +274,8 @@ mod tests {
             follow_ups: None,
             required_args: None,
             limitations: None,
+            limitations: None,
+impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert_eq!(v["feature"], "evidence-cli-ladybug");
@@ -287,6 +304,8 @@ mod tests {
             follow_ups: None,
             required_args: None,
             limitations: None,
+            limitations: None,
+impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert!(
@@ -357,6 +376,8 @@ mod tests {
             follow_ups: None,
             required_args: None,
             limitations: None,
+            limitations: None,
+impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         for key in [

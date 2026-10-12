@@ -178,10 +178,15 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // for the 5 quality tools). The 55 is the on-disk count at the
     // moment this assertion was bumped; any further WU adds another
     // file and bumps again.
+    // 55 -> 56 with b4_w1_impact_graph (B4.W1, impact graph with
+    // evidence and provenance: Direction, Provenance, ImpactEdge,
+    // ImpactPath, ImpactResult, ImpactLimits, build_impact_result).
+    // The 56 is the on-disk count at the moment this assertion was
+    // bumped; any further WU adds another file and bumps again.
     assert_eq!(
         suites.len(),
-        55,
-        "expected exactly 55 cognicode-core integration suites, found {}. \
+        56,
+        "expected exactly 56 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -304,6 +309,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "b3_w2_progressive_context",
     "b3_w3_agent_discovery",
     "b3_w4_incremental_analysis",
+    "b4_w1_impact_graph",
     "b4_w2_architecture_diagnostic",
     "b4_w3_quality_findings",
     "behavior_authority_e2e",
