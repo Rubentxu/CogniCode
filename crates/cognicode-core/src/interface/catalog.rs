@@ -59,15 +59,76 @@ pub struct ToolDescriptor {
     pub input_schema: Value,
     #[serde(default)]
     pub output_schema: Value,
+    /// B3.W2 — Affordances for `cognicode inspect`. The set of
+    /// `Intent` variants (`Locate`, `Summarize`, `Verify`, `Read`)
+    /// that route to this tool. Agents introspect this field to
+    /// discover which intent each tool resolves without reading
+    /// the routing function source. Parity with
+    /// `interface::intent::route_intent` is pinned by the test
+    /// `b3_w2_progressive_context::intent_tags_in_catalog_match_route_intent`.
+    #[serde(default)]
+    pub intent_tags: Vec<String>,
+    /// B3.W1 — declared precision floor. One of `"lsp"`,
+    /// `"ast-heuristic"`, or `"index"`. Tools without an explicit
+    /// declaration default to `"ast-heuristic"` (the conservative
+    /// choice — never silently upgrade an absent field to LSP-grade,
+    /// AAT-B3-01). The 8 navigation tools consolidated in B3.W1
+    /// (see `NAVIGATION_TOOLS` in `symbol_identity`) MUST declare
+    /// this field; the test
+    /// `catalog_declares_precision_floor_for_every_navigation_tool`
+    /// pins the invariant.
+    #[serde(default = "default_precision_floor")]
+    pub precision_floor: String,
     /// Cargo feature this tool is gated behind. `None` means always
     /// available. The MCP filter uses this to drop tools whose feature
     /// is not enabled in the current build.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<String>,
+    /// B3.W3 — tool names that must run first (e.g. `build_graph`
+    /// for navigation/graph tools). Identifiers match `name`. Empty
+    /// means no dependency; absent means not yet annotated. Used
+    /// by the "what analysis is required first" affordance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prerequisites: Option<Vec<String>>,
+    /// B3.W3 — tool names that the result commonly leads to (e.g.
+    /// `query_symbol_index` → `["get_symbol_code", "find_references"]`).
+    /// Chains form a DAG; the test `catalog_follow_ups_chain_is_acyclic`
+    /// asserts there is no cycle. Used by the "what follow-up result
+    /// can I query" affordance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow_ups: Option<Vec<String>>,
+    /// B3.W3 — argument names that MUST be present in the call. Mirrors
+    /// `input_schema.required` so a caller can ask the catalog
+    /// declaratively which fields are missing without parsing the JSON
+    /// Schema. Used by the "what arguments are missing" affordance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_args: Option<Vec<String>>,
+    /// B3.W3 — human-readable strings describing what blocks this tool
+    /// (e.g. `"requires build_graph to have run first"`,
+    /// `"may miss dynamic dispatch"`, `"mutates workspace"`). Free-form;
+    /// rendered as-is by the agent runtime. Used by the "what limitation
+    /// blocks progress" affordance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limitations: Option<Vec<String>>,
+    // Note: the spec's `intent_routing` (question 1 / 2 — "what can I
+    // do" / "which intent resolves here") is covered by B3.W2's
+    // `intent_tags` field above. The two were planned as separate
+    // work units; both end up answering the same question, so we keep
+    // the canonical B3.W2 name (`intent_tags`) and document that B3.W3
+    // does not duplicate it. See `b3_w2_progressive_context` tests
+    // for the B3.W2 contract and `b3_w3_agent_discovery` for the
+    // B3.W3 fields.
 }
 
 fn default_requirements_status() -> String {
     "not_declared".to_string()
+}
+
+/// B3.W1 — default precision floor when the catalog omits the field.
+/// Chosen to be the conservative tier: an absent field must NOT be
+/// silently upgraded to LSP-grade (AAT-B3-01).
+fn default_precision_floor() -> String {
+    "ast-heuristic".to_string()
 }
 
 /// Resolve the gate for a `feature` value declared in the catalog.
@@ -191,7 +252,13 @@ mod tests {
             runtime_metadata: Value::Null,
             input_schema: Value::Null,
             output_schema: Value::Null,
+            intent_tags: Vec::new(),
+            precision_floor: "ast-heuristic".to_string(),
             feature: Some("evidence-cli-ladybug".into()),
+            prerequisites: None,
+            follow_ups: None,
+            required_args: None,
+            limitations: None,
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert_eq!(v["feature"], "evidence-cli-ladybug");
@@ -213,13 +280,95 @@ mod tests {
             runtime_metadata: Value::Null,
             input_schema: Value::Null,
             output_schema: Value::Null,
+            intent_tags: Vec::new(),
+            precision_floor: "ast-heuristic".to_string(),
             feature: None,
+            prerequisites: None,
+            follow_ups: None,
+            required_args: None,
+            limitations: None,
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert!(
             v.get("feature").is_none(),
             "feature=None must not add a null key to the JSON output"
         );
+    }
+
+    #[test]
+    fn b3_w3_discovery_fields_round_trip_when_set() {
+        // B3.W3 — every new affordance field round-trips when populated
+        // and is omitted from the JSON when None (skip_serializing_if).
+        let d = ToolDescriptor {
+            name: "t".into(),
+            title: "T".into(),
+            description: "T".into(),
+            category: "graph".into(),
+            authority: "read".into(),
+            stability: "stable".into(),
+            estimated_latency_ms: 1,
+            requirements: Value::Null,
+            requirements_status: "satisfied".into(),
+            public_profiles: vec![],
+            runtime_metadata: Value::Null,
+            input_schema: Value::Null,
+            output_schema: Value::Null,
+            intent_tags: Vec::new(),
+            precision_floor: "ast-heuristic".to_string(),
+            feature: None,
+            prerequisites: Some(vec!["build_graph".into()]),
+            follow_ups: Some(vec!["get_symbol_code".into()]),
+            required_args: Some(vec!["symbol_name".into()]),
+            limitations: Some(vec!["requires build_graph to have run first".into()]),
+        };
+        let v = serde_json::to_value(&d).expect("serialise");
+        assert_eq!(v["prerequisites"][0], "build_graph");
+        assert_eq!(v["follow_ups"][0], "get_symbol_code");
+        assert_eq!(v["required_args"][0], "symbol_name");
+        assert_eq!(
+            v["limitations"][0], "requires build_graph to have run first"
+        );
+    }
+
+    #[test]
+    fn b3_w3_discovery_fields_omitted_when_none() {
+        // B3.W3 — None-valued affordances must NOT emit null keys.
+        // The catalog stays byte-shape compatible with pre-B3.W3
+        // consumers (`b2_w2_catalog_parity`).
+        let d = ToolDescriptor {
+            name: "t".into(),
+            title: "T".into(),
+            description: "T".into(),
+            category: "graph".into(),
+            authority: "read".into(),
+            stability: "stable".into(),
+            estimated_latency_ms: 1,
+            requirements: Value::Null,
+            requirements_status: "satisfied".into(),
+            public_profiles: vec![],
+            runtime_metadata: Value::Null,
+            input_schema: Value::Null,
+            output_schema: Value::Null,
+            intent_tags: Vec::new(),
+            precision_floor: "ast-heuristic".to_string(),
+            feature: None,
+            prerequisites: None,
+            follow_ups: None,
+            required_args: None,
+            limitations: None,
+        };
+        let v = serde_json::to_value(&d).expect("serialise");
+        for key in [
+            "prerequisites",
+            "follow_ups",
+            "required_args",
+            "limitations",
+        ] {
+            assert!(
+                v.get(key).is_none(),
+                "field `{key}` with None must not emit a JSON key"
+            );
+        }
     }
 
     #[test]

@@ -253,6 +253,32 @@ pub enum CliCommand {
     /// against its intended release artifact. Does NOT mutate state
     /// or print to stderr.
     Identity,
+    /// B3.W2 — Progressive context routing (scaffold).
+    ///
+    /// PROPOSED: contract under review; see B3.W5.
+    ///
+    /// Best-effort parser that maps free-text arguments to an
+    /// `Intent` and prints the routing chain (which tools to call,
+    /// in what order). The scaffold does NOT actually invoke the
+    /// routed tools; the caller (human or agent) reads the chain
+    /// and issues the calls themselves. The contract is pinned by
+    /// `b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`
+    /// and `b3_w2_progressive_context::intent_tags_in_catalog_match_route_intent`.
+    ///
+    /// Parsing rules (best-effort, NOT a final contract):
+    ///   - `inspect path/to/file.rs`            -> Read
+    ///   - `inspect path/to/file.rs:10-20`      -> Read with range
+    ///   - `inspect fn foo`  / `inspect foo`    -> Locate
+    ///   - `inspect summary <scope>`            -> Summarize
+    ///   - `inspect verify <claim>`             -> Verify
+    ///   - anything else                        -> fallback to Locate
+    ///                                            with the joined args as
+    ///                                            the symbol (last-ditch).
+    Inspect {
+        /// Free-text arguments the user typed after `inspect`.
+        /// Parsed best-effort into an `Intent`; never panics.
+        intent_args: Vec<String>,
+    },
 }
 
 /// Subcomandos de `cognicode export`. v1 solo expone `assurance`; el
@@ -593,6 +619,28 @@ impl CommandExecutor {
             // presenter runs. Identity is a read-only inspection
             // surface; no execute_* function needed here.
             Some(CliCommand::Identity) => Ok(CommandOutput::Other),
+            // B3.W2 — `cognicode inspect <args...>` scaffold. The
+            // parser is best-effort (see the variant doc comment).
+            // On any input it must (a) not panic, (b) emit the
+            // PROPOSED status marker to stderr, and (c) exit 0.
+            // The actual routing chain is delegated to
+            // `crate::interface::intent::route_intent`. B3.W5 pins
+            // the final shape; for now the contract is
+            // "scaffold compiles, no panic, announces PROPOSED".
+            Some(CliCommand::Inspect { intent_args }) => {
+                let intent = parse_intent_args(intent_args);
+                let chain = crate::interface::intent::route_intent(&intent);
+                eprintln!(
+                    "PROPOSED: contract under review; see B3.W5. \
+                     intent={} next_steps={}",
+                    intent_kind_label(&intent),
+                    chain.len(),
+                );
+                for (i, step) in chain.iter().enumerate() {
+                    eprintln!("  {}. {} -> {}", i + 1, step.tool, step.args);
+                }
+                Ok(CommandOutput::Other)
+            }
             Some(CliCommand::Serve { port }) => {
                 eprintln!("Use 'cognicode-mcp' binary to start the MCP server.");
                 eprintln!("The MCP server uses stdio transport, not TCP ports.");
@@ -2211,6 +2259,17 @@ impl CommandExecutor {
             symbol: symbol.to_string(),
             usages: entries,
             total,
+            // B3.W1 — CLI mirror of the MCP `find_usages` handler: tag
+            // precision + provider so the JSON presenter emits them in
+            // the same shape as the MCP wire. The CLI text path ignores
+            // these fields; the JSON path is the one that needs them.
+            precision: crate::interface::symbol_identity::precision_floor_for_tool(
+                "find_usages",
+            ),
+            provider: crate::interface::symbol_identity::default_provider_for_tool(
+                "find_usages",
+            )
+            .to_string(),
         };
 
         // 4) Format output to stdout.
@@ -2887,6 +2946,131 @@ fn current_source_commit(workspace_root: &std::path::Path) -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .map(|s| s.trim().to_string())
         .unwrap_or_default()
+}
+
+/// B3.W2 — Best-effort parser for `cognicode inspect <args...>`.
+///
+/// English: maps free-text CLI args to a typed `Intent`.
+/// Espanol: convierte args de CLI free-text a un `Intent` tipado.
+///
+/// Politica B3.W2 (scaffold; B3.W5 pinea el contrato final):
+///   - Nunca panic. Si el input no encaja en ninguna regla,
+///     cae a `Locate` con el resto del texto como symbol.
+///   - Las reglas son deterministas y locales: no leen el
+///     workspace ni invocan tools.
+///   - El usuario puede sobreescribir la heuristica con palabras
+///     clave (`summary`, `verify`) al principio.
+fn parse_intent_args(args: &[String]) -> crate::interface::intent::Intent {
+    use crate::interface::intent::Intent;
+
+    // Empty input: default to Locate with an empty symbol; the
+    // caller will see the PROPOSED status and an empty chain.
+    // Better than panicking.
+    if args.is_empty() {
+        return Intent::Locate {
+            symbol: String::new(),
+        };
+    }
+
+    // First token drives the intent kind when it's a keyword.
+    let first = args[0].to_ascii_lowercase();
+    let rest = &args[1..];
+
+    match first.as_str() {
+        // `inspect summary <scope>` -> Summarize
+        "summary" | "summarize" => {
+            return Intent::Summarize {
+                scope: rest.join(" "),
+            };
+        }
+        // `inspect verify <claim>` -> Verify
+        "verify" => {
+            return Intent::Verify {
+                claim: if rest.is_empty() {
+                    args.join(" ")
+                } else {
+                    rest.join(" ")
+                },
+            };
+        }
+        // `inspect read <path>` / `inspect read <path:range>`
+        "read" => {
+            return parse_read(rest);
+        }
+        // `inspect locate <symbol>` (explicit) or
+        // `inspect fn <symbol>` (Rust-ish keyword).
+        "locate" | "find" | "fn" => {
+            return Intent::Locate {
+                symbol: if rest.is_empty() {
+                    String::new()
+                } else {
+                    rest.join(" ")
+                },
+            };
+        }
+        _ => {}
+    }
+
+    // No keyword matched. If the only argument looks like a path
+    // (contains '/' or '.' or has a `:LINE-LINE` range), treat it
+    // as Read. Otherwise treat it as Locate.
+    if args.len() == 1 {
+        let only = &args[0];
+        if only.contains('/') || only.contains('.') {
+            return parse_read(&[only.clone()]);
+        }
+        return Intent::Locate {
+            symbol: only.clone(),
+        };
+    }
+
+    // Multi-arg without keyword: best-effort Read if the first
+    // arg looks like a path; otherwise Locate with joined args.
+    if args[0].contains('/') || args[0].contains('.') {
+        parse_read(args)
+    } else {
+        Intent::Locate {
+            symbol: args.join(" "),
+        }
+    }
+}
+
+/// B3.W2 — Parses `Read` intent from raw args, recognizing the
+/// `path:start-end` range syntax.
+///
+/// English: extract path and optional line range from CLI args.
+/// Espanol: extrae path y rango opcional de lineas de args CLI.
+fn parse_read(args: &[String]) -> crate::interface::intent::Intent {
+    use crate::interface::intent::Intent;
+    use std::ops::Range;
+
+    let joined = args.join(" ");
+    if let Some((path, range)) = joined.split_once(':') {
+        if let Some((s, e)) = range.split_once('-') {
+            if let (Ok(start), Ok(end)) = (s.parse::<usize>(), e.parse::<usize>()) {
+                return Intent::Read {
+                    path: path.to_string(),
+                    range: Some(Range { start, end }),
+                };
+            }
+        }
+    }
+    Intent::Read {
+        path: joined,
+        range: None,
+    }
+}
+
+/// B3.W2 — Human-readable label for an `Intent` (used in the
+/// PROPOSED status line so the operator can see which variant
+/// the scaffold chose).
+fn intent_kind_label(intent: &crate::interface::intent::Intent) -> &'static str {
+    match intent {
+        crate::interface::intent::Intent::Locate { .. } => "Locate",
+        crate::interface::intent::Intent::Summarize { .. } => "Summarize",
+        crate::interface::intent::Intent::Verify { .. } => "Verify",
+        crate::interface::intent::Intent::Read { .. } => "Read",
+    }
 }
 
 #[cfg(test)]
