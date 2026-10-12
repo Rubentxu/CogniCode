@@ -265,6 +265,10 @@ mod tests {
 
     #[test]
     fn impact_field_accepts_arbitrary_json_value() {
+        // `CompositeImpactResult` is `Serialize` only (mismo principio
+        // que `ToolRef` en B3.W2 — `&'static str` no sobrevive
+        // deserializacion). Verificamos que el campo `impact`
+        // acepta cualquier shape JSON forward-compatible.
         let mut result = CompositeImpactResult::investigative();
         result.impact = Some(json!({
             "paths": [{"complete": true, "coverage": 1.0}],
@@ -272,12 +276,13 @@ mod tests {
             "total_visited": 2
         }));
         let json = serde_json::to_value(&result).expect("serializable");
-        let imp = json.get("impact").expect("impact must serialise");
+        let imp = json
+            .get("impact")
+            .expect("impact must serialise when populated");
         assert_eq!(imp["total_visited"], json!(2));
-        let back: CompositeImpactResult = serde_json::from_value(json)
-            .expect("round-trip");
-        let r = back.impact.expect("impact preserved through round-trip");
-        assert_eq!(r["total_visited"], json!(2));
+        // `verdict_refused` sigue siendo la pieza load-bearing del
+        // pin: sobrevive a un assignment directo del campo `impact`.
+        assert_eq!(json["verdict_refused"], json!(true));
     }
 
     #[test]

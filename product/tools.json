@@ -65,6 +65,65 @@
       "impact_direction_floor": "observed"
     },
     {
+      "name": "composite_impact_query",
+      "title": "Composite impact query for agents",
+      "description": "Aggregate impact paths (B4.W1), architecture observations (B4.W2), and quality findings (B4.W3) for a symbol. Adds the suggested follow-ups and prerequisites pulled from the catalog. Investigative, NOT authoritative: the result always carries verdict_refused=true with reason `composite queries return evidence, not verdicts; investigate each piece`. Use the suggested tools to investigate each piece independently.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "qualified_name": {
+            "description": "Qualified name of the symbol to investigate",
+            "type": "string"
+          },
+          "file_path": {
+            "description": "File where the symbol is defined (best-effort location)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qualified_name"
+        ],
+        "type": "object"
+      },
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.14"
+      },
+      "required_args": [
+        "qualified_name"
+      ],
+      "prerequisites": [],
+      "follow_ups": [],
+      "limitations": [
+        "investigation only; result is not a verdict",
+        "evidence fields are empty until B4.W1 / B4.W2 / B4.W3 extractors wire to the composite",
+        "follow_ups and prerequisites are pulled from the catalog by qualified_name; unknown symbols yield empty suggestions"
+      ],
+      "intent_tags": [
+        "verify",
+        "locate"
+      ]
+    },
+    {
       "name": "ask_about_code",
       "title": "Answer questions about code flow by tracing execution paths between symbols",
       "description": "Answer questions about code flow by tracing execution paths between symbols.",

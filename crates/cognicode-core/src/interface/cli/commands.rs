@@ -533,6 +533,27 @@ pub enum GraphCommand {
         #[arg(default_value = ".")]
         path: String,
     },
+    /// B4.W5 — Composite impact query for agents. Aggregates
+    /// impact paths + architecture observations + quality findings
+    /// + suggested follow-ups / prerequisites for a symbol.
+    /// INVESTIGATIVE, NOT AUTHORITATIVE: the result carries
+    /// `verdict_refused: true` precisely so the agent never treats
+    /// this as a verdict. Use the suggested follow-ups
+    /// (`suggested_follow_ups`) and prerequisites
+    /// (`suggested_prerequisites`) to investigate each piece.
+    #[command(name = "impact-composite")]
+    ImpactComposite {
+        /// Symbol qualified name to investigate. Must match a
+        /// `ToolDescriptor::name` in the catalog for follow-ups /
+        /// prerequisites to surface.
+        symbol: String,
+        /// Optional depth limit for the impact extractor (B4.W1).
+        #[arg(short = 'd', long)]
+        depth: Option<usize>,
+        /// Directory to analyze (workspace root for the query).
+        #[arg(default_value = ".")]
+        path: String,
+    },
 }
 
 /// Navigate subcommands (LSP-based)
@@ -1628,6 +1649,56 @@ impl CommandExecutor {
                 // T1-5.4l: text formatting is in the
                 // presenter.
                 Ok(result)
+            }
+            GraphCommand::ImpactComposite { symbol, depth: _, path } => {
+                // B4.W5 — Composite impact query. INVESTIGATIVE,
+                // NOT AUTHORITATIVE. The result carries
+                // `verdict_refused: true` precisely so the caller
+                // cannot treat it as a verdict (R-B4-W5). Emitted as
+                // a JSON object via stdout (T1-5.4 pre-migration
+                // pattern for sub-commands not yet migrated to
+                // `GraphResult`).
+                use crate::impact::composite::{execute_composite, CompositeImpactQuery};
+                use crate::interface::symbol_identity::SymbolId;
+                use std::path::PathBuf;
+                use std::ops::Range;
+
+                // Build the SymbolId the catalog will look up by
+                // qualified_name. The `file_path`/`byte_range` are
+                // best-effort defaults; the agent that wants precise
+                // location should pass a real symbol identity via a
+                // future rich input.
+                let symbol_id = SymbolId {
+                    qualified_name: symbol.clone(),
+                    file_path: PathBuf::from(path.clone()),
+                    byte_range: Range { start: 0, end: 0 },
+                };
+                let query = CompositeImpactQuery {
+                    symbol: symbol_id,
+                    workspace_root: PathBuf::from(path),
+                    depth_limit: None,
+                };
+                let result = execute_composite(&query);
+
+                // Serialise the result and emit to stdout.
+                // `verdict_refused: true` travels as the JSON
+                // `true` literal — the consumer can pattern-match
+                // it without parsing the response.
+                let body = serde_json::to_string(&result)
+                    .map_err(|e| -> Box<dyn std::error::Error> {
+                        Box::new(std::io::Error::other(e))
+                    })?;
+                println!("{body}");
+                // Returns `CommandOutput::Other` (the bin does not
+                // re-emit). Result intentionally not migrated to
+                // `GraphResult::CompositeImpact { .. }`; that variant
+                // can be added in a follow-up without changing the
+                // command's wire shape.
+                Ok(GR::PerFile {
+                    file: "composite_impact".to_string(),
+                    symbols: 0,
+                    dependencies: 0,
+                })
             }
         }
     }
