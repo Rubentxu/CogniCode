@@ -1,6 +1,6 @@
 # B4 — Impact, Architecture & Quality Intelligence (v0.101.14)
 
-> **Estado**: PENDING. Desbloqueado por B3 (semantic identity + content-based invalidation).
+> **Estado**: CLOSED 2026-10-12 (v0.101.14 released).
 > Detalle: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](../docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md#bloque-b4--impact-architecture--quality-intelligence).
 
 ## Valor
@@ -84,8 +84,36 @@ planifican refactorizaciones.
 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
-| _pendiente_ | B4.W1 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B4.W2 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B4.W3 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B4.W4 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B4.W5 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B4.W1 | `49d8c25` | ImpactEdge con direction + provenance + SymbolId; 15 tests. Cierra AAT-B4-01 (grafo parcial) + AAT-B4-03 (heuristico no determinista). Catalog añade `impact_direction_floor` en 5 impact tools. |
+| 2026-10-12 | B4.W2 | `aba10c7` | ArchitectureDiagnostic read-only; catalog marca `gate_authority: false` y `produces_observations_only: true`. 11 tests. Cierra UAT-B4-02. |
+| 2026-10-12 | B4.W3 | `37fc65a` | Finding normalizado con category/severity/confidence/language; language_scope en 5 quality tools; 10 tests. Cierra R-B4-W3 (no equivalencia falsa entre lenguajes). |
+| 2026-10-12 | B4.W4 | `a1204e9` | 3 extractores aditivos en assurance_export con ExtractionOutcome honest. 13 tests. Wire bump top-level al release. |
+| 2026-10-12 | B4.W5 | `f3cc51a` | CompositeImpactResult con verdict_refused: true; nueva tool composite_impact_query. 10 tests. |
+| 2026-10-12 | post-merge | `64c9500`, `6a33aa7`, `8204625`, `c305392`, `d2b824d`, `9da80c3`, `32c4853` | clippy + fmt + capabilities + catalog output_schema + DTO + baseline 0 entries + severity array. |
+| 2026-10-12 | release | `cb98593` | bump 0.101.13 → 0.101.14; golden CBOR regen (sha `ff35e199408b8ecf...`). |
+| 2026-10-12 | veredicto | `cb98593` | per MERGE-GATE-BYPASS-POLICY §4. |
+| 2026-10-12 | tag | v0.101.14 | anotado + pushed + GitHub Release con 3 tarballs. |
+
+### B4 cierre
+
+  - **Tag**: v0.101.14 anotado y pusheado a origin.
+  - **GitHub Release**: `v0.101.14 — B4 Impact, Architecture & Quality
+    Intelligence` con 3 tarballs (`cogh`, `cognicode`, `cognicode-mcp`)
+    y sus SHA256.
+  - **Veredicto**: `docs/roadmap/production-ready/veredictos/2026-10-12-b4-release-v0.101.14.md`
+    per MERGE-GATE-BYPASS-POLICY §4.
+  - **Gate**: fmt + clippy + lib+tests + doctests + known_failures
+    todos verdes por separado. test-full rc=1 por OOM en el
+    release build (no del codigo; binaries staged y SHA256
+    verificados).
+  - **Ratchet**: `core_gate_coverage_contract` cuenta pineada a
+    58; ANCHOR_SUITES incluye b4_w1..b4_w5.
+  - **Pendiente explicito**:
+      - AAT-B4-04 (cross-build con `pipelinek-assurance`
+        validando el envelope enriquecido) requiere el consumer
+        Kotlin; out of scope para esta release.
+      - B4.W1..W4 mantienen aditividad; el wire bump
+        top-level del envelope (relations, observations,
+        findings) llega al siguiente bloque en lockstep con
+        el consumer update si la version anterior no los
+        conoce.
