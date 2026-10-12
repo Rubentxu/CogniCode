@@ -180,6 +180,11 @@ pub enum CommandOutput {
     /// Antes de T1-5.6a el bin recibía `Other`; el presenter nuevo
     /// emite text y JSON desde esta variante.
     Navigate(NavigateResult),
+    /// B4.W2 — `cogh check-architecture`. Read-only diagnostic surface:
+    /// observations with evidence, never a gate. The catalog declares
+    /// `gate_authority: false` + `produces_observations_only: true` so an
+    /// MCP client can verify the contract without reading the prompt.
+    Architecture(crate::architecture::ArchitectureDiagnostic),
     /// Sub-comando no migrado a `*Result` aún. El texto ya fue
     /// emitido internamente por `execute_*`; el bin no hace nada.
     Other,

@@ -183,10 +183,18 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // ImpactPath, ImpactResult, ImpactLimits, build_impact_result).
     // The 56 is the on-disk count at the moment this assertion was
     // bumped; any further WU adds another file and bumps again.
+    // 56 -> 57 with b4_w4_evidence_export_enriched (B4.W4, additive
+    // assurance-evidence/v1 ports for impact/architecture/quality findings).
+    // The 57 is the on-disk count at the moment this assertion was
+    // bumped; any further WU adds another file and bumps again.
+    // 57 -> 58 with b4_w5_composite_impact_query (B4.W5, composite
+    // impact query for agents, evidence not verdict).
+    // The 58 is the on-disk count at the moment this assertion was
+    // bumped; any further WU adds another file and bumps again.
     assert_eq!(
         suites.len(),
-        56,
-        "expected exactly 56 cognicode-core integration suites, found {}. \
+        58,
+        "expected exactly 58 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -312,6 +320,8 @@ const ANCHOR_SUITES: &[&str] = &[
     "b4_w1_impact_graph",
     "b4_w2_architecture_diagnostic",
     "b4_w3_quality_findings",
+    "b4_w4_evidence_export_enriched",
+    "b4_w5_composite_impact_query",
     "behavior_authority_e2e",
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
