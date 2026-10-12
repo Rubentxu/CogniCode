@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use super::envelope::{
     API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
-    KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MEDIA_TYPE_CBOR, ManifestSection, ProducerInfo,
-    Provenance, Relation, Signal, SourceAnchor, SubjectRef,
+    Finding, KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MEDIA_TYPE_CBOR, ManifestSection,
+    Observation, ProducerInfo, Provenance, Relation, Signal, SourceAnchor, SubjectRef,
 };
 use super::serialize::{SerializeError, encode_to_cbor_with_digest};
 
@@ -633,4 +633,160 @@ pub fn export_to_file(
 /// Devuelve el media type que este exporter publica (para CLI/headers).
 pub fn cbor_media_type() -> &'static str {
     MEDIA_TYPE_CBOR
+}
+
+// =============================================================================
+// B4.W4 — Ports de assurance-export enriquecido (impact / architecture /
+// quality findings). ADDITIVO sobre B2.W4: no rompe el shape del envelope
+// vigente ni la golden CBOR. El bump real del wire (`observations` y
+// `findings` como top-level fields) llega al release B4 con la versión
+// bumped del workspace y la actualización del consumer en lockstep.
+// =============================================================================
+
+/// Accumulator para `Relation`s drenadas por `extract_impact_relations`.
+/// Tipo alias para mantener la superficie simétrica con los extractores
+/// B2.W4 (`Vec<Entity>` / `Vec<Fact>`). El parámetro de salida se pasa
+/// por `&mut` para que el extractor pueda drenar al vuelo sin reasignar.
+pub type RelationAccumulator = Vec<Relation>;
+
+/// Accumulator para `Observation`s arquitectónicas (B4.W2). Misma forma.
+pub type ObservationAccumulator = Vec<Observation>;
+
+/// Accumulator para `Finding`s de calidad (B4.W3). Misma forma.
+pub type FindingAccumulator = Vec<Finding>;
+
+/// Resultado de un extractor B4.W4. Espejo a nivel de extractor del
+/// `CapabilityCompleteness` del envelope: `Complete` cuando el
+/// accumulator quedó exhaustivo, `Partial { gaps }` cuando la fuente
+/// tenía más items que `max` y se truncó honestamente, `Unsupported {
+/// capability_kind }` cuando la capability aún no tiene módulo que la
+/// respalde en este commit (B4.W1/W2/W3 no fusionados todavía en la
+/// rama de release).
+///
+/// `Unsupported` lleva siempre `capability_kind` no-vacío por contrato:
+/// el caller lo usa para discriminar "todavía no expuesto" de "se
+/// truncó", y un motivo vacío haría indistinguibles los dos casos.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtractionOutcome {
+    Complete,
+    Partial { gaps: Vec<String> },
+    Unsupported { capability_kind: &'static str },
+}
+
+impl ExtractionOutcome {
+    /// Nombre estable del variante, paralelo a `CapabilityCompleteness::kind_name`.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial { .. } => "partial",
+            Self::Unsupported { .. } => "unsupported",
+        }
+    }
+
+    /// `true` si el extractor aportó items utilizables (Complete o
+    /// Partial). Útil para que el caller decida si anexar a `relations`
+    /// / `observations` / `findings` en el envelope.
+    pub fn is_producing(&self) -> bool {
+        matches!(self, Self::Complete | Self::Partial { .. })
+    }
+}
+
+/// `capability_kind` estable para el extractor de relaciones de impacto
+/// mientras B4.W1 (`crates/cognicode-core/src/impact/`) no está
+/// fusionado en la rama de release. Es la cadena que verá el consumer
+/// (vía `ExtractionOutcome::Unsupported` propagado por la capa de
+/// caller, mapeada después a un `CapabilityGap` con razón
+/// `UnsupportedProduced(<esto>)` al integrarse).
+pub const CAPABILITY_KIND_IMPACT_RELATIONS: &str = "impact-relations:envelope-v2";
+
+/// `capability_kind` estable para el extractor de observaciones de
+/// arquitectura mientras B4.W2 (`architecture::diagnostic`) no está
+/// fusionado en la rama de release.
+pub const CAPABILITY_KIND_ARCHITECTURE_OBSERVATIONS: &str = "architecture-observations:envelope-v2";
+
+/// `capability_kind` estable para el extractor de hallazgos de calidad
+/// mientras B4.W3 (`findings::*`) no está fusionado en la rama de
+/// release.
+pub const CAPABILITY_KIND_QUALITY_FINDINGS: &str = "quality-findings:envelope-v2";
+
+/// Drena `ImpactEdge`s (B4.W1) al accumulator, honrando el límite
+/// `max` (simétrico a `MAX_COLLECTION_SIZE = 1024`).
+///
+/// **Estado B4.W4 (este commit)**: B4.W1 no está fusionado en la rama
+/// de release, así que el extractor no encuentra datos. Devuelve
+/// `Unsupported` con `capability_kind = CAPABILITY_KIND_IMPACT_RELATIONS`
+/// y deja el accumulator intacto. Si el caller pre-pobló el accumulator
+/// con más de `max` items (escenario de integración cuando B4.W1
+/// aterrice y exporte un set grande), se trunca al límite y se
+/// devuelve `Partial` con el gap honesto. Esa rama es la que B2.W4
+/// pineó como "symmetric limits".
+///
+/// Cuando B4.W1 se fusione, este extractor se reescribe para:
+/// 1. Iterar `crates/cognicode-core::impact::iter_impact_edges()`.
+/// 2. Mapear cada `ImpactEdge` a `Relation { from, to, kind, evidence }`.
+/// 3. Misma regla de truncado.
+///
+/// El `capability_kind` permanece estable para que el consumer pueda
+/// identificar el motivo de `Unsupported` byte-a-byte sin re-codificar
+/// la lógica del parser.
+pub fn extract_impact_relations(
+    out: &mut RelationAccumulator,
+    max: usize,
+) -> ExtractionOutcome {
+    if out.len() > max {
+        out.truncate(max);
+        return ExtractionOutcome::Partial {
+            gaps: vec![format!(
+                "ImpactAccumulator truncado a max={max} (simetrico a \
+                 MAX_COLLECTION_SIZE={MAX_COLLECTION_SIZE})"
+            )],
+        };
+    }
+    ExtractionOutcome::Unsupported {
+        capability_kind: CAPABILITY_KIND_IMPACT_RELATIONS,
+    }
+}
+
+/// Drena `ArchitectureObservation`s (B4.W2) al accumulator, honrando
+/// `max`. Misma simetría que `extract_impact_relations`. B4.W2 todavía
+/// no está fusionado en la rama de release, así que devuelve
+/// `Unsupported` hasta el release.
+pub fn extract_architecture_observations(
+    out: &mut ObservationAccumulator,
+    max: usize,
+) -> ExtractionOutcome {
+    if out.len() > max {
+        out.truncate(max);
+        return ExtractionOutcome::Partial {
+            gaps: vec![format!(
+                "ObservationAccumulator truncado a max={max} (simetrico a \
+                 MAX_COLLECTION_SIZE={MAX_COLLECTION_SIZE})"
+            )],
+        };
+    }
+    ExtractionOutcome::Unsupported {
+        capability_kind: CAPABILITY_KIND_ARCHITECTURE_OBSERVATIONS,
+    }
+}
+
+/// Drena `Finding`s de calidad (B4.W3) al accumulator, honrando `max`.
+/// Misma simetría que los otros dos extractores. B4.W3 todavía no está
+/// fusionado en la rama de release, así que devuelve `Unsupported`
+/// hasta el release.
+pub fn extract_quality_findings(
+    out: &mut FindingAccumulator,
+    max: usize,
+) -> ExtractionOutcome {
+    if out.len() > max {
+        out.truncate(max);
+        return ExtractionOutcome::Partial {
+            gaps: vec![format!(
+                "FindingAccumulator truncado a max={max} (simetrico a \
+                 MAX_COLLECTION_SIZE={MAX_COLLECTION_SIZE})"
+            )],
+        };
+    }
+    ExtractionOutcome::Unsupported {
+        capability_kind: CAPABILITY_KIND_QUALITY_FINDINGS,
+    }
 }

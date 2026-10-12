@@ -318,3 +318,60 @@ pub struct CapabilityGap {
     // detail se emite aunque sea null: misma razon que Entity.layer.
     pub detail: Option<String>,
 }
+
+// ----- B4.W4 ---- nuevas DTOs para el schema bump --------------------------
+
+/// Diagnóstico de arquitectura (B4.W2 adapter). Una observación es la
+/// materialización honesta de un `ArchitectureConstraint` evaluado:
+/// lleva la entidad (módulo/símbolo) sobre la que aplica, el tipo de
+/// observación (`layer-violation`, `forbidden-dependency`, etc.) y una
+/// referencia opcional al evidence (fact / relation) que la sostiene.
+///
+/// Para B4.W4 (commit W4, módulo `architecture::diagnostic` aún no
+/// escrito) este tipo define el shape del **productor**; el bump real
+/// del wire (campo top-level `observations` en el envelope) llega al
+/// release B4 en lockstep con la actualización del consumer
+/// `pipelinek-assurance`. Hasta entonces, ningún extractor rellena
+/// `Vec<Observation>` en el envelope, así que el SHA-256 del golden
+/// CBOR no cambia.
+///
+/// `rename_all = "camelCase"` es OBLIGATORIO: la shape del campo en el
+/// consumer (futuro `CogniCodeEvidenceExportDto.observations`) usa los
+/// nombres Kotlin exactos (`entityRef`, `evidenceRef`). El cambio de
+/// nombre aquí rompe M-D01 silenciosamente.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Observation {
+    pub id: String,
+    pub entity_ref: String,
+    pub kind: String,
+    pub description: String,
+    pub evidence_ref: Option<String>,
+    pub authority: String,
+}
+
+/// Hallazgo de calidad (B4.W3 adapter). Normaliza lo que las heurísticas
+/// y los análisis (`solid_audit`, complejidad ciclomática, parámetros
+/// largos, god functions) emiten. La forma del payload (categoría +
+/// severidad + confianza + regla + origen + location) viene dictada por
+/// el goal doc del B4 (sección "B4.W3 — Calidad y hallazgos"):
+/// "category + severidad + confianza + source + location + regla +
+/// procedencia". NO pretende ser equivalente cross-language: cada
+/// analizador emite dentro de su capacidad, y el extractor declara qué
+/// capacidad cubrió en `capability_completeness["findings"]`.
+///
+/// Igual que `Observation`, el bump real del wire (campo top-level
+/// `findings` en el envelope) llega al release B4 con el consumer
+/// actualizado. Ningún extractor rellena el campo en este commit.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Finding {
+    pub id: String,
+    pub entity_ref: String,
+    pub category: String,
+    pub severity: String,
+    pub confidence: String,
+    pub rule_ref: String,
+    pub location: Option<String>,
+    pub origin: String,
+}

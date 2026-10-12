@@ -38,12 +38,16 @@ pub mod workspace_extractor;
 pub use digest::{digest_of, sha256_hex, with_declared_digest};
 pub use envelope::{
     API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
-    KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MAX_INPUT_BYTES, MAX_NESTING_DEPTH,
-    MAX_STRING_LENGTH, MEDIA_TYPE_CBOR, MEDIA_TYPE_JSON, ManifestSection, ProducerInfo, Provenance,
-    Relation, Signal, SourceAnchor, SubjectRef,
+    Finding, KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MAX_INPUT_BYTES, MAX_NESTING_DEPTH,
+    MAX_STRING_LENGTH, MEDIA_TYPE_CBOR, MEDIA_TYPE_JSON, ManifestSection, Observation,
+    ProducerInfo, Provenance, Relation, Signal, SourceAnchor, SubjectRef,
 };
 pub use serialize::{
     SerializeError, decode_from_cbor, decode_from_json, encode_to_cbor, encode_to_cbor_with_digest,
     encode_to_json, encode_to_json_with_digest,
 };
-pub use workspace_extractor::{ExtractionCapabilities, WorkspaceInfo, extract_from_workspace};
+pub use workspace_extractor::{
+    ExtractionCapabilities, ExtractionOutcome, FindingAccumulator, ObservationAccumulator,
+    RelationAccumulator, WorkspaceInfo, extract_architecture_observations, extract_from_workspace,
+    extract_impact_relations, extract_quality_findings,
+};
