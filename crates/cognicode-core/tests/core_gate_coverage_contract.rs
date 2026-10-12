@@ -159,13 +159,19 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // b2_w4_export_invariants (B2.W4). All four are anchor suites:
     // they pin contracts on a struct / catalog that no workflow names
     // and no script exercises, so a silent rename or removal would not
-    // break anything else. The 49 is the on-disk count at the moment
-    // this assertion was bumped; any further WU adds another file
-    // and bumps again.
+    // break anything else.
+    // 49 -> 53 with each B3 WU: b3_w1_semantic_navigation (B3.W1,
+    // symbol identity + precision/provider discriminator),
+    // b3_w2_progressive_context (B3.W2, intent routing),
+    // b3_w3_agent_discovery (B3.W3, catalog affordances),
+    // b3_w4_incremental_analysis (B3.W4, blake3 content-based
+    // invalidation). The 53 is the on-disk count at the moment this
+    // assertion was bumped; any further WU adds another file and
+    // bumps again.
     assert_eq!(
         suites.len(),
-        49,
-        "expected exactly 49 cognicode-core integration suites, found {}. \
+        53,
+        "expected exactly 53 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -284,6 +290,10 @@ const ANCHOR_SUITES: &[&str] = &[
     "b2_w2_catalog_parity",
     "b2_w3_output_schema_contract",
     "b2_w4_export_invariants",
+    "b3_w1_semantic_navigation",
+    "b3_w2_progressive_context",
+    "b3_w3_agent_discovery",
+    "b3_w4_incremental_analysis",
     "behavior_authority_e2e",
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
