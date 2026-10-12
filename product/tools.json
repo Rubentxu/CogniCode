@@ -87,6 +87,48 @@
         ],
         "type": "object"
       },
+      "output_schema": {
+        "properties": {
+          "verdict_refused": {
+            "description": "Always true; the composite result is evidence, not a verdict",
+            "type": "boolean"
+          },
+          "verdict_refused_reason": {
+            "description": "Canonical reason string pinned in the source",
+            "type": "string"
+          },
+          "impact": {
+            "description": "B4.W1 ImpactResult envelope, or null when B4.W1 not wired",
+            "type": ["object", "null"]
+          },
+          "architecture": {
+            "description": "B4.W2 ArchitectureDiagnostic envelope, or null when not wired",
+            "type": ["object", "null"]
+          },
+          "findings": {
+            "description": "B4.W3 Finding list (empty when not wired)",
+            "type": "array"
+          },
+          "suggested_follow_ups": {
+            "description": "ToolRef list pulled from ToolDescriptor.follow_ups",
+            "type": "array"
+          },
+          "suggested_prerequisites": {
+            "description": "ToolRef list pulled from ToolDescriptor.prerequisites",
+            "type": "array"
+          }
+        },
+        "required": [
+          "verdict_refused",
+          "verdict_refused_reason",
+          "impact",
+          "architecture",
+          "findings",
+          "suggested_follow_ups",
+          "suggested_prerequisites"
+        ],
+        "type": "object"
+      },
       "requirements": {
         "graph": false,
         "persistence": false,
