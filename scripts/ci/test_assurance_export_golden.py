@@ -98,6 +98,7 @@ def workspace_version() -> str:
 # SHA-256 pinned del golden. Cambia con cada regeneracion intencionada
 # (refactor del encoding del producer o bump de producer version).
 # Anteriores:
+#   - 1fd8f7fcb5854bdcf0d036be6da6238fe122582da4ba8974d2f9d5e43756f9be (v0.101.13, regenerate 2026-10-12 al bump 0.101.12 → 0.101.13; cierre B3)
 #   - dfb39aa7a8efe888df2875812d845e2380b73b5cc1f2b59d354b40a29d618852 (v0.101.12, regenerate 2026-10-12 al bump 0.101.11 → 0.101.12; cierre B2)
 #   - 464ba947472a0d5b824bb9843c4119a90a85db7259e21ca3b5b669b601b22d60 (v0.101.11, B2.W4 2026-10-11: producer enforces MAX_COLLECTION_SIZE — CogniCode workspace tiene 4681 .rs > 1024, entities y facts se truncan con Partial { gaps } honesto. AAT-B2-01 cumplido: el envelope ya no excede la cota del consumer.)
 #   - 5cc8fdf3ed36bc4d3bdb615ac85530f901e23991a9524c2f7d928395c37350d5 (v0.101.11, regenerate 2026-10-11 al bump 0.101.10 → 0.101.11)
@@ -106,7 +107,7 @@ def workspace_version() -> str:
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
 GOLDEN_SHA256 = (
-    "dfb39aa7a8efe888df2875812d845e2380b73b5cc1f2b59d354b40a29d618852"
+    "1fd8f7fcb5854bdcf0d036be6da6238fe122582da4ba8974d2f9d5e43756f9be"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
