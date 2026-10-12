@@ -271,9 +271,7 @@ pub enum CliCommand {
     ///   - `inspect fn foo`  / `inspect foo`    -> Locate
     ///   - `inspect summary <scope>`            -> Summarize
     ///   - `inspect verify <claim>`             -> Verify
-    ///   - anything else                        -> fallback to Locate
-    ///   -                                          with the joined args as
-    ///   -                                          the symbol (last-ditch).
+    ///   - anything else                        -> Locate with joined args.
     Inspect {
         /// Free-text arguments the user typed after `inspect`.
         /// Parsed best-effort into an `Intent`; never panics.
