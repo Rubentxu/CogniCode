@@ -72,6 +72,8 @@ mod release_test_support;
 mod rollback_journal;
 #[path = "../cmd/skill.rs"]
 mod skill;
+#[path = "../skills.rs"]
+mod skills;
 #[path = "../cmd/tracker.rs"]
 mod tracker;
 #[path = "../cmd/version.rs"]
@@ -96,12 +98,16 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Install a plugin at a specific version
+    /// Install a plugin at a specific version, or self-install cogh
+    /// (B6.W3). When `plugin` is omitted, `--version` controls the
+    /// cogh lifecycle and `--apply` is required to actually write.
     Install {
-        /// Plugin name (e.g. mcp-server, opencode)
-        plugin: String,
-        /// Version ref ("latest" or e.g. 0.96.0). Governs the core bundle:
-        /// the release is resolved remotely and its BundleManifest installed.
+        /// Plugin name (e.g. mcp-server, opencode). Optional in B6.W3:
+        /// when omitted, the install is the self-install surface
+        /// driven by `--version` / `--rollback` / `--apply`.
+        plugin: Option<String>,
+        /// Version ref ("latest" or e.g. 0.96.0). For the self-install
+        /// surface (no plugin) this is the cogh version to install.
         #[arg(long, default_value = "latest")]
         version: String,
         /// Configure one or more IDEs (opencode, zcode, claude, codex, all)
@@ -119,6 +125,15 @@ pub enum Command {
         /// Read releases.json from this directory instead of hitting the API
         #[arg(long)]
         staging: Option<PathBuf>,
+        /// B6.W3: rollback cogh to a previously pinned version.
+        /// Mutually exclusive with the plugin install path.
+        #[arg(long)]
+        rollback: Option<String>,
+        /// B6.W3: actually write the install. Without this flag the
+        /// self-install surface prints a JSON `InstallPlan` for review
+        /// and exits 0 (no filesystem mutation).
+        #[arg(long, default_value_t = false)]
+        apply: bool,
     },
     /// Uninstall a plugin version
     Uninstall {
@@ -227,6 +242,12 @@ pub enum Command {
         #[command(subcommand)]
         action: SkillAction,
     },
+    /// List agent-first skills from product/skills.json (B6.W4)
+    Skills {
+        /// Emit a JSON array instead of the plain table
+        #[arg(long)]
+        json: bool,
+    },
     /// IDE-specific operations (detect, install)
     Ide {
         #[command(subcommand)]
@@ -325,6 +346,79 @@ fn run_setup(
     finish_setup(home, &resolved.version, &resolved.tag, profile)
 }
 
+/// B6.W3 — `cogh install --version X` / `--rollback Y`.
+///
+/// Self-install surface for the `cogh` binary itself. The plan is
+/// always printed to stdout (JSON when `--apply` is not set, JSON
+/// outcome when it is). Without `--apply` we never touch the
+/// filesystem: this lets a UI preview the destination and only
+/// commit when the user confirms.
+fn run_self_install(
+    home: &CognicodeHome,
+    version: &str,
+    rollback: Option<&str>,
+    apply: bool,
+) -> anyhow::Result<()> {
+    use cognicode_cli::lifecycle::{
+        InstallAction, execute_install, plan_install, plan_rollback,
+    };
+
+    let plan = if let Some(target) = rollback {
+        plan_rollback(&home.root, target)
+            .map_err(|e| anyhow::anyhow!("lifecycle plan failed: {e}"))?
+    } else {
+        plan_install(version)
+            .map_err(|e| anyhow::anyhow!("lifecycle plan failed: {e}"))?
+    };
+
+    if !apply {
+        // Dry-run envelope. Always exit 0; the plan is the result.
+        let envelope = serde_json::json!({
+            "dry_run": true,
+            "plan": plan,
+            "action": if rollback.is_some() {
+                serde_json::json!(InstallAction::Rollback {
+                    from: String::new(),
+                    to: plan.version.clone(),
+                })
+            } else {
+                serde_json::json!(InstallAction::Install)
+            },
+            "message": "re-run with --apply to perform the install",
+        });
+        println!("{}", serde_json::to_string_pretty(&envelope)?);
+        return Ok(());
+    }
+
+    // Apply path: copy the current `cogh` binary to the planned
+    // install path, then write the tracker so a subsequent
+    // `cogh current` reflects the new pin. The source binary is
+    // resolved from `current_exe()`; under `cargo test` that
+    // resolves to the integration-test binary, which is fine for
+    // subprocess coverage.
+    let source = std::env::current_exe().map_err(|e| {
+        anyhow::anyhow!("could not resolve current cogh binary for self-install: {e}")
+    })?;
+    let mut outcome = execute_install(&plan, &source)
+        .map_err(|e| anyhow::anyhow!("lifecycle apply failed: {e}"))?;
+    if rollback.is_some() {
+        outcome.action = InstallAction::Rollback {
+            from: String::new(),
+            to: plan.version.clone(),
+        };
+    }
+    if let Some(parent) = home.tracker_version().parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&home.tracker_version(), plan.version.as_bytes())?;
+    let envelope = serde_json::json!({
+        "dry_run": false,
+        "outcome": outcome,
+    });
+    println!("{}", serde_json::to_string_pretty(&envelope)?);
+    Ok(())
+}
+
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
@@ -355,7 +449,24 @@ fn main() -> anyhow::Result<()> {
             channel,
             base_url,
             staging,
+            rollback,
+            apply,
         } => {
+            // B6.W3: the plugin positional is now optional. When it is
+            // absent, the install is the self-install surface
+            // (`cogh install --version X` / `--rollback Y`), driven by
+            // the new `cognicode_cli::lifecycle` module. When it is
+            // present, the legacy plugin install path runs unchanged.
+            let plugin_missing = plugin.is_none();
+            if plugin_missing || rollback.is_some() {
+                return run_self_install(
+                    &home,
+                    version.as_str(),
+                    rollback.as_deref(),
+                    apply,
+                );
+            }
+            let plugin = plugin.expect("plugin is required on the legacy path");
             // e87.1: the requested version governs the core bundle. Resolve
             // the published release remotely (or from --staging), stage its
             // BundleManifest, then run the atomic install. A remote failure
@@ -456,6 +567,8 @@ fn main() -> anyhow::Result<()> {
         Command::Skill { action } => match action {
             SkillAction::Validate { path } => skill::cmd_skill_validate(&path),
         },
+        Command::Skills { json } => skills::cmd_skills_list(json)
+            .map_err(|e| anyhow::anyhow!("{e}")),
         Command::Ide { action } => match action {
             IdeAction::Detect => ide::cmd_ide_detect(),
             IdeAction::Install {

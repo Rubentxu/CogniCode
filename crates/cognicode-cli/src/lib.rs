@@ -19,4 +19,6 @@
 pub use cognicode_core;
 
 pub mod identity;
+pub mod lifecycle;
 pub mod presenter;
+pub mod skills;

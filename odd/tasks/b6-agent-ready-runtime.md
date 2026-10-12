@@ -89,9 +89,9 @@ sin depender de Explorer ni de servicios externos obligatorios.
 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
-| _pendiente_ | B6.W1 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B6.W1 | _pendiente_ | Robustez MCP verificada contra `cognicode-mcp` real (subprocess stdio): framing JSON-only stdout, init+shutdown rc=0 sin huérfanos, paginación cursors reales, timeouts fail-fast (<5s vs techo 60s), sesiones paralelas sin cruce, errores estructurados. NO daemon: `ServerLimits`/`ServerDiagnostics` viven en `crates/cognicode-core/src/interface/mcp/robustness.rs` (mismo proceso). 4 unit tests + 8 integration. `core_gate_coverage_contract` ANCHOR_SUITES += b6_w1_mcp_robustness. |
 | _pendiente_ | B6.W2 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B6.W3 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B6.W3 | _pendiente_ | lifecycle.rs + cogh install --version/--rollback + tests + catalog |
 | _pendiente_ | B6.W4 | _pendiente_ | _pendiente_ |
 | _pendiente_ | B6.W5 | _pendiente_ | _pendiente_ |
 | _pendiente_ | B6.W6 | _pendiente_ | _pendiente_ |

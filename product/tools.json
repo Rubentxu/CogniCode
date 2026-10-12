@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 77,
+  "runtime_tool_count": 81,
   "tools": [
     {
       "name": "analyze_impact",
@@ -5426,6 +5426,103 @@
       "limitations": [
         "requires evidence-cli-ladybug feature",
         "substring match"
+      ]
+    },
+    {
+      "name": "cogh",
+      "title": "cogh — CogniCode version manager CLI (B6.W3 lifecycle)",
+      "description": "User-facing lifecycle for the cogh binary itself: clean install, update, version pinning, IDE compatibility, doctor, rollback. A new user obtains a first real query without compiling CogniCode or reading internal repo instructions. The install / update / rollback surface prints a JSON plan and only writes when --apply is supplied.",
+      "category": "lifecycle",
+      "authority": "mutating",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "version": {
+            "description": "Version to install or pin (e.g. 0.101.15). Use `latest` to resolve the current stable release.",
+            "type": "string"
+          },
+          "rollback": {
+            "description": "Rollback cogh to a previously pinned version. Mutually exclusive with `version`.",
+            "type": "string"
+          },
+          "apply": {
+            "description": "When true, perform the install/rollback. When false (default), only print the plan as JSON. The user must re-run with --apply to actually write.",
+            "type": "boolean"
+          },
+          "home": {
+            "description": "Override COGNICODE_HOME (defaults to ~/.cognicode).",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "output_schema": {
+        "properties": {
+          "dry_run": {
+            "description": "True when --apply was not set; the envelope is a plan, not an outcome.",
+            "type": "boolean"
+          },
+          "plan": {
+            "description": "InstallPlan: version, install_path, bin_paths, shell_completion_path. Present on dry-run.",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "InstallOutcome: action, install_path, sha256, doctor_pass. Present after --apply.",
+            "type": "object"
+          },
+          "action": {
+            "description": "InstallAction discriminator: install | update | rollback.",
+            "type": "object"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dry_run"
+        ],
+        "type": "object"
+      },
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 50,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "mutating",
+        "category": "lifecycle",
+        "estimated_latency_ms": 50,
+        "mutates_workspace": true,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.16"
+      },
+      "install_instructions": "curl -fsSL https://raw.githubusercontent.com/cognicode/cogh/main/install.sh | bash -s -- --version 0.101.15",
+      "version_check_command": "cogh --version",
+      "required_args": [],
+      "prerequisites": [],
+      "follow_ups": [
+        "cogh doctor",
+        "cogh current"
+      ],
+      "limitations": [
+        "user-facing self-install only; the plugin install surface (cogh install <plugin>) is unchanged",
+        "dry-run is the default; --apply is required to mutate the filesystem",
+        "rollback requires a prior tracker pin to be informative (otherwise `from` is empty)"
+      ],
+      "ide_compatibility": [
+        "cursor",
+        "vscode",
+        "neovim"
       ]
     }
   ]
