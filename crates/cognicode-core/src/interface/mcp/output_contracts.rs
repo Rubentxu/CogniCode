@@ -99,7 +99,10 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("project_insights", schema_of::<ProjectInsightsOutput>());
     m.insert("project_overview", schema_of::<ProjectOverviewOutput>());
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
-    m.insert("composite_impact_query", schema_of::<CompositeImpactOutput>());
+    m.insert(
+        "composite_impact_query",
+        schema_of::<CompositeImpactOutput>(),
+    );
     m
 }
 
