@@ -11,6 +11,7 @@ pub mod parameter_aliases;
 pub mod prompts;
 pub mod resources;
 pub mod rmcp_adapter;
+pub mod robustness;
 pub mod schemas;
 pub mod security;
 pub mod status;

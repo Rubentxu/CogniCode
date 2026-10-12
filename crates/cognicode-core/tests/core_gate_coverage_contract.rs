@@ -212,10 +212,23 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // Refused, AAT-B5-04). The 62 is the on-disk count at the
     // moment this assertion was bumped; any further WU adds
     // another file and bumps again.
+    // 62 -> 63 with b6_w1_mcp_robustness (B6.W1, MCP server
+    // robustness: stdio framing is JSON-only, clean shutdown
+    // leaves no orphan PID, pagination cursors are real offsets,
+    // dispatch timeouts fire promptly, parallel sessions do not
+    // cross, structured errors on malformed calls).
+    // 63 -> 66 with the remaining B6 WU test files already on
+    // disk (b6_w5_distribution_certification, b6_w6_architectural_close)
+    // and b6_w2_perf_budgets (B6.W2, rendimiento reproducible —
+    // cold/hot/incremental/search/navigation/graphs sobre corpus
+    // pequeño/mediano/grande; presupuestos en el test, medición
+    // en benches/b6_w2_reproducible_perf.rs). The 66 is the
+    // on-disk count at the moment this assertion was bumped; any
+    // further WU adds another file and bumps again.
     assert_eq!(
         suites.len(),
-        62,
-        "expected exactly 62 cognicode-core integration suites, found {}. \
+        66,
+        "expected exactly 66 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -347,6 +360,10 @@ const ANCHOR_SUITES: &[&str] = &[
     "b5_w2_preview_verifiable",
     "b5_w3_apply_with_authority",
     "b5_w4_post_apply_revalidation",
+    "b6_w1_mcp_robustness",
+    "b6_w2_perf_budgets",
+    "b6_w5_distribution_certification",
+    "b6_w6_architectural_close",
     "behavior_authority_e2e",
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
