@@ -33,7 +33,18 @@ use std::path::PathBuf;
 use crate::interface::symbol_identity::SymbolId;
 
 #[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    schemars::JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
@@ -209,7 +220,13 @@ mod tests {
             skip_reasons: reasons.clone(),
         };
         assert_eq!(diag.skip_reasons.len(), 2);
-        assert_eq!(diag.skip_reasons.get("rule_a"), Some(&"disabled".to_string()));
-        assert_eq!(diag.skip_reasons.get("rule_b"), Some(&"no evidence".to_string()));
+        assert_eq!(
+            diag.skip_reasons.get("rule_a"),
+            Some(&"disabled".to_string())
+        );
+        assert_eq!(
+            diag.skip_reasons.get("rule_b"),
+            Some(&"no evidence".to_string())
+        );
     }
 }

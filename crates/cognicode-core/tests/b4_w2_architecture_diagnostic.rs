@@ -1,8 +1,8 @@
 //! B4.W2 — Architecture as diagnostic, no gate authority.
 
 use cognicode_core::architecture::diagnostic::{
-    build_diagnostic, validate_observation, ArchitectureDiagnostic, ArchitectureEvidence,
-    ArchitectureObservation, ObservationValidationError, Severity,
+    ArchitectureDiagnostic, ArchitectureEvidence, ArchitectureObservation,
+    ObservationValidationError, Severity, build_diagnostic, validate_observation,
 };
 use cognicode_core::interface::catalog::load_tool_catalog;
 use cognicode_core::interface::symbol_identity::SymbolId;
@@ -10,11 +10,7 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 use std::path::PathBuf;
 
-fn sample_observation(
-    rule_id: &str,
-    severity: Severity,
-    message: &str,
-) -> ArchitectureObservation {
+fn sample_observation(rule_id: &str, severity: Severity, message: &str) -> ArchitectureObservation {
     let evidence = ArchitectureEvidence {
         file: PathBuf::from("src/domain/foo.rs"),
         byte_range: Range { start: 0, end: 24 },
@@ -45,20 +41,18 @@ fn catalog_declares_check_architecture_gate_authority_false() {
         .runtime_metadata
         .as_object()
         .expect("runtime_metadata must be an object");
-    assert_eq!(
-        runtime
+    assert!(
+        !runtime
             .get("gate_authority")
             .and_then(|v| v.as_bool())
             .expect("gate_authority must be a bool"),
-        false,
         "check_architecture must declare gate_authority: false — R-B4-W2"
     );
-    assert_eq!(
+    assert!(
         runtime
             .get("produces_observations_only")
             .and_then(|v| v.as_bool())
             .expect("produces_observations_only must be a bool"),
-        true,
         "check_architecture must declare produces_observations_only: true"
     );
 }
@@ -78,7 +72,10 @@ fn check_architecture_returns_observations_not_gates() {
     let dbg = format!("{diag:?}");
     assert!(!dbg.contains("gate"), "must not contain gate: {dbg}");
     assert!(!dbg.contains("verdict"), "must not contain verdict: {dbg}");
-    assert!(dbg.contains("observations"), "must expose observations: {dbg}");
+    assert!(
+        dbg.contains("observations"),
+        "must expose observations: {dbg}"
+    );
     assert_eq!(diag.observations.len(), 1);
     assert_eq!(diag.observations[0].severity, Severity::Error);
 }
@@ -100,7 +97,11 @@ fn architecture_observation_carries_evidence_with_byte_range() {
 fn architecture_diagnostic_total_evaluated_matches_observations_plus_skipped() {
     let obs = vec![
         sample_observation("architecture.layer_dependency", Severity::Error, "first"),
-        sample_observation("architecture.forbidden_dependency", Severity::Warning, "second"),
+        sample_observation(
+            "architecture.forbidden_dependency",
+            Severity::Warning,
+            "second",
+        ),
     ];
     let diag = build_diagnostic(obs, 5);
     assert_eq!(diag.observations.len(), 2);
@@ -128,8 +129,7 @@ fn build_diagnostic_explicit_skip_reasons_take_precedence() {
         skip_reasons: reasons.clone(),
     };
     assert_eq!(
-        diag.skip_reasons
-            .get("architecture.namespace_boundary"),
+        diag.skip_reasons.get("architecture.namespace_boundary"),
         Some(&"disabled by config".to_string())
     );
     assert_eq!(diag.total_rules_skipped, 0);
@@ -155,7 +155,11 @@ fn severity_field_is_one_of_error_warning_info_hint() {
 fn cli_and_mcp_return_same_observation_count_for_same_workspace() {
     let obs_via_cli = vec![
         sample_observation("architecture.layer_dependency", Severity::Error, "via CLI"),
-        sample_observation("architecture.forbidden_dependency", Severity::Warning, "via CLI"),
+        sample_observation(
+            "architecture.forbidden_dependency",
+            Severity::Warning,
+            "via CLI",
+        ),
     ];
     let cli_diag = build_diagnostic(obs_via_cli.clone(), 4);
     let obs_via_mcp = obs_via_cli;
@@ -166,7 +170,10 @@ fn cli_and_mcp_return_same_observation_count_for_same_workspace() {
         "CLI and MCP must emit the same observation count"
     );
     assert_eq!(cli_diag.observations.len(), 2);
-    assert_eq!(cli_diag.total_rules_evaluated, mcp_diag.total_rules_evaluated);
+    assert_eq!(
+        cli_diag.total_rules_evaluated,
+        mcp_diag.total_rules_evaluated
+    );
 }
 
 #[test]
@@ -218,6 +225,12 @@ fn skip_reasons_are_preserved_through_build() {
         skip_reasons: reasons.clone(),
     };
     assert_eq!(diag.skip_reasons.len(), 2);
-    assert_eq!(diag.skip_reasons.get("rule_a"), Some(&"disabled".to_string()));
-    assert_eq!(diag.skip_reasons.get("rule_b"), Some(&"no evidence".to_string()));
+    assert_eq!(
+        diag.skip_reasons.get("rule_a"),
+        Some(&"disabled".to_string())
+    );
+    assert_eq!(
+        diag.skip_reasons.get("rule_b"),
+        Some(&"no evidence".to_string())
+    );
 }

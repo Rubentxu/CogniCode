@@ -21,9 +21,7 @@ use crate::interface::symbol_identity::SymbolId;
 /// `CalleeToCaller`: A is the consumer of B (B is impacted by changes to A).
 /// `Bidirectional`:  A and B reference each other.
 /// `Undirected`: no orientation is meaningful.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Direction {
     CallerToCallee,
@@ -49,9 +47,7 @@ impl Direction {
 /// `Inferred`: from a graph projection grounded in observed facts.
 /// `Heuristic`: from a heuristic algorithm — MUST NOT be presented
 ///              with the same authority as `Observed` (AAT-B4-03).
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Provenance {
     Observed,
@@ -184,11 +180,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn sym(name: &str) -> SymbolId {
-        SymbolId::from_lsp_location(
-            name.to_string(),
-            PathBuf::from("src/lib.rs"),
-            0..10,
-        )
+        SymbolId::from_lsp_location(name.to_string(), PathBuf::from("src/lib.rs"), 0..10)
     }
 
     fn edge(from: &str, to: &str, dir: Direction, prov: Provenance) -> ImpactEdge {
@@ -218,9 +210,18 @@ mod tests {
         for i in 0..6 {
             let from = format!("n{i}");
             let to = format!("n{i}_dep");
-            edges.push(edge(&from, &to, Direction::CallerToCallee, Provenance::Observed));
+            edges.push(edge(
+                &from,
+                &to,
+                Direction::CallerToCallee,
+                Provenance::Observed,
+            ));
         }
-        let limits = ImpactLimits { max_depth: 100, max_nodes: 2, direction: Direction::CallerToCallee };
+        let limits = ImpactLimits {
+            max_depth: 100,
+            max_nodes: 2,
+            direction: Direction::CallerToCallee,
+        };
         let result = build_impact_result(edges, &limits);
         assert!(result.truncated);
         let path = result.paths.first().expect("at least one path");
@@ -234,9 +235,18 @@ mod tests {
         for i in 0..20 {
             let from = format!("n{i}");
             let to = format!("n{i}_dep");
-            edges.push(edge(&from, &to, Direction::CallerToCallee, Provenance::Observed));
+            edges.push(edge(
+                &from,
+                &to,
+                Direction::CallerToCallee,
+                Provenance::Observed,
+            ));
         }
-        let limits = ImpactLimits { max_depth: 3, max_nodes: 100, direction: Direction::CallerToCallee };
+        let limits = ImpactLimits {
+            max_depth: 3,
+            max_nodes: 100,
+            direction: Direction::CallerToCallee,
+        };
         let result = build_impact_result(edges, &limits);
         assert!(!result.truncated);
         let path = result.paths.first().expect("at least one path");
@@ -256,7 +266,11 @@ mod tests {
                 )
             })
             .collect();
-        let limits = ImpactLimits { max_depth: 2, max_nodes: 100, direction: Direction::CallerToCallee };
+        let limits = ImpactLimits {
+            max_depth: 2,
+            max_nodes: 100,
+            direction: Direction::CallerToCallee,
+        };
         let result = build_impact_result(chain, &limits);
         for path in &result.paths {
             assert!(path.edges.len() <= 2);
@@ -266,7 +280,11 @@ mod tests {
     #[test]
     fn provenance_discriminator_travels_on_edges() {
         let edge = edge("a", "b", Direction::CallerToCallee, Provenance::Heuristic);
-        let limits = ImpactLimits { max_depth: 10, max_nodes: 100, direction: Direction::CallerToCallee };
+        let limits = ImpactLimits {
+            max_depth: 10,
+            max_nodes: 100,
+            direction: Direction::CallerToCallee,
+        };
         let result = build_impact_result(vec![edge], &limits);
         let serialized = serde_json::to_string(&result).unwrap();
         assert!(serialized.contains("\"provenance\":\"heuristic\""));
@@ -276,11 +294,36 @@ mod tests {
     #[test]
     fn edge_weight_ordering_preserved() {
         let edges = vec![
-            ImpactEdge { from: sym("a"), to: sym("b"), direction: Direction::CallerToCallee, provenance: Provenance::Observed, weight: 0.1, evidence: None },
-            ImpactEdge { from: sym("b"), to: sym("c"), direction: Direction::CallerToCallee, provenance: Provenance::Observed, weight: 0.5, evidence: None },
-            ImpactEdge { from: sym("c"), to: sym("d"), direction: Direction::CallerToCallee, provenance: Provenance::Observed, weight: 0.9, evidence: None },
+            ImpactEdge {
+                from: sym("a"),
+                to: sym("b"),
+                direction: Direction::CallerToCallee,
+                provenance: Provenance::Observed,
+                weight: 0.1,
+                evidence: None,
+            },
+            ImpactEdge {
+                from: sym("b"),
+                to: sym("c"),
+                direction: Direction::CallerToCallee,
+                provenance: Provenance::Observed,
+                weight: 0.5,
+                evidence: None,
+            },
+            ImpactEdge {
+                from: sym("c"),
+                to: sym("d"),
+                direction: Direction::CallerToCallee,
+                provenance: Provenance::Observed,
+                weight: 0.9,
+                evidence: None,
+            },
         ];
-        let limits = ImpactLimits { max_depth: 100, max_nodes: 100, direction: Direction::CallerToCallee };
+        let limits = ImpactLimits {
+            max_depth: 100,
+            max_nodes: 100,
+            direction: Direction::CallerToCallee,
+        };
         let result = build_impact_result(edges, &limits);
         let path = result.paths.first().unwrap();
         let weights: Vec<f64> = path.edges.iter().map(|e| e.weight).collect();

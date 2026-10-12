@@ -189,10 +189,7 @@ pub struct FindingsReport {
 }
 
 impl FindingsReport {
-    pub fn from_findings(
-        findings: Vec<Finding>,
-        total_files_scanned: usize,
-    ) -> Self {
+    pub fn from_findings(findings: Vec<Finding>, total_files_scanned: usize) -> Self {
         let language_breakdown = compute_language_breakdown(&findings);
         Self {
             findings,

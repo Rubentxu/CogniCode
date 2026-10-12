@@ -37,8 +37,8 @@ pub mod workspace_extractor;
 
 pub use digest::{digest_of, sha256_hex, with_declared_digest};
 pub use envelope::{
-    API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
-    Finding, KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MAX_INPUT_BYTES, MAX_NESTING_DEPTH,
+    API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact, Finding,
+    KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MAX_INPUT_BYTES, MAX_NESTING_DEPTH,
     MAX_STRING_LENGTH, MEDIA_TYPE_CBOR, MEDIA_TYPE_JSON, ManifestSection, Observation,
     ProducerInfo, Provenance, Relation, Signal, SourceAnchor, SubjectRef,
 };

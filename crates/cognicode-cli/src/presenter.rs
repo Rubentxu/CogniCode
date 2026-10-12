@@ -1368,7 +1368,9 @@ pub fn present_output(
         (CommandOutput::Navigate(r), CliFormat::Text) => present_navigate_result(r, w),
         (CommandOutput::Navigate(r), CliFormat::Json) => present_navigate_result_json(r, w),
         (CommandOutput::Architecture(r), CliFormat::Text) => present_architecture_diagnostic(r, w),
-        (CommandOutput::Architecture(r), CliFormat::Json) => present_architecture_diagnostic_json(r, w),
+        (CommandOutput::Architecture(r), CliFormat::Json) => {
+            present_architecture_diagnostic_json(r, w)
+        }
         (CommandOutput::Other, _) => Ok(()),
     }
 }
@@ -1379,7 +1381,11 @@ pub fn present_architecture_diagnostic(
     diag: &ArchitectureDiagnostic,
     w: &mut dyn Write,
 ) -> io::Result<()> {
-    writeln!(w, "architecture diagnostic: {} observation(s)", diag.observations.len())?;
+    writeln!(
+        w,
+        "architecture diagnostic: {} observation(s)",
+        diag.observations.len()
+    )?;
     writeln!(
         w,
         "  rules evaluated: {}  skipped: {}",
@@ -1399,7 +1405,13 @@ pub fn present_architecture_diagnostic(
             obs.message
         )?;
         for ev in &obs.evidence {
-            writeln!(w, "      @ {} [{}..{}]", ev.file.display(), ev.byte_range.start, ev.byte_range.end)?;
+            writeln!(
+                w,
+                "      @ {} [{}..{}]",
+                ev.file.display(),
+                ev.byte_range.start,
+                ev.byte_range.end
+            )?;
         }
     }
     Ok(())

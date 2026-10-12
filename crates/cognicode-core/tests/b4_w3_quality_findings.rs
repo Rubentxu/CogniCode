@@ -5,8 +5,7 @@ use std::ops::Range;
 use std::path::PathBuf;
 
 use cognicode_core::findings::{
-    Finding, FindingCategory, FindingLocation, FindingProvenance, FindingSeverity,
-    FindingsReport,
+    Finding, FindingCategory, FindingLocation, FindingProvenance, FindingSeverity, FindingsReport,
 };
 use cognicode_core::interface::symbol_identity::SymbolId;
 
@@ -30,8 +29,7 @@ fn catalog_path() -> std::path::PathBuf {
 }
 
 fn read_raw_tools() -> Vec<serde_json::Value> {
-    let text = std::fs::read_to_string(catalog_path())
-        .expect("read product/tools.json");
+    let text = std::fs::read_to_string(catalog_path()).expect("read product/tools.json");
     let v: serde_json::Value = serde_json::from_str(&text).expect("valid JSON");
     v["tools"].as_array().expect("tools array").clone()
 }
@@ -117,7 +115,13 @@ fn location_byte_range_is_per_file() {
         byte_range: 100..200,
         function: Some("f".to_string()),
     };
-    assert_eq!(loc.byte_range, Range::<usize> { start: 100, end: 200 });
+    assert_eq!(
+        loc.byte_range,
+        Range::<usize> {
+            start: 100,
+            end: 200
+        }
+    );
     assert!(loc.byte_range.end > loc.byte_range.start);
     let a = FindingLocation {
         file: PathBuf::from("a.rs"),
@@ -143,10 +147,7 @@ fn language_breakdown_sums_to_total_findings() {
     let report = FindingsReport {
         findings: findings.clone(),
         total_files_scanned: 2,
-        language_breakdown: BTreeMap::from([
-            ("rust".to_string(), 2),
-            ("python".to_string(), 1),
-        ]),
+        language_breakdown: BTreeMap::from([("rust".to_string(), 2), ("python".to_string(), 1)]),
         truncated: false,
     };
     let sum: usize = report.language_breakdown.values().sum();
@@ -159,8 +160,10 @@ fn language_breakdown_sums_to_total_findings() {
 #[test]
 fn catalog_language_scope_matches_what_tools_produce() {
     let raw = read_raw_tools();
-    let by_name: std::collections::HashMap<&str, &serde_json::Value> =
-        raw.iter().map(|t| (t["name"].as_str().expect("name"), t)).collect();
+    let by_name: std::collections::HashMap<&str, &serde_json::Value> = raw
+        .iter()
+        .map(|t| (t["name"].as_str().expect("name"), t))
+        .collect();
     for tool_name in QUALITY_TOOL_NAMES {
         let raw_entry = by_name
             .get(tool_name)
@@ -276,8 +279,10 @@ fn severity_order_is_total_and_stable() {
 #[test]
 fn every_quality_tool_has_a_non_empty_language_scope() {
     let raw = read_raw_tools();
-    let by_name: std::collections::HashMap<&str, &serde_json::Value> =
-        raw.iter().map(|t| (t["name"].as_str().expect("name"), t)).collect();
+    let by_name: std::collections::HashMap<&str, &serde_json::Value> = raw
+        .iter()
+        .map(|t| (t["name"].as_str().expect("name"), t))
+        .collect();
     for tool_name in QUALITY_TOOL_NAMES {
         let entry = by_name
             .get(tool_name)

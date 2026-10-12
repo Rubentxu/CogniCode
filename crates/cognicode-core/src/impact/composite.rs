@@ -127,10 +127,7 @@ pub fn execute_composite(query: &CompositeImpactQuery) -> CompositeImpactResult 
     result
 }
 
-fn tool_names_to_refs(
-    names: Option<&[String]>,
-    symbol: &SymbolId,
-) -> Vec<ToolRef> {
+fn tool_names_to_refs(names: Option<&[String]>, symbol: &SymbolId) -> Vec<ToolRef> {
     let Some(names) = names else {
         return Vec::new();
     };
@@ -157,8 +154,7 @@ fn tool_names_to_refs(
     out
 }
 
-const COMPOSITE_TOOL_REF_RATIONALE: &str =
-    "Composite impact query: this tool appears in the catalog's \
+const COMPOSITE_TOOL_REF_RATIONALE: &str = "Composite impact query: this tool appears in the catalog's \
      follow_ups or prerequisites for the queried symbol; run it to \
      advance the investigation.";
 
@@ -247,7 +243,10 @@ mod tests {
             symbol: SymbolId {
                 qualified_name: "analyze_impact".into(),
                 file_path: PathBuf::from("src/analyze.rs"),
-                byte_range: Range { start: 100, end: 200 },
+                byte_range: Range {
+                    start: 100,
+                    end: 200,
+                },
             },
             workspace_root: PathBuf::from("."),
             depth_limit: None,
@@ -257,8 +256,7 @@ mod tests {
             .iter()
             .find(|t| t.tool == "build_graph");
         if let Some(p) = prereq {
-            let v = serde_json::to_value(&p.args)
-                .expect("ToolRef.args is serialisable");
+            let v = serde_json::to_value(&p.args).expect("ToolRef.args is serialisable");
             assert!(v.get("qualified_name").is_some());
         }
     }

@@ -262,6 +262,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "graph_analyze",
         "graph_explain",
         "graph_insights",
+        "composite_impact_query",
         "export_mermaid",
         "export_callflow",
         "get_per_file_graph",

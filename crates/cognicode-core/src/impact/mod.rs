@@ -49,10 +49,9 @@ pub mod composite;
 pub mod graph;
 
 pub use composite::{
-    CompositeImpactQuery, CompositeImpactResult, COMPOSITE_VERDICT_REFUSED_REASON,
+    COMPOSITE_VERDICT_REFUSED_REASON, CompositeImpactQuery, CompositeImpactResult,
     execute_composite,
 };
 pub use graph::{
-    build_impact_result, Direction, ImpactEdge, ImpactLimits, ImpactPath, ImpactResult,
-    Provenance,
+    Direction, ImpactEdge, ImpactLimits, ImpactPath, ImpactResult, Provenance, build_impact_result,
 };

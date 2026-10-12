@@ -536,6 +536,7 @@ pub enum GraphCommand {
     /// B4.W5 — Composite impact query for agents. Aggregates
     /// impact paths + architecture observations + quality findings
     /// + suggested follow-ups / prerequisites for a symbol.
+    ///
     /// INVESTIGATIVE, NOT AUTHORITATIVE: the result carries
     /// `verdict_refused: true` precisely so the agent never treats
     /// this as a verdict. Use the suggested follow-ups
@@ -1650,7 +1651,11 @@ impl CommandExecutor {
                 // presenter.
                 Ok(result)
             }
-            GraphCommand::ImpactComposite { symbol, depth: _, path } => {
+            GraphCommand::ImpactComposite {
+                symbol,
+                depth: _,
+                path,
+            } => {
                 // B4.W5 — Composite impact query. INVESTIGATIVE,
                 // NOT AUTHORITATIVE. The result carries
                 // `verdict_refused: true` precisely so the caller
@@ -1658,10 +1663,10 @@ impl CommandExecutor {
                 // a JSON object via stdout (T1-5.4 pre-migration
                 // pattern for sub-commands not yet migrated to
                 // `GraphResult`).
-                use crate::impact::composite::{execute_composite, CompositeImpactQuery};
+                use crate::impact::composite::{CompositeImpactQuery, execute_composite};
                 use crate::interface::symbol_identity::SymbolId;
-                use std::path::PathBuf;
                 use std::ops::Range;
+                use std::path::PathBuf;
 
                 // Build the SymbolId the catalog will look up by
                 // qualified_name. The `file_path`/`byte_range` are
@@ -1684,8 +1689,8 @@ impl CommandExecutor {
                 // `verdict_refused: true` travels as the JSON
                 // `true` literal — the consumer can pattern-match
                 // it without parsing the response.
-                let body = serde_json::to_string(&result)
-                    .map_err(|e| -> Box<dyn std::error::Error> {
+                let body =
+                    serde_json::to_string(&result).map_err(|e| -> Box<dyn std::error::Error> {
                         Box::new(std::io::Error::other(e))
                     })?;
                 println!("{body}");

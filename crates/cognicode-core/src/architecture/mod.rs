@@ -3,6 +3,6 @@
 pub mod diagnostic;
 
 pub use diagnostic::{
-    build_diagnostic, validate_observation, ArchitectureDiagnostic, ArchitectureEvidence,
-    ArchitectureObservation, ObservationValidationError, Severity,
+    ArchitectureDiagnostic, ArchitectureEvidence, ArchitectureObservation,
+    ObservationValidationError, Severity, build_diagnostic, validate_observation,
 };

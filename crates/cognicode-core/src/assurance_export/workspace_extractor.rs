@@ -29,9 +29,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use super::envelope::{
-    API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact,
-    Finding, KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MEDIA_TYPE_CBOR, ManifestSection,
-    Observation, ProducerInfo, Provenance, Relation, Signal, SourceAnchor, SubjectRef,
+    API_VERSION, CapabilityCompleteness, CapabilityGap, Entity, EvidenceExport, Fact, Finding,
+    KIND_EVIDENCE_EXPORT, MAX_COLLECTION_SIZE, MEDIA_TYPE_CBOR, ManifestSection, Observation,
+    ProducerInfo, Provenance, Relation, Signal, SourceAnchor, SubjectRef,
 };
 use super::serialize::{SerializeError, encode_to_cbor_with_digest};
 
@@ -729,10 +729,7 @@ pub const CAPABILITY_KIND_QUALITY_FINDINGS: &str = "quality-findings:envelope-v2
 /// El `capability_kind` permanece estable para que el consumer pueda
 /// identificar el motivo de `Unsupported` byte-a-byte sin re-codificar
 /// la lógica del parser.
-pub fn extract_impact_relations(
-    out: &mut RelationAccumulator,
-    max: usize,
-) -> ExtractionOutcome {
+pub fn extract_impact_relations(out: &mut RelationAccumulator, max: usize) -> ExtractionOutcome {
     if out.len() > max {
         out.truncate(max);
         return ExtractionOutcome::Partial {
@@ -773,10 +770,7 @@ pub fn extract_architecture_observations(
 /// Misma simetría que los otros dos extractores. B4.W3 todavía no está
 /// fusionado en la rama de release, así que devuelve `Unsupported`
 /// hasta el release.
-pub fn extract_quality_findings(
-    out: &mut FindingAccumulator,
-    max: usize,
-) -> ExtractionOutcome {
+pub fn extract_quality_findings(out: &mut FindingAccumulator, max: usize) -> ExtractionOutcome {
     if out.len() > max {
         out.truncate(max);
         return ExtractionOutcome::Partial {

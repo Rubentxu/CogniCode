@@ -36,16 +36,17 @@
 //! donde el histórico del repo (PRs, JOURNALS, docs) exige
 //! vocabulario local para no perder la trazabilidad.
 
-use cognicode_core::assurance_export::{
-    CapabilityCompleteness, EvidenceExport, ExtractionCapabilities, ExtractionOutcome, Finding,
-    FindingAccumulator, Observation, ObservationAccumulator, ProducerInfo, Relation,
-    RelationAccumulator, WorkspaceInfo, encode_to_cbor_with_digest, extract_architecture_observations,
-    extract_from_workspace, extract_impact_relations, extract_quality_findings,
-};
 use cognicode_core::assurance_export::workspace_extractor::{
     CAP_ARCHITECTURE, CAP_ENTITIES, CAP_FACTS, CAP_RELATIONS, CAP_SIGNALS,
     CAPABILITY_KIND_ARCHITECTURE_OBSERVATIONS, CAPABILITY_KIND_IMPACT_RELATIONS,
     CAPABILITY_KIND_QUALITY_FINDINGS,
+};
+use cognicode_core::assurance_export::{
+    CapabilityCompleteness, EvidenceExport, ExtractionCapabilities, ExtractionOutcome, Finding,
+    FindingAccumulator, Observation, ObservationAccumulator, ProducerInfo, Relation,
+    RelationAccumulator, WorkspaceInfo, encode_to_cbor_with_digest,
+    extract_architecture_observations, extract_from_workspace, extract_impact_relations,
+    extract_quality_findings,
 };
 
 use std::path::PathBuf;
@@ -298,7 +299,10 @@ fn extract_quality_findings_honors_max() {
 fn extraction_outcome_kind_name_returns_stable_strings() {
     assert_eq!(ExtractionOutcome::Complete.kind_name(), "complete");
     assert_eq!(
-        ExtractionOutcome::Partial { gaps: vec!["x".into()] }.kind_name(),
+        ExtractionOutcome::Partial {
+            gaps: vec!["x".into()]
+        }
+        .kind_name(),
         "partial"
     );
     assert_eq!(
@@ -313,7 +317,12 @@ fn extraction_outcome_kind_name_returns_stable_strings() {
 #[test]
 fn extraction_outcome_is_producing_only_for_complete_or_partial() {
     assert!(ExtractionOutcome::Complete.is_producing());
-    assert!(ExtractionOutcome::Partial { gaps: vec!["x".into()] }.is_producing());
+    assert!(
+        ExtractionOutcome::Partial {
+            gaps: vec!["x".into()]
+        }
+        .is_producing()
+    );
     assert!(
         !ExtractionOutcome::Unsupported {
             capability_kind: "k"
@@ -369,7 +378,13 @@ fn envelope_b2w4_path_unaffected_by_b4w4_extractors() {
 
     // Invariante B2.W4 honest coverage: cada capability conocida aparece
     // en capability_completeness, incluso si es Unsupported.
-    for cap in [CAP_ENTITIES, CAP_FACTS, CAP_RELATIONS, CAP_SIGNALS, CAP_ARCHITECTURE] {
+    for cap in [
+        CAP_ENTITIES,
+        CAP_FACTS,
+        CAP_RELATIONS,
+        CAP_SIGNALS,
+        CAP_ARCHITECTURE,
+    ] {
         assert!(
             env.capability_completeness.contains_key(cap),
             "B2.W4 honest coverage: {cap} debe declararse en capability_completeness"
@@ -472,12 +487,15 @@ fn envelope_with_unsupported_capability_carries_explicit_gap() {
 /// construcción local para los tests de arriba.
 fn build_minimal_envelope_with_gap(capability: &str, reason: &str) -> EvidenceExport {
     use cognicode_core::assurance_export::{
-        CapabilityGap, ManifestSection, Provenance, SubjectRef, API_VERSION,
-        KIND_EVIDENCE_EXPORT,
+        API_VERSION, CapabilityGap, KIND_EVIDENCE_EXPORT, ManifestSection, Provenance, SubjectRef,
     };
     use std::collections::BTreeMap;
 
-    let cap_name = capability.split(':').next().unwrap_or(capability).to_string();
+    let cap_name = capability
+        .split(':')
+        .next()
+        .unwrap_or(capability)
+        .to_string();
     let mut completeness: BTreeMap<String, CapabilityCompleteness> = BTreeMap::new();
     completeness.insert(
         cap_name.clone(),

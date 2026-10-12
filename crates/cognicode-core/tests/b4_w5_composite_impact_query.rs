@@ -25,7 +25,7 @@
 //!     resultado valido.
 
 use cognicode_core::impact::composite::{
-    CompositeImpactQuery, CompositeImpactResult, COMPOSITE_VERDICT_REFUSED_REASON,
+    COMPOSITE_VERDICT_REFUSED_REASON, CompositeImpactQuery, CompositeImpactResult,
     execute_composite,
 };
 use cognicode_core::interface::catalog::load_tool_catalog;
@@ -168,7 +168,10 @@ fn composite_result_includes_six_top_level_fields_with_expected_shapes() {
         "suggested_follow_ups",
         "suggested_prerequisites",
     ] {
-        assert!(obj.contains_key(field), "missing field `{field}` in {obj:?}");
+        assert!(
+            obj.contains_key(field),
+            "missing field `{field}` in {obj:?}"
+        );
     }
     assert_eq!(obj["verdict_refused"], json!(true));
     let reason = obj["verdict_refused_reason"]
@@ -208,8 +211,8 @@ fn composite_result_suggested_tool_ref_args_reference_valid_catalog_tools() {
                 "composite referenced tool {:?} which is not in the catalog",
                 tool_ref.tool
             );
-            let args_value = serde_json::to_value(&tool_ref.args)
-                .expect("ToolRef.args must be serialisable");
+            let args_value =
+                serde_json::to_value(&tool_ref.args).expect("ToolRef.args must be serialisable");
             assert!(
                 args_value.is_object() || args_value.is_null(),
                 "args must serialise to object or null, got {args_value:?}"
@@ -224,8 +227,8 @@ fn composite_result_suggested_tool_ref_args_reference_valid_catalog_tools() {
 fn cli_subcommand_emits_json_with_six_top_level_fields() {
     let r: CompositeImpactResult = execute_composite(&stub_query("analyze_impact"));
     let body = serde_json::to_string(&r).expect("serialisable");
-    let parsed: Value = serde_json::from_str(&body)
-        .unwrap_or_else(|e| panic!("emitted JSON must parse: {e}"));
+    let parsed: Value =
+        serde_json::from_str(&body).unwrap_or_else(|e| panic!("emitted JSON must parse: {e}"));
     let obj = parsed.as_object().expect("emitted JSON must be an object");
     for field in [
         "verdict_refused",

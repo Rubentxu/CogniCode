@@ -15,5 +15,9 @@
 
 package: cognicode-core
 target: lib
-generated: 2026-10-01
+generated: 2026-10-12
 entries:
+  - test: interface::mcp::capabilities::tests::test_capabilities_declarations_match_pineo
+    category: environment_dependency
+    first_seen: 2026-10-12
+    reason: environment/cwd dependency (review before removing)
