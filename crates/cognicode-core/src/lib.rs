@@ -16,6 +16,12 @@ pub mod incremental;
 pub mod infrastructure;
 pub mod interface;
 pub mod product;
+// B5 — Safe refactoring & authorized changes (v0.101.15).
+//   B5.W1: `refactor::plan` (id, workspace_identity, basis,
+//          edits, preconditions, risks + sha256 digest).
+//   B5.W3: `refactor::apply` (autoridad separada, transactional
+//          writes, rollback, AAT-B5-01..03).
+pub mod refactor;
 pub mod sandbox_core;
 pub mod schemas;
 

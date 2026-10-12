@@ -80,9 +80,18 @@ pub enum CliCommand {
         operation: RefactorOperation,
         /// PRF-CLI-05: mutation authorization. Preview (default) never
         /// writes; `--apply` is the explicit separate authorization that
-        /// permits file mutation.
+        /// permits file mutation. B5.W1 keeps this refusal in place;
+        /// the apply path with rollback lands in B5.W3.
         #[arg(long)]
         apply: bool,
+        /// B5.W1 — path to a JSON file holding a `RefactorPlan`
+        /// (`cognicode_core::refactor::plan::RefactorPlan`). When
+        /// provided, the CLI parses the plan and runs the
+        /// plan-based preview path. When omitted, the existing
+        /// free-form text refactor preview arm remains valid for
+        /// non-plan-based quick previews.
+        #[arg(long)]
+        plan_file: Option<PathBuf>,
         /// Preview output format: text or json
         #[arg(long, default_value = "text")]
         format: String,
@@ -673,12 +682,14 @@ impl CommandExecutor {
                 symbol,
                 new_name,
                 apply,
+                plan_file,
                 format,
             }) => {
                 // PRF-CLI-05: without --apply this is preview-only and must
                 // never mutate files. execute_refactor is preview-only by
                 // contract; --apply is refused until an apply path with
-                // rollback exists (honest Unsupported).
+                // rollback exists (honest Unsupported). B5.W1 preserves
+                // this refusal; the apply path lands in B5.W3.
                 if *apply {
                     eprintln!(
                         "refactor --apply: file mutation is not implemented yet; \
@@ -686,6 +697,33 @@ impl CommandExecutor {
                          preview + rollback, which is pending)"
                     );
                     return Err("refactor --apply unsupported: no rollback path yet".into());
+                }
+                // B5.W1 — plan-based preview path. When `--plan-file`
+                // is provided, parse the JSON `RefactorPlan` here and
+                // surface a clean error if the file is missing or
+                // malformed. The free-form preview path remains valid
+                // when `--plan-file` is omitted.
+                if let Some(plan_path) = plan_file.as_deref() {
+                    let plan = crate::refactor::plan::load_plan_from_file(plan_path).map_err(
+                        |e| -> Box<dyn std::error::Error> {
+                            format!(
+                                "failed to load --plan-file {}: {}",
+                                plan_path.display(),
+                                e
+                            )
+                            .into()
+                        },
+                    )?;
+                    eprintln!(
+                        "B5.W1 plan preview: id={} files={} edits={} \
+                         risks={} digest={}",
+                        plan.id,
+                        plan.affected_files.len(),
+                        plan.edits.len(),
+                        plan.risks.len(),
+                        plan.digest
+                    );
+                    return Ok(CommandOutput::Other);
                 }
                 Self::execute_refactor(operation, symbol, new_name.as_deref(), format).await?;
                 Ok(CommandOutput::Other)

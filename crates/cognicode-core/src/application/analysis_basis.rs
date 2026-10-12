@@ -78,7 +78,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 /// `AnalysisBasis` antes de delegar, de modo que la cache y los
 /// budgets se compartan sin que cada adapter tenga que inventar
 /// su propia version del "workspace + opciones".
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisBasis {
     workspace_root: PathBuf,
     profile: ConsumerProfile,

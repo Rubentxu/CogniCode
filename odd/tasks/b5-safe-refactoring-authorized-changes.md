@@ -77,7 +77,8 @@ capacidad de recuperación ante errores. No basta con disponer de
 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
-| _pendiente_ | B5.W1 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B5.W2 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B5.W3 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B5.W4 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B5.W1 | `0e5708d` | `RefactorPlan` contract portador: id + workspace_identity + AnalysisBasis (B2.W1) + edits + preconditions + risks + sha256 digest. `build_plan` rechaza paths no absolutos y ordena edits/risks estructuralmente. |
+| 2026-10-12 | B5.W2 | `0e5708d` | `render_preview` es funcion PURA: mismo plan + mismos bytes => byte-equal `RefactorPreview` (JSON canonico incluido). NUNCA muta; `verify_preview_no_mutation` sanity-check de mtimes. 8 unit tests + 8 integration. `safe_refactor_preview` (read/stable) en catalog. |
+| 2026-10-12 | B5.W3 | `0e5708d` | `apply` con autoridad: `AuthorizationToken` por canal separado (AAT-B5-03), workspace_state_digest recomputado (WorkspaceStateMismatch si difiere), symlink/traversal rechazados, staging + fsync + rename atomico + rollback (AAT-B5-01). |
+| 2026-10-12 | B5.W4 | `0e5708d` | Revalidacion post-apply: `verdict_refused` por defecto (AAT-B5-04), evidence-only. `safe_refactor_revalidate` (read/stable) en catalog. NO ejecuta comandos arbitrarios del repo. |
+| 2026-10-12 | gate | `0e5708d` | `core_gate_coverage_contract` ANCHOR_SUITES += b5_w1..b5_w4 (count 58 -> 62). `cargo check -p cognicode-core --tests` 0 errors. |

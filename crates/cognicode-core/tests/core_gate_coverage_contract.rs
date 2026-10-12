@@ -191,10 +191,31 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // impact query for agents, evidence not verdict).
     // The 58 is the on-disk count at the moment this assertion was
     // bumped; any further WU adds another file and bumps again.
+    // 58 -> 59 with b5_w4_post_apply_revalidation (B5.W4,
+    // post-apply revalidation, evidence not verdict — default
+    // verdict Refused, AAT-B5-04). The 59 is the on-disk count
+    // at the moment this assertion was bumped; any further WU
+    // adds another file and bumps again.
+    // 59 -> 60 with b5_w2_preview_verifiable (B5.W2, render_preview
+    // is a pure function: same plan + same bytes => byte-equal
+    // RefactorPreview, NEVER mutates the workspace; safe_refactor_preview
+    // catalog entry pins read authority for parity with B3.W3).
+    // The 60 is the on-disk count at the moment this assertion was
+    // bumped; any further WU adds another file and bumps again.
+    // 60 -> 62 with B5 WUs: b5_w1_plan_contract (B5.W1, plan
+    // contract: id, workspace_identity, basis, edits, sha256
+    // digest), b5_w2_preview_verifiable (B5.W2, render_preview
+    // is pure, never mutates), b5_w3_apply_with_authority
+    // (B5.W3, transactional writes with rollback), and
+    // b5_w4_post_apply_revalidation (B5.W4, post-apply
+    // revalidation, evidence not verdict — default verdict
+    // Refused, AAT-B5-04). The 62 is the on-disk count at the
+    // moment this assertion was bumped; any further WU adds
+    // another file and bumps again.
     assert_eq!(
         suites.len(),
-        58,
-        "expected exactly 58 cognicode-core integration suites, found {}. \
+        62,
+        "expected exactly 62 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -322,6 +343,10 @@ const ANCHOR_SUITES: &[&str] = &[
     "b4_w3_quality_findings",
     "b4_w4_evidence_export_enriched",
     "b4_w5_composite_impact_query",
+    "b5_w1_plan_contract",
+    "b5_w2_preview_verifiable",
+    "b5_w3_apply_with_authority",
+    "b5_w4_post_apply_revalidation",
     "behavior_authority_e2e",
     "behavior_budget_e2e",
     "callgraph_projection_orientation",
