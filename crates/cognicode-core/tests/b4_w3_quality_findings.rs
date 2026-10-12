@@ -256,11 +256,11 @@ fn finding_category_serialize_round_trip() {
 fn severity_order_is_total_and_stable() {
     use std::cmp::Ordering;
     let severities = [
-        FindingSeverity::Critical,
-        FindingSeverity::High,
-        FindingSeverity::Medium,
-        FindingSeverity::Low,
         FindingSeverity::Info,
+        FindingSeverity::Low,
+        FindingSeverity::Medium,
+        FindingSeverity::High,
+        FindingSeverity::Critical,
     ];
     for (i, a) in severities.iter().enumerate() {
         for (j, b) in severities.iter().enumerate() {
