@@ -34,7 +34,7 @@ proporcionan distintas experiencias de usuario sobre los mismos servicios.
   qué argumentos faltan, qué análisis previo se necesita, qué resultado
   consultar después, qué limitación impide continuar. Affordances
   tipadas, no prompts prescriptivos.
-- [ ] **B3.W4** — Análisis incremental fiable. Invalidación dependiente
+- [x] **B3.W4** — Análisis incremental fiable. Invalidación dependiente
   del contenido, no solo `mtime`. Probar cold / hot / post-edit /
   post-branch-switch. NO publicar stale como current.
 
@@ -72,7 +72,7 @@ proporcionan distintas experiencias de usuario sobre los mismos servicios.
 
 | Fecha | WU | SHA | Notas |
 |---|---|---|---|
-| _pendiente_ | B3.W1 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B3.W2 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B3.W1 | `50c5820` | Cierra UAT-B3-01 (definición+usos localizables) y AAT-B3-01 (LSP ausente → degradación explícita). 16 tests verdes (7 unit en symbol_identity + 9 integration en b3_w1_semantic_navigation). DTOs ampliados con `precision` + `provider` (lsp | ast-heuristic | index) y `SymbolId = (qualified_name, file_path, byte_range)`. Catálogo declara `precision_floor` por tool. 3 archivos: interface/{mod.rs, symbol_identity.rs}, tests/b3_w1_semantic_navigation.rs. product/tools.json aporta precision_floor en HEAD. |
+| 2026-10-12 | B3.W2 | `146f9da` + `d8cad0a` | Cierra UAT-B3-04 (cadena de lectura paginada reconstruye original). 6 tools composables (`codebase_map`, `smart_search`, `get_symbol_code`, `read_file`, `search_content`, `retrieve_and_verify`) enrutan via `Intent::{Locate,Summarize,Verify,Read}` -> `Vec<ToolRef>`. Scaffold `cognicode inspect` (PROPOSED, B3.W5 cierra shape). Catálogo lleva `intent_tags` por tool. 11 unit + 12 integration tests verdes. `bash scripts/test-fast.sh` exit 0. Archivos: crates/cognicode-core/src/interface/{intent.rs, catalog.rs (intent_tags), cli/commands.rs (Inspect), mod.rs (intent)}, crates/cognicode-core/tests/b3_w2_progressive_context.rs, product/tools.json. |
 | _pendiente_ | B3.W3 | _pendiente_ | _pendiente_ |
-| _pendiente_ | B3.W4 | _pendiente_ | _pendiente_ |
+| 2026-10-12 | B3.W4 | `dde6f5b` | Cierra AAT-B3-02 (blake3 detecta edit con mtime+size preservados) y AAT-B3-03 (CacheStore per-workspace no comparte estado). 4 archivos: lib.rs + incremental/{mod,content_hash}.rs + tests/b3_w4_incremental_analysis.rs. 11 integration + 4 unit tests verdes. `bash scripts/test-fast.sh` exit 0. |
