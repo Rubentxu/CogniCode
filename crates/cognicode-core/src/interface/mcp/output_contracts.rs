@@ -47,6 +47,7 @@ use std::sync::OnceLock;
 use serde_json::{Map, Value};
 
 use crate::interface::mcp::handlers::BuildGraphOutput;
+use crate::interface::mcp::handlers::CompositeImpactOutput;
 use crate::interface::mcp::handlers::consolidated_handlers::{
     CodebaseMapOutput, GraphCheckpointOutput, IacQueryOutput, ProjectInsightsOutput,
     ProjectOverviewOutput, ReviewPrOutput,
@@ -98,6 +99,7 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("project_insights", schema_of::<ProjectInsightsOutput>());
     m.insert("project_overview", schema_of::<ProjectOverviewOutput>());
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
+    m.insert("composite_impact_query", schema_of::<CompositeImpactOutput>());
     m
 }
 
