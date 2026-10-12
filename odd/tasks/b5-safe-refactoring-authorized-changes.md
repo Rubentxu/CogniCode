@@ -1,6 +1,6 @@
 # B5 — Safe Refactoring & Authorized Changes (v0.101.15)
 
-> **Estado**: PENDING. Desbloqueado por B4 (impact + architecture + quality).
+> **Estado**: CLOSED 2026-10-12 (v0.101.15 released).
 > Detalle: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](../docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md#bloque-b5--safe-refactoring--authorized-changes).
 
 ## Valor
@@ -82,5 +82,8 @@ capacidad de recuperación ante errores. No basta con disponer de
 | 2026-10-12 | B5.W3 | `0e5708d` | `apply` con autoridad: `AuthorizationToken` por canal separado (AAT-B5-03), workspace_state_digest recomputado (WorkspaceStateMismatch si difiere), symlink/traversal rechazados, staging + fsync + rename atomico + rollback (AAT-B5-01). |
 | 2026-10-12 | B5.W4 | `0e5708d` | Revalidacion post-apply: `verdict_refused` por defecto (AAT-B5-04), evidence-only. `safe_refactor_revalidate` (read/stable) en catalog. NO ejecuta comandos arbitrarios del repo. |
 | 2026-10-12 | gate | `0e5708d` | `core_gate_coverage_contract` ANCHOR_SUITES += b5_w1..b5_w4 (count 58 -> 62). `cargo check -p cognicode-core --tests` 0 errors. |
+| 2026-10-12 | release | `7960031` | bump 0.101.14 → 0.101.15; golden CBOR regen (sha `ce7d61168c125ed3...`). |
+| 2026-10-12 | veredicto | `7960031` | per MERGE-GATE-BYPASS-POLICY §4. |
+| 2026-10-12 | tag | v0.101.15 | anotado + pushed + GitHub Release con 3 tarballs. |
 
 | 2026-10-12 | B5.W3 CLI+catalog | (pendiente) | CLI `cogh refactor --apply` ahora LIVE con `--plan-file <path>` + `--authorization-token <token>` ambos obligatorios (B5.W3 / AAT-B5-03). Cualquiera ausente devuelve error limpio antes de cualquier I/O. Catalog pin `safe_refactor_apply` (mutating/stable) en `product/tools.json`. `safe_refactor_preview` (read-only) sigue usando `deny_unknown_fields` y rechaza `authorization_token`; un caller read-only NO puede adquirir write authority. |
