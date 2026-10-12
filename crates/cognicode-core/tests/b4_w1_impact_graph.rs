@@ -51,7 +51,7 @@ fn direction_field_is_present_on_every_impact_edge() {
     let paths = json.get("paths").and_then(|v| v.as_array()).expect("paths");
     let first_path = paths.first().expect("at least one path");
     let edges_json = first_path.get("edges").and_then(|v| v.as_array()).expect("edges");
-    for (idx, edge_json) in edges_json.iter().enumerate() {
+    for edge_json in edges_json.iter() {
         assert!(edge_json.get("direction").is_some());
         let dir = edge_json.get("direction").and_then(|v| v.as_str()).expect("direction string");
         assert!(matches!(dir, "caller_to_callee" | "callee_to_caller" | "bidirectional" | "undirected"));

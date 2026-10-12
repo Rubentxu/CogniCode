@@ -42,6 +42,7 @@
 
 use std::io::{self, Write};
 
+use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
 use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
 use cognicode_core::interface::cli::result::{
@@ -1366,6 +1367,49 @@ pub fn present_output(
         (CommandOutput::Graph(r), CliFormat::Json) => present_graph_result_json(r, w),
         (CommandOutput::Navigate(r), CliFormat::Text) => present_navigate_result(r, w),
         (CommandOutput::Navigate(r), CliFormat::Json) => present_navigate_result_json(r, w),
+        (CommandOutput::Architecture(r), CliFormat::Text) => present_architecture_diagnostic(r, w),
+        (CommandOutput::Architecture(r), CliFormat::Json) => present_architecture_diagnostic_json(r, w),
         (CommandOutput::Other, _) => Ok(()),
     }
+}
+
+/// B4.W2 — Architecture diagnostic text output. Diagnostic is read-only
+/// observations + evidence; the presenter summarizes them as bullet points.
+pub fn present_architecture_diagnostic(
+    diag: &ArchitectureDiagnostic,
+    w: &mut dyn Write,
+) -> io::Result<()> {
+    writeln!(w, "architecture diagnostic: {} observation(s)", diag.observations.len())?;
+    writeln!(
+        w,
+        "  rules evaluated: {}  skipped: {}",
+        diag.total_rules_evaluated, diag.total_rules_skipped
+    )?;
+    for obs in &diag.observations {
+        writeln!(
+            w,
+            "  - [{}] {}: {}",
+            match obs.severity {
+                cognicode_core::architecture::diagnostic::Severity::Error => "error",
+                cognicode_core::architecture::diagnostic::Severity::Warning => "warning",
+                cognicode_core::architecture::diagnostic::Severity::Info => "info",
+                cognicode_core::architecture::diagnostic::Severity::Hint => "hint",
+            },
+            obs.rule_id,
+            obs.message
+        )?;
+        for ev in &obs.evidence {
+            writeln!(w, "      @ {} [{}..{}]", ev.file.display(), ev.byte_range.start, ev.byte_range.end)?;
+        }
+    }
+    Ok(())
+}
+
+/// B4.W2 — JSON dispatch for architecture diagnostics.
+pub fn present_architecture_diagnostic_json(
+    diag: &ArchitectureDiagnostic,
+    w: &mut dyn Write,
+) -> io::Result<()> {
+    serde_json::to_writer_pretty(&mut *w, diag)?;
+    w.write_all(b"\n")
 }

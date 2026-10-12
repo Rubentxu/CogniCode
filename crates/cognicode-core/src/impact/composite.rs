@@ -9,7 +9,6 @@
 //!   - `CompositeImpactResult`: el output agregado, sin veredicto.
 //!   - `execute_composite`: la funcion orquestadora.
 
-use std::ops::Range;
 use std::path::PathBuf;
 
 use serde::Serialize;
@@ -166,6 +165,7 @@ const COMPOSITE_TOOL_REF_RATIONALE: &str =
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::Range;
 
     fn stub_query(symbol_qualified: &str) -> CompositeImpactQuery {
         CompositeImpactQuery {

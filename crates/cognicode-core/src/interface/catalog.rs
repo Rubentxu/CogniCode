@@ -274,8 +274,7 @@ mod tests {
             follow_ups: None,
             required_args: None,
             limitations: None,
-            limitations: None,
-impact_direction_floor: "observed".into(),
+            impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert_eq!(v["feature"], "evidence-cli-ladybug");
@@ -304,8 +303,7 @@ impact_direction_floor: "observed".into(),
             follow_ups: None,
             required_args: None,
             limitations: None,
-            limitations: None,
-impact_direction_floor: "observed".into(),
+            impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert!(
@@ -339,6 +337,7 @@ impact_direction_floor: "observed".into(),
             follow_ups: Some(vec!["get_symbol_code".into()]),
             required_args: Some(vec!["symbol_name".into()]),
             limitations: Some(vec!["requires build_graph to have run first".into()]),
+            impact_direction_floor: "observed".to_string(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         assert_eq!(v["prerequisites"][0], "build_graph");
@@ -376,8 +375,7 @@ impact_direction_floor: "observed".into(),
             follow_ups: None,
             required_args: None,
             limitations: None,
-            limitations: None,
-impact_direction_floor: "observed".into(),
+            impact_direction_floor: "observed".into(),
         };
         let v = serde_json::to_value(&d).expect("serialise");
         for key in [

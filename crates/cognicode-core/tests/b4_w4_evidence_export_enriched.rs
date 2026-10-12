@@ -49,7 +49,7 @@ use cognicode_core::assurance_export::workspace_extractor::{
 };
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 // ----- fixture helpers (same pattern as b2_w4_export_invariants) -----------
 

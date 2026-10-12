@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use crate::interface::symbol_identity::SymbolId;
 
 #[derive(
-    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema,
+    Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
