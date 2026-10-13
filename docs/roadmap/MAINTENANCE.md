@@ -445,6 +445,71 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
+### 2j. ASan sobre el SERVIDOR en release: el fallo sí aparece (y lo que no se puede concluir)
+
+Hasta aquí todo el ASan había corrido sobre un **binario de test de un solo
+hilo**. El crash ocurre en el **servidor**, con 130 hilos, y a velocidad
+release. Eso es un experimento distinto, así que se compiló el servidor con
+`-Zsanitizer=address` en `--release --target x86_64-unknown-linux-gnu` (target
+explícito para no instrumentar los proc-macros) y se le pasó el mismo payload:
+
+```
+$ cognicode-mcp < payload.jsonl        # release + ASan
+AddressSanitizer: CHECK failed: asan_allocator.cpp:191
+  "((old)) == ((kAllocBegMagic))" (0xcc6e96b900000066, 0xcc6e96b9cc6e96b9)
+  (tid=2094360)
+exit=1   en 20s
+```
+
+Mismo servidor, misma llamada, **mismo sitio**: `build_index` →
+`find_all_symbols_with_path` → `node_to_symbol_with_path`, y el fallo está en un
+`realloc` de un `RawVec` que crece:
+
+```
+#7  __asan::Allocator::Reallocate
+#8  __asan::asan_realloc
+#9  realloc
+#10 <alloc::raw_vec::RawVecInner>::finish_grow
+#11 RawVec<(u32, Vec<(SymbolId, f64)>)>::grow_one
+#12 TreeSitterParser::node_to_symbol_with_path
+#13 TreeSitterParser::find_all_symbols_with_path
+#14 LightweightIndex::build_index
+#15 handle_build_lightweight_index::{closure#0}::{closure#0}
+```
+
+Esto **confirma por qué ASan no lo veía antes**: no era que no hubiera
+corrupción, era que (a) la velocidad de un binario de test de un solo hilo no
+llega al tramo dañado, y (b) el perfil debug no llegaba a los ~20 s que tarda el
+servidor. El fallo es **real, reproducible y está en el camino de parseo del
+índice**, no en el andamiaje MCP.
+
+**Lo que este dato NO demuestra, y hay que decirlo claro:**
+
+- `0xcc6e96b9` es el propio `kAllocBegMagic` de ASan, no contenido del repo
+  (se buscó la secuencia de bytes en el árbol: cero coincidencias). El `0x66`
+  final es un byte de datos residual. O sea: ASan leyó una cabecera de chunk que
+  **no es suya**.
+- Eso apunta a **fallo de interposición**: hay una ruta que pide memoria por
+  `malloc`/`realloc` **sin instrumentar** y por tanto fuera del heap de ASan, y
+  el código de Rust luego opera sobre ese puntero **creyendo** que sí lo está. El
+  candidato natural es el runtime C de `tree-sitter`, que entra por `cc`/`build.rs`
+  y que en 2h no había mostrado ni un error — coherente con que aquí tampoco lo
+  muestre, sino que *corrompe sin quejarse*.
+- **Los nombres de tipo del symbolizeson poco fiables.** La misma dirección da
+  tres tipos distintos según la herramienta (`RawVec<(u32, Vec<(SymbolId,f64)>)>`
+  con llvm-symbolizer, `RawVec<schemars::generate::SchemaUid>` con addr2line).
+  Es el efecto conocido de `lto="thin"` + `codegen-units=16` (del
+  `~/.cargo/config.toml` global) sobre el debug info: la info de depuración ya no
+  corresponde 1:1 al código emitido. Por eso **no** se afirma que el vector
+  concreto sea un `(SymbolId, f64)`: sólo que hay un `RawVec` creciendo en
+  `node_to_symbol_with_path` cuando glibc/ASan detectan el heap roto.
+
+Lo que queda pendiente para cerrar la causa raíz: simbolizar con
+`codegen-units=1` y `lto=false` (build de una sola unidad, más lento pero con
+debug info fiable) para nombrar el `RawVec` real, o instrumentar el C de
+tree-sitter en release. Ninguna de las dos está hecha; ambas son el siguiente
+paso, no una conclusión.
+
 ### 2i. El abort NO ocurre en reposo: la corrupción viene del propio `build_index`
 
 Con el binario release **sin strip** (`RUSTFLAGS=-C strip=none`, porque el
