@@ -347,3 +347,65 @@ desreferenciada no resuelve la pregunta: no aborta, pero tampoco termina en
 Este defecto es de disponibilidad en una ruta de advertised, y una
 certificación production-ready no puede firmarse con una herramienta
 anunciada que tumba el servidor.
+
+### 2b. Los cuatro fantasmas corregidos — verificado en vivo
+
+`9fcde296` (composite) y `51e826da` (los tres `safe_refactor_*`). Tras el
+rebuild release, sobre el binario real:
+
+| Herramienta | Antes | Ahora |
+|---|---|---|
+| `composite_impact_query` | `tool not found` | OK, con `verdict_refused=true` |
+| `safe_refactor_preview` | `tool not found` | `isError` honesto (plan inválido / inexistente / ambos a la vez) |
+| `safe_refactor_apply` | `tool not found` | `isError` honesto (plan ilegible) |
+| `safe_refactor_revalidate` | `tool not found` | `isError` honesto y explained |
+
+Clasificación viva de las 77 (`scripts/product/classify_tool_errors.py`,
+1 proceso por herramienta):
+`OK 23 · VALIDATION 49 · CONTEXT 4 · CRASH 1 · MISSING_ARM 0 · UNKNOWN 0`.
+
+**Cero fantasmas.** `CONTEXT` son precondiciones que la propia herramienta
+nombra y remedy (`No graph available`, `Run build_graph first`,
+`Call relationships not found (0 edges)`) — el opuesto de `tool not found`,
+que no nombra remedio porque no hay handler al que llegar.
+
+**Control de autoridad verificado en el cable**: un `authorization_token`
+ smuggling en `safe_refactor_preview` se **rechaza** con
+``unknown field `authorization_token`, expected `plan_path` or `plan_json` ``,
+no se descarta en silencio. Antes de este trabajo el rechazo dependía de que
+el cliente notara un campo ignorado.
+
+`safe_refactor_revalidate` **rechaza a propósito**. `run_revalidation` necesita
+el conjunto de ficheros cambiados del plan aplicado; un `plan_id` no lo
+reconstruye y el resultado del apply no se persiste. Devolver cero ficheros
+analizados con `verdict_refused: true` se leería como "comprobado, nada
+encontrado" en vez de "nada comprobado". La pieza que falta es un registro
+durable del outcome del apply.
+
+### 2c. Superficies CLI verificadas en vivo
+
+`cognicode 0.101.16`, `cogh 0.101.16`,
+`cognicode capabilities --json` con `cli_version 0.101.16` y perfiles,
+`cogh skills` con 4 bundles `[ok]`.
+
+Claims publicados contrastados contra lo observado:
+
+- README (EN y ES) dice **77 herramientas MCP**; el catálogo tiene 77 y
+  `tools/list` devuelve 77. Correcto.
+- Las tablas del README suman 35 y el texto dice explícitamente
+  *"curated selection — not the full surface"*, con `product/tools.json` como
+  lista autoritativa. Correcto y honesto: no es una afirmación falsa.
+- Las menciones de `0.101.6`..`0.101.10` en README/SECURITY son historial de
+  releases, no el claim de versión actual.
+
+### 2d. Estado del gate tras estas correcciones
+
+- `cargo test --workspace --features cognicode-core/test-contract-seam`:
+  **6378 passed, 0 failed**.
+- `core_gate_coverage_contract` detectó las dos suites nuevas y hubo que
+  registrarlas en el mismo commit (66 → 68, más `ANCHOR_SUITES`). El contrato
+  está haciendo su trabajo: una suite que nada ejecuta no puede aparecer en
+  silencio.
+- `bash scripts/test-fast.sh`: verde. Nota: el selector CR-08 **no** elige las
+  suites nuevas; hay que invocarlas explícitamente con
+  `--features cognicode-core/test-contract-seam`. Sin revisar.

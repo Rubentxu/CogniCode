@@ -97,6 +97,13 @@ def classify(status: str, detail: str) -> str:
         return "VALIDATION"
     if re.search(r"No graph available|no index|not initialized|feature", detail, re.I):
         return "CONTEXT"
+    # Preconditions a handler names for itself. These are not defects: the arm
+    # ran, and the error says what to do next. `solid_audit` saying "Run
+    # build_graph first" is the same shape as a tool reporting it needs a graph
+    # -- the opposite of `tool not found`, which names no remedy because there
+    # is no handler to reach.
+    if re.search(r"call graph available|call relationships not found", detail, re.I):
+        return "CONTEXT"
     return "UNKNOWN"
 
 
