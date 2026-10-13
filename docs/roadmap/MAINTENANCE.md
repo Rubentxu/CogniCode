@@ -445,6 +445,97 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
+### 2k. CAUSA RAÍZ LOCALIZADA (con nº de línea): el `Vec<tree_sitter::Node>` del DFS
+
+El problema de los nombres de tipo de 2j se resolvió recompilando con
+`CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1` y `CARGO_PROFILE_RELEASE_LTO=false`, con
+`-Cstrip=none` y `CARGO_PROFILE_RELEASE_DEBUG=1` (el `~/.cargo/config.toml`
+global pone `strip=true` y `debug=false` en release, que es exactamente por lo
+que el debug info era inservible). Mismo fallo, mismos 20 s, y ahora las líneas
+de origen son fiables:
+
+```
+#17 RawVec<(u32, Vec<(SymbolId, f64)>)>::grow_one
+#18 <alloc::vec::Vec<tree_sitter::Node>>::push_mut        vec/mod.rs:1041
+#19 <alloc::vec::Vec<tree_sitter::Node>>::push             vec/mod.rs:1004
+#20 TreeSitterParser::find_identifier_name                tree_sitter_parser.rs:337
+#21 TreeSitterParser::node_to_symbol_with_path            tree_sitter_parser.rs:256
+#22 TreeSitterParser::find_all_symbols_with_path          tree_sitter_parser.rs:199
+#23 LightweightIndex::build_index                         lightweight_index.rs:170
+#24 handle_build_lightweight_index                        handlers/mod.rs:3664
+```
+
+`tree_sitter_parser.rs:337` es, literalmente, la línea
+
+```rust
+stack.push(child);      // stack: Vec<tree_sitter::Node>
+```
+
+dentro del **fase 2** de `find_identifier_name` (el DFS iterativo en busca del
+nombre del símbolo). La línea 256 es el `find_identifier_name(node, source)?`
+de `node_to_symbol_with_path`, y la 199 es la llamada a
+`node_to_symbol_with_path` en `find_all_symbols_with_path`.
+
+O sea: la asignación que dispara la detección **es la pila de DFS de nodos de
+tree-sitter creciendo**, no un `String` ni un símbolo. Eso explica el `21 bytes`
+del primer backtrace: el testigo es esta pila, y no el sitio donde se escribió el
+byte de más.
+
+**Sobre el tipo de 2j**: el `RawVec<(u32, Vec<(SymbolId, f64)>)>` del frame 17
+era **debug info equivocado** (el tipo compartido o monomorfizado más cercano).
+El frame 18 lo desmentía ya —`Vec<tree_sitter::Node>`— y con `codegen-units=1` el
+frame 18 es el de fiar. Por tanto **se retira** la hipótesis de que el vector
+`(SymbolId, f64)` (analítica de grafos) estuviera implicada: ese tipo no aparece
+en este camino de código.
+
+**Por qué esto puede corromper el heap, con el mecanismo exacto:**
+
+```rust
+#[derive(Clone, Copy)]
+#[repr(transparent)]
+pub struct Node<'tree>(ffi::TSNode, PhantomData<&'tree ()>);
+```
+
+Un `Node` de tree-sitter 0.27 es un `TSNode` **crudo**: un puntero al nodo más
+dos `u32` de offset. Es `Copy`, no tiene refcount, y `Node::child(i)` llama a
+`ffi::ts_node_child` devolviendo un nuevo `TSNode` **sin ninguna referencia
+contada**. La parte de Rust es sound en cuanto a *lifetimes*:
+`find_all_symbols_with_path`
+mantiene `tree` (el `TreeSitterTree`) vivo durante todo el bucle, y el
+`PhantomData<&'tree ()>` ata cada `Node` a ese árbol, así que el compilador
+prohíbe usar un `Node` después de soltar el `Tree`.
+
+Lo que queda es que **el `TSNode` crudo depende de que la C API no reutilice ni
+mueva el almacenamiento del subárbol mientras la pila DFS lo referencia**. La
+pila DFS vive en la heap de Rust (instrumentada), pero los punteros que guarda
+apuntan al almacenamiento del *subárbol*, que es memoria gestionada por el
+runtime C de tree-sitter. Si el runtime C reutiliza esa memoria —o si un
+`TSNode` es copiado a un árbol distinto y su `id` colisiona con otro— el
+`RawVec` de Rust sigue siendo válido pero los **datos** a los que apuntan sus
+`Node` ya no son los que eran. Eso encaja exactamente con el `CHECK failed`:
+ASan leyó una cabecera de chunk que **no era suya** en la posición que un chunk
+de su heap debería tener, porque algo escribió allí con un puntero tonto.
+
+**Esto NO es todavía una atribución al upstream de tree-sitter.** Es la
+localización del sitio exacto (`tree_sitter_parser.rs:337`, el `push` de la pila
+de DFS) y la eliminación de las hipótesis alternativas. Lo que falta para
+cerrarlo del todo:
+
+1. Instrumentar el C de tree-sitter en release (`CFLAGS=-fsanitize=address`) en
+   vez de sólo Rust, para ver si el fallo se reporta como
+   `heap-buffer-overflow` en el C y con qué stack.
+2. Reproducir con **un solo fichero** y un **solo lenguaje**, porque el fallo sólo
+   aparece con el repo completo. Eso reduce el corpus y permite bisecar por
+   gramática sin builds de horas.
+3. Regla de estilo: `find_identifier_name` tiene la misma pila DFS en fase 1 y
+   fase 2, y `find_all_symbols_with_path` tiene la suya propia (línea 186). Hay
+   **tres** DFS idénticos con la misma forma. Si el fallo está en el patrón y no
+   en un `grammar` concreto, la corrección es un único helper de recorrido
+   compartido, no tres parches.
+
+El punto 2 es el siguiente paso y es barato: sin ASan, un solo fichero no tarda
+14 minutos.
+
 ### 2j. ASan sobre el SERVIDOR en release: el fallo sí aparece (y lo que no se puede concluir)
 
 Hasta aquí todo el ASan había corrido sobre un **binario de test de un solo
