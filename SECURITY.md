@@ -82,6 +82,7 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
+| 0.101.16 (current workspace version, not yet tagged) | yes |
 | 0.101.9 (latest published release, `v0.101.9`, cut from `integrate/v1015`) | yes |
 | 0.98.1 (previous release, `v0.98.1`) | yes |
 

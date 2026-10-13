@@ -17,7 +17,7 @@ lenguajes de serie: 18 con evidencia de aceptación completa y 12 experimentales
 
 ## Características
 
-- **73 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
+- **77 herramientas MCP** — grafos de llamadas, análisis de impacto, búsqueda semántica, refactorización segura, métricas de complejidad y más
 - **30 lenguajes** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) y 12 `experimental`, todos mediante Tree-sitter. El desglose exacto, con la evidencia de cada nivel, está en [`product/languages.json`](product/languages.json)
 - **4 estrategias de grafo** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Caché persistente** — RedbGraphStore sobrevive entre sesiones (base de datos embebida `redb`)
@@ -125,7 +125,7 @@ Añade CogniCode como servidor MCP en la configuración de tu cliente de IA:
 
 ## Herramientas MCP
 
-CogniCode publica **73 herramientas MCP**. Las tablas siguientes son una
+CogniCode publica **77 herramientas MCP**. Las tablas siguientes son una
 **selección curada**, agrupada por la capacidad que más le importa al lector,
 no la superficie completa. La lista autoritativa, generada desde el código y
 verificada en CI, está en [`product/tools.json`](product/tools.json); los
