@@ -445,6 +445,48 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
+### 2l. CASO MÍNIMO: `sandbox/fixtures` aborta en 3 s (3/3)
+
+Bajar a un caso mínimo era el paso 2 de 2k y resultó ser el más rentable. Con el
+mismo payload MCP pero de un solo directorio:
+
+```
+$ build_lightweight_index  directory=sandbox/fixtures
+rc=-6  3.0s  3/3 veces   corrupted size vs. prev_size
+```
+
+Y ese directorio **no** contiene nada raro: tras el `WalkFilter` (que se salta
+`node_modules`) son ~1800 ficheros reales, de los que los mayores son
+`rules/` (436), `scale/` (367), `rust-hello/` (210), `rust/` (210). Además,
+**cada hijo por separado pasa** (`scale`, `rules`, `rust-hello`, `rust-debug`,
+`lsi-baseline`: todos `rc=0`), y las 20 extensiones probadas una a una también
+pasaron, incluidas 4730 `.rs` y 11197 `.md`.
+
+Conclusión: **el disparador es el agregado, no una gramática concreta**. Ninguna
+lengua rompe el heap por sí misma; lo rompe el volumen combinado. Eso encaja con
+el resto de la evidencia (ver 2i: `wait_until_cold` en los 128 workers, o sea
+nada concurrente) y **descarta** la hipótesis de que una gramática concreta
+—tree-sitter-c a 0.21, tree-sitter-php a 0.24, etc.— sea la culpable.
+
+**Advertencia metodológica registrada, porque casi me engaña**: varios
+"ok rc=0" de esta sesión eran **falsos verdes**. `sandbox/fixtures/typescript`
+tiene 15048 ficheros pero indexa **9 símbolos** en 0.1 s, porque `node_modules`
+está filtrado. Un subdirectorio que responde rápido no es un subdirectorio
+seguro: es un subdirectorio que no se ha recorrido. A partir de aquí, cada
+"ok" se contrasta con el `symbols_indexed` de la respuesta; sin ese número, un
+`rc=0` no prueba nada.
+
+Estado actual del caso mínimo:
+
+- **Reproducción**: `sandbox/fixtures` → `rc=-6`, 3 s, determinista (3/3).
+- **Ubicación del fallo**: `tree_sitter_parser.rs:337`, `stack.push(child)` de la
+  pila `Vec<tree_sitter::Node>` (2k, con debug info fiable).
+- **Sin atribuir** a un fichero concreto ni al upstream de tree-sitter.
+
+Lo que falta para tener el fichero de un solo caso: reducir `sandbox/fixtures`
+por mitades dentro de `sandbox/fixtures` hasta que una mitad aborte y la otra
+no. Con 3 s por prueba son ~20 pruebas, no horas. Ese es el siguiente paso.
+
 ### 2k. CAUSA RAÍZ LOCALIZADA (con nº de línea): el `Vec<tree_sitter::Node>` del DFS
 
 El problema de los nombres de tipo de 2j se resolvió recompilando con
