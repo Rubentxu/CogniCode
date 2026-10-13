@@ -796,6 +796,85 @@ servidor le impone. Aunque se arregle el abort, la herramienta seguiría siendo
 inaccesible en este repo salvo que el trabajo se haga incremental o el
 presupuesto sea mayor.
 
+**Corrección posterior a esa medición**: el presupuesto de
+`build_lightweight_index` **no** es 30 s. `product/tools.json` lo declara
+`category: "graph"`, y `timeout_for_category` da 60 s a `graph`
+(`rmcp_adapter.rs:267`). El `duration_ms=30001` de arriba apunta a que el
+servidor en modo standalone no está resolviendo la categoría y cae al default
+de 30 s. Queda por cerrar por medición directa cuál de las dos rutas aplica en
+cada modo de despliegue; no se afirma aquí ninguna de las dos sin comprobarla.
+
+## Causa raíz del abort: `tree-sitter-haskell` 0.23.1 (medido, cerrado)
+
+El intento 3 de arriba, repetido con el `.o` de tree-sitter verificado como
+instrumentado (23 referencias `__asan`), **sí reproduce** el defecto. Reporte
+completo:
+
+```
+==2713957==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x7b597e4ca270
+WRITE of size 4 at 0x7b597e4ca270 thread T129
+    #0 advance          tree-sitter-haskell-0.23.1/src/scanner.c:651
+    #2 take_line        tree-sitter-haskell-0.23.1/src/scanner.c:1426
+    #3 newline_lookahead / #6 pre_ws_commands / #9 external_scanner_scan
+    #17 TreeSitterParser::parse_tree        tree_sitter_parser.rs:128
+    #19 LightweightIndex::build_index       lightweight_index.rs:170
+    #20 handle_build_lightweight_index      handlers/mod.rs:3664
+0x7b597e4ca270 is located 0 bytes after 32-byte region
+freed by thread T129 here:
+    realloc             asan_malloc_linux.cpp:81
+    _array__reserve     tree_sitter/array.h:185
+previously allocated by thread T129 here:
+    ts_malloc           tree_sitter/array.h:187
+SUMMARY: AddressSanitizer: heap-buffer-overflow scanner.c:651 in advance.part.0
+```
+
+El defecto está en la macro `array_push` del `array.h` que el vendor trae:
+
+```c
+#define array_push(self, element)                            \
+  (_array__grow((Array *)(self), 1, array_elem_size(self)),    \
+   (self)->contents[(self)->size++] = (element))
+```
+
+`_array__grow` puede `ts_realloc` y mover el bloque; cuando lo mueve,
+`realloc` libera el antiguo, pero el store de la segunda mitad de la macro
+cae en el liberado: el orden de evaluación del operador coma no está
+especificado, así que el compilador puede cargar `self->contents` antes de la
+llamada. `advance()` empuja un elemento por paso del lexer, así que basta un
+cuerpo de comentario lo bastante largo para forzar el primer crecimiento del
+array.
+
+**Trigger minimal por delta debugging: 9 bytes, `-- Haskel`.**
+Crash: `-- Haskel`, `-- Haskel\n`, `-- Haskell`, `-- Haskel\n-- x`.
+No crash: `--`, `--a`, `--a\n`, `abc`, `\n`, `-- x`, `a\n`.
+Los ficheros `sandbox/fixtures/tierc/Main.hs` y `sandbox/fixtures/tier-c/Main.hs`
+(226 y 239 bytes) ambos disparan.
+
+**Depende del optimizador.** A `opt-level=0` el compilador sube el load de
+`contents` y el store cae en el buffer vivo: un run solo en debug **no puede
+observar el bug**. Por eso el guard vive en el crate (para poder correr con
+`cargo test --release`):
+
+```
+cargo test --release -p cognicode-core --lib haskell_lookahead_overflow
+  0.23.1 -> corrupted size vs. prev_size, SIGABRT (signal 6), rc=101
+  0.24.1 -> 3 passed, 0 failed, rc=0
+```
+
+**Fix**: `tree-sitter-haskell` `0.23` → `0.24` (`f4989780`). 0.24.1 reescribe
+`array_push` para releer `self->contents` tras crecer, que es la corrección real.
+Sin parche local, sin guarda, sin aserción debilitada.
+
+**Verificación en el servidor real** (binario release, JSON-RPC por stdio, sin
+ASan): `sandbox/fixtures` → `success: true`, 7293 símbolos, 0.8 s, donde antes
+abortaba. El caso `-- Haskel` aislado → `success: true`, 2 símbolos.
+
+Esto **deja obsoleto** el descarte de "gramáticas tree-sitter" más arriba: las 30
+gramáticas cargan y parsean, y eso sigue siendo cierto, pero la de Haskell
+además escribía fuera de los límites al indexar. La hipótesis del
+`follow_links(true)` queda igualmente cerrada: `build_lightweight_index` con
+`follow_links(false)` también abortaba.
+
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
 Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
