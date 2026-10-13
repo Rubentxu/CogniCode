@@ -325,7 +325,23 @@ pub struct ViolationInfo {
 // Safe Refactor
 // ============================================================================
 
+/// Read-only safe-refactor request (AAT-B5-03).
+///
+/// `deny_unknown_fields` is the security control here, not a strictness
+/// preference. This is the read-only MCP surface, and `apply.rs` documents the
+/// invariant it protects: the `AuthorizationToken` is passed as a separate
+/// argument and is never derived from, computed out of, or accepted inside any
+/// JSON crossing the read-only boundary. Without this attribute serde silently
+/// drops an `authorization_token` the caller smuggled in, the preview proceeds,
+/// and the field appears to have been honoured while it was actually discarded.
+///
+/// That was the actual state: the attribute was documented on the struct in
+/// `refactor/apply.rs` and absent from the type, so
+/// `read_only_mcp_tool_cannot_acquire_write_authority` has been failing since
+/// B5.W3. Silently ignoring an unknown field also makes every future field
+/// addition on the wire a no-op for this tool.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SafeRefactorInput {
     pub action: RefactorAction,
     pub target: String,

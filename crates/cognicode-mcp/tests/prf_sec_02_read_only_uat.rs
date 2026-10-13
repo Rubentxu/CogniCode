@@ -17,6 +17,7 @@ use std::path::PathBuf;
 
 mod common;
 use common::McpSession;
+use cognicode_core::interface::catalog::load_tool_catalog;
 
 fn fixture_ws() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws")
@@ -178,7 +179,30 @@ async fn default_mode_keeps_write_file_available() {
         "default mode must keep write_file advertised"
     );
 
-    // PRF-EXT-01: default mode flags exactly the three mutating tools.
+    // PRF-EXT-01: default mode flags exactly the tools the catalog declares
+    // mutating.
+    //
+    // The expectation is derived from `product/tools.json` rather than written
+    // as a literal. The hardcoded list was missing `safe_refactor_apply`, which
+    // has been `authority: "mutating"` since B5.W3 and does write to the
+    // workspace -- `refactor/apply.rs` stages edits, fsyncs, and renames.
+    // Enumerating the set in two places meant the flag was correct in one and
+    // wrong in the other, which is how a test that claims to check
+    // "exactly the declared mutating tools" ended up contradicting the
+    // declaration. `cogh` was the other omission; removing the phantom tool
+    // took care of that one.
+    let catalog = load_tool_catalog();
+    assert!(
+        !catalog.is_empty(),
+        "product/tools.json must load for this test to mean anything"
+    );
+    let mut declared: Vec<String> = catalog
+        .iter()
+        .filter(|d| matches!(d.authority.as_str(), "mutating" | "execute" | "network"))
+        .map(|d| d.name.clone())
+        .collect();
+    declared.sort();
+
     let tools = all_tools_with_mutates(&mut s).await;
     let mut flagged: Vec<String> = tools
         .into_iter()
@@ -188,12 +212,42 @@ async fn default_mode_keeps_write_file_available() {
     flagged.sort();
     assert_eq!(
         flagged,
+        declared,
+        "the tools flagged mutating at runtime must be exactly the tools the \
+         catalog declares mutating"
+    );
+
+    // The comparison above cannot fail on its own. `descriptor_to_tool` derives
+    // `mutates_workspace` from the very same `authority` value this list is
+    // built from, so editing the catalog moves both sides together -- checked
+    // by mutation: declaring `safe_refactor_apply` read-only left the test
+    // green. What the assertion does buy is coverage of the *projection*, i.e.
+    // that nothing between the catalog and the wire drops or reclassifies a
+    // mutating tool.
+    //
+    // So the security claim is pinned here separately, against a literal: the
+    // set of tools that can write must be exactly these four, and each one must
+    // be one whose handler really touches the workspace. A new write-capable
+    // tool cannot be added without updating this list deliberately.
+    assert_eq!(
+        declared,
         vec![
             "edit_file".to_string(),
             "reparse_on_edit".to_string(),
-            "write_file".to_string()
+            "safe_refactor_apply".to_string(),
+            "write_file".to_string(),
         ],
-        "exactly the declared mutating tools must be flagged"
+        "the write-capable tool set changed. If a tool now writes the \
+         workspace, it must be declared mutating here; if it no longer does, \
+         the declaration is a lie the read-only mode would act on."
+    );
+    // `safe_refactor_apply` belongs in that set: `refactor/apply.rs` stages
+    // edits, fsyncs them, and renames into place. It was missing from the
+    // previous literal list while the catalog already declared it mutating,
+    // which is exactly the drift this test was supposed to catch.
+    assert!(
+        declared.iter().any(|n| n == "safe_refactor_apply"),
+        "safe_refactor_apply writes the workspace and must be declared mutating"
     );
 
     let resp = s

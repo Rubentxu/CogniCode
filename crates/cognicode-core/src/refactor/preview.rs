@@ -1,4 +1,6 @@
-//! B5.W2 — Preview verificable de un [`plan::RefactorPlan`] (B5.W1).
+//! B5.W2 — Preview verificable de un [`RefactorPlan`] (B5.W1).
+//!
+//! [`RefactorPlan`]: super::plan::RefactorPlan
 //!
 //! Estado pre-B5.W2:
 //!   - `RefactorService` y `safe_refactor` (MCP) producen un
