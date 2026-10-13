@@ -23,6 +23,10 @@
         {"type": "null"}
       ]
     },
+    "stringArrayOrAbsent": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
     "tool": {
       "type": "object",
       "additionalProperties": false,
@@ -64,7 +68,16 @@
           "uniqueItems": true,
           "items": {"enum": ["core", "reviewer", "developer", "experimental"]}
         },
-        "runtime_metadata": {"type": "object"}
+        "runtime_metadata": {"type": "object"},
+        "intent_tags": {"$ref": "#/$defs/stringArrayOrAbsent"},
+        "precision_floor": {"enum": ["lsp", "ast-heuristic", "index"]},
+        "feature": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "prerequisites": {"$ref": "#/$defs/stringArrayOrAbsent"},
+        "follow_ups": {"$ref": "#/$defs/stringArrayOrAbsent"},
+        "required_args": {"$ref": "#/$defs/stringArrayOrAbsent"},
+        "limitations": {"$ref": "#/$defs/stringArrayOrAbsent"},
+        "impact_direction_floor": {"enum": ["observed", "inferred", "heuristic"]},
+        "language_scope": {"$ref": "#/$defs/stringArrayOrAbsent"}
       }
     }
   }

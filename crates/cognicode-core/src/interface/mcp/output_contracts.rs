@@ -48,6 +48,7 @@ use serde_json::{Map, Value};
 
 use crate::interface::mcp::handlers::BuildGraphOutput;
 use crate::interface::mcp::handlers::CompositeImpactOutput;
+use crate::interface::mcp::handlers::SafeRefactorRevalidateOutput;
 use crate::interface::mcp::handlers::consolidated_handlers::{
     CodebaseMapOutput, GraphCheckpointOutput, IacQueryOutput, ProjectInsightsOutput,
     ProjectOverviewOutput, ReviewPrOutput,
@@ -102,6 +103,10 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert(
         "composite_impact_query",
         schema_of::<CompositeImpactOutput>(),
+    );
+    m.insert(
+        "safe_refactor_revalidate",
+        schema_of::<SafeRefactorRevalidateOutput>(),
     );
     m
 }

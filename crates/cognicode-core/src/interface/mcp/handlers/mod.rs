@@ -1275,6 +1275,54 @@ pub struct CompositeImpactOutput {
     pub suggested_prerequisites: Vec<serde_json::Value>,
 }
 
+/// Output for `safe_refactor_revalidate`.
+///
+/// `product/tools.json` has advertised a contract for this tool since B4.W4,
+/// but no registration existed here, so the runtime published nothing and the
+/// `catalog_and_runtime_agree_on_output_schema_coverage` parity test failed
+/// with `cogh` and this tool as the two drift cases. This DTO is that
+/// registration's missing half.
+///
+/// Like [`CompositeImpactOutput`] this is a structural mirror rather than a
+/// re-export: `refactor::revalidate::RevalidationReport` is `Serialize`-only
+/// and embeds `RevalidationVerdict`, a fieldless-payload enum whose variants
+/// carry data, so it cannot derive `JsonSchema` without losing its shape. The
+/// nested evidence types are carried as `serde_json::Value` for the same
+/// reason `CompositeImpactOutput` does it, and because they are themselves not
+/// `JsonSchema`-derivable.
+///
+/// The refusal fields are load-bearing. A post-apply report that does not say
+/// it refused to conclude reads as an all-clear, and an agent that treats it as
+/// one will skip the verification this tool exists to provide.
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub struct SafeRefactorRevalidateOutput {
+    /// Echo of the input `plan_id`.
+    pub plan_id: String,
+    /// Stable 16-hex digest over `plan_id` + `what_changed`. Used for report
+    /// deduplication, not for security.
+    pub plan_digest: String,
+    /// Number of files in `what_changed`. Parity with the apply outcome, not
+    /// a re-scan.
+    pub analyzed_files: usize,
+    /// B4.W3 findings over the changed files.
+    pub findings: serde_json::Value,
+    /// B4.W2 diagnostic, or `None` when the check did not run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostics: Option<serde_json::Value>,
+    /// B4.W1 impact result, or `None` when the check did not run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impact: Option<serde_json::Value>,
+    /// `verdict_refused` | `invariants_hold` | `invariants_drift`.
+    pub verdict: String,
+    /// Always `true` until a future WU records an `evidence_digest`.
+    pub verdict_refused: bool,
+    /// Canonical, static refusal reason.
+    pub verdict_refused_reason: String,
+    /// Names of the B4 checks that actually executed, so a consumer can tell
+    /// what was run and not just what was produced.
+    pub executed_checks: Vec<String>,
+}
+
 /// Handler for build_graph tool
 pub async fn handle_build_graph(
     ctx: &HandlerContext,
