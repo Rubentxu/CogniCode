@@ -56,12 +56,12 @@ fn lightweight_index_over_repo_root_does_not_corrupt_the_heap() {
 #[test]
 #[ignore = "indexes a large tree; run explicitly"]
 fn lightweight_index_over_one_large_language_tree() {
-    // CARGO_MANIFEST_DIR is `crates/cognicode-core`, so the workspace root is
-    // two levels up and `crates/` is one level up from there.
+    // CARGO_MANIFEST_DIR is `crates/cognicode-core`, so the `crates/` tree is
+    // its direct parent. Joining "crates" again produced `crates/crates`,
+    // which does not exist and made this probe fail for the wrong reason.
     let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crates/")
-        .join("crates")
         .to_path_buf();
 
     eprintln!("indexing {}", root.display());
