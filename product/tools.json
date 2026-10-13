@@ -1,8 +1,8 @@
 {
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
-  "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 80,
+  "source_commit": "54a2c599ce0aba6f435bce714ca6a3041dfad8a1",
+  "runtime_tool_count": 77,
   "tools": [
     {
       "name": "analyze_impact",
@@ -47,129 +47,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol_name"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_explain",
-        "get_call_hierarchy"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ],
-      "impact_direction_floor": "observed"
-    },
-    {
-      "name": "composite_impact_query",
-      "title": "Composite impact query for agents",
-      "description": "Aggregate impact paths (B4.W1), architecture observations (B4.W2), and quality findings (B4.W3) for a symbol. Adds the suggested follow-ups and prerequisites pulled from the catalog. Investigative, NOT authoritative: the result always carries verdict_refused=true with reason `composite queries return evidence, not verdicts; investigate each piece`. Use the suggested tools to investigate each piece independently.",
-      "category": "graph",
-      "authority": "read",
-      "stability": "stable",
-      "input_schema": {
-        "properties": {
-          "qualified_name": {
-            "description": "Qualified name of the symbol to investigate",
-            "type": "string"
-          },
-          "file_path": {
-            "description": "File where the symbol is defined (best-effort location)",
-            "type": "string"
-          }
-        },
-        "required": [
-          "qualified_name"
-        ],
-        "type": "object"
-      },
-      "output_schema": {
-        "properties": {
-          "verdict_refused": {
-            "description": "Always true; the composite result is evidence, not a verdict",
-            "type": "boolean"
-          },
-          "verdict_refused_reason": {
-            "description": "Canonical reason string pinned in the source",
-            "type": "string"
-          },
-          "impact": {
-            "description": "B4.W1 ImpactResult envelope, or null when B4.W1 not wired",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "architecture": {
-            "description": "B4.W2 ArchitectureDiagnostic envelope, or null when not wired",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "findings": {
-            "description": "B4.W3 Finding list (empty when not wired)",
-            "type": "array"
-          },
-          "suggested_follow_ups": {
-            "description": "ToolRef list pulled from ToolDescriptor.follow_ups",
-            "type": "array"
-          },
-          "suggested_prerequisites": {
-            "description": "ToolRef list pulled from ToolDescriptor.prerequisites",
-            "type": "array"
-          }
-        },
-        "required": [
-          "verdict_refused",
-          "verdict_refused_reason",
-          "impact",
-          "architecture",
-          "findings",
-          "suggested_follow_ups",
-          "suggested_prerequisites"
-        ],
-        "type": "object"
-      },
-      "requirements": {
-        "graph": false,
-        "persistence": false,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 10,
-      "public_profiles": [
-        "reviewer"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 10,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.14"
-      },
-      "required_args": [
-        "qualified_name"
-      ],
-      "prerequisites": [],
-      "follow_ups": [],
-      "limitations": [
-        "investigation only; result is not a verdict",
-        "evidence fields are empty until B4.W1 / B4.W2 / B4.W3 extractors wire to the composite",
-        "follow_ups and prerequisites are pulled from the catalog by qualified_name; unknown symbols yield empty suggestions"
-      ],
-      "intent_tags": [
-        "verify",
-        "locate"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "ask_about_code",
@@ -214,18 +93,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "question"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "experimental; traces paths, not a chat model"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "build_call_subgraph",
@@ -283,19 +152,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol_name"
-      ],
-      "follow_ups": [
-        "get_call_hierarchy",
-        "graph_explain"
-      ],
-      "limitations": [
-        "requires a current call graph",
-        "on-demand; not persisted"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "build_graph",
@@ -460,21 +318,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "follow_ups": [
-        "get_call_hierarchy",
-        "analyze_impact",
-        "check_architecture",
-        "graph_explain",
-        "graph_communities",
-        "graph_pagerank",
-        "find_references",
-        "find_usages"
-      ],
-      "limitations": [
-        "synchronous walk; may be partial on unreadable sources"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "build_lightweight_index",
@@ -522,16 +367,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "follow_ups": [
-        "query_symbol_index",
-        "find_usages"
-      ],
-      "limitations": [
-        "requires a current symbol graph / index",
-        "may miss deep call edges"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "cfg_per_function",
@@ -576,14 +413,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "experimental; PlanLimits may diverge from upstream"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "check_architecture",
@@ -621,29 +452,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2",
-        "gate_authority": false,
-        "produces_observations_only": true
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_insights",
-        "graph_feedback_arcs"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "Tarjan SCC results depend on graph completeness"
-      ],
-      "language_scope": [
-        "rust",
-        "python",
-        "typescript",
-        "javascript",
-        "go",
-        "java"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "codebase_map",
@@ -705,22 +515,96 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
+        "tool_version": "0.101.16"
+      }
+    },
+    {
+      "name": "composite_impact_query",
+      "title": "Aggregate impact paths (B4",
+      "description": "Aggregate impact paths (B4.W1), architecture observations (B4.W2), and quality findings (B4.W3) for a symbol. Adds the suggested follow-ups and prerequisites pulled from the catalog. Investigative, NOT authoritative: the result always carries verdict_refused=true with reason `composite queries return evidence, not verdicts; investigate each piece`. Use the suggested tools to investigate each piece independently.",
+      "category": "graph",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "properties": {
+          "file_path": {
+            "description": "File where the symbol is defined (best-effort location)",
+            "type": "string"
+          },
+          "qualified_name": {
+            "description": "Qualified name of the symbol to investigate",
+            "type": "string"
+          }
+        },
+        "required": [
+          "qualified_name"
+        ],
+        "type": "object"
       },
-      "intent_tags": [
-        "Summarize"
+      "output_schema": {
+        "description": "Output for `composite_impact_query`.\n\nB4.W5 registered this type in `build_output_schemas()` and recorded in\nits message that the DTO had been added here, but no such commit\nexisted. The registration therefore named a type that was never\ndefined, and `cognicode-core` stopped compiling at that commit. The\nB1..B6 close-out then recorded green gates over a crate that could not\nbuild. This type is the one that registration meant.\n\nThe field set and the `JsonSchema` shape are pinned to what\n`impact::composite::CompositeImpactResult` actually serializes and to\nwhat `product/tools.json` advertises for this tool, so the three\ncannot drift apart silently. It is deliberately a structural mirror\nrather than a re-export: `CompositeImpactResult` is `Serialize`-only\nand pins `verdict_refused_reason: &'static str`, so it cannot derive\n`JsonSchema` without losing that pin.\n\nThe evidence fields (`impact`, `architecture`, `findings`) stay\nnullable/empty while the B4.W1/W2/W3 extractors are unwired. That is\nthe advertised contract, not an accident: an empty result with\n`verdict_refused: true` is how the wire says \"investigate further\",\nand it must not read as \"no impact found\".",
+        "properties": {
+          "architecture": {
+            "description": "B4.W2 `ArchitectureDiagnostic` envelope, or `None` while unwired."
+          },
+          "findings": {
+            "description": "B4.W3 findings. An empty list is a valid result that belongs on\nthe wire, so this is a list and never an option.",
+            "items": true,
+            "type": "array"
+          },
+          "impact": {
+            "description": "B4.W1 `ImpactResult` envelope, or `None` while unwired."
+          },
+          "suggested_follow_ups": {
+            "description": "B3.W3 parity: pointers into the catalog's `follow_ups`.",
+            "items": true,
+            "type": "array"
+          },
+          "suggested_prerequisites": {
+            "description": "B3.W3 parity: pointers into the catalog's `prerequisites`.",
+            "items": true,
+            "type": "array"
+          },
+          "verdict_refused": {
+            "description": "B4.W5 load-bearing invariant. Always `true` on this tool.",
+            "type": "boolean"
+          },
+          "verdict_refused_reason": {
+            "description": "Canonical, static refusal reason so an agent never has to infer\nwhy the result is not authoritative.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "verdict_refused",
+          "verdict_refused_reason",
+          "findings",
+          "suggested_follow_ups",
+          "suggested_prerequisites"
+        ],
+        "title": "CompositeImpactOutput",
+        "type": "object"
+      },
+      "requirements": {
+        "graph": false,
+        "persistence": false,
+        "cache": null,
+        "network": null
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 10,
+      "public_profiles": [
+        "reviewer"
       ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "smart_search",
-        "nl_to_symbol"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "compact format may drop details"
-      ]
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "graph",
+        "estimated_latency_ms": 10,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "detect_drift",
@@ -769,16 +653,8 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "feature": "persistence",
-      "required_args": [
-        "file_path"
-      ],
-      "limitations": [
-        "requires persistence feature",
-        "writes drift_events"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "detect_god_functions",
@@ -824,23 +700,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "thresholds are heuristic"
-      ],
-      "language_scope": [
-        "rust",
-        "python",
-        "typescript",
-        "javascript",
-        "go",
-        "java"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "detect_long_parameter_lists",
@@ -878,23 +739,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "threshold-driven; tunable"
-      ],
-      "language_scope": [
-        "rust",
-        "python",
-        "typescript",
-        "javascript",
-        "go",
-        "java"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "dominators_cfg",
@@ -937,14 +783,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "experimental"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "edit_file",
@@ -1007,16 +847,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "path",
-        "edits"
-      ],
-      "limitations": [
-        "mutates workspace",
-        "oldString must be unique in the file"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "export_callflow",
@@ -1077,14 +909,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "export_mermaid",
@@ -1142,18 +968,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "export_callflow"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "truncated above 2000 chars unless format=svg|png"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "find_pattern_by_intent",
@@ -1198,17 +1014,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "intent"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "find_references",
@@ -1217,7 +1024,6 @@
       "category": "navigation",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "lsp",
       "input_schema": {
         "properties": {
           "column": {
@@ -1262,20 +1068,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path",
-        "line",
-        "column"
-      ],
-      "follow_ups": [
-        "get_symbol_code"
-      ],
-      "limitations": [
-        "requires build to be current",
-        "may miss dynamic dispatch"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "find_usages",
@@ -1284,7 +1078,6 @@
       "category": "search",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "ast-heuristic",
       "input_schema": {
         "properties": {
           "context_lines": {
@@ -1326,17 +1119,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol_name"
-      ],
-      "follow_ups": [
-        "get_symbol_code"
-      ],
-      "limitations": [
-        "AST-based; no LSP server required but no LSP precision"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "generate_contract",
@@ -1382,15 +1166,8 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "gated",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "function_name",
-        "file_path"
-      ],
-      "limitations": [
-        "requires persistence feature"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_call_hierarchy",
@@ -1399,7 +1176,6 @@
       "category": "graph",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "index",
       "input_schema": {
         "properties": {
           "compressed": {
@@ -1449,21 +1225,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol_name",
-        "direction"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_explain"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_complexity",
@@ -1508,25 +1271,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path"
-      ],
-      "follow_ups": [
-        "detect_god_functions"
-      ],
-      "limitations": [
-        "file must be parseable by the AST provider"
-      ],
-      "language_scope": [
-        "rust",
-        "python",
-        "typescript",
-        "javascript",
-        "go",
-        "java"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_entry_points",
@@ -1564,15 +1310,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "compressed returns natural-language summary"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_file_symbols",
@@ -1581,7 +1320,6 @@
       "category": "file",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "lsp",
       "input_schema": {
         "properties": {
           "compressed": {
@@ -1623,15 +1361,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path"
-      ],
-      "follow_ups": [
-        "get_symbol_code",
-        "go_to_definition"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_hot_paths",
@@ -1673,14 +1404,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_implementors",
@@ -1689,7 +1414,6 @@
       "category": "graph",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "index",
       "input_schema": {
         "properties": {
           "trait_name": {
@@ -1703,6 +1427,17 @@
         "type": "object"
       },
       "output_schema": {
+        "$defs": {
+          "Precision": {
+            "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
+            "enum": [
+              "lsp",
+              "ast-heuristic",
+              "index"
+            ],
+            "type": "string"
+          }
+        },
         "properties": {
           "implementors": {
             "items": {
@@ -1710,13 +1445,23 @@
             },
             "type": "array"
           },
+          "precision": {
+            "$ref": "#/$defs/Precision",
+            "description": "B3.W1 — the tier that served this request. `index` rather than an\nLSP tier: these come from the CogniCode project graph, not from a\nlanguage server, and the wire must say so."
+          },
+          "provider": {
+            "description": "B3.W1 — the backend that served this request.",
+            "type": "string"
+          },
           "trait_name": {
             "type": "string"
           }
         },
         "required": [
           "trait_name",
-          "implementors"
+          "implementors",
+          "precision",
+          "provider"
         ],
         "title": "GetImplementorsOutput",
         "type": "object"
@@ -1740,17 +1485,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "trait_name"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_imports",
@@ -1809,17 +1545,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_leaf_functions",
@@ -1857,14 +1584,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_members",
@@ -1930,17 +1651,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "class_name"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_per_file_graph",
@@ -1981,14 +1693,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path"
-      ],
-      "limitations": [
-        "each file must have a per-file graph already built"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_symbol_code",
@@ -2040,19 +1746,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Locate"
-      ],
-      "required_args": [
-        "file",
-        "line",
-        "col"
-      ],
-      "limitations": [
-        "location must point at the symbol declaration"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "get_type_references",
@@ -2061,7 +1756,6 @@
       "category": "graph",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "index",
       "input_schema": {
         "properties": {
           "symbol_name": {
@@ -2076,6 +1770,15 @@
       },
       "output_schema": {
         "$defs": {
+          "Precision": {
+            "description": "Precision tier of a navigation result (B3.W1 contract).\n\n`lsp`: produced by an LSP-grade backend (rust-analyzer, pyright, ...).\n`ast-heuristic`: tree-sitter fallback / local resolver; honest about\n                 being a best-effort extraction.\n`index`: a graph-store query backed by the CogniCode project graph.\n\nDefault (per `Default::default()`) is `ast-heuristic`. Choosing the\nmost conservative tier as default prevents a forgotten precision\nfrom being silently upgraded to LSP-grade — which is exactly the\nregression AAT-B3-01 forbids.",
+            "enum": [
+              "lsp",
+              "ast-heuristic",
+              "index"
+            ],
+            "type": "string"
+          },
           "TypeRefRecord": {
             "properties": {
               "context": {
@@ -2093,6 +1796,14 @@
           }
         },
         "properties": {
+          "precision": {
+            "$ref": "#/$defs/Precision",
+            "description": "B3.W1 — the tier that served this request. `index` rather than an\nLSP tier: these come from the CogniCode project graph, not from a\nlanguage server, and the wire must say so."
+          },
+          "provider": {
+            "description": "B3.W1 — the backend that served this request.",
+            "type": "string"
+          },
           "references": {
             "items": {
               "$ref": "#/$defs/TypeRefRecord"
@@ -2105,7 +1816,9 @@
         },
         "required": [
           "symbol",
-          "references"
+          "references",
+          "precision",
+          "provider"
         ],
         "title": "GetTypeRefsOutput",
         "type": "object"
@@ -2129,17 +1842,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol_name"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "go_to_definition",
@@ -2148,7 +1852,6 @@
       "category": "navigation",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "lsp",
       "input_schema": {
         "properties": {
           "column": {
@@ -2189,20 +1892,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path",
-        "line",
-        "column"
-      ],
-      "follow_ups": [
-        "get_symbol_code"
-      ],
-      "limitations": [
-        "requires build to be current",
-        "LSP precision not guaranteed"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_all_paths",
@@ -2252,23 +1943,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "from_symbol",
-        "to_symbol"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_explain",
-        "get_call_hierarchy"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "max_hops bounds exhaustive search; substring name match"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_analyze",
@@ -2310,18 +1986,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_condensed",
-        "graph_reduced"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_checkpoint",
@@ -2398,15 +2064,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "checkpoint IDs are session-scoped"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_communities",
@@ -2444,18 +2103,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_community_detail",
-        "graph_surprising_connections"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_community_detail",
@@ -2500,18 +2149,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "community_id"
-      ],
-      "prerequisites": [
-        "build_graph",
-        "graph_communities"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_condensed",
@@ -2544,14 +2183,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_explain",
@@ -2687,21 +2320,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "symbol"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "get_symbol_code"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ],
-      "impact_direction_floor": "observed"
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_feedback_arcs",
@@ -2734,15 +2354,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "greedy heuristic; not optimal feedback arc set"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_god_nodes",
@@ -2780,15 +2393,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "percentile threshold is tunable"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_insights",
@@ -2821,15 +2427,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "composite call; slower than focused tools"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_pagerank",
@@ -2871,17 +2470,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_god_nodes"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_query",
@@ -3021,19 +2611,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "question"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "natural-language parser; may miss ambiguous phrasing"
-      ],
-      "impact_direction_floor": "inferred"
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_query_filtered",
@@ -3200,18 +2779,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "question"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ],
-      "impact_direction_floor": "inferred"
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_reduced",
@@ -3244,15 +2813,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "transitive reduction; redundant edges dropped"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_search_idf",
@@ -3298,18 +2860,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "query"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "hub bypass may drop popular symbols intentionally"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_suggest_questions",
@@ -3342,15 +2894,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "experimental; questions are heuristic"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "graph_surprising_connections",
@@ -3392,15 +2937,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph",
-        "graph_communities"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "hover",
@@ -3449,19 +2987,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_path",
-        "line",
-        "column"
-      ],
-      "follow_ups": [
-        "go_to_definition"
-      ],
-      "limitations": [
-        "requires build to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "iac_query",
@@ -3566,21 +3093,8 @@
         "requires_graph": true,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "resource_id"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "graph_insights"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "experimental; in-memory graph only"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "list_files",
@@ -3639,11 +3153,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "limitations": [
-        ".gitignore aware; honors workspace root"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "list_view_specs",
@@ -3677,11 +3188,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "follow_ups": [
-        "read_view_spec"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "merge_graphs",
@@ -3725,14 +3233,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "file_paths"
-      ],
-      "limitations": [
-        "each file must have a per-file graph already built"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "nl_to_symbol",
@@ -3778,21 +3280,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "query"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "follow_ups": [
-        "get_symbol_code",
-        "go_to_definition"
-      ],
-      "limitations": [
-        "requires build_graph to be current"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "project_insights",
@@ -3956,15 +3445,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "experimental; composite call"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "project_overview",
@@ -4058,15 +3540,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "experimental; system_prompt_context optional"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "query_symbol_index",
@@ -4075,7 +3550,6 @@
       "category": "search",
       "authority": "read",
       "stability": "stable",
-      "precision_floor": "ast-heuristic",
       "input_schema": {
         "properties": {
           "directory": {
@@ -4113,21 +3587,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Locate"
-      ],
-      "required_args": [
-        "symbol_name"
-      ],
-      "follow_ups": [
-        "get_symbol_code",
-        "find_references"
-      ],
-      "limitations": [
-        "requires index build (lightweight or full)"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "read_file",
@@ -4195,23 +3656,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Locate",
-        "Summarize",
-        "Read"
-      ],
-      "required_args": [
-        "path"
-      ],
-      "follow_ups": [
-        "get_file_symbols",
-        "search_content"
-      ],
-      "limitations": [
-        "path must be inside workspace"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "read_view_spec",
@@ -4253,11 +3699,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "id"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "reparse_on_edit",
@@ -4301,17 +3744,8 @@
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "feature": "persistence",
-      "required_args": [
-        "file_paths"
-      ],
-      "limitations": [
-        "mutates workspace",
-        "requires persistence feature",
-        "content-based invalidation; slower than mtime-only"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "retrieve_and_verify",
@@ -4365,17 +3799,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Verify"
-      ],
-      "required_args": [
-        "query"
-      ],
-      "limitations": [
-        "verify=true spawns rustc; slower"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "review_pr",
@@ -4454,14 +3879,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "files"
-      ],
-      "limitations": [
-        "impact analysis only; does not call external CI"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "safe_refactor",
@@ -4518,34 +3937,24 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "action",
-        "target"
-      ],
-      "follow_ups": [
-        "generate_contract"
-      ],
-      "limitations": [
-        "preview by default; --apply required to mutate"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "safe_refactor_apply",
-      "title": "Apply an authorized RefactorPlan (B5.W3)",
+      "title": "Apply a RefactorPlan (B5",
       "description": "Apply a RefactorPlan (B5.W1) to the workspace under explicit write authorization. Requires both `plan_file` (path to a JSON RefactorPlan produced by `safe_refactor_preview` or another plan emitter) and `authorization_token` (opaque token received out-of-band; NOT derived from plan content). Performs transactional staging+fsync+rename; on any failure the staging dir is removed and the partial batch is rolled back (AAT-B5-01). The read-only `safe_refactor_preview` cannot acquire write authority because its input schema uses `deny_unknown_fields` and rejects `authorization_token` (AAT-B5-03).",
       "category": "refactor",
       "authority": "mutating",
       "stability": "stable",
       "input_schema": {
         "properties": {
-          "plan_file": {
-            "description": "Absolute path to a JSON file holding an authorized RefactorPlan (B5.W1 shape).",
-            "type": "string"
-          },
           "authorization_token": {
             "description": "Opaque write-authorization token received via a separate channel (not derived from plan content). Must be non-empty and recent.",
+            "type": "string"
+          },
+          "plan_file": {
+            "description": "Absolute path to a JSON file holding an authorized RefactorPlan (B5.W1 shape).",
             "type": "string"
           }
         },
@@ -4565,7 +3974,7 @@
       "requirements_status": "not_declared",
       "estimated_latency_ms": 200,
       "public_profiles": [
-        "reviewer"
+        "developer"
       ],
       "runtime_metadata": {
         "authority": "mutating",
@@ -4575,36 +3984,17 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.15"
-      },
-      "required_args": [
-        "plan_file",
-        "authorization_token"
-      ],
-      "limitations": [
-        "requires explicit write authorization",
-        "transactional writes with rollback (AAT-B5-01)",
-        "post-apply revalidation is `safe_refactor_revalidate` (B5.W4)"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "safe_refactor_preview",
-      "title": "Render a deterministic preview of a RefactorPlan without mutating files",
+      "title": "Read a RefactorPlan (B5",
       "description": "Read a RefactorPlan (B5.W1) from a plan file or a JSON string and produce a RefactorPreview (B5.W2): per-file unified diff, original vs new bytes, workspace state digest, and preconditions/risks summary. The function is pure: same plan + same bytes => byte-equal preview, and it NEVER mutates the workspace. B5.W3 (apply) reuses the workspace_state_digest to detect concurrent modifications between preview and apply.",
       "category": "refactor",
       "authority": "read",
       "stability": "stable",
       "input_schema": {
-        "properties": {
-          "plan_path": {
-            "description": "Absolute path to a RefactorPlan JSON file (B5.W1 shape).",
-            "type": "string"
-          },
-          "plan_json": {
-            "description": "Inline RefactorPlan JSON (alternative to plan_path).",
-            "type": "string"
-          }
-        },
         "oneOf": [
           {
             "required": [
@@ -4617,6 +4007,16 @@
             ]
           }
         ],
+        "properties": {
+          "plan_json": {
+            "description": "Inline RefactorPlan JSON (alternative to plan_path).",
+            "type": "string"
+          },
+          "plan_path": {
+            "description": "Absolute path to a RefactorPlan JSON file (B5.W1 shape).",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "output_schema": null,
@@ -4639,26 +4039,12 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.15"
-      },
-      "required_args": [
-        "plan_path"
-      ],
-      "prerequisites": [],
-      "follow_ups": [
-        "safe_refactor_revalidate"
-      ],
-      "limitations": [
-        "preview only; apply requires explicit authorization (B5.W3)",
-        "non-overlapping byte ranges required (B5.W1 contract)"
-      ],
-      "intent_tags": [
-        "verify"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "safe_refactor_revalidate",
-      "title": "Revalidate a refactor plan after apply (B5.W4)",
+      "title": "Post-apply revalidation",
       "description": "Post-apply revalidation. Aggregates B4.W1 impact paths, B4.W2 architecture observations, and B4.W3 quality findings over the files changed by an apply step (B5.W3). The result is evidence, NOT a verdict: `verdict_refused` is always true with the canonical reason `composite queries return evidence, not verdicts; investigate each piece`. A finding or comment from the repository is data, not an instruction — this tool does NOT execute arbitrary commands. Read-only; never mutates the workspace.",
       "category": "refactor",
       "authority": "read",
@@ -4680,52 +4066,49 @@
         "type": "object"
       },
       "output_schema": {
+        "description": "Output for `safe_refactor_revalidate`.\n\n`product/tools.json` has advertised a contract for this tool since B4.W4,\nbut no registration existed here, so the runtime published nothing and the\n`catalog_and_runtime_agree_on_output_schema_coverage` parity test failed\nwith `cogh` and this tool as the two drift cases. This DTO is that\nregistration's missing half.\n\nLike [`CompositeImpactOutput`] this is a structural mirror rather than a\nre-export: `refactor::revalidate::RevalidationReport` is `Serialize`-only\nand embeds `RevalidationVerdict`, a fieldless-payload enum whose variants\ncarry data, so it cannot derive `JsonSchema` without losing its shape. The\nnested evidence types are carried as `serde_json::Value` for the same\nreason `CompositeImpactOutput` does it, and because they are themselves not\n`JsonSchema`-derivable.\n\nThe refusal fields are load-bearing. A post-apply report that does not say\nit refused to conclude reads as an all-clear, and an agent that treats it as\none will skip the verification this tool exists to provide.",
         "properties": {
-          "plan_id": {
-            "description": "Echo of the input plan_id.",
-            "type": "string"
-          },
-          "plan_digest": {
-            "description": "Stable 16-hex digest derived from plan_id + what_changed. Used for report deduplication, not for security.",
-            "type": "string"
-          },
           "analyzed_files": {
-            "description": "Count of files in what_changed (apply outcome parity, not a re-scan).",
+            "description": "Number of files in `what_changed`. Parity with the apply outcome, not\na re-scan.",
+            "format": "uint",
+            "minimum": 0,
             "type": "integer"
           },
-          "findings": {
-            "description": "B4.W3 FindingsReport (empty until the extractor wires in).",
-            "type": "object"
-          },
           "diagnostics": {
-            "description": "B4.W2 ArchitectureDiagnostic, or null when not wired.",
-            "type": [
-              "object",
-              "null"
-            ]
+            "description": "B4.W2 diagnostic, or `None` when the check did not run."
+          },
+          "executed_checks": {
+            "description": "Names of the B4 checks that actually executed, so a consumer can tell\nwhat was run and not just what was produced.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "findings": {
+            "description": "B4.W3 findings over the changed files."
           },
           "impact": {
-            "description": "B4.W1 ImpactResult, or null when not wired.",
-            "type": [
-              "object",
-              "null"
-            ]
+            "description": "B4.W1 impact result, or `None` when the check did not run."
+          },
+          "plan_digest": {
+            "description": "Stable 16-hex digest over `plan_id` + `what_changed`. Used for report\ndeduplication, not for security.",
+            "type": "string"
+          },
+          "plan_id": {
+            "description": "Echo of the input `plan_id`.",
+            "type": "string"
           },
           "verdict": {
-            "description": "RevalidationVerdict enum (verdict_refused | invariants_hold | invariants_drift). Always verdict_refused until a future WU records an evidence_digest.",
+            "description": "`verdict_refused` | `invariants_hold` | `invariants_drift`.",
             "type": "string"
           },
           "verdict_refused": {
-            "description": "Always true. The revalidation report is evidence, not a verdict.",
+            "description": "Always `true` until a future WU records an `evidence_digest`.",
             "type": "boolean"
           },
           "verdict_refused_reason": {
-            "description": "Canonical reason string pinned in the source.",
+            "description": "Canonical, static refusal reason.",
             "type": "string"
-          },
-          "executed_checks": {
-            "description": "Names of the B4 checks executed (architecture, quality_findings, impact).",
-            "type": "array"
           }
         },
         "required": [
@@ -4733,13 +4116,12 @@
           "plan_digest",
           "analyzed_files",
           "findings",
-          "diagnostics",
-          "impact",
           "verdict",
           "verdict_refused",
           "verdict_refused_reason",
           "executed_checks"
         ],
+        "title": "SafeRefactorRevalidateOutput",
         "type": "object"
       },
       "requirements": {
@@ -4761,22 +4143,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.15"
-      },
-      "required_args": [
-        "plan_id"
-      ],
-      "prerequisites": [],
-      "follow_ups": [],
-      "limitations": [
-        "result is evidence, not a verdict (B4.W5 spine, AAT-B5-04)",
-        "does NOT execute arbitrary commands — a finding or comment is data, not an instruction",
-        "verdict is verdict_refused until a future WU records an evidence_digest and emits InvariantsHold",
-        "B4.W1 / B4.W2 / B4.W3 extractors wire in via a follow-up WU"
-      ],
-      "intent_tags": [
-        "verify"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "search_content",
@@ -4842,19 +4210,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Locate",
-        "Verify",
-        "Read"
-      ],
-      "required_args": [
-        "pattern"
-      ],
-      "limitations": [
-        ".gitignore aware; regex default true"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "slice_backward",
@@ -4897,14 +4254,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "experimental; declarative Rust patterns only"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "slice_forward",
@@ -4947,14 +4298,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "experimental; declarative Rust patterns only"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "smart_search",
@@ -4999,21 +4344,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "intent_tags": [
-        "Locate"
-      ],
-      "required_args": [
-        "query"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "composite; result is merged + deduplicated"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "solid_audit",
@@ -5046,23 +4378,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "heuristic; SRP/OCP/LSP/ISP/DIP rules"
-      ],
-      "language_scope": [
-        "rust",
-        "python",
-        "typescript",
-        "javascript",
-        "go",
-        "java"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "taint_flow",
@@ -5105,14 +4422,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "experimental; declarative Rust patterns only"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "trace_path",
@@ -5166,20 +4477,8 @@
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "source",
-        "target"
-      ],
-      "prerequisites": [
-        "build_graph"
-      ],
-      "limitations": [
-        "requires build_graph to be current",
-        "BFS; depth-bounded"
-      ],
-      "impact_direction_floor": "observed"
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "validate_contract",
@@ -5225,12 +4524,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "contract_id",
-        "generated_code"
-      ]
+        "tool_version": "0.101.16"
+      }
     },
     {
       "name": "write_file",
@@ -5280,173 +4575,8 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.99.2"
-      },
-      "required_args": [
-        "path",
-        "content"
-      ],
-      "limitations": [
-        "mutates workspace",
-        "overwrites existing files"
-      ]
-    },
-    {
-      "name": "interproc_summary",
-      "title": "Interprocedural summary",
-      "description": "Interprocedural summary: bottom-up reads/writes + fixed-point on recursive SCCs.",
-      "category": "graph",
-      "authority": "read",
-      "stability": "experimental",
-      "feature": "program-analysis-server",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "algorithm_params": {
-            "type": "object"
-          },
-          "limits": {
-            "type": "object"
-          }
-        },
-        "required": [
-          "algorithm_params"
-        ]
-      },
-      "output_schema": null,
-      "requirements": {
-        "graph": false,
-        "persistence": false,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 500,
-      "public_profiles": [
-        "experimental"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "graph",
-        "estimated_latency_ms": 500,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "experimental",
-        "tool_version": "0.101.11"
-      },
-      "required_args": [
-        "algorithm_params"
-      ],
-      "limitations": [
-        "requires program-analysis-server feature",
-        "experimental; SCC fixed-point bounded"
-      ]
-    },
-    {
-      "name": "list_evidence",
-      "title": "List evidence rows",
-      "description": "List evidence rows for a workspace, optionally filtered by kind. Mirrors the `cognicode evidence list` CLI subcommand.",
-      "category": "evidence",
-      "authority": "read",
-      "stability": "stable",
-      "feature": "evidence-cli-ladybug",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "workspace": {
-            "type": "string",
-            "description": "Workspace identifier (default: empty)"
-          },
-          "kind": {
-            "type": "string",
-            "description": "Filter by kind: log | trace | measurement | external (optional)"
-          }
-        }
-      },
-      "output_schema": null,
-      "requirements": {
-        "graph": false,
-        "persistence": true,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 30,
-      "public_profiles": [
-        "core"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "evidence",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "stable",
-        "tool_version": "0.101.11"
-      },
-      "limitations": [
-        "requires evidence-cli-ladybug feature"
-      ]
-    },
-    {
-      "name": "search_evidence",
-      "title": "Search evidence rows",
-      "description": "Full-text search across evidence titles and excerpts. Mirrors the `cognicode evidence search` CLI subcommand.",
-      "category": "evidence",
-      "authority": "read",
-      "stability": "stable",
-      "feature": "evidence-cli-ladybug",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "workspace": {
-            "type": "string",
-            "description": "Workspace identifier (default: empty)"
-          },
-          "query": {
-            "type": "string",
-            "description": "Substring query against title + excerpt"
-          },
-          "limit": {
-            "type": "integer",
-            "description": "Max rows returned (default: 25)"
-          }
-        },
-        "required": [
-          "query"
-        ]
-      },
-      "output_schema": null,
-      "requirements": {
-        "graph": false,
-        "persistence": true,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 30,
-      "public_profiles": [
-        "core"
-      ],
-      "runtime_metadata": {
-        "authority": "read",
-        "category": "evidence",
-        "estimated_latency_ms": 30,
-        "mutates_workspace": false,
-        "requires_graph": false,
-        "requires_persistence": true,
-        "stability": "stable",
-        "tool_version": "0.101.11"
-      },
-      "required_args": [
-        "query"
-      ],
-      "limitations": [
-        "requires evidence-cli-ladybug feature",
-        "substring match"
-      ]
+        "tool_version": "0.101.16"
+      }
     }
   ]
 }

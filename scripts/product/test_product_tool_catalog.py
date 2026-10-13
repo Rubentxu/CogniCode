@@ -23,6 +23,18 @@ DISPATCH_ALLOWLIST_SOURCE = (
 ENABLED_FEATURES = frozenset({"persistence"})
 
 
+def source_commit() -> str:
+    """The commit the committed catalog was generated from.
+
+    Derived from the catalog itself rather than pinned to a literal. The
+    generator stamps this field, so checking a regeneration against a pinned
+    SHA only passes until the next commit -- which is exactly how a stale
+    artifact stays on disk looking current.
+    """
+    committed = json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))
+    return committed["source_commit"]
+
+
 def run(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["python3", str(GENERATOR), *args],
@@ -138,19 +150,26 @@ def test_committed_catalog_is_self_consistent_and_schema_valid() -> None:
         "--output",
         str(ROOT / "product/tools.json"),
         "--source-commit",
-        BASELINE,
+        source_commit(),
         "--check",
     )
     assert result.returncode == 0, result.stderr
     catalog = json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))
     # The count is derived, not written as a literal. A literal here is a second
-    # copy of a fact the capture already states, and it goes stale silently: the
-    # committed capture holds 73 tools while the catalog has been extended since,
-    # so a hardcoded number cannot tell a reader which of the two is wrong.
+    # copy of a fact the capture already states, and it goes stale silently.
+    #
+    # The capture and the catalog hold the same tool names by construction: the
+    # generator copies every descriptor it is given. They used to differ (73 vs
+    # 80) because B6.W3 hand-edited the generated catalog. An assertion that the
+    # catalog is a strict *superset* of the capture encoded that hand-editing as
+    # the contract, and would have rejected a correct regeneration, so equality
+    # of the name sets is asserted instead.
     capture = json.loads((ROOT / "product/tool-catalog-runtime.json").read_text(encoding="utf-8"))
-    assert len(catalog["tools"]) > len(capture), (
-        "the catalog must be a superset of the capture it is generated from; "
-        "a smaller catalog means the generator and the hand-edits disagree"
+    assert {t["name"] for t in catalog["tools"]} == {t["name"] for t in capture}, (
+        "the catalog must list exactly the tools the committed capture observed. "
+        "A mismatch means generated output was hand-edited: regenerate with "
+        "scripts/product/generate_tool_catalog.py from a real tools/list capture "
+        "instead of typing descriptors in."
     )
     assert catalog["runtime_tool_count"] == len(catalog["tools"]), (
         "runtime_tool_count disagrees with the number of tools actually listed. "
