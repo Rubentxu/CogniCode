@@ -1489,7 +1489,8 @@ mod haskell_lookahead_overflow_tests {
     fn haskell_file_opening_with_a_comment_survives() {
         // The shape that reached production: `build_lightweight_index` walking
         // a directory whose only Haskell file opens with a comment.
-        let source = "-- Haskell test fixture\nmodule Main where\n\nmain :: IO ()\nmain = putStrLn \"hi\"\n";
+        let source =
+            "-- Haskell test fixture\nmodule Main where\n\nmain :: IO ()\nmain = putStrLn \"hi\"\n";
         let tree = haskell()
             .parse_tree(source)
             .expect("haskell file starting with a comment must parse");
