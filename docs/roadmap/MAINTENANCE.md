@@ -213,6 +213,61 @@ main` por bypass.
 
 ---
 
+### 2e. Bisección del SIGABRT — binario con símbolos e hipótesis descartadas
+
+Sesión 2026-10-13, HEAD `7b638d18`. Estado: **abierto**, sin causa raíz.
+
+**Por qué gdb no daba nada antes**: el perfil release global de
+`~/.cargo/config.toml` fija `debug = false` y `strip = true`, así que el
+binario de `cargo-targets/release` sale *stripped* y el backtrace solo traía
+direcciones sin resolver. No era un bug del símbolo: era una configuración.
+Rebuild con `CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=none`
+en un `CARGO_TARGET_DIR` aparte (para no invalidar la caché compartida) da un
+binario de 335 MB, `with debug_info, not stripped`.
+
+**Hipótesis levantadas y DESCARTADAS por medición** (no por suposición):
+
+- `GraphCache::get_ref` (`graph_cache.rs:141`) era el único `unsafe` en la
+  ruta: devolvía un `&CallGraph` con vida ligada a `&self`. **Es realmente
+  insound** — un `set`/`update` posterior suelta el Arc del head y el pointeur
+  queda colgando; el `Box::leak` sólo fija un clon, y el guard de
+  `ArcSwap::load` se cae al salir de la función. Se elimina en `bd4051c6`.
+  **Pero no causaba este abort**: la función tenía *cero* llamadores en el
+  crate, los binarios y los tests. soundness real, causa no.
+- `child(i)` de tree-sitter 0.27: sospechado de tomar offset en bytes. Falso:
+  el binding Rust expone `pub fn child(&self, i: u32) -> Option<Self>` por
+  índice, y `Node` es refcounted, así que no puede quedar colgante. Descartado
+  leyendo `binding_rust/lib.rs:1829`.
+- ABI de gramáticas contra runtime 0.27: las 30 cargan y parsean (suite
+  existente, 0 fallos). Descartado de nuevo.
+- Symlinks con `follow_links(true)`: existen 40 symlinks in-tree y varios
+  duplican contenido (`rust-intelligence -> sandbox/fixtures/rust-intelligence`),
+  pero **ninguno** apunta a un ancestre, luego no hay ciclo. Duplica ficheros
+  indexados; no corrompe un heap. Descartado como causa del SIGABRT.
+- Rayon: `build_project_graph` parsea con `into_par_iter`, pero
+  `TreeSitterParser` usa cache thread-local (`PARSER_CACHE.with`) y cada
+  parser lleva su propio `Arc<Mutex<TsParser>>`. Sin dato compartido mutable.
+  Descartado como causa.
+
+**Lo que sí queda establecido**:
+
+- `build_project_graph` es la ruta real de `build_lightweight_index`; la
+  diferencia con `build_graph` no está en qué función se llama sino en que
+  `build_graph` camina con `follow_links(false)` y el índice ligero con `true`.
+- El fallo es de **concurrencia/interoperación**, no de gramática ni de
+  volumen: el mismo repo pasa en `build_graph`, y el camino directo y
+  monothread de `LightweightIndex::build_index` **no** aborta (corre >20 min
+  sin morir). Sólo el servidor aborta.
+
+Corrección de método: el test de repro tenía `parent().join("crates")`, que
+apuntaba a `crates/crates` (inexistente) y fallaba por el motivo equivocado.
+Arreglado en `7b638d18`.
+
+**Pendiente**: capturar el backtrace symbolizado del SIGABRT contra el binario
+con debug_info, y comparar el mismo `build_index` (a) directo, (b) dentro de
+`spawn_blocking`, (c) proceso MCP completo. Sin eso, la causa sigue sin
+identificar.
+
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
 Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
