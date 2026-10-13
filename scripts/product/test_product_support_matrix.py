@@ -43,10 +43,26 @@ def test_generation_and_classification() -> None:
     generator = load_generator()
     languages, platforms = generator.build_documents(ROOT, BASELINE)
     assert len(languages["languages"]) == 30
-    assert len(platforms["platforms"]) == 6
     assert sum(item["support_level"] == "supported" for item in languages["languages"]) == 18
     assert sum(item["support_level"] == "experimental" for item in languages["languages"]) == 12
     assert [item["id"] for item in languages["languages"]] == sorted(item["id"] for item in languages["languages"])
+    # The platform count is not a literal. It is the certified set (whatever the
+    # lane builds), plus the musl experiment, plus the deferred platforms the
+    # generator appends to prove their absence is real. On 2026-10-13 this read
+    # `== 6`, written when the lane built two targets; commit `e3ab9c4e` dropped
+    # aarch64 to x86_64-only and the number became 6 against a generated 5, so
+    # the suite was red for a day with nobody looking because the *program* had
+    # gone 11 contracts down at the same time.
+    #
+    # A derived count is what catches the failures that matter: a platform lost
+    # from the lane lowers it, a duplicate entry raises it, and a platform the
+    # generator forgets to classify does not move it at all — which is why the
+    # per-classification assertions below still pin the shape, not just the size.
+    assert len(platforms["platforms"]) == (
+        len(release_lane.release_targets(ROOT))
+        + 1
+        + len(generator.DEFERRED_PUBLIC_PLATFORMS)
+    )
     # The certified set is whatever the release lane builds, read here
     # independently of the generator. Asserting two literals instead would be a
     # third copy of the same fact — the lane declares it, the generator reads
@@ -56,7 +72,18 @@ def test_generation_and_classification() -> None:
         item["target"] for item in platforms["platforms"] if item["support_level"] == "certified"
     } == set(release_lane.release_targets(ROOT))
     assert any(item["target"] == "x86_64-unknown-linux-musl" and item["support_level"] == "experimental" for item in platforms["platforms"])
-    assert sum(item["support_level"] == "unsupported" for item in platforms["platforms"]) == 3
+    assert sum(item["support_level"] == "unsupported" for item in platforms["platforms"]) == len(generator.DEFERRED_PUBLIC_PLATFORMS)
+    # A platform cannot be certified and deferred at once. `deferred_evidence`
+    # raises when the lane builds a target listed here as unsupported, so this
+    # is the invariant that check exists to protect, stated where a reader of
+    # the counts above will see it.
+    certified_targets = {
+        item["target"] for item in platforms["platforms"] if item["support_level"] == "certified"
+    }
+    deferred_targets = {entry["target"] for entry in generator.DEFERRED_PUBLIC_PLATFORMS}
+    assert not (certified_targets & deferred_targets), (
+        f"targets claimed both certified and unsupported: {sorted(certified_targets & deferred_targets)}"
+    )
 
 
 def test_schemas_and_check_mode() -> None:

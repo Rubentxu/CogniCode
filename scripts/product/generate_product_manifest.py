@@ -178,7 +178,7 @@ def _load_public_profiles(root: Path) -> list[dict[str, Any]]:
     return projected
 
 
-def validate_manifest(manifest: dict[str, Any]) -> None:
+def validate_manifest(manifest: dict[str, Any], root: Path) -> None:
     required = {
         "schema_version",
         "product",
@@ -226,12 +226,12 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     certified = {
         item["target"] for item in manifest["platforms"] if item["support_level"] == "certified"
     }
-    if certified != set(certified_platforms_from_manifest(manifest)):
-        raise ValueError("certified platform set is not the release-certified Linux set")
-
-
-def certified_platforms_from_manifest(manifest: dict[str, Any]) -> list[str]:
-    return ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+    if certified != set(certified_platforms(root)):
+        raise ValueError(
+            "certified platform set is not the set the release lane builds: "
+            f"manifest says {sorted(certified)}, lane says "
+            f"{sorted(certified_platforms(root))}"
+        )
 
 
 def render(manifest: dict[str, Any]) -> str:
@@ -250,7 +250,7 @@ def main() -> int:
     try:
         source_commit = args.source_commit or run_git(root, "rev-parse", "HEAD")
         manifest = build_manifest(root, source_commit)
-        validate_manifest(manifest)
+        validate_manifest(manifest, root)
         rendered = render(manifest)
         if args.check:
             actual = output.read_text(encoding="utf-8")

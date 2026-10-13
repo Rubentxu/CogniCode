@@ -78,7 +78,10 @@ val cd = "cd \"$repoRoot\""
 // To re-enable aarch64 for a future release:
 //   1. Confirm the CI runner is provisioned (TF-7.2) and the cross
 //      toolchain is pre-installed.
-//   2. Restore the aarch64 entry to the list below.
+//   2. Restore BOTH the aarch64 entry in `targets` and the aarch64 arm in
+//      `platformOf` below. They are two declarations of one fact, and
+//      `scripts/product/release_lane.py` refuses to answer a published
+//      platform set when only one of them carries a target.
 //   3. Verify the candidate builds in the CI with both targets.
 //   4. Then run the release-candidate + release pipelines against the CI.
 val targets = listOf("x86_64-unknown-linux-gnu")
@@ -117,16 +120,26 @@ fun workspaceVersion(root: String): String {
 // because the only check that did read the lane — `scripts/check-release-matrix.sh`
 // — was reading `.github/workflows/release.yml` instead, where the id was
 // spelled correctly. The packaging stage would have failed on the first real
-// run. The two spellings also disagreed with each other inside this file:
-// `linux-aarch64` has always been hyphenated here.
+// run. The spelling drifted the same way twice in this file, which is why the
+// check that reads it now exists at all.
+//
+// The aarch64 arm was deleted on 2026-10-13. Commit `e3ab9c4e` removed
+// aarch64 from the release scope and left the arm behind, so the lane named a
+// platform it does not build. That is not cosmetic: `release_lane.py` reads
+// both declarations and raises `ReleaseLaneUnreadable` on a platform without a
+// target, which took `generate_support_matrix.py` and
+// `generate_product_manifest.py` down with it — 11 contract tests red because
+// no product document could be generated at all. A platform that is not built
+// must not appear in a product manifest as `certified`, and the reader was
+// right to refuse. The two declarations now cover the same set again; restore
+// the arm together with the target, per the steps above.
 //
 // `scripts/product/release_lane.py` reads both this mapping and `val targets`
 // and refuses to answer when they disagree, and
-// `scripts/check-release-matrix.sh` now compares this name against the
-// contract's own `platform-token`. That is what catches the next one.
+// `scripts/check-release-matrix.sh` compares this name against the contract's
+// own `platform-token`. That is what catches the next one.
 fun platformOf(target: String): String = when (target) {
     "x86_64-unknown-linux-gnu" -> "linux-x86-64"
-    "aarch64-unknown-linux-gnu" -> "linux-aarch64"
     else -> error("no release platform is declared for cargo target `$target`. Add it to `targets` and to `platformOf` together, so a target can never be built without a platform name to package it under.")
 }
 
