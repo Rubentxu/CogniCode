@@ -225,10 +225,20 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
+    // 66 -> 68 with the live-wire defect guards added after driving the
+    // release binary as a real MCP client:
+    //   - `undispatchable_tool_guard` (calls every advertised tool through
+    //     the real dispatcher and fails only on `ToolNotFound`; it found
+    //     four advertised-but-uncallable tools the suite had missed),
+    //   - `tree_sitter_grammar_abi` (every grammar loads and parses against
+    //     tree-sitter 0.27; pins the fallback in `lightweight_index.rs`
+    //     that would otherwise substitute the Rust grammar silently).
+    // The 68 is the on-disk count at the moment this assertion was
+    // bumped; any further WU adds another file and bumps again.
     assert_eq!(
         suites.len(),
-        66,
-        "expected exactly 66 cognicode-core integration suites, found {}. \
+        68,
+        "expected exactly 68 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -389,6 +399,8 @@ const ANCHOR_SUITES: &[&str] = &[
     "t1_1c_ground_truth_orphan_mapping",
     "t1_5_3b_index_result_serde",
     "t1_5_4_graph_result_serde",
+    "tree_sitter_grammar_abi",
+    "undispatchable_tool_guard",
 ];
 
 /// The count alone cannot see a rename: renaming a suite keeps `len()`
