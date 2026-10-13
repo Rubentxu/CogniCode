@@ -1349,12 +1349,50 @@ porque `ignore::WalkBuilder` con `.parents(false)` solo carga reglas dentro de
 un repositorio. El fixture necesita un `.git` vacío; sin él el test pasaba
 por la razón equivocada.
 
-**3. `ask_about_code`, `find_references`, `hover`, `merge_graphs`: EMPTY.**
-Responden sin error pero sin evidencia. Se marcan para inspección, no se
-declaran bug: no se ha separado todavía "no hay nada que encontrar" de "no lo
-buscó". En particular `find_references` se autodeclara
-`precision:"lsp", provider:"lsp::composite (tier unverified)"`, así que la
-ausencia de resultados puede ser honesta.
+**3. Los cuatro EMPTY: dos eran culpa del instrumento, dos eran defecto real.**
+
+Repetido con la entrada correcta, uno por uno:
+
+| herramienta | veredicto |
+|---|---|
+| `hover` | **funciona**: con un símbolo real devuelve `found:true`; con uno falso devuelve `found:false`. Honesto en ambos casos. |
+| `find_references` | **defecto real, cerrado** (ver abajo) |
+| `ask_about_code` | sin evidencia: `"answers":[]`. Marcado para inspección. |
+| `merge_graphs` | sin evidencia: contadores a 0. Con dos listas vacías puede ser correcto; no se ha separado. |
+
+El barrido los marcó EMPTY porque no suministró los campos `file_path`, `line`
+y `column` que `find_references` y `hover` exigen de verdad — el schema los
+declara opcionales y el handler los rechaza si faltan. Otro falso positivo del
+instrumento.
+
+**`find_references` no puede distinguir "sin referencias" de "no se buscó".**
+Dos defectos en `lsp_handlers.rs`:
+
+1. `references_with_tier` mapeaba `TieredOutcome::Unresolved` a
+   `Ok(Vec::new())`, y el brazo `Err` del handler devolvía `total: 0` con
+   lista vacía. El propio `TieredOutcome::Unresolved` documenta *"callers must
+   not fabricate a value"*: el handler hacía exactamente eso. Medido: una
+   posición sin identificador devolvía `total:0` con
+   `provider:"lsp::composite (tier unverified)"`, que se lee como búsqueda
+   completada. Ahora devuelve **error** nombrando los dos tiers intentados:
+   `all tiers exhausted (lsp@S2 ... tree-sitter@S0 Invalid location: No
+   identifier at ...)`.
+
+2. El campo de salida `symbol` se rellenaba con `input.file_path`, así que la
+   respuesta decía `{"symbol":"crates/.../plan.rs"}`: una ruta presentada como
+   nombre de símbolo. `FindReferencesInput` solo lleva una posición, así que
+   ahora se reporta `file:line:column`, que es lo que el llamante puede usar.
+
+**Corrección sobre una afirmación anterior mía.** Escribí que
+`find_references` devolvía cero referencias para `build_plan` mientras
+`find_usages` encontraba las suyas, y lo presenté como prueba del defecto.
+Era **mi sonda la que pasaba una columna equivocada**: en
+`pub fn build_plan(` el identificador empieza en la columna 8, no en la 7, y en
+la 3. Con `column:8` la herramienta **funciona**: devuelve sus referencias,
+las 20 ocurrencias del fichero. El defecto real es el de los dos puntos
+anteriores (fabricar un cero, y etiquetar mal el campo), no "no encuentra
+nada". Se deja constancia porque el número que sostenía la conclusión
+original era erróneo.
 
 ### Método, y su límite
 

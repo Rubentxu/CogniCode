@@ -208,7 +208,41 @@ async fn references_with_tier(
             .await
         {
             TieredOutcome::Served(answer) => (Ok(answer.value), Some(answer.tier)),
-            TieredOutcome::Unresolved(_) => (Ok(Vec::new()), None),
+            // `TieredOutcome::Unresolved` documents that "callers must not
+            // fabricate a value". This returned `Ok(Vec::new())`, which made
+            // a symbol the provider could not resolve look identical to a
+            // symbol with no references: `{"references":[],"total":0}` with
+            // the provider string still saying "tier unverified". A caller
+            // could not tell "not checked" from "nothing there".
+            //
+            // Measured against the release server: a position with no
+            // identifier at it now returns an error naming both attempted
+            // tiers, instead of a confident total:0. A position that DOES
+            // resolve returns its references (verified at plan.rs:343:8,
+            // which has 20 same-file occurrences and reports them).
+            //
+            // The failure is now reported as a failure.
+            TieredOutcome::Unresolved(diagnostics) => {
+                let detail = diagnostics
+                    .iter()
+                    .map(|d| format!("{:?}", d))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                (
+                    Err(crate::domain::traits::code_intelligence::CodeIntelligenceError::Internal(
+                        format!(
+                            "find_references could not resolve the symbol at {}:{}:{}. \
+                             No tier served a reference list, so no answer is reported. \
+                             Diagnostics: {}",
+                            location.file().to_string(),
+                            location.line(),
+                            location.column(),
+                            if detail.is_empty() { "none" } else { &detail }
+                        ),
+                    )),
+                    None,
+                )
+            }
         };
     }
     (
@@ -236,6 +270,17 @@ pub async fn handle_find_references(
 
     let (refs, tier) = references_with_tier(ctx, &location, input.include_declaration).await;
 
+    // The input is a position, not a symbol name: `FindReferencesInput` has
+    // only `file_path`, `line` and `column`. The output field is still called
+    // `symbol`, and it was filled with `input.file_path`, so the response read
+    // `{"symbol":"crates/.../plan.rs"}` - a path presented as a symbol name.
+    // Report the position that was actually searched, which is what the caller
+    // can act on and cannot be mistaken for a resolved symbol name.
+    let searched_at = format!(
+        "{}:{}:{}",
+        input.file_path, input.line, input.column
+    );
+
     match refs {
         Ok(refs) => {
             let entries: Vec<ReferenceEntry> = refs
@@ -251,22 +296,20 @@ pub async fn handle_find_references(
             let total = entries.len();
             let (precision, provider) = report_precision("find_references", tier);
             Ok(FindReferencesOutput {
-                symbol: input.file_path,
+                symbol: searched_at,
                 references: entries,
                 total,
                 precision,
                 provider,
             })
         }
-        Err(_) => {
-            let (precision, provider) = report_precision("find_references", tier);
-            Ok(FindReferencesOutput {
-                symbol: input.file_path,
-                references: vec![],
-                total: 0,
-                precision,
-                provider,
-            })
+        Err(e) => {
+            // Previously this arm returned `total: 0` with an empty list, so
+            // a failed lookup was indistinguishable from a completed one that
+            // found nothing. The failure is now reported as a failure.
+            Err(HandlerError::App(crate::application::error::AppError::AnalysisError(
+                format!("find_references: {}", e),
+            )))
         }
     }
 }
