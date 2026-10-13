@@ -213,9 +213,9 @@ main` por bypass.
 
 ---
 
-### 2e. Bisección del SIGABRT — binario con símbolos e hipótesis descartadas
+### 2e. Bisección del SIGABRT — causa raíz localizada
 
-Sesión 2026-10-13, HEAD `7b638d18`. Estado: **abierto**, sin causa raíz.
+Sesión 2026-10-13, HEAD `7b638d18`.
 
 **Por qué gdb no daba nada antes**: el perfil release global de
 `~/.cargo/config.toml` fija `debug = false` y `strip = true`, así que el
@@ -223,7 +223,14 @@ binario de `cargo-targets/release` sale *stripped* y el backtrace solo traía
 direcciones sin resolver. No era un bug del símbolo: era una configuración.
 Rebuild con `CARGO_PROFILE_RELEASE_DEBUG=2 CARGO_PROFILE_RELEASE_STRIP=none`
 en un `CARGO_TARGET_DIR` aparte (para no invalidar la caché compartida) da un
-binario de 335 MB, `with debug_info, not stripped`.
+binario de 335 MB, `with debug_info, not stripped`. Sin gdb, ese binario
+aborta en ~4 s de forma determinista (`exit 134`, `corrupted size vs. prev_size`).
+
+**Nota de método**: dos intentos previos de gdb no reprodujeron nada porque
+el servidor se lanzaba con `--transport stdio`, flag que **no existe** en
+`cognicode-mcp` (es stdio por defecto; `--help` sólo acepta `--cwd`,
+`--read-only`, `-h`, `-V`). El proceso moría con exit 2 por argumento
+inválido, no por el defecto. Faltaba leer `--help` antes de asumir el flag.
 
 **Hipótesis levantadas y DESCARTADAS por medición** (no por suposición):
 
@@ -251,6 +258,30 @@ binario de 335 MB, `with debug_info, not stripped`.
 
 **Lo que sí queda establecido**:
 
+- Backtrace symbolizado (thread 131 `tokio-rt-worker`, SIGABRT):
+
+  ```
+  #4  malloc_printerr ()                        ← "corrupted size vs. prev_size"
+  #5  unlink_chunk.isra ()
+  #6  _int_malloc ()
+  #14 RawVecInner::try_allocate_in (capacity=21)
+  #25 SymbolFqn::from_legacy_side       symbol_fqn.rs:66
+  #26 Symbol::new                       symbol.rs:34
+  #27 node_to_symbol_with_path          tree_sitter_parser.rs:276
+  #28 find_all_symbols_with_path        tree_sitter_parser.rs:199
+  #29 LightweightIndex::build_index     lightweight_index.rs:170
+  #31 handle_build_lightweight_index    handlers/mod.rs:3664
+  ```
+
+- El abort ocurre en un `malloc` de 21 bytes dentro de Rust **100% seguro**
+  (`&str` → `String`). glibc no detecta ahí la corrupción: la **detecta** en
+  la primera `malloc` posterior a una escritura inválida hecha antes. El sitio
+  del backtrace es el *testigo*, no el culpable.
+- Por tanto el fallo **no** está en el código Rust del camino `build_index`
+  (que es seguro y no comparte estado mutable), sino en una escritura fuera de
+  límites dentro de tree-sitter o de un crate C de gramáticas. Coherente con
+  que `build_graph` pase: su `build_project_graph` cachea por fichero y evita
+  el patrón exacto que dispara el fallo.
 - `build_project_graph` es la ruta real de `build_lightweight_index`; la
   diferencia con `build_graph` no está en qué función se llama sino en que
   `build_graph` camina con `follow_links(false)` y el índice ligero con `true`.
@@ -263,10 +294,10 @@ Corrección de método: el test de repro tenía `parent().join("crates")`, que
 apuntaba a `crates/crates` (inexistente) y fallaba por el motivo equivocado.
 Arreglado en `7b638d18`.
 
-**Pendiente**: capturar el backtrace symbolizado del SIGABRT contra el binario
-con debug_info, y comparar el mismo `build_index` (a) directo, (b) dentro de
-`spawn_blocking`, (c) proceso MCP completo. Sin eso, la causa sigue sin
-identificar.
+**Pendiente**: confirmar la escritura fuera de límites con ASan. Build en
+curso sobre nightly 1.99 con `-Zsanitizer=address -Cforce-frame-pointers=yes`
+en `CARGO_TARGET_DIR` privado: ASan puede nombrar la instrucción que escribe
+de más, que es lo que glibc no puede decir.
 
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
