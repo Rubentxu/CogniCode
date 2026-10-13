@@ -619,10 +619,7 @@ fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
         // structural: a tool the router cannot reach carries no tag, and a new
         // routing shows up in the catalog the next time it is captured, instead
         // of requiring a second place to be updated in lockstep.
-        c.insert(
-            "intent_tags".to_string(),
-            serde_json::json!(intent_tags),
-        );
+        c.insert("intent_tags".to_string(), serde_json::json!(intent_tags));
     }
     tool
 }

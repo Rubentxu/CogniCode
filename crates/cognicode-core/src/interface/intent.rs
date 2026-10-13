@@ -139,10 +139,31 @@ pub fn route_intent(intent: &Intent) -> Vec<ToolRef> {
 /// Canonical label for each intent variant, used as the catalog's
 /// `intent_tags` vocabulary.
 const INTENT_LABELS: [(Intent, &str); 4] = [
-    (Intent::Locate { symbol: String::new() }, "Locate"),
-    (Intent::Summarize { scope: String::new() }, "Summarize"),
-    (Intent::Verify { claim: String::new() }, "Verify"),
-    (Intent::Read { path: String::new(), range: None }, "Read"),
+    (
+        Intent::Locate {
+            symbol: String::new(),
+        },
+        "Locate",
+    ),
+    (
+        Intent::Summarize {
+            scope: String::new(),
+        },
+        "Summarize",
+    ),
+    (
+        Intent::Verify {
+            claim: String::new(),
+        },
+        "Verify",
+    ),
+    (
+        Intent::Read {
+            path: String::new(),
+            range: None,
+        },
+        "Read",
+    ),
 ];
 
 /// Invert [`route_intent`]: which intent variants can reach `tool`?

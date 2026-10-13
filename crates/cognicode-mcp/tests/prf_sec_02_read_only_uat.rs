@@ -16,8 +16,8 @@ use serde_json::{Value, json};
 use std::path::PathBuf;
 
 mod common;
-use common::McpSession;
 use cognicode_core::interface::catalog::load_tool_catalog;
+use common::McpSession;
 
 fn fixture_ws() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mcp_03_ws")
@@ -211,8 +211,7 @@ async fn default_mode_keeps_write_file_available() {
         .collect();
     flagged.sort();
     assert_eq!(
-        flagged,
-        declared,
+        flagged, declared,
         "the tools flagged mutating at runtime must be exactly the tools the \
          catalog declares mutating"
     );
