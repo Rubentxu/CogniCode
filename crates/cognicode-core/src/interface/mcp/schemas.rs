@@ -77,6 +77,10 @@ pub struct GetCallHierarchyOutput {
     pub symbol: String,
     pub calls: Vec<CallEntry>,
     pub metadata: AnalysisMetadata,
+    /// B3.W1 — the tier that served this request (see [`FindUsagesOutput`]).
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +116,10 @@ pub struct GetFileSymbolsOutput {
     /// Hierarchical symbols tree (when `hierarchical` is true). Empty when `hierarchical` is false.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub hierarchical_symbols: Vec<HierarchicalSymbolInfo>,
+    /// B3.W1 — the tier that served this request (see [`FindUsagesOutput`]).
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 /// Hierarchical symbol info with children for tree representation
@@ -194,6 +202,19 @@ pub struct FindUsagesOutput {
     pub symbol: String,
     pub usages: Vec<UsageEntry>,
     pub total: usize,
+    /// B3.W1 — the precision tier that actually served this request.
+    ///
+    /// The catalog's `precision_floor` is the documented *ceiling* for the
+    /// tool; this field is the tier that produced *this* result, so an
+    /// agent can never mistake an `ast-heuristic` answer for an LSP-grade
+    /// one (AAT-B3-01). It is not an option because "we do not know how
+    /// precise this is" is not an honest state to publish: a tool that
+    /// cannot state its precision must not answer at all.
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request, e.g. `tree-sitter-rust`.
+    /// Named so an agent can grep the source for the actual provider
+    /// rather than inferring it.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -679,6 +700,10 @@ pub struct QuerySymbolOutput {
     pub symbol_name: String,
     pub locations: Vec<SymbolLocationEntry>,
     pub total: usize,
+    /// B3.W1 — the tier that served this request (see [`FindUsagesOutput`]).
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1025,6 +1050,15 @@ pub struct GoToDefinitionOutput {
     pub column: Option<u32>,
     pub context: Option<String>,
     pub message: Option<String>,
+    /// B3.W1 — the tier that served this request (see [`FindUsagesOutput`]).
+    ///
+    /// Load-bearing for this tool in particular: when the LSP backend is
+    /// absent the pipeline falls back to tree-sitter, and a caller that
+    /// cannot see the demotion will treat a heuristic guess as a
+    /// compiler-grade answer (AAT-B3-01).
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 /// Input for hover tool
@@ -1060,6 +1094,10 @@ pub struct FindReferencesOutput {
     pub symbol: String,
     pub references: Vec<ReferenceEntry>,
     pub total: usize,
+    /// B3.W1 — the tier that served this request (see [`FindUsagesOutput`]).
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 /// A single reference entry

@@ -196,6 +196,42 @@ pub fn default_provider_for_tool(tool: &str) -> &'static str {
     }
 }
 
+/// Map a serving tier onto the wire precision an agent reads (B3.W1).
+///
+/// The two vocabularies exist on purpose and must not be collapsed:
+/// `PrecisionTier` is the internal provenance ladder (`S0`…`S4`) used by
+/// the composite pipeline, while [`Precision`] is the published
+/// three-value contract (`lsp` | `ast-heuristic` | `index`) that B3.W1
+/// pinned in `product/tools.json` and in the wire tests.
+///
+/// The mapping is deliberately conservative: only `S2`, the language
+/// server, maps to `lsp`. `S0` and `S1` are heuristics and local-index
+/// guesses, so both demote to `ast-heuristic` rather than claiming a
+/// grade they did not earn (AAT-B3-01). `S1` is backed by the workspace
+/// index, but "backed by an index" is not "compiler-grade", and
+/// advertising `index` here would overstate it in the other direction.
+///
+/// The reserved tiers `S3`/`S4` have no producer in this codebase, so
+/// this mapping is unreachable for them. They map to `index` — the
+/// strongest published tier — on the grounds that if a compiler-grade
+/// producer ever lands, demoting it to `ast-heuristic` would be the worse
+/// error. That arm is unreachable today, so it is documented rather than
+/// proven by a test.
+pub fn precision_from_tier(
+    tier: crate::domain::traits::code_intelligence::PrecisionTier,
+) -> Precision {
+    use crate::domain::traits::code_intelligence::PrecisionTier;
+    match tier {
+        // The only tier that is genuinely LSP-grade.
+        PrecisionTier::S2 => Precision::Lsp,
+        // Tree-sitter heuristics and the workspace-index resolver.
+        PrecisionTier::S0 | PrecisionTier::S1 => Precision::AstHeuristic,
+        // Reserved for SCIP/LSIF (S3) and compiler IR (S4). No producer
+        // reaches these yet; see the doc comment above.
+        PrecisionTier::S3 | PrecisionTier::S4 => Precision::Index,
+    }
+}
+
 /// The 8 navigation tools B3.W1 unifies. Pinned by the
 /// `catalog_declares_precision_floor_for_every_navigation_tool` test so
 /// adding a 9th navigation tool cannot land without updating both this

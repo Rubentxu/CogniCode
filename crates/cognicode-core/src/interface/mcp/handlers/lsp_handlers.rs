@@ -13,6 +13,71 @@ fn get_provider(ctx: &HandlerContext) -> Arc<dyn CodeIntelligenceProvider> {
     }
 }
 
+/// B3.W1: the tier-aware provider, when the caller configured one.
+///
+/// A bare `Arc<dyn CodeIntelligenceProvider>` cannot be downcast to
+/// `dyn TieredCodeIntelligenceProvider`, and `get_definition` on
+/// `CompositeProvider` erases the tier on the way out, so without this
+/// the LSP handlers would have to hardcode the catalog ceiling and claim
+/// `lsp` even when tree-sitter answered. When no tiered provider is
+/// configured the handlers fall back to the floor and say so in
+/// `provider` — honest degradation, not a fabricated upgrade.
+fn get_tiered_provider(
+    ctx: &HandlerContext,
+) -> Option<Arc<dyn crate::domain::traits::code_intelligence::TieredCodeIntelligenceProvider>> {
+    ctx.tiered_code_intelligence_provider.clone()
+}
+
+/// Resolve the `(precision, provider)` pair to publish for a navigation
+/// response.
+///
+/// `tier` is the tier that actually served the request. `None` means the
+/// tier is not observable, in which case the published value is the
+/// catalog floor and the provider is suffixed so a reader can tell the
+/// difference between "this was LSP-grade" and "we could not verify it".
+fn report_precision(
+    tool: &str,
+    tier: Option<crate::domain::traits::code_intelligence::PrecisionTier>,
+) -> (crate::interface::symbol_identity::Precision, String) {
+    let base = crate::interface::symbol_identity::default_provider_for_tool(tool);
+    match tier {
+        Some(t) => (
+            crate::interface::symbol_identity::precision_from_tier(t),
+            format!("{base} (tier {})", t.as_str()),
+        ),
+        None => (
+            crate::interface::symbol_identity::precision_floor_for_tool(tool),
+            format!("{base} (tier unverified)"),
+        ),
+    }
+}
+
+/// Resolve a definition through the tiered pipeline when one is
+/// configured, so the response can report the tier that answered.
+///
+/// Returns `(value, tier)`. `tier` is `None` on the fallback path: the
+/// plain `get_definition` erases it, and inventing an `S2` there would
+/// be exactly the false LSP claim AAT-B3-01 forbids.
+async fn definition_with_tier(
+    ctx: &HandlerContext,
+    location: &crate::domain::value_objects::Location,
+) -> (
+    Result<
+        Option<crate::domain::value_objects::Location>,
+        crate::domain::traits::code_intelligence::CodeIntelligenceError,
+    >,
+    Option<crate::domain::traits::code_intelligence::PrecisionTier>,
+) {
+    if let Some(tiered) = get_tiered_provider(ctx) {
+        use crate::domain::traits::code_intelligence::TieredOutcome;
+        return match tiered.get_definition_tiered(location).await {
+            TieredOutcome::Served(answer) => (Ok(answer.value), Some(answer.tier)),
+            TieredOutcome::Unresolved(_) => (Ok(None), None),
+        };
+    }
+    (get_provider(ctx).get_definition(location).await, None)
+}
+
 #[cognicode_macros::aix_tool(
     name = "go_to_definition",
     description = "Navigate to the definition of a symbol using LSP.",
@@ -22,14 +87,15 @@ pub async fn handle_go_to_definition(
     ctx: &HandlerContext,
     input: GoToDefinitionInput,
 ) -> HandlerResult<GoToDefinitionOutput> {
-    let provider = get_provider(ctx);
     let location = crate::domain::value_objects::Location::new(
         input.file_path.clone(),
         input.line,
         input.column,
     );
 
-    match provider.get_definition(&location).await {
+    let (definition, tier) = definition_with_tier(ctx, &location).await;
+
+    match definition {
         Ok(Some(def_loc)) => {
             let source = std::fs::read_to_string(def_loc.file()).ok();
             let context = source.as_ref().map(|s| {
@@ -41,6 +107,7 @@ pub async fn handle_go_to_definition(
                     String::new()
                 }
             });
+            let (precision, provider) = report_precision("go_to_definition", tier);
             Ok(GoToDefinitionOutput {
                 found: true,
                 file: Some(def_loc.file().to_string()),
@@ -48,24 +115,36 @@ pub async fn handle_go_to_definition(
                 column: Some(def_loc.column()),
                 context,
                 message: None,
+                precision,
+                provider,
             })
         }
-        Ok(None) => Ok(GoToDefinitionOutput {
-            found: false,
-            file: None,
-            line: None,
-            column: None,
-            context: None,
-            message: Some("No definition found at this position".to_string()),
-        }),
-        Err(e) => Ok(GoToDefinitionOutput {
-            found: false,
-            file: None,
-            line: None,
-            column: None,
-            context: None,
-            message: Some(e.to_string()),
-        }),
+        Ok(None) => {
+            let (precision, provider) = report_precision("go_to_definition", tier);
+            Ok(GoToDefinitionOutput {
+                found: false,
+                file: None,
+                line: None,
+                column: None,
+                context: None,
+                message: Some("No definition found at this position".to_string()),
+                precision,
+                provider,
+            })
+        }
+        Err(e) => {
+            let (precision, provider) = report_precision("go_to_definition", tier);
+            Ok(GoToDefinitionOutput {
+                found: false,
+                file: None,
+                line: None,
+                column: None,
+                context: None,
+                message: Some(e.to_string()),
+                precision,
+                provider,
+            })
+        }
     }
 }
 
@@ -106,6 +185,40 @@ pub async fn handle_hover(ctx: &HandlerContext, input: HoverInput) -> HandlerRes
 }
 
 /// Handler for find_references tool
+/// Resolve references through the tiered pipeline when one is
+/// configured, so the response can report the tier that answered.
+///
+/// Same rule as [`definition_with_tier`]: a missing tiered provider
+/// yields `tier: None`, never an assumed `S2`.
+async fn references_with_tier(
+    ctx: &HandlerContext,
+    location: &crate::domain::value_objects::Location,
+    include_declaration: bool,
+) -> (
+    Result<
+        Vec<crate::domain::traits::code_intelligence::Reference>,
+        crate::domain::traits::code_intelligence::CodeIntelligenceError,
+    >,
+    Option<crate::domain::traits::code_intelligence::PrecisionTier>,
+) {
+    if let Some(tiered) = get_tiered_provider(ctx) {
+        use crate::domain::traits::code_intelligence::TieredOutcome;
+        return match tiered
+            .find_references_tiered(location, include_declaration)
+            .await
+        {
+            TieredOutcome::Served(answer) => (Ok(answer.value), Some(answer.tier)),
+            TieredOutcome::Unresolved(_) => (Ok(Vec::new()), None),
+        };
+    }
+    (
+        get_provider(ctx)
+            .find_references(location, include_declaration)
+            .await,
+        None,
+    )
+}
+
 #[cognicode_macros::aix_tool(
     name = "find_references",
     description = "Find all references to a symbol using LSP.",
@@ -115,17 +228,15 @@ pub async fn handle_find_references(
     ctx: &HandlerContext,
     input: FindReferencesInput,
 ) -> HandlerResult<FindReferencesOutput> {
-    let provider = get_provider(ctx);
     let location = crate::domain::value_objects::Location::new(
         input.file_path.clone(),
         input.line,
         input.column,
     );
 
-    match provider
-        .find_references(&location, input.include_declaration)
-        .await
-    {
+    let (refs, tier) = references_with_tier(ctx, &location, input.include_declaration).await;
+
+    match refs {
         Ok(refs) => {
             let entries: Vec<ReferenceEntry> = refs
                 .iter()
@@ -138,17 +249,25 @@ pub async fn handle_find_references(
                 })
                 .collect();
             let total = entries.len();
+            let (precision, provider) = report_precision("find_references", tier);
             Ok(FindReferencesOutput {
                 symbol: input.file_path,
                 references: entries,
                 total,
+                precision,
+                provider,
             })
         }
-        Err(_) => Ok(FindReferencesOutput {
-            symbol: input.file_path,
-            references: vec![],
-            total: 0,
-        }),
+        Err(_) => {
+            let (precision, provider) = report_precision("find_references", tier);
+            Ok(FindReferencesOutput {
+                symbol: input.file_path,
+                references: vec![],
+                total: 0,
+                precision,
+                provider,
+            })
+        }
     }
 }
 

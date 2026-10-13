@@ -365,6 +365,12 @@ pub struct GetTypeRefsInput {
 pub struct GetTypeRefsOutput {
     pub symbol: String,
     pub references: Vec<TypeRefRecord>,
+    /// B3.W1 — the tier that served this request. `index` rather than an
+    /// LSP tier: these come from the CogniCode project graph, not from a
+    /// language server, and the wire must say so.
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct TypeRefRecord {
@@ -406,6 +412,15 @@ pub async fn handle_get_type_references(
     Ok(GetTypeRefsOutput {
         symbol: input.symbol_name,
         references,
+        // B3.W1 — resolved from the project graph, so `index` is the
+        // truthful tier; a language server was never asked.
+        precision: crate::interface::symbol_identity::precision_floor_for_tool(
+            "get_type_references",
+        ),
+        provider: crate::interface::symbol_identity::default_provider_for_tool(
+            "get_type_references",
+        )
+        .to_string(),
     })
 }
 
@@ -480,6 +495,12 @@ pub struct GetImplementorsInput {
 pub struct GetImplementorsOutput {
     pub trait_name: String,
     pub implementors: Vec<String>,
+    /// B3.W1 — the tier that served this request. `index` rather than an
+    /// LSP tier: these come from the CogniCode project graph, not from a
+    /// language server, and the wire must say so.
+    pub precision: crate::interface::symbol_identity::Precision,
+    /// B3.W1 — the backend that served this request.
+    pub provider: String,
 }
 
 pub async fn handle_get_implementors(
@@ -519,6 +540,11 @@ pub async fn handle_get_implementors(
     Ok(GetImplementorsOutput {
         trait_name: input.trait_name,
         implementors,
+        // B3.W1 — resolved from the project graph, so `index` is the
+        // truthful tier; a language server was never asked.
+        precision: crate::interface::symbol_identity::precision_floor_for_tool("get_implementors"),
+        provider: crate::interface::symbol_identity::default_provider_for_tool("get_implementors")
+            .to_string(),
     })
 }
 

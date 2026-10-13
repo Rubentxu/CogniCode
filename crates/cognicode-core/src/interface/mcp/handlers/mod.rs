@@ -261,6 +261,27 @@ pub struct HandlerContext {
     graph_store: Option<Arc<dyn GraphStore>>,
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    /// B3.W1 — optional tier-aware sibling of `code_intelligence_provider`.
+    ///
+    /// The existing slot erases the serving tier: `get_definition` on
+    /// `CompositeProvider` walks S2 → S1 → S0 and returns just the value,
+    /// so a caller cannot tell an LSP answer from a tree-sitter guess. A
+    /// navigation response that hardcodes `precision: "lsp"` would be a
+    /// false claim whenever the language server was absent (AAT-B3-01).
+    ///
+    /// This slot holds the same object typed as
+    /// `dyn TieredCodeIntelligenceProvider` when it supports that trait,
+    /// so the LSP handlers can report the tier that actually served the
+    /// request. It is a separate slot rather than a second constructor
+    /// parameter on the existing one because the existing field is
+    /// `Arc<dyn CodeIntelligenceProvider>`: downcasting it would need a
+    /// new trait bound on every `dyn` consumer, which is the signature
+    /// ripple `TieredCodeIntelligenceProvider`'s doc comment explicitly
+    /// avoids. Left `None`, the LSP handlers report the catalog floor and
+    /// say so in `provider`, which is honest degradation rather than a
+    /// fabricated upgrade.
+    tiered_code_intelligence_provider:
+        Option<Arc<dyn crate::domain::traits::code_intelligence::TieredCodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
     /// ST-04: read through `file_ops_service()`. The accessor returns a
     /// borrow, not the `Option` itself, so the service this context was
@@ -509,6 +530,8 @@ pub struct HandlerContextBuilder {
     symbol_hotness: Option<Arc<Mutex<HashMap<String, usize>>>>,
     graph_store: Option<Arc<dyn GraphStore>>,
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
+    tiered_code_intelligence_provider:
+        Option<Arc<dyn crate::domain::traits::code_intelligence::TieredCodeIntelligenceProvider>>,
     file_ops_service:
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
@@ -669,6 +692,21 @@ impl HandlerContextBuilder {
         self
     }
 
+    /// Sets the tier-aware code intelligence provider (B3.W1).
+    ///
+    /// Callers that hold a `CompositeProvider` should set this alongside
+    /// [`Self::with_code_intelligence`] so navigation responses can report
+    /// the tier that actually served the request instead of the catalog
+    /// floor. Leaving it unset is not an error: the LSP handlers then
+    /// report the documented ceiling and name it as such in `provider`.
+    pub fn with_tiered_code_intelligence(
+        mut self,
+        provider: Arc<dyn crate::domain::traits::code_intelligence::TieredCodeIntelligenceProvider>,
+    ) -> Self {
+        self.tiered_code_intelligence_provider = Some(provider);
+        self
+    }
+
     /// Sets the FileOperationsService for shared file operations.
     ///
     /// If not set, handlers create their own instance per request.
@@ -735,6 +773,7 @@ impl HandlerContextBuilder {
                 .unwrap_or_else(|| Arc::new(Mutex::new(HashMap::new()))),
             graph_store: self.graph_store,
             code_intelligence_provider: self.code_intelligence_provider,
+            tiered_code_intelligence_provider: self.tiered_code_intelligence_provider,
             file_ops_service: self.file_ops_service,
             iac_repo: self.iac_repo,
             fallback_store: Arc::new(OnceLock::new()),
@@ -1192,6 +1231,50 @@ pub struct SkippedFileDto {
     pub reason: String,
 }
 
+/// Output for `composite_impact_query`.
+///
+/// B4.W5 registered this type in `build_output_schemas()` and recorded in
+/// its message that the DTO had been added here, but no such commit
+/// existed. The registration therefore named a type that was never
+/// defined, and `cognicode-core` stopped compiling at that commit. The
+/// B1..B6 close-out then recorded green gates over a crate that could not
+/// build. This type is the one that registration meant.
+///
+/// The field set and the `JsonSchema` shape are pinned to what
+/// `impact::composite::CompositeImpactResult` actually serializes and to
+/// what `product/tools.json` advertises for this tool, so the three
+/// cannot drift apart silently. It is deliberately a structural mirror
+/// rather than a re-export: `CompositeImpactResult` is `Serialize`-only
+/// and pins `verdict_refused_reason: &'static str`, so it cannot derive
+/// `JsonSchema` without losing that pin.
+///
+/// The evidence fields (`impact`, `architecture`, `findings`) stay
+/// nullable/empty while the B4.W1/W2/W3 extractors are unwired. That is
+/// the advertised contract, not an accident: an empty result with
+/// `verdict_refused: true` is how the wire says "investigate further",
+/// and it must not read as "no impact found".
+#[derive(Debug, serde::Serialize, JsonSchema)]
+pub struct CompositeImpactOutput {
+    /// B4.W5 load-bearing invariant. Always `true` on this tool.
+    pub verdict_refused: bool,
+    /// Canonical, static refusal reason so an agent never has to infer
+    /// why the result is not authoritative.
+    pub verdict_refused_reason: String,
+    /// B4.W1 `ImpactResult` envelope, or `None` while unwired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub impact: Option<serde_json::Value>,
+    /// B4.W2 `ArchitectureDiagnostic` envelope, or `None` while unwired.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture: Option<serde_json::Value>,
+    /// B4.W3 findings. An empty list is a valid result that belongs on
+    /// the wire, so this is a list and never an option.
+    pub findings: Vec<serde_json::Value>,
+    /// B3.W3 parity: pointers into the catalog's `follow_ups`.
+    pub suggested_follow_ups: Vec<serde_json::Value>,
+    /// B3.W3 parity: pointers into the catalog's `prerequisites`.
+    pub suggested_prerequisites: Vec<serde_json::Value>,
+}
+
 /// Handler for build_graph tool
 pub async fn handle_build_graph(
     ctx: &HandlerContext,
@@ -1547,6 +1630,15 @@ pub async fn handle_get_call_hierarchy(
             total_calls,
             analysis_time_ms: start.elapsed().as_millis() as u64,
         },
+        // B3.W1 — built from the project graph, not from a language
+        // server, so `index` is the truthful tier here.
+        precision: crate::interface::symbol_identity::precision_floor_for_tool(
+            "get_call_hierarchy",
+        ),
+        provider: crate::interface::symbol_identity::default_provider_for_tool(
+            "get_call_hierarchy",
+        )
+        .to_string(),
     })
 }
 
@@ -1596,6 +1688,11 @@ pub async fn handle_get_file_symbols(
         file_path: input.file_path.clone(),
         symbols,
         hierarchical_symbols,
+        // B3.W1 — this path parses with tree-sitter and does not consult a
+        // language server, so the floor is what the catalog declares.
+        precision: crate::interface::symbol_identity::precision_floor_for_tool("get_file_symbols"),
+        provider: crate::interface::symbol_identity::default_provider_for_tool("get_file_symbols")
+            .to_string(),
     };
 
     // If compression is requested, return a natural language summary
@@ -1769,6 +1866,13 @@ pub async fn handle_find_usages(
         symbol: input.symbol_name,
         usages: usage_entries,
         total,
+        // B3.W1 — the tier that actually served this request, not the
+        // catalog's ceiling. Both handlers derive these from the single
+        // canonical table so the MCP and CLI wires cannot disagree
+        // about how precise an answer is (AAT-B3-01).
+        precision: crate::interface::symbol_identity::precision_floor_for_tool("find_usages"),
+        provider: crate::interface::symbol_identity::default_provider_for_tool("find_usages")
+            .to_string(),
     })
 }
 
@@ -3338,6 +3442,15 @@ pub async fn handle_query_symbol_index(
             symbol_name: input.symbol_name,
             locations: Vec::new(),
             total: 0,
+            // B3.W1 — same tier as the populated path below: the empty
+            // result still has to declare how it would have been found.
+            precision: crate::interface::symbol_identity::precision_floor_for_tool(
+                "query_symbol_index",
+            ),
+            provider: crate::interface::symbol_identity::default_provider_for_tool(
+                "query_symbol_index",
+            )
+            .to_string(),
         });
     }
 
@@ -3377,6 +3490,15 @@ pub async fn handle_query_symbol_index(
         symbol_name: input.symbol_name,
         locations: location_entries,
         total,
+        // B3.W1 — served from the tree-sitter-backed symbol index; no
+        // language server is consulted on this path.
+        precision: crate::interface::symbol_identity::precision_floor_for_tool(
+            "query_symbol_index",
+        ),
+        provider: crate::interface::symbol_identity::default_provider_for_tool(
+            "query_symbol_index",
+        )
+        .to_string(),
     })
 }
 

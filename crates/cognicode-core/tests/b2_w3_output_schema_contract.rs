@@ -495,3 +495,108 @@ fn type_matches(declared: &str, value: &Value) -> bool {
     // Nullable string fields may legitimately be `null`.
     declared == "string" && actual == "null"
 }
+
+// ---------------------------------------------------------------------------
+// B4.W5 — the registration that named a type that was never created
+// ---------------------------------------------------------------------------
+
+/// `composite_impact_query` publishes a schema, and the catalog agrees.
+///
+/// On 2026-10-13 `cognicode-core` did not compile: commit `d2b824de`
+/// registered `CompositeImpactOutput` in `build_output_schemas()` and its
+/// message claimed it had added the DTO to `handlers/mod.rs`, but that
+/// commit's diff touches `output_contracts.rs` only. The type never
+/// existed, so every tool in the crate failed to build, and the B1..B6
+/// close-out recorded green gates over a crate that could not compile.
+///
+/// This test is here so the next registration cannot lie the same way. It
+/// cannot assert "the crate compiles" — a test that does not build proves
+/// nothing — so it asserts the property that was actually missing: the
+/// tool named in the catalog has a schema here, the schema describes a
+/// real object, and its properties name the fields the handler's own
+/// result carries. A registration of a type that does not exist cannot
+/// pass this, because this file would not compile either.
+#[test]
+fn composite_impact_query_publishes_the_fields_its_handler_fills() {
+    let schema = output_schema_for("composite_impact_query")
+        .expect("composite_impact_query publishes an output contract (B4.W5)");
+
+    assert_eq!(
+        schema.get("type").and_then(|t| t.as_str()),
+        Some("object"),
+        "composite_impact_query does not describe an object"
+    );
+
+    let properties = schema
+        .get("properties")
+        .and_then(|p| p.as_object())
+        .expect("composite_impact_query advertises no properties");
+    assert!(
+        !properties.is_empty(),
+        "composite_impact_query advertises an empty properties map, which is \
+         the same as advertising no contract at all"
+    );
+
+    // The load-bearing B4.W5 invariant is the refused verdict: the tool must
+    // be able to say it refused and why, without an agent reading prose. If
+    // the DTO drifts and loses these two, the refusal becomes invisible on
+    // the wire and the agent infers an empty graph means "no impact".
+    for field in ["verdict_refused", "verdict_refused_reason"] {
+        assert!(
+            properties.contains_key(field),
+            "composite_impact_query no longer advertises `{field}`. The B4.W5 \
+             contract is that a refused verdict travels on the wire; an agent \
+             that cannot see it reads an empty result as a clean one."
+        );
+    }
+
+    // And the catalog must agree, or the parity test above will catch it
+    // separately and with a worse message.
+    let catalog = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../product/tools.json"),
+    )
+    .expect("product/tools.json is readable");
+    assert!(
+        catalog.contains("composite_impact_query"),
+        "the runtime publishes a contract for a tool the catalog does not name"
+    );
+}
+
+/// The CLI `find_usages` JSON path emits the same shape as the MCP wire.
+///
+/// B3.W1 tagged the CLI construction of `FindUsagesOutput` with
+/// `precision` and `provider` so the JSON presenter matched the MCP
+/// handler. The two fields were added to the construction site and to
+/// neither the struct nor its consumers, so the same commit broke the
+/// build. This asserts the serialization actually carries them, which is
+/// the property the comment at that construction site claimed.
+#[test]
+fn find_usages_output_carries_precision_and_provider() {
+    use cognicode_core::interface::mcp::schemas::{FindUsagesOutput, UsageEntry};
+
+    let out = FindUsagesOutput {
+        symbol: "foo::bar".to_string(),
+        usages: vec![UsageEntry {
+            file: "src/lib.rs".to_string(),
+            line: 1,
+            column: 1,
+            context: "foo::bar()".to_string(),
+            is_definition: false,
+            surrounding_lines: None,
+        }],
+        total: 1,
+        precision: cognicode_core::interface::symbol_identity::Precision::Index,
+        provider: "test-provider".to_string(),
+    };
+
+    let value = serde_json::to_value(&out).expect("FindUsagesOutput serializes");
+    for field in ["precision", "provider"] {
+        assert!(
+            value.get(field).and_then(|v| v.as_str()).is_some(),
+            "find_usages output does not carry `{field}` on the wire. The MCP \
+             handler publishes it and the CLI JSON path is supposed to mirror \
+             that; an agent reading the CLI sees a weaker claim than the same \
+             call over MCP."
+        );
+    }
+}
