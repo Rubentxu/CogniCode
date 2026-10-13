@@ -210,3 +210,47 @@ funcionó en este release, pero futuros operadores
 deberían considerar si prefieren enforce estricto
 vía repo settings antes de invocar `git push origin
 main` por bypass.
+
+---
+
+## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
+
+Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
+preexistentes a esta sesión: reproducen idéntico en `80974345`.
+
+### `cargo fmt --all -- --check` — 21 ficheros, 97 hunks
+
+Ficheros: `cogh.rs`, `skills.rs`, `lifecycle.rs`,
+`b6_w3_cogh_lifecycle.rs`, `b6_w4_skills_autodiscovery.rs`,
+`b6_w2_reproducible_perf.rs`, `commands.rs`, `robustness.rs`,
+`refactor/{plan,apply,preview,revalidate,mod}.rs`,
+`b5_w{1,2,3,4}_*.rs`, `b6_w{1,2,5,6}_*.rs`,
+`prf_sec_02_read_only_uat.rs`.
+
+Los tres ficheros que esta sesión tocó (`intent.rs`, `rmcp_adapter.rs`,
+`prf_sec_02_read_only_uat.rs`) se corrigieron en `097e7b4a`. `apply.rs` y
+`preview.rs` siguen sin formatear a propósito: su único cambio fue el enlace
+intra-doc, y formatearlos habría arrastrado hunks ajenos al mismo commit.
+
+### `cargo clippy --workspace --all-targets -- -D warnings` — 9 errores en 4 ficheros
+
+| Fichero | Errores | Lint |
+|---|---|---|
+| `refactor/revalidate.rs` | 2 | `collapsible_if` |
+| `refactor/preview.rs` | 2 | `collapsible_if` |
+| `interface/cli/commands.rs` | 2 | `redundant_closure` |
+| `refactor/plan.rs` | 1 | `assign_op_pattern` |
+
+Más un `result_large_err` (`large size difference between variants`).
+
+**Por qué no se cierra aquí**: es reformatting y lint-mecánico sobre código que
+esta sesión no cambió de comportamiento. Mezclarlo con correcciones de contrato
+los vuelve irrevisables, y el proyecto trata el cleanup de fmt como work unit
+propia (ver `scripts/test-fast.sh` / `scripts/test-full.sh` en `AGENTS.md`).
+
+**Efecto sobre C8-R**: el gate **G2** del runbook
+(`docs/roadmap/production-ready/runbooks/C8-RECERTIFICATION-RUNBOOK.md:24-25`)
+exige ambos comandos en verde. C8-R sigue `PENDING_HUMAN_SIGNATURE` y **no es
+firmable** hasta que G2 pase, con independencia de la firma humana. G1, G3 y el
+resto de la campaña sí están verdes: `cargo test --workspace` da 208 suites /
+6562 passed / 0 failed, y `scripts/product` da 46/46.
