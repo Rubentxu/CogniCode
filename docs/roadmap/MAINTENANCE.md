@@ -445,6 +445,61 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
+### 2i. El abort NO ocurre en reposo: la corrupción viene del propio `build_index`
+
+Con el binario release **sin strip** (`RUSTFLAGS=-C strip=none`, porque el
+`~/.cargo/config.toml` global pone `strip=true` y `debug=false` en release) se
+reprodujo el abort de forma determinista por script, sin gdb:
+
+```
+exit_code=-6  elapsed=12.2s
+corrupted size vs. prev_size
+```
+
+Dos experimentos descartan lo que parecía más probable.
+
+**1. El servidor en reposo NO aborta.** Con stdin abierto y **ninguna** llamada a
+herramienta, el proceso estuvo 90 s vivo y terminó por `ConnectionClosed`, no
+por `SIGABRT`. Si otro hilo del servidor (los 128 de rayon, o el runtime) fuera
+el que corrompe el heap, el abort aparecería sin herramienta. No aparece: la
+escritura inválida ocurre **dentro de la llamada**.
+
+**2. En el instante del abort, los 128 workers de rayon están parados.** El
+`thread apply all bt` de gdb en la señal da:
+
+```
+Thread 130 (LWP 1844910) "tokio-rt-worker":
+  #4 malloc_printerr
+  #5 unlink_chunk.isra
+  #6 _int_malloc
+  #8 std::sys::alloc::unix::alloc
+  #16 RawVec::with_capacity_in<u8>
+  #18 slice::to_vec<u8>
+  #21 String::clone
+  #22 LightweightIndex::build_index
+  #23 handle_build_lightweight_index::{{closure}}
+  #26 tokio::runtime::blocking::pool::Inner::run
+
+Thread 129, 128, 127, ... (los 128 restantes):
+  #1 rayon_core::sleep::Sleep::sleep
+  #2 rayon_core::registry::WorkerThread::wait_until_cold
+```
+
+`wait_until_cold` es el estado de un worker de rayon que **no tiene trabajo**.
+Todos dormidos, sólo un hilo asignando. Por tanto:
+
+- No es una carrera de datos entre rayon y el indexador.
+- No es concurrencia entre hilos del servidor.
+- Es una **escritura fuera de límites secuencial** dentro de `build_index`, que
+  glibc detecta ~12 s después cuando una asignación posterior camina por la
+  cabecera del chunk dañado.
+
+Esto **reduce** el alcance real: el defecto está en el camino de parseo /
+indexado, no en el andamiaje de la herramienta ni en el runtime MCP. Y explica
+por qué los tests de un solo hilo no reproducen: sin ASan el `build_index`
+sobre el repo tarda **más de 14 min** en debug (medido, `TIME`≈`ELAPSED`), así
+que el test nunca llega al tramo de memoria que se daña.
+
 ### 2h. ASan: cómo se llegó al diagnóstico
 
 El camino del stack es C: `tree-sitter` 0.27 compila su runtime con `cc`
