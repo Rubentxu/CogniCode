@@ -796,13 +796,22 @@ servidor le impone. Aunque se arregle el abort, la herramienta seguiría siendo
 inaccesible en este repo salvo que el trabajo se haga incremental o el
 presupuesto sea mayor.
 
-**Corrección posterior a esa medición**: el presupuesto de
-`build_lightweight_index` **no** es 30 s. `product/tools.json` lo declara
-`category: "graph"`, y `timeout_for_category` da 60 s a `graph`
-(`rmcp_adapter.rs:267`). El `duration_ms=30001` de arriba apunta a que el
-servidor en modo standalone no está resolviendo la categoría y cae al default
-de 30 s. Queda por cerrar por medición directa cuál de las dos rutas aplica en
-cada modo de despliegue; no se afirma aquí ninguna de las dos sin comprobarla.
+**Corrección posterior a esa medición, cerrada por medición directa**: el
+presupuesto de `build_lightweight_index` **no** es 30 s. El servidor resuelve
+`category: "graph"` y `timeout_for_category` da 60 s a `graph`
+(`rmcp_adapter.rs:267`). Medido, no deducido del catálogo:
+`lightweight_index_timeout_budget.rs` lee la categoría del mismo
+`build_all_tools()` que usa `lookup_category` en el dispatch, y comprueba que
+da `graph`, no `unknown`. Las constantes del espejo del test coinciden con
+`rmcp_adapter.rs:265-271` y con `STRICT_RATE_LIMIT_CATEGORIES` (línea 279), que
+incluye `graph`. Por tanto el presupuesto efectivo es **60 s también en modo
+standalone**.
+
+El `duration_ms=30001` de la medición anterior **no es la prueba de que el
+catálogo diga 30 s**: era una ejecución que abortó antes por el defecto del
+walker (1813 s sin respuesta), no por el presupuesto. La hipótesis de que el
+servidor standalone no resolvía la categoría queda **descartada por medición**,
+no por argumento.
 
 ## Causa raíz del abort: `tree-sitter-haskell` 0.23.1 (medido, cerrado)
 
@@ -911,8 +920,8 @@ verde, leyendo los ficheros que el índice registró de verdad vía `entries()`.
 Con esto el defecto de "no puede indexar un repo de tamaño real" queda
 cerrado en su causa, no en su síntoma: la herramienta anunciada ahora indexa
 este repo en 4.8 s y responde `ok`. La pregunta del presupuesto (30 s vs 60 s
-de `category: "graph"`) queda sin tocar y sigue sin medirse por modo de
-despliegue.
+de `category: "graph"`) queda **cerrada por medición**: la categoría resuelve a
+`graph` y el presupuesto efectivo es 60 s.
 
 ### 2f. Estado del gate medido en esta sesión (no todo verde)
 
