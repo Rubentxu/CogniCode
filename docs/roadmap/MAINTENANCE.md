@@ -947,6 +947,33 @@ Los dos FAIL de fmt y clippy son deuda de gates que ya existía antes de esta
 sesión y que no se toca aquí para no mezclar limpieza con el arreglo del
 bloqueador.
 
+**Resultado final, con `CARGO_TARGET_DIR` aislado y los binarios release
+presentes** (`cogh`, `cognicode`, `cognicode-mcp`), para que el único FAIL
+real quede aislado:
+
+| paso | resultado |
+|---|---|
+| `fmt --check` | FAIL (rc=1) — 23 ficheros, ninguno de esta sesión |
+| `clippy -D warnings` | FAIL (rc=101) — 9 lints, confirmado igual en HEAD |
+| `test --workspace` | **FAIL (rc=101), 1 test** |
+| `test --workspace --doc` | **OK** |
+| `known_failures (core/lib)` | **OK** — 0 entradas, baseline coincide |
+
+El único fallo de test que queda es
+`workspace_documentation_is_warning_free` con
+`warning: unresolved link to 'RefactorPlan'`, en
+`crates/cognicode-core/src/interface/mcp/schemas.rs:2625`. **No es de esta
+sesión**: `git log -L` sitúa esa línea en `51e826da`
+("wire the three safe_refactor_* ghosts"), seis commits antes del primero de
+estos. El propio mensaje del gate dice que un warning nuevo debe arreglarse en
+el commit que lo introduce y no se difiere a un backlog nuevo.
+
+Con esto el cierre queda así: **los dos defectos de `build_lightweight_index`
+que bloqueaban la ruta están corregidos y medidos**, y la batería completa
+sigue en rojo por tres deudas de gates anteriores a esta sesión
+(fmt, clippy, y este link de rustdoc). Ninguna se ha tapado ni se ha
+presentado como verde.
+
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
 Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
