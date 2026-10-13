@@ -249,8 +249,8 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // than named by a workflow step: nothing runs them by name.
     assert_eq!(
         suites.len(),
-        71,
-        "expected exactly 71 cognicode-core integration suites, found {}. \
+        72,
+        "expected exactly 72 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -400,13 +400,14 @@ const ANCHOR_SUITES: &[&str] = &[
     "findings_axiom_import_e2e",
     "findings_dataflow_e2e",
     "findings_graph_e2e",
-    // Registered by the SIGABRT investigation. These three landed without
-    // a contract update, so the anchor set did not describe the suites
-    // actually on disk until this commit.
+    // Registered by the SIGABRT investigation. These landed without a
+    // contract update, so the anchor set did not describe the suites
+    // actually on disk until the commits named in each entry.
     "haskell_scanner_overflow",
     "identity_benchmark",
     "inc007_integration",
     "intelligence_event_log_e2e",
+    "lightweight_index_prunes_ignored",
     "lightweight_index_repro",
     "map_symbol_collision_repro",
     "prf_ext_04_adapter_authority_uat",
