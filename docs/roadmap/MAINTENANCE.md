@@ -361,6 +361,19 @@ separado; (b) parchear `ADVANCE_MAP` para generar nombres únicos (p. ej.
 **No se ha aplicado ninguno**: cambiar la estrategia de enlace es una
 decisión de release, no un fix de una línea.
 
+**Censo de símbolos (verificación independiente del mecanismo)**:
+
+```
+$ nm cc-asan/release/cognicode-mcp | grep -cE '\bmap\.[0-9]+'
+1936
+$ nm cc-asan/release/cognicode-mcp | grep -E '\bmap\.[0-9]+' | awk '{print $1}' | sort -u | wc -l
+1934
+```
+
+Es decir: 1936 arrays `map` de bloque estático en el binario enlazado, y sólo
+1934 direcciones distintas — hay nombres solapados. `nm` del binario final
+confirma la colisión de nombres que ASan señala, sin depender de ASan.
+
 ### 2g. ASan: cómo se llegó al diagnóstico
 
 El camino del stack es C: `tree-sitter` 0.27 compila su runtime con `cc`
