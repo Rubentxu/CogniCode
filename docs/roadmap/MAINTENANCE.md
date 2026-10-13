@@ -445,43 +445,58 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
-### 2m. La bisección por mitades NO crashea, pero la copia real SÍ: el heap no es el contenido
+### 2m. La bisección por subconjuntos NO encuentra el fallo: es no monótona
 
-La reducción por mitades de 2l dejó un resultado confuso hasta que se midió
-bien. Los 44 hijos de `sandbox/fixtures` se reducen así:
+La reducción por mitades de 2l dio un resultado que parecía concluir que el
+disparador era la "identidad del fichero" (ficheros reales crashean, symlinks
+no). **Eso era una lectura errónea y aquí se corrige.** La razón: no se estaba
+comparando el mismo conjunto de ficheros.
+
+Lo que se midió de verdad, con repeticiones:
 
 | conjunto | símbolos | resultado |
 |---|---|---|
-| mitad A (22 dirs) | 237 | `ok` |
-| mitad B (22 dirs) | 7056 | `ok` |
-| todos (44 dirs) | 7293 | `ok` **vía symlink**, `CRASH` **vía real** |
-| `scripts/` | 599 | `ok` |
-| `scale/` | 6098 | `ok` |
+| 44 hijos, **vía symlink** | 7293 | `ok` 6/6 |
+| 44 hijos, **directo** | — | `CRASH` 6/6 |
+| `scale/` solo | 6098 | `ok` |
+| `scale/` + `rules/` | 6441 | `ok` |
+| `scale/` + `typescript/` | 6107 | `ok` |
+| los otros 43 (sin `scale`) | ~1200 | `CRASH` |
+| mitades A (22) y B (22) | 237 / 7056 | `ok` las dos |
+| los 44 hardlink (`cp -al`) | 0 | `ok` (cross-device: sin ficheros) |
 
-Y aquí está el dato que lo resuelve: **la misma lista de 44, hecha con symlinks,
-indexa 7293 símbolos sin crash; hecha con ficheros reales, aborta**. El diff de
-los ficheros recorridos da **831 en ambos casos, conjuntos idénticos, cero
-diferencias**. Mismos bytes, mismos paths relativos, mismos símbolos esperados.
+Los hardlinks cruzados fallaron (`Enlace cruzado entre dispositivos`), así que
+su "0 símbolos" **no es evidencia de nada**: no se copiaron ficheros. Se
+descarta.
 
-Se comprobó que no es culpa del symlink en sí: `cp -r` de 15 de esos directorios
-a un path nuevo (ficheros reales) **vuelve a abortar**. Y ningún fichero
-individual (el `lib.rs` de 22 KB, el `package-lock.json` de 138 KB, el
-`inventory.json` de 17 KB) crasha solo. Tampoco hay ficheros no-UTF8 (0 de 765).
+El resultado que explica todos los demás: **`scale/` aporta 6098 de los 7293
+símbolos**. Los 44 por symlink indexan 7293 y no crashean; los 43 sin `scale`
+indexan ~1200 y crashean; y cada mitad pasa. O sea, **la partición por mitades
+nunca puede encontrar este fallo**, porque ninguna mitad contiene el conjunto
+que lo dispara. Un leave-one-out sobre los 44 confirma que quitar cualquier
+hijo da un corpus más pequeño que pasa: 12 de 44 quedan directamente limpios, y
+el resto pasa por margen de tamaño.
 
-Conclusión medida: **el disparador no es el contenido, ni la gramática, ni el
-volumen, ni el camino.** Es la **identidad del fichero en el sistema de
-ficheros** — es decir, cómo el runtime C de tree-sitter indexa el fichero al
-abrirlo. Esto es coherente con 2j: una cabecera de chunk que no es de ASan sólo
-aparece si alguien escribe con un puntero que no es de Rust. Y encaja con
-que la C API de tree-sitter (`ts_node_*`) trabaja sobre punteros al
-almacenamiento del subárbol, que para ficheros grandes se referencia por
-`mmap`/offset y no por copia.
+Por tanto se retira la conclusión de 2m anterior. Lo que **sí** queda en pie, y
+es sólido:
 
-**Lo que esto deja abierto, con honestidad**: es una correlación fuerte y
-reproducible (6/6 real vs 6/6 symlink), pero **no es una atribución**. Falta
-instrumentar el C de tree-sitter en release para ver el `heap-buffer-overflow`
-con stack en C, que es lo que convertiría esto en causa. Y `MALLOC_CHECK_`/ASan
-no lo han producido hasta ahora.
+1. El fallo necesita **el agregado completo** de `sandbox/fixtures`.
+2. Ningún subconjunto por directorio lo reproduce, y ningún lenguaje por separado
+   lo reproduce (20 extensiones probadas, 2l).
+3. Los 6400 ficheros y 100k+ símbolos sintéticos tampoco (2l).
+4. Es determinista: 6/6 real, 6/6 symlink, con 831 ficheros idénticos en ambos
+   casos.
+
+Esto es un **defecto de escala/umbrebral dentro del camino de parseo**, no un
+bug de un fichero concreto ni de una gramática concreta. El ASan con
+`codegen-units=1` (2k) sitúa el fallo en la pila `Vec<tree_sitter::Node>` del
+DFS, que es exactamente donde un uso intensificado de la C API reventaría.
+
+**Lo que sigue siendo atribución, no conclusión**: instrumentar el C de
+tree-sitter en release para ver el `heap-buffer-overflow` con stack en C. Hasta
+eso, la mejor descripción honesta es "corrupción de heap secuencial en el
+recorrido de nodos de tree-sitter, dependiente del volumen total del corpus,
+con la escritura inválida aún sin localizar".
 
 ### 2l. CASO MÍNIMO: `sandbox/fixtures` aborta en 3 s (3/3)
 
