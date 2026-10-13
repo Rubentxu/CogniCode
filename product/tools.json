@@ -4323,7 +4323,7 @@
       "name": "query_symbol_index",
       "title": "Query the symbol index to find locations of a symbol by name (case-insensitive)",
       "description": "Query the symbol index to find locations of a symbol by name (case-insensitive).",
-      "category": "search",
+      "category": "composite",
       "authority": "read",
       "stability": "stable",
       "input_schema": {
@@ -4350,15 +4350,15 @@
         "network": null
       },
       "requirements_status": "not_declared",
-      "estimated_latency_ms": 30,
+      "estimated_latency_ms": 5000,
       "public_profiles": [
         "core",
         "reviewer"
       ],
       "runtime_metadata": {
         "authority": "read",
-        "category": "search",
-        "estimated_latency_ms": 30,
+        "category": "composite",
+        "estimated_latency_ms": 5000,
         "intent_tags": [
           "Locate"
         ],

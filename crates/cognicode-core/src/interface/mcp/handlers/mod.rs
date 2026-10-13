@@ -3749,18 +3749,42 @@ pub async fn handle_query_symbol_index(
     let locations = if ctx.analysis_service.has_symbol_index() {
         ctx.analysis_service.find_symbol(&input.symbol_name)
     } else {
-        // Cache miss: build the index and store it for next time
-        let directory = resolve_directory(input.directory, &ctx.working_dir);
+        // Cache miss: build the index and store it for next time.
+        //
+        // Two defects fixed here, both measured against the release server:
+        //
+        //  1. `directory` is optional in the advertised schema, but omitting
+        //     it made the tool unusable instead of defaulting to the working
+        //     dir. Callers had to know an undocumented requirement.
+        //  2. The build result was discarded with `.ok()`. On a repository
+        //     where the build exceeds the category budget, the call is
+        //     cancelled, `.ok()` turns that into `None`, and an EMPTY index
+        //     was then cached and served for every later query. A transient
+        //     failure became a persistent wrong answer, reported as a bare
+        //     "internal: timeout" with no mention of the cache miss.
+        //
+        // A failed build must not be cached: an empty index is
+        // indistinguishable from "this directory has no symbols", which is
+        // exactly the kind of result this project must never present as
+        // complete.
+        let directory = resolve_directory(input.directory.clone(), &ctx.working_dir);
         let index = tokio::task::spawn_blocking({
             let dir = directory.clone();
-            move || {
+            move || -> HandlerResult<_> {
                 let mut s = LightweightStrategy::new();
-                s.build_index(&dir).ok();
-                s.into_index()
+                s.build_index(&dir).map_err(|e| {
+                    HandlerError::Internal(format!(
+                        "symbol index build failed for {}: {}",
+                        dir.display(),
+                        e
+                    ))
+                })?;
+                Ok(s.into_index())
             }
         })
         .await
-        .map_err(|e| HandlerError::Internal(e.to_string()))?;
+        .map_err(|e| HandlerError::Internal(e.to_string()))??;
+
         ctx.analysis_service.set_symbol_index(index);
         ctx.analysis_service.find_symbol(&input.symbol_name)
     };

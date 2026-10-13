@@ -1245,3 +1245,88 @@ documentada**: el conjunto de ficheros cambiados por un apply no se persiste
 en ningún sitio que la herramienta pueda leer, y devolver
 `verdict_refused=true` con cero ficheros analizados se leería como
 "revisado, nada encontrado" en vez de "no se revisó nada". No se cambia.
+
+## Barrido de superficie anunciada (medido, no inferido)
+
+Se exertieron las 77 herramientas de `product/tools.json` contra el servidor
+release real por JSON-RPC sobre stdio, un proceso por herramienta (un proceso
+único se bloqueaba: una herramienta lenta atasca el pipe y las siguientes nunca
+se miden), con tope de 45s por herramienta. Se excluyen las que mutan
+(`edit_file`, `write_file`, `safe_refactor_apply`, `reparse_on_edit`).
+
+Reparto: **32 OK**, 34 ERROR, 4 EMPTY, 3 HANG.
+
+**Los 34 ERROR no son 34 defectos: son en su mayoría mi entrada incorrecta.**
+El generador de entradas del barrido rellenaba los campos `required` con
+`"old_name"` sin mirar el tipo, así que:
+
+| herramienta | lo que el barrido mandó | lo que exige el schema |
+|---|---|---|
+| `safe_refactor` | `action:"old_name"` | enum `rename\|extract\|inline\|move\|change_signature` |
+| `get_call_hierarchy` | `direction:"old_name"` | enum `incoming\|outgoing` |
+| `cfg_per_function` | `algorithm_params:"old_name"` | objeto; además pide `adjacency` |
+| `read_file`, `get_file_symbols`, `get_symbol_code`, `detect_drift` | `path:"old_name"` | fichero existente |
+
+Repetido con entradas correctas contra el binario: **`retrieve_and_verify`
+responde con resultados reales**, **`cfg_per_function` falla con "missing
+'adjacency'"** (petición válida y específica, no un bug), y **`safe_refactor`
+rename funciona**. Se corrige aquí la lectura anterior: la mayoría de esa
+columna eran errores del instrumento de medida, no del producto. Un barrido
+que no distingue "el producto falló" de "yo mandé basura" no vale como prueba.
+
+### Defectos reales encontrados por el barrido
+
+**1. `query_symbol_index`: `internal: timeout` en 0.5s en cualquier repo real.**
+
+Medido contra el release, con el mismo `symbol_name` válido:
+
+| entrada | antes | después |
+|---|---|---|
+| `directory` = repo real | `internal: timeout` (0.5s) | `total:1` en **5.0s** |
+| `directory` omitido | `internal: timeout` (0.5s) | `total:1` en **4.8s** |
+| símbolo inexistente | `internal: timeout` (0.5s) | `total:0` en 4.8s |
+
+Tres defectos distintos, todos medidos:
+
+- **Presupuesto 10x corto.** El catálogo declaraba `category: "search"`, cuyo
+  presupuesto es 500ms (`timeout_for_category`, `rmcp_adapter.rs:269`), pero
+  un índice en frío de este repo tarda ~4.8s. La propia entrada admitía en
+  `limitations` *"requires index build"*: la categoría era incorrecta para lo
+  que la herramienta hace en su primera llamada. Cambiada a `composite` (30s).
+- **`estimated_latency_ms: 30` era falso** en las dos apariciones (entrada y
+  `runtime_metadata`). 30ms no cubre ni el caso cacheado con índice ya
+  construido. Corregido a 5000.
+- **`.ok()` se tragaba el fallo y cacheaba el índice vacío.** En el camino de
+  cache-miss el handler hacía `s.build_index(&dir).ok(); s.into_index()`. Con
+  el presupuesto agotado, la cancelación se convertía en `None`, se cacheaba
+  un índice **vacío** y se servía en todas las consultas posteriores. Un fallo
+  transitorio pasaba a ser una respuesta incorrecta permanente, indistinguible
+  de "este directorio no tiene símbolos" — justo el resultado que este
+  proyecto no puede presentar como completo. Ahora el fallo se propaga y
+  **no se cachea**.
+
+Verificado contra el release reconstruido: encuentra `build_plan` en
+`refactor/plan.rs:342`, que es la definición real. `query_symbol_index`
+devolvía `internal: timeout` **antes de construir nada**.
+
+**2. `nl_to_symbol`, `find_usages`, `smart_search`: HANG >45s.** Verificado
+que no es del instrumento: son llamadas independientes, cada una en su propio
+servidor, con entrada que satisface el schema. Queda como **BLOCKED por
+investigar**, no como cerrado: no se ha medido todavía si es trabajo real muy
+lento o un bloqueo. No se afirma ninguna de las dos cosas.
+
+**3. `ask_about_code`, `find_references`, `hover`, `merge_graphs`: EMPTY.**
+Responden sin error pero sin evidencia. Se marcan para inspección, no se
+declaran bug: no se ha separado todavía "no hay nada que encontrar" de "no lo
+buscó". En particular `find_references` se autodeclara
+`precision:"lsp", provider:"lsp::composite (tier unverified)"`, así que la
+ausencia de resultados puede ser honesta.
+
+### Método, y su límite
+
+Lo que este barrido **sí** sostiene: ninguna de las 32 herramientas OK
+revienta el servidor, y los defectos 1 y 2 de `safe_refactor` se encontraron
+así. Lo que **no** sostiene: que las 77 estén sanas. Un sweep con entradas
+mínimas encuentra defectos de contrato y de disponibilidad; no encuentra
+lógica incorrecta que solo se manifiesta con entradas realistas. `cargo test
+--workspace` con 4748 tests cubre esa segunda clase mejor que este barrido.
