@@ -137,31 +137,6 @@ impl GraphCache {
         provider.snapshot(workspace, revision).ok()
     }
 
-    /// Gets a reference to the underlying graph.
-    pub fn get_ref(&self) -> &CallGraph {
-        // SAFETY: same pattern the previous implementation used to
-        // return a long-lived `&CallGraph` through an `&self` receiver.
-        // The pointer is taken from the head's `Arc<CallGraph>` held
-        // inside the current `ArcSwap<Mutex<VersionedGraphCache>>`.
-        // The `Arc<CallGraph>` is leaked into a `Box<Arc<_>>` that
-        // outlives the returned reference, so the pointee stays valid
-        // for the unbounded lifetime of `&CallGraph`. This preserves
-        // the original (intentionally optimistic) semantics and the
-        // public signature.
-        let guard = self.cache.load();
-        let cache = guard
-            .lock()
-            .unwrap_or_else(|_| panic!("graph cache poisoned"));
-        let arc: Arc<CallGraph> = cache.head().unwrap_or_else(|| Arc::new(CallGraph::new()));
-        let ptr = arc.as_ref() as *const CallGraph;
-        // Keep the Arc alive: leak the Box so the CallGraph heap
-        // allocation is not freed while the returned reference is
-        // still in use. The leak is bounded by the rate of `get_ref`
-        // calls; in MCP handlers that is one call per request.
-        Box::leak(Box::new(arc));
-        unsafe { &*ptr }
-    }
-
     /// Replaces the cached graph with a new checkpoint. Returns the
     /// [`CheckpointId`] of the new head. Existing callers that ignore
     /// the return value continue to work unchanged.
