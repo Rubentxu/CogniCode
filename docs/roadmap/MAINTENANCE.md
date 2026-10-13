@@ -380,10 +380,47 @@ sabemos con certeza:
 - Bajo ASan no se reproduce dentro del timeout de 30 s: depende del ritmo.
 
 Siguiente paso honesto: instrumentar **el runtime C de tree-sitter durante
-el propio camino que aborta**, no un test de parseo aparte. El test anterior
-usa `TreeSitterParser::new` por lenguaje; el camino real pasa por
-`spawn_blocking` + `LightweightStrategy::build_index` + `LightweightIndex`. La
-diferencia puede estar en el patrón de invocación, no en los datos.
+el propio camino que aborta**, no un test de parseo aparte.
+
+### 2i. Corrección de método: el primer test de parseo no cubría el caso
+
+El test de 2g reimplementaba el bucle de parseo a mano. Eso lo hace más débil
+que llamar a la cosa real, por dos motivos que medí:
+
+1. **No cubría el `WalkFilter` ni el `follow_links(true)`** que hace
+   `build_index`, así que los árboles de fixtures alcanzados por symlink no
+   se indexaban.
+2. **Sólo alcanzaba 5 de las 30 gramáticas.** Medido con el test rápido
+   `repo_grammar_breadth_is_measured_not_assumed`:
+
+   ```
+   repo contains 30 distinct languages: [Json, Python, TypeScript, Bash,
+   JavaScript, Yaml, Rust, Java, Erlang, Dart, SystemVerilog, R, Julia,
+   Zig, PowerShell, Haskell, Groovy, Fortran, Scala, Lua, Verilog, Go, Hcl,
+   CSharp, Cpp, C, Swift, Ruby, Elixir, Php]
+   ```
+
+   Un verde sobre 5 gramáticas no dice casi nada cuando el repo tiene 30.
+   `Language::to_ts_language` enlaza las 30 al binario, y la amplitud de
+   gramáticas es exactamente la variable sospechosa.
+
+Corregido en `0204a554`: el test ahora llama a
+`LightweightIndex::build_index` sobre la raíz del repo, que es el punto de
+entrada de producción. Sigue bajo ASan con `detect_odr_violation=0`.
+
+**Aviso sobre el método de execução**: el primer intento de correr este test
+bajo ASan dio un falso "vacío". Dos errores míos, no del defecto:
+- El script envolvía la salida en `tail -120`, que no emite nada hasta que el
+  proceso acaba, así que un log vacío parecía un fallo.
+- Al esperarlo desde una sesión con timeout de 10 min, el proceso de test
+  moría sin que su salida llegara a escribirse. Un `pgrep` contra el nombre
+  del binario matcheaba su propio shell y daba la impresión de que seguía
+  vivo. Comprobación real: `ps -o time=` sobre el PID concreto.
+
+Lección operativa: para una corrida larga y silenciosa hay que desvincularla
+del wrapper, escribir la salida incrementalmente y verificar el PID real, no
+el patrón de nombre. Un "no salió nada" sólo es evidencia si el proceso
+terminó por su cuenta y su código de salida está registrado.
 
 **Sobre el símbolo `map`**: pendiente de arreglar por ser un `odr-violation`
 legítimo, pero **no es el bloqueante de release** que buscaba. No es un
