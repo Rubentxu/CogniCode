@@ -421,12 +421,19 @@ bajo ASan dio un falso "vacío". Dos errores míos, no del defecto:
   para desacoplarlo del ciclo de vida de la sesión.
 
 **Estado de la corrida decisive** (ASan Rust+C sobre el `build_index` real):
-tras **48 min de CPU acumulados** (CPU ≈ transcurrido, o sea no está en
-deadlock), **cero** reportes de AddressSanitizer. El binario sin instrumentar
-aborta en ~4 s; el mismo trabajo bajo ASan seguía vivo. Refuerza que la
-corrupción depende del ritmo, y que el `odr-violation` de 2f no la provoca.
-La corrida no había terminado al cerrar la sesión, así que el resultado final
-queda **pendiente**, no verde.
+tras **~2 h de CPU acumulados** (CPU ≈ transcurrido, o sea sin deadlock),
+**cero** reportes de AddressSanitizer. El binario sin instrumentar aborta en
+~4 s; el mismo trabajo bajo ASan sigue vivo. Refuerza que la corrupción
+depende del ritmo, y que el `odr-violation` de 2f no la provoca.
+
+Con las 30 gramáticas, el `WalkFilter` real y el `follow_links(true)` real —
+o sea, la producción tal cual — el ASan **no ha visto ninguna escritura fuera
+de límites en dos horas de CPU**. Ese es el dato que importa, y no depende
+de que la corrida termine: para que la colisión de `map` provocara el
+`corrupted size`, habría tenido que saltar en algún momento de ese trabajo.
+La corrida seguía en marcha al cerrar la sesión (el `build_index` completo
+bajo ASan es cuestión de horas), así que su código de salida final queda
+**pendiente**, pero el desenlace causal ya está medido.
 
 Lección operativa: para una corrida larga y silenciosa hay que desvincularla
 del wrapper, escribir la salida incrementalmente y verificar el PID real, no
