@@ -2609,3 +2609,60 @@ pub struct CompositeImpactQueryInput {
     #[serde(default)]
     pub file_path: Option<String>,
 }
+
+/// Input for safe_refactor_preview (B5.W2).
+///
+/// `deny_unknown_fields` for the same reason as [`SafeRefactorInput`], and it
+/// matters more here: this is the read-only half of the pair, and
+/// `apply::validate_authorization_token` exists to keep write authority out of
+/// anything that crosses the read-only boundary. Silently dropping an
+/// `authorization_token` a caller smuggled into the *preview* would advertise
+/// that the preview honoured a token, when in fact it discarded it — and would
+/// make the preview the place authority leaks in.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SafeRefactorPreviewInput {
+    /// Path to a serialised [`RefactorPlan`]. Mutually exclusive with
+    /// `plan_json`; supplying both is ambiguous about which plan is previewed.
+    #[serde(default)]
+    pub plan_path: Option<String>,
+    /// Inline plan JSON, for clients that build the plan in memory.
+    #[serde(default)]
+    pub plan_json: Option<serde_json::Value>,
+}
+
+/// Input for safe_refactor_apply (B5.W3).
+///
+/// `deny_unknown_fields` here is about *auditability*, not secrecy: the caller
+/// must not believe a typo'd or misspelled field was honoured. `apply` reads
+/// `plan_file` and `authorization_token` and nothing else, so an unrecognised
+/// key means the caller sent something the server ignored.
+///
+/// `authorization_token` is required by the catalog contract. The authority
+/// model does not trust the wire for it — `validate_authorization_token`
+/// checks the value is non-empty and within a 1h window — but requiring the
+/// field means a caller cannot get an apply attempt to start at all without
+/// having thought about authority.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SafeRefactorApplyInput {
+    /// Path to the serialised plan to apply.
+    pub plan_file: String,
+    /// Write-authority token. Never accepted on a read-only tool.
+    pub authorization_token: String,
+}
+
+/// Input for safe_refactor_revalidate (B5.W4).
+///
+/// No `deny_unknown_fields`: this tool is read-only and post-apply, it carries
+/// no authority token, and an unknown key here cannot escalate anything. The
+/// attribute would only make a forward-compatible field addition a hard error
+/// for clients on an older build.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SafeRefactorRevalidateInput {
+    /// `plan_id` of the applied plan.
+    pub plan_id: String,
+    /// Workspace root to re-validate against. Defaults to the session's.
+    #[serde(default)]
+    pub workspace_root: Option<String>,
+}

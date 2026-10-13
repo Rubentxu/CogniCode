@@ -1411,6 +1411,161 @@ pub struct SafeRefactorRevalidateOutput {
     pub executed_checks: Vec<String>,
 }
 
+/// Handler for `safe_refactor_preview` (B5.W2).
+///
+/// Advertised in the catalog since B5.W2 but never given a dispatch arm, so a
+/// live client got `tool not found`. `render_preview` is a pure function over
+/// `(plan, workspace_root)`, which makes this the read-only half of the
+/// refactor pair: it reads files and returns diffs, and never writes.
+///
+/// `deny_unknown_fields` on the input is load-bearing, not decorative.
+/// `apply::validate_authorization_token` exists to keep write authority out of
+/// anything crossing the read-only boundary; a preview that silently discarded
+/// a smuggled `authorization_token` would report that the field was honoured.
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor_preview",
+    description = "Render a verifiable preview (per-file diffs, digests, risks) for a refactor plan without touching the workspace.",
+    input_schema = SafeRefactorPreviewInput
+)]
+pub async fn handle_safe_refactor_preview(
+    ctx: &HandlerContext,
+    input: crate::interface::mcp::schemas::SafeRefactorPreviewInput,
+) -> HandlerResult<serde_json::Value> {
+    let plan = resolve_plan(&input.plan_path, &input.plan_json)?;
+    let workspace_root = ctx.working_dir().to_path_buf();
+
+    let preview = crate::refactor::preview::render_preview(&plan, &workspace_root)
+        .map_err(|e| {
+            HandlerError::App(AppError::AnalysisError(format!("preview failed: {e}")))
+        })?;
+
+    serde_json::to_value(&preview)
+        .map_err(|e| HandlerError::Internal(format!("preview serialisation failed: {e}")))
+}
+
+/// Handler for `safe_refactor_apply` (B5.W3). Authority: **mutating**.
+///
+/// Advertised in the catalog but never dispatched. Unlike the other two this
+/// one writes: `apply` stages, renames and commits edits under the workspace
+/// root. The authority contract is enforced by the domain, not here — `apply`
+/// re-validates the token, recomputes the workspace digest and refuses on
+/// mismatch — so this handler's job is to pass the caller's token through
+/// *separately*, never as a field smuggled inside the plan.
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor_apply",
+    description = "Apply a previously previewed refactor plan. Requires an authorization token issued over a separate channel; refuses if the workspace changed since the preview.",
+    input_schema = SafeRefactorApplyInput
+)]
+pub async fn handle_safe_refactor_apply(
+    ctx: &HandlerContext,
+    input: crate::interface::mcp::schemas::SafeRefactorApplyInput,
+) -> HandlerResult<serde_json::Value> {
+    let plan_file = std::path::PathBuf::from(&input.plan_file);
+    let plan = crate::refactor::plan::load_plan_from_file(&plan_file).map_err(|e| {
+        HandlerError::InvalidInput(format!("could not load plan from {plan_file:?}: {e}"))
+    })?;
+
+    // Built here from the dedicated argument, timestamped now. Deliberately not
+    // read off `plan`: `apply` treats the token as a separate capability, and
+    // folding it into the plan would let a plan file carry its own authority.
+    let token = crate::refactor::apply::AuthorizationToken {
+        value: input.authorization_token,
+        created_at: chrono::Utc::now(),
+    };
+
+    let workspace_root = ctx.working_dir().to_path_buf();
+
+    // Recomputed here rather than accepted from the client, then compared by
+    // `apply` itself. Passing the plan's own digest would make the check
+    // tautological.
+    let workspace_state_digest = crate::refactor::apply::compute_workspace_state_digest(&plan);
+
+    let outcome =
+        crate::refactor::apply::apply(&plan, &workspace_state_digest, &token, &workspace_root)
+            .map_err(|e| {
+                HandlerError::App(AppError::AnalysisError(format!("apply refused: {e}")))
+            })?;
+
+    Ok(serde_json::json!({
+        "plan_id": outcome.plan_id.to_string(),
+        "plan_digest": outcome.plan_digest,
+        "applied_files": outcome
+            .applied_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<String>>(),
+        "rolled_back_files": outcome
+            .rolled_back_files
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<String>>(),
+        "committed": outcome.committed,
+        "error": outcome.error,
+    }))
+}
+
+/// Handler for `safe_refactor_revalidate` (B5.W4). Read-only, post-apply.
+///
+/// Advertised in the catalog but never dispatched. This deliberately refuses
+/// rather than returning an empty report, and the reason is load-bearing for
+/// the honesty contract in `AGENTS.md`: `run_revalidation` needs the applied
+/// plan's changed-file set, and a `plan_id` cannot reconstruct it. Nothing
+/// persists the apply outcome where this tool could read it back. Answering
+/// with zero analysed files and `verdict_refused: true` would read as "checked,
+/// nothing found" rather than "nothing was checked", which is exactly the
+/// `Complete/clean/no impact` over `Partial/Unknown` substitution the contract
+/// forbids.
+///
+/// Un-wiring is not the fix either: the catalog entry would go back to being a
+/// ghost. So the tool stays advertised, the seam is reported honestly, and the
+/// missing piece is a durable apply-outcome record.
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor_revalidate",
+    description = "Re-run impact, architecture and findings checks over the files a refactor plan changed. Currently refuses: revalidation needs a durable apply-outcome record, which is not yet persisted.",
+    input_schema = SafeRefactorRevalidateInput
+)]
+pub async fn handle_safe_refactor_revalidate(
+    _ctx: &HandlerContext,
+    input: crate::interface::mcp::schemas::SafeRefactorRevalidateInput,
+) -> HandlerResult<SafeRefactorRevalidateOutput> {
+    Err(HandlerError::InvalidInput(format!(
+        "safe_refactor_revalidate cannot re-check plan {}: revalidation needs the \
+         applied plan's changed-file set, and the apply outcome is not persisted \
+         anywhere this tool can read. Calling it with the id alone would report \
+         zero analysed files with verdict_refused=true, which reads as \
+         'checked, nothing found' rather than 'nothing was checked'.",
+        input.plan_id
+    )))
+}
+
+/// Load a plan from exactly one of `plan_path` / `plan_json`.
+///
+/// Both-or-neither is rejected rather than resolved by precedence: silently
+/// preferring one would let a client believe it previewed the plan it sent
+/// inline when the server used the file on disk instead.
+fn resolve_plan(
+    plan_path: &Option<String>,
+    plan_json: &Option<serde_json::Value>,
+) -> HandlerResult<crate::refactor::plan::RefactorPlan> {
+    match (plan_path, plan_json) {
+        (Some(_), Some(_)) => Err(HandlerError::InvalidInput(
+            "supply either plan_path or plan_json, not both".into(),
+        )),
+        (None, None) => Err(HandlerError::InvalidInput(
+            "supply one of plan_path or plan_json".into(),
+        )),
+        (Some(path), None) => {
+            let p = std::path::PathBuf::from(path);
+            crate::refactor::plan::load_plan_from_file(&p).map_err(|e| {
+                HandlerError::InvalidInput(format!("could not load plan from {path}: {e}"))
+            })
+        }
+        (None, Some(value)) => serde_json::from_value(value.clone()).map_err(|e| {
+            HandlerError::InvalidInput(format!("plan_json is not a valid RefactorPlan: {e}"))
+        }),
+    }
+}
+
 /// Handler for build_graph tool
 pub async fn handle_build_graph(
     ctx: &HandlerContext,

@@ -254,3 +254,96 @@ exige ambos comandos en verde. C8-R sigue `PENDING_HUMAN_SIGNATURE` y **no es
 firmable** hasta que G2 pase, con independencia de la firma humana. G1, G3 y el
 resto de la campaña sí están verdes: `cargo test --workspace` da 208 suites /
 6562 passed / 0 failed, y `scripts/product` da 46/46.
+
+---
+
+## Defectos de contrato hallados por verificación en vivo (2026-10-13, HEAD `9fcde296`)
+
+Ninguno de estos lo vio la suite. Todos se hallaron conduciendo el binario
+release como cliente MCP real sobre stdio, que es exactamente lo que la
+revisión pidió y lo que el suite sintético no cubre.
+
+### 1. Herramientas anunciadas sin brazo de dispatch (4, confirmada en vivo)
+
+`product/tools.json` es la fuente de verdad de `tools/list`. Una entrada del
+catálogo sin brazo en `call_tool_handler` es una promesa que el servidor no
+puede cumplir: el cliente la descubre por `tools/list`, la llama y recibe
+`isError=true` / `tool not found`.
+
+| Herramienta | Autoridad | Estado |
+|---|---|---|
+| `composite_impact_query` | read | **corregida** en `9fcde296` |
+| `safe_refactor_apply` | **mutating** | abierta |
+| `safe_refactor_preview` | read | abierta |
+| `safe_refactor_revalidate` | read | abierta |
+
+Las cuatro están confirmadas sobre el binario release, no por inspección.
+
+**Por qué el suite era verde**: `test_all_listed_tools_are_dispatchable`
+compara `tools/list` contra `dispatchable_tool_names()`, un segundo array
+mantenido a mano. Añadir el nombre a ambos documentos satisface el guard
+mientras el runtime sigue sin poder enrutar el nombre. El guard probaba que
+dos ficheros coincidieran; nunca preguntaba al dispatcher. Es la misma clase de
+defecto que el `cogh` fantasma retirado antes en este ciclo.
+
+**Guard derivado** (`tests/undispatchable_tool_guard.rs`): llama a cada
+herramienta anunciada por el dispatcher real y falla **solo** ante
+`ToolNotFound`. Un fallo no reconocido cae en un bucket `UNKNOWN` en vez de
+darse por bueno, para que un modo de fallo nuevo no se esconda dentro de "ok".
+Exige `dispatch_tool_for_contract_test`, un seam tras el feature
+`test-contract-seam` (off por defecto): los tests de integración compilan sin
+`cfg(test)`, así que un re-export `#[cfg(test)]` sería invisible y el guard
+dejaría de comprobar nada silenciosamente.
+
+**Por qué el commit está en rojo a propósito**: el guard reporta las tres
+`safe_refactor_*` como el mismo defecto. No se han cableado en `9fcde296`
+porque cada una necesita su propia revisión de autoridad —
+`safe_refactor_preview` necesita el mismo `deny_unknown_fields` que protege
+`safe_refactor` contra un `authorization_token` smuggling, y
+`safe_refactor_apply` es `mutating`. Dejar el test verde sobre un defecto de
+cableado vivo es exactamente lo que este guard existe para impedir.
+
+Servicios de dominio presentes y **sin caller en producción** (mismo patrón, una
+capa más abajo): `refactor::preview::render_preview`,
+`refactor::apply::apply`, `refactor::revalidate::run_revalidation`. B5.W2/W3/W4
+solo los ejercita desde `tests/`.
+
+### 2. `build_lightweight_index` aborta el servidor — corrupción de heap
+
+`tools/call build_lightweight_index` mata el proceso **en todas las
+invocaciones**: SIGABRT, glibc `corrupted size vs. prev_size` en `malloc`, en un
+hilo `tokio-rt-worker`. No es un `isError`: el servidor desaparece.
+
+Medido:
+- `build_graph` sobre el mismo directorio responde OK (2458 ficheros,
+  61698 símbolos). No es el volumen.
+- `build_lightweight_index` con `{}` y con `{"strategy":"lightweight"}`:
+  ambos abortan.
+- Un solo fichero por lenguaje (rs, ts, js, tf, md): los cinco OK.
+- 359 ficheros `.rs`: OK. 50/150/359 escalados: OK.
+- `crates/`, `apps/`, `docs/`, `scripts/`, `sdd/`, `odd/`, `bundles/` por
+  separado: todos OK.
+
+Descartado por medición, no por suposición:
+- **Gramáticas tree-sitter**: las 30 cargan y parsean contra `tree-sitter
+  0.27.0` (`tests/tree_sitter_grammar_abi.rs`, 0 fallos). El
+  `Err(_) => TreeSitterParser::new(Language::Rust).unwrap()` de
+  `lightweight_index.rs:162` nunca se toma. Sigue siendo una trampa latente —
+  un fallo de gramática produciría símbolos Rust silenciosos sobre otro
+  lenguaje — pero **no** es la causa de este abort.
+- **Símbolos**: el binario release va stripped, así que el backtrace de gdb
+  solo da direcciones sin resolver. Hay que repetir contra un build con
+  símbolos.
+
+Diferencia estructural pendiente de aislar: `build_graph` camina con
+`follow_links(false)` (`handlers/mod.rs:1039,1119`) y
+`build_lightweight_index` con `follow_links(true)`
+(`lightweight_index.rs:137`). No se ha encontrado ningún ciclo de symlinks
+(361 symlinks, ninguno apunta a un ancestre), pero una copia del repo
+desreferenciada no resuelve la pregunta: no aborta, pero tampoco termina en
+5 min, así que el fallo y el resultado limpio difieren en más que symlinks.
+
+**Efecto sobre C8-R**: reforzar el argumento de que G2 no es el único bloqueo.
+Este defecto es de disponibilidad en una ruta de advertised, y una
+certificación production-ready no puede firmarse con una herramienta
+anunciada que tumba el servidor.

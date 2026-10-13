@@ -1633,6 +1633,33 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string(&output)?)
             }
 
+            "safe_refactor_preview" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorPreviewInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_safe_refactor_preview(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
+            "safe_refactor_apply" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorApplyInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_safe_refactor_apply(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
+            "safe_refactor_revalidate" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorRevalidateInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_safe_refactor_revalidate(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
             _ => Err(InterfaceError::ToolNotFound(tool_name.to_string())),
         }
     };
