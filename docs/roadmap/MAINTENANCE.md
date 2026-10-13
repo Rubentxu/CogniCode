@@ -914,6 +914,39 @@ este repo en 4.8 s y responde `ok`. La pregunta del presupuesto (30 s vs 60 s
 de `category: "graph"`) queda sin tocar y sigue sin medirse por modo de
 despliegue.
 
+### 2f. Estado del gate medido en esta sesión (no todo verde)
+
+Con los dos fixes de arriba aplicados, `bash scripts/test-full.sh` da:
+
+- **`cargo test --workspace`: 0 fallos.** 4748 tests `ok` acumulados en el log,
+  `test result: FAILED` aparece **0 veces**.
+- **`fmt --check`: FAIL (rc=1).** 23 ficheros con diff, **ninguno** tocado por
+  estos commits. Verificado: `cargo fmt -- --check` no reporta ni
+  `graph/lightweight_index.rs` ni `tree_sitter_parser.rs` ni
+  `haskell_scanner_overflow.rs` ni `lightweight_index_prunes_ignored.rs` ni
+  `core_gate_coverage_contract.rs`.
+- **`clippy -D warnings`: FAIL (rc=101).** 9 errores en
+  `interface/cli/commands.rs`, `refactor/plan.rs`, `refactor/preview.rs` y
+  `refactor/revalidate.rs`. Confirmado **idéntico en HEAD limpio** con
+  `git stash`: es deuda previa, no regresión de estos commits.
+- **`test --workspace --doc`: FAIL (rc=143 = SIGTERM).** No es un fallo de
+  test. Otra sesión de agente estaba ejecutando
+  `cargo test --workspace --all-features` sobre el target dir compartido
+  `/var/home/rubentxu/cargo-targets` a la vez; el lock de cargo hizo que
+  nuestros binarios de test recibieran SIGTERM en lugar de fallar. Reejecutado
+  con `CARGO_TARGET_DIR` aislado.
+- **`known_failures (core/lib)`: OK**, pero **solo** con
+  `--tmpdir-root` apuntando a un directorio real. Con
+  `TMPDIR=/home/rubentxu/.jcode/scratch` (que cruza un ancestro symlink,
+  `/home -> /var/home`) el checker reporta **51 regresiones nuevas** que son
+  un artefacto del `TMPDIR`, no regresiones reales. Reproducido y corregido:
+  `python3 scripts/check_known_failures.py --tmpdir-root /var/home/rubentxu/tmp-cc`
+  → `OK: observed failure set matches baseline (0 entries)`.
+
+Los dos FAIL de fmt y clippy son deuda de gates que ya existía antes de esta
+sesión y que no se toca aquí para no mezclar limpieza con el arreglo del
+bloqueador.
+
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
 Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
