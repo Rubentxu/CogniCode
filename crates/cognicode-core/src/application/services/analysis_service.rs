@@ -1640,20 +1640,37 @@ impl AnalysisService {
         let mut usages = Vec::new();
         let mut seen_first_definition = false;
 
-        for entry in walkdir::WalkDir::new(&params.project_dir)
+        // Walk with `ignore::WalkBuilder`, not `walkdir::WalkDir`, so .gitignore
+        // is honoured on top of USAGE_SKIP_DIRS.
+        //
+        // Measured on this repository: `WalkDir` with only a directory-name
+        // skip list descends into the ignored `sandbox/` tree (311,779 files,
+        // 176,200 of them under sandbox/repos) and re-parses every one of them
+        // with tree-sitter on every call. Measured against the release server,
+        // `find_usages`, `nl_to_symbol` and `smart_search` each failed to
+        // answer within 100s for a single symbol, while the same call on a
+        // one-file directory answered in 0.0s. This is the identical defect
+        // already fixed in `LightweightIndex::build_index`.
+        //
+        // The server was not dead: a second, unrelated call answered while
+        // the first was still running. This was slow work, not a hang, and
+        // USAGE_SKIP_DIRS alone is what made it slow.
+        let walker = ignore::WalkBuilder::new(&params.project_dir)
             .follow_links(true)
-            .into_iter()
-            .filter_entry(|e| {
-                // Skip known dependency/build/cache directories
-                if let Some(name) = e.file_name().to_str() {
-                    !USAGE_SKIP_DIRS.contains(&name)
-                } else {
-                    true
-                }
-            })
-            .filter_map(|e| e.ok())
-        {
+            .build();
+
+        for entry in walker.filter_map(|e| e.ok()) {
             let path = entry.path();
+            // Keep the existing policy layered on top of gitignore: skipping
+            // conventional dependency/build dirs still matters for a directory
+            // that is not a git repository.
+            let skip = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| USAGE_SKIP_DIRS.contains(&name));
+            if skip {
+                continue;
+            }
             if !path.is_file() {
                 continue;
             }

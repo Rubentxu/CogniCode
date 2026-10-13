@@ -249,8 +249,8 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // than named by a workflow step: nothing runs them by name.
     assert_eq!(
         suites.len(),
-        75,
-        "expected exactly 75 cognicode-core integration suites, found {}. \
+        76,
+        "expected exactly 76 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -415,6 +415,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "provider_conformance",
     "query_symbol_index_cache_miss_contract",
     "safe_refactor_rename_symbol_contract",
+    "workspace_walk_honours_gitignore",
     "read_set_e2e",
     "roadmap_claims_contract",
     "t1_1b_symbolkind_wire_format",

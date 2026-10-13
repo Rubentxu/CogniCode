@@ -336,11 +336,23 @@ impl SemanticSearchService {
 
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-        for entry in walkdir::WalkDir::new(dir)
+        // Walk with `ignore::WalkBuilder`, not `walkdir::WalkDir`, so .gitignore
+        // is honoured on top of WalkFilter.
+        //
+        // Measured on this repository: WalkDir with only WalkFilter descends
+        // into the ignored `sandbox/` tree (311,779 files) and indexes every
+        // one of them. That is why `smart_search` and `nl_to_symbol`, which
+        // populate from this function, failed to answer within 100s against
+        // the release server for a single query, while the same query on a
+        // one-file directory answered in 0.0s. Same defect already fixed in
+        // `LightweightIndex::build_index` and `find_symbol_usages`.
+        let walker = ignore::WalkBuilder::new(dir)
             .follow_links(true)
-            .into_iter()
-            .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
+            .build();
+
+        for entry in walker
             .filter_map(|e| e.ok())
+            .filter(|e| !walk_filter.matches_any_component(e.path()))
         {
             let path = entry.path();
             if !path.is_file() {

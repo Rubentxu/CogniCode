@@ -1309,11 +1309,45 @@ Verificado contra el release reconstruido: encuentra `build_plan` en
 `refactor/plan.rs:342`, que es la definición real. `query_symbol_index`
 devolvía `internal: timeout` **antes de construir nada**.
 
-**2. `nl_to_symbol`, `find_usages`, `smart_search`: HANG >45s.** Verificado
-que no es del instrumento: son llamadas independientes, cada una en su propio
-servidor, con entrada que satisface el schema. Queda como **BLOCKED por
-investigar**, no como cerrado: no se ha medido todavía si es trabajo real muy
-lento o un bloqueo. No se afirma ninguna de las dos cosas.
+**2. `nl_to_symbol`, `find_usages`, `smart_search`: >100s sin responder.
+Cerrado: era el mismo defecto ciego de `.gitignore`.**
+
+Primero se descartó "servidor colgado": con la llamada lenta en curso, una
+segunda llamada **no relacionada sí respondió**. Era trabajo lento, no un
+bloqueo. Y en un directorio de un solo fichero la misma consulta respondía en
+0.0s. La causa es el defecto ya cerrado en `LightweightIndex::build_index`,
+repetido en **dos localizaciones más**:
+
+- `AnalysisService::find_symbol_usages` (`analysis_service.rs:1643`) usaba
+  `walkdir::WalkDir` filtrando solo por `USAGE_SKIP_DIRS`.
+- `SemanticSearch::populate_from_directory` (`semantic_search.rs:339`) usaba
+  `walkdir::WalkDir` filtrando solo por `WalkFilter`.
+
+Ambas ignoran `.gitignore`, así que bajaban al `sandbox/` de este repo
+(311.779 ficheros) y reparseaban cada uno con tree-sitter en cada llamada.
+`nl_to_symbol` y `smart_search` se sirven de la segunda.
+
+Medido contra el release reconstruido:
+
+| herramienta | antes | después |
+|---|---|---|
+| `find_usages` | >100s sin responder | **4.3s** con usos reales |
+| `nl_to_symbol` | >100s | **17.8s**, 20 candidatos |
+| `smart_search` | >100s | **18.3s**, `build_plan` primero |
+
+**Una regresión que casi era verde por vacío.** El test nuevo pasó a la primera
+contra el walker *viejo* (el que explicaba el defecto): usaba `vendor/` como
+directorio ignorado, y `vendor` ya estaba en la lista de nombres
+convencionales, así que la poda lo cortaba igual y la aserción no probaba nada.
+Cambiado a `generated/`, que solo `.gitignore` puede excluir, el test pasó a
+**FAIL** contra el walker viejo y **OK** contra el nuevo. Un test de regresión
+que pasa contra el código que arregla no es una regresión: hay que verlo rojo
+antes de Presentarlo como tal.
+
+Segundo error del mismo test: el `.gitignore` del fixture no se aplicaba,
+porque `ignore::WalkBuilder` con `.parents(false)` solo carga reglas dentro de
+un repositorio. El fixture necesita un `.git` vacío; sin él el test pasaba
+por la razón equivocada.
 
 **3. `ask_about_code`, `find_references`, `hover`, `merge_graphs`: EMPTY.**
 Responden sin error pero sin evidencia. Se marcan para inspección, no se
