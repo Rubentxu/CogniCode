@@ -294,10 +294,52 @@ Corrección de método: el test de repro tenía `parent().join("crates")`, que
 apuntaba a `crates/crates` (inexistente) y fallaba por el motivo equivocado.
 Arreglado en `7b638d18`.
 
-**Pendiente**: confirmar la escritura fuera de límites con ASan. Build en
-curso sobre nightly 1.99 con `-Zsanitizer=address -Cforce-frame-pointers=yes`
-en `CARGO_TARGET_DIR` privado: ASan puede nombrar la instrucción que escribe
-de más, que es lo que glibc no puede decir.
+**Pendiente**: confirmar la escritura fuera de límites con ASan sobre el
+runtime C de tree-sitter (ver 2f).
+
+### 2f. ASan: dos intentos y lo que cada uno demuestra
+
+El camino del stack es C: `tree-sitter` 0.27 compila su runtime con `cc`
+dentro de su `build.rs` (`src/parser.c`, `stack.c`, `lexer.c`, ...). Instrumentar
+sólo Rust no instrumenta esos objetos, y por eso el primer ASan **no vio nada**.
+
+- **Intento 1** (`-Zsanitizer=address` en `RUSTFLAGS` global): falló al enlazar.
+  Los proc-macros también se instrumentan, son cdylibs cargados por rustc y no
+  tienen runtime de ASan →
+  `undefined symbol: __asan_option_detect_stack_use_after_return`.
+- **Intento 2** (`--target x86_64-unknown-linux-gnu` + `-Z build-std=std,panic_abort`,
+  que deja los proc-macros para host sin instrumentar): **compiló y corrió**.
+  Resultado observado, y es un dato en sí mismo:
+
+  ```
+  tool_call tool=build_lightweight_index duration_ms=30001 status=error
+  {"jsonrpc":"2.0","id":2,"result":{"content":[{"type":"text",
+   "text":"internal: timeout"}],"isError":true}}
+  ```
+
+  Sin Abort, sin `corrupted size`, y **cero** reportes de AddressSanitizer.
+  El servidor sobrevivió y devolvió `isError: true` con timeout de 30 s.
+- **Intento 3** (en curso): `CFLAGS`/`CXXFLAGS` con `-fsanitize=address` para
+  instrumentar también el C de tree-sitter. Sin esto ASan no puede atribuir
+  el fallo, porque la escritura está en código que no compila el sanitizer.
+
+Consecuencia útil del intento 2: bajo ASan (unas 5-10x más lento) el
+`build_lightweight_index` **no llega a corromper el heap en 30 s**. El
+`corrupted size vs. prev_size` del binario normal aparece a los ~4 s. Eso
+apunta a que la corrupción depende del **ritmo**: una ventana temporal o de
+reutilización de memoria que ASan al ralentizar no llega a alcanzar dentro
+del timeout. Refuerza la sospecha sobre el runtime C y descarta aún más una
+causa en el Rust de este crate.
+
+**Defecto de contrato adicional descubierto en vivo**: `build_lightweight_index`
+sobre este repo tarda más de 30 s y el servidor responde `internal: timeout`
+(`isError: true`, `duration_ms=30001`). El timeout viene de
+`timeout_for_category` en `rmcp_adapter.rs` (30 s para `file`, `composite`,
+`quality`, `refactor`, `aix`, y default). Es decir: la herramienta anunciada no
+puede indexar un repo de tamaño real dentro del presupuesto que el propio
+servidor le impone. Aunque se arregle el abort, la herramienta seguiría siendo
+inaccesible en este repo salvo que el trabajo se haga incremental o el
+presupuesto sea mayor.
 
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
