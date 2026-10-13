@@ -1,7 +1,7 @@
 {
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
-  "source_commit": "54a2c599ce0aba6f435bce714ca6a3041dfad8a1",
+  "source_commit": "568f41e7f376c6f7584a6942320005f64da7c899",
   "runtime_tool_count": 77,
   "tools": [
     {
@@ -43,12 +43,29 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 25,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "symbol_name"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_explain",
+        "get_call_hierarchy"
+      ]
     },
     {
       "name": "ask_about_code",
@@ -89,12 +106,26 @@
         "authority": "read",
         "category": "aix",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "experimental; traces paths, not a chat model"
+      ],
+      "required_args": [
+        "question"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "build_call_subgraph",
@@ -148,12 +179,27 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires a current call graph",
+        "on-demand; not persisted"
+      ],
+      "required_args": [
+        "symbol_name"
+      ],
+      "follow_ups": [
+        "get_call_hierarchy",
+        "graph_explain"
+      ]
     },
     {
       "name": "build_graph",
@@ -314,12 +360,29 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 300,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "synchronous walk; may be partial on unreadable sources"
+      ],
+      "follow_ups": [
+        "get_call_hierarchy",
+        "analyze_impact",
+        "check_architecture",
+        "graph_explain",
+        "graph_communities",
+        "graph_pagerank",
+        "find_references",
+        "find_usages"
+      ]
     },
     {
       "name": "build_lightweight_index",
@@ -363,12 +426,24 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 30,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires a current symbol graph / index",
+        "may miss deep call edges"
+      ],
+      "follow_ups": [
+        "query_symbol_index",
+        "find_usages"
+      ]
     },
     {
       "name": "cfg_per_function",
@@ -409,12 +484,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "experimental; PlanLimits may diverge from upstream"
+      ],
+      "required_args": [
+        "algorithm_params"
+      ]
     },
     {
       "name": "check_architecture",
@@ -448,12 +533,37 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.101.16"
-      }
+        "tool_version": "0.101.16",
+        "gate_authority": false,
+        "produces_observations_only": true
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "Tarjan SCC results depend on graph completeness"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_insights",
+        "graph_feedback_arcs"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
+      ]
     },
     {
       "name": "codebase_map",
@@ -511,12 +621,31 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 100,
+        "intent_tags": [
+          "Summarize"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Summarize"
+      ],
+      "limitations": [
+        "requires build_graph to be current",
+        "compact format may drop details"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "smart_search",
+        "nl_to_symbol"
+      ]
     },
     {
       "name": "composite_impact_query",
@@ -599,12 +728,24 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 10,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "investigation only; result is not a verdict",
+        "evidence fields are empty until B4.W1 / B4.W2 / B4.W3 extractors wire to the composite",
+        "follow_ups and prerequisites are pulled from the catalog by qualified_name; unknown symbols yield empty suggestions"
+      ],
+      "required_args": [
+        "qualified_name"
+      ]
     },
     {
       "name": "detect_drift",
@@ -649,12 +790,23 @@
         "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 150,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires persistence feature",
+        "writes drift_events"
+      ],
+      "required_args": [
+        "file_path"
+      ]
     },
     {
       "name": "detect_god_functions",
@@ -696,12 +848,31 @@
         "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 100,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "thresholds are heuristic"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
+      ]
     },
     {
       "name": "detect_long_parameter_lists",
@@ -735,12 +906,31 @@
         "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 60,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "threshold-driven; tunable"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
+      ]
     },
     {
       "name": "dominators_cfg",
@@ -779,12 +969,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "experimental"
+      ],
+      "required_args": [
+        "algorithm_params"
+      ]
     },
     {
       "name": "edit_file",
@@ -843,12 +1043,24 @@
         "authority": "mutating",
         "category": "file",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": true,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "mutates workspace",
+        "oldString must be unique in the file"
+      ],
+      "required_args": [
+        "path",
+        "edits"
+      ]
     },
     {
       "name": "export_callflow",
@@ -905,12 +1117,22 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 60,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "export_mermaid",
@@ -964,12 +1186,26 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 40,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "truncated above 2000 chars unless format=svg|png"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "export_callflow"
+      ]
     },
     {
       "name": "find_pattern_by_intent",
@@ -1010,12 +1246,25 @@
         "authority": "read",
         "category": "aix",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "intent"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "find_references",
@@ -1064,12 +1313,28 @@
         "authority": "read",
         "category": "navigation",
         "estimated_latency_ms": 30,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "lsp",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "lsp",
+      "intent_tags": [],
+      "limitations": [
+        "requires build to be current",
+        "may miss dynamic dispatch"
+      ],
+      "required_args": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "follow_ups": [
+        "get_symbol_code"
+      ]
     },
     {
       "name": "find_usages",
@@ -1115,12 +1380,25 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 40,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "AST-based; no LSP server required but no LSP precision"
+      ],
+      "required_args": [
+        "symbol_name"
+      ],
+      "follow_ups": [
+        "get_symbol_code"
+      ]
     },
     {
       "name": "generate_contract",
@@ -1162,12 +1440,23 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "gated",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires persistence feature"
+      ],
+      "required_args": [
+        "function_name",
+        "file_path"
+      ]
     },
     {
       "name": "get_call_hierarchy",
@@ -1221,12 +1510,29 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 25,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "index",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "index",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "symbol_name",
+        "direction"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_explain"
+      ]
     },
     {
       "name": "get_complexity",
@@ -1267,12 +1573,33 @@
         "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "file must be parseable by the AST provider"
+      ],
+      "required_args": [
+        "file_path"
+      ],
+      "follow_ups": [
+        "detect_god_functions"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
+      ]
     },
     {
       "name": "get_entry_points",
@@ -1306,12 +1633,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 15,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "compressed returns natural-language summary"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_file_symbols",
@@ -1357,12 +1695,23 @@
         "authority": "read",
         "category": "file",
         "estimated_latency_ms": 15,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "lsp",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "lsp",
+      "intent_tags": [],
+      "required_args": [
+        "file_path"
+      ],
+      "follow_ups": [
+        "get_symbol_code",
+        "go_to_definition"
+      ]
     },
     {
       "name": "get_hot_paths",
@@ -1400,12 +1749,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 25,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_implementors",
@@ -1481,12 +1840,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 40,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "index",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "index",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "trait_name"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_imports",
@@ -1541,12 +1913,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "file_path"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_leaf_functions",
@@ -1580,12 +1965,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 15,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_members",
@@ -1647,12 +2042,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 25,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "class_name"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "get_per_file_graph",
@@ -1689,12 +2097,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "each file must have a per-file graph already built"
+      ],
+      "required_args": [
+        "file_path"
+      ]
     },
     {
       "name": "get_symbol_code",
@@ -1742,12 +2160,28 @@
         "authority": "read",
         "category": "file",
         "estimated_latency_ms": 10,
+        "intent_tags": [
+          "Locate"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Locate"
+      ],
+      "limitations": [
+        "location must point at the symbol declaration"
+      ],
+      "required_args": [
+        "file",
+        "line",
+        "col"
+      ]
     },
     {
       "name": "get_type_references",
@@ -1838,12 +2272,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 25,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "index",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "index",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "symbol_name"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "go_to_definition",
@@ -1888,12 +2335,28 @@
         "authority": "read",
         "category": "navigation",
         "estimated_latency_ms": 15,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "lsp",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "lsp",
+      "intent_tags": [],
+      "limitations": [
+        "requires build to be current",
+        "LSP precision not guaranteed"
+      ],
+      "required_args": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "follow_ups": [
+        "get_symbol_code"
+      ]
     },
     {
       "name": "graph_all_paths",
@@ -1939,12 +2402,31 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 150,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "max_hops bounds exhaustive search; substring name match"
+      ],
+      "required_args": [
+        "from_symbol",
+        "to_symbol"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_explain",
+        "get_call_hierarchy"
+      ]
     },
     {
       "name": "graph_analyze",
@@ -1982,12 +2464,26 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 150,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_condensed",
+        "graph_reduced"
+      ]
     },
     {
       "name": "graph_checkpoint",
@@ -2060,12 +2556,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "checkpoint IDs are session-scoped"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_communities",
@@ -2099,12 +2606,26 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 250,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_community_detail",
+        "graph_surprising_connections"
+      ]
     },
     {
       "name": "graph_community_detail",
@@ -2145,12 +2666,26 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "community_id"
+      ],
+      "prerequisites": [
+        "build_graph",
+        "graph_communities"
+      ]
     },
     {
       "name": "graph_condensed",
@@ -2179,12 +2714,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_explain",
@@ -2316,12 +2861,28 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 100,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "symbol"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "get_symbol_code"
+      ]
     },
     {
       "name": "graph_feedback_arcs",
@@ -2350,12 +2911,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 100,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "greedy heuristic; not optimal feedback arc set"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_god_nodes",
@@ -2389,12 +2961,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 100,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "percentile threshold is tunable"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_insights",
@@ -2423,12 +3006,23 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 200,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "composite call; slower than focused tools"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_pagerank",
@@ -2466,12 +3060,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 250,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_god_nodes"
+      ]
     },
     {
       "name": "graph_query",
@@ -2607,12 +3214,26 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 80,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "natural-language parser; may miss ambiguous phrasing"
+      ],
+      "required_args": [
+        "question"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_query_filtered",
@@ -2775,12 +3396,25 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 80,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "question"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_reduced",
@@ -2809,12 +3443,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "transitive reduction; redundant edges dropped"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_search_idf",
@@ -2856,12 +3501,26 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 40,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "hub bypass may drop popular symbols intentionally"
+      ],
+      "required_args": [
+        "query"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_suggest_questions",
@@ -2890,12 +3549,23 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "experimental; questions are heuristic"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "graph_surprising_connections",
@@ -2933,12 +3603,23 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 120,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "prerequisites": [
+        "build_graph",
+        "graph_communities"
+      ]
     },
     {
       "name": "hover",
@@ -2983,12 +3664,27 @@
         "authority": "read",
         "category": "navigation",
         "estimated_latency_ms": 15,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build to be current"
+      ],
+      "required_args": [
+        "file_path",
+        "line",
+        "column"
+      ],
+      "follow_ups": [
+        "go_to_definition"
+      ]
     },
     {
       "name": "iac_query",
@@ -3089,12 +3785,29 @@
         "authority": "read",
         "category": "infra",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": true,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "experimental; in-memory graph only"
+      ],
+      "required_args": [
+        "resource_id"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "graph_insights"
+      ]
     },
     {
       "name": "list_files",
@@ -3149,12 +3862,19 @@
         "authority": "read",
         "category": "file",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        ".gitignore aware; honors workspace root"
+      ]
     },
     {
       "name": "list_view_specs",
@@ -3184,12 +3904,19 @@
         "authority": "read",
         "category": "view",
         "estimated_latency_ms": 10,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "follow_ups": [
+        "read_view_spec"
+      ]
     },
     {
       "name": "merge_graphs",
@@ -3229,12 +3956,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "each file must have a per-file graph already built"
+      ],
+      "required_args": [
+        "file_paths"
+      ]
     },
     {
       "name": "nl_to_symbol",
@@ -3276,12 +4013,29 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current"
+      ],
+      "required_args": [
+        "query"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "follow_ups": [
+        "get_symbol_code",
+        "go_to_definition"
+      ]
     },
     {
       "name": "project_insights",
@@ -3441,12 +4195,23 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 300,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "experimental; composite call"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "project_overview",
@@ -3536,12 +4301,23 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 300,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "experimental; system_prompt_context optional"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "query_symbol_index",
@@ -3583,12 +4359,30 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 30,
+        "intent_tags": [
+          "Locate"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Locate"
+      ],
+      "limitations": [
+        "requires index build (lightweight or full)"
+      ],
+      "required_args": [
+        "symbol_name"
+      ],
+      "follow_ups": [
+        "get_symbol_code",
+        "find_references"
+      ]
     },
     {
       "name": "read_file",
@@ -3652,12 +4446,34 @@
         "authority": "read",
         "category": "file",
         "estimated_latency_ms": 10,
+        "intent_tags": [
+          "Locate",
+          "Summarize",
+          "Read"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Locate",
+        "Summarize",
+        "Read"
+      ],
+      "limitations": [
+        "path must be inside workspace"
+      ],
+      "required_args": [
+        "path"
+      ],
+      "follow_ups": [
+        "get_file_symbols",
+        "search_content"
+      ]
     },
     {
       "name": "read_view_spec",
@@ -3695,12 +4511,19 @@
         "authority": "read",
         "category": "view",
         "estimated_latency_ms": 10,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "required_args": [
+        "id"
+      ]
     },
     {
       "name": "reparse_on_edit",
@@ -3740,12 +4563,24 @@
         "authority": "mutating",
         "category": "graph",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": true,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": true,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "mutates workspace",
+        "requires persistence feature",
+        "content-based invalidation; slower than mtime-only"
+      ],
+      "required_args": [
+        "file_paths"
+      ]
     },
     {
       "name": "retrieve_and_verify",
@@ -3795,12 +4630,26 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 80,
+        "intent_tags": [
+          "Verify"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Verify"
+      ],
+      "limitations": [
+        "verify=true spawns rustc; slower"
+      ],
+      "required_args": [
+        "query"
+      ]
     },
     {
       "name": "review_pr",
@@ -3875,12 +4724,22 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 200,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "impact analysis only; does not call external CI"
+      ],
+      "required_args": [
+        "files"
+      ]
     },
     {
       "name": "safe_refactor",
@@ -3933,12 +4792,26 @@
         "authority": "read",
         "category": "refactor",
         "estimated_latency_ms": 100,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "preview by default; --apply required to mutate"
+      ],
+      "required_args": [
+        "action",
+        "target"
+      ],
+      "follow_ups": [
+        "generate_contract"
+      ]
     },
     {
       "name": "safe_refactor_apply",
@@ -3980,12 +4853,25 @@
         "authority": "mutating",
         "category": "refactor",
         "estimated_latency_ms": 200,
+        "intent_tags": [],
         "mutates_workspace": true,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires explicit write authorization",
+        "transactional writes with rollback (AAT-B5-01)",
+        "post-apply revalidation is `safe_refactor_revalidate` (B5.W4)"
+      ],
+      "required_args": [
+        "plan_file",
+        "authorization_token"
+      ]
     },
     {
       "name": "safe_refactor_preview",
@@ -4035,12 +4921,26 @@
         "authority": "read",
         "category": "refactor",
         "estimated_latency_ms": 50,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "preview only; apply requires explicit authorization (B5.W3)",
+        "non-overlapping byte ranges required (B5.W1 contract)"
+      ],
+      "required_args": [
+        "plan_path"
+      ],
+      "follow_ups": [
+        "safe_refactor_revalidate"
+      ]
     },
     {
       "name": "safe_refactor_revalidate",
@@ -4139,12 +5039,25 @@
         "authority": "read",
         "category": "refactor",
         "estimated_latency_ms": 20,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "result is evidence, not a verdict (B4.W5 spine, AAT-B5-04)",
+        "does NOT execute arbitrary commands — a finding or comment is data, not an instruction",
+        "verdict is verdict_refused until a future WU records an evidence_digest and emits InvariantsHold",
+        "B4.W1 / B4.W2 / B4.W3 extractors wire in via a follow-up WU"
+      ],
+      "required_args": [
+        "plan_id"
+      ]
     },
     {
       "name": "search_content",
@@ -4206,12 +5119,30 @@
         "authority": "read",
         "category": "search",
         "estimated_latency_ms": 40,
+        "intent_tags": [
+          "Locate",
+          "Verify",
+          "Read"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Locate",
+        "Verify",
+        "Read"
+      ],
+      "limitations": [
+        ".gitignore aware; regex default true"
+      ],
+      "required_args": [
+        "pattern"
+      ]
     },
     {
       "name": "slice_backward",
@@ -4250,12 +5181,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "experimental; declarative Rust patterns only"
+      ],
+      "required_args": [
+        "algorithm_params"
+      ]
     },
     {
       "name": "slice_forward",
@@ -4294,12 +5235,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "experimental; declarative Rust patterns only"
+      ],
+      "required_args": [
+        "algorithm_params"
+      ]
     },
     {
       "name": "smart_search",
@@ -4340,12 +5291,30 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 200,
+        "intent_tags": [
+          "Locate"
+        ],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [
+        "Locate"
+      ],
+      "limitations": [
+        "requires build_graph to be current",
+        "composite; result is merged + deduplicated"
+      ],
+      "required_args": [
+        "query"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "solid_audit",
@@ -4374,12 +5343,31 @@
         "authority": "read",
         "category": "quality",
         "estimated_latency_ms": 200,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "heuristic; SRP/OCP/LSP/ISP/DIP rules"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ],
+      "language_scope": [
+        "rust",
+        "python",
+        "typescript",
+        "javascript",
+        "go",
+        "java"
+      ]
     },
     {
       "name": "taint_flow",
@@ -4418,12 +5406,22 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 500,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "experimental",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "experimental; declarative Rust patterns only"
+      ],
+      "required_args": [
+        "algorithm_params"
+      ]
     },
     {
       "name": "trace_path",
@@ -4473,12 +5471,27 @@
         "authority": "read",
         "category": "graph",
         "estimated_latency_ms": 30,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": true,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "requires build_graph to be current",
+        "BFS; depth-bounded"
+      ],
+      "required_args": [
+        "source",
+        "target"
+      ],
+      "prerequisites": [
+        "build_graph"
+      ]
     },
     {
       "name": "validate_contract",
@@ -4520,12 +5533,20 @@
         "authority": "read",
         "category": "composite",
         "estimated_latency_ms": 30,
+        "intent_tags": [],
         "mutates_workspace": false,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "required_args": [
+        "contract_id",
+        "generated_code"
+      ]
     },
     {
       "name": "write_file",
@@ -4571,12 +5592,24 @@
         "authority": "mutating",
         "category": "file",
         "estimated_latency_ms": 10,
+        "intent_tags": [],
         "mutates_workspace": true,
+        "precision_floor": "ast-heuristic",
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
         "tool_version": "0.101.16"
-      }
+      },
+      "precision_floor": "ast-heuristic",
+      "intent_tags": [],
+      "limitations": [
+        "mutates workspace",
+        "overwrites existing files"
+      ],
+      "required_args": [
+        "path",
+        "content"
+      ]
     }
   ]
 }

@@ -44,6 +44,30 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def run_without_overlay(*args: str) -> subprocess.CompletedProcess[str]:
+    """Run the generator with an explicitly empty affordance overlay.
+
+    Fixture-driven tests build a catalog from a synthetic one- or two-tool
+    capture. Without this, the generator would also fold in the repository's
+    real `product/tool-affordances.json`, which names tools that fixture does not
+    contain -- and `merge_overlay` rejects exactly that, by design, so a stale
+    overlay entry cannot hide behind a passing test.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        empty = Path(directory) / "overlay.json"
+        empty.write_text(
+            json.dumps(
+                {
+                    "schema_version": "cognicode.tool-overlay/v1",
+                    "tools": {},
+                    "runtime_metadata_flags": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return run(*args, "--overlay", str(empty))
+
+
 def fixture() -> list[dict]:
     return [
         {
@@ -84,7 +108,7 @@ def test_generation_is_sorted_and_preserves_runtime_metadata() -> None:
         source = Path(directory) / "tools-list.json"
         output = Path(directory) / "tools.json"
         source.write_text(json.dumps(fixture()), encoding="utf-8")
-        result = run(
+        result = run_without_overlay(
             "--input",
             str(source),
             "--output",
@@ -114,7 +138,7 @@ def test_duplicate_names_are_rejected_without_output() -> None:
         output = Path(directory) / "tools.json"
         duplicate = fixture() + [fixture()[0]]
         source.write_text(json.dumps(duplicate), encoding="utf-8")
-        result = run(
+        result = run_without_overlay(
             "--input",
             str(source),
             "--output",
@@ -131,7 +155,7 @@ def test_invalid_source_commit_is_rejected_without_output() -> None:
         source = Path(directory) / "tools-list.json"
         output = Path(directory) / "tools.json"
         source.write_text(json.dumps(fixture()), encoding="utf-8")
-        result = run(
+        result = run_without_overlay(
             "--input",
             str(source),
             "--output",
@@ -216,6 +240,83 @@ def test_every_catalog_field_is_declared_by_the_schema() -> None:
         assert not missing, (
             f"tool {tool['name']!r} is missing required fields: {sorted(missing)}"
         )
+
+
+def test_affordance_overlay_survives_regeneration() -> None:
+    """Hand-authored affordances must survive a regeneration.
+
+    These four fields -- what a tool cannot do, what it needs first, what
+    usually comes next, and a declarative mirror of its required arguments --
+    cannot be observed from a `tools/list` capture, so they live in
+    `product/tool-affordances.json`. Before that split they existed only in the
+    generated catalog, and regenerating silently erased them: `limitations`
+    vanished from 73 tools, `required_args` from 50, `prerequisites` from 41,
+    `follow_ups` from 26, and four `b3_w3_agent_discovery` tests failed.
+
+    The assertion is that the committed catalog carries what the overlay
+    declares. A generator that stopped merging would still pass the pure
+    self-consistency check -- it would just be consistently empty -- so this
+    compares the two artefacts against each other instead.
+    """
+    overlay = json.loads((ROOT / "product/tool-affordances.json").read_text(encoding="utf-8"))
+    assert overlay["schema_version"] == "cognicode.tool-overlay/v1"
+    assert overlay["tools"], "the overlay must not be empty; an empty one hides the defect"
+    catalog = {
+        t["name"]: t
+        for t in json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))["tools"]
+    }
+    for name, affordances in overlay["tools"].items():
+        assert name in catalog, f"overlay names unknown tool {name!r}"
+        for field, value in affordances.items():
+            assert catalog[name].get(field) == value, (
+                f"{name}.{field} was not carried into the catalog. Either the "
+                f"generator stopped merging the overlay, or the committed "
+                f"catalog is stale with respect to product/tool-affordances.json."
+            )
+
+
+def test_overlay_may_not_claim_a_tool_the_runtime_does_not_serve() -> None:
+    """A stale overlay entry is a claim about a capability that is gone.
+
+    Silently dropping such an entry would let the overlay rot into a second,
+    unreadable catalog that nobody notices is describing a previous product.
+    `merge_overlay` raises on this in the generator; this pins it on the
+    committed artefacts so the rot is visible without running the generator.
+    """
+    catalog = {
+        t["name"]
+        for t in json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))["tools"]
+    }
+    overlay = json.loads((ROOT / "product/tool-affordances.json").read_text(encoding="utf-8"))
+    unknown = sorted((set(overlay["tools"]) | set(overlay["runtime_metadata_flags"])) - catalog)
+    assert not unknown, (
+        f"tool-affordances.json describes tools the catalog does not publish: {unknown}"
+    )
+
+
+def test_runtime_metadata_flags_survive_regeneration() -> None:
+    """Authored `runtime_metadata` flags must survive a regeneration too.
+
+    `check_architecture` declares `gate_authority: false` and
+    `produces_observations_only: true` so an MCP client can verify the
+    read-only diagnostic contract without reading the prompt. Those claims live
+    only inside `runtime_metadata`, which the runtime does not emit, so a
+    regeneration emptied them and `catalog_declares_check_architecture_gate_
+    authority_false` failed with "gate_authority must be a bool".
+    """
+    overlay = json.loads((ROOT / "product/tool-affordances.json").read_text(encoding="utf-8"))
+    catalog = {
+        t["name"]: t
+        for t in json.loads((ROOT / "product/tools.json").read_text(encoding="utf-8"))["tools"]
+    }
+    for name, flags in overlay["runtime_metadata_flags"].items():
+        runtime_metadata = catalog[name]["runtime_metadata"]
+        for field, value in flags.items():
+            assert runtime_metadata.get(field) == value, (
+                f"{name}.runtime_metadata.{field} was not carried into the "
+                f"catalog; the committed catalog is stale with respect to "
+                f"product/tool-affordances.json"
+            )
 
 
 def test_no_catalog_tool_is_undispatchable() -> None:

@@ -560,6 +560,30 @@ fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
         d.authority.as_str(),
     );
 
+    // Resolved before `d` is consumed by `Tool::new` below.
+    //
+    // `precision_floor` is a contract field, not presentation metadata. It was
+    // absent from this projection, and that silently broke the catalog:
+    // `generate_tool_catalog.py` builds `product/tools.json` from a real
+    // `tools/list` capture, so a field the server never emits is a field the
+    // generator cannot carry. Regenerating the catalog erased
+    // `precision_floor` from all eight navigation tools, and
+    // `catalog_declares_precision_floor_for_every_navigation_tool` failed
+    // because the catalog then fell back to the conservative `ast-heuristic`
+    // default while `precision_floor_for_tool` returns `lsp` for
+    // `get_file_symbols`.
+    //
+    // The value comes from `precision_floor_for_tool`, the same authoritative
+    // map the handlers use, rather than from `d.precision_floor`. The server
+    // *loads* the catalog, so echoing the field back would make the capture a
+    // copy of a file that is itself generated from the capture -- a loop that
+    // can only ever reproduce the conservative default. Resolving from the map
+    // makes the capture an independent source, which is what keeps the catalog
+    // and the handlers from drifting apart.
+    let tool_name = d.name.clone();
+    let precision_floor = crate::interface::symbol_identity::precision_floor_for_tool(&tool_name);
+    let intent_tags = crate::interface::intent::intent_tags_for_tool(&tool_name);
+
     let mut tool = Tool::new(d.name, d.description, Arc::new(input_schema)).with_meta(meta);
 
     // PRF-EXT-01 + PRF-MCP-05: expose the read/write permission
@@ -578,6 +602,26 @@ fn descriptor_to_tool(d: crate::interface::catalog::ToolDescriptor) -> Tool {
         c.insert(
             "tool_version".to_string(),
             serde_json::json!(env!("CARGO_PKG_VERSION")),
+        );
+        c.insert(
+            "precision_floor".to_string(),
+            serde_json::json!(precision_floor.as_str()),
+        );
+        // `intent_tags` has the same shape of defect as `precision_floor` did:
+        // it is a first-class `ToolDescriptor` field, the server never emitted
+        // it, and regenerating the catalog therefore left every entry at
+        // `intent_tags=[]`. `intent_tags_in_catalog_match_route_intent` then
+        // failed for every routing the router can actually produce.
+        //
+        // The tags are computed by asking `intent_tags_for_tool` -- which
+        // inverts `route_intent` -- rather than copied from a hand-kept list.
+        // Deriving them from the router is what makes the parity property
+        // structural: a tool the router cannot reach carries no tag, and a new
+        // routing shows up in the catalog the next time it is captured, instead
+        // of requiring a second place to be updated in lockstep.
+        c.insert(
+            "intent_tags".to_string(),
+            serde_json::json!(intent_tags),
         );
     }
     tool

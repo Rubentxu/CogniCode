@@ -136,6 +136,41 @@ pub fn route_intent(intent: &Intent) -> Vec<ToolRef> {
     }
 }
 
+/// Canonical label for each intent variant, used as the catalog's
+/// `intent_tags` vocabulary.
+const INTENT_LABELS: [(Intent, &str); 4] = [
+    (Intent::Locate { symbol: String::new() }, "Locate"),
+    (Intent::Summarize { scope: String::new() }, "Summarize"),
+    (Intent::Verify { claim: String::new() }, "Verify"),
+    (Intent::Read { path: String::new(), range: None }, "Read"),
+];
+
+/// Invert [`route_intent`]: which intent variants can reach `tool`?
+///
+/// English: list the intent labels whose routing includes this tool.
+/// Espanol: devuelve las etiquetas de intencion cuyo enrutamiento usa la tool.
+///
+/// This is the single source for `intent_tags` in `product/tools.json`, which
+/// the MCP projection emits so the catalog can be regenerated from a real
+/// `tools/list` capture. Deriving the tags by inverting the router -- rather
+/// than maintaining a parallel list -- is what keeps
+/// `intent_tags_in_catalog_match_route_intent` satisfiable: there is no second
+/// place where a new routing has to be remembered.
+///
+/// `route_*` selects on the variant only and never inspects the bound value, so
+/// the empty placeholders above route identically to any real input. That is a
+/// property of the current routers, not a coincidence this function relies on
+/// silently: if a route ever starts branching on its argument, this returns the
+/// tags for the empty argument and the parity test fails, which is the intended
+/// signal to revisit the derivation.
+pub fn intent_tags_for_tool(tool: &str) -> Vec<String> {
+    INTENT_LABELS
+        .iter()
+        .filter(|(intent, _)| route_intent(intent).iter().any(|r| r.tool == tool))
+        .map(|(_, label)| (*label).to_string())
+        .collect()
+}
+
 /// Cadena para `Intent::Locate`. Encadena:
 ///   1. `query_symbol_index` (definicion: donde esta X?)
 ///   2. `get_symbol_code` (codigo: que hace X?)
@@ -263,6 +298,46 @@ mod tests {
     //! the 6 B3.W2 tools each appear in at least one branch.
 
     use super::*;
+
+    #[test]
+    fn intent_tags_are_the_exact_inverse_of_route_intent() {
+        // The inversion has to hold in both directions, or the catalog's
+        // `intent_tags` either over- or under-claim what the router can reach.
+        // `intent_tags_in_catalog_match_route_intent` only pins one direction;
+        // the reverse is what catches a tag attached to a tool no intent routes
+        // to, which is the failure mode of hand-maintaining the list.
+        for (intent, label) in INTENT_LABELS {
+            for r in route_intent(&intent) {
+                assert!(
+                    intent_tags_for_tool(&r.tool).iter().any(|t| t == label),
+                    "{label} routes to {} but that tool does not carry the tag",
+                    r.tool
+                );
+            }
+        }
+        for r in route_intent(&Intent::Read {
+            path: "a.rs".into(),
+            range: None,
+        }) {
+            for tag in intent_tags_for_tool(&r.tool) {
+                assert!(
+                    route_intent(&Intent::Read {
+                        path: "a.rs".into(),
+                        range: None,
+                    })
+                    .iter()
+                    .any(|x| x.tool == r.tool),
+                    "{} is tagged {tag} but no intent routes to it",
+                    r.tool
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn intent_tags_for_unknown_tool_is_empty() {
+        assert!(intent_tags_for_tool("no_such_tool").is_empty());
+    }
 
     #[test]
     fn locate_routes_to_query_symbol_index() {

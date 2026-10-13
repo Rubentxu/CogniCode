@@ -45,7 +45,10 @@ def test_every_document_on_disk_is_registered() -> None:
     documents = {
         path.stem
         for path in (ROOT / "product").glob("*.json")
-        if path.name not in {"tool-catalog-runtime.json"}
+        # Generator inputs, not published documents. Both feed
+        # `generate_tool_catalog.py` and neither is a contract an external
+        # consumer reads, so neither needs a schema here.
+        if path.name not in {"tool-catalog-runtime.json", "tool-affordances.json"}
     }
     registered = set(DOCUMENT_SCHEMA_PAIRS)
     assert documents == registered, (

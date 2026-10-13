@@ -21,6 +21,33 @@ REQUIRED_METADATA = {
 STABILITIES = {"stable", "experimental", "gated"}
 AUTHORITIES = {"read", "mutating", "execute", "network"}
 CORE_CATEGORIES = {"file", "navigation", "search", "view"}
+# `_meta.cognicode` keys that are also first-class `ToolDescriptor` fields.
+# They are carried in the metadata bag for the wire, and must additionally be
+# promoted to the descriptor's top level or serde substitutes the conservative
+# default for the real value.
+PROMOTED_METADATA_FIELDS = (
+    "precision_floor",
+    "impact_direction_floor",
+    "intent_tags",
+)
+
+# Affordances the runtime cannot report, so they are authored by hand and merged
+# from `product/tool-affordances.json`. See `load_overlay`.
+OVERLAY_SCHEMA_VERSION = "cognicode.tool-overlay/v1"
+OVERLAY_FIELDS = (
+    "limitations",
+    "required_args",
+    "prerequisites",
+    "follow_ups",
+    # Which languages a quality tool actually produces findings for. Authored
+    # rather than observed because the answer depends on the tree-sitter
+    # grammars a build happens to link, which is not something a `tools/list`
+    # capture can answer.
+    "language_scope",
+)
+# Default location of the overlay, relative to the repository root. The
+# `--overlay` flag exists so tests can point at a fixture.
+DEFAULT_OVERLAY = Path("product/tool-affordances.json")
 
 
 def title_from_description(description: str) -> str:
@@ -82,7 +109,7 @@ def normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
         "network": metadata.get("requires_network"),
     }
     status = "declared" if all(value is not None for value in requirements.values()) else "not_declared"
-    return {
+    descriptor = {
         "name": tool["name"],
         "title": title_from_description(tool["description"]),
         "description": tool["description"],
@@ -104,6 +131,19 @@ def normalize_tool(tool: dict[str, Any]) -> dict[str, Any]:
         "public_profiles": public_profiles(metadata),
         "runtime_metadata": metadata,
     }
+    # Contract fields the runtime reports in `_meta.cognicode` but that
+    # `ToolDescriptor` reads from the top level of the descriptor.
+    #
+    # Leaving them only inside `runtime_metadata` did not drop them so much as
+    # make them invisible: serde fell back to `default_precision_floor`, and
+    # `catalog_declares_precision_floor_for_every_navigation_tool` compared the
+    # conservative `ast-heuristic` default against the authoritative `lsp`.
+    # Promoting them here is what makes the catalog round-trip through the
+    # loader instead of silently degrading on every regeneration.
+    for field in PROMOTED_METADATA_FIELDS:
+        if field in metadata:
+            descriptor[field] = metadata[field]
+    return descriptor
 
 
 def build_catalog(tools: list[dict[str, Any]], source_commit: str) -> dict[str, Any]:
@@ -127,6 +167,83 @@ def build_catalog(tools: list[dict[str, Any]], source_commit: str) -> dict[str, 
     }
 
 
+def load_overlay(path: Path) -> dict[str, Any]:
+    """Load the hand-authored affordance overlay.
+
+    Some catalog fields cannot be observed from a `tools/list` capture at all:
+    what a tool cannot do (`limitations`), what it needs first
+    (`prerequisites`), what usually comes next (`follow_ups`), and a declarative
+    mirror of its required arguments. They are editorial, per-tool knowledge, so
+    they live in `product/tool-affordances.json` and are merged in here.
+
+    Without this split they lived only in the generated file, which meant every
+    regeneration silently erased them. That is not hypothetical: regenerating
+    from a complete capture dropped `limitations` from 73 tools,
+    `required_args` from 50, `prerequisites` from 41, and `follow_ups` from 26,
+    and four `b3_w3_agent_discovery` tests failed as a result. A generated file
+    is the wrong home for content no generator can produce.
+    """
+    if not path.exists():
+        return {"tools": {}, "runtime_metadata_flags": {}}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != OVERLAY_SCHEMA_VERSION:
+        raise ValueError(
+            f"{path} has schema_version {payload.get('schema_version')!r}, "
+            f"expected {OVERLAY_SCHEMA_VERSION!r}"
+        )
+    return {
+        "tools": payload.get("tools", {}),
+        "runtime_metadata_flags": payload.get("runtime_metadata_flags", {}),
+    }
+
+
+def merge_overlay(catalog: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    """Fold overlay affordances into the generated catalog.
+
+    Raises on an overlay entry for a tool the runtime does not serve. That is
+    deliberate: a stale overlay entry is a claim about a capability that no
+    longer exists, and silently dropping it would let the overlay rot into a
+    second, unreadable catalog.
+    """
+    by_name = {entry["name"]: entry for entry in catalog["tools"]}
+    affordances = overlay.get("tools", {})
+    metadata_flags = overlay.get("runtime_metadata_flags", {})
+    unknown = sorted((set(affordances) | set(metadata_flags)) - set(by_name))
+    if unknown:
+        raise ValueError(
+            f"tool-affordances.json names tools the runtime does not serve: {unknown}"
+        )
+    for name, fields in affordances.items():
+        entry = by_name[name]
+        for field, value in fields.items():
+            if field not in OVERLAY_FIELDS:
+                raise ValueError(
+                    f"tool-affordances.json sets unknown field {field!r} on {name!r}"
+                )
+            entry[field] = value
+    # Authored flags that stay inside `runtime_metadata`, which
+    # `ToolDescriptor` reads as an untyped bag. `gate_authority: false` for
+    # `check_architecture` is the case that matters: it is what lets an MCP
+    # client verify the read-only diagnostic contract without reading the
+    # prompt, and `runtime_metadata` is the only place that claim is read from.
+    for name, flags in metadata_flags.items():
+        entry = by_name[name]
+        runtime_metadata = entry.get("runtime_metadata")
+        if not isinstance(runtime_metadata, dict):
+            raise ValueError(
+                f"cannot set runtime_metadata flags on {name!r}: its "
+                f"runtime_metadata is not an object"
+            )
+        for field, value in flags.items():
+            if field in runtime_metadata:
+                raise ValueError(
+                    f"tool-affordances.json overrides runtime field {field!r} on "
+                    f"{name!r}; the runtime is authoritative for that field"
+                )
+            runtime_metadata[field] = value
+    return catalog
+
+
 def render(catalog: dict[str, Any]) -> str:
     return json.dumps(catalog, indent=2, sort_keys=False, ensure_ascii=False) + "\n"
 
@@ -136,10 +253,26 @@ def main() -> int:
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument(
+        "--overlay",
+        type=Path,
+        default=None,
+        help=(
+            "hand-authored affordances to merge "
+            "(default: product/tool-affordances.json when present)"
+        ),
+    )
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
+    overlay_path = args.overlay
+    if overlay_path is None:
+        default_overlay = DEFAULT_OVERLAY
+        if default_overlay.exists():
+            overlay_path = default_overlay
     try:
         catalog = build_catalog(load_tools(args.input), args.source_commit)
+        if overlay_path is not None:
+            merge_overlay(catalog, load_overlay(overlay_path))
         rendered = render(catalog)
         if args.check:
             actual = args.output.read_text(encoding="utf-8")
