@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cognicode.dev/schemas/skills.v1.schema.json",
+  "title": "CogniCode skills manifest (cognicode.skills/v1)",
+  "description": "The shipped skill manifest read by `cognicode skills` and by the CLI's autonomous discovery. Constrains the shape that `cognicode-cli/src/skills.rs` deserializes. Referential constraints -- `tools_used` must resolve to a real catalog tool, `feature_gates` to a real catalog feature, and no tool may be experimental -- are enforced against the catalog by `validate_skill_against_catalog`, not by this schema, because they need the catalog as a second input.",
+  "type": "object",
+  "required": ["schema_version", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "description": "Identifies this manifest format. Bumped only on an incompatible change to the skill entry shape.",
+      "const": "cognicode.skills/v1"
+    },
+    "product": {
+      "description": "Product that owns the manifest. Recorded for provenance; not used for dispatch.",
+      "type": "string",
+      "minLength": 1
+    },
+    "skills": {
+      "description": "The shipped skills. Each one names tools the agent should reach for.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "tools_used", "feature_gates", "evaluation"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "description": "Skill identifier, invoked as `/name`. Kebab-case so it is usable as a slash command.",
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+          },
+          "description": {
+            "description": "When to reach for this skill and what it answers. Read by the agent before any tool call, so vague text here misroutes real work.",
+            "type": "string",
+            "minLength": 1
+          },
+          "tools_used": {
+            "description": "Catalog tool names this skill drives. An unknown name fails closed in `validate_skill_against_catalog` rather than being ignored, so a typo cannot ship a skill that quietly does nothing.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "feature_gates": {
+            "description": "Cargo features this skill requires. Empty when the skill works in the default build. A value that is not a real catalog feature fails closed.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "evaluation": {
+            "description": "Repository-relative path to the JSON eval file for this skill. Recorded by the loader but not parsed there; tests resolve it.",
+            "type": "string",
+            "pattern": "^[^/][^\\\\]*$",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

@@ -53,6 +53,12 @@ DOCUMENT_SCHEMA_PAIRS: dict[str, str] = {
     "product-manifest": "product-manifest.v1.schema.json",
     "languages": "languages.v1.schema.json",
     "platforms": "platforms.v1.schema.json",
+    # `skills.json` shipped without a schema, so the gate below reported six
+    # published documents while validating five. The manifest is read by
+    # `cognicode skills` and drives autonomous discovery, so its shape was
+    # unenforced on the one path where a typo changes what an agent believes it
+    # can do.
+    "skills": "skills.v1.schema.json",
 }
 
 
