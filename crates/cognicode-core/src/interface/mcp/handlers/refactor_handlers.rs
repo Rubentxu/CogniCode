@@ -31,14 +31,36 @@ pub async fn handle_safe_refactor(
                 })?
                 .to_string();
 
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
+            // Resolve the target file. An explicit params.file_path always
+            // wins. Otherwise the schema advertised `target` as a *symbol
+            // name* and never asked for a filename, but this used to do
+            // `working_dir.join(&input.target)`, reading the name as a path.
+            // Measured on the release server that made every advertised
+            // refactor unreachable: no file named after the symbol gave
+            // "Failed to read <cwd>/old_name", and an extensionless file
+            // named after it gave "Unsupported file type". So locate the file
+            // that actually defines the symbol, and refuse explicitly if none
+            // does rather than guessing a path and retrying.
+            let file_path = match input
                 .params
                 .as_ref()
                 .and_then(|p| p.get("file_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            {
+                Some(s) => resolve_file_path(s, &ctx.working_dir),
+                None => ctx
+                    .refactor_service
+                    .resolve_symbol_file(&ctx.working_dir, &input.target)
+                    .map_err(|e| HandlerError::InvalidInput(format!("{}", e)))?
+                    .ok_or_else(|| {
+                        HandlerError::InvalidInput(format!(
+                            "No file under {} defines a symbol named '{}'. \
+                             Pass params.file_path to disambiguate.",
+                            ctx.working_dir.display(),
+                            input.target
+                        ))
+                    })?,
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -115,14 +137,36 @@ pub async fn handle_safe_refactor(
                 })?
                 .to_string();
 
-            // Get the file path from params or use working_dir/target, resolving relative paths
-            let file_path = input
+            // Resolve the target file. An explicit params.file_path always
+            // wins. Otherwise the schema advertised `target` as a *symbol
+            // name* and never asked for a filename, but this used to do
+            // `working_dir.join(&input.target)`, reading the name as a path.
+            // Measured on the release server that made every advertised
+            // refactor unreachable: no file named after the symbol gave
+            // "Failed to read <cwd>/old_name", and an extensionless file
+            // named after it gave "Unsupported file type". So locate the file
+            // that actually defines the symbol, and refuse explicitly if none
+            // does rather than guessing a path and retrying.
+            let file_path = match input
                 .params
                 .as_ref()
                 .and_then(|p| p.get("file_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            {
+                Some(s) => resolve_file_path(s, &ctx.working_dir),
+                None => ctx
+                    .refactor_service
+                    .resolve_symbol_file(&ctx.working_dir, &input.target)
+                    .map_err(|e| HandlerError::InvalidInput(format!("{}", e)))?
+                    .ok_or_else(|| {
+                        HandlerError::InvalidInput(format!(
+                            "No file under {} defines a symbol named '{}'. \
+                             Pass params.file_path to disambiguate.",
+                            ctx.working_dir.display(),
+                            input.target
+                        ))
+                    })?,
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -167,14 +211,36 @@ pub async fn handle_safe_refactor(
             }
         }
         RefactorAction::Inline => {
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
+            // Resolve the target file. An explicit params.file_path always
+            // wins. Otherwise the schema advertised `target` as a *symbol
+            // name* and never asked for a filename, but this used to do
+            // `working_dir.join(&input.target)`, reading the name as a path.
+            // Measured on the release server that made every advertised
+            // refactor unreachable: no file named after the symbol gave
+            // "Failed to read <cwd>/old_name", and an extensionless file
+            // named after it gave "Unsupported file type". So locate the file
+            // that actually defines the symbol, and refuse explicitly if none
+            // does rather than guessing a path and retrying.
+            let file_path = match input
                 .params
                 .as_ref()
                 .and_then(|p| p.get("file_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            {
+                Some(s) => resolve_file_path(s, &ctx.working_dir),
+                None => ctx
+                    .refactor_service
+                    .resolve_symbol_file(&ctx.working_dir, &input.target)
+                    .map_err(|e| HandlerError::InvalidInput(format!("{}", e)))?
+                    .ok_or_else(|| {
+                        HandlerError::InvalidInput(format!(
+                            "No file under {} defines a symbol named '{}'. \
+                             Pass params.file_path to disambiguate.",
+                            ctx.working_dir.display(),
+                            input.target
+                        ))
+                    })?,
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -305,14 +371,36 @@ pub async fn handle_safe_refactor(
                     HandlerError::InvalidInput(format!("Invalid new_parameters: {}", e))
                 })?;
 
-            // Get the file path from params or use working_dir, resolving relative paths
-            let file_path = input
+            // Resolve the target file. An explicit params.file_path always
+            // wins. Otherwise the schema advertised `target` as a *symbol
+            // name* and never asked for a filename, but this used to do
+            // `working_dir.join(&input.target)`, reading the name as a path.
+            // Measured on the release server that made every advertised
+            // refactor unreachable: no file named after the symbol gave
+            // "Failed to read <cwd>/old_name", and an extensionless file
+            // named after it gave "Unsupported file type". So locate the file
+            // that actually defines the symbol, and refuse explicitly if none
+            // does rather than guessing a path and retrying.
+            let file_path = match input
                 .params
                 .as_ref()
                 .and_then(|p| p.get("file_path"))
                 .and_then(|v| v.as_str())
-                .map(|s| resolve_file_path(s, &ctx.working_dir))
-                .unwrap_or_else(|| ctx.working_dir.join(&input.target));
+            {
+                Some(s) => resolve_file_path(s, &ctx.working_dir),
+                None => ctx
+                    .refactor_service
+                    .resolve_symbol_file(&ctx.working_dir, &input.target)
+                    .map_err(|e| HandlerError::InvalidInput(format!("{}", e)))?
+                    .ok_or_else(|| {
+                        HandlerError::InvalidInput(format!(
+                            "No file under {} defines a symbol named '{}'. \
+                             Pass params.file_path to disambiguate.",
+                            ctx.working_dir.display(),
+                            input.target
+                        ))
+                    })?,
+            };
 
             let file_path_str = file_path.to_string_lossy().to_string();
 

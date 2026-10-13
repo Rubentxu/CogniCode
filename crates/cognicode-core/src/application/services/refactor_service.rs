@@ -33,6 +33,60 @@ impl RefactorService {
         Self { safety_gate }
     }
 
+    /// Finds the file under `workspace_root` that defines the symbol `name`.
+    ///
+    /// The `safe_refactor` schema advertises `target` as a *symbol name* and
+    /// never asks for a filename, but the handler used to resolve it with
+    /// `working_dir.join(target)`, reading the name as a path. That made every
+    /// advertised rename unreachable. This method is the other half of that
+    /// fix: locate the defining file instead of guessing one.
+    ///
+    /// Returns the first file (in walk order) that actually declares `name`.
+    /// `None` means no candidate file defines it, which the caller must report
+    /// as a refusal rather than substituting a path and retrying.
+    ///
+    /// Uses `ignore::WalkBuilder` so it honours .gitignore, matching
+    /// `LightweightIndex::build_index`. Scanning 300k ignored files to find one
+    /// symbol is exactly the defect already fixed on the indexing path.
+    pub fn resolve_symbol_file(
+        &self,
+        workspace_root: &Path,
+        name: &str,
+    ) -> AppResult<Option<std::path::PathBuf>> {
+        let root = workspace_root.to_path_buf();
+        let walker = ignore::WalkBuilder::new(&root).follow_links(true).build();
+
+        for entry in walker {
+            let Ok(entry) = entry else { continue };
+            if !entry.file_type().is_some_and(|t| t.is_file()) {
+                continue;
+            }
+            let path = entry.path();
+            // Language::from_extension rejects unsupported files; skip them
+            // cheaply rather than letting the parser fail per candidate.
+            if Language::from_extension(path.extension()).is_none() {
+                continue;
+            }
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            let Some(language) = Language::from_extension(path.extension()) else {
+                continue;
+            };
+            let Ok(parser) = TreeSitterParser::new(language) else {
+                continue;
+            };
+            let path_str = path.to_string_lossy().to_string();
+            let Ok(symbols) = parser.find_all_symbols_with_path(&source, &path_str) else {
+                continue;
+            };
+            if symbols.iter().any(|s| s.name() == name) {
+                return Ok(Some(path.to_path_buf()));
+            }
+        }
+        Ok(None)
+    }
+
     /// Renames a symbol across the codebase
     ///
     /// This method:

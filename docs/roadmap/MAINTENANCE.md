@@ -1179,3 +1179,69 @@ Claims publicados contrastados contra lo observado:
 - `bash scripts/test-fast.sh`: verde. Nota: el selector CR-08 **no** elige las
   suites nuevas; hay que invocarlas explícitamente con
   `--features cognicode-core/test-contract-seam`. Sin revisar.
+
+## `safe_refactor` rename: el target symbol se leia como ruta (medido, cerrado)
+
+Superficie anunciada pero no funcional, encontrado al ejercer las cuatro
+herramientas `safe_refactor*` por el servidor release real, no leyendo el
+código.
+
+`product/tools.json` anuncia `target` como **"Target symbol name"** y el
+schema no pide ningún nombre de fichero. Pero los cuatro handlers
+(`rename`, `extract`, `inline`, `move`) resolvían
+
+```rust
+.unwrap_or_else(|| ctx.working_dir.join(&input.target));
+```
+
+es decir, leían el nombre del símbolo como una ruta. Medido contra el binario
+release por JSON-RPC sobre stdio:
+
+| entrada | respuesta real |
+|---|---|
+| `target: "old_name"` | `Failed to read <cwd>/old_name: No such file or directory` |
+| `+ params.file_path` a fichero sin extensión llamado `old_name` | `Unsupported file type: <cwd>/old_name` |
+
+**Un nombre de símbolo real no puede funcionar**: sin fichero llamado así
+falla por "No such file", y con él falla por "Unsupported file type". Rename
+estaba inalcanzable por el contrato anunciado, y no por un argumento mal
+puesto.
+
+**Por qué sobrevivía al gate**: el test unitario existente
+(`test_handle_safe_refactor_rename_with_new_name_extraction`) afirma sólo
+`assert!(result.is_ok())`, y eso es cierto incluso con el payload diciendo
+`success: false` más un mensaje de error. `Result::is_ok()` no distingue
+refusal de éxito.
+
+**Arreglo**: `RefactorService::resolve_symbol_file` localiza el fichero que
+realmente declara el símbolo, con `ignore::WalkBuilder` respetando
+`.gitignore` (el mismo criterio del arreglo del índice; buscar un símbolo
+recorriendo 300k ficheros ignorados reproduciría el defecto ya cerrado). Un
+`file_path` explícito sigue teniendo prioridad. Si ningún fichero declara el
+símbolo, el handler **rechaza explícitamente** diciendo que lo pase, en vez de
+adivinar una ruta y reintentar.
+
+**Verificado por el servidor release real**, con la entrada que el schema
+anuncia:
+
+```json
+{"action":"rename","success":true,"changes":[
+  {"file":".../lib.rs","old_text":"old_name","new_text":"new_name","line":0,"column":7},
+  {"file":".../lib.rs","old_text":"old_name","new_text":"new_name","line":5,"column":4}],
+ "validation_result":{"is_valid":true,"warnings":["Impact: 1 symbols affected"],"errors":[]},
+ "error_message":null}
+```
+
+Encuentra la definición (línea 0) y el punto de llamada (línea 5). El fichero
+en disco **no** cambia, que es lo correcto: rename es preview.
+
+RED antes del arreglo: `rename must succeed ... but got success=false
+error=Some("Invalid parameter: Failed to read .../old_name: No such file")`.
+GREEN después: 2/2. Los tests de refactor existentes siguen verdes
+(9 + 8 + 11 + 10), porque el `file_path` explícito que usan tiene prioridad.
+
+`safe_refactor_revalidate` se mantiene como **refusal deliberada y
+documentada**: el conjunto de ficheros cambiados por un apply no se persiste
+en ningún sitio que la herramienta pueda leer, y devolver
+`verdict_refused=true` con cero ficheros analizados se leería como
+"revisado, nada encontrado" en vez de "no se revisó nada". No se cambia.
