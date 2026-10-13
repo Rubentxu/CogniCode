@@ -875,6 +875,45 @@ además escribía fuera de los límites al indexar. La hipótesis del
 `follow_links(true)` queda igualmente cerrada: `build_lightweight_index` con
 `follow_links(false)` también abortaba.
 
+## Segundo defecto: el walk ignoraba el `.gitignore` (medido, cerrado)
+
+Con el abort arreglado, `build_lightweight_index` sobre el repo entero seguía
+sin responder. Medido sobre el binario release, mismo payload:
+
+| caso | antes | después |
+|---|---|---|
+| repo entero | **1813 s, sin respuesta** | **4.8 s, 61826 símbolos, `duration_ms=4708 status=ok`** |
+| `crates/` solo | 2.9 s, 53300 símbolos | — |
+| `sandbox/repos/` solo | **796.1 s, cero símbolos** | — |
+
+`sandbox/` tiene 311,779 ficheros; `sandbox/repos/` son 176,200 y está
+ignorado en `.gitignore:87`. Aportaba **cero** símbolos y consumía el 44% del
+tiempo. `git ls-files --others --ignored --exclude-standard` devuelve 28
+entradas ignoradas de primer nivel que el filtro no podaba, incluidas
+`release`, `specs`, `staging` y `rust-intelligence`.
+
+**Causa**: `LightweightIndex::build_index` solo poda con
+`WalkFilter::default()`, una lista fija de nombres convencionales (`target`,
+`node_modules`, `.sandbox`, ...). Esa lista no puede saber qué deja fuera un
+proyecto concreto, así que el `WalkDir` detrás descendía por todo.
+
+**Fix** (`97424015`): `ignore::WalkBuilder`, que lee `.gitignore`, `.ignore` y
+las reglas de exclusión directamente. `should_skip_path` se mantiene encima,
+no se reemplaza, así que el prune sigue siendo un único punto de decisión;
+`follow_links(true)` conserva el comportamiento anterior. `WalkFilter` no se
+toca: el defecto era que era el **único** filtro, no que estuviera mal.
+
+**RED confirmado revirtiendo el walker**: el mismo test no completó en 10
+minutos, que es el defecto reproducido como cuelgue. Con el fix:
+`gitignored_files_are_not_indexed` y `tracked_sources_are_still_indexed` en
+verde, leyendo los ficheros que el índice registró de verdad vía `entries()`.
+
+Con esto el defecto de "no puede indexar un repo de tamaño real" queda
+cerrado en su causa, no en su síntoma: la herramienta anunciada ahora indexa
+este repo en 4.8 s y responde `ok`. La pregunta del presupuesto (30 s vs 60 s
+de `category: "graph"`) queda sin tocar y sigue sin medirse por modo de
+despliegue.
+
 ## Deuda de gates estáticos — G2 de C8-R (medida 2026-10-13, HEAD `097e7b4a`)
 
 Medido con el compilador, no con aserciones de roadmap. Ambos fallos son
