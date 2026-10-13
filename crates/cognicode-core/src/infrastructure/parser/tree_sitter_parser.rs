@@ -1427,3 +1427,76 @@ mod w4_h_r4_1_tests {
         );
     }
 }
+
+/// Regression guard for the tree-sitter-haskell 0.23.1 lookahead overflow.
+///
+/// This lives in the crate (not in `tests/`) so it can also run under
+/// `cargo test --release`, which is the only mode where the 0.23.1 scanner
+/// actually performs the invalid write. At opt-level 0 the C compiler hoists
+/// the `self->contents` load out of the `array_push` macro and the store lands
+/// in the live buffer, so a debug-only run cannot observe the bug.
+///
+/// Measured with C instrumentation on 0.23.1:
+/// `AddressSanitizer: heap-buffer-overflow WRITE of size 4` in
+/// `tree-sitter-haskell-0.23.1/src/scanner.c:651` (`advance`), called from
+/// `take_line` while scanning the body of a `--` line comment. That write
+/// corrupted the heap and aborted `build_lightweight_index` with
+/// `corrupted size vs. prev_size`.
+///
+/// Minimal trigger: a line comment body of at least 9 bytes (`-- Haskel`).
+#[cfg(test)]
+mod haskell_lookahead_overflow_tests {
+    use super::*;
+    use crate::infrastructure::parser::Language;
+
+    fn haskell() -> TreeSitterParser {
+        TreeSitterParser::new(Language::Haskell).expect("haskell grammar must load")
+    }
+
+    #[test]
+    fn haskell_line_comment_of_minimal_trigger_length_survives() {
+        // The exact minimized input that produced the ASan report on 0.23.1.
+        let tree = haskell()
+            .parse_tree("-- Haskel")
+            .expect("minimal haskell comment trigger must parse");
+        assert_eq!(
+            tree.root_node().child(0).map(|n| n.kind()),
+            Some("comment"),
+            "the trigger input must still parse as a haskell line comment"
+        );
+        assert!(!tree.root_node().has_error());
+    }
+
+    #[test]
+    fn haskell_comment_bodies_across_the_first_growth_boundary_survive() {
+        // The lookahead array grows geometrically from 8, so the invalid write
+        // only starts once a comment body is long enough to force a realloc.
+        // Sweep across that boundary and well past it.
+        for len in 0..64usize {
+            let body = "x".repeat(len);
+            let source = format!("-- {body}\nmain = 1\n");
+            let tree = haskell()
+                .parse_tree(&source)
+                .unwrap_or_else(|e| panic!("haskell comment body length {len} failed: {e:?}"));
+            assert!(
+                !tree.root_node().has_error(),
+                "haskell comment body length {len} produced an error node"
+            );
+        }
+    }
+
+    #[test]
+    fn haskell_file_opening_with_a_comment_survives() {
+        // The shape that reached production: `build_lightweight_index` walking
+        // a directory whose only Haskell file opens with a comment.
+        let source = "-- Haskell test fixture\nmodule Main where\n\nmain :: IO ()\nmain = putStrLn \"hi\"\n";
+        let tree = haskell()
+            .parse_tree(source)
+            .expect("haskell file starting with a comment must parse");
+        assert!(
+            !tree.root_node().has_error(),
+            "valid haskell source produced an error node: {:?}",
+            tree.root_node().to_sexp()
+        );
+    }
+}
