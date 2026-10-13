@@ -416,6 +416,17 @@ bajo ASan dio un falso "vacío". Dos errores míos, no del defecto:
   moría sin que su salida llegara a escribirse. Un `pgrep` contra el nombre
   del binario matcheaba su propio shell y daba la impresión de que seguía
   vivo. Comprobación real: `ps -o time=` sobre el PID concreto.
+- Una recarga del servidor abortó la sesión y mató el proceso en segundo
+  plano. `nohup ... &` no sobrevive; hace falta `setsid setsid ... < /dev/null`
+  para desacoplarlo del ciclo de vida de la sesión.
+
+**Estado de la corrida decisive** (ASan Rust+C sobre el `build_index` real):
+tras **48 min de CPU acumulados** (CPU ≈ transcurrido, o sea no está en
+deadlock), **cero** reportes de AddressSanitizer. El binario sin instrumentar
+aborta en ~4 s; el mismo trabajo bajo ASan seguía vivo. Refuerza que la
+corrupción depende del ritmo, y que el `odr-violation` de 2f no la provoca.
+La corrida no había terminado al cerrar la sesión, así que el resultado final
+queda **pendiente**, no verde.
 
 Lección operativa: para una corrida larga y silenciosa hay que desvincularla
 del wrapper, escribir la salida incrementalmente y verificar el PID real, no
