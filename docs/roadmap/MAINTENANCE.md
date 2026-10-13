@@ -294,10 +294,74 @@ Corrección de método: el test de repro tenía `parent().join("crates")`, que
 apuntaba a `crates/crates` (inexistente) y fallaba por el motivo equivocado.
 Arreglado en `7b638d18`.
 
-**Pendiente**: confirmar la escritura fuera de límites con ASan sobre el
-runtime C de tree-sitter (ver 2f).
+**Pendiente**: ninguno para el diagnóstico. Confirmado en 2f; el camino de
+instrumentación, en 2g.
 
-### 2f. ASan: dos intentos y lo que cada uno demuestra
+### 2f. CAUSA RAÍZ CONFIRMADA: colisión de globales `map` entre gramáticas
+
+AddressSanitizer, con **Rust y C** instrumentados, nombra el defecto:
+
+```
+ERROR: AddressSanitizer: odr-violation (0x56098f0e05e0):
+  [1] size=100 'map' src/parser.c:4347:7 in cognicode-mcp
+  [2] size=100 'map' src/parser.c:4381:7 in cognicode-mcp
+SUMMARY: AddressSanitizer: odr-violation: global 'map' at src/parser.c:4347:7
+```
+
+**Mecanismo** (`tree-sitter-0.27.0/src/parser.h:203`):
+
+```c
+#define ADVANCE_MAP(...)                                              \
+  {                                                                   \
+    static const uint16_t map[] = { __VA_ARGS__ };                    \
+    for (uint32_t i = 0; i < sizeof(map)/sizeof(map[0]); i += 2) {     \
+      if (map[i] == lookahead) { state = map[i+1]; goto next_state; }  \
+    }                                                                 \
+  }
+```
+
+`ADVANCE_MAP` declara un `static const uint16_t map[]` **dentro del cuerpo de
+la función**, con un nombre fijo y sin ninguna marca de unicidad. El código C
+generado para cada gramática usa esa macro docenas de veces (31 invocaciones
+en `tree_sitter_rust`), así que **un mismo `.o` de gramática contiene muchos
+globales distintos que se llaman todos `map`**.
+
+Eso no es un error del compilador: los `static` con el mismo nombre en
+distinto ámbito se guardan en `.rodata` con nombres tipo `map.1234`. Pero al
+enlazar 30+ gramáticas en **un solo binario**, el enlazador les da a todos el
+mismo símbolo `map`. En el binario final hay, por tanto, **decenas de arrays
+`static const uint16_t map[]` distintos, con el mismo nombre y distinto
+tamaño, que el enlazador solapa en una sola dirección**.
+`sizeof(map)/sizeof(map[0])`
+se evalúa con el tamaño compilado en cada copia, así que el bucle puede leer
+o escribir más allá del array que en realidad le corresponde.
+
+De ahí el `corrupted size vs. prev_size`: `state` es un `TSStateId` (índice),
+y el código generado asume que la tabla de estados que sigue es la del
+propio parser. Al leer de la copia equivocada, sale un índice fuera de rango
+y se escribe fuera de los límites de una tabla de estados del heap. glibc lo
+detecta en la siguiente `malloc`, que es exactamente el backtrace del gdb:
+`SymbolFqn::from_legacy_side` es solo el testigo.
+
+Por qué los síntomas encajan con lo medido antes:
+- `build_graph` pasa: cachea por fichero y por volumen no repite el patrón.
+- Los probes por directorio y por lenguaje pasan: un subárbol que exercise
+  menos gramáticas o menos transiciones no llega al solape.
+- Bajo ASan el abort **no** aparece y responde `internal: timeout`: al
+  ralentizarse 5-10x no se alcanza la transición que corrompe dentro de los 30 s.
+- Un solo fichero por lenguaje pasa: los 30 `set_language` cargan bien; el
+  conflicto no es de carga de gramática sino de enlace.
+
+**Alcance**: no es un defecto del código de este repo — `cognicode` enlaza 30
+gramáticas porque `Language::to_ts_language` las referencia todas. Cualquier
+consumidor que enlace muchas gramáticas tree-sitter en un binario tiene el
+mismo riesgo. Workarounds reales: (a) enlazar cada gramática en un `.so`
+separado; (b) parchear `ADVANCE_MAP` para generar nombres únicos (p. ej.
+`static const uint16_t map_##__LINE__[]`); (c) evitar el enlace monolítico.
+**No se ha aplicado ninguno**: cambiar la estrategia de enlace es una
+decisión de release, no un fix de una línea.
+
+### 2g. ASan: cómo se llegó al diagnóstico
 
 El camino del stack es C: `tree-sitter` 0.27 compila su runtime con `cc`
 dentro de su `build.rs` (`src/parser.c`, `stack.c`, `lexer.c`, ...). Instrumentar
@@ -319,17 +383,18 @@ sólo Rust no instrumenta esos objetos, y por eso el primer ASan **no vio nada**
 
   Sin Abort, sin `corrupted size`, y **cero** reportes de AddressSanitizer.
   El servidor sobrevivió y devolvió `isError: true` con timeout de 30 s.
-- **Intento 3** (en curso): `CFLAGS`/`CXXFLAGS` con `-fsanitize=address` para
-  instrumentar también el C de tree-sitter. Sin esto ASan no puede atribuir
-  el fallo, porque la escritura está en código que no compila el sanitizer.
+- **Intento 3** (el que diagnostica): `CFLAGS`/`CXXFLAGS` con
+  `-fsanitize=address` para instrumentar también el C de tree-sitter.
+  Verificado antes de correr: el objeto del runtime
+  (`build/tree-sitter/<hash>/out/<hash>-lib.o`) pasó de 0 a **23 referencias
+  `__asan`**, así que esta vez el C sí estaba instrumentado. Resultado: el
+  `odr-violation` de 2f.
 
-Consecuencia útil del intento 2: bajo ASan (unas 5-10x más lento) el
-`build_lightweight_index` **no llega a corromper el heap en 30 s**. El
-`corrupted size vs. prev_size` del binario normal aparece a los ~4 s. Eso
-apunta a que la corrupción depende del **ritmo**: una ventana temporal o de
-reutilización de memoria que ASan al ralentizar no llega a alcanzar dentro
-del timeout. Refuerza la sospecha sobre el runtime C y descarta aún más una
-causa en el Rust de este crate.
+Consecuencia útil del intento 2: bajo ASan (5-10x más lento) el
+`build_lightweight_index` **no llega a corromper el heap en 30 s**, mientras que
+el `corrupted size vs. prev_size` del binario normal aparece a los ~4 s. La
+corrupción depende del **ritmo**: una ventana temporal o de reutilización de
+memoria que ASan al ralentizar no alcanza dentro del timeout.
 
 **Defecto de contrato adicional descubierto en vivo**: `build_lightweight_index`
 sobre este repo tarda más de 30 s y el servidor responde `internal: timeout`
