@@ -445,6 +445,44 @@ legítimo, pero **no es el bloqueante de release** que buscaba. No es un
 fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
 técnica declarada, no como causa del crash.
 
+### 2m. La bisección por mitades NO crashea, pero la copia real SÍ: el heap no es el contenido
+
+La reducción por mitades de 2l dejó un resultado confuso hasta que se midió
+bien. Los 44 hijos de `sandbox/fixtures` se reducen así:
+
+| conjunto | símbolos | resultado |
+|---|---|---|
+| mitad A (22 dirs) | 237 | `ok` |
+| mitad B (22 dirs) | 7056 | `ok` |
+| todos (44 dirs) | 7293 | `ok` **vía symlink**, `CRASH` **vía real** |
+| `scripts/` | 599 | `ok` |
+| `scale/` | 6098 | `ok` |
+
+Y aquí está el dato que lo resuelve: **la misma lista de 44, hecha con symlinks,
+indexa 7293 símbolos sin crash; hecha con ficheros reales, aborta**. El diff de
+los ficheros recorridos da **831 en ambos casos, conjuntos idénticos, cero
+diferencias**. Mismos bytes, mismos paths relativos, mismos símbolos esperados.
+
+Se comprobó que no es culpa del symlink en sí: `cp -r` de 15 de esos directorios
+a un path nuevo (ficheros reales) **vuelve a abortar**. Y ningún fichero
+individual (el `lib.rs` de 22 KB, el `package-lock.json` de 138 KB, el
+`inventory.json` de 17 KB) crasha solo. Tampoco hay ficheros no-UTF8 (0 de 765).
+
+Conclusión medida: **el disparador no es el contenido, ni la gramática, ni el
+volumen, ni el camino.** Es la **identidad del fichero en el sistema de
+ficheros** — es decir, cómo el runtime C de tree-sitter indexa el fichero al
+abrirlo. Esto es coherente con 2j: una cabecera de chunk que no es de ASan sólo
+aparece si alguien escribe con un puntero que no es de Rust. Y encaja con
+que la C API de tree-sitter (`ts_node_*`) trabaja sobre punteros al
+almacenamiento del subárbol, que para ficheros grandes se referencia por
+`mmap`/offset y no por copia.
+
+**Lo que esto deja abierto, con honestidad**: es una correlación fuerte y
+reproducible (6/6 real vs 6/6 symlink), pero **no es una atribución**. Falta
+instrumentar el C de tree-sitter en release para ver el `heap-buffer-overflow`
+con stack en C, que es lo que convertiría esto en causa. Y `MALLOC_CHECK_`/ASan
+no lo han producido hasta ahora.
+
 ### 2l. CASO MÍNIMO: `sandbox/fixtures` aborta en 3 s (3/3)
 
 Bajar a un caso mínimo era el paso 2 de 2k y resultó ser el más rentable. Con el
