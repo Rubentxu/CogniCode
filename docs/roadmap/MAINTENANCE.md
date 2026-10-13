@@ -213,7 +213,7 @@ main` por bypass.
 
 ---
 
-### 2e. Bisección del SIGABRT — causa raíz localizada
+### 2e. Bisección del SIGABRT — localised, sin causa raíz
 
 Sesión 2026-10-13, HEAD `7b638d18`.
 
@@ -294,12 +294,12 @@ Corrección de método: el test de repro tenía `parent().join("crates")`, que
 apuntaba a `crates/crates` (inexistente) y fallaba por el motivo equivocado.
 Arreglado en `7b638d18`.
 
-**Pendiente**: ninguno para el diagnóstico. Confirmado en 2f; el camino de
-instrumentación, en 2g.
+**Estado**: la causa raíz del SIGABRT sigue **sin identificar**. El
+`odr-violation` de 2f es real pero queda descartado como causa en 2h.
 
-### 2f. CAUSA RAÍZ CONFIRMADA: colisión de globales `map` entre gramáticas
+### 2f. ODR violation de `map` — hallazgo real, pero NO es la causa del abort
 
-AddressSanitizer, con **Rust y C** instrumentados, nombra el defecto:
+AddressSanitizer, con **Rust y C** instrumentados, reporta:
 
 ```
 ERROR: AddressSanitizer: odr-violation (0x56098f0e05e0):
@@ -320,61 +320,77 @@ SUMMARY: AddressSanitizer: odr-violation: global 'map' at src/parser.c:4347:7
   }
 ```
 
-`ADVANCE_MAP` declara un `static const uint16_t map[]` **dentro del cuerpo de
-la función**, con un nombre fijo y sin ninguna marca de unicidad. El código C
-generado para cada gramática usa esa macro docenas de veces (31 invocaciones
-en `tree_sitter_rust`), así que **un mismo `.o` de gramática contiene muchos
-globales distintos que se llaman todos `map`**.
+`ADVANCE_MAP` declara un `static const uint16_t map[]` dentro del cuerpo de
+la función con un nombre fijo. El C generado de cada gramática la invoca
+docenas de veces (31 en `tree_sitter_rust`), así que un mismo `.o` contiene
+muchos arrays distintos llamados todos `map`. Al enlazar 30+ gramáticas en un
+binario, el enlazador les asigna a todos el símbolo `map`.
 
-Eso no es un error del compilador: los `static` con el mismo nombre en
-distinto ámbito se guardan en `.rodata` con nombres tipo `map.1234`. Pero al
-enlazar 30+ gramáticas en **un solo binario**, el enlazador les da a todos el
-mismo símbolo `map`. En el binario final hay, por tanto, **decenas de arrays
-`static const uint16_t map[]` distintos, con el mismo nombre y distinto
-tamaño, que el enlazador solapa en una sola dirección**.
-`sizeof(map)/sizeof(map[0])`
-se evalúa con el tamaño compilado en cada copia, así que el bucle puede leer
-o escribir más allá del array que en realidad le corresponde.
-
-De ahí el `corrupted size vs. prev_size`: `state` es un `TSStateId` (índice),
-y el código generado asume que la tabla de estados que sigue es la del
-propio parser. Al leer de la copia equivocada, sale un índice fuera de rango
-y se escribe fuera de los límites de una tabla de estados del heap. glibc lo
-detecta en la siguiente `malloc`, que es exactamente el backtrace del gdb:
-`SymbolFqn::from_legacy_side` es solo el testigo.
-
-Por qué los síntomas encajan con lo medido antes:
-- `build_graph` pasa: cachea por fichero y por volumen no repite el patrón.
-- Los probes por directorio y por lenguaje pasan: un subárbol que exercise
-  menos gramáticas o menos transiciones no llega al solape.
-- Bajo ASan el abort **no** aparece y responde `internal: timeout`: al
-  ralentizarse 5-10x no se alcanza la transición que corrompe dentro de los 30 s.
-- Un solo fichero por lenguaje pasa: los 30 `set_language` cargan bien; el
-  conflicto no es de carga de gramática sino de enlace.
-
-**Alcance**: no es un defecto del código de este repo — `cognicode` enlaza 30
-gramáticas porque `Language::to_ts_language` las referencia todas. Cualquier
-consumidor que enlace muchas gramáticas tree-sitter en un binario tiene el
-mismo riesgo. Workarounds reales: (a) enlazar cada gramática en un `.so`
-separado; (b) parchear `ADVANCE_MAP` para generar nombres únicos (p. ej.
-`static const uint16_t map_##__LINE__[]`); (c) evitar el enlace monolítico.
-**No se ha aplicado ninguno**: cambiar la estrategia de enlace es una
-decisión de release, no un fix de una línea.
-
-**Censo de símbolos (verificación independiente del mecanismo)**:
+**Censo de símbolos** (verificación independiente del sanitizer):
 
 ```
-$ nm cc-asan/release/cognicode-mcp | grep -cE '\bmap\.[0-9]+'
+$ nm cognicode-mcp | grep -cE '\bmap\.[0-9]+'
 1936
-$ nm cc-asan/release/cognicode-mcp | grep -E '\bmap\.[0-9]+' | awk '{print $1}' | sort -u | wc -l
+$ nm cognicode-mcp | grep -E '\bmap\.[0-9]+' | awk '{print $1}' | sort -u | wc -l
 1934
 ```
 
-Es decir: 1936 arrays `map` de bloque estático en el binario enlazado, y sólo
-1934 direcciones distintas — hay nombres solapados. `nm` del binario final
-confirma la colisión de nombres que ASan señala, sin depender de ASan.
+1936 arrays de bloque estático, 1934 direcciones distintas: hay nombres
+solapados. El hallazgo es real.
 
-### 2g. ASan: cómo se llegó al diagnóstico
+### 2g. CORRECCIÓN: el `odr-violation` NO causa el `corrupted size`
+
+**Este apartado corrige una conclusión anterior mía.** Escribí que la
+colisión de `map` explicaba el `corrupted size vs. prev_size`. **No lo
+explica**, y lo he descartado por medición directa:
+
+`crates/cognicode-core/tests/map_symbol_collision_repro.rs` enlaza las
+gramáticas reales en un binario de test y parsea el árbol `crates/` con la
+gramática de verdad, bajo ASan **con `detect_odr_violation=0`** para que la
+corrida no pare en la queja de nombres y siga hasta el fallo de memoria real:
+
+```
+test map_symbol_collision_corrupts_heap_under_asan ...
+     parsed 915 files across 5 grammars, 53281 symbols
+test result: ok. 1 passed; 0 failed
+ERROR: AddressSanitizer reports: 0
+```
+
+Cero errores de ASan. 915 ficheros, 5 gramáticas, 53281 símbolos, ninguna
+escritura fuera de límites. Si la colisión fuera la causa del abort, este
+test habría fallado aquí.
+
+Por qué el ODR violation **no** corrompe memoria, a pesar de lo que sugiere
+el mecanismo: los dos globales que ASan señala tienen **el mismo tamaño
+(`size=100`)** y **la misma dirección**. El enlazador plegó copias de datos
+idénticos o equivalentemente alineados. `sizeof(map)/sizeof(map[0])` se
+evalúa con el tamaño que compiló cada copia, y como el tamaño coincide, el
+bucle `for` recorre el mismo número de elementos y lee dentro de los límites.
+La colisión es un defecto de nombres real que **debe** corregirse, pero es
+latente y benigno en esta forma: no produce corrupción de heap.
+
+**Estado real del defecto del SIGABRT: sin causa raíz identificada.** Lo que
+sabemos con certeza:
+- Es determinista (~4 s), sólo en el proceso del servidor MCP, no en el
+  camino directo y monothread de `LightweightIndex::build_index`.
+- glibc lo detecta en un `malloc` de 21 bytes dentro de Rust seguro
+  (`SymbolFqn::from_legacy_side`), o sea el backtrace es el *testigo*.
+- No es de gramáticas (las 30 cargan y parsean), ni de symlinks, ni de
+  rayon, ni de la colisión de `map`.
+- Bajo ASan no se reproduce dentro del timeout de 30 s: depende del ritmo.
+
+Siguiente paso honesto: instrumentar **el runtime C de tree-sitter durante
+el propio camino que aborta**, no un test de parseo aparte. El test anterior
+usa `TreeSitterParser::new` por lenguaje; el camino real pasa por
+`spawn_blocking` + `LightweightStrategy::build_index` + `LightweightIndex`. La
+diferencia puede estar en el patrón de invocación, no en los datos.
+
+**Sobre el símbolo `map`**: pendiente de arreglar por ser un `odr-violation`
+legítimo, pero **no es el bloqueante de release** que buscaba. No es un
+fix de una línea y cambia cómo se enlaza el binario; se deja como deuda
+técnica declarada, no como causa del crash.
+
+### 2h. ASan: cómo se llegó al diagnóstico
 
 El camino del stack es C: `tree-sitter` 0.27 compila su runtime con `cc`
 dentro de su `build.rs` (`src/parser.c`, `stack.c`, `lexer.c`, ...). Instrumentar
