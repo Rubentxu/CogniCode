@@ -1275,6 +1275,94 @@ pub struct CompositeImpactOutput {
     pub suggested_prerequisites: Vec<serde_json::Value>,
 }
 
+/// Handler for `composite_impact_query`.
+///
+/// The tool was advertised in `product/tools.json` and given a published
+/// output schema by B4.W5, but no dispatch arm ever existed, so a live client
+/// that discovered it and called it got `isError=true` / `tool not found`. The
+/// same defect class as the phantom `cogh` tool: the catalog is the source of
+/// truth for `tools/list`, so a catalog entry without an arm is a ghost.
+///
+/// `execute_composite` is synchronous, pure, and reads only the catalog, so the
+/// handler validates its input and projects the result onto
+/// [`CompositeImpactOutput`]. It deliberately does NOT consult a graph: the
+/// catalog pins `requires_graph: false`, and the B4.W1/W2/W3 extractors are
+/// still unwired, so the evidence fields stay `None`/empty while the
+/// `verdict_refused` pair travels on the wire. That empty-but-refused shape is
+/// the advertised contract, not an all-clear.
+#[cognicode_macros::aix_tool(
+    name = "composite_impact_query",
+    description = "Aggregate impact paths, architecture observations, and quality findings for a symbol, plus catalog-derived follow-ups and prerequisites. Investigative, NOT authoritative: the result always carries verdict_refused=true.",
+    input_schema = CompositeImpactQueryInput
+)]
+pub async fn handle_composite_impact_query(
+    ctx: &HandlerContext,
+    input: crate::interface::mcp::schemas::CompositeImpactQueryInput,
+) -> HandlerResult<CompositeImpactOutput> {
+    if input.qualified_name.trim().is_empty() {
+        return Err(HandlerError::InvalidInput(
+            "qualified_name must not be empty".into(),
+        ));
+    }
+
+    let file_path = match input.file_path.as_deref() {
+        Some(raw) if !raw.trim().is_empty() => std::path::PathBuf::from(raw),
+        // The catalog describes file_path as best-effort. Falling back to the
+        // working directory keeps the tool answering rather than failing on a
+        // field the client was never required to supply.
+        _ => ctx.working_dir().to_path_buf(),
+    };
+
+    // Fully qualified: this module already has a different `SymbolId` in
+    // scope (the call-graph one), and importing these names would silently
+    // resolve to the wrong types.
+    let query = crate::impact::composite::CompositeImpactQuery {
+        symbol: crate::interface::symbol_identity::SymbolId {
+            qualified_name: input.qualified_name.clone(),
+            file_path,
+            // Not on the wire (see CompositeImpactQueryInput). The composite
+            // only copies these bounds into the catalog tool-refs, so an empty
+            // range is the honest "the client did not tell us where the symbol
+            // ends" rather than a fabricated one.
+            byte_range: 0..0,
+        },
+        workspace_root: ctx.working_dir().to_path_buf(),
+        depth_limit: None,
+    };
+
+    let result = crate::impact::composite::execute_composite(&query);
+
+    // The refusal pair is a contract invariant, not a value the caller can
+    // vary. Re-assert it here so a future edit to the composite cannot turn
+    // this tool into something that appears to return a verdict.
+    debug_assert!(
+        result.verdict_refused,
+        "execute_composite must always refuse to conclude"
+    );
+
+    Ok(CompositeImpactOutput {
+        verdict_refused: true,
+        verdict_refused_reason: result.verdict_refused_reason.to_string(),
+        impact: result.impact,
+        architecture: result.architecture,
+        findings: result
+            .findings
+            .iter()
+            .map(|f| serde_json::to_value(f).unwrap_or(serde_json::Value::Null))
+            .collect(),
+        suggested_follow_ups: result
+            .suggested_follow_ups
+            .iter()
+            .map(|t| serde_json::to_value(t).unwrap_or(serde_json::Value::Null))
+            .collect(),
+        suggested_prerequisites: result
+            .suggested_prerequisites
+            .iter()
+            .map(|t| serde_json::to_value(t).unwrap_or(serde_json::Value::Null))
+            .collect(),
+    })
+}
+
 /// Output for `safe_refactor_revalidate`.
 ///
 /// `product/tools.json` has advertised a contract for this tool since B4.W4,

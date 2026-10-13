@@ -2593,3 +2593,19 @@ pub struct ReadViewSpecInput {
 pub struct ReadViewSpecOutput {
     pub view: ViewSpec,
 }
+
+/// Input for composite_impact_query.
+///
+/// Mirrors `product/tools.json`: `qualified_name` is required, `file_path` is
+/// the best-effort location. `byte_range` is not on the wire -- the composite
+/// only uses it to fill the catalog tool-refs, and a client has no reason to
+/// assert it -- so the handler derives the full range locally.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CompositeImpactQueryInput {
+    /// Qualified name of the symbol to investigate.
+    pub qualified_name: String,
+
+    /// File where the symbol is defined (best-effort location).
+    #[serde(default)]
+    pub file_path: Option<String>,
+}

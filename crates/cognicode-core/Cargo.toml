@@ -50,6 +50,12 @@ test-support = []
 # stays free of the lbug native dependency. Activated by the `ladybug`
 # feature in `cognicode-cli`.
 evidence-cli-ladybug = []
+# `test-contract-seam` exposes internals that contract tests need to reach
+# (`rmcp_adapter::dispatch_tool_for_contract_test`). Integration tests under
+# `tests/` compile the crate *without* `cfg(test)`, so a `#[cfg(test)]`-only
+# re-export would be invisible to them and the guard would silently stop
+# testing anything. Off by default: the default build gains no code from it.
+test-contract-seam = []
 
 [dependencies]
 # Proc macros for tool definitions
@@ -195,3 +201,10 @@ harness = false
 [[bench]]
 name = "b6_w2_reproducible_perf"
 harness = false
+
+# The ghost-tool guard needs the contract seam to call the real dispatcher.
+# `required-features` keeps it out of builds without the seam instead of
+# letting it fail to compile there.
+[[test]]
+name = "undispatchable_tool_guard"
+required-features = ["test-contract-seam"]

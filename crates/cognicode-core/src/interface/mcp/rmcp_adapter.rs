@@ -1624,6 +1624,15 @@ async fn call_tool_handler(
                     .map_err(InterfaceError::Internal)
             }
 
+            "composite_impact_query" => {
+                let input: crate::interface::mcp::schemas::CompositeImpactQueryInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_composite_impact_query(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
             _ => Err(InterfaceError::ToolNotFound(tool_name.to_string())),
         }
     };
@@ -1692,6 +1701,33 @@ async fn call_tool_handler(
     }
 
     result
+}
+
+/// Test seam: call a tool by name through the real dispatcher.
+///
+/// `call_tool_handler` is private, so a contract test could previously only
+/// assert against a hand-maintained name array — which is how an advertised
+/// tool with no arm (`composite_impact_query`) shipped green. This exposes the
+/// dispatcher itself, in test builds only, so `tests/undispatchable_tool_guard.rs`
+/// can ask the runtime which names it can actually route instead of trusting a
+/// second list that drifts alongside the first.
+#[cfg(any(test, feature = "test-contract-seam"))]
+pub async fn dispatch_tool_for_contract_test(
+    ctx: &HandlerContext,
+    name: &str,
+    arguments: serde_json::Value,
+) -> InterfaceResult<serde_json::Value> {
+    // `CallToolRequestParams` is `#[non_exhaustive]`, its `arguments` field is a
+    // `Map` rather than a free `Value`, and its `name` is `Cow<'static, str>`.
+    // So the arguments are unwrapped to a `Map` and the name is owned -- both
+    // through the rmcp builder, the same path a real client takes.
+    let arguments = arguments.as_object().cloned().unwrap_or_default();
+    let raw = call_tool_handler(
+        ctx,
+        CallToolRequestParams::new(name.to_string()).with_arguments(arguments),
+    )
+    .await?;
+    Ok(serde_json::from_str(&raw).unwrap_or(serde_json::Value::Null))
 }
 
 #[cfg(test)]
