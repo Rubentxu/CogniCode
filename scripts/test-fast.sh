@@ -26,6 +26,24 @@ cd "${REPO_ROOT}"
 SELECTOR="${REPO_ROOT}/scripts/ci/select-suites.sh"
 BASELINE="${REPO_ROOT}/scripts/known_failures.yaml"
 BASELINE_CHECK="${REPO_ROOT}/scripts/check_known_failures.py"
+ROADMAP_RATCHET="${REPO_ROOT}/scripts/ci/test_roadmap_version_ratchet.py"
+
+# ---------- roadmap coherence ratchet ----------
+# MEASURED 2026-10-14 (JOURNAL N+106): this ratchet was FAILING for 112
+# commits because neither gate invoked it. It costs 0.08 s, which is why it
+# belongs here and not only in the full battery: drift is cheapest to catch on
+# the loop that runs after every change.
+#
+# It runs at the TOP, before the strategy dispatch, because every branch below
+# (noop, fallback, suite loop) exits on its own. A check placed at the bottom
+# would be skipped exactly when the selector degrades, which is when a
+# developer most needs the other contracts to still hold.
+if [ -f "$ROADMAP_RATCHET" ]; then
+  printf '\n=== roadmap version ratchet ===\n'
+  python3 "$ROADMAP_RATCHET" || roadmap_rc=1
+else
+  roadmap_rc=0
+fi
 
 # ---------- args ----------
 MODE="auto"
@@ -95,7 +113,7 @@ fi
 # Strategy noop: nada que correr
 if [ "$STRATEGY" = "noop" ]; then
   echo "noop: cambios no impactan suites (solo metadata)."
-  exit 0
+  exit "$roadmap_rc"
 fi
 
 # Fallback o strategy vacía → ejecutar subset conservador
@@ -105,7 +123,9 @@ if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
   cargo_clippy_rc=$?
   cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
   clippy_rc=$?
-  [ "$cargo_clippy_rc" -eq 0 ] && [ "$clippy_rc" -eq 0 ] && exit 0 || exit 1
+  # The roadmap ratchet result is ANDed in, never ORed: a green subset must
+  # not be able to hide a red contract.
+  [ "$cargo_clippy_rc" -eq 0 ] && [ "$clippy_rc" -eq 0 ] && [ "$roadmap_rc" -eq 0 ] && exit 0 || exit 1
 fi
 
 # ---------- mapear suites a comandos ----------
@@ -128,7 +148,7 @@ run_suite() {
   esac
 }
 
-overall_rc=0
+overall_rc=$roadmap_rc
 seen=""
 for s in $(printf '%s' "$SUITES" | tr ',' ' '); do
   case " $seen " in *" $s "*) continue ;; esac

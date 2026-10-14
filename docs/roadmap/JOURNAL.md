@@ -15038,3 +15038,96 @@ inflados, el `cargo test | tail` cuyo exit era el de `tail`, y el worktree con
 **41** fallos que no eran de HEAD. En los tres casos el detalle —una linea de
 log, un `$?`, un `CARGO_MANIFEST_DIR`— era mas barato que el agregado. Un
 conteo agregado no es una medicion: es una suma que nadie ha contrastado.
+
+## N+106 — Un ratchet existed, estaba en rojo, y nadie lo ejecutaba
+
+**Rama** `main` · **Bloque** Gobernanza del roadmap.
+**SHA** `pending`. Cierra N+105.
+
+### El hueco
+
+`docs/roadmap/CURRENT.md` es el snapshot operativo que AGENTS.md §6 obliga a
+leer al empezar cada sesion. Escribi en N+105 que el bloque de blockers "no
+tiene fila en el roadmap" y lo deje como prosa. Al verificarlo aparecio otra
+cosa: **ese snapshot mintia, y hacia 112 commits.**
+
+    ROADMAP version ratchet: FAIL
+      - test_current_sha_matches_head: FAIL: CURRENT.md declara SHA 6af11bf83f07,
+        HEAD es 4cde125712b9
+      - test_control_all_green: FAIL: (idem)
+
+    rc=1
+
+### Las cinco afirmaciones verificadas como falsas
+
+| `CURRENT.md` afirmaba | Medido |
+|---|---|
+| `cargo fmt --all --check` → exit 0 | **100 ficheros** con deriva |
+| version workspace `0.101.10` | **`0.101.16`** |
+| proximo release `v0.101.11` | publicados hasta **`v0.101.16`** |
+| "`docs/roadmap/*` excluido por `.gitignore`, no se commitean" | **los 4 estan versionados** (`.gitignore:200` los excluye, `:199` y `:201-202` los re-incluyen) |
+| "40 commits ahead" | **53** |
+
+La cuarta es la mas peligrosa, y no por ser falsa sino porque **instruia mal**:
+decir "estas modificaciones no se commitean" es una instruccion de no
+registrar receipts. `AGENTS.md` exige registar un recibo por unidad. El
+snapshot autorizaba a saltarselo.
+
+### La causa raiz: un ratchet sin red
+
+`scripts/ci/test_roadmap_version_ratchet.py` existe **precisamente** para esto.
+Su docstring describe el hueco, declara cuatro mutaciones vistas caer y se llama
+"la red minima". Verificado:
+
+    grep -rn 'roadmap_version_ratchet' scripts/ .github/ *.pipeline.kts
+    (vacio)
+
+**Ningun gate lo invoca.** Ni `test-fast.sh` ni `test-full.sh`. El fichero se
+puede ejecutar a mano, asi que cuando alguien lo ejecuto en su ultimo commit
+(`1c664066`, hace 112 commits) dio verde. Después dejo de correr, y desde
+entonces el drift crecio **sin que nada lo viera**.
+
+Es el mismo patron que N+104 y N+105, una tercera vez: **una regla enunciada y
+supuesta cierta**. Pero aqui es mas grave que una regla de test: es la red que
+debia vigilar a las demas redes.
+
+### Correccion, y el lugar donde va importa
+
+Anadido a los dos gates. En `test-full.sh` al final, que es donde esta el resto.
+En `test-fast.sh` **al principio**, y esto no es cosmetico: el script tiene
+`exit` propios en tres ramas (`--dry-run`, `noop`, `fallback`). Mi primer
+cambio lo puso al final, junto al baseline check, y **medido** resulto que la
+rama `fallback` —que es la que corre ahora mismo, porque `scripts/**` no
+matchea ninguna suite del selector— salia antes y **nunca llegaba** al ratchet.
+Un check al final de un script con salidas propias es un check opcional.
+
+Medido de ambos lados, sobre el script real:
+
+| Escenario | Resultado |
+|---|---|
+| SHA de `CURRENT.md` mutado a un no-ancestro | ratchet **FAIL**, `test-fast.sh` **rc=1** |
+| `CURRENT.md` restaurado | ratchet **OK** |
+
+Y el residual: `test-fast.sh` sigue dando **rc=1** con el snapshot limpio, pero
+la causa es **clippy preexistente** (`rc=101` medido), identica a antes de este
+cambio. El ratchet esta **AND** con el resto de la rama, nunca **OR**: un
+subset verde no puede tapar un contrato rojo.
+
+### Sobre el snapshot regenerado
+
+Regenerado contra HEAD real. Lo que **no** he hecho: reescribir el bloque de
+`docs/roadmap/ROADMAP.md` para declarar el bloque de blockers. La fila nueva
+corresponde al operador y, segun `AGENTS.md`, "un plan NO significa una
+ejecucion" y la autoridad de la version publicada es humana. Lo que si queda
+es que el **hecho medido** esta escrito y el ratchet lo sostiene.
+
+### La leccion
+
+Un ratchet que nadie ejecuta **no es una red, es un fichero**. Y el sintoma
+—no rizado que persistio 112 commits— era indistinguible deliotimi
+"(el roadmap va atrasado)", que es lo que todo el mundo daba por supuesto. El
+contrato existia, describia el problema exacto, y por eso nadie leyo que
+funcionaba: decia lo que habia que hacer, no lo que hacia falta **conectarlo**.
+
+Regla que queda: un contrato que no aparece en ningun script de gate se
+considera inexistente hasta que se ve a **fallar** dentro de el.

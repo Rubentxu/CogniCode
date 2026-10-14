@@ -9,62 +9,60 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-11, sobre `main` HEAD
-> `6af11bf83f07ecf8b337379fd0df413cda73572e` (post-T1-5.5g +
-> B1..B6 block goals + work-loop + B1.W1 partial commit `f6b124c`;
-> 40 commits ahead de `origin/main`).
-> Regenerado al cierre de **B1.W1** (reconciliación de versión
-> publicada: `PRODUCER_VERSION` derivado de `Cargo.toml`,
-> `GOLDEN_SHA256` actualizado a `3ac84ea7...` para v0.101.10,
-> workspace sigue en `0.101.10` per `Cargo.toml` y tag `v0.101.10`).
-> R1 invariant `/releases/latest` sigue resolviendo a `v0.101.10`.
+> **Snapshot**: 2026-10-14, sobre `main` HEAD
+> `4cde125712b9f24a8fead99750571fcd3b1c5312` (cierre del bloque de
+> blockers de superficie anunciada + unidad de claims de lenguaje;
+> **53 commits ahead de `origin/main`**, sin pushear).
+> Regenerado tras detectar que el ratchet
+> `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
+> `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
+> gate. Ver `JOURNAL.md` N+106.
 >
-> Próxima release objetivo: `v0.101.11` (cierre de B1 + bump) per
-> [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
->
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
-> pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
-> drift es reintroducir el problema; el ratchet es la red.
+> Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
+> `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y batería (a 2026-10-11)
+## HEAD y bateria (MEDIDO sobre `4cde1257`, 2026-10-14)
 
-* **Rama**: `main` (PR #345 squash-merged el 2026-10-10T10:45:22Z;
-  40 commits ahead del squash: T1-5.5 cerrado `810396a..f187be7`
-  + B1..B6 goal docs `6af11bf` + B1.W1 partial `f6b124c`).
-* **SHA funcional**: `6af11bf83f07ecf8b337379fd0df413cda73572e`.
-* **Versión workspace**: `0.101.10` (sin cambio desde 2026-10-10;
-  el siguiente bump es `v0.101.11` al cierre de B1).
-* **Batería workspace** (medida sobre este SHA):
-  * `cargo fmt --all --check` → exit 0.
-  * `cargo build -p cognicode-core` → 0 errors (T1-5.5).
-  * `cargo build -p cognicode-cli --bins` → 0 errors (T1-5.5c + 5e).
-  * `cargo test -p cognicode-cli --test t1_5_3d_index_presenter_snapshot` → 6 passed.
-  * `cargo test -p cognicode-cli --test t1_5_4c_graph_perfile_presenter_snapshot` → 4 passed.
-  * `cargo test -p cognicode-cli --test t1_5_4k_graph_full_snapshot` → 3 passed.
-  * `cargo test -p cognicode-cli --test t1_5_4l_graph_impact_snapshot` → 4 passed.
-  * `cargo test -p cognicode-cli --test t1_5_5_json_dispatch` → **22 passed** (T1-5.5f).
-  * `cargo test -p cognicode-cli --test t1_5_snapshot` → 4 passed (binary smoke).
-  * `cargo test -p cognicode-core --test t1_5_3b_index_result_serde` → 7 passed.
-  * `cargo test -p cognicode-core --test t1_5_4_graph_result_serde` → 12 passed.
-  * `cargo build --workspace` → 0 errors (16 crates).
-  * `cargo build --release --bin cognicode` → 0 errors (v0.101.10 binary built).
-  * `python3 scripts/ci/test_assurance_export_golden.py` → **exit 0**
-    (golden SHA `3ac84ea7de366e5b39e0e2316e0f2a06127b9d77cb10248dfbb16c14c09429da`,
-    producer v0.101.10). B1.W1 partial.
-  * `python3 scripts/ci/test_roadmap_version_ratchet.py` → exit 0 (post B1.W1 partial).
-* **Working tree**: clean post-`f6b124c` (modificaciones locales en
-  `docs/roadmap/ROADMAP.md` no se commitean — `docs/roadmap/*` está
-  excluido por `.gitignore:200` por decisión del operador 2026-06-24).
-* **Smoke E2E (T1-5.5)**: `cognicode --format json index build /tmp/repo`
-  emite `{ "kind": "build", ... }`. `cognicode --format json graph
-  per-file <file>` emite `{ "kind": "per_file", ... }`. `--format`
-  flag visible en help.
-* **Pre-existing clippy issue**: igual que snapshot 2026-10-10,
-  `assurance_export_roundtrip.rs:408` (`clippy::expect_fun_call`).
-  No introducido por T1-5 ni B1.W1. Workaround en B1.W3 (reparación
-  de superficie actual).
-* **Branch protection**: `required_status_checks: ['merge-gate']`,
-  `enforce_admins: True`. Sin bypass activo.
+Correcciones a las afirmaciones del snapshot anterior (2026-10-11), que
+eran **falsas** y se dejaron pasar 112 commits:
+
+| Afirmacion previa | Realidad medida |
+|---|---|
+| `cargo fmt --all --check` → exit 0 | **100 ficheros** con deriva de fmt |
+| version workspace `0.101.10` | **`0.101.16`** |
+| `next release v0.101.11` | ya publicados hasta **`v0.101.16`** |
+| "`docs/roadmap/*` esta excluido por `.gitignore`" | los 4 ficheros **si estan versionados** |
+| "40 commits ahead" | **53** |
+
+* **Bateria workspace** (medida en este SHA, `CARGO_TARGET_DIR` aislado):
+  * `cargo test --workspace` → **6589 passed / 0 failed** (exit 0).
+    Con la unidad de lenguaje de este mismo bloque: **6594 / 0**.
+  * `cargo test --workspace --doc` → **8 passed / 0 failed**.
+  * `cargo fmt --all --check` → **FAIL, 100 ficheros** (preexistente).
+  * `cargo clippy --workspace --all-targets -- -D warnings` → **FAIL, 11
+    ficheros** (preexistente). Interseccion con el diff de este bloque:
+    **vacia**.
+  * `scripts/ci/test_roadmap_version_ratchet.py` → **ver arriba, FAIL →
+    regenerado**.
+
+## Deuda de fmt y clippy: declarada, no tocada
+
+Los **100** ficheros de fmt y los **11** de clippy son deuda **preexistente**
+en `main`, no introducida por el bloque de blockers. Medido: la interseccion
+entre los ficheros con aviso de clippy y los ficheros que el bloque toco es
+**vacia**. Se dejan intactos a proposito — mezclarlos con correcciones de
+blocker haria la revision mas cara y el rollback mas dificil, que es
+justamente lo contrario de lo que un commit atomico pide.
+
+## Estado de las filas del snapshot anterior
+
+| Fila del snapshot 2026-10-11 | Estado medido 2026-10-14 |
+|---|---|
+| T0-1..T0-3 (dead code, `unimplemented!`) | CLOSED, conservado |
+| T0-5 disparar merge-gate | OPEN, sin ejecutar en este bloque |
+| T1-1..T1-5 connascence cleanup | OPEN, **sin tocar por este bloque** |
+| TF-1..TF-4 promote + tag v0.101.10 | **OBSOLETO**: ya publicados hasta v0.101.16 |
+| SDDK cycle creation | sigue BLOQUEADO por `ledger.sqlite` vacio |
 
 ## Capacidades certificadas (Post-PRF)
 
@@ -195,12 +193,10 @@ parcialmente en la serie v0.101.x:
 
 ---
 
-*Mantenedor: agente principal en modo AUTO. Regenerado 2026-10-10
-desde snapshot v0.101.9 stale sobre SHA `443a540f`. Cierre del
-bypass del `merge-gate` per `MAINTENANCE.md` lesson 85 (infra
-pipelinek bloqueada en `durable-shell` con code 101; el mismo
-comando pasa local con 3158/0/7). PR #345 squash-merged a
-`4f1bb29`.*
-*Diferencia vs snapshot anterior: +1 PR merged, +6 commits en main
-(5 assurance-evidence + 1 gate fix), branch protection re-habilitada,
-+2 work items en próximos (T1-5, T1-1b).*
+*Mantenedor: agente principal en modo AUTO. Regenerado 2026-10-14 desde el
+HEAD real `4cde1257`, reemplazando el snapshot 2026-10-11 sobre `6af11bf8` que
+llevaba **112 commits** de deriva y cinco afirmaciones verificadas como falsas
+(fmt limpio, version 0.101.10, `docs/roadmap/*` sin versionar, 40 commits
+ahead, proximo release v0.101.11). Motivo del hallazgo: el ratchet
+`test_roadmap_version_ratchet.py` estaba en FAIL desde `1c664066` y **ningun**
+gate lo invoca — un ratchet sin red. Ver `JOURNAL.md` N+106.*
