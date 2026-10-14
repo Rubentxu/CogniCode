@@ -15566,3 +15566,95 @@ arreglar; no se toca aqui porque es codigo Rust y CD-1 es infraestructura.
   checkout probado), y conectar la seleccion real de suites al pipeline.
 * Resolver la unificacion de features de `cognicode-core`, o hacer que el gate
   declare que conjunto prueba.
+
+---
+
+## N+111 — CD-2: el veredicto de merge se publicaba para un commit que nadie probo (`b5b8ae03`)
+
+**SHA**: `b5b8ae031...` · 2026-10-14 · WU CD-2
+**Gates**: `test_merge_gate_sha_authority.py` PASS 5/5 ·
+`test_publish_merge_gate_status.py` PASS · ratchet OK · `test-full.sh`
+**NOT_RUN**
+
+### El hallazgo
+
+`scripts/ci/publish-merge-gate.sh` es el puente que publica el contexto
+`merge-gate` que `main` exige con `strict: true`. Resolvia el SHA, lo imprimia
+y lo publicaba, y **la autoridad de merge nunca recibia ese SHA**: no hacia
+checkout, no lo recibia como argumento, y `merge-gate.pipeline.kts` no lo
+menciona. Probaba el arbol de trabajo tal cual.
+
+Medido con el puente real y `pipelinek`/`gh` de mentira:
+
+```
+published sha = 367813eb...   (el que se nombra al publicar)
+tested   head = 7cfe749e...   (el que la autoridad probo)
+```
+
+Publicar `merge-gate=success` para el primero es una firma falsa por
+construccion. Con `strict: true` desbloquea el merge, y no hace falta untruear
+nada: basta apuntar a un commit que ya se sabe bueno mientras el arbol que se
+prueba es otro.
+
+Pesa mas que el falso verde de CD-1. Aquel hacia que el feedback del
+desarrollador fuera inutil; este gobierna la entrada a `main`.
+
+### El arreglo
+
+Solo el bridge. El SHA tiene que ser un commit del repositorio
+(`--verify ...^{commit}`), tiene que ser **HEAD**, y el arbol tiene que estar
+limpio.
+
+Se **rechaza** en vez de hacer checkout, y esa es la decision que conviene
+explicar: la autoridad de merge prueba el arbol en el que corre, asi que la
+unica manera de que el veredicto describa el commit nombrado es no correr para
+ningun otro commit. Un checkout obligaria al gate a recibir un SHA que hoy no
+acepta, y ese cambio es de otro orden que este.
+
+El guard de arbol sucio tiene un motivo concreto: el gate compila y prueba el
+arbol, no un commit. Con cambios sin commitear puede pasar sobre un estado que
+no existe en ningun sitio y que nadie podra reconstruir despues.
+
+### Por que los tests ejecutan el puente
+
+Igual que en CD-1, con la misma trampa en el medio: un test que greppara
+`git checkout` pasaria con la linea presente pero sin usarse, que es
+exactamente el defecto que ya se produjo. Los 5 tests afirman sobre **el SHA
+publicado** y **que arbol probo la autoridad**, leyendo lo que recibio el `gh`
+de mentira.
+
+El RED salio **3 de 4**, y el cuarto daba verde por un defecto del propio test:
+buscaba un token que empiece por `statuses/`, pero la URL llega como
+`statuses/<sha>` **sin barra final**, de modo que la extraccion devolvia lista
+vacia y el test afirmaba "no se publico nada" cuando si se habia publicado. Eso
+tapia justo el hallazgo. Corregido antes de aceptar el RED como valido.
+
+### Mutation: 3 de 4, y el cuarto declarado
+
+`drop_verify_commit` **sobrevive**, y no se cuenta como kill. El motivo esta
+medido: sin `--verify`, `git rev-parse` de 40 ceros devuelve la cadena tal cual
+y el check de HEAD la rechaza igualmente por debajo. Son dos guards sobre el mismo
+fallo, y solo uno tiene test. Se conserva `--verify` y se declara que no esta
+cubierto de forma independiente, en vez de presentar un 4/4 que no se midio.
+
+### Regresion encontrada al integrar
+
+`test_publish_merge_gate_status.py` ejecutaba el puente en `REPO_ROOT`, el arbol
+de trabajo **real del desarrollador**. Con el guard de arbol sucio, ese test
+falla siempre que haya trabajo sin commitear, que es el estado normal mientras
+se desarrolla algo. No es un defecto del guard: es que el test dependia del
+estado del arbol de quien lo ejecuta. Ahora levanta un checkout limpio y
+aislado.
+
+Consecuencia que conviene retener: un guard que exige limpieza **convierte en
+testes fragiles** todo lo que dependia de que el arbol estuviera sucio por
+casualidad. El arreglo no es relajar el guard, es sacar el test de la
+dependencia.
+
+### Following
+
+* CD-2 (segunda parte): conectar la seleccion real de suites al pipeline, y
+  declarar que conjunto prueba el gate. Sigue abierto el hallazgo lateral de
+  CD-1 (41 tests que fallan solo bajo `--workspace` por feature unification):
+  si el gate verde y la suite ejecutada prueban conjuntos distintos, "el gate
+  corrio" no significa "se ejecutaron los tests que dice ejecutar".

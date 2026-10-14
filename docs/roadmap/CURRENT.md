@@ -10,11 +10,11 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-14, sobre `main` HEAD
-> `26e049052e8b873a55c86bddf1281d394b17d664` (CD-1: `test-fast` no podia
-> ejecutar ni una suite; cierre del bloque de blockers de superficie
-> anunciada + unidad de claims de lenguaje + correccion de los mapeos de nodo
-> de Scala);
-> **61 commits ahead de `origin/main`**, sin pushear).
+> `b5b8ae036d3a52224605201bca6bb96ea9d31e7c` (CD-2: el veredicto de merge se publicaba para un commit
+> que nadie probo; CD-1: `test-fast` no podia ejecutar ni una suite; cierre del
+> bloque de blockers de superficie anunciada + unidad de claims de lenguaje +
+> correccion de los mapeos de nodo de Scala);
+> **63 commits ahead de `origin/main`**, sin pushear).
 > Regenerado tras detectar que el ratchet
 > `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
 > `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
@@ -23,7 +23,49 @@
 > Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
 > `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y bateria (MEDIDO sobre `26e04905`, 2026-10-14)
+## HEAD y bateria (MEDIDO sobre `b5b8ae03`, 2026-10-14)
+
+### CD-2 — el veredicto de merge se publicaba para un commit sin probar (`b5b8ae03`)
+
+`scripts/ci/publish-merge-gate.sh` es el puente que publica el contexto
+`merge-gate` que `main` exige con `strict: true`. Resolvia el SHA y lo
+publicaba, pero **la autoridad de merge nunca recibia ese SHA**: sin checkout,
+sin argumento, y `merge-gate.pipeline.kts` no lo menciona. Medido con el puente
+real y `pipelinek`/`gh` de mentira:
+
+```
+published sha = 367813eb...   (el que se nombra al publicar)
+tested   head = 7cfe749e...   (el que la autoridad probo)
+```
+
+Con `strict: true`, ese `success` desbloquea el merge, y no hace falta
+untruear nada: basta apuntar a un commit que ya se sabe bueno mientras el arbol
+que se prueba es otro.
+
+Corregido con tres guards: el argumento tiene que ser un commit del repositorio,
+tiene que ser **HEAD**, y el arbol tiene que estar limpio. Se **rechaza** en
+vez de hacer checkout: la autoridad prueba el arbol en el que corre, asi que la
+unica forma de que el veredicto describa el commit nombrado es no correr para
+ningun otro.
+
+* `scripts/ci/test_merge_gate_sha_authority.py`: 5 comprobaciones que ejecutan el
+  puente y afirman sobre el **SHA publicado** y **que arbol se probo**, no
+  sobre el texto. Un test que greppara `git checkout` pasaria con la linea
+  presente pero sin usarse.
+  * RED **3/4**. El cuarto daba verde por un defecto del propio test (la URL
+    llega como `statuses/<sha>` sin barra final), lo que tapaba el hallazgo.
+  * GREEN **5/5** (6.2 s).
+  * Mutation **3 de 4**. `drop_verify_commit` **sobrevive**: el check de HEAD
+    rechaza el SHA invalido igualmente por debajo. Se conserva y se declara que
+    no tiene cobertura independiente.
+
+* Regresion de integracion: `test_publish_merge_gate_status.py` corria el puente
+  en el arbol real del desarrollador y, con el guard de arbol sucio, fallaba
+  siempre que hubiera trabajo sin commitear. Ahora usa un checkout limpio.
+
+**Gates CD-2**: `test_merge_gate_sha_authority.py` PASS 5/5 ·
+`test_publish_merge_gate_status.py` PASS · ratchet OK ·
+**`test-full.sh` NOT_RUN**.
 
 ### CD-1 — `test-fast` no ejecutaba ninguna suite (`26e04905`)
 
