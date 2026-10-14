@@ -28,6 +28,35 @@ BASELINE="${REPO_ROOT}/scripts/known_failures.yaml"
 BASELINE_CHECK="${REPO_ROOT}/scripts/check_known_failures.py"
 ROADMAP_RATCHET="${REPO_ROOT}/scripts/ci/test_roadmap_version_ratchet.py"
 
+# MEDIDO 2026-10-14 (N+114): mismo origen que en `test-full.sh`.
+# `--tmpdir-root` existia pero no lo usaba nadie, y sin el el paso cae en la
+# rama de fallo (rc=2) donde `TMPDIR` cruce un symlink. Se resuelve una raiz
+# utilizable aqui; si no hay ninguna, se avisa y se deja que el script decida.
+TMPDIR_ROOT="$(
+  python3 - "$TMPDIR" <<'PY'
+import os
+import sys
+
+
+def usable(path: str | None) -> str | None:
+    if not path:
+        return None
+    absolute = os.path.abspath(path)
+    if os.path.realpath(absolute) != absolute:
+        return None
+    if not (os.path.isdir(absolute) and os.access(absolute, os.W_OK)):
+        return None
+    return absolute
+
+
+for candidate in (sys.argv[1] if len(sys.argv) > 1 else None, "/tmp", "/var/tmp"):
+    resolved = usable(candidate)
+    if resolved:
+        print(resolved)
+        break
+PY
+)"
+
 # ---------- roadmap coherence ratchet ----------
 # MEASURED 2026-10-14 (JOURNAL N+106): this ratchet was FAILING for 112
 # commits because neither gate invoked it. It costs 0.08 s, which is why it
@@ -233,7 +262,12 @@ fi
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
   if printf ' %s ' "$seen" | grep -q ' core '; then
     printf '\n=== baseline: check_known_failures (core/lib) ===\n'
-    if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib; then
+    if [ -n "$TMPDIR_ROOT" ]; then
+      if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib \
+        --tmpdir-root "$TMPDIR_ROOT"; then
+        overall_rc=1
+      fi
+    elif ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib; then
       overall_rc=1
     fi
   fi
