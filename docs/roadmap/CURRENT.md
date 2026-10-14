@@ -14,7 +14,7 @@
 > ejecutar ni una suite; cierre del bloque de blockers de superficie
 > anunciada + unidad de claims de lenguaje + correccion de los mapeos de nodo
 > de Scala);
-> **60 commits ahead de `origin/main`**, sin pushear).
+> **61 commits ahead de `origin/main`**, sin pushear).
 > Regenerado tras detectar que el ratchet
 > `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
 > `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
