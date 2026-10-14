@@ -1402,3 +1402,50 @@ así. Lo que **no** sostiene: que las 77 estén sanas. Un sweep con entradas
 mínimas encuentra defectos de contrato y de disponibilidad; no encuentra
 lógica incorrecta que solo se manifiesta con entradas realistas. `cargo test
 --workspace` con 4748 tests cubre esa segunda clase mejor que este barrido.
+
+### Cierre del bloque: estado del gate medido (2026-10-14)
+
+`bash scripts/test-full.sh` sobre `814e9e87`:
+
+    test --workspace          OK    6590 passed, 0 failed
+    test --workspace --doc    OK
+    known_failures (core/lib) OK    0 entries, coincide con la linea base
+    fmt --check               FAIL  100 ficheros sucios  (preexistente)
+    clippy -D warnings        FAIL  11 ficheros con avisos  (preexistente)
+
+Los dos FAIL se atribuyen con medicion, no con suposicion. En la base del
+bloque (`f4989780~1`) ya habia 100 ficheros con deriva de fmt. Y el cruce de
+los ficheros con aviso de clippy contra los ficheros que el bloque toco da
+**vacio**: todo el clippy restante esta en ficheros que este bloque no toco.
+Se dejan para su propia unidad en vez de mezclarse en un fix de blocker.
+
+**Cuatro regresiones propias las encontro el gate, no una revision manual.**
+`test --workspace` dio 4 FAILED y `known_failures` reporto los mismos 4 como
+NEW REGRESSIONS: dos gates de acuerdo antes de arreglar nada. Una era real —
+mover `USAGE_SKIP_DIRS` de `filter_entry` a un post-filtro del iterador deja
+de podar el descenso, con lo que `target/` se seguia recorriendo, justo el
+coste que el cambio a `.gitignore` existia para eliminar—. Las otras dos eran
+tests que pineaban los bugs ya corregidos (un cero fabricado y un
+`Ok(success=false)` soft), corregidos al contrato nuevo. Detalle y evidencia en
+`JOURNAL.md` N+103.
+
+**Una sonda mala produjo un falso positivo que casi se reporta como defecto.**
+`ask_about_code` "no respondio" en la primera sonda porque el servidor tardaba
+13,3 s en construir el grafo del repo y la sonda cerro stdin a los 5 s. El
+stderr ya decia `status=ok`. La sonda estaba mal, no el tool. Corregida la
+sonda (stdin abierto), responde; `merge_graphs` responde bien (1.950 simbolos).
+Queda abierto y **medido, no arreglado**: `ask_about_code` devuelve
+`answers: []` sin decir por que — parte la pregunta en palabras, toma la
+primera y la ultima como simbolos y busca un camino BFS entre ellas — y un
+`Unknown` presentado como `Complete` es justo lo que AGENTS.md prohibe. Es
+decision de producto, no fix mecanico.
+
+Ademas se corrigio el `unresolved link to RefactorPlan` de
+`m011_rustdoc_gate` (introducido por `51e826da`, no por este bloque): era lo
+unico que separaba a `cargo test --workspace` del verde.
+
+**Disciplina del checkout compartido.** Un `git stash` usado para medir deuda
+de fmt dejo tres ficheros en conflicto `UU` de un stash previo ajeno; se
+restauraron a HEAD. En un checkout que comparten varias sesiones, `git stash`
+no es seguro: las mediciones se hacen con `git show <base>:<fichero>` hacia un
+temporal.

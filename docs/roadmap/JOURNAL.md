@@ -14629,3 +14629,124 @@ habia restaurado. Un verde de control sobre un arbol sucio no es un verde, es
 una cifra. **Toda afirmacion de que una mutacion cae tiene que estar
 acompanada de la razon por la que cae**, y si no cae, hay que averiguar si fallo el
 contrato o fallo la prueba antes de reportar el numero.
+
+## N+103 — El test que hacia verde un prune que ya no hacia nada
+
+**Rama** `main` · **Bloque** Release blockers de superficie MCP anunciada
+(`build_lightweight_index`, `safe_refactor`, `query_symbol_index`,
+`find_references`, y los walks de `find_usages`/`nl_to_symbol`/`smart_search`).
+**SHA** `814e9e87`. Cierra el trabajo de N+102.
+
+### Que se cerro
+
+Seis defectos de la superficie anunciada por `product/tools.json`, los seis
+encontrados ejercitando los 77 tools por JSON-RPC stdio contra el binario
+release real, un proceso por tool:
+
+| SHA | Defecto |
+|---|---|
+| `f4989780` | SIGABRT en `build_lightweight_index`: `tree-sitter-haskell` 0.23.1 desborda el heap de C en `array_push` |
+| `97424015` | el walk del indice ignoraba `.gitignore` y bajaba al arbol `sandbox/` (311.779 ficheros) |
+| `0b5771e7` | `safe_refactor` trataba `target` (nombre de simbolo) como ruta: `working_dir.join(&input.target)` |
+| `caaa9431` | `query_symbol_index` con timeout de 500 ms para un indice frio de ~4,8 s, que ademas cacheaba el fallo como indice vacio |
+| `225d5649` | `find_usages`, `nl_to_symbol` y `smart_search` con el mismo walk sin `.gitignore` |
+| `1735d97e` | `find_references` convertia `Unresolved` en `Ok(0)`: fallo indistinguible de "no hay referencias" |
+
+MEDIDO, no estimado: `build_lightweight_index` sobre el repo entero paso de
+1813 s sin respuesta a 4,8 s / 61.826 simbolos. `find_usages` de >100 s a 4,3 s,
+`nl_to_symbol` a 17,8 s, `smart_search` a 18,3 s.
+
+### El hallazgo que importa: el gate encontro 4 regresiones mias
+
+`test --workspace` dio **4 FAILED**, todos en ficheros que este bloque habia
+tocado. Y `known_failures` reporto **exactamente los mismos 4** como NEW
+REGRESSIONS: dos gates independientes de acuerdo antes de escribir una sola
+linea de arreglo.
+
+Uno era una regresion mia de verdad. Al cambiar `walkdir::WalkDir` por
+`ignore::WalkBuilder` en `find_symbol_usages` (para respetar `.gitignore`),
+movi la politica `USAGE_SKIP_DIRS` de `filter_entry` —que poda el descenso— a un
+post-filtro del iterador —que sigue bajando y luego tira la entrada—. O sea:
+`target/` se seguia recorriendo y sus ficheros se parseaban con tree-sitter en
+cada llamada, que es justo el coste que el cambio de `.gitignore` existia para
+eliminar. Los tests `r1_2` y `r1_3` lo FOURON: 3 usos en vez de 2, y un uso
+procedente de `target/`.
+
+El arreglo es una linea: registrar `filter_entry` en el builder. Compose con el
+matching de gitignore, no lo sustituye.
+
+Los otros dos eran tests **viejos que pineaban los bugs**:
+`test_handle_find_references_error` afirmaba `total == 0` sobre un provider que
+habia fallado — la fabricacion de un cero era el contrato —, y
+`test_handle_safe_refactor_extract_invalid_selection` afirmaba
+`Ok(success=false)`, alcanzable solo porque el handler leia el nombre del
+simbolo como ruta. Los dos se corrigen, no se revierten: el contrato corregido
+es el que AGENTS.md exige.
+
+Verificado contra el binario release: `find_usages("build_index")` = 4,3 s,
+8 usos, **0** de `target/` o `sandbox/`, todos bajo `crates/`. Las dos
+propiedades a la vez, que es justamente lo que el post-filtro habia roto.
+
+### Un hallazgo metodologico que casi es un falso positivo
+
+`ask_about_code` devolvio "sin respuesta" en la primera sonda de este bloque.
+No era un defecto: el servidor empezo a construir el grafo del repo (13,3 s) y
+la sonda cerro stdin a los 5 s, asi que el proceso salio (`quit_reason=Closed`)
+antes de escribir la respuesta. El log de stderr ya decia
+`tool_call tool=ask_about_code duration_ms=13395 status=ok`. **La sonda estaba
+mal, no el tool.** Corregida la sonda (stdin abierto 90 s), responde
+correctamente. `merge_graphs` tambien responde bien (1.950 simbolos).
+
+Lo que si queda abierto en `ask_about_code`, y se declara **medido, no
+arreglado**: devuelve `answers: []` sin decir por que. El handler
+(`aix_handlers.rs:590`) parte la pregunta en palabras, coge la **primera** y la
+**ultima** como nombres de simbolo, y busca un camino BFS entre ellas. Sin
+camino devuelve `Ok` con lista vacia y sin diagnostico. `answers: []` es un
+`Unknown` presentado como `Complete`, que es justo lo que AGENTS.md prohibe. Y el
+tool esta marcado `experimental` en el catalogo, con un gate que ya prohibe su
+uso en skills (`b6_w4_skills_autodiscovery`). No se abre work item aqui: es una
+decision de producto (implementar preguntas en lenguaje natural, o declarar el
+alcance real en la descripcion), no un fix mecanico.
+
+### Estado del gate al cierre
+
+`bash scripts/test-full.sh` sobre `814e9e87`:
+
+    test --workspace          OK    6590 passed, 0 failed
+    test --workspace --doc    OK
+    known_failures (core/lib) OK    0 entries, coincide con la linea base
+    fmt --check               FAIL  100 ficheros sucios
+    clippy -D warnings        FAIL  11 ficheros con avisos
+
+Los dos FAIL **preexisten**. MEDIDO, no supuesto: en la base del bloque
+(`f4989780~1`) ya habia 100 ficheros con deriva de fmt, y el cruce de los
+ficheros con aviso de clippy contra los ficheros que este bloque toco da
+**vacio**. Todo el clippy y el fmt que quedan estan en ficheros que este
+bloque no toco, asi que se dejan para su propia unidad y no se mezclan en un
+fix de blocker.
+
+Ademas se corrigio el `unresolved link to RefactorPlan` de
+`m011_rustdoc_gate`, introducido por `51e826da` (no por este bloque) pero que
+era lo unico que separaba a `cargo test --workspace` del verde. El propio gate
+dice que un warning nuevo "must be fixed in the same commit that introduces it".
+
+### Una nota de disciplina
+
+Durante la medicion de la deuda de fmt se ejecuto `git stash` en el checkout
+compartido y dejo tres ficheros en conflicto (`UU`) de un stash previo ajeno.
+Se restauraron a HEAD y el arbol quedo limpio, pero la leccion es la de siempre:
+**este checkout lo comparten varias sesiones y `git stash` no es seguro aqui.**
+Las mediciones de deuda henceforth se hacen con `git show <base>:<fichero>`
+hacia un temporal, nunca moviendo el arbol de trabajo.
+
+### Que sigue
+
+Los seis blockers estan cerrados y con evidencia RED->GREEN mas verificacion
+contra el binario release. Queda abierto, y es decision del operador:
+
+1. `ask_about_code`: implementar preguntas en lenguaje natural, o declarar su
+   alcance real. Hoy `answers: []` no dice por que.
+2. `safe_refactor_apply` / `safe_refactor_revalidate`: hay cobertura de rechazo
+   pero no un flujo vivo completo apply -> revalidate -> persistencia.
+3. Firmas de certificacion: **C8-R sin firmar, y no se firma sin aprobacion
+   humana explicita.**
