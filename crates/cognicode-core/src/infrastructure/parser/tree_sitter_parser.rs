@@ -278,6 +278,31 @@ impl TreeSitterParser {
 
     /// Searches for an identifier name in a node tree (two-phase iterative DFS)
     fn find_identifier_name(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
+        // Phase 0: Read the grammar's `name` FIELD.
+        //
+        // MEASURED 2026-10-14: every probed grammar except C and Cpp stores
+        // the declared name as a field, whatever the child's node kind is.
+        // Bash is the case that proved the whitelist below was not a safety
+        // rule but an omission: `function_definition` had `name` =
+        // Some("...") available and children `[word, compound_statement]`,
+        // and `word` is not on the list, so a name that was present in the
+        // tree was discarded one step later. Bash is advertised
+        // `support_level: "supported"`.
+        //
+        // Field-first is a strict superset of the old behaviour: it can only
+        // add a name where the old code found none. C and Cpp carry no `name`
+        // field (the declarator nests it), which is exactly why Phase 1 and 2
+        // stay, and `crates/cognicode-core/src/application/ingest/extractor.rs`
+        // already uses this field-then-fallback shape.
+        if let Some(name_node) = node.child_by_field_name("name") {
+            return Some(
+                name_node
+                    .utf8_text(source.as_bytes())
+                    .unwrap_or("unknown")
+                    .to_string(),
+            );
+        }
+
         // Phase 1: Check direct children first
         //
         // `name` covers languages whose grammar emits a generic `name`

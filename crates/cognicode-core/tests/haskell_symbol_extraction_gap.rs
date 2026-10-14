@@ -69,6 +69,25 @@
 //! in the gate instead of being an unrecorded surprise. When this is fixed,
 //! every assertion below has to be inverted in the same commit that fixes it;
 //! that inversion is the point, not an inconvenience.
+//!
+//! UPDATED 2026-10-14, after `find_identifier_name` learned to read the
+//! grammar's `name` FIELD before falling back to child node kinds (the Bash
+//! fix, commit below). That change is a strict superset of the old lookup and
+//! it partially improved Haskell, measured against the parse tree rather than
+//! assumed:
+//!
+//! ```text
+//! function @row11 field(name)=Some("use")   <- the definition, correctly named
+//! function @row10 field(name)=None  text="Config -> Int"  <- signature body
+//! module   @row0  field(name)=None  text="Small"
+//! module   @row0  field(name)=None  text="module"
+//! ```
+//!
+//! So `use` is now correctly extracted, and the state moved from **1** symbol
+//! to **2**: `[("Config", 10), ("use", 11)]`. `mkAll` is still missing, `Config`
+//! is still reported at the signature body instead of its `data` definition,
+//! and the module still does not surface. That is progress, not a fix, and the
+//! assertions below record precisely which half is still wrong.
 
 use cognicode_core::domain::value_objects::Language;
 use cognicode_core::infrastructure::parser::TreeSitterParser;
@@ -100,10 +119,11 @@ fn haskell_symbols() -> Vec<(String, u32)> {
 #[test]
 fn haskell_data_type_is_not_extracted_from_its_own_definition_node() {
     let symbols = haskell_symbols();
-    // Measured: the whole file yields exactly one symbol, ("Config", 10).
-    // `Config` therefore does appear, but NOT from `data_type @line3` — it
-    // comes from the `function` node whose text is the signature body
-    // `Config -> Int`, which starts on 1-based line 11 (0-based 10).
+    // The whole file yields ("Config", 10) and ("use", 11). `Config` therefore
+    // does appear, but NOT from `data_type @line2` — it comes from the
+    // `function` node whose text is the signature body `Config -> Int`, which
+    // starts on 1-based line 11 (0-based 10). That node has no `name` field,
+    // which is why the field-first lookup did not rescue it either.
     let definition_line = SMALL_HS
         .lines()
         .position(|l| l.starts_with("data Config"))
@@ -120,22 +140,53 @@ fn haskell_data_type_is_not_extracted_from_its_own_definition_node() {
 }
 
 #[test]
-fn haskell_function_binds_are_not_extracted() {
+fn haskell_module_is_not_extracted() {
     let symbols = haskell_symbols();
-    // Measured: only ("Config", 10) comes back. `mkAll` and `use` are both
-    // real definitions in the file and neither is indexed.
+    // `class_node_type` is declared as "module" and the grammar does emit
+    // `module` nodes, yet nothing surfaces for `Small`. Measured: both module
+    // nodes have `field(name) = None` and their text is "Small" / "module",
+    // so neither the field lookup nor the node-kind whitelist can name them.
+    // Fixing this needs a Haskell-specific mapping, not a lookup change.
+    assert!(
+        !symbols.iter().any(|(n, _)| n == "Small"),
+        "expected the CURRENT defect (module name not extracted); found {symbols:?}"
+    );
+}
+
+#[test]
+fn haskell_bind_bindings_are_not_extracted() {
+    let symbols = haskell_symbols();
+    // Measured now: ("Config", 10) and ("use", 11). `use` is recovered because
+    // the grammar models `use c = ...` as a `function` node that carries a
+    // `name` field. `mkAll = [...]` is modelled as a `bind`, which the filter
+    // does not match at all, so it is still missing.
     assert_eq!(
         symbols.len(),
-        1,
-        "expected the CURRENT defect: 3 of 4 definitions unindexed; found {symbols:?}. \
+        2,
+        "expected the CURRENT defect: mkAll still unindexed, and only the two \
+         symbols measured after the field-first name lookup; found {symbols:?}. \
          If extraction was fixed, invert this to the real count."
     );
     assert!(
         !symbols.iter().any(|(n, _)| n == "mkAll"),
         "expected the CURRENT defect (bind not extracted); found {symbols:?}"
     );
+}
+
+#[test]
+fn haskell_use_binding_is_extracted_at_its_definition() {
+    // The one part that IS correct today, asserted positively so the fix for
+    // the rest cannot regress it into the previous "extracts nothing" state.
+    let symbols = haskell_symbols();
+    let definition_line = SMALL_HS
+        .lines()
+        .position(|l| l.starts_with("use c ="))
+        .unwrap() as u32;
     assert!(
-        !symbols.iter().any(|(n, _)| n == "use"),
-        "expected the CURRENT defect (`use c = ...` bind not extracted); found {symbols:?}"
+        symbols
+            .iter()
+            .any(|(n, l)| n == "use" && *l == definition_line),
+        "`use c = ...` is a real definition and is currently extracted at its \
+         own line ({definition_line}); symbols found: {symbols:?}"
     );
 }

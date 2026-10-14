@@ -15131,3 +15131,114 @@ funcionaba: decia lo que habia que hacer, no lo que hacia falta **conectarlo**.
 
 Regla que queda: un contrato que no aparece en ningun script de gate se
 considera inexistente hasta que se ve a **fallar** dentro de el.
+
+## N+107 — Uno de los cuatro "no lo arreglo" si se podia arreglar
+
+**Rama** `main` · **Bloque** Extraccion de simbolos.
+**SHA** `pending`. Cierra N+105 (que abrio el hallazgo) y N+106.
+
+### El error de encuadre, segunda vez
+
+N+105 escribi: "cuatro de dieciocho no extraen nada [...] **no lo arreglo**, y
+se dice por que" y llame producto a la decision. Eso era **parcialmente
+falso**, y lo comprobe en vez de dejarlo escrito:
+
+Mediendo `child_by_field_name("name")` en cada nodo que el filtro ya acepta:
+
+    Bash     function_definition  field(name)=Some("probeBashSymbol")  kids=[word, ...]
+    Rust     function_item        field(name)=Some("probe")
+    Python   function_definition  field(name)=Some("probe")
+    Go       function_declaration field(name)=Some("probe")
+    Java     class_declaration    field(name)=Some("A")
+    Java     method_declaration   field(name)=Some("probe")
+    Php      function_definition  field(name)=Some("probe")
+    Ruby     method               field(name)=Some("probe")
+    Swift    function_declaration field(name)=Some("probe")
+    Lua      function_declaration field(name)=Some("probe")
+    CSharp   method_declaration   field(name)=Some("Probe")
+    Ts       function_declaration field(name)=Some("probe")
+    C        function_definition  field(name)=None   kids=[primitive_type, function_declarator, ...]
+    Cpp      function_definition  field(name)=None   kids=[primitive_type, function_declarator, ...]
+
+**El nombre estaba en el arbol las 14 veces.** Once de catorce ya funcionaban
+porque su tipo de nodo por casualidad estaba en la lista blanca; Bash no, y por
+eso no funcionaba. **La lista blanca no era una regla de seguridad: era una
+omision.**
+
+Y `extract_name` en
+`crates/cognicode-core/src/application/ingest/extractor.rs:250` ya hace
+exactamente esto — `child_by_field_name("name")` con fallback. El patron ya
+existia en el repo. No era una abstraccion nueva ni una decision de producto.
+
+### El fix
+
+`find_identifier_name` gana una **Fase 0**: leer el campo `name` antes de la
+lista blanca. C y Cpp siguen necesitando el fallback porque anidan el nombre
+dentro de un `function_declarator` y no exponen el campo; por eso las fases 1
+y 2 se quedan.
+
+Es un **superset estricto** del comportamiento anterior: solo puede anadir un
+nombre donde antes no habia ninguno. No puede cambiar un nombre ya extraido.
+
+### RED -> GREEN, y el test que fallo al hacerlo
+
+    RED   bash_function_definition_is_extracted
+          left:  []
+          right: [("probeBashSymbol", 0)]
+    GREEN 5 passed / 0 failed
+
+Los 12 lenguajes que ya funcionaban siguen verdes, con la salida exacta
+comprobada. Eso es lo que hace que un arreglo de este tipo no pueda
+sobre-corregirse en silencio.
+
+### El test de caracterizacion de Haskell CAyo, y por eso existia
+
+`cargo test -p cognicode-core` -> **2800 passed / 1 failed**. El unico fallo:
+
+    haskell_function_binds_are_not_extracted
+    left: 2   right: 1
+    found [("Config", 10), ("use", 11)]
+
+El fix habia **mejorado Haskell de 1 simbolo a 2**. Medido contra el arbol, no
+supuesto:
+
+    function @row11  field(name)=Some("use")   <- la definicion, bien nombrada
+    function @row10  field(name)=None  text="Config -> Int"  <- cuerpo de firma
+    module   @row0   field(name)=None  text="Small"
+    module   @row0   field(name)=None  text="module"
+
+Es decir: `use c = ...` es un `function` con campo `name` y se recupera;
+`mkAll = [...]` es un `bind` que el filtro no casa; los dos `module` no tienen
+campo `name`.
+
+Actualizado el archivo de caracterizacion a ese estado exacto, y dividido en
+**cuatro** asserts en vez de uno:
+
+- `data_type` sigue sin reportarse en su linea de definicion (sigue mal)
+- `module` sigue sin extraerse (sigue mal)
+- `mkAll` sigue sin extraerse (sigue mal)
+- **`use` se extrae correctamente** (assert positivo nuevo)
+
+El ultimo es el que faltaba: sin el, un arreglo futuro de los otros tres
+podia revertir esto en silencio al estado "no extrae nada".
+
+### Que queda, y por que sigue sin tocarse
+
+| Lenguaje | Por que no se arregla aqui |
+|---|---|
+| **Scala** | `function_declaration` y `val_declaration` **no existen** en un arbol real |
+| **Yaml** | sin nodo identificador y sin campo `name`; la clave es `flow_node` |
+| **Haskell** | `bind` y `module` exigen cambiar el mapeo de nodos |
+
+Los tres necesitan **que tipos de nodo cuentan como simbolo** en su lenguaje.
+Eso es decision de producto, y ahi si es cierto que no es mia.
+
+### La leccion
+
+N+105 escribi que el arreglo "no es mio" y la justificacion fue **mitad
+verdad, mitad excusa**. El patron ya existia en el mismo crate, la
+medicion de una linea lo desmentia, y el coste de arreglarlo era un `if`.
+
+La regla que queda: **antes de declarar algo decision de producto, medir si la
+decision es realmente necesaria.** "Es una decision" no es un hecho medido, y
+en este caso la habia dejado como si lo fuera.
