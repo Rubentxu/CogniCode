@@ -14750,3 +14750,129 @@ contra el binario release. Queda abierto, y es decision del operador:
    pero no un flujo vivo completo apply -> revalidate -> persistencia.
 3. Firmas de certificacion: **C8-R sin firmar, y no se firma sin aprobacion
    humana explicita.**
+
+## N+104 — El gate decia "verde" sobre un tool que tardaba 60 s
+
+**Rama** `main` · **Bloque** Aceptacion del bloque de blockers de superficie
+anunciada. **SHA** `ea6b912a`. Cierra N+103.
+
+### Por que esta entrada existe
+
+N+103 cerro los seis defectos y dio el gate por bueno. Ese "bueno" estaba
+**sin cerrar**: cada fix se habia verificado por separado, y lamayoria con
+binarios viejos. El defecto de fondo no lo hacia el gate, sino esto: **nadie
+habia corrido el camino de aceptacion sobre el conjunto al final**.
+
+Al hacerlo (binario release en HEAD, JSON-RPC por stdout, un proceso por tool,
+stdin abierto, stdout y stderr separados) aparecieron **dos defectos mas**, uno
+de ellos introducido por un fix mio del bloque anterior.
+
+### El primero: un fix mio habia cambiado "inutil" por "inservible"
+
+`safe_refactor` con `target="resolve_symbol_file"`:
+
+    tool_call tool=safe_refactor duration_ms=60510 status=error
+
+Sin respuesta en stdout. La categoria `refactor` da 30s
+(`rmcp_adapter::timeout_for_category`), y el catalogo anuncia 100ms. El fix
+`0b5771e7` habia hecho alcanzable el simbolo con un walk que leia y parseaba
+**todos** los ficheros fuente sin politica de skip: exactamente el defecto del
+indice de 1813s. Corregido en `ea315137` con `filter_entry` sobre
+`USAGE_SKIP_DIRS` (compartido, no duplicado) y un prefilter por identificador.
+Medido despues: **341 ms**, `success: true`, y `dry_run` dejo 0 apariciones del
+nombre nuevo en disco.
+
+**El test de presupuesto estuvo VACUO dos veces**, y por eso queda escrito:
+
+1. Apuntaba a la raiz del repo y paso en **16,7 s con el fix revertido**, porque
+   el `CARGO_TARGET_DIR` compartido no tiene arbol `target/` debajo. Un test de
+   presupuesto cuyo fixture no controla mide la maquina, no el codigo.
+2. Con fixture propio, paso en **0,16 s con el fix revertido**, dos veces por la
+   misma razon de fondo: `ignore::WalkBuilder` emite ficheros antes de descender
+   a los directorios (medido: la definicion salia en el indice 0 de 901), asi
+   que el `return` temprano hacia que el arbol caro no se alcanzara nunca.
+
+La correccion: el fixture tiene que forzar el recorrido completo, asi que la
+definicion **no existe** a proposito. RED contra el fix revertido: **62,657 s
+sobre 6.000 ficheros, por encima de los 30 s**. GREEN con el fix: **5 passed en
+0,67 s**. El numero de RED reproduce los 60,5 s del servidor real.
+
+### El segundo: Haskell devuelve simbolos que no son definiciones
+
+`query_symbol_index "Config"` sobre un fichero Haskell de 12 lineas devolvio
+`total: 1` con la localizacion en la **linea 10**, y `Config` esta en la 3.
+Medido contra el parser: el fichero entero produce **un solo simbolo**,
+`("Config", 10)`. De las cuatro definiciones (`module`, `data Config`, `mkAll`,
+`use`), **tres no se indexan nunca**.
+
+La causa esta medida enumerando los kinds de nodo que produce la gramatica, no
+suponiendolos:
+
+    bind      @line9  : mkAll = [Config "a" 1]
+    data_type @line3  : data Config = Config
+    function  @line11 : Config -> Int
+    function  @line12 : use c = cfgCount c
+    module    @line1  : Small
+
+`find_all_symbols_with_path` solo casa `function_node_type` /
+`class_node_type` / `variable_node_type`. Para Haskell estan declarados como los
+strings `"function"`, `"module"` y `"declaration"`. Luego `data_type` y `bind`
+—los nodos que llevan el `data` y los bindings `=` de Haskell— no casan con
+nada, y el `Config` que sobrevive viene del nodo `function` cuyo texto es el
+cuerpo de la firma `Config -> Int`.
+
+**No se arregla aqui, y se dice por que.** Es un cambio de mapeo en un enum de
+mas de 20 brazos mas una decision sobre que kinds de Haskell son simbolos, y no
+tiene relacion con los blockers. Se deja **caracterizado** en
+`haskell_symbol_extraction_gap.rs`: los tests afirman el comportamiento
+**equivocado actual** y lo dicen en el mensaje de fallo, de modo que el commit
+que lo arregle los tiene que invertir. Esa inversion es el objetivo.
+
+Por que sobrevivio: `product/languages.json` anuncia haskell como
+`support_level: "supported"` y cita como evidencia "Focused parser acceptance
+coverage in m06_acceptance.rs". Esa cobertura es **una fila de tabla**,
+`("haskell", Language::Haskell, "add a b = a + b\n")`, que solo comprueba
+`root_node().child_count() != 0`. Prueba que la gramatica carga; no dice nada
+de simbolos.
+
+### Requisito -> comprobacion -> observado
+
+Cada requisito explicito, con la comprobacion que lo cubre y lo que **devolvio**
+la ejecucion. Ningun recuento agregado sustituye a esta tabla.
+
+| Requisito | Comprobacion | Observado |
+|---|---|---|
+| SIGABRT de `build_lightweight_index` | trigger documentado (`-- Haskel`) + repo real + repo con `.gitignore` | `success: true`, 0 abortos, arbol ignorado excluido |
+| timeout del indice = 60 s | proyeccion de categoria, ya pineada | verde |
+| `safe_refactor` resuelve simbolo real | release server, `target=resolve_symbol_file` | `success: true`, 341 ms, `dry_run` sin mutar |
+| `query_symbol_index` no expira en cache frio | dos llamadas, cache vacio | responde y es estable |
+| cache envenenada: fallo no se cachea | dir inexistente luego dir valido | error en el fallo, el siguiente ok |
+| `find_references` no fabrica ceros | coords validas + fichero inexistente | refs reales con `file:line:column`; el otro **falla** |
+| `find_usages`/`nl_to_symbol`/`smart_search` | repo real | los tres responden; 8 usos, **0** de `target/`/`sandbox/` |
+| `apply`/`revalidate` no fingen | plan inexistente, plan id inexistente | ambos rechazan con motivo accionable |
+| stdout solo JSON-RPC | 7 sondas, lineas no-JSON contadas | **0** en las 7 |
+| `ask_about_code` no miente | stdin abierto (sonda previa era mala) | responde; `answers: []` sin motivo, ya declarado |
+
+### Estado del gate sobre el conjunto
+
+`bash scripts/test-full.sh` en `ea6b912a`:
+
+    test --workspace          OK    6597 passed, 0 failed
+    test --workspace --doc    OK
+    known_failures (core/lib) OK    0 entries, coincide con la linea base
+    fmt --check               FAIL  100 ficheros  (preexistente, medido)
+    clippy -D warnings        FAIL  11 ficheros   (preexistente, 0 en comun con el diff)
+
+### La leccion, dicha sin adornos
+
+N+103 dio por cerrado un bloque entero y estaba mal. Los tests unitarios estaban
+verdes, el gate estaba verde, y aun asi `safe_refactor` tardaba 60 s y Haskell
+devolvia simbolos inventados. **Verificar cada fix por separado no es verificar
+el conjunto**: los dos defectos que aparecieron aqui eran invisibles a la
+suma de verificaciones individuales, y uno lo habia creado un fix anterior que
+"funcionaba" en su test.
+
+La regla que queda: un bloque se cierra cuando **el camino de aceptacion** —el
+que un usuario recorre de verdad— se ha ejecutado sobre el resultado entero, en
+el binario de release, en el HEAD final. Los test counts son una consecuencia,
+no la prueba.
