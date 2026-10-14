@@ -251,10 +251,13 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     //     Yaml are advertised `support_level: "supported"` but extract
     //     nothing from their own definitions; the twelve that work are
     //     pinned so a fix cannot over-correct)
+    //   - `scala_node_kinds` (the Scala mappings that gate the matrix above are
+    //     pinned against a live parse, since node-types.json is not a complete
+    //     oracle for what the grammar emits)
     assert_eq!(
         suites.len(),
-        80,
-        "expected exactly 80 cognicode-core integration suites, found {}. \
+        81,
+        "expected exactly 81 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -423,6 +426,9 @@ const ANCHOR_SUITES: &[&str] = &[
     "safe_refactor_rename_symbol_contract",
     "safe_refactor_resolution_budget",
     "haskell_symbol_extraction_gap",
+    // Scala node-kind mappings were Java's spellings, which tree-sitter-scala
+    // never emits. This suite pins reachability against a live parse.
+    "scala_node_kinds",
     "workspace_walk_honours_gitignore",
     "read_set_e2e",
     "roadmap_claims_contract",

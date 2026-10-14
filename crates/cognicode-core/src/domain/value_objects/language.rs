@@ -241,9 +241,12 @@ impl Language {
             Language::Ruby => "assignment",
             Language::Php => "expression_statement",
             Language::Swift => "variable_declaration",
-            // MEASURED 2026-10-14: a Scala `val` is `val_definition`, and
-            // `val_declaration` appears in node-types.json only as a
-            // supertype, not as something the parser emits on its own.
+            // MEASURED 2026-10-14: a Scala `val` is `val_definition`.
+            // `val_declaration` does appear in node-types.json, but it is
+            // unreachable from any parse of real Scala code: it has no parent
+            // node and never appears in a tree, so the filter could never fire
+            // on it. See crates/cognicode-core/tests/scala_node_kinds.rs, which
+            // pins this against a live parse rather than the schema alone.
             Language::Scala => "val_definition",
             Language::Lua => "variable_declaration",
             Language::Zig => "variable_declaration",
