@@ -10,10 +10,11 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-14, sobre `main` HEAD
-> `087e771e68407bf210d2948f2128c93e711d7f18` (cierre del bloque de
-> blockers de superficie anunciada + unidad de claims de lenguaje + correccion
-> de los mapeos de nodo de Scala);
-> **57 commits ahead de `origin/main`**, sin pushear).
+> `26e049052e8b873a55c86bddf1281d394b17d664` (CD-1: `test-fast` no podia
+> ejecutar ni una suite; cierre del bloque de blockers de superficie
+> anunciada + unidad de claims de lenguaje + correccion de los mapeos de nodo
+> de Scala);
+> **60 commits ahead de `origin/main`**, sin pushear).
 > Regenerado tras detectar que el ratchet
 > `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
 > `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
@@ -22,7 +23,53 @@
 > Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
 > `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y bateria (MEDIDO sobre `087e771e`, 2026-10-14)
+## HEAD y bateria (MEDIDO sobre `26e04905`, 2026-10-14)
+
+### CD-1 — `test-fast` no ejecutaba ninguna suite (`26e04905`)
+
+`scripts/test-fast.sh` era un **falso verde de forma total**: no ejecutaba ni
+una sola suite desde que el selector paso a emitir JSON. El `sed` que extraia
+`suites` conservaba las comillas, de modo que el token iterado era
+`["ladybug","core"]` y el `case` de `run_suite` no casaba con nada. El abort por
+`set -u` sobre `roadmap_rc` sin inicializar enmascaraba el defecto y devolvia un
+rc que parecia el de un fallo de tests. Medido:
+
+```
+$ bash scripts/test-fast.sh --paths crates/cognicode-core/src/lib.rs
+selector -> strategy=changed suites=["ladybug","core"]
+scripts/test-fast.sh: linea 151: roadmap_rc: variable sin asignar
+# 0.2 s, cero tests ejecutados
+```
+
+Todo lo que `fast` "verificaba" en las iteraciones anteriores era el ratchet del
+roadmap. Ningun cambio de codigo de las ultimas unidades pudo ser detectado por
+`fast`, porque `fast` no ejecutaba tests.
+
+Corregido sin tocar el producto: parseo real del JSON con `python3` (ya
+dependencia del script), rc del selector ya no descartado, suite desconocida
+`return 1` en vez de `return 0`, `roadmap_rc` inicializado, y `suites: []` cae al
+subset conservador **con aviso** en lugar de `exit 0` (se mantiene la regla 2 de
+AGENTS.md: el fallback avisa, no falla).
+
+* `scripts/ci/test_fast_truthfulness.py`: 7 comprobaciones que **ejecutan** el
+  wrapper con selector y `cargo` de mentira. Los tests previos del wrapper
+  greppeaban texto y habrian dado verde sobre este bug.
+  * RED **7/7**, cada uno por su causa propia (1 m 09 s).
+  * GREEN **7/7** (33 s).
+  * Mutation **4/5 mutantes mueren**. El quinto no lo mata ningun test, asi que
+    se **elimino** la guarda que protegia en vez de dejar codigo muerto.
+
+**Hallazgo lateral, preexistente y NO resuelto**: `cargo test -p cognicode-core
+--lib` pasa **2352/0**, pero `cargo test --workspace --lib` corre **41 tests mas
+que fallan**. Es *feature unification*: `cognicode-cli` habilita
+`cognicode-core/evidence-cli-ladybug`, de modo que los dos comandos prueban
+conjuntos distintos de tests. Verificado con el codigo de `HEAD` y el mio, y con
+`CARGO_TARGET_DIR` nuevo y reutilizado: el resultado es identico. Queda abierto
+para CD-2.
+
+**Gates CD-1**: `test_fast_truthfulness.py` PASS (7/7) ·
+`test_fast_full_wrappers.py` PASS · `check_known_failures.py` con
+`--tmpdir-root` real PASS (0 entradas) · **`test-full.sh` NOT_RUN**.
 
 Correcciones a las afirmaciones del snapshot anterior (2026-10-11), que
 eran **falsas** y se dejaron pasar 112 commits:

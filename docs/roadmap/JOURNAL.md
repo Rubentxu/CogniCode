@@ -15455,3 +15455,114 @@ Impacto real: cualquier despliegue donde el cliente lance el binario con cwd
 propio (configuracion habitual de un cliente MCP, que lanza el servidor como
 subproceso) obtiene una superficie **vacia y sin diagnostico**. El
 `--cwd <project_root>` que el cliente cree estar fijando no llega al catalogo.
+
+---
+
+## N+110 — CD-1: `test-fast` no ejecutaba ninguna suite (`26e04905`)
+
+**SHA**: `26e049052e8b873a55c86bddf1281d394b17d664` · 2026-10-14 · WU CD-1
+**Gates**: `test_fast_truthfulness.py` PASS 7/7 · `test_fast_full_wrappers.py`
+PASS · `check_known_failures.py --tmpdir-root` PASS (0 entradas) ·
+`test-full.sh` **NOT_RUN** · ratchet OK
+
+### El hallazgo
+
+`scripts/test-fast.sh` era un falso verde **total**: no ejecutaba ni una sola
+suite. No era un caso limite ni un typo improbable; era el camino normal de
+cada iteracion.
+
+El `sed` que extraia `suites` del JSON del selector conservaba las comillas:
+
+```
+SUITES = ["ladybug","core"]     # tal cual
+```
+
+El bucle partia esa cadena por espacios, asi que el token era
+`["ladybug","core"]`, y el `case` de `run_suite` comparaba contra `ladybug`,
+contra `core`, y no encontraba ninguno. Cada iteracion imprimia
+`=== suite: ["ladybug","core"] ===` y ejecutaba exactamente cero tests.
+
+Lo que enmascaraba el defecto era un segundo bug: `roadmap_rc` no se
+inicializaba en la rama `changed`, asi que `set -u` abortaba el script en
+`overall_rc=$roadmap_rc` con un rc != 0. Ese rc se leia como "los tests
+fallaron" cuando en realidad no se llego a correr ninguno. Un rojo por motivo
+equivocado es peor que un rojo: entrena al evaluador a ignorar el rojo.
+
+Consecuencia: **ningun cambio de las ultimas unidades pudo ser detectado por
+`fast`**. El wrapper solo estaba ejecutando el ratchet del roadmap.
+
+### El arreglo
+
+Solo `scripts/test-fast.sh`. Ningun cambio en el producto.
+
+* parseo real del JSON con `python3`, ya dependencia del script, que distingue
+  "JSON malformado" de "seleccion vacia"
+* el rc del selector ya no se descarta con `2>/dev/null`
+* suite desconocida: `return 0` -> `return 1`
+* `roadmap_rc` se inicializa antes de poder leerse
+* `suites: []` con strategy `changed` cae al subset conservador **con aviso**, no
+  a `exit 0` sin ejecutar nada
+
+### Por que los tests ejecutan y no greppean
+
+Los tests que ya cubrian estos wrappers (`test_fast_full_wrappers.py`) comprueban
+que el fichero mencione `select-suites.sh` y que declare `pipefail`. Son tests
+de texto, y **un test de texto habria dado verde sobre este bug**: el fichero
+existia, era ejecutable y mencionaba todo lo que debia mencionar.
+
+`scripts/ci/test_fast_truthfulness.py` ejecuta el wrapper de verdad contra un
+selector y un `cargo` de mentira. El `cargo` falso va en el PATH porque el
+defecto esta en el parseo y en el `return 0`, no en la duracion de
+`cargo test`: la primera version del harness compilaba el workspace 7 veces y
+tardo **8 m 31 s**, lo cual lo hacia inusable como test de iteracion. Con el
+stub: **33 s**.
+
+Un detalle del propio harness que habria falseado la RED: tres de los siete
+tests afirmaban solo `rc != 0`, y con `roadmap_rc` sin asignar el script aborta
+en cualquier caso. Habrian dado verde **sin corregir nada**. Por eso cada test
+exige ademas que el fallo sea atribuible a su causa y no a un fallo de shell.
+
+### Mutation
+
+5 mutantes, uno por correccion. **4 mueren**. El quinto
+(`drop_executed_guard`) sobrevive, porque la guarda `executed -eq 0` solo puede
+dispararse por un fallo de shell y ningun test la alcanza. En vez de dejar esa
+guarda como codigo muerto que aparenta proteger, se **elimino** del script. Si
+se quisiera esa proteccion, tiene que llegar con su test.
+
+### Hallazgo lateral: 41 tests que fallan solo bajo `--workspace`
+
+Medido durante CD-1 y **preexistente**, no causado por el cambio:
+
+| Comando | Resultado |
+|---|---|
+| `cargo test -p cognicode-core --lib` | 2352 passed / 0 failed |
+| `cargo test --workspace --lib` | 41 fallos mas (3093 passed / 41 failed) |
+
+Es *feature unification*: `cognicode-cli` habilita
+`cognicode-core/evidence-cli-ladybug`, de modo que `--workspace` compila core
+con un conjunto de features distinto y ejecuta tests que en el build por defecto
+ni existen. Comprobado aislando el test:
+
+```
+$ cargo test -p cognicode-core --lib -- --exact \
+    application::ai::fix_agent_tests::l_response_output_offers_no_authority_bearing_variant
+running 0 tests        # no existe con las features por defecto
+```
+
+Verificado que el resultado es identico con el codigo de HEAD y con el mio, y
+con `CARGO_TARGET_DIR` recien creado y reutilizado, para descartar que fuera
+artefacto incremental.
+
+El impacto es real para CD-2: si el gate verde y la suite que se ejecuta
+prueban **distintos conjuntos de tests**, entonces "el gate corrio" no significa
+"se ejecutaron los tests que el gate dice ejecutar". Queda abierto y sin
+arreglar; no se toca aqui porque es codigo Rust y CD-1 es infraestructura.
+
+### Following
+
+* **CD-2**: autoridad de merge y integridad SHA/checkout
+  (`publish-merge-gate.sh` puede publicar verde para un SHA distinto del
+  checkout probado), y conectar la seleccion real de suites al pipeline.
+* Resolver la unificacion de features de `cognicode-core`, o hacer que el gate
+  declare que conjunto prueba.
