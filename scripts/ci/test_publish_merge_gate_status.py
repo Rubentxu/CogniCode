@@ -231,12 +231,43 @@ def test_a_published_success_cannot_be_produced_without_running_the_gate() -> No
     on PATH that fails, and with `gh` replaced by a recorder. Nothing is posted:
     the recorder writes what it was asked to post, and this reads it.
     """
+    import shutil
     import tempfile
 
     with tempfile.TemporaryDirectory() as tmp:
         bindir = Path(tmp) / "bin"
         bindir.mkdir()
         recorded = Path(tmp) / "posted.txt"
+
+        # MEDIDO 2026-10-14 (CD-2). El puente se ejecutaba en REPO_ROOT, el
+        # arbol de trabajo real del desarrollador. Con el guard de arbol sucio
+        # (CD-2) eso hace que este test falle siempre que haya trabajo sin
+        # commitear, que es exactamente el estado normal mientras se develops
+        # algo. Se levanta un checkout limpio y aislado en su lugar: el bridge
+        # tiene que ser independiente del estado del arbol de quien lo ejecuta.
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "harness@example.invalid"],
+            cwd=repo, check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "harness"], cwd=repo, check=True
+        )
+        subprocess.run(
+            ["git", "remote", "add", "origin",
+             "git@github.com:acme/cognicode.git"],
+            cwd=repo, check=True,
+        )
+        scripts = repo / "scripts" / "ci"
+        scripts.mkdir(parents=True)
+        shutil.copy2(SCRIPT, scripts / "publish-merge-gate.sh")
+        shutil.copy2(REPO_ROOT / AUTHORITY, repo / AUTHORITY)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "bridge"], cwd=repo, check=True
+        )
 
         # A stand-in pipelinek that fails, whatever the script asks for.
         (bindir / "pipelinek").write_text(
@@ -259,11 +290,11 @@ def test_a_published_success_cannot_be_produced_without_running_the_gate() -> No
         env["PATH"] = f"{bindir}:{env['PATH']}"
 
         proc = subprocess.run(
-            ["bash", str(SCRIPT)],
+            ["bash", str(scripts / "publish-merge-gate.sh")],
             capture_output=True,
             text=True,
             env=env,
-            cwd=REPO_ROOT,
+            cwd=repo,
             check=False,
         )
 

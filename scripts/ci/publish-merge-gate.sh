@@ -91,7 +91,45 @@ if ! command -v gh >/dev/null 2>&1; then
     exit 2
 fi
 
-resolved="$(git rev-parse "$sha")"
+resolved="$(git rev-parse --verify "${sha}^{commit}" 2>/dev/null)" || {
+    echo "ERROR: '$sha' is not a commit in this repository." >&2
+    echo "       Nothing was run and nothing was published." >&2
+    exit 2
+}
+
+# MEDIDO 2026-10-14 (CD-2). El veredicto tiene que describir el estado del
+# commit que se nombra al publicarlo. Antes el script resolvia el SHA, lo
+# imprimia y lo publicaba, pero ejecutaba la autoridad sobre el arbol de trabajo
+# tal cual: nunca hacia checkout del SHA ni se lo pasaba. Medido con el puente
+# real y `pipelinek`/`gh` de mentira:
+#
+#     published sha = 367813eb...   (el que se nombra)
+#     tested   head = 7cfe749e...   (el que la autoridad probo)
+#
+# Publicar `success` para el primero es una firma falsa por construccion, y con
+# `strict: true` basta para desbloquear un merge. La razon de fondo es la misma
+# que el "WHAT THIS COSTS" de arriba: un estado publicado es una afirmacion.
+# Ahora la afirmacion es al menos sobre el commit correcto, porque se prueba el
+# commit correcto.
+if [ "$resolved" != "$(git rev-parse --verify HEAD^{commit})" ]; then
+    echo "ERROR: '$sha' ($resolved) is not HEAD ($(git rev-parse --verify HEAD^{commit}))." >&2
+    echo "       The merge authority tests the checkout it runs in, so a verdict" >&2
+    echo "       for another commit would describe code that was never tested." >&2
+    echo "       Nothing was run and nothing was published." >&2
+    exit 2
+fi
+
+# MEDIDO 2026-10-14 (CD-2). `merge-gate.pipeline.kts` compila y prueba el arbol
+# de trabajo. Un arbol con cambios sin commitear puede pasar el gate sobre un
+# estado que no existe en ningun commit y que nadie podra reconstruir despues;
+# publicarlo bajo un SHA es afirmar algo que no se puede comprobar.
+if ! git diff --quiet HEAD -- 2>/dev/null || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+    echo "ERROR: the working tree has uncommitted changes." >&2
+    echo "       The gate would test a state that no commit describes." >&2
+    echo "       Commit or stash them first (nothing was published)." >&2
+    exit 2
+fi
+
 echo "==> running the merge authority for $resolved"
 echo "    database: $PIPELINE_DB"
 mkdir -p "$(dirname "$PIPELINE_DB")"
