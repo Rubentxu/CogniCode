@@ -14876,3 +14876,165 @@ La regla que queda: un bloque se cierra cuando **el camino de aceptacion** —el
 que un usuario recorre de verdad— se ha ejecutado sobre el resultado entero, en
 el binario de release, en el HEAD final. Los test counts son una consecuencia,
 no la prueba.
+
+## N+105 — "Haskell" no era un defecto de Haskell: eran cuatro
+
+**Rama** `main` · **Bloque** Claims de soporte (`product/languages.json`).
+**SHA** `pending`. Cierra N+104, que habia cerrado el caso Haskell como si
+fuera un solo lenguaje.
+
+### El error de encuadre
+
+N+104 titulo el hallazgo "Haskell devuelve simbolos que no son definiciones" y
+lo trato como un defecto de mapeo aislado. **No lo era.** No medi cuantos
+lenguajes se anuncian como soportados, y por eso describi un sintoma como si
+fuera la enfermedad.
+
+La pregunta correcta no era "por que Haskell falla" sino **"que otros Lenguajes
+anunciados fallan igual"**. `product/languages.json` anuncia **18** lenguajes
+como `support_level: "supported"`. Medidos:
+
+    language     parsed  found      language     parsed  found
+    Rust         yes     ok         Ruby         yes     ok
+    Python       yes     ok         Swift        yes     ok
+    Go           yes     ok         Lua          yes     ok
+    Java         yes     ok         Scala        yes     MISSING  []
+    TypeScript   yes     ok         Bash         yes     MISSING  []
+    C            yes     ok         Yaml         yes     MISSING  []
+    Cpp          yes     ok         Haskell      yes     MISSING  []
+    CSharp       yes     ok
+    Php          yes     ok
+
+**Cuatro de dieciocho no extraen absolutamente nada** de su propia definicion
+de nivel superior. Haskell es el cuarto, no el unico.
+
+### Cuatro causas distintas, un solo sintoma
+
+Lo instructive es que **las causas no son la misma**, asi que "arreglar Haskell"
+habria arreglado uno de cuatro:
+
+| Lenguaje | Que dice el codigo | Que produce la gramatica |
+|---|---|---|
+| **Bash** | `function_definition` | nodo correcto, pero el nombre es un hijo `word` |
+| **Haskell** | `bind` / `signature` | nodos correctos, pero el nombre es un hijo `variable` |
+| **Yaml** | `block_mapping` | correcto, pero YAML **no tiene** nodo identificador: la clave es `flow_node` |
+| **Scala** | `function_declaration` / `val_declaration` | esos nodos **no existen** en un arbol real |
+
+La causa comun de Bash y Haskell esta en un solo sitio:
+`find_identifier_name` (`tree_sitter_parser.rs:280`) acepta **solo** cuatro tipos
+de nodo, `identifier`, `type_identifier`, `name` y `simple_identifier`. El nodo
+casa en el filtro y despues **el nombre se descarta**. Por eso estos dos no son
+un problema de `function_node_type`: son un problema de la segunda fase.
+
+Verificado contra el arbol real, no contra los `node-types.json` (que si mentian:
+`variable_declaration` de Python no existe, y aun asi Python extrae bien porque
+solo importa `function_definition`).
+
+### Por que el defecto es de producto y no mio
+
+`product/languages.json` dice `supported`. Eso es una **afirmacion de venta**, y
+la afirmacion no la respalda el codigo en cuatro casos. La leccion se **
+enfrenta** al patron que N+104 ya habia nombrado: **5 de 6 reglas falsas de los
+bloques anteriores eran reglas enunciadas en prosa y supuestas ciertas**. Aqui
+la regla falsa es `support_level`, que es prosa en un `.json` sin ninguna
+comprobacion que la respalde. La prueba que se citaba como evidencia
+(`m06_acceptance.rs`) solo afirma que la gramatica **carga**.
+
+No he tocado `languages.json`. Bajar cuatro lenguajes a `experimental` es una
+decision de producto con impacto comercial, no mia. Lo que si hago es dejar el
+hecho medido y ejecutable.
+
+### Tests: cuatro que afirman lo roto, doce que lo healthy
+
+`advertised_language_extraction_matrix.rs`, **5 tests**:
+
+- 4 tests de caracterizacion (Bash, Scala, Yaml, Haskell) que **afirman el
+  comportamiento erroneo actual** y cuyo mensaje de fallo dice que hay que
+  invertirlos al arreglar.
+- 1 test que **afirma positively** los 12 lenguajes que hoy funcionan, con la
+  salida exacta. No es decorativo: sin el, un arreglo que amplie
+  `find_identifier_name` a `word` y `variable` podria empezar a casar nodos
+  arbitrarios en Rust o Python y nadie se enteraria.
+
+**No son vacuos, y esta vez lo medi en vez de suponerlo.** Amplie los dos brazos
+de `find_identifier_name` a `word` y `variable` (lo que un arreglo real haria) y
+observe: `bash_function_definition_is_not_extracted` **FALLA** y los 12healthy
+siguen verdes. Es decir, el test muerde **y** no sobre-corrige. Haskell seguia
+verde porque su arreglo necesita ademas el cambio de mapeo: **un solo test no
+puede cubrir las cuatro causas**, y por eso hay cuatro.
+
+### El contrato de cobertura atrapo la suite nueva
+
+Anadir `advertised_language_extraction_matrix.rs` rompio
+`core_gate_coverage_contract`, exactamente como esta disenado para:
+
+    every_core_suite_is_either_named_or_covered_by_an_unrestricted_step  FAILED
+    the_anchor_set_is_the_measured_one                                  FAILED
+    left: [... "advertised_language_extraction_matrix", ...]
+    right: [... "analytics_bounded_paths", ...]
+
+Actualizado 79 -> **80** suites y registrada en `ANCHOR_SUITES`, con el motivo
+en el comentario. Comprobado que el pin muerde: ocultando la suite, el contrato
+vuelve a fallar con `expected exactly 80 ... found 79` y **3** aserciones
+caidas. Restaurado, **10/10 verde**.
+
+Es la segunda vez en dos sesiones que un contrato escrito hace rato atrapa un
+cambio mio. La diferencia con los 100 ficheros de `fmt` sucios: aqui el fallo es
+**informativo y barato**, y por eso no lo toco.
+
+### Estado
+
+- `advertised_language_extraction_matrix`: **5 passed**
+- `core_gate_coverage_contract`: **10 passed**, pin verificado en ambos sentidos
+- Workspace completo: **6594 passed / 0 failed** (`CARGO_EXIT=0`)
+- Sin cambios de logica: **0 lineas de produccion tocadas**
+- Sigue **sin pushear** y **sin firmar** nada.
+
+### Correccion: la cifra de N+104 estaba inflada en 8
+
+N+104 cerro declarando **"6597 passed"**. Al medirlo de nuevo con la unidad de
+este bloque encima, el numero no cuadra, y un numero que no cuadra con la
+aritmetica que uno mismo acaba de hacer es suspecto por principio.
+
+Medido en el checkout principal, con el arbol limpio en `d50bb7ae`:
+
+    HEAD    passed=6589  failed=0   (exit 0)
+    +5 tests de esta unidad  = 6594    exit 0, 0 failed
+
+6594 coincide exactamente con la corrida de esta unidad. Por tanto la cifra
+correcta en HEAD es **6589**, y los **6597** de N+104 estaban **8 por encima**.
+No hay test que falte: los 5 nuevos estan contados y verificados uno a uno en
+`ws.log`. Era un numero arrastrado, no medido en ese momento.
+
+### Un worktree aislado no sirve como linea base aqui
+
+Queria medir HEAD sin tocar el checkout, y perdi dos mediciones por el camino.
+El worktree fallo con **41 tests** que no son fallos de HEAD: varios tests
+resuelven rutas con `env!("CARGO_MANIFEST_DIR")`, que **se hornea en tiempo de
+compilacion**. Al compilar dentro del worktree, esos artefactos pasaron a apuntar
+a un directorio que luego borre, y los binarios de test ya compilados siguieron
+resolviendo la ruta muerta:
+
+    read application/ai/fix_agent.rs: No such file or directory
+    cannot read merge-gate.pipeline.kts: No such file or directory
+    skill bundle path is not a directory: .../baseline-wt/skills/cognicode
+
+Un `touch` de los fuentes **no** los arregla: `env!` no se reevalua si no
+recompila el crate. Hizo falta `cargo clean -p cognicode-core -p cognicode-cli
+-p cognicode-mcp` (**21,5 GiB**) antes de que la medicion significara algo.
+
+El otro fallo del worktree si era real y revelador:
+`lightweight_index_prunes_ignored::gitignored_files_are_not_indexed` falla
+porque el worktree **no tiene** `sandbox/repos/` ni `target/`, y el test exige
+que existan. Ese test **depende de la forma del checkout**, no del codigo: es
+correcto en el checkout principal y no puede correr en cualquier arbol limpio.
+No lo he tocado, pero queda dicho: cualquier baseline aislado de este repo tiene
+que pagar el coste de reconstruir el arbol antes de servir de referencia.
+
+### La leccion
+
+Tres veces en esta sesion el numero agregado fue el que mintio: los **6597**
+inflados, el `cargo test | tail` cuyo exit era el de `tail`, y el worktree con
+**41** fallos que no eran de HEAD. En los tres casos el detalle —una linea de
+log, un `$?`, un `CARGO_MANIFEST_DIR`— era mas barato que el agregado. Un
+conteo agregado no es una medicion: es una suma que nadie ha contrastado.

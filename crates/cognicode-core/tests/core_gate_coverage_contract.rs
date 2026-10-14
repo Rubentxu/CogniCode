@@ -247,10 +247,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // The three repro suites are characterization, not behaviour
     // contracts, so they are registered in ANCHOR_SUITES below rather
     // than named by a workflow step: nothing runs them by name.
+    //   - `advertised_language_extraction_matrix` (Bash, Haskell, Scala and
+    //     Yaml are advertised `support_level: "supported"` but extract
+    //     nothing from their own definitions; the twelve that work are
+    //     pinned so a fix cannot over-correct)
     assert_eq!(
         suites.len(),
-        79,
-        "expected exactly 79 cognicode-core integration suites, found {}. \
+        80,
+        "expected exactly 80 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -357,6 +361,7 @@ fn is_accepted_unreadable(path: &Path) -> bool {
 /// make the measured set and the pinned set disagree — which is exactly what
 /// `the_anchor_set_is_the_measured_one` is for.
 const ANCHOR_SUITES: &[&str] = &[
+    "advertised_language_extraction_matrix",
     "analytics_bounded_paths",
     "analytics_registry_admission",
     "analytics_registry_cohort_1",
