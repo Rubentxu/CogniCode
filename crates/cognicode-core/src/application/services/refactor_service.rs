@@ -15,6 +15,29 @@ use crate::infrastructure::vfs::VirtualFileSystem;
 use lsp_types::Url;
 use std::path::Path;
 
+/// Whether `source` contains `name` as a whole identifier.
+///
+/// Used as a cheap prefilter before paying for a tree-sitter parse: a symbol
+/// definition cannot exist in a file that never mentions the identifier. This
+/// is deliberately conservative — it may return `true` for a file that only
+/// calls the symbol, which then fails the exact parse check — because a false
+/// negative here would hide a real definition. Word boundaries keep
+/// `mkAll` from matching `mkAllDone`.
+fn contains_identifier(source: &str, name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let bytes = source.as_bytes();
+    let needle = name.as_bytes();
+    let is_ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'$';
+    source.match_indices(name).any(|(idx, _)| {
+        let before_ok = idx == 0 || !is_ident_byte(bytes[idx - 1]);
+        let after = idx + needle.len();
+        let after_ok = after >= bytes.len() || !is_ident_byte(bytes[after]);
+        before_ok && after_ok
+    })
+}
+
 /// Service for refactoring operations
 pub struct RefactorService {
     safety_gate: SafetyGate,
@@ -54,7 +77,26 @@ impl RefactorService {
         name: &str,
     ) -> AppResult<Option<std::path::PathBuf>> {
         let root = workspace_root.to_path_buf();
-        let walker = ignore::WalkBuilder::new(&root).follow_links(true).build();
+        // Skip the same dependency/build trees the other search walks skip
+        // (analysis_service::USAGE_SKIP_DIRS), rather than re-declaring the
+        // list here. Measured: without this, `safe_refactor` on this repository
+        // read and tree-sitter-parsed all 2,472 source files and took 60.5s,
+        // over the 30s category budget in rmcp_adapter::timeout_for_category,
+        // so the call returned an error instead of a plan. The 0b5771e7 fix made
+        // the symbol reachable; this keeps it reachable in time.
+        //
+        // `filter_entry` prunes the descent; an iterator post-filter would
+        // still walk the skipped trees and only discard them afterwards.
+        let walker = ignore::WalkBuilder::new(&root)
+            .follow_links(true)
+            .filter_entry(|e| {
+                if let Some(name) = e.file_name().to_str() {
+                    !crate::application::services::analysis_service::USAGE_SKIP_DIRS.contains(&name)
+                } else {
+                    true
+                }
+            })
+            .build();
 
         for entry in walker {
             let Ok(entry) = entry else { continue };
@@ -64,15 +106,19 @@ impl RefactorService {
             let path = entry.path();
             // Language::from_extension rejects unsupported files; skip them
             // cheaply rather than letting the parser fail per candidate.
-            if Language::from_extension(path.extension()).is_none() {
-                continue;
-            }
-            let Ok(source) = std::fs::read_to_string(path) else {
-                continue;
-            };
             let Some(language) = Language::from_extension(path.extension()) else {
                 continue;
             };
+            // Cheap reject before any I/O or parsing: a definition of `name`
+            // must contain the identifier as a word. This keeps the common case
+            // (a symbol that does not exist) linear in bytes rather than paying a
+            // full parse per file.
+            let Ok(source) = std::fs::read_to_string(path) else {
+                continue;
+            };
+            if !contains_identifier(&source, name) {
+                continue;
+            }
             let Ok(parser) = TreeSitterParser::new(language) else {
                 continue;
             };

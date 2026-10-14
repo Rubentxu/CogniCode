@@ -1575,7 +1575,12 @@ pub struct ContextData {
 
 /// Directories skipped during usage-search traversal
 /// (dependency/build/cache directories).
-const USAGE_SKIP_DIRS: &[&str] = &[
+///
+/// Shared with `RefactorService::resolve_symbol_file`, which walks the whole
+/// workspace for a symbol definition. Declared in one place so the two walks
+/// cannot drift; a second copy here would be a second source of truth for the
+/// same policy.
+pub(crate) const USAGE_SKIP_DIRS: &[&str] = &[
     "node_modules",
     ".git",
     "target",
