@@ -83,10 +83,18 @@ def _path_has_ancestor_symlink(path: Path) -> bool:
 def prepare_tmpdir(tmpdir_root: str | None) -> tuple[str | None, str | None]:
     """Return ``(tmpdir_root_used, scratch_subdir)`` suitable for ``TMPDIR``.
 
+    * On success: ``(root, scratch)`` with both non-None.
+    * On failure: ``(None, reason)`` — ``reason`` is a human-readable
+      explanation, never a path. The caller must surface it and abort.
+
+    The ``None`` sentinel therefore always lives in the FIRST field. That
+    invariant is what this contract exists to pin: returning the reason in
+    the second field is what let `main` export a prose message as `TMPDIR`
+    (MEDIDO 2026-10-14, N+114).
+
     * If ``tmpdir_root`` is None: falls back to ``tempfile.gettempdir()``.
     * The chosen root MUST exist, be writable, and not have any symlinked
-      ancestor. If those conditions fail, returns ``(None, reason)`` and the
-      caller must surface the failure to the user.
+      ancestor.
     * The scratch subdir is created with ``tempfile.mkdtemp``, owned by us,
       and the caller is responsible for cleaning it up.
     """
@@ -233,8 +241,15 @@ def main() -> int:
     target = args.target or baseline.get("target") or "lib"
 
     root_used, scratch = prepare_tmpdir(args.tmpdir_root)
-    if scratch is None:
-        print(f"[known-failures] TMPDIR setup failed: {root_used}", file=sys.stderr)
+    # `prepare_tmpdir` devuelve `(None, motivo)` cuando el root no vale y
+    # `(root, scratch)` cuando vale. La comprobacion va sobre el PRIMER
+    # campo porque ahi es donde va el None: mirar `scratch` daba False
+    # siempre (en el fallo `scratch` es el texto del motivo) y el script
+    # exportaba una frase en prosa como TMPDIR. MEDIDO 2026-10-14: de ahi
+    # venian 16 falsos "NEW REGRESSIONS" y un directorio basura creado
+    # dentro del repo con el mensaje como nombre.
+    if root_used is None:
+        print(f"[known-failures] TMPDIR setup failed: {scratch}", file=sys.stderr)
         return 2
 
     child_env = {**os.environ, "TMPDIR": scratch}
