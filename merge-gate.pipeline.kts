@@ -351,8 +351,26 @@ pipeline {
 
             // pr-ci.yml also runs the selector script itself, not only its
             // contract. The contract pins what the script decides; running the
-            // script is what proves the decision is consumable downstream. A
-            // green contract over a script nothing calls is the A-013 shape.
+            // script is what proves it still runs at all. A green contract over
+            // a script nothing calls is the A-013 shape.
+            //
+            // MEDIDO 2026-10-14 (CD-3). This stage computed SELECT_OUTPUT and
+            // echoed it. Nothing read it, and nothing could have: the selector
+            // exits 0 for any input (measured with a valid path and with a path
+            // that does not exist), so a typo in PATHS, a broken selector or a
+            // malformed selection all reached the same place as a healthy one.
+            // The stage could not fail for any reason connected to the thing it
+            // exists to check.
+            //
+            // WHAT THIS STAGE IS NOT. It does not narrow the gate. This pipeline
+            // runs every suite unconditionally — that is deliberate, and
+            // `test_merge_gate_selection_truth.py` pins it so nobody "optimises"
+            // the merge gate by making it diff-aware. The selection governs
+            // `scripts/test-fast.sh`, the developer feedback loop, not `main`.
+            // The earlier version of this comment said that running the
+            // script proved the selection was consumable downstream. Measured:
+            // the selection is consumed by nobody. Corrected here rather than
+            // left as a contract the code does not meet.
             stage("select-suites-script") {
                 sh("""
                     $cd || exit 1
@@ -360,6 +378,24 @@ pipeline {
                     PATHS="scripts/ci/run-all-contracts.sh"
                     SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"
                     echo "${'$'}SELECT_OUTPUT"
+
+                    # MEDIDO 2026-10-14 (CD-3): the stage used to echo the
+                    # selection and stop. `echo` cannot fail for any reason
+                    # connected to the selector, so the stage verified nothing.
+                    # These three lines make it able to fail, which is the whole
+                    # reason it exists. They assert the shape of the output, not
+                    # which suites came out: the suite set belongs to fast.
+                    case "${'$'}SELECT_OUTPUT" in
+                        *'"strategy"'*'"suites"'*) ;;
+                        *) echo "ERROR: selector output has no strategy/suites" >&2; exit 1 ;;
+                    esac
+                    printf '%s' "${'$'}SELECT_OUTPUT" | python3 -c '
+import json, sys
+doc = json.loads(sys.stdin.read())
+assert isinstance(doc.get("strategy"), str), "strategy is not a string"
+assert isinstance(doc.get("suites"), list), "suites is not a list"
+assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings"
+'
                 """.trimIndent())
             }
         }
