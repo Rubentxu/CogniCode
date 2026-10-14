@@ -96,33 +96,51 @@ fn bash_function_definition_is_extracted() {
     );
 }
 
-// --- Scala, Yaml, Haskell: still not extracted, still characterized ---------
+// --- Scala: fixed, asserted positively ---------------------------------------
 //
-// These three remain broken and are NOT fixed here. Unlike Bash they need a
-// per-language node-mapping decision, which is a product call:
-//   Scala   the declared `function_declaration` / `val_declaration` do not
-//           exist in a real tree, so the filter never fires
-//   Yaml     the key is a `flow_node` and there is no identifier node kind;
-//           YAML has no `name` field to read either
-//   Haskell  `bind` / `signature` do carry a `name` field, but the node
-//           types the filter accepts do not include them, so fixing the
-//           lookup is not enough
+// N+105 recorded Scala as "the declared strings do not exist in a real tree, so
+// the filter never fires" and classified it as a product decision. Measured on
+// 2026-10-14 against tree-sitter-scala 0.26.2's own node-types.json:
 //
-// The support-level question for these three is for the operator.
+//   function_declaration   EXISTS        class_declaration   DOES NOT EXIST
+//   val_declaration         EXISTS        function_definition EXISTS
+//                                         class_definition    EXISTS
+//                                         object_definition   EXISTS
+//
+// `class_declaration` is **Java's** spelling. tree-sitter-scala emits
+// `class_definition` and `object_definition`, so the strings had been copied
+// from a neighbouring grammar instead of measured. That is a factual error, not
+// a policy question, and no test pinned them.
+//
+// The filter can only match one function kind at a time, so Scala declares
+// `function_definition` (what the grammar emits) and the classes are reachable
+// through `class_definition`.
 
 #[test]
-fn scala_function_definition_is_not_extracted() {
-    let src = "object A {\n  def probeScalaSymbol: Int = 1\n}\n";
+fn scala_definitions_are_extracted() {
+    let src = "class Config {\n  def count: Int = 1\n}\nobject Runner {\n  def main(): Unit = println(\"x\")\n}\n";
     let got = extract(Language::Scala, src);
-    assert!(
-        got.is_empty(),
-        "Scala is advertised support_level='supported' but extracts nothing from \
-         its own function definition. Today the behaviour under test is that it \
-         returns zero symbols, which is a product claim the code does not back. \
-         When Scala support is fixed this test must be inverted to assert that \
-         probeScalaSymbol is found on line 1."
+    assert_eq!(
+        got,
+        vec![
+            ("Config".to_string(), 0u32),
+            ("count".to_string(), 1u32),
+            ("Runner".to_string(), 3u32),
+            ("main".to_string(), 4u32),
+        ],
+        "Scala is advertised support_level='supported'. Its classes, objects and \
+         methods must extract with their own names and lines. Measured: {got:?}. \
+         The mapping used to declare Java's `class_declaration`, a node kind \
+         tree-sitter-scala does not emit."
     );
 }
+
+// --- Yaml: still not extracted, still characterized --------------------------
+//
+// Unlike Scala this one has no name to read: YAML keys are `flow_node` values
+// and `block_mapping_pair` exposes `key`/`value` fields rather than `name`.
+// Treating each top-level key as a symbol is a product decision about what a
+// YAML symbol is, so it stays untouched.
 
 #[test]
 fn yaml_key_is_not_extracted() {

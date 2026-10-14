@@ -195,7 +195,18 @@ impl TreeSitterParser {
                 _ => kind == self.language.variable_node_type(),
             };
 
-            if (kind == function_type || kind == class_type || is_variable)
+            // MEASURED 2026-10-14: tree-sitter-scala splits Scala's class-shaped
+            // declarations across TWO kinds, `class_definition` and
+            // `object_definition`, and there is no single kind that covers both.
+            // `object Node` is how Scala spells a singleton class, so counting
+            // only one of them drops half the definitions in a Scala file. Same
+            // single-value-API escape hatch as the Rust case above.
+            let is_class = match self.language {
+                Language::Scala => matches!(kind, "class_definition" | "object_definition"),
+                _ => kind == class_type,
+            };
+
+            if (kind == function_type || is_class || is_variable)
                 && let Some(symbol) = self.node_to_symbol_with_path(current, source, file_path)
             {
                 symbols.push(symbol);
@@ -259,9 +270,14 @@ impl TreeSitterParser {
         // constants (const_item, static_item) from let-bindings (let_declaration).
         // Both shapes are variable-shaped in `find_all_symbols_with_path`; here
         // we pick the appropriate `SymbolKind` for each.
+        // MEASURED 2026-10-14: `object_definition` is the Scala counterpart of
+        // `class_definition` (a Scala `object` IS a singleton class), so it maps
+        // to `SymbolKind::Class`. The node's own `kind()` still flows through to
+        // `node_type` untouched below.
         let kind = match node.kind() {
             "const_item" | "static_item" => SymbolKind::Constant,
             f if f == self.language.function_node_type() => SymbolKind::Function,
+            c if c == "object_definition" && self.language == Language::Scala => SymbolKind::Class,
             c if c == self.language.class_node_type() => SymbolKind::Class,
             v if v == self.language.variable_node_type() => SymbolKind::Variable,
             _ => SymbolKind::Unknown,

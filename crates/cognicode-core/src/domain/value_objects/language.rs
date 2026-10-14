@@ -161,7 +161,12 @@ impl Language {
             // free functions. `method_declaration` only appears inside
             // type bodies (class/struct/protocol/enum).
             Language::Swift => "function_declaration",
-            Language::Scala => "function_declaration",
+            // MEASURED 2026-10-14 against tree-sitter-scala 0.26.2:
+            // `def` is `function_definition`, NOT `function_declaration`.
+            // The old value was Java's spelling and matched nothing, so a
+            // Scala file with a method produced zero symbols while the
+            // language is advertised support_level="supported".
+            Language::Scala => "function_definition",
             Language::Lua => "function_declaration",
             Language::Zig => "function_declaration",
             Language::Dart => "method_declaration",
@@ -196,7 +201,12 @@ impl Language {
             Language::Ruby => "class",
             Language::Php => "class_declaration",
             Language::Swift => "class_declaration",
-            Language::Scala => "class_declaration",
+            // MEASURED 2026-10-14: tree-sitter-scala 0.26.2 has NO
+            // `class_declaration` node. Classes and objects are
+            // `class_definition` and `object_definition` respectively, both of
+            // which expose a `name` field. The old value was Java's spelling,
+            // copied rather than measured.
+            Language::Scala => "class_definition",
             Language::Lua => "function_declaration",
             Language::Zig => "struct_declaration",
             Language::Dart => "class_declaration",
@@ -231,7 +241,10 @@ impl Language {
             Language::Ruby => "assignment",
             Language::Php => "expression_statement",
             Language::Swift => "variable_declaration",
-            Language::Scala => "val_declaration",
+            // MEASURED 2026-10-14: a Scala `val` is `val_definition`, and
+            // `val_declaration` appears in node-types.json only as a
+            // supertype, not as something the parser emits on its own.
+            Language::Scala => "val_definition",
             Language::Lua => "variable_declaration",
             Language::Zig => "variable_declaration",
             Language::Dart => "variable_declaration",
