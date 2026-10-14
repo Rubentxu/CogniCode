@@ -15739,8 +15739,95 @@ que importa y sobrevive a la version rota.
 ### Following
 
 * La unificacion de features de `cognicode-core` (41 tests que fallan solo bajo
-  `--workspace`) sigue abierta y sin tocar.
+  `--workspace`) sigue abierta y sin tocar. **CORREGIDO en N+113**: la
+  hipotesis de feature unification era falsa; la causa era un binario de
+  test obsoleto en un `CARGO_TARGET_DIR` reutilizado.
 * CD-4 sin definir. `test-full.sh` no se ha ejecutado en CD-1, CD-2 ni CD-3:
   las tres son infraestructura de scripts y ninguna toca codigo Rust, pero el
   gate completo sigue **NOT_RUN** y conviene ejecutarlo antes de cualquier
   bump de SemVer o tag.
+
+## N+113 — CD-3 cerrada: el gate completo da rc=1 y ninguna de las tres unidades lo causaba (`b6c7d613`)
+
+**SHA**: `b6c7d613...` · 2026-10-14 · WU CD-3 (cierre de gate)
+**Gates**: `test-full.sh` **FAIL rc=1** · fmt FAIL 100 diffs · clippy FAIL 7 errores · workspace FAIL 41 · doc PASS · known_failures FAIL 16 · ratchet PASS
+
+### Ejecutar el gate era lo unico que quedaba
+
+CD-1, CD-2 y CD-3 dejaron `test-full.sh` como **NOT_RUN**, cada una
+justificandolo con que "ninguna toca codigo Rust". Justificacion correcta
+y a la vez incompleta: que nadie haya tocado codigo Rust no es un motivo
+para no correr el gate, es un motivo para sospechar que el fallo es de
+otro sitio. Correrlo transformo tres suposiciones en mediciones.
+
+### Ninguna de las tres unidades podia ser la causa
+
+`git diff --name-only 26e04905~1..HEAD -- '*.rs'` devuelve **0**. CD-1,
+CD-2 y CD-3 tocan nueve ficheros: dos scripts de shell, el pipeline,
+cuatro tests de Python y dos de documentacion. Ni un `.rs`. Cualquier
+fallo de `cargo` es, por construccion, anterior a las tres.
+
+### Los 41 fallos: no eran uniones de features
+
+CD-1 habia dejado escrito que `cargo test -p cognicode-core --lib` daba
+2352/0 mientras `--workspace` ejecutaba tests adicionales y reportaba 41
+fallos, "trazado a `cognicode-cli` habilitando
+`cognicode-core/evidence-cli-ladybug`". **Era falso, y el propio dato lo
+desmentia**: el mismo binario de test compilado con los mismos sources
+daba 3134/0 en un arbol y 3093/41 en otro.
+
+La causa real era un **binario de test obsoleto en un `CARGO_TARGET_DIR`
+reutilizado**. Los 41 fallos citaban rutas bajo
+`/var/home/rubentxu/tmp-cc/cc-fast-harness-s5a972om/repo/...` —un
+directorio temporal que mi propio harness de CD-1 crea y ya no existe—
+porque `CARGO_MANIFEST_DIR` y las rutas del harness se hornean en tiempo
+de compilacion. Al borrar el harness, el binario cacheado seguia
+apuntando ahi. Con target dir nuevo: **3134 passed / 0 failed**.
+
+Leccion: el numero de tests cambia con las features y eso hace que la causa
+parezca un feature flag. Antes de atribuir a un flag, hay que comprobar si
+el **arbol** cambia: aqui el arbol era identico y cambiaba el target dir.
+
+### 16 falsos "NEW REGRESSIONS": el script comparaba contra su propio error
+
+`check_known_failures.py` es la red que distingue una regresion real del
+ruido conocido. Estaba contando el ruido como regresion, 16 veces.
+Causa: `prepare_tmpdir` devuelve `(None, motivo)` en fallo y `(root,
+scratch)` en exito, pero `main` comprobaba `scratch is None`. En el fallo
+`scratch` es el texto del motivo, asi que la comprobacion daba False y el
+script seguia con `TMPDIR` = una frase en prosa partida por espacios:
+
+    TMPDIR=temp root /home/rubentxu/.jcode/scratch crosses a symlinked
+      ancestor; pass --tmpdir-root <real-dir> to override
+
+Eso explica tambien el segundo sintoma, que no era ruido: el mensaje se
+usa como **nombre de ruta** en `env::temp_dir()`, se resuelve contra el
+cwd y crea `crates/cognicode-core/temp root /...` dentro del repo. Como
+no esta ignorado, lo detectaba el guard de arbol sucio de CD-2 y
+**bloqueaba el merge-gate**.
+
+El defecto se reprodujo solo: correr el test RED hizo reaparecer el
+directorio. Esa es la prueba mas directa de la causalidad.
+
+Con TMPDIR real (`/var/tmp`): **0 entries**, rc=0.
+
+### fmt y clippy: deuda previa, no de estas unidades
+
+100 diffs de fmt y 7 errores de clippy, todos anteriores (el commit base
+`96c22ced` da los mismos 100 diffs). Los de clippy aparecian **por
+capas**: `cognicode-core` enmascaraba a `cognicode-cli`, que enmascaraba
+a los targets de test. Arreglados uno a uno (`b6c7d613`).
+
+Un unico cambio con sustancia: `IncrementalAnalysis::QualityFinding` pasa
+a `Box<Finding>` (272 bytes frente a 64 de las otras variantes). Es
+source-compatible y no toca comportamiento.
+
+### Following
+
+* `test-full.sh` sigue en **rc=1**: tras los dos commits de esta unidad
+  falta la corrida que lo deje en rc=0. El gate ya es *capaz* de fallar
+  (CD-3), asi que su rc=0 sera informative y no decorativo.
+* La maquina tiene `TMPDIR=/home/rubentxu/.jcode/scratch`, que cruza un
+  symlink. Con el arreglo, el gate **falla honestamente** con rc=2 en vez
+  de fabricar comparacion. Operativamente hay que correr con
+  `TMPDIR=/var/tmp`, o persistir un `--tmpdir-root` por defecto.
