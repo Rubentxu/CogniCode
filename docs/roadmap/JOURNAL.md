@@ -15366,7 +15366,57 @@ en vez de arreglo.
 **Rama** `main` · **Bloque** Surface MCP.
 **SHA** `pending`. Hallazgo nuevo, abierto, **no arreglado**.
 
+### RECHAZADO: la causa que propuse aqui era la mitad de la historia
+
+Escribi que la causa era que `--cwd` no se aplica al cwd del proceso y que por
+eso `load_tool_catalog()` resolvia desde el sitio equivocado. **Es cierto como
+sintoma y falso como causa completa.** Intente arreglarlo y no se sostiene:
+
+Anclar el catalogo en `--cwd` **rompio** dos tests reales de B6.W1:
+
+    concurrent_requests_in_different_sessions_isolated  FAILED: A catalog must be non-empty
+    large_response_uses_pagination                    FAILED: empty catalog across all pages
+
+Motivo real: **`product/tools.json` describe el build, no el proyecto**. `--cwd`
+es el directorio que las herramientas analizan y no tiene por que tener
+`product/`. `b6_w1` lanza el servidor con un `TempDir` como `--cwd` y exige un
+catalogo no vacio, lo cual solo tiene sentido si el catalogo pertenece al
+binario. Anclarlo en el proyecto hacia que **la superficie dependiera de a que
+proyecto se apunte**, que es justo lo contrario de lo que debe pasar.
+
+Segundo intento: anclar en el ejecutable (`current_exe`), que es lo que hace
+`resolve_product_assets_root` del CLI. **Tampoco basta** cuando el binario vive
+en un `CARGO_TARGET_DIR` aislado: `target/release/` no lleva datos al lado, y
+`CARGO_MANIFEST_DIR` es de *tiempo de compilacion*, asi que un binario lanzado
+no lo tiene. Medido con el release binary:
+
+    proc cwd = <fixture>  tools=0
+    proc cwd = <repo>     tools=20
+
+### Lo que si queda establecido
+
+- El sintoma es real y esta medido (A/B, mismo binario, mismo `--cwd`).
+- El CLI **ya resolvio** esto correctamente en `resolve_product_assets_root`
+  (`interface/cli/commands.rs:3112`), con el fallo de `env!("CARGO_MANIFEST_DIR")`
+  documentado como antecedente probado. La leccion esta escrita alli; aqui solo
+  se ignoraba.
+- El arreglo correcto no es "anclar en otro sitio": es **no depender del cwd en
+  runtime**, p. ej. incrustar el catalogo en el binario (`include_str!`) o
+  instalar `product/` junto al ejecutable. Es un cambio de empaquetado y de
+  resolucion de assets, no un retoque de `catalog.rs`.
+- El trabajo de este intento esta **deshecho**: no se commiteo nada. El arbol
+  queda en `75de8189`, limpio.
+
+No he dejado el arreglo a medias en `main` porque no soy capaz de demostrarlo
+con el binario real. Un test verde sobre un target dir que no es el de
+produccion no es evidencia, y publicarlo asi habria sido el mismo defecto que
+reprocho: un `PASS` sin verificacion real detras.
+
 ### Sintoma
+
+> **Nota**: la seccion siguiente describe la hipotesis original. Se conserva por
+> trazabilidad, pero **la seccion "RECHAZADO" de arriba la refuta**: el fallo no
+> es solo que `--cwd` no llegue al resolutor.
 
 Cliente MCP arranca el servidor release con `--cwd <proyecto>` y recibe
 **cero herramientas**, sin error:
