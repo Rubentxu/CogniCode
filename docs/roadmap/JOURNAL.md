@@ -15824,10 +15824,82 @@ source-compatible y no toca comportamiento.
 
 ### Following
 
-* `test-full.sh` sigue en **rc=1**: tras los dos commits de esta unidad
-  falta la corrida que lo deje en rc=0. El gate ya es *capaz* de fallar
-  (CD-3), asi que su rc=0 sera informative y no decorativo.
-* La maquina tiene `TMPDIR=/home/rubentxu/.jcode/scratch`, que cruza un
-  symlink. Con el arreglo, el gate **falla honestamente** con rc=2 en vez
-  de fabricar comparacion. Operativamente hay que correr con
-  `TMPDIR=/var/tmp`, o persistir un `--tmpdir-root` por defecto.
+* ~~`test-full.sh` sigue en **rc=1**~~ → **RESUELTO**: ver N+114.
+* ~~hay que correr con `TMPDIR=/var/tmp`~~ → **RESUELTO** en `6311217f`:
+  los wrappers resuelven solos una raiz sin symlink, asi que el gate
+  se completa sin exportar nada.
+
+---
+
+## N+114 — El gate en rc=0, y una capacidad que nadie ejercitaba (`6311217f`)
+
+**SHA**: `6311217f...` · 2026-10-14 · WU CD-3 (cierre)
+**Gates**: `test-full.sh` **PASS rc=0** (6/6) · workspace 6607 passed · `known_failures` **0 entries** · contratos 7/7 rc=0
+
+Commits de la unidad: `b6c7d613` (clippy + fmt), `792ddb76` (el bug de
+TMPDIR), `9672e0e8` (recibo N+113), `6311217f` (cableado de los wrappers).
+
+### El arreglo dejaba el gate inutilizable en esta maquina
+
+Arreglar `check_known_failures.py` bien —abortar con rc=2 en vez de
+fabricar una comparacion— tiene un coste: el paso `known_failures` ahora
+**falla** en cualquier maquina donde `TMPDIR` cruce un symlink. Aqui
+`TMPDIR=/home/rubentxu/.jcode/scratch` y `/home -> /var/home`, asi que el
+gate no se podia completar sin acordarse de exportar una variable.
+
+Preferible a fingir, pero no es un gate utilizable.
+
+### `--tmpdir-root` existia y no lo usaba nadie
+
+La capacidad ya estaba escrita. La docstring de `_path_has_ancestor_symlink`
+dice, textual, que existe "para que el harness redirija TMPDIR a una raiz
+que no cruza symlink". Y `grep -rn tmpdir-root scripts/` antes del arreglo
+solo encontraba **tests**.
+
+Los dos wrappers resuelven ahora una raiz utilizable: primero el `TMPDIR`
+heredado si sirve (respeta al operador), luego `/tmp`, luego `/var/tmp`.
+Una raiz sirve si existe, es escribible y `realpath` coincide con la forma
+lexical. Si ninguna sirve, se avisa por stderr y se invoca sin el flag: no
+se enmascara el fallo devolviendo 0.
+
+Un test verifica que no haya ni un path de esta maquina hardcodeado en los
+wrappers. `/tmp` y `/var/tmp` son del sistema; `/var/home/rubentxu/...` en
+un gate seria una trampa que en otra maquina vuelve a fallar en silencio.
+
+Medido con el `TMPDIR` real de la maquina, sin exportar nada: resuelve
+`/tmp`, `known_failures` da **0 entries**, `test-full.sh` da **rc=0**.
+
+### Dos tests RED mios que no podian detectar nada
+
+Quinto y sexto caso de la misma familia (CD-1, CD-2, CD-3, y ahora dos mas
+en este mismo commit):
+
+  1. El detector buscaba el nombre del script en la linea de invocacion.
+     No aparece literal: se pasa por `$BASELINE_CHECK`. Cero coincidencias,
+     y el test pasaba sin comprobar nada.
+  2. Con la ventana de 4 lineas, el flag `--tmpdir-root` queda **fuera**
+     porque va en la linea siguiente por continuacion con `\`. El test
+     fallaba con la correccion ya aplicada.
+
+El primero se detecta leyendo lo que el test realmente encontro; el
+segundo, porque un test que falla despues del arreglo no es un test del
+arreglo.
+
+Ademas el primer RED exigia el flag en *todas* las invocaciones, lo que
+prohibia la rama de reserva legitima ("no se encontro raiz"). Corregido:
+se exige que exista al menos una rama con el flag.
+
+RED 2 failures · GREEN 4/4 · mutation: quitar el flag de los dos wrappers
+mata 2 de los 4.
+
+### Following
+
+* 70 commits sin pushear. No hay tag ni bump de SemVer hasta que el
+  merge-gate este verde en el PR a `main` (regla PR-CI vigente).
+* `test-fast.sh` comparte la misma logica y la resolucion de `TMPDIR_ROOT`,
+  pero **no se ha ejecutado end-to-end** en esta unidad: `test-full.sh` si,
+  con rc=0.
+* El `rc=137` (SIGKILL) observado en una corrida intermedia era
+  contencion de recursos por mis propias corridas concurrentes y otros
+  procesos `cargo` de la maquina, no un defecto. La corrida limpia dio
+  rc=0.
