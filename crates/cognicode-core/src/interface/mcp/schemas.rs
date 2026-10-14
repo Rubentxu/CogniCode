@@ -2622,7 +2622,8 @@ pub struct CompositeImpactQueryInput {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SafeRefactorPreviewInput {
-    /// Path to a serialised [`RefactorPlan`]. Mutually exclusive with
+    /// Path to a serialised [`RefactorPlan`](crate::refactor::plan::RefactorPlan).
+    /// Mutually exclusive with
     /// `plan_json`; supplying both is ambiguous about which plan is previewed.
     #[serde(default)]
     pub plan_path: Option<String>,
