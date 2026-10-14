@@ -10,11 +10,12 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-14, sobre `main` HEAD
-> `b5b8ae036d3a52224605201bca6bb96ea9d31e7c` (CD-2: el veredicto de merge se publicaba para un commit
-> que nadie probo; CD-1: `test-fast` no podia ejecutar ni una suite; cierre del
+> `97145a9c367d2ca0d3924820632cb77d04e2a54a` (CD-3: el stage del selector no
+> podia fallar; CD-2: el veredicto de merge se publicaba para un commit que
+> nadie probo; CD-1: `test-fast` no podia ejecutar ni una suite; cierre del
 > bloque de blockers de superficie anunciada + unidad de claims de lenguaje +
 > correccion de los mapeos de nodo de Scala);
-> **63 commits ahead de `origin/main`**, sin pushear).
+> **65 commits ahead de `origin/main`**, sin pushear).
 > Regenerado tras detectar que el ratchet
 > `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
 > `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
@@ -23,7 +24,41 @@
 > Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
 > `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y bateria (MEDIDO sobre `b5b8ae03`, 2026-10-14)
+## HEAD y bateria (MEDIDO sobre `97145a9c`, 2026-10-14)
+
+### CD-3 — el stage del selector no podia fallar (`97145a9c`)
+
+**Correccion de encuadre, primero.** El plan de CD-3 decia "conectar la
+seleccion real de suites al pipeline de merge". Hacer eso habria **debilitado**
+el gate: `merge-gate.pipeline.kts` corre sus **73 stages de forma
+incondicional** y no hay ninguna condicion de diff que los salve, que es lo
+correcto para un gate de merge. El nombre de la unidad era el error. El test
+nuevo **fija que el gate siga incondicional**, para que el "arreglo" obvious no
+llegue nunca.
+
+El hallazgo real es mas pequeño: `select-suites-script` calculaba `SELECT_OUTPUT`
+y lo imprimia, sin leerlo ni validarlo. Medido: el selector sale rc=0 con un path
+valido **y con uno que no existe**, asi que el stage no podia detectar un
+selector roto, un typo en el path fijo ni una seleccion malformada. Ademas su
+comentario afirmaba que la decision era "consumable downstream"; medido, **no la
+consume nadie**.
+
+El riesgo no era una brecha de seguridad —el gate no depende de la seleccion, asi
+que un selector roto no puede reducir la cobertura— sino un gate que **parece**
+mas estrecho de lo que es.
+
+* `scripts/ci/test_merge_gate_selection_truth.py`: 5 comprobaciones sobre la
+  estructura del pipeline.
+  * RED **2 checks** contra HEAD, **0** despues. Verificado restaurando
+    `git show HEAD:merge-gate.pipeline.kts`.
+  * GREEN **5/5**; suite de contratos **8/8**.
+  * Dos comprobaciones del propio test eran incapaces de fallar: buscaban la
+    frase retirada en el codigo cuando vivia en un comentario, y buscaban
+    `SELECT_OUTPUT` en un stage donde `echo "$SELECT_OUTPUT"` la contiene. Un
+    test que no falla antes del arreglo no es un test.
+
+**Gates CD-3**: `test_merge_gate_selection_truth.py` PASS 5/5 · suite de
+contratos 8/8 · ratchet OK · **`test-full.sh` NOT_RUN**.
 
 ### CD-2 — el veredicto de merge se publicaba para un commit sin probar (`b5b8ae03`)
 

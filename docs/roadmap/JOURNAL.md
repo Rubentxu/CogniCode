@@ -15658,3 +15658,89 @@ dependencia.
   CD-1 (41 tests que fallan solo bajo `--workspace` por feature unification):
   si el gate verde y la suite ejecutada prueban conjuntos distintos, "el gate
   corrio" no significa "se ejecutaron los tests que dice ejecutar".
+
+---
+
+## N+112 — CD-3: el stage del selector no podia fallar, y el gate no es lo que se creia (`97145a9c`)
+
+**SHA**: `97145a9c...` · 2026-10-14 · WU CD-3
+**Gates**: `test_merge_gate_selection_truth.py` PASS 5/5 ·
+suite de contratos 8/8 · ratchet OK · `test-full.sh` **NOT_RUN**
+
+### Una correccion de encuadre, antes que nada
+
+Al buscar el defecto de CD-3 se encontro algo que habria sido mas grave y que
+**no** es un defecto: `merge-gate.pipeline.kts` corre sus **73 stages de forma
+incondicional**, y no hay ninguna condicion de diff que los salve. Para un gate
+de merge eso es lo correcto.
+
+El plan de CD-3 decia "conectar la seleccion real de suites al pipeline de
+merge". Hacer eso habria sido **debilitar el gate**: lo que hoy se ejecuta
+incondicionalmente pasaria a depender de que se vea el cambio. El nombre de la
+unidad era el error, no el codigo. Se corrige el encuadre antes de tocar nada, y
+el test nuevo **fija que el gate siga siendo incondicional** para que el
+"arreglo" obvious no llegue nunca.
+
+### El hallazgo, que es mas pequeño
+
+El stage `select-suites-script` calculaba `SELECT_OUTPUT` y lo imprimia. No lo
+leia, no lo validaba, no lo usaba:
+
+```sh
+SELECT_OUTPUT="$(SELECT_PATHS="$PATHS" bash scripts/ci/select-suites.sh)"
+echo "$SELECT_OUTPUT"
+```
+
+Medido: el selector sale rc=0 con un path valido **y con un path que no
+existe**. Un stage cuyo unico trabajo es invocar el selector no podia detectar
+ni un typo en el path fijo, ni un selector roto, ni una seleccion malformada.
+
+Ademas el comentario afirmaba que correr el script "proves the decision is
+consumable downstream". Medido: **la decision no la consume nadie**.
+
+El riesgo real no es una brecha de seguridad —como el gate no depende de la
+seleccion, un selector roto no puede reducir la cobertura— sino un gate que
+**parece** mas estrecho de lo que es. Un gate que parece otro gate es un gate
+que nadie audita bien.
+
+### El arreglo
+
+El stage valida la forma de la salida (`case` + `python3`) y puede fallar por las
+razones que existen para. Verificado ejecutando la logica aislada contra la
+salida real del selector y contra cinco formas rotas: acepta la real y rechaza
+vacio, JSON malformado, sin `suites`, `suites` no-lista y `suites` con
+no-cadenas.
+
+Se retira la afirmacion falsa del comentario y se dice explicitamente lo que el
+stage **no** es: no estrecha el gate. La seleccion gobierna
+`scripts/test-fast.sh`, no `main`.
+
+### Dos tests que no podian fallar
+
+Lo mas importante de esta unidad no es el arreglo del pipeline, son dos
+defectos del propio test RED que lo hacian incapaz de detectar nada:
+
+  1. La comprobacion de "consumable downstream" se puso primero sobre el codigo
+     **sin comentarios**. La frase vivia en un comentario, asi que no podia
+     dispararse nunca: daba **verde sobre el fichero sin corregir**. Se
+     verifico restaurando `git show HEAD:merge-gate.pipeline.kts` y el test
+     seguia dando verde. Un test que no falla antes del arreglo no es un test.
+  2. `SELECT_OUTPUT in stage` daba **True tambien sobre el stage roto**, porque
+     `echo "$SELECT_OUTPUT"` contiene el nombre de la variable. Ahora se mira
+     **despues** de la linea del echo.
+
+La leccion se repite desde CD-1 y CD-2 por tercera vez, y conviene dejarla
+escrita: un contrato que se satisface por la forma en lugar de por el
+comportamiento pasa mientras el defecto siga presente. La comprobacion utile
+sobre el comportamiento —el stage **usa** la salida despues de imprimirla—
+secciono el caso
+que importa y sobrevive a la version rota.
+
+### Following
+
+* La unificacion de features de `cognicode-core` (41 tests que fallan solo bajo
+  `--workspace`) sigue abierta y sin tocar.
+* CD-4 sin definir. `test-full.sh` no se ha ejecutado en CD-1, CD-2 ni CD-3:
+  las tres son infraestructura de scripts y ninguna toca codigo Rust, pero el
+  gate completo sigue **NOT_RUN** y conviene ejecutarlo antes de cualquier
+  bump de SemVer o tag.
