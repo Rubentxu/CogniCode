@@ -155,8 +155,20 @@ fn analysis_basis_canonicalizes_workspace_root() {
     // `canonicalize` (que sigue symlinks Y resuelve `..`) pueda
     // actuar; un path inexistente se devuelve literal y no se
     // normaliza, eso es la semantica de std::fs::canonicalize.
-    let raw = PathBuf::from("crates/cognicode-core/../cognicode-cli");
-    let basis = AnalysisBasis::for_workspace(raw);
+    //
+    // RED-PROBE(cognicode-cd5): `raw` era un path RELATIVO, asi que su
+    // resolucion dependia del cwd del proceso de test (cargo usa
+    // CARGO_MANIFEST_DIR para los integration tests, pero no es un
+    // contrato del harness). Lo hacemos explicito y absoluto para que
+    // el expected no dependa de donde se ejecute.
+    let cli_dir =
+        std::fs::canonicalize(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../cognicode-cli"))
+            .expect("el directorio de prueba debe existir en disco");
+    // `raw` apunta a `cognicode-cli` CON un `..` extra que canonicalize
+    // debe resolver de vuelta al mismo directorio: asi el `..` se
+    // ejercita de verdad y el resultado esperado sigue siendo `cli_dir`.
+    let raw = cli_dir.join("../cognicode-cli");
+    let basis = AnalysisBasis::for_workspace(raw.clone());
     assert!(
         basis.workspace_root().is_absolute(),
         "root no canonicalizado: {:?}",
@@ -166,6 +178,18 @@ fn analysis_basis_canonicalizes_workspace_root() {
         !basis.workspace_root().to_string_lossy().contains(".."),
         "root contiene '..': {:?}",
         basis.workspace_root()
+    );
+    // RED-PROBE(cognicode-cd5): las dos aserciones anteriores las
+    // cumple CUALQUIER ruta absoluta, incluida una literal inventada
+    // (`Path::new("/tmp/...")` hacia `ok` con el producto roto). Fijamos
+    // la identidad: el root debe ser EXACTAMENTE el directorio pedido,
+    // no una ruta cualquiera con forma correcta.
+    assert_eq!(
+        basis.workspace_root(),
+        cli_dir,
+        "workspace_root() devolvio {:?} en lugar del directorio solicitado {:?}",
+        basis.workspace_root(),
+        cli_dir
     );
 }
 
