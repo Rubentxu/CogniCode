@@ -40,6 +40,7 @@ ROADMAP_RATCHET="${REPO_ROOT}/scripts/ci/test_roadmap_version_ratchet.py"
 # developer most needs the other contracts to still hold.
 if [ -f "$ROADMAP_RATCHET" ]; then
   printf '\n=== roadmap version ratchet ===\n'
+  roadmap_rc=0
   python3 "$ROADMAP_RATCHET" || roadmap_rc=1
 else
   roadmap_rc=0
@@ -92,11 +93,62 @@ if [ ! -x "$SELECTOR" ]; then
   exit 2
 fi
 
-SELECTION="$(bash "$SELECTOR" --paths "$PATHS" 2>/dev/null)"
-STRATEGY="$(printf '%s' "$SELECTION" | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')"
-SUITES="$(printf '%s' "$SELECTION" | sed -n 's/.*"suites":\[\(.*\)\].*/\1/p')"
+# MEDIDO 2026-10-14 (CD-1). El rc del selector NO puede descartarse: antes
+# `2>/dev/null` lo tiraba y la salida vacia caia al fallback en silencio. Un
+# selector roto producia un resultado que parecia una seleccion legitima.
+if SELECTION="$(bash "$SELECTOR" --paths "$PATHS")"; then
+  :
+else
+  selector_rc=$?
+  echo "ERROR: el selector fallo (rc=$selector_rc): $SELECTOR" >&2
+  exit 2
+fi
 
-printf 'selector → strategy=%s suites=[%s]\n' "$STRATEGY" "$SUITES"
+# MEDIDO 2026-10-14 (CD-1). Los dos `sed` de antes devolvian
+# SUITES='"core"' con las comillas del JSON dentro, de modo que ningun token
+# casaba con el `case` de `run_suite` y el wrapper no ejecutaba ni una sola
+# suite. Se parsea con python3, que ya es dependencia del script (ratchet,
+# baseline) y que distingue "JSON malformado" de "seleccion vacia".
+SELECTION_PARSED="$(printf '%s' "$SELECTION" | python3 -c '
+import json, sys
+
+raw = sys.stdin.read().strip()
+if not raw:
+    print("SELECTION_EMPTY", file=sys.stderr)
+    sys.exit(3)
+try:
+    doc = json.loads(raw)
+except json.JSONDecodeError as e:
+    print(f"SELECTION_MALFORMED: {e}", file=sys.stderr)
+    sys.exit(3)
+
+strategy = doc.get("strategy")
+suites = doc.get("suites")
+if not isinstance(strategy, str) or not isinstance(suites, list):
+    print("SELECTION_MALFORMED: faltan strategy o suites", file=sys.stderr)
+    sys.exit(3)
+if not all(isinstance(s, str) for s in suites):
+    print("SELECTION_MALFORMED: suites no es una lista de cadenas", file=sys.stderr)
+    sys.exit(3)
+
+print("STRATEGY=" + strategy)
+for s in suites:
+    print("SUITE=" + s)
+')"
+parse_rc=$?
+if [ "$parse_rc" -ne 0 ]; then
+  echo "ERROR: salida del selector no interpretable (rc=$parse_rc)" >&2
+  echo "  selector: $SELECTOR" >&2
+  echo "  salida: ${SELECTION:-<vacia>}" >&2
+  exit 2
+fi
+
+# `strategy` y `suites` se separan en el shell porque el bucle de abajo las
+# necesita como variables planas; python3 se limita a leer el JSON.
+STRATEGY="$(printf '%s\n' "$SELECTION_PARSED" | sed -n 's/^STRATEGY=//p')"
+SUITE_LIST="$(printf '%s\n' "$SELECTION_PARSED" | sed -n 's/^SUITE=//p')"
+
+printf 'selector → strategy=%s suites=[%s]\n' "$STRATEGY" "$(printf '%s' "$SUITE_LIST" | tr '\n' ',' | sed 's/,$//')"
 printf '  paths: %s\n' "${PATHS:-<empty>}"
 
 if [ "$DRY_RUN" = "true" ]; then
@@ -116,16 +168,19 @@ if [ "$STRATEGY" = "noop" ]; then
   exit "$roadmap_rc"
 fi
 
-# Fallback o strategy vacía → ejecutar subset conservador
-if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
+# MEDIDO 2026-10-14 (CD-1). strategy `changed` sin suites no es "nada que
+# correr": es una seleccion que no se pudo resolver. Antes salia 0 sin ejecutar
+# nada, que es el peor resultado posible. Cae al subset conservador, que si
+# ejecuta tests reales, y se avisa de por que.
+if [ "$STRATEGY" != "changed" ] || [ -z "$SUITE_LIST" ]; then
   echo "fallback: corriendo subset conservador (workspace --lib + clippy)."
   cargo test --workspace --lib --quiet
-  cargo_clippy_rc=$?
+  cargo_test_rc=$?
   cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
   clippy_rc=$?
   # The roadmap ratchet result is ANDed in, never ORed: a green subset must
   # not be able to hide a red contract.
-  [ "$cargo_clippy_rc" -eq 0 ] && [ "$clippy_rc" -eq 0 ] && [ "$roadmap_rc" -eq 0 ] && exit 0 || exit 1
+  [ "$cargo_test_rc" -eq 0 ] && [ "$clippy_rc" -eq 0 ] && [ "$roadmap_rc" -eq 0 ] && exit 0 || exit 1
 fi
 
 # ---------- mapear suites a comandos ----------
@@ -144,20 +199,35 @@ run_suite() {
       # workspace compilan y pasan sus tests unitarios.
       cargo test --workspace --lib --quiet
       ;;
-    *) echo "WARN: suite desconocida: $suite" >&2; return 0 ;;
+    # MEDIDO 2026-10-14 (CD-1). `return 0` hacia que un typo en el nombre de la
+    # suite se convirtiera en PASS sin ejecutar nada. Una suite que el wrapper
+    # no sabe correr es un fallo del contrato, no un caso vacio.
+    *) echo "ERROR: suite desconocida: '$suite'" >&2; return 1 ;;
   esac
 }
 
 overall_rc=$roadmap_rc
 seen=""
-for s in $(printf '%s' "$SUITES" | tr ',' ' '); do
+executed=0
+while IFS= read -r s; do
+  [ -z "$s" ] && continue
   case " $seen " in *" $s "*) continue ;; esac
   seen="$seen $s"
   printf '\n=== suite: %s ===\n' "$s"
+  executed=$((executed + 1))
   if ! run_suite "$s"; then
     overall_rc=1
   fi
-done
+done <<< "$SUITE_LIST"
+
+# MEDIDO 2026-10-14 (CD-1). Guarda de red: si el bucle no llego a ejecutar
+# ninguna suite, el resultado no es un PASS, sea cual sea el camino por el que
+# se llegase aqui. Con `changed` y una lista no vacia esto solo puede dispararse
+# por un fallo de shell, y en ese caso tampoco es atribuible a los tests.
+if [ "$executed" -eq 0 ]; then
+  echo "ERROR: no se ejecuto ninguna suite (seleccion vacia o bucle sin iterar)" >&2
+  exit 2
+fi
 
 # ---------- baseline check (core) ----------
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
