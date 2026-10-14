@@ -744,6 +744,16 @@ mod tests {
         assert!(result.references.is_empty());
     }
 
+    /// A failed lookup must NOT be reported as a completed search with zero
+    /// results.
+    ///
+    /// This test previously asserted `total == 0` and `unwrap()` on the happy
+    /// path, which pinned the defect fixed in 1735d97e: a provider that could
+    /// not answer was turned into "0 references found", making failure
+    /// indistinguishable from a real negative. `Partial/Unknown/Failed` must
+    /// never be presented as `Complete/clean` (AGENTS.md, principios
+    /// operativos). Now an unresolved provider surfaces as an error naming the
+    /// tiers that were attempted.
     #[tokio::test]
     async fn test_handle_find_references_error() {
         let provider = Arc::new(MockLspProvider::new().with_references(Err(
@@ -763,10 +773,15 @@ mod tests {
             include_declaration: true,
         };
 
-        let result = handle_find_references(&ctx, input).await.unwrap();
-        // Error returns empty results but still succeeds
-        assert_eq!(result.total, 0);
-        assert!(result.references.is_empty());
+        // Must fail loudly rather than fabricate an empty, successful result.
+        let err = handle_find_references(&ctx, input)
+            .await
+            .expect_err("an unresolved provider must not become a zero-result success");
+        let message = err.to_string();
+        assert!(
+            message.contains("find_references"),
+            "error must name the failed operation, got: {message}"
+        );
     }
 
     // ========================================================================

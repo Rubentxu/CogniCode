@@ -1655,22 +1655,27 @@ impl AnalysisService {
         // The server was not dead: a second, unrelated call answered while
         // the first was still running. This was slow work, not a hang, and
         // USAGE_SKIP_DIRS alone is what made it slow.
+        //
+        // `filter_entry` must be registered on the builder, NOT applied to the
+        // finished iterator. A post-filter on the iterator still descends into
+        // `target/` and only then throws the entries away, so the pruned files
+        // are still walked (the r1_2/r1_3 contract tests catch this). Registering
+        // it here prunes the descent itself, which is the behaviour the original
+        // `walkdir::filter_entry` call had.
         let walker = ignore::WalkBuilder::new(&params.project_dir)
             .follow_links(true)
+            .filter_entry(|e| {
+                // Skip known dependency/build/cache directories
+                if let Some(name) = e.file_name().to_str() {
+                    !USAGE_SKIP_DIRS.contains(&name)
+                } else {
+                    true
+                }
+            })
             .build();
 
         for entry in walker.filter_map(|e| e.ok()) {
             let path = entry.path();
-            // Keep the existing policy layered on top of gitignore: skipping
-            // conventional dependency/build dirs still matters for a directory
-            // that is not a git repository.
-            let skip = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|name| USAGE_SKIP_DIRS.contains(&name));
-            if skip {
-                continue;
-            }
             if !path.is_file() {
                 continue;
             }

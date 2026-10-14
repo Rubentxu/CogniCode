@@ -687,10 +687,20 @@ fn process() {
         };
 
         let result = handle_safe_refactor(&ctx, input).await;
-        // Should return Ok with success=false for invalid selection
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(!output.success);
+        // A target that no file defines is unusable input, and refusing loudly
+        // is the contract (same as test_handle_safe_refactor_extract_missing_
+        // new_name above). This test previously asserted `Ok(success=false)`,
+        // which was only reachable because the handler read the symbol name
+        // as a path: it tried to read `<cwd>/nonexistent_func`, failed, and
+        // reported a soft failure. After 0b5771e7 the symbol is resolved to
+        // the file that defines it, and a symbol nothing defines is refused
+        // rather than pretended to have been reviewed.
+        let err = result.expect_err("an undefined target must be refused, not softly failed");
+        assert!(matches!(err, HandlerError::InvalidInput(_)));
+        assert!(
+            err.to_string().contains("nonexistent_func"),
+            "the refusal must name the unresolved target, got: {err}"
+        );
     }
 
     // =========================================================================
