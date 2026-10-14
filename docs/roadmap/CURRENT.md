@@ -10,21 +10,58 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-14, sobre `main` HEAD
-> `97145a9c367d2ca0d3924820632cb77d04e2a54a` (CD-3: el stage del selector no
-> podia fallar; CD-2: el veredicto de merge se publicaba para un commit que
-> nadie probo; CD-1: `test-fast` no podia ejecutar ni una suite; cierre del
-> bloque de blockers de superficie anunciada + unidad de claims de lenguaje +
-> correccion de los mapeos de nodo de Scala);
-> **65 commits ahead de `origin/main`**, sin pushear).
-> Regenerado tras detectar que el ratchet
-> `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
-> `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
-> gate. Ver `JOURNAL.md` N+106.
+> `d22267d3290a9da96626cacad87852b2f0709182` (CD-3 cerrada: el gate completo
+> `test-full.sh` da **rc=0**
+> por primera vez; `check_known_failures.py` exportaba su propio error como
+> `TMPDIR`, lo que fabricaba 16 falsos "NEW REGRESSIONS"; los wrappers del gate
+> ahora usan `--tmpdir-root`, que hasta entonces no usaba nadie; CD-3: el stage
+> del selector no podia fallar; CD-2: el veredicto de merge se publicaba para un
+> commit que nadie probo; CD-1: `test-fast` no podia ejecutar ni una suite;
+> cierre del bloque de blockers de superficie anunciada + unidad de claims de
+> lenguaje + correccion de los mapeos de nodo de Scala);
+> **70 commits ahead de `origin/main`**, sin pushear).
+> Regenerado de nuevo tras detectar que el ratchet
+> `scripts/ci/test_roadmap_version_ratchet.py` habia vuelto a **FAIL**: el
+> SHA declarado (`97145a9c`) quedo a **6 commits** de HEAD, fuera de su
+> ventana de 5. Ver `JOURNAL.md` N+113 y N+114.
 >
 > Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
 > `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y bateria (MEDIDO sobre `97145a9c`, 2026-10-14)
+## HEAD y bateria (MEDIDO sobre `d22267d3`, 2026-10-14)
+
+### CD-3 cerrada — el gate completo en rc=0 (`6311217f`, `d22267d3`)
+
+**`test-full.sh` PASS rc=0 (6/6)**, verificado con el `TMPDIR` real de la
+maquina (`/home/rubentxu/.jcode/scratch`, que cruza el symlink
+`/home -> /var/home`) y **sin exportar nada a mano**:
+
+| Paso | Resultado |
+|---|---|
+| `fmt --check` | **OK** (antes: FAIL, 100 diffs) |
+| `clippy -D warnings` | **OK** (antes: FAIL, 7 errores) |
+| `test --workspace` | **OK** (antes: FAIL, 41) — **6607 passed / 0 failed** |
+| `test --workspace --doc` | **OK** |
+| `known_failures (core/lib)` | **OK — 0 entries** (antes: FAIL, 16 falsos) |
+| ratchet roadmap | **OK** |
+
+Tres correcciones de encuadre respecto a lo que este snapshot afirmaba:
+
+* Los **41 fallos** de `--workspace` **no** eran feature unification. El
+  arbol era identico; la causa era un binario de test obsoleto en un
+  `CARGO_TARGET_DIR` reutilizado, con rutas horneadas a un harness temporal
+  ya borrado. Con target dir nuevo: 3134/0.
+* Los **16 "NEW REGRESSIONS"** los fabricaba `check_known_failures.py`
+  comprobando el campo equivocado de una tupla: exportaba su **mensaje de
+  error** como `TMPDIR`, y ese mensaje acababa tambien como **nombre de ruta**
+  dentro del repo, lo que ademas bloqueaba el merge-gate por el guard de
+  arbol sucio de CD-2.
+* El flag `--tmpdir-root` **ya existia** y no lo usaba nadie. Los wrappers
+  resuelven ahora una raiz sin symlink por su cuenta.
+
+Nota operativa: `rc=137` (SIGKILL) visto en una corrida intermedia era
+contencion de recursos por corridas concurrentes, no un defecto; la corrida
+limpia dio rc=0.
 
 ### CD-3 — el stage del selector no podia fallar (`97145a9c`)
 
@@ -153,20 +190,20 @@ eran **falsas** y se dejaron pasar 112 commits:
 
 | Afirmacion previa | Realidad medida |
 |---|---|
-| `cargo fmt --all --check` → exit 0 | **100 ficheros** con deriva de fmt |
+| `cargo fmt --all --check` → exit 0 | **100 ficheros** con deriva de fmt → **arreglado** en `b6c7d613` |
 | version workspace `0.101.10` | **`0.101.16`** |
 | `next release v0.101.11` | ya publicados hasta **`v0.101.16`** |
 | "`docs/roadmap/*` esta excluido por `.gitignore`" | los 4 ficheros **si estan versionados** |
-| "40 commits ahead" | **57** |
+| "40 commits ahead" | **57** (hoy **70**) |
 
-* **Bateria workspace** (medida en este SHA, `CARGO_TARGET_DIR` aislado):
-  * `cargo test --workspace` → **6599 passed / 0 failed** (exit 0), 222 suites.
-    (6596 antes de la unidad de Scala, +3 tests nuevos.)
-  * `cargo test --workspace --doc` → **8 passed / 0 failed**.
-  * `cargo fmt --all --check` → **FAIL, 100 ficheros** (preexistente).
-  * `cargo clippy --workspace --all-targets -- -D warnings` → **FAIL, 11
-    ficheros** (preexistente). Interseccion con el diff de este bloque:
-    **vacia**.
+* **Bateria workspace** (medida en este SHA, target dir por defecto):
+  * `cargo test --workspace` → **6607 passed / 0 failed** (exit 0).
+  * `cargo test --workspace --doc` → **OK**.
+  * `cargo fmt --all --check` → **OK** (arreglado en `b6c7d613`; antes FAIL
+    con 100 ficheros de deriva previa).
+  * `cargo clippy --workspace --all-targets -- -D warnings` → **OK**
+    (arreglado en `b6c7d613`; antes FAIL con 7 errores, que aparecian por
+    capas: core enmascaraba a cli, que enmascaraba a los targets de test).
   * `scripts/ci/test_roadmap_version_ratchet.py` → **ver arriba, FAIL →
     regenerado**.
 
