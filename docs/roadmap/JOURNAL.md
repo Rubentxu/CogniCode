@@ -15042,7 +15042,7 @@ conteo agregado no es una medicion: es una suma que nadie ha contrastado.
 ## N+106 — Un ratchet existed, estaba en rojo, y nadie lo ejecutaba
 
 **Rama** `main` · **Bloque** Gobernanza del roadmap.
-**SHA** `pending`. Cierra N+105.
+**SHA** `518e01c2`. Cierra N+105.
 
 ### El hueco
 
@@ -15135,7 +15135,7 @@ considera inexistente hasta que se ve a **fallar** dentro de el.
 ## N+107 — Uno de los cuatro "no lo arreglo" si se podia arreglar
 
 **Rama** `main` · **Bloque** Extraccion de simbolos.
-**SHA** `pending`. Cierra N+105 (que abrio el hallazgo) y N+106.
+**SHA** `26b57541`. Cierra N+105 (que abrio el hallazgo) y N+106.
 
 ### El error de encuadre, segunda vez
 
@@ -15242,3 +15242,166 @@ medicion de una linea lo desmentia, y el coste de arreglarlo era un `if`.
 La regla que queda: **antes de declarar algo decision de producto, medir si la
 decision es realmente necesaria.** "Es una decision" no es un hecho medido, y
 en este caso la habia dejado como si lo fuera.
+
+## N+108 — Scala no era una decision de producto: los mapeos eran de Java
+
+**Rama** `main` · **Bloque** Extraccion de simbolos.
+**SHA** `c30733bd`, `087e771e`. Cierra N+107 (que abrio el hallazgo).
+
+### La clasificacion de N+107 era incorrecta
+
+N+107 escribio que Scala "no se arregla aqui [...] product decision". Al medir
+los kinds reales, esa clasificacion no se sostiene:
+
+    tree-sitter-scala 0.26.2, node-types.json
+      function_declaration   EXISTS      class_declaration   DOES NOT EXIST
+      val_declaration         EXISTS      function_definition EXISTS
+                                         class_definition    EXISTS
+                                         object_definition   EXISTS
+
+`class_declaration` es **la grafia de Java**. Scala nunca la emite, luego el
+filtro no podia dispararse para ningun fichero Scala. Medir con un parse real:
+
+    comp_unit
+      class_definition            <- clase
+        identifier
+        template_body
+          val_definition          <- val limit: Int = 5
+          function_definition     <- def run(): Int = 1
+
+N+107 apuntaba el sintoma correcto ("los kinds declarados no existen en un
+arbol real") y lo marco como politica. Era un **copypaste de la gramatica
+vecina**, sin test que lo sujetara. Scala esta declarado
+`support_level: "supported"` en `product/languages.json`, y su propio bloque de
+evidencia cita estos mapeos.
+
+Corregido en `c30733bd`:
+
+| accessor | antes | ahora |
+|---|---|---|
+| `function_node_type` | `function_declaration` | `function_definition` |
+| `class_node_type`    | `class_declaration`    | `class_definition` |
+| `variable_node_type` | `val_declaration`      | `val_definition` |
+
+`object_definition` no cabe en la API de un solo valor, asi que
+`find_all_symbols_with_path` lo acepta para Scala junto a `class_definition`,
+imitando el escape hatch de Rust (`let_declaration`/`const_item`/`static_item`)
+que ya estaba literalmente en la misma funcion. `object_definition` mapea a
+`SymbolKind::Class` y el `node_type` publico sigue llevando el kind real.
+
+RED antes del arreglo:
+
+    left:  []
+    right: [("Config", 0), ("count", 1), ("Runner", 3), ("main", 4)]
+
+y solo con los mapeos corregidos, sin el `object_definition`:
+
+    left:  [("Config", 0), ("count", 1), ("main", 4)]
+    right: [("Config", 0), ("count", 1), ("Runner", 3), ("main", 4)]
+
+### Dos afirmaciones mias que un parse desmentio
+
+Escribi en el mensaje de commit que `val_declaration` "aparece en
+node-types.json solo como supertype". Medido: es un node nombrado ordinario con
+`fields: [name, type]`. La conclusion se sostenia, el mecanismo no: ningun node
+padre lo lista como hijo, luego es inalcanzable. Comentario corregido.
+
+Peor: afirmé que `function_declaration` tampoco se emitia. **Si se emite**, para
+un `def` abstracto de trait:
+
+    trait Greeter { def greet(): String }   ->  function_declaration
+
+`node-types.json` lo lista sin padre, asi que en papel parece muerto mientras un
+parse real lo produce. El esquema **no es oraculo completo** para esta gramatica.
+Queda registrado en `abstract_trait_def_is_a_function_declaration` como
+comportamiento medido, no arreglado: aceptar dos kinds de funcion para Scala es
+otro cambio y no cabia en este commit. Consecuencia real: hoy
+`function_node_type()` **no ve los metodos abstractos de un trait**.
+
+### Por que el test de extraccion no basta
+
+Suite nueva `scala_node_kinds`, que mide alcance contra un parse. Mutacion:
+revertir `class_node_type` a `class_declaration` deja **verde** la matriz de
+extraccion, porque el broadening de Scala la enmascara, y **roja** la prueba de
+alcance. Lo que sostiene la linea es la prueba de alcance.
+
+### Medicion
+
+- `cargo test --workspace`: **6599 passed / 0 failed**, exit 0, 222 suites.
+  (6596 antes, +3 tests nuevos.)
+- `core_gate_coverage_contract`: 80 -> **81** suites, 10/10 verde. El contrato
+  exige el bump en el mismo commit, asi que va aqui y no como deuda.
+- `rustfmt --check`: limpio en los 4 ficheros tocados. Clippy: 0 hits en ellos.
+- YAML y Haskell siguen sin extraer. No se tocaron: YAML no tiene campo `name`
+  (su clave es `flow_node`) y Haskell necesita su propia medicion.
+
+La regla de N+107 se confirma y se completa: **medir antes de clasificar, y
+medir contra un parse real, no contra el esquema del gramatico.**
+
+### E2E por el binario release (medido, no inferido)
+
+`cargo build --release --bin cognicode-mcp`, MCP v0.101.16, y un fichero Scala
+real en disco. Sesion stdio con **stdin abierto** y stdout separado de stderr:
+
+    get_file_symbols(file_path="Config.scala")
+
+    Config  class      line -      Runner  class      line -
+    limit   variable   line -      main    function   line -
+
+    19 ms, isError=false
+
+Control en el mismo directorio, para descartar sobrecorreccion:
+
+    Control.rs  -> [('Control','class'), ('run','function')]
+
+Las 12 lenguas sanas siguen intactas (suite
+`supported_languages_that_extract_correctly_still_do`, verde).
+
+**Ausente a proposito y medido**: `greet`, el `def` abstracto del trait, que
+parsea como `function_declaration`. Es el hueco que N+108 deja characterisation
+en vez de arreglo.
+
+## N+109 — `tools/list` devuelve `[]` cuando el cwd del proceso no tiene `product/`
+
+**Rama** `main` · **Bloque** Surface MCP.
+**SHA** `pending`. Hallazgo nuevo, abierto, **no arreglado**.
+
+### Sintoma
+
+Cliente MCP arranca el servidor release con `--cwd <proyecto>` y recibe
+**cero herramientas**, sin error:
+
+    process cwd = /var/home/rubentxu/tmp-cc/scala_e2e   -> tools: 0
+    process cwd = <repo>                                -> tools: 20  (paginado, 77 total)
+
+Mismo binario, mismo `--cwd`, mismo handshake. Lo unico que cambia es el cwd
+del **proceso**.
+
+### Causa medida
+
+`build_all_tools()` -> `load_tool_catalog_active()` -> `load_tool_catalog()`, que
+resuelve el asset asi (`crates/cognicode-core/src/interface/catalog.rs:202`):
+
+    catalog_candidate_paths()  -> walk_up(current_dir())        [1]
+                              -> walk_up(CARGO_MANIFEST_DIR)   [2]
+
+`--cwd` se guarda en `args.cwd` y se usa para el workspace, pero **nunca** se
+aplica con `std::env::set_current_dir`, asi que [1] sube desde el directorio
+desde el que el cliente lanzo el proceso. Si ahi no hay `product/tools.json`,
+`load_tool_catalog()` devuelve `Vec::new()` y el servidor anuncia **0 tools**.
+
+El fallo es silencioso por construccion: el `for` de `load_tool_catalog()`
+tiene `if let Ok(...)` y su `else` implicito es `Vec::new()`, sin log. Para un
+cliente MCP eso no es "sin herramientas", es "el servidor no sirve", y la
+superficie de herramienta vacia.
+
+### Por que no lo arreglo aqui
+
+Es ortogonal al arreglo de Scala y toca la resolucion de assets de arranque, que
+es compartida por CLI y MCP. Merece WU propio con su RED. Lo dejo abierto y
+documentado en vez de colarlo en el commit de Scala.
+
+Impacto real: cualquier despliegue donde el cliente lance el binario con cwd
+propio (configuracion habitual de un cliente MCP, que lanza el servidor como
+subproceso) obtiene una superficie **vacia y sin diagnostico**. El
+`--cwd <project_root>` que el cliente cree estar fijando no llega al catalogo.

@@ -10,9 +10,10 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-14, sobre `main` HEAD
-> `4cde125712b9f24a8fead99750571fcd3b1c5312` (cierre del bloque de
-> blockers de superficie anunciada + unidad de claims de lenguaje;
-> **53 commits ahead de `origin/main`**, sin pushear).
+> `087e771e68407bf210d2948f2128c93e711d7f18` (cierre del bloque de
+> blockers de superficie anunciada + unidad de claims de lenguaje + correccion
+> de los mapeos de nodo de Scala);
+> **57 commits ahead de `origin/main`**, sin pushear).
 > Regenerado tras detectar que el ratchet
 > `scripts/ci/test_roadmap_version_ratchet.py` estaba en **FAIL** desde
 > `1c664066` (**112 commits** antes) y que ademas no lo invoca **ningun**
@@ -21,7 +22,7 @@
 > Version workspace: **`0.101.16`** (`Cargo.toml`), que ya tiene tag
 > `v0.101.16` en `origin`. El ultimo tag publicado es `v0.101.16`.
 
-## HEAD y bateria (MEDIDO sobre `4cde1257`, 2026-10-14)
+## HEAD y bateria (MEDIDO sobre `087e771e`, 2026-10-14)
 
 Correcciones a las afirmaciones del snapshot anterior (2026-10-11), que
 eran **falsas** y se dejaron pasar 112 commits:
@@ -32,11 +33,11 @@ eran **falsas** y se dejaron pasar 112 commits:
 | version workspace `0.101.10` | **`0.101.16`** |
 | `next release v0.101.11` | ya publicados hasta **`v0.101.16`** |
 | "`docs/roadmap/*` esta excluido por `.gitignore`" | los 4 ficheros **si estan versionados** |
-| "40 commits ahead" | **53** |
+| "40 commits ahead" | **57** |
 
 * **Bateria workspace** (medida en este SHA, `CARGO_TARGET_DIR` aislado):
-  * `cargo test --workspace` → **6589 passed / 0 failed** (exit 0).
-    Con la unidad de lenguaje de este mismo bloque: **6594 / 0**.
+  * `cargo test --workspace` → **6599 passed / 0 failed** (exit 0), 222 suites.
+    (6596 antes de la unidad de Scala, +3 tests nuevos.)
   * `cargo test --workspace --doc` → **8 passed / 0 failed**.
   * `cargo fmt --all --check` → **FAIL, 100 ficheros** (preexistente).
   * `cargo clippy --workspace --all-targets -- -D warnings` → **FAIL, 11
