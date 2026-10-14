@@ -89,7 +89,10 @@ fn repo_grammar_breadth_is_measured_not_assumed() {
 
     let mut langs = Vec::new();
     walk(&root, &mut langs, 0);
-    eprintln!("repo contains {} distinct languages: {langs:?}", langs.len());
+    eprintln!(
+        "repo contains {} distinct languages: {langs:?}",
+        langs.len()
+    );
 
     // Every one of them must load. This is a measured precondition, not the
     // thing under test, so it stays a plain assertion.

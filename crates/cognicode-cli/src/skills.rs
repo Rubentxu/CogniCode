@@ -93,12 +93,16 @@ pub enum SkillError {
     UnknownTool { skill: String, tool: String },
     /// `feature_gates` names a feature that the catalog does not have
     /// for any tool. Catches typos like `magic-llm`.
-    #[error("skill `{skill}` declares unknown feature gate `{feature}` (no tool in the catalog declares this feature)")]
+    #[error(
+        "skill `{skill}` declares unknown feature gate `{feature}` (no tool in the catalog declares this feature)"
+    )]
     UnknownFeature { skill: String, feature: String },
     /// B6.W4 stability contract: a skill that names an experimental tool
     /// is rejected. The agent must not be told to use an experimental
     /// capability as if it were stable.
-    #[error("skill `{skill}` advertises experimental tool `{tool}` as stable (stability=experimental); R-B6-W4 forbids this")]
+    #[error(
+        "skill `{skill}` advertises experimental tool `{tool}` as stable (stability=experimental); R-B6-W4 forbids this"
+    )]
     ExperimentalToolAdvertised { skill: String, tool: String },
 }
 
@@ -225,8 +229,7 @@ pub fn cmd_skills_list(json: bool) -> Result<(), SkillError> {
                 })
             })
             .collect();
-        let out = serde_json::to_string_pretty(&summaries)
-            .unwrap_or_else(|_| "[]".to_string());
+        let out = serde_json::to_string_pretty(&summaries).unwrap_or_else(|_| "[]".to_string());
         println!("{out}");
     } else {
         println!("Skills ({}):", skills.len());

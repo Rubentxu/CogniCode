@@ -26,8 +26,8 @@
 //!
 //! Bilingual doc comments (English / Spanish) per AGENTS.md.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
 /// B6.W1 — Operational limits enforced by the stdio MCP server.
@@ -354,5 +354,4 @@ mod tests {
             l.cancel_grace_ms
         );
     }
-
-    }
+}

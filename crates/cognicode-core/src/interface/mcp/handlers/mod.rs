@@ -1435,9 +1435,7 @@ pub async fn handle_safe_refactor_preview(
     let workspace_root = ctx.working_dir().to_path_buf();
 
     let preview = crate::refactor::preview::render_preview(&plan, &workspace_root)
-        .map_err(|e| {
-            HandlerError::App(AppError::AnalysisError(format!("preview failed: {e}")))
-        })?;
+        .map_err(|e| HandlerError::App(AppError::AnalysisError(format!("preview failed: {e}"))))?;
 
     serde_json::to_value(&preview)
         .map_err(|e| HandlerError::Internal(format!("preview serialisation failed: {e}")))

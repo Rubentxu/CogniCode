@@ -696,20 +696,16 @@ impl CommandExecutor {
                 // travel on separate channels; either missing is a
                 // clean error (R-B5-W3 / AAT-B5-03).
                 if *apply {
-                    let plan_path = plan_file.as_deref().ok_or_else(|| {
-                        "--apply requires --plan-file <path> (B5.W3)"
-                    })?;
-                    let token_value = authorization_token.as_deref().ok_or_else(|| {
+                    let plan_path = plan_file
+                        .as_deref()
+                        .ok_or("--apply requires --plan-file <path> (B5.W3)")?;
+                    let token_value = authorization_token.as_deref().ok_or(
                         "--apply requires --authorization-token <token> \
-                         received out-of-band (B5.W3 / AAT-B5-03)"
-                    })?;
-                    return Self::execute_refactor_apply(
-                        plan_path,
-                        token_value,
-                        format,
-                    )
-                    .await
-                    .map(|_| CommandOutput::Other);
+                         received out-of-band (B5.W3 / AAT-B5-03)",
+                    )?;
+                    return Self::execute_refactor_apply(plan_path, token_value, format)
+                        .await
+                        .map(|_| CommandOutput::Other);
                 }
                 // PRF-CLI-05 / B5.W1: without --apply this is
                 // preview-only and must never mutate files.
@@ -722,12 +718,8 @@ impl CommandExecutor {
                 if let Some(plan_path) = plan_file.as_deref() {
                     let plan = crate::refactor::plan::load_plan_from_file(plan_path).map_err(
                         |e| -> Box<dyn std::error::Error> {
-                            format!(
-                                "failed to load --plan-file {}: {}",
-                                plan_path.display(),
-                                e
-                            )
-                            .into()
+                            format!("failed to load --plan-file {}: {}", plan_path.display(), e)
+                                .into()
                         },
                     )?;
                     eprintln!(
@@ -2671,9 +2663,7 @@ impl CommandExecutor {
         authorization_token: &str,
         format: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::refactor::apply::{
-            AuthorizationToken, apply, compute_workspace_state_digest,
-        };
+        use crate::refactor::apply::{AuthorizationToken, apply, compute_workspace_state_digest};
         use chrono::Utc;
 
         // Carga el plan desde disco (B5.W1).

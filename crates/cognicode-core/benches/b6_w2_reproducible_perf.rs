@@ -192,9 +192,7 @@ fn bench_incremental(c: &mut Criterion) {
         let target_path = entries[target_idx].0.clone();
         group.bench_function(label, |b| {
             b.iter(|| {
-                let stale = store
-                    .is_stale(black_box(&target_path))
-                    .expect("is_stale");
+                let stale = store.is_stale(black_box(&target_path)).expect("is_stale");
                 black_box(stale);
             });
         });
@@ -249,8 +247,7 @@ fn bench_navigation(c: &mut Criterion) {
             );
             srcs.push((path, src));
         }
-        let refs: Vec<(&str, &str)> =
-            srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+        let refs: Vec<(&str, &str)> = srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
         builder.build_index_from_sources(refs);
         // Pick a symbol that has a known callee: func_<i> calls
         // helper_<i>, so depth-1 in `Callees` direction must resolve

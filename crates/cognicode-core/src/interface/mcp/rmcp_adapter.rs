@@ -1646,8 +1646,7 @@ async fn call_tool_handler(
                 let input: crate::interface::mcp::schemas::SafeRefactorApplyInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
-                    crate::interface::mcp::handlers::handle_safe_refactor_apply(ctx, input)
-                        .await?;
+                    crate::interface::mcp::handlers::handle_safe_refactor_apply(ctx, input).await?;
                 Ok(serde_json::to_string(&output)?)
             }
 
