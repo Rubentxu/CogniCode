@@ -15896,9 +15896,14 @@ mata 2 de los 4.
 
 * 70 commits sin pushear. No hay tag ni bump de SemVer hasta que el
   merge-gate este verde en el PR a `main` (regla PR-CI vigente).
-* `test-fast.sh` comparte la misma logica y la resolucion de `TMPDIR_ROOT`,
-  pero **no se ha ejecutado end-to-end** en esta unidad: `test-full.sh` si,
-  con rc=0.
+* ~~`test-fast.sh` comparte la misma logica y la resolucion de `TMPDIR_ROOT`,
+  pero **no se ha ejecutado end-to-end**~~ → **RESUELTO**: ejecutado en
+  `f87c08d4` con `--paths crates/cognicode-core/src/refactor/revalidate.rs`.
+  Selector eligio `suites=[ladybug,core]`, **2 suites ejecutadas de verdad**
+  (2414 passed / 0 failed), paso baseline con `TMPDIR=/tmp/...` y
+  **0 entries**. `rc=0` en 25 s, con el `TMPDIR` symlinked de la maquina.
+  Esta es la prueba funcional de CD-1: antes de su arreglo el wrapper no
+  ejecutaba ni una suite.
 * El `rc=137` (SIGKILL) observado en una corrida intermedia era
   contencion de recursos por mis propias corridas concurrentes y otros
   procesos `cargo` de la maquina, no un defecto. La corrida limpia dio
