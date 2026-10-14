@@ -346,9 +346,7 @@ impl SemanticSearchService {
         // the release server for a single query, while the same query on a
         // one-file directory answered in 0.0s. Same defect already fixed in
         // `LightweightIndex::build_index` and `find_symbol_usages`.
-        let walker = ignore::WalkBuilder::new(dir)
-            .follow_links(true)
-            .build();
+        let walker = ignore::WalkBuilder::new(dir).follow_links(true).build();
 
         for entry in walker
             .filter_map(|e| e.ok())

@@ -7,9 +7,9 @@
 //! against the real release server over stdio JSON-RPC:
 //!
 //!   target="old_name"  -> "Failed to read <cwd>/old_name: No such file or
-//!                          directory"
+//!                         directory"
 //!   + explicit file_path=.../old_name (an existing file)
-//!                      -> "Unsupported file type: <cwd>/old_name"
+//!                     -> "Unsupported file type: <cwd>/old_name"
 //!
 //! So a real symbol name can never succeed: without a file named after the
 //! symbol it is "No such file", and with one it is "Unsupported file type".

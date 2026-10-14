@@ -229,17 +229,19 @@ async fn references_with_tier(
                     .collect::<Vec<_>>()
                     .join("; ");
                 (
-                    Err(crate::domain::traits::code_intelligence::CodeIntelligenceError::Internal(
-                        format!(
-                            "find_references could not resolve the symbol at {}:{}:{}. \
+                    Err(
+                        crate::domain::traits::code_intelligence::CodeIntelligenceError::Internal(
+                            format!(
+                                "find_references could not resolve the symbol at {}:{}:{}. \
                              No tier served a reference list, so no answer is reported. \
                              Diagnostics: {}",
-                            location.file().to_string(),
-                            location.line(),
-                            location.column(),
-                            if detail.is_empty() { "none" } else { &detail }
+                                location.file(),
+                                location.line(),
+                                location.column(),
+                                if detail.is_empty() { "none" } else { &detail }
+                            ),
                         ),
-                    )),
+                    ),
                     None,
                 )
             }
@@ -276,10 +278,7 @@ pub async fn handle_find_references(
     // `{"symbol":"crates/.../plan.rs"}` - a path presented as a symbol name.
     // Report the position that was actually searched, which is what the caller
     // can act on and cannot be mistaken for a resolved symbol name.
-    let searched_at = format!(
-        "{}:{}:{}",
-        input.file_path, input.line, input.column
-    );
+    let searched_at = format!("{}:{}:{}", input.file_path, input.line, input.column);
 
     match refs {
         Ok(refs) => {
@@ -307,9 +306,12 @@ pub async fn handle_find_references(
             // Previously this arm returned `total: 0` with an empty list, so
             // a failed lookup was indistinguishable from a completed one that
             // found nothing. The failure is now reported as a failure.
-            Err(HandlerError::App(crate::application::error::AppError::AnalysisError(
-                format!("find_references: {}", e),
-            )))
+            Err(HandlerError::App(
+                crate::application::error::AppError::AnalysisError(format!(
+                    "find_references: {}",
+                    e
+                )),
+            ))
         }
     }
 }

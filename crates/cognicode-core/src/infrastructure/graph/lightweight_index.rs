@@ -161,7 +161,6 @@ impl LightweightIndex {
         // builder, so it takes its own copy of the root rather than
         // borrowing the one the loop below still needs.
         let root_for_filter = project_dir.clone();
-        let should_skip_path = should_skip_path;
         let mut builder = ignore::WalkBuilder::new(&project_dir);
         builder
             .hidden(false)
