@@ -10,10 +10,14 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `2df856fce7a541f2a3352adef73d4ca1f576247b` (contrato B4.W1 `precision`/`provider` restaurado en los 8
-> DTOs de navegación; enlaces intra-doc de `refactor::apply`/`preview`
-> reparados; gate `rustdoc-gate` verde por primera vez bajo
-> pipelinek 0.61.0-rc2).
+> `3ddb776f138a224f86732618ec688060a48cbb5a` (seis gates que no podían
+> fallar reparados y probados por mutación: el veredicto publicado por
+> `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
+> adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
+> restauraba los bytes en vez de borrar el archivo, la validación de schema
+> del catálogo publicado dejaba de saltarse en silencio, y dos wrappers
+> `fast`/`full` dejaron de poder responder verde sin hacer nada;
+> estado de runtime de PipelineK des-trackeado de git).
 > Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
 > `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
 > publicado** — el tag remoto sigue en `v0.101.16`, que es la release
@@ -31,16 +35,27 @@
 
 * **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
   también abiertos y `BLOCKED` a la espera de `merge-gate`).
-* **SHA funcional**: `2df856fce7a541f2a3352adef73d4ca1f576247b`.
+* **SHA funcional**: `3ddb776f138a224f86732618ec688060a48cbb5a`.
 * **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
-* **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`):
-  * `toolchain` → success.
-  * `repo-contract` → success.
-  * `fmt` → success.
-  * `clippy` (`-D warnings`) → success.
-  * `rustdoc-gate` → success.
-  * `contracts` → **FAIL** (ver JOURNAL.md, recibo de 2026-10-15).
+* **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`, con
+  `--rerun` para que las etapas ejecuten y no se sirvan del journal):
+  * `toolchain` → success (0,2 s).
+  * `repo-contract` → success (0,1 s).
+  * `fmt` → success (4,5 s).
+  * `clippy` (`-D warnings`) → success (83,8 s).
+  * `rustdoc-gate` → success (434,0 s = 7,2 min).
+  * `contracts` → sin medir a fondo; la etapa anterior agota por sí sola
+    más de la mitad del presupuesto de 15 min acordado para el gate.
+
+  Los tiempos son por etapa, leídos del journal SQLite del propio run. Antes
+  de `--rerun` los mismos stages se replayaban en 79 ms marcados `RERUN`, de
+  modo que ninguna de estas cifras correspondía a trabajo ejecutado.
+
+  **Bloqueo conocido**: `rustdoc-gate` es `cargo doc --workspace --no-deps`
+  envuelto en un test, y consume 7,2 min por sí solo. El gate no cabe en
+  15 min sin segmentarlo; la segmentación propuesta es un work item abierto,
+  no un hecho.
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
   * `cargo build -p cognicode-core` → 0 errors (T1-5.5).
