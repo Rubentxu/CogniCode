@@ -219,37 +219,48 @@ fn apply_commits_on_success() {
     assert!(!staging.exists(), "staging dir must be cleaned on success");
 }
 
-/// 6. apply_rolls_back_on_partial_failure: un segundo archivo falla
-///    al renombrar (parent no escribible); el primero NO debe quedar
-///    modificado parcialmente, y el staging se borra.
+/// 6. apply_rolls_back_on_partial_failure: el SEGUNDO archivo en
+///    orden de aplicación falla al renombrar (parent no escribible).
+///    Para que el rollback tenga algo que deshacer, el fallo tiene que
+///    ocurrir DESPUÉS de que el primero se haya aplicado: por eso los
+///    paths se eligen a mano (`a_...` ordena antes que `z_...`) y el
+///    orden se asserta explícitamente abajo. Un rollback que borrase
+///    los archivos en vez de restaurar sus bytes dejaría `a_first.rs`
+///    inexistente y este test en rojo.
 #[cfg(unix)]
 #[test]
 fn apply_rolls_back_on_partial_failure() {
     use std::os::unix::fs::PermissionsExt;
 
     let tmp = TempDir::new().unwrap();
-    // Crea los dos archivos.
-    let good = tmp.path().join("good.rs");
-    fs::write(&good, "old_good").unwrap();
-    let bad = tmp.path().join("bad").join("dir").join("bad.rs");
-    fs::create_dir_all(bad.parent().unwrap()).unwrap();
-    fs::write(&bad, "old_bad").unwrap();
+
+    // "a_first.rs" ordena ANTES que "z_second_dir/second.rs" porque
+    // `build_plan` -> `sort_edits` ordena por path como string. El
+    // nombre del que falla NO puede empezar por una letra que sortee
+    // antes que la del que debe aplicarse primero.
+    let first = tmp.path().join("a_first.rs");
+    fs::write(&first, "old_first_contents").unwrap();
+
+    let second_dir = tmp.path().join("z_second_dir");
+    let second = second_dir.join("second.rs");
+    fs::create_dir_all(&second_dir).unwrap();
+    fs::write(&second, "old_second_contents").unwrap();
 
     let plan = build_plan(
         tmp.path().to_path_buf(),
         AnalysisBasis::for_workspace(tmp.path().to_path_buf()),
-        vec![good.clone(), bad.clone()],
+        vec![first.clone(), second.clone()],
         vec![
             PlannedEdit {
-                file: good.clone(),
-                byte_range: 0..7,
-                replacement: "new_good".to_string(),
+                file: first.clone(),
+                byte_range: 0..3,
+                replacement: "NEW".to_string(),
                 deterministic: true,
             },
             PlannedEdit {
-                file: bad.clone(),
-                byte_range: 0..7,
-                replacement: "new_bad".to_string(),
+                file: second.clone(),
+                byte_range: 0..3,
+                replacement: "NEW".to_string(),
                 deterministic: true,
             },
         ],
@@ -258,34 +269,62 @@ fn apply_rolls_back_on_partial_failure() {
     )
     .expect("build_plan");
 
+    // Pin del orden de aplicación: si `sort_edits` cambia, este test
+    // debe fallar en vez de volverse vacuo otra vez.
+    assert_eq!(
+        plan.edits.len(),
+        2,
+        "plan must carry exactly the two edits"
+    );
+    assert_eq!(
+        plan.edits[0].file, first,
+        "the FIRST edit in application order must be a_first.rs; otherwise \
+         the failing edit runs first and the rollback loop is a no-op"
+    );
+    assert_eq!(plan.edits[1].file, second, "second edit must be second.rs");
+
     let workspace_digest = compute_workspace_state_digest(&plan);
     let token = fresh_token();
 
-    // Bloquea el directorio `bad/dir` para que el rename falle.
-    let bad_dir = tmp.path().join("bad").join("dir");
-    fs::set_permissions(&bad_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    // Bloquea el directorio padre del SEGUNDO archivo para que su
+    // rename falle (EACCES) sin que el primero se entere.
+    fs::set_permissions(&second_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
     let res = apply(&plan, &workspace_digest, &token, tmp.path());
 
     // Restaura permisos (para que TempDir se limpie bien al final).
-    fs::set_permissions(&bad_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&second_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
     match res {
         Err(ApplyError::IoError { path, .. }) => {
-            assert!(
-                path.to_string_lossy().contains("bad"),
-                "IoError path must point to the bad file, got {:?}",
-                path
+            assert_eq!(
+                path, second,
+                "IoError path must point to the second (failing) file"
             );
         }
         other => panic!("expected IoError on partial failure, got {:?}", other),
     }
 
-    // El archivo bueno NO debe quedar modificado (rollback).
-    let good_content = fs::read_to_string(&good).unwrap();
+    // (a) El archivo que SÍ se aplicó debe haber sido RESTAURADO
+    //     byte a byte. Que exista no basta: el rollback tiene que
+    //     devolver sus bytes originales, no simplemente no perderlo.
+    assert!(
+        first.exists(),
+        "a_first.rs must still EXIST after rollback, not be deleted \
+         (rollback restores prior contents, it does not remove files)"
+    );
+    let first_content = fs::read_to_string(&first).unwrap();
     assert_eq!(
-        good_content, "old_good",
-        "good.rs must remain unchanged after partial rollback"
+        first_content, "old_first_contents",
+        "a_first.rs must be byte-identical to its pre-apply contents"
+    );
+
+    // (b) El archivo que falló queda en su estado original: su rename
+    //     nunca se aplicó, así que nunca fue modificado.
+    let second_content = fs::read_to_string(&second).unwrap();
+    assert_eq!(
+        second_content, "old_second_contents",
+        "the failing file must remain in its original state"
     );
 
     // El staging global debe estar vacío (ningún plan_id dir
