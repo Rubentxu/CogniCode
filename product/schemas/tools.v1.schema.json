@@ -87,8 +87,8 @@
           "enum": ["inferred", "observed"]
         },
 
-        "comment": "The provenance floor, spelled exactly as interface::symbol_identity::Precision::as_str spells it on the wire. Pinning the enum here is what stops the catalog from advertising a fourth precision tier the runtime cannot produce.",
         "precision_floor": {
+          "$comment": "The provenance floor, spelled exactly as interface::symbol_identity::Precision::as_str spells it on the wire. Pinning the enum here is what stops the catalog from advertising a fourth precision tier the runtime cannot produce.",
           "type": "string",
           "enum": ["ast-heuristic", "index", "lsp"]
         }

@@ -41,7 +41,7 @@
         },
         "allOf": [
           {
-            "comment": "A skill that declares no tool cannot act, and a skill whose tools are all gated cannot act either. Either it names at least one tool, or it explains itself as gated.",
+            "$comment": "A skill that declares no tool cannot act, and a skill whose tools are all gated cannot act either. Either it names at least one tool, or it explains itself as gated.",
             "if": {
               "properties": {"tools_used": {"maxItems": 0}},
               "required": ["tools_used"]
