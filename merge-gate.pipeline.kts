@@ -335,9 +335,20 @@ set -eo pipefail
                 sh("cargo test -p cognicode-core --lib prf_mcp_05 --quiet")
             }
 
-            stage("core-adversarial-e2e") {
-                sh("cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet")
-            }
+            // MEDIDO 2026-10-15. Esta etapa nombra `prf_h06_adversarial_e2e` bajo
+            // `cognicode-core`, y ese target ya no existe: la suite vive en
+            // `cognicode-mcp`, porque `CARGO_BIN_EXE_cognicode-mcp` solo existe
+            // para el paquete que declara ese binario. El error de cargo es:
+            //
+            //     error: no test target named `prf_h06_adversarial_e2e` in
+            //            `cognicode-core` package
+            //
+            // Corre bajo `-p cognicode-mcp`, en `mcp-prf-h06-adversarial-e2e`.
+            //
+            // Y esto es lo que pasó al devolver la granularidad: se añadió la
+            // etapa nueva y esta se quedó. Sin `-e` en la etapa, el fallo de
+            // cargo no paraba nada y el gate pasaba. Con el, se ve a los 23
+            // pasos — que es exactamente para lo que está el guard.
 
             // pr-ci.yml:567. The unrestricted core step. Without it the five
             // suites behind #![cfg(feature = "evidence-kernel")] compile to
