@@ -4,7 +4,8 @@ Sesión cerrada. Todo lo que sigue está verificado con comandos reales de esta 
 
 ## Resumen en 30 segundos
 
-- **CD-1, CD-2, CD-3**: cerrados y verificados (scripts que daban verde falso).
+- **CD-1, CD-2, CD-3, CD-5**: cerrados y verificados (scripts que daban
+  verde falso + helper de cleanup SBOM con wildcard).
 - **Hallazgo fuerte**: un test daba verde con el producto roto. Arreglado y
   verificado con RED→GREEN. Commit `13a0de4e`.
 - **nextest**: da los mismos resultados y es **2,05× más rápido**, pero **NO se
@@ -37,11 +38,9 @@ El PR **no** se abrió a propósito: dispara `merge-gate`, y la versión de runn
 sigue sin decidir (0.56.0 activa por `.tool-versions`; 0.48.0-rc2 es la que pide
 el ROADMAP). No corresponde al agente publicar el semáforo verde.
 
-Árbol: **un solo fichero modificado sin commitear**, intencionado y descrito abajo.
-
-```
- M crates/cognicode-cli/tests/prf_f6_w3_bis_sbom_contract.rs
-```
+Árbol: **limpio** en el momento de este addendum; el cambio del punto 3
+de Pendientes quedó committeado en `3f5e2df` (ver "Cerrado y verificado"
+CD-5 y Pendientes #3 ~~tachado~~).
 
 Producto (`crates/*/src/`) **intacto**. Todo cambio de esta sesión es en tests.
 
@@ -60,6 +59,7 @@ Nunca usar `git stash` ni releases sin `test-full.sh` verde.
 | CD-2 publish-merge-gate.sh podía publicar verde de otro SHA | ✅ | `b5b8ae03` |
 | CD-3 selector de merge-gate kts calculado y descartado | ✅ | `97145a9c` |
 | Test con **verde falso** (ver abajo) | ✅ | `13a0de4e` |
+| CD-5 helper cleanup bounded (SBOM isolation, fix del pendiente #3) | ✅ | `3f5e2df` |
 
 `test-full.sh` = **6607 passed, 0 failed, rc=0** (698.5 s bajo contención).
 
@@ -114,9 +114,11 @@ incompatibles **NO se rompieron**.
 1. **`#[serial]` no protege bajo nextest.** serial_test serializa dentro de un
    proceso; nextest da un proceso por test. La valla no existe. `prf_f6_w3_bis_sbom_contract.rs`
    tiene sus 5 tests marcados `#[serial]` y aun así se pisan.
-2. **`rm` con wildcard** en `prf_f6_w3_bis_sbom_contract.rs:95` (ya corregido en el
-   working tree, sin commitear) borraba `crates/*/*_bin.cdx.json` — alcanzaba todo
+2. **`rm` con wildcard** en `prf_f6_w3_bis_sbom_contract.rs` (corregido en
+   `3f5e2df`, CD-5) borraba `crates/*/*_bin.cdx.json` — alcanzaba todo
    el árbol `crates/` y podía borrar fixtures de otro test en paralelo.
+   Reemplazado por una lista explícita de `(crate, bin)`. La regresión
+   está pineada por el test `cd5_helper_cleanup_does_not_delete_foreign_crate_sboms`.
 
 Workspace completo con nextest: `6587/6591 passed, 4 failed`. **Los 4 pasan aislados**
 (ej. `cold_small_under_budget`: 19.5 s bajo carga vs **0.048 s** solo, presupuesto 5 s).
@@ -127,7 +129,14 @@ Adoptar nextest exigiría crear `.config/nextest.toml` con test-groups serializa
 Trabajo de auditoría amplio que el repo nunca hizo. Ganancia real sobre
 `test-full.sh` (698 s, mayormente compilación + UAT) es pequeña.
 
-## CD-5: por qué NO se optimizó código de producto
+## Nota: por qué NO se optimizó código de producto (iowait)
+
+> **Nota histórica, no una unidad de código.** Esta sección se llamaba
+> "CD-5" en el handoff inicial; el `CD-5` que aparece en la tabla de
+> "Cerrado y verificado" (commit `3f5e2df`) es otra cosa: el fix del
+> cleanup wildcard en el test SBOM. El número se reusó por confusión
+> entre los dos hilos; aquí lo renombro a "Nota iowait" para que la
+> tabla pueda leer limpio.
 
 FAST medido 7 veces: `55.04 61.20 44.99 57.49 31.84 41.58 25.72` s (rango 25.7-61.2 s).
 Objetivo propuesto p95 ≤ 30 s **no es medible en esta máquina**:
@@ -161,29 +170,34 @@ Opciones: (a) crear clave real con el email del operador y publicarla en GitHub,
 (b) seguir sin firmar. `commit.gpgsign` y `user.signingkey` siguen sin configurar.
 `scripts/ci/test_provenance_gate.py` = PASS (construido `cognicode-control-plane`).
 
-### 3. `prf_f6_w3_bis_sbom_contract.rs` modificado sin commitear
+### 3. `prf_f6_w3_bis_sbom_contract.rs` modificado sin commitear ~~pendiente~~ ✅
 Cambio: `rm -f crates/*/*_bin.cdx.json …` (wildcard) → lista explícita de
 `(crate, bin)` = cogh, cognicode, cognicode-release, cognicode-mcp, mcp-client.
 437 líneas, los 5 `#[test]` dentro, fmt OK, clippy limpio.
-**Decidir**: commitear como fix de aislamiento (correcto e independiente de nextest),
-o `git checkout --` para revertir.
-⚠️ **Está en el working tree, NO en la rama publicada.** Si se pierde, hay que rehacerlo.
-⚠️ Durante esta sesión un regex mío **borró 325 líneas** de ese fichero.
-Se restauró con `git checkout --` y se rehizo. **Verificar el fichero antes de commitear.**
+**Resuelto** en commit `3f5e2df` (ver tabla "Cerrado y verificado" CD-5).
+Se añadió además un test de regresión (`cd5_helper_cleanup_does_not_delete_foreign_crate_sboms`)
+que planta un fixture en `crates/cognicode-core/` (librería sin `[[bin]]`, por
+tanto fuera del dominio del helper) y verifica que el cleanup acotado no lo
+borra. El test fuerza `cwd = repo_root()` para reproducir el escenario
+paralelo donde el bug se manifestaba (con `cwd = crates/cognicode-cli/` el
+wildcard no matcheaba y el defecto quedaba latente). RED→GREEN verificado:
+con el wildcard restaurado el test falla con el panic esperado; con la lista
+explícita, pasa.
 
 ## Cómo retomar
 
 ```bash
 cd /var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode
 git rev-parse --abbrev-ref HEAD   # debe ser cp2-cd01-trustworthy-gates
-git status --short                # M prf_f6_w3_bis_sbom_contract.rs  ← sigue sin commitear
+git status --short                # limpio desde 3f5e2df; si no lo está, se perdió el addendum
 bash scripts/test-fast.sh         # feedback rápido, sustituye a full durante iteración
 bash scripts/test-full.sh         # OBLIGATORIO antes de push/tag/bump: fmt+clippy+tests
 ```
 
-⚠️ Si `git status` aparece limpio, el cambio del punto 3 se perdió: estaba **solo**
-en el working tree. Rehacerlo es el diff de `remove_canonical_sboms` en
-`prf_f6_w3_bis_sbom_contract.rs` (wildcard → lista explícita de 5 pares crate/bin).
+⚠️ El cambio del punto 3 está en `3f5e2df` (CD-5) — la nota defensiva
+original sobre "si `git status` aparece limpio se perdió" ya no aplica,
+pero se conserva el espíritu: si un futuro handoff habla de un cambio
+"sin commitear", verificar antes de asumir que sigue en el working tree.
 
 Reglas del repo: `fast` no sustituye a `full`. Nada de `git stash`. Nada de release
 con `FAIL`/`BLOCKED`/`NOT_RUN`. Estados permitidos: `NOT_RUN PASS FAIL BLOCKED
