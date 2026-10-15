@@ -14729,3 +14729,82 @@ el build por defecto no los expone, pero `tools.json` es el **catálogo
 maestro** y sí los publica. El procedimiento documentado es correcto para un
 build con todas las features y destructivo para el build por defecto, y no
 dice cuál de los dos se está ejecutando. No se regenera hasta decidirlo.
+
+## Recibo 2026-10-15 (bis) — Ocho gates que no podían fallar, y una release que sí
+
+**SHA**: `87074382` sobre `b5-v0.101.17` (PR #348), empujado a `origin`.
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16` — el bump está preparado, no publicado.
+
+### El defecto de fondo
+
+Ocho gates de este repositorio pasaban sin poder fallar. Todos tienen la
+misma forma: **la propiedad vive en el test, no en el código**. El test
+compara el artefacto contra sí mismo, contra un grep de su propio comentario
+de cabecera, o contra una constante escrita a su lado.
+
+### Lo que se corrigió, con la mutación que lo demuestra
+
+| # | Defecto | Dientes |
+|---|---|---|
+| 1 | `publish-merge-gate.sh` corría el gate **sin `--rerun`**: 30 stages replayados del journal en 79 ms, marcados `RERUN`. El check `merge-gate` publicado era el veredicto de otro árbol. | quitar `--rerun` → rc=1 |
+| 2 | `prf_h06_adversarial_e2e`: **0 de 15 tests ejecutados**, todos `SKIP_NOT_APPLICABLE` contamados como PASS. Buscaba el binario por `$CARGO_TARGET_DIR`, que cargo no exporta a los test binaries. | invertir el guard de `assert_token_absent` → `PRF-SEC-03 violated: decoy token leaked` |
+| 3 | Rollback de refactor hacía `fs::remove_file`: **borraba el archivo del usuario** en vez de restaurar sus bytes. Y el test que debía detectarlo pasaba con el rollback entero borrado (`sort_edits` ponía el fichero que fallaba primero). | restaurar el `remove_file` → `a_first.rs must still EXIST after rollback` |
+| 4 | `test_product_tool_catalog.py` se saltaba la validación de schema en silencio sin `jsonschema`. Y la stage que instalaba PyYAML corría **después** de `contracts`, que la necesita. | bloquear el import → rc=1 |
+| 5 | Un guard de 60 líneas invisible: no empezaba por `test_`, el runner no lo descubría. El gate corría 10 tests donde `main()` listaba 11. | `if ! rm -rf -- release;` → `if ! true;` → rc=1 |
+| 6 | `test-full.sh` grepeaba 4 needles contra su **comentario de cabecera**. Borrar la batería entera dejaba el test verde. | borrar las 4 invocaciones → rc=1 |
+| 7 | `test-fast.sh` respondía verde con `--lib` para la suite `merge`, que el selector documenta como "merge-gate completo". Sin correr ninguno de los 65 tests contractuales. | restaurar las ramas viejas → 2 contratos en rojo |
+| 8 | `verify-as-consumer` comprobaba la **integridad** de los assets publicados, no su **completitud**. | (ver abajo) |
+
+### La release estaba rota y nadie lo veía
+
+Medido contra la API de GitHub:
+
+    v0.101.10    8 assets
+    v0.101.15    3 assets
+    v0.101.16    3 assets
+
+Seis releases seguidas publicadas con 3 de 8. Los 5 ausentes son
+exactamente los que necesitan `install.sh` y `cogh update`: el bundle por
+plataforma, los dos bundles portables, el release-inventory y el propio
+`SHA256SUMS`. Una release así existe, resuelve por `/releases/latest`, y no
+se puede instalar.
+
+`sandbox/scripts/test_release_asset_set.sh` ya lo detectaba — rc=1 sobre
+`v0.101.16`, nombrando los 5 assets ausentes. **No lo invocaba ningún
+pipeline**; el único que lo mencionaba era su propia cabecera. Es la misma
+deuda que el gate de skills CP5, verde durante meses sin workflow que lo
+ejecutara. `verify-asset-set` lo corre ahora, después de `publish-draft`.
+
+### El contrato de ese wiring cometió el mismo defecto que vigilaba
+
+Su primera versión hacía `text.index("test_release_asset_set.sh")` sobre el
+fichero entero y **pasaba con la stage borrada**, porque el comentario que
+explica por qué existe ya nombra el script. Reescrito para leer el cuerpo de
+la stage vía `stage_blocks()`. Dos mutaciones, ambas rojas: borrar la stage, y
+dejar el nombre con un `echo` en el cuerpo.
+
+### Estado medido
+
+* `bash scripts/ci/run-all-contracts.sh` → **276 passed, 0 failed**.
+* `cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e` → 15 passed,
+  0 ignored, 0 filtered.
+* `cargo test -p cognicode-core --test b5_w3_apply_with_authority` → 11 passed.
+* `merge-gate.pipeline.kts` con `--rerun`, por stage, leído del journal SQLite:
+  toolchain 0,2 s · repo-contract 0,1 s · fmt 4,5 s · clippy 83,8 s ·
+  **rustdoc-gate 434,0 s**.
+
+### Abierto, no resuelto
+
+* **`rustdoc-gate` mide 7,2 min por sí solo.** Con 30 stages el gate no cabe
+  en los 15 min acordados sin segmentarlo. La segmentación es un work item,
+  no un hecho, y cambia el contrato del gate: decisión del operador.
+* **Planificación**: `plan.rs` no deduplica ediciones por fichero. Dos edits
+  al mismo fichero se aplican en orden y el segundo empalma un `byte_range`
+  calculado sobre los bytes originales; el rollback restaura cada uno a lo
+  que leyó, dejando edit 1 aplicado permanentemente. Es un cambio de
+  contrato (rebasing de offsets o rechazar planes multi-edit), no un fix
+  mínimo.
+* 32 ficheros de estado de runtime de PipelineK (`leases/`, `last-run/`,
+  `output-plane/`) estaban **trackeados en git** desde `e14d6e7e`. Des-trackeados
+  e ignorados; contrato con oráculo `git ls-files`.
