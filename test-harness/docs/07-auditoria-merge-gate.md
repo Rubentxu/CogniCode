@@ -294,3 +294,63 @@ una política, así que ninguna es un cambio de B1 sin decisión.
    `cli-integration-suites` (antes `cli-unrestricted-ladybug`).** Motivo: el workaround vive en la autoridad de
    merge y se apoya en una causa no diagnosticada. Sustituirlo por un diagnóstico
    o por una versión de PipelineK reparada exige verificación externa al repo.
+
+## 5. Medición de B1 (antes/después) y perfil por stage
+
+Fichero auditado: 787 líneas y 73 declaraciones `stage(`; tras B1,
+`merge-gate.pipeline.kts` tiene 875 líneas y 73 declaraciones: salen siete
+(cuatro construcciones release, su verificador, el comodín CLI y la UAT de dos
+procesos) y entran siete (tres construcciones debug, su verificador y las tres
+stages CLI que sustituyen al comodín).
+`release-candidate.pipeline.kts` pasa de 26 a 33 (el grupo `release-contracts`).
+
+**Entorno**: worktree `worktree-test-harness`, máquina compartida (durante la
+medición corría otra sesión con la suite Gradle de `pipelinek` y varios JVM de
+Jenkins), `pipelinek 0.61.0-rc2`, workspace `0.101.17`, `CARGO_TARGET_DIR` **no**
+exportado (cargo resuelve `~/.cargo/config.toml` y apunta al directorio
+compartido). Invocación idéntica en las dos corridas:
+`pipelinek run merge-gate.pipeline.kts` desde la raíz, sin banderas.
+
+Perfil por stage (segundos), medido con un watcher que fecha cada transición de
+stage en el log de la corrida:
+
+| Stage | Antes (`658409fb^`) | Después (`658409fb`) |
+|---|---|---|
+| `rustdoc-gate` | ~574 (frío) | 548 |
+| `contracts` | 197 | 202 |
+| `clippy` | 171 (frío) | 10 (caché caliente) |
+| `build-cognicode-mcp-release` | 264 | no existe |
+| `build-control-plane-release` | 100 | no existe |
+| `build-cognicode-cli-release` | 69 | no existe |
+| `build-cognicode-release-bin` | 35 | no existe |
+| `verify-release-binaries` | < 1 | sustituido por `verify-debug-binaries` (0,5) |
+| `build-cognicode-mcp-debug` | no existía | 0,5 |
+| `build-cognicode-cli-debug` | no existía | 5 |
+| `build-control-plane-debug` | no existía | 61 |
+| `cli-unit-tests` | (dentro del comodín) | 61 |
+| `cli-doctests` | (dentro del comodín) | 1,5 |
+| `cli-integration-suites` | (comodín único) | 45 |
+| `core-unrestricted-evidence-kernel` | (no alcanzado) | 30 |
+| `cognicode-ladybug` | (no alcanzado) | 69 |
+| `mcp-a009-agent-safe-profile` | (no alcanzado) | 47 |
+| `mcp-a010-tool-authority-audit` | (no alcanzado) | 65 |
+| `mcp-a016-tools-runtime-consistency` | (no alcanzado) | 57 |
+| resto de MCP (21 stages) | (no alcanzado) | 1-2 cada uno |
+
+**Bloque release**: 470 s antes, 0 s después. **Sustitución**: 67 s de
+construcciones debug. **Ahorro estructural neto**: ≈ 400 s por iteración, con
+independencia de la caché, porque los cuatro artefactos release ya no se
+construyen.
+
+**Total de corrida**: antes se truncó a propósito tras el bloque medido (1 399 s
+de prefijo), porque las stages restantes compilan los ficheros que esta unidad
+cambia. Después, corrida completa: 1 215 s. La comparación honesta es
+el bloque eliminado y el ahorro neto; los totales absolutos están dominados por
+`rustdoc-gate` (una compilación de documentación de workspace que ninguna de las
+dos versiones cacheó) y por `contracts`, que B1 no toca.
+
+**Siguiente palanca medida (no ejecutada en B1)**: `rustdoc-gate` es hoy la stage
+más cara del merge, 548 s medidos en las dos corridas. No es una regresión de
+esta unidad — existía igual antes — y reducirla exige una decisión propia
+(alcance del gate de documentación, caché de `cargo doc`, o moverlo de lane).
+Se registra como insumo para B3/B5, no como cambio de B1.

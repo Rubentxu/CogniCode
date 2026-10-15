@@ -10,32 +10,39 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `9731d9962b1777c0ce468157fc195b6a26984d4a` (paquete documental TH-DOC-01 publicado).
+> `658409fb` (B1: gate de merge ligero; el recibo va en `JOURNAL.md` y el commit
+> de recibos es el siguiente a este SHA).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
-> La captura anterior de `b5-v0.101.17` sobre SHA
-> `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
-> Ese SHA es un ancestro 12 commits detrás de este HEAD y sus resultados
-> no se presentan como evidencia del HEAD actual.
+> La captura anterior de TH-DOC-01 sobre
+> `9731d9962b1777c0ce468157fc195b6a26984d4a` se conserva abajo como histórica;
+> sus resultados no se presentan como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-DOC-01, README de entrada del Test Harness
-> publicado en `test-harness/README.md`; staging ignorado `docs/test-harness/`
-> preservado e intacto. Cualquier implementación del harness requiere una unidad separada.
+> **Unidad cerrada en este worktree**: B1 del mandato del operador de 2026-10-15.
+> El staging ignorado `docs/test-harness/` sigue preservado e intacto, y la
+> implementación del harness (`test-harness/src`, `bin`, adaptadores) sigue sin
+> existir: B1 es cambio de gate, no arranque del harness.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS** en HEAD
-> `9731d9962b1777c0ce468157fc195b6a26984d4a`, `workspace=0.101.17`.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS**,
+> `workspace=0.101.17`.
 
-## HEAD y gates del worktree
+## HEAD y gates del worktree (B1)
 
 * **Rama**: `worktree/test-harness`.
-* **Commit de publicación**: `9731d9962b1777c0ce468157fc195b6a26984d4a`.
-* **Versión workspace**: `0.101.17`.
-* **Batería de workspace sobre el SHA del plan**: `NOT_RUN` en esta iniciativa
-  documental.
-* **Estado**: TH-DOC-01 cerrada para el README documental.
-* **Paquete fuente**: `docs/test-harness/` sigue ignorado por `.gitignore:153` y se preserva intacto.
-* **Aceptación desde archivo Git**: 31 archivos del paquete; 20/20 enlaces; 30/30 entradas de manifiesto; onboarding documental 6/6.
-* **Ratchet**: PASS en HEAD `9731d9962b17`.
-* **Límite**: implementación y UAT/AAT operativa del harness `NOT_RUN`, fuera de esta unidad.
+* **Commits de la unidad**: `658409fb` (gate, contratos, auditoría, ADR) y
+  `00c9e47e` (reparación de una deriva preexistente en la UAT read-only).
+* **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
+  `v0.101.16` y **no** se publica release en esta unidad.
+* **merge-gate**: construcciones release eliminadas (470 s medidos) y sustituidas
+  por construcciones debug (67 s). Corrida real con base durable:
+  `pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts` →
+  **SUCCESS**, 73 stages verdes, 1 215 s.
+* **Suites de perfil release**: seis, verdes en la lane de candidato
+  (`release-contracts`), 62 tests, `rc=0`.
+* **Mutaciones adversariales**: 6/6 detectadas por los contratos de cobertura;
+  control sin mutación verde.
+* **Límite**: lane de candidato completa (clean-clone, empaquetado, instalación,
+  provenance) y `cargo test --workspace` **NOT_RUN** en esta unidad; los límites
+  están declarados en el recibo del `JOURNAL.md`.
 
 ## Snapshot anterior b5-v0.101.17 (histórico, SHA `2df856fce7a541f2a3352adef73d4ca1f576247b`)
 

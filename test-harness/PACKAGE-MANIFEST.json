@@ -118,8 +118,8 @@
     },
     {
       "path": "docs/07-auditoria-merge-gate.md",
-      "sha256": "39fbb27c4c3f00dd1e5d480c349b66dbc0fef31dd42f8bf7721ea6d5782aef26",
-      "bytes": 36408
+      "sha256": "10befedc898c9dac1fd75ff9243841297b575bd3601834bcfd0d010d1fcd3703",
+      "bytes": 39718
     },
     {
       "path": "prompts/MANDATO-AGENTE.md",
@@ -153,8 +153,8 @@
     },
     {
       "path": "specs/TH-S05-gates-release.md",
-      "sha256": "8adcfbb3803bd1ff5e5de0ba3ed6494930a153896d3b260e675d58e925f5d029",
-      "bytes": 4060
+      "sha256": "0ce2d46305b9483d8543202119a807a63ab4c119dd7cb5447e2faa708d560ffa",
+      "bytes": 6108
     },
     {
       "path": "specs/TH-S06-operacion-seguridad.md",

@@ -14729,3 +14729,134 @@ el build por defecto no los expone, pero `tools.json` es el **catálogo
 maestro** y sí los publica. El procedimiento documentado es correcto para un
 build con todas las features y destructivo para el build por defecto, y no
 dice cuál de los dos se está ejecutando. No se regenera hasta decidirlo.
+
+---
+
+## Recibo 2026-10-15 — B1: gate de merge ligero (construcciones release fuera)
+
+**SHA de implementación**: `658409fb` (gate, contratos, auditoría, ADR) y
+`00c9e47e` (reparación de una deriva preexistente en la UAT read-only).
+**Unidad**: B1 del mandato del operador *«Reorientar el Test Harness de CogniCode
+hacia entrega de valor»* (2026-10-15), en el worktree paralelo
+`worktree/test-harness`. **Versión workspace**: `0.101.17`; **no** se publica
+release de producto en esta unidad. **Rama remota**: `worktree/test-harness`.
+
+### Qué cambió
+
+1. **Las cuatro construcciones release salen de `merge-gate.pipeline.kts`.** Su
+   único consumidor verificable era un conjunto de seis suites que taran,
+   generan y verifican bytes de perfil release. La lane de merge construye ahora
+   los binarios de perfil **debug** que sus propias suites lanzan por ruta
+   (`cognicode-mcp`, `cognicode-cli --bins`, `cognicode-control-plane`) y los
+   verifica: existen, son ejecutables y arrancan. Decisión en
+   `test-harness/adrs/ADR-TH-005-dueno-unico-por-suite.md`.
+2. **Seis suites cambian de dueño**: `prf_dist_01_06_release_candidate_uat`,
+   `prf_dist_workflow_flatten_uat`, `prf_f6_w1_release_coherence`,
+   `prf_f6_w2_staging_contract`, `published_skill_bundles_are_required` y
+   `prf_cli_04_two_process_uat` pasan al grupo `release-contracts` de
+   `release-candidate.pipeline.kts`, con `COGNICODE_RELEASE_BIN` y
+   `COGNICODE_RELEASE_BIN_DIR` apuntando a los artefactos de esa lane y guarda de
+   host para un target extranjero. **Ninguna suite se elimina.**
+3. **La selección CLI deja de ser un comodín**: `--lib --bins` (unidad y bin,
+   incluidos los tests de `cogh` que derivan su binario de `current_exe`),
+   `--doc` en su propia invocación (cargo prohíbe mezclar `--doc`), y una
+   enumeración explícita de las 49 suites que no exigen perfil release.
+4. **No hay PASS vacíos**: `prf_h06_adversarial_e2e`, `b6_w1_mcp_robustness` y
+   `b3_w2_progressive_context` resolvían su binario por ruta y se auto-saltaban
+   con `SKIP_NOT_APPLICABLE`; ahora fallan en voz alta, leen `COGNICODE_MCP_BIN`
+   / `COGNICODE_CLI_BIN` y el gate les entrega el binario que acaba de construir.
+5. **`release_bin_path()`/`release_dir()` rechazan perfil debug**, overrides
+   incluidos: cargo exporta `CARGO_BIN_EXE_<name>` a los tests de integración y
+   bajo un `cargo test` normal esa variable apunta al build debug.
+6. **Contratos de cobertura reescritos**: propiedad exhaustiva por lane,
+   conjunto de perfil release **medido desde el código de las suites**,
+   construcción debug de merge pinada, prohibición de construcciones release en
+   el merge, y ausencia de skip silencioso en las suites de subproceso.
+
+### Medición antes/después
+
+Entorno: worktree `worktree-test-harness`, máquina compartida (otra sesión corría
+la suite Gradle de `pipelinek`), `pipelinek 0.61.0-rc2`, workspace `0.101.17`,
+`CARGO_TARGET_DIR` **no** exportado. Perfil por stage medido con un watcher que
+fecha cada transición en el log de la corrida.
+
+| Tramo | Antes (`658409fb^`) | Después (`658409fb`) |
+|---|---|---|
+| `build-cognicode-mcp-release` | 264 s | no existe |
+| `build-control-plane-release` | 100 s | no existe |
+| `build-cognicode-cli-release` | 69 s | no existe |
+| `build-cognicode-release-bin` | 35 s | no existe (subconjunto del anterior) |
+| `verify-release-binaries` | < 1 s | sustituido por `verify-debug-binaries` (0,5 s) |
+| **Bloque release** | **470 s** | **0 s** |
+| Construcciones debug que lo sustituyen | no existían | 67 s (mcp 0,5 + cli 5 + control-plane 61) |
+| `rustdoc-gate` | ~574 s (frío) | 548 s |
+| `contracts` | 197 s | 202 s |
+| `cli-unit-tests` + `cli-doctests` + `cli-integration-suites` | (comodín único) | 61 + 1,5 + 45 s |
+| Corrida completa | truncada a propósito tras el bloque medido (1 399 s de prefijo) | **1 215 s con veredicto verde** |
+
+El prefijo «antes» se detuvo a propósito tras el bloque medido: las stages
+siguientes compilan los ficheros que esta unidad cambia. El ahorro estructural
+neto es ≈ 400 s por iteración y es independiente de la caché, porque los cuatro
+artefactos release ya no se construyen en esta lane. `rustdoc-gate` (548 s) es
+la siguiente palanca medida y queda registrada como insumo para B3/B5.
+
+**Seis suites movidas**, ejecutadas con el entorno que les da la lane de
+candidato sobre los artefactos release de este árbol: **62 tests, `rc=0`** en
+las seis (10 + 5 + 10 + 5 + 5 + 9 s).
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --all --check` | PASS |
+| `cargo check -p cognicode-core -p cognicode-cli -p cognicode-mcp --tests` | PASS |
+| `cli_gate_coverage_contract` | 21/21 PASS |
+| `core_gate_coverage_contract` | 11/11 PASS |
+| `pipelinek validate` de las dos pipelines tocadas | VALIDATION SUCCESSFUL |
+| `test_pipeline_stage_bodies.py`, `test_pipeline_artifact_reachability.py`, `test_candidate_packaging.py`, `test_release_lane_wiring.py`, `test_release_candidate_layout.py` | PASS |
+| `pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts` | **SUCCESS**, 73 stages verdes, 1 215 s |
+
+Corridas intermedias, declaradas: dos corridas sin base durable fallaron antes
+de esta, y ninguna por el cambio de B1. La primera en `mcp-prf-sec-02-read-only-uat`
+por una deriva preexistente (
+`safe_refactor_apply` ya es mutante y la UAT declaraba tres; reproducido con el
+mismo `left`/`right` en un worktree de `658409fb^`), reparada en `00c9e47e`. La
+segunda en `cr07-metrics-exposition` por un fallo no reproducible fuera del
+gate (25/25 ejecuciones limpias después), coherente con la carrera de puerto que
+la propia suite documenta.
+
+### Mutaciones adversariales
+
+Ejecutadas con `cli_gate_coverage_contract` sobre el árbol commitado; cada
+mutación se revierte con `git checkout --` y el control final queda verde:
+
+| # | Mutación | Detectada por |
+|---|---|---|
+| M1 | quitar `--test cogh_cli` de la enumeración de merge | `merge_runs_every_cli_suite_that_does_not_need_release_artifacts`: «1 of 49 CLI integration suites are not named by the merge authority: ["cogh_cli"]» |
+| M2 | renombrar la suite de candidato (`prf_dist_01_06`) | `the_candidate_lane_owns_every_release_profile_suite` |
+| M3 | cambiar `cargo build -p cognicode-cli --bins` por `--lib` en merge | `the_merge_gate_builds_the_debug_binaries_its_subprocess_suites_spawn` |
+| M4 | reintroducir una construcción release en merge | mismo contrato, aserto de prohibición |
+| M5 | quitar `--features ladybug` de la enumeración | `the_gate_runs_the_ladybug_feature_with_the_suites_that_need_it` |
+| M6 | declarar `prf_ext_02_partial_uat` como suite de perfil release | `the_release_profile_set_is_the_measured_one` |
+
+Las seis producen `exit 101`; el control sin mutación, `exit 0`. Detalle en
+`test-harness/docs/07-auditoria-merge-gate.md` §5.
+
+### Límites declarados
+
+- La lane de candidato **completa** (clean-clone, empaquetado, instalación,
+  provenance) no se ejecutó: las seis suites se ejecutaron con el entorno de esa
+  lane y sus artefactos, y `pipelinek validate` comprueba el grafo de las dos
+  pipelines. La corrida completa del candidato pertenece al punto de certificación.
+- `COGNICODE_RELEASE_BIN_DIR` apuntó al directorio release compartido (artefactos
+  de este árbol construidos por la corrida «antes»), no al subdirectorio por
+  target de la lane de candidato: mismo perfil y nombres, distinta disposición.
+- No se ejecutó `cargo test --workspace` en esta unidad; el gate de merge cubre
+  su lane y su corrida es la evidencia de gate.
+- `AGENTS.md` lista `prf_f4_w3_corrupt_cache_recovery` entre las suites que
+  necesitan binario release; no lo es. No se tocó `AGENTS.md`: es un hallazgo.
+- Quedan duplicaciones de **ejecución** heredadas (stages CLI con nombre dentro
+  de la enumeración, `core-adversarial-e2e` dentro de la corrida irrestricta de
+  core). Eliminarlas cambia obligaciones nombradas: decisión aparte.
+- El check requerido `merge-gate` en GitHub lo publica
+  `scripts/ci/publish-merge-gate.sh`; la fusión queda en manos del operador.

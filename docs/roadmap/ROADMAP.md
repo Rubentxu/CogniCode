@@ -386,3 +386,23 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 
 **Cierre**: R1..R5 cerrados para el entregable documental. Cualquier trabajo de
 implementación del harness W0..W7 requiere una unidad Post-PRF separada.
+
+## 12. B1 — Gate de integración ligero (2026-10-15)
+
+> **Estado**: IMPLEMENTADO, medido y con gate verde en el worktree paralelo
+> `worktree/test-harness`. El merge deja de construir artefactos release; las seis
+> suites que ejecutan bytes de perfil release pasan a
+> `release-candidate.pipeline.kts`, que ya los construye como candidato. Decisión:
+> [`test-harness/adrs/ADR-TH-005-dueno-unico-por-suite.md`](../../test-harness/adrs/ADR-TH-005-dueno-unico-por-suite.md).
+> Auditoría de las 73 stages y medición:
+> [`test-harness/docs/07-auditoria-merge-gate.md`](../../test-harness/docs/07-auditoria-merge-gate.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Reducir el coste de iteración del merge sin perder garantías: quitar de la lane de merge las cuatro construcciones release (470 s medidos) y las seis suites que las exigían, y conservar cada aserción en la lane que puede cumplirla |
+| Clasificación | Cambio de CI del roadmap Post-PRF dentro del evolutivo del test harness, autorizado por el mandato del operador de 2026-10-15 (bloque B1). No es mantenimiento v0.98.x ni release de producto |
+| Alcance | `merge-gate.pipeline.kts`, `release-candidate.pipeline.kts`, contratos de cobertura de CLI y core, resolución de binarios en cuatro suites de test, paquete documental del harness |
+| Fuera de alcance | Caché, reanudación, fingerprints y selección incremental (B3/B4); política de certificación; lane de candidato completa |
+| Consumidores | Contribuidores (coste de iteración), mantenedor (gate de merge y gate de candidato), auditoría (auditoría de stages y ADR-TH-005) |
+| Criterio de cierre | Cumplido: merge verde con base durable (73 stages, 1 215 s), seis suites release verdes en su lane nueva (62 tests), seis mutaciones adversariales detectadas y control verde, duración antes/después del bloque eliminado medida |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md) |
