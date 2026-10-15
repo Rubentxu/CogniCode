@@ -1,5 +1,27 @@
 #!/usr/bin/env python3
-"""Focused black-box tests for the generated MCP tool catalog."""
+"""Focused black-box tests for the generated MCP tool catalog.
+
+MEDIDO 2026-10-15. La validacion de schema vivia tras un
+`try: import jsonschema / except ImportError: return`, asi que en un runner
+limpio —donde `jsonschema` no esta — la comprobacion se saltaba en silencio y
+el test reportaba PASS. El catalogo de tools publicado dejaba de validarse
+contra su schema y el gate seguia verde.
+
+El import NO esta guardado, y esa es la decision. El mismo requisito lo
+resuelven los dos hermanos de forma distinta y por eso habia tres reglas:
+`validate_schemas.py:80` levanta `RuntimeError` cuando Draft202012Validator es
+None, y `test_profiles.py:66` importa sin guardar. Un import sin guardar es la
+forma mas simple de las tres porque no necesita ninguna instruccion: si la
+dependencia falta, `ImportError` sube, el runner lo reporta como FAIL y el
+gate esta rojo. Una dependencia que falta es un fallo de infraestructura, y
+por eso tiene que mostrarse como fallo y no como PASS.
+
+La contraparte —que la dependencia este declarada en el runner— es la stage
+`contract-toolchain` de `merge-gate.pipeline.kts`, que instala
+`jsonschema==4.25.1` ANTES de `contracts`. Las dos mitades son necesarias:
+declararla sin quitar el `try` deja el salto silencioso; quitar el `try` sin
+declararla deja el CI permanentemente rojo.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +29,10 @@ import json
 import subprocess
 import tempfile
 from pathlib import Path
+
+# Unguarded on purpose — see the module docstring. A missing dependency must
+# fail this contract loudly, not silently skip the validation it exists for.
+import jsonschema
 
 ROOT = Path(__file__).resolve().parents[2]
 GENERATOR = ROOT / "scripts/product/generate_tool_catalog.py"
@@ -170,10 +196,6 @@ def test_committed_catalog_is_self_consistent_and_schema_valid() -> None:
     assert len(published) == len(set(published)), "duplicate tool names in the catalog"
     assert catalog["runtime_tool_count"] == len(catalog["tools"])
 
-    try:
-        import jsonschema
-    except ImportError:
-        return
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     jsonschema.validate(catalog, schema)
 

@@ -157,6 +157,26 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
             }
 
+            // MEDIDO 2026-10-15. Las dependencias Python del contrato se
+            // declaran ANTES de `contracts`, no despues. `skills-toolchain`
+            // instalaba PyYAML aqui, debajo, y por eso podia: cuando esta stage
+            // corria, `contracts` ya habia terminado, y cualquier dependencia
+            // que la suite de contratos necesite ya no llega a tiempo.
+            //
+            // No es hipotetico. `scripts/product/test_product_tool_catalog.py`
+            // hacia `try: import jsonschema / except ImportError: return` — la
+            // validacion de schema del catalogo de tools publicado se saltaba
+            // en silencio y el test reportaba PASS. En un runner limpio
+            // (ubuntu-latest no trae jsonschema) ese gate estaba apagado y
+            // verde. Es el mismo antipatron que este lane ya documenta para
+            // PyYAML mas abajo, aplicado a otro import.
+            //
+            // El runner instala desde aqui: no hay fichero de requirements para
+            // estas dependencias, asi que esta linea ES la declaracion.
+            stage("contract-toolchain") {
+                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\" \"jsonschema==4.25.1\"")
+            }
+
             // The contract suite. One entry point, no list: the pipeline names a
             // script, the script discovers `scripts/ci/test_*.py` by glob. The
             // previous shape named eight contract files inside pr-ci.yml, which
@@ -172,14 +192,13 @@ pipeline {
             // checks each bundle has a manifest. Both were correct, both passed,
             // and no workflow invoked them until 2026-10-02.
             //
-            // PyYAML is declared here rather than trusted from the runner image:
+            // PyYAML is declared rather than trusted from the runner image:
             // validate_skills.py degrades to a printed SKIP without it, and
             // verify-skills.sh aborts on `import yaml`. Neither is a failure, and
-            // both are how a gate goes stale in silence.
-            stage("skills-toolchain") {
-                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\"")
-            }
-
+            // both are how a gate goes stale in silence. It is installed by
+            // `contract-toolchain` above, which runs first; installing it here
+            // as well would be a second declaration of the same pin, and the
+            // second one would still be too late for the contract suite.
             stage("skills-validate") {
                 sh("$cd && python3 scripts/validate_skills.py")
             }
