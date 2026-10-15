@@ -463,3 +463,22 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Mantenedor (evidencia de no-regresión de cobertura), contribuidores (`parity --corpus`), auditoría (ADR-TH-008) |
 | Criterio de cierre | Cumplido: 15 tests de paridad verdes (82 en total con el contrato), corpus medido en tres lanes sin debilidades, y **dos bugs del harness corregidos** que la comparación destapó (presupuesto del barrido de citas agotado y atribución de citas al primer paquete) |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 16. TH-IMPL-03 — Supervisor: concurrencia, inventario pinado y GC (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated. El supervisor deja de ser secuencial por
+> obligación: `--max-workers N` con cerrojos declarados, suites seriales como
+> barrera de escritor, pin de casos por suite y recolección de logs que conserva
+> evidencia. Decisión:
+> [`test-harness/adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md`](../../test-harness/adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md).
+> No cambia qué bloquea un merge.
+
+| Item | Contrato |
+|---|---|
+| Valor | Que el supervisor aguante lo que TH-S03 llama adversarial: dos runs al mismo id, un SIGKILL a mitad, un lease huérfano y un fallo del propio supervisor terminan en huecos nombrados, nunca en un verde inventado; y que una suite que pierde casos no pase por verde (pin en `inventory.json`) |
+| Clasificación | Evolutivo del test harness (W4) sobre el mandato del operador de 2026-10-15, continuación de TH-IMPL-02 |
+| Alcance | `test-harness/src/harness/{orchestrator,planner,gate,validity,inventory,gc}.py`, `adapters/{ledger_store,pipeline_catalog}.py`, `config/suite-metadata.json`, `inventory.json`, `tests/test_supervisor.py`, `scripts/ci/test_harness_contract.py`, README y ADR-TH-009 |
+| Fuera de alcance | Paralelismo de compilación (target dir por worker), adaptador nextest, lanes de release, retención por antigüedad |
+| Consumidores | Contribuidores (corridas largas con concurrencia acotada), mantenedor (pin de casos y GC del ledger), auditoría (ADR-TH-009) |
+| Criterio de cierre | Cumplido: 89 tests del harness verdes, contrato del gate 9/9, SIGKILL + reanudación y dos runs al mismo id cubiertos por test, y **cuatro bugs corregidos** que los tests adversariales destaparon (barrera serial incompleta, marcador RUNNING reutilizado, lease huérfano, excepción del supervisor sin veredicto) |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

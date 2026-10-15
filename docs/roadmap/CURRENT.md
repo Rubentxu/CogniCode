@@ -10,8 +10,8 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `46bb6b2b3ec15855feda914af9a294d7ad133ce8` (TH-IMPL-02: paridad medida con el selector vigente), sobre el árbol
-> posterior a TH-IMPL-01;
+> `1deb8dfb0775b18847aa40b93b414284bc7c5bed` (TH-IMPL-03: supervisor con
+> concurrencia, inventario pinado y GC), sobre el árbol posterior a TH-IMPL-02;
 > este snapshot describe el árbol de trabajo del worktree antes del commit de
 > recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -19,7 +19,14 @@
 > `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
 > como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-IMPL-02, registrada en `ROADMAP.md` §15
+> **Unidad cerrada en este worktree**: TH-IMPL-03, registrada en `ROADMAP.md` §16
+> y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-009`. El supervisor
+> acepta `--max-workers` con cerrojos declarados, las suites `serial` son barrera
+> de escritor, el pin de inventario impide que una suite que pierde casos pase por
+> verde y `gc` poda logs sin tocar recibos. Cuatro bugs corregidos que destaparon
+> los tests adversariales (SIGKILL, dos runs al mismo id).
+>
+> La unidad anterior en este worktree fue TH-IMPL-02, registrada en `ROADMAP.md` §15
 > y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-008`. La comparación
 > con CR-08 existe y se vuelve a medir en cada merge dentro de la etapa de
 > contratos: 0 debilidades sin declarar en `change`, `merge` e `integration`, con
@@ -38,7 +45,7 @@
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS**,
 > `workspace=0.101.17`.
 
-## HEAD y gates del worktree (TH-IMPL-02)
+## HEAD y gates del worktree (TH-IMPL-03)
 
 * **Rama**: `worktree/test-harness`.
 * **Commits de la unidad**: el commit de paridad y el commit de recibos que sigue
@@ -52,6 +59,12 @@
 * **Paridad con CR-08**: `parity --corpus` en `change`, `merge` e `integration`
   → 0 `HARNESS_WEAKER` sin desviación declarada; 9 `AGREE`, 5 `HARNESS_STRICTER`
   y 2 desviaciones declaradas por lane.
+* **Suite del harness**: 89/89 PASS (~50 s), con supervisor, paridad e inventario.
+* **Contrato del harness**: 9/9 PASS (~65 s, incluye la suite).
+* **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`):
+  **285 passed, 0 failed**.
+* **Pin de inventario**: `cognicode-ladybug:lib#-` = 62 casos, derivado de una
+  ejecución real en esta unidad.
 * **Harness**: `plan --lane change` sobre el repositorio real: 2,5 s, 27 de 39
   obligaciones requeridas y 12 excluidas con motivo para un cambio de una línea en
   `cognicode-ladybug`. Suite del harness: 60/60 PASS (~35 s).

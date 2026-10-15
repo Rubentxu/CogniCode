@@ -15069,3 +15069,78 @@ caídas a ALL del oráculo para paths que su lista de reglas no conoce.
   scope por suite) y su interfaz de paths separa por espacios, así que un nombre
   con espacios se detecta y se declara en el informe en vez de compararse a
   ciegas.
+
+## Recibo 2026-10-15 — TH-IMPL-03: supervisor (concurrencia, inventario pinado, GC)
+
+Tercer bloque del evolutivo, sobre el mismo worktree paralelo. Decisión:
+`test-harness/adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md`; contrato
+en `docs/roadmap/ROADMAP.md` §16.
+
+### Qué se hizo
+
+- **Concurrencia con cerrojos**: `--max-workers N` (tope 8, por defecto 1). Cada
+  suite toma sus recursos declarados; el target dir de Cargo es un recurso
+  compartido implícito (cargo lo bloquea de todas formas). La concurrencia
+  efectiva, los cerrojos y las suites seriales quedan escritos en el estado del
+  run.
+- **Serial = barrera de escritor**: una suite marcada `serial` no se solapa con
+  nadie, tampoco con suites normales. `serial` y `locks` se declaran en
+  `test-harness/config/suite-metadata.json` (versionado); un fichero ilegible es un
+  error, no un aviso.
+- **Pin de inventario** (`test-harness/inventory.json`): mínimo de casos por suite
+  derivado de ejecuciones reales (`inventory --write`). Entra en la huella de
+  entradas, invalida la reutilización de un recibo que ejecutó menos y hace que el
+  gate no acepte ese PASS. Sembrado en este bloque con una ejecución real:
+  `cognicode-ladybug:lib#-` = 62 casos.
+- **GC** (`gc --keep N [--dry-run]`): borra solo logs de runs fuera de la ventana,
+  nunca recibos; conserva siempre un run en `RUNNING`; deja evento en el ledger.
+- **Robustez del supervisor**: `_execute_guarded` convierte un fallo del supervisor
+  en hueco nombrado (no en crash sin veredicto); el marcador `RUNNING` es único por
+  intento; el lease se reconcilia si el dueño está muerto (`lease_reclaimed`).
+- 14 tests nuevos (`test-harness/tests/test_supervisor.py`): cerrojos, solape real
+  entre dos suites, exclusividad de la serial, SIGKILL + reanudación, dos runs con
+  el mismo id, pin de inventario (unitario y end-to-end) y GC (plan, dry-run y run
+  vivo).
+
+### Bugs que los tests adversariales destaparon
+
+| Bug | Síntoma | Corrección |
+|---|---|---|
+| Barrera serial incompleta | Una suite normal corría en paralelo con una `serial` que muta el entorno | Barrera de escritor/lector: la serial espera a que no corra nadie y nadie entra mientras corre |
+| Marcador `RUNNING` reutilizado | Reanudar tras un `kill -9` chocaba con el guardia de inmutabilidad y abortaba el run sin veredicto | El id del marcador incluye el instante del intento: un intento, un marcador |
+| Lease huérfano | El run cortado dejaba el lease y `resume` lo rechazaba como si el dueño viviera | Reconciliación por PID/host con evento `lease_reclaimed` |
+| Excepción del supervisor sin veredicto | Un fallo de escritura del ledger tumbaba el run sin agregar | `_execute_guarded`: hueco `INFRA_ERROR` con motivo y el run termina |
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Suite del harness | 89/89 PASS (~50 s) |
+| Contrato del gate | 9/9 PASS (~65 s con la suite dentro) |
+| Solape real de dos suites con `--max-workers 2` | solapan (intervalos medidos por los propios scripts) |
+| Suite serial con `--max-workers 2` | no solapa con ninguna otra (intervalos disjuntos) |
+| Run cortado con SIGKILL | estado RUNNING, sin PASS terminal; `resume` reejecuta y el veredicto declara los pendientes |
+| Dos runs con el mismo id | el segundo sale con código 2 («ya tiene dueño») y no escribe |
+| Pin de inventario sembrado | `cognicode-ladybug:lib#-` = 62 casos |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 89/89 |
+| `scripts/ci/test_harness_contract.py` | PASS, 9/9 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS**, 285/285 (incluye las 89 del harness, el pin de inventario y el dry-run del GC) |
+| `parity --corpus` en `change`, `merge` e `integration` | PASS, 0 debilidades sin declarar (sin cambios respecto a TH-IMPL-02) |
+
+### Límites declarados
+
+- **No hay paralelismo de compilación**: los `cargo test` comparten target dir y se
+  serializan en la práctica; el paralelismo real hoy viene de las suites de script.
+  No se presenta como speedup lo que no está medido.
+- El pin de inventario cubre solo las suites que ya pasaron en algún run registrado
+  en esta máquina (una al cerrar el bloque); crece con el uso y **no** se rellena a
+  mano con valores inventados.
+- La retención del ledger es por número de runs, no por antigüedad, y no se
+  ejecutó un `gc` real sobre el ledger del mantenedor (solo `--dry-run` y tests en
+  directorios temporales).
+- Siguen fuera de alcance el adaptador nextest y las lanes de release (W5).
