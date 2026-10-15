@@ -14924,3 +14924,71 @@ esta unidad.
   más cargada (cinco JVM ajenos), no hay regresión de la lane.
 - No se ejecutó `cargo test --workspace` tras la retirada; el baseline del
   preflight queda declarado como calculado hasta su primera corrida real.
+
+## Recibo 2026-10-15 — TH-IMPL-01: núcleo ejecutable del test harness
+
+Unidad del roadmap Post-PRF dentro del evolutivo del test harness (W2/W3/W4
+parciales), en el worktree paralelo `worktree/test-harness`. Decisión registrada
+en `test-harness/adrs/ADR-TH-007-implementacion-nucleo.md`; resumen de contrato en
+`docs/roadmap/ROADMAP.md` §14.
+
+### Qué se hizo
+
+- `test-harness/bin/harness.py` + `src/harness/` + `adapters/`: seis comandos
+  (`plan`, `run`, `status`, `resume`, `explain`, `certify`) con biblioteca
+  estándar de Python y sin instalación. Núcleo puro (`domain`, `policy`,
+  `validity`, `gate`) separado de los adaptadores (git, `cargo metadata`,
+  pipelines, ledger, procesos).
+- Cambio de alcance en `.gitignore`: `bin/` está ignorado globalmente
+  (`~/.config/git/ignore`) y el punto de entrada `test-harness/bin/harness.py`
+  habría quedado fuera de Git sin una negación explícita. Es el mismo accidente
+  que ya documentan las negaciones de `crates/*/src/bin/`.
+- Selección: `ChangeSet` con merge-base, working tree y untracked en formato
+  `-z`; catálogo derivado de los `*.pipeline.kts` (`cargo test`,
+  `cargo fmt|clippy|deny|build`, `bash scripts/…`); impacto por `cargo metadata`
+  con dependientes transitivos; fail-closed con motivo visible para ruta
+  desconocida, manifest/lock/toolchain/pipeline tocados, borrado de un fichero de
+  test, ChangeSet sin base y grafo ilegible.
+- Evidencia: ledger append-only fuera del checkout (`$XDG_STATE_HOME`), recibos
+  inmutables con marcador `RUNNING` separado del recibo terminal, huellas de
+  entrada con `policy_version`, lease por run, índice derivado que se reconstruye
+  cuando cambia el directorio de recibos.
+- Honestidad del resultado: `PASSED` exige `exit_code=0`, cero fallos, cuentas
+  cuadrando, log con digest y, en suites de Cargo, al menos un caso ejecutado
+  (una suite que no ejecutó nada es un vacío, no un verde). Un 101 de Cargo se
+  clasifica por marcadores de la salida, no por el código de salida.
+- 60 tests dependency-free (`test-harness/tests/`), ejecutados con
+  `scripts/run_contract_tests.py`, y contrato de gate
+  `scripts/ci/test_harness_contract.py` en la etapa de contratos del merge-gate.
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| `plan --lane change` sobre el repositorio real (cambio de una línea en `cognicode-ladybug`) | 2,5 s; 27 de 39 obligaciones requeridas, 12 excluidas con motivo (8 suites de `cognicode-core` + 4 scripts) |
+| Clausura verificada con `cargo metadata` | `ladybug ← cli, runtime`; `mcp ← runtime ← ladybug` (dependencia transitiva real, no precaución) |
+| Suite del harness | 60/60 PASS, ~35 s |
+| Contrato del harness | 6/6 PASS, ~50 s (incluye la suite) |
+| Repositorio intacto tras `plan`/`run` | `git status --porcelain` idéntico; el estado se crea donde se le pide |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 60/60 |
+| `scripts/ci/test_harness_contract.py` | PASS, 6/6 |
+| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate, incluye el contrato nuevo) | ver resultado en el recibo del PR |
+| `plan` validado contra `test-harness/contracts/plan.schema.json` | PASS (jsonschema) |
+| Fail-closed (mutaciones de entrada) | PASS: ruta desconocida, manifest, borrado de test, sin base, sin grafo, `RUNNING` sin terminal, recibo roto, PASS vacuo, reutilización fuera de lane |
+
+### Límites declarados
+
+- **No hay paridad medida con CR-08** y por eso el harness **no** sustituye
+  ninguna etapa: corre como contrato. La adopción en modo sombra es W6.
+- Sin ejecución en paralelo (`--max-workers > 1` se rechaza con motivo), sin
+  adaptador nextest, sin lanes de release y sin GC del ledger: están fuera de
+  este bloque y así se declaran en el README del paquete.
+- No se ejecutó `cargo test --workspace` ni la lane de candidato en esta unidad.
+- La clausura por citas textuales no detecta rutas construidas por concatenación;
+  la lista de ficheros tratados como potencialmente inertes es corta y explícita,
+  y el límite está escrito en el README.

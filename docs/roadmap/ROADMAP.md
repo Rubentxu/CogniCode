@@ -424,3 +424,23 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Fuera de alcance | AAT (mutaciones), contratos `a0*`/`b*`/`t1_*`, evidencia histórica `docs/prf/`, `evidence/` y `odd/` |
 | Criterio de cierre | Cumplido: merge verde tras la retirada (58/58 stages, 1 638 s), contratos actualizados en el mismo commit, baseline del preflight re-baselinizado y declarado como calculado |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md) |
+
+## 14. TH-IMPL-01 — Núcleo ejecutable del test harness (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated; adopción como sustituto del gate, NO. El
+> paquete `test-harness/` deja de ser solo especificación: incluye un harness
+> ejecutable (`bin/harness.py`, biblioteca estándar sin dependencias) con
+> `plan`, `run`, `status`, `resume`, `explain` y `certify`, un ledger de evidencia
+> fuera del checkout y 60 tests que corren con el runner de contratos del
+> repositorio. Decisiones:
+> [`test-harness/adrs/ADR-TH-007-implementacion-nucleo.md`](../../test-harness/adrs/ADR-TH-007-implementacion-nucleo.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Que el coste de retroalimentación dependa de lo que cambió y no del tamaño del inventario: `plan` en 2,5 s sobre el repositorio real exige 27 de 39 obligaciones para un cambio de una línea y excluye las 12 restantes con motivo escrito; `run` reutiliza lo que conserva huella idéntica |
+| Clasificación | Implementación del roadmap Post-PRF dentro del evolutivo del test harness (W2/W3/W4 parciales), autorizada por el mandato del operador de 2026-10-15 |
+| Alcance | `test-harness/{bin,src,adapters,tests}`, `.gitignore` (negación de `bin/`), `scripts/ci/test_harness_contract.py`, `test-harness/README.md`, `test-harness/adrs/ADR-TH-007`, `test-harness/roadmap/ROADMAP.md`, manifiesto del paquete |
+| Fuera de alcance | Paridad medida con CR-08, adopción en modo sombra en las pipelines, ejecución en paralelo, adaptador nextest, lanes de release, CSP/SEV y cualquier cambio en qué bloquea un merge |
+| Consumidores | Contribuidores (feedback local con evidencia), mantenedor (contrato dentro de la etapa de contratos del merge-gate), auditoría (ADR-TH-007 y README) |
+| Criterio de cierre | Cumplido en lo declarado: 60 tests verdes con `scripts/run_contract_tests.py` (~35 s), contrato del gate verde dentro de `run-all-contracts.sh`, plan válido contra `plan.schema.json`, fail-closed verificado (ruta desconocida, borrado de test, sin merge-base, sin grafo), y declaración explícita de lo que NO se hizo |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

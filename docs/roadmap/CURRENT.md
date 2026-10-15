@@ -9,22 +9,43 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `910ad2d3f191de54584c459d1dbbf950287fd4b5` (B1: gate de merge ligero; retirada de la clase UAT
-> ADR-TH-006; el recibo va en `JOURNAL.md` y el commit de recibos es el
-> siguiente a este SHA).
+> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, TH-IMPL-01
+> (núcleo ejecutable del test harness) sobre el árbol posterior a `c7721ee0`;
+> este snapshot describe el árbol de trabajo del worktree antes del commit de
+> recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
-> La captura anterior de TH-DOC-01 sobre
-> `9731d9962b1777c0ce468157fc195b6a26984d4a` se conserva abajo como histórica;
-> sus resultados no se presentan como evidencia de este HEAD.
+> Los snapshots anteriores (TH-DOC-01 sobre `9731d996`, B1/retirada UAT sobre
+> `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
+> como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: B1 del mandato del operador de 2026-10-15.
-> El staging ignorado `docs/test-harness/` sigue preservado e intacto, y la
-> implementación del harness (`test-harness/src`, `bin`, adaptadores) sigue sin
-> existir: B1 es cambio de gate, no arranque del harness.
+> **Unidad cerrada en este worktree**: TH-IMPL-01, registrada en `ROADMAP.md` §14
+> y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-007`. El paquete
+> `test-harness/` deja de ser solo especificación: `bin/harness.py`, `src/harness/`,
+> `adapters/` y `tests/` existen, están versionados y pasan 60/60 con
+> `scripts/run_contract_tests.py`, más el contrato de gate
+> `scripts/ci/test_harness_contract.py` (6/6) descubierto por el glob de
+> `scripts/ci/run-all-contracts.sh`.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS**,
 > `workspace=0.101.17`.
+
+## HEAD y gates del worktree (TH-IMPL-01)
+
+* **Rama**: `worktree/test-harness`.
+* **Commits de la unidad**: el commit de código del harness y el commit de
+  recibos que sigue a este snapshot; el PR #349 recoge el histórico completo
+  (B1, retirada UAT, README y este bloque).
+* **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
+  `v0.101.16` y **no** se publica release en esta unidad.
+* **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`,
+  30 contratos CI + `scripts/product/*.py`): **282 passed, 0 failed**, con el
+  contrato del harness incluido por glob.
+* **Harness**: `plan --lane change` sobre el repositorio real: 2,5 s, 27 de 39
+  obligaciones requeridas y 12 excluidas con motivo para un cambio de una línea en
+  `cognicode-ladybug`. Suite del harness: 60/60 PASS (~35 s).
+* **No ejecutado en esta unidad**: `cargo test --workspace`, lane de candidato,
+  `merge-gate` completo con el árbol nuevo. La adopción del harness en las
+  pipelines sigue sin decidir: corre como contrato, no como etapa.
 
 ## HEAD y gates del worktree (B1)
 
