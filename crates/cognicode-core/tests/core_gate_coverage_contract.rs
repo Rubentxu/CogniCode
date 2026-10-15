@@ -861,6 +861,68 @@ fn the_coverage_contract_itself_is_pinned() {
     );
 }
 
+/// The core suites that spawn a product binary by path must be handed one by the
+/// gate, and must fail loudly when it is missing.
+///
+/// Measured 2026-10-15 (B1). `prf_h06_adversarial_e2e` and
+/// `b6_w1_mcp_robustness` resolve `cognicode-mcp` by walking the target
+/// directory — not through `CARGO_BIN_EXE_*`, which cargo only sets for the
+/// process that owns the binary — and both printed `SKIP_NOT_APPLICABLE` and
+/// returned green when the walk found nothing. The walk finds nothing when the
+/// machine's cargo config redirects the target directory and the gate does not
+/// export it, which is this repository's documented setup; the suite then
+/// reported a pass while spawning no server at all. The third one is
+/// `b3_w2_progressive_context`, whose only binary-shaped test short-circuited
+/// the same way.
+///
+/// A skip that prints and returns is a green test with no subject. It is the
+/// same defect class the CLI contract pins for `--features ladybug`, where a
+/// suite compiles to an empty binary and reports 0 passed / 0 failed / exit 0.
+#[test]
+fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
+    let workflow = merge_authority_text();
+    assert!(
+        workflow.contains("cargo build -p cognicode-mcp"),
+        "the merge authority builds no debug `cognicode-mcp`, and the core suites \
+         that spawn it resolve it from the target directory. Without the build \
+         they cannot run, and the only alternatives are a red gate or a skip."
+    );
+    for var in ["COGNICODE_MCP_BIN", "COGNICODE_CLI_BIN"] {
+        assert!(
+            workflow.contains(var),
+            "the merge authority does not export {var}. The suites that spawn a \
+             binary by path would fall back to whatever the shared target directory \
+             happens to hold, or to nothing at all."
+        );
+    }
+    for suite in [
+        "prf_h06_adversarial_e2e",
+        "b6_w1_mcp_robustness",
+        "b3_w2_progressive_context",
+    ] {
+        let path = repo_root()
+            .join("crates/cognicode-core/tests")
+            .join(format!("{suite}.rs"));
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        // A skip is the pair print-and-return, not the word: these suites
+        // document the defect they removed, and a contract that fails on its own
+        // explanation teaches the next reader to delete the explanation.
+        assert!(
+            !src.contains("eprintln!(\"SKIP_NOT_APPLICABLE"),
+            "{suite} still prints a skip and returns. A test that cannot run must \
+             fail loudly, naming the binary and the command that builds it; a green \
+             skip certifies nothing."
+        );
+        assert!(
+            src.contains("COGNICODE_MCP_BIN") || src.contains("COGNICODE_CLI_BIN"),
+            "{suite} does not read the explicit binary variable the gate exports, so \
+             it resolves the binary from whatever the shared target directory \
+             happens to hold instead of from the build this run produced."
+        );
+    }
+}
+
 /// The M0.11 rustdoc gate must run in whatever gates a merge.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at

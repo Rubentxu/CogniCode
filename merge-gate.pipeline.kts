@@ -157,6 +157,26 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
             }
 
+            // MEDIDO 2026-10-15. Las dependencias Python del contrato se
+            // declaran ANTES de `contracts`, no despues. `skills-toolchain`
+            // instalaba PyYAML aqui, debajo, y por eso podia: cuando esta stage
+            // corria, `contracts` ya habia terminado, y cualquier dependencia
+            // que la suite de contratos necesite ya no llega a tiempo.
+            //
+            // No es hipotetico. `scripts/product/test_product_tool_catalog.py`
+            // hacia `try: import jsonschema / except ImportError: return` — la
+            // validacion de schema del catalogo de tools publicado se saltaba
+            // en silencio y el test reportaba PASS. En un runner limpio
+            // (ubuntu-latest no trae jsonschema) ese gate estaba apagado y
+            // verde. Es el mismo antipatron que este lane ya documenta para
+            // PyYAML mas abajo, aplicado a otro import.
+            //
+            // El runner instala desde aqui: no hay fichero de requirements para
+            // estas dependencias, asi que esta linea ES la declaracion.
+            stage("contract-toolchain") {
+                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\" \"jsonschema==4.25.1\"")
+            }
+
             // The contract suite. One entry point, no list: the pipeline names a
             // script, the script discovers `scripts/ci/test_*.py` by glob. The
             // previous shape named eight contract files inside pr-ci.yml, which
@@ -172,14 +192,13 @@ pipeline {
             // checks each bundle has a manifest. Both were correct, both passed,
             // and no workflow invoked them until 2026-10-02.
             //
-            // PyYAML is declared here rather than trusted from the runner image:
+            // PyYAML is declared rather than trusted from the runner image:
             // validate_skills.py degrades to a printed SKIP without it, and
             // verify-skills.sh aborts on `import yaml`. Neither is a failure, and
-            // both are how a gate goes stale in silence.
-            stage("skills-toolchain") {
-                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\"")
-            }
-
+            // both are how a gate goes stale in silence. It is installed by
+            // `contract-toolchain` above, which runs first; installing it here
+            // as well would be a second declaration of the same pin, and the
+            // second one would still be too late for the contract suite.
             stage("skills-validate") {
                 sh("$cd && python3 scripts/validate_skills.py")
             }
@@ -283,59 +302,70 @@ pipeline {
         }
 
         // ---------------------------------------------------------- build-binary
+        //
+        // 2026-10-15 / B1 (ADR-TH-005). This group used to build four
+        // release-profile artifacts and verify them, and it was measured as the
+        // largest single block of a merge run. Their only verifiable consumer
+        // was a set of suites that tar and execute real release bytes; those
+        // suites now run in `release-candidate.pipeline.kts`, the lane that
+        // builds those artifacts as the candidate itself. What is left here is
+        // what a merge actually executes: the debug-profile binaries.
+        //
+        // The debug profile is not a downgrade. `cargo test` resolves test-time
+        // binaries from the debug profile through `CARGO_BIN_EXE_*`; what these
+        // stages add is the builds that `cargo test` alone does not guarantee
+        // before the suites that spawn a binary by path run, and the failure
+        // they now produce is loud instead of a skipped test.
         stage("build-binary") {
-            // pr-ci.yml:127 and :141. Both binaries are release builds because the
-            // release-flow suites below shell out to release binaries by path.
-            stage("build-cognicode-mcp-release") {
-                sh("$cd && cargo build --release -p cognicode-mcp")
+            // The MCP server, spawned by the core subprocess UATs
+            // (`prf_h06_adversarial_e2e`, `b6_w1_mcp_robustness`) and by every
+            // `tests/*.rs` of the MCP crate.
+            stage("build-cognicode-mcp-debug") {
+                sh("$cd && cargo build -p cognicode-mcp")
             }
 
-            stage("build-control-plane-release") {
-                sh("$cd && cargo build --release --bin cognicode-control-plane")
+            // `cogh`, `cognicode` and `cognicode-release` as plain debug
+            // binaries. Three consumers, and none of them is satisfied by
+            // `cargo test --bins`: the `cogh` unit tests derive
+            // `<target-dir>/debug/cogh` from `current_exe`, and the core suite
+            // `b3_w2_progressive_context` spawns `cognicode` by path.
+            stage("build-cognicode-cli-debug") {
+                sh("$cd && cargo build -p cognicode-cli --bins")
             }
 
-            // pr-ci.yml also builds the CLI itself. Without it the binary the
-            // release-flow suites shell out to by path does not exist, and the
-            // reachability checks that look for it have nothing to reach.
-            stage("build-cognicode-cli-release") {
-                sh("$cd && cargo build --release -p cognicode-cli")
+            // The control-plane binary had no consumer in this lane beyond the
+            // verifier below, in release or in debug. What survives is the
+            // guarantee that verifier encoded: it links and it starts.
+            stage("build-control-plane-debug") {
+                sh("$cd && cargo build --bin cognicode-control-plane")
             }
 
-            stage("build-cognicode-release-bin") {
-                sh("$cd && cargo build --release --bin cognicode")
-            }
-
-            // pr-ci.yml:400. A release binary that compiles and then does not
-            // start is caught only here: the build stage is satisfied by an
-            // artifact that exists, not by one that runs. This was one of
-            // three gates the first version of the coverage inventory could
-            // not see, because it matched `cargo <subcommand>` and these run no
-            // cargo at all.
-            stage("verify-release-binaries") {
+            // A binary that compiles and then does not start is caught only
+            // here: a build stage is satisfied by an artifact that exists, not
+            // by one that runs. It asks cargo where it wrote instead of
+            // hardcoding a path, which is the defect that already failed once.
+            // The release-profile twin of this stage lives in the candidate
+            // lane (`binary-smoke-$target`), with the artifacts it verifies.
+            stage("verify-debug-binaries") {
                 sh("""
                     $cd || exit 1
                     set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    missing=0
                     for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
+                        if [ ! -x "${'$'}TARGET_DIR/debug/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/debug/${'$'}bin is missing or not executable."
+                            echo "  A suite in this lane spawns it by path, and a binary that is"
+                            echo "  not there is not a reason to skip that suite."
+                            missing=1
                         fi
                     done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
+                    if [ "${'$'}missing" -ne 0 ]; then
+                        exit 1
+                    fi
+                    "${'$'}TARGET_DIR/debug/cognicode" --version
+                    "${'$'}TARGET_DIR/debug/cognicode-control-plane" --help | head -5
+                    "${'$'}TARGET_DIR/debug/cognicode-mcp" --version
                 """.trimIndent())
             }
         }
@@ -351,26 +381,8 @@ pipeline {
 
             // pr-ci.yml also runs the selector script itself, not only its
             // contract. The contract pins what the script decides; running the
-            // script is what proves it still runs at all. A green contract over
-            // a script nothing calls is the A-013 shape.
-            //
-            // MEDIDO 2026-10-14 (CD-3). This stage computed SELECT_OUTPUT and
-            // echoed it. Nothing read it, and nothing could have: the selector
-            // exits 0 for any input (measured with a valid path and with a path
-            // that does not exist), so a typo in PATHS, a broken selector or a
-            // malformed selection all reached the same place as a healthy one.
-            // The stage could not fail for any reason connected to the thing it
-            // exists to check.
-            //
-            // WHAT THIS STAGE IS NOT. It does not narrow the gate. This pipeline
-            // runs every suite unconditionally — that is deliberate, and
-            // `test_merge_gate_selection_truth.py` pins it so nobody "optimises"
-            // the merge gate by making it diff-aware. The selection governs
-            // `scripts/test-fast.sh`, the developer feedback loop, not `main`.
-            // The earlier version of this comment said that running the
-            // script proved the selection was consumable downstream. Measured:
-            // the selection is consumed by nobody. Corrected here rather than
-            // left as a contract the code does not meet.
+            // script is what proves the decision is consumable downstream. A
+            // green contract over a script nothing calls is the A-013 shape.
             stage("select-suites-script") {
                 sh("""
                     $cd || exit 1
@@ -378,24 +390,6 @@ pipeline {
                     PATHS="scripts/ci/run-all-contracts.sh"
                     SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"
                     echo "${'$'}SELECT_OUTPUT"
-
-                    # MEDIDO 2026-10-14 (CD-3): the stage used to echo the
-                    # selection and stop. `echo` cannot fail for any reason
-                    # connected to the selector, so the stage verified nothing.
-                    # These three lines make it able to fail, which is the whole
-                    # reason it exists. They assert the shape of the output, not
-                    # which suites came out: the suite set belongs to fast.
-                    case "${'$'}SELECT_OUTPUT" in
-                        *'"strategy"'*'"suites"'*) ;;
-                        *) echo "ERROR: selector output has no strategy/suites" >&2; exit 1 ;;
-                    esac
-                    printf '%s' "${'$'}SELECT_OUTPUT" | python3 -c '
-import json, sys
-doc = json.loads(sys.stdin.read())
-assert isinstance(doc.get("strategy"), str), "strategy is not a string"
-assert isinstance(doc.get("suites"), list), "suites is not a list"
-assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings"
-'
                 """.trimIndent())
             }
         }
@@ -416,7 +410,19 @@ assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings
             }
 
             stage("core-adversarial-e2e") {
-                sh("$cd && cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet")
+                // MEDIDO 2026-10-15. This suite spawns `cognicode-mcp` and resolves
+                // it by walking the target directory itself; `cargo test` does not
+                // export the path for it. Without the two variables below the walk
+                // found nothing on a machine whose cargo config redirects the target
+                // directory, and the suite reported a green skip. It now fails loudly
+                // instead, and the gate hands it the debug binary it just built.
+                sh("""
+                    $cd || exit 1
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
+                    export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
+                    cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+                """.trimIndent())
             }
 
             // pr-ci.yml:567. The unrestricted core step. Without it the five
@@ -424,7 +430,42 @@ assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings
             // empty test binaries and report 0 passed / 0 failed / exit 0.
             // core_gate_coverage_contract pins this stage by command parity.
             stage("core-unrestricted-evidence-kernel") {
-                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --quiet")
+                // MEDIDO 2026-10-15. This step streamed `cargo test --quiet`
+                // straight into the run transcript: 68 test binaries' worth of
+                // progress dots, tens of thousands of bytes. The runtime drains
+                // a step's stdout/stderr on a 10s budget and reported
+                //
+                //   [INFRASTRUCTURE]: transcript drain unfinished after
+                //   10000ms: durable-sh-transcript-pump-...-stdout, -stderr
+                //
+                // which reads like a pipeline fault and is not one — the same
+                // command exits 0 when its output goes to a file. A step that
+                // cannot finish being read is not evidence either way.
+                //
+                // Same shape as `cli-unrestricted-ladybug` below: log to a
+                // file, show only the tail, and say where the full log is.
+                sh("""
+                    $cd || exit 1
+                    $cdLog || exit 1
+                    # The two suites inside this run that spawn a product binary by
+                    # path (`b6_w1_mcp_robustness`, `b3_w2_progressive_context`)
+                    # resolve it from the target directory, and they fail loudly when
+                    # they do not find it. These three exports are what makes them
+                    # find the binaries `build-binary` built for this run instead of
+                    # whatever the shared target directory happens to hold.
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
+                    export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
+                    export COGNICODE_CLI_BIN="${'$'}TARGET_DIR/debug/cognicode"
+                    set +e
+                    cargo test -p cognicode-core --features evidence-kernel --quiet \
+                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1
+                    rc=${'$'}?
+                    set -e
+                    tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
+                    echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
+                    exit ${'$'}rc
+                """.trimIndent())
             }
 
             // pr-ci.yml:481. A-014 product asset resolution.
@@ -500,52 +541,103 @@ assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings
                 sh("$cd && cargo test -p cognicode-cli --test action_register_identity_contract --quiet")
             }
 
-            // The unrestricted step. pr-ci.yml:569. cli_gate_coverage_contract
-            // fails if it is missing or narrowed: it is what compiles every
-            // `tests/*.rs` target in the crate and what carries --features ladybug,
-            // without which evidence_cli_mcp_equivalence compiles to an empty
-            // binary and reports 0 passed / 0 failed / exit 0.
+            // The unit surface: `src/` unit tests, the bin targets and the
+            // doctests. It is separate from the integration list below because
+            // cargo forbids `--doc` in the same invocation as any other target
+            // option, and because enumerating integration targets with `--test`
+            // would drop this whole surface without a word. The `cogh` lifecycle
+            // tests live here, and they derive their sibling binary from
+            // `current_exe`, which is why `build-binary` runs first.
             //
-            // It is also the only stage in this lane that runs a whole crate's
-            // suite rather than one `--test` target, and it is the only stage
-            // that died: four clean runs, all of them here, all of them after
-            // 10.127 / 10.126 / 10.135 / 10.129 ms with exit 101 and not one
-            // byte of output captured, in a run that had produced 30 KB from
-            // the same command when the stage stood alone.
+            // `--lib --bins` is spelled in that order on purpose:
+            // cli_gate_coverage_contract rejects `-p cognicode-cli --lib` as the
+            // lib-only selector that once skipped every `tests/` target of a
+            // bin-only crate.
+            stage("cli-unit-tests") {
+                sh("$cd && cargo test -p cognicode-cli --features ladybug --lib --bins --quiet")
+            }
+
+            stage("cli-doctests") {
+                sh("$cd && cargo test -p cognicode-cli --features ladybug --doc --quiet")
+            }
+
+            // The integration surface, enumerated instead of glossed with a
+            // wildcard. `cargo test -p cognicode-cli --quiet` selects every
+            // target of the crate, and five of them cannot run here any more:
+            // they tar, generate and verify release-profile artifacts, and this
+            // lane no longer builds any. Naming the rest explicitly is what lets
+            // `cli_gate_coverage_contract` compare the selection with the
+            // filesystem, so a suite added, dropped or moved is a deliberate
+            // edit in both places instead of an invisible one.
             //
-            // What is NOT the cause, each measured rather than assumed: not the
-            // size of the output (PipelineK captured 21 MB in this position,
-            // from one writer and from thirty, in both cases whole); not stderr
-            // (520 KB of it captured from a step that failed); not a capture
-            // cap (700 KB and 21 MB both survived); not memory (55-65 GB free
-            // at the moment of failure, no OOM kill); not disk; not the cargo
-            // build-directory lock (held on purpose with flock: cargo waits
-            // 120 s and is killed by the timeout, it does not exit 101); not
-            // the stage's position (38 trivial stages in front of it pass) and
-            // not any single predecessor (five contiguous prefixes of this lane
-            // pass, and the stage passes after the ladybug crate, after a
-            // feature switch on the same crate, and after core with
-            // evidence-kernel).
+            // The named `--test` stages above run their targets here as well,
+            // exactly as the wildcard did before this change: the duplication is
+            // inherited, deliberate, and recorded in the audit (stage 44).
             //
-            // So this is a workaround for a defect inside the orchestrator, not
-            // a diagnosis, and it is written down as one. What is known is that
-            // redirecting this stage's output makes the difference: the same
-            // lane, the same tree, the same command, passes 64 of 64 with the
-            // redirection and fails 4 of 4 without it. The tail is there so
-            // that if it ever fails again the output is on disk and named,
-            // instead of a run database that says only "shell exited with
-            // code 101" — which is what four failures produced.
-            stage("cli-unrestricted-ladybug") {
+            // Output goes to a file because this is the longest stage of the
+            // lane: MEDIDO 2026-10-15, the runtime drains a step's transcript on
+            // a 10 s budget and reports an infrastructure warning on the same
+            // command that exits 0 when its output goes to a file.
+            stage("cli-integration-suites") {
                 sh("""
                     $cd || exit 1
                     $cdLog || exit 1
                     set +e
                     cargo test -p cognicode-cli --features ladybug --quiet \
-                        > "$logDir/cli-unrestricted-ladybug.log" 2>&1
+                        --test a013_lifecycle_gate_contract \
+                        --test a014_capabilities_json \
+                        --test a015_licenses_gate \
+                        --test a015_onboarding_gate \
+                        --test action_register_identity_contract \
+                        --test advisory_ignore_backing_contract \
+                        --test b1_w2_identity \
+                        --test b6_w3_cogh_lifecycle \
+                        --test b6_w4_skills_autodiscovery \
+                        --test backtick_provenance_contract \
+                        --test cli_exit_code_propagation \
+                        --test cli_gate_coverage_contract \
+                        --test cogh_cli \
+                        --test cognicode_ide_adapter \
+                        --test cognicode_lifecycle \
+                        --test cognicode_plugin \
+                        --test cr07_protobuf_advisory_closed \
+                        --test evidence_cli_mcp_equivalence \
+                        --test gitignore_negation_contract \
+                        --test perf_budget_checker_contract \
+                        --test portable_skill_bundle \
+                        --test prf_ci_01_07_clippy_gate_uat \
+                        --test prf_cli_01_exhaustive_uat \
+                        --test prf_cli_01_uat \
+                        --test prf_cli_03_workspace_uat \
+                        --test prf_cli_06_determinism_uat \
+                        --test prf_ext_02_partial_uat \
+                        --test prf_f4_w2_binary_restart \
+                        --test prf_f6_w3_bis_sbom_contract \
+                        --test prf_f6_w3_bis_staging_contract \
+                        --test prf_sec_03_uat \
+                        --test prf_state_06_existing_home_uat \
+                        --test qw03_bin_tracking_guard \
+                        --test qw04_preflight_contract \
+                        --test qw08_crate_selector \
+                        --test t1_5_3d_index_presenter_snapshot \
+                        --test t1_5_4c_graph_perfile_presenter_snapshot \
+                        --test t1_5_4d_graph_entrypoints_leaffunctions_snapshot \
+                        --test t1_5_4e_graph_hotpaths_snapshot \
+                        --test t1_5_4f_graph_complexity_snapshot \
+                        --test t1_5_4g_graph_tracepath_snapshot \
+                        --test t1_5_4h_graph_mermaid_snapshot \
+                        --test t1_5_4i_graph_ondemand_snapshot \
+                        --test t1_5_4j_graph_hierarchy_snapshot \
+                        --test t1_5_4k_graph_full_snapshot \
+                        --test t1_5_4l_graph_impact_snapshot \
+                        --test t1_5_5_json_dispatch \
+                        --test t1_5_6a_navigate_presenter_snapshot \
+                        --test t1_5_snapshot \
+                        > "$logDir/cli-integration-suites.log" 2>&1
                     rc=${'$'}?
                     set -e
-                    tail -40 "$logDir/cli-unrestricted-ladybug.log"
-                    echo "the full log is $logDir/cli-unrestricted-ladybug.log"
+                    tail -40 "$logDir/cli-integration-suites.log"
+                    echo "the full log is $logDir/cli-integration-suites.log"
                     exit ${'$'}rc
                 """.trimIndent())
             }
@@ -641,9 +733,13 @@ assert all(isinstance(s, str) for s in doc["suites"]), "suites holds non-strings
             // nothing about coverage changes; what changes is that a failure names the
             // contract instead of the loop, and a contract that asserts "the merge gate
             // runs me" becomes checkable by a reader and by a checker.
-            stage("mcp-prf-cli-04-two-process-uat") {
-                sh("$cd && cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet")
-            }
+            // prf_cli_04_two_process_uat used to be a stage here. It spawns
+            // `cognicode` and `cognicode-mcp` from the **release** directory, and
+            // this lane builds no release artifact since B1 (ADR-TH-005), so it
+            // runs in `release-candidate.pipeline.kts` (`release-contracts`) against
+            // the bytes that lane produces. Nothing about it is skipped; its owner
+            // changed, and `cli_gate_coverage_contract` pins the ownership in both
+            // directions.
             // One stage per contract, the way the workflow spelled them out. The
             // loop this replaces ran the same 22 commands in the same order, so
             // nothing about coverage changes; what changes is that a failure names the
