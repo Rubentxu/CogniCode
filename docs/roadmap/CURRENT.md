@@ -40,6 +40,17 @@
 * **SHA funcional**: `1a70ea11fb16b43c2038a69fa42263a850b3b0c2`.
 * **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
+* **Flake abierto, sin reproducir**: `cr07_metrics_exposition_contract`
+  devolvió `shell exited with code 101` en la quinta corrida del gate, siendo la
+  etapa 32 de 67. En solitario no se ha reproducido: 3/3 y después 20/20. La
+  diferencia con el gate es la carga — la etapa anterior acaba de compilar en
+  release — y el test **levanta un servidor HTTP real y hace scrape a
+  `/metrics` con un plazo de 60 s** para que responda. Hipótesis: el plazo se
+  agota bajo carga y el panic dice `/metrics never became reachable`.
+  **No está reproducido, así que no está arreglado.** Si vuelve a salir, la
+  pista es el stderr del servidor, que el test ya imprime y que la lane no
+  captura porque PipelineK no muestra la salida de un step que falla.
+
 * **Estado del gate**: cuatro correcciones encadenadas el 2026-10-15 antes de
   que el gate volviera a correr entero. Cada una la encontró el gate, no una
   revisión, y tres eran de este mismo trabajo:
