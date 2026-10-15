@@ -9,15 +9,15 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` (seis gates que no podían
-> fallar reparados y probados por mutación: el veredicto publicado por
-> `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
-> adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
-> restauraba los bytes en vez de borrar el archivo, la validación de schema
-> del catálogo publicado dejaba de saltarse en silencio, y dos wrappers
-> `fast`/`full` dejaron de poder responder verde sin hacer nada;
-> estado de runtime de PipelineK des-trackeado de git).
+> **Snapshot**: 2026-10-15, sobre `main` mergeado
+> `88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb` (PR #348 integrado). Los seis
+> gates reparados que se listaban sobre
+> `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` siguen en el árbol, **pero el
+> veredicto que se les atribuyó era falso**: la etapa `tests` del merge gate
+> ejecutaba 4 de sus 39 `cargo test` y devolvía `success`. MEDIDO
+> 2026-10-15 — ver "Batería" más abajo, donde esas cifras quedan
+> marcadas como no válidas. `v0.101.17` está **suspendida**: la lane
+> `release-candidate` falló en `clean-clone` por esta causa.
 > Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
 > `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
 > publicado** — el tag remoto sigue en `v0.101.16`, que es la release
@@ -33,13 +33,24 @@
 
 ## HEAD y batería (a 2026-10-15)
 
-* **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
-  también abiertos y `BLOCKED` a la espera de `merge-gate`).
-* **SHA funcional**: `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6`.
-* **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
+* **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
+  (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
+  contenido dentro de #348).
+* **SHA funcional**: `88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb`.
+* **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
-* **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`, con
-  `--rerun` para que las etapas ejecuten y no se sirvan del journal):
+* **Batería**: **las cifras de abajo están RETIRADAS: no son válidas.** Se
+  midieron sobre el gate colapsado de 73 a 8 etapas, en el que la etapa
+  `tests` ejecutaba 4 de sus 39 `cargo test` y devolvía `success`
+  (MEDIDO 2026-10-15: un `exit $rc` heredado de un sub-bloque terminaba el
+  proceso a mitad de etapa; y PipelineK corre el cuerpo con
+  `bash script.sh` sin `set -e`, de modo que sin guard el veredicto es el
+  código de la última orden). El presupuesto de 15 min se aprovou sobre
+  esas cifras, así que **no hay medida del coste real de la batería
+  completa**. La corrección (guard `set -eo pipefail` en los 8 bloques y
+  eliminación del `exit` truncante) está aplicada y validada con
+  `pipelinek validate`; falta la re-ejecución que dé la cifra buena.
+  Historial de lo que se afirmó entonces, para no reutilizarlo:
   * `toolchain` → success (0,2 s).
   * `repo-contract` → success (0,1 s).
   * `fmt` → success (4,5 s).
