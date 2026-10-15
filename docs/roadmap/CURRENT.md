@@ -47,8 +47,8 @@
 * **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
   `v0.101.16` y **no** se publica release en esta unidad.
 * **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`,
-  30 contratos CI + `scripts/product/*.py`): con el contrato del harness incluido
-  por glob; ver el recibo del PR para el total de esta corrida.
+  30 contratos CI + `scripts/product/*.py`): **283 passed, 0 failed**, con el
+  contrato del harness incluido por glob (75 tests del harness dentro).
 * **Paridad con CR-08**: `parity --corpus` en `change`, `merge` e `integration`
   → 0 `HARNESS_WEAKER` sin desviación declarada; 9 `AGREE`, 5 `HARNESS_STRICTER`
   y 2 desviaciones declaradas por lane.

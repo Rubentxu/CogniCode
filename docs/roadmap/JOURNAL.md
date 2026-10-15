@@ -15052,7 +15052,7 @@ caídas a ALL del oráculo para paths que su lista de reglas no conoce.
 |---|---|
 | `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 75/75 |
 | `scripts/ci/test_harness_contract.py` | PASS, 7/7 |
-| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate) | ver recibo del PR; incluye la comprobación de paridad |
+| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate) | **PASS**, 283/283 (incluye las 75 del harness y la comprobación de paridad) |
 | `parity --corpus` en `change`, `merge` e `integration` | PASS, 0 debilidades sin declarar |
 
 ### Límites declarados
