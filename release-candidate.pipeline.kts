@@ -78,7 +78,13 @@ val cd = "cd \"$repoRoot\""
 // To re-enable aarch64 for a future release:
 //   1. Confirm the CI runner is provisioned (TF-7.2) and the cross
 //      toolchain is pre-installed.
-//   2. Restore the aarch64 entry to the list below.
+//   2. Restore the aarch64 entry to the list below AND the
+//      `aarch64-unknown-linux-gnu` arm in `platformOf`. Both, together:
+//      `scripts/product/release_lane.py` reads both declarations and
+//      refuses to answer when they disagree, so an arm without a target is
+//      as broken as a target without an arm — the first one would publish
+//      a platform nothing builds. The platform name is `linux-aarch64`,
+//      hyphenated, and it must stay that way (see `platformOf` below).
 //   3. Verify the candidate builds in the CI with both targets.
 //   4. Then run the release-candidate + release pipelines against the CI.
 val targets = listOf("x86_64-unknown-linux-gnu")
@@ -124,9 +130,15 @@ fun workspaceVersion(root: String): String {
 // and refuses to answer when they disagree, and
 // `scripts/check-release-matrix.sh` now compares this name against the
 // contract's own `platform-token`. That is what catches the next one.
+//
+// 2026-10-15: the `aarch64-unknown-linux-gnu` arm that used to sit here is
+// gone. It was a note-to-self parked in executable position, and the reader
+// cannot tell an inert arm from a live one — it read the file and reported a
+// certified `linux-aarch64` that nothing in this lane builds. The re-enable
+// steps above carry the spelling instead, where it cannot be mistaken for a
+// declaration.
 fun platformOf(target: String): String = when (target) {
     "x86_64-unknown-linux-gnu" -> "linux-x86-64"
-    "aarch64-unknown-linux-gnu" -> "linux-aarch64"
     else -> error("no release platform is declared for cargo target `$target`. Add it to `targets` and to `platformOf` together, so a target can never be built without a platform name to package it under.")
 }
 

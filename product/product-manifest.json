@@ -1,8 +1,8 @@
 {
   "schema_version": "cognicode.product/v1",
   "product": "cognicode",
-  "version": "0.101.9",
-  "source_commit": "5d0ab72932b1e462ae8568579d23c21b538e2629",
+  "version": "0.101.17",
+  "source_commit": "f99a5e7fd96246d69469394489dcf6b9509131d6",
   "public_surface": {
     "binaries": [
       {
@@ -215,11 +215,6 @@
   "platforms": [
     {
       "target": "x86_64-unknown-linux-gnu",
-      "support_level": "certified",
-      "evidence": "cargo build lane in release-candidate.pipeline.kts"
-    },
-    {
-      "target": "aarch64-unknown-linux-gnu",
       "support_level": "certified",
       "evidence": "cargo build lane in release-candidate.pipeline.kts"
     }

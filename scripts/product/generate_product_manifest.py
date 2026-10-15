@@ -178,7 +178,7 @@ def _load_public_profiles(root: Path) -> list[dict[str, Any]]:
     return projected
 
 
-def validate_manifest(manifest: dict[str, Any]) -> None:
+def validate_manifest(manifest: dict[str, Any], root: Path) -> None:
     required = {
         "schema_version",
         "product",
@@ -226,12 +226,35 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     certified = {
         item["target"] for item in manifest["platforms"] if item["support_level"] == "certified"
     }
-    if certified != set(certified_platforms_from_manifest(manifest)):
-        raise ValueError("certified platform set is not the release-certified Linux set")
+    if certified != set(certified_platforms(root)):
+        raise ValueError("certified platform set is not the release-certified set")
 
 
 def certified_platforms_from_manifest(manifest: dict[str, Any]) -> list[str]:
-    return ["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]
+    """DELIBERADAMENTE INOPERANTE — leer antes de reañadirla.
+
+    2026-10-15: esta función devolvía
+    `["aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]` y
+    `validate_manifest` la usaba como
+    verdad para comparar. El builder, en cambio, derivaba la lista de
+    `certified_platforms(root)`, que lee `val targets` de la lane. Las dos
+    copias convivían lado a lado y la del validador era la que estaba mal:
+    declaraba `aarch64` **certificada** cuando la lane no la construye y
+    nada la certifica. El generador rechazaba su propia salida con
+    "certified platform set is not the release-certified Linux set", y el
+    mensaje era correcto — el validador era el que mentía.
+
+    Un `support_level: certified` sin evidencia detrás es exactamente el
+    "PASS sin cobertura" que este repo no acepta en ningún otro sitio. Si
+    hace falta una lista aquí, que venga de `certified_platforms(root)`, que
+    es la misma que usa el builder. Dos copias de un mismo hecho derivan; y
+    cuando divergen, la que se sobreescribe es la que no se regenera.
+    """
+    raise NotImplementedError(
+        "certified_platforms_from_manifest no debe existir: el conjunto "
+        "certificado se deriva de la lane (certified_platforms(root)), "
+        "nunca de una lista escrita a mano."
+    )
 
 
 def render(manifest: dict[str, Any]) -> str:
@@ -250,7 +273,7 @@ def main() -> int:
     try:
         source_commit = args.source_commit or run_git(root, "rev-parse", "HEAD")
         manifest = build_manifest(root, source_commit)
-        validate_manifest(manifest)
+        validate_manifest(manifest, root)
         rendered = render(manifest)
         if args.check:
             actual = output.read_text(encoding="utf-8")
