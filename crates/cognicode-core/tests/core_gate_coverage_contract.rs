@@ -225,10 +225,17 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
+    // 66 -> 65 on 2026-10-15: `prf_h06_adversarial_e2e` moved to
+    // `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only exists for
+    // the package that declares that binary and the suite spawns it. The move
+    // is a relocation, not a deletion — the suite is named by the gate's
+    // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
+    // side, which is how the companion hole (the suite losing its gate step
+    // entirely) was found.
     assert_eq!(
         suites.len(),
-        66,
-        "expected exactly 66 cognicode-core integration suites, found {}. \
+        65,
+        "expected exactly 65 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
