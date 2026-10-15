@@ -171,6 +171,55 @@ val releasePaths = """
     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
 """.trimIndent()
 
+// The environment a release-contract suite runs in.
+//
+// 2026-10-15 / B1 (ADR-TH-005). These suites execute real release-profile
+// bytes: they tar `cogh`, `cognicode` and `cognicode-mcp` out of the directory
+// they are pointed at, run `cognicode-release generate` and `verify` on them,
+// and spawn two processes for the CLI/MCP equivalence UAT. Two variables carry
+// that intent into the suites, and both suites refuse a path that is not a
+// release-profile one, so a debug binary that `cargo test` happened to build
+// cannot be mistaken for the artifact under test:
+//
+//   COGNICODE_RELEASE_BIN      the release tool this lane built
+//   COGNICODE_RELEASE_BIN_DIR  the directory with the host target's payloads
+//
+// The host guard is not decoration. The payloads below are host binaries, so
+// running the suites for a foreign target would either fail to spawn or, worse,
+// execute a stale host artifact and report it as evidence for a platform
+// nothing built. The target this group is written for is the first declared
+// platform, and a mismatch says so instead of hiding it.
+fun releaseContractEnv(target: String) = """
+    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+    HOST=$(rustc -vV | sed -n 's/^host: //p')
+    if [ -z "${'$'}HOST" ]; then
+        echo "FAIL: rustc did not report its host triple."
+        exit 1
+    fi
+    if [ "${'$'}HOST" != "$target" ]; then
+        echo "SKIP_NOT_APPLICABLE: $target payloads are not host binaries (host=${'$'}HOST)."
+        echo "  The release-contract suites execute real binaries, so they are evidence"
+        echo "  for the host platform. This target's own evidence is the per-payload"
+        echo "  stages above, which run for every target."
+        exit 0
+    fi
+    export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
+    export COGNICODE_RELEASE_BIN="${'$'}TARGET_DIR/release/cognicode-release"
+    export COGNICODE_RELEASE_BIN_DIR="${'$'}TARGET_DIR/${'$'}HOST/release"
+    for bin in cogh cognicode cognicode-mcp; do
+        if [ ! -x "${'$'}COGNICODE_RELEASE_BIN_DIR/${'$'}bin" ]; then
+            echo "FAIL: ${'$'}COGNICODE_RELEASE_BIN_DIR/${'$'}bin is missing or not executable."
+            echo "  binaries-$target builds it, and a suite that tars real release"
+            echo "  binaries cannot run without it: that is not a reason to skip it."
+            exit 1
+        fi
+    done
+    if [ ! -x "${'$'}COGNICODE_RELEASE_BIN" ]; then
+        echo "FAIL: ${'$'}COGNICODE_RELEASE_BIN is missing; the toolchain stage builds it."
+        exit 1
+    fi
+""".trimIndent()
+
 pipeline {
     stages {
         // ------------------------------------------------------------- preflight
@@ -711,6 +760,59 @@ pipeline {
                         bash "${'$'}runner" $target "${'$'}work/bin/cognicode" --version
                     """.trimIndent())
                 }
+            }
+        }
+
+        // ------------------------------------------------------ release-contracts
+        //
+        // 2026-10-15 / B1 (ADR-TH-005). These six suites are the reason a merge
+        // used to build four release artifacts: they tar, generate and verify
+        // release-profile bytes, or spawn them as two processes. They run here
+        // now, against the artifacts this lane builds and packages, and the
+        // merge lane no longer pays for binaries none of its own suites read.
+        //
+        // The group sits outside `targets.forEach` on purpose: the suites execute
+        // host binaries, so they are evidence for the host target once, not for
+        // every target. `releaseContractEnv` says so out loud for a foreign one
+        // instead of executing a cross binary that cannot run.
+        stage("release-contracts") {
+            stage("prf-dist-01-06-release-candidate-uat") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-cli --test prf_dist_01_06_release_candidate_uat --quiet
+                """.trimIndent())
+            }
+
+            stage("prf-dist-workflow-flatten-uat") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-cli --test prf_dist_workflow_flatten_uat --quiet
+                """.trimIndent())
+            }
+
+            stage("prf-f6-w1-release-coherence") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-cli --test prf_f6_w1_release_coherence --quiet
+                """.trimIndent())
+            }
+
+            stage("prf-f6-w2-staging-contract") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-cli --test prf_f6_w2_staging_contract --quiet
+                """.trimIndent())
+            }
+
+            stage("published-skill-bundles-are-required") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-cli --test published_skill_bundles_are_required --quiet
+                """.trimIndent())
+            }
+
+            // The two-process UAT lives in the MCP crate and spawns `cognicode`
+            // and `cognicode-mcp` from the release directory; same environment,
+            // same guard.
+            stage("prf-cli-04-two-process-uat") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet
+                """.trimIndent())
             }
         }
 

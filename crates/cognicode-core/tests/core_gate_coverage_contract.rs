@@ -34,7 +34,7 @@
 
 mod common;
 
-use common::{merge_authority_runs, not_run_message, release_lane_runs};
+use common::{merge_authority_runs, not_run_message};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -225,24 +225,10 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
-    // 66 -> 65 on 2026-10-15: `prf_h06_adversarial_e2e` moved to
-    // `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only exists for
-    // the package that declares that binary and the suite spawns it. The move
-    // is a relocation, not a deletion — the suite is named by the gate's
-    // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
-    // side, which is how the companion hole (the suite losing its gate step
-    // entirely) was found.
-    // 65 -> 68 on 2026-10-16: CU-1 (SDK de consumo confiable) añade tres
-    // suites de contrato: cu1_w2_facade_contract (facade pura + smart
-    // ctor), cu1_w2_service_analyzer_contract (adaptador sobre el
-    // AnalysisService real, incluida la ley de paridad Partial por
-    // BuildReport hallada por UAT-CU-1) y cu1_w3_presenter_parity
-    // (CLI graph full via presenter, paridad con la orquestación
-    // manual previa).
     assert_eq!(
         suites.len(),
-        68,
-        "expected exactly 68 cognicode-core integration suites, found {}. \
+        66,
+        "expected exactly 66 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -384,9 +370,6 @@ const ANCHOR_SUITES: &[&str] = &[
     "checkpoint_integration",
     "clippy_gate_parity_contract",
     "cp5_tie_break",
-    "cu1_w2_facade_contract",
-    "cu1_w2_service_analyzer_contract",
-    "cu1_w3_presenter_parity",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
     "find_usages_cli_mcp_equivalence",
@@ -829,7 +812,69 @@ fn the_coverage_contract_itself_is_pinned() {
     );
 }
 
-/// The M0.11 rustdoc gate must run in a pipeline that runs.
+/// The core suites that spawn a product binary by path must be handed one by the
+/// gate, and must fail loudly when it is missing.
+///
+/// Measured 2026-10-15 (B1). `prf_h06_adversarial_e2e` and
+/// `b6_w1_mcp_robustness` resolve `cognicode-mcp` by walking the target
+/// directory — not through `CARGO_BIN_EXE_*`, which cargo only sets for the
+/// process that owns the binary — and both printed `SKIP_NOT_APPLICABLE` and
+/// returned green when the walk found nothing. The walk finds nothing when the
+/// machine's cargo config redirects the target directory and the gate does not
+/// export it, which is this repository's documented setup; the suite then
+/// reported a pass while spawning no server at all. The third one is
+/// `b3_w2_progressive_context`, whose only binary-shaped test short-circuited
+/// the same way.
+///
+/// A skip that prints and returns is a green test with no subject. It is the
+/// same defect class the CLI contract pins for `--features ladybug`, where a
+/// suite compiles to an empty binary and reports 0 passed / 0 failed / exit 0.
+#[test]
+fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
+    let workflow = merge_authority_text();
+    assert!(
+        workflow.contains("cargo build -p cognicode-mcp"),
+        "the merge authority builds no debug `cognicode-mcp`, and the core suites \
+         that spawn it resolve it from the target directory. Without the build \
+         they cannot run, and the only alternatives are a red gate or a skip."
+    );
+    for var in ["COGNICODE_MCP_BIN", "COGNICODE_CLI_BIN"] {
+        assert!(
+            workflow.contains(var),
+            "the merge authority does not export {var}. The suites that spawn a \
+             binary by path would fall back to whatever the shared target directory \
+             happens to hold, or to nothing at all."
+        );
+    }
+    for suite in [
+        "prf_h06_adversarial_e2e",
+        "b6_w1_mcp_robustness",
+        "b3_w2_progressive_context",
+    ] {
+        let path = repo_root()
+            .join("crates/cognicode-core/tests")
+            .join(format!("{suite}.rs"));
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        // A skip is the pair print-and-return, not the word: these suites
+        // document the defect they removed, and a contract that fails on its own
+        // explanation teaches the next reader to delete the explanation.
+        assert!(
+            !src.contains("eprintln!(\"SKIP_NOT_APPLICABLE"),
+            "{suite} still prints a skip and returns. A test that cannot run must \
+             fail loudly, naming the binary and the command that builds it; a green \
+             skip certifies nothing."
+        );
+        assert!(
+            src.contains("COGNICODE_MCP_BIN") || src.contains("COGNICODE_CLI_BIN"),
+            "{suite} does not read the explicit binary variable the gate exports, so \
+             it resolves the binary from whatever the shared target directory \
+             happens to hold instead of from the build this run produced."
+        );
+    }
+}
+
+/// The M0.11 rustdoc gate must run in whatever gates a merge.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
 /// all. It was green, and it could not fail a single PR. An intra-doc link
@@ -840,32 +885,20 @@ fn the_coverage_contract_itself_is_pinned() {
 /// The standard is already written down in this repository: *"Un test que no
 /// corre en ningun sitio no es un gate."* The gate was breaking that rule.
 ///
-/// MOVED 2026-10-15, with the operator's approval, from the merge authority to
-/// `release-candidate.pipeline.kts`. Measured: it cost ~472 s of a ~1900 s
-/// merge gate, and a merge does not publish documentation.
-///
-/// **What that costs, in this contract's own words, because they are the right
-/// ones:** before, without this gate "a broken doc link or a
-/// public-docs-to-private-item reference" failed the merge gate. Now it fails
-/// the release lane instead — detected when preparing to publish rather than
-/// when merging. One class of defect, detected later. The gate still exists
-/// and still runs; this assertion follows it rather than being deleted.
-///
 /// This assertion deliberately lives in the core crate rather than next to the
-/// gate it protects. The release lane runs the core crate unrestricted, so if
-/// the rustdoc wiring is deleted from either pipeline the suite still runs and
-/// this still fails. A contract that only the deleted wiring could execute
-/// would notice nothing — which is the failure mode it exists to catch.
+/// gate it protects. The merge authority runs the core crate unrestricted, so
+/// if the rustdoc wiring is deleted the core suite still runs and this still
+/// fails. A contract that only the deleted wiring could execute would notice
+/// nothing — which is the failure mode it exists to catch.
 #[test]
-fn the_rustdoc_gate_runs_in_a_pipeline() {
+fn the_rustdoc_gate_runs_in_the_merge_authority() {
     const GATE: &str = "m011_rustdoc_gate";
 
     assert!(
-        merge_authority_runs(GATE) || release_lane_runs(GATE),
-        "no pipeline runs {GATE}. It holds the workspace at zero rustdoc \
-         warnings in the gated categories; without it a broken doc link or a \
-         public-docs-to-private-item reference ships in a published release \
-         and nothing fails.\n{}",
-        not_run_message(GATE, "Restore the stage in whichever lane claims it.")
+        merge_authority_runs(GATE),
+        "the merge authority no longer runs {GATE}. That gate holds the workspace \
+         at zero rustdoc warnings in the gated categories; without it a broken \
+         doc link or a public-docs-to-private-item reference passes every PR.\n{}",
+        not_run_message(GATE, "Restore the stage next to the clippy gate.")
     );
 }
