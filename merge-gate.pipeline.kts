@@ -388,7 +388,32 @@ pipeline {
             // empty test binaries and report 0 passed / 0 failed / exit 0.
             // core_gate_coverage_contract pins this stage by command parity.
             stage("core-unrestricted-evidence-kernel") {
-                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --quiet")
+                // MEDIDO 2026-10-15. This step streamed `cargo test --quiet`
+                // straight into the run transcript: 68 test binaries' worth of
+                // progress dots, tens of thousands of bytes. The runtime drains
+                // a step's stdout/stderr on a 10s budget and reported
+                //
+                //   [INFRASTRUCTURE]: transcript drain unfinished after
+                //   10000ms: durable-sh-transcript-pump-...-stdout, -stderr
+                //
+                // which reads like a pipeline fault and is not one — the same
+                // command exits 0 when its output goes to a file. A step that
+                // cannot finish being read is not evidence either way.
+                //
+                // Same shape as `cli-unrestricted-ladybug` below: log to a
+                // file, show only the tail, and say where the full log is.
+                sh("""
+                    $cd || exit 1
+                    $cdLog || exit 1
+                    set +e
+                    cargo test -p cognicode-core --features evidence-kernel --quiet \
+                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1
+                    rc=${'$'}?
+                    set -e
+                    tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
+                    echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
+                    exit ${'$'}rc
+                """.trimIndent())
             }
 
             // pr-ci.yml:481. A-014 product asset resolution.
