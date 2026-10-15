@@ -18,13 +18,36 @@ Tres verificaciones que el contrato no admite que se rompan:
 Sin estas guardas, una refactorizacion inocente podria borrar el wrapper
 o cambiar su cableado y nadie se enteraria hasta que el gate fallase en
 silencio. Pine los caminos, no los contenidos.
+
+MEDIDO 2026-10-15. M5 era un gate sin dientes: grepeaba los cuatro needles
+(`cargo fmt`, `cargo clippy`, `cargo test`, `--doc`) contra el TEXTO CRUDO de
+`test-full.sh`, y los cuatro aparecen en el comentario de cabecera (lineas 5-8),
+antes de una sola linea de codigo. Borrar las cuatro invocaciones `run_step` de
+las lineas 41-44 dejaba el test en verde: la bateria de release, que AGENTS.md
+declara prerrequisito duro de merge a `main` y de cualquier bump SemVer, podia
+no correr nada y seguir reportando PASS.
+
+El arreglo es el mismo que ya usa `test_candidate_packaging.py`: un comentario no
+se ejecuta, asi que no puede ser la confusion que se busca, y por eso las
+comparaciones de contenido van contra el texto sin comentarios. `strip_comments`
+se IMPORTA de ese contrato y no se reimplementa aqui: una segunda copia seria
+una segunda fuente de verdad para la misma regla, que es exactamente lo que este
+repositorio se prohibe hacer.
 """
 from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+# Sibling contract, same directory. `run_contract_tests.py` puts a contract's
+# own directory on sys.path, and running this file directly puts it there too,
+# so the import resolves identically under both entry points — the same reason
+# `run_contract_tests.load_module` documents. Imported, not copied: one rule.
+from test_candidate_packaging import strip_comments
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 FAST = REPO_ROOT / "scripts" / "test-fast.sh"
@@ -38,6 +61,19 @@ def _read(path: Path) -> str:
     if not path.is_file():
         return ""
     return path.read_text(encoding="utf-8")
+
+
+def _code(path: Path) -> str:
+    """El wrapper SIN comentarios: lo que bash llega a ejecutar.
+
+    Un comentario no se ejecuta. Comparar contra el texto crudo permite que un
+    contrato se satisfied por la prosa que explica que deberia hacer, que es
+    justo el modo de fallo que estos wrappers no admiten. Solo se descartan
+    lineas completas de comentario; un `#` al final de una linea de codigo si se
+    cuenta, porque ahi no se puede distinguir de una cadena — la misma
+    limitacion que declara `strip_comments`.
+    """
+    return strip_comments(_read(path))
 
 
 # ---------- assertions (each pins one mutation that the contract refuses) ----------
@@ -69,7 +105,7 @@ def test_fast_delegates_to_selector() -> None:
     selector CR-08. Si lo cambia, se pierde la trazabilidad de la
     decision de que correr (cambio de paths -> cambio de suites).
     """
-    text = _read(FAST)
+    text = _code(FAST)
     assert "select-suites.sh" in text, (
         f"FAIL: {FAST.name} no referencia scripts/ci/select-suites.sh. "
         f"El wrapper DEBE delegar en el selector CR-08; no recalcular."
@@ -82,7 +118,7 @@ def test_fast_uses_known_failures_baseline() -> None:
     La red minima que evita que una regresion nueva se pierda en el
     ruido conocido. Si la quita, el feedback de fast pierde precision.
     """
-    text = _read(FAST)
+    text = _code(FAST)
     assert "check_known_failures.py" in text or "known_failures" in text, (
         f"FAIL: {FAST.name} no aplica scripts/check_known_failures.py. "
         f"El baseline check es la red minima contra regresiones nuevas."
@@ -94,8 +130,13 @@ def test_full_runs_the_release_battery() -> None:
 
     El gate de release exige la bateria completa. Si el wrapper omite
     alguno, una falla silente pasara hasta el merge.
+
+    MEDIDO 2026-10-15: esto grepeaba el TEXTO CRUDO, asi que los cuatro
+    needles se satisfacian con el comentario de cabecera y las cuatro
+    invocaciones `run_step` reales podian desaparecer sin que nadie se
+    enterara. Ver el docstring del modulo.
     """
-    text = _read(FULL)
+    text = _code(FULL)
     missing = []
     for needle in ("cargo fmt", "cargo clippy", "cargo test", "--doc"):
         if needle not in text:
@@ -112,7 +153,7 @@ def test_full_invokes_known_failures_baseline() -> None:
     La bateria completa + baseline = exit 0 si no hay regresiones nuevas.
     Si omite el baseline, regresiones nuevas pasan en verde.
     """
-    text = _read(FULL)
+    text = _code(FULL)
     assert "check_known_failures.py" in text or "known_failures" in text, (
         f"FAIL: {FULL.name} no invoca scripts/check_known_failures.py. "
         f"El baseline es la red contra regresiones nuevas."
@@ -127,7 +168,7 @@ def test_both_wrappers_have_set_euo_pipefail() -> None:
     es 0). Disciplina minima de shell.
     """
     for path in (FAST, FULL):
-        text = _read(path)
+        text = _code(path)
         assert "pipefail" in text, (
             f"FAIL: {path.name} no declara 'set -.*pipefail'. "
             f"Sin pipefail los rc parciales se silencian."
@@ -143,6 +184,156 @@ def test_selector_dependency_exists() -> None:
     assert SELECTOR.is_file(), (
         f"FAIL: {SELECTOR} no existe pero {FAST.name} lo invoca. "
         f"Discrepancia entre wrapper y dependencia declarada."
+    )
+
+
+# ---------- las ramas de run_suite(): las que no podian fallar ----------
+
+MEDIDO_2026_10_15 = """
+MEDIDO 2026-10-15. `run_suite()` tenia dos ramas que no podian fallar:
+
+  - `*)` hacia `echo WARN` + `return 0`. Una suite que el selector emite y
+    el runner no conoce se saltaba EN VERDE. Un WARN no cambia el rc, asi
+    que lo unico quehacian era escribir en stderr, y stderr no es veredicto.
+  - `merge)` corria `cargo test --workspace --lib --quiet` y devolvia 0. La
+    cabecera del selector define `merge` como "merge-gate completo (e2e +
+    pineados)", que son las stages del lane, no una suite de cargo. Correr
+    `--lib` en su nombre reportaba exito sin haber ejecutado ni un test
+    contractual de integracion.
+
+Ninguna de las dos estaba cubierta: este fichero solo comprobaba que la
+CADENA "select-suites.sh" apareciera en `test-fast.sh`. Las tres guardas de
+abajo se ejecutan de verdad —extraen la funcion y la llaman en bash— porque
+una rama de shell no se demuestra leyendola como texto.
+"""
+
+
+def run_suite_case(suite: str) -> subprocess.CompletedProcess[str]:
+    """Ejecuta `run_suite <suite>` de verdad, en bash, y devuelve su rc.
+
+    Se extrae el cuerpo de la funcion tal cual y se ejecuta en un subshell
+    aislado. Se ejecuta en vez de inspeccionarse porque las ramas que hay que
+    demostrar son las de EJECUCION: lo que se comprueba es el codigo de
+    salida, que es lo que fast convierte en veredicto, y no una cadena que
+    este contrato podria satisfacerse con un comentario.
+    """
+    text = _read(FAST)
+    start = text.find("run_suite() {")
+    assert start != -1, f"FAIL: {FAST.name} ya no define run_suite()"
+    end = text.find("\n}\n", start)
+    assert end != -1, f"FAIL: no se pudo delimitar run_suite() en {FAST.name}"
+    body = text[start : end + 3]
+
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "run_suite_only.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\nset -uo pipefail\n" + body + f'\nrun_suite "$1"\n',
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            ["bash", str(script), suite],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
+def test_an_unknown_suite_is_a_hard_error_not_a_warning() -> None:
+    """M10: una suite desconocida debe salir con rc != 0.
+
+    Una suite desconocida es una divergencia entre el selector y el wrapper,
+    no una novedad de la que avisar: o el wrapper no sabe correrla, o el
+    selector no deberia emitirla. Devolver 0 hacia que `fast` reportara
+    verde sin haber corrido esa suite.
+    """
+    done = run_suite_case("definitely_not_a_suite")
+    assert done.returncode != 0, (
+        f"FAIL: run_suite() devolvio rc=0 para una suite desconocida. "
+        f"`fast` la saltaria en verde. stderr:\n{done.stderr}"
+    )
+    assert "ERROR" in done.stderr, (
+        f"FAIL: el fallo de suite desconocida debe ir a stderr marcado como "
+        f"ERROR, no como aviso. stderr:\n{done.stderr}"
+    )
+
+
+def test_the_merge_suite_is_not_silently_substituted() -> None:
+    """M11: `merge` no se puede correr desde fast, y hay que decirlo.
+
+    El comando correcto para `merge` es `bash scripts/test-full.sh`. La rama
+    no puede correr otra cosa y devolver 0: eso es reportar verde tras
+    `cargo test --workspace --lib`, que no ejecuta ningun test contractual de
+    integracion (b5_*, b6_*, prf_*). Fallar cerrado con el comando correcto a
+    la vista mantiene `fast` rapido —que es su contrato— sin que pueda
+    fingir ser el gate, que es lo que no podia ser.
+    """
+    done = run_suite_case("merge")
+    assert done.returncode != 0, (
+        f"FAIL: run_suite() devolvio rc=0 para la suite `merge`. `fast` "
+        f"reportaria verde sin correr el merge-gate completo."
+    )
+    assert "test-full.sh" in done.stderr, (
+        f"FAIL: al rechazar `merge`, hay que nombrar el comando correcto "
+        f"(`bash scripts/test-full.sh`). Un refusal sin salida no es accionable. "
+        f"stderr:\n{done.stderr}"
+    )
+
+
+DOCUMENTED_SUITE = re.compile(r'^\s*#\s*-\s*"([a-z_]+)"\s*:', re.M)
+CASE_LABEL = re.compile(r"^\s{4}([a-z_]+)\)", re.M)
+
+
+def documented_suites() -> set[str]:
+    """Suites que la cabecera de `select-suites.sh` promete emitir.
+
+    Se leen del TEXTO CRUDO, comentarios incluidos: en este fichero la
+    documentacion ES un comentario, asi que `strip_comments` aqui seria
+   =self-destruccion. La excepcion es explicita y no se extiende: para los
+    wrappers, un comentario no se ejecuta.
+    """
+    return set(DOCUMENTED_SUITE.findall(_read(SELECTOR)))
+
+
+def handled_suites() -> set[str]:
+    """Suites que `run_suite()` sabe ejecutar de verdad."""
+    text = _read(FAST)
+    start = text.find("run_suite() {")
+    assert start != -1, f"FAIL: {FAST.name} ya no define run_suite()"
+    end = text.find("\n}\n", start)
+    assert end != -1, f"FAIL: no se pudo delimitar run_suite() en {FAST.name}"
+    return set(CASE_LABEL.findall(text[start : end + 3]))
+
+
+def test_the_selector_doc_and_the_runner_agree() -> None:
+    """M12: lo que el selector documenta es lo que `fast` sabe correr.
+
+    MEDIDO 2026-10-15: la cabecera documentaba `core_int`, que ningun path
+    emitia, que no estaba en FULL_BATTERY y que `run_suite()` no tenia. Una
+    suite que no puede ocurrir no protege nada y sugiere que el mapeo esta
+    mas completo de lo que esta — que es exactamente la forma en que un
+    selector se vuelve imposible de leer con confianza.
+
+    Esto no obliga a que las suites documentadas se ejecuten: obliga a que
+    el conjunto documentado y el conjunto manejado sean el mismo, de modo que
+    anadir una suite exige, en el mismo commit, el caso que la corre.
+    """
+    documented = documented_suites()
+    handled = handled_suites()
+    assert documented, (
+        f"FAIL: no se pudo leer ninguna suite de la cabecera de {SELECTOR.name}. "
+        f"El regex del contrato y el formato de la cabecera han divergido, que "
+        f"es un fallo silencioso del propio contrato."
+    )
+    orphans = sorted(documented - handled)
+    assert not orphans, (
+        f"FAIL: {SELECTOR.name} documenta las suites {orphans} pero "
+        f"{FAST.name} no tiene caso para ellas en run_suite(). "
+        f"Documentada y no ejecutable, o ejecutable y no documentada."
+    )
+    undocumented = sorted(handled - documented)
+    assert not undocumented, (
+        f"FAIL: run_suite() maneja {undocumented} y la cabecera de "
+        f"{SELECTOR.name} no las documenta."
     )
 
 
@@ -168,6 +359,9 @@ def main() -> int:
         test_both_wrappers_have_set_euo_pipefail,
         test_selector_dependency_exists,
         test_baseline_dependencies_exist,
+        test_an_unknown_suite_is_a_hard_error_not_a_warning,
+        test_the_merge_suite_is_not_silently_substituted,
+        test_the_selector_doc_and_the_runner_agree,
     ):
         try:
             fn()
