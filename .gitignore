@@ -268,3 +268,15 @@ out-*.json
 # published verdict is auditable after the fact rather than only assertable at
 # the moment it was posted. See scripts/ci/publish-merge-gate.sh.
 .pipelinek/
+
+# PipelineK control-root state. When `--control-root` points at the repository
+# instead of `.pipelinek`, the runtime writes its leases, output-plane streams
+# and last-run pointers into the working tree. Measured 2026-10-15: 32 such
+# files were tracked and would have shipped in a release tarball. They are
+# per-run scratch, not product, and two of them are `*.lock` files whose whole
+# purpose is to disappear with the process that held them.
+/leases/
+/last-run/
+/output-plane/
+/retry-control/
+/wait-until-control/
