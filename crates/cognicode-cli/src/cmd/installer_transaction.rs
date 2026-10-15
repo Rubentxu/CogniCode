@@ -828,7 +828,7 @@ impl InstallerTransaction {
                 let manifest_path = home.version_manifest(&manifest.version);
 
                 // Serialize manifest to YAML
-                let yaml = serde_yaml::to_string(&manifest)
+                let yaml = serde_norway::to_string(&manifest)
                     .map_err(|e| InstallerError::Serialize(e.to_string()))?;
 
                 // Capture the tracker value BEFORE the install overwrites it,

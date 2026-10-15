@@ -16,10 +16,12 @@
 
 #![allow(clippy::needless_raw_string_hashes)]
 
+use cognicode_core::interface::mcp::rmcp_adapter::build_all_tools;
 use cognicode_core::interface::mcp::robustness::{
     collect_diagnostics, default_limits, note_request_finished, note_request_started,
 };
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::ExitStatusExt;
@@ -28,12 +30,19 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
+/// Page size the stdio server uses for `tools/list` pagination. It is
+/// a private constant in `rmcp_adapter::list_tools`; restating it here
+/// is what lets the pagination test notice a server that silently
+/// changed its page contract (see `large_response_uses_pagination`).
+const PAGE_SIZE: usize = 20;
+
 const O_NONBLOCK: i32 = 2048;
 const F_GETFL: i32 = 3;
 const F_SETFL: i32 = 4;
 
 unsafe extern "C" {
     fn fcntl(fd: i32, op: i32, ...) -> i32;
+    fn kill(pid: i32, sig: i32) -> i32;
 }
 
 /// SAFETY: `fd` is a valid file descriptor borrowed for the duration
@@ -152,12 +161,11 @@ fn rpc_recv_by_id(
                             .position(|b: &u8| !b.is_ascii_whitespace())
                             .unwrap_or(buf.len());
                         let line_bytes = &buf[trimmed_start..];
-                        if let Ok(v) = serde_json::from_slice::<Value>(line_bytes) {
-                            if v.get("id").and_then(|x| x.as_i64()) == Some(expected_id)
-                                && matched.is_none()
-                            {
-                                matched = Some(v);
-                            }
+                        if let Ok(v) = serde_json::from_slice::<Value>(line_bytes)
+                            && v.get("id").and_then(|x| x.as_i64()) == Some(expected_id)
+                            && matched.is_none()
+                        {
+                            matched = Some(v);
                         }
                         buf.clear();
                     } else {
@@ -178,6 +186,115 @@ fn rpc_recv_by_id(
         fcntl_setfl(stdout_fd, prev_flags);
     }
     (matched, buf)
+}
+
+/// Decode a `tools/list` cursor into the byte offset it encodes.
+///
+/// `rmcp_adapter::list_tools` encodes the offset as the base64 of its
+/// decimal string, so this is the inverse. A cursor that does not
+/// decode to a number is not an offset, and the caller asserts on
+/// `None` rather than skipping the check — that is precisely the
+/// "cursor is a fingerprint, not a position" failure the pagination
+/// test exists to catch.
+fn decode_cursor(cursor: &str) -> Option<usize> {
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(cursor)
+        .ok()?;
+    String::from_utf8(bytes).ok()?.parse().ok()
+}
+
+/// Extract the text payload of a `tools/call` response frame.
+///
+/// The stdio MCP surface answers a tool call with
+/// `result.content[0].text`, which for the handlers exercised here is
+/// either a JSON document (`Ok` path) or a one-line reason (`isError`
+/// path). Returns the empty string when the frame has neither, so a
+/// caller asserting on its content fails with a readable message
+/// rather than panicking inside serde.
+fn first_text(frame: &Value) -> String {
+    frame
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|a| a.first())
+        .and_then(|c| c.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Whether a `tools/call` frame reports failure.
+///
+/// A handler error comes back as `result.isError == true` (the
+/// `call_tool` impl in `rmcp_adapter` converts every `Err` into
+/// `CallToolResult::error`), never as a JSON-RPC `error` object — but
+/// a transport-level rejection can still use one, so both count.
+fn frame_is_error(frame: &Value) -> bool {
+    let is_error = frame
+        .get("result")
+        .and_then(|r| r.get("isError"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    is_error || frame.get("error").is_some()
+}
+
+/// Whether `pid` names a live process.
+///
+/// `/proc/<pid>` is authoritative on Linux and lets us distinguish a
+/// running child from a not-yet-reaped zombie (whose entry has state
+/// `Z`). Elsewhere — this suite is already unix-only, it depends on
+/// `ExitStatusExt` — fall back to `kill(pid, 0)`, which returns 0 for
+/// a live process and -1/ESRCH for one that is gone.
+///
+/// Race note: the "gone" answer is subject to PID reuse, which would
+/// need the kernel to hand out this exact PID again inside the
+/// microseconds between reap and check. Not a practical flake source
+/// for a test that has just reaped its own child.
+fn process_is_alive(pid: u32) -> bool {
+    let proc_entry = PathBuf::from(format!("/proc/{pid}"));
+    if proc_entry.exists() {
+        // `pid (comm) state ...` — `comm` can contain spaces and
+        // parentheses, so the state char is the first field *after*
+        // the last ')'.
+        if let Ok(stat) = std::fs::read_to_string(proc_entry.join("stat"))
+            && let Some((_, rest)) = stat.rsplit_once(')')
+            && rest
+                .split_whitespace()
+                .next()
+                .is_some_and(|state| state == "Z")
+        {
+            // A zombie is not an orphan, but it is not running either;
+            // reporting it as gone keeps the check about "did the
+            // process exit", which is what this suite is pinning.
+            return false;
+        }
+        return true;
+    }
+    // SAFETY: `kill` with signal 0 performs only an existence and
+    // permission check; it sends nothing and mutates no state.
+    unsafe { kill(pid as i32, 0) == 0 }
+}
+
+/// Write `count` small Rust files into `root` so that a full-tree
+/// `search_content` scan costs real wall-clock time.
+///
+/// A scan that matches nothing cannot short-circuit on `max_results`,
+/// so it walks and reads every file — the cheapest way to hand the
+/// server a dispatch that overruns its per-category budget without
+/// needing a network, a fake clock, or a `sleep` inside the handler.
+fn write_scan_corpus(root: &Path, count: usize) {
+    let line = "let value = compute(alpha, beta, gamma) + delta_epsilon * foxtrot;\n";
+    let body: String = std::iter::repeat_n(line, 60).collect();
+    for i in 0..count {
+        std::fs::write(root.join(format!("f{i:05}.rs")), &body).expect("write corpus file");
+    }
+}
+
+/// Write a two-function Rust file whose entry point is `marker`.
+fn write_marker(root: &Path, marker: &str) {
+    let source = format!("fn {marker}() {{\n    helper();\n}}\n\nfn helper() {{}}\n");
+    std::fs::write(root.join(format!("{marker}.rs")), source).expect("write marker file");
 }
 
 /// Send `shutdown` (graceful close) and reap the child.
@@ -237,11 +354,16 @@ fn stdio_framing_keeps_stdout_pure_json() {
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_test", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_test", "version": "0.0.1"}
+        }),
+    );
     let (init_resp, _) = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
     let init = init_resp.expect("initialize response within 10s");
     assert_eq!(init["jsonrpc"], "2.0", "initialize must be JSON-RPC 2.0");
@@ -249,7 +371,10 @@ fn stdio_framing_keeps_stdout_pure_json() {
     rpc_send(&mut child, 2, "tools/list", json!({}));
     let (list_resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(10));
     let list = list_resp.expect("tools/list response within 10s");
-    assert!(list["result"]["tools"].is_array(), "tools/list must enumerate tools");
+    assert!(
+        list["result"]["tools"].is_array(),
+        "tools/list must enumerate tools"
+    );
 
     // Drain any buffered stdout and assert every byte is part of a
     // parseable JSON frame. We close stdin first to make EOF
@@ -294,12 +419,28 @@ fn initialize_then_clean_shutdown_no_orphan() {
     let child = spawn_binary(workspace.path()).expect("spawn");
     let pid = child.id();
     let mut child = child;
+
+    // The PID this test is about to hold accountable has to be a real
+    // running process first. Without this precondition the
+    // post-shutdown check below would also pass against a PID that
+    // was never alive, which is the failure mode that makes a
+    // liveness assertion look like it works when it does not.
+    assert!(
+        process_is_alive(pid),
+        "server process {pid} must be alive immediately after spawn"
+    );
+
     // Drive the lifecycle explicitly so we exercise the real exit path.
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_shutdown", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_shutdown", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
     let status = shutdown_and_reap(child).expect("reap");
 
@@ -315,13 +456,17 @@ fn initialize_then_clean_shutdown_no_orphan() {
         "shutdown must not require a signal kill; got signal={:?}",
         status.signal()
     );
-    // The PID must be gone (the reap above consumed it). This is the
-    // half that holds the line on "no orphan": after `wait()` returns
-    // Some(status), the OS has reaped the child and `pid` is free for
-    // reuse. The compile-time type system has us hold only the
-    // `ExitStatus`, so we just assert `status.success()` and the fact
-    // that we got here at all (no panic, no kill).
-    let _ = pid;
+
+    // The half that holds the line on "no orphan". `shutdown_and_reap`
+    // returning an `ExitStatus` means `wait()` reaped the child, but
+    // that is an implication we are asserting explicitly rather than
+    // trusting: a server that forked a grandchild holding the stdio
+    // pipes would exit cleanly and still leave something behind, and
+    // only an observation of the process table catches that.
+    assert!(
+        !process_is_alive(pid),
+        "clean shutdown must leave no process behind at pid {pid}"
+    );
 }
 
 // ===========================================================================
@@ -329,41 +474,78 @@ fn initialize_then_clean_shutdown_no_orphan() {
 // ===========================================================================
 
 /// `tools/list` returns a `next_cursor` when the catalog exceeds the
-/// page size. This test walks the cursor to completion and asserts the
-/// union is the full advertised catalog and that the cursor is absent
-/// on the last page. The MCP SDK already handles pagination at the
-/// framing level; what we are pinning is that *our* server exposes the
-/// contract honestly (cursor is a real offset, never a fingerprint
-/// retry loop).
+/// page size. This test walks the cursor to completion and asserts
+/// three things that a "server that quietly loses a page" cannot
+/// survive:
+///
+///   1. the **union of every page is exactly the advertised
+///      catalogue** — compared against `build_all_tools()`, the same
+///      function the server paginates;
+///   2. the cursor is a **real, contiguous offset**: base64 of
+///      `0, PAGE_SIZE, 2*PAGE_SIZE, …`. A server that returned a
+///      constant cursor, or advanced by the wrong stride, still walks
+///      without duplicates but loses or repeats rows;
+///   3. every page but the last is **exactly `PAGE_SIZE` long**, so a
+///      truncated middle page cannot hide behind a non-empty union.
+///
+/// The MCP SDK already handles pagination at the framing level; what
+/// we are pinning is that *our* server exposes the contract honestly.
 #[test]
 fn large_response_uses_pagination() {
     let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_pagination", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_pagination", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
-    // Walk the catalog by cursor. We collect every tool name we see
-    // and assert no duplicates.
-    let mut seen: Vec<String> = Vec::new();
+    // Walk the catalog by cursor, keeping the name set and the
+    // per-page shape.
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut ordered: Vec<String> = Vec::new();
     let mut cursor: Option<String> = None;
     let mut req_id = 2i64;
     let mut pages = 0usize;
     loop {
         let mut params = json!({});
         if let Some(c) = &cursor {
-            params = json!({"cursor": c});
+            params = json!({ "cursor": c });
         }
         rpc_send(&mut child, req_id, "tools/list", params);
         let (resp, _) = rpc_recv_by_id(&mut child, req_id, Duration::from_secs(10));
         let frame = resp.expect("tools/list page within 10s");
         let result = frame.get("result").expect("result present");
-        let tools = result.get("tools").and_then(|t| t.as_array()).expect("tools array");
+        let tools = result
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .expect("tools array");
+
+        let next = result
+            .get("nextCursor")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string());
+
+        // Shape of this page. A page that hands back a cursor for
+        // "more" but is not full means the server skipped rows.
+        if next.is_some() {
+            assert_eq!(
+                tools.len(),
+                PAGE_SIZE,
+                "page {pages} advertises a nextCursor but carries {} tools, \
+                 not the full page size of {PAGE_SIZE}; the cursor skipped rows",
+                tools.len()
+            );
+        }
+
         for tool in tools {
             let name = tool
                 .get("name")
@@ -371,15 +553,13 @@ fn large_response_uses_pagination() {
                 .expect("tool name")
                 .to_string();
             assert!(
-                !seen.contains(&name),
+                seen.insert(name.clone()),
                 "duplicate tool name {name} across pages (cursor contract broken)"
             );
-            seen.push(name);
+            ordered.push(name);
         }
-        cursor = result
-            .get("nextCursor")
-            .and_then(|c| c.as_str())
-            .map(|s| s.to_string());
+
+        cursor = next;
         pages += 1;
         if pages > 200 {
             panic!("pagination did not terminate after 200 pages; cursor={cursor:?}");
@@ -387,17 +567,58 @@ fn large_response_uses_pagination() {
         if cursor.is_none() {
             break;
         }
+
+        // The cursor must be base64 of the *contiguous* offset this
+        // walk expects: page 1 hands back `PAGE_SIZE`, page 2 hands
+        // back `2 * PAGE_SIZE`, and so on. This is the assertion that
+        // fails when the cursor is not a real offset — a constant
+        // cursor loops, a mis-strided one silently reorders.
+        let expected_offset = pages * PAGE_SIZE;
+        let decoded = decode_cursor(cursor.as_deref().expect("cursor present"));
+        assert_eq!(
+            decoded,
+            Some(expected_offset),
+            "cursor for page {pages} must encode offset {expected_offset}; \
+             got {decoded:?} (cursor={:?})",
+            cursor.as_deref()
+        );
+
         req_id += 1;
     }
     let _ = shutdown_and_reap(child);
 
-    // We must have observed at least one tool. The empty case is
-    // unreachable in practice (the catalog has ~70+ entries) but we
-    // assert it anyway so a broken `build_all_tools()` cannot pass
-    // silently here.
     assert!(
         !seen.is_empty(),
         "tools/list returned an empty catalog across all pages"
+    );
+    assert!(
+        pages >= 4,
+        "the catalogue is large enough to need several pages; walking it \
+         took {pages}, which means the server is no longer paginating \
+         and this test is not testing pagination"
+    );
+
+    // The load-bearing assertion: the union of every page is the
+    // advertised catalogue, item for item. `build_all_tools()` is the
+    // function the server itself paginates, so this is "the whole
+    // catalogue", not a hand-copied list that can drift.
+    let advertised: BTreeSet<String> = build_all_tools()
+        .into_iter()
+        .map(|t| t.name.to_string())
+        .collect();
+    let missing: Vec<&String> = advertised.difference(&seen).collect();
+    let extra: Vec<&String> = seen.difference(&advertised).collect();
+    assert!(
+        missing.is_empty() && extra.is_empty(),
+        "walking the cursor did not reproduce the advertised catalogue \
+         ({} walked, {} advertised, {pages} pages).\n\
+         missing from the walk: {missing:?}\n\
+         walked but not advertised: {extra:?}\n\
+         If the server binary under test is stale, rebuild it with \
+         `cargo build --bin cognicode-mcp` before reading this as a \
+         server bug.",
+        seen.len(),
+        advertised.len()
     );
 }
 
@@ -405,125 +626,354 @@ fn large_response_uses_pagination() {
 // Test 4 — request timeout cancels in-flight
 // ===========================================================================
 
-/// The stdio server uses a per-category dispatch timeout. We cannot
-/// directly provoke a 60-second graph timeout inside a unit test, but
-/// the *contract* is the same: a dispatch that takes longer than its
-/// budget must not block the server indefinitely. We verify the
-/// observable side by sending a `tools/call` for a non-existent tool
-/// and asserting the server returns promptly with a structured error
-/// rather than blocking past `default_limits().request_timeout_ms`.
+/// A `tools/call` that overruns its category budget must still be
+/// answered, and it must leave the transport usable.
 ///
-/// This pins the bounded-time property without depending on internal
-/// handler timing. A future handler that hangs forever would still be
-/// caught by the explicit tokio::time::timeout wrap in
-/// `call_tool_handler`.
+/// # Known gap, measured against `cognicode-mcp`
+///
+/// The per-category budget in `timeout_for_category` (`search` = 500
+/// ms) does **not** cancel a synchronous handler. `call_tool_handler`
+/// wraps the dispatch in `tokio::time::timeout`, but tokio's
+/// `Timeout` only reports `Elapsed` once the inner future returns
+/// `Pending`; a handler whose whole body runs inside one poll — which
+/// is every file_ops, graph and AIX handler today — reaches the
+/// deadline *after* it has already produced its value, and the value
+/// wins. Measured 2026-10-15: a `search_content` over a 670 MB corpus
+/// took 1350 ms against the 500 ms budget and returned `isError:false`
+/// with a complete result. No timeout, no cancellation.
+///
+/// So this test does not claim to prove cancellation, because
+/// cancellation does not happen. It pins the two properties that do
+/// hold, and that a wedged or starved transport would break:
+///
+///   1. **bounded** — the slow call is answered, well inside the
+///      published `default_limits().request_timeout_ms` ceiling;
+///   2. **not wedged** — the very next request is served, so a long
+///      dispatch leaves no stuck state, no leaked worker, and no
+///      poisoned stdio pipe behind it.
+///
+/// When the handlers are made genuinely async (`spawn_blocking` or a
+/// real await that yields), the timeout will start firing; this test
+/// must then be tightened to assert an `isError` frame whose body is
+/// `timeout`, and the `MIN_USEFUL_WORK_MS` guard below becomes the
+/// thing to remove.
 #[test]
-fn request_timeout_cancels_inflight() {
+fn slow_tool_call_is_bounded_and_does_not_wedge_the_transport() {
+    /// Floor on how long the corpus scan must take for this test to
+    /// be exercising a slow dispatch at all. Well under the 500 ms
+    /// `search` budget so it does not turn into a machine-speed
+    /// assertion, but far above the ~2 ms a no-op round trip costs.
+    const MIN_USEFUL_WORK_MS: u128 = 150;
+
+    /// ~25k small files (≈100 MB). A scan whose pattern matches
+    /// nothing cannot stop on `max_results`, so it reads the whole
+    /// tree — measured ≈0.65 s, comfortably past the 500 ms budget,
+    /// while costing only ~2 s to materialise.
+    const CORPUS_FILES: usize = 25_000;
+
     let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
+    write_scan_corpus(workspace.path(), CORPUS_FILES);
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_timeout", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_timeout", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
-    // Send an unknown tool name. The dispatch must return *promptly*
-    // with `isError=true`, never hang past the category timeout.
-    let unknown_tool = "this_tool_does_not_exist_b6w1";
-    rpc_send(&mut child, 2, "tools/call", json!({
-        "name": unknown_tool,
-        "arguments": {}
-    }));
+    rpc_send(
+        &mut child,
+        2,
+        "tools/call",
+        json!({
+            "name": "search_content",
+            "arguments": {
+                "pattern": "ZZZ_NO_SUCH_TOKEN_ZZZ",
+                "regex": true,
+                "max_results": 1
+            }
+        }),
+    );
     let started = Instant::now();
-    let (resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(5));
-    let elapsed = started.elapsed();
-    let frame = resp.expect("unknown tool must produce a response within 5s");
-    let elapsed_ms = elapsed.as_millis();
+    let (resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(60));
+    let elapsed_ms = started.elapsed().as_millis();
+    let frame = resp.expect("slow search_content must be answered within 60s");
 
-    // The published per-category timeout for the `unknown` bucket is
-    // 30 s; for the explicit test we only need "did not hang past the
-    // deadline we set on `rpc_recv_by_id`", i.e. < 5 s.
     assert!(
-        elapsed_ms < 5_000,
-        "unknown tool must fail-fast, not block the timeout; took {elapsed_ms}ms"
+        elapsed_ms >= MIN_USEFUL_WORK_MS,
+        "the corpus scan finished in {elapsed_ms}ms, below the \
+         {MIN_USEFUL_WORK_MS}ms floor this test needs — the workload \
+         stopped being slow and the test now proves nothing"
     );
 
-    // The error must be structured: `isError` true or `error` present.
-    let is_error = frame
-        .get("result")
-        .and_then(|r| r.get("isError"))
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let has_error = frame.get("error").is_some();
+    // (1) Bounded: answered, and far below the published ceiling.
+    let limit_ms = default_limits().request_timeout_ms as u128;
     assert!(
-        is_error || has_error,
-        "unknown tool must produce a structured error response: {frame}"
+        elapsed_ms < limit_ms,
+        "slow dispatch took {elapsed_ms}ms, above the published {limit_ms}ms ceiling"
     );
 
-    // The published limit was the ceiling; the actual elapsed must be
-    // far smaller than that ceiling.
-    let limit_ms = default_limits().request_timeout_ms;
+    // (2) Structured: whatever the outcome, it is an intact JSON-RPC
+    // frame addressed to this request — never a torn or merged line.
+    assert_eq!(frame["jsonrpc"], "2.0", "slow call must answer in-band");
+    assert_eq!(frame["id"], 2, "slow call must answer its own request id");
     assert!(
-        elapsed_ms < limit_ms as u128,
-        "elapsed {elapsed_ms}ms must be below the published {limit_ms}ms ceiling"
+        frame.get("result").is_some() || frame.get("error").is_some(),
+        "slow call must produce a JSON-RPC result or error object: {frame}"
     );
+
+    // (3) Not wedged: the transport still serves the next request.
+    rpc_send(&mut child, 3, "tools/list", json!({}));
+    let (next, _) = rpc_recv_by_id(&mut child, 3, Duration::from_secs(10));
+    let next = next.expect("server must still serve requests after a slow dispatch");
+    assert!(
+        next["result"]["tools"].is_array(),
+        "tools/list after a slow dispatch must enumerate tools: {next}"
+    );
+
     let _ = shutdown_and_reap(child);
+}
+
+/// Tripwire for the known gap documented on
+/// `slow_tool_call_is_bounded_and_does_not_wedge_the_transport`.
+///
+/// `call_tool_handler` guards its dispatch with
+/// `tokio::time::timeout(timeout_for_category(&category), dispatch)`.
+/// This runs the same primitive over a future whose body blocks its
+/// worker thread synchronously — the shape every current handler has
+/// — and asserts the timeout does **not** fire.
+///
+/// It passes today, and it is here so that the day someone makes a
+/// handler genuinely async it turns red and forces a decision about
+/// what the transport-level test above should then assert, instead of
+/// the cancellation guarantee quietly changing underneath a test that
+/// claims to pin it.
+#[tokio::test]
+async fn dispatch_timeout_cannot_interrupt_a_blocking_handler() {
+    let budget = Duration::from_millis(50);
+    let blocking = async {
+        std::thread::sleep(Duration::from_millis(250));
+        "handler finished"
+    };
+    let outcome = tokio::time::timeout(budget, blocking).await;
+    assert_eq!(
+        outcome,
+        Ok("handler finished"),
+        "tokio::time::timeout returned Elapsed for a handler body that \
+         blocks its worker thread. The handler shape has changed, so the \
+         per-category dispatch timeout may now actually cancel work — \
+         revisit `slow_tool_call_is_bounded_and_does_not_wedge_the_transport` \
+         and make it assert a `timeout` error instead."
+    );
 }
 
 // ===========================================================================
 // Test 5 — concurrent requests in different sessions are isolated
 // ===========================================================================
 
-/// Two parallel subprocesses rooted at different workspaces must not
-/// see each other's results. We spawn two children with different
-/// `cwd`s, send `initialize` to each, send `tools/call build_graph`
-/// in one, and assert the other is unaffected (its `tools/list` still
-/// responds normally).
+/// Two sessions must not share mutable state.
+///
+/// The stdio transport is one process per session and
+/// `CogniCodeHandler` owns exactly one `Arc<HandlerContext>` — so
+/// there *is* real per-session state to isolate: the in-memory graph
+/// store, the `graph_loaded` flag, the bound workspace root, and the
+/// `InputValidator` sandbox built from it (`build_ctx` in
+/// `rmcp_adapter`). This test populates all four in session A and
+/// checks session B observes none of them.
+///
+/// Each check is a *negative* observation about B after A has
+/// established the corresponding positive in itself, so a shared
+/// store, a shared `OnceLock`, or a server that quietly ignored its
+/// `--cwd` all turn this red.
+///
+/// The catalogue-equality assertion the test used to make (both
+/// sessions see the same tool list) was worthless: `build_all_tools()`
+/// is a build-time constant, so that equality held by construction and
+/// said nothing about isolation. It survives here as a one-line
+/// sanity check on the harness, not as evidence.
 #[test]
 fn concurrent_requests_in_different_sessions_isolated() {
     let _bin = require_binary!();
     let ws_a = TempDir::new().expect("ws a");
     let ws_b = TempDir::new().expect("ws b");
+    write_marker(ws_a.path(), "alpha_marker");
+    write_marker(ws_b.path(), "beta_marker");
+    let a_file = ws_a.path().join("alpha_marker.rs");
+    let a_file_str = a_file.to_string_lossy().into_owned();
+    let b_file = ws_b.path().join("beta_marker.rs");
+    let b_file_str = b_file.to_string_lossy().into_owned();
 
     let mut child_a = spawn_binary(ws_a.path()).expect("spawn a");
     let mut child_b = spawn_binary(ws_b.path()).expect("spawn b");
 
-    rpc_send(&mut child_a, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "session_a", "version": "0.0.1"}
-    }));
-    rpc_send(&mut child_b, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "session_b", "version": "0.0.1"}
-    }));
-    let (a_init, _) = rpc_recv_by_id(&mut child_a, 1, Duration::from_secs(10));
-    let (b_init, _) = rpc_recv_by_id(&mut child_b, 1, Duration::from_secs(10));
-    assert!(a_init.is_some(), "session A must complete initialize");
-    assert!(b_init.is_some(), "session B must complete initialize");
+    for (child, name) in [(&mut child_a, "session_a"), (&mut child_b, "session_b")] {
+        rpc_send(
+            child,
+            1,
+            "initialize",
+            json!({
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": name, "version": "0.0.1"}
+            }),
+        );
+        let (init, _) = rpc_recv_by_id(child, 1, Duration::from_secs(10));
+        assert!(init.is_some(), "{name} must complete initialize");
+    }
 
-    // Both must answer tools/list correctly and independently.
-    rpc_send(&mut child_a, 2, "tools/list", json!({}));
-    rpc_send(&mut child_b, 2, "tools/list", json!({}));
-    let (a_list, _) = rpc_recv_by_id(&mut child_a, 2, Duration::from_secs(10));
-    let (b_list, _) = rpc_recv_by_id(&mut child_b, 2, Duration::from_secs(10));
-    let a_list = a_list.expect("session A tools/list");
-    let b_list = b_list.expect("session B tools/list");
+    // Harness sanity: both sessions are alive and serving. (This is
+    // the whole of what the old version of this test asserted.)
+    for (child, name) in [(&mut child_a, "A"), (&mut child_b, "B")] {
+        rpc_send(child, 2, "tools/list", json!({}));
+        let (list, _) = rpc_recv_by_id(child, 2, Duration::from_secs(10));
+        let list = list.unwrap_or_else(|| panic!("session {name} must serve tools/list"));
+        assert!(
+            !list["result"]["tools"]
+                .as_array()
+                .expect("tools array")
+                .is_empty(),
+            "session {name} catalogue must be non-empty"
+        );
+    }
 
-    // Both must advertise the same catalog (the catalog is global to
-    // the build, not per-workspace) and it must be a non-empty array.
-    let a_tools = a_list["result"]["tools"].as_array().expect("A tools array");
-    let b_tools = b_list["result"]["tools"].as_array().expect("B tools array");
-    assert!(!a_tools.is_empty(), "A catalog must be non-empty");
-    assert!(!b_tools.is_empty(), "B catalog must be non-empty");
-    assert_eq!(
-        a_tools.len(),
-        b_tools.len(),
-        "both sessions must see the same catalog size"
+    // --- Per-session state #1: the in-memory graph store. ---------
+    rpc_send(
+        &mut child_a,
+        3,
+        "tools/call",
+        json!({"name": "build_graph", "arguments": {}}),
+    );
+    let (a_build, _) = rpc_recv_by_id(&mut child_a, 3, Duration::from_secs(60));
+    let a_build = a_build.expect("session A build_graph within 60s");
+    assert!(
+        !frame_is_error(&a_build),
+        "session A must build a graph over its own workspace: {a_build}"
+    );
+    assert!(
+        first_text(&a_build).contains("\"success\":true"),
+        "session A build_graph must report success: {a_build}"
+    );
+
+    // Same tool, same arguments, both sessions. A answers from its own
+    // graph; B has none of its own and must not inherit A's.
+    rpc_send(
+        &mut child_a,
+        4,
+        "tools/call",
+        json!({"name": "graph_analyze", "arguments": {}}),
+    );
+    let (a_graph, _) = rpc_recv_by_id(&mut child_a, 4, Duration::from_secs(30));
+    let a_graph = a_graph.expect("session A graph_analyze within 30s");
+    assert!(
+        !frame_is_error(&a_graph),
+        "session A must serve graph_analyze from the graph it just built: {a_graph}"
+    );
+
+    rpc_send(
+        &mut child_b,
+        3,
+        "tools/call",
+        json!({"name": "graph_analyze", "arguments": {}}),
+    );
+    let (b_graph, _) = rpc_recv_by_id(&mut child_b, 3, Duration::from_secs(30));
+    let b_graph = b_graph.expect("session B graph_analyze within 30s");
+    assert!(
+        frame_is_error(&b_graph),
+        "session B must NOT see session A's graph, but graph_analyze \
+         succeeded there: {b_graph}"
+    );
+    assert!(
+        first_text(&b_graph).contains("No graph available"),
+        "session B's graph_analyze must fail with the no-graph reason: {b_graph}"
+    );
+
+    // --- Per-session state #2: the bound workspace root. ---------
+    // `project_overview` reports the entry points it discovered. Each
+    // session must see only the tree it was pointed at.
+    for (child, id, mine, theirs, name) in [
+        (&mut child_a, 5, "alpha_marker", "beta_marker", "A"),
+        (&mut child_b, 4, "beta_marker", "alpha_marker", "B"),
+    ] {
+        rpc_send(
+            child,
+            id,
+            "tools/call",
+            json!({"name": "project_overview", "arguments": {}}),
+        );
+        let (frame, _) = rpc_recv_by_id(child, id, Duration::from_secs(30));
+        let frame = frame.unwrap_or_else(|| panic!("session {name} project_overview within 30s"));
+        assert!(
+            !frame_is_error(&frame),
+            "session {name} project_overview must succeed: {frame}"
+        );
+        let text = first_text(&frame);
+        assert!(
+            text.contains(mine),
+            "session {name} project_overview must report its own entry \
+             point {mine}: {text}"
+        );
+        assert!(
+            !text.contains(theirs),
+            "session {name} project_overview leaked session \
+             {theirs}'s symbol — the two sessions share a workspace root: {text}"
+        );
+    }
+
+    // --- Per-session state #3: the InputValidator sandbox. -------
+    // Built from the canonicalised workspace root, so the same
+    // absolute path must be readable from its own session and
+    // refused from the other.
+    rpc_send(
+        &mut child_a,
+        6,
+        "tools/call",
+        json!({"name": "read_file", "arguments": {"path": a_file_str.clone()}}),
+    );
+    let (a_read, _) = rpc_recv_by_id(&mut child_a, 6, Duration::from_secs(30));
+    let a_read = a_read.expect("session A read_file within 30s");
+    assert!(
+        !frame_is_error(&a_read),
+        "session A must read a file inside its own workspace: {a_read}"
+    );
+
+    rpc_send(
+        &mut child_b,
+        5,
+        "tools/call",
+        json!({"name": "read_file", "arguments": {"path": a_file_str.clone()}}),
+    );
+    let (b_cross, _) = rpc_recv_by_id(&mut child_b, 5, Duration::from_secs(30));
+    let b_cross = b_cross.expect("session B read_file within 30s");
+    assert!(
+        frame_is_error(&b_cross),
+        "session B must NOT be able to read session A's file at {a_file_str}: {b_cross}"
+    );
+    assert!(
+        first_text(&b_cross).contains("Path outside workspace"),
+        "session B's cross-workspace read must be refused by the sandbox \
+         with the workspace-boundary reason: {b_cross}"
+    );
+
+    // ...and B still reads its own, so the refusal above is the
+    // sandbox talking and not a broken handler.
+    rpc_send(
+        &mut child_b,
+        6,
+        "tools/call",
+        json!({"name": "read_file", "arguments": {"path": b_file_str}}),
+    );
+    let (b_read, _) = rpc_recv_by_id(&mut child_b, 6, Duration::from_secs(30));
+    let b_read = b_read.expect("session B read_file within 30s");
+    assert!(
+        !frame_is_error(&b_read),
+        "session B must read a file inside its own workspace: {b_read}"
     );
 
     let _ = shutdown_and_reap(child_a);
@@ -544,18 +994,28 @@ fn structured_error_response_is_iserror() {
     let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_err", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_err", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
     // Malformed arguments for `read_file`: missing required `path`.
-    rpc_send(&mut child, 2, "tools/call", json!({
-        "name": "read_file",
-        "arguments": {}
-    }));
+    rpc_send(
+        &mut child,
+        2,
+        "tools/call",
+        json!({
+            "name": "read_file",
+            "arguments": {}
+        }),
+    );
     let (resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(5));
     let frame = resp.expect("read_file with missing path must respond");
     let is_error = frame

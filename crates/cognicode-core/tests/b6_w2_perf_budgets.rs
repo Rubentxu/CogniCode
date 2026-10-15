@@ -121,8 +121,10 @@ fn cold_small_under_budget() {
         let dir = corpus::build(n);
         let sources = corpus::read(&dir);
         let mut builder = OnDemandGraphBuilder::new();
-        let refs: Vec<(&str, &str)> =
-            sources.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+        let refs: Vec<(&str, &str)> = sources
+            .iter()
+            .map(|(r, s)| (r.as_str(), s.as_str()))
+            .collect();
         builder.build_index_from_sources(refs);
         let r = builder.build_for_symbol("func_0", 1, TraversalDirection::Callees);
         assert!(!r.entries.is_empty(), "cold corpus must index func_0");
@@ -145,8 +147,10 @@ fn cold_medium_under_budget() {
         let dir = corpus::build(n);
         let sources = corpus::read(&dir);
         let mut builder = OnDemandGraphBuilder::new();
-        let refs: Vec<(&str, &str)> =
-            sources.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+        let refs: Vec<(&str, &str)> = sources
+            .iter()
+            .map(|(r, s)| (r.as_str(), s.as_str()))
+            .collect();
         builder.build_index_from_sources(refs);
         let r = builder.build_for_symbol("func_0", 1, TraversalDirection::Callees);
         assert!(!r.entries.is_empty());
@@ -172,16 +176,14 @@ fn hot_small_under_budget() {
     let dir = corpus::build(n);
     let sources = corpus::read(&dir);
     let mut builder = OnDemandGraphBuilder::new();
-    let refs: Vec<(&str, &str)> =
-        sources.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+    let refs: Vec<(&str, &str)> = sources
+        .iter()
+        .map(|(r, s)| (r.as_str(), s.as_str()))
+        .collect();
     builder.build_index_from_sources(refs);
     let target = "func_0".to_string();
     let nanos = measure_nanos(|| {
-        let r = builder.build_for_symbol(
-            &target,
-            3,
-            TraversalDirection::Callees,
-        );
+        let r = builder.build_for_symbol(&target, 3, TraversalDirection::Callees);
         assert!(!r.entries.is_empty());
     });
     let budget = std::time::Duration::from_millis(100);
@@ -313,8 +315,7 @@ fn navigation_small_under_budget() {
         );
         srcs.push((path, src));
     }
-    let refs: Vec<(&str, &str)> =
-        srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+    let refs: Vec<(&str, &str)> = srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
     builder.build_index_from_sources(refs);
     let target = format!("func_{}", n / 2);
     let nanos = measure_nanos(|| {
@@ -348,8 +349,7 @@ fn navigation_medium_under_budget() {
         );
         srcs.push((path, src));
     }
-    let refs: Vec<(&str, &str)> =
-        srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
+    let refs: Vec<(&str, &str)> = srcs.iter().map(|(r, s)| (r.as_str(), s.as_str())).collect();
     builder.build_index_from_sources(refs);
     let target = format!("func_{}", n / 2);
     let nanos = measure_nanos(|| {
@@ -389,7 +389,10 @@ fn graph_full_small_under_budget() {
         let refs: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
         let merged = cache.merge(&refs);
         let projection = CallGraphProjection::from_call_graph(&merged);
-        assert!(projection.node_count() > 0, "merged graph must be non-empty");
+        assert!(
+            projection.node_count() > 0,
+            "merged graph must be non-empty"
+        );
     });
     let budget = std::time::Duration::from_secs(10);
     assert!(

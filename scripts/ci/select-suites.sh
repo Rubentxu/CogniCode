@@ -15,13 +15,33 @@
 #   Exit 0 siempre.
 #
 # Estrategia:
-#   - "core"     : cargo test -p cognicode-core
+#   - "core"     : cargo test -p cognicode-core --lib
 #   - "explorer" : cargo test -p cognicode-explorer --lib
 #   - "mcp"      : cargo test -p cognicode-mcp --lib
 #   - "cli"      : cargo test -p cognicode-cli --lib (no integration tests separados)
 #   - "ladybug"  : cargo test -p cognicode-ladybug --lib
-#   - "core_int" : cargo test -p cognicode-core --test <contractual>
 #   - "merge"    : merge-gate completo (e2e + pineados)
+#
+# MEDIDO 2026-10-15. Esta cabecera documentaba una septima suite, `core_int`
+# ("cargo test -p cognicode-core --test <contractual>"), que ningun path
+# emitia, ningun consumidor sabia correr y que no estaba en FULL_BATTERY
+# (scripts/ci/test_select_suites.py). Se retira como documentacion muerta:
+# es la misma clase de deuda que la regla de `.github/workflows/**` que esta
+# misma cabecera ya borro — "una regla para un directorio ausente no protege
+# nada" — y el contrato
+# scripts/ci/test_fast_full_wrappers.py::test_the_selector_doc_and_the_runner_agree
+# impide que vuelva: el conjunto de suites documentadas tiene que ser
+# exactamente el que `run_suite()` sabe ejecutar.
+#
+# Lo que SI es real y esta MEDIDO, y que esta nota deja explicito para que
+# ningun lector lo descubra por sorpresa: crates/cognicode-core/tests/ tiene
+# 65 tests de integracion (b5_*, b6_*, prf_* entre ellos) y `core` se ejecuta
+# con `--lib`, asi que `fast` NO corre ninguno de ellos. Cerrar esa brecha es
+# una decision propia —correr 65 binarios de test convierte `fast` en
+# minutos— y no se toma aqui renombrando un suite que no existia. La
+# contradiccion anterior era la de linea 18, que decia `cargo test -p
+# cognicode-core` sin `--lib` mientras el runner ponia `--lib`: la cabecera
+# prompia mas de lo que se corre. Ahora dice lo que se corre.
 #
 # Reglas de mapeo (ordenadas):
 #   1. Touch en `Cargo.toml` workspace, `Cargo.lock`, `.cargo/**`,

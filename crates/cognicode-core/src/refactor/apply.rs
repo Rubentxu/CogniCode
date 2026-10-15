@@ -1,6 +1,6 @@
 //! `cognicode-core::refactor::apply` — B5.W3.
 //!
-//! Apply con autoridad y rollback. Lee un [`plan::RefactorPlan`]
+//! Apply con autoridad y rollback. Lee un [`crate::refactor::plan::RefactorPlan`]
 //! (B5.W1) y un `workspace_state_digest` calculado en el momento de
 //! la previsualización, y aplica las [`PlannedEdit`]s del plan sobre
 //! el workspace con staging + fsync + rename atómico.
@@ -247,12 +247,9 @@ impl std::fmt::Display for ApplyError {
                 expected_size,
                 actual_size
             ),
-            ApplyError::IoError { path, source } => write!(
-                f,
-                "I/O error on {}: {}",
-                path.display(),
-                source
-            ),
+            ApplyError::IoError { path, source } => {
+                write!(f, "I/O error on {}: {}", path.display(), source)
+            }
         }
     }
 }
@@ -302,23 +299,23 @@ pub fn apply(
         source: e,
     })?;
 
-    let mut applied: Vec<PathBuf> = Vec::new();
+    let mut applied: Vec<AppliedFile> = Vec::new();
 
     // Aplicar cada edición. El primer fallo aborta el batch.
-    let result: Result<(), ApplyError> = plan
-        .edits
-        .iter()
-        .try_for_each(|edit| {
-            apply_one(edit, workspace_root, &staging_dir).map(|abs| {
-                applied.push(abs);
-            })
-        });
+    let result: Result<(), ApplyError> = plan.edits.iter().try_for_each(|edit| {
+        apply_one(edit, workspace_root, &staging_dir).map(|rec| {
+            applied.push(rec);
+        })
+    });
 
     if let Err(err) = result {
-        // Rollback: borra los archivos aplicados en este batch.
-        // AAT-B5-01: el staging dir debe quedar limpio.
-        for abs in &applied {
-            let _ = fs::remove_file(abs);
+        // Rollback: RESTITUYE el estado previo de cada archivo ya
+        // aplicado en este batch. Borrar el archivo sería pérdida de
+        // datos: el rename atómico de `apply_one` ya reemplazó los
+        // bytes originales del usuario, así que deshacer exige
+        // reescribirlos (AAT-B5-01).
+        for rec in &applied {
+            restore_prior_state(rec);
         }
         let _ = fs::remove_dir_all(&staging_dir);
         return Err(err);
@@ -329,19 +326,50 @@ pub fn apply(
     Ok(ApplyOutcome {
         plan_id: plan.id,
         plan_digest: plan.digest.clone(),
-        applied_files: applied,
+        applied_files: applied.into_iter().map(|rec| rec.path).collect(),
         rolled_back_files: Vec::new(),
         committed: true,
         error: None,
     })
 }
 
+/// Estado previo de un archivo que `apply_one` ya sobrescribió.
+struct AppliedFile {
+    /// Path absoluto destino (el que quedó renombrado).
+    path: PathBuf,
+    /// Bytes previos. `None` = el archivo NO existía antes del
+    /// apply, así que deshacer es borrarlo, no restaurarlo.
+    previous: Option<Vec<u8>>,
+}
+
+/// Deshace un `AppliedFile`, devolviendo el archivo a su estado
+/// previo.
+///
+/// Best-effort: `apply` ya devuelve `Err` por el fallo que provocan
+/// el rollback, y en esa rama no existe `ApplyOutcome` donde cabría
+/// reportar un restore fallido. Un `None` en `previous` significa que
+/// el archivo no existía antes, así que deshacer es borrarlo.
+fn restore_prior_state(rec: &AppliedFile) {
+    match &rec.previous {
+        Some(bytes) => {
+            let _ = fs::write(&rec.path, bytes);
+        }
+        None => {
+            let _ = fs::remove_file(&rec.path);
+        }
+    }
+}
+
 /// Apply una edición de un solo archivo con staging+fsync+rename.
+///
+/// Devuelve el path renombrado junto con los bytes que tenía ANTES
+/// del rename, para que `apply` pueda deshacer el cambio si una
+/// edición posterior del mismo batch falla.
 fn apply_one(
     edit: &PlannedEdit,
     workspace_root: &Path,
     staging_dir: &Path,
-) -> Result<PathBuf, ApplyError> {
+) -> Result<AppliedFile, ApplyError> {
     // (a) El path debe ser absoluto (B5.W1 ya exige esto, pero
     //     verificamos aquí también como defensa).
     if !edit.file.is_absolute() {
@@ -385,9 +413,7 @@ fn apply_one(
 
     // (f) Verifica que el byte_range sigue siendo válido (no
     //     concurrent modification).
-    if edit.byte_range.start > current_bytes.len()
-        || edit.byte_range.end > current_bytes.len()
-    {
+    if edit.byte_range.start > current_bytes.len() || edit.byte_range.end > current_bytes.len() {
         return Err(ApplyError::ConcurrentModification {
             path: edit.file.clone(),
             expected_size: edit.byte_range.end,
@@ -400,10 +426,7 @@ fn apply_one(
 
     // (h) Stage preservando estructura de sub-directorios relativa
     //     al workspace_root.
-    let rel = edit
-        .file
-        .strip_prefix(workspace_root)
-        .unwrap_or(&edit.file);
+    let rel = edit.file.strip_prefix(workspace_root).unwrap_or(&edit.file);
     let stage_abs = staging_dir.join(rel);
     if let Some(parent) = stage_abs.parent() {
         fs::create_dir_all(parent).map_err(|e| ApplyError::IoError {
@@ -442,7 +465,12 @@ fn apply_one(
         }
     })?;
 
-    Ok(edit.file.clone())
+    Ok(AppliedFile {
+        path: edit.file.clone(),
+        // El rename de (j) ya consumió los bytes originales: es este
+        // snapshot el único que permite restaurarlos en el rollback.
+        previous: Some(current_bytes),
+    })
 }
 
 // =============================================================================

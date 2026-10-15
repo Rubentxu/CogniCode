@@ -3,6 +3,7 @@
 use super::*;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::infrastructure::lsp::providers::CompositeProvider;
+use crate::interface::symbol_identity::{default_provider_for_tool, precision_floor_for_tool};
 
 /// Helper to get the code intelligence provider from context or create a default one
 fn get_provider(ctx: &HandlerContext) -> Arc<dyn CodeIntelligenceProvider> {
@@ -48,6 +49,8 @@ pub async fn handle_go_to_definition(
                 column: Some(def_loc.column()),
                 context,
                 message: None,
+                precision: precision_floor_for_tool("go_to_definition"),
+                provider: default_provider_for_tool("go_to_definition").to_string(),
             })
         }
         Ok(None) => Ok(GoToDefinitionOutput {
@@ -57,6 +60,8 @@ pub async fn handle_go_to_definition(
             column: None,
             context: None,
             message: Some("No definition found at this position".to_string()),
+            precision: precision_floor_for_tool("go_to_definition"),
+            provider: default_provider_for_tool("go_to_definition").to_string(),
         }),
         Err(e) => Ok(GoToDefinitionOutput {
             found: false,
@@ -65,6 +70,8 @@ pub async fn handle_go_to_definition(
             column: None,
             context: None,
             message: Some(e.to_string()),
+            precision: precision_floor_for_tool("go_to_definition"),
+            provider: default_provider_for_tool("go_to_definition").to_string(),
         }),
     }
 }
@@ -142,12 +149,16 @@ pub async fn handle_find_references(
                 symbol: input.file_path,
                 references: entries,
                 total,
+                precision: precision_floor_for_tool("find_references"),
+                provider: default_provider_for_tool("find_references").to_string(),
             })
         }
         Err(_) => Ok(FindReferencesOutput {
             symbol: input.file_path,
             references: vec![],
             total: 0,
+            precision: precision_floor_for_tool("find_references"),
+            provider: default_provider_for_tool("find_references").to_string(),
         }),
     }
 }

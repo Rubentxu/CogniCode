@@ -14629,3 +14629,251 @@ habia restaurado. Un verde de control sobre un arbol sucio no es un verde, es
 una cifra. **Toda afirmacion de que una mutacion cae tiene que estar
 acompanada de la razon por la que cae**, y si no cae, hay que averiguar si fallo el
 contrato o fallo la prueba antes de reportar el numero.
+
+---
+
+## Recibo 2026-10-15 — BLOQUE 5: `v0.101.17` y el runtime que fabricaba gates rojos
+
+**SHA**: `f99a5e7f` sobre `b5-v0.101.17` (PR #348).
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16` — el bump está preparado, no publicado.
+
+### Lo que se arregló
+
+1. **Contrato B4.W1 restaurado en los 8 DTOs de navegación.** Los campos
+   `precision`/`provider` faltaban en seis y en `FindUsagesOutput` estaban
+   como `Option<String>`, así que el tier de procedencia se omitía en lugar
+   de reportarse como un mínimo garantizado. Todos los constructores
+   derivan ahora de `symbol_identity::{precision_floor_for_tool,
+   default_provider_for_tool}` en vez de literales, para que el catálogo
+   siga siendo la única fuente de verdad.
+2. **Enlaces intra-doc de `refactor::apply` / `refactor::preview`**: usaban
+   `[`plan::RefactorPlan`]`, que no resuelve desde dentro del módulo. Son
+   ahora rutas completas al crate.
+3. **Lints de clippy en `b6_w6_architectural_close.rs`**: un `#[allow(
+   non_snake_case)]` no suprime el lint sobre la función misma.
+
+### El runtime era el defecto, no el código
+
+`rustdoc-gate` fallaba con `exit 101` **a los 10 segundos** de arrancar, de
+forma reproducible en tres ejecuciones de `merge-gate` bajo pipelinek 0.46.0.
+`cargo doc --workspace --no-deps` en frío tarda 8 minutos; la secuencia
+`clippy` → test del gate, ejecutada en bash pelado, da verde en 332s. Bajo
+**pipelinek 0.61.0-rc2** el mismo paso tarda lo que tiene que tardar y da
+`success`.
+
+La causa de fondo eran los flags: `--control-root "$PWD"` apuntaba el control
+root a la raíz del repo. Según `docs/user/configuration-and-workspace.md` de
+`Rubentxu/pipeline-kotlin`, ese flag es donde PipelineK escribe las
+transcripciones de los pasos, y **por defecto es `<workspace>/.pipelinek`**
+— que CogniCode ya ignora en `.gitignore:270`. Con los valores por defecto un
+`sh()` corre en el *parent* del control root, o sea la raíz del repo, que es
+lo que hace redundante el preámbulo `val repoRoot` / `val cd` de los `.kts`.
+Pasar `--db /tmp/….db` además desperdigaba `leases/`, `last-run/` y
+`output-plane/` como untracked en el árbol de trabajo.
+
+Invocación correcta, desde la raíz del repo y sin banderas:
+
+```
+pipelinek run merge-gate.pipeline.kts
+```
+
+### Medición del gate (`pipelinek 0.61.0-rc2`, sin flags)
+
+| stage | resultado |
+|---|---|
+| toolchain | success |
+| repo-contract | success |
+| fmt | success |
+| clippy (`-D warnings`) | success |
+| rustdoc-gate | **success** |
+| contracts | **FAIL** — 13 aserciones, todas con texto legible por primera vez |
+
+### Contrato: fallos abiertos en `contracts`
+
+Dos grupos. El primero es propagación del bump 0.101.16 → 0.101.17:
+`README.md` y `SECURITY.md` seguían declarando la superficie y la versión de
+la línea anterior, `CURRENT.md` citaba un SHA de 5 versiones atrás y
+`0.101.17` no aparecía en ROADMAP ni JOURNAL. El segundo es deriva real de
+contrato, no de esta versión: `tools.json` declaraba `runtime_tool_count=81`
+mientras publicaba 80, las skills afirmaban "73 tools", `DOCUMENT_SCHEMA_PAIR`
+no valida el documento `skills`, y `release-candidate.pipeline.kts` nombra
+`aarch64-unknown-linux-gnu`, que no está en `val targets`.
+
+### Leccion 232 — Un flag con valor por defecto no es un flag que se pase
+
+`--control-root` parecía necesario porque sin él el runner parecía perder el
+repo. No lo perdía: lo estaba apuntando a la raíz del repo, que es donde el
+runner escribe todo lo que no es output de build. El síntoma — directorios de
+run y leases apareciendo como untracked — se leía como "el runner ensucia el
+árbol" cuando el árbol ensuciado era exactamente lo que yo le había pedido.
+
+**Antes de añadir un flag para arreglar un síntoma, hay que leer qué hace el
+flag por defecto.** El default de `--control-root` era el repo entero, y por
+eso el síntoma era correcto: yo había pedido el síntoma.
+
+### Leccion 233 — Un fallo de 10 segundos donde se esperaban 8 minutos
+
+`rustdoc-gate` moría en 10s. Un paso que documenta el workspace entero no
+puede terminar en 10s; el número era la prueba de que el runtime, no el
+contenido, era el culpable. La comprobación que lo confirmó fue ejecutar la
+secuencia exacta en bash: verde en 332s. Ante un fallo cuyo tiempo es
+imposible, el primer sospechoso no es el código que el paso ejecuta.
+
+### Leccion 234 — Regenerar un artefacto desde su captura puede destruirlo
+
+`product/README.md` documenta regenerar `tools.json` capturando `tools/list`
+con el binario por defecto. Con ese procedimiento el catálogo pierde los 3
+tools feature-gated (`interproc_summary`, `list_evidence`, `search_evidence`):
+el build por defecto no los expone, pero `tools.json` es el **catálogo
+maestro** y sí los publica. El procedimiento documentado es correcto para un
+build con todas las features y destructivo para el build por defecto, y no
+dice cuál de los dos se está ejecutando. No se regenera hasta decidirlo.
+
+## Recibo 2026-10-15 (bis) — Ocho gates que no podían fallar, y una release que sí
+
+**SHA**: `87074382` sobre `b5-v0.101.17` (PR #348), empujado a `origin`.
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16` — el bump está preparado, no publicado.
+
+### El defecto de fondo
+
+Ocho gates de este repositorio pasaban sin poder fallar. Todos tienen la
+misma forma: **la propiedad vive en el test, no en el código**. El test
+compara el artefacto contra sí mismo, contra un grep de su propio comentario
+de cabecera, o contra una constante escrita a su lado.
+
+### Lo que se corrigió, con la mutación que lo demuestra
+
+| # | Defecto | Dientes |
+|---|---|---|
+| 1 | `publish-merge-gate.sh` corría el gate **sin `--rerun`**: 30 stages replayados del journal en 79 ms, marcados `RERUN`. El check `merge-gate` publicado era el veredicto de otro árbol. | quitar `--rerun` → rc=1 |
+| 2 | `prf_h06_adversarial_e2e`: **0 de 15 tests ejecutados**, todos `SKIP_NOT_APPLICABLE` contamados como PASS. Buscaba el binario por `$CARGO_TARGET_DIR`, que cargo no exporta a los test binaries. | invertir el guard de `assert_token_absent` → `PRF-SEC-03 violated: decoy token leaked` |
+| 3 | Rollback de refactor hacía `fs::remove_file`: **borraba el archivo del usuario** en vez de restaurar sus bytes. Y el test que debía detectarlo pasaba con el rollback entero borrado (`sort_edits` ponía el fichero que fallaba primero). | restaurar el `remove_file` → `a_first.rs must still EXIST after rollback` |
+| 4 | `test_product_tool_catalog.py` se saltaba la validación de schema en silencio sin `jsonschema`. Y la stage que instalaba PyYAML corría **después** de `contracts`, que la necesita. | bloquear el import → rc=1 |
+| 5 | Un guard de 60 líneas invisible: no empezaba por `test_`, el runner no lo descubría. El gate corría 10 tests donde `main()` listaba 11. | `if ! rm -rf -- release;` → `if ! true;` → rc=1 |
+| 6 | `test-full.sh` grepeaba 4 needles contra su **comentario de cabecera**. Borrar la batería entera dejaba el test verde. | borrar las 4 invocaciones → rc=1 |
+| 7 | `test-fast.sh` respondía verde con `--lib` para la suite `merge`, que el selector documenta como "merge-gate completo". Sin correr ninguno de los 65 tests contractuales. | restaurar las ramas viejas → 2 contratos en rojo |
+| 8 | `verify-as-consumer` comprobaba la **integridad** de los assets publicados, no su **completitud**. | (ver abajo) |
+
+### La release estaba rota y nadie lo veía
+
+Medido contra la API de GitHub:
+
+    v0.101.10    8 assets
+    v0.101.15    3 assets
+    v0.101.16    3 assets
+
+Seis releases seguidas publicadas con 3 de 8. Los 5 ausentes son
+exactamente los que necesitan `install.sh` y `cogh update`: el bundle por
+plataforma, los dos bundles portables, el release-inventory y el propio
+`SHA256SUMS`. Una release así existe, resuelve por `/releases/latest`, y no
+se puede instalar.
+
+`sandbox/scripts/test_release_asset_set.sh` ya lo detectaba — rc=1 sobre
+`v0.101.16`, nombrando los 5 assets ausentes. **No lo invocaba ningún
+pipeline**; el único que lo mencionaba era su propia cabecera. Es la misma
+deuda que el gate de skills CP5, verde durante meses sin workflow que lo
+ejecutara. `verify-asset-set` lo corre ahora, después de `publish-draft`.
+
+### El contrato de ese wiring cometió el mismo defecto que vigilaba
+
+Su primera versión hacía `text.index("test_release_asset_set.sh")` sobre el
+fichero entero y **pasaba con la stage borrada**, porque el comentario que
+explica por qué existe ya nombra el script. Reescrito para leer el cuerpo de
+la stage vía `stage_blocks()`. Dos mutaciones, ambas rojas: borrar la stage, y
+dejar el nombre con un `echo` en el cuerpo.
+
+### Estado medido
+
+* `bash scripts/ci/run-all-contracts.sh` → **276 passed, 0 failed**.
+* `cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e` → 15 passed,
+  0 ignored, 0 filtered.
+* `cargo test -p cognicode-core --test b5_w3_apply_with_authority` → 11 passed.
+* `merge-gate.pipeline.kts` con `--rerun`, por stage, leído del journal SQLite:
+  toolchain 0,2 s · repo-contract 0,1 s · fmt 4,5 s · clippy 83,8 s ·
+  **rustdoc-gate 434,0 s**.
+
+### Abierto, no resuelto
+
+* **`rustdoc-gate` mide 7,2 min por sí solo.** Con 30 stages el gate no cabe
+  en los 15 min acordados sin segmentarlo. La segmentación es un work item,
+  no un hecho, y cambia el contrato del gate: decisión del operador.
+* **Planificación**: `plan.rs` no deduplica ediciones por fichero. Dos edits
+  al mismo fichero se aplican en orden y el segundo empalma un `byte_range`
+  calculado sobre los bytes originales; el rollback restaura cada uno a lo
+  que leyó, dejando edit 1 aplicado permanentemente. Es un cambio de
+  contrato (rebasing de offsets o rechazar planes multi-edit), no un fix
+  mínimo.
+* 32 ficheros de estado de runtime de PipelineK (`leases/`, `last-run/`,
+  `output-plane/`) estaban **trackeados en git** desde `e14d6e7e`. Des-trackeados
+  e ignorados; contrato con oráculo `git ls-files`.
+
+## Recibo 2026-10-15 (ter) — 65 etapas colapsadas a 10, y un agujero que打开代价
+
+**SHA**: `00a866f6` sobre `b5-v0.101.17` (PR #348).
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16`.
+
+### El gate tenía 73 etapas y nadie había quitado ninguna
+
+Cada una se añadió cuando alguien encontró un defecto. Ninguna se Pinedó
+nunca después. Así se forma un montón, y así un montón deja de leerse.
+
+**35 de las 65 ejecutables eran `cargo test -p <crate> --test <un_fichero>`**
+— una etapa por fichero de test, repartidas entre core, cli y mcp. Eso no son
+35 comprobaciones: `cargo test` ya informa por suite. La división no compraba
+trazabilidad que la herramienta no diera, y costaba 35 etapas, 35 pares
+`StepStarted`/`StepFinished`, y 35 oportunidades de que el runtime pierda uno.
+
+### Diez etapas, misma cobertura, verificado
+
+    static       toolchain, repo-contract, fmt, clippy
+    docs         rustdoc-gate
+    contracts    pip, run-all-contracts.sh
+    skills       validate_skills, verify-skills
+    supply-chain cargo-deny install, advisories, licenses
+    lsp          rust-analyzer install, rust-analyzer-answers
+    build        build-binary + 4 release + verify-release-binaries
+    selector     qw08-crate-selector, select-suites-script
+    tests        los 39 stages de test, en su orden original
+    governance   drift-lint, compat-matrix, gate-coverage, e91-w7, e91-w8
+
+La cobertura no se afirma, se mide: extraídos todos los payloads `sh` de los
+dos ficheros y comparadas las líneas de comando que no son comentarios, el
+resultado es **cero líneas en uno y ausentes en el otro**. El orden se
+conserva porque ordenar es el invariante entero del fichero.
+
+### El contrato encontró un agujero que este mismo recibo abrió antes
+
+`cli_gate_coverage_contract` reportó que **`prf_h06_adversarial_e2e` no la
+nombraba ninguna etapa**. Esa suite —los 15 tests adversarios de escape por
+symlink, traversal y secretos— se movió esta misma mañana de
+`cognicode-core` a `cognicode-mcp` para poder usar `CARGO_BIN_EXE`. El
+movimiento funcionó y **la dejó fuera del gate**, con todo en verde. El
+contrato que dice cubrir ese agujero lo cubrió.
+
+Vuelve a estar nombrada, desde `cognicode-mcp`, con el motivo en un
+comentario. `core_gate_coverage_contract` vio el mismo movimiento desde el
+otro lado — 66 suites contadas donde hay 65 — y ahora cuenta 65 explicando
+por qué.
+
+### Coste medido por etapa, con ejecución real
+
+    toolchain 0,2s · repo-contract 0,1s · fmt 4,4s · clippy 89,6s
+    rustdoc-gate 449,0s
+
+### Abierto
+
+* **`docs` cuesta 449 s y `build` unos 700 s.** Diez etapas no son quince
+  minutos: son un coste visible. Sacar `build` a la lane de release es
+  limpieza; sacar `docs` cambia qué garantiza un merge. Ambas son decisiones
+  del operador y ninguna se ha tomado.
+* **`cargo doc --workspace --no-deps` no cachea.** Medido dos veces seguidas
+  sobre árbol sin cambios: 8m10s y 8m57s. `rustdoc-gate` lo ha medido 434 s,
+  449 s y 488 s en tres runs. Cargo doc en caliente es de 1-2 min; aquí no
+  cachea nada y no se ha explicado por qué. Es la palanca de ~6 minutos y
+  sigue sin tocarse.
+* **El gate murió con exit 137 (SIGKILL) en un run anterior**, con 61 GB de
+  94 GB en uso por sesiones ajenas a esta. No reproducido; la máquina estaba
+  compartida.

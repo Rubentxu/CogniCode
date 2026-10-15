@@ -22,7 +22,7 @@ members = [
 exclude = ["crates/spike-ladybug"]
 
 [workspace.package]
-version = "0.101.16"
+version = "0.101.17"
 edition = "2024"
 authors = ["CogniCode Team"]
 # ADR-011 (CP1.1): license of record, formalising the deferral M0.9 left open.
@@ -99,7 +99,7 @@ serde = { version = "1.0", features = ["derive"] }
 # declaring it here changes no resolution.
 schemars = { version = "1.2", features = ["derive"] }
 serde_json = "1.0"
-serde_yaml = "0.9"
+serde_norway = "0.9"
 sqlparser = "0.53"
 bincode = { version = "2.0", features = ["serde"] }
 blake3 = "1.5"

@@ -204,6 +204,7 @@ use crate::interface::mcp::schemas::{
     ValidationResult,
 };
 use crate::interface::mcp::security::{InputValidator, RateLimiter};
+use crate::interface::symbol_identity::{default_provider_for_tool, precision_floor_for_tool};
 use schemars::JsonSchema;
 // Re-export file operations handlers
 pub use crate::interface::mcp::file_ops_handlers::*;
@@ -1547,6 +1548,8 @@ pub async fn handle_get_call_hierarchy(
             total_calls,
             analysis_time_ms: start.elapsed().as_millis() as u64,
         },
+        precision: precision_floor_for_tool("get_call_hierarchy"),
+        provider: default_provider_for_tool("get_call_hierarchy").to_string(),
     })
 }
 
@@ -1596,6 +1599,8 @@ pub async fn handle_get_file_symbols(
         file_path: input.file_path.clone(),
         symbols,
         hierarchical_symbols,
+        precision: precision_floor_for_tool("get_file_symbols"),
+        provider: default_provider_for_tool("get_file_symbols").to_string(),
     };
 
     // If compression is requested, return a natural language summary
@@ -1769,6 +1774,15 @@ pub async fn handle_find_usages(
         symbol: input.symbol_name,
         usages: usage_entries,
         total,
+        // B3.W1 parity with the MCP wire shape; `find_usages` is
+        // navigation, so its floor is `ast-heuristic` and its default
+        // provider is the symbol index. The values match what
+        // precision_floor_for_tool / default_provider_for_tool return
+        // for "find_usages" (computed here in literals to avoid a
+        // circular dependency between the handler module and the
+        // symbol_identity module on import order).
+        precision: precision_floor_for_tool("find_usages"),
+        provider: default_provider_for_tool("find_usages").to_string(),
     })
 }
 
@@ -3338,6 +3352,8 @@ pub async fn handle_query_symbol_index(
             symbol_name: input.symbol_name,
             locations: Vec::new(),
             total: 0,
+            precision: precision_floor_for_tool("query_symbol_index"),
+            provider: default_provider_for_tool("query_symbol_index").to_string(),
         });
     }
 
@@ -3377,6 +3393,8 @@ pub async fn handle_query_symbol_index(
         symbol_name: input.symbol_name,
         locations: location_entries,
         total,
+        precision: precision_floor_for_tool("query_symbol_index"),
+        provider: default_provider_for_tool("query_symbol_index").to_string(),
     })
 }
 

@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::interface::symbol_identity::Precision;
+
 // Re-export types from dto for MCP protocol use
 // These types are shared between MCP schemas and application DTOs
 // They are defined in dto/common.rs with proper serde for camelCase MCP serialization
@@ -77,6 +79,10 @@ pub struct GetCallHierarchyOutput {
     pub symbol: String,
     pub calls: Vec<CallEntry>,
     pub metadata: AnalysisMetadata,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +118,12 @@ pub struct GetFileSymbolsOutput {
     /// Hierarchical symbols tree (when `hierarchical` is true). Empty when `hierarchical` is false.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub hierarchical_symbols: Vec<HierarchicalSymbolInfo>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed
+    /// to carry. One of `lsp`, `ast-heuristic`, `index`. Required.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result. Required so consumers
+    /// can tell apart an LSP-backed result from an AST heuristic.
+    pub provider: String,
 }
 
 /// Hierarchical symbol info with children for tree representation
@@ -194,6 +206,10 @@ pub struct FindUsagesOutput {
     pub symbol: String,
     pub usages: Vec<UsageEntry>,
     pub total: usize,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,7 +320,21 @@ pub struct ViolationInfo {
 // Safe Refactor
 // ============================================================================
 
+/// Read-only refactor request.
+///
+/// `deny_unknown_fields` is the AAT-B5-03 guarantee, and it is load-bearing:
+/// this is the *preview* input, the one that crosses the read-only MCP
+/// boundary, and `apply` takes its `AuthorizationToken` over a separate
+/// channel. Without it, serde silently drops an `authorization_token` field
+/// a caller sent — the preview would accept a write-authority field and
+/// ignore it, and the caller would believe it had done something.
+///
+/// The test that pins this (`b5_w3_apply_with_authority::
+/// read_only_mcp_tool_cannot_acquire_write_authority`) was written before the
+/// attribute was here. It never reported the gap because it lives in
+/// `core-unrestricted-evidence-kernel`, which had never completed a run.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SafeRefactorInput {
     pub action: RefactorAction,
     pub target: String,
@@ -679,6 +709,10 @@ pub struct QuerySymbolOutput {
     pub symbol_name: String,
     pub locations: Vec<SymbolLocationEntry>,
     pub total: usize,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1025,6 +1059,10 @@ pub struct GoToDefinitionOutput {
     pub column: Option<u32>,
     pub context: Option<String>,
     pub message: Option<String>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 /// Input for hover tool
@@ -1060,6 +1098,10 @@ pub struct FindReferencesOutput {
     pub symbol: String,
     pub references: Vec<ReferenceEntry>,
     pub total: usize,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 /// A single reference entry

@@ -42,11 +42,7 @@ fn cogh() -> PathBuf {
 /// self-install never touches the developer's real install root. The
 /// `HOME` override is also passed via `--home` to keep the tracker
 /// under the same tempdir.
-fn run_cogh_with_bin<I, S>(
-    home: &Path,
-    bin_dir: &Path,
-    args: I,
-) -> Output
+fn run_cogh_with_bin<I, S>(home: &Path, bin_dir: &Path, args: I) -> Output
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
@@ -149,15 +145,14 @@ fn execute_install_apply_copies_binary() {
         ["install", "--version", "0.101.15", "--apply"],
     );
 
-    assert_success(
-        &out,
-        "cogh install --version 0.101.15 --apply",
-    );
+    assert_success(&out, "cogh install --version 0.101.15 --apply");
     let body = stdout_of(&out);
     let json: Value = serde_json::from_str(&body)
         .unwrap_or_else(|e| panic!("--apply stdout is not JSON: {e}\n{body}"));
     assert_eq!(json.get("dry_run").and_then(|v| v.as_bool()), Some(false));
-    let outcome = json.get("outcome").expect("envelope must include `outcome`");
+    let outcome = json
+        .get("outcome")
+        .expect("envelope must include `outcome`");
     let installed = outcome
         .get("install_path")
         .and_then(|v| v.as_str())
@@ -197,8 +192,7 @@ fn dry_run_envelope_records_install_action() {
         ["install", "--version", "0.101.15"],
     );
     assert_success(&out, "dry-run install");
-    let json: Value =
-        serde_json::from_str(&stdout_of(&out)).expect("stdout is JSON");
+    let json: Value = serde_json::from_str(&stdout_of(&out)).expect("stdout is JSON");
     let action = json.get("action").expect("envelope must include `action`");
     assert_eq!(
         action.get("kind").and_then(|v| v.as_str()),
@@ -225,7 +219,9 @@ fn rollback_writes_tracker_pin() {
     assert_success(&first, "first install");
     let tracker = home.path().join("tracker").join("version");
     assert_eq!(
-        std::fs::read_to_string(&tracker).expect("read tracker").trim(),
+        std::fs::read_to_string(&tracker)
+            .expect("read tracker")
+            .trim(),
         "0.101.15",
         "tracker must reflect the first install"
     );
@@ -255,7 +251,9 @@ fn rollback_writes_tracker_pin() {
         "rollback `to` must echo the target version"
     );
     assert_eq!(
-        std::fs::read_to_string(&tracker).expect("read tracker").trim(),
+        std::fs::read_to_string(&tracker)
+            .expect("read tracker")
+            .trim(),
         "0.101.14",
         "tracker must be updated to the rollback target"
     );
@@ -275,8 +273,8 @@ fn rollback_dry_run_prints_plan_without_writing() {
         ["install", "--rollback", "0.101.14"],
     );
     assert_success(&out, "rollback dry-run");
-    let json: Value = serde_json::from_str(&stdout_of(&out))
-        .expect("rollback dry-run stdout is JSON");
+    let json: Value =
+        serde_json::from_str(&stdout_of(&out)).expect("rollback dry-run stdout is JSON");
     assert_eq!(json.get("dry_run").and_then(|v| v.as_bool()), Some(true));
     let tracker = home.path().join("tracker").join("version");
     assert!(
@@ -300,7 +298,12 @@ fn cogh_version_works_without_lifecycle_install() {
         .output()
         .expect("spawn cogh --version");
     assert_success(&out, "cogh --version");
-    let line = stdout_of(&out).lines().next().unwrap_or("").trim().to_string();
+    let line = stdout_of(&out)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
     assert!(
         line.starts_with("cogh "),
         "cogh --version must start with `cogh `; got {line:?}"
@@ -364,8 +367,8 @@ fn self_install_is_distinct_from_plugin_install() {
         ["install", "--version", "0.101.15"],
     );
     assert_success(&self_out, "cogh install --version (self-install)");
-    let self_json: Value = serde_json::from_str(&stdout_of(&self_out))
-        .expect("self-install stdout is JSON");
+    let self_json: Value =
+        serde_json::from_str(&stdout_of(&self_out)).expect("self-install stdout is JSON");
     assert_eq!(
         self_json.get("dry_run").and_then(|v| v.as_bool()),
         Some(true),

@@ -17,7 +17,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 
 ## Features
 
-- **73 MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
+- **80 MCP tools** — call graphs, impact analysis, semantic search, safe refactoring, complexity metrics, and more
 - **30 languages** — 18 `supported` (Rust, Python, TypeScript, JavaScript, Java, Go, C, C++, C#, Ruby, PHP, Swift, Scala, Haskell, Lua, Bash, JSON, YAML) and 12 `experimental`, all via Tree-sitter. The exact split, with per-language evidence, lives in [`product/languages.json`](product/languages.json)
 - **4 graph strategies** — `full`, `lightweight`, `on_demand`, `per_file`
 - **Persistent graph cache** — RedbGraphStore survives across sessions (embedded `redb` database)
@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.9`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.17`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.9`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.17`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -139,7 +139,7 @@ Add CogniCode as an MCP server in your AI client configuration:
 
 ## MCP Tools
 
-CogniCode ships **73 MCP tools**. The tables below are a **curated selection**,
+CogniCode ships **80 MCP tools**. The tables below are a **curated selection**,
 grouped by the capability a reader is most likely to care about — not the full
 surface. The authoritative list, generated from the code and checked in CI, is
 [`product/tools.json`](product/tools.json); per-tool input and output schemas are
@@ -437,11 +437,15 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.9` — cut from this tree; **not yet published**, and
-  the last published release is still `v0.98.1`, which is what an unpinned
-  `install.sh` serves today.
-- **Binaries report:** `0.101.9` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.9`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.9).
+- **Current release:** `v0.101.17` — cut from this tree; **not yet published**.
+  The last published release is [`v0.101.16`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.16),
+  which is what an unpinned `install.sh` serves today. **Known defect in that
+  release:** v0.101.16 ships 3 of the 8 assets it is contracted to publish, so
+  `cogh update` and `sh install.sh` both fail closed against it. v0.101.17 is
+  the cut that restores the full set.
+- **Binaries report:** `0.101.17` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** not yet cut for `v0.101.17`; the published tag is
+  [`origin/v0.101.16`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.16).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7` and
   `v0.101.8` exist and were never published. Each has a changelog entry
   explaining why. `v0.101.6` was cut before the staging-root fix and the Release
@@ -450,6 +454,13 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
   built the whole candidate —eleven artifacts that verify against their
   `SHA256SUMS`— but exited non-zero because the install UAT lost its verdict in
   its own cleanup. This release supersedes all three.
+- **Published releases with an incomplete asset set:** `v0.101.11` through
+  `v0.101.16` each publish 3 of 8 assets. The cause is recorded in the
+  v0.101.17 changelog entry: the `skill-bundles` stage read the
+  `cognicode-release skills --published` answer through a pipe, the subcommand
+  did not exist in the binary that ran, the loop consumed nothing, and the
+  stage passed with zero bundles. The fix checks the answer and asserts the
+  count staged.
 - **Tracking authority:** the `PRODUCT-1.0` row in [`docs/roadmap/ROADMAP.md` §2](docs/roadmap/ROADMAP.md).
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md).
 

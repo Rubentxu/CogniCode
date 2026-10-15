@@ -158,14 +158,14 @@ impl BundleManifest {
 
     /// Parse from a YAML string and validate.
     pub fn from_str(s: &str) -> Result<Self> {
-        let m: BundleManifest = serde_yaml::from_str(s).with_context(|| "parse bundle.yaml")?;
+        let m: BundleManifest = serde_norway::from_str(s).with_context(|| "parse bundle.yaml")?;
         m.validate()?;
         Ok(m)
     }
 
     /// Serialise back to YAML, canonical field order.
     pub fn to_yaml(&self) -> Result<String> {
-        Ok(serde_yaml::to_string(self)?)
+        Ok(serde_norway::to_string(self)?)
     }
 
     /// Validate every v2 contract invariant.

@@ -24,8 +24,8 @@ use cognicode_core::architecture::diagnostic::Severity;
 use cognicode_core::interface::cli::Cli;
 use cognicode_core::interface::cli::commands::CliCommand;
 use cognicode_core::refactor::plan::{
-    BuildPlanError, PlannedEdit, Precondition, RefactorPlan, Risk, build_plan,
-    load_plan_from_file, save_plan_to_file, verify_digest,
+    BuildPlanError, PlannedEdit, Precondition, RefactorPlan, Risk, build_plan, load_plan_from_file,
+    save_plan_to_file, verify_digest,
 };
 
 use tempfile::TempDir;
@@ -119,8 +119,7 @@ fn plan_digest_is_stable_across_builds() {
 #[test]
 fn plan_includes_all_required_fields() {
     let plan = make_plan();
-    let value =
-        serde_json::to_value(&plan).expect("RefactorPlan is serializable");
+    let value = serde_json::to_value(&plan).expect("RefactorPlan is serializable");
     let obj = value.as_object().expect("top-level must be an object");
     let required: BTreeSet<&str> = [
         "id",
@@ -214,9 +213,7 @@ fn cli_refactor_with_valid_plan_file_parses_to_refactor_plan() {
     .expect("clap parse");
     match cli.command {
         Some(CliCommand::Refactor {
-            symbol,
-            plan_file,
-            ..
+            symbol, plan_file, ..
         }) => {
             assert_eq!(symbol, "foo");
             assert_eq!(
@@ -286,8 +283,7 @@ fn mcp_safe_refactor_requires_plan_file_field() {
             "new_name": "bar"
         }
     });
-    let parsed_no_plan: Result<SafeRefactorInput, _> =
-        serde_json::from_value(without_plan);
+    let parsed_no_plan: Result<SafeRefactorInput, _> = serde_json::from_value(without_plan);
     assert!(
         parsed_no_plan.is_ok(),
         "free-form preview path must remain valid"
@@ -323,9 +319,7 @@ fn affected_files_are_absolute_paths() {
         "relative affected_files must be rejected"
     );
     // `..` traversal components are rejected by the absolute check.
-    let traversal: PathBuf = ["rel", "..", "..", "etc", "passwd"]
-        .iter()
-        .collect();
+    let traversal: PathBuf = ["rel", "..", "..", "etc", "passwd"].iter().collect();
     let result2 = build_plan(
         PathBuf::from("/tmp"),
         basis_for("/tmp"),
@@ -348,7 +342,7 @@ fn affected_files_are_absolute_paths() {
 fn plan_digest_excludes_temporal_fields() {
     let plan = make_plan();
     let mut twin = plan.clone();
-    twin.created_at = twin.created_at + chrono::Duration::seconds(86_400);
+    twin.created_at += chrono::Duration::seconds(86_400);
     assert_eq!(plan.digest, twin.digest);
 }
 

@@ -240,6 +240,33 @@ def musl_target(root: Path) -> str:
     return match.group(1)
 
 
+def linux_aarch64_target(root: Path) -> str:
+    """The aarch64 Linux triple, read from the lane's own re-enable comment.
+
+    `linux-aarch64` is `experimental`: the project intends to certify it
+    (TF-6 / TF-7) and no lane builds it yet. That is a different claim from
+    `unsupported`, and a third one from simply being absent — an absent
+    platform tells a reader nothing, and before 2026-10-15 this one was
+    absent by accident: it had only ever appeared because an inert
+    `platformOf` arm in the release lane made the generator certify it.
+
+    The triple is read out of the lane rather than written here so that the
+    spelling cannot drift from the one the re-enable steps restore.
+    """
+    source = read_required(root, release_lane.RELEASE_LANE)
+    match = re.search(
+        r"`([a-z0-9_]+-unknown-linux-gnu)` arm in `platformOf`", source
+    )
+    if not match:
+        raise ValueError(
+            f"{release_lane.RELEASE_LANE} no longer documents the aarch64 "
+            "triple in its re-enable steps. The platform matrix lists "
+            "linux-aarch64 as experimental, so either the target was renamed "
+            "or that entry is a claim nothing backs."
+        )
+    return match.group(1)
+
+
 def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dict[str, Any]]:
     if not re.fullmatch(r"[0-9a-f]{40}", source_commit):
         raise ValueError("source_commit must be a lowercase 40-character Git SHA")
@@ -307,6 +334,18 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             "evidence": [
                 "Smoke build in integration.pipeline.kts",
                 f"No publishable release lane in {release_lane.RELEASE_LANE}",
+            ],
+        }
+    )
+    platforms.append(
+        {
+            "id": "linux-aarch64",
+            "target": linux_aarch64_target(root),
+            "name": "Linux Aarch64",
+            "support_level": "experimental",
+            "evidence": [
+                f"Not built by {release_lane.RELEASE_LANE} (no entry in `val targets`)",
+                "TF-6/TF-7 track the CI runner provisioning and the cross toolchain",
             ],
         }
     )

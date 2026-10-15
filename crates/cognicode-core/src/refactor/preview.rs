@@ -1,4 +1,4 @@
-//! B5.W2 — Preview verificable de un [`plan::RefactorPlan`] (B5.W1).
+//! B5.W2 — Preview verificable de un [`crate::refactor::plan::RefactorPlan`] (B5.W1).
 //!
 //! Estado pre-B5.W2:
 //!   - `RefactorService` y `safe_refactor` (MCP) producen un
@@ -170,12 +170,20 @@ impl std::fmt::Display for PreviewError {
             PreviewError::SymlinkEscape(p) => {
                 write!(f, "symlink escapes workspace: {:?}", p)
             }
-            PreviewError::OverlappingEdits { path, range_a, range_b } => write!(
+            PreviewError::OverlappingEdits {
+                path,
+                range_a,
+                range_b,
+            } => write!(
                 f,
                 "overlapping edits in {:?}: {:?} vs {:?}",
                 path, range_a, range_b
             ),
-            PreviewError::RangeOutOfBounds { path, range, file_size } => write!(
+            PreviewError::RangeOutOfBounds {
+                path,
+                range,
+                file_size,
+            } => write!(
                 f,
                 "range {:?} out of bounds for {:?} (size={})",
                 range, path, file_size
@@ -223,8 +231,7 @@ pub fn render_preview(
     // 1) Resolver paths absolutos de B5.W1 contra workspace_root y
     //    validar que caen dentro (anti-traversal AAT-B5-02).
     //    Ademas: rechazar symlinks (simetria con apply).
-    let mut file_inputs: Vec<(PathBuf /*rel*/, PathBuf /*abs*/, Vec<PlannedEdit>)> =
-        Vec::new();
+    let mut file_inputs: Vec<(PathBuf /*rel*/, PathBuf /*abs*/, Vec<PlannedEdit>)> = Vec::new();
     for edit in &plan.edits {
         let abs = resolve_within_root(workspace_root, &edit.file)?;
         reject_symlink_escape(&abs)?;
@@ -262,8 +269,8 @@ pub fn render_preview(
         if !abs.exists() {
             return Err(PreviewError::AffectedFileMissing(rel.clone()));
         }
-        let original = fs::read(&abs)
-            .map_err(|e| PreviewError::IoError(format!("read {:?}: {}", abs, e)))?;
+        let original =
+            fs::read(&abs).map_err(|e| PreviewError::IoError(format!("read {:?}: {}", abs, e)))?;
         let file_size = original.len();
         for e in &edits {
             if e.byte_range.start > file_size || e.byte_range.end > file_size {
@@ -353,10 +360,7 @@ pub fn snapshot_workspace_mtimes(
 /// Compara los mtimes capturados con los actuales. Devuelve `true`
 /// si NINGUNO cambio (best-effort: si el archivo fue borrado o el
 /// mtime es inaccesible, devuelve `false` conservador).
-pub fn verify_no_mutation_since(
-    snapshot: &MtimeSnapshot,
-    _workspace_root: &Path,
-) -> bool {
+pub fn verify_no_mutation_since(snapshot: &MtimeSnapshot, _workspace_root: &Path) -> bool {
     for (abs, before) in &snapshot.captures {
         let now = match fs::metadata(abs) {
             Ok(m) => match m.modified() {
@@ -376,10 +380,7 @@ pub fn verify_no_mutation_since(
 ///
 /// Conveniente para tests y para el CLI. NO la usa el MCP handler
 /// porque ahi queremos composicion explicita.
-pub fn verify_preview_no_mutation(
-    plan: &RefactorPlan,
-    workspace_root: &Path,
-) -> bool {
+pub fn verify_preview_no_mutation(plan: &RefactorPlan, workspace_root: &Path) -> bool {
     let Ok(snapshot) = snapshot_workspace_mtimes(plan, workspace_root) else {
         return false;
     };
@@ -448,22 +449,18 @@ fn reject_symlink_escape(abs: &Path) -> Result<(), PreviewError> {
     // Es symlink: comprobamos que su destino (tras canonicalize)
     // cae dentro del root. Si canonicalize falla, conservamos el
     // symlink (lo detectara el apply real).
-    if let Ok(canonical) = abs.canonicalize() {
-        if let Some(root_norm) = abs.ancestors().find(|a| a.parent().is_none()) {
-            if !canonical.starts_with(root_norm) {
-                return Err(PreviewError::SymlinkEscape(abs.to_path_buf()));
-            }
-        }
+    if let Ok(canonical) = abs.canonicalize()
+        && let Some(root_norm) = abs.ancestors().find(|a| a.parent().is_none())
+        && !canonical.starts_with(root_norm)
+    {
+        return Err(PreviewError::SymlinkEscape(abs.to_path_buf()));
     }
     Ok(())
 }
 
 /// Aplica una lista de ediciones YA ORDENADAS y NO SOLAPADAS sobre
 /// `original`. Devuelve los bytes nuevos y los rangos modificados.
-fn apply_edits(
-    original: &[u8],
-    edits: &[PlannedEdit],
-) -> (Vec<u8>, Vec<Range<usize>>) {
+fn apply_edits(original: &[u8], edits: &[PlannedEdit]) -> (Vec<u8>, Vec<Range<usize>>) {
     let mut out: Vec<u8> = Vec::with_capacity(original.len());
     let mut modified: Vec<Range<usize>> = Vec::with_capacity(edits.len());
     let mut cursor: usize = 0;
@@ -511,8 +508,14 @@ fn compute_unified_diff(path: &Path, original: &[u8], modified: &[u8]) -> String
 
     let old_hunk_start = lcs.saturating_sub(3);
     let new_hunk_start = lcs.saturating_sub(3);
-    let old_hunk_end_excl = old_lines.len().saturating_sub(lcs_suffix).min(old_lines.len());
-    let new_hunk_end_excl = new_lines.len().saturating_sub(lcs_suffix).min(new_lines.len());
+    let old_hunk_end_excl = old_lines
+        .len()
+        .saturating_sub(lcs_suffix)
+        .min(old_lines.len());
+    let new_hunk_end_excl = new_lines
+        .len()
+        .saturating_sub(lcs_suffix)
+        .min(new_lines.len());
 
     let old_hunk: Vec<&[u8]> = old_lines[old_hunk_start..old_hunk_end_excl].to_vec();
     let new_hunk: Vec<&[u8]> = new_lines[new_hunk_start..new_hunk_end_excl].to_vec();
@@ -614,8 +617,8 @@ mod tests {
     use std::io::Write;
 
     use crate::application::analysis_basis::AnalysisBasis;
-    use crate::refactor::plan::{build_plan, PlannedEdit, Precondition, Risk};
     use crate::architecture::diagnostic::Severity;
+    use crate::refactor::plan::{PlannedEdit, Precondition, Risk, build_plan};
 
     /// Helper: crea un TempDir con un archivo de contenido dado y
     /// devuelve (root, abs_path).

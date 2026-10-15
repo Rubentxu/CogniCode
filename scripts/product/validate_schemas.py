@@ -53,6 +53,7 @@ DOCUMENT_SCHEMA_PAIRS: dict[str, str] = {
     "product-manifest": "product-manifest.v1.schema.json",
     "languages": "languages.v1.schema.json",
     "platforms": "platforms.v1.schema.json",
+    "skills": "skills.v1.schema.json",
 }
 
 

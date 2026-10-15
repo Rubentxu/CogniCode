@@ -54,7 +54,7 @@ impl SkillManifest {
     /// Parse a YAML string.
     pub fn from_str(s: &str) -> Result<Self> {
         let m: SkillManifest =
-            serde_yaml::from_str(s).with_context(|| "parse skill manifest.yaml")?;
+            serde_norway::from_str(s).with_context(|| "parse skill manifest.yaml")?;
         m.validate()?;
         Ok(m)
     }

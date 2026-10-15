@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cognicode.skills/v1",
+  "type": "object",
+  "required": ["schema_version", "product", "skills"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "cognicode.skills/v1"},
+    "product": {"const": "cognicode"},
+    "skills": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "tools_used",
+          "feature_gates",
+          "evaluation"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^cognicode-[a-z0-9-]+$"
+          },
+          "description": {"type": "string", "minLength": 1},
+          "tools_used": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "feature_gates": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "evaluation": {"type": "string", "minLength": 1}
+        },
+        "allOf": [
+          {
+            "$comment": "A skill that declares no tool cannot act, and a skill whose tools are all gated cannot act either. Either it names at least one tool, or it explains itself as gated.",
+            "if": {
+              "properties": {"tools_used": {"maxItems": 0}},
+              "required": ["tools_used"]
+            },
+            "then": {"properties": {"feature_gates": {"minItems": 1}}}
+          }
+        ]
+      }
+    }
+  }
+}

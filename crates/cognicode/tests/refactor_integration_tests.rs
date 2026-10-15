@@ -8,8 +8,8 @@
 //! - Parameter substitution with word boundaries
 //! - Complex control flow detection
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
-#![allow(unused_comparisons)]
 
+use cognicode::application::error::AppError;
 use cognicode::application::services::refactor_service::RefactorService;
 use cognicode::infrastructure::parser::{Language, TreeSitterParser};
 use cognicode::infrastructure::refactor::ExtractStrategy;
@@ -361,6 +361,20 @@ sum
 mod refactor_service_tests {
     use super::*;
 
+    /// `extract_symbol(path, new_name)` looks up **the new name** as if it
+    /// were the symbol to extract, so on a file that has never been
+    /// called `calculate_tax` it fails with `SymbolNotFound`.
+    ///
+    /// That is a real defect in the two-argument form — you cannot
+    /// extract into a name that does not exist yet — but the sibling
+    /// `extract_symbol_with_target(path, target, new_name)` takes the
+    /// existing symbol explicitly and works. This test pins what the
+    /// two-argument form actually does, so the day someone fixes it
+    /// this turns red instead of the fix landing silently.
+    ///
+    /// (It previously asserted `result.is_ok() || result.is_err()`,
+    /// which is true of every `Result` and therefore of every possible
+    /// behaviour of this function.)
     #[test]
     fn test_extract_symbol_preview() {
         let service = RefactorService::new();
@@ -373,10 +387,36 @@ mod refactor_service_tests {
         writeln!(file, "}}").unwrap();
 
         let result = service.extract_symbol(file.path().to_str().unwrap(), "calculate_tax");
-        // The extraction might fail due to various reasons, but should not panic
-        assert!(result.is_ok() || result.is_err(), "Should return a result");
+
+        let err = result.expect_err(
+            "extract_symbol must not invent a preview: `calculate_tax` is the \
+             NEW name and does not exist in the file yet",
+        );
+        assert!(
+            matches!(err, AppError::SymbolNotFound(_)),
+            "expected SymbolNotFound for the not-yet-existing new name, got: {err:?}"
+        );
+        assert!(
+            err.to_string().contains("calculate_tax"),
+            "the error must name the symbol it could not find, got: {err}"
+        );
+
+        // The three-argument form is the one that takes the existing
+        // symbol, and it is what a caller should actually use. Same
+        // file, real target, real new name — this is the positive half
+        // the old tautology was standing in for.
+        let preview = service
+            .extract_symbol_with_target(file.path().to_str().unwrap(), "process", "calculate_tax")
+            .expect("extract_symbol_with_target must produce a preview");
+        assert!(
+            preview.change_count > 0,
+            "extracting `process` must report at least one change: {preview:?}"
+        );
     }
 
+    /// Inlining an existing symbol produces a concrete preview: the
+    /// symbol is named, the file is named, and the change count covers
+    /// the call sites plus the definition that gets removed.
     #[test]
     fn test_inline_symbol_preview() {
         let service = RefactorService::new();
@@ -384,9 +424,31 @@ mod refactor_service_tests {
         let mut file = NamedTempFile::with_suffix(".rs").unwrap();
         writeln!(file, "fn helper(x: i32) -> i32 {{ x * 2 }}").unwrap();
         writeln!(file, "fn main() {{ let y = helper(5); }}").unwrap();
+        let path = file.path().to_str().unwrap().to_string();
 
-        let result = service.inline_symbol(file.path().to_str().unwrap(), "helper");
-        assert!(result.is_ok() || result.is_err(), "Should return a result");
+        let preview = service
+            .inline_symbol(&path, "helper")
+            .expect("inlining an existing symbol must produce a preview");
+
+        assert_eq!(
+            preview.symbols_affected,
+            vec!["helper".to_string()],
+            "the preview must name the symbol being inlined"
+        );
+        assert_eq!(
+            preview.files_to_modify,
+            vec![path.clone()],
+            "the preview must name the file being rewritten"
+        );
+        // `inline_symbol` computes `change_count = call_sites + 1`
+        // (the +1 removes the definition). This file has exactly one
+        // call site, so the count must be exactly 2 — a larger value
+        // means the call-site walk started matching something it
+        // should not.
+        assert_eq!(
+            preview.change_count, 2,
+            "one call site plus the definition removal must be 2 changes: {preview:?}"
+        );
     }
 }
 
@@ -421,8 +483,40 @@ fn main() {
         assert!(is_recursive, "Should detect recursive function");
     }
 
+    /// Overruling the "documents intent" auto-debilitation.
+    ///
+    /// The old body was `assert!(blocks.len() >= 0)` with a comment
+    /// admitting it was always true, carrying an
+    /// `#[allow(clippy::absurd_extreme_comparisons)]` (and a
+    /// file-level `#![allow(unused_comparisons)]`) to stop the
+    /// toolchain saying so. It cost two lint suppressions and bought
+    /// nothing: the test could not fail, so it could not document
+    /// anything. A reader who saw `assert!(blocks.len() >= 0)` and a
+    /// comment saying "empty name is validated at a higher level" had
+    /// to take both on faith.
+    ///
+    /// It is also worth being precise about what the test name claims
+    /// versus what the body exercises. `find_extractable_blocks(source,
+    /// file_path)` takes no function name at all — the second argument
+    /// is the *file* the blocks are attributed to. There is no "empty
+    /// function name" reaching this function to reject. So the honest
+    /// subject is the contract the function actually has, and that is
+    /// what is pinned below: the function finds the function body,
+    /// attributes it to the caller's file, and hands back code that is
+    /// a real slice of the source it was given. Those are the three
+    /// things a caller downstream — `extract_symbol_with_target`, and
+    /// through it the `extract_symbol` preview — relies on, and all
+    /// three can break silently.
+    ///
+    /// (Naming note: a one-statement body *is* reported as
+    /// extractable. The old comment implied it might not be, which is
+    /// a second thing the old test got wrong on top of asserting
+    /// nothing.)
+    ///
+    /// The test name is kept because renaming it would silently retire
+    /// a test other people may be grepping for; the doc comment is the
+    /// part that has to change, and it just did.
     #[test]
-    #[allow(clippy::absurd_extreme_comparisons)] // documents intent
     fn test_extract_rejects_empty_function_name() {
         let strategy = create_extract_strategy(Language::Rust);
 
@@ -432,8 +526,64 @@ fn foo() {
 }
 "#;
 
-        let blocks = strategy.find_extractable_blocks(source, "test.rs").unwrap();
-        // Empty name is validated at a higher level - block list may or may not be empty
-        assert!(blocks.len() >= 0); // always true, but documents intent
+        let blocks = strategy
+            .find_extractable_blocks(source, "test.rs")
+            .expect("parsing a one-function file must succeed");
+
+        assert_eq!(
+            blocks.len(),
+            1,
+            "the single function body must be offered as one extractable \
+             candidate; got {blocks:?}"
+        );
+        let block = &blocks[0];
+
+        // The caller names the file; every block must be attributed to
+        // that file and not to something the strategy invented.
+        assert_eq!(
+            (block.range.start().file(), block.range.end().file()),
+            ("test.rs", "test.rs"),
+            "the block must be attributed to the file the caller passed in"
+        );
+
+        // The code handed back has to be a real slice of the source
+        // that was parsed. If `analyze_block` ever reconstructs text
+        // instead of slicing, this goes off and the preview starts
+        // showing edits that do not exist in the file.
+        assert!(
+            source.contains(&block.code),
+            "the returned block code must be a literal slice of the \
+             parsed source; got {:?}",
+            block.code
+        );
+
+        // The variables it binds are what a caller needs in order to
+        // synthesise a function signature, so an empty list here means
+        // the analysis silently stopped working.
+        assert_eq!(
+            block.local_variables,
+            vec!["x".to_string()],
+            "the block must report the variable it binds"
+        );
+
+        // A second function is a second block: the walk recurses, it
+        // does not stop at the first body it finds.
+        let two_functions = r#"
+fn foo() {
+    let x = 1;
+}
+
+fn bar() {
+    let y = 2;
+}
+"#;
+        let blocks = strategy
+            .find_extractable_blocks(two_functions, "test.rs")
+            .expect("parsing a two-function file must succeed");
+        assert_eq!(
+            blocks.len(),
+            2,
+            "each function body must be offered separately; got {blocks:?}"
+        );
     }
 }

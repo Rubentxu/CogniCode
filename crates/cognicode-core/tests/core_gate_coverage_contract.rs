@@ -34,7 +34,7 @@
 
 mod common;
 
-use common::{merge_authority_runs, not_run_message};
+use common::{merge_authority_runs, not_run_message, release_lane_runs};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -225,10 +225,17 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
+    // 66 -> 65 on 2026-10-15: `prf_h06_adversarial_e2e` moved to
+    // `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only exists for
+    // the package that declares that binary and the suite spawns it. The move
+    // is a relocation, not a deletion — the suite is named by the gate's
+    // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
+    // side, which is how the companion hole (the suite losing its gate step
+    // entirely) was found.
     assert_eq!(
         suites.len(),
-        66,
-        "expected exactly 66 cognicode-core integration suites, found {}. \
+        65,
+        "expected exactly 65 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -812,7 +819,7 @@ fn the_coverage_contract_itself_is_pinned() {
     );
 }
 
-/// The M0.11 rustdoc gate must run in whatever gates a merge.
+/// The M0.11 rustdoc gate must run in a pipeline that runs.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
 /// all. It was green, and it could not fail a single PR. An intra-doc link
@@ -823,20 +830,32 @@ fn the_coverage_contract_itself_is_pinned() {
 /// The standard is already written down in this repository: *"Un test que no
 /// corre en ningun sitio no es un gate."* The gate was breaking that rule.
 ///
+/// MOVED 2026-10-15, with the operator's approval, from the merge authority to
+/// `release-candidate.pipeline.kts`. Measured: it cost ~472 s of a ~1900 s
+/// merge gate, and a merge does not publish documentation.
+///
+/// **What that costs, in this contract's own words, because they are the right
+/// ones:** before, without this gate "a broken doc link or a
+/// public-docs-to-private-item reference" failed the merge gate. Now it fails
+/// the release lane instead — detected when preparing to publish rather than
+/// when merging. One class of defect, detected later. The gate still exists
+/// and still runs; this assertion follows it rather than being deleted.
+///
 /// This assertion deliberately lives in the core crate rather than next to the
-/// gate it protects. The merge authority runs the core crate unrestricted, so
-/// if the rustdoc wiring is deleted the core suite still runs and this still
-/// fails. A contract that only the deleted wiring could execute would notice
-/// nothing — which is the failure mode it exists to catch.
+/// gate it protects. The release lane runs the core crate unrestricted, so if
+/// the rustdoc wiring is deleted from either pipeline the suite still runs and
+/// this still fails. A contract that only the deleted wiring could execute
+/// would notice nothing — which is the failure mode it exists to catch.
 #[test]
-fn the_rustdoc_gate_runs_in_the_merge_authority() {
+fn the_rustdoc_gate_runs_in_a_pipeline() {
     const GATE: &str = "m011_rustdoc_gate";
 
     assert!(
-        merge_authority_runs(GATE),
-        "the merge authority no longer runs {GATE}. That gate holds the workspace \
-         at zero rustdoc warnings in the gated categories; without it a broken \
-         doc link or a public-docs-to-private-item reference passes every PR.\n{}",
-        not_run_message(GATE, "Restore the stage next to the clippy gate.")
+        merge_authority_runs(GATE) || release_lane_runs(GATE),
+        "no pipeline runs {GATE}. It holds the workspace at zero rustdoc \
+         warnings in the gated categories; without it a broken doc link or a \
+         public-docs-to-private-item reference ships in a published release \
+         and nothing fails.\n{}",
+        not_run_message(GATE, "Restore the stage in whichever lane claims it.")
     );
 }

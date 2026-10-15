@@ -73,7 +73,7 @@ impl PluginManifest {
 
     /// Parse a YAML manifest from a string.
     pub fn from_str(s: &str) -> Result<Self> {
-        let m: PluginManifest = serde_yaml::from_str(s).with_context(|| "parse plugin.yaml")?;
+        let m: PluginManifest = serde_norway::from_str(s).with_context(|| "parse plugin.yaml")?;
         m.validate()?;
         Ok(m)
     }

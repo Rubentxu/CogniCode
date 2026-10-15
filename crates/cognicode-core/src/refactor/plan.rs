@@ -465,8 +465,7 @@ pub fn load_plan_from_file(path: &Path) -> PlanIoResult<RefactorPlan> {
     if bytes.is_empty() {
         return Err(PlanIoError::Empty);
     }
-    let plan: RefactorPlan =
-        serde_json::from_slice(&bytes).map_err(PlanIoError::Parse)?;
+    let plan: RefactorPlan = serde_json::from_slice(&bytes).map_err(PlanIoError::Parse)?;
     if !verify_digest(&plan) {
         let actual = compute_digest(&plan);
         return Err(PlanIoError::DigestMismatch {
@@ -611,9 +610,7 @@ mod tests {
         );
         assert_eq!(
             result.err(),
-            Some(BuildPlanError::RelativePath(PathBuf::from(
-                "relative.rs"
-            )))
+            Some(BuildPlanError::RelativePath(PathBuf::from("relative.rs")))
         );
     }
 
@@ -699,7 +696,7 @@ mod tests {
         // Reconstruimos un plan identico con otro created_at:
         // el digest recalculado debe coincidir.
         let mut twin = plan.clone();
-        twin.created_at = twin.created_at + chrono::Duration::seconds(42);
+        twin.created_at += chrono::Duration::seconds(42);
         assert_eq!(compute_digest(&plan), compute_digest(&twin));
     }
 

@@ -28,11 +28,11 @@ use cognicode_core::application::analysis_basis::AnalysisBasis;
 use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
 use cognicode_core::refactor::apply::ApplyOutcome;
 use cognicode_core::refactor::plan::RefactorPlan;
+use cognicode_core::refactor::revalidate::IncrementalAnalysis;
 use cognicode_core::refactor::revalidate::{
     REVALIDATION_VERDICT_REFUSED_REASON, RevalidationVerdict, build_revalidation_plan,
     run_revalidation,
 };
-use cognicode_core::refactor::revalidate::IncrementalAnalysis;
 use uuid::Uuid;
 
 // =============================================================================
@@ -102,7 +102,10 @@ fn revalidation_always_uses_verdict_refused_default() {
             panic!("default MUST be VerdictRefused; got InvariantsDrift with diff={diff:?}");
         }
     }
-    assert!(r.verdict_refused(), "verdict_refused() helper must return true");
+    assert!(
+        r.verdict_refused(),
+        "verdict_refused() helper must return true"
+    );
 }
 
 /// Paridad con apply: `what_changed` del revalidation plan viene
@@ -171,7 +174,10 @@ fn mcp_safe_refactor_revalidate_is_listed_in_catalog() {
     );
     let tool = find_tool("safe_refactor_revalidate")
         .expect("safe_refactor_revalidate must be present and loadable");
-    assert_eq!(tool.authority, "read", "read-only — revalidation never mutates");
+    assert_eq!(
+        tool.authority, "read",
+        "read-only — revalidation never mutates"
+    );
     assert_eq!(tool.stability, "stable");
 }
 
@@ -183,18 +189,16 @@ fn executed_checks_includes_architecture_quality_impact() {
     let outcome = stub_outcome(plan.id, vec![PathBuf::from("a.rs")]);
     let rp = build_revalidation_plan(&plan, &outcome);
     let r = run_revalidation(&rp, PathBuf::from(".").as_path());
-    let lower: HashSet<String> = r
-        .executed_checks
-        .iter()
-        .map(|s| s.to_lowercase())
-        .collect();
+    let lower: HashSet<String> = r.executed_checks.iter().map(|s| s.to_lowercase()).collect();
     assert!(
         lower.iter().any(|s| s.contains("architecture")),
         "executed_checks must include architecture (B4.W2); got {:?}",
         r.executed_checks
     );
     assert!(
-        lower.iter().any(|s| s.contains("quality") || s.contains("finding")),
+        lower
+            .iter()
+            .any(|s| s.contains("quality") || s.contains("finding")),
         "executed_checks must include quality/finding (B4.W3); got {:?}",
         r.executed_checks
     );
@@ -214,7 +218,10 @@ fn executed_checks_is_non_empty_in_default_report() {
     let outcome = stub_outcome(plan.id, Vec::new());
     let rp = build_revalidation_plan(&plan, &outcome);
     let r = run_revalidation(&rp, PathBuf::from(".").as_path());
-    assert!(!r.executed_checks.is_empty(), "executed_checks MUST be populated");
+    assert!(
+        !r.executed_checks.is_empty(),
+        "executed_checks MUST be populated"
+    );
 }
 
 /// El verdict NO serializa como booleano: es un enum con tres

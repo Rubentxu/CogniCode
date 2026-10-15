@@ -1,7 +1,7 @@
 ---
 name: cognicode-mcp
 description: >
-  Drive CogniCode's 73-tool MCP server effectively: tool selection,
+  Drive CogniCode's 80-tool MCP server effectively: tool selection,
   graph prerequisites, read-before-write, incremental re-analysis,
   error recovery. Trigger: When an agent is doing multi-step graph
   exploration, impact analysis, quality audits, or safe refactoring
@@ -29,7 +29,7 @@ skill teaches **decision-making**, not tool enumeration.
 
 ## Capability domains (from `tools/list`)
 
-Group the 73 tools by what the user wants to do, not by MCP method
+Group the 80 tools by what the user wants to do, not by MCP method
 prefix. The runtime's `_meta.category` is informative; the user
 intent is what matters.
 
@@ -245,7 +245,7 @@ There is no version-pinned reference in this skill.
 ## What this skill does NOT do
 
 - It does not teach you how to **install** CogniCode. Use `cogh`.
-- It does not list all 73 tools. Use `tools/list`.
+- It does not list all 80 tools. Use `tools/list`.
 - It does not promise internal CogniCode subsystems (e77
   architecture, LSI facts/evidence, governed promotion) as public
   MCP capabilities.

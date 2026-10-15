@@ -25,6 +25,8 @@ What is pinned here, and why each one:
   verdict nobody computed would satisfy every check in this file.
 - The run database is inside the repository, so the verdict is auditable after
   the fact rather than only assertable at the moment of posting.
+- The run executes rather than replaying a journal, so the posted status is
+  evidence about the tree it names and not about a tree from an earlier run.
 
 Run:
     python3 scripts/ci/test_publish_merge_gate_status.py
@@ -288,6 +290,80 @@ def test_a_published_success_cannot_be_produced_without_running_the_gate() -> No
                 f"context={REQUIRED_CONTEXT}" in posted,
                 f"the posted status does not carry the required context: "
                 f"{posted.strip()[:200]}",
+            )
+
+
+def test_the_published_status_cannot_be_a_journal_replay() -> None:
+    """A replayed verdict says nothing about the tree the status names.
+
+    Measured 2026-10-15: without `--rerun`, PipelineK serves stages from the
+    SQLite journal. On a real run, thirty stages — clippy, four release builds
+    and the evidence-kernel suite among them — were served in 79 ms, each
+    marked `RERUN`, and the only steps that executed were the ones that failed.
+    Every other contract in this file would still have passed, because the
+    lane's exit code was faithfully reported: it was the exit code of a
+    replay, not of the gate.
+    """
+    import tempfile
+
+    text = script_text()
+    invocation = re.search(r"^pipelinek run .*$", text, re.MULTILINE)
+    check(
+        invocation is not None,
+        f"{SCRIPT_REL} has no `pipelinek run` line to inspect, so whether it "
+        f"executes or replays cannot be told from the file",
+    )
+    if invocation:
+        check(
+            "--rerun" in invocation.group(0),
+            f"{SCRIPT_REL} runs the gate without `--rerun`:\n"
+            f"    {invocation.group(0).strip()}\n"
+            f"PipelineK then serves stages from its journal, so the status this "
+            f"bridge publishes is a verdict about an earlier tree replayed under "
+            f"this one's name. The published check would stop being evidence.",
+        )
+
+    # Behaviour, not just spelling: a stand-in `pipelinek` that records the
+    # flags it was given. This is the mutation that goes red when `--rerun` is
+    # dropped — the static check above and this one fail together.
+    with tempfile.TemporaryDirectory() as tmp:
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        recorded = Path(tmp) / "argv.txt"
+
+        (bindir / "pipelinek").write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$*" >> ' + str(recorded) + "\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        (bindir / "gh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+        for name in ("pipelinek", "gh"):
+            os.chmod(bindir / name, 0o755)
+
+        env = dict(os.environ)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+        subprocess.run(
+            ["bash", str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+
+        check(
+            recorded.is_file(),
+            f"the stand-in `pipelinek` was never invoked, so the bridge's "
+            f"invocation could not be observed at all",
+        )
+        if recorded.is_file():
+            argv = recorded.read_text(encoding="utf-8")
+            check(
+                "--rerun" in argv,
+                f"the bridge invoked the gate as `{argv.strip()[:200]}` with no "
+                f"`--rerun`, so the verdict it publishes came from the journal "
+                f"rather than from running the gate",
             )
 
 

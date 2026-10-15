@@ -187,6 +187,55 @@ def test_every_verify_invocation_passes_both_required_flags() -> None:
     )
 
 
+def test_the_published_asset_set_is_verified_not_just_the_published_bytes() -> None:
+    """MEDIDO 2026-10-15. Seis releases seguidas se publicaron con 3 de 8 assets.
+
+    Medido contra la API de GitHub: v0.101.10 publico 8 assets; v0.101.15 y
+    v0.101.16 publicaron 3 cada una. Los 5 ausentes son los que necesitan
+    `install.sh` y `cogh update` — el bundle por plataforma, los dos bundles
+    portables, el release-inventory y el propio SHA256SUMS.
+
+    `verify-as-consumer` no lo podia ver: re-descarga los assets publicados y
+    corre `sha256sum -c SHA256SUMS`, que prueba que los assets presentes son
+    los correctos. Si SHA256SUMS lista 3, la comprobacion pasa con 3. Es
+    integridad sin completitud.
+
+    `sandbox/scripts/test_release_asset_set.sh` comprueba el conjunto. Antes de
+    este cambio no lo invocaba ningun pipeline — el unico que lo mencionaba era
+    su propia cabecera. Es la misma deuda que el gate de skills CP5, verde
+    durante meses sin que ningun workflow lo ejecutara.
+    """
+    text = RELEASE.read_text(encoding="utf-8")
+    blocks = dict(stage_blocks(text))
+    # El cuerpo de la stage, no el texto del fichero. Un `in` sobre el fichero
+    # entero encuentra la cadena tambien en la prosa que explica por que la
+    # stage existe — y este contrato se escribio precisamente contra ese
+    # fallo, asi que repetirlo aqui seria el mismo bug un nivel mas arriba.
+    # La primera version de este aserto hacia `text.index(...)` y paso con la
+    # stage eliminada, porque el comentario de arriba ya nombraba el script.
+    body = blocks.get("verify-asset-set")
+    assert body is not None, (
+        f"{RELEASE.name} no tiene stage `verify-asset-set`. El gate que "
+        f"comprueba que la release publica EL CONJUNTO de assets deja de "
+        f"correr, y una release de 3 assets vuelve a publicarse sin que nada "
+        f"lo note. Es el fallo que produjo v0.101.11..v0.101.16."
+    )
+    assert "test_release_asset_set.sh" in body, (
+        "`verify-asset-set` existe pero no invoca "
+        "sandbox/scripts/test_release_asset_set.sh — el nombre de la stage "
+        "promete una verificacion que el cuerpo no hace"
+    )
+    # Y tiene que ir DESPUES de publicar, sobre el tag recien publicado. Antes
+    # de `publish-draft` comprobaria el draft, que no es lo que consume un
+    # instalador.
+    published = text.index('stage("publish-draft")')
+    invoked = text.index('stage("verify-asset-set")')
+    assert invoked > published, (
+        "`verify-asset-set` tiene que ir despues de `publish-draft`: antes "
+        "mediria el draft, que todavia no es lo que consume un instalador"
+    )
+
+
 def main() -> int:
     module = sys.modules[__name__]
     tests = sorted(

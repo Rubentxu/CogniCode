@@ -23,6 +23,11 @@
         {"type": "null"}
       ]
     },
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
     "tool": {
       "type": "object",
       "additionalProperties": false,
@@ -64,7 +69,29 @@
           "uniqueItems": true,
           "items": {"enum": ["core", "reviewer", "developer", "experimental"]}
         },
-        "runtime_metadata": {"type": "object"}
+        "runtime_metadata": {"type": "object"},
+
+        "limitations": {"$ref": "#/$defs/stringList"},
+        "required_args": {"$ref": "#/$defs/stringList"},
+        "prerequisites": {"$ref": "#/$defs/stringList"},
+        "follow_ups": {"$ref": "#/$defs/stringList"},
+        "intent_tags": {"$ref": "#/$defs/stringList"},
+        "language_scope": {"$ref": "#/$defs/stringList"},
+
+        "feature": {
+          "type": "string",
+          "enum": ["evidence-cli-ladybug", "persistence", "program-analysis-server"]
+        },
+        "impact_direction_floor": {
+          "type": "string",
+          "enum": ["inferred", "observed"]
+        },
+
+        "precision_floor": {
+          "$comment": "The provenance floor, spelled exactly as interface::symbol_identity::Precision::as_str spells it on the wire. Pinning the enum here is what stops the catalog from advertising a fourth precision tier the runtime cannot produce.",
+          "type": "string",
+          "enum": ["ast-heuristic", "index", "lsp"]
+        }
       }
     }
   }

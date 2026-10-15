@@ -9,6 +9,8 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -45,9 +47,22 @@ impl From<std::io::Error> for McpError {
 }
 
 /// Handle to a running MCP server process.
+///
+/// Reads from the server's stdout are performed by a dedicated reader
+/// thread spawned at construction time. The thread pushes complete lines
+/// (or read errors) into a `mpsc::channel`; `read_response` and
+/// `drain_notifications` poll the channel with `recv_timeout` so the
+/// caller can enforce a deadline while the read itself is in progress.
+///
+/// This replaces the previous design where `read_line` was called
+/// directly on the child's `ChildStdout`, which is a blocking syscall:
+/// if the server stayed alive but emitted no further data, the read
+/// blocked indefinitely and the deadline check before/after the read
+/// never fired (P0 #1 in the sandbox harness audit).
 pub struct McpServer {
     child: Child,
-    stdout: BufReader<ChildStdout>,
+    line_rx: mpsc::Receiver<Result<String, std::io::Error>>,
+    _reader_handle: Option<thread::JoinHandle<()>>,
     stdin: std::process::ChildStdin,
     stderr: Option<ChildStderr>,
     request_id: u64,
@@ -66,9 +81,11 @@ impl McpServer {
         stdout: ChildStdout,
         stderr: Option<ChildStderr>,
     ) -> Self {
+        let (_tx, line_rx, reader_handle) = spawn_reader_thread(stdout);
         Self {
             child,
-            stdout: BufReader::new(stdout),
+            line_rx,
+            _reader_handle: Some(reader_handle),
             stdin,
             stderr,
             request_id: 0,
@@ -118,9 +135,11 @@ impl McpServer {
         })?;
         let stderr = child.stderr.take();
 
+        let (_tx, line_rx, reader_handle) = spawn_reader_thread(stdout);
         Ok(Self {
             child,
-            stdout: BufReader::new(stdout),
+            line_rx,
+            _reader_handle: Some(reader_handle),
             stdin,
             stderr,
             request_id: 0,
@@ -211,31 +230,41 @@ impl McpServer {
     pub fn drain_notifications(&mut self) -> Vec<Value> {
         let mut notifications = Vec::new();
         let deadline = Instant::now() + Duration::from_millis(100); // 100ms max
+        let poll_interval = Duration::from_millis(20);
+        // Forensic counter for non-JSON lines that arrive during the
+        // drain window. The 100ms cap bounds the total, so this is
+        // for visibility, not enforcement. Without it, a server
+        // that emits non-protocol output during drain would lose
+        // that signal entirely (P1 of the sandbox harness audit).
+        let mut non_json_count: usize = 0;
 
-        loop {
-            if Instant::now() > deadline {
-                break; // Timeout - stop waiting for more notifications
-            }
-
-            // read_line() blocks until a newline is received
-            let mut line = String::new();
-            let read_result = self.stdout.read_line(&mut line);
-
-            match read_result {
-                Ok(0) => break, // EOF
-                Ok(_) => {
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = poll_interval.min(remaining);
+            match self.line_rx.recv_timeout(wait) {
+                Ok(Ok(line)) => {
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
                         continue;
                     }
 
-                    if let Ok(msg) = serde_json::from_str::<Value>(trimmed)
-                        && msg.get("id").is_none()
-                    {
-                        notifications.push(msg);
+                    match serde_json::from_str::<Value>(trimmed) {
+                        Ok(msg) => {
+                            if msg.get("id").is_none() {
+                                notifications.push(msg);
+                            }
+                        }
+                        Err(_) => {
+                            non_json_count += 1;
+                            eprintln!(
+                                "mcp_core: drain_notifications: non-JSON line #{}: {}",
+                                non_json_count, trimmed
+                            );
+                        }
                     }
                 }
-                Err(_) => break, // Error reading, stop draining
+                Ok(Err(_)) | Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => continue,
             }
         }
         notifications
@@ -271,33 +300,36 @@ impl McpServer {
     /// Returns the full response Value (including jsonrpc, id, result/error).
     fn read_response(&mut self, expected_id: u64, timeout_secs: u64) -> Result<Value, McpError> {
         let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+        // Poll interval is short relative to typical timeouts; the deadline
+        // is checked at every iteration, so the wall-clock cost of a
+        // full-timeout wait is bounded by (timeout + poll_interval).
+        let poll_interval = Duration::from_millis(50);
+        // Per-call counter for non-JSON lines. Occasional ANSI log
+        // output (tracing, etc.) is tolerated; sustained non-JSON
+        // output is a protocol violation. The pre-fix code silently
+        // dropped every non-JSON line, so a server that does not
+        // speak MCP at all could pass through undetected (P1 of the
+        // sandbox harness audit).
+        const MAX_NON_JSON_LINES: usize = 10;
+        let mut non_json_count: usize = 0;
 
         loop {
             if Instant::now() > deadline {
                 return Err(McpError::Timeout(expected_id, timeout_secs));
             }
 
-            // read_line() blocks until a newline is received
-            // but ANSI log lines from the server provide frequent newlines
-            let mut line = String::new();
-            let read_result = self.stdout.read_line(&mut line);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = poll_interval.min(remaining);
 
-            // Check deadline after blocking read
-            if Instant::now() > deadline {
-                return Err(McpError::Timeout(expected_id, timeout_secs));
-            }
-
-            match read_result {
-                Ok(0) => {
-                    // Server closed stdout — drain stderr to capture crash message
-                    let stderr = self.drain_stderr();
-                    if stderr.is_empty() {
-                        return Err(McpError::Eof);
-                    } else {
-                        return Err(McpError::EofWithStderr(stderr));
+            match self.line_rx.recv_timeout(wait) {
+                Ok(Ok(line)) => {
+                    // Check the deadline as soon as a line arrives; even
+                    // one blocking read was enough to overshoot the
+                    // budget in the pre-fix code.
+                    if Instant::now() > deadline {
+                        return Err(McpError::Timeout(expected_id, timeout_secs));
                     }
-                }
-                Ok(_) => {
+
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
                         continue;
@@ -306,7 +338,20 @@ impl McpServer {
                     let msg: Value = match serde_json::from_str(trimmed) {
                         Ok(v) => v,
                         Err(_) => {
-                            // Non-JSON line (e.g., ANSI log from tracing), skip
+                            // Non-JSON line. The pre-fix code silently
+                            // continued, which meant a server that
+                            // never speaks MCP would pass through with
+                            // no signal. Count the occurrences and trip
+                            // McpError::ProtocolViolation once the
+                            // threshold is exceeded. A few ANSI log
+                            // lines from tracing are still tolerated.
+                            non_json_count += 1;
+                            if non_json_count > MAX_NON_JSON_LINES {
+                                return Err(McpError::ProtocolViolation(format!(
+                                    "server emitted {} non-JSON lines in a single read_response (expected JSON-RPC)",
+                                    non_json_count
+                                )));
+                            }
                             continue;
                         }
                     };
@@ -331,7 +376,33 @@ impl McpServer {
                     }
                     // Not our response, keep reading
                 }
-                Err(e) => return Err(McpError::ReadError(e.to_string())),
+                Ok(Err(e)) => {
+                    // The reader thread saw an IO error. EOF is
+                    // signalled by UnexpectedEof; anything else is
+                    // surfaced as a ReadError.
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        let stderr = self.drain_stderr();
+                        if stderr.is_empty() {
+                            return Err(McpError::Eof);
+                        } else {
+                            return Err(McpError::EofWithStderr(stderr));
+                        }
+                    }
+                    return Err(McpError::ReadError(e.to_string()));
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => {
+                    // Reader thread exited without sending an error.
+                    // Most likely the process closed stdout and the
+                    // thread's last send was treated as a normal
+                    // termination.
+                    let stderr = self.drain_stderr();
+                    if stderr.is_empty() {
+                        return Err(McpError::Eof);
+                    } else {
+                        return Err(McpError::EofWithStderr(stderr));
+                    }
+                }
             }
         }
     }
@@ -350,6 +421,67 @@ impl McpServer {
     pub fn is_dead(&mut self) -> bool {
         self.child.try_wait().ok().flatten().is_some()
     }
+}
+
+/// Spawn a background reader thread that pulls complete lines (or read
+/// errors) from the child's stdout and pushes them into the returned
+/// `mpsc::Receiver`. The thread terminates when the pipe closes
+/// (server exit) or the receiver is dropped (`McpServer` dropped).
+///
+/// Returns a tuple `(Sender, Receiver, JoinHandle)`; the `JoinHandle`
+/// is the second field of the tuple, stored in `McpServer`. We do not
+/// join it on `Drop` because the child's pipe closure already causes
+/// the thread to exit on its own.
+///
+/// The thread is the only piece of code that calls blocking
+/// `read_line` on the child's stdout. The `read_response` and
+/// `drain_notifications` paths use `recv_timeout` on the receiver,
+/// which is the deadline-enforcing primitive called for by P0 #1 of
+/// the sandbox harness audit.
+#[allow(clippy::type_complexity)]
+// The return type is the natural shape of mpsc::channel + spawn:
+// the writer end, the reader end, and the join handle. Extracting
+// type aliases for a private helper would be over-engineering; the
+// reader thread is called from one site and the alias would not
+// improve readability.
+fn spawn_reader_thread(
+    stdout: ChildStdout,
+) -> (
+    mpsc::Sender<Result<String, std::io::Error>>,
+    mpsc::Receiver<Result<String, std::io::Error>>,
+    thread::JoinHandle<()>,
+) {
+    let (tx, rx) = mpsc::channel();
+    let tx_clone = tx.clone();
+    let handle = thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    // EOF: signal and exit. The receiver treats
+                    // UnexpectedEof as the EOF indication.
+                    let _ = tx_clone.send(Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "server closed stdout",
+                    )));
+                    break;
+                }
+                Ok(_) => {
+                    if tx_clone.send(Ok(line.clone())).is_err() {
+                        // Receiver dropped (McpServer dropped). Exit.
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx_clone.send(Err(e));
+                    break;
+                }
+            }
+        }
+    });
+    (tx, rx, handle)
 }
 
 /// JSON-RPC 2.0 request/response pair captured for artifact storage.
@@ -386,5 +518,131 @@ mod tests {
         let json = serde_json::to_string(&call).unwrap();
         let parsed: CapturedCall = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.request["method"], "tools/call");
+    }
+
+    /// Behavioral test for P0 #1 of the sandbox harness audit:
+    /// read_response must enforce the deadline when the server is
+    /// alive but emits no data. The pre-fix code called read_line
+    /// directly on the child's stdout (a blocking syscall), so a
+    /// silent server would block forever and the deadline check
+    /// would never fire.
+    ///
+    /// The test spawns `cat` as the "server". cat opens stdout,
+    /// reads from stdin, and never writes to stdout. With the
+    /// pre-fix code, read_response would block indefinitely and
+    /// the test would hang (or the test runner would time out
+    /// externally). With the post-fix code, recv_timeout polls
+    /// the channel with a 50ms tick and the deadline is checked
+    /// at every iteration, so the call returns Timeout within
+    /// `timeout + poll_interval` (here 1s + 50ms, so < 1.5s in
+    /// practice).
+    #[cfg(unix)]
+    #[test]
+    fn read_response_enforces_deadline_against_silent_server() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn cat as silent server");
+
+        let stdin = child.stdin.take().expect("cat stdin");
+        let stdout = child.stdout.take().expect("cat stdout");
+        let stderr = child.stderr.take();
+
+        let mut server = McpServer::from_child(child, stdin, stdout, stderr);
+
+        let start = Instant::now();
+        let result = server.read_response(1, 1);
+        let elapsed = start.elapsed();
+
+        // Cleanup: the child is still running. Kill it.
+        let _ = server.kill();
+        let _ = server.wait();
+
+        let err = result.expect_err("read_response against silent server must return Err");
+        assert!(
+            matches!(err, McpError::Timeout(1, 1)),
+            "expected Timeout(1, 1), got {:?}",
+            err
+        );
+        // Budget = 1s timeout + 50ms poll interval + 200ms slack
+        // for CI noise. Pre-fix this would block indefinitely.
+        assert!(
+            elapsed < std::time::Duration::from_millis(1250),
+            "timeout took {:?}, expected < 1.25s",
+            elapsed
+        );
+    }
+
+    /// Behavioral test for P1 of the sandbox harness audit: a
+    /// server that streams non-JSON output to stdout must trigger
+    /// McpError::ProtocolViolation once the per-call threshold
+    /// (10 lines) is exceeded. The pre-fix code silently dropped
+    /// every non-JSON line, so a server that did not speak MCP
+    /// at all could pass through with no signal.
+    ///
+    /// The test spawns `sh -c "yes noise | head -n 30"` as the
+    /// "server". `yes` prints its argument repeatedly; `head -30`
+    /// limits it to 30 lines. The server emits "noise\n" 30 times
+    /// and closes. With the post-fix code, read_response should
+    /// see 11+ non-JSON lines and return ProtocolViolation.
+    #[cfg(unix)]
+    #[test]
+    fn read_response_protocol_violation_on_sustained_non_json() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        // Generate 30 lines of "noise" (not JSON-RPC) to stdout.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("i=0; while [ $i -lt 30 ]; do echo 'noise is not json-rpc'; i=$((i+1)); done")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn noise generator");
+
+        let stdin = child.stdin.take().expect("noise stdin");
+        let stdout = child.stdout.take().expect("noise stdout");
+        let stderr = child.stderr.take();
+
+        let mut server = McpServer::from_child(child, stdin, stdout, stderr);
+
+        let start = Instant::now();
+        let result = server.read_response(42, 5);
+        let elapsed = start.elapsed();
+
+        let _ = server.kill();
+        let _ = server.wait();
+
+        let err = result.expect_err("sustained non-JSON must produce Err");
+        match &err {
+            McpError::ProtocolViolation(msg) => {
+                // The threshold is 10; the message should report
+                // at least 11 occurrences. Some lines may still
+                // be in the channel buffer when we error, so
+                // allow >= 11.
+                assert!(
+                    msg.contains("non-JSON"),
+                    "ProtocolViolation message must mention non-JSON, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected ProtocolViolation, got {:?} after {:?}",
+                other, elapsed
+            ),
+        }
+        // The server produces 30 lines quickly, then closes.
+        // We should see the violation well within the 5s timeout.
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "protocol violation detection took {:?}, expected < 2s",
+            elapsed
+        );
     }
 }

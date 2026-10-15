@@ -54,6 +54,11 @@ pub const REVALIDATION_VERDICT_REFUSED_REASON: &str =
 /// Incremental analysis slot. Reuses B4.W1 (ImpactResult),
 /// B4.W2 (ArchitectureDiagnostic) y B4.W3 (Finding) types.
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::large_enum_variant)]
+// The size difference between ImpactResult (rich call-graph payload)
+// and Finding (a single quality observation) is intentional: each
+// variant carries the full type for that tool's output. Boxing would
+// force an indirection on every read of the dominant variant.
 pub enum IncrementalAnalysis {
     /// B4.W1 — call graph impact over the changed files.
     Impact(ImpactResult),
@@ -154,7 +159,7 @@ impl RevalidationReport {
     /// impact) so the count reflects what a populated report would
     /// have.
     pub fn incremental_analyses_count(&self) -> usize {
-        let n = self.findings.findings.len()
+        self.findings.findings.len()
             + self
                 .diagnostics
                 .as_ref()
@@ -164,8 +169,7 @@ impl RevalidationReport {
                 .impact
                 .as_ref()
                 .map(|i| i.paths.iter().map(|p| p.edges.len()).sum::<usize>())
-                .unwrap_or(0);
-        n
+                .unwrap_or(0)
     }
 }
 
@@ -176,10 +180,7 @@ impl RevalidationReport {
 /// Build a revalidation plan from a `RefactorPlan` (B5.W1) and an
 /// `ApplyOutcome` (B5.W3). `what_changed` is `outcome.applied_files`
 /// verbatim.
-pub fn build_revalidation_plan(
-    plan: &RefactorPlan,
-    outcome: &ApplyOutcome,
-) -> RevalidationPlan {
+pub fn build_revalidation_plan(plan: &RefactorPlan, outcome: &ApplyOutcome) -> RevalidationPlan {
     assert_eq!(
         plan.id, outcome.plan_id,
         "plan_id mismatch: plan={}, outcome={}",
@@ -265,8 +266,7 @@ mod tests {
     #[test]
     fn revalidation_report_first_construction_is_always_refused() {
         let plan = stub_plan();
-        let outcome =
-            stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
+        let outcome = stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
         let rp = build_revalidation_plan(&plan, &outcome);
         let r = run_revalidation(&rp, std::path::Path::new("/tmp/ws"));
         assert!(r.verdict_refused(), "verdict_refused helper must be true");
@@ -274,10 +274,7 @@ mod tests {
             RevalidationVerdict::VerdictRefused { reason } => {
                 assert_eq!(*reason, REVALIDATION_VERDICT_REFUSED_REASON);
             }
-            other => panic!(
-                "first construction MUST be VerdictRefused; got {:?}",
-                other
-            ),
+            other => panic!("first construction MUST be VerdictRefused; got {:?}", other),
         }
     }
 
@@ -330,8 +327,7 @@ mod tests {
             created_at: DateTime::from_timestamp(0, 0).unwrap(),
             digest: "stable".to_string(),
         };
-        let outcome =
-            stub_outcome(plan_id, vec![std::path::PathBuf::from("a.rs")]);
+        let outcome = stub_outcome(plan_id, vec![std::path::PathBuf::from("a.rs")]);
         let rp1 = build_revalidation_plan(&plan, &outcome);
         let rp2 = build_revalidation_plan(&plan, &outcome);
         let r1 = run_revalidation(&rp1, std::path::Path::new("/tmp/ws"));
