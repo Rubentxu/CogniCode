@@ -9,33 +9,34 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, baseline
-> HEAD `efbc2a3ec6114550584766698606e5d4a95e0596`.
+> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
+> `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a` (commit inicial de TH-DOC-01).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
-> Ese SHA es un ancestro 11 commits detrás de este baseline y sus resultados
+> Ese SHA es un ancestro 12 commits detrás de este HEAD y sus resultados
 > no se presentan como evidencia del HEAD actual.
 >
 > **Unidad abierta en este worktree**: TH-DOC-01, iniciativa documental
 > registrada en `docs/roadmap/ROADMAP.md` §11 y
 > `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: falló antes de
-> refrescar este snapshot por antigüedad del SHA; tras refrescarlo dio PASS
-> sobre baseline `efbc2a3ec611`.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: tras refrescar
+> el snapshot dio PASS en HEAD `c5c5e91ad728` con snapshot apuntando a su
+> ancestro inmediato `efbc2a3ec611`; se repetirá tras este nuevo puntero.
 
 ## HEAD y gates del worktree
 
 * **Rama**: `worktree/test-harness`.
-* **SHA baseline**: `efbc2a3ec6114550584766698606e5d4a95e0596`.
+* **SHA del plan**: `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a`.
 * **Versión workspace**: `0.101.17`.
-* **Batería sobre el SHA baseline**: `NOT_RUN` en esta iniciativa documental.
-* **Estado inicial**: checkout limpio antes de abrir TH-DOC-01; los artefactos
-  de iniciativa están ahora en el diff de trabajo.
+* **Batería de workspace sobre el SHA del plan**: `NOT_RUN` en esta iniciativa
+  documental.
+* **Estado**: el commit del plan quedó limpio; esta actualización refresca el
+  puntero global del worktree.
 * **Paquete objetivo**: `docs/test-harness/` sigue ignorado por `.gitignore:153`
   y no pertenece a `HEAD`; el gate THD-G1 está `BLOCKED`.
-* **Validación documental**: ratchet PASS sobre baseline `efbc2a3ec611`;
+* **Validación documental**: ratchet PASS en HEAD `c5c5e91ad728`;
   los cinco destinos OpenSpec enlazados desde §11 existen. La UAT del README
   sigue `NOT_RUN` y THD-G1 sigue `BLOCKED` por la regla de ignore.
 

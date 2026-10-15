@@ -4,8 +4,8 @@
 - **Unidad**: completar el README de entrada del Test Harness.
 - **Baseline**: branch `worktree/test-harness`, HEAD inicial
   `efbc2a3ec6114550584766698606e5d4a95e0596`.
-- **SHA de artefactos**: pendiente del commit de esta apertura; actualizar
-  después de validar y commitear el contrato.
+- **SHA de artefactos**: `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a`
+  (`docs(roadmap): open TH-DOC-01 README initiative`).
 - **Artefactos normativos**: `proposal.md`,
   `specs/test-harness-readme/spec.md`, `tasks.md`.
 - **Gates**: publicación/ruta **BLOCKED** porque `docs/test-harness/` está

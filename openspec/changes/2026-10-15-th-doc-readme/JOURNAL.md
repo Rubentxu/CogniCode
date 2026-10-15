@@ -29,3 +29,15 @@
   y esta unidad solo abre el contrato/goals.
 - No se modificó ni se añadió al índice el directorio ignorado
   `docs/test-harness/`.
+
+## Recibo de commit inicial — 2026-10-15
+
+- **Commit de iniciativa/goals**: `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a`
+  (`docs(roadmap): open TH-DOC-01 README initiative`).
+- `git diff --cached --check` → exit 0; los siete archivos esperados quedaron
+  versionados, sin incluir `docs/test-harness/README.md`.
+- `python3 scripts/ci/test_roadmap_version_ratchet.py` → **PASS** en HEAD
+  `c5c5e91ad728` (snapshot a un ancestro inmediato).
+- `git status --short --branch` → limpio después del commit inicial.
+- **Siguiente WU**: THD-0, resolver publicación/ruta. La aceptación del README
+  permanece bloqueada y `NOT_RUN` hasta que el paquete esté en el checkout.
