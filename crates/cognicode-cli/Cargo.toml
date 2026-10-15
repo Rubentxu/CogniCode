@@ -34,7 +34,7 @@ cognicode-ladybug = { path = "../cognicode-ladybug", optional = true }
 tokio.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+serde_norway.workspace = true
 toml.workspace = true
 sha2.workspace = true
 anyhow.workspace = true

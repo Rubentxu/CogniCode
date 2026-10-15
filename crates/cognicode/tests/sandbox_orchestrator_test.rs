@@ -377,7 +377,7 @@ scenarios:
       new_text: "# modified"
 "##;
 
-    let manifest: Manifest = serde_yaml::from_str(manifest_content).expect("manifest should parse");
+    let manifest: Manifest = serde_norway::from_str(manifest_content).expect("manifest should parse");
     let expanded = manifest.expand();
 
     // Verify the scenario has expected_outcome = "expected_fail"
@@ -419,7 +419,7 @@ scenarios:
       new_text: "# modified"
 "##;
 
-    let manifest: Manifest = serde_yaml::from_str(manifest_content).expect("manifest should parse");
+    let manifest: Manifest = serde_norway::from_str(manifest_content).expect("manifest should parse");
     let expanded = manifest.expand();
 
     // Verify the scenario has expected_outcome = "pass"
@@ -564,7 +564,7 @@ scenarios:
       new_text: "fn new() {"
 "##;
 
-    let manifest: Manifest = serde_yaml::from_str(manifest_content).expect("manifest should parse");
+    let manifest: Manifest = serde_norway::from_str(manifest_content).expect("manifest should parse");
     let expanded = manifest.expand();
 
     // Verify the scenario has expected_outcome = "expected_fail" and tool = "edit_file"
@@ -663,7 +663,7 @@ scenarios:
       new_text: "# modified"
 "##;
 
-    let manifest: Manifest = serde_yaml::from_str(manifest_content).expect("manifest should parse");
+    let manifest: Manifest = serde_norway::from_str(manifest_content).expect("manifest should parse");
     let expanded = manifest.expand();
 
     // Verify the scenario is set up correctly to trigger the fix
@@ -722,7 +722,7 @@ scenarios:
       path: nonexistent.py
 "##;
 
-    let manifest: Manifest = serde_yaml::from_str(manifest_content).expect("manifest should parse");
+    let manifest: Manifest = serde_norway::from_str(manifest_content).expect("manifest should parse");
     let expanded = manifest.expand();
 
     // Verify the scenario has expected_outcome = "expected_fail"

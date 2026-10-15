@@ -1748,7 +1748,7 @@ mod tests {
             };
             std::fs::write(
                 prev_root.join("manifest.yaml"),
-                serde_yaml::to_string(&prev_manifest).unwrap(),
+                serde_norway::to_string(&prev_manifest).unwrap(),
             )
             .unwrap();
             let prev_bin_dir = home.component_root(prev, "cognicode").join("bin");
@@ -4789,7 +4789,7 @@ components:
             };
             std::fs::write(
                 &recovered_manifest_a,
-                serde_yaml::to_string(&manifest).unwrap(),
+                serde_norway::to_string(&manifest).unwrap(),
             )
             .expect("restore A manifest for retry");
         }

@@ -635,7 +635,7 @@ impl GraphServiceImpl {
                 ))
             })?;
             // Handle empty or invalid YAML gracefully - return default architecture
-            match serde_yaml::from_str::<ExpectedArchitecture>(&content) {
+            match serde_norway::from_str::<ExpectedArchitecture>(&content) {
                 Ok(arch) => arch,
                 Err(_) => {
                     // Graceful degradation: invalid or empty YAML means no expected architecture

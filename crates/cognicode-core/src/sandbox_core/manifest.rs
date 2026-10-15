@@ -180,7 +180,7 @@ impl Manifest {
 
     /// Parse a YAML manifest from a string.
     pub fn from_str(content: &str) -> Result<Self, ManifestError> {
-        serde_yaml::from_str(content).map_err(ManifestError::ParseError)
+        serde_norway::from_str(content).map_err(ManifestError::ParseError)
     }
 
     /// Expand the manifest into a flat list of concrete scenario instances.
@@ -280,7 +280,7 @@ pub enum ManifestError {
     #[error("failed to read manifest file {0}: {1}")]
     IoError(PathBuf, std::io::Error),
     #[error("failed to parse YAML: {0}")]
-    ParseError(serde_yaml::Error),
+    ParseError(serde_norway::Error),
 }
 
 #[cfg(test)]
@@ -342,21 +342,21 @@ scenarios:
 
     #[test]
     fn test_manifest_expand_with_variants() {
-        let manifest: Manifest = serde_yaml::from_str(TEST_MANIFEST).unwrap();
+        let manifest: Manifest = serde_norway::from_str(TEST_MANIFEST).unwrap();
         let scenarios: Vec<ExpandedScenario> = manifest.expand();
         assert_eq!(scenarios[0].id, "rust_rename_function_default");
     }
 
     #[test]
     fn test_stage_default_timeout() {
-        let stage: StageDef = serde_yaml::from_str("name: test\ncommands: [echo ok]").unwrap();
+        let stage: StageDef = serde_norway::from_str("name: test\ncommands: [echo ok]").unwrap();
         assert_eq!(stage.timeout_seconds, 60);
     }
 
     #[test]
     fn test_scenario_default_expected_outcome() {
         let scenario: ScenarioDef =
-            serde_yaml::from_str("name: test\ntool: read_file\naction: read\nworkspace: .")
+            serde_norway::from_str("name: test\ntool: read_file\naction: read\nworkspace: .")
                 .unwrap();
         assert_eq!(scenario.expected_outcome, "pass");
     }
@@ -380,7 +380,7 @@ scenarios:
     action: rename
     workspace: src/lib.rs
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios.len(), 1);
         assert_eq!(scenarios[0].repo, Some("my_rust_repo".to_string()));
@@ -406,7 +406,7 @@ scenarios:
     workspace: src/lib.rs
     repo: ""
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         // Empty string "" means "explicitly no repo" — should NOT inherit
         assert_eq!(scenarios[0].repo, None);
@@ -432,7 +432,7 @@ scenarios:
     workspace: src/lib.rs
     repo: scenario_repo
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios[0].repo, Some("scenario_repo".to_string()));
     }
@@ -457,7 +457,7 @@ scenarios:
     action: read
     workspace: src/lib.rs
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios[0].validation.stages.len(), 2);
         assert_eq!(scenarios[0].validation.stages[0].name, "build");
@@ -487,7 +487,7 @@ scenarios:
         - name: syntax
           commands: [rustfmt --check]
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         // Scenario should have its own validation, not manifest's
         assert_eq!(scenarios[0].validation.stages.len(), 1);
@@ -513,7 +513,7 @@ scenarios:
     action: read
     workspace: src/lib.rs
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios[0].timeout_seconds, 120);
     }
@@ -537,7 +537,7 @@ scenarios:
     workspace: src/lib.rs
     timeout_seconds: 30
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios[0].timeout_seconds, 30);
     }
@@ -561,7 +561,7 @@ scenarios:
     workspace: main.py
     variant: regression
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios[0].id, "python_refactor_func_regression");
         assert_eq!(scenarios[0].variant, Some("regression".to_string()));
@@ -589,7 +589,7 @@ scenarios:
     action: read
     workspace: src/b.rs
 "#;
-        let manifest: Manifest = serde_yaml::from_str(manifest_yaml).unwrap();
+        let manifest: Manifest = serde_norway::from_str(manifest_yaml).unwrap();
         let scenarios = manifest.expand();
         assert_eq!(scenarios.len(), 2);
         assert_eq!(scenarios[0].id, "rust_scenario_a_default");

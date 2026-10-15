@@ -55,7 +55,7 @@ toml.workspace = true
 # Glob pattern matching for boundary rule evaluation (E19)
 glob.workspace = true
 # YAML parsing for expected-architecture.yaml drift detection
-serde_yaml.workspace = true
+serde_norway.workspace = true
 # `async-trait` is always needed — the facade traits use `#[async_trait]`.
 # It is NOT optional because the proc macro must always be available.
 async-trait.workspace = true

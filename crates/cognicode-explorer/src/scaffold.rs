@@ -89,7 +89,7 @@ impl Scaffold {
     /// Unknown strings are returned as `ViewKind::Custom(s)`.
     pub fn parse_view_kind(s: &str) -> ViewKind {
         // ViewKind implements Deserialize via its Serialize/Deserialize impl
-        serde_yaml::from_str(&format!("---\n{}", s))
+        serde_norway::from_str(&format!("---\n{}", s))
             .unwrap_or_else(|_| ViewKind::Custom(s.to_string()))
     }
 
@@ -97,7 +97,7 @@ impl Scaffold {
     ///
     /// Unknown strings are returned as `RendererKind::Custom(s)`.
     pub fn parse_renderer_kind(s: &str) -> RendererKind {
-        serde_yaml::from_str(&format!("---\n{}", s))
+        serde_norway::from_str(&format!("---\n{}", s))
             .unwrap_or_else(|_| RendererKind::Custom(s.to_string()))
     }
 
@@ -216,7 +216,7 @@ impl ScaffoldRegistry {
     /// when called multiple times.
     fn load() -> Result<Self, ScaffoldLoadError> {
         let yaml_content = include_str!("../assets/moldql-scaffolds.yaml");
-        let parsed: ScaffoldsYaml = serde_yaml::from_str(yaml_content)
+        let parsed: ScaffoldsYaml = serde_norway::from_str(yaml_content)
             .map_err(|e| ScaffoldLoadError::Parse(e.to_string()))?;
 
         if parsed.scaffolds.is_empty() {
@@ -469,7 +469,7 @@ scaffolds:
     #[test]
     fn parse_fixture_yaml() {
         let parsed: ScaffoldsYaml =
-            serde_yaml::from_str(FIXTURE_YAML).expect("fixture should parse");
+            serde_norway::from_str(FIXTURE_YAML).expect("fixture should parse");
         assert_eq!(parsed.scaffolds.len(), 1);
         let s = &parsed.scaffolds[0];
         assert_eq!(s.id, "test-scaffold");
