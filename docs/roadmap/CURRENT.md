@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `910ad2d3` (B1: gate de merge ligero; retirada de la clase UAT
+> `910ad2d3f191de54584c459d1dbbf950287fd4b5` (B1: gate de merge ligero; retirada de la clase UAT
 > ADR-TH-006; el recibo va en `JOURNAL.md` y el commit de recibos es el
 > siguiente a este SHA).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -31,7 +31,7 @@
 * **Rama**: `worktree/test-harness`.
 * **Commits de la unidad**: `658409fb` (B1: gate, contratos, auditoría, ADR), `00c9e47e`
   (reparación de una deriva preexistente en la UAT read-only), `e2b22d15` (retirada
-  de la clase UAT) y `910ad2d3` (paquete del harness sin plan de UAT).
+  de la clase UAT) y `910ad2d3` (paquete del harness sin plan de UAT, SHA completo en la cabecera).
 * **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
   `v0.101.16` y **no** se publica release en esta unidad.
 * **merge-gate**: construcciones release eliminadas (470 s medidos) y sustituidas
