@@ -877,7 +877,7 @@ fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
     }
 }
 
-/// The M0.11 rustdoc gate must run in whatever gates a merge.
+/// The M0.11 rustdoc gate must run in exactly one blocking authority.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
 /// all. It was green, and it could not fail a single PR. An intra-doc link
@@ -888,20 +888,52 @@ fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
 /// The standard is already written down in this repository: *"Un test que no
 /// corre en ningun sitio no es un gate."* The gate was breaking that rule.
 ///
+/// Measured 2026-10-15 in the gate's durable ledger: the same target was also
+/// being executed by the integration lane's `cargo test --workspace
+/// --all-targets`, so every change paid for it twice — 667 s of a 1 630 s
+/// merge. The guarantee is unchanged (the workspace still has to hold zero
+/// rustdoc warnings in the gated categories, in a lane that blocks `main`);
+/// what changed is that it is paid once. The assertion moved from "the merge
+/// authority runs it" to "exactly one authority runs it, and it must be named
+/// there explicitly rather than hidden inside `--all-targets`", because the
+/// owner has to be checkable, not assumed.
+///
 /// This assertion deliberately lives in the core crate rather than next to the
-/// gate it protects. The merge authority runs the core crate unrestricted, so
-/// if the rustdoc wiring is deleted the core suite still runs and this still
-/// fails. A contract that only the deleted wiring could execute would notice
-/// nothing — which is the failure mode it exists to catch.
+/// gate it protects: the merge authority runs the core crate unrestricted, so
+/// if the rustdoc wiring is deleted from every lane the core suite still runs
+/// and this still fails. A contract that only the deleted wiring could execute
+/// would notice nothing — which is the failure mode it exists to catch.
 #[test]
-fn the_rustdoc_gate_runs_in_the_merge_authority() {
+fn the_rustdoc_gate_runs_in_exactly_one_authority() {
     const GATE: &str = "m011_rustdoc_gate";
 
+    let in_merge = merge_authority_runs(GATE);
+    let integration = std::fs::read_to_string(repo_root().join("integration.pipeline.kts"))
+        .expect("integration.pipeline.kts is readable");
+    let in_integration = integration.contains(GATE);
+    let runners: Vec<&str> = [
+        ("merge-gate.pipeline.kts", in_merge),
+        ("integration.pipeline.kts", in_integration),
+    ]
+    .iter()
+    .filter(|(_, runs)| *runs)
+    .map(|(name, _)| *name)
+    .collect();
+
     assert!(
-        merge_authority_runs(GATE),
-        "the merge authority no longer runs {GATE}. That gate holds the workspace \
-         at zero rustdoc warnings in the gated categories; without it a broken \
-         doc link or a public-docs-to-private-item reference passes every PR.\n{}",
-        not_run_message(GATE, "Restore the stage next to the clippy gate.")
+        !runners.is_empty(),
+        "{GATE} runs in no pipeline, so it gates nothing. That gate holds the \
+         workspace at zero rustdoc warnings in the gated categories; without it a \
+         broken doc link or a public-docs-to-private-item reference passes every \
+         PR.\n{}",
+        not_run_message(GATE, "Restore the stage in the integration lane.")
+    );
+    assert_eq!(
+        runners,
+        vec!["integration.pipeline.kts"],
+        "{GATE} must run in exactly one authority. Running it in the merge \
+         authority as well costs 667 s of every merge for a check the integration \
+         lane already performs on the same target (measured 2026-10-15). Running it \
+         nowhere removes the guarantee. Runners found: {runners:?}"
     );
 }
