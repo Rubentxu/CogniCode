@@ -2,8 +2,18 @@
   "schema_version": "cognicode.platforms/v1",
   "product": "cognicode",
   "version": "0.101.17",
-  "source_commit": "f99a5e7fd96246d69469394489dcf6b9509131d6",
+  "source_commit": "93ef18cce48834d38cfd00615af9c1d4819285e7",
   "platforms": [
+    {
+      "id": "linux-aarch64",
+      "target": "aarch64-unknown-linux-gnu",
+      "name": "Linux Aarch64",
+      "support_level": "experimental",
+      "evidence": [
+        "Not built by release-candidate.pipeline.kts (no entry in `val targets`)",
+        "TF-6/TF-7 track the CI runner provisioning and the cross toolchain"
+      ]
+    },
     {
       "id": "linux-x86-64",
       "target": "x86_64-unknown-linux-gnu",

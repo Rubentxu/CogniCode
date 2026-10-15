@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `f99a5e7fd96246d69469394489dcf6b9509131d6` (contrato B4.W1 `precision`/`provider` restaurado en los 8
+> `93ef18cce48834d38cfd00615af9c1d4819285e7` (contrato B4.W1 `precision`/`provider` restaurado en los 8
 > DTOs de navegación; enlaces intra-doc de `refactor::apply`/`preview`
 > reparados; gate `rustdoc-gate` verde por primera vez bajo
 > pipelinek 0.61.0-rc2).
@@ -31,7 +31,7 @@
 
 * **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
   también abiertos y `BLOCKED` a la espera de `merge-gate`).
-* **SHA funcional**: `f99a5e7fd96246d69469394489dcf6b9509131d6`.
+* **SHA funcional**: `93ef18cce48834d38cfd00615af9c1d4819285e7`.
 * **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
 * **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`):
