@@ -1,6 +1,6 @@
 //! `cognicode-core::refactor::apply` — B5.W3.
 //!
-//! Apply con autoridad y rollback. Lee un [`plan::RefactorPlan`]
+//! Apply con autoridad y rollback. Lee un [`crate::refactor::plan::RefactorPlan`]
 //! (B5.W1) y un `workspace_state_digest` calculado en el momento de
 //! la previsualización, y aplica las [`PlannedEdit`]s del plan sobre
 //! el workspace con staging + fsync + rename atómico.

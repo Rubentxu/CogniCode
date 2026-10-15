@@ -300,7 +300,7 @@ fn large_coordinators_have_a_size_ratchet() {
 /// verdad para el mismo concepto de dominio, la leccion que
 /// AGENTS.md cita para `EvidenceStore`.
 #[test]
-fn B4_modules_dont_reimplement_b2_types() {
+fn b4_modules_dont_reimplement_b2_types() {
     let search_dirs = [
         "crates/cognicode-core/src/impact",
         "crates/cognicode-core/src/architecture",
@@ -453,10 +453,7 @@ fn impact_graph_reuses_symbol_identity() {
         // shared, not module-local.
         for line in text.lines() {
             let t = line.trim();
-            if t.starts_with("pub struct ")
-                && t.ends_with("Id {")
-                && t.contains("SymbolId") == false
-            {
+            if t.starts_with("pub struct ") && t.ends_with("Id {") && !t.contains("SymbolId") {
                 re_declares.push(format!("{}: {t}", p.display()));
             }
         }
