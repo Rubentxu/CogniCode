@@ -9,31 +9,38 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-11, sobre `main` HEAD
-> `6af11bf83f07ecf8b337379fd0df413cda73572e` (post-T1-5.5g +
-> B1..B6 block goals + work-loop + B1.W1 partial commit `f6b124c`;
-> 40 commits ahead de `origin/main`).
-> Regenerado al cierre de **B1.W1** (reconciliación de versión
-> publicada: `PRODUCER_VERSION` derivado de `Cargo.toml`,
-> `GOLDEN_SHA256` actualizado a `3ac84ea7...` para v0.101.10,
-> workspace sigue en `0.101.10` per `Cargo.toml` y tag `v0.101.10`).
-> R1 invariant `/releases/latest` sigue resolviendo a `v0.101.10`.
+> **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
+> `f99a5e7fd96246d69469394489dcf6b9509131d6` (contrato B4.W1 `precision`/`provider` restaurado en los 8
+> DTOs de navegación; enlaces intra-doc de `refactor::apply`/`preview`
+> reparados; gate `rustdoc-gate` verde por primera vez bajo
+> pipelinek 0.61.0-rc2).
+> Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
+> `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
+> publicado** — el tag remoto sigue en `v0.101.16`, que es la release
+> que hoy publica 3 de los 8 assets. La release viva es `v0.101.16`.
 >
-> Próxima release objetivo: `v0.101.11` (cierre de B1 + bump) per
+> Próxima release objetivo: `v0.101.17` (re-publicar el set completo de
+> 8 assets) per
 > [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
 > drift es reintroducir el problema; el ratchet es la red.
 
-## HEAD y batería (a 2026-10-11)
+## HEAD y batería (a 2026-10-15)
 
-* **Rama**: `main` (PR #345 squash-merged el 2026-10-10T10:45:22Z;
-  40 commits ahead del squash: T1-5.5 cerrado `810396a..f187be7`
-  + B1..B6 goal docs `6af11bf` + B1.W1 partial `f6b124c`).
-* **SHA funcional**: `6af11bf83f07ecf8b337379fd0df413cda73572e`.
-* **Versión workspace**: `0.101.10` (sin cambio desde 2026-10-10;
-  el siguiente bump es `v0.101.11` al cierre de B1).
+* **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
+  también abiertos y `BLOCKED` a la espera de `merge-gate`).
+* **SHA funcional**: `f99a5e7fd96246d69469394489dcf6b9509131d6`.
+* **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
+  el tag remoto más reciente sigue siendo `v0.101.16`).
+* **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`):
+  * `toolchain` → success.
+  * `repo-contract` → success.
+  * `fmt` → success.
+  * `clippy` (`-D warnings`) → success.
+  * `rustdoc-gate` → success.
+  * `contracts` → **FAIL** (ver JOURNAL.md, recibo de 2026-10-15).
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
   * `cargo build -p cognicode-core` → 0 errors (T1-5.5).

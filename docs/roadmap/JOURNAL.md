@@ -14629,3 +14629,103 @@ habia restaurado. Un verde de control sobre un arbol sucio no es un verde, es
 una cifra. **Toda afirmacion de que una mutacion cae tiene que estar
 acompanada de la razon por la que cae**, y si no cae, hay que averiguar si fallo el
 contrato o fallo la prueba antes de reportar el numero.
+
+---
+
+## Recibo 2026-10-15 — BLOQUE 5: `v0.101.17` y el runtime que fabricaba gates rojos
+
+**SHA**: `f99a5e7f` sobre `b5-v0.101.17` (PR #348).
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16` — el bump está preparado, no publicado.
+
+### Lo que se arregló
+
+1. **Contrato B4.W1 restaurado en los 8 DTOs de navegación.** Los campos
+   `precision`/`provider` faltaban en seis y en `FindUsagesOutput` estaban
+   como `Option<String>`, así que el tier de procedencia se omitía en lugar
+   de reportarse como un mínimo garantizado. Todos los constructores
+   derivan ahora de `symbol_identity::{precision_floor_for_tool,
+   default_provider_for_tool}` en vez de literales, para que el catálogo
+   siga siendo la única fuente de verdad.
+2. **Enlaces intra-doc de `refactor::apply` / `refactor::preview`**: usaban
+   `[`plan::RefactorPlan`]`, que no resuelve desde dentro del módulo. Son
+   ahora rutas completas al crate.
+3. **Lints de clippy en `b6_w6_architectural_close.rs`**: un `#[allow(
+   non_snake_case)]` no suprime el lint sobre la función misma.
+
+### El runtime era el defecto, no el código
+
+`rustdoc-gate` fallaba con `exit 101` **a los 10 segundos** de arrancar, de
+forma reproducible en tres ejecuciones de `merge-gate` bajo pipelinek 0.46.0.
+`cargo doc --workspace --no-deps` en frío tarda 8 minutos; la secuencia
+`clippy` → test del gate, ejecutada en bash pelado, da verde en 332s. Bajo
+**pipelinek 0.61.0-rc2** el mismo paso tarda lo que tiene que tardar y da
+`success`.
+
+La causa de fondo eran los flags: `--control-root "$PWD"` apuntaba el control
+root a la raíz del repo. Según `docs/user/configuration-and-workspace.md` de
+`Rubentxu/pipeline-kotlin`, ese flag es donde PipelineK escribe las
+transcripciones de los pasos, y **por defecto es `<workspace>/.pipelinek`**
+— que CogniCode ya ignora en `.gitignore:270`. Con los valores por defecto un
+`sh()` corre en el *parent* del control root, o sea la raíz del repo, que es
+lo que hace redundante el preámbulo `val repoRoot` / `val cd` de los `.kts`.
+Pasar `--db /tmp/….db` además desperdigaba `leases/`, `last-run/` y
+`output-plane/` como untracked en el árbol de trabajo.
+
+Invocación correcta, desde la raíz del repo y sin banderas:
+
+```
+pipelinek run merge-gate.pipeline.kts
+```
+
+### Medición del gate (`pipelinek 0.61.0-rc2`, sin flags)
+
+| stage | resultado |
+|---|---|
+| toolchain | success |
+| repo-contract | success |
+| fmt | success |
+| clippy (`-D warnings`) | success |
+| rustdoc-gate | **success** |
+| contracts | **FAIL** — 13 aserciones, todas con texto legible por primera vez |
+
+### Contrato: fallos abiertos en `contracts`
+
+Dos grupos. El primero es propagación del bump 0.101.16 → 0.101.17:
+`README.md` y `SECURITY.md` seguían declarando la superficie y la versión de
+la línea anterior, `CURRENT.md` citaba un SHA de 5 versiones atrás y
+`0.101.17` no aparecía en ROADMAP ni JOURNAL. El segundo es deriva real de
+contrato, no de esta versión: `tools.json` declaraba `runtime_tool_count=81`
+mientras publicaba 80, las skills afirmaban "73 tools", `DOCUMENT_SCHEMA_PAIR`
+no valida el documento `skills`, y `release-candidate.pipeline.kts` nombra
+`aarch64-unknown-linux-gnu`, que no está en `val targets`.
+
+### Leccion 232 — Un flag con valor por defecto no es un flag que se pase
+
+`--control-root` parecía necesario porque sin él el runner parecía perder el
+repo. No lo perdía: lo estaba apuntando a la raíz del repo, que es donde el
+runner escribe todo lo que no es output de build. El síntoma — directorios de
+run y leases apareciendo como untracked — se leía como "el runner ensucia el
+árbol" cuando el árbol ensuciado era exactamente lo que yo le había pedido.
+
+**Antes de añadir un flag para arreglar un síntoma, hay que leer qué hace el
+flag por defecto.** El default de `--control-root` era el repo entero, y por
+eso el síntoma era correcto: yo había pedido el síntoma.
+
+### Leccion 233 — Un fallo de 10 segundos donde se esperaban 8 minutos
+
+`rustdoc-gate` moría en 10s. Un paso que documenta el workspace entero no
+puede terminar en 10s; el número era la prueba de que el runtime, no el
+contenido, era el culpable. La comprobación que lo confirmó fue ejecutar la
+secuencia exacta en bash: verde en 332s. Ante un fallo cuyo tiempo es
+imposible, el primer sospechoso no es el código que el paso ejecuta.
+
+### Leccion 234 — Regenerar un artefacto desde su captura puede destruirlo
+
+`product/README.md` documenta regenerar `tools.json` capturando `tools/list`
+con el binario por defecto. Con ese procedimiento el catálogo pierde los 3
+tools feature-gated (`interproc_summary`, `list_evidence`, `search_evidence`):
+el build por defecto no los expone, pero `tools.json` es el **catálogo
+maestro** y sí los publica. El procedimiento documentado es correcto para un
+build con todas las features y destructivo para el build por defecto, y no
+dice cuál de los dos se está ejecutando. No se regenera hasta decidirlo.
