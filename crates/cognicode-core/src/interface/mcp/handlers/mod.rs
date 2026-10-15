@@ -1769,6 +1769,15 @@ pub async fn handle_find_usages(
         symbol: input.symbol_name,
         usages: usage_entries,
         total,
+        // B3.W1 parity with the MCP wire shape; `find_usages` is
+        // navigation, so its floor is `ast-heuristic` and its default
+        // provider is the symbol index. The values match what
+        // precision_floor_for_tool / default_provider_for_tool return
+        // for "find_usages" (computed here in literals to avoid a
+        // circular dependency between the handler module and the
+        // symbol_identity module on import order).
+        precision: Some("ast-heuristic".to_string()),
+        provider: Some("symbol-index".to_string()),
     })
 }
 

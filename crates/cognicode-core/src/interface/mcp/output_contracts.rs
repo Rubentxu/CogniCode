@@ -47,7 +47,6 @@ use std::sync::OnceLock;
 use serde_json::{Map, Value};
 
 use crate::interface::mcp::handlers::BuildGraphOutput;
-use crate::interface::mcp::handlers::CompositeImpactOutput;
 use crate::interface::mcp::handlers::consolidated_handlers::{
     CodebaseMapOutput, GraphCheckpointOutput, IacQueryOutput, ProjectInsightsOutput,
     ProjectOverviewOutput, ReviewPrOutput,
@@ -101,7 +100,36 @@ fn build_output_schemas() -> BTreeMap<&'static str, Map<String, Value>> {
     m.insert("review_pr", schema_of::<ReviewPrOutput>());
     m.insert(
         "composite_impact_query",
-        schema_of::<CompositeImpactOutput>(),
+        // Hand-rolled schema: CompositeImpactResult in
+        // crates/cognicode-core/src/impact/composite.rs does not
+        // (yet) derive schemars::JsonSchema, and cascading the derive
+        // through Finding and ToolRef is out of scope for a hotfix
+        // that unblocks compilation. The shape documented here
+        // mirrors the struct's serde annotations (Option<Value>
+        // fields, Vec<Finding>, verdict_refused invariant).
+        serde_json::from_value(serde_json::json!({
+            "type": "object",
+            "properties": {
+                "impact": { "type": ["object", "null"] },
+                "architecture": { "type": ["object", "null"] },
+                "findings": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                },
+                "suggested_follow_ups": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                },
+                "suggested_prerequisites": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                },
+                "verdict_refused": { "type": "boolean" },
+                "verdict_refused_reason": { "type": "string" }
+            },
+            "required": ["verdict_refused", "verdict_refused_reason"]
+        }))
+        .expect("hand-rolled composite_impact_query schema is a valid JSON object"),
     );
     m
 }

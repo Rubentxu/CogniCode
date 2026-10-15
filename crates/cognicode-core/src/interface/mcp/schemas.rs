@@ -194,6 +194,14 @@ pub struct FindUsagesOutput {
     pub symbol: String,
     pub usages: Vec<UsageEntry>,
     pub total: usize,
+    /// B3.W1 parity with the MCP `find_usages` wire shape. The CLI
+    /// text path ignores these; the JSON presenter emits them when
+    /// populated. Absent from the JSON when `None` so existing
+    /// consumers that do not expect them are unaffected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2391,9 +2391,15 @@ impl CommandExecutor {
             // precision + provider so the JSON presenter emits them in
             // the same shape as the MCP wire. The CLI text path ignores
             // these fields; the JSON path is the one that needs them.
-            precision: crate::interface::symbol_identity::precision_floor_for_tool("find_usages"),
-            provider: crate::interface::symbol_identity::default_provider_for_tool("find_usages")
-                .to_string(),
+            precision: Some(
+                crate::interface::symbol_identity::precision_floor_for_tool("find_usages")
+                    .as_str()
+                    .to_string(),
+            ),
+            provider: Some(
+                crate::interface::symbol_identity::default_provider_for_tool("find_usages")
+                    .to_string(),
+            ),
         };
 
         // 4) Format output to stdout.
