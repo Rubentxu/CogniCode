@@ -14877,3 +14877,77 @@ por qué.
 * **El gate murió con exit 137 (SIGKILL) en un run anterior**, con 61 GB de
   94 GB en uso por sesiones ajenas a esta. No reproducido; la máquina estaba
   compartida.
+
+---
+
+## 2026-10-15 — Merge gate verde sobre `fb0e9494`, y la UAT que llevaba meses roja
+
+**SHA**: `fb0e9494bcc6d20a177e8ad23be482c1f7ee3549` · rama `release/v0.101.17`
+· base `origin/main` = `88f6d02a` (PR #348) · **0 detrás, 10 delante**
+
+**Comando**
+
+    pipelinek run --rerun --db /tmp/gate7 merge-gate.pipeline.kts
+
+**Resultado**: `GATE_RC=0 WALL=606s`, `merge-gate -> success`,
+`Finished: success`. **71 etapas declaradas, 71 ejecutadas, 0 fallos.** El
+recuento no es estimado: se cruzó la lista de nombres de etapa que el runtime
+imprimió contra los `stage(...)` declarados en el fichero, y coinciden exactamente.
+
+### La sexta corrida paró en algo que no era del gate
+
+`mcp-prf-sec-02-read-only-uat`, etapa 46 de 71. Reproducido a la primera, en
+solitario, sin ambigüedad:
+
+    assertion `left == right` failed: exactly the declared mutating tools must be flagged
+      left: ["edit_file", "reparse_on_edit", "safe_refactor_apply", "write_file"]
+     right: ["edit_file", "reparse_on_edit", "write_file"]
+
+El test afirmaba que el modo por defecto marca *exactamente* las herramientas
+mutantes, y para decirlo nombraba tres: `edit_file`, `reparse_on_edit`,
+`write_file`. Esa lista escrita a mano es una **segunda fuente de verdad** del
+campo `authority` de `product/tools.json`. B5.W3 (`e11016ff`) declaró
+`safe_refactor_apply` como `mutating` —correctamente, porque escribe el
+refactor— y la lista no se actualizó.
+
+El dato importante no es el fallo: es **desde cuándo**. `git log -S` sitúa el
+cambio de `authority` en `e11016ff`, y esta UAT estaba entre las 35 pruebas que
+el gate colapsado de 73 a 8 etapas no ejecutaba. Es decir: **el gate llevaba
+meses en verde sin ejecutar esta prueba**, que estaba roja. La sexta pasada no
+encontró una avería nueva; encontró una que el gate llevaba mucho tiempo
+tapando. Es el argumento medido, no teórico, de por qué restaurar las etapas no
+era cosmético.
+
+### El arreglo: cambiar el oráculo, no la lista
+
+No se ha añadido un cuarto nombre a la lista. El oráculo pasa a ser el catálogo,
+leído con el mismo cargador que el runtime (`load_tool_catalog_active`, el mismo
+que proyecta `build_all_tools`, para que una tool con feature desactivada no
+aparezca como faltante sin que nadie la haya roto). Lo que el test sigue
+midiendo, y para eso está, es otra cosa: que **el flag que llega por el cable
+coincida con lo que el catálogo declara**. Eso exige un proceso MCP real,
+`tools/list` paginado y el transporte entero — justo lo que no cubre la prueba
+en proceso del adaptador (`rmcp_adapter.rs`, `descriptor_to_tool`).
+
+Guarda contra el catálogo vacío: si `declared` no contuviera `write_file`, la
+igualdad de abajo pasaría sin comprobar nada, y el test seguiría escribendo un
+fichero. Se afirma explícitamente.
+
+**Mutation-checked**: quitar `edit_file` del conjunto esperado pone la suite en
+rojo.
+
+    left: ["edit_file", "reparse_on_edit", "safe_refactor_apply", "write_file"]
+    right: ["reparse_on_edit", "safe_refactor_apply", "write_file"]
+
+### Abierto
+
+* **`cr07_metrics_exposition_contract` sigue sin reproducirse.** Pasó en la
+  corrida 7. Sigue siendo un flake abierto, no un arreglo: una vez en verde no
+  es evidencia de nada, y el gate no muestra la salida de un step que falla, así
+  que si vuelve a salir habrá que repetir el paso en solitario con la máquina
+  cargada como estaba.
+* **Coste real del gate: 606 s en caliente.** En frío, con los cuatro builds
+  release de un target dir vacío (693 s medidos), el orden de magnitud es de
+  decenas de minutos. El presupuesto de 15 min que se aprobó con este gate
+  descansaba en una medición de un gate que ejecutaba 4 de 39 tests. Sigue sin
+  rededicirse, y es una decisión del operador.

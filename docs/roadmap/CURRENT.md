@@ -37,9 +37,17 @@
 * **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
   (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
   contenido dentro de #348).
-* **SHA funcional**: `1a70ea11fb16b43c2038a69fa42263a850b3b0c2`.
+* **SHA funcional**: `fb0e9494bcc6d20a177e8ad23be482c1f7ee3549`, sobre el que
+  el merge gate correría **completo y en verde**.
 * **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
+
+* **Gate en verde**: corrida del 2026-10-15 sobre `fb0e9494`,
+  `pipelinek run --rerun --db /tmp/gate7 merge-gate.pipeline.kts` →
+  **rc=0, 606 s**, `merge-gate -> success`, `Finished: success`.
+  **71 etapas declaradas, 71 ejecutadas, 0 fallos** — el recuento se cruzó
+  contra los nombres declarados en el fichero, no estimado.
+
 * **Flake abierto, sin reproducir**: `cr07_metrics_exposition_contract`
   devolvió `shell exited with code 101` en la quinta corrida del gate, siendo la
   etapa 32 de 67. En solitario no se ha reproducido: 3/3 y después 20/20. La
@@ -47,13 +55,14 @@
   release — y el test **levanta un servidor HTTP real y hace scrape a
   `/metrics` con un plazo de 60 s** para que responda. Hipótesis: el plazo se
   agota bajo carga y el panic dice `/metrics never became reachable`.
-  **No está reproducido, así que no está arreglado.** Si vuelve a salir, la
-  pista es el stderr del servidor, que el test ya imprime y que la lane no
-  captura porque PipelineK no muestra la salida de un step que falla.
+  Pasó en la corrida 7. **No está reproducido, así que no está arreglado.**
+  Si vuelve a salir, la pista es el stderr del servidor, que el test ya imprime
+  y que la lane no captura porque PipelineK no muestra la salida de un step que
+  falla.
 
-* **Estado del gate**: cuatro correcciones encadenadas el 2026-10-15 antes de
-  que el gate volviera a correr entero. Cada una la encontró el gate, no una
-  revisión, y tres eran de este mismo trabajo:
+* **Estado del gate**: seis corridas el 2026-10-15 antes de que volviera a
+  correr entero. Cada una la encontró el gate, no una revisión, y cuatro eran
+  de este mismo trabajo:
 
   | Corrida | Paró en | Causa |
   |---|---|---|
@@ -61,10 +70,25 @@
   | 2 | `core-unrestricted-evidence-kernel` | `build-binary` estaba *después* del primer consumidor |
   | 3 | `fmt` | dos líneas mías sin `cargo fmt`, en 13 s |
   | 4 | `contracts` | este mismo ratchet, por 4 commits de distancia |
+  | 5 | `cr07-metrics-exposition` | flake no reproducido (ver arriba) |
+  | 6 | `mcp-prf-sec-02-read-only-uat` | UAT roja desde `e11016ff`, ver abajo |
 
   La primera medición del gate —687 s en 8 etapas— era de un gate que ejecutaba
   4 de sus 39 tests. Las cifras de abajo son las que se midieron después de
   arreglarlo.
+
+* **La sexta corrección era una UAT roja de meses, no una avería del gate.**
+  `prf_sec_02_read_only_uat` afirmaba que el modo por defecto marca
+  «exactamente las tres herramientas mutantes» nombrándolas una a una: esa
+  lista es una segunda fuente de verdad del campo `authority` de
+  `product/tools.json`. Cuando B5.W3 (`e11016ff`) declaró `safe_refactor_apply`
+  como mutante —con razón, escribe el refactor— la lista no se tocó y el test
+  quedó rojo. Nadie lo vio porque era una de las **35 pruebas que el gate
+  colapsado no ejecutaba**: salió al restaurar las etapas. El oráculo pasa a
+  ser el catálogo, leído con el mismo cargador que el runtime
+  (`load_tool_catalog_active`), y el test pasa a comprobar en negro, sobre un
+  proceso MCP real y con la paginación de `tools/list` de por medio, que el flag
+  que llega por el cable coincide con lo que el catálogo declara.
 
 * **Batería — MEDIDAS, y ya no son las de antes.** Las cifras de este
   snapshot se retiraron el 2026-10-15 porque se midieron sobre el gate
