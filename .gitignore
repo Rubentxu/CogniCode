@@ -244,6 +244,11 @@ uat-guided-v1.0.0-current.html
 # detected on first pr-ci.yml run after E2.W2 (workflow could not
 # find the bin source file). Mirror the cli exemption.
 !crates/cognicode-explorer/src/bin/
+# Same hazard, third time: `test-harness/bin/` holds the harness entry point
+# (`harness.py`), not build output. The first version of the harness lived only
+# as an untracked file locally because of this blanket ignore; the negation makes
+# it versioned instead of "present on the maintainer's machine".
+!test-harness/bin/
 sandbox/scripts/tests/__pycache__/
 *.cdx.json
 *.cdx.xml

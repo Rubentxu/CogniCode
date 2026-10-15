@@ -13,6 +13,23 @@
 - [ ] **W6: Pilotar con PipelineK, demostrar paridad, aceptar gate.** Shadow plan en lanes vigentes, UAT/AAT y comparativa de velocidad; demostrar cada obligación del full y cada artifact hash; ADR de política para admitir reutilización en gates oficiales si se aprueba. Adaptar stages progresivamente, sin tocar la fábrica release salvo interfaz permitida. **Entrega:** aceptación oficial o `NOT_CERTIFIED` explícito. **Release:** PR + merge sólo con matrices completas.
 - [ ] **W7: Consolidar, retirar duplicados y documentar operación.** Eliminar lógica antigua, conservar shims mínimos cuando haya clientes. Ratchets anti-regresión, benchmark antes/después, guía operadores, limpieza de deuda documental en documentos vigentes. **Entrega:** una sola autoridad técnica en `test-harness/`, rutas antiguas compatibles o retiradas justificadamente. **Release:** PR + merge.
 
+## Estado de las WU (2026-10-15)
+
+La primera implementación del harness cubre parte de W2, W3 y W4. Ninguna de las
+tres está CLOSED: el protocolo de bloque exige paridad medida y eso no se ha
+hecho. Lo que hay, y lo que falta:
+
+| WU | Estado | Qué existe hoy | Qué falta para cerrarla |
+|---|---|---|---|
+| W0 | NOT_STARTED | — | Informe de tiempos de referencia y mapa de cobertura |
+| W1 | NOT_STARTED | — | Fiabilidad del sandbox, `test-all.sh` |
+| W2 | EN_PROGRESO | Esqueleto `test-harness/{src,adapters,bin,tests}` con front propio, 60 tests dependency-free, contrato de gate | Delegaciones compat desde `scripts/`; paridad de argumentos y rc con `full` |
+| W3 | EN_PROGRESO | `ChangeSet` de merge-base + dirty + untracked con `-z`; grafo de `cargo metadata` con dependientes transitivos; `plan`/`explain` con motivo por decisión; fail-closed en ruta desconocida y borrado de test | Comparación automática con CR-08 y mutaciones de fallos de selección |
+| W4 | EN_PROGRESO | Ledger append-only fuera del checkout, recibos inmutables, huellas de entrada con `policy_version`, `run/resume/status`, lease por run, recibo `RUNNING` antes de lanzar | Prueba de corte SIGKILL en CI, invalidación por cambio de features en el plan, política de GC |
+| W5 | NOT_STARTED | — | Nextest opcional, sandbox por escenario |
+| W6 | NOT_STARTED | — | Shadow plan en las lanes, paridad demostrada, ADR de política |
+| W7 | NOT_STARTED | — | Retirada de duplicados y guía de operación |
+
 ## Dependencias
 
 `W0 -> W1 -> W2 -> W3 -> W4 -> W5 -> W6 -> W7`. W1 puede prepararse en rama corta separada y fusionarse pronto sin esperar W3/W4. W3 y W4 tienen interfaces negociadas desde W2; se pueden desarrollar en worktrees distintos sin modificaciones simultáneas a scripts de autoridad. W6 nunca comienza sin W4/5 certificados y paridad con W0.
