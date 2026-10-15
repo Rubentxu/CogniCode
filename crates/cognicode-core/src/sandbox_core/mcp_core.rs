@@ -231,6 +231,12 @@ impl McpServer {
         let mut notifications = Vec::new();
         let deadline = Instant::now() + Duration::from_millis(100); // 100ms max
         let poll_interval = Duration::from_millis(20);
+        // Forensic counter for non-JSON lines that arrive during the
+        // drain window. The 100ms cap bounds the total, so this is
+        // for visibility, not enforcement. Without it, a server
+        // that emits non-protocol output during drain would lose
+        // that signal entirely (P1 of the sandbox harness audit).
+        let mut non_json_count: usize = 0;
 
         while Instant::now() < deadline {
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -242,10 +248,19 @@ impl McpServer {
                         continue;
                     }
 
-                    if let Ok(msg) = serde_json::from_str::<Value>(trimmed)
-                        && msg.get("id").is_none()
-                    {
-                        notifications.push(msg);
+                    match serde_json::from_str::<Value>(trimmed) {
+                        Ok(msg) => {
+                            if msg.get("id").is_none() {
+                                notifications.push(msg);
+                            }
+                        }
+                        Err(_) => {
+                            non_json_count += 1;
+                            eprintln!(
+                                "mcp_core: drain_notifications: non-JSON line #{}: {}",
+                                non_json_count, trimmed
+                            );
+                        }
                     }
                 }
                 Ok(Err(_)) | Err(RecvTimeoutError::Disconnected) => break,
@@ -289,6 +304,14 @@ impl McpServer {
         // is checked at every iteration, so the wall-clock cost of a
         // full-timeout wait is bounded by (timeout + poll_interval).
         let poll_interval = Duration::from_millis(50);
+        // Per-call counter for non-JSON lines. Occasional ANSI log
+        // output (tracing, etc.) is tolerated; sustained non-JSON
+        // output is a protocol violation. The pre-fix code silently
+        // dropped every non-JSON line, so a server that does not
+        // speak MCP at all could pass through undetected (P1 of the
+        // sandbox harness audit).
+        const MAX_NON_JSON_LINES: usize = 10;
+        let mut non_json_count: usize = 0;
 
         loop {
             if Instant::now() > deadline {
@@ -315,7 +338,20 @@ impl McpServer {
                     let msg: Value = match serde_json::from_str(trimmed) {
                         Ok(v) => v,
                         Err(_) => {
-                            // Non-JSON line (e.g., ANSI log from tracing), skip
+                            // Non-JSON line. The pre-fix code silently
+                            // continued, which meant a server that
+                            // never speaks MCP would pass through with
+                            // no signal. Count the occurrences and trip
+                            // McpError::ProtocolViolation once the
+                            // threshold is exceeded. A few ANSI log
+                            // lines from tracing are still tolerated.
+                            non_json_count += 1;
+                            if non_json_count > MAX_NON_JSON_LINES {
+                                return Err(McpError::ProtocolViolation(format!(
+                                    "server emitted {} non-JSON lines in a single read_response (expected JSON-RPC)",
+                                    non_json_count
+                                )));
+                            }
                             continue;
                         }
                     };
