@@ -99,11 +99,17 @@
           },
           "impact": {
             "description": "B4.W1 ImpactResult envelope, or null when B4.W1 not wired",
-            "type": ["object", "null"]
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "architecture": {
             "description": "B4.W2 ArchitectureDiagnostic envelope, or null when not wired",
-            "type": ["object", "null"]
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "findings": {
             "description": "B4.W3 Finding list (empty when not wired)",
@@ -321,7 +327,7 @@
                 "type": "string"
               },
               "source_manifest_digest": {
-                "description": "Digest over the source manifest (sorted relative paths + content\nhashes). Same sources \u21d2 same digest; any source change \u21d2 different\ndigest. Empty when the manifest could not be computed.",
+                "description": "Digest over the source manifest (sorted relative paths + content\nhashes). Same sources ⇒ same digest; any source change ⇒ different\ndigest. Empty when the manifest could not be computed.",
                 "type": "string"
               },
               "workspace": {
@@ -1587,7 +1593,7 @@
             "type": "string"
           },
           "hierarchical": {
-            "description": "Group symbols by nesting (parent\u2192children tree) (default: false)",
+            "description": "Group symbols by nesting (parent→children tree) (default: false)",
             "type": "boolean"
           }
         },
@@ -2699,8 +2705,8 @@
     },
     {
       "name": "graph_feedback_arcs",
-      "title": "Find a feedback arc set \u2014 edges whose removal would make the call graph acyclic",
-      "description": "Find a feedback arc set \u2014 edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
+      "title": "Find a feedback arc set — edges whose removal would make the call graph acyclic",
+      "description": "Find a feedback arc set — edges whose removal would make the call graph acyclic. The greedy heuristic is not optimal but fast; use the result as a starting point when breaking circular dependencies. Requires build_graph first.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -2740,8 +2746,8 @@
     },
     {
       "name": "graph_god_nodes",
-      "title": "Find god nodes \u2014 symbols with unusually high PageRank (above the supplied percentile)",
-      "description": "Find god nodes \u2014 symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
+      "title": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile)",
+      "description": "Find god nodes — symbols with unusually high PageRank (above the supplied percentile). These are symbols that too many things depend on and are prime refactoring candidates. Requires build_graph first.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -3209,8 +3215,8 @@
     },
     {
       "name": "graph_reduced",
-      "title": "Compute the transitive reduction of the call graph \u2014 the minimal set of dependency edges that preserves reachability",
-      "description": "Compute the transitive reduction of the call graph \u2014 the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
+      "title": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability",
+      "description": "Compute the transitive reduction of the call graph — the minimal set of dependency edges that preserves reachability. Redundant edges (implied by longer paths) are dropped. Requires build_graph first.",
       "category": "graph",
       "authority": "read",
       "stability": "stable",
@@ -3894,7 +3900,7 @@
             "type": "number"
           },
           "hot_paths": {
-            "description": "Hot paths \u2014 top god node names ranked by importance score.",
+            "description": "Hot paths — top god node names ranked by importance score.",
             "items": {
               "$ref": "#/$defs/HotPath"
             },
@@ -4210,7 +4216,7 @@
     {
       "name": "read_view_spec",
       "title": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID)",
-      "description": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props \u2014 use list_view_specs for discovery.",
+      "description": "Read a full ViewSpec by id (built-in kebab id like 'overview', 'call-graph'; or runtime UUID). Returns the complete 13-field ViewSpec JSON. Built-in specs synthesize with empty data_source/transform/props — use list_view_specs for discovery.",
       "category": "view",
       "authority": "read",
       "stability": "stable",
@@ -4600,8 +4606,16 @@
           }
         },
         "oneOf": [
-          {"required": ["plan_path"]},
-          {"required": ["plan_json"]}
+          {
+            "required": [
+              "plan_path"
+            ]
+          },
+          {
+            "required": [
+              "plan_json"
+            ]
+          }
         ],
         "type": "object"
       },
@@ -4685,11 +4699,17 @@
           },
           "diagnostics": {
             "description": "B4.W2 ArchitectureDiagnostic, or null when not wired.",
-            "type": ["object", "null"]
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "impact": {
             "description": "B4.W1 ImpactResult, or null when not wired.",
-            "type": ["object", "null"]
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "verdict": {
             "description": "RevalidationVerdict enum (verdict_refused | invariants_hold | invariants_drift). Always verdict_refused until a future WU records an evidence_digest.",
@@ -5426,103 +5446,6 @@
       "limitations": [
         "requires evidence-cli-ladybug feature",
         "substring match"
-      ]
-    },
-    {
-      "name": "cogh",
-      "title": "cogh — CogniCode version manager CLI (B6.W3 lifecycle)",
-      "description": "User-facing lifecycle for the cogh binary itself: clean install, update, version pinning, IDE compatibility, doctor, rollback. A new user obtains a first real query without compiling CogniCode or reading internal repo instructions. The install / update / rollback surface prints a JSON plan and only writes when --apply is supplied.",
-      "category": "lifecycle",
-      "authority": "mutating",
-      "stability": "stable",
-      "input_schema": {
-        "properties": {
-          "version": {
-            "description": "Version to install or pin (e.g. 0.101.15). Use `latest` to resolve the current stable release.",
-            "type": "string"
-          },
-          "rollback": {
-            "description": "Rollback cogh to a previously pinned version. Mutually exclusive with `version`.",
-            "type": "string"
-          },
-          "apply": {
-            "description": "When true, perform the install/rollback. When false (default), only print the plan as JSON. The user must re-run with --apply to actually write.",
-            "type": "boolean"
-          },
-          "home": {
-            "description": "Override COGNICODE_HOME (defaults to ~/.cognicode).",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "output_schema": {
-        "properties": {
-          "dry_run": {
-            "description": "True when --apply was not set; the envelope is a plan, not an outcome.",
-            "type": "boolean"
-          },
-          "plan": {
-            "description": "InstallPlan: version, install_path, bin_paths, shell_completion_path. Present on dry-run.",
-            "type": "object"
-          },
-          "outcome": {
-            "description": "InstallOutcome: action, install_path, sha256, doctor_pass. Present after --apply.",
-            "type": "object"
-          },
-          "action": {
-            "description": "InstallAction discriminator: install | update | rollback.",
-            "type": "object"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "dry_run"
-        ],
-        "type": "object"
-      },
-      "requirements": {
-        "graph": false,
-        "persistence": false,
-        "cache": null,
-        "network": null
-      },
-      "requirements_status": "not_declared",
-      "estimated_latency_ms": 50,
-      "public_profiles": [
-        "core",
-        "reviewer"
-      ],
-      "runtime_metadata": {
-        "authority": "mutating",
-        "category": "lifecycle",
-        "estimated_latency_ms": 50,
-        "mutates_workspace": true,
-        "requires_graph": false,
-        "requires_persistence": false,
-        "stability": "stable",
-        "tool_version": "0.101.16"
-      },
-      "install_instructions": "curl -fsSL https://raw.githubusercontent.com/cognicode/cogh/main/install.sh | bash -s -- --version 0.101.15",
-      "version_check_command": "cogh --version",
-      "required_args": [],
-      "prerequisites": [],
-      "follow_ups": [
-        "cogh doctor",
-        "cogh current"
-      ],
-      "limitations": [
-        "user-facing self-install only; the plugin install surface (cogh install <plugin>) is unchanged",
-        "dry-run is the default; --apply is required to mutate the filesystem",
-        "rollback requires a prior tracker pin to be informative (otherwise `from` is empty)"
-      ],
-      "ide_compatibility": [
-        "cursor",
-        "vscode",
-        "neovim"
       ]
     }
   ]
