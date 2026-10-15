@@ -384,3 +384,72 @@ Las garantías siguen descritas en `docs/prf/` como evidencia histórica y sus
 contratos supervivientes (`a009`, `a016`, `cli_exit_code_propagation`,
 `prf_h06`, `b6_w1`) siguen pineando la parte que ejercen por otra vía; lo que ya
 no existe es la reproducción ejecutable de la clase retirada.
+
+---
+
+## 7. Perfil medido del gate tras B1 y el corte del rustdoc (2026-10-15)
+
+Reparto medido del run durable `1b37e37b` (58 etapas, 1 630 s = 27,2 min) en el
+ledger de PipelineK (`.pipelinek/merge-gate.db`, tabla `events`:
+
+| Etapa | Segundos | % del gate | Clasificación |
+|---|---:|---:|---|
+| `rustdoc-gate` | 667,4 | 41,0% | **MOVIDA** a integración (ver §8) |
+| `contracts` | 205,9 | 12,6% | MERGE_REQUIRED (contratos estructurales) |
+| `cognicode-ladybug` | 158,3 | 9,7% | MERGE_REQUIRED hoy; candidata a selección por impacto |
+| `core-unrestricted-evidence-kernel` | 122,4 | 7,5% | MERGE_REQUIRED hoy; idem |
+| `core-lib` | 77,3 | 4,7% | MERGE_REQUIRED hoy; idem |
+| `clippy` | 77,2 | 4,7% | MERGE_REQUIRED (lint) |
+| `build-control-plane-debug` | 69,6 | 4,3% | MERGE_REQUIRED (precondición de sus suites) |
+| `cli-unit-tests` | 59,8 | 3,7% | MERGE_REQUIRED hoy; idem |
+| `core-adversarial-campaign` | 53,7 | 3,3% | MERGE_REQUIRED (seguridad) |
+| `cli-integration-suites` | 42,0 | 2,6% | MERGE_REQUIRED hoy; idem |
+| resto (48 etapas) | ~96 | 5,9% | fmt, builds, gates pequeños, advisories |
+
+Las diez primeras etapas suman el 94% del gate. El presupuesto de 6–7 minutos
+(360–420 s) no se alcanza con un solo corte: quitando el rustdoc quedan ~963 s
+(16 min), y el resto del camino exige que la lane de merge ejecute las **pruebas
+afectadas** (selección por impacto, ya medida contra CR-08 en `parity`) en vez de
+la batería completa, que es lo que la lane de integración ya hace.
+
+Es decir: el gate útil no se construye borrando etapas por lentas, sino cambiando
+quién posee cada obligación y cuándo se paga. Lo que se ha movido aquí es una
+etapa que **el repositorio ya ejecutaba dos veces por cambio**.
+
+## 8. Dueño único para el gate de rustdoc (movimiento medido)
+
+| Antes | Después |
+|---|---|
+| `merge-gate.pipeline.kts` stage `rustdoc-gate` (**737 s medidos hoy** con `/usr/bin/time` sobre el mismo comando) **y** `integration.pipeline.kts` `cargo test --workspace --all-targets` (que ejecuta el mismo target) | `integration.pipeline.kts` stage `rustdoc-gate`, nombrada y explícita; el merge deja de pagarla |
+| Gate de merge: **1 316 s** (579 s + 737 s) en el mismo entorno y día | Gate de merge: **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`) |
+
+Ahorro medido por iteración de merge: **−737 s (−56%)**. La corrida histórica del
+perfil (1 630 s, run `1b37e37b`) se hizo con la máquina cargada y no es comparable;
+la comparación honesta es la de arriba, medida hoy y con el mismo comando.
+
+- **Garantía conservada**: el workspace sigue teniendo que mantener cero avisos de
+  rustdoc en las categorías de M0.11, verificado por el mismo target, en una lane
+  que bloquea `main`.
+- **Garantía nueva**: el contrato
+  `core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority`
+  exige que el gate corra en **exactamente una** autoridad, nombrada de forma
+  explícita (no escondida dentro de `--all-targets`) y que no sea el merge. Antes
+  la aserción era «el merge lo ejecuta», que no detectaba la duplicación.
+- **Pruebas adversariales ejecutadas**: (a) borrar la etapa de integración → el
+  contrato falla con «runs in no pipeline, so it gates nothing»; (b) volver a
+  ponerla en merge → falla con «must run in exactly one authority … Runners found:
+  [merge-gate.pipeline.kts, integration.pipeline.kts]». Ambas mutaciones se
+  restauraron y el contrato volvió a verde (11/11).
+
+### 7.1 Clasificación de las 57 etapas restantes (vocabulario del mandato)
+
+| Clasificación | Etapas | Nota |
+|---|---|---|
+| `MERGE_REQUIRED` | 53 | Los contratos estructurales del repo (`contracts`, `fmt`, `clippy`, cobertura de CLI/core, `check-bin-tracking`, `verify-skills`), las suites de producto y seguridad de CLI/MCP/core y las construcciones debug que sus suites consumen. Clasificación heredada de §5 para las etapas que ya estaban |
+| `CERTIFICATION_REQUIRED` | 1 | `rustdoc-gate`, movida (ver §8): es una comprobación de calidad de documentación del workspace, no una precondición de integración |
+| `RELEASE_REQUIRED` | 0 en esta lane | Las cuatro construcciones release y las seis suites de perfil release salieron en B1 (§12 del ROADMAP); su dueño es `release-candidate.pipeline.kts` |
+| `ADVISORY` | 3 | Los pasos cuya falla no bloquea por diseño (instalaciones de herramientas y sus equivalentes); el resto de `cargo deny` depende de una base de avisos externa y hoy se ejecuta en merge porque su resultado es contractual |
+
+Ninguna etapa se movió por ser lenta: la única que cambió de dueño (§8) ya se
+ejecutaba dos veces por cambio. Las 53 `MERGE_REQUIRED` son las que el siguiente
+bloque (selección por impacto) debe poder reducir a *afectadas*, no eliminar.

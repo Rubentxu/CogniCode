@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 20323,
+      "bytes": 21105,
       "path": "README.md",
-      "sha256": "8af3cfdb0f18931ec03f53bb456fcfbff65bdf0e3b6f37c0ea43595e0827f20a"
+      "sha256": "4d09a1485d02ccb71bd93163da2e4dc8f2233e57d2c55d0a152e1394f1816f4b"
     },
     {
       "bytes": 7968,
@@ -96,6 +96,11 @@
       "sha256": "9e8a063b8f473764649b6e083c82b1071fd29359bfd337c358ad645b5ef596f0"
     },
     {
+      "bytes": 3309,
+      "path": "adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md",
+      "sha256": "d6199779773638c3972ef83b12a250b1f20a0df41f1a84601e42c02abd0828c2"
+    },
+    {
       "bytes": 1010,
       "path": "bin/harness.py",
       "sha256": "9d24f1a56ed59eaa76fb080aeec253e8368f1ec6da78997d99a65546e6583a20"
@@ -181,9 +186,9 @@
       "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c"
     },
     {
-      "bytes": 41557,
+      "bytes": 46331,
       "path": "docs/07-auditoria-merge-gate.md",
-      "sha256": "cf5eda915465aebc51f693e7f89ffab095a2659e748c6ae1a8506b94c8a4e3ed"
+      "sha256": "5c44974691e187d4c8b56f42bb9ea2f47cc8264e67610ed6f31f886068c2ce9e"
     },
     {
       "bytes": 96,

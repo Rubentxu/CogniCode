@@ -172,6 +172,18 @@ acepte ese PASS: una suite que pierde pruebas por una feature apagada es un huec
 con nombre, no un verde. Sin pin, el suelo es 1 caso para Cargo y ninguno para los
 scripts.
 
+## Perfil del gate de merge y presupuesto
+
+Medido en el ledger durable de PipelineK (run `1b37e37b`, 58 etapas, 1 630 s):
+las diez etapas más caras suman el 94%; `rustdoc-gate` sola era 667 s (41%) y se
+ejecutaba **dos veces por cambio** (merge + integración). Desde el 2026-10-15 su
+dueño es la lane de integración, con stage nombrada y contrato que exige dueño
+único ([ADR-TH-011](adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md)); el merge
+deja de pagarla. El reparto completo y el camino hasta el presupuesto de 6–7
+minutos están en [`docs/07-auditoria-merge-gate.md`](docs/07-auditoria-merge-gate.md)
+§7-§8: el siguiente salto exige que el merge ejecute las pruebas **afectadas**
+(selección ya medida contra CR-08) y que la batería completa siga en integración.
+
 ## Suelo de obligaciones críticas
 
 `obligations.json` lista el mínimo de obligaciones que la lane de merge (y las

@@ -147,15 +147,15 @@ pipeline {
                 sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
             }
 
-            stage("rustdoc-gate") {
-                // Wired 2026-10-01. The M0.11 rustdoc gate was green and ran in no
-                // pipeline at all, so a rustdoc warning that ST-01 introduced in
-                // infrastructure/parser/syntax_analysis.rs survived that commit, the
-                // whole branch and six more commits: nothing executed it. It surfaced
-                // only because someone ran `cargo test --workspace`.
-                // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_both_pipelines.
-                sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
-            }
+            // El gate de rustdoc (M0.11) vivía aquí y se pagaba **dos veces** por
+            // cambio: esta stage y, unas horas después, el `cargo test --workspace
+            // --all-targets` de la lane de integración, que ejecuta el mismo target.
+            // MEDIDO 2026-10-15 en el ledger durable del gate: 667 s aquí, dentro
+            // de un merge de 1 630 s (41%). La garantía no se retira: se ejecuta
+            // una sola vez, en la lane que ya la ejecutaba y que es la que bloquea
+            // `main`, con stage propia y nombrada (no escondida dentro de
+            // `--all-targets`) para que el contrato pueda verificarla.
+            // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority.
 
             // MEDIDO 2026-10-15. Las dependencias Python del contrato se
             // declaran ANTES de `contracts`, no despues. `skills-toolchain`
