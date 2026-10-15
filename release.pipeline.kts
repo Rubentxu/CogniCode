@@ -340,6 +340,31 @@ pipeline {
                     echo "published release verified from re-downloaded bytes"
                 """.trimIndent())
             }
+
+            // MEDIDO 2026-10-15. `verify-as-consumer` re-descarga cada asset y
+            // corre `sha256sum -c SHA256SUMS`. Eso prueba que los assets que
+            // estan son los correctos — y no que esten todos. Si SHA256SUMS
+            // solo lista 3, la comprobacion pasa con 3.
+            //
+            // Y asi ocurrio: v0.101.10 publico 8 assets; v0.101.11 hasta
+            // v0.101.16 publicaron 3 cada una, medido contra la API de GitHub.
+            // Los 5 que faltan son exactamente los que necesitan install.sh y
+            // `cogh update`: el bundle por plataforma, los dos bundles
+            // portables, el release-inventory y el propio SHA256SUMS. Seis
+            // releases seguidas se publicaron rotas para quien instala.
+            //
+            // `sandbox/scripts/test_release_asset_set.sh` comprueba el conjunto
+            // contra el tag publicado. No estaba invocado por ningun pipeline:
+            // el unico que lo mencionaba era su propia cabecera. Es la misma
+            // clase de deuda que el gate de skills CP5, que estuvo verde mucho
+            // tiempo sin que ningun workflow lo invocara — y que este mismo
+            // lane ya documenta para no repetir.
+            stage("verify-asset-set") {
+                sh("""
+                    $cd || exit 1
+                    bash sandbox/scripts/test_release_asset_set.sh "${'$'}RELEASE_TAG"
+                """.trimIndent())
+            }
         }
     }
 }
