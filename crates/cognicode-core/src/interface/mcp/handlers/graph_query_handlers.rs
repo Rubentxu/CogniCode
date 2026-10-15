@@ -9,6 +9,9 @@ use std::collections::HashSet;
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
+use crate::interface::symbol_identity::{
+    Precision, default_provider_for_tool, precision_floor_for_tool,
+};
 // `JsonSchema` derives the published MCP output contract from this type, so
 // the contract cannot drift from the struct that produces the bytes.
 use schemars::JsonSchema;
@@ -365,6 +368,10 @@ pub struct GetTypeRefsInput {
 pub struct GetTypeRefsOutput {
     pub symbol: String,
     pub references: Vec<TypeRefRecord>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct TypeRefRecord {
@@ -406,6 +413,8 @@ pub async fn handle_get_type_references(
     Ok(GetTypeRefsOutput {
         symbol: input.symbol_name,
         references,
+        precision: precision_floor_for_tool("get_type_references"),
+        provider: default_provider_for_tool("get_type_references").to_string(),
     })
 }
 
@@ -480,6 +489,10 @@ pub struct GetImplementorsInput {
 pub struct GetImplementorsOutput {
     pub trait_name: String,
     pub implementors: Vec<String>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 pub async fn handle_get_implementors(
@@ -519,6 +532,8 @@ pub async fn handle_get_implementors(
     Ok(GetImplementorsOutput {
         trait_name: input.trait_name,
         implementors,
+        precision: precision_floor_for_tool("get_implementors"),
+        provider: default_provider_for_tool("get_implementors").to_string(),
     })
 }
 

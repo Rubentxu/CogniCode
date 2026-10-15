@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::interface::symbol_identity::Precision;
+
 // Re-export types from dto for MCP protocol use
 // These types are shared between MCP schemas and application DTOs
 // They are defined in dto/common.rs with proper serde for camelCase MCP serialization
@@ -77,6 +79,10 @@ pub struct GetCallHierarchyOutput {
     pub symbol: String,
     pub calls: Vec<CallEntry>,
     pub metadata: AnalysisMetadata,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +118,12 @@ pub struct GetFileSymbolsOutput {
     /// Hierarchical symbols tree (when `hierarchical` is true). Empty when `hierarchical` is false.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub hierarchical_symbols: Vec<HierarchicalSymbolInfo>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed
+    /// to carry. One of `lsp`, `ast-heuristic`, `index`. Required.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result. Required so consumers
+    /// can tell apart an LSP-backed result from an AST heuristic.
+    pub provider: String,
 }
 
 /// Hierarchical symbol info with children for tree representation
@@ -194,14 +206,10 @@ pub struct FindUsagesOutput {
     pub symbol: String,
     pub usages: Vec<UsageEntry>,
     pub total: usize,
-    /// B3.W1 parity with the MCP `find_usages` wire shape. The CLI
-    /// text path ignores these; the JSON presenter emits them when
-    /// populated. Absent from the JSON when `None` so existing
-    /// consumers that do not expect them are unaffected.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub precision: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider: Option<String>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -687,6 +695,10 @@ pub struct QuerySymbolOutput {
     pub symbol_name: String,
     pub locations: Vec<SymbolLocationEntry>,
     pub total: usize,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1033,6 +1045,10 @@ pub struct GoToDefinitionOutput {
     pub column: Option<u32>,
     pub context: Option<String>,
     pub message: Option<String>,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 /// Input for hover tool
@@ -1068,6 +1084,10 @@ pub struct FindReferencesOutput {
     pub symbol: String,
     pub references: Vec<ReferenceEntry>,
     pub total: usize,
+    /// B4.W1 — minimum provenance tier the tool's edges are guaranteed to carry.
+    pub precision: Precision,
+    /// B4.W1 — provider that produced the result.
+    pub provider: String,
 }
 
 /// A single reference entry
