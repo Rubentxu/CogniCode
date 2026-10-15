@@ -280,11 +280,32 @@ def test_status_without_runs_is_a_harness_error():
         assert "no hay ningún run" in proc.stderr, proc.stderr
 
 
-def test_parallel_workers_are_refused_with_a_reason():
+def test_parallel_workers_are_recorded_and_capped():
+    """La concurrencia se declara en el run, y por encima del tope se recorta."""
     with demo_repo() as repo:
-        proc = run_cli(repo, _state(repo), "run", "--lane", "change", "--max-workers", "4")
-        assert proc.returncode == 2, proc
-        assert "no está implementado" in proc.stderr, proc.stderr
+        state = _state(repo)
+        commit_change(repo, "scripts/slow-a.sh", "# cambio\n")
+        proc = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "run",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--max-workers",
+            "99",
+            "--only",
+            "workspace:script:slow-a",
+        )
+        payload = json.loads(proc.stdout)
+        run_state = json.loads((state / "runs" / f"{payload['run_id']}.json").read_text())
+        concurrency = run_state["concurrency"]
+        assert concurrency["requested"] == 99, concurrency
+        assert concurrency["effective"] == 8, concurrency
+        assert "cargo-target" in concurrency["locks"], concurrency
 
 
 def test_unknown_suite_explain_is_honest():

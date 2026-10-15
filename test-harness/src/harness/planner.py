@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .domain import ExecutionPlan, PlanAction, SuiteRef
+from .inventory import Inventory
 from .parity import ParityReport, compare, floor_entries
 from .policy import POLICY_VERSION, reuse_allowed
 from .validity import FingerprintInputs, evaluate_reuse
@@ -133,6 +134,10 @@ class PlanResult:
     warnings: tuple[str, ...] = field(default_factory=tuple)
     parity: ParityReport | None = None
     oracle: SelectorDecision | None = None
+
+    def minimums(self) -> dict[str, int]:
+        """Mínimo de casos exigido por suite (del pin, o el suelo de Cargo)."""
+        return {suite.entry.suite_id: suite.fingerprint.expected_min_cases for suite in self.suites}
 
 
 def _walk_files(root: Path, subdir: str, cap: int = CLOSURE_FILE_CAP) -> tuple[list[str], bool]:
@@ -519,6 +524,7 @@ def build_plan(
     allow_reuse: bool = False,
     allow_external: bool = False,
     oracle: SelectorDecision | None = None,
+    inventory: Inventory | None = None,
     run_id: str,
     created_at: str,
 ) -> PlanResult:
@@ -530,6 +536,7 @@ def build_plan(
     entonces no hay forma de demostrar que no se está por debajo.
     """
     repo_root = changeset.repo_root
+    inventory = inventory or Inventory(entries={})
     selection = select(
         lane=lane, changeset=changeset, graph=graph, catalog=catalog, repo_root=repo_root
     )
@@ -561,7 +568,13 @@ def build_plan(
             cargo_lock_digest=lock_digest,
             toolchain_digest=toolchain_digest,
             closure_digest=closure.digest,
-            expected_min_cases=1 if runner_name == "cargo-test" else 0,
+            # El mínimo sale del pin versionado cuando existe; si no, Cargo exige
+            # al menos un caso y los scripts ninguno (no cuentan casos).
+            expected_min_cases=(
+                inventory.expected_min_for(entry.suite_id)
+                if inventory.expected_min_for(entry.suite_id) > 0
+                else (1 if runner_name == "cargo-test" else 0)
+            ),
         )
         external = _needs_external_state(entry)
         receipt = None

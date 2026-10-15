@@ -1,0 +1,20 @@
+{
+  "schema_version": "th.suite-metadata/v1",
+  "notes": "Metadatos que no se pueden derivar del comando: serialidad y recursos compartidos. Solo lo que el repositorio sabe y el comando no dice.",
+  "rules": [
+    {
+      "match": "workspace:script:*",
+      "serial": true,
+      "reason": "Los scripts de contrato trabajan sobre el árbol, el entorno y directorios temporales: dos a la vez compiten por lo mismo."
+    },
+    {
+      "match": "workspace:cargo:clippy#-",
+      "locks": ["cpu-heavy"],
+      "reason": "clippy --workspace satura la máquina; se declara para que no comparta turno con otras tareas pesadas."
+    },
+    {
+      "match": "workspace:cargo:build#-",
+      "locks": ["cpu-heavy"]
+    }
+  ]
+}

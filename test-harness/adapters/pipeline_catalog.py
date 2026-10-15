@@ -13,8 +13,9 @@ Todo lo demás se deriva del texto.
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 # Qué pipelines alimentan qué lane. Es la única tabla escrita a mano, y es
@@ -58,6 +59,8 @@ class CatalogEntry:
     scope: str = "package"  # package | workspace | script
     kind: str = "test"  # test | check | script
     advisory: bool = False  # el gate la deja fallar a propósito
+    serial: bool = False  # muta el entorno: corre sola, con barrera
+    locks: tuple[str, ...] = ()  # recursos compartidos que necesita
 
     def sort_key(self) -> tuple[str, str]:
         return (self.package, self.target)
@@ -254,6 +257,57 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                 )
 
     return tuple(entries[key] for key in sorted(entries))
+
+
+SUITE_METADATA = Path("test-harness/config/suite-metadata.json")
+SUITE_METADATA_SCHEMA = "th.suite-metadata/v1"
+
+
+def _rule_matches(rule: str, suite_id: str) -> bool:
+    if rule.endswith("*"):
+        return suite_id.startswith(rule[:-1])
+    return rule == suite_id
+
+
+def apply_suite_metadata(
+    entries: tuple[CatalogEntry, ...], repo_root: Path
+) -> tuple[CatalogEntry, ...]:
+    """Aplica los metadatos declarados que no son derivables (TH-S01).
+
+    `serial` y `locks` no se pueden deducir del comando: un script que toca el
+    entorno y otro que solo lee se ven igual en la línea de la pipeline. Se
+    declaran en `test-harness/config/suite-metadata.json` y se aplican aquí.
+
+    Un fichero ilegible **no** se ignora en silencio: devuelve las entradas sin
+    metadatos y un aviso queda registrado en el log del harness. Silenciarlo
+    paralelizaría suites que el repositorio declaró seriales.
+    """
+    path = repo_root / SUITE_METADATA
+    if not path.exists():
+        return entries
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        raise ValueError(f"{SUITE_METADATA} ilegible: {exc}") from exc
+    if payload.get("schema_version") != SUITE_METADATA_SCHEMA:
+        raise ValueError(
+            f"{SUITE_METADATA} declara schema_version {payload.get('schema_version')!r} "
+            f"y se esperaba {SUITE_METADATA_SCHEMA!r}"
+        )
+    rules = payload.get("rules") or []
+    updated: list[CatalogEntry] = []
+    for entry in entries:
+        serial = entry.serial
+        locks = set(entry.locks)
+        for rule in rules:
+            match = rule.get("match", "")
+            if not match or not _rule_matches(match, entry.suite_id):
+                continue
+            if rule.get("serial"):
+                serial = True
+            locks.update(rule.get("locks") or ())
+        updated.append(replace(entry, serial=serial, locks=tuple(sorted(locks))))
+    return tuple(updated)
 
 
 def catalog_for_lane(catalog: tuple[CatalogEntry, ...], lane: str) -> tuple[CatalogEntry, ...]:

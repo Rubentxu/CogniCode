@@ -228,6 +228,46 @@ def test_the_harness_is_never_weaker_than_the_current_selector():
         assert verdicts.get("AGREE", 0) + verdicts.get("HARNESS_STRICTER", 0) >= 8, verdicts
 
 
+def test_the_pinned_inventory_is_consistent_with_the_observations():
+    """El pin de casos no puede estar por encima de lo que las suites ejecutan.
+
+    Un pin inventado convierte el gate en ruido; un pin por debajo de la realidad
+    deja pasar una suite que perdió pruebas. Esta comprobación exige que el pin
+    versionado, si existe, no esté por encima de lo observado en los recibos del
+    ledger de esta máquina, y que `inventory --check` no señale nada por debajo.
+    """
+    inventory_path = HARNESS_DIR / "inventory.json"
+    if not inventory_path.exists():
+        return  # sin pin no hay nada que comprobar; el plan exige el suelo de Cargo
+    with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:
+        proc = _run_cli(Path(tmp), "--format", "json", "inventory", "--check")
+        assert proc.stdout.strip(), proc.stderr
+        payload = json.loads(proc.stdout)
+        assert payload["problem"] is None, payload["problem"]
+        assert payload["under_pin"] == [], payload["under_pin"]
+        # El pin tiene que describir suites reales del catálogo, no fantasmas.
+        catalog = json.loads(
+            _run_cli(Path(tmp), "--format", "json", "plan", "--lane", "change", "--base", "origin/main").stdout
+        )
+        known = set(catalog["plan"]["required_suites"]) | {
+            entry["suite_id"] for entry in catalog.get("excluded", [])
+        }
+        unknown = [suite for suite in payload["pinned"]["entries"] if known and suite not in known]
+        assert not unknown, f"el pin nombra suites que no están en el catálogo: {unknown}"
+
+
+def test_gc_dry_run_never_deletes_evidence():
+    """La recolección dice qué borraría y no toca ni un recibo."""
+    with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:
+        state = Path(tmp)
+        proc = _run_cli(state, "--format", "json", "gc", "--keep", "1", "--dry-run")
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout)
+        assert payload["dry_run"] is True, payload
+        assert payload["bytes_to_free"] == 0, payload
+        assert payload["logs_to_delete"] == [], payload
+
+
 def test_the_harness_imports_only_the_standard_library():
     """Corre en el gate sin instalar nada: un import de terceros lo rompería allí."""
     allowed = set(sys.stdlib_module_names) | LOCAL_MODULES

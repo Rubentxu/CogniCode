@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import signal
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -26,6 +29,7 @@ from .domain import (
     digest_of,
 )
 from .gate import Coverage, aggregate
+from .inventory import Inventory, load_inventory
 from .planner import PlanResult, PlannedSuite, build_plan, refutable_fallback, select
 from .policy import certify_requires_fresh, reuse_allowed
 from .validity import evaluate_reuse
@@ -33,6 +37,7 @@ from .validity import evaluate_reuse
 from adapters import cargo_workspace, cr08_selector, git_repo, pipeline_catalog, process_runner
 from adapters.git_repo import ChangeSet
 from adapters.ledger_store import Ledger, now_iso, receipt_id_for, state_root
+from adapters.pipeline_catalog import CatalogEntry
 
 EXIT_SATISFIED = 0
 EXIT_UNSATISFIED = 1
@@ -57,6 +62,7 @@ class Context:
     changeset: object
     graph: object
     catalog: tuple
+    inventory: Inventory = field(default_factory=lambda: Inventory(entries={}))
     warnings: tuple[str, ...] = ()
 
     def catalog_for_lane(self, lane: str) -> tuple:
@@ -79,8 +85,13 @@ def prepare(
     toolchain = ToolchainInfo.read(root)
     changeset = git_repo.read_changeset(root, base_ref)
     graph = cargo_workspace.load_graph(root, offline=offline_metadata)
-    catalog = pipeline_catalog.read_catalog(root)
+    catalog = pipeline_catalog.apply_suite_metadata(
+        pipeline_catalog.read_catalog(root), root
+    )
+    inventory = load_inventory(root)
     warnings: list[str] = []
+    if inventory.problem:
+        warnings.append(f"inventario pinado ilegible: {inventory.problem}")
     if graph.is_unknown:
         warnings.append(f"grafo de paquetes desconocido: {graph.reason}")
     if changeset.is_unknown:
@@ -138,6 +149,7 @@ def make_plan(
         allow_reuse=allow_reuse,
         allow_external=allow_external,
         oracle=decision,
+        inventory=context.inventory,
         run_id=identifier,
         created_at=now_iso(),
     )
@@ -225,6 +237,94 @@ class RunOptions:
     only: tuple[str, ...] = ()
     env_overrides: dict[str, str] = field(default_factory=dict)
     run_id: str | None = None
+    max_workers: int = 1
+
+
+MAX_WORKERS_LIMIT = 8
+
+# Recurso compartido implícito de toda suite de Cargo: el directorio de
+# compilación del workspace. Dos `cargo test` concurrentes se serializan de todas
+# formas (cargo bloquea el target dir), así que declararlo evita el ruido de
+# «Blocking waiting for file lock» y deja claro de dónde sale —o no— el
+# paralelismo real.
+CARGO_TARGET_LOCK = "cargo-target"
+
+
+class ResourceGate:
+    """Un cerrojo por recurso, y barrera exclusiva para las suites seriales.
+
+    TH-S03 prohíbe paralelizar por defecto y exige exclusión para las suites que
+    mutan el entorno. Una suite marcada `serial` no solo no se solapa con otra
+    serial: **nadie** corre mientras ella corre, así que la barrera es de
+    escritor/lector. La primera versión solo bloqueaba a las otras seriales, y eso
+    dejaba a una suite normal corriendo en paralelo con una que muta el entorno —
+    exactamente lo que la marca existe para impedir.
+    """
+
+    def __init__(self, lock_names: tuple[str, ...] = ()) -> None:
+        names = set(lock_names) | {CARGO_TARGET_LOCK}
+        self._locks = {name: threading.Lock() for name in sorted(names)}
+        self._condition = threading.Condition()
+        self._running = 0
+        self._serial_running = 0
+        self._serial_waiting = 0
+
+    @contextmanager
+    def hold(self, entry: CatalogEntry):
+        if getattr(entry, "serial", False):
+            self._enter_serial()
+            try:
+                yield
+            finally:
+                self._leave_serial()
+            return
+        self._enter_shared()
+        acquired: list[threading.Lock] = []
+        try:
+            for name in sorted(set(getattr(entry, "locks", ()))):
+                lock = self._locks.get(name)
+                if lock is not None:
+                    lock.acquire()
+                    acquired.append(lock)
+            yield
+        finally:
+            for lock in reversed(acquired):
+                lock.release()
+            self._leave_shared()
+
+    def _enter_shared(self) -> None:
+        with self._condition:
+            # Si hay una serial esperando, las normales esperan: sin esto, una
+            # racha de suites normales podría posponer indefinidamente la serial.
+            while self._serial_running or self._serial_waiting:
+                self._condition.wait()
+            self._running += 1
+
+    def _leave_shared(self) -> None:
+        with self._condition:
+            self._running -= 1
+            self._condition.notify_all()
+
+    def _enter_serial(self) -> None:
+        with self._condition:
+            self._serial_waiting += 1
+            try:
+                while self._serial_running or self._running:
+                    self._condition.wait()
+            finally:
+                self._serial_waiting -= 1
+            self._serial_running += 1
+
+    def _leave_serial(self) -> None:
+        with self._condition:
+            self._serial_running -= 1
+            self._condition.notify_all()
+
+    def lock_names(self) -> tuple[str, ...]:
+        return tuple(sorted(self._locks))
+
+    def close(self) -> None:
+        return None
 
 
 @dataclass
@@ -270,7 +370,12 @@ def _running_receipt(
     started_at: str,
 ) -> Receipt:
     return Receipt(
-        receipt_id=receipt_id_for(run_id, suite.entry.suite_id, suite.fingerprint.digest(), "running"),
+        # Un intento = un marcador. El id incluye el instante de arranque porque
+        # reanudar un run vuelve a lanzar la misma suite y los recibos son
+        # inmutables: reutilizar el id obligaría a reescribir evidencia.
+        receipt_id=receipt_id_for(
+            run_id, suite.entry.suite_id, suite.fingerprint.digest(), f"running-{started_at}"
+        ),
         run_id=run_id,
         repo_id=context.repo_id,
         suite_id=suite.entry.suite_id,
@@ -336,41 +441,58 @@ def run_plan(
     pending: list[str] = []
     interrupted = False
     verdict: GateVerdict | None = None
+    state_lock = threading.Lock()
+    stop = threading.Event()
+    workers = max(1, min(options.max_workers, MAX_WORKERS_LIMIT))
+    declared_locks = tuple(
+        sorted({lock for suite in plan_result.suites for lock in getattr(suite.entry, "locks", ())})
+    )
+    gate = ResourceGate(declared_locks)
 
-    try:
-        for suite in plan_result.suites:
-            suite_id = suite.entry.suite_id
-            if options.only and suite_id not in options.only:
-                pending.append(suite_id)
-                state["suites"][suite_id] = {"action": suite.action, "status": "SKIPPED_BY_FILTER"}
-                continue
-            if suite.action == "BLOCK":
-                state["suites"][suite_id] = {"action": "BLOCK", "status": "BLOCKED", "reason": suite.action_reason}
-                continue
-            if suite.action == "REUSE":
-                receipt, problem = context.ledger.latest_receipt_for_suite(suite_id)
-                if receipt is None or problem:
-                    # La decisión se tomó con el mismo ledger hace un momento; si
-                    # ya no cuadra, se ejecuta en vez de inventar una prueba.
-                    suite.action = "EXECUTE"
-                    suite.action_reason += " (el recibo desapareció o no verifica: se ejecuta)"
-                else:
-                    reused.append(receipt)
-                    coverage.append(
-                        Coverage(
-                            suite_id=suite_id,
-                            receipt_id=receipt.receipt_id,
-                            fingerprint=receipt.input_fingerprint,
-                            how="REUSE",
-                        )
-                    )
-                    state["suites"][suite_id] = {
-                        "action": "REUSE",
-                        "status": "REUSED",
-                        "receipt_id": receipt.receipt_id,
-                    }
-                    continue
+    def _record(suite_id: str, payload: dict) -> None:
+        with state_lock:
+            state["suites"][suite_id] = payload
 
+    def _prepare(suite: PlannedSuite) -> str:
+        """Resuelve lo que no ejecuta: filtro, BLOCK y REUSE. Devuelve el veredicto."""
+        suite_id = suite.entry.suite_id
+        if options.only and suite_id not in options.only:
+            pending.append(suite_id)
+            _record(suite_id, {"action": suite.action, "status": "SKIPPED_BY_FILTER"})
+            return "filtered"
+        if suite.action == "BLOCK":
+            _record(
+                suite_id,
+                {"action": "BLOCK", "status": "BLOCKED", "reason": suite.action_reason},
+            )
+            return "blocked"
+        if suite.action != "REUSE":
+            return "execute"
+        receipt, problem = context.ledger.latest_receipt_for_suite(suite_id)
+        if receipt is None or problem:
+            # La decisión se tomó con el mismo ledger hace un momento; si ya no
+            # cuadra, se ejecuta en vez de inventar una prueba.
+            suite.action = "EXECUTE"
+            suite.action_reason += " (el recibo desapareció o no verifica: se ejecuta)"
+            return "execute"
+        reused.append(receipt)
+        coverage.append(
+            Coverage(
+                suite_id=suite_id,
+                receipt_id=receipt.receipt_id,
+                fingerprint=receipt.input_fingerprint,
+                how="REUSE",
+            )
+        )
+        _record(
+            suite_id, {"action": "REUSE", "status": "REUSED", "receipt_id": receipt.receipt_id}
+        )
+        return "reused"
+
+    def _execute(suite: PlannedSuite) -> tuple[Receipt, bool]:
+        """Ejecuta una suite con sus cerrojos. Escribe evidencia antes y después."""
+        suite_id = suite.entry.suite_id
+        with gate.hold(suite.entry):
             running = _running_receipt(
                 run_id=run_id,
                 context=context,
@@ -381,7 +503,13 @@ def run_plan(
             )
             context.ledger.write_receipt(running)
             context.ledger.append_event(
-                {"event": "suite_running", "run_id": run_id, "suite_id": suite_id, "receipt_id": running.receipt_id}
+                {
+                    "event": "suite_running",
+                    "run_id": run_id,
+                    "suite_id": suite_id,
+                    "receipt_id": running.receipt_id,
+                    "serial": bool(getattr(suite.entry, "serial", False)),
+                }
             )
             outcome, text = process_runner.execute(
                 suite.entry.argv,
@@ -389,50 +517,55 @@ def run_plan(
                 env_overrides=options.env_overrides,
                 timeout_s=options.timeout_s,
             )
-            _, log_digest = context.ledger.write_log(run_id, suite_id, text.encode("utf-8"))
-            terminal = Receipt(
-                receipt_id=receipt_id_for(
-                    run_id, suite_id, suite.fingerprint.digest(), "terminal"
-                ),
-                run_id=run_id,
-                repo_id=context.repo_id,
-                suite_id=suite_id,
-                lane=lane,
-                status=outcome.status,
-                input_fingerprint=suite.fingerprint.digest(),
-                source_snapshot=snapshot,
-                runner=_runner_info(suite),
-                started_at=running.started_at,
-                finished_at=now_iso(),
-                exit_code=outcome.exit_code,
-                discovered_cases=outcome.counts.discovered,
-                executed_cases=outcome.counts.executed,
-                passed_cases=outcome.counts.passed,
-                failed_cases=outcome.counts.failed,
-                skipped_cases=outcome.counts.skipped,
-                log_sha256=log_digest,
-            )
-            context.ledger.write_receipt(terminal)
-            context.ledger.append_event(
-                {
-                    "event": "suite_finished",
-                    "run_id": run_id,
-                    "suite_id": suite_id,
-                    "receipt_id": terminal.receipt_id,
-                    "status": terminal.status,
-                    "classification": outcome.classification,
-                    "duration_s": round(outcome.duration_s, 3),
-                }
-            )
+        _, log_digest = context.ledger.write_log(run_id, suite_id, text.encode("utf-8"))
+        terminal = Receipt(
+            receipt_id=receipt_id_for(run_id, suite_id, suite.fingerprint.digest(), "terminal"),
+            run_id=run_id,
+            repo_id=context.repo_id,
+            suite_id=suite_id,
+            lane=lane,
+            status=outcome.status,
+            input_fingerprint=suite.fingerprint.digest(),
+            source_snapshot=snapshot,
+            runner=_runner_info(suite),
+            started_at=running.started_at,
+            finished_at=now_iso(),
+            exit_code=outcome.exit_code,
+            discovered_cases=outcome.counts.discovered,
+            executed_cases=outcome.counts.executed,
+            passed_cases=outcome.counts.passed,
+            failed_cases=outcome.counts.failed,
+            skipped_cases=outcome.counts.skipped,
+            log_sha256=log_digest,
+        )
+        context.ledger.write_receipt(terminal)
+        context.ledger.append_event(
+            {
+                "event": "suite_finished",
+                "run_id": run_id,
+                "suite_id": suite_id,
+                "receipt_id": terminal.receipt_id,
+                "status": terminal.status,
+                "classification": outcome.classification,
+                "duration_s": round(outcome.duration_s, 3),
+            }
+        )
+        with state_lock:
             executed.append(terminal)
-            state["suites"][suite_id] = {
+        _record(
+            suite_id,
+            {
                 "action": "EXECUTE",
                 "status": terminal.status,
                 "classification": outcome.classification,
                 "receipt_id": terminal.receipt_id,
                 "duration_s": round(outcome.duration_s, 3),
-            }
-            if terminal.is_well_formed_pass():
+                "serial": bool(getattr(suite.entry, "serial", False)),
+            },
+        )
+        well_formed = terminal.is_well_formed_pass()
+        if well_formed:
+            with state_lock:
                 coverage.append(
                     Coverage(
                         suite_id=suite_id,
@@ -441,25 +574,92 @@ def run_plan(
                         how="EXECUTE",
                     )
                 )
-            if fail_fast and not terminal.is_well_formed_pass():
-                remaining = [
-                    s.entry.suite_id
-                    for s in plan_result.suites
-                    if s.entry.suite_id not in state["suites"] and s.action == "EXECUTE"
-                ]
-                pending.extend(remaining)
-                state["stop_reason"] = (
-                    f"modo fail-fast: {suite_id} terminó en {terminal.status} y quedan "
-                    f"{len(remaining)} obligaciones sin ejecutar"
-                )
-                break
+        elif fail_fast:
+            stop.set()
+        return terminal, well_formed
+
+    def _execute_guarded(suite: PlannedSuite) -> tuple[Receipt | None, bool]:
+        """Ejecuta y, si el supervisor falla, lo convierte en un hueco con nombre."""
+        try:
+            return _execute(suite)
+        except Exception as exc:  # noqa: BLE001 - un fallo del supervisor no es un verde
+            stop.set()
+            _record(
+                suite.entry.suite_id,
+                {
+                    "action": "EXECUTE",
+                    "status": "INFRA_ERROR",
+                    "reason": f"el supervisor falló: {exc}",
+                },
+            )
+            context.ledger.append_event(
+                {
+                    "event": "suite_supervisor_error",
+                    "run_id": run_id,
+                    "suite_id": suite.entry.suite_id,
+                    "error": str(exc)[:300],
+                }
+            )
+            return None, False
+
+    def _remaining() -> list[str]:
+        with state_lock:
+            seen = set(state["suites"])
+        return [
+            s.entry.suite_id
+            for s in plan_result.suites
+            if s.entry.suite_id not in seen and s.action == "EXECUTE"
+        ]
+
+    try:
+        to_run: list[PlannedSuite] = []
+        for suite in plan_result.suites:
+            if _prepare(suite) == "execute":
+                to_run.append(suite)
+
+        if workers == 1:
+            for suite in to_run:
+                if stop.is_set():
+                    break
+                terminal, ok = _execute_guarded(suite)
+                if fail_fast and not ok:
+                    state["stop_reason"] = (
+                        "modo fail-fast: "
+                        + (terminal.suite_id if terminal else suite.entry.suite_id)
+                        + " no terminó en verde"
+                    )
+                    break
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {}
+                for suite in to_run:
+                    if stop.is_set():
+                        break
+                    futures[pool.submit(_execute_guarded, suite)] = suite
+                for future in as_completed(futures):
+                    suite = futures[future]
+                    terminal, ok = future.result()
+                    if fail_fast and not ok:
+                        state["stop_reason"] = (
+                            "modo fail-fast: "
+                            + (terminal.suite_id if terminal else suite.entry.suite_id)
+                            + " no terminó en verde"
+                        )
+                        stop.set()
+        if stop.is_set():
+            remaining = _remaining()
+            pending.extend(remaining)
+            state.setdefault(
+                "stop_reason",
+                f"detenido tras un fallo; quedan {len(remaining)} obligaciones sin ejecutar",
+            )
     except KeyboardInterrupt:
         interrupted = True
-        pending.extend(
-            s.entry.suite_id for s in plan_result.suites if s.entry.suite_id not in state["suites"]
-        )
+        stop.set()
+        pending.extend(_remaining())
         state["stop_reason"] = "interrumpido por señal"
     finally:
+        gate.close()
         receipts_by_suite = {receipt.suite_id: receipt for receipt in (*reused, *executed)}
         verdict = aggregate(
             lane=lane,
@@ -469,6 +669,7 @@ def run_plan(
             actions=plan_result.plan.actions,
             receipts=receipts_by_suite,
             coverage=tuple(coverage),
+            minimums=plan_result.minimums(),
             unknown_reasons=plan_result.plan.unknown_reasons,
         )
         state["status"] = (
@@ -485,6 +686,14 @@ def run_plan(
             "pending": len(pending),
             "blocked": sum(1 for s in state["suites"].values() if s.get("action") == "BLOCK"),
         }
+        state["concurrency"] = {
+            "requested": options.max_workers,
+            "effective": workers,
+            "locks": list(gate.lock_names()),
+            "serial_suites": sorted(
+                s.entry.suite_id for s in plan_result.suites if getattr(s.entry, "serial", False)
+            ),
+        }
         context.ledger.write_run(run_id, state)
         context.ledger.append_event(
             {
@@ -493,6 +702,7 @@ def run_plan(
                 "lane": lane,
                 "verdict": verdict.verdict,
                 "gaps": len(verdict.gaps),
+                "max_workers": workers,
             }
         )
         context.ledger.release_lease(lease)
@@ -519,6 +729,7 @@ def resume(
     only: tuple[str, ...] = (),
     timeout_s: float | None = None,
     fail_fast: bool | None = None,
+    max_workers: int = 1,
 ) -> RunOutcome:
     """Reanuda un run recalculando el plan con el snapshot de ahora."""
     previous = context.ledger.read_run(run_id)
@@ -574,6 +785,7 @@ def resume(
         timeout_s=timeout_s,
         only=only,
         run_id=run_id,
+        max_workers=max_workers,
     )
     return run_plan(context, plan_result, run_id=run_id, options=options)
 

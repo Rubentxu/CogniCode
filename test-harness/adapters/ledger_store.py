@@ -283,7 +283,14 @@ class Ledger:
 
     # ---- lease -----------------------------------------------------------
     def acquire_lease(self, run_id: str, purpose: str) -> Lease:
-        """Un solo escritor por run. Dos procesos ejecutando el mismo run es un bug."""
+        """Un solo escritor por run, con reconciliación de dueños muertos.
+
+        Dos procesos ejecutando el mismo run es un bug, así que el lease es
+        exclusivo. Pero un `kill -9` deja el fichero del lease detrás: si el PID
+        del dueño ya no existe y el host es este, el lease está huérfano y se
+        reclama dejando constancia. Si el dueño vive —o el lease viene de otra
+        máquina, donde no se puede comprobar— no se toca: se rechaza.
+        """
         self.leases_dir.mkdir(parents=True, exist_ok=True)
         path = self.leases_dir / f"{run_id}.lock"
         holder = {
@@ -292,19 +299,68 @@ class Ledger:
             "acquired_at": now_iso(),
             "purpose": purpose,
         }
-        try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
-        except FileExistsError:
-            try:
-                current = json.loads(path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                current = {"pid": None, "host": None, "acquired_at": None}
-            return Lease(path, False, current, f"el run {run_id} ya tiene dueño: {current}")
+        fd = self._try_create_lease(path)
+        if fd is None:
+            current = self._read_lease(path)
+            reclaimed, why = self._reclaim_if_orphan(path, current)
+            if not reclaimed:
+                return Lease(path, False, current, f"el run {run_id} ya tiene dueño: {current}")
+            self.append_event(
+                {
+                    "event": "lease_reclaimed",
+                    "run_id": run_id,
+                    "previous_holder": current,
+                    "reason": why,
+                    "new_purpose": purpose,
+                }
+            )
+            fd = self._try_create_lease(path)
+            if fd is None:  # pragma: no cover - carrera con otro reclamante
+                return Lease(path, False, self._read_lease(path), f"el run {run_id} acaba de ser reclamado")
+
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
             json.dump(holder, stream, sort_keys=True)
             stream.flush()
             os.fsync(stream.fileno())
         return Lease(path, True, holder)
+
+    @staticmethod
+    def _try_create_lease(path: Path) -> int | None:
+        try:
+            return os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            return None
+        except OSError:
+            return None
+
+    @staticmethod
+    def _read_lease(path: Path) -> dict:
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {"pid": None, "host": None, "acquired_at": None, "unreadable": True}
+
+    @staticmethod
+    def _reclaim_if_orphan(path: Path, holder: dict) -> tuple[bool, str]:
+        pid = holder.get("pid")
+        host = holder.get("host")
+        if host != socket.gethostname():
+            return False, "el dueño del lease no es de esta máquina"
+        if not isinstance(pid, int):
+            return False, "el lease no declara un PID utilizable"
+        if pid == os.getpid():
+            return False, "el lease es de este mismo proceso"
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            try:
+                path.unlink()
+            except OSError:
+                return False, "no se pudo retirar el lease huérfano"
+            return True, f"el PID {pid} ya no existe: el lease quedó huérfano tras un corte"
+        except PermissionError:
+            return False, "el lease pertenece a un proceso de otro usuario"
+        return False, f"el PID {pid} sigue vivo"
 
     def release_lease(self, lease: Lease) -> None:
         if lease.acquired and lease.path.exists():

@@ -79,7 +79,7 @@ edition = "2021"
 demo-core = { path = "../core" }
 """
 
-PIPELINE = """// PipelineK de prueba: dos obligaciones de test y un check de formato.
+PIPELINE = """// PipelineK de prueba: dos obligaciones de test, un check y tres scripts.
 pipeline("demo-fast") {
     stage("fmt") {
         sh("$cd && cargo fmt --all -- --check")
@@ -90,8 +90,34 @@ pipeline("demo-fast") {
     stage("app-lib") {
         sh("$cd && cargo test -p demo-app --lib --quiet")
     }
+    stage("slow-a") {
+        sh("$cd && bash scripts/slow-a.sh")
+    }
+    stage("slow-b") {
+        sh("$cd && bash scripts/slow-b.sh")
+    }
+    stage("slow-c") {
+        sh("$cd && bash scripts/slow-c.sh")
+    }
 }
 """
+
+# Scripts de conveniencia para los tests del supervisor: registran su intervalo
+# (inicio y fin) en $TH_TEST_MARK para poder afirmar solapes sin medir relojes.
+SLOW_SCRIPT = """#!/usr/bin/env bash
+set -euo pipefail
+name="$(basename "$0" .sh)"
+if [ -n "${TH_TEST_MARK:-}" ]; then
+  date +%s.%N > "$TH_TEST_MARK/$name.start"
+fi
+sleep "${TH_TEST_SLEEP:-0.5}"
+if [ -n "${TH_TEST_MARK:-}" ]; then
+  date +%s.%N > "$TH_TEST_MARK/$name.end"
+fi
+exit 0
+"""
+
+SLOW_SUITES = ("slow-a", "slow-b", "slow-c")
 
 CORE_SUITE = "demo-core:lib#-"
 APP_SUITE = "demo-app:lib#-"
@@ -136,6 +162,11 @@ def demo_repo(prefix: str = "th-demo-") -> Iterator[Path]:
             encoding="utf-8",
         )
         (root / "docs" / "guia.md").write_text("# guía\n", encoding="utf-8")
+        (root / "scripts").mkdir(parents=True, exist_ok=True)
+        for name in SLOW_SUITES:
+            path = root / "scripts" / f"{name}.sh"
+            path.write_text(SLOW_SCRIPT, encoding="utf-8")
+            path.chmod(0o755)
         (root / "product-fast.pipeline.kts").write_text(PIPELINE, encoding="utf-8")
         # La lane de merge ejecuta las mismas obligaciones, como en el repositorio
         # real: lo que cambia entre lanes es la política, no los comandos.
@@ -274,3 +305,31 @@ def run_cli(repo: Path, state_dir: Path, *args: str) -> subprocess.CompletedProc
 
 def git_dirty(repo: Path) -> str:
     return git(repo, "status", "--porcelain").strip()
+
+
+def intervals(mark_dir: Path) -> dict[str, tuple[float, float]]:
+    """Intervalos (inicio, fin) por script, leídos de los ficheros de marca."""
+    result: dict[str, tuple[float, float]] = {}
+    for start in sorted(mark_dir.glob("*.start")):
+        name = start.stem
+        end = mark_dir / f"{name}.end"
+        if not end.exists():
+            continue
+        result[name] = (float(start.read_text().strip()), float(end.read_text().strip()))
+    return result
+
+
+def overlap(left: tuple[float, float], right: tuple[float, float]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
+
+
+def wait_for_file(path: Path, timeout_s: float = 20.0) -> bool:
+    """Espera a que exista un fichero, sin dormir de más."""
+    import time
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if path.exists():
+            return True
+        time.sleep(0.05)
+    return False

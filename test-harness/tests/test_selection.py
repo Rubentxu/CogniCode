@@ -47,6 +47,11 @@ def _required_ids(selection) -> set[str]:
     return {entry.suite_id for entry, _ in selection.required}
 
 
+def _all_ids(catalog) -> set[str]:
+    """Todo el catálogo: lo que un fallback conservador debe exigir."""
+    return {entry.suite_id for entry in catalog}
+
+
 def _reason_for(selection, suite_id: str) -> str:
     for entry, reason in (*selection.required, *selection.excluded):
         if entry.suite_id == suite_id:
@@ -122,7 +127,7 @@ def test_manifest_change_forces_everything():
 
         selection = _selection(repo, graph, catalog)
 
-        assert _required_ids(selection) == {CORE_SUITE, APP_SUITE, FMT_SUITE}, selection
+        assert _required_ids(selection) == _all_ids(catalog), selection
         assert any("Cargo.toml" in reason for reason in selection.global_reasons), selection
 
 
@@ -134,7 +139,7 @@ def test_unknown_path_forces_everything():
 
         selection = _selection(repo, graph, catalog)
 
-        assert _required_ids(selection) == {CORE_SUITE, APP_SUITE, FMT_SUITE}, selection
+        assert _required_ids(selection) == _all_ids(catalog), selection
         assert any("no pertenece a ningún paquete" in reason for reason in selection.global_reasons)
 
 
@@ -148,7 +153,7 @@ def test_deleted_test_file_forces_everything():
 
         selection = _selection(repo, graph, catalog)
 
-        assert _required_ids(selection) == {CORE_SUITE, APP_SUITE, FMT_SUITE}, selection
+        assert _required_ids(selection) == _all_ids(catalog), selection
         assert any("se eliminó un fichero de test" in reason for reason in selection.global_reasons)
 
 
@@ -182,7 +187,7 @@ def test_unknown_inputs_force_the_conservative_fallback():
         selection = select(
             lane="change", changeset=changeset, graph=graph, catalog=catalog, repo_root=repo
         )
-        assert _required_ids(selection) == {CORE_SUITE, APP_SUITE, FMT_SUITE}, selection
+        assert _required_ids(selection) == _all_ids(catalog), selection
         assert selection.unknown_reasons
         assert selection.fallback_reason
 
@@ -272,5 +277,5 @@ def test_graph_unknown_forces_everything():
         graph, catalog = _context(repo)
         unknown = WorkspaceGraph(root=Path(repo), status=GRAPH_UNKNOWN, reason="metadata ilegible")
         selection = _selection(repo, unknown, catalog)
-        assert _required_ids(selection) == {CORE_SUITE, APP_SUITE, FMT_SUITE}, selection
+        assert _required_ids(selection) == _all_ids(catalog), selection
         assert "metadata ilegible" in selection.unknown_reasons[0]

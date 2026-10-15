@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .domain import GateVerdict, PlanAction, Receipt
+from .inventory import check_receipt_against_inventory
 from .policy import POLICY_VERSION
 
 PROOF_KINDS = ("EXECUTE", "REUSE")
@@ -35,6 +36,7 @@ def aggregate(
     actions: tuple[PlanAction, ...],
     receipts: dict[str, Receipt],
     coverage: tuple[Coverage, ...] = (),
+    minimums: dict[str, int] | None = None,
     unknown_reasons: tuple[str, ...] = (),
     candidate_artifact_digest: str | None = None,
 ) -> GateVerdict:
@@ -48,6 +50,7 @@ def aggregate(
          todo lo demás esté verde: no se sabe si faltan obligaciones.
     """
     by_suite_receipt = receipts
+    minimums = minimums or {}
     proofs: list[dict[str, str]] = []
     gaps: list[dict[str, str]] = []
 
@@ -94,6 +97,10 @@ def aggregate(
                     ),
                 }
             )
+            continue
+        minimum_problem = check_receipt_against_inventory(receipt, minimums.get(suite_id, 0))
+        if minimum_problem:
+            gaps.append({"suite_id": suite_id, "reason": minimum_problem})
             continue
         proofs.append(
             {

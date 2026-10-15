@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 from .domain import canonical_json
+from .gc import apply_gc, plan_gc
+from .inventory import Inventory, inventory_from_receipts, write_inventory
 from .orchestrator import (
     EXIT_HARNESS_ERROR,
     EXIT_INTERRUPTED,
@@ -76,6 +78,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--only", action="append", default=[], help="limita la ejecución a estas suites")
     run.add_argument("--timeout", type=float, default=None, help="segundos por suite")
     run.add_argument("--max-workers", type=int, default=1)
+    run.add_argument("--run-id", default=None, help="id de run explícito (por defecto: derivado)")
     run.add_argument(
         "--fail-fast",
         dest="fail_fast",
@@ -114,6 +117,19 @@ def build_parser() -> argparse.ArgumentParser:
     certify_parser.add_argument("--only", action="append", default=[])
     certify_parser.add_argument("--timeout", type=float, default=None)
     certify_parser.add_argument("--max-workers", type=int, default=1)
+
+    inventory_parser = sub.add_parser(
+        "inventory", help="pin del inventario de casos por suite (TH-S02)"
+    )
+    inventory_parser.add_argument("--write", action="store_true", help="reescribe el pin con lo observado")
+    inventory_parser.add_argument("--check", action="store_true", help="compara el pin con los recibos")
+    inventory_parser.add_argument("--from-run", default=None, help="run del que tomar los recuentos")
+    inventory_parser.add_argument("--base", default=DEFAULT_BASE)
+
+    gc_parser = sub.add_parser("gc", help="borra logs de runs antiguos y conserva la evidencia")
+    gc_parser.add_argument("--keep", type=int, default=20, help="runs cuyos logs se conservan")
+    gc_parser.add_argument("--dry-run", action="store_true", help="dice qué borraría, sin borrar")
+    gc_parser.add_argument("--base", default=None)
 
     parity_parser = sub.add_parser(
         "parity", help="compara la selección con el selector vigente (CR-08)"
@@ -251,16 +267,13 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "run":
-            if args.max_workers != 1:
-                raise HarnessError(
-                    "--max-workers > 1 no está implementado: la ejecución en paralelo exige "
-                    "locks por recurso y separación de suites seriales (W5 del roadmap). "
-                    "Ejecutar en paralelo sin eso sería compartir estado sin saberlo"
-                )
             context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
             plan_result, run_id = make_plan(
-                context, lane=args.lane, allow_reuse=args.allow_reuse or args.lane == "change",
+                context,
+                lane=args.lane,
+                allow_reuse=args.allow_reuse or args.lane == "change",
                 allow_external=args.allow_external,
+                run_id=args.run_id,
             )
             if args.selection and args.selection != plan_result.plan.plan_id:
                 raise HarnessError(
@@ -275,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
                 timeout_s=args.timeout,
                 only=tuple(args.only),
                 run_id=run_id,
+                max_workers=max(1, args.max_workers),
             )
             outcome = run_plan(context, plan_result, run_id=run_id, options=options)
             payload = {
@@ -290,8 +304,6 @@ def main(argv: list[str] | None = None) -> int:
             return exit_code_for(outcome)
 
         if args.command == "resume":
-            if args.max_workers != 1:
-                raise HarnessError("--max-workers > 1 no está implementado (ver W5)")
             context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
             outcome = resume(
                 context,
@@ -301,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
                 mode=args.mode,
                 only=tuple(args.only),
                 timeout_s=args.timeout,
+                max_workers=max(1, args.max_workers),
             )
             payload = {
                 "run_id": outcome.run_id,
@@ -370,8 +383,6 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "certify":
-            if args.max_workers != 1:
-                raise HarnessError("--max-workers > 1 no está implementado (ver W5)")
             context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
             candidate_digest = None
             if args.candidate:
@@ -392,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
                 allow_external=args.allow_external,
                 timeout_s=args.timeout,
                 only=tuple(args.only),
+                max_workers=max(1, args.max_workers),
             )
             outcome = certify(context, lane=args.lane, options=options)
             payload = {
@@ -477,6 +489,75 @@ def main(argv: list[str] | None = None) -> int:
                 return EXIT_UNDETERMINED
             if report["verdict"] == "ORACLE_UNKNOWN":
                 return EXIT_UNDETERMINED
+            return 0
+
+        if args.command == "inventory":
+            context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
+            receipts = []
+            if args.from_run:
+                run_state = context.ledger.read_run(args.from_run)
+                if run_state is None:
+                    raise HarnessError(f"no existe el run {args.from_run} en {context.ledger.root}")
+                for suite_id in (run_state.get("suites") or {}):
+                    receipt, _ = context.ledger.latest_receipt_for_suite(suite_id)
+                    if receipt is not None:
+                        receipts.append(receipt)
+            else:
+                for path in sorted(context.ledger.receipts_dir.glob("*.json")):
+                    receipt, _ = context.ledger.read_receipt(path.stem)
+                    if receipt is not None:
+                        receipts.append(receipt)
+            observed = inventory_from_receipts(receipts)
+            current = context.inventory
+            lines = [
+                f"INVENTARIO  recibos leídos={len(receipts)}  pin actual={
+                    len(current.entries)} suites  observado={len(observed.entries)} suites",
+            ]
+            for suite_id in sorted(set(current.entries) | set(observed.entries)):
+                pinned = current.entries.get(suite_id)
+                seen = observed.entries.get(suite_id)
+                flag = ""
+                if pinned is not None and seen is not None and seen < pinned:
+                    flag = "  <-- por debajo del pin"
+                lines.append(f"  {suite_id}: pin={pinned} observado={seen}{flag}")
+            if current.problem:
+                lines.append(f"  aviso: {current.problem}")
+            under = [
+                suite_id
+                for suite_id in current.entries
+                if suite_id in observed.entries and observed.entries[suite_id] < current.entries[suite_id]
+            ]
+            payload = {
+                "pinned": current.to_json(),
+                "observed": observed.to_json(),
+                "under_pin": under,
+                "problem": current.problem,
+            }
+            if args.write:
+                written = write_inventory(context.repo_root, observed)
+                lines.append(f"  pin reescrito en {written.relative_to(context.repo_root)}")
+                payload["written"] = str(written.relative_to(context.repo_root))
+            if args.check and under:
+                _emit(payload, args, "\n".join(lines))
+                return EXIT_UNDETERMINED
+            _emit(payload, args, "\n".join(lines))
+            return 0
+
+        if args.command == "gc":
+            context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
+            plan = plan_gc(context.ledger, args.keep)
+            if not args.dry_run:
+                plan = apply_gc(context.ledger, plan)
+            lines = [
+                f"GC  ledger={context.ledger.root}  runs conservados={len(plan.kept)}  "
+                f"logs a borrar={len(plan.logs_to_delete)}  bytes={plan.bytes_to_free}"
+                + ("  (dry-run: no se ha borrado nada)" if args.dry_run else ""),
+            ]
+            for note in plan.notes:
+                lines.append(f"  nota: {note}")
+            payload = plan.to_json()
+            payload["dry_run"] = bool(args.dry_run)
+            _emit(payload, args, "\n".join(lines))
             return 0
 
         raise HarnessError(f"comando desconocido: {args.command}")

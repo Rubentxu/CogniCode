@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 16916,
+      "bytes": 19394,
       "path": "README.md",
-      "sha256": "2412acf34cbff866290fa51b4b0cc59ffa864f79a2dafd9287d3aecfe3094960"
+      "sha256": "3cd73f9a3130e6c18692b590199c110646dcd5c4aaf66bccaf6d9a6a8adddefe"
     },
     {
       "bytes": 4013,
@@ -31,14 +31,14 @@
       "sha256": "7eab9df986a4ba66772ebd5012cfb7533c8d2f6d265961e48840ad50a2cbb658"
     },
     {
-      "bytes": 15693,
+      "bytes": 17973,
       "path": "adapters/ledger_store.py",
-      "sha256": "45e133e7e381059f93fcc3cb99860fd3fae7e0447a86523b0b9c5b10e4bebc66"
+      "sha256": "3b6a95e1561e6689714037f789e8bb476a1673b2995813c861b10adf092bacab"
     },
     {
-      "bytes": 10526,
+      "bytes": 12682,
       "path": "adapters/pipeline_catalog.py",
-      "sha256": "bf3098d728899fee8680d20b56606b779d2466d631856ac37b2153e7912e0250"
+      "sha256": "f8bac84d43d0f791a6399faa85017513dbbf46e8011e89e4c2ff3edcd5bb2ddc"
     },
     {
       "bytes": 6595,
@@ -86,9 +86,19 @@
       "sha256": "9395011e27d45c2bc35a733d5ce57bb08797b2ebb54f4dfdf360426a49a85053"
     },
     {
+      "bytes": 4766,
+      "path": "adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md",
+      "sha256": "61542e6b00d0977d4e7bb7f75cb0c4a8ee0bc3d3ccf0e5d65259bd02922ae994"
+    },
+    {
       "bytes": 1010,
       "path": "bin/harness.py",
       "sha256": "9d24f1a56ed59eaa76fb080aeec253e8368f1ec6da78997d99a65546e6583a20"
+    },
+    {
+      "bytes": 719,
+      "path": "config/suite-metadata.json",
+      "sha256": "d7fbffb018152493ba3958c897fef1798b813158da9e3bf6496f7a51db29aecd"
     },
     {
       "bytes": 1461,
@@ -171,14 +181,19 @@
       "sha256": "cf5eda915465aebc51f693e7f89ffab095a2659e748c6ae1a8506b94c8a4e3ed"
     },
     {
+      "bytes": 96,
+      "path": "inventory.json",
+      "sha256": "b310b2b04bcd4e62a87a9149c6a0b897cd50abcc390595eb01e1be52d583302d"
+    },
+    {
       "bytes": 3483,
       "path": "prompts/MANDATO-AGENTE.md",
       "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27"
     },
     {
-      "bytes": 8181,
+      "bytes": 8490,
       "path": "roadmap/ROADMAP.md",
-      "sha256": "37340a8200febbfbf129c13d920b70966a94355360e15e84b464f8ecbcd6e87c"
+      "sha256": "8c1ecc0e01cef844ec683b3d7d2fc0926557a5f27e37d008bb67441d3ca00713"
     },
     {
       "bytes": 3420,
@@ -216,9 +231,9 @@
       "sha256": "2dc5c63952caeaef7ca2048cbd49b56e06a4d0affa1c2e4936faaa9ba2cf8d43"
     },
     {
-      "bytes": 23745,
+      "bytes": 27843,
       "path": "src/harness/cli.py",
-      "sha256": "36dfc4bf1401050f1e0dc85b5630e0c7bfeb7e30b4d4fdde74908d409aa8c8f2"
+      "sha256": "efc9f23a1a34371c72fefc9096f7ca79b11335983c563cbfd4ddac56002669a8"
     },
     {
       "bytes": 9406,
@@ -226,14 +241,24 @@
       "sha256": "15953b65d27d6501fabfda9b39332a474259041194d506e1122b14a3531391a1"
     },
     {
-      "bytes": 4078,
+      "bytes": 4425,
       "path": "src/harness/gate.py",
-      "sha256": "d0076c566cee434a7ed510b1297ebe52731974998293cf98b4383c87cfec35b8"
+      "sha256": "e8df4b924296f5c6c4e014e1b152a2881f8ba06f8aaa2c8e0b504eb4e5f50066"
     },
     {
-      "bytes": 25034,
+      "bytes": 3771,
+      "path": "src/harness/gc.py",
+      "sha256": "dd8ce2d872a55da80d81cfeabfe0ad019abeeee378c7b7c4c7c71a472ce33556"
+    },
+    {
+      "bytes": 4211,
+      "path": "src/harness/inventory.py",
+      "sha256": "c7bdc2f653d48b59cc8c0feaedc3abcdd8c8f824119107a823701c2ccf4a5249"
+    },
+    {
+      "bytes": 32490,
       "path": "src/harness/orchestrator.py",
-      "sha256": "81561b11ec6a9b1c871c6a79c82d4ad15281bddad52a24bd70089926ffc86eab"
+      "sha256": "eed75de8e1440874afd48c01d4603601dc026bf988e3e0570d5d3d2bce0d5f61"
     },
     {
       "bytes": 15413,
@@ -241,9 +266,9 @@
       "sha256": "d7b4b1869a65f0cc15cbafac022cb68c46a8781487bea5b56b25b5797a42e49f"
     },
     {
-      "bytes": 29741,
+      "bytes": 30410,
       "path": "src/harness/planner.py",
-      "sha256": "2ebf1a4393620007c113a285365fd3fd20f358b5a67de76290c4cbe6389b753b"
+      "sha256": "da8ef90fa4085eed110a07ae00a171340d865a2e6d78f8893f94d90158629f4c"
     },
     {
       "bytes": 2614,
@@ -251,14 +276,14 @@
       "sha256": "f7a09297204d491fb63fee072cb4a92c7c0c7081ba924dcd54d421377b6a52f6"
     },
     {
-      "bytes": 5985,
+      "bytes": 6417,
       "path": "src/harness/validity.py",
-      "sha256": "ecceaf4a4be7a121c127c1ad1411d530d2032131cd364a53f66bcfbd2f8cef9f"
+      "sha256": "5ac2c9d2b7cafd11e77879db614eba4c605d24cc0f6923678e8bbb3ebe840a3e"
     },
     {
-      "bytes": 8917,
+      "bytes": 10787,
       "path": "tests/harness_support.py",
-      "sha256": "e21f96897e90afc420cb8c4e0dda852f12335878af1db8b40ec29d876246dc2f"
+      "sha256": "9e77842ad0480f4f67f2f123e6eb0ca9f197050e7a5d1fc483bb4982c5dc9243"
     },
     {
       "bytes": 4346,
@@ -266,9 +291,9 @@
       "sha256": "c38b08bf74fd3c052cb89e4a525d43c4a59b29f405dad5a4c80b20c3c3634a76"
     },
     {
-      "bytes": 12578,
+      "bytes": 13241,
       "path": "tests/test_cli_e2e.py",
-      "sha256": "a88a769861f4130ea1e86e0cdc2286014774ac556bcfac5649c9faf5ad983d05"
+      "sha256": "876bccf5a4efd0c184f47b018abd9f82c128773e52626015282b0119137a85ec"
     },
     {
       "bytes": 6838,
@@ -286,9 +311,14 @@
       "sha256": "357dc6b917d00d72103ac5211e15a024e51fe26bf18b7e302c9ea944ed13613a"
     },
     {
-      "bytes": 10539,
+      "bytes": 10613,
       "path": "tests/test_selection.py",
-      "sha256": "8ccea15fad60723bfda0f49461c01eae72268ab1cfc94320b669d0b722eb00fe"
+      "sha256": "2891836e0deee78aa3a901df2901fa201c64fd0b6067db89e79d355cd6afc31e"
+    },
+    {
+      "bytes": 18326,
+      "path": "tests/test_supervisor.py",
+      "sha256": "8276a8ee5505443ff32b70781da2d4be7aeec0a5decef9529ba36cebe3839c0b"
     }
   ]
 }

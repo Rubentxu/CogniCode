@@ -45,6 +45,7 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 |---|---|
 | **Ejecutar el harness o entender su implementación** | [Uso](#uso) y [ADR-TH-007](adrs/ADR-TH-007-implementacion-nucleo.md) (decisiones del núcleo: lenguaje, ledger, huellas, fail-closed). |
 | **Comprobar que el harness no recorta cobertura** | [Paridad con el selector vigente](#paridad-con-el-selector-vigente) y [ADR-TH-008](adrs/ADR-TH-008-paridad-con-el-oraculo.md) (veredictos, desviaciones declaradas y medición). |
+| **Concurrencia, inventario pinado y GC del ledger** | [Concurrencia, cerrojos y pin de inventario](#concurrencia-cerrojos-y-pin-de-inventario) y [ADR-TH-009](adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md) (cerrojos, SIGKILL, lease huérfano). |
 | Ver hallazgos y rastrear evidencia del repositorio | [Auditoría de código](docs/00-auditoria-codigo.md) y [rutas y referencias](docs/06-rutas-y-referencias.md). |
 | Entender arquitectura, estados o migración | [Arquitectura](docs/01-arquitectura.md), [ontología](docs/02-ontologia-y-estados.md) y [compatibilidad](docs/03-migracion-y-compatibilidad.md). |
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
@@ -62,7 +63,7 @@ Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
 `path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
 obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
 el que se comprueba que el paquete entregado es el que se describe. Los ADR
-vigentes son TH-001..TH-008 y este paquete no incluye ningún plan de UAT
+vigentes son TH-001..TH-009 y este paquete no incluye ningún plan de UAT
 desde el 2026-10-15 (ADR-TH-006).
 
 ## Uso
@@ -88,6 +89,14 @@ python3 test-harness/bin/harness.py explain --suite 'cognicode-core:lib#-'
 
 # Certifica con evidencia fresca (no reutiliza nada, en ninguna lane).
 python3 test-harness/bin/harness.py certify --lane certification --candidate <sha>
+
+# Concurrencia explícita con cerrojos declarados (por defecto sigue siendo 1).
+python3 test-harness/bin/harness.py run --lane merge --max-workers 4
+
+# Pin del inventario de casos por suite, y recolección de logs del ledger.
+python3 test-harness/bin/harness.py inventory --write     # deriva el pin de recibos reales
+python3 test-harness/bin/harness.py inventory --check     # falla si alguna suite ejecuta menos
+python3 test-harness/bin/harness.py gc --keep 20 --dry-run
 
 # Compara la selección con el selector vigente (CR-08) sobre el cambio actual,
 # o sobre el corpus de clases de cambio.
@@ -135,7 +144,32 @@ index.json            vista derivada del directorio de recibos, reconstruible
 
 Los recibos son inmutables: reescribir uno con contenido distinto es un error, no
 una actualización. El índice se reconstruye solo si el directorio cambió, y la
-verdad es el directorio.
+verdad es el directorio. `gc` borra logs de runs fuera de la ventana conservada y
+nunca toca recibos; un run en `RUNNING` se conserva siempre.
+
+Un `kill -9` deja el fichero del lease detrás. Si el PID del dueño ya no existe y
+el host es el mismo, el lease está huérfano y se reclama dejando evento
+(`lease_reclaimed`); si el dueño vive, o viene de otra máquina, se rechaza.
+
+## Concurrencia, cerrojos y pin de inventario
+
+`--max-workers N` (tope 8) ejecuta suites en paralelo, con `default=1`: sin pedirlo
+el harness es secuencial. Cada suite toma sus recursos declarados, y el directorio
+de compilación de Cargo es un recurso compartido implícito (cargo lo bloquea de
+todas formas; el paralelismo real hoy viene de las suites que no compilan).
+
+Una suite marcada `serial` es una barrera de escritor: **nadie** corre mientras
+ella corre. `serial` y `locks` no se pueden derivar del comando, así que se
+declaran en [`config/suite-metadata.json`](config/suite-metadata.json) —versionado
+y revisable— y el estado del run registra la concurrencia efectiva y los cerrojos
+tomados.
+
+`inventory.json` pina el número de casos esperado por suite, derivado de
+ejecuciones reales (`inventory --write`). El mínimo entra en la huella de entradas,
+invalida la reutilización de un recibo que ejecutó menos y hace que el gate no
+acepte ese PASS: una suite que pierde pruebas por una feature apagada es un hueco
+con nombre, no un verde. Sin pin, el suelo es 1 caso para Cargo y ninguno para los
+scripts.
 
 ## Restricciones no negociables
 
@@ -220,7 +254,7 @@ selección por impacto no cubra.
 ## Pruebas del harness y cómo se gated
 
 ```shell
-python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 75 tests, ~45 s
+python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 89 tests, ~50 s
 python3 scripts/ci/test_harness_contract.py                          # contrato del gate
 ```
 
@@ -239,13 +273,15 @@ lo que le permite correr en el gate sin instalar nada.
 
 ## Estado
 
-**Implementado y gated**: plan/run/status/resume/explain/certify; ChangeSet con
-merge-base, working tree y untracked con `-z`; catálogo derivado de las pipelines;
-impacto por `cargo metadata` con dependientes transitivos; huellas de entrada con
-`policy_version`; ledger append-only con recibos inmutables, índice reconstruible
-y lease por run; clasificación de procesos que no convierte un 101 en verde;
-agregación de gate con huecos nombrados; 60 tests dependency-free y el contrato
-del gate.
+**Implementado y gated**: plan/run/status/resume/explain/certify/parity/inventory/gc;
+ChangeSet con merge-base, working tree y untracked con `-z`; catálogo derivado de
+las pipelines con metadatos declarados (serial, locks); impacto por
+`cargo metadata` con dependientes transitivos; huellas de entrada con
+`policy_version` y mínimo de casos pinado; ledger append-only con recibos
+inmutables, índice reconstruible, lease con reconciliación de dueños muertos y GC
+que conserva evidencia; supervisor con concurrencia, cerrojos y SIGKILL probado;
+clasificación de procesos que no convierte un 101 en verde; agregación de gate con
+huecos nombrados; 89 tests dependency-free y el contrato del gate.
 
 **No implementado, y no se afirma lo contrario**:
 
@@ -258,9 +294,9 @@ del gate.
   añadiría evidencia nueva (ADR-TH-008).
 - **Reutilización en lanes oficiales.** `merge` ejecuta todo por defecto;
   reutilizar exige `--allow-reuse`, y la paridad no está demostrada.
-- **Ejecución en paralelo.** `--max-workers > 1` se rechaza con un motivo: sin
-  locks por recurso y separación de suites seriales sería compartir estado a
-  ciegas.
+- **Paralelismo de compilación.** `--max-workers` reparte suites con cerrojos, pero
+  los `cargo test` comparten target dir y se serializan en la práctica; paralelizar
+  de verdad exige un target dir por worker y medir si compensa.
 - **Adaptador nextest y lanes de release** (empaquetado, instalación,
   provenance): sin tocar.
 - **AAT** sigue siendo especificación: hay reglas adoptadas (PASS vacuo, recibo

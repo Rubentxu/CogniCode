@@ -140,6 +140,14 @@ def evaluate_reuse(
             "la huella de entradas cambió (código, manifest, lock, toolchain, fixtures o política)",
             receipt.receipt_id,
         )
+    if expected.expected_min_cases and receipt.executed_cases < expected.expected_min_cases:
+        return ReuseDecision(
+            "Invalidated",
+            f"el recibo ejecutó {receipt.executed_cases} caso(s) y el inventario pinado espera "
+            f"al menos {expected.expected_min_cases}: reutilizarlo consolidaría una suite que "
+            "perdió pruebas por el camino",
+            receipt.receipt_id,
+        )
     if freshness == "always-fresh":
         return ReuseDecision(
             "Execute",
