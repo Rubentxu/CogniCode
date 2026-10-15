@@ -36,12 +36,20 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
 | Integrar adaptadores, gates u operación segura | Specs [TH-S04](specs/TH-S04-adaptadores.md), [TH-S05](specs/TH-S05-gates-release.md) y [TH-S06](specs/TH-S06-operacion-seguridad.md). |
 | Consultar decisiones, contratos y entregas previstas | [ADRs](adrs/), [contratos JSON](contracts/README.md), [criterios](docs/04-metrica-y-criterios.md), [decisiones pendientes](docs/05-decision-pendientes.md) y [roadmap](roadmap/ROADMAP.md). |
+| Entender el gate de merge y el reparto de obligaciones por lane | [Auditoría de `merge-gate`](docs/07-auditoria-merge-gate.md) (las 73 stages clasificadas y la medición antes/después de B1), [ADR-TH-005](adrs/ADR-TH-005-dueno-unico-por-suite.md) (una suite, un dueño) y [ADR-TH-006](adrs/ADR-TH-006-retirada-uat.md) (retirada de la clase UAT). |
 | Aceptar el diseño o buscar falsos verdes | [AAT](aat/AAT.md). Es un plan/especificación, no un resultado ejecutado. El plan de UAT que acompañaba a este paquete se retiró el 2026-10-15 (ADR-TH-006). |
 | Preparar instrucciones para un agente implementador | [Mandato del agente](prompts/MANDATO-AGENTE.md). |
 
 El README sirve de índice. Las reglas normativas viven en las specs y ADRs; este mapa no las reemplaza.
 
 Diagrama: [arquitectura](diagrams/arquitectura.mmd).
+
+Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
+`path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
+obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
+el que se comprueba que el paquete entregado es el que se describe. Los ADR
+vigentes son TH-001..TH-006 y este paquete no incluye ningún plan de UAT
+desde el 2026-10-15 (ADR-TH-006).
 
 ## Meta de uso — comandos PROPUESTOS (aún no disponibles)
 
