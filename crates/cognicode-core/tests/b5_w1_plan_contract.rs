@@ -348,7 +348,7 @@ fn affected_files_are_absolute_paths() {
 fn plan_digest_excludes_temporal_fields() {
     let plan = make_plan();
     let mut twin = plan.clone();
-    twin.created_at = twin.created_at + chrono::Duration::seconds(86_400);
+    twin.created_at += chrono::Duration::seconds(86_400);
     assert_eq!(plan.digest, twin.digest);
 }
 

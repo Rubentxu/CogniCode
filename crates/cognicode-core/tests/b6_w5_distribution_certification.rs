@@ -78,24 +78,24 @@ fn parse_cert() -> serde_json::Value {
     })
 }
 
-fn entries<'a>(cert: &'a serde_json::Value) -> &'a [serde_json::Value] {
+fn entries(cert: &serde_json::Value) -> &[serde_json::Value] {
     cert["entries"]
         .as_array()
         .unwrap_or_else(|| panic!("cert file has no top-level `entries` array: {cert:?}"))
         .as_slice()
 }
 
-fn entry_reason<'a>(entry: &'a serde_json::Value) -> Option<&'a str> {
+fn entry_reason(entry: &serde_json::Value) -> Option<&str> {
     entry["reason"].as_str()
 }
 
-fn entry_status<'a>(entry: &'a serde_json::Value) -> &'a str {
+fn entry_status(entry: &serde_json::Value) -> &str {
     entry["status"]
         .as_str()
         .unwrap_or_else(|| panic!("entry is missing string `status`: {entry:?}"))
 }
 
-fn entry_id<'a>(entry: &'a serde_json::Value) -> &'a str {
+fn entry_id(entry: &serde_json::Value) -> &str {
     entry["id"]
         .as_str()
         .unwrap_or_else(|| panic!("entry is missing string `id`: {entry:?}"))
