@@ -10,8 +10,8 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `1deb8dfb0775b18847aa40b93b414284bc7c5bed` (TH-IMPL-03: supervisor con
-> concurrencia, inventario pinado y GC), sobre el árbol posterior a TH-IMPL-02;
+> `6fff1ab1665b6e3eb8639fc8de68ff95c90084ed` (TH-IMPL-04: AAT ejecutado), sobre el
+> árbol posterior a TH-IMPL-03;
 > este snapshot describe el árbol de trabajo del worktree antes del commit de
 > recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -19,7 +19,15 @@
 > `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
 > como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-IMPL-03, registrada en `ROADMAP.md` §16
+> **Unidad cerrada en este worktree**: TH-IMPL-04, registrada en `ROADMAP.md` §17
+> y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-010`. El AAT se
+> ejecuta por mutación: 21 de 30 filas se matan con test, 2 son `PARTIAL` y 7
+> `NOT_RUN` con motivo. Además: suelo de obligaciones críticas (borrar `clippy` o
+> los doctests del gate deja el plan indeterminado), identidad de repositorio en la
+> reutilización, inestabilidad declarada en `certify` y aislamiento del state root
+> frente a ids hostiles y symlinks.
+>
+> La unidad anterior en este worktree fue TH-IMPL-03, registrada en `ROADMAP.md` §16
 > y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-009`. El supervisor
 > acepta `--max-workers` con cerrojos declarados, las suites `serial` son barrera
 > de escritor, el pin de inventario impide que una suite que pierde casos pase por
@@ -45,7 +53,7 @@
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS**,
 > `workspace=0.101.17`.
 
-## HEAD y gates del worktree (TH-IMPL-03)
+## HEAD y gates del worktree (TH-IMPL-04)
 
 * **Rama**: `worktree/test-harness`.
 * **Commits de la unidad**: el commit de paridad y el commit de recibos que sigue
@@ -59,10 +67,11 @@
 * **Paridad con CR-08**: `parity --corpus` en `change`, `merge` e `integration`
   → 0 `HARNESS_WEAKER` sin desviación declarada; 9 `AGREE`, 5 `HARNESS_STRICTER`
   y 2 desviaciones declaradas por lane.
-* **Suite del harness**: 89/89 PASS (~50 s), con supervisor, paridad e inventario.
-* **Contrato del harness**: 9/9 PASS (~65 s, incluye la suite).
+* **Suite del harness**: 101/101 PASS (~55 s), con supervisor, paridad, inventario y AAT.
+* **AAT**: 21 filas `KILLED` (12 con test propio), 2 `PARTIAL`, 7 `NOT_RUN` con motivo.
+* **Contrato del harness**: 10/10 PASS (~70 s, incluye la suite y la comprobación del AAT).
 * **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`):
-  **285 passed, 0 failed**.
+  **286 passed, 0 failed** (incluye las 101 del harness y la comprobación del AAT).
 * **Pin de inventario**: `cognicode-ladybug:lib#-` = 62 casos, derivado de una
   ejecución real en esta unidad.
 * **Harness**: `plan --lane change` sobre el repositorio real: 2,5 s, 27 de 39

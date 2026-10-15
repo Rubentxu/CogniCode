@@ -15144,3 +15144,67 @@ en `docs/roadmap/ROADMAP.md` §16.
   ejecutó un `gc` real sobre el ledger del mantenedor (solo `--dry-run` y tests en
   directorios temporales).
 - Siguen fuera de alcance el adaptador nextest y las lanes de release (W5).
+
+## Recibo 2026-10-15 — TH-IMPL-04: AAT ejecutado (mutaciones con test)
+
+Cuarto bloque del evolutivo. Decisión:
+`test-harness/adrs/ADR-TH-010-aat-ejecutado.md`; contrato en
+`docs/roadmap/ROADMAP.md` §17.
+
+### Qué se hizo
+
+- **AAT ejecutado**: `test-harness/aat/AAT.md` incorpora la tabla «Ejecución» con
+  las 30 filas, su estado (`KILLED` / `PARTIAL` / `NOT_RUN`) y el test que las
+  mata. Reparto: **21 KILLED, 2 PARTIAL, 7 NOT_RUN**. Las `NOT_RUN` llevan motivo
+  (campaña de sandbox, adaptador nextest, artefactos de release,
+  `known_failures.yaml`), y el contrato del gate comprueba que cada fila `KILLED`
+  nombra un test existente y que el resumen coincide con la tabla.
+- **12 mutaciones nuevas** en `test-harness/tests/test_aat.py`: evidencia faltante,
+  features quitadas, obligación crítica (doctests, clippy) ausente, recibo de otro
+  repositorio, id de suite hostil y symlink plantado, palabra PASS en un log de
+  error, cambio en `scripts/ci`, suite que divergió con la misma huella, recibo
+  parcial junto a uno válido y rc=0 con cero casos. Las otras 9 filas `KILLED` se
+  apoyan en tests que ya existían (selección, fingerprints, ledger, vaciedad).
+- **Suelo de obligaciones críticas** (`test-harness/obligations.json`): mínimo por
+  lane de obligaciones que no pueden desaparecer del catálogo. Si falta una, el
+  plan queda `UNKNOWN_INPUT` nombrando la que falta y el veredicto no puede ser
+  `SATISFIED`. Sembrado y verificado contra el catálogo real: 4 obligaciones en
+  `change`, 13 en `merge`, 3 en `integration`, ninguna inexistente.
+- **Identidad de repositorio en la reutilización**: un recibo de otro repositorio
+  no se reutiliza aunque el directorio se llame igual; la equivalencia entre
+  worktrees se declara por el identificador del repositorio (remoto `origin`).
+- **Inestabilidad declarada**: si una suite pasó y falló con la misma huella de
+  entradas, `certify` añade el hueco con el motivo y no certifica estabilidad.
+- **Aislamiento del estado**: id de suite hostil saneado y sin salir del state
+  root; un symlink plantado donde el harness escribe no redirige la escritura
+  (la escritura atómica reemplaza el enlace).
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Suite del harness | 101/101 PASS (~55 s) |
+| Contrato del gate | 10/10 PASS (~70 s con la suite dentro) |
+| Filas del AAT | 21 `KILLED` (12 con test propio + 9 por tests existentes), 2 `PARTIAL`, 7 `NOT_RUN` |
+| Suelo de obligaciones | 0 inexistentes, 0 ausentes en las tres lanes verificadas |
+| Mutación AAT-04/AAT-06 (borrar doctests / clippy del catálogo) | el plan pasa a `UNKNOWN_INPUT` nombrando la obligación ausente |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 101/101 |
+| `scripts/ci/test_harness_contract.py` | PASS, 10/10 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS**, 286/286 (incluye las 101 del harness y la comprobación del AAT) |
+
+### Límites declarados
+
+- **9 filas del AAT siguen sin ejecutarse** y no se cuentan como cobertura:
+  dependen de sandbox de campañas, del adaptador nextest, de la fábrica de release
+  o de `known_failures.yaml` (que vive en `test-fast`, no en el harness).
+- Las dos filas `PARTIAL` prueban el mecanismo (exclusión de suites seriales,
+  cerrojos por recurso) pero no la independencia frente a un servicio externo real.
+- El suelo de obligaciones es un mínimo mantenido a mano; el contrato lo compara
+  con el catálogo real, no lo genera.
+- AAT-30 no admite waiver: hoy la vacuidad siempre falla y un mecanismo de
+  excepción aprobada sería otro ADR.

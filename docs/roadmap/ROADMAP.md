@@ -482,3 +482,21 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Contribuidores (corridas largas con concurrencia acotada), mantenedor (pin de casos y GC del ledger), auditoría (ADR-TH-009) |
 | Criterio de cierre | Cumplido: 89 tests del harness verdes, contrato del gate 9/9, SIGKILL + reanudación y dos runs al mismo id cubiertos por test, y **cuatro bugs corregidos** que los tests adversariales destaparon (barrera serial incompleta, marcador RUNNING reutilizado, lease huérfano, excepción del supervisor sin veredicto) |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 17. TH-IMPL-04 — AAT ejecutado: mutaciones con test (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated. El AAT deja de ser un documento de
+> intenciones: **21 de sus 30 filas se matan hoy con test**, 2 quedan `PARTIAL` y 7
+> `NOT_RUN` con motivo escrito. Decisión:
+> [`test-harness/adrs/ADR-TH-010-aat-ejecutado.md`](../../test-harness/adrs/ADR-TH-010-aat-ejecutado.md).
+> No cambia qué bloquea un merge.
+
+| Item | Contrato |
+|---|---|
+| Valor | Que las garantías del harness se puedan *comprobar* por mutación y no por lectura: borrar `clippy` o los doctests del gate, quitar features, meter un recibo de otro repositorio o un id de suite hostil, o dejar una suite que divergió bajo la misma huella, tienen test que lo mata o declaración con motivo |
+| Clasificación | Evolutivo del test harness sobre el mandato del operador de 2026-10-15, continuación de TH-IMPL-03 |
+| Alcance | `test-harness/{aat/AAT.md, tests/test_aat.py, obligations.json, src/harness/{obligations,validity,planner,orchestrator}.py}`, `scripts/ci/test_harness_contract.py`, README y ADR-TH-010 |
+| Fuera de alcance | Filas del AAT que exigen sandbox, adaptador nextest o fábrica de release; waiver de vacuidad; `known_failures.yaml` dentro del harness |
+| Consumidores | Mantenedor (cobertura del AAT verificable en el gate), contribuidores (mutaciones reproducibles), auditoría (ADR-TH-010 y tabla de ejecución) |
+| Criterio de cierre | Cumplido: 101 tests del harness verdes, contrato del gate 10/10, 21 filas del AAT `KILLED` con test existente comprobado por contrato, y suelo de obligaciones verificado contra el catálogo real (0 inexistentes) |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
