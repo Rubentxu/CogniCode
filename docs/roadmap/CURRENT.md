@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a` (commit inicial de TH-DOC-01).
+> `fefc64f8` (recibo de auditoría de TH-DOC-01).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
@@ -21,30 +21,30 @@
 > registrada en `docs/roadmap/ROADMAP.md` §11 y
 > `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: tras refrescar
-> el snapshot dio PASS en HEAD `c5c5e91ad728` con snapshot apuntando a su
-> ancestro inmediato `efbc2a3ec611`; se repetirá tras este nuevo puntero.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: PASS en HEAD
+> `6458044891ef` (`workspace=0.101.17`); se repetirá tras este refresco.
 
 ## HEAD y gates del worktree
 
 * **Rama**: `worktree/test-harness`.
-* **SHA del plan**: `c5c5e91ad7280e5404a6093bc4acfc2e80871b6a`.
+* **SHA del plan**: `fefc64f8` (recibo de auditoría de trazabilidad).
 * **Versión workspace**: `0.101.17`.
 * **Batería de workspace sobre el SHA del plan**: `NOT_RUN` en esta iniciativa
   documental.
-* **Estado**: el commit del plan quedó limpio; esta actualización refresca el
+* **Estado**: el recibo de auditoría quedó limpio; este cambio refresca el
   puntero global del worktree.
 * **Paquete objetivo**: `docs/test-harness/` sigue ignorado por `.gitignore:153`
   y no pertenece a `HEAD`; el gate THD-G1 está `BLOCKED`.
-* **Validación documental**: ratchet PASS en HEAD `c5c5e91ad728`;
-  los cinco destinos OpenSpec enlazados desde §11 existen. La UAT del README
+* **Validación documental**: ratchet PASS en el baseline `6458044891ef`;
+  5/5 enlaces de ROADMAP §11 resuelven y `git archive` contiene los cinco
+  artefactos OpenSpec, pero cero entradas del README objetivo. La UAT del README
   sigue `NOT_RUN` y THD-G1 sigue `BLOCKED` por la regla de ignore.
 
 ## Snapshot anterior b5-v0.101.17 (histórico, SHA `2df856fce7a541f2a3352adef73d4ca1f576247b`)
 
 > El detalle restante conserva evidencia histórica de esa captura. Para el
 > estado actual de agenda manda `docs/roadmap/ROADMAP.md`; no trasladar sus
-> resultados a HEAD `efbc2a3` sin repetir las comprobaciones.
+> resultados a HEAD `fefc64f8` sin repetir las comprobaciones.
 
 ## HEAD y batería (a 2026-10-15)
 
