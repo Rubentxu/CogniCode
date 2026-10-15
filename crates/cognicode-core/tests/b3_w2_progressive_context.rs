@@ -330,7 +330,10 @@ fn cognicode_bin() -> Option<PathBuf> {
         }
     }
     for profile in ["release", "debug"] {
-        let p = workspace_root.join("target").join(profile).join("cognicode");
+        let p = workspace_root
+            .join("target")
+            .join(profile)
+            .join("cognicode");
         if p.exists() {
             return Some(p.canonicalize().ok().unwrap_or(p));
         }

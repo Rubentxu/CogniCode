@@ -124,7 +124,12 @@ fn binary_path() -> Option<PathBuf> {
         }
     }
     for profile in ["release", "debug"] {
-        candidates.push(workspace_root.join("target").join(profile).join("cognicode-mcp"));
+        candidates.push(
+            workspace_root
+                .join("target")
+                .join(profile)
+                .join("cognicode-mcp"),
+        );
     }
     for profile in ["release", "debug"] {
         candidates.push(PathBuf::from(format!("target/{profile}/cognicode-mcp")));
