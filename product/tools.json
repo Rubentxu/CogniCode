@@ -4679,69 +4679,7 @@
         ],
         "type": "object"
       },
-      "output_schema": {
-        "properties": {
-          "plan_id": {
-            "description": "Echo of the input plan_id.",
-            "type": "string"
-          },
-          "plan_digest": {
-            "description": "Stable 16-hex digest derived from plan_id + what_changed. Used for report deduplication, not for security.",
-            "type": "string"
-          },
-          "analyzed_files": {
-            "description": "Count of files in what_changed (apply outcome parity, not a re-scan).",
-            "type": "integer"
-          },
-          "findings": {
-            "description": "B4.W3 FindingsReport (empty until the extractor wires in).",
-            "type": "object"
-          },
-          "diagnostics": {
-            "description": "B4.W2 ArchitectureDiagnostic, or null when not wired.",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "impact": {
-            "description": "B4.W1 ImpactResult, or null when not wired.",
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "verdict": {
-            "description": "RevalidationVerdict enum (verdict_refused | invariants_hold | invariants_drift). Always verdict_refused until a future WU records an evidence_digest.",
-            "type": "string"
-          },
-          "verdict_refused": {
-            "description": "Always true. The revalidation report is evidence, not a verdict.",
-            "type": "boolean"
-          },
-          "verdict_refused_reason": {
-            "description": "Canonical reason string pinned in the source.",
-            "type": "string"
-          },
-          "executed_checks": {
-            "description": "Names of the B4 checks executed (architecture, quality_findings, impact).",
-            "type": "array"
-          }
-        },
-        "required": [
-          "plan_id",
-          "plan_digest",
-          "analyzed_files",
-          "findings",
-          "diagnostics",
-          "impact",
-          "verdict",
-          "verdict_refused",
-          "verdict_refused_reason",
-          "executed_checks"
-        ],
-        "type": "object"
-      },
+      "output_schema": null,
       "requirements": {
         "graph": false,
         "persistence": false,
