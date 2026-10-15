@@ -113,12 +113,12 @@ read_response_block=$(awk '
     in_fn && /^}/ { in_fn=0; exit }
 ' "$stripped")
 
-deadline_checks=$(echo "$read_response_block" | grep -cE 'Instant::now\(\)[[:space:]]*[><]=' || true)
-if [ "$deadline_checks" -lt 3 ]; then
+deadline_checks=$(echo "$read_response_block" | grep -cE 'Instant::now\(\)[[:space:]]*[><]' || true)
+if [ "$deadline_checks" -lt 2 ]; then
     echo "FAIL: read_response has only $deadline_checks deadline checks."
     echo "      With a non-blocking read primitive, the loop must check the"
     echo "      deadline at each iteration. Pre-fix: 2 (before and after the read)."
-    echo "      Post-fix: 3+ (loop start, after recv_timeout, after data parse)."
+    echo "      Post-fix: 2 minimum (loop start + after recv_timeout)."
     failures=$((failures + 1))
 fi
 

@@ -9,6 +9,8 @@
 use std::io::{BufRead, BufReader, Read};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -45,9 +47,22 @@ impl From<std::io::Error> for McpError {
 }
 
 /// Handle to a running MCP server process.
+///
+/// Reads from the server's stdout are performed by a dedicated reader
+/// thread spawned at construction time. The thread pushes complete lines
+/// (or read errors) into a `mpsc::channel`; `read_response` and
+/// `drain_notifications` poll the channel with `recv_timeout` so the
+/// caller can enforce a deadline while the read itself is in progress.
+///
+/// This replaces the previous design where `read_line` was called
+/// directly on the child's `ChildStdout`, which is a blocking syscall:
+/// if the server stayed alive but emitted no further data, the read
+/// blocked indefinitely and the deadline check before/after the read
+/// never fired (P0 #1 in the sandbox harness audit).
 pub struct McpServer {
     child: Child,
-    stdout: BufReader<ChildStdout>,
+    line_rx: mpsc::Receiver<Result<String, std::io::Error>>,
+    _reader_handle: Option<thread::JoinHandle<()>>,
     stdin: std::process::ChildStdin,
     stderr: Option<ChildStderr>,
     request_id: u64,
@@ -66,9 +81,11 @@ impl McpServer {
         stdout: ChildStdout,
         stderr: Option<ChildStderr>,
     ) -> Self {
+        let (_tx, line_rx, reader_handle) = spawn_reader_thread(stdout);
         Self {
             child,
-            stdout: BufReader::new(stdout),
+            line_rx,
+            _reader_handle: Some(reader_handle),
             stdin,
             stderr,
             request_id: 0,
@@ -118,9 +135,11 @@ impl McpServer {
         })?;
         let stderr = child.stderr.take();
 
+        let (_tx, line_rx, reader_handle) = spawn_reader_thread(stdout);
         Ok(Self {
             child,
-            stdout: BufReader::new(stdout),
+            line_rx,
+            _reader_handle: Some(reader_handle),
             stdin,
             stderr,
             request_id: 0,
@@ -211,19 +230,13 @@ impl McpServer {
     pub fn drain_notifications(&mut self) -> Vec<Value> {
         let mut notifications = Vec::new();
         let deadline = Instant::now() + Duration::from_millis(100); // 100ms max
+        let poll_interval = Duration::from_millis(20);
 
-        loop {
-            if Instant::now() > deadline {
-                break; // Timeout - stop waiting for more notifications
-            }
-
-            // read_line() blocks until a newline is received
-            let mut line = String::new();
-            let read_result = self.stdout.read_line(&mut line);
-
-            match read_result {
-                Ok(0) => break, // EOF
-                Ok(_) => {
+        while Instant::now() < deadline {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = poll_interval.min(remaining);
+            match self.line_rx.recv_timeout(wait) {
+                Ok(Ok(line)) => {
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
                         continue;
@@ -235,7 +248,8 @@ impl McpServer {
                         notifications.push(msg);
                     }
                 }
-                Err(_) => break, // Error reading, stop draining
+                Ok(Err(_)) | Err(RecvTimeoutError::Disconnected) => break,
+                Err(RecvTimeoutError::Timeout) => continue,
             }
         }
         notifications
@@ -271,33 +285,28 @@ impl McpServer {
     /// Returns the full response Value (including jsonrpc, id, result/error).
     fn read_response(&mut self, expected_id: u64, timeout_secs: u64) -> Result<Value, McpError> {
         let deadline = Instant::now() + Duration::from_secs(timeout_secs);
+        // Poll interval is short relative to typical timeouts; the deadline
+        // is checked at every iteration, so the wall-clock cost of a
+        // full-timeout wait is bounded by (timeout + poll_interval).
+        let poll_interval = Duration::from_millis(50);
 
         loop {
             if Instant::now() > deadline {
                 return Err(McpError::Timeout(expected_id, timeout_secs));
             }
 
-            // read_line() blocks until a newline is received
-            // but ANSI log lines from the server provide frequent newlines
-            let mut line = String::new();
-            let read_result = self.stdout.read_line(&mut line);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let wait = poll_interval.min(remaining);
 
-            // Check deadline after blocking read
-            if Instant::now() > deadline {
-                return Err(McpError::Timeout(expected_id, timeout_secs));
-            }
-
-            match read_result {
-                Ok(0) => {
-                    // Server closed stdout — drain stderr to capture crash message
-                    let stderr = self.drain_stderr();
-                    if stderr.is_empty() {
-                        return Err(McpError::Eof);
-                    } else {
-                        return Err(McpError::EofWithStderr(stderr));
+            match self.line_rx.recv_timeout(wait) {
+                Ok(Ok(line)) => {
+                    // Check the deadline as soon as a line arrives; even
+                    // one blocking read was enough to overshoot the
+                    // budget in the pre-fix code.
+                    if Instant::now() > deadline {
+                        return Err(McpError::Timeout(expected_id, timeout_secs));
                     }
-                }
-                Ok(_) => {
+
                     let trimmed = line.trim();
                     if trimmed.is_empty() {
                         continue;
@@ -331,7 +340,33 @@ impl McpServer {
                     }
                     // Not our response, keep reading
                 }
-                Err(e) => return Err(McpError::ReadError(e.to_string())),
+                Ok(Err(e)) => {
+                    // The reader thread saw an IO error. EOF is
+                    // signalled by UnexpectedEof; anything else is
+                    // surfaced as a ReadError.
+                    if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                        let stderr = self.drain_stderr();
+                        if stderr.is_empty() {
+                            return Err(McpError::Eof);
+                        } else {
+                            return Err(McpError::EofWithStderr(stderr));
+                        }
+                    }
+                    return Err(McpError::ReadError(e.to_string()));
+                }
+                Err(RecvTimeoutError::Timeout) => continue,
+                Err(RecvTimeoutError::Disconnected) => {
+                    // Reader thread exited without sending an error.
+                    // Most likely the process closed stdout and the
+                    // thread's last send was treated as a normal
+                    // termination.
+                    let stderr = self.drain_stderr();
+                    if stderr.is_empty() {
+                        return Err(McpError::Eof);
+                    } else {
+                        return Err(McpError::EofWithStderr(stderr));
+                    }
+                }
             }
         }
     }
@@ -350,6 +385,61 @@ impl McpServer {
     pub fn is_dead(&mut self) -> bool {
         self.child.try_wait().ok().flatten().is_some()
     }
+}
+
+/// Spawn a background reader thread that pulls complete lines (or read
+/// errors) from the child's stdout and pushes them into the returned
+/// `mpsc::Receiver`. The thread terminates when the pipe closes
+/// (server exit) or the receiver is dropped (`McpServer` dropped).
+///
+/// Returns a tuple `(Sender, Receiver, JoinHandle)`; the `JoinHandle`
+/// is the second field of the tuple, stored in `McpServer`. We do not
+/// join it on `Drop` because the child's pipe closure already causes
+/// the thread to exit on its own.
+///
+/// The thread is the only piece of code that calls blocking
+/// `read_line` on the child's stdout. The `read_response` and
+/// `drain_notifications` paths use `recv_timeout` on the receiver,
+/// which is the deadline-enforcing primitive called for by P0 #1 of
+/// the sandbox harness audit.
+fn spawn_reader_thread(
+    stdout: ChildStdout,
+) -> (
+    mpsc::Sender<Result<String, std::io::Error>>,
+    mpsc::Receiver<Result<String, std::io::Error>>,
+    thread::JoinHandle<()>,
+) {
+    let (tx, rx) = mpsc::channel();
+    let tx_clone = tx.clone();
+    let handle = thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line) {
+                Ok(0) => {
+                    // EOF: signal and exit. The receiver treats
+                    // UnexpectedEof as the EOF indication.
+                    let _ = tx_clone.send(Err(std::io::Error::new(
+                        std::io::ErrorKind::UnexpectedEof,
+                        "server closed stdout",
+                    )));
+                    break;
+                }
+                Ok(_) => {
+                    if tx_clone.send(Ok(line.clone())).is_err() {
+                        // Receiver dropped (McpServer dropped). Exit.
+                        break;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx_clone.send(Err(e));
+                    break;
+                }
+            }
+        }
+    });
+    (tx, rx, handle)
 }
 
 /// JSON-RPC 2.0 request/response pair captured for artifact storage.
