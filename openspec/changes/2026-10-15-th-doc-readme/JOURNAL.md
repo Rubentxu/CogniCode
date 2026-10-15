@@ -68,3 +68,19 @@
 - **No se cambió** README, manifiesto, `.gitignore`, scripts ni PipelineK.
 - **Límite de esta evidencia**: valida el entregable solicitado (iniciativa y
   goals) y su visibilidad versionada, no completa el README ni satisface THD-G1.
+
+## Recibo de corrección del snapshot y revalidación — 2026-10-15
+
+- La primera ejecución del ratchet tras el commit `d0d762378691` falló: el
+  snapshot `CURRENT.md` quedó con SHA abreviado `fefc64f8`; el test buscó el SHA
+  histórico `2df856fce7a5` y rechazó su distancia frente al HEAD.
+- Se corrigió la cabecera con SHA completo `d0d7623786918a789cda28cfe7254741f2d5d9b4`
+  en el commit `387f788aff11641a3e19576e39f344fbe476aca8`.
+- En HEAD `387f788aff11641a3e19576e39f344fbe476aca8`:
+  `python3 scripts/ci/test_roadmap_version_ratchet.py` → **PASS**
+  (`workspace=0.101.17`).
+- En el mismo HEAD, el archivo `git archive` incluyó ROADMAP y los cinco
+  artefactos TH-DOC-01; `docs/test-harness/README.md` estuvo ausente. THD-G1
+  permanece **BLOCKED**, no es una aceptación fallida atribuible al README.
+- No se cambió README, manifiesto, `.gitignore`, scripts ni PipelineK. La batería
+  de workspace y el onboarding siguen **NOT_RUN**.

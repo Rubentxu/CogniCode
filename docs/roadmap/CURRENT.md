@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `d0d7623786918a789cda28cfe7254741f2d5d9b4` (recibo de auditoría de TH-DOC-01).
+> `387f788aff11641a3e19576e39f344fbe476aca8` (ratchet corregido y validado).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
@@ -21,10 +21,9 @@
 > registrada en `docs/roadmap/ROADMAP.md` §11 y
 > `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
 >
-> Ratchet latest `python3 scripts/ci/test_roadmap_version_ratchet.py`: **FAIL**
-> en HEAD `d0d762378691` porque el snapshot previo usaba el SHA abreviado
-> `fefc64f8` y el parser leyó el SHA histórico `2df856fce7a5`. El snapshot
-> ahora declara el SHA completo de HEAD; repetir el ratchet tras el commit.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS** en
+> HEAD `387f788aff11641a3e19576e39f344fbe476aca8`, `workspace=0.101.17`.
+> El snapshot usa SHA completo y está dentro de la ventana contractual.
 
 ## HEAD y gates del worktree
 
@@ -37,7 +36,7 @@
   puntero global del worktree.
 * **Paquete objetivo**: `docs/test-harness/` sigue ignorado por `.gitignore:153`
   y no pertenece a `HEAD`; el gate THD-G1 está `BLOCKED`.
-* **Validación documental**: ratchet PASS en el baseline `6458044891ef`;
+* **Validación documental**: ratchet PASS en HEAD `387f788aff11`;
   5/5 enlaces de ROADMAP §11 resuelven y `git archive` contiene los cinco
   artefactos OpenSpec, pero cero entradas del README objetivo. La UAT del README
   sigue `NOT_RUN` y THD-G1 sigue `BLOCKED` por la regla de ignore.
@@ -46,7 +45,7 @@
 
 > El detalle restante conserva evidencia histórica de esa captura. Para el
 > estado actual de agenda manda `docs/roadmap/ROADMAP.md`; no trasladar sus
-> resultados a HEAD `fefc64f8` sin repetir las comprobaciones.
+> resultados a HEAD `387f788aff11641a3e19576e39f344fbe476aca8` sin repetir las comprobaciones.
 
 ## HEAD y batería (a 2026-10-15)
 
