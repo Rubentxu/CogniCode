@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `fefc64f8` (recibo de auditoría de TH-DOC-01).
+> `d0d7623786918a789cda28cfe7254741f2d5d9b4` (recibo de auditoría de TH-DOC-01).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
@@ -21,8 +21,10 @@
 > registrada en `docs/roadmap/ROADMAP.md` §11 y
 > `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: PASS en HEAD
-> `6458044891ef` (`workspace=0.101.17`); se repetirá tras este refresco.
+> Ratchet latest `python3 scripts/ci/test_roadmap_version_ratchet.py`: **FAIL**
+> en HEAD `d0d762378691` porque el snapshot previo usaba el SHA abreviado
+> `fefc64f8` y el parser leyó el SHA histórico `2df856fce7a5`. El snapshot
+> ahora declara el SHA completo de HEAD; repetir el ratchet tras el commit.
 
 ## HEAD y gates del worktree
 
