@@ -105,6 +105,16 @@ fi
 # Fallback o strategy vacía → ejecutar subset conservador
 if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
   echo "fallback: corriendo subset conservador (workspace --lib + clippy)."
+  # MEDIDO 2026-10-15. Este camino se salta `run_suite` entero, asi que con
+  # el fallback del selector NUNCA se ejecutan las suites listadas — y la
+  # lista del fallback incluye `merge`, que es el merge-gate completo. El
+  # subconjunto conservador es lo que AGENTS.md prescribe para fallback
+  # ("corre el subset conservador y avisa — no falla"), asi que el rc se
+  # respeta; lo que no se respeta es que el aviso no decia en voz alta que
+  # ningun test contractual de integracion se ha corrido. Este wrapper no es
+  # el gate: el gate es `bash scripts/test-full.sh`.
+  echo "  AVISO: este subconjunto NO incluye los tests de integracion"
+  echo "  contractuales (b5_*, b6_*, prf_*). Para eso: bash scripts/test-full.sh"
   cargo test --workspace --lib --quiet
   cargo_clippy_rc=$?
   cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
@@ -122,13 +132,33 @@ run_suite() {
     cli)      cargo test -p cognicode-cli --lib ;;
     ladybug)  cargo test -p cognicode-ladybug --lib ;;
     merge)
-      # En fast NO lanzamos la batería completa: los integration tests
-      # de release-flow son lentos (3+ min) y ya están cubiertos por
-      # `scripts/test-full.sh`. Aquí solo validamos que las libs del
-      # workspace compilan y pasan sus tests unitarios.
-      cargo test --workspace --lib --quiet
+      # `merge` es, segun el propio selector, "merge-gate completo (e2e +
+      # pineados)" (scripts/ci/select-suites.sh). Su comando correcto es
+      # `bash scripts/test-full.sh`, y no existe un comando cargo que sea eso:
+      # son las stages del lane, no una suite. Este caso corria
+      # `--workspace --lib` en su nombre y devolvia verde, que es reportar
+      # exito sin haber ejecutado ni un test contractual de integracion
+      # (b5_*, b6_*, prf_* — hay 65 en crates/cognicode-core/tests/).
+      # Un gate que no puede decir que no, aqui, no puede decir nada.
+      # Fallar cerrado y decir cual es el comando correcto.
+      printf 'ERROR: la suite `merge` no se puede correr desde fast.\n' >&2
+      printf '  correcto:  bash scripts/test-full.sh\n' >&2
+      printf '  `merge` es el merge-gate completo (e2e + pineados) segun\n' >&2
+      printf '  scripts/ci/select-suites.sh; fast no lo sustituye por --lib.\n' >&2
+      return 1
       ;;
-    *) echo "WARN: suite desconocida: $suite" >&2; return 0 ;;
+    *)
+      # MEDIDO 2026-10-15. Esto era `WARN` + `return 0`: una suite que el
+      # selector emite y el runner no conoce se saltaba EN VERDE. Un WARN
+      # no cambia el rc, asi que el unico efecto era escribir en stderr,
+      # y stderr no es un veredicto. Una divergencia entre CR-08 y este
+      # wrapper es un fallo de cableado, no una novedad: o el wrapper no
+      # la sabe correr, o el selector no deberia emitirla.
+      printf 'ERROR: suite desconocida para %s: `%s`\n' "$0" "$suite" >&2
+      printf '  La emitio select-suites.sh y este wrapper no la ejecuta.\n' >&2
+      printf '  Anade el caso en run_suite() o quita la suite del selector.\n' >&2
+      return 1
+      ;;
   esac
 }
 
