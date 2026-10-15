@@ -90,9 +90,21 @@ Schema: `product/schemas/profiles.v1.schema.json`.
 
 ## Tool catalog
 
-Capture the runtime list with the HEAD-built MCP binaries, then regenerate:
+`product/tools.json` is the **master catalog**: every tool the product
+publishes, including the ones a default build does not expose. The runtime
+list is the **active subset**. They are not the same set, and capturing the
+wrong one is silent — it produces a smaller catalog that still validates.
+
+The two tools that a default build hides are gated by
+`program-analysis-server` and `evidence-cli-ladybug`. Build with both, or the
+capture will come up three tools short and regenerating will delete
+`interproc_summary`, `list_evidence` and `search_evidence` from the published
+surface. Measured 2026-10-15: a default build reports 77 tools, a
+full-feature build reports exactly the 80 the catalog publishes.
 
 ```bash
+cargo build -p cognicode-mcp \
+  --features cognicode-core/program-analysis-server,cognicode-core/evidence-cli-ladybug
 /var/home/rubentxu/cargo-targets/debug/mcp-client \
   --workspace "$PWD" \
   --method tools/list \
@@ -110,4 +122,18 @@ Validate the committed projection with:
 python3 scripts/product/test_product_tool_catalog.py
 ```
 
-The catalog schema is `product/schemas/tools.v1.schema.json`. Output schemas remain `null` until the structured-output contract is implemented for the relevant public profile. No output contract is invented here.
+The catalog schema is `product/schemas/tools.v1.schema.json`. Output schemas
+remain `null` until the structured-output contract is implemented for the
+relevant public profile. No output contract is invented here.
+
+### Fields the generator does not own
+
+`limitations`, `required_args`, `prerequisites`, `follow_ups`, `intent_tags`,
+`language_scope`, `feature`, `impact_direction_floor` and `precision_floor`
+are present in the published catalog and are **not** produced by
+`generate_tool_catalog.py`: the runtime's `_meta.cognicode` carries no source
+for them. Running the procedure above therefore drops all nine. They are
+curated by hand and have drifted — `tool_version` still reads `0.99.2` for
+tools whose runtime now reports `0.101.17`. Until the generator owns them,
+`--check` cannot be the authority over this document; see the open decision in
+`docs/roadmap/JOURNAL.md`.
