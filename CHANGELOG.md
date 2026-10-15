@@ -10,6 +10,41 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.17] — 2026-10-15
+
+**Patch de release pipeline.** v0.101.11–v0.101.16 publicaron solo 3
+de los 8 assets que v0.101.10 sí publicaba. Los 5 assets perdidos
+(`bundle-<v>-<platform>.yaml`, `cognicode-<v>.tar.gz`,
+`cognicode-mcp-<v>.tar.gz`, `release-inventory-<v>.json`, `SHA256SUMS`)
+rompían `cogh update/install/latest` ("no per-platform manifest
+asset for platform LinuxX86_64") y `sh install.sh` (404 sobre
+SHA256SUMS, fail-closed).
+
+**Causa raíz:** el binary que produjo v0.101.11–v0.101.16 no
+tenía aún el subcomando `skills --published` (introducido en
+`e51f49ef`, post-v0.101.10). La stage `skill-bundles` consumía
+0 líneas vía pipe y salía con rc=0. El fix de la stage (post-mortem
+en `release-candidate.pipeline.kts:631-640`) ya está en HEAD.
+
+**Esta release re-ejecuta la lane con el binary actual**, que
+sí incluye el subcomando. Verificado en este commit:
+
+  $ cognicode-release skills --published
+  cognicode
+  cognicode-mcp
+
+  $ cognicode-release generate --staging <empty>
+  Error: missing artifact cogh-0.101.17-x86_64-unknown-linux-gnu.tar.gz:
+         component cogh is published but was not produced for platform
+         linux-x86-64
+
+(fail-closed: la lane no produce manifests con payloads faltantes)
+
+**Test de regresión:** `sandbox/scripts/test_release_asset_set.sh`
+pinea el contrato de los 8 assets. v0.101.16 → FAIL con los 5
+nombres exactos; v0.101.10 → PASS (control positivo). Cuando
+v0.101.17 se publique, el test debe pasar.
+
 ## [v0.101.9] — 2026-10-04
 
 **Por qué existe v0.101.9, y qué pasó con `v0.101.8`.** `v0.101.8` está
