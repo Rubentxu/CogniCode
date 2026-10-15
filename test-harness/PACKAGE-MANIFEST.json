@@ -8,8 +8,8 @@
   "files": [
     {
       "path": "README.md",
-      "sha256": "7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7",
-      "bytes": 6090
+      "sha256": "8c612beae0827284001330a1f4ab9bce51829ee1ddb284f04da76da4380c3fbc",
+      "bytes": 6293
     },
     {
       "path": "aat/AAT.md",
@@ -38,8 +38,13 @@
     },
     {
       "path": "adrs/ADR-TH-005-dueno-unico-por-suite.md",
-      "sha256": "adc974e1cedf841cc78aca7ea0c61a31c3fcb8c318c885baad4164839c776955",
-      "bytes": 4873
+      "sha256": "70016fc883f09225cab9418eafbe6bfbc87cbeac3d9a730ad21cd830cae3abd3",
+      "bytes": 5354
+    },
+    {
+      "path": "adrs/ADR-TH-006-retirada-uat.md",
+      "sha256": "bfb70e99b27e4fc33aaee368a1c3e2431feae971bd858b77c196a8f92384a78c",
+      "bytes": 3774
     },
     {
       "path": "contracts/README.md",
@@ -88,8 +93,8 @@
     },
     {
       "path": "docs/01-arquitectura.md",
-      "sha256": "0fc680dfd9b4625d735ef7d3dce78a179a3185d599f3d2d7dce659207d534cc3",
-      "bytes": 4611
+      "sha256": "763c1c1a9362ccb1e8cc63f720fab10047b60c749cb2bf4946410bd0d770866e",
+      "bytes": 4613
     },
     {
       "path": "docs/02-ontologia-y-estados.md",
@@ -98,18 +103,18 @@
     },
     {
       "path": "docs/03-migracion-y-compatibilidad.md",
-      "sha256": "ddb7846e0b0a57af9d2794eaeb46375aa02e21b1f4b787a1f80a4499fd7b83ce",
-      "bytes": 4484
+      "sha256": "f7d502d9f7278420413d7950ae62738840aba17fca2d70856ca382a450d0bcf3",
+      "bytes": 4486
     },
     {
       "path": "docs/04-metrica-y-criterios.md",
-      "sha256": "16035d9515c6d0a2c6ee3395db784e6bc3ead2831c5c03221b3453560734ea43",
-      "bytes": 3008
+      "sha256": "e73fd7f28d23e7ec93aed6793115674b93200d62dbf009f00826743575f5d044",
+      "bytes": 3107
     },
     {
       "path": "docs/05-decision-pendientes.md",
-      "sha256": "c530c7fd78c7e7c3b64a370ba640d8f403ddf0e728376f6945ccdafbbdaff741",
-      "bytes": 1792
+      "sha256": "608b9696b85f235e9266c47eb9a1e1b6923596e800c278dea62c4e6c3f599bdb",
+      "bytes": 1814
     },
     {
       "path": "docs/06-rutas-y-referencias.md",
@@ -118,8 +123,8 @@
     },
     {
       "path": "docs/07-auditoria-merge-gate.md",
-      "sha256": "10befedc898c9dac1fd75ff9243841297b575bd3601834bcfd0d010d1fcd3703",
-      "bytes": 39718
+      "sha256": "cf5eda915465aebc51f693e7f89ffab095a2659e748c6ae1a8506b94c8a4e3ed",
+      "bytes": 41557
     },
     {
       "path": "prompts/MANDATO-AGENTE.md",
@@ -160,11 +165,6 @@
       "path": "specs/TH-S06-operacion-seguridad.md",
       "sha256": "0da05a71faa2b8ba64ac81f202e1479c8ecf6d13907b29cf28bc20f41ca8ec4d",
       "bytes": 3975
-    },
-    {
-      "path": "uat/UAT.md",
-      "sha256": "e91eab3d0cfcfcc36db4014e2a5d7fd2cef95ae6aa767dfe18f34e8f8ebff4f0",
-      "bytes": 4665
     }
   ]
 }

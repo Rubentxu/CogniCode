@@ -5,10 +5,10 @@ Se especifica una trayectoria segura por defecto, sin obligar al agente a detene
 | Decisión | Default seguro | Se decide antes de |
 |---|---|---|
 | Tecnología CLI | Python stdlib pequeño, con core puro; Rust sólo si medición y ergonomía lo justifican | W2 |
-| Ledger persistente | Evaluar SQLite WAL vs JSONL append-only en UAT; elegir una autoridad | W4 |
+| Ledger persistente | Evaluar SQLite WAL vs JSONL append-only con corte abrupto y concurrencia; elegir una autoridad | W4 |
 | Nextest | Opcional / experimental, no sustituye Cargo en release | W5 |
 | Migración física de pipelines | Mantener root como autoridad, centralizar drivers de prueba bajo subárbol | W6-W7 |
-| Política reuse en merge/release | OFF hasta ADR aceptada y UAT/AAT de equivalencia | W6 |
+| Política reuse en merge/release | OFF hasta ADR aceptada y AAT de equivalencia | W6 |
 | Estado XDG | `~/.local/state/cognicode-test-harness/` (override `XDG_STATE_HOME`) | W2 |
 | Limpieza de wrappers legacy | Sólo después de inventario de consumidores y paridad | W7 |
 | Uso de `cargo-llvm-cov` y cache | Herramienta/profiling separados, sin reciclar PASS de tests estándar | W2-W6 |

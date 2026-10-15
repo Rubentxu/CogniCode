@@ -2,7 +2,9 @@
 
 **Estado: especificación únicamente.** No incluye un *harness* ejecutable. Los seis comandos de la sección de uso son propuestas, no interfaces disponibles.
 
-UAT está planificado, no ejecutado; AAT sigue siendo especificación. No hay mediciones de velocidad o paridad.
+AAT sigue siendo especificación. No hay mediciones de velocidad o paridad. La
+clase UAT se retiró del repositorio el 2026-10-15 por decisión del operador
+(ADR-TH-006): este paquete ya no incluye un plan de UAT.
 
 - **Fecha de auditoría**: 2026-10-15
 - **Repositorio destino**: https://github.com/Rubentxu/CogniCode
@@ -34,7 +36,7 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
 | Integrar adaptadores, gates u operación segura | Specs [TH-S04](specs/TH-S04-adaptadores.md), [TH-S05](specs/TH-S05-gates-release.md) y [TH-S06](specs/TH-S06-operacion-seguridad.md). |
 | Consultar decisiones, contratos y entregas previstas | [ADRs](adrs/), [contratos JSON](contracts/README.md), [criterios](docs/04-metrica-y-criterios.md), [decisiones pendientes](docs/05-decision-pendientes.md) y [roadmap](roadmap/ROADMAP.md). |
-| Aceptar el diseño o buscar falsos verdes | [UAT](uat/UAT.md) y [AAT](aat/AAT.md). Ambos son planes/especificación, no resultados ejecutados. |
+| Aceptar el diseño o buscar falsos verdes | [AAT](aat/AAT.md). Es un plan/especificación, no un resultado ejecutado. El plan de UAT que acompañaba a este paquete se retiró el 2026-10-15 (ADR-TH-006). |
 | Preparar instrucciones para un agente implementador | [Mandato del agente](prompts/MANDATO-AGENTE.md). |
 
 El README sirve de índice. Las reglas normativas viven en las specs y ADRs; este mapa no las reemplaza.
@@ -52,7 +54,7 @@ python3 test-harness/bin/harness.py explain --suite core-lib
 python3 test-harness/bin/harness.py certify --lane integration --candidate <sha>
 ```
 
-No afirmar que esos comandos existen hasta superar una UAT. `bin/harness.py` es una **propuesta de interfaz**, sustituible si el diseño demuestra más adecuado un binario Rust.
+No afirmar que esos comandos existen hasta superar una verificación real contra el repositorio. `bin/harness.py` es una **propuesta de interfaz**, sustituible si el diseño demuestra más adecuado un binario Rust.
 
 El planificador no ejecuta otro motor CI: PipelineK sigue iniciando y autorizando los gates.
 
@@ -73,12 +75,12 @@ portables si existe prueba de equivalencia de entrada y entorno.
 - Nextest `-R` rerun experimental **no invalida automáticamente** por cambios de código; nunca constituye por sí solo la prueba de vigencia.
 - No sobrescribir la configuración global Cargo, no aplicar `CARGO_BUILD_JOBS` ni `[profile.test]` a todo el workspace sin autorización, y no destruir `CARGO_TARGET_DIR` compartido.
 - No introducir GitHub Actions. PipelineK sigue siendo la autoridad vigente en `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
-- Preservar los recibos y los artefactos exactos del candidato release; publicar únicamente bytes verificados. Las instalaciones desde los tarballs finales requieren UAT real.
+- Preservar los recibos y los artefactos exactos del candidato release; publicar únicamente bytes verificados. Las instalaciones desde los tarballs finales requieren una instalación real, no una simulada.
 - No reabrir PRF histórico; ubicar cada avance en el roadmap Post-PRF existente y conservar la disciplina SDDK de `AGENTS.md`.
 
 ## Estado
 
 **Diseño listo para evaluación, implementación del harness pendiente.** La
 presencia de estos documentos en Git no demuestra que exista una interfaz
-ejecutable, ni certifica ejecución de tests, ahorro de tiempo o paridad. UAT
-sigue sin ejecutar y AAT sigue siendo una especificación.
+ejecutable, ni certifica ejecución de tests, ahorro de tiempo o paridad. AAT
+sigue siendo una especificación.

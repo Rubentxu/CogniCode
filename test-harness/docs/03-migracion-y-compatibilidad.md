@@ -36,7 +36,7 @@
 4. W1-W2 preferentemente bajo subtree, con PRs pequeños de correcciones seguras sólo si main las necesita y green gate.
 5. Mover *seams* hacia wrappers en PR acotados, uno por superficie. Rebase/integración frecuente para que la evolución paralela no diverja de runtime/release.
 6. Habilitar rutas experimentales por flag/config *opt-in*, no por sustitución silenciosa de `test-full`.
-7. W6 sólo integra el resultado en gates oficiales una vez completadas UAT/AAT y aprobación de política.
+7. W6 sólo integra el resultado en gates oficiales una vez completado el AAT y con aprobación de política.
 
 ## Criterio de anti-contaminación
 

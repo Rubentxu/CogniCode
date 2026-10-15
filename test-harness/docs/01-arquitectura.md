@@ -6,7 +6,7 @@
 CogniCode/
 ├── test-harness/                  # NUEVO — único propietario del harness
 │   ├── README.md
-│   ├── docs/ adrs/ specs/ roadmap/ uat/ aat/ prompts/
+│   ├── docs/ adrs/ specs/ roadmap/ aat/ prompts/
 │   ├── contracts/                 # schemas + catálogo generado/verificado
 │   ├── bin/                       # CLI de orquestación de pruebas, sin CI paralelo
 │   ├── src/                       # core puro, selección e invalidación
@@ -74,7 +74,7 @@ Lógica pura estilo funcional (ficheros pequeños, ADTs, funciones totales):
 - `plan(requirements, receipts, snapshot) -> ExecutionPlan`;
 - `aggregate(requirements, valid_receipts) -> GateVerdict`.
 
-Sólo adaptadores tocan FS, Git, Cargo, procesos, logs, Podman, SQLite. No abusar de modelos OO, abstracciones o bases de datos múltiples; un ledger SQLite externo opcional o JSONL append-only + índices derivados, **pero no ambos como dos fuentes de verdad**. Elegir una opción tras UAT de corte abrupto y concurrencia.
+Sólo adaptadores tocan FS, Git, Cargo, procesos, logs, Podman, SQLite. No abusar de modelos OO, abstracciones o bases de datos múltiples; un ledger SQLite externo opcional o JSONL append-only + índices derivados, **pero no ambos como dos fuentes de verdad**. Elegir una opción tras una prueba de corte abrupto y concurrencia.
 
 ## Regla crítica: dos identidades, no una
 

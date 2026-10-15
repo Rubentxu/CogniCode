@@ -21,10 +21,10 @@ Guardar muestras y metodología en `$XDG_STATE_HOME/cognicode-test-harness/bench
 ## Objetivos de aceptación (propuestas, recalibrables tras baseline)
 
 1. Mínimo funcional: dado un fallo en suite N y arreglo que sólo cambia sus inputs, se conservan recibos válidos previos y se reejecutan N + dependientes afectados. Debe ser verificable por `explain`.
-2. Ninguna mejora de tiempo es válida si falsifica PASS, reduce cobertura o evita UAT finales.
+2. Ninguna mejora de tiempo es válida si falsifica PASS, reduce cobertura o evita las verificaciones finales que la política exija.
 3. *Target* inicial tras baseline: reducir tiempo de *fix-to-green* warm al menos un 30% en una suite independiente fallida; si no, registrar resultado y rediseñar, no proclamar velocidad ficticia.
 4. Overhead del planificador objetivo <=2s warm en repositorio de tamaño actual, medido y excluyendo Cargo builds; si no se logra, optimizar sin debilitar fingerprint.
-5. AAT y UAT obligatorias 100% PASS para permitir `harness` como autoridad delegada; informe de migración 1:1 de obligaciones.
+5. AAT obligatorio 100% PASS para permitir `harness` como autoridad delegada; informe de migración 1:1 de obligaciones. La clase UAT se retiró del repositorio el 2026-10-15 (ADR-TH-006).
 
 ## Interrupción y recurso
 

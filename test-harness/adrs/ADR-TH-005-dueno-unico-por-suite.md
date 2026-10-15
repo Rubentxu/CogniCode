@@ -69,3 +69,10 @@
 - **Límites:** este ADR no altera la política de seguridad ni de certificación,
   no cambia el significado de `full` en `AGENTS.md`, y no autoriza solape,
   reutilización de resultados ni certificación de artefactos sin verificar.
+- **Nota (2026-10-15, ADR-TH-006):** tres de las seis suites que este ADR movió
+  (`prf_dist_01_06_release_candidate_uat`, `prf_dist_workflow_flatten_uat` y
+  `prf_cli_04_two_process_uat`) se retiraron con la clase UAT el mismo día, por
+  decisión del operador. El reparto por lane sigue en pie para las tres que
+  quedan (`prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract` y
+  `published_skill_bundles_are_required`), que es lo que la lane de candidato
+  ejecuta hoy.

@@ -354,3 +354,33 @@ más cara del merge, 548 s medidos en las dos corridas. No es una regresión de
 esta unidad — existía igual antes — y reducirla exige una decisión propia
 (alcance del gate de documentación, caché de `cargo doc`, o moverlo de lane).
 Se registra como insumo para B3/B5, no como cambio de B1.
+
+## 6. Retirada de la clase UAT (2026-10-15, misma jornada)
+
+Decisión del operador, registrada en `../adrs/ADR-TH-006-retirada-uat.md`: la
+clase UAT (`*_uat.rs`) sale del repositorio y del paquete del harness. No es una
+consecuencia de B1 ni una reclasificación: es una decisión de alcance que elimina
+obligaciones, y por eso se documenta aquí en lugar de editar las tablas de arriba,
+que describen el fichero auditado y siguen siendo ciertas para él.
+
+| Efecto | Antes | Después |
+|---|---|---|
+| Targets `*_uat.rs` | 28 (3 crates) | 0 |
+| Tests en esos targets | 68 (1 con `#[ignore]`) | 0 |
+| `merge-gate.pipeline.kts` | 73 declaraciones | 58 |
+| `release-candidate.pipeline.kts` | 33 declaraciones | 30 |
+| Suites de perfil release (CLI) | 5 | 3 (`prf_f6_w1`, `prf_f6_w2`, `published_skill_bundles`) |
+| Suites de perfil release (MCP) | 1 | 0 |
+| Suites CLI no-release enumeradas | 49 | 41 |
+| Suites MCP nombradas o excluidas | 25 + 1 | 8 + 1 (`continuation_e2e` sigue excluida) |
+| `preflight-clean-clone.sh` baseline | `passed=5579 ignored=37` | `passed=5512 ignored=36` (delta calculado, pendiente de confirmar en el primer clean-clone) |
+
+Lo que **deja de estar verificado** en CI, dicho sin rodeos: los contratos
+`prf_sec_*` (diferenciación read/write, allowlist de directorios, telemetría
+opt-in, shutdown), `prf_state_*` (namespace por digest, snapshots, concurrencia),
+`prf_cli_*` (paridad del gate, determinismo, workspaces), `prf_dist_*`
+(distribución desde bytes release) y `prf_ci_01_07` (paridad del gate de clippy).
+Las garantías siguen descritas en `docs/prf/` como evidencia histórica y sus
+contratos supervivientes (`a009`, `a016`, `cli_exit_code_propagation`,
+`prf_h06`, `b6_w1`) siguen pineando la parte que ejercen por otra vía; lo que ya
+no existe es la reproducción ejecutable de la clase retirada.
