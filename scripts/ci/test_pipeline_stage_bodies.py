@@ -468,7 +468,7 @@ def test_a_missing_target_still_fails_the_way_it_did() -> None:
     )
 
 
-def a_build_output_directory_starts_from_itself() -> None:
+def test_a_build_output_directory_starts_from_itself() -> None:
     """A directory a stage OWNS does not survive from the previous run.
 
     MEDIDO 2026-10-04. `staging/` se limpia —`skill-bundles` borra los ficheros
@@ -543,7 +543,7 @@ def main() -> int:
         test_a_linker_that_does_not_resolve_is_named,
         test_a_native_target_needs_no_linker_configuration,
         test_a_missing_target_still_fails_the_way_it_did,
-        a_build_output_directory_starts_from_itself,
+        test_a_build_output_directory_starts_from_itself,
     ]
     for func in tests:
         try:
