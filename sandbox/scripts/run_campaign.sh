@@ -353,6 +353,17 @@ _run_campaign() {
     for w in "${WORKER_IDS[@]}"; do
         rm -rf "$RESULTS_DIR/worker-$w"
     done
+
+    # P0 #2 fix: propagate worker failures to the caller.
+    # Without this, the parent script sees $? from the rm loop (always 0)
+    # and the campaign appears green even when workers died. The exact
+    # count is recorded in the campaign_manifest.json by the caller; here
+    # we only need the boolean signal. The pre-fix code had a bare
+    # `return` here (implicit 0), which is what made the bug silent.
+    if [ "${FAILURES:-0}" -gt 0 ]; then
+        return 1
+    fi
+    return 0
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -476,9 +487,15 @@ trap '_mark_campaign_terminal interrupted 130; trap - EXIT; exit 130' INT TERM
 if [ "$REPEAT" -eq 1 ]; then
     mkdir -p "$RUN_DIR"
     _run_campaign "$RUN_DIR" "$RUN_DIR"
-    # Mark complete explicitly here; the EXIT trap will also fire.
-    _mark_campaign_terminal complete $?
-    exit 0
+    CAMPAIGN_RC=$?
+    # Mark terminal with the actual exit code; pre-fix hardcoded 0
+    # which made campaign_manifest.json lie about worker health.
+    if [ "$CAMPAIGN_RC" -eq 0 ]; then
+        _mark_campaign_terminal complete "$CAMPAIGN_RC"
+    else
+        _mark_campaign_terminal incomplete "$CAMPAIGN_RC"
+    fi
+    exit "$CAMPAIGN_RC"
 fi
 
 # ── Multi-repeat path: stability/repeat testing ──
@@ -491,7 +508,10 @@ for ((i=1; i<=REPEAT; i++)); do
     echo ""
     echo "─── Repeat $i of $REPEAT ───"
     _run_campaign "$REPEAT_RUN_DIR" "$REPEAT_RUN_DIR"
-    MULTI_FAILURES=$((MULTI_FAILURES + FAILURES))
+    REPEAT_RC=$?
+    if [ "$REPEAT_RC" -ne 0 ]; then
+        MULTI_FAILURES=$((MULTI_FAILURES + 1))
+    fi
 done
 FAILURES=$MULTI_FAILURES
 
@@ -527,6 +547,16 @@ echo "  Stability: $RUN_DIR/stability.json"
 echo "  Total:  $(find "$RUN_DIR" -name 'result.json' | wc -l) scenarios across $REPEAT repeats"
 echo "  Measured HEAD: $MEASURED_SOURCE_HEAD"
 echo "════════════════════════════════════════════════════════════"
+
+# P0 #2 fix: a red campaign must NOT exit 0. Pre-fix hardcoded
+# `_mark_campaign_terminal complete 0` and let the script exit 0
+# via the EXIT trap. Now: the trap will see the non-zero exit code
+# we set here and mark the campaign incomplete; the manifest's
+# `worker_exit_code` reflects the real number of failed repeats.
+if [ "$FAILURES" -gt 0 ]; then
+    _mark_campaign_terminal incomplete "$FAILURES"
+    exit 1
+fi
 
 # Mark complete explicitly; EXIT trap also fires.
 _mark_campaign_terminal complete 0
