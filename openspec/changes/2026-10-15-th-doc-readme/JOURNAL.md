@@ -41,3 +41,30 @@
 - `git status --short --branch` → limpio después del commit inicial.
 - **Siguiente WU**: THD-0, resolver publicación/ruta. La aceptación del README
   permanece bloqueada y `NOT_RUN` hasta que el paquete esté en el checkout.
+
+## Recibo de auditoría de aceptación y trazabilidad — 2026-10-15
+
+- **Baseline auditado**: HEAD `6458044891ef669254fcbe88a4b12f3622f584bb`.
+- **Feedback loop de la iniciativa**: la ruta pública de ROADMAP §11 permite
+  llegar a los cinco artefactos de propuesta, spec, tareas, estado y journal.
+  Comprobación normalizada contra `git ls-files`: 5/5 destinos presentes.
+- **Boundary de distribución**: `git archive --format=tar HEAD | tar -tf -`
+  incluye ROADMAP y los cinco artefactos OpenSpec, pero cero entradas
+  `docs/test-harness/README.md`. Resultado funcional: iniciativa publicada,
+  README objetivo ausente en checkout limpio; THD-G1 sigue `BLOCKED`.
+- **Ratchet**: `python3 scripts/ci/test_roadmap_version_ratchet.py` → **PASS**
+  (`workspace=0.101.17`, HEAD `6458044891ef`).
+- **Diagnóstico no autoritativo del paquete local ignorado**: 17 enlaces
+  relativos, 0 destinos inexistentes; README SHA-256
+  `5909e3d315f59efa7705a4d84ede976f0fa671872563f0096605f8699dcfe26e`, 5658
+  bytes; ambos valores coinciden con `PACKAGE-MANIFEST.json`. El directorio
+  sigue fuera de `HEAD`, por lo que estas observaciones no son aceptación.
+- **Trazabilidad**: tasks.md relaciona R1..R5 con sus tareas, checks y resultado.
+  R2 y R4 siguen `NOT_RUN` para aceptación final; R3 y R5 no se aceptan desde
+  checkout limpio; onboarding no se intentó.
+- **Diagnóstico de enlaces**: un primer parser manual no normalizó `..` y dio
+  falsos missing para los cinco enlaces; al normalizar rutas correctamente, la
+  comprobación pasó 5/5. No se alteró ningún archivo por ese diagnóstico.
+- **No se cambió** README, manifiesto, `.gitignore`, scripts ni PipelineK.
+- **Límite de esta evidencia**: valida el entregable solicitado (iniciativa y
+  goals) y su visibilidad versionada, no completa el README ni satisface THD-G1.
