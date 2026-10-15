@@ -14862,3 +14862,65 @@ Las seis producen `exit 101`; el control sin mutación, `exit 0`. Detalle en
   core). Eliminarlas cambia obligaciones nombradas: decisión aparte.
 - El check requerido `merge-gate` en GitHub lo publica
   `scripts/ci/publish-merge-gate.sh`; la fusión queda en manos del operador.
+
+---
+
+## Recibo 2026-10-15 — Retirada de la clase UAT (ADR-TH-006)
+
+**Decisión**: operador, instrucción literal «fuera UAT he dicho», con
+independencia de B1 y el mismo día. **Alcance**: 28 targets `*_uat.rs`
+(68 tests, 4 804 líneas) en `cognicode-cli`, `cognicode-core` y `cognicode-mcp`;
+`test-harness/uat/UAT.md`; y todas las referencias en pipelines, contratos,
+comentarios y manifiesto. **No** se retira el AAT (mutaciones) ni la evidencia
+histórica de `docs/prf/`.
+
+### Efectos
+
+| Efecto | Antes | Después |
+|---|---|---|
+| Targets `*_uat.rs` | 28 | 0 |
+| Tests en esos targets | 68 (1 `#[ignore]`) | 0 |
+| `merge-gate.pipeline.kts` | 73 stages | 58 |
+| `release-candidate.pipeline.kts` | 33 stages | 30 |
+| Suites de perfil release | 5 CLI + 1 MCP | 3 CLI + 0 MCP |
+| Enumeración CLI | 49 targets | 41 |
+| Inventario MCP | 26 ficheros | 9 |
+| `preflight-clean-clone.sh` | `passed=5579 ignored=37` | `passed=5512 ignored=36` (calculado) |
+
+### Lo que deja de verificarse (declarado, no escondido)
+
+Diferenciación read/write, allowlist de directorios, telemetría opt-in, shutdown
+limpio, namespace por digest, snapshots durables, concurrencia entre procesos,
+determinismo de CLI, paridad del gate de clippy y distribución desde bytes
+release. Las garantías siguen descritas en `docs/prf/` como evidencia histórica y
+los contratos supervivientes (`a009`, `a016`, `cli_exit_code_propagation`,
+`prf_h06`, `b6_w1`) siguen pineando la parte que ejercen por otra vía; lo que se
+retira es la reproducción ejecutable de la clase.
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --all --check` | PASS |
+| `cargo check -p cognicode-core -p cognicode-cli -p cognicode-mcp --tests` | PASS |
+| `cli_gate_coverage_contract` | 20/20 PASS (conjuntos declarados y suelo MCP actualizados) |
+| `a013_lifecycle_gate_contract` | 12/12 PASS (tabla BLACKBOX sin las UAT retiradas) |
+| `core_gate_coverage_contract` | 11/11 PASS (65 suites, ancla sin `prf_ext_04`) |
+| `pipelinek validate` de las dos pipelines tocadas | VALIDATION SUCCESSFUL |
+| `test_pipeline_stage_bodies.py`, `test_pipeline_artifact_reachability.py`, `test_preflight_passed_ratchet.py` | PASS |
+| `pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts` | **SUCCESS**, 58/58 stages verdes, 1 638 s |
+
+### Baseline del preflight
+
+El delta 5579 → 5512 es **calculado** (67 tests que pasaban + 1 ignorado), no
+medido por un clean-clone: el primer preflight posterior lo confirma, y si el
+observado difiere más que la tolerancia (2) se re-baseliniza con el observado,
+que es lo que el propio fallo prescribe. La lane de candidato no se ejecutó en
+esta unidad.
+
+### Límites declarados
+
+- La corrida verde duró 1 638 s frente a los 1 215 s de B1: la máquina estaba
+  más cargada (cinco JVM ajenos), no hay regresión de la lane.
+- No se ejecutó `cargo test --workspace` tras la retirada; el baseline del
+  preflight queda declarado como calculado hasta su primera corrida real.

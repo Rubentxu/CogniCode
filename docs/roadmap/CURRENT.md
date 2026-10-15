@@ -10,8 +10,9 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `658409fb` (B1: gate de merge ligero; el recibo va en `JOURNAL.md` y el commit
-> de recibos es el siguiente a este SHA).
+> `910ad2d3` (B1: gate de merge ligero; retirada de la clase UAT
+> ADR-TH-006; el recibo va en `JOURNAL.md` y el commit de recibos es el
+> siguiente a este SHA).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de TH-DOC-01 sobre
 > `9731d9962b1777c0ce468157fc195b6a26984d4a` se conserva abajo como histórica;
@@ -28,8 +29,9 @@
 ## HEAD y gates del worktree (B1)
 
 * **Rama**: `worktree/test-harness`.
-* **Commits de la unidad**: `658409fb` (gate, contratos, auditoría, ADR) y
-  `00c9e47e` (reparación de una deriva preexistente en la UAT read-only).
+* **Commits de la unidad**: `658409fb` (B1: gate, contratos, auditoría, ADR), `00c9e47e`
+  (reparación de una deriva preexistente en la UAT read-only), `e2b22d15` (retirada
+  de la clase UAT) y `910ad2d3` (paquete del harness sin plan de UAT).
 * **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
   `v0.101.16` y **no** se publica release en esta unidad.
 * **merge-gate**: construcciones release eliminadas (470 s medidos) y sustituidas
@@ -40,6 +42,12 @@
   (`release-contracts`), 62 tests, `rc=0`.
 * **Mutaciones adversariales**: 6/6 detectadas por los contratos de cobertura;
   control sin mutación verde.
+* **Clase UAT**: retirada del repositorio el 2026-10-15 por decisión del operador
+  (ADR-TH-006): 28 targets, 68 tests y 4 804 líneas fuera; `merge-gate` queda en
+  58 stages y la lane de candidato en 30, con **58/58 verdes y 1 638 s** en la
+  corrida de verificación. El baseline de `preflight-clean-clone.sh` se
+  re-baseliniza a `passed=5512 ignored=36` (delta calculado, pendiente de la
+  primera corrida real de la lane).
 * **Límite**: lane de candidato completa (clean-clone, empaquetado, instalación,
   provenance) y `cargo test --workspace` **NOT_RUN** en esta unidad; los límites
   están declarados en el recibo del `JOURNAL.md`.

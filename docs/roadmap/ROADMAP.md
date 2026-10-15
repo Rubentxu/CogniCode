@@ -406,3 +406,21 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Contribuidores (coste de iteración), mantenedor (gate de merge y gate de candidato), auditoría (auditoría de stages y ADR-TH-005) |
 | Criterio de cierre | Cumplido: merge verde con base durable (73 stages, 1 215 s), seis suites release verdes en su lane nueva (62 tests), seis mutaciones adversariales detectadas y control verde, duración antes/después del bloque eliminado medida |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` (fusión operator-gated por el check `merge-gate`) |
+
+## 13. Retirada de la clase UAT (2026-10-15)
+
+> **Estado**: IMPLEMENTADO. Decisión explícita del operador, registrada en
+> [`test-harness/adrs/ADR-TH-006-retirada-uat.md`](../../test-harness/adrs/ADR-TH-006-retirada-uat.md).
+> Los 28 targets `*_uat.rs` (68 tests) salen del repositorio y `test-harness/`
+> deja de incluir un plan de UAT. No es una consecuencia de B1 §12 ni una
+> reclasificación: elimina obligaciones, y el ADR enumera lo que deja de
+> verificarse en cada merge.
+
+| Item | Contrato |
+|---|---|
+| Valor | Retirar una segunda clase de prueba que repetía escenarios de aceptación ya pineados por contratos de lane, y dejar el inventario del harness limitado a lo que se va a construir |
+| Clasificación | Cambio de alcance de pruebas del roadmap Post-PRF, autorizado por el operador el 2026-10-15. No es mantenimiento v0.98.x ni release de producto |
+| Alcance | 28 targets en tres crates, `merge-gate.pipeline.kts` (73 → 58 stages), `release-candidate.pipeline.kts` (33 → 30), contratos de cobertura y de gate, `scripts/ci/preflight-clean-clone.sh` (baseline), `AGENTS.md` y el paquete `test-harness/` |
+| Fuera de alcance | AAT (mutaciones), contratos `a0*`/`b*`/`t1_*`, evidencia histórica `docs/prf/`, `evidence/` y `odd/` |
+| Criterio de cierre | Cumplido: merge verde tras la retirada (58/58 stages, 1 638 s), contratos actualizados en el mismo commit, baseline del preflight re-baselinizado y declarado como calculado |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md) |
