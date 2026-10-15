@@ -9,23 +9,41 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `2df856fce7a541f2a3352adef73d4ca1f576247b` (contrato B4.W1 `precision`/`provider` restaurado en los 8
-> DTOs de navegación; enlaces intra-doc de `refactor::apply`/`preview`
-> reparados; gate `rustdoc-gate` verde por primera vez bajo
-> pipelinek 0.61.0-rc2).
-> Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
-> `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
-> publicado** — el tag remoto sigue en `v0.101.16`, que es la release
-> que hoy publica 3 de los 8 assets. La release viva es `v0.101.16`.
+> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, baseline
+> HEAD `efbc2a3ec6114550584766698606e5d4a95e0596`.
+> Este snapshot describe este worktree, no actualiza la autoridad de `main`.
+> La captura anterior de `b5-v0.101.17` sobre SHA
+> `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
+> Ese SHA es un ancestro 11 commits detrás de este baseline y sus resultados
+> no se presentan como evidencia del HEAD actual.
 >
-> Próxima release objetivo: `v0.101.17` (re-publicar el set completo de
-> 8 assets) per
-> [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
+> **Unidad abierta en este worktree**: TH-DOC-01, iniciativa documental
+> registrada en `docs/roadmap/ROADMAP.md` §11 y
+> `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
-> pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
-> drift es reintroducir el problema; el ratchet es la red.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: falló antes de
+> refrescar este snapshot por antigüedad del SHA; tras refrescarlo dio PASS
+> sobre baseline `efbc2a3ec611`.
+
+## HEAD y gates del worktree
+
+* **Rama**: `worktree/test-harness`.
+* **SHA baseline**: `efbc2a3ec6114550584766698606e5d4a95e0596`.
+* **Versión workspace**: `0.101.17`.
+* **Batería sobre el SHA baseline**: `NOT_RUN` en esta iniciativa documental.
+* **Estado inicial**: checkout limpio antes de abrir TH-DOC-01; los artefactos
+  de iniciativa están ahora en el diff de trabajo.
+* **Paquete objetivo**: `docs/test-harness/` sigue ignorado por `.gitignore:153`
+  y no pertenece a `HEAD`; el gate THD-G1 está `BLOCKED`.
+* **Validación documental**: ratchet PASS sobre baseline `efbc2a3ec611`;
+  los cinco destinos OpenSpec enlazados desde §11 existen. La UAT del README
+  sigue `NOT_RUN` y THD-G1 sigue `BLOCKED` por la regla de ignore.
+
+## Snapshot anterior b5-v0.101.17 (histórico, SHA `2df856fce7a541f2a3352adef73d4ca1f576247b`)
+
+> El detalle restante conserva evidencia histórica de esa captura. Para el
+> estado actual de agenda manda `docs/roadmap/ROADMAP.md`; no trasladar sus
+> resultados a HEAD `efbc2a3` sin repetir las comprobaciones.
 
 ## HEAD y batería (a 2026-10-15)
 
