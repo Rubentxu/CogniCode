@@ -76,7 +76,11 @@ fi
 
 SELECTION="$(bash "$SELECTOR" --paths "$PATHS" 2>/dev/null)"
 STRATEGY="$(printf '%s' "$SELECTION" | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')"
-SUITES="$(printf '%s' "$SELECTION" | sed -n 's/.*"suites":\[\(.*\)\].*/\1/p')"
+# Strip JSON string quotes that the sed captures verbatim — the inner
+# content of ["core","mcp"] is "core","mcp" (with literal quotes), which
+# must be normalized before the case dispatch. The tr handles both single
+# and multiple elements.
+SUITES="$(printf '%s' "$SELECTION" | sed -n 's/.*"suites":\[\([^]]*\)\].*/\1/p' | tr -d '"')"
 
 printf 'selector → strategy=%s suites=[%s]\n' "$STRATEGY" "$SUITES"
 printf '  paths: %s\n' "${PATHS:-<empty>}"
