@@ -282,9 +282,17 @@ $cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --qui
             # ─────────────────────────────────────────────
 $cd && cargo test -p cognicode-core --lib prf_mcp_05 --quiet
 
-            # ── core-adversarial-e2e
+            # ── core-adversarial-e2e — RELOCATED
             # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+            # MEDIDO 2026-10-15. `prf_h06_adversarial_e2e` now lives in
+            # `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only
+            # exists for the package that declares that binary. Naming it here
+            # is cargo's error, not a test failure:
+            #
+            #     error: no test target named `prf_h06_adversarial_e2e` in
+            #            `cognicode-core` package
+            #
+            # It runs once, further down this same block, under `-p cognicode-mcp`.
 
             # ── core-unrestricted-evidence-kernel
             # ─────────────────────────────────────────────
