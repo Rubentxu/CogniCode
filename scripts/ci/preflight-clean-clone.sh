@@ -55,11 +55,17 @@ RECEIPT_FILE="/tmp/preflight-receipt-${TARGET_SHA:0:12}.json"
 #        rustc-subprocess tests (CR-00f, 2026-09-26). The 7 newly-counted
 #        tests are the exact 7 that received #[serial]: 3 in file_operations.rs
 #        + 4 in rust_verifier.rs. The +7 delta is reproducible and explained.
-# Por defecto usamos el baseline más estricto (5579) porque el preflight
+# 5512 = 5579 - 67, tras retirar la clase UAT del repositorio el 2026-10-15
+#        (ADR-TH-006): 28 targets `*_uat.rs` con 68 tests, de los cuales uno
+#        estaba marcado #[ignore]. El delta esta CALCULADO, no medido por un
+#        clean-clone: el primer preflight despues de esta retirada es el que lo
+#        confirma. Si el observado difiere en mas de la tolerancia, re-baseline
+#        con el valor observado, que es lo que pide el propio fallo.
+# Por defecto usamos el baseline mas estricto (5512) porque el preflight
 # ejecuta cargo build --release antes de los tests.
-BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5579}"
+BASELINE_PASSED="${PREFLIGHT_BASELINE_PASSED:-5512}"
 BASELINE_FAILED="${PREFLIGHT_BASELINE_FAILED:-0}"
-BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-37}"
+BASELINE_IGNORED="${PREFLIGHT_BASELINE_IGNORED:-36}"
 TOLERANCE="${PREFLIGHT_TOLERANCE:-2}"  # tests que pueden desaparecer por churn
 
 # --- La rama que el clon puede nombrar -----------------------------------------
@@ -341,11 +347,10 @@ log "  → QW-03 guard OK"
 log "Stage 4/7: cargo check --workspace --all-targets"
 
 # IMPORTANTE: este target_dir debe estar DENTRO del clon (`$WORK_DIR/clone/target`).
-# El test `prf_cli_01_exhaustive_uat` calcula el path del binario con
-# `parent().parent().join("target/release/cognicode")` desde `crates/cognicode-cli/`,
-# asumiendo el `target/` del repo_root del clon. Si redirigimos fuera del clon
-# (p.ej. `$WORK_DIR/target`), los 7 UAT fallan con `NotFound` aunque el
-# build sea OK. El `trap rm -rf "$WORK_DIR"` borra el clon al EXIT, así que
+# Los tests que resuelven el binario por `parent().parent().join("target/release/...")`
+# desde `crates/cognicode-cli/` asumen el `target/` del repo_root del clon. Si
+# redirigimos fuera del clon (p.ej. `$WORK_DIR/target`), fallan con `NotFound`
+# aunque el build sea OK. El `trap rm -rf "$WORK_DIR"` borra el clon al EXIT, así que
 # los artefactos no contaminan el sistema. Trade-off: ~2-3 min extra de cold
 # build si se re-ejecuta el preflight; aceptable a cambio de reproducibilidad
 # real del contrato de los tests.
@@ -358,9 +363,9 @@ fi
 log "  → cargo check OK"
 
 # --- Stage 4b: cargo build --release --bins ---------------------------------
-# Algunos tests de integración (notablemente prf_cli_01_exhaustive_uat)
-# buscan binarios en `target/release/<name>` (no debug). Sin este
-# build, fallan con "No such file or directory" en clean clone.
+# Los tests de integración que resuelven el binario o la herramienta release
+# (p.ej. `prf_f6_w1_release_coherence` vía `common::release_bin_path()`) exigen
+# perfil release: sin este build, fallan en vez de auto-saltarse.
 # El preflight debe ejecutar cargo build --release --bins antes de los
 # tests para que la batería completa sea reproducible desde Git.
 

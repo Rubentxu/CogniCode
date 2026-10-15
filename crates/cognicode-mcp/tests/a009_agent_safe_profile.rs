@@ -9,8 +9,9 @@
 //!
 //! That is a promise to every adopter who installs the `reviewer` profile:
 //! this profile cannot modify their workspace. The read-only machinery to
-//! keep it already existed and was tested (`prf_sec_02_read_only_uat.rs`
-//! drives the real binary with `--read-only`).
+//! keep it already existed and was tested: the `--read-only` UAT that drove the
+//! real binary was retired with the UAT class on 2026-10-15 (ADR-TH-006), and
+//! this contract keeps the promise it proved.
 //!
 //! What was missing is the *link*. `--read-only` is a flag a human types;
 //! a profile is a thing an installer resolves. Nothing connected the two, so
@@ -207,9 +208,9 @@ fn known_profiles_are_unaffected_by_the_fail_closed_path() {
 /// The real binary in read-only mode must not advertise or accept
 /// `write_file`, and must leave nothing on disk.
 ///
-/// `prf_sec_02_read_only_uat.rs` covers the `--read-only` flag itself;
-/// this test states the profile-level promise, which is the thing a user
-/// reads in `profiles.json` and has to be able to trust.
+/// The per-flag UAT is gone with the class (ADR-TH-006); what remains here is
+/// the profile-level promise, which is the thing a user reads in
+/// `profiles.json` and has to be able to trust.
 #[tokio::test]
 async fn reviewer_posture_refuses_writes_against_the_real_binary() {
     let ws = fixture_ws();
