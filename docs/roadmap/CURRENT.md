@@ -10,8 +10,8 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre `release/v0.101.17`
-> `1a70ea11fb16b43c2038a69fa42263a850b3b0c2` (PR #348 mergeado en `main` como
-> `88f6d02a`; este trabajo corrige el gate sobre el). Los seis
+> `3d8906c267550a3ba4c5a3fca1e765ddc1082792` (base: PR #348 mergeado en `main`
+> como `88f6d02a`; este trabajo corrige el gate sobre ella). Los seis
 > gates reparados que se listaban sobre
 > `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` siguen en el árbol, **pero el
 > veredicto que se les atribuyó era falso**: la etapa `tests` del merge gate
@@ -37,45 +37,77 @@
 * **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
   (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
   contenido dentro de #348).
-* **SHA funcional**: `fb0e9494bcc6d20a177e8ad23be482c1f7ee3549`, sobre el que
-  el merge gate correría **completo y en verde**.
+* **SHA**: `3d8906c267550a3ba4c5a3fca1e765ddc1082792`. **No hay SHA funcional**:
+  no existe ningún commit de esta rama con un veredicto de gate atribuible a él.
 * **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
 
-* **Gate en verde**: corrida del 2026-10-15 sobre `fb0e9494`,
-  `pipelinek run --rerun --db /tmp/gate7 merge-gate.pipeline.kts` →
-  **rc=0, 606 s**, `merge-gate -> success`, `Finished: success`.
-  **71 etapas declaradas, 71 ejecutadas, 0 fallos** — el recuento se cruzó
-  contra los nombres declarados en el fichero, no estimado.
+* **Los tres gates obligatorios, sin adornos.** Ninguno está `PASS`.
+
+  | Gate | Estado | Motivo |
+  |---|---|---|
+  | `merge-gate` | **FAIL** | dos corridas; ambas con el veredicto contaminado entre checkouts |
+  | `integration` | **NOT_RUN** | arrancada y abortada; fuera del alcance mínimo que fijó el operador |
+  | `certification` | **NOT_RUN** | no ejecutada |
+
+  El operador decidió publicar `v0.101.17` sin el merge gate en verde, con
+  motivo declarado: el bloqueo es de entorno, no de código. El agente registra
+  esa decisión y **no la firma**.
+
+* **RETIRADO — «Gate en verde» sobre `fb0e9494`.** Este snapshot afirmaba, hasta
+  el 2026-10-15, que el gate había corrido en 606 s con 71 etapas declaradas, 71
+  ejecutadas y 0 fallos. **Se retira.** No porque las cifras fueran falsas —el
+  recuento se cruzó contra los nombres de etapa que el runtime imprimió— sino
+  porque **no son atribuibles a este árbol**: seis checkouts de este repo
+  compilan al mismo target dir (`/var/home/rubentxu/cargo-targets/`), cargo
+  decide frescura por mtime, y un mtime no dice de qué checkout salió un
+  binario. Las corridas 6 y 7 fallaron exactamente así, en las dos
+  direcciones: un test paniqueó en la línea 900 de un fichero de 861 nombrando
+  un test que no existe en este árbol, y otro comparó su `source_commit`
+  (`d5082848…`) contra `git rev-parse HEAD` (`d73e7b08…`), que es el HEAD de
+  `worktree-test-harness`.
+
+  Las corridas 7 y 8 se marcan **no atribuibles**, no «verdes». Un gate que
+  puede ejecutar el binario de cualquiera de los otros cinco checkouts no
+  decide nada: ni rojo ni verde.
+
+  La etapa `build-isolation` (`3d8906c2`) se antepone ahora a todo lo demás y
+  **se niega** cuando un checkout hermano de este repo está compilando,
+  nombrándolo. Falla, no avisa: el aviso caería en la misma pantalla que el
+  resultado. Y es una detección puntual, no una garantía — entre el preflight y
+  la última etapa otro checkout puede empezar a compilar. El aislamiento de
+  verdad es `CARGO_TARGET_DIR` por corrida.
 
 * **Flake abierto, sin reproducir**: `cr07_metrics_exposition_contract`
   devolvió `shell exited with code 101` en la quinta corrida del gate, siendo la
-  etapa 32 de 67. En solitario no se ha reproducido: 3/3 y después 20/20. La
-  diferencia con el gate es la carga — la etapa anterior acaba de compilar en
-  release — y el test **levanta un servidor HTTP real y hace scrape a
-  `/metrics` con un plazo de 60 s** para que responda. Hipótesis: el plazo se
-  agota bajo carga y el panic dice `/metrics never became reachable`.
-  Pasó en la corrida 7. **No está reproducido, así que no está arreglado.**
-  Si vuelve a salir, la pista es el stderr del servidor, que el test ya imprime
-  y que la lane no captura porque PipelineK no muestra la salida de un step que
-  falla.
+  etapa 32 de 67. En solitario no se ha reproducido: 3/3 y después 20/20. Pasó en
+  las corridas 6, 7 y 8, **ninguna atribuible**. **No está reproducido, así que
+  no está arreglado**, y un verde no atribuible no es ni la mitad de la prueba.
 
-* **Estado del gate**: seis corridas el 2026-10-15 antes de que volviera a
-  correr entero. Cada una la encontró el gate, no una revisión, y cuatro eran
-  de este mismo trabajo:
+* **Estado del gate**: diez corridas el 2026-10-15. Las seis primeras, cada una
+  con una avería distinta y real, y cada una encontrada por el gate y no por una
+  revisión — cuatro de ellas de este mismo trabajo. La 7 y la 8 salieron
+  verdes. La 9 y la 10 salieron rojas. **Ninguna de las cuatro es atribuible a
+  este árbol.**
 
-  | Corrida | Paró en | Causa |
+  | Corrida | Resultado | Causa |
   |---|---|---|
-  | 1 | `core-unrestricted-evidence-kernel` | `prf_h06_adversarial_e2e` nombrado bajo el crate que ya no lo contenía |
-  | 2 | `core-unrestricted-evidence-kernel` | `build-binary` estaba *después* del primer consumidor |
-  | 3 | `fmt` | dos líneas mías sin `cargo fmt`, en 13 s |
-  | 4 | `contracts` | este mismo ratchet, por 4 commits de distancia |
-  | 5 | `cr07-metrics-exposition` | flake no reproducido (ver arriba) |
-  | 6 | `mcp-prf-sec-02-read-only-uat` | UAT roja desde `e11016ff`, ver abajo |
+  | 1 | FAIL | `prf_h06_adversarial_e2e` nombrado bajo el crate que ya no lo contenía |
+  | 2 | FAIL | `build-binary` estaba *después* del primer consumidor |
+  | 3 | FAIL | `fmt` — dos líneas mías sin `cargo fmt`, en 13 s |
+  | 4 | FAIL | `contracts` — este mismo ratchet, por 4 commits de distancia |
+  | 5 | FAIL | `cr07-metrics-exposition`, flake sin reproducir (ver arriba) |
+  | 6 | FAIL | `mcp-prf-sec-02-read-only-uat`, UAT roja desde `e11016ff` |
+  | 7 | "verde", 606 s | **no atribuible** |
+  | 8 | "verde", 677 s | **no atribuible** |
+  | 9 | FAIL | test paniqueando en la línea 900 de un fichero de 861 — binario de otro checkout |
+  | 10 | FAIL | `source_commit (d5082848…) must match git rev-parse HEAD (d73e7b08…)` — `d73e7b08` es el HEAD de `worktree-test-harness` |
 
   La primera medición del gate —687 s en 8 etapas— era de un gate que ejecutaba
   4 de sus 39 tests. Las cifras de abajo son las que se midieron después de
-  arreglarlo.
+  arreglarlo, y **también están bajo la misma reserva**: son tiempos reales de
+  una máquina real, pero de una máquina donde seis checkouts compiten por el
+  mismo directorio.
 
 * **La sexta corrección era una UAT roja de meses, no una avería del gate.**
   `prf_sec_02_read_only_uat` afirmaba que el modo por defecto marca
