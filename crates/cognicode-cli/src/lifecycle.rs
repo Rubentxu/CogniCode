@@ -135,7 +135,11 @@ pub fn plan_install(version: &str) -> Result<InstallPlan, InstallError> {
     let install_root = resolve_install_root();
     let install_path = install_root.join("bin").join(binary_name());
     let bin_paths = vec![install_root.join("bin")];
-    let shell_completion_path = Some(install_root.join("completions").join(shell_completion_name()));
+    let shell_completion_path = Some(
+        install_root
+            .join("completions")
+            .join(shell_completion_name()),
+    );
     Ok(InstallPlan {
         version: version.to_string(),
         install_path,
@@ -232,7 +236,10 @@ fn resolve_install_root() -> PathBuf {
     if let Ok(home) = std::env::var("HOME")
         && !home.is_empty()
     {
-        return PathBuf::from(home).join(".local").join("share").join("cognicode");
+        return PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("cognicode");
     }
     PathBuf::from("/usr/local/share/cognicode")
 }
@@ -326,8 +333,8 @@ mod tests {
         plan.install_path = install_root.join("bin").join("cogh");
 
         let missing = tmp.path().join("does-not-exist");
-        let err = execute_install(&plan, &missing)
-            .expect_err("missing source must surface an io error");
+        let err =
+            execute_install(&plan, &missing).expect_err("missing source must surface an io error");
         assert!(
             matches!(err, InstallError::Io(_)),
             "expected Io error, got {err:?}"

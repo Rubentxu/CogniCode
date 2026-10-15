@@ -247,12 +247,9 @@ impl std::fmt::Display for ApplyError {
                 expected_size,
                 actual_size
             ),
-            ApplyError::IoError { path, source } => write!(
-                f,
-                "I/O error on {}: {}",
-                path.display(),
-                source
-            ),
+            ApplyError::IoError { path, source } => {
+                write!(f, "I/O error on {}: {}", path.display(), source)
+            }
         }
     }
 }
@@ -305,14 +302,11 @@ pub fn apply(
     let mut applied: Vec<PathBuf> = Vec::new();
 
     // Aplicar cada edición. El primer fallo aborta el batch.
-    let result: Result<(), ApplyError> = plan
-        .edits
-        .iter()
-        .try_for_each(|edit| {
-            apply_one(edit, workspace_root, &staging_dir).map(|abs| {
-                applied.push(abs);
-            })
-        });
+    let result: Result<(), ApplyError> = plan.edits.iter().try_for_each(|edit| {
+        apply_one(edit, workspace_root, &staging_dir).map(|abs| {
+            applied.push(abs);
+        })
+    });
 
     if let Err(err) = result {
         // Rollback: borra los archivos aplicados en este batch.
@@ -385,9 +379,7 @@ fn apply_one(
 
     // (f) Verifica que el byte_range sigue siendo válido (no
     //     concurrent modification).
-    if edit.byte_range.start > current_bytes.len()
-        || edit.byte_range.end > current_bytes.len()
-    {
+    if edit.byte_range.start > current_bytes.len() || edit.byte_range.end > current_bytes.len() {
         return Err(ApplyError::ConcurrentModification {
             path: edit.file.clone(),
             expected_size: edit.byte_range.end,
@@ -400,10 +392,7 @@ fn apply_one(
 
     // (h) Stage preservando estructura de sub-directorios relativa
     //     al workspace_root.
-    let rel = edit
-        .file
-        .strip_prefix(workspace_root)
-        .unwrap_or(&edit.file);
+    let rel = edit.file.strip_prefix(workspace_root).unwrap_or(&edit.file);
     let stage_abs = staging_dir.join(rel);
     if let Some(parent) = stage_abs.parent() {
         fs::create_dir_all(parent).map_err(|e| ApplyError::IoError {

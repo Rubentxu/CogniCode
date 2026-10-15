@@ -465,8 +465,7 @@ pub fn load_plan_from_file(path: &Path) -> PlanIoResult<RefactorPlan> {
     if bytes.is_empty() {
         return Err(PlanIoError::Empty);
     }
-    let plan: RefactorPlan =
-        serde_json::from_slice(&bytes).map_err(PlanIoError::Parse)?;
+    let plan: RefactorPlan = serde_json::from_slice(&bytes).map_err(PlanIoError::Parse)?;
     if !verify_digest(&plan) {
         let actual = compute_digest(&plan);
         return Err(PlanIoError::DigestMismatch {
@@ -611,9 +610,7 @@ mod tests {
         );
         assert_eq!(
             result.err(),
-            Some(BuildPlanError::RelativePath(PathBuf::from(
-                "relative.rs"
-            )))
+            Some(BuildPlanError::RelativePath(PathBuf::from("relative.rs")))
         );
     }
 

@@ -119,8 +119,8 @@ fn workspace_path_deps(cargo_toml: &Path) -> Vec<String> {
             // version deps use a quoted version string as the value.
             let is_workspace_attr =
                 raw_name.ends_with(".workspace") || value.contains("workspace = true");
-            let is_path_attr = value.contains("../cognicode-")
-                || value.contains("path = \"../cognicode-");
+            let is_path_attr =
+                value.contains("../cognicode-") || value.contains("path = \"../cognicode-");
             let is_inline_block = value.starts_with('{');
             // Build the canonical crate name (strip `.workspace`).
             let canonical = raw_name
@@ -343,8 +343,7 @@ fn B4_modules_dont_reimplement_b2_types() {
             }
             if text.lines().any(|l| {
                 let t = l.trim();
-                t.starts_with("pub enum Severity")
-                    && (t.ends_with('{') || t.contains('<'))
+                t.starts_with("pub enum Severity") && (t.ends_with('{') || t.contains('<'))
             }) {
                 redefined.push(format!(
                     "{} redefines `pub enum Severity` — must re-use via \
@@ -500,9 +499,7 @@ fn architecture_diagnostic_publishes_severity() {
         if let Ok(text) = fs::read_to_string(p) {
             for line in text.lines() {
                 let t = line.trim();
-                if t.starts_with("pub enum Severity")
-                    && (t.ends_with('{') || t.contains('<'))
-                {
+                if t.starts_with("pub enum Severity") && (t.ends_with('{') || t.contains('<')) {
                     hits.push(p.display().to_string());
                     break;
                 }

@@ -180,10 +180,7 @@ impl RevalidationReport {
 /// Build a revalidation plan from a `RefactorPlan` (B5.W1) and an
 /// `ApplyOutcome` (B5.W3). `what_changed` is `outcome.applied_files`
 /// verbatim.
-pub fn build_revalidation_plan(
-    plan: &RefactorPlan,
-    outcome: &ApplyOutcome,
-) -> RevalidationPlan {
+pub fn build_revalidation_plan(plan: &RefactorPlan, outcome: &ApplyOutcome) -> RevalidationPlan {
     assert_eq!(
         plan.id, outcome.plan_id,
         "plan_id mismatch: plan={}, outcome={}",
@@ -269,8 +266,7 @@ mod tests {
     #[test]
     fn revalidation_report_first_construction_is_always_refused() {
         let plan = stub_plan();
-        let outcome =
-            stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
+        let outcome = stub_outcome(plan.id, vec![std::path::PathBuf::from("a.rs")]);
         let rp = build_revalidation_plan(&plan, &outcome);
         let r = run_revalidation(&rp, std::path::Path::new("/tmp/ws"));
         assert!(r.verdict_refused(), "verdict_refused helper must be true");
@@ -278,10 +274,7 @@ mod tests {
             RevalidationVerdict::VerdictRefused { reason } => {
                 assert_eq!(*reason, REVALIDATION_VERDICT_REFUSED_REASON);
             }
-            other => panic!(
-                "first construction MUST be VerdictRefused; got {:?}",
-                other
-            ),
+            other => panic!("first construction MUST be VerdictRefused; got {:?}", other),
         }
     }
 
@@ -334,8 +327,7 @@ mod tests {
             created_at: DateTime::from_timestamp(0, 0).unwrap(),
             digest: "stable".to_string(),
         };
-        let outcome =
-            stub_outcome(plan_id, vec![std::path::PathBuf::from("a.rs")]);
+        let outcome = stub_outcome(plan_id, vec![std::path::PathBuf::from("a.rs")]);
         let rp1 = build_revalidation_plan(&plan, &outcome);
         let rp2 = build_revalidation_plan(&plan, &outcome);
         let r1 = run_revalidation(&rp1, std::path::Path::new("/tmp/ws"));

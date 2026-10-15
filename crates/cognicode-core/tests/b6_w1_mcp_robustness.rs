@@ -236,11 +236,16 @@ fn stdio_framing_keeps_stdout_pure_json() {
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_test", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_test", "version": "0.0.1"}
+        }),
+    );
     let (init_resp, _) = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
     let init = init_resp.expect("initialize response within 10s");
     assert_eq!(init["jsonrpc"], "2.0", "initialize must be JSON-RPC 2.0");
@@ -248,7 +253,10 @@ fn stdio_framing_keeps_stdout_pure_json() {
     rpc_send(&mut child, 2, "tools/list", json!({}));
     let (list_resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(10));
     let list = list_resp.expect("tools/list response within 10s");
-    assert!(list["result"]["tools"].is_array(), "tools/list must enumerate tools");
+    assert!(
+        list["result"]["tools"].is_array(),
+        "tools/list must enumerate tools"
+    );
 
     // Drain any buffered stdout and assert every byte is part of a
     // parseable JSON frame. We close stdin first to make EOF
@@ -294,11 +302,16 @@ fn initialize_then_clean_shutdown_no_orphan() {
     let pid = child.id();
     let mut child = child;
     // Drive the lifecycle explicitly so we exercise the real exit path.
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_shutdown", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_shutdown", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
     let status = shutdown_and_reap(child).expect("reap");
 
@@ -340,11 +353,16 @@ fn large_response_uses_pagination() {
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_pagination", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_pagination", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
     // Walk the catalog by cursor. We collect every tool name we see
@@ -362,7 +380,10 @@ fn large_response_uses_pagination() {
         let (resp, _) = rpc_recv_by_id(&mut child, req_id, Duration::from_secs(10));
         let frame = resp.expect("tools/list page within 10s");
         let result = frame.get("result").expect("result present");
-        let tools = result.get("tools").and_then(|t| t.as_array()).expect("tools array");
+        let tools = result
+            .get("tools")
+            .and_then(|t| t.as_array())
+            .expect("tools array");
         for tool in tools {
             let name = tool
                 .get("name")
@@ -422,20 +443,30 @@ fn request_timeout_cancels_inflight() {
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
 
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_timeout", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_timeout", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
     // Send an unknown tool name. The dispatch must return *promptly*
     // with `isError=true`, never hang past the category timeout.
     let unknown_tool = "this_tool_does_not_exist_b6w1";
-    rpc_send(&mut child, 2, "tools/call", json!({
-        "name": unknown_tool,
-        "arguments": {}
-    }));
+    rpc_send(
+        &mut child,
+        2,
+        "tools/call",
+        json!({
+            "name": unknown_tool,
+            "arguments": {}
+        }),
+    );
     let started = Instant::now();
     let (resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(5));
     let elapsed = started.elapsed();
@@ -490,16 +521,26 @@ fn concurrent_requests_in_different_sessions_isolated() {
     let mut child_a = spawn_binary(ws_a.path()).expect("spawn a");
     let mut child_b = spawn_binary(ws_b.path()).expect("spawn b");
 
-    rpc_send(&mut child_a, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "session_a", "version": "0.0.1"}
-    }));
-    rpc_send(&mut child_b, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "session_b", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child_a,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "session_a", "version": "0.0.1"}
+        }),
+    );
+    rpc_send(
+        &mut child_b,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "session_b", "version": "0.0.1"}
+        }),
+    );
     let (a_init, _) = rpc_recv_by_id(&mut child_a, 1, Duration::from_secs(10));
     let (b_init, _) = rpc_recv_by_id(&mut child_b, 1, Duration::from_secs(10));
     assert!(a_init.is_some(), "session A must complete initialize");
@@ -543,18 +584,28 @@ fn structured_error_response_is_iserror() {
     let _bin = require_binary!();
     let workspace = TempDir::new().expect("tempdir");
     let mut child = spawn_binary(workspace.path()).expect("spawn");
-    rpc_send(&mut child, 1, "initialize", json!({
-        "protocolVersion": "2025-03-26",
-        "capabilities": {},
-        "clientInfo": {"name": "b6_w1_err", "version": "0.0.1"}
-    }));
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_err", "version": "0.0.1"}
+        }),
+    );
     let _ = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
 
     // Malformed arguments for `read_file`: missing required `path`.
-    rpc_send(&mut child, 2, "tools/call", json!({
-        "name": "read_file",
-        "arguments": {}
-    }));
+    rpc_send(
+        &mut child,
+        2,
+        "tools/call",
+        json!({
+            "name": "read_file",
+            "arguments": {}
+        }),
+    );
     let (resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(5));
     let frame = resp.expect("read_file with missing path must respond");
     let is_error = frame

@@ -359,16 +359,13 @@ fn run_self_install(
     rollback: Option<&str>,
     apply: bool,
 ) -> anyhow::Result<()> {
-    use cognicode_cli::lifecycle::{
-        InstallAction, execute_install, plan_install, plan_rollback,
-    };
+    use cognicode_cli::lifecycle::{InstallAction, execute_install, plan_install, plan_rollback};
 
     let plan = if let Some(target) = rollback {
         plan_rollback(&home.root, target)
             .map_err(|e| anyhow::anyhow!("lifecycle plan failed: {e}"))?
     } else {
-        plan_install(version)
-            .map_err(|e| anyhow::anyhow!("lifecycle plan failed: {e}"))?
+        plan_install(version).map_err(|e| anyhow::anyhow!("lifecycle plan failed: {e}"))?
     };
 
     if !apply {
@@ -459,12 +456,7 @@ fn main() -> anyhow::Result<()> {
             // present, the legacy plugin install path runs unchanged.
             let plugin_missing = plugin.is_none();
             if plugin_missing || rollback.is_some() {
-                return run_self_install(
-                    &home,
-                    version.as_str(),
-                    rollback.as_deref(),
-                    apply,
-                );
+                return run_self_install(&home, version.as_str(), rollback.as_deref(), apply);
             }
             let plugin = plugin.expect("plugin is required on the legacy path");
             // e87.1: the requested version governs the core bundle. Resolve
@@ -567,8 +559,9 @@ fn main() -> anyhow::Result<()> {
         Command::Skill { action } => match action {
             SkillAction::Validate { path } => skill::cmd_skill_validate(&path),
         },
-        Command::Skills { json } => skills::cmd_skills_list(json)
-            .map_err(|e| anyhow::anyhow!("{e}")),
+        Command::Skills { json } => {
+            skills::cmd_skills_list(json).map_err(|e| anyhow::anyhow!("{e}"))
+        }
         Command::Ide { action } => match action {
             IdeAction::Detect => ide::cmd_ide_detect(),
             IdeAction::Install {

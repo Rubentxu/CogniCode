@@ -29,12 +29,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::Command;
 
-use cognicode_cli::skills::{
-    Skill, load_skills, validate_skill_against_catalog,
-};
-use cognicode_core::interface::catalog::{
-    ToolDescriptor, load_tool_catalog,
-};
+use cognicode_cli::skills::{Skill, load_skills, validate_skill_against_catalog};
+use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
 
 // =============================================================================
 // Helpers — anchor discovery for product/, evals/, and the cogh binary.
@@ -55,10 +51,7 @@ fn catalog_names(catalog: &[ToolDescriptor]) -> HashSet<String> {
 
 /// All `feature` values declared by tools in the catalog.
 fn catalog_feature_values(catalog: &[ToolDescriptor]) -> HashSet<String> {
-    catalog
-        .iter()
-        .filter_map(|t| t.feature.clone())
-        .collect()
+    catalog.iter().filter_map(|t| t.feature.clone()).collect()
 }
 
 /// The `cogh` binary built by cargo for this test target.
@@ -180,13 +173,12 @@ fn no_skill_advertises_experimental_feature_as_stable() {
     let catalog = load_tool_catalog();
 
     for skill in &skills {
-        validate_skill_against_catalog(skill, &catalog)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "skill `{}` fails the B6.W4 stability contract: {e}",
-                    skill.name
-                )
-            });
+        validate_skill_against_catalog(skill, &catalog).unwrap_or_else(|e| {
+            panic!(
+                "skill `{}` fails the B6.W4 stability contract: {e}",
+                skill.name
+            )
+        });
     }
 }
 
@@ -195,10 +187,7 @@ fn cogh_skills_lists_documented_skills() {
     // The runtime entry point: `cogh skills` exits 0 and lists every
     // skill declared in `product/skills.json`. This is the contract
     // the agent invokes to discover what the runtime exposes.
-    let output = cogh()
-        .arg("skills")
-        .output()
-        .expect("spawn cogh skills");
+    let output = cogh().arg("skills").output().expect("spawn cogh skills");
     assert!(
         output.status.success(),
         "cogh skills exited non-zero: stderr={}",
@@ -268,7 +257,11 @@ fn unknown_feature_gate_is_a_hard_error() {
         feature_gates: vec!["magic-llm".into()],
         evaluation: None,
     };
-    let catalog = vec![make_tool("list_evidence", "stable", Some("evidence-cli-ladybug"))];
+    let catalog = vec![make_tool(
+        "list_evidence",
+        "stable",
+        Some("evidence-cli-ladybug"),
+    )];
     let err = validate_skill_against_catalog(&skill, &catalog)
         .expect_err("unknown feature gate must be rejected");
     assert!(

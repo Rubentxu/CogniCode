@@ -197,18 +197,11 @@ fn apply_refuses_traversal_escape() {
 #[test]
 fn apply_commits_on_success() {
     let tmp = TempDir::new().unwrap();
-    let plan = simple_plan(
-        tmp.path(),
-        "src/a.rs",
-        "hello world",
-        6..11,
-        "Rust",
-    );
+    let plan = simple_plan(tmp.path(), "src/a.rs", "hello world", 6..11, "Rust");
     let token = fresh_token();
     let workspace_digest = compute_workspace_state_digest(&plan);
 
-    let out = apply(&plan, &workspace_digest, &token, tmp.path())
-        .expect("apply must succeed");
+    let out = apply(&plan, &workspace_digest, &token, tmp.path()).expect("apply must succeed");
     assert!(out.committed, "out.committed = true on success");
     assert_eq!(out.applied_files.len(), 1);
     assert_eq!(out.rolled_back_files.len(), 0);
@@ -219,11 +212,11 @@ fn apply_commits_on_success() {
     assert_eq!(content, "hello Rust");
 
     // Staging debe estar limpio (success path borra el dir).
-    let staging = tmp.path().join(APPLY_STAGING_DIR).join(out.plan_id.to_string());
-    assert!(
-        !staging.exists(),
-        "staging dir must be cleaned on success"
-    );
+    let staging = tmp
+        .path()
+        .join(APPLY_STAGING_DIR)
+        .join(out.plan_id.to_string());
+    assert!(!staging.exists(), "staging dir must be cleaned on success");
 }
 
 /// 6. apply_rolls_back_on_partial_failure: un segundo archivo falla

@@ -26,7 +26,7 @@ use std::path::PathBuf;
 
 use cognicode_core::application::analysis_basis::AnalysisBasis;
 use cognicode_core::interface::catalog::load_tool_catalog;
-use cognicode_core::refactor::plan::{build_plan, PlannedEdit, RefactorPlan};
+use cognicode_core::refactor::plan::{PlannedEdit, RefactorPlan, build_plan};
 
 // ----------------------------------------------------------------------------
 // Helpers
@@ -123,10 +123,8 @@ fn preview_is_deterministic_across_runs() {
         },
     );
 
-    let p1 =
-        cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview 1 ok");
-    let p2 =
-        cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview 2 ok");
+    let p1 = cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview 1 ok");
+    let p2 = cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview 2 ok");
 
     let j1 = serde_json::to_string(&p1).unwrap();
     let j2 = serde_json::to_string(&p2).unwrap();
@@ -158,7 +156,10 @@ fn preview_includes_unified_diff_per_file() {
         cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview ok");
     assert_eq!(preview.file_diffs.len(), 1);
     let d = &preview.file_diffs[0];
-    assert!(!d.unified_diff.is_empty(), "unified diff must be non-empty for a real edit");
+    assert!(
+        !d.unified_diff.is_empty(),
+        "unified diff must be non-empty for a real edit"
+    );
     assert!(d.unified_diff.contains("--- a.txt"));
     assert!(d.unified_diff.contains("+++ a.txt"));
     assert!(d.unified_diff.contains("@@ "));
@@ -186,11 +187,7 @@ fn preview_byte_size_total_matches_sum_of_new_bytes() {
 
     let preview =
         cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview ok");
-    let sum: usize = preview
-        .file_diffs
-        .iter()
-        .map(|d| d.new_bytes.len())
-        .sum();
+    let sum: usize = preview.file_diffs.iter().map(|d| d.new_bytes.len()).sum();
     assert_eq!(preview.byte_size_total, sum);
 }
 
@@ -247,8 +244,7 @@ fn cli_refactor_apply_is_still_rejected() {
         },
     );
     let before = read_bytes(&root.join("a.txt"));
-    let _ = cognicode_core::refactor::preview::render_preview(&plan, &root)
-        .expect("preview ok");
+    let _ = cognicode_core::refactor::preview::render_preview(&plan, &root).expect("preview ok");
     let after = read_bytes(&root.join("a.txt"));
     assert_eq!(
         before, after,
