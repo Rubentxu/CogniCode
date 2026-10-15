@@ -214,25 +214,25 @@ fn shell_completion_name() -> &'static str {
 }
 
 fn resolve_install_root() -> PathBuf {
-    if let Ok(p) = std::env::var("COGNICODE_BIN_DIR") {
-        if !p.is_empty() {
-            return PathBuf::from(p);
-        }
+    if let Ok(p) = std::env::var("COGNICODE_BIN_DIR")
+        && !p.is_empty()
+    {
+        return PathBuf::from(p);
     }
-    if let Ok(cargo_home) = std::env::var("CARGO_HOME") {
-        if !cargo_home.is_empty() {
-            return PathBuf::from(cargo_home);
-        }
+    if let Ok(cargo_home) = std::env::var("CARGO_HOME")
+        && !cargo_home.is_empty()
+    {
+        return PathBuf::from(cargo_home);
     }
-    if let Ok(xdg) = std::env::var("XDG_DATA_HOME") {
-        if !xdg.is_empty() {
-            return PathBuf::from(xdg).join("cognicode");
-        }
+    if let Ok(xdg) = std::env::var("XDG_DATA_HOME")
+        && !xdg.is_empty()
+    {
+        return PathBuf::from(xdg).join("cognicode");
     }
-    if let Ok(home) = std::env::var("HOME") {
-        if !home.is_empty() {
-            return PathBuf::from(home).join(".local").join("share").join("cognicode");
-        }
+    if let Ok(home) = std::env::var("HOME")
+        && !home.is_empty()
+    {
+        return PathBuf::from(home).join(".local").join("share").join("cognicode");
     }
     PathBuf::from("/usr/local/share/cognicode")
 }

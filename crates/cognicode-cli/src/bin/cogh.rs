@@ -410,7 +410,7 @@ fn run_self_install(
     if let Some(parent) = home.tracker_version().parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&home.tracker_version(), plan.version.as_bytes())?;
+    std::fs::write(home.tracker_version(), plan.version.as_bytes())?;
     let envelope = serde_json::json!({
         "dry_run": false,
         "outcome": outcome,

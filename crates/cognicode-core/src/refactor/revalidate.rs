@@ -54,6 +54,11 @@ pub const REVALIDATION_VERDICT_REFUSED_REASON: &str =
 /// Incremental analysis slot. Reuses B4.W1 (ImpactResult),
 /// B4.W2 (ArchitectureDiagnostic) y B4.W3 (Finding) types.
 #[derive(Debug, Clone, Serialize)]
+#[allow(clippy::large_enum_variant)]
+// The size difference between ImpactResult (rich call-graph payload)
+// and Finding (a single quality observation) is intentional: each
+// variant carries the full type for that tool's output. Boxing would
+// force an indirection on every read of the dominant variant.
 pub enum IncrementalAnalysis {
     /// B4.W1 — call graph impact over the changed files.
     Impact(ImpactResult),
@@ -154,7 +159,7 @@ impl RevalidationReport {
     /// impact) so the count reflects what a populated report would
     /// have.
     pub fn incremental_analyses_count(&self) -> usize {
-        let n = self.findings.findings.len()
+        self.findings.findings.len()
             + self
                 .diagnostics
                 .as_ref()
@@ -164,8 +169,7 @@ impl RevalidationReport {
                 .impact
                 .as_ref()
                 .map(|i| i.paths.iter().map(|p| p.edges.len()).sum::<usize>())
-                .unwrap_or(0);
-        n
+                .unwrap_or(0)
     }
 }
 

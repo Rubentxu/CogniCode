@@ -699,7 +699,7 @@ mod tests {
         // Reconstruimos un plan identico con otro created_at:
         // el digest recalculado debe coincidir.
         let mut twin = plan.clone();
-        twin.created_at = twin.created_at + chrono::Duration::seconds(42);
+        twin.created_at += chrono::Duration::seconds(42);
         assert_eq!(compute_digest(&plan), compute_digest(&twin));
     }
 

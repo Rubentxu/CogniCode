@@ -152,12 +152,11 @@ fn rpc_recv_by_id(
                             .position(|b: &u8| !b.is_ascii_whitespace())
                             .unwrap_or(buf.len());
                         let line_bytes = &buf[trimmed_start..];
-                        if let Ok(v) = serde_json::from_slice::<Value>(line_bytes) {
-                            if v.get("id").and_then(|x| x.as_i64()) == Some(expected_id)
-                                && matched.is_none()
-                            {
-                                matched = Some(v);
-                            }
+                        if let Ok(v) = serde_json::from_slice::<Value>(line_bytes)
+                            && v.get("id").and_then(|x| x.as_i64()) == Some(expected_id)
+                            && matched.is_none()
+                        {
+                            matched = Some(v);
                         }
                         buf.clear();
                     } else {

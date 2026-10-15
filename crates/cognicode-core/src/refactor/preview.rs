@@ -448,12 +448,11 @@ fn reject_symlink_escape(abs: &Path) -> Result<(), PreviewError> {
     // Es symlink: comprobamos que su destino (tras canonicalize)
     // cae dentro del root. Si canonicalize falla, conservamos el
     // symlink (lo detectara el apply real).
-    if let Ok(canonical) = abs.canonicalize() {
-        if let Some(root_norm) = abs.ancestors().find(|a| a.parent().is_none()) {
-            if !canonical.starts_with(root_norm) {
-                return Err(PreviewError::SymlinkEscape(abs.to_path_buf()));
-            }
-        }
+    if let Ok(canonical) = abs.canonicalize()
+        && let Some(root_norm) = abs.ancestors().find(|a| a.parent().is_none())
+        && !canonical.starts_with(root_norm)
+    {
+        return Err(PreviewError::SymlinkEscape(abs.to_path_buf()));
     }
     Ok(())
 }

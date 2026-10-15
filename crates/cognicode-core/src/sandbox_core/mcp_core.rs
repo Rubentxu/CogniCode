@@ -438,6 +438,12 @@ impl McpServer {
 /// `drain_notifications` paths use `recv_timeout` on the receiver,
 /// which is the deadline-enforcing primitive called for by P0 #1 of
 /// the sandbox harness audit.
+#[allow(clippy::type_complexity)]
+// The return type is the natural shape of mpsc::channel + spawn:
+// the writer end, the reader end, and the join handle. Extracting
+// type aliases for a private helper would be over-engineering; the
+// reader thread is called from one site and the alias would not
+// improve readability.
 fn spawn_reader_thread(
     stdout: ChildStdout,
 ) -> (

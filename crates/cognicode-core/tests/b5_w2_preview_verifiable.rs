@@ -80,7 +80,7 @@ fn preview_does_not_modify_files() {
 
     // Snapshot ANTES.
     let before = read_bytes(&root.join("a.txt"));
-    let before_meta = fs::metadata(&root.join("a.txt")).unwrap();
+    let before_meta = fs::metadata(root.join("a.txt")).unwrap();
 
     // Render preview (no debe mutar).
     let preview =
@@ -88,7 +88,7 @@ fn preview_does_not_modify_files() {
 
     // Snapshot DESPUES.
     let after = read_bytes(&root.join("a.txt"));
-    let after_meta = fs::metadata(&root.join("a.txt")).unwrap();
+    let after_meta = fs::metadata(root.join("a.txt")).unwrap();
 
     // Bytes identicos.
     assert_eq!(before, after, "preview must not modify file bytes");
