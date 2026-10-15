@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `387f788aff11641a3e19576e39f344fbe476aca8` (ratchet corregido y validado).
+> `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e` (HEAD antes del commit de publicación).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
@@ -19,33 +19,28 @@
 >
 > **Unidad abierta en este worktree**: TH-DOC-01, iniciativa documental
 > registrada en `docs/roadmap/ROADMAP.md` §11 y
-> `openspec/changes/2026-10-15-th-doc-readme/`. El README no se modificó.
+> `openspec/changes/2026-10-15-th-doc-readme/`. README canónico revisado en el worktree; el staging ignorado permanece intacto.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS** en
-> HEAD `387f788aff11641a3e19576e39f344fbe476aca8`, `workspace=0.101.17`.
-> El snapshot usa SHA completo y está dentro de la ventana contractual.
+> HEAD `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e`, `workspace=0.101.17`.
 
 ## HEAD y gates del worktree
 
 * **Rama**: `worktree/test-harness`.
-* **SHA del plan**: `fefc64f8` (recibo de auditoría de trazabilidad).
+* **SHA de baseline para la WU activa**: `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e`.
 * **Versión workspace**: `0.101.17`.
 * **Batería de workspace sobre el SHA del plan**: `NOT_RUN` en esta iniciativa
   documental.
-* **Estado**: el recibo de auditoría quedó limpio; este cambio refresca el
-  puntero global del worktree.
-* **Paquete objetivo**: `docs/test-harness/` sigue ignorado por `.gitignore:153`
-  y no pertenece a `HEAD`; el gate THD-G1 está `BLOCKED`.
-* **Validación documental**: ratchet PASS en HEAD `387f788aff11`;
-  5/5 enlaces de ROADMAP §11 resuelven y `git archive` contiene los cinco
-  artefactos OpenSpec, pero cero entradas del README objetivo. La UAT del README
-  sigue `NOT_RUN` y THD-G1 sigue `BLOCKED` por la regla de ignore.
+* **Estado**: README y paquete canónicos revisados en el worktree, pendientes de commit.
+* **Paquete fuente**: `docs/test-harness/` sigue ignorado por `.gitignore:153` y se preserva intacto.
+* **Validación local**: 20/20 enlaces resuelven; 30/30 entradas de manifiesto pasan. README SHA-256 `7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7`, 6090 bytes.
+* **Clean archive/onboarding**: `NOT_RUN` hasta commit.
 
 ## Snapshot anterior b5-v0.101.17 (histórico, SHA `2df856fce7a541f2a3352adef73d4ca1f576247b`)
 
 > El detalle restante conserva evidencia histórica de esa captura. Para el
 > estado actual de agenda manda `docs/roadmap/ROADMAP.md`; no trasladar sus
-> resultados a HEAD `387f788aff11641a3e19576e39f344fbe476aca8` sin repetir las comprobaciones.
+> resultados a HEAD `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e` sin repetir las comprobaciones.
 
 ## HEAD y batería (a 2026-10-15)
 

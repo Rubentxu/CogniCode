@@ -1,0 +1,30 @@
+{
+  "schema_version": "th.plan/v1",
+  "plan_id": "plan-example-not-real",
+  "repo_id": "cognicode--example",
+  "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+  "lane": "change",
+  "status": "READY",
+  "required_suites": [
+    "cargo.core.default.lib",
+    "cargo.mcp.default.lib"
+  ],
+  "actions": [
+    {
+      "suite_id": "cargo.core.default.lib",
+      "action": "REUSE",
+      "reason": "Fingerprint compatible (ejemplo ficticio)",
+      "dependencies": [],
+      "receipt_id": "receipt-example-not-real"
+    },
+    {
+      "suite_id": "cargo.mcp.default.lib",
+      "action": "EXECUTE",
+      "reason": "Cambio en input de mcp (ejemplo ficticio)",
+      "dependencies": [
+        "cargo.core.default.lib"
+      ]
+    }
+  ],
+  "policy_version": "th-policy-v1"
+}

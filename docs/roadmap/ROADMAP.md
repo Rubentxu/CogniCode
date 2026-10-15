@@ -367,22 +367,24 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 
 ## 11. TH-DOC-01 — README de entrada del Test Harness (2026-10-15)
 
-> **Estado**: OPEN / PLAN CREATED. Esta unidad prepara la finalización
-> documental de `docs/test-harness/README.md`; no implementa el harness ni
-> afirma que sus comandos propuestos estén disponibles. El paquete fuente está
-> ignorado por `.gitignore:153` y no está en `HEAD`, por lo que la decisión de
-> ubicación y publicación es el primer gate, no una autorización para forzar su
-> inclusión.
+> **Estado**: OPEN / IN PROGRESS. Ruta canónica resuelta como
+> `test-harness/README.md`, coherente con la ubicación raíz indicada por el
+> README fuente y `installation_subdirectory` del manifiesto.
+> El README canónico fue revisado; sus 20 enlaces relativos resuelven y las 30
+> entradas del manifiesto coinciden. El staging `docs/test-harness/` sigue
+> ignorado y preservado. `git archive` y el onboarding limpio siguen pendientes
+> del commit.
 
 | Item | Contrato |
 |---|---|
 | Valor | Proporcionar a contribuidores y revisores un punto de entrada fiel al alcance, madurez, restricciones y navegación del paquete de especificación del Test Harness. |
 | Clasificación | Iniciativa de documentación de producto; no es mantenimiento v0.98.x ni cambio de implementación. |
+| Ruta canónica | `test-harness/README.md` en la raíz del worktree de evolución, según el README del paquete y `PACKAGE-MANIFEST.json`. |
 | Consumidores | Contribuidores, revisores y operadores que evalúen el paquete antes de implementar sus W0..W7. |
-| Límite | No cambiar código, scripts, gates, PipelineK, política de reutilización ni el ignore global en esta apertura. |
+| Límite | No cambiar código, scripts, gates, PipelineK, política de reutilización ni el ignore global. El staging `docs/test-harness/` se conserva local e intacto. |
 | Propuesta, goals y contrato | [`openspec/changes/2026-10-15-th-doc-readme/proposal.md`](../../openspec/changes/2026-10-15-th-doc-readme/proposal.md), [`spec.md`](../../openspec/changes/2026-10-15-th-doc-readme/specs/test-harness-readme/spec.md), [`tasks.md`](../../openspec/changes/2026-10-15-th-doc-readme/tasks.md). |
 | Estado y recibos de unidad | [`CURRENT.md`](../../openspec/changes/2026-10-15-th-doc-readme/CURRENT.md), [`JOURNAL.md`](../../openspec/changes/2026-10-15-th-doc-readme/JOURNAL.md). |
 
-**Siguiente WU**: THD-0 resolver la ruta canónica y su inclusión/publicación
-desde un checkout limpio. No redactar ni aceptar el README como completo hasta
-que ese gate y los criterios de `THD-G1..G4` del OpenSpec estén satisfechos.
+**Siguiente WU**: commit del paquete y punteros; comprobar en `git archive` que
+la ruta canónica y los destinos enlazados están incluidos. Después completar el
+recorrido de onboarding desde checkout limpio y cerrar R1..R5 con recibo.

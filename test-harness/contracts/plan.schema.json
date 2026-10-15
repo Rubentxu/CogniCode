@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rubentxu/CogniCode/test-harness/contracts/plan.schema.json",
+  "title": "TH ExecutionPlan v1 PROPOSED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plan_id",
+    "repo_id",
+    "source_fingerprint",
+    "lane",
+    "status",
+    "required_suites",
+    "actions",
+    "policy_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "th.plan/v1"
+    },
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repo_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "lane": {
+      "enum": [
+        "change",
+        "merge",
+        "integration",
+        "certification",
+        "release-candidate",
+        "release"
+      ]
+    },
+    "status": {
+      "enum": [
+        "READY",
+        "BLOCKED",
+        "UNKNOWN_INPUT"
+      ]
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "required_suites": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suite_id",
+          "action",
+          "reason",
+          "dependencies"
+        ],
+        "properties": {
+          "suite_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "enum": [
+              "EXECUTE",
+              "REUSE",
+              "BLOCK"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dependencies": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "receipt_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "unknown_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

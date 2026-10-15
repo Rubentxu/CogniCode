@@ -1,0 +1,19 @@
+flowchart LR
+  Dev[Agente / developer] --> CLI[test-harness/bin CLI]
+  PK[PipelineK authoritative gates] --> CLI
+  CLI --> P[Pure Planner + Policy]
+  P --> VAL[Input fingerprint + reuse decision]
+  VAL --> EXEC[Execution Supervisor]
+  EXEC --> CG[Cargo]
+  EXEC --> NX[Nextest opt-in]
+  EXEC --> PY[CI contracts]
+  EXEC --> SB[Sandbox / Podman]
+  CG --> STORE[Append-only receipts]
+  NX --> STORE
+  PY --> STORE
+  SB --> STORE
+  STORE --> VAL
+  STORE --> AGG[Gate aggregator]
+  AGG --> PK
+  STATE[XDG state outside Git] --- STORE
+  SRC[CogniCode source + Cargo metadata] --> P

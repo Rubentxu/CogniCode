@@ -84,3 +84,21 @@
   permanece **BLOCKED**, no es una aceptación fallida atribuible al README.
 - No se cambió README, manifiesto, `.gitignore`, scripts ni PipelineK. La batería
   de workspace y el onboarding siguen **NOT_RUN**.
+
+## Recibo de resolución de ruta y publicación local — 2026-10-15
+
+- Baseline: HEAD `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e` en `worktree/test-harness`.
+- Evidencia de ruta: README fuente declara `test-harness/` en la raíz del worktree paralelo (líneas 5 y 13); el manifiesto fija `installation_subdirectory: test-harness`.
+- El staging ignorado `docs/test-harness/` se mantiene intacto. No se modifica `.gitignore` y no se fuerza al índice.
+- `cp -a docs/test-harness test-harness`: 31 archivos de origen y destino; `diff -qr` sin diferencias, cero symlinks. Verificación completa del manifiesto en destino: 30 entradas, 0 mismatch.
+- `test-harness/` no existe en HEAD todavía; `git archive`/checkout limpio queda **NOT_RUN** hasta el commit de publicación. THD-0.3 sigue pendiente.
+
+## Validación de contenido del README canónico — 2026-10-15
+
+- README revisado y editado en `test-harness/README.md`, no en el staging ignorado. Se eliminaron referencias obsoletas al ZIP/no-Git, se hicieron explícitos el estado de solo especificación, los comandos propuestos y la ausencia de mediciones, y se convirtió el índice en navegación por tareas.
+- Afirmaciones contrastadas con la auditoría, arquitectura y ontología del paquete, ADR-TH-003, UAT/AAT, `AGENTS.md` y `docs/adr/ADR-CI-ORCHESTRATOR-CUTOVER.md`.
+- Evidencia operativa: no existen `test-harness/bin/`, `test-harness/src/` ni `test-harness/bin/harness.py`; `merge-gate.pipeline.kts` existe y `.github/workflows/` está ausente. Los ejemplos permanecen marcados como propuestas.
+- Índice local: 20 enlaces relativos, 0 destinos inexistentes.
+- Manifiesto canónico: 30/30 entradas válidas, sin archivos no declarados salvo el propio `PACKAGE-MANIFEST.json`. README SHA-256 `4b55bf00047949bbeb79a7c70bf23640bf8b0bc246b48f470aee12443775a028`, 6088 bytes.
+- Staging ignorado preservado: `docs/test-harness/README.md` conserva SHA `5909e3d315f59efa7705a4d84ede976f0fa671872563f0096605f8699dcfe26e`, 5658 bytes; `.gitignore` no cambió.
+- Estados: exactitud/estado y manifiesto **PASS** a nivel de revisión local; publicación de archivo y enlaces desde checkout limpio **NOT_RUN** hasta commit; onboarding documental **NOT_RUN** hasta ejecutar ese recorrido.

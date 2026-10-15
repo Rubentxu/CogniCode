@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rubentxu/CogniCode/test-harness/contracts/gate-verdict.schema.json",
+  "title": "TH GateVerdict v1 PROPOSED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "verdict",
+    "lane",
+    "repo_id",
+    "source_fingerprint",
+    "requirements",
+    "proofs",
+    "gaps",
+    "policy_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "th.gate/v1"
+    },
+    "verdict": {
+      "enum": [
+        "SATISFIED",
+        "UNSATISFIED",
+        "INCONCLUSIVE"
+      ]
+    },
+    "lane": {
+      "enum": [
+        "change",
+        "merge",
+        "integration",
+        "certification",
+        "release-candidate",
+        "release"
+      ]
+    },
+    "repo_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "candidate_artifact_digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "requirements": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "proofs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suite_id",
+          "receipt_id",
+          "fingerprint"
+        ],
+        "properties": {
+          "suite_id": {
+            "type": "string"
+          },
+          "receipt_id": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        }
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "suite_id",
+          "reason"
+        ],
+        "properties": {
+          "suite_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

@@ -1,0 +1,160 @@
+{
+  "kind": "cognicode-test-harness-evolution-specifications",
+  "version": "0.1.0-spec",
+  "created": "2026-10-15",
+  "target_repository": "Rubentxu/CogniCode",
+  "installation_subdirectory": "test-harness",
+  "state": "PROPOSED_NOT_IMPLEMENTED",
+  "files": [
+    {
+      "path": "README.md",
+      "sha256": "7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7",
+      "bytes": 6090
+    },
+    {
+      "path": "aat/AAT.md",
+      "sha256": "a8c7d1e9608364c8611c3c2320c05d242d5c285b2420f77f370be4567d916b54",
+      "bytes": 4013
+    },
+    {
+      "path": "adrs/ADR-TH-001-centralizacion.md",
+      "sha256": "4ec06a5af105f9ad03199b11afc664926bc3dd31a082f7d9a9b7dc5188f133b7",
+      "bytes": 1386
+    },
+    {
+      "path": "adrs/ADR-TH-002-validez-y-reanudacion.md",
+      "sha256": "668049a3748b23174525acc9ed1d2376e9fead0db1f8d2c827027f0a1c3a0652",
+      "bytes": 1112
+    },
+    {
+      "path": "adrs/ADR-TH-003-autoridad-pipelinek.md",
+      "sha256": "d62d28c5d8c7f4eaf4430200dd2ecf050d4f26b63988b7d9899f0466c3e839b1",
+      "bytes": 1121
+    },
+    {
+      "path": "adrs/ADR-TH-004-nextest-opcional.md",
+      "sha256": "171bcbcf4eea517e7c02fe82a124e854a77eac1c35bc16811bdc467ade477230",
+      "bytes": 1031
+    },
+    {
+      "path": "contracts/README.md",
+      "sha256": "2f0a0a29361e2b52d05353d01d04ed2e35cf140714a0d5aac0b27bee20a22f41",
+      "bytes": 1461
+    },
+    {
+      "path": "contracts/examples/gate-verdict.example.json",
+      "sha256": "aa9284da2cf8bb5589733321fb38293e8ea3365715ee985a41fb75d075850711",
+      "bytes": 655
+    },
+    {
+      "path": "contracts/examples/plan.example.json",
+      "sha256": "629d782e2735e8251aa8ce3424b55bafe2ce6b555e8efbb9a33e1743625866dd",
+      "bytes": 809
+    },
+    {
+      "path": "contracts/examples/receipt.example.json",
+      "sha256": "deeedb7144e62191b73f1bd1234756b4b59f067b630a17c25d026bcf97800571",
+      "bytes": 1179
+    },
+    {
+      "path": "contracts/gate-verdict.schema.json",
+      "sha256": "e870639c96457df96e3ad9e29177fa9b69b72959f9fa9ccc47976a1159bab5ea",
+      "bytes": 2183
+    },
+    {
+      "path": "contracts/plan.schema.json",
+      "sha256": "c7e7958c0c6a5e06bfe43d95702dc6678a67d40fce64ca1d64238552ae614f5e",
+      "bytes": 2297
+    },
+    {
+      "path": "contracts/receipt.schema.json",
+      "sha256": "ef2006151ad399d7bae16ff41f9321f4ddfdadd0d335251aacd0f007bdbcb2c8",
+      "bytes": 3987
+    },
+    {
+      "path": "diagrams/arquitectura.mmd",
+      "sha256": "4677421df1c215ddfda9f301b1dc66f77cc4769a0458d2b19fc464167092fab1",
+      "bytes": 576
+    },
+    {
+      "path": "docs/00-auditoria-codigo.md",
+      "sha256": "0acea85ca2166801adc6438bbb2b0c8974ff07b270a41e65059b56ad8d092382",
+      "bytes": 5903
+    },
+    {
+      "path": "docs/01-arquitectura.md",
+      "sha256": "0fc680dfd9b4625d735ef7d3dce78a179a3185d599f3d2d7dce659207d534cc3",
+      "bytes": 4611
+    },
+    {
+      "path": "docs/02-ontologia-y-estados.md",
+      "sha256": "59b45eccc554877ec0d6ce40f4bae5266ba5317333710aec928a2d7cbaeee0ba",
+      "bytes": 3856
+    },
+    {
+      "path": "docs/03-migracion-y-compatibilidad.md",
+      "sha256": "ddb7846e0b0a57af9d2794eaeb46375aa02e21b1f4b787a1f80a4499fd7b83ce",
+      "bytes": 4484
+    },
+    {
+      "path": "docs/04-metrica-y-criterios.md",
+      "sha256": "16035d9515c6d0a2c6ee3395db784e6bc3ead2831c5c03221b3453560734ea43",
+      "bytes": 3008
+    },
+    {
+      "path": "docs/05-decision-pendientes.md",
+      "sha256": "c530c7fd78c7e7c3b64a370ba640d8f403ddf0e728376f6945ccdafbbdaff741",
+      "bytes": 1792
+    },
+    {
+      "path": "docs/06-rutas-y-referencias.md",
+      "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c",
+      "bytes": 1954
+    },
+    {
+      "path": "prompts/MANDATO-AGENTE.md",
+      "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27",
+      "bytes": 3483
+    },
+    {
+      "path": "roadmap/ROADMAP.md",
+      "sha256": "55133cea4348ea9a83b21bf0c9072ae2e3f2d1a837865b8c308576377c0f5105",
+      "bytes": 6333
+    },
+    {
+      "path": "specs/TH-S01-seleccion.md",
+      "sha256": "c677a92b05fe86a31cf5ab93db3abc915dbf0e44fb898bf31909d74e9f5eb512",
+      "bytes": 3420
+    },
+    {
+      "path": "specs/TH-S02-evidencia-invalidez.md",
+      "sha256": "0e3d45475de5de94af267362aa99039e61b8eab5b0640bd77c424e636b56c73c",
+      "bytes": 4251
+    },
+    {
+      "path": "specs/TH-S03-ejecucion-resume.md",
+      "sha256": "01735ab3af5effaa919cb4e5bca2b0e2d49e6bd3915644fd87e52512a6dbb919",
+      "bytes": 3823
+    },
+    {
+      "path": "specs/TH-S04-adaptadores.md",
+      "sha256": "fa833bca2d51529479504081a22dc382407431fabbef314c810a69ec1cc9ff09",
+      "bytes": 4843
+    },
+    {
+      "path": "specs/TH-S05-gates-release.md",
+      "sha256": "8adcfbb3803bd1ff5e5de0ba3ed6494930a153896d3b260e675d58e925f5d029",
+      "bytes": 4060
+    },
+    {
+      "path": "specs/TH-S06-operacion-seguridad.md",
+      "sha256": "0da05a71faa2b8ba64ac81f202e1479c8ecf6d13907b29cf28bc20f41ca8ec4d",
+      "bytes": 3975
+    },
+    {
+      "path": "uat/UAT.md",
+      "sha256": "e91eab3d0cfcfcc36db4014e2a5d7fd2cef95ae6aa767dfe18f34e8f8ebff4f0",
+      "bytes": 4665
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "schema_version": "th.gate/v1",
+  "verdict": "INCONCLUSIVE",
+  "lane": "change",
+  "repo_id": "cognicode--example",
+  "source_fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+  "requirements": [
+    "cargo.core.default.lib",
+    "cargo.mcp.default.lib"
+  ],
+  "proofs": [
+    {
+      "suite_id": "cargo.core.default.lib",
+      "receipt_id": "receipt-example-not-real",
+      "fingerprint": "2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  ],
+  "gaps": [
+    {
+      "suite_id": "cargo.mcp.default.lib",
+      "reason": "Pending; example only"
+    }
+  ],
+  "policy_version": "th-policy-v1"
+}

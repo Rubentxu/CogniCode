@@ -1,0 +1,42 @@
+{
+  "schema_version": "th.receipt/v1",
+  "receipt_id": "receipt-example-not-real",
+  "run_id": "run-example-not-real",
+  "repo_id": "cognicode--example",
+  "suite_id": "cargo.core.default.lib",
+  "lane": "change",
+  "status": "PASSED",
+  "input_fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+  "source_snapshot": {
+    "git_head": "example-commit",
+    "effective_content_digest": "1111111111111111111111111111111111111111111111111111111111111111",
+    "dirty": false
+  },
+  "runner": {
+    "name": "cargo-test",
+    "version": "example",
+    "argv": [
+      "cargo",
+      "test",
+      "-p",
+      "cognicode-core",
+      "--lib"
+    ],
+    "features": [
+      "default"
+    ],
+    "target_triple": "x86_64-unknown-linux-gnu"
+  },
+  "started_at": "2026-10-15T10:00:00Z",
+  "finished_at": "2026-10-15T10:00:01Z",
+  "exit_code": 0,
+  "discovered_cases": 1,
+  "executed_cases": 1,
+  "passed_cases": 1,
+  "failed_cases": 0,
+  "skipped_cases": 0,
+  "log_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "policy_version": "th-policy-v1",
+  "failure_class": "NONE",
+  "notes": "EXAMPLE ONLY - no execution performed"
+}

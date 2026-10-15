@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Rubentxu/CogniCode/test-harness/contracts/receipt.schema.json",
+  "title": "TH EvidenceReceipt v1 PROPOSED",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "run_id",
+    "repo_id",
+    "suite_id",
+    "lane",
+    "status",
+    "input_fingerprint",
+    "source_snapshot",
+    "runner",
+    "started_at",
+    "finished_at",
+    "exit_code",
+    "discovered_cases",
+    "executed_cases",
+    "passed_cases",
+    "failed_cases",
+    "skipped_cases",
+    "log_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "th.receipt/v1"
+    },
+    "receipt_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repo_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "suite_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "lane": {
+      "enum": [
+        "change",
+        "merge",
+        "integration",
+        "certification",
+        "release-candidate",
+        "release"
+      ]
+    },
+    "status": {
+      "enum": [
+        "PASSED",
+        "FAILED",
+        "CANCELLED",
+        "TIMED_OUT",
+        "INFRA_ERROR",
+        "MISSING",
+        "QUARANTINED",
+        "SKIPPED",
+        "RUNNING"
+      ]
+    },
+    "input_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "source_snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git_head",
+        "effective_content_digest",
+        "dirty"
+      ],
+      "properties": {
+        "git_head": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effective_content_digest": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "worktree_id": {
+          "type": "string"
+        }
+      }
+    },
+    "runner": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "argv",
+        "features",
+        "target_triple"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
+        "features": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "target_triple": {
+          "type": "string"
+        },
+        "resource_locks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "exit_code": {
+      "type": "integer"
+    },
+    "discovered_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "executed_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "passed_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "failed_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "skipped_cases": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "log_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "artifact_digests": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    },
+    "policy_version": {
+      "type": "string"
+    },
+    "failure_class": {
+      "enum": [
+        "NONE",
+        "ASSERTION",
+        "COMPILATION",
+        "ENVIRONMENT",
+        "TIMEOUT",
+        "HARNESS",
+        "UNKNOWN"
+      ]
+    },
+    "notes": {
+      "type": "string"
+    }
+  }
+}
