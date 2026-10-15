@@ -46,13 +46,14 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | **Ejecutar el harness o entender su implementación** | [Uso](#uso) y [ADR-TH-007](adrs/ADR-TH-007-implementacion-nucleo.md) (decisiones del núcleo: lenguaje, ledger, huellas, fail-closed). |
 | **Comprobar que el harness no recorta cobertura** | [Paridad con el selector vigente](#paridad-con-el-selector-vigente) y [ADR-TH-008](adrs/ADR-TH-008-paridad-con-el-oraculo.md) (veredictos, desviaciones declaradas y medición). |
 | **Concurrencia, inventario pinado y GC del ledger** | [Concurrencia, cerrojos y pin de inventario](#concurrencia-cerrojos-y-pin-de-inventario) y [ADR-TH-009](adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md) (cerrojos, SIGKILL, lease huérfano). |
+| **Ver qué mutaciones se matan de verdad** | [Ejecución del AAT](aat/AAT.md#ejecución-2026-10-15) y [ADR-TH-010](adrs/ADR-TH-010-aat-ejecutado.md) (estados, suelo de obligaciones, identidad e inestabilidad). |
 | Ver hallazgos y rastrear evidencia del repositorio | [Auditoría de código](docs/00-auditoria-codigo.md) y [rutas y referencias](docs/06-rutas-y-referencias.md). |
 | Entender arquitectura, estados o migración | [Arquitectura](docs/01-arquitectura.md), [ontología](docs/02-ontologia-y-estados.md) y [compatibilidad](docs/03-migracion-y-compatibilidad.md). |
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
 | Integrar adaptadores, gates u operación segura | Specs [TH-S04](specs/TH-S04-adaptadores.md), [TH-S05](specs/TH-S05-gates-release.md) y [TH-S06](specs/TH-S06-operacion-seguridad.md). |
 | Consultar decisiones, contratos y entregas previstas | [ADRs](adrs/), [contratos JSON](contracts/README.md), [criterios](docs/04-metrica-y-criterios.md), [decisiones pendientes](docs/05-decision-pendientes.md) y [roadmap](roadmap/ROADMAP.md). |
 | Entender el gate de merge y el reparto de obligaciones por lane | [Auditoría de `merge-gate`](docs/07-auditoria-merge-gate.md) (las 73 stages clasificadas y la medición antes/después de B1), [ADR-TH-005](adrs/ADR-TH-005-dueno-unico-por-suite.md) (una suite, un dueño) y [ADR-TH-006](adrs/ADR-TH-006-retirada-uat.md) (retirada de la clase UAT). |
-| Aceptar el diseño o buscar falsos verdes | [AAT](aat/AAT.md). Es un plan/especificación, no un resultado ejecutado. El plan de UAT que acompañaba a este paquete se retiró el 2026-10-15 (ADR-TH-006). |
+| Aceptar el diseño o buscar falsos verdes | [AAT](aat/AAT.md): **21 de 30 mutaciones se matan hoy con test** y las 9 restantes están declaradas con motivo (sandbox, nextest, release). El plan de UAT que acompañaba a este paquete se retiró el 2026-10-15 (ADR-TH-006). |
 | Preparar instrucciones para un agente implementador | [Mandato del agente](prompts/MANDATO-AGENTE.md). |
 
 El README sirve de índice. Las reglas normativas viven en las specs y ADRs; este mapa no las reemplaza.
@@ -63,7 +64,7 @@ Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
 `path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
 obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
 el que se comprueba que el paquete entregado es el que se describe. Los ADR
-vigentes son TH-001..TH-009 y este paquete no incluye ningún plan de UAT
+vigentes son TH-001..TH-010 y este paquete no incluye ningún plan de UAT
 desde el 2026-10-15 (ADR-TH-006).
 
 ## Uso
@@ -171,6 +172,15 @@ acepte ese PASS: una suite que pierde pruebas por una feature apagada es un huec
 con nombre, no un verde. Sin pin, el suelo es 1 caso para Cargo y ninguno para los
 scripts.
 
+## Suelo de obligaciones críticas
+
+`obligations.json` lista el mínimo de obligaciones que la lane de merge (y las
+demás) **no pueden perder**: si borrar una etapa del gate dejara el catálogo sin
+`cargo clippy`, `--doc`, los contratos o las suites ancla, el plan pasa a
+`UNKNOWN_INPUT` con el nombre de la que falta y el veredicto no puede ser
+`SATISFIED`. No sustituye al catálogo —que se sigue leyendo de las pipelines— ni
+añade obligaciones: solo impide que desaparezcan en silencio.
+
 ## Restricciones no negociables
 
 - **Fail-closed:** missing, stale, partial, cancelled, quarantined y unknown **no equivalen** a PASS.
@@ -254,7 +264,7 @@ selección por impacto no cubra.
 ## Pruebas del harness y cómo se gated
 
 ```shell
-python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 89 tests, ~50 s
+python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 101 tests, ~55 s
 python3 scripts/ci/test_harness_contract.py                          # contrato del gate
 ```
 
@@ -281,7 +291,8 @@ las pipelines con metadatos declarados (serial, locks); impacto por
 inmutables, índice reconstruible, lease con reconciliación de dueños muertos y GC
 que conserva evidencia; supervisor con concurrencia, cerrojos y SIGKILL probado;
 clasificación de procesos que no convierte un 101 en verde; agregación de gate con
-huecos nombrados; 89 tests dependency-free y el contrato del gate.
+huecos nombrados; suelo de obligaciones críticas; AAT ejecutado (21/30 filas con
+test, 9 declaradas); 101 tests dependency-free y el contrato del gate.
 
 **No implementado, y no se afirma lo contrario**:
 
@@ -299,9 +310,10 @@ huecos nombrados; 89 tests dependency-free y el contrato del gate.
   de verdad exige un target dir por worker y medir si compensa.
 - **Adaptador nextest y lanes de release** (empaquetado, instalación,
   provenance): sin tocar.
-- **AAT** sigue siendo especificación: hay reglas adoptadas (PASS vacuo, recibo
-  roto, recibo no terminal, hueco declarado, reanudación tras interrupción) con
-  test propio, pero el documento no está ejecutado de punta a punta.
+- **AAT sin ejecutar del todo**: 21 de 30 filas se matan con test; 2 son `PARTIAL`
+  (el mecanismo está probado, la fila pide además sandbox o servicio externo) y 7
+  son `NOT_RUN` con motivo (sandbox, nextest, release, `known_failures`). No se
+  cuenta como cobertura el AAT que no se ejecuta.
 
 **Límites conocidos del método**: la clausura por citas textuales no ve una ruta
 construida por concatenación de cadenas, y por eso la lista de ficheros que se

@@ -256,6 +256,38 @@ def test_the_pinned_inventory_is_consistent_with_the_observations():
         assert not unknown, f"el pin nombra suites que no están en el catálogo: {unknown}"
 
 
+def test_every_aat_row_has_a_status_and_a_real_test_when_it_is_killed():
+    """El AAT no puede quedarse en prosa: cada fila tiene estado y, si se mata, test.
+
+    Un AAT que dice «esto se mata» sin un test que lo mate es una afirmación de
+    fe. Este contrato exige que las mutaciones declaradas `KILLED` nombren un test
+    que exista en la suite del harness, y que el reparto de estados esté escrito.
+    """
+    aat = (HARNESS_DIR / "aat" / "AAT.md").read_text(encoding="utf-8")
+    rows = re.findall(r"^\|\s*(AAT-\d+)\s*\|\s*(KILLED|PARTIAL|NOT_RUN)\s*\|\s*([^|]*)\|", aat, re.MULTILINE)
+    assert len(rows) >= 30, f"la tabla de ejecución del AAT tiene {len(rows)} filas"
+
+    statuses = {status for _, status, _ in rows}
+    assert statuses <= {"KILLED", "PARTIAL", "NOT_RUN"}, statuses
+
+    defined: set[str] = set()
+    for path in sorted((HARNESS_DIR / "tests").glob("test_*.py")):
+        defined.update(re.findall(r"^def (test_\w+)", path.read_text(encoding="utf-8"), re.MULTILINE))
+
+    missing = [
+        f"{row_id}: {name.strip()}"
+        for row_id, status, name in rows
+        if status == "KILLED" and name.strip() and name.strip() not in defined
+    ]
+    assert not missing, "filas KILLED sin test que las mate: " + "; ".join(missing)
+
+    killed = sum(1 for _, status, _ in rows if status == "KILLED")
+    assert killed >= 15, f"solo {killed} filas KILLED: el AAT se está quedando en prosa"
+    summary = re.search(r"Resumen:\s*(\d+)\s*`KILLED`,\s*(\d+)\s*`PARTIAL`,\s*(\d+)\s*`NOT_RUN`", aat)
+    assert summary, "el AAT no declara el reparto de estados"
+    assert int(summary.group(1)) == killed, "el resumen no coincide con la tabla"
+
+
 def test_gc_dry_run_never_deletes_evidence():
     """La recolección dice qué borraría y no toca ni un recibo."""
     with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:

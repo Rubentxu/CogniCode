@@ -73,6 +73,7 @@ def evaluate_reuse(
     freshness: str = "reusable",
     external_state: bool = False,
     integrity_ok: bool = True,
+    expected_repo_id: str | None = None,
 ) -> ReuseDecision:
     """Decide qué hacer con una suite, en el orden que fija TH-S02.
 
@@ -108,6 +109,14 @@ def evaluate_reuse(
             f"el recibo {receipt.receipt_id} dice PASSED pero no cuadra "
             f"(exit={receipt.exit_code}, ejecutados={receipt.executed_cases}, "
             f"pasados={receipt.passed_cases}, fallidos={receipt.failed_cases}): recibo roto",
+            receipt.receipt_id,
+        )
+    if expected_repo_id is not None and receipt.repo_id != expected_repo_id:
+        return ReuseDecision(
+            "Invalidated",
+            f"el recibo es de otro repositorio ({receipt.repo_id!r}); la equivalencia "
+            "entre worktrees se declara por el identificador de repositorio, no por el "
+            "nombre del directorio",
             receipt.receipt_id,
         )
     if receipt.suite_id != expected.suite_id:

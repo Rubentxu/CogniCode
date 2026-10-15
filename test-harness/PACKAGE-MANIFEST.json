@@ -1,14 +1,14 @@
 {
   "files": [
     {
-      "bytes": 19394,
+      "bytes": 20323,
       "path": "README.md",
-      "sha256": "3cd73f9a3130e6c18692b590199c110646dcd5c4aaf66bccaf6d9a6a8adddefe"
+      "sha256": "8af3cfdb0f18931ec03f53bb456fcfbff65bdf0e3b6f37c0ea43595e0827f20a"
     },
     {
-      "bytes": 4013,
+      "bytes": 7968,
       "path": "aat/AAT.md",
-      "sha256": "a8c7d1e9608364c8611c3c2320c05d242d5c285b2420f77f370be4567d916b54"
+      "sha256": "83aa012b136cede5d36835abd7bf2f763dde98dcba57354e9c7bb989d0c07e9d"
     },
     {
       "bytes": 331,
@@ -89,6 +89,11 @@
       "bytes": 4766,
       "path": "adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md",
       "sha256": "61542e6b00d0977d4e7bb7f75cb0c4a8ee0bc3d3ccf0e5d65259bd02922ae994"
+    },
+    {
+      "bytes": 3930,
+      "path": "adrs/ADR-TH-010-aat-ejecutado.md",
+      "sha256": "9e8a063b8f473764649b6e083c82b1071fd29359bfd337c358ad645b5ef596f0"
     },
     {
       "bytes": 1010,
@@ -186,14 +191,19 @@
       "sha256": "b310b2b04bcd4e62a87a9149c6a0b897cd50abcc390595eb01e1be52d583302d"
     },
     {
+      "bytes": 1102,
+      "path": "obligations.json",
+      "sha256": "aa200ca143c78e338495068d63ca57dacd58dc396af7b0d2a44e98957a479b4e"
+    },
+    {
       "bytes": 3483,
       "path": "prompts/MANDATO-AGENTE.md",
       "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27"
     },
     {
-      "bytes": 8490,
+      "bytes": 8586,
       "path": "roadmap/ROADMAP.md",
-      "sha256": "8c1ecc0e01cef844ec683b3d7d2fc0926557a5f27e37d008bb67441d3ca00713"
+      "sha256": "416ea735029a86e13d056d3909bc2f7e5eb4a35104dff39c0a4ddd7d3f661620"
     },
     {
       "bytes": 3420,
@@ -256,9 +266,14 @@
       "sha256": "c7bdc2f653d48b59cc8c0feaedc3abcdd8c8f824119107a823701c2ccf4a5249"
     },
     {
-      "bytes": 32490,
+      "bytes": 3361,
+      "path": "src/harness/obligations.py",
+      "sha256": "b48f2978de348691425a5c90980060adc415249d04d8882c696248bcdcf7f730"
+    },
+    {
+      "bytes": 34762,
       "path": "src/harness/orchestrator.py",
-      "sha256": "eed75de8e1440874afd48c01d4603601dc026bf988e3e0570d5d3d2bce0d5f61"
+      "sha256": "38f02fe21a19f13ad29b15da15174d141f7e941ed07c1e4b6e357042d6fdac38"
     },
     {
       "bytes": 15413,
@@ -266,9 +281,9 @@
       "sha256": "d7b4b1869a65f0cc15cbafac022cb68c46a8781487bea5b56b25b5797a42e49f"
     },
     {
-      "bytes": 30410,
+      "bytes": 31356,
       "path": "src/harness/planner.py",
-      "sha256": "da8ef90fa4085eed110a07ae00a171340d865a2e6d78f8893f94d90158629f4c"
+      "sha256": "11c818148e9d4ab32bfbbcbec6d08ec8e497ccbefb5706b2ae08a124f5c24ef8"
     },
     {
       "bytes": 2614,
@@ -276,14 +291,19 @@
       "sha256": "f7a09297204d491fb63fee072cb4a92c7c0c7081ba924dcd54d421377b6a52f6"
     },
     {
-      "bytes": 6417,
+      "bytes": 6848,
       "path": "src/harness/validity.py",
-      "sha256": "5ac2c9d2b7cafd11e77879db614eba4c605d24cc0f6923678e8bbb3ebe840a3e"
+      "sha256": "c7ccbf022435904d75c59ee36705286a264325e02f19b362d7ea583bf432a57d"
     },
     {
       "bytes": 10787,
       "path": "tests/harness_support.py",
       "sha256": "9e77842ad0480f4f67f2f123e6eb0ca9f197050e7a5d1fc483bb4982c5dc9243"
+    },
+    {
+      "bytes": 12480,
+      "path": "tests/test_aat.py",
+      "sha256": "be9ec5daaf039ace3d8d43ea97e51f2eba41fa7544aa5ff8017dbb87666c9ef3"
     },
     {
       "bytes": 4346,

@@ -30,6 +30,7 @@ from .domain import (
 )
 from .gate import Coverage, aggregate
 from .inventory import Inventory, load_inventory
+from .obligations import Floor, load_floor
 from .planner import PlanResult, PlannedSuite, build_plan, refutable_fallback, select
 from .policy import certify_requires_fresh, reuse_allowed
 from .validity import evaluate_reuse
@@ -63,6 +64,7 @@ class Context:
     graph: object
     catalog: tuple
     inventory: Inventory = field(default_factory=lambda: Inventory(entries={}))
+    obligation_floor: Floor = field(default_factory=lambda: Floor(entries={}))
     warnings: tuple[str, ...] = ()
 
     def catalog_for_lane(self, lane: str) -> tuple:
@@ -89,9 +91,12 @@ def prepare(
         pipeline_catalog.read_catalog(root), root
     )
     inventory = load_inventory(root)
+    obligation_floor = load_floor(root)
     warnings: list[str] = []
     if inventory.problem:
         warnings.append(f"inventario pinado ilegible: {inventory.problem}")
+    if obligation_floor.problem:
+        warnings.append(f"suelo de obligaciones ilegible: {obligation_floor.problem}")
     if graph.is_unknown:
         warnings.append(f"grafo de paquetes desconocido: {graph.reason}")
     if changeset.is_unknown:
@@ -150,6 +155,8 @@ def make_plan(
         allow_external=allow_external,
         oracle=decision,
         inventory=context.inventory,
+        obligation_floor=context.obligation_floor,
+        repo_id_expected=context.repo_id,
         run_id=identifier,
         created_at=now_iso(),
     )
@@ -790,6 +797,27 @@ def resume(
     return run_plan(context, plan_result, run_id=run_id, options=options)
 
 
+def _unstable_suites(context: Context, required: tuple[str, ...]) -> dict[str, set[str]]:
+    """Suites que han pasado y no pasado con la **misma** huella de entradas.
+
+    Una suite así no es estable: el resultado depende de algo que la huella no
+    captura. No se bloquea su reutilización (la política no cambia), pero tampoco
+    se certifica que sea reproducible, que es lo que AAT-27 exige.
+    """
+    unstable: dict[str, set[str]] = {}
+    for suite_id in required:
+        by_fingerprint: dict[str, set[str]] = {}
+        for receipt_id in context.ledger.receipts_for_suite(suite_id):
+            receipt, problem = context.ledger.read_receipt(receipt_id)
+            if receipt is None or problem or not receipt.is_terminal():
+                continue
+            by_fingerprint.setdefault(receipt.input_fingerprint, set()).add(receipt.status)
+        if any({"PASSED"} < statuses and statuses != {"PASSED"} for statuses in by_fingerprint.values()):
+            statuses = set().union(*by_fingerprint.values())
+            unstable[suite_id] = statuses
+    return unstable
+
+
 def _find_receipt(context: Context, suite_id: str) -> Receipt | None:
     receipt, _ = context.ledger.latest_receipt_for_suite(suite_id)
     return receipt
@@ -872,6 +900,24 @@ def certify(
         context, lane=lane, allow_reuse=False, allow_external=options.allow_external
     )
     outcome = run_plan(context, plan_result, run_id=options.run_id or run_id, options=options)
+    unstable = _unstable_suites(context, plan_result.plan.required_suites)
+    if unstable:
+        outcome.verdict.gaps = outcome.verdict.gaps + tuple(
+            {
+                "suite_id": suite_id,
+                "reason": (
+                    "la suite pasó y falló con la misma huella de entradas: no se puede "
+                    "certificar estabilidad sobre un resultado que se repite distinto "
+                    f"({len(statuses)} ejecuciones divergentes con la misma huella)"
+                ),
+            }
+            for suite_id, statuses in sorted(unstable.items())
+        )
+        outcome.verdict.verdict = "UNSATISFIED"
+        outcome.notes = (
+            *outcome.notes,
+            "certify no certifica estabilidad con suites que divergen bajo la misma huella",
+        )
     if outcome.reused:
         # No debería ocurrir, pero si ocurriera, la certificación no vale.
         outcome.verdict.gaps = outcome.verdict.gaps + (

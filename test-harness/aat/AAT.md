@@ -1,6 +1,12 @@
 # AAT — Adversarial Acceptance Tests / pruebas de mutación
 
-**Estado:** especificación. El criterio del AAT no es «el mutante compila», sino que el validador lo **MATA** con señal concreta. Conservar recibo por mutante y seed. No ejecutar mutaciones sobre main ni releases públicos.
+**Estado:** ejecutado en lo que el harness puede matar hoy. El criterio del AAT no es «el mutante compila», sino que el validador lo **MATA** con señal concreta. Conservar recibo por mutante y seed. No ejecutar mutaciones sobre main ni releases públicos.
+
+La tabla «Ejecución» de abajo es la que manda: cada fila con estado `KILLED`
+nombra el test que la mata, y el contrato del gate comprueba que ese test existe y
+que el estado es uno de los tres admitidos. Las filas `NOT_RUN` llevan su motivo,
+no un silencio: sandbox de campañas, adaptador nextest y artefactos de release
+quedan fuera del alcance del harness en esta unidad.
 
 | ID | Mutación inyectada | Debe producir |
 |---|---|---|
@@ -42,3 +48,50 @@
 3. Restaurar mutante y ejecutar tests quirúrgicos, sin hacer commits de mutaciones al repo principal.
 4. Documentar `MUTANT_KILLED / SURVIVED / NOT_RUN`, outputs/recibos y run SHA. Toda supervivencia de mutante de seguridad/reuse es BLOCKER.
 5. En gate final, agregar todos los AAT críticos, no confundir con número de tests positivos.
+
+## Ejecución (2026-10-15)
+
+Estados: `KILLED` = hay un test que inyecta la mutación y comprueba el rechazo
+exacto; `PARTIAL` = el mecanismo existe y está probado, pero la fila pide además
+algo que hoy no se puede ejercer (sandbox, servicio externo); `NOT_RUN` = fuera del
+alcance actual, con motivo.
+
+| ID | Estado | Test que lo mata | Motivo si no está KILLED |
+|---|---|---|---|
+| AAT-01 | NOT_RUN | — | Requiere campaña real de sandbox; fuera del alcance del harness |
+| AAT-02 | KILLED | test_aat_02_a_required_suite_without_receipt_turns_the_gate_red | |
+| AAT-03 | KILLED | test_aat_03_removing_features_changes_the_fingerprint_and_the_reuse | |
+| AAT-04 | KILLED | test_aat_04_a_missing_critical_obligation_leaves_the_plan_indeterminate | |
+| AAT-05 | PARTIAL | test_a_serial_suite_never_overlaps_even_with_workers_available | El mecanismo de exclusión está probado; la declaración de qué suite del CLI es serial es un dato de `config/suite-metadata.json` y su auditoría es manual |
+| AAT-06 | KILLED | test_aat_06_removing_clippy_from_the_gate_is_detected_as_indeterminate | |
+| AAT-07 | KILLED | test_unknown_path_forces_everything | |
+| AAT-08 | KILLED | test_touching_a_suite_source_invalidates_only_its_fingerprint | |
+| AAT-09 | KILLED | test_docs_change_alone_selects_nothing | |
+| AAT-10 | KILLED | test_fingerprint_is_stable_and_input_sensitive | |
+| AAT-11 | KILLED | test_working_tree_and_untracked_files_with_spaces | |
+| AAT-12 | KILLED | test_inventory_pin_flags_a_suite_that_lost_cases | |
+| AAT-13 | KILLED | test_corrupt_receipt_is_not_evidence | |
+| AAT-14 | KILLED | test_sigkill_leaves_no_pass_and_resume_reexecutes | |
+| AAT-15 | KILLED | test_two_runs_with_the_same_id_do_not_both_write | |
+| AAT-16 | KILLED | test_aat_16_a_receipt_from_another_repository_is_not_reused | |
+| AAT-17 | NOT_RUN | — | No hay adaptador nextest; su semántica de `-R` no se usa |
+| AAT-18 | NOT_RUN | — | Igual que AAT-17: sin grabaciones de nextest no hay origen que validar |
+| AAT-19 | NOT_RUN | — | Requiere artefactos release; vive en la lane de candidato |
+| AAT-20 | KILLED | test_aat_20_a_hostile_suite_id_cannot_escape_the_state_root | |
+| AAT-21 | NOT_RUN | — | Sustitución de candidato tras los tests: lane de release |
+| AAT-22 | NOT_RUN | — | Publicación de tarballs y bundle manifest: lane de release |
+| AAT-23 | NOT_RUN | — | `known_failures.yaml` lo evalúa `scripts/test-fast.sh` con su propio gate, no el harness |
+| AAT-24 | KILLED | test_aat_24_the_word_pass_in_a_failing_log_does_not_pass | |
+| AAT-25 | KILLED | test_aat_25_a_ci_change_forces_everything | |
+| AAT-26 | KILLED | test_advisory_obligations_do_not_block | |
+| AAT-27 | KILLED | test_aat_27_a_suite_that_flipped_with_the_same_fingerprint_is_not_stable | |
+| AAT-28 | KILLED | test_aat_28_a_partial_receipt_does_not_hide_the_valid_ones | |
+| AAT-29 | PARTIAL | test_a_serial_suite_never_overlaps_even_with_workers_available | Los cerrojos por recurso están probados; la independencia frente a un PG o puerto ajeno exige levantar el servicio y eso es sandbox |
+| AAT-30 | KILLED | test_aat_30_rc_zero_with_zero_tests_is_not_a_pass | |
+
+Resumen: 21 `KILLED`, 2 `PARTIAL`, 7 `NOT_RUN`. Ninguna fila `NOT_RUN` se cuenta
+como cubierta: el README y el recibo de la unidad repiten el reparto.
+
+Las mutaciones con AAT-17 a AAT-23 dependen de piezas que no existen todavía
+(nextest, fábrica de release, `known_failures` dentro del harness). Cuando existan,
+la fila cambia de estado en esta misma tabla y el contrato exige el test.

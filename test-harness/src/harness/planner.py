@@ -24,6 +24,7 @@ from pathlib import Path
 
 from .domain import ExecutionPlan, PlanAction, SuiteRef
 from .inventory import Inventory
+from .obligations import Floor, missing_from_catalog
 from .parity import ParityReport, compare, floor_entries
 from .policy import POLICY_VERSION, reuse_allowed
 from .validity import FingerprintInputs, evaluate_reuse
@@ -525,6 +526,8 @@ def build_plan(
     allow_external: bool = False,
     oracle: SelectorDecision | None = None,
     inventory: Inventory | None = None,
+    obligation_floor: Floor | None = None,
+    repo_id_expected: str | None = None,
     run_id: str,
     created_at: str,
 ) -> PlanResult:
@@ -540,6 +543,20 @@ def build_plan(
     selection = select(
         lane=lane, changeset=changeset, graph=graph, catalog=catalog, repo_root=repo_root
     )
+    if obligation_floor is not None:
+        missing_critical = missing_from_catalog(
+            obligation_floor, lane, {entry.suite_id for entry in catalog}
+        )
+        if missing_critical:
+            # Una obligación crítica que ya no está en el catálogo no se puede
+            # exigir: no existe. El plan lo declara indeterminado en vez de dar la
+            # lane por cubierta sin ella.
+            reason = (
+                "faltan obligaciones críticas del suelo en la lane "
+                f"'{lane}': {', '.join(missing_critical)}. Ninguna pipeline de esa lane "
+                "las ejecuta ya, así que el plan no puede cubrirlas"
+            )
+            selection.unknown_reasons = (*selection.unknown_reasons, reason)
     if oracle is not None:
         selection = _apply_oracle(selection, oracle, catalog=catalog)
     lane_ok, lane_reason = reuse_allowed(lane, allow_reuse)
@@ -588,6 +605,7 @@ def build_plan(
             fingerprint,
             lane_reuse_allowed=lane_ok,
             lane_reason=lane_reason,
+            expected_repo_id=repo_id_expected or repo_id,
             freshness="always-fresh" if external else "reusable",
             external_state=external and not allow_external,
             integrity_ok=integrity_ok,

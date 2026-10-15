@@ -1,0 +1,32 @@
+{
+  "schema_version": "th.obligations/v1",
+  "notes": "Obligaciones que no pueden desaparecer del catálogo de su lane. No es un inventario paralelo: es el mínimo que, si falta, deja el plan indeterminado en vez de dar el merge por bueno.",
+  "entries": {
+    "change": [
+      "workspace:cargo:fmt#-",
+      "workspace:script:run-all-contracts",
+      "cognicode-core:lib#-",
+      "cognicode-ladybug:lib#-"
+    ],
+    "merge": [
+      "workspace:cargo:build#-",
+      "workspace:cargo:clippy#-",
+      "workspace:cargo:fmt#-",
+      "workspace:script:check-bin-tracking",
+      "workspace:script:run-all-contracts",
+      "workspace:script:verify-skills",
+      "cognicode-cli:bins+lib#-",
+      "cognicode-cli:cli_gate_coverage_contract#-",
+      "cognicode-cli:doc#-",
+      "cognicode-core:core_gate_coverage_contract#-",
+      "cognicode-core:lib#-",
+      "cognicode-core:prf_sec_07_adversarial_campaign#-",
+      "cognicode-mcp:cargo:build#-"
+    ],
+    "integration": [
+      "cognicode-explorer:lib#-",
+      "cognicode-core:lib#-",
+      "workspace:script:check-release-matrix"
+    ]
+  }
+}
