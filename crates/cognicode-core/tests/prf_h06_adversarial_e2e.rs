@@ -28,12 +28,14 @@
 //! | C2   | Calling a mutating-style tool name in `--read-only` returns `isError=true`.                     |
 //! | C3   | Each test uses an isolated TempDir; no tempdir orphans are left in /tmp/h06-*.                    |
 //!
-//! ## Skip policy
+//! ## No-skip policy
 //!
-//! If neither `target/release/cognicode-mcp` nor `target/debug/cognicode-mcp`
-//! is present, every test short-circuits with `SKIP_NOT_APPLICABLE` style
-//! assertion. The intent is: don't fail CI when the binary has not been
-//! compiled; fail loudly when the contract regresses.
+//! Every test needs the compiled binary. If it cannot be resolved, each test
+//! fails loudly (see `require_binary!`): a skip would report a green suite
+//! while the 7 adversarial vectors went unexercised, which is the one outcome
+//! an adversarial campaign must never produce. Resolution order:
+//! `COGNICODE_MCP_BIN`, then `CARGO_TARGET_DIR/{release,debug}`, then the
+//! workspace-relative `target/{release,debug}`.
 //!
 //! ## Concurrency
 //!
@@ -68,6 +70,26 @@ const O_NONBLOCK: i32 = 2048;
 // ---------------------------------------------------------------------------
 
 fn binary_path() -> Option<PathBuf> {
+    // 1. Explicit override. When it is set it is the answer: asserted to exist
+    //    and to be executable, with no fallback, so a typo fails here rather
+    //    than silently exercising a different build.
+    if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN") {
+        let path = PathBuf::from(explicit);
+        assert!(
+            path.exists(),
+            "COGNICODE_MCP_BIN={} does not exist. Point it at the compiled \
+             `cognicode-mcp` binary (`cargo build --bin cognicode-mcp`) or unset \
+             it to use the target-dir search.",
+            path.display()
+        );
+        assert!(
+            is_executable(&path),
+            "COGNICODE_MCP_BIN={} exists but is not executable. \
+             `cargo build --bin cognicode-mcp` produces an executable file.",
+            path.display()
+        );
+        return Some(path.canonicalize().unwrap_or(path));
+    }
     // Cargo exports CARGO_MANIFEST_DIR to integration tests. From there we
     // can reach the workspace target/ dir. We also honour CARGO_TARGET_DIR
     // (used in this environment) and the workspace-relative target/.
@@ -93,6 +115,18 @@ fn binary_path() -> Option<PathBuf> {
     }
     eprintln!("binary_path: no candidate found. tried: {candidates:#?}");
     None
+}
+
+/// `true` when `path` is a regular file with at least one execute bit.
+///
+/// Used by the `COGNICODE_MCP_BIN` override: a path that exists but
+/// cannot be spawned would otherwise fail later with a bare
+/// `PermissionDenied` that says nothing about which env var is wrong.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 /// Spawn the MCP binary. Returns `None` if the binary is not present.
@@ -318,13 +352,29 @@ fn assert_is_error_with(resp: &Value, needle: &str, ctx: &str) {
     );
 }
 
-fn skip_if_no_binary() -> bool {
-    if binary_path().is_none() {
-        eprintln!("SKIP_NOT_APPLICABLE: cognicode-mcp binary not built");
-        false
-    } else {
-        true
-    }
+/// Fail the current test loudly when `cognicode-mcp` is not built.
+///
+/// The campaign used to call `skip_if_no_binary()` and `return`, which made a
+/// missing binary a green result: the 7 adversarial vectors were reported as
+/// passing while nothing ran. A vacuous pass is indistinguishable from a real
+/// one, so the absence of the binary is a hard failure now.
+macro_rules! require_binary {
+    () => {
+        match binary_path() {
+            Some(p) => p,
+            None => panic!(
+                "cognicode-mcp binary not found: prf_h06_adversarial_e2e.rs \
+                 cannot exercise the 7 adversarial vectors without it, and \
+                 skipping would be a vacuous pass (a green suite that asserts \
+                 nothing).\n\
+                 Build it with `cargo build --bin cognicode-mcp` (add `--release`, \
+                 and set CARGO_TARGET_DIR if your config redirects it), or point \
+                 the harness at an existing build with \
+                 COGNICODE_MCP_BIN=/abs/path/to/cognicode-mcp, then re-run \
+                 `cargo test -p cognicode-core --test prf_h06_adversarial_e2e`."
+            ),
+        }
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -333,9 +383,7 @@ fn skip_if_no_binary() -> bool {
 
 #[test]
 fn v1_repo_with_decoy_code_does_not_execute() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_decoy_repo("v1");
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
 
@@ -399,9 +447,7 @@ fn v1_repo_with_decoy_code_does_not_execute() {
 
 #[test]
 fn v2_symlink_to_etc_passwd_is_rejected_via_rpc() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v2");
     // Symlink INSIDE the fixture pointing OUTSIDE.
     let target = tmp.path().join("target.rs");
@@ -429,9 +475,7 @@ fn v2_symlink_to_etc_passwd_is_rejected_via_rpc() {
 
 #[test]
 fn v2b_absolute_path_outside_workspace_is_rejected_via_rpc() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v2b");
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
     initialize(&mut child).expect("initialize");
@@ -454,9 +498,7 @@ fn v2b_absolute_path_outside_workspace_is_rejected_via_rpc() {
 
 #[test]
 fn v2c_traversal_with_dotdot_is_rejected_via_rpc() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v2c");
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
     initialize(&mut child).expect("initialize");
@@ -483,9 +525,7 @@ fn v2c_traversal_with_dotdot_is_rejected_via_rpc() {
 
 #[test]
 fn v3_binary_garbage_is_classified_as_parse_error() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v3");
     let bad = tmp.path().join("garbage.rs");
     let bytes: [u8; 16] = [
@@ -518,9 +558,7 @@ fn v3_binary_garbage_is_classified_as_parse_error() {
 
 #[test]
 fn v4_decoy_secret_is_not_leaked_to_any_diagnostic() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v4");
     fs::write(
         tmp.path().join("secret.rs"),
@@ -560,9 +598,7 @@ fn v4_decoy_secret_is_not_leaked_to_any_diagnostic() {
 
 #[test]
 fn v5_unknown_tool_name_returns_is_error() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v5");
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
     initialize(&mut child).expect("initialize");
@@ -615,9 +651,7 @@ fn v5_unknown_tool_name_returns_is_error() {
 
 #[test]
 fn v5b_unknown_authority_defaults_read_only() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let mut child = spawn_binary(Path::new("."), true).expect("spawn");
     initialize(&mut child).expect("initialize");
     rpc_send(&mut child, 2, "tools/list", json!({}));
@@ -650,10 +684,7 @@ fn v5b_unknown_authority_defaults_read_only() {
 
 #[test]
 fn v6_stdin_closed_before_initialize_exits_without_panic() {
-    let Some(bin) = binary_path() else {
-        eprintln!("SKIP_NOT_APPLICABLE: cognicode-mcp binary not built");
-        return;
-    };
+    let bin = require_binary!();
     let mut child = Command::new(&bin)
         .arg("--cwd")
         .arg(".")
@@ -685,10 +716,7 @@ fn v6_stdin_closed_before_initialize_exits_without_panic() {
 
 #[test]
 fn v6b_partial_json_rpc_header_exits_without_panic() {
-    let Some(bin) = binary_path() else {
-        eprintln!("SKIP_NOT_APPLICABLE: cognicode-mcp binary not built");
-        return;
-    };
+    let bin = require_binary!();
     let mut child = Command::new(&bin)
         .arg("--cwd")
         .arg(".")
@@ -725,9 +753,7 @@ fn v6b_partial_json_rpc_header_exits_without_panic() {
 
 #[test]
 fn v7_inaccessible_file_returns_typed_security_error() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v7");
 
     let forbidden = TempDir::new().expect("forbidden tempdir");
@@ -781,9 +807,7 @@ fn v7_inaccessible_file_returns_typed_security_error() {
 
 #[test]
 fn v7b_nonexistent_file_returns_typed_error() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let tmp = make_fixture_repo("v7b");
     let mut child = spawn_binary(tmp.path(), true).expect("spawn");
     initialize(&mut child).expect("initialize");
@@ -817,9 +841,7 @@ fn v7b_nonexistent_file_returns_typed_error() {
 
 #[test]
 fn c1_read_only_mode_hides_mutating_tools() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let mut child = spawn_binary(Path::new("."), true).expect("spawn");
     initialize(&mut child).expect("initialize");
     rpc_send(&mut child, 2, "tools/list", json!({}));
@@ -848,9 +870,7 @@ fn c1_read_only_mode_hides_mutating_tools() {
 
 #[test]
 fn c2_mutating_tool_call_in_read_only_returns_is_error() {
-    if !skip_if_no_binary() {
-        return;
-    }
+    let _bin = require_binary!();
     let mut child = spawn_binary(Path::new("."), true).expect("spawn");
     initialize(&mut child).expect("initialize");
     rpc_send(

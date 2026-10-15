@@ -28,7 +28,7 @@
 
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Resolve the absolute path to the given binary under test.
 ///
@@ -157,17 +157,71 @@ pub fn workspace_tag() -> String {
     format!("v{}", workspace_version())
 }
 
-/// Path to the `cognicode-release` binary built by the preflight. Uses
-/// the same resolution chain as `binary_path` so it is robust under
-/// `CARGO_TARGET_DIR` overrides and stale `target/` directories.
+/// Path to the `cognicode-release` binary built by the preflight.
+///
+/// Resolution order (first match wins):
+///
+/// 1. `COGNICODE_RELEASE_BIN` — absolute path to the release-profile
+///    tool. Asserted to exist and returned verbatim.
+/// 2. The same resolution chain as `binary_path` (robust under
+///    `CARGO_TARGET_DIR` overrides and stale `target/` directories),
+///    **plus** a profile assertion: the resolved binary must live in a
+///    directory named `release`.
+///
+/// Why the profile assertion exists: Cargo exports
+/// `CARGO_BIN_EXE_<name>` to integration tests, and under a plain
+/// `cargo test` that variable resolves to the **debug** build. Without
+/// the assertion the release-flow suites would execute debug-profile
+/// bytes and certify a release candidate nobody built — green results
+/// about the wrong artifact. A suite whose contract is "the release
+/// binary does X" has to fail when the bytes it is about to run are not
+/// release bytes.
 pub fn release_bin_path() -> PathBuf {
+    if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN") {
+        let p = PathBuf::from(raw);
+        assert!(
+            p.exists(),
+            "COGNICODE_RELEASE_BIN={} does not exist; point it at the absolute \
+             path of the release-profile `cognicode-release` binary (built with \
+             `cargo build --release --bin cognicode-release`)",
+            p.display()
+        );
+        // The override names the artifact, so it has to satisfy the property
+        // the override exists to establish: an override pointing at
+        // `debug/cognicode-release` would re-open, through the variable that is
+        // meant to close it, the hole the profile assertion below closes.
+        assert_release_profile(&p, "COGNICODE_RELEASE_BIN");
+        return p;
+    }
     let p = binary_path("cognicode-release");
     assert!(
         p.exists(),
         "cognicode-release binary missing at {}; build it first (`cargo build --release --bin cognicode-release`)",
         p.display()
     );
+    assert_release_profile(&p, "release_bin_path");
     p
+}
+
+/// Assert that `path` lives in a directory named `release`.
+///
+/// See `release_bin_path` for why the profile matters: the release-flow
+/// suites must execute release-profile bytes, and Cargo's
+/// `CARGO_BIN_EXE_*` fallback would otherwise let them run a debug build
+/// that happens to exist.
+fn assert_release_profile(path: &Path, ctx: &str) {
+    let in_release = path
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .is_some_and(|name| name == "release");
+    assert!(
+        in_release,
+        "{ctx}: resolved binary {} is not in a `release` profile directory; \
+         the release-flow suites must test release-profile bytes. Build with \
+         `cargo build --release --bin <name>` or set \
+         COGNICODE_RELEASE_BIN=/abs/path/to/release/<name> and re-run.",
+        path.display()
+    );
 }
 
 /// Absolute path to the `release/` directory that contains the
@@ -175,14 +229,25 @@ pub fn release_bin_path() -> PathBuf {
 ///
 /// Resolution order (first match wins):
 ///
-/// 1. The parent of the resolved cognicode binary when that parent
+/// 1. `COGNICODE_RELEASE_BIN_DIR` — absolute path to the release
+///    directory. Asserted to be an existing directory, returned
+///    verbatim.
+/// 2. The parent of the resolved cognicode binary when that parent
 ///    already ends with `release` (e.g. when `cargo test --release`
 ///    was used). Same path as `cargo build --release` would write to.
-/// 2. The sibling `release/` directory when the resolved cognicode
+/// 3. The sibling `release/` directory when the resolved cognicode
 ///    binary lives in `debug/` (the usual case under `cargo test`
 ///    without `--release`). This directory is normally populated by
 ///    a separate `cargo build --release` invocation.
-/// 3. The literal `<repo_root>/target/release` — workspace default.
+/// 4. The literal `<repo_root>/target/release` — workspace default.
+///
+/// Without an override the resolved path must end with a `release`
+/// component or this function fails. The reason is the one given in
+/// `release_bin_path`: Cargo exports `CARGO_BIN_EXE_<name>` to
+/// integration tests and under a plain `cargo test` that variable points
+/// at the **debug** build, so a release-flow suite could splice release
+/// names onto a debug directory and stay green while reading artifacts
+/// that were never built for release.
 ///
 /// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
 /// because it breaks under a global `~/.cargo/config.toml`
@@ -190,6 +255,53 @@ pub fn release_bin_path() -> PathBuf {
 /// Cargo for the integration test, falling back to the workspace
 /// default only when it fails.
 pub fn release_dir() -> PathBuf {
+    if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN_DIR") {
+        let dir = PathBuf::from(raw);
+        assert!(
+            dir.is_dir(),
+            "COGNICODE_RELEASE_BIN_DIR={} is not an existing directory; point it \
+             at the directory holding the release-profile binaries (cogh, \
+             cognicode, cognicode-mcp), e.g. `$CARGO_TARGET_DIR/release`",
+            dir.display()
+        );
+        assert!(
+            dir.ends_with("release"),
+            "COGNICODE_RELEASE_BIN_DIR={} does not end with a `release` \
+             component; the release-flow suites must read release-profile \
+             artifacts, and this variable is how the lane that built them says \
+             so",
+            dir.display()
+        );
+        return dir;
+    }
+    let resolved = resolve_release_dir();
+    assert!(
+        resolved.ends_with("release"),
+        "release_dir: resolved {} does not end with a `release` component; the \
+         release-flow suites must read release-profile artifacts, not the debug \
+         build Cargo produced for this test. Build with `cargo build --release` \
+         or set COGNICODE_RELEASE_BIN_DIR=/abs/path/to/release and re-run.",
+        resolved.display()
+    );
+    // Existing at all is the other half of the guarantee: a path that ends in
+    // `release` but is not there used to surface as a `src.exists()` panic
+    // inside each suite, naming a binary without naming the build that produces
+    // it. Failing here names the directory and the command that fills it.
+    assert!(
+        resolved.is_dir(),
+        "release_dir: {} does not exist, so the release-profile binaries this \
+         suite reads were never built. Build them with `cargo build --release \
+         -p cognicode-cli --bins` and `cargo build --release -p cognicode-mcp`, \
+         or point COGNICODE_RELEASE_BIN_DIR at the directory that holds them.",
+        resolved.display()
+    );
+    resolved
+}
+
+/// `release_dir` without the overrides, so the profile assertion above
+/// covers every branch it can return (today they all end in `release` by
+/// construction; the assertion is what keeps that true).
+fn resolve_release_dir() -> PathBuf {
     let probe = binary_path("cognicode");
     let parent = probe
         .parent()

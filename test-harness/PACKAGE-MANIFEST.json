@@ -37,6 +37,11 @@
       "bytes": 1031
     },
     {
+      "path": "adrs/ADR-TH-005-dueno-unico-por-suite.md",
+      "sha256": "adc974e1cedf841cc78aca7ea0c61a31c3fcb8c318c885baad4164839c776955",
+      "bytes": 4873
+    },
+    {
       "path": "contracts/README.md",
       "sha256": "2f0a0a29361e2b52d05353d01d04ed2e35cf140714a0d5aac0b27bee20a22f41",
       "bytes": 1461
@@ -110,6 +115,11 @@
       "path": "docs/06-rutas-y-referencias.md",
       "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c",
       "bytes": 1954
+    },
+    {
+      "path": "docs/07-auditoria-merge-gate.md",
+      "sha256": "39fbb27c4c3f00dd1e5d480c349b66dbc0fef31dd42f8bf7721ea6d5782aef26",
+      "bytes": 36408
     },
     {
       "path": "prompts/MANDATO-AGENTE.md",

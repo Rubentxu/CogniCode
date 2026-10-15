@@ -38,7 +38,7 @@
 use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
 use cognicode_core::interface::intent::{Intent, route_intent};
 use serde_json::{Value, json};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // -----------------------------------------------------------------------
@@ -256,12 +256,33 @@ fn intent_tags_in_catalog_match_route_intent() {
 
 fn cognicode_bin() -> Option<PathBuf> {
     // Mirror the resolution strategy used in cognicode-cli/tests:
-    // 1. CARGO_BIN_EXE_cognicode at compile time (set when running
+    // 1. COGNICODE_CLI_BIN: override explícito. Cuando está seteado es la
+    //    respuesta: se asserta existencia y permiso de ejecución, y no hay
+    //    fallback, para que un typo falle aquí en vez de testear otro build
+    //    en silencio.
+    // 2. CARGO_BIN_EXE_cognicode at compile time (set when running
     //    `cargo test` against the cognicode-cli crate).
-    // 2. Same env var at runtime (cargo-nextest, manual wrappers).
-    // 3. CARGO_TARGET_DIR override (this environment uses one).
-    // 4. Workspace-relative target/.
+    // 3. Same env var at runtime (cargo-nextest, manual wrappers).
+    // 4. CARGO_TARGET_DIR override (this environment uses one).
+    // 5. Workspace-relative target/.
 
+    if let Some(explicit) = std::env::var_os("COGNICODE_CLI_BIN") {
+        let p = PathBuf::from(explicit);
+        assert!(
+            p.exists(),
+            "COGNICODE_CLI_BIN={} no existe. Apúntalo al binario `cognicode` \
+             compilado (`cargo build -p cognicode-cli --bin cognicode`) o \
+             desexporta la variable para usar la búsqueda por target-dir.",
+            p.display()
+        );
+        assert!(
+            is_executable(&p),
+            "COGNICODE_CLI_BIN={} existe pero no es ejecutable. \
+             `cargo build -p cognicode-cli --bin cognicode` produce un ejecutable.",
+            p.display()
+        );
+        return Some(p.canonicalize().unwrap_or(p));
+    }
     if let Some(p) = option_env!("CARGO_BIN_EXE_cognicode") {
         let p = PathBuf::from(p);
         if p.exists() {
@@ -305,22 +326,35 @@ fn cognicode_bin() -> Option<PathBuf> {
     None
 }
 
+/// `true` si `path` es un fichero regular con al menos un bit de ejecución.
+///
+/// Lo usa el override `COGNICODE_CLI_BIN`: un path que existe pero no se
+/// puede lanzar fallaría más tarde con un `PermissionDenied` que no dice
+/// qué variable de entorno está mal.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
 #[test]
 fn inspect_subcommand_does_not_panic_on_arbitrary_input() {
     // The scaffold must compile and exit 0 on any of these shapes.
     // We don't pin the exact routing (that's B3.W5); we pin that
     // the binary survives arbitrary free-text input.
-    let bin = match cognicode_bin() {
-        Some(p) => p,
-        None => {
-            eprintln!(
-                "cognicode binary not found; skipping the subprocess test. \
-                 Build with `cargo build -p cognicode-cli --bin cognicode` \
-                 and re-run."
-            );
-            return;
-        }
-    };
+    let bin = cognicode_bin().unwrap_or_else(|| {
+        panic!(
+            "binario `cognicode` no encontrado: este test solo tiene sentido \
+             contra el binario real (su sujeto es el comportamiento del \
+             subcomando `inspect`), y saltarlo sería un verde vacío.\n\
+             Compílalo con `cargo build -p cognicode-cli --bin cognicode` \
+             (añade `--release` y ajusta CARGO_TARGET_DIR si tu config lo \
+             redirige), o exporta COGNICODE_CLI_BIN=/ruta/absoluta/a/cognicode \
+             y re-ejecuta \
+             `cargo test -p cognicode-core --test b3_w2_progressive_context`."
+        )
+    });
 
     let inputs: &[&[&str]] = &[
         &["inspect", "fn", "foo"],
