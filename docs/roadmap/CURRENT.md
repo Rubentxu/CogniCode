@@ -9,8 +9,9 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre `main` mergeado
-> `88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb` (PR #348 integrado). Los seis
+> **Snapshot**: 2026-10-15, sobre `release/v0.101.17`
+> `1a70ea11fb16b43c2038a69fa42263a850b3b0c2` (PR #348 mergeado en `main` como
+> `88f6d02a`; este trabajo corrige el gate sobre el). Los seis
 > gates reparados que se listaban sobre
 > `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` siguen en el árbol, **pero el
 > veredicto que se les atribuyó era falso**: la etapa `tests` del merge gate
@@ -36,9 +37,24 @@
 * **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
   (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
   contenido dentro de #348).
-* **SHA funcional**: `88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb`.
+* **SHA funcional**: `1a70ea11fb16b43c2038a69fa42263a850b3b0c2`.
 * **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
+* **Estado del gate**: cuatro correcciones encadenadas el 2026-10-15 antes de
+  que el gate volviera a correr entero. Cada una la encontró el gate, no una
+  revisión, y tres eran de este mismo trabajo:
+
+  | Corrida | Paró en | Causa |
+  |---|---|---|
+  | 1 | `core-unrestricted-evidence-kernel` | `prf_h06_adversarial_e2e` nombrado bajo el crate que ya no lo contenía |
+  | 2 | `core-unrestricted-evidence-kernel` | `build-binary` estaba *después* del primer consumidor |
+  | 3 | `fmt` | dos líneas mías sin `cargo fmt`, en 13 s |
+  | 4 | `contracts` | este mismo ratchet, por 4 commits de distancia |
+
+  La primera medición del gate —687 s en 8 etapas— era de un gate que ejecutaba
+  4 de sus 39 tests. Las cifras de abajo son las que se midieron después de
+  arreglarlo.
+
 * **Batería — MEDIDAS, y ya no son las de antes.** Las cifras de este
   snapshot se retiraron el 2026-10-15 porque se midieron sobre el gate
   colapsado de 73 a 8 etapas, en el que la etapa `tests` ejecutaba **4 de sus
