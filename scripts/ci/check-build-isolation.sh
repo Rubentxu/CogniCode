@@ -46,9 +46,19 @@ cd "$REPO_ROOT"
 
 self_root="$(pwd -P)"
 
-# `build.target-dir` vive en la config global, así que todos los checkouts de
-# esta máquina comparten destino. `cargo metadata` lo dice con la config del
-# operador aplicada, que es la única fuente que no se puede equivocar.
+# MEDIDO 2026-10-15. Una corrida que fija `CARGO_TARGET_DIR` tiene destino
+# propio, así que los otros cinco checkouts **no pueden** escribir en él: la
+# contaminación que este script detecta es imposible por construcción. Sin esta
+# salida, el preflight rechazaba precisamente el remedio que recomienda — y
+# publicar un gate que nunca puede pasar es peor que no tener preflight.
+#
+# No se acepta cualquier valor: tiene que ser un destino explícito y distinto
+# del compartido. Si la variable viene vacía, o apunta al mismo destino de
+# siempre, no cuenta como aislamiento y se sigue por el camino normal —
+# si no, sería una forma de apagar la comprobación declarando su propio
+# destino.
+isolated_target="${CARGO_TARGET_DIR:-}"
+
 target_dir="$(cargo metadata --format-version 1 --no-deps 2>/dev/null \
     | sed -E 's/.*"target_directory":"([^"]*)".*/\1/')"
 # MEDIDO 2026-10-15: la primera versión de esta comprobación era
@@ -67,6 +77,15 @@ case "$target_dir" in
         exit 0
         ;;
 esac
+
+# El aislamiento declarado manda sobre todo lo que viene después: si esta
+# corrida escribe en un destino que los otros checkouts no comparten, su
+# veredicto es atribuible por construcción, haya quien compile o no.
+if [ -n "$isolated_target" ] && [ "$isolated_target" != "$target_dir" ]; then
+    echo "build isolation: this run writes to its own target dir ($isolated_target),"
+    echo "build isolation: which sibling checkouts cannot reach; verdict is attributable"
+    exit 0
+fi
 
 # Todos los checkouts de este repo, y cuál es el que está corriendo esto.
 others=()

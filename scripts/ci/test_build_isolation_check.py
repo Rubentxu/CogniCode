@@ -128,9 +128,18 @@ def build_fixture(tmp: Path, ps_lines: str) -> Path:
     return repo
 
 
-def run_check(repo: Path, stub_bin: Path) -> subprocess.CompletedProcess:
+def run_check(
+    repo: Path,
+    stub_bin: Path,
+    env_extra: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     env = dict(os.environ)
     env["PATH"] = f"{stub_bin}:{env['PATH']}"
+    # The real machine may already export CARGO_TARGET_DIR; the fixtures below
+    # mean "unset" unless they say otherwise.
+    env.pop("CARGO_TARGET_DIR", None)
+    if env_extra:
+        env.update(env_extra)
     return subprocess.run(
         ["bash", "scripts/ci/check-build-isolation.sh"],
         cwd=repo,
@@ -238,7 +247,58 @@ def test_the_check_stays_quiet_when_there_is_no_reason() -> None:
         )
 
 
-def run_check_with_named_ps(repo: Path, tmp: Path, name: str) -> subprocess.CompletedProcess:
+def test_a_declared_isolated_target_dir_wins() -> None:
+    """MEDIDO 2026-10-15: the preflight rejected its own remedy.
+
+    The message it prints when it refuses tells the operator to run
+    `CARGO_TARGET_DIR=/tmp/... bash scripts/ci/publish-merge-gate.sh`. The
+    script checked `git worktree list` and `ps` and never looked at
+    `CARGO_TARGET_DIR`, so it refused that run too — while a sibling
+    checkout was compiling, which under an isolated destination cannot
+    happen at all. A gate that refuses the only way to make it trustworthy
+    is worse than having no preflight at all.
+
+    So a declared, different target directory must short-circuit the
+    refusal.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        repo = build_fixture(tmp, ps_lines="")
+        proc = run_check_with_named_ps(
+            repo, tmp, name=f"{tmp / 'other'}/cargo", env_extra={"CARGO_TARGET_DIR": "/tmp/its-own-target"}
+        )
+        check(
+            proc.returncode == 0,
+            "the check refused a run that declared its own CARGO_TARGET_DIR, "
+            "even with a sibling checkout compiling. That is the remedy the "
+            "refusal message recommends, so following it makes the gate "
+            "permanently red. "
+            f"stdout={proc.stdout!r} stderr={proc.stderr[:300]!r}",
+        )
+
+    # And the same declaration must NOT let a run through when it points at the
+    # shared destination it was supposed to escape from.
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        repo = build_fixture(tmp, ps_lines="")
+        proc = run_check_with_named_ps(
+            repo, tmp, name=f"{tmp / 'other'}/cargo", env_extra={"CARGO_TARGET_DIR": "/tmp/shared-target"}
+        )
+        check(
+            proc.returncode == 1,
+            "the check accepted CARGO_TARGET_DIR pointing at the very shared "
+            "directory the run was trying to escape. Declaring the shared "
+            "path is not isolation; if it counted, the variable would be a "
+            "way to switch the check off.",
+        )
+
+
+def run_check_with_named_ps(
+    repo: Path,
+    tmp: Path,
+    name: str,
+    env_extra: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess:
     """run_check, but the fake `ps` reports one process whose args contain `name`."""
     stub_bin = tmp / "stub-bin"
     ps = stub_bin / "ps"
@@ -247,7 +307,7 @@ def run_check_with_named_ps(repo: Path, tmp: Path, name: str) -> subprocess.Comp
         f"cat <<'PS'\n  1234 {name} --release\nPS\n"
     )
     ps.chmod(0o755)
-    return run_check(repo, stub_bin)
+    return run_check(repo, stub_bin, env_extra=env_extra)
 
 
 def main() -> int:
