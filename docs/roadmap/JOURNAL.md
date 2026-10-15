@@ -14951,3 +14951,83 @@ rojo.
   decenas de minutos. El presupuesto de 15 min que se aprobó con este gate
   descansaba en una medición de un gate que ejecutaba 4 de 39 tests. Sigue sin
   rededicirse, y es una decisión del operador.
+
+---
+
+## 2026-10-15 — El gate no puede dar veredicto en esta máquina: seis checkouts, un target dir
+
+**Decisión del operador**: publicar `v0.101.17` sin el merge gate en verde.
+Motivo declarado por el operador: el bloqueo es de entorno, no de código.
+
+**Lo que el agente NO hace, por política**: no postea el status `merge-gate`,
+no toca la protección de `main`, noAssume la firma. Que la decisión sea del
+operador es justamente lo que la política contempla; lo que no puede hacer
+el agente es **asumirla**. Por eso este recibo dice `FAIL` y no `PASS`.
+
+### Los dos hechos, con evidencia
+
+**1. Un binario de otro checkout ejecutándose como si fuera de este.**
+
+    core_gate_coverage_contract.rs:900 — the_rustdoc_gate_runs_in_the_merge_authority FAILED
+
+Ese test **no existe en este árbol**. El fichero en disco tiene 861 líneas y
+contiene la versión relajada, `the_rustdoc_gate_runs_in_a_pipeline`, con la nota
+«MOVED 2026-10-15, con la aprobación del operador». El binario compilado
+contenía otra versión, más larga. `touch` sobre el fuente y recompilar: 10 passed.
+
+**2. El caso inverso, con el nombre del culpable.**
+
+    source_commit (d5082848…) must match git rev-parse HEAD (d73e7b08…)
+
+`d73e7b08` es el HEAD de `worktree/test-harness`. El test comparó el binario
+compilado en **otro checkout** contra el HEAD de **este**.
+
+    git worktree list
+      …/CogniCode                          d5082848  [release/v0.101.17]
+      …/.herdr/worktrees/…/test-harness    d73e7b08  [worktree/test-harness]
+      …/cog-cand-v0101                     2c4831ec
+      …/cog-fix-skills                     978b24c3
+      …/cog-integrated                     2840f2f3
+      …/cog-rel-v01011                     4faa0138
+
+    cargo metadata --no-deps → target_directory = /var/home/rubentxu/cargo-targets
+
+Los seis compilan al mismo directorio. Cargo decide frescura por mtime, y el
+mtime no dice de qué checkout salió el binario. Doce procesos lo estaban
+usando en el momento de medirlo.
+
+### Lo que esto deja sin valor
+
+**Las corridas 7 y 8 tampoco valen.** No porque se sabe que estén mal, sino
+porque no hay forma de distinguir un verde de este árbol de un verde que vino
+de otro. Un gate que puede 执行 el binario de cualquiera de los cinco árboles
+no es un gate: es un generador de resultados. Es la misma enfermedad que
+[BLOQUE 1] persigue —«defectos que permiten obtener pruebas verdes engañosas»—
+con el signo invertido: aquí produce un **rojo que no es real**, y un verde que
+tampoco. La acusación y la defensa son el mismo fallo.
+
+### Para qué sirve la evidencia
+
+Los dos fallos fueron **diagnosticados, no depurados**: el primero por un panic
+más allá del final del fichero, el segundo porque el mensaje de aserción trae
+el SHA ajeno. Ninguno de los dos es un defecto de `d5082848`.
+
+### Lo que haría falta para cerrar esto en serio
+
+Un target dir aislado por corrida (`CARGO_TARGET_DIR` como variable de entorno
+de un solo proceso; no toca ningún fichero de configuración y no invalida la
+caché compartida que AGENTS.md manda preservar), o serializar las sesiones. Sin
+una de las dos, **ningún resultado de gate en esta máquina es atribuible**, y eso
+es un hecho de infraestructura, no una opinión.
+
+### Estado de los gates en el momento de publicar
+
+| Gate | Estado | Motivo |
+|---|---|---|
+| `merge-gate` | **FAIL** | dos corridas; la última en `cli-unrestricted-ladybug`, contaminada entre worktrees |
+| `integration` | **NOT_RUN** | arrancada y abortada; fuera del alcance mínimo que fijó el operador |
+| `certification` | **NOT_RUN** | no ejecutada |
+| `cr07_metrics_exposition_contract` | flake abierto | verde en 6, 7 y 8; sin reproducir nunca |
+
+Ninguno de los tres está `PASS`. La release se publica **por decisión explícita
+del operador y con esta tabla a la vista**, no porque los gates lo permitieran.
