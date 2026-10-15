@@ -45,8 +45,6 @@ const BLACKBOX_CONTRACTS: &[(&str, &str)] = &[
     ("a009_agent_safe_profile", "cognicode-mcp"),
     ("a010_tool_authority_audit", "cognicode-mcp"),
     ("a012_structured_output", "cognicode-mcp"),
-    ("a013_lifecycle_uat", "cognicode-mcp"),
-    ("prf_sec_02_read_only_uat", "cognicode-mcp"),
     // Same `--lib` blind spot, different crate. A-014 publishes the
     // `cognicode.capabilities/v1` document that the skill bundles and the
     // integration adapters consume, so a silent schema break there is as
@@ -54,20 +52,6 @@ const BLACKBOX_CONTRACTS: &[(&str, &str)] = &[
     ("a014_capabilities_json", "cognicode-cli"),
     ("a015_licenses_gate", "cognicode-cli"),
 ];
-
-#[test]
-fn a013_lifecycle_uat_is_pinned_in_the_merge_gate() {
-    assert!(
-        merge_authority_runs("--test a013_lifecycle_uat"),
-        "The A-013 lifecycle contract exists and passes locally, but the CR-08 \
-         `mcp` suite runs `cargo test -p cognicode-mcp --lib`, which never \
-         compiles tests/ — so the startup -> shutdown contract is unprotected.\n{}",
-        not_run_message(
-            "cargo test -p cognicode-mcp --test a013_lifecycle_uat",
-            "a013_lifecycle_uat must run in the merge authority"
-        )
-    );
-}
 
 #[test]
 fn every_blackbox_mcp_contract_is_pinned() {

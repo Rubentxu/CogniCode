@@ -103,9 +103,10 @@ fn symlink_to_etc_passwd_is_rejected_at_filesystem_level() {
          the REJECTION happens later in the input validator (PRF-SEC-01)"
     );
 
-    // The downstream rejection is covered by `crates/cognicode-mcp/tests/
-    // prf_sec_01_uat.rs::path_outside_workspace_*`. We pin here only
-    // the adversarial fixture itself.
+    // The downstream rejection was covered by the retired MCP path-allowlist
+    // UAT (ADR-TH-006); `prf_sec_02_read_only_uat`'s surviving cousin is
+    // `a009_agent_safe_profile`, which pins the profile-level promise against
+    // the real binary. We pin here only the adversarial fixture itself.
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +122,9 @@ fn binary_garbage_reports_parser_failure_via_classification() {
     // the analysis_service test harness, but we can pin the contract
     // shape: PRF-ANA-02 mandates that corrupt/non-UTF8 input surfaces
     // as `SkippedFile { reason_kind: parse | read, ... }`, never a
-    // silent drop. This test asserts the **fixture** is what we expect
-    // and that the runtime path is exercised separately in
-    // `crates/cognicode-core/tests/prf_ana_02_uat.rs`.
+    // silent drop. This test asserts the **fixture** is what we expect; the
+    // integration path that used to exercise it (a UAT) was retired with the
+    // class on 2026-10-15 (ADR-TH-006).
     let tmp = TempDir::new().expect("tempdir");
     let bad = tmp.path().join("garbage.rs");
     // 0xFF 0xFE 0xFD ... is invalid UTF-8 byte sequence.
@@ -165,9 +166,10 @@ fn decoy_secret_in_source_is_not_leaked_to_diagnostics() {
 
     // The contract (PRF-SEC-03): no log line, no telemetry output, no
     // diagnostic message may contain the literal token. We assert the
-    // fixture itself contains the token (the seed is real) and rely on
-    // the `prf_sec_03_uat.rs` integration test to prove the assertion
-    // holds at runtime. Here we only ensure the fixture is reproducible.
+    // fixture itself contains the token (the seed is real); the integration
+    // test that used to prove the runtime side was a UAT, retired with the class
+    // on 2026-10-15 (ADR-TH-006). Here we only ensure the fixture is
+    // reproducible.
     let read = fs::read_to_string(&src).expect("read");
     assert!(
         read.contains(DECOY_TOKEN),
@@ -253,10 +255,10 @@ fn unknown_tool_name_defaults_to_mutating() {
 fn disconnected_client_does_not_leak_resources_at_library_level() {
     // At the library level the relevant surface is the
     // `lifecycle_journal` writer, which we already cover with the atomic
-    // write test (§91). The PRF-SEC-07 vector "cliente desconectado"
-    // is exercised end-to-end by `crates/cognicode-cli/tests/
-    // prf_dist_workflow_flatten_uat.rs` and by the smoke check on the
-    // release-install-smoke step. Here we pin the contract: a handler
+    // write test (§91). The PRF-SEC-07 vector "cliente desconectado" is
+    // exercised end-to-end by the smoke check on the release-install-smoke
+    // step; the flatten UAT that also covered it was retired with the class on
+    // 2026-10-15 (ADR-TH-006). Here we pin the contract: a handler
     // that receives an empty arguments map and no stdin should return
     // a typed error, not panic.
     //

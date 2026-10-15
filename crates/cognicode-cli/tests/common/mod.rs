@@ -100,9 +100,9 @@ fn runtime_bin_exe(name: &str) -> Option<std::ffi::OsString> {
 // ---------------------------------------------------------------------------
 // CR-00c: helpers de workspace para tests de release-flow.
 //
-// Antes, cada test (`prf_dist_01_06_release_candidate_uat`,
-// `prf_dist_workflow_flatten_uat`, `prf_f6_w2_staging_contract`,
-// `prf_f6_w1_release_coherence`) tenía su propio `repo_root()` calculado
+// Antes, cada test de release-flow (`prf_f6_w1_release_coherence`,
+// `prf_f6_w2_staging_contract`, `published_skill_bundles_are_required`)
+// tenía su propio `repo_root()` calculado
 // y `const VERSION: &str = "0.97.4"` hardcoded. Esto los hacía
 // NO-herméticos en clean clone (la versión 0.97.4 no corresponde al
 // workspace actual, los payloads generados no satisfacían el check R8 del
@@ -193,7 +193,7 @@ pub fn release_bin_path() -> PathBuf {
         assert_release_profile(&p, "COGNICODE_RELEASE_BIN");
         return p;
     }
-    let p = binary_path("cognicode-release");
+    let p = release_profile_preferred(binary_path("cognicode-release"));
     assert!(
         p.exists(),
         "cognicode-release binary missing at {}; build it first (`cargo build --release --bin cognicode-release`)",
@@ -201,6 +201,29 @@ pub fn release_bin_path() -> PathBuf {
     );
     assert_release_profile(&p, "release_bin_path");
     p
+}
+
+/// The same binary in the release profile, when a sibling `release/` exists.
+///
+/// `binary_path` prefers `CARGO_BIN_EXE_*`, and under a plain `cargo test` that
+/// variable is the **debug** build the test harness just produced. A lane that
+/// built the release profile (the clean-clone preflight, the integration lane,
+/// the candidate lane) has the artifact one directory over. Preferring it is what
+/// keeps the profile assertion below from failing in those lanes while still
+/// failing when nothing release-profile exists at all.
+fn release_profile_preferred(path: PathBuf) -> PathBuf {
+    let parent = match path.parent() {
+        Some(p) if p.file_name().is_some_and(|n| n == "debug") => p,
+        _ => return path,
+    };
+    let Some(name) = path.file_name() else {
+        return path;
+    };
+    let Some(dir) = parent.parent() else {
+        return path;
+    };
+    let sibling = dir.join("release").join(name);
+    if sibling.exists() { sibling } else { path }
 }
 
 /// Assert that `path` lives in a directory named `release`.

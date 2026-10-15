@@ -225,10 +225,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
+    // 66 -> 65 on 2026-10-15: `prf_ext_04_adapter_authority_uat` was deleted
+    // with the rest of the UAT class by operator decision (ADR-TH-006). A file
+    // that goes away on purpose moves this number in the same commit, which is
+    // what this assertion is for.
     assert_eq!(
         suites.len(),
-        66,
-        "expected exactly 66 cognicode-core integration suites, found {}. \
+        65,
+        "expected exactly 65 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -381,7 +385,6 @@ const ANCHOR_SUITES: &[&str] = &[
     "identity_benchmark",
     "inc007_integration",
     "intelligence_event_log_e2e",
-    "prf_ext_04_adapter_authority_uat",
     "provider_conformance",
     "read_set_e2e",
     "roadmap_claims_contract",
