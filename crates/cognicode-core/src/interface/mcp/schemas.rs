@@ -320,7 +320,21 @@ pub struct ViolationInfo {
 // Safe Refactor
 // ============================================================================
 
+/// Read-only refactor request.
+///
+/// `deny_unknown_fields` is the AAT-B5-03 guarantee, and it is load-bearing:
+/// this is the *preview* input, the one that crosses the read-only MCP
+/// boundary, and `apply` takes its `AuthorizationToken` over a separate
+/// channel. Without it, serde silently drops an `authorization_token` field
+/// a caller sent — the preview would accept a write-authority field and
+/// ignore it, and the caller would believe it had done something.
+///
+/// The test that pins this (`b5_w3_apply_with_authority::
+/// read_only_mcp_tool_cannot_acquire_write_authority`) was written before the
+/// attribute was here. It never reported the gap because it lives in
+/// `core-unrestricted-evidence-kernel`, which had never completed a run.
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SafeRefactorInput {
     pub action: RefactorAction,
     pub target: String,
