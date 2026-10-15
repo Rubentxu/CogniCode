@@ -109,19 +109,15 @@ val cdLog = "mkdir -p \"$logDir\""
 
 pipeline {
     stages {
-        stage("static") {
-            // toolchain fmt clippy — what a merge has to look clean
-            // Formerly 4 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── toolchain
-            # ─────────────────────────────────────────────
-cargo --version && rustc --version
+        // ---------------------------------------------------------------- check
+        stage("check") {
+            stage("toolchain") {
+                sh("cargo --version && rustc --version")
+            }
 
-            # ── repo-contract
-            # ─────────────────────────────────────────────
-
+            stage("repo-contract") {
+                sh("""
+            set -eo pipefail
                     test -f "$repoRoot/Cargo.toml" || {
                         echo "FAIL: $repoRoot has no Cargo.toml"
                         exit 1
@@ -136,95 +132,151 @@ cargo --version && rustc --version
                         exit 1
                     }
                     echo "repo=$repoRoot authority=$authority crates=$(ls -d $repoRoot/crates/*/ | wc -l)"
+                """.trimIndent())
+            }
 
-            # ── fmt
-            # ─────────────────────────────────────────────
-$cd && cargo fmt --all -- --check
+            stage("fmt") {
+                sh("$cd && cargo fmt --all -- --check")
+            }
 
-            # ── clippy
-            # ─────────────────────────────────────────────
-$cd && cargo clippy --workspace --all-targets -- -D warnings
-            """.trimIndent())
+            stage("clippy") {
+                // pr-ci.yml:78 — bare `cargo clippy --workspace --all-targets -- -D warnings`.
+                // The previous stage name "clippy-baseline" carried an allowlist for 42
+                // pre-existing errors in rig/tools.rs that no longer exist (cargo clippy
+                // reports 0 on the current tree). The baseline was dead and the pipeline
+                // permitted more than CI; restored to the bare assertion CI runs.
+                sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
+            }
+
+            
+
+            // MEDIDO 2026-10-15. Las dependencias Python del contrato se
+            // declaran ANTES de `contracts`, no despues. `skills-toolchain`
+            // instalaba PyYAML aqui, debajo, y por eso podia: cuando esta stage
+            // corria, `contracts` ya habia terminado, y cualquier dependencia
+            // que la suite de contratos necesite ya no llega a tiempo.
+            //
+            // No es hipotetico. `scripts/product/test_product_tool_catalog.py`
+            // hacia `try: import jsonschema / except ImportError: return` — la
+            // validacion de schema del catalogo de tools publicado se saltaba
+            // en silencio y el test reportaba PASS. En un runner limpio
+            // (ubuntu-latest no trae jsonschema) ese gate estaba apagado y
+            // verde. Es el mismo antipatron que este lane ya documenta para
+            // PyYAML mas abajo, aplicado a otro import.
+            //
+            // El runner instala desde aqui: no hay fichero de requirements para
+            // estas dependencias, asi que esta linea ES la declaracion.
+            stage("contract-toolchain") {
+                sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\" \"jsonschema==4.25.1\"")
+            }
+
+            // The contract suite. One entry point, no list: the pipeline names a
+            // script, the script discovers `scripts/ci/test_*.py` by glob. The
+            // previous shape named eight contract files inside pr-ci.yml, which
+            // meant a new contract passed locally and ran in CI only if whoever
+            // wrote it also edited that YAML — how the CP5 skill gate stayed
+            // green while no workflow invoked it.
+            stage("contracts") {
+                sh("$cd && bash scripts/ci/run-all-contracts.sh")
+            }
+
+            // CP5 / A-033..A-036. `validate_skills.py` resolves tool names from
+            // the published catalog rather than a private list; `verify-skills.sh`
+            // checks each bundle has a manifest. Both were correct, both passed,
+            // and no workflow invoked them until 2026-10-02.
+            //
+            // PyYAML is declared rather than trusted from the runner image:
+            // validate_skills.py degrades to a printed SKIP without it, and
+            // verify-skills.sh aborts on `import yaml`. Neither is a failure, and
+            // both are how a gate goes stale in silence. It is installed by
+            // `contract-toolchain` above, which runs first; installing it here
+            // as well would be a second declaration of the same pin, and the
+            // second one would still be too late for the contract suite.
+            stage("skills-validate") {
+                sh("$cd && python3 scripts/validate_skills.py")
+            }
+
+            stage("skills-bundles") {
+                sh("$cd && bash scripts/verify-skills.sh")
+            }
         }
 
-                stage("contracts") {
-            // the checks that keep every other gate honest
-            // Formerly 2 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── contract-toolchain
-            # ─────────────────────────────────────────────
-            $cd || exit 1
-            python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\" \"jsonschema==4.25.1\"
-
-            # ── contracts
-            # ─────────────────────────────────────────────
-$cd && bash scripts/ci/run-all-contracts.sh
-            """.trimIndent())
-        }
-
-        stage("skills") {
-            // skill bundles resolve their tools from the published catalog
-            // Formerly 2 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── skills-validate
-            # ─────────────────────────────────────────────
-$cd && python3 scripts/validate_skills.py
-
-            # ── skills-bundles
-            # ─────────────────────────────────────────────
-$cd && bash scripts/verify-skills.sh
-            """.trimIndent())
-        }
-
+        // ---------------------------------------------------------- supply-chain
+        // pr-ci.yml's `supply-chain` job, added in 05c66126. Advisories and
+        // licences ran at tag time and never on a pull request, so a dependency
+        // with a published advisory merged unnoticed.
+        //
+        // cargo-deny is installed with a fixed version on purpose: `--locked`
+        // alone pins its dependencies while floating the tool, so the gate's
+        // behaviour would change with no commit in this repository.
+        // Measured 2026-10-02 on this machine: 1m43s to install from scratch.
         stage("supply-chain") {
-            // advisories and licences of the dependency graph
-            // Formerly 3 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── install-cargo-deny
-            # ─────────────────────────────────────────────
-
+            stage("install-cargo-deny") {
+                sh(
+                    """
+set -eo pipefail
                     $cd || exit 1
                     if command -v cargo-deny >/dev/null 2>&1; then
                         echo "cargo-deny already present, skipping install"
                     else
                         cargo install cargo-deny --version 0.20.2 --locked
                     fi
+                    """.trimIndent(),
+                )
+            }
 
-            # ── advisories
-            # ─────────────────────────────────────────────
-$cd && cargo deny check advisories
+            stage("advisories") {
+                sh("$cd && cargo deny check advisories")
+            }
 
-            # ── licenses
-            # ─────────────────────────────────────────────
-$cd && cargo deny check licenses
-            """.trimIndent())
+            stage("licenses") {
+                sh("$cd && cargo deny check licenses")
+            }
         }
 
-        stage("lsp") {
-            // the LSP provider answers against a real rust-analyzer
-            // Formerly 2 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── install-rust-analyzer
-            # ─────────────────────────────────────────────
-
+        // ── El binario LSP del gate, y por que tiene que estar aqui ────────
+        //
+        // MEDIDO 2026-10-04. El gate corre `cargo test -p cognicode-core
+        // --lib`, y en esa suite vive
+        // `test_hierarchy_falls_through_within_the_bounded_readiness`, que se
+        // auto-salta con un `println!` cuando `rust-analyzer` no esta en el
+        // PATH. Es decir: el gate se saltaba el test y daba verde. Y no era
+        // solo que faltara el binario: el shim de rustup lo hace existir sin
+        // funcionar (`~/.cargo/bin/rust-analyzer` es un symlink a `rustup`, y
+        // responde `Unknown binary` con codigo 1), de modo que un
+        // `command -v` habria dado la respuesta equivocada. Medido con
+        // `grep 'component add'` sobre este pipeline, los scripts de CI y los
+        // workflows: nadie lo instalaba.
+        //
+        // El coste de no tenerlo esta medido en las dos direcciones, y por eso
+        // la decision es facil: el gate completo tardaba 20m17s sin el
+        // componente y 22m48s con el. Dos minutos y medio para que un test que
+        // hoy no se ejecuta, se ejecute.
+        //
+        // Se instala como componente del toolchain y no como `cargo install`:
+        // es un binario de rustup, `rustup component add` es idempotente y no
+        // compila nada. El `if` evita el trabajo cuando ya esta, y la
+        // comprobacion posterior convierte "lo instale" en "responde", que es
+        // la distincion que el shim rompia.
+        stage("lsp-toolchain") {
+            stage("install-rust-analyzer") {
+                sh(
+                    """
+set -eo pipefail
                     $cd || exit 1
                     if rust-analyzer --version >/dev/null 2>&1; then
                         echo "rust-analyzer already present, skipping install"
                     else
                         rustup component add rust-analyzer
                     fi
+                    """.trimIndent(),
+                )
+            }
 
-            # ── rust-analyzer-answers
-            # ─────────────────────────────────────────────
-
+            stage("rust-analyzer-answers") {
+                sh(
+                    """
+set -eo pipefail
                     $cd || exit 1
                     # Un shim en el PATH que sale con 1 haria que el paso
                     # anterior pasara y los tests se saltaran igual. Preguntar
@@ -240,253 +292,429 @@ $cd && cargo deny check licenses
                         exit 1
                     fi
                     rust-analyzer --version
-            """.trimIndent())
+                    """.trimIndent(),
+                )
+            }
         }
 
-                stage("selector") {
-            // the CR-08 suite selector and its own contract
-            // Formerly 2 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── qw08-crate-selector
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test qw08_crate_selector --quiet
+        // ---------------------------------------------------------- build-binary
+        
 
-            # ── select-suites-script
-            # ─────────────────────────────────────────────
+        // ------------------------------------------------------------- selector
+        stage("selector") {
+            // pr-ci.yml:173. CR-08 picks suites from the changed diff; the selector
+            // contract below is what pins its behaviour, so run the contract rather
+            // than reimplementing the diff walk in shell.
+            stage("qw08-crate-selector") {
+                sh("$cd && cargo test -p cognicode-cli --test qw08_crate_selector --quiet")
+            }
 
+            // pr-ci.yml also runs the selector script itself, not only its
+            // contract. The contract pins what the script decides; running the
+            // script is what proves the decision is consumable downstream. A
+            // green contract over a script nothing calls is the A-013 shape.
+            stage("select-suites-script") {
+                sh("""
+            set -eo pipefail
                     $cd || exit 1
                     set -euo pipefail
                     PATHS="scripts/ci/run-all-contracts.sh"
                     SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"
                     echo "${'$'}SELECT_OUTPUT"
-            """.trimIndent())
+                """.trimIndent())
+            }
         }
 
-        stage("tests") {
-            // the product test battery
-            // Formerly 40 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── core-lib
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --lib --quiet
+        // ---------------------------------------------------------------- test-pr
+        stage("test-pr") {
+            // core (pr-ci.yml:291-300)
+            stage("core-lib") {
+                sh("$cd && cargo test -p cognicode-core --lib --quiet")
+            }
 
-            # ── core-adversarial-campaign
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet
+            stage("core-adversarial-campaign") {
+                sh("$cd && cargo test -p cognicode-core --test prf_sec_07_adversarial_campaign --quiet")
+            }
 
-            # ── core-prf-mcp-05
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --lib prf_mcp_05 --quiet
+            stage("core-prf-mcp-05") {
+                sh("$cd && cargo test -p cognicode-core --lib prf_mcp_05 --quiet")
+            }
 
-            # ── core-adversarial-e2e — RELOCATED
-            # ─────────────────────────────────────────────
-            # MEDIDO 2026-10-15. `prf_h06_adversarial_e2e` now lives in
-            # `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only
-            # exists for the package that declares that binary. Naming it here
-            # is cargo's error, not a test failure:
-            #
-            #     error: no test target named `prf_h06_adversarial_e2e` in
-            #            `cognicode-core` package
-            #
-            # It runs once, further down this same block, under `-p cognicode-mcp`.
+            stage("core-adversarial-e2e") {
+                sh("$cd && cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet")
+            }
 
-            # ── core-unrestricted-evidence-kernel
-            # ─────────────────────────────────────────────
-
+            // pr-ci.yml:567. The unrestricted core step. Without it the five
+            // suites behind #![cfg(feature = "evidence-kernel")] compile to
+            // empty test binaries and report 0 passed / 0 failed / exit 0.
+            // core_gate_coverage_contract pins this stage by command parity.
+            stage("core-unrestricted-evidence-kernel") {
+                // MEDIDO 2026-10-15. This step streamed `cargo test --quiet`
+                // straight into the run transcript: 68 test binaries' worth of
+                // progress dots, tens of thousands of bytes. The runtime drains
+                // a step's stdout/stderr on a 10s budget and reported
+                //
+                //   [INFRASTRUCTURE]: transcript drain unfinished after
+                //   10000ms: durable-sh-transcript-pump-...-stdout, -stderr
+                //
+                // which reads like a pipeline fault and is not one — the same
+                // command exits 0 when its output goes to a file. A step that
+                // cannot finish being read is not evidence either way.
+                //
+                // Same shape as `cli-unrestricted-ladybug` below: log to a
+                // file, show only the tail, and say where the full log is.
+                sh("""
+            set -eo pipefail
                     $cd || exit 1
                     $cdLog || exit 1
-                    set +e
-                    cargo test -p cognicode-core --features evidence-kernel --quiet \
-                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1
-                    rc=${'$'}?
-                    set -e
+                    if ! cargo test -p cognicode-core --features evidence-kernel --quiet \
+                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1; then
+                        tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
+                        echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
+                        exit 1
+                    fi
                     tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
                     echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
-                    exit ${'$'}rc
+                """.trimIndent())
+            }
 
-            # ── core-a014-product-asset-resolution
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --test a014_product_asset_resolution --quiet
+            // pr-ci.yml:481. A-014 product asset resolution.
+            stage("core-a014-product-asset-resolution") {
+                sh("$cd && cargo test -p cognicode-core --test a014_product_asset_resolution --quiet")
+            }
 
-            # ── cognicode-ladybug
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-ladybug --lib --quiet
+            // ladybug (pr-ci.yml:388)
+            stage("cognicode-ladybug") {
+                sh("$cd && cargo test -p cognicode-ladybug --lib --quiet")
+            }
 
-            # ── bin-tracking
-            # ─────────────────────────────────────────────
-$cd && bash scripts/ci/check-bin-tracking.sh
+            // PR-SEC reachability: every release-artifact path the pipeline
+            // downloads is a path some earlier stage produced. Runs here as
+            // well as in pr-ci.yml because the Kotlin pipeline is the one that
+            // will own release once the migration closes, and a check that only
+            // runs on the orchestrator being retired checks nothing.
+            stage("bin-tracking") {
+                sh("$cd && bash scripts/ci/check-bin-tracking.sh")
+            }
 
-            # ── cr07-metrics-exposition
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --quiet
+            // QW-09 used to have two stages here: a shell guard and a Rust
+            // contract, both reading `pr-ci.yml`. Both are gone, and the
+            // property is stronger for it. The original question was GitHub's
+            // — "does this job download the artifact an earlier job uploaded?" —
+            // which only exists because every Actions job gets a fresh runner
+            // and `needs:` does not mean "inherits artifacts". PipelineK has
+            // neither problem: the stages share one filesystem (measured, not
+            // assumed), so the surviving property is an ordering one — every
+            // step that consumes a release artifact needs an earlier step that
+            // produced it. `scripts/ci/test_pipeline_artifact_reachability.py`
+            // states that, and it is discovered by the `contracts` stage above
+            // rather than named by this one, and it scans every `*.pipeline.kts`
+            // rather than a single workflow.
 
-            # ── cli-qw03-bin-tracking
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet
+            // CR-07. `/metrics` is the only reason the OpenTelemetry upgrade was
+            // worth doing, and the upgrade was the only reason RUSTSEC-2024-0437
+            // is gone from deny.toml. A package version that satisfies an
+            // advisory without still exposing the endpoint is the regression
+            // this pins.
+            stage("cr07-metrics-exposition") {
+                sh("$cd && cargo test -p cognicode-mcp --test cr07_metrics_exposition_contract --quiet")
+            }
 
-            # ── cli-qw04-preflight
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test qw04_preflight_contract --quiet
+            // cli named contracts (pr-ci.yml:408-528)
+            stage("cli-qw03-bin-tracking") {
+                sh("$cd && cargo test -p cognicode-cli --test qw03_bin_tracking_guard --quiet")
+            }
 
-            # ── cli-a013-lifecycle-gate-contract
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet
+            stage("cli-qw04-preflight") {
+                sh("$cd && cargo test -p cognicode-cli --test qw04_preflight_contract --quiet")
+            }
 
-            # ── cli-a014-capabilities-json
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test a014_capabilities_json --quiet
+            stage("cli-a013-lifecycle-gate-contract") {
+                sh("$cd && cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet")
+            }
 
-            # ── cli-a015-licenses-gate
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test a015_licenses_gate --quiet
+            stage("cli-a014-capabilities-json") {
+                sh("$cd && cargo test -p cognicode-cli --test a014_capabilities_json --quiet")
+            }
 
-            # ── cli-a015-onboarding-gate
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet
+            stage("cli-a015-licenses-gate") {
+                sh("$cd && cargo test -p cognicode-cli --test a015_licenses_gate --quiet")
+            }
 
-            # ── cli-action-register-identity-contract
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test action_register_identity_contract --quiet
+            stage("cli-a015-onboarding-gate") {
+                sh("$cd && cargo test -p cognicode-cli --test a015_onboarding_gate --quiet")
+            }
 
-            # ── cli-unrestricted-ladybug
-            # ─────────────────────────────────────────────
+            // pr-ci.yml:699. The A-014 twin-cycle identity collision must stay
+            // visible in the action register (N+63.2).
+            stage("cli-action-register-identity-contract") {
+                sh("$cd && cargo test -p cognicode-cli --test action_register_identity_contract --quiet")
+            }
 
+            // The unrestricted step. pr-ci.yml:569. cli_gate_coverage_contract
+            // fails if it is missing or narrowed: it is what compiles every
+            // `tests/*.rs` target in the crate and what carries --features ladybug,
+            // without which evidence_cli_mcp_equivalence compiles to an empty
+            // binary and reports 0 passed / 0 failed / exit 0.
+            //
+            // It is also the only stage in this lane that runs a whole crate's
+            // suite rather than one `--test` target, and it is the only stage
+            // that died: four clean runs, all of them here, all of them after
+            // 10.127 / 10.126 / 10.135 / 10.129 ms with exit 101 and not one
+            // byte of output captured, in a run that had produced 30 KB from
+            // the same command when the stage stood alone.
+            //
+            // What is NOT the cause, each measured rather than assumed: not the
+            // size of the output (PipelineK captured 21 MB in this position,
+            // from one writer and from thirty, in both cases whole); not stderr
+            // (520 KB of it captured from a step that failed); not a capture
+            // cap (700 KB and 21 MB both survived); not memory (55-65 GB free
+            // at the moment of failure, no OOM kill); not disk; not the cargo
+            // build-directory lock (held on purpose with flock: cargo waits
+            // 120 s and is killed by the timeout, it does not exit 101); not
+            // the stage's position (38 trivial stages in front of it pass) and
+            // not any single predecessor (five contiguous prefixes of this lane
+            // pass, and the stage passes after the ladybug crate, after a
+            // feature switch on the same crate, and after core with
+            // evidence-kernel).
+            //
+            // So this is a workaround for a defect inside the orchestrator, not
+            // a diagnosis, and it is written down as one. What is known is that
+            // redirecting this stage's output makes the difference: the same
+            // lane, the same tree, the same command, passes 64 of 64 with the
+            // redirection and fails 4 of 4 without it. The tail is there so
+            // that if it ever fails again the output is on disk and named,
+            // instead of a run database that says only "shell exited with
+            // code 101" — which is what four failures produced.
+            stage("cli-unrestricted-ladybug") {
+                sh("""
+            set -eo pipefail
                     $cd || exit 1
                     $cdLog || exit 1
-                    set +e
-                    cargo test -p cognicode-cli --features ladybug --quiet \
-                        > "$logDir/cli-unrestricted-ladybug.log" 2>&1
-                    rc=${'$'}?
-                    set -e
+                    if ! cargo test -p cognicode-cli --features ladybug --quiet \
+                        > "$logDir/cli-unrestricted-ladybug.log" 2>&1; then
+                        tail -40 "$logDir/cli-unrestricted-ladybug.log"
+                        echo "the full log is $logDir/cli-unrestricted-ladybug.log"
+                        exit 1
+                    fi
                     tail -40 "$logDir/cli-unrestricted-ladybug.log"
                     echo "the full log is $logDir/cli-unrestricted-ladybug.log"
-                    exit ${'$'}rc
+                """.trimIndent())
+            }
 
-            # ── cli-gate-coverage-contract
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet
+            // the gate contract itself (pr-ci.yml:578)
+            stage("cli-gate-coverage-contract") {
+                sh("$cd && cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet")
+            }
 
-            # ── mcp-a009-agent-safe-profile
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test a009_agent_safe_profile --quiet
+            // mcp (pr-ci.yml:453-501)
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a009-agent-safe-profile") {
+                sh("$cd && cargo test -p cognicode-mcp --test a009_agent_safe_profile --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a010-tool-authority-audit") {
+                sh("$cd && cargo test -p cognicode-mcp --test a010_tool_authority_audit --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a012-structured-output") {
+                sh("$cd && cargo test -p cognicode-mcp --test a012_structured_output --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a013-lifecycle-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test a013_lifecycle_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-02-read-only-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-a016-tools-runtime-consistency") {
+                sh("$cd && cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet")
+            }
+            // MEDIDO 2026-10-15. Esta suite estaba en `cognicode-core/tests/` y
+            // nombarla aqui es el error de cargo, no un fallo del test:
+            //
+            //     error: no test target named `prf_h06_adversarial_e2e` in
+            //            `cognicode-core` package
+            //
+            // `CARGO_BIN_EXE_cognicode-mcp` solo existe para el paquete que
+            // declara ese binario, asi que la suite se퇴rizó a
+            // `cognicode-mcp/tests/`. Sin esta etapa, el gate la pierde en
+            // silencio y `every_mcp_suite_is_named_by_the_gate_or_excluded_
+            // with_a_reason` lo detecta: la cobertura que se cree tener y no
+            // tiene se lee igual que la que existe.
+            stage("mcp-prf-h06-adversarial-e2e") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-05-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_05_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-07-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_07_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-ana-08-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_ana_08_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-cli-04-two-process-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-f4-w3-corrupt-cache-recovery") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-f5-w3-signal-cancel") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-mcp-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_mcp_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-01-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-03-telemetry-optin-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-sec-05-shutdown-recovery-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-01-data-catalog-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_01_data_catalog_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-02-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_02_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-03-04-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_03_04_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-03-concurrent-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_03_concurrent_uat --quiet")
+            }
+            // One stage per contract, the way the workflow spelled them out. The
+            // loop this replaces ran the same 22 commands in the same order, so
+            // nothing about coverage changes; what changes is that a failure names the
+            // contract instead of the loop, and a contract that asserts "the merge gate
+            // runs me" becomes checkable by a reader and by a checker.
+            stage("mcp-prf-state-04-isolation-uat") {
+                sh("$cd && cargo test -p cognicode-mcp --test prf_state_04_isolation_uat --quiet")
+            }
 
-            # ── mcp-a010-tool-authority-audit
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test a010_tool_authority_audit --quiet
-
-            # ── mcp-a012-structured-output
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test a012_structured_output --quiet
-
-            # ── mcp-a013-lifecycle-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test a013_lifecycle_uat --quiet
-
-            # ── mcp-prf-sec-02-read-only-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_sec_02_read_only_uat --quiet
-
-            # ── mcp-a016-tools-runtime-consistency
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test a016_tools_runtime_consistency --quiet
-
-            # ── mcp-prf-h06-adversarial-e2e
-            # ─────────────────────────────────────────────
-            # MEDIDO 2026-10-15. Esta suite pasó de `cognicode-core` a
-            # `cognicode-mcp` porque `CARGO_BIN_EXE_<name>` solo existe para
-            # el paquete que declara el binario, y el binario bajo prueba es
-            # `cognicode-mcp`. Ese traslado la dejó sin etapa que la nombrara:
-            # el gate seguía verde y la suite de seguridad había dejado de
-            # correr. Lo detectó `cli_gate_coverage_contract::every_mcp_suite
-            # _is_named_by_the_gate_or_excluded_with_a_reason`, que es
-            # exactamente el agujero que dice cubrir.
-            #
-            # Antes de ese commit la suite estaba en el stage `core-adversarial-e2e`.
-$cd && cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e --quiet
-
-            # ── mcp-prf-ana-02-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_ana_02_uat --quiet
-
-            # ── mcp-prf-ana-05-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_ana_05_uat --quiet
-
-            # ── mcp-prf-ana-07-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_ana_07_uat --quiet
-
-            # ── mcp-prf-ana-08-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_ana_08_uat --quiet
-
-            # ── mcp-prf-cli-04-two-process-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet
-
-            # ── mcp-prf-f4-w3-corrupt-cache-recovery
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_f4_w3_corrupt_cache_recovery --quiet
-
-            # ── mcp-prf-f5-w3-signal-cancel
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_f5_w3_signal_cancel --quiet
-
-            # ── mcp-prf-mcp-02-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_mcp_02_uat --quiet
-
-            # ── mcp-prf-sec-01-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_sec_01_uat --quiet
-
-            # ── mcp-prf-sec-03-telemetry-optin-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_sec_03_telemetry_optin_uat --quiet
-
-            # ── mcp-prf-sec-05-shutdown-recovery-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_sec_05_shutdown_recovery_uat --quiet
-
-            # ── mcp-prf-state-01-data-catalog-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_state_01_data_catalog_uat --quiet
-
-            # ── mcp-prf-state-02-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_state_02_uat --quiet
-
-            # ── mcp-prf-state-03-04-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_state_03_04_uat --quiet
-
-            # ── mcp-prf-state-03-concurrent-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_state_03_concurrent_uat --quiet
-
-            # ── mcp-prf-state-04-isolation-uat
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-mcp --test prf_state_04_isolation_uat --quiet
-            """.trimIndent())
         }
 
-        stage("governance") {
-            // drift, compatibility and the gate-coverage contract
-            // Formerly 5 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── capabilities-drift-lint
-            # ─────────────────────────────────────────────
-$cd && python3 sandbox/scripts/capabilities_drift_lint.py --strict
+        // ------------------------------------------------------------ merge-gate
+        stage("merge-gate") {
+            // pr-ci.yml:358 — the capabilities drift lint, a hard gate.
+            stage("capabilities-drift-lint") {
+                sh("$cd && python3 sandbox/scripts/capabilities_drift_lint.py --strict")
+            }
 
-            # ── compat-matrix-0-97-x
-            # ─────────────────────────────────────────────
-
+            // pr-ci.yml:369 — compat matrix 0.97.x. Skips by design when the legacy
+            // binary fixture is absent, so this reports SKIP rather than pretending
+            // the matrix ran.
+            stage("compat-matrix-0-97-x") {
+                sh("""
+            set -eo pipefail
                     $cd || exit 1
                     if [ -x sandbox/.compat/0.97.3/cognicode-mcp ]; then
                         echo "compat fixture present, running the matrix"
@@ -495,19 +723,25 @@ $cd && python3 sandbox/scripts/capabilities_drift_lint.py --strict
                     else
                         echo "SKIP: sandbox/.compat/0.97.3/cognicode-mcp absent (ADR-PRF-008 policy R1)"
                     fi
+                """.trimIndent())
+            }
 
-            # ── core-gate-coverage-contract
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --features evidence-kernel --test core_gate_coverage_contract --quiet
+            // pr-ci.yml:605 — the core coverage contract. It reads pr-ci.yml and fails
+            // when a gate suite disappears from the workflow, so it must run here too
+            // or the Kotlin pipeline could narrow the gate without anything noticing.
+            stage("core-gate-coverage-contract") {
+                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test core_gate_coverage_contract --quiet")
+            }
 
-            # ── e91-w7-regression-budget
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --test e91_w7_regression_budget --quiet
+            // pr-ci.yml:615 — CR-05 e91.W7 regression budget gate.
+            stage("e91-w7-regression-budget") {
+                sh("$cd && cargo test -p cognicode-core --test e91_w7_regression_budget --quiet")
+            }
 
-            # ── e91-w8-stage-profile
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-core --test e91_w8_stage_profile --quiet
-            """.trimIndent())
+            // pr-ci.yml:625 — CR-03 e91.W8 per-stage profile gate.
+            stage("e91-w8-stage-profile") {
+                sh("$cd && cargo test -p cognicode-core --test e91_w8_stage_profile --quiet")
+            }
         }
     }
 }
