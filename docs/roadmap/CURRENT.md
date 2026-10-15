@@ -39,34 +39,47 @@
 * **SHA funcional**: `88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb`.
 * **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
-* **Batería**: **las cifras de abajo están RETIRADAS: no son válidas.** Se
-  midieron sobre el gate colapsado de 73 a 8 etapas, en el que la etapa
-  `tests` ejecutaba 4 de sus 39 `cargo test` y devolvía `success`
-  (MEDIDO 2026-10-15: un `exit $rc` heredado de un sub-bloque terminaba el
-  proceso a mitad de etapa; y PipelineK corre el cuerpo con
-  `bash script.sh` sin `set -e`, de modo que sin guard el veredicto es el
-  código de la última orden). El presupuesto de 15 min se aprovou sobre
-  esas cifras, así que **no hay medida del coste real de la batería
-  completa**. La corrección (guard `set -eo pipefail` en los 8 bloques y
-  eliminación del `exit` truncante) está aplicada y validada con
-  `pipelinek validate`; falta la re-ejecución que dé la cifra buena.
+* **Batería — MEDIDAS, y ya no son las de antes.** Las cifras de este
+  snapshot se retiraron el 2026-10-15 porque se midieron sobre el gate
+  colapsado de 73 a 8 etapas, en el que la etapa `tests` ejecutaba **4 de sus
+  39 `cargo test`** y devolvía `success`. Causa: un `exit $rc` heredado de un
+  sub-bloque termina el proceso, no el sub-bloque; pegado en medio de una etapa
+  de 39 órdenes se come las 35 siguientes. Y PipelineK corre el cuerpo con
+  `bash script.sh` **sin opciones de shell**, así que sin `-e` el veredicto de
+  una etapa de muchas órdenes es el de la última.
+
+  Coste real medido el 2026-10-15, orden por orden:
+  * 37 invocaciones con selector de target → **692 s**, de las cuales
+    `cargo test -p cognicode-core --lib` son **477 s** en solitario.
+  * Los cuatro builds de perfil release, en un target dir **vacío**:
+    `cognicode-mcp` 358 s, `cognicode-control-plane` 123 s,
+    `cognicode-cli` 174 s, `cognicode` 38 s → **693 s**. En un runner limpio
+    es ese el precio de que las cuatro suites UAT de release puedan correr.
+
+  * **Coste por etapa: 124 ms.** Dos pipelines de sonda con trabajo idéntico
+    (30 órdenes `true`), mejor de 5: 1 etapa 5827 ms, 30 etapas 9432 ms.
+    Restaurar las 73 etapas cuesta **8,9 s**. El colapso de etapas no era el
+    problema que parecía, y su precio —un gate que miente— sí lo era.
+
+  * **El presupuesto de 15 min que se aprobó con este gate ya no es
+    alcanzable**, y la cifra que lo sostenía (687 s) era la de un gate que no
+    ejecutaba su batería. El orden de magnitud real, frío, es de decenas de
+    minutos. Volver a decidir el presupuesto con el número viejo sería repetir
+    el error.
+
   Historial de lo que se afirmó entonces, para no reutilizarlo:
   * `toolchain` → success (0,2 s).
   * `repo-contract` → success (0,1 s).
   * `fmt` → success (4,5 s).
   * `clippy` (`-D warnings`) → success (83,8 s).
-  * `rustdoc-gate` → success (434,0 s = 7,2 min).
-  * `contracts` → sin medir a fondo; la etapa anterior agota por sí sola
-    más de la mitad del presupuesto de 15 min acordado para el gate.
+  * `rustdoc-gate` → success (434,0 s = 7,2 min) — ya no está en el merge
+    gate; vive en la lane de release-candidate.
+  * `contracts` → sin medir a fondo.
 
-  Los tiempos son por etapa, leídos del journal SQLite del propio run. Antes
-  de `--rerun` los mismos stages se replayaban en 79 ms marcados `RERUN`, de
-  modo que ninguna de estas cifras correspondía a trabajo ejecutado.
-
-  **Bloqueo conocido**: `rustdoc-gate` es `cargo doc --workspace --no-deps`
-  envuelto en un test, y consume 7,2 min por sí solo. El gate no cabe en
-  15 min sin segmentarlo; la segmentación propuesta es un work item abierto,
-  no un hecho.
+  **Nota sobre el presupuesto**: el gate ya no cabe en 15 min, y la razón
+  no es la segmentación de etapas —medida a 124 ms por etapa— sino el trabajo
+  que hace: la batería de tests y los cuatro builds de release. `rustdoc-gate`
+  ya no forma parte del merge gate; vive en la lane de release-candidate.
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
   * `cargo build -p cognicode-core` → 0 errors (T1-5.5).

@@ -166,8 +166,18 @@ val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.rem
 // those machines, and wrong in the direction that looks most like success. Cargo
 // is the authority for where its own output goes; every stage that needs a built
 // artifact asks it through `scripts/ci/target-dir.sh`.
+// MEDIDO 2026-10-15. El guard va AQUI y no en cada stage que usa este
+// preambulo, porque el preambulo es lo que define el entorno de shell de la
+// etapa: PipelineK la ejecuta con `bash script.sh` y sin opciones, asi que sin
+// `-e` el veredicto de una etapa de varias ordenes es el codigo de la ULTIMA y
+// todas las anteriores pueden fallar en silencio. `verify-asset-set` es el caso
+// que duele: comprueba que la release publica EL CONJUNTO de assets, y con dos
+// ordenes y sin guard, un fallo seguido de un `echo` reporta exito.
+//
+// `TARGET_DIR` es una variable de shell SIN exportar y cada `sh` corre en su
+// propio proceso, asi que esta linea tiene que seguir definiendola aqui.
 val releasePaths = """
-    $cd || exit 1
+    set -eo pipefail
     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
 """.trimIndent()
 
@@ -190,6 +200,10 @@ pipeline {
         stage("coherence") {
             stage("tag-coherence") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_TAG:-}" ]; then
                         echo "RELEASE_TAG is unset, so this is a dry run: there is no tag to be coherent with."
@@ -223,6 +237,10 @@ pipeline {
         stage("toolchain") {
             stage("release-tool") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     cargo build --release --bin cognicode-release
                     # MEDIDO 2026-10-03. Esta stage se quedaba con "cargo
@@ -267,6 +285,10 @@ pipeline {
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
             sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
             # ── rustdoc-gate
             # ─────────────────────────────────────────────
             $cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
@@ -279,6 +301,10 @@ pipeline {
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
             sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
             # ── build-binary
             # ─────────────────────────────────────────────
 
@@ -357,6 +383,10 @@ pipeline {
             targets.forEach { target ->
                 stage("toolchain-for-$target") {
                     sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                         $cd || exit 1
                         rustup target list --installed | grep -qx '$target' || {
                             echo "cargo target '$target' is not installed."
@@ -493,6 +523,10 @@ pipeline {
 
                 stage("binaries-$target") {
                     sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                         $cd || exit 1
                         # cogh consumes evidence-gated types, so the feature is on for
                         # the whole cognicode-cli package, not per binary.
@@ -876,6 +910,10 @@ pipeline {
 
             stage("install-smoke") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     bash scripts/ci/release-install-smoke.sh "$version" release
                 """.trimIndent())
@@ -883,6 +921,10 @@ pipeline {
 
             stage("candidate-manifest") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     test -f release/SHA256SUMS || {
                         echo "the candidate has no SHA256SUMS. Without it, the release lane has"
@@ -918,6 +960,10 @@ pipeline {
             // anuncia por que no firmo.
             stage("provenance") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_PROVENANCE_KEY:-}" ]; then
                         echo "provenance: NOT generated — no RELEASE_PROVENANCE_KEY on this host."

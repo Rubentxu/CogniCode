@@ -97,8 +97,18 @@ val repo: String = System.getenv("GITHUB_REPOSITORY") ?: "Rubentxu/CogniCode"
 // command still names the tool, because the name is the gate and the directory
 // is the machine's business. See `scripts/ci/target-dir.sh` and the longer note
 // in `release-candidate.pipeline.kts`.
+// MEDIDO 2026-10-15. El guard va AQUI y no en cada stage que usa este
+// preambulo, porque el preambulo es lo que define el entorno de shell de la
+// etapa: PipelineK la ejecuta con `bash script.sh` y sin opciones, asi que sin
+// `-e` el veredicto de una etapa de varias ordenes es el codigo de la ULTIMA y
+// todas las anteriores pueden fallar en silencio. `verify-asset-set` es el caso
+// que duele: comprueba que la release publica EL CONJUNTO de assets, y con dos
+// ordenes y sin guard, un fallo seguido de un `echo` reporta exito.
+//
+// `TARGET_DIR` es una variable de shell SIN exportar y cada `sh` corre en su
+// propio proceso, asi que esta linea tiene que seguir definiendola aqui.
 val releasePaths = """
-    $cd || exit 1
+    set -eo pipefail
     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
 """.trimIndent()
 
@@ -108,6 +118,10 @@ pipeline {
         stage("consume-candidate") {
             stage("candidate-present") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     for d in dist release; do
                         test -d "${'$'}d" || {
@@ -190,6 +204,10 @@ pipeline {
         stage("draft") {
             stage("create-draft") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}RELEASE_TAG" ]; then
                         echo "RELEASE_TAG is unset, so there is nothing to publish to."
@@ -210,6 +228,10 @@ pipeline {
 
             stage("upload-payloads") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     gh release upload "${'$'}RELEASE_TAG" release/*.tar.gz --clobber
                 """.trimIndent())
@@ -217,6 +239,10 @@ pipeline {
 
             stage("confirm-uploaded-set") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     expected=$(cd release && ls *.tar.gz | sort)
                     actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
@@ -231,6 +257,10 @@ pipeline {
 
             stage("upload-manifests") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     gh release upload "${'$'}RELEASE_TAG" \
                         release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
@@ -246,6 +276,10 @@ pipeline {
         stage("provenance") {
             stage("attestations") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     scripts/ci/verify-provenance.sh "${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}" \
                         release/*.tar.gz release/SHA256SUMS
@@ -278,6 +312,10 @@ pipeline {
 
             stage("publish-draft") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     gh release edit "${'$'}RELEASE_TAG" --draft=false
                 """.trimIndent())
@@ -301,6 +339,10 @@ pipeline {
             // un gate que mide lo que el gate cree medir es peor que no medir.
             stage("verify-latest-resolution") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     api="https://api.github.com/repos/${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}"
                     resolved=$(curl -fsSL "${'$'}api/releases/latest" \
@@ -323,6 +365,10 @@ pipeline {
 
             stage("verify-as-consumer") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     draft=$(gh release view "${'$'}RELEASE_TAG" --json isDraft -q .isDraft)
                     if [ "${'$'}draft" != "false" ]; then
@@ -361,6 +407,10 @@ pipeline {
             // lane ya documenta para no repetir.
             stage("verify-asset-set") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     bash sandbox/scripts/test_release_asset_set.sh "${'$'}RELEASE_TAG"
                 """.trimIndent())

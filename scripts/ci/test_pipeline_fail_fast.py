@@ -56,7 +56,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 LANES = ("merge-gate.pipeline.kts", "release-candidate.pipeline.kts", "release.pipeline.kts")
 
 # `set -e`, `set -eo pipefail`, `set -euo pipefail`… Lo que importa es el `-e`.
-FAIL_FAST = re.compile(r"^set\s+-[a-z]*e")
+FAIL_FAST = re.compile(r"^\s*set\s+-[a-z]*e", re.M)
 
 # Una linea que solo abre o cierra un bloque de control.
 OPENER = re.compile(r"(\bthen$)|(^\s*(if|while|until|for|case)\b)|(\{\s*$)|(\bdo\s*$)")
@@ -77,6 +77,11 @@ def executable_lines(body: str) -> list[tuple[int, str]]:
             continue
         if line.startswith('"""') or line.endswith('"""') or line.endswith("trimIndent())"):
             continue
+        # `sh(` en su propia linea solo abre la llamada; el cuerpo empieza en
+        # la triple comilla siguiente. Contarlo como orden desplaza al guard una
+        # posicion y hace creer que protege tarde cuando no.
+        if line == "sh(":
+            continue
         out.append((index, raw))
     return out
 
@@ -93,13 +98,36 @@ def stage_commands(body: str) -> list[str]:
     return out
 
 
-def fail_fast_position(body: str) -> int | None:
+SH_PREAMBLE = re.compile(r'sh\(\s*(\w+)\s*\+')
+PREAMBLE = re.compile(r'val (\w+)\s*=\s*"""\n(.*?)"""\.trimIndent\(\)', re.S)
+
+
+def preambles(text: str) -> dict[str, str]:
+    """Los `val <nombre>` de un pipeline, con su cuerpo de triple comilla, por nombre.
+
+    Un preambulo compartido es la forma correcta de declarar una vez lo que
+    todas las etapas necesitan — y por eso el contrato tiene que RESOLVERLO en
+    vez de buscar el guard letra a letra en cada cuerpo. Si exigiera que cada
+    etapa repita el `set -e`, la siguiente persona que anada una etapa lo
+    escribiria… o no, y el preambulo seguiria siendo la via de hecho.
+    """
+    return {name: body for name, body in PREAMBLE.findall(text)}
+
+
+def fail_fast_position(body: str, preamble: str | None = None) -> int | None:
     """Donde aparece el fail-fast, como indice dentro de `executable_lines`.
 
     None si no aparece. La posicion importa: un `set -e` debajo del primer
     comando protege al segundo pero no al primero, que es exactamente el hueco
     que busco cerrar.
+
+    `preamble` es el cuerpo de un `val` que la etapa antepone a su propio shell.
+    Cuando la etapa lo usa, el guard cuenta como PRIMERA linea: en tiempo de
+    ejecucion el preambulo se ejecuta antes que el cuerpo de la etapa, y el
+    contrato no deberia obligar a repetirlo en cinco sitios.
     """
+    if preamble is not None and FAIL_FAST.search(preamble):
+        return 0
     for slot, (_, raw) in enumerate(executable_lines(body)):
         if FAIL_FAST.match(raw.strip()):
             return slot
@@ -164,7 +192,16 @@ def test_every_multi_command_stage_brings_its_own_fail_fast() -> None:
             if len(commands) < 2:
                 continue
             checked += 1
-            position = fail_fast_position(body)
+            # Si la etapa antepone un `val` compartido, ese es su entorno de
+            # shell y el guard se busca ahi.
+            # `sh(releasePaths + "\n" + """` — el nombre va en la llamada al
+            # `sh`, no en las ordenes: la linea acaba en `"""` y el filtro de
+            # lineas ejecutables la descarta. Buscarlo en el cuerpo crudo.
+            shared = None
+            head = SH_PREAMBLE.search(body)
+            if head and head.group(1) in preambles(text):
+                shared = preambles(text)[head.group(1)]
+            position = fail_fast_position(body, shared)
             if position is None:
                 unguarded.append(f"{lane}:{name}")
             elif position > 0:
