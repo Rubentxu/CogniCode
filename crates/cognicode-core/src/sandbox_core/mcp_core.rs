@@ -513,4 +513,130 @@ mod tests {
         let parsed: CapturedCall = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.request["method"], "tools/call");
     }
+
+    /// Behavioral test for P0 #1 of the sandbox harness audit:
+    /// read_response must enforce the deadline when the server is
+    /// alive but emits no data. The pre-fix code called read_line
+    /// directly on the child's stdout (a blocking syscall), so a
+    /// silent server would block forever and the deadline check
+    /// would never fire.
+    ///
+    /// The test spawns `cat` as the "server". cat opens stdout,
+    /// reads from stdin, and never writes to stdout. With the
+    /// pre-fix code, read_response would block indefinitely and
+    /// the test would hang (or the test runner would time out
+    /// externally). With the post-fix code, recv_timeout polls
+    /// the channel with a 50ms tick and the deadline is checked
+    /// at every iteration, so the call returns Timeout within
+    /// `timeout + poll_interval` (here 1s + 50ms, so < 1.5s in
+    /// practice).
+    #[cfg(unix)]
+    #[test]
+    fn read_response_enforces_deadline_against_silent_server() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        let mut child = Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn cat as silent server");
+
+        let stdin = child.stdin.take().expect("cat stdin");
+        let stdout = child.stdout.take().expect("cat stdout");
+        let stderr = child.stderr.take();
+
+        let mut server = McpServer::from_child(child, stdin, stdout, stderr);
+
+        let start = Instant::now();
+        let result = server.read_response(1, 1);
+        let elapsed = start.elapsed();
+
+        // Cleanup: the child is still running. Kill it.
+        let _ = server.kill();
+        let _ = server.wait();
+
+        let err = result.expect_err("read_response against silent server must return Err");
+        assert!(
+            matches!(err, McpError::Timeout(1, 1)),
+            "expected Timeout(1, 1), got {:?}",
+            err
+        );
+        // Budget = 1s timeout + 50ms poll interval + 200ms slack
+        // for CI noise. Pre-fix this would block indefinitely.
+        assert!(
+            elapsed < std::time::Duration::from_millis(1250),
+            "timeout took {:?}, expected < 1.25s",
+            elapsed
+        );
+    }
+
+    /// Behavioral test for P1 of the sandbox harness audit: a
+    /// server that streams non-JSON output to stdout must trigger
+    /// McpError::ProtocolViolation once the per-call threshold
+    /// (10 lines) is exceeded. The pre-fix code silently dropped
+    /// every non-JSON line, so a server that did not speak MCP
+    /// at all could pass through with no signal.
+    ///
+    /// The test spawns `sh -c "yes noise | head -n 30"` as the
+    /// "server". `yes` prints its argument repeatedly; `head -30`
+    /// limits it to 30 lines. The server emits "noise\n" 30 times
+    /// and closes. With the post-fix code, read_response should
+    /// see 11+ non-JSON lines and return ProtocolViolation.
+    #[cfg(unix)]
+    #[test]
+    fn read_response_protocol_violation_on_sustained_non_json() {
+        use std::process::{Command, Stdio};
+        use std::time::Instant;
+
+        // Generate 30 lines of "noise" (not JSON-RPC) to stdout.
+        let mut child = Command::new("sh")
+            .arg("-c")
+            .arg("i=0; while [ $i -lt 30 ]; do echo 'noise is not json-rpc'; i=$((i+1)); done")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn noise generator");
+
+        let stdin = child.stdin.take().expect("noise stdin");
+        let stdout = child.stdout.take().expect("noise stdout");
+        let stderr = child.stderr.take();
+
+        let mut server = McpServer::from_child(child, stdin, stdout, stderr);
+
+        let start = Instant::now();
+        let result = server.read_response(42, 5);
+        let elapsed = start.elapsed();
+
+        let _ = server.kill();
+        let _ = server.wait();
+
+        let err = result.expect_err("sustained non-JSON must produce Err");
+        match &err {
+            McpError::ProtocolViolation(msg) => {
+                // The threshold is 10; the message should report
+                // at least 11 occurrences. Some lines may still
+                // be in the channel buffer when we error, so
+                // allow >= 11.
+                assert!(
+                    msg.contains("non-JSON"),
+                    "ProtocolViolation message must mention non-JSON, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "expected ProtocolViolation, got {:?} after {:?}",
+                other, elapsed
+            ),
+        }
+        // The server produces 30 lines quickly, then closes.
+        // We should see the violation well within the 5s timeout.
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "protocol violation detection took {:?}, expected < 2s",
+            elapsed
+        );
+    }
 }
