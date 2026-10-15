@@ -405,4 +405,4 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Fuera de alcance | Caché, reanudación, fingerprints y selección incremental (B3/B4); política de certificación; lane de candidato completa |
 | Consumidores | Contribuidores (coste de iteración), mantenedor (gate de merge y gate de candidato), auditoría (auditoría de stages y ADR-TH-005) |
 | Criterio de cierre | Cumplido: merge verde con base durable (73 stages, 1 215 s), seis suites release verdes en su lane nueva (62 tests), seis mutaciones adversariales detectadas y control verde, duración antes/después del bloque eliminado medida |
-| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md) |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` (fusión operator-gated por el check `merge-gate`) |

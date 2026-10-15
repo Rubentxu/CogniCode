@@ -14739,7 +14739,9 @@ dice cuál de los dos se está ejecutando. No se regenera hasta decidirlo.
 **Unidad**: B1 del mandato del operador *«Reorientar el Test Harness de CogniCode
 hacia entrega de valor»* (2026-10-15), en el worktree paralelo
 `worktree/test-harness`. **Versión workspace**: `0.101.17`; **no** se publica
-release de producto en esta unidad. **Rama remota**: `worktree/test-harness`.
+release de producto en esta unidad. **Rama remota**: `worktree/test-harness`
+(PR #349 abierto contra `main`; el check requerido `merge-gate` lo publica
+`scripts/ci/publish-merge-gate.sh`).
 
 ### Qué cambió
 
