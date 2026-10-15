@@ -12,6 +12,7 @@
 //! RED→GREEN: before this change there was no way to run the MCP server
 //! read-only; write_file was always callable.
 
+use cognicode_core::interface::catalog::load_tool_catalog_active;
 use serde_json::{Value, json};
 use std::path::PathBuf;
 
@@ -178,7 +179,24 @@ async fn default_mode_keeps_write_file_available() {
         "default mode must keep write_file advertised"
     );
 
-    // PRF-EXT-01: default mode flags exactly the three mutating tools.
+    // PRF-EXT-01: default mode flags exactly the declared mutating tools.
+    //
+    // MEDIDO 2026-10-15. Esta asercion llevaba una lista escrita a mano
+    // (`edit_file`, `reparse_on_edit`, `write_file`) que es una SEGUNDA fuente
+    // de verdad del campo `authority` de `product/tools.json`. Cuando B5.W3
+    // (`e11016ff`) declaro `safe_refactor_apply` como `mutating` — con razon,
+    // escribe el refactor — la lista no se toco y la UAT quedo roja sin que
+    // nadie lo viera: la suite estaba entre las 35 que el gate colapsado no
+    // ejecutaba. Salio al restaurar las 67 etapas.
+    //
+    // El oraculo pasa a ser el catalogo: el runtime deriva
+    // `mutates_workspace` de `authority` en
+    // `interface::mcp::rmcp_adapter::descriptor_to_tool`, asi que la pregunta
+    // con valor no es "que nombres son mutantes" — eso ya lo dice el catalogo —
+    // sino "el flag que llega por el cable coincide con lo que el catalogo
+    // declara". Eso se comprueba en negro, sobre un proceso MCP real, con la
+    // paginacion de `tools/list` de por medio, que es justo lo que la prueba
+    // en proceso del adaptador no cubre.
     let tools = all_tools_with_mutates(&mut s).await;
     let mut flagged: Vec<String> = tools
         .into_iter()
@@ -186,14 +204,32 @@ async fn default_mode_keeps_write_file_available() {
         .map(|(n, _)| n)
         .collect();
     flagged.sort();
+
+    // El mismo cargador que usa el runtime (`build_all_tools` proyecta
+    // `load_tool_catalog_active`, no el catalogo entero): si el oraculo
+    // leyera el catalogo completo, cada tool con feature desactivada
+    // apareceria como faltante sin que nadie la haya roto.
+    let mut declared: Vec<String> = load_tool_catalog_active()
+        .into_iter()
+        .filter(|d| matches!(d.authority.as_str(), "mutating" | "execute" | "network"))
+        .map(|d| d.name)
+        .collect();
+    declared.sort();
+
+    // Guarda contra un catalogo vacio o sin herramientas mutantes: en ese
+    // caso la igualdad de abajo pasaria sin comprobar nada.
+    assert!(
+        declared.contains(&"write_file".to_string()),
+        "el catalogo debe seguir declarando write_file como mutante; \
+         sin el, esta prueba no demuestra nada: {declared:?}"
+    );
+
     assert_eq!(
-        flagged,
-        vec![
-            "edit_file".to_string(),
-            "reparse_on_edit".to_string(),
-            "write_file".to_string()
-        ],
-        "exactly the declared mutating tools must be flagged"
+        flagged, declared,
+        "the tools the server flags as mutating must be exactly the ones the \
+         catalog declares mutating. A tool the catalog calls mutating but the \
+         server does not flag is advertised to an agent as safe, and a tool the \
+         server flags that the catalog does not is a flag nobody declared."
     );
 
     let resp = s
