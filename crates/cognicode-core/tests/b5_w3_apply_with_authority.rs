@@ -271,11 +271,7 @@ fn apply_rolls_back_on_partial_failure() {
 
     // Pin del orden de aplicación: si `sort_edits` cambia, este test
     // debe fallar en vez de volverse vacuo otra vez.
-    assert_eq!(
-        plan.edits.len(),
-        2,
-        "plan must carry exactly the two edits"
-    );
+    assert_eq!(plan.edits.len(), 2, "plan must carry exactly the two edits");
     assert_eq!(
         plan.edits[0].file, first,
         "the FIRST edit in application order must be a_first.rs; otherwise \

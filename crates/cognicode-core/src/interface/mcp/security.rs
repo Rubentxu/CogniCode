@@ -1951,16 +1951,32 @@ mod tests {
 
     #[test]
     fn test_property_empty_string_handling() {
-        // Property: Empty string should be handled gracefully (not panic)
+        // Property: the empty string is a *specific* answer, not "some
+        // Result". `validate_file_path("")` passes every check —
+        // no traversal, no control characters, zero path components,
+        // no symlink — and then canonicalises, fails with NotFound,
+        // and falls back through `canonicalize_with_fallback` to the
+        // current directory. With no workspace configured there is no
+        // boundary left to reject it, so it returns `Ok` carrying the
+        // empty path it was handed.
+        //
+        // This is pinned deliberately, including the part that is not
+        // great: the validator accepts an empty path. Emptiness is
+        // rejected one layer up, in
+        // `FileOperationsService::read_file` ("Empty path not
+        // allowed"), so a caller of `validate_file_path` that skips
+        // that check is holding an empty path it believes was
+        // vetted. If the validator ever starts rejecting it, this
+        // test is the one to flip, and the reason it fails will say
+        // which layer moved.
         let validator = InputValidator::new();
 
         let result = validator.validate_file_path("");
-        // Empty path may be invalid or may resolve to current dir
-        // The important thing is it doesn't panic
-        assert!(
-            result.is_ok() || result.is_err(),
-            "Empty string should be handled gracefully, got: {:?}",
-            result
+        assert_eq!(
+            result,
+            Ok(PathBuf::new()),
+            "validate_file_path(\"\") must be a decided answer, not a \
+             no-op; got: {result:?}"
         );
     }
 

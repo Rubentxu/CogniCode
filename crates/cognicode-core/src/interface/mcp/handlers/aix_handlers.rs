@@ -2577,11 +2577,42 @@ mod aix_tests {
             query: "process".to_string(),
             limit: 10,
         };
+        let input_limit = input.limit;
 
         let result = handle_ranked_symbols(&ctx, input).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert!(output.returned > 0 || output.total_matches == 0); // Either has results or empty but valid
+
+        // The corpus contains `fn process_data()`, the query is
+        // "process", so a working index returns at least one hit.
+        // The old assertion here was `returned > 0 || total_matches == 0`,
+        // which is true whenever `returned == total_matches` — including
+        // for the empty-result case the test was supposedly tolerating.
+        // It could not fail for any input the handler produces.
+        assert!(
+            output.returned > 0,
+            "query 'process' must match `process_data` in the corpus; \
+             got {output:?}"
+        );
+
+        // Structural invariants the handler is actually responsible
+        // for. These hold for every query, empty or not, and are what
+        // the counts are *for*: the caller has to be able to trust
+        // that `returned` describes `results`.
+        assert_eq!(
+            output.returned,
+            output.results.len(),
+            "`returned` must be the number of results actually attached: {output:?}"
+        );
+        assert_eq!(
+            output.total_matches, output.returned,
+            "`total_matches` and `returned` are populated from the same \
+             rank list and must agree: {output:?}"
+        );
+        assert!(
+            output.returned <= input_limit,
+            "`returned` must respect the caller's limit of {input_limit}: {output:?}"
+        );
     }
 
     #[tokio::test]

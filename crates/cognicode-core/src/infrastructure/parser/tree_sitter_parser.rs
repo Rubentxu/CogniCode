@@ -1236,8 +1236,40 @@ function hello() {
         let with_bom = "\u{feff}fn foo() {}";
         let parser = TreeSitterParser::new(Language::Rust).unwrap();
         let result = parser.parse(with_bom);
-        // BOM should be handled gracefully
-        assert!(result.is_ok() || result.is_err()); // Either is fine, just no panic
+
+        // `parse` cannot fail here: it only returns `Err` when
+        // `tree_sitter::Parser::parse` yields `None`, which happens
+        // solely when a timeout or cancellation flag is set. Neither is
+        // set in this crate. So "it returned Ok or Err" was never a
+        // claim about anything.
+        let parsed = result.expect("parse must not fail on a BOM");
+        assert_eq!(
+            parsed.source, with_bom,
+            "the parsed tree must carry the source verbatim, BOM included"
+        );
+
+        // The real, decidable behaviour: tree-sitter's Rust grammar
+        // skips the BOM as a leading extra, so the source parses
+        // clean and the function is still recoverable. That is worth
+        // pinning rather than leaving to "handled gracefully": the
+        // alternative — an ERROR root that swallowed the first
+        // declaration — would silently empty every symbol walk over a
+        // BOM-prefixed file.
+        assert!(
+            !parsed.tree.root_node().has_error(),
+            "a BOM-prefixed Rust source must still parse clean; got {:?}",
+            parsed.tree.root_node()
+        );
+
+        // ...and the function is recovered, so a caller that only
+        // wants the symbol list is not left with nothing at all.
+        let symbols = parser
+            .find_all_symbols(with_bom)
+            .expect("symbol walk must not fail on a BOM");
+        assert!(
+            symbols.iter().any(|s| s.name() == "foo"),
+            "the function after the BOM must still be recovered, got {symbols:?}"
+        );
     }
 
     #[test]

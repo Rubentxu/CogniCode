@@ -862,6 +862,19 @@ fn process(x: i32, y: i32) -> i32 {
     // Error Cases - Validation Failures
     // =========================================================================
 
+    /// A refactor target that is not an identifier must be refused
+    /// with a reason, and must never report success or report edits.
+    ///
+    /// This used to assert `result.is_ok() || result.is_err()`, which
+    /// is true for every `Result` — the SQL-injection probe was
+    /// asserting that the function returned something. What it
+    /// actually does: `ctx.validator.validate_query` only checks the
+    /// query *length*, so the payload passes validation untouched; the
+    /// rename then resolves `working_dir/<payload>` as a file path,
+    /// fails to read it, and surfaces as `success: false` with the
+    /// I/O reason. That is safe — nothing interprets the string, and
+    /// CogniCode has no SQL layer — but it is safe by accident of the
+    /// payload naming a nonexistent file, not by validation.
     #[tokio::test]
     async fn test_handle_safe_refactor_invalid_query() {
         let tempdir = tempfile::tempdir().unwrap();
@@ -871,20 +884,53 @@ fn process(x: i32, y: i32) -> i32 {
             .with_working_dir(tempdir_path.to_path_buf())
             .build();
 
-        // Use a query pattern that might be rejected by validator
+        let payload = "'; DROP TABLE users;--";
         let input = SafeRefactorInput {
             action: RefactorAction::Rename,
-            target: "'; DROP TABLE users;--".to_string(), // SQL injection-like pattern
+            target: payload.to_string(),
             params: Some(serde_json::json!({
                 "new_name": "safe_name"
             })),
         };
 
-        let result = handle_safe_refactor(&ctx, input).await;
-        // Should either fail validation or handle safely
-        assert!(result.is_ok() || result.is_err());
+        let output = handle_safe_refactor(&ctx, input)
+            .await
+            .expect("a SQL-injection-shaped target must be answered, not error the whole call");
+
+        assert!(
+            !output.success,
+            "a refactor whose target names no existing symbol must not \
+             report success; got {output:?}"
+        );
+        let reason = output
+            .error_message
+            .expect("a failed refactor must carry an error_message");
+        assert!(
+            reason.contains("Failed to read"),
+            "the refusal must come from resolving the target, not from \
+             silently accepting it; got: {reason}"
+        );
+        assert!(
+            output.changes.is_empty(),
+            "a refused refactor must not report edits; got {:?}",
+            output.changes
+        );
+        assert!(
+            !output.validation_result.is_valid && !output.validation_result.errors.is_empty(),
+            "validation_result must record the failure; got {:?}",
+            output.validation_result
+        );
+
+        // Nothing on disk may have been created for the payload name.
+        assert!(
+            !tempdir_path.join(payload).exists(),
+            "the payload must never have been treated as a real path"
+        );
     }
 
+    /// An empty target is the same class of input: it must be refused
+    /// with a reason, not resolved against the workspace root and
+    /// reported as a successful rename of nothing.
     #[tokio::test]
     async fn test_handle_safe_refactor_empty_target() {
         let tempdir = tempfile::tempdir().unwrap();
@@ -902,9 +948,28 @@ fn process(x: i32, y: i32) -> i32 {
             })),
         };
 
-        let result = handle_safe_refactor(&ctx, input).await;
-        // Empty target should be handled (either error or empty result)
-        assert!(result.is_ok() || result.is_err());
+        let output = handle_safe_refactor(&ctx, input)
+            .await
+            .expect("an empty target must be answered, not error the whole call");
+
+        assert!(
+            !output.success,
+            "an empty refactor target must not report success; got {output:?}"
+        );
+        assert!(
+            output.error_message.is_some(),
+            "an empty target must carry an error_message; got {output:?}"
+        );
+        assert!(
+            output.changes.is_empty(),
+            "a refused refactor must not report edits; got {:?}",
+            output.changes
+        );
+        assert!(
+            !output.validation_result.is_valid,
+            "validation_result must be invalid; got {:?}",
+            output.validation_result
+        );
     }
 
     // =========================================================================
