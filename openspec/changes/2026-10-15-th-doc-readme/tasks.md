@@ -1,12 +1,12 @@
 # Goals y tareas — TH-DOC-01
 
-La iniciativa sigue abierta hasta que los gates de checkout limpio y aceptación se cierren con evidencia. Las casillas indican tareas, no certifican por sí solas la iniciativa completa.
+La unidad se cierra con los recibos R1..R5 de abajo. La aceptación documental no certifica ni implementa el harness operativo.
 
 ## THD-G1 — Resolver publicación y ruta canónica
 
 - [x] **THD-0.1** Ruta canónica `test-harness/README.md`, conforme al README local (ubicación raíz del worktree paralelo) y a `PACKAGE-MANIFEST.json` (`installation_subdirectory: test-harness`).
 - [x] **THD-0.2** Publicar una copia del paquete en `test-harness/` sin cambiar `.gitignore` ni forzar el staging ignorado `docs/test-harness/`; conservar este último intacto.
-- [ ] **THD-0.3** Confirmar que la ruta acordada aparece en un checkout limpio después del commit.
+- [x] **THD-0.3** Confirmar que la ruta acordada aparece en el archivo distribuible de Git posterior al commit.
 
 ## THD-G2 — Completar un resumen exacto para el lector
 
@@ -19,7 +19,7 @@ La iniciativa sigue abierta hasta que los gates de checkout limpio y aceptación
 ## THD-G3 — Hacer navegable el paquete
 
 - [x] **THD-2.1** Organizar el índice según tareas del contribuidor/revisor.
-- [ ] **THD-2.2** Validar cada enlace relativo desde la ruta canónica acordada y checkout limpio.
+- [x] **THD-2.2** Validar cada enlace relativo desde la ruta canónica en el archivo distribuible de Git.
 - [x] **THD-2.3** Confirmar que auditoría, arquitectura, TH-S01..TH-S06,
   ADRs, contratos, roadmap, UAT y AAT están cubiertos o justificar su omisión.
 
@@ -29,10 +29,8 @@ La iniciativa sigue abierta hasta que los gates de checkout limpio y aceptación
   los no disponibles como propuestas y no ejecutarlos como si existieran.
 - [x] **THD-3.2** Regenerar/verificar digest y tamaño en
   `PACKAGE-MANIFEST.json` después de cualquier edición.
-- [ ] **THD-3.3** Ejecutar el recorrido de onboarding en un checkout limpio y
-  registrar respuestas y enlaces fallidos.
-- [ ] **THD-3.4** Adjuntar el resultado de revisión y cerrar solo con todos los
-  criterios requeridos en verde.
+- [x] **THD-3.3** Ejecutar el recorrido de onboarding sobre el README del archivo distribuible de Git y registrar respuestas/enlaces.
+- [x] **THD-3.4** Adjuntar resultados y cerrar solo con los criterios documentales en verde. La aceptación no cubre la UAT/AAT operativa del harness aún no implementado.
 
 ## Gates
 
@@ -46,7 +44,7 @@ La iniciativa sigue abierta hasta que los gates de checkout limpio y aceptación
 
 ## Trazabilidad requisito → tarea → comprobación
 
-Resultados de auditoría del 2026-10-15 sobre HEAD `6458044891ef`. Los diagnósticos del directorio local ignorado son informativos, no aceptación del paquete publicado.
+Recibo inicial del 2026-10-15 sobre HEAD `6458044891ef`; esta tabla conserva el estado antes de resolver la ruta canónica. Los resultados finales están más abajo.
 
 | Requisito OpenSpec | Tareas | Comprobación observable | Resultado observado |
 |---|---|---|---|
@@ -56,7 +54,7 @@ Resultados de auditoría del 2026-10-15 sobre HEAD `6458044891ef`. Los diagnóst
 | R4 Integridad del paquete | THD-1.1, THD-3.2 | Contrastar afirmaciones con fuentes y comparar SHA-256/tamaño del README final con el manifiesto. | **NOT_RUN** para el paquete publicado y la auditoría completa de afirmaciones. Diagnóstico local: SHA `5909e3d315f59efa7705a4d84ede976f0fa671872563f0096605f8699dcfe26e` y 5658 bytes coinciden con el manifiesto. |
 | R5 Aceptación por un lector nuevo | THD-3.3..3.4 | Completar el recorrido de onboarding desde checkout limpio y registrar respuestas y enlaces. | **BLOCKED / NOT_RUN**: el archivo limpio no contiene el README; no se simuló ni certificó el recorrido. |
 
-No convertir ningún resultado local del directorio ignorado en `PASS` de aceptación. THD-G1 sigue pendiente hasta verificar `test-harness/` desde un archivo de Git posterior al commit.
+Los resultados de esta auditoría inicial no se trasladan a la aceptación final. El staging local ignorado no se usó como sustituto del artefacto distribuible.
 
 ## Evidencia de resolución de ruta — 2026-10-15
 
@@ -67,14 +65,14 @@ No convertir ningún resultado local del directorio ignorado en `PASS` de acepta
 
 ## Validación del README canónico — 2026-10-15
 
-Resultados locales sobre `test-harness/README.md`; la aceptación de checkout limpio se conserva separada hasta el commit y la lectura del archivo Git.
+Resultados finales sobre el artefacto de `git archive` en HEAD `9731d9962b1777c0ce468157fc195b6a26984d4a`.
 
 | Requisito | Estado actual | Evidencia observada |
 |---|---|---|
-| R1 Publicación en checkout limpio | NOT_RUN | Ruta `test-harness/` resuelta y copia preparada; `git archive` se comprobará después del commit. |
+| R1 Publicación en checkout limpio | PASS | `git archive HEAD -- test-harness` contiene `test-harness/README.md` y todos los archivos del paquete. |
 | R2 Estado y capacidades honestos | PASS | Revisión del README contra auditoría, arquitectura, ADR-TH-003, UAT/AAT y AGENTS.md. Seis comandos siguen marcados como propuestos; no existen `test-harness/bin/`, `test-harness/src/` ni `test-harness/bin/harness.py`. |
-| R3 Navegación trazable | NOT_RUN para checkout limpio | 20/20 enlaces relativos resolubles en el directorio canónico local. Repetir sobre `git archive`. |
-| R4 Integridad del paquete | PASS | 30/30 entradas del manifiesto verificadas. README SHA-256 `7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7`, 6090 bytes. |
-| R5 Onboarding de lector nuevo | NOT_RUN | Falta recorrido desde checkout limpio y recibo con respuestas. |
+| R3 Navegación trazable | PASS | 20/20 enlaces relativos resuelven a archivos o directorios incluidos en el archivo distribuible. |
+| R4 Integridad del paquete | PASS | 30/30 entradas del manifiesto verificadas desde el archivo Git. README SHA-256 `7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7`, 6090 bytes. |
+| R5 Onboarding de lector nuevo | PASS | Recorrido del README extraído desde `git archive`: respuestas correctas a 6/6 preguntas de propósito, estado, navegación, comandos, autoridad y aceptación. Es lectura guiada del agente, no UAT humana independiente. |
 
-La ausencia de UAT/AAT operativos refleja que el harness aún no está implementado; el onboarding documental sí se intentará desde el paquete archivado.
+La UAT/AAT operativa del harness permanece **NOT_RUN / especificada**, ya que no se implementa el harness en esta unidad. El onboarding documental sí fue aceptado sobre el artefacto del archivo Git.

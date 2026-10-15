@@ -85,9 +85,7 @@ Revertir el puntero de TH-DOC-01 y retirar únicamente los archivos versionados 
 
 ## Success Criteria
 
-- [ ] THD-G1..G4 satisfechos con evidencia documentada.
-- [ ] README disponible desde un checkout limpio en `test-harness/README.md`.
-- [ ] Todos los enlaces relativos resuelven y `PACKAGE-MANIFEST.json` coincide
-      con el archivo final.
-- [ ] La aceptación de lectura confirma que el estado propuesto/implementado
-      se entiende sin afirmar capacidades no verificadas.
+- [x] THD-G1..G4 satisfechos con evidencia documentada en `tasks.md` y `JOURNAL.md`.
+- [x] README disponible desde el artefacto distribuible Git en `test-harness/README.md`.
+- [x] Los 20 enlaces relativos resuelven y los 30 hashes/tamaños del `PACKAGE-MANIFEST.json` coinciden.
+- [x] El recorrido de lectura en el artefacto distribuible distingue diseño propuesto de implementación y no afirma capacidades no verificadas.

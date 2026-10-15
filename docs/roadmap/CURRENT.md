@@ -10,37 +10,38 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e` (HEAD antes del commit de publicación).
+> `9731d9962b1777c0ce468157fc195b6a26984d4a` (paquete documental TH-DOC-01 publicado).
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
 > La captura anterior de `b5-v0.101.17` sobre SHA
 > `2df856fce7a541f2a3352adef73d4ca1f576247b` se conserva abajo como histórica.
 > Ese SHA es un ancestro 12 commits detrás de este HEAD y sus resultados
 > no se presentan como evidencia del HEAD actual.
 >
-> **Unidad abierta en este worktree**: TH-DOC-01, iniciativa documental
-> registrada en `docs/roadmap/ROADMAP.md` §11 y
-> `openspec/changes/2026-10-15-th-doc-readme/`. README canónico revisado en el worktree; el staging ignorado permanece intacto.
+> **Unidad cerrada en este worktree**: TH-DOC-01, README de entrada del Test Harness
+> publicado en `test-harness/README.md`; staging ignorado `docs/test-harness/`
+> preservado e intacto. Cualquier implementación del harness requiere una unidad separada.
 >
-> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS** en
-> HEAD `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e`, `workspace=0.101.17`.
+> Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS** en HEAD
+> `9731d9962b1777c0ce468157fc195b6a26984d4a`, `workspace=0.101.17`.
 
 ## HEAD y gates del worktree
 
 * **Rama**: `worktree/test-harness`.
-* **SHA de baseline para la WU activa**: `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e`.
+* **Commit de publicación**: `9731d9962b1777c0ce468157fc195b6a26984d4a`.
 * **Versión workspace**: `0.101.17`.
 * **Batería de workspace sobre el SHA del plan**: `NOT_RUN` en esta iniciativa
   documental.
-* **Estado**: README y paquete canónicos revisados en el worktree, pendientes de commit.
+* **Estado**: TH-DOC-01 cerrada para el README documental.
 * **Paquete fuente**: `docs/test-harness/` sigue ignorado por `.gitignore:153` y se preserva intacto.
-* **Validación local**: 20/20 enlaces resuelven; 30/30 entradas de manifiesto pasan. README SHA-256 `7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7`, 6090 bytes.
-* **Clean archive/onboarding**: `NOT_RUN` hasta commit.
+* **Aceptación desde archivo Git**: 31 archivos del paquete; 20/20 enlaces; 30/30 entradas de manifiesto; onboarding documental 6/6.
+* **Ratchet**: PASS en HEAD `9731d9962b17`.
+* **Límite**: implementación y UAT/AAT operativa del harness `NOT_RUN`, fuera de esta unidad.
 
 ## Snapshot anterior b5-v0.101.17 (histórico, SHA `2df856fce7a541f2a3352adef73d4ca1f576247b`)
 
 > El detalle restante conserva evidencia histórica de esa captura. Para el
 > estado actual de agenda manda `docs/roadmap/ROADMAP.md`; no trasladar sus
-> resultados a HEAD `a25a1a6e78b8de712a3755e20bc27cdf0d23d59e` sin repetir las comprobaciones.
+> resultados a HEAD `9731d9962b1777c0ce468157fc195b6a26984d4a` sin repetir las comprobaciones.
 
 ## HEAD y batería (a 2026-10-15)
 

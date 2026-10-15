@@ -102,3 +102,15 @@
 - Manifiesto canónico: 30/30 entradas válidas, sin archivos no declarados salvo el propio `PACKAGE-MANIFEST.json`. README SHA-256 `4b55bf00047949bbeb79a7c70bf23640bf8b0bc246b48f470aee12443775a028`, 6088 bytes.
 - Staging ignorado preservado: `docs/test-harness/README.md` conserva SHA `5909e3d315f59efa7705a4d84ede976f0fa671872563f0096605f8699dcfe26e`, 5658 bytes; `.gitignore` no cambió.
 - Estados: exactitud/estado y manifiesto **PASS** a nivel de revisión local; publicación de archivo y enlaces desde checkout limpio **NOT_RUN** hasta commit; onboarding documental **NOT_RUN** hasta ejecutar ese recorrido.
+
+## Recibo de aceptación y cierre — 2026-10-15
+
+- **HEAD evaluado**: `9731d9962b1777c0ce468157fc195b6a26984d4a` (`docs(test-harness): publish and complete README`).
+- **Distribución pública**: lectura de `git archive --format=tar HEAD test-harness`; aparecen 31 archivos del paquete, incluido `README.md` y el manifiesto.
+- **Integridad**: 30/30 entradas del `PACKAGE-MANIFEST.json` verificadas contra los bytes del archivo; README SHA-256 `7b8b0bd5764de0cd4833018d8fd5e1038c5e8e43f5adcaded9d7e97fc4aef4b7`, 6090 bytes.
+- **Navegación**: se extrajo el README del archivo y se validaron sus 20 enlaces relativos contra rutas del mismo archivo; 20/20 resuelven.
+- **Onboarding documental**: recorrido guiado sobre el README extraído, 6/6 respuestas explícitas: propósito propuesto, estado solo-especificación, rutas de lectura por tarea, comandos no disponibles, autoridad PipelineK y estado no ejecutado de UAT/AAT. Esta es una revisión guiada del agente, no una UAT humana independiente.
+- **UAT/AAT operativa**: **NOT_RUN / especificada** porque no se implementa el harness en TH-DOC-01. README no atribuye capacidad ejecutable ni mejora de rendimiento.
+- `python3 scripts/ci/test_roadmap_version_ratchet.py` → **PASS** (`workspace=0.101.17`, HEAD `9731d9962b17`).
+- Se preservó el staging ignorado `docs/test-harness/`, se mantuvo `.gitignore` sin cambios y no se tocaron código ni pipelines.
+- **Resultado**: THD-G1..G4 y R1..R5 cerrados para el README documental. Implementar W0..W7 requerirá una unidad Post-PRF separada.

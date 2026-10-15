@@ -367,13 +367,12 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 
 ## 11. TH-DOC-01 — README de entrada del Test Harness (2026-10-15)
 
-> **Estado**: OPEN / IN PROGRESS. Ruta canónica resuelta como
-> `test-harness/README.md`, coherente con la ubicación raíz indicada por el
-> README fuente y `installation_subdirectory` del manifiesto.
-> El README canónico fue revisado; sus 20 enlaces relativos resuelven y las 30
-> entradas del manifiesto coinciden. El staging `docs/test-harness/` sigue
-> ignorado y preservado. `git archive` y el onboarding limpio siguen pendientes
-> del commit.
+> **Estado**: CLOSED (2026-10-15). README canónico publicado en
+> `test-harness/README.md`, según README fuente y manifiesto. En el archivo Git:
+> 20/20 enlaces relativos, 30/30 hashes/tamaños del manifiesto y onboarding
+> documental 6/6 pasan. El staging `docs/test-harness/` sigue ignorado e intacto.
+> La implementación del harness y su UAT/AAT operativa permanecen fuera de esta
+> unidad y no se declaran completas.
 
 | Item | Contrato |
 |---|---|
@@ -385,6 +384,5 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 | Propuesta, goals y contrato | [`openspec/changes/2026-10-15-th-doc-readme/proposal.md`](../../openspec/changes/2026-10-15-th-doc-readme/proposal.md), [`spec.md`](../../openspec/changes/2026-10-15-th-doc-readme/specs/test-harness-readme/spec.md), [`tasks.md`](../../openspec/changes/2026-10-15-th-doc-readme/tasks.md). |
 | Estado y recibos de unidad | [`CURRENT.md`](../../openspec/changes/2026-10-15-th-doc-readme/CURRENT.md), [`JOURNAL.md`](../../openspec/changes/2026-10-15-th-doc-readme/JOURNAL.md). |
 
-**Siguiente WU**: commit del paquete y punteros; comprobar en `git archive` que
-la ruta canónica y los destinos enlazados están incluidos. Después completar el
-recorrido de onboarding desde checkout limpio y cerrar R1..R5 con recibo.
+**Cierre**: R1..R5 cerrados para el entregable documental. Cualquier trabajo de
+implementación del harness W0..W7 requiere una unidad Post-PRF separada.
