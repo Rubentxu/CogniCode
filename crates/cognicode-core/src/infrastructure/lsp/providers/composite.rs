@@ -1222,14 +1222,25 @@ mod tests {
     /// S2 tier is never attempted.
     #[tokio::test]
     async fn test_composite_hierarchy_uses_tree_sitter_when_lsp_gated_off() {
+        // The root is a `TempDir`, not `/tmp`. `CompositeProvider` walks its
+        // root, so a test rooted at a shared system directory measures that
+        // directory: on a clean machine it passes, on a busy one it hangs
+        // forever. Neither of these tests needs anything from the root's
+        // contents — only a directory that does not contain the file it is
+        // about to fail to find.
+        let tmp = tempfile::TempDir::new().unwrap();
         let provider = CompositeProvider::with_policy(
-            std::path::Path::new("/tmp"),
+            tmp.path(),
             TierPolicy {
                 lsp: false,
                 ..TierPolicy::all()
             },
         );
-        let location = Location::new("/tmp/test.rs".to_string(), 1, 1);
+        let location = Location::new(
+            tmp.path().join("test.rs").to_string_lossy().to_string(),
+            1,
+            1,
+        );
         let error = provider
             .get_hierarchy(&location)
             .await
@@ -1672,15 +1683,19 @@ mod tests {
     /// `Err(Internal)` carrying the exhausted-tier diagnostic summary.
     #[tokio::test]
     async fn test_symbols_unresolved_maps_to_internal_error() {
+        // See the sibling hierarchy test: a provider rooted at `/tmp` walks
+        // `/tmp`, and `/tmp` is a shared directory whose size and shape are
+        // not this test's to decide.
+        let tmp = tempfile::TempDir::new().unwrap();
         let provider = CompositeProvider::with_policy(
-            std::path::Path::new("/tmp"),
+            tmp.path(),
             TierPolicy {
                 lsp: false,
                 ..TierPolicy::all()
             },
         );
         let error = provider
-            .get_symbols(std::path::Path::new("/nonexistent/missing.rs"))
+            .get_symbols(&tmp.path().join("nonexistent").join("missing.rs"))
             .await
             .expect_err("no tier can parse a missing file");
         let message = error.to_string();
