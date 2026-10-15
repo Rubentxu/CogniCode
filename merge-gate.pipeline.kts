@@ -110,6 +110,25 @@ pipeline {
     stages {
         // ---------------------------------------------------------------- check
         stage("check") {
+            stage("build-isolation") {
+                // MEDIDO 2026-10-15. Esta etapa se antepone a todo lo demás a
+                // propósito. Seis checkouts de este repo compilan al mismo
+                // target dir, así que un binario de cualquiera de los cinco
+                // worktrees puede ejecutarse como si fuera de este árbol: cargo
+                // decide frescura por mtime, y un mtime no dice de dónde salió
+                // el binario. Pasó dos veces en un día, en las dos
+                // direcciones — un test paniqueando en la línea 900 de un
+                // fichero de 861, y otro comparando su `source_commit` contra
+                // el HEAD de otro worktree.
+                //
+                // Sin esta etapa el gate produce un veredicto que no se puede
+                // atribuir, y falla después de 11 minutos explicando un test
+                // que en realidad no falla. Con ella, no arranca y dice por
+                // qué. El negativo está probado: dos checkouts y nadie
+                // compilando sale 0.
+                sh("bash scripts/ci/check-build-isolation.sh")
+            }
+
             stage("toolchain") {
                 sh("cargo --version && rustc --version")
             }
