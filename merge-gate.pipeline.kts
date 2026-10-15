@@ -354,6 +354,56 @@ set -eo pipefail
             // suites behind #![cfg(feature = "evidence-kernel")] compile to
             // empty test binaries and report 0 passed / 0 failed / exit 0.
             // core_gate_coverage_contract pins this stage by command parity.
+            // MEDIDO 2026-10-15. Estas cuatro etapas se movieron fuera del merge
+            // gate cuando el trabajo de release salio de aqui (e987d389, con la
+            // aprobacion del operador). Eso dejo en rojo, y sigue en rojo,
+            // `cli_gate_coverage_contract::the_gate_provides_what_the
+            // release_flow_suites_require`: cuatro suites de release resuelven sus
+            // binarios por `target/release/`, y en un runner limpio ese directorio
+            // no existe. Localmente lo enmascara whatever release binaries happen
+            // to exist on this machine — que es la frase del propio contrato y
+            // describe el fallo entero: un gate que en esta maquina dice verde y en
+            // la otra no.
+            //
+            // MEDIDO: en frio, con el target dir vacio, son 358 + 123 + 174 + 38 =
+            // 693 s. El gate no cabe hoy en 15 min por la bateria, no por esto.
+            //
+            // MEDIDO 2026-10-15, el orden importa y la primera version no lo
+            // tenia en cuenta: estas etapas iban DESPUES de
+            // `core-unrestricted-evidence-kernel`, que ya necesita `cognicode-mcp`
+            // para `b6_w1_mcp_robustness`. El gate fallo ahi con "binary not
+            // found" having them built further down the file. Un binario que el
+            // gate construye tiene que construirse antes del primer consumer.
+            // MEDIDO 2026-10-15. Estas cuatro etapas se movieron fuera del merge
+            // gate cuando el trabajo de release salio de aqui (e987d389, con
+            // la aprobacion del operador). Eso dejo en rojo, y sigue en rojo,
+            // `cli_gate_coverage_contract::the_gate_provides_what_the
+            // release_flow_suites_require`: las cuatro suites de release
+            // resuelven sus binarios por `target/release/`, y en un runner
+            // limpio ese directorio no existe. Localmente lo enmascara
+            // whatever release binaries happen to exist on this machine — que
+            // es la frase del propio contrato y describe el fallo entero: un
+            // gate que en esta maquina dice verde y en la otra no.
+            //
+            // MEDIDO: en frio, `cargo build --release -p cognicode-mcp` son
+            // 358 s en un target dir vacio. Los otros tres comparten el arbol
+            // de dependencias y cuestan mucho menos. El merge gate no cabe
+            // hoy en 15 min por la bateria de tests, no por esto; esto es lo
+            // que hace que la bateria signifique algo.
+            stage("build-binary") {
+                stage("build-cognicode-mcp-release") {
+                    sh("cargo build --release -p cognicode-mcp")
+                }
+                stage("build-control-plane-release") {
+                    sh("cargo build --release --bin cognicode-control-plane")
+                }
+                stage("build-cognicode-cli-release") {
+                    sh("cargo build --release -p cognicode-cli")
+                }
+                stage("build-cognicode-release-bin") {
+                    sh("cargo build --release --bin cognicode")
+                }
+            }
             stage("core-unrestricted-evidence-kernel") {
                 // MEDIDO 2026-10-15. This step streamed `cargo test --quiet`
                 // straight into the run transcript: 68 test binaries' worth of
@@ -491,36 +541,6 @@ set -eo pipefail
             // that if it ever fails again the output is on disk and named,
             // instead of a run database that says only "shell exited with
             // code 101" — which is what four failures produced.
-            // MEDIDO 2026-10-15. Estas cuatro etapas se movieron fuera del merge
-            // gate cuando el trabajo de release salio de aqui (e987d389, con
-            // la aprobacion del operador). Eso dejo en rojo, y sigue en rojo,
-            // `cli_gate_coverage_contract::the_gate_provides_what_the
-            // release_flow_suites_require`: las cuatro suites de release
-            // resuelven sus binarios por `target/release/`, y en un runner
-            // limpio ese directorio no existe. Localmente lo enmascara
-            // whatever release binaries happen to exist on this machine — que
-            // es la frase del propio contrato y describe el fallo entero: un
-            // gate que en esta maquina dice verde y en la otra no.
-            //
-            // MEDIDO: en frio, `cargo build --release -p cognicode-mcp` son
-            // 358 s en un target dir vacio. Los otros tres comparten el arbol
-            // de dependencias y cuestan mucho menos. El merge gate no cabe
-            // hoy en 15 min por la bateria de tests, no por esto; esto es lo
-            // que hace que la bateria signifique algo.
-            stage("build-binary") {
-                stage("build-cognicode-mcp-release") {
-                    sh("cargo build --release -p cognicode-mcp")
-                }
-                stage("build-control-plane-release") {
-                    sh("cargo build --release --bin cognicode-control-plane")
-                }
-                stage("build-cognicode-cli-release") {
-                    sh("cargo build --release -p cognicode-cli")
-                }
-                stage("build-cognicode-release-bin") {
-                    sh("cargo build --release --bin cognicode")
-                }
-            }
             stage("cli-unrestricted-ladybug") {
                 sh("""
             set -eo pipefail
