@@ -14992,3 +14992,80 @@ en `test-harness/adrs/ADR-TH-007-implementacion-nucleo.md`; resumen de contrato 
 - La clausura por citas textuales no detecta rutas construidas por concatenación;
   la lista de ficheros tratados como potencialmente inertes es corta y explícita,
   y el límite está escrito en el README.
+
+## Recibo 2026-10-15 — TH-IMPL-02: paridad medida con el selector vigente (CR-08)
+
+Continuación de TH-IMPL-01 en el worktree paralelo `worktree/test-harness`.
+Decisión: `test-harness/adrs/ADR-TH-008-paridad-con-el-oraculo.md`; contrato en
+`docs/roadmap/ROADMAP.md` §15.
+
+### Qué se hizo
+
+- `adapters/cr08_selector.py`: ejecuta `scripts/ci/select-suites.sh` con los paths
+  del cambio y normaliza su decisión (`strategy`, `reason`, `suites`). Oráculo
+  ilegible (sin script, sin JSON, con timeout o con nombres que su interfaz de
+  espacios no puede representar) no es `noop`: es `ok=false` con el motivo.
+- `src/harness/parity.py`: comparación por scope con dirección explícita
+  (`AGREE`, `HARNESS_STRICTER`, `DECLARED_DEVIATION`, `HARNESS_WEAKER`,
+  `ORACLE_UNKNOWN`, y `NOT_IN_CATALOG` para scopes que ninguna obligación de la
+  lane ejecuta), desviaciones declaradas atribuidas al **motivo del propio
+  oráculo**, suelo del oráculo para el plan y corpus de 16 clases de cambio.
+- `plan --oracle cr08`: añade las obligaciones que el selector exige y la
+  selección por impacto no cubría, con el motivo escrito; si el oráculo no se
+  puede leer, exige todo y queda `UNKNOWN_INPUT`.
+- Acoplamientos que CR-08 declara y que no son dependencias (`mcp→core`,
+  `explorer→core`) aplicados en la selección: sin ellos, un cambio en mcp habría
+  dejado de ejecutar suites que el gate de hoy sí exige.
+- Contrato del gate: la paridad se comprueba en
+  `scripts/ci/test_harness_contract.py` sobre el corpus y con el selector real;
+  `HARNESS_WEAKER` sin desviación declarada hace caer la etapa de contratos.
+- `.gitignore`: nada nuevo; `bin/` ya quedó negado en TH-IMPL-01.
+
+### Bugs que la comparación destapó (los dos producían falsos verdes)
+
+| Bug | Síntoma | Corrección |
+|---|---|---|
+| El presupuesto del barrido de citas (4 MB) se agotaba a la mitad del árbol y el barrido devolvía «nadie cita» | Un `docs/` o `AGENTS.md` cambiado podía quedarse sin ninguna suite, con una prueba aparente | `docs_references` devuelve `(citas, completa)`; presupuesto 64 MB, sólo ficheros de texto, y si el barrido no termina el plan cae al fallback conservador |
+| La atribución de citas se quedaba con la **primera** cita por documento | Se perdían paquetes que sí citan el fichero (el paquete que aparecía primero en el recorrido se llevaba la obligación) | Se recogen todas las citas (tope 500 por documento) y la cobertura se calcula por paquete |
+
+Además, un techo de tres diferencias reales quedó resuelto con reglas declaradas y
+medidas: `mcp→core` (acoplamiento del oráculo), `explorer` fuera de las lanes
+`change`/`merge` (sus suites sólo corren en integración, `NOT_IN_CATALOG`) y las
+caídas a ALL del oráculo para paths que su lista de reglas no conoce.
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Corpus de paridad, lane `change` | 9 `AGREE`, 5 `HARNESS_STRICTER`, 2 `DECLARED_DEVIATION`, **0 `HARNESS_WEAKER`** |
+| Corpus de paridad, lane `merge` | ídem |
+| Corpus de paridad, lane `integration` | ídem (explorer cubierto: 49 obligaciones) |
+| `parity --corpus` (16 clases, selector real) | ~1,3 s |
+| Suite del harness | 75/75 PASS (15 nuevos de paridad) |
+| Suite del harness + contrato del gate | 82/82 PASS, ~95 s |
+| `plan --lane change` con cambio en un `.rs` | 2,4 s; 27 de 39 obligaciones |
+| `plan --lane change` con cambio sólo en `docs/roadmap/ROADMAP.md` | 2,8 s; 22 de 39 (el escaneo de citas cuesta ~0,4 s) |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 75/75 |
+| `scripts/ci/test_harness_contract.py` | PASS, 7/7 |
+| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate) | ver recibo del PR; incluye la comprobación de paridad |
+| `parity --corpus` en `change`, `merge` e `integration` | PASS, 0 debilidades sin declarar |
+
+### Límites declarados
+
+- **El selector CR-08 sigue siendo la autoridad.** El harness mide paridad; no
+  decide la cobertura de la lane de merge ni sustituye ninguna etapa.
+- No se añadió etapa de sombra a las pipelines: la paridad se mide dentro del
+  contrato, que ya corre en el gate, y una etapa nueva cambiaría la forma de la
+  pipeline sin aportar evidencia (ADR-TH-008).
+- El corpus es una tabla mantenida a mano de 16 clases de cambio; no es una
+  generación exhaustiva de diffs. Cubre dependencias, infraestructura,
+  documentación, metadata, sandbox y rutas desconocidas.
+- La comparación hereda dos límites del oráculo: su vocabulario es grueso (un
+  scope por suite) y su interfaz de paths separa por espacios, así que un nombre
+  con espacios se detecta y se declara en el informe en vez de compararse a
+  ciegas.

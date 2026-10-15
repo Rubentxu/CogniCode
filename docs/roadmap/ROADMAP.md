@@ -444,3 +444,22 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Contribuidores (feedback local con evidencia), mantenedor (contrato dentro de la etapa de contratos del merge-gate), auditoría (ADR-TH-007 y README) |
 | Criterio de cierre | Cumplido en lo declarado: 60 tests verdes con `scripts/run_contract_tests.py` (~35 s), contrato del gate verde dentro de `run-all-contracts.sh`, plan válido contra `plan.schema.json`, fail-closed verificado (ruta desconocida, borrado de test, sin merge-base, sin grafo), y declaración explícita de lo que NO se hizo |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 15. TH-IMPL-02 — Paridad medida con el selector vigente (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated. La comparación con CR-08 existe, está medida
+> sobre un corpus de 16 clases de cambio y se vuelve a medir dentro del contrato
+> del gate en cada merge: **0 debilidades sin declarar** en `change`, `merge` e
+> `integration`. Decisión:
+> [`test-harness/adrs/ADR-TH-008-paridad-con-el-oraculo.md`](../../test-harness/adrs/ADR-TH-008-paridad-con-el-oraculo.md).
+> No cambia qué bloquea un merge: el selector sigue siendo la autoridad.
+
+| Item | Contrato |
+|---|---|
+| Valor | Poder afirmar sin fe que el harness no recorta cobertura: la comparación tiene dirección explícita (`AGREE`, `HARNESS_STRICTER`, `DECLARED_DEVIATION`, `HARNESS_WEAKER`, `ORACLE_UNKNOWN`) y `HARNESS_WEAKER` sin desviación declarada hace caer la etapa de contratos |
+| Clasificación | Evolutivo del test harness (W3/W6 parciales) sobre el mandato del operador de 2026-10-15, continuación del bloque TH-IMPL-01 |
+| Alcance | `test-harness/{src,adapters,tests}` (paridad, oráculo, acoplamientos, escaneo de citas), `scripts/ci/test_harness_contract.py`, README y ADR-TH-008, roadmap del harness |
+| Fuera de alcance | Sustituir CR-08, migrar `test-fast.sh`, etapa de sombra en las pipelines, política de reutilización en gates oficiales |
+| Consumidores | Mantenedor (evidencia de no-regresión de cobertura), contribuidores (`parity --corpus`), auditoría (ADR-TH-008) |
+| Criterio de cierre | Cumplido: 15 tests de paridad verdes (82 en total con el contrato), corpus medido en tres lanes sin debilidades, y **dos bugs del harness corregidos** que la comparación destapó (presupuesto del barrido de citas agotado y atribución de citas al primer paquete) |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

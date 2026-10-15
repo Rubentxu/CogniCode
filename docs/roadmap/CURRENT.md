@@ -9,8 +9,9 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, TH-IMPL-01
-> (núcleo ejecutable del test harness) sobre el árbol posterior a `c7721ee0`;
+> **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
+> `46bb6b2b3ec15855feda914af9a294d7ad133ce8` (TH-IMPL-02: paridad medida con el selector vigente), sobre el árbol
+> posterior a TH-IMPL-01;
 > este snapshot describe el árbol de trabajo del worktree antes del commit de
 > recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -18,7 +19,15 @@
 > `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
 > como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-IMPL-01, registrada en `ROADMAP.md` §14
+> **Unidad cerrada en este worktree**: TH-IMPL-02, registrada en `ROADMAP.md` §15
+> y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-008`. La comparación
+> con CR-08 existe y se vuelve a medir en cada merge dentro de la etapa de
+> contratos: 0 debilidades sin declarar en `change`, `merge` e `integration`, con
+> 16 clases de cambio en el corpus. Dos bugs del harness (barrido de citas
+> incompleto y atribución al primer paquete) se corrigieron al destaparlos la
+> comparación.
+>
+> La unidad anterior en este worktree fue TH-IMPL-01, registrada en `ROADMAP.md` §14
 > y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-007`. El paquete
 > `test-harness/` deja de ser solo especificación: `bin/harness.py`, `src/harness/`,
 > `adapters/` y `tests/` existen, están versionados y pasan 60/60 con
@@ -29,17 +38,20 @@
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py`: **PASS**,
 > `workspace=0.101.17`.
 
-## HEAD y gates del worktree (TH-IMPL-01)
+## HEAD y gates del worktree (TH-IMPL-02)
 
 * **Rama**: `worktree/test-harness`.
-* **Commits de la unidad**: el commit de código del harness y el commit de
-  recibos que sigue a este snapshot; el PR #349 recoge el histórico completo
-  (B1, retirada UAT, README y este bloque).
+* **Commits de la unidad**: el commit de paridad y el commit de recibos que sigue
+  a este snapshot; el PR #349 recoge el histórico completo (B1, retirada UAT,
+  README, TH-IMPL-01 y este bloque).
 * **Versión workspace**: `0.101.17`; el tag remoto más reciente sigue siendo
   `v0.101.16` y **no** se publica release en esta unidad.
 * **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`,
-  30 contratos CI + `scripts/product/*.py`): **282 passed, 0 failed**, con el
-  contrato del harness incluido por glob.
+  30 contratos CI + `scripts/product/*.py`): con el contrato del harness incluido
+  por glob; ver el recibo del PR para el total de esta corrida.
+* **Paridad con CR-08**: `parity --corpus` en `change`, `merge` e `integration`
+  → 0 `HARNESS_WEAKER` sin desviación declarada; 9 `AGREE`, 5 `HARNESS_STRICTER`
+  y 2 desviaciones declaradas por lane.
 * **Harness**: `plan --lane change` sobre el repositorio real: 2,5 s, 27 de 39
   obligaciones requeridas y 12 excluidas con motivo para un cambio de una línea en
   `cognicode-ladybug`. Suite del harness: 60/60 PASS (~35 s).
