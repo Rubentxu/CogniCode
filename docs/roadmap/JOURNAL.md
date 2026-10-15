@@ -14808,3 +14808,72 @@ dejar el nombre con un `echo` en el cuerpo.
 * 32 ficheros de estado de runtime de PipelineK (`leases/`, `last-run/`,
   `output-plane/`) estaban **trackeados en git** desde `e14d6e7e`. Des-trackeados
   e ignorados; contrato con oráculo `git ls-files`.
+
+## Recibo 2026-10-15 (ter) — 65 etapas colapsadas a 10, y un agujero que打开代价
+
+**SHA**: `00a866f6` sobre `b5-v0.101.17` (PR #348).
+**Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
+`v0.101.16`.
+
+### El gate tenía 73 etapas y nadie había quitado ninguna
+
+Cada una se añadió cuando alguien encontró un defecto. Ninguna se Pinedó
+nunca después. Así se forma un montón, y así un montón deja de leerse.
+
+**35 de las 65 ejecutables eran `cargo test -p <crate> --test <un_fichero>`**
+— una etapa por fichero de test, repartidas entre core, cli y mcp. Eso no son
+35 comprobaciones: `cargo test` ya informa por suite. La división no compraba
+trazabilidad que la herramienta no diera, y costaba 35 etapas, 35 pares
+`StepStarted`/`StepFinished`, y 35 oportunidades de que el runtime pierda uno.
+
+### Diez etapas, misma cobertura, verificado
+
+    static       toolchain, repo-contract, fmt, clippy
+    docs         rustdoc-gate
+    contracts    pip, run-all-contracts.sh
+    skills       validate_skills, verify-skills
+    supply-chain cargo-deny install, advisories, licenses
+    lsp          rust-analyzer install, rust-analyzer-answers
+    build        build-binary + 4 release + verify-release-binaries
+    selector     qw08-crate-selector, select-suites-script
+    tests        los 39 stages de test, en su orden original
+    governance   drift-lint, compat-matrix, gate-coverage, e91-w7, e91-w8
+
+La cobertura no se afirma, se mide: extraídos todos los payloads `sh` de los
+dos ficheros y comparadas las líneas de comando que no son comentarios, el
+resultado es **cero líneas en uno y ausentes en el otro**. El orden se
+conserva porque ordenar es el invariante entero del fichero.
+
+### El contrato encontró un agujero que este mismo recibo abrió antes
+
+`cli_gate_coverage_contract` reportó que **`prf_h06_adversarial_e2e` no la
+nombraba ninguna etapa**. Esa suite —los 15 tests adversarios de escape por
+symlink, traversal y secretos— se movió esta misma mañana de
+`cognicode-core` a `cognicode-mcp` para poder usar `CARGO_BIN_EXE`. El
+movimiento funcionó y **la dejó fuera del gate**, con todo en verde. El
+contrato que dice cubrir ese agujero lo cubrió.
+
+Vuelve a estar nombrada, desde `cognicode-mcp`, con el motivo en un
+comentario. `core_gate_coverage_contract` vio el mismo movimiento desde el
+otro lado — 66 suites contadas donde hay 65 — y ahora cuenta 65 explicando
+por qué.
+
+### Coste medido por etapa, con ejecución real
+
+    toolchain 0,2s · repo-contract 0,1s · fmt 4,4s · clippy 89,6s
+    rustdoc-gate 449,0s
+
+### Abierto
+
+* **`docs` cuesta 449 s y `build` unos 700 s.** Diez etapas no son quince
+  minutos: son un coste visible. Sacar `build` a la lane de release es
+  limpieza; sacar `docs` cambia qué garantiza un merge. Ambas son decisiones
+  del operador y ninguna se ha tomado.
+* **`cargo doc --workspace --no-deps` no cachea.** Medido dos veces seguidas
+  sobre árbol sin cambios: 8m10s y 8m57s. `rustdoc-gate` lo ha medido 434 s,
+  449 s y 488 s en tres runs. Cargo doc en caliente es de 1-2 min; aquí no
+  cachea nada y no se ha explicado por qué. Es la palanca de ~6 minutos y
+  sigue sin tocarse.
+* **El gate murió con exit 137 (SIGKILL) en un run anterior**, con 61 GB de
+  94 GB en uso por sesiones ajenas a esta. No reproducido; la máquina estaba
+  compartida.
