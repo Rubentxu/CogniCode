@@ -651,18 +651,6 @@ pipeline {
         // every target. `releaseContractEnv` says so out loud for a foreign one
         // instead of executing a cross binary that cannot run.
         stage("release-contracts") {
-            stage("prf-dist-01-06-release-candidate-uat") {
-                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-cli --test prf_dist_01_06_release_candidate_uat --quiet
-                """.trimIndent())
-            }
-
-            stage("prf-dist-workflow-flatten-uat") {
-                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-cli --test prf_dist_workflow_flatten_uat --quiet
-                """.trimIndent())
-            }
-
             stage("prf-f6-w1-release-coherence") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
                     cargo test -p cognicode-cli --test prf_f6_w1_release_coherence --quiet
@@ -678,15 +666,6 @@ pipeline {
             stage("published-skill-bundles-are-required") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
                     cargo test -p cognicode-cli --test published_skill_bundles_are_required --quiet
-                """.trimIndent())
-            }
-
-            // The two-process UAT lives in the MCP crate and spawns `cognicode`
-            // and `cognicode-mcp` from the release directory; same environment,
-            // same guard.
-            stage("prf-cli-04-two-process-uat") {
-                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
-                    cargo test -p cognicode-mcp --test prf_cli_04_two_process_uat --quiet
                 """.trimIndent())
             }
         }
@@ -832,11 +811,10 @@ pipeline {
 
                     # `--tag` and `--source-commit` are not decoration:
                     # `source_commit` is a required field of the release
-                    # inventory, and `prf_dist_01_06_release_candidate_uat`
-                    # asserts the inventory records HEAD. A manifest that does
-                    # not name the commit it was built from cannot be tied to
-                    # one, which is the first link of the chain this lane exists
-                    # to keep.
+                    # inventory, and the inventory is what ties a candidate to
+                    # the commit it was built from. A manifest that does not
+                    # name that commit cannot be tied to one, which is the first
+                    # link of the chain this lane exists to keep.
                     source=$(git rev-parse HEAD)
                     "${'$'}TARGET_DIR/release/cognicode-release" generate \
                         --staging staging \

@@ -225,39 +225,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
-    // 66 -> 68 with the live-wire defect guards added after driving the
-    // release binary as a real MCP client:
-    //   - `undispatchable_tool_guard` (calls every advertised tool through
-    //     the real dispatcher and fails only on `ToolNotFound`; it found
-    //     four advertised-but-uncallable tools the suite had missed),
-    //   - `tree_sitter_grammar_abi` (every grammar loads and parses against
-    //     tree-sitter 0.27; pins the fallback in `lightweight_index.rs`
-    //     that would otherwise substitute the Rust grammar silently).
-    // The 68 is the on-disk count at the moment this assertion was
-    // bumped; any further WU adds another file and bumps again.
-    //
-    // 68 -> 71 registers three SIGABRT investigation suites that had been
-    // added without updating this constant, which left the contract
-    // failing at HEAD before any of them could be trusted:
-    //   - `lightweight_index_repro`  (direct repro of the abort)
-    //   - `map_symbol_collision_repro` (disproved the tree-sitter ODR
-    //     violation as the cause)
-    //   - `haskell_scanner_overflow` (the confirmed root cause: the
-    //     tree-sitter-haskell 0.23.1 lookahead write past its buffer)
-    // The three repro suites are characterization, not behaviour
-    // contracts, so they are registered in ANCHOR_SUITES below rather
-    // than named by a workflow step: nothing runs them by name.
-    //   - `advertised_language_extraction_matrix` (Bash, Haskell, Scala and
-    //     Yaml are advertised `support_level: "supported"` but extract
-    //     nothing from their own definitions; the twelve that work are
-    //     pinned so a fix cannot over-correct)
-    //   - `scala_node_kinds` (the Scala mappings that gate the matrix above are
-    //     pinned against a live parse, since node-types.json is not a complete
-    //     oracle for what the grammar emits)
+    // 81 -> 80 on 2026-10-17: `prf_ext_04_adapter_authority_uat` was deleted
+    // with the rest of the UAT class by operator decision (ADR-TH-006, applied
+    // via D1 cherry-pick e2b22d15). A file that goes away on purpose moves
+    // this number in the same commit, which is what this assertion is for.
     assert_eq!(
         suites.len(),
-        81,
-        "expected exactly 81 cognicode-core integration suites, found {}. \
+        80,
+        "expected exactly 80 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -420,7 +395,6 @@ const ANCHOR_SUITES: &[&str] = &[
     "lightweight_index_repro",
     "lightweight_index_timeout_budget",
     "map_symbol_collision_repro",
-    "prf_ext_04_adapter_authority_uat",
     "provider_conformance",
     "query_symbol_index_cache_miss_contract",
     "safe_refactor_rename_symbol_contract",

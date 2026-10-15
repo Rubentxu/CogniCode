@@ -18,6 +18,15 @@
 //! and the builds that fed them, to `release-candidate.pipeline.kts`, the lane
 //! that produces release bytes as the candidate itself (ADR-TH-005).
 //!
+//! On 2026-10-15 the operator retired the whole UAT class from the repository
+//! (`*_uat.rs` targets, ADR-TH-006): their subject was acceptance, and the cost
+//! of keeping a second, slower gate for behaviour the merge lane already pins
+//! was paid on every iteration. That removed eight of this crate's targets and
+//! left three release-profile suites, all of them lane contracts rather than
+//! UATs: `prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract` and
+//! `published_skill_bundles_are_required`. The matrix below is unchanged in
+//! shape; what it measures simply has fewer rows.
+//!
 //! That splits the surface in two, and the split is what this file now pins:
 //!
 //!   * `merge-gate.pipeline.kts` names every `tests/*.rs` target **except** the
@@ -168,8 +177,6 @@ fn is_lib_without_bins(command: &str) -> bool {
 /// bytes. None of them can be evidence in a lane that builds no release binary;
 /// in this lane they would be a red gate whose cheapest repair is a skip.
 const RELEASE_PROFILE_SUITES: &[&str] = &[
-    "prf_dist_01_06_release_candidate_uat",
-    "prf_dist_workflow_flatten_uat",
     "prf_f6_w1_release_coherence",
     "prf_f6_w2_staging_contract",
     "published_skill_bundles_are_required",
@@ -330,7 +337,7 @@ fn the_candidate_lane_builds_the_release_artifacts_those_suites_consume() {
         ),
         (
             "--bin cogh --bin cognicode",
-            "`cogh` and `cognicode`, which PRF-DIST-01/06 and F6 tar as payloads",
+            "`cogh` and `cognicode`, which F6.W1 and F6.W2 tar as payloads",
         ),
         (
             "-p cognicode-mcp --bin cognicode-mcp",
@@ -439,25 +446,24 @@ fn the_a016_tools_runtime_consistency_suite_is_gated() {
 ///
 /// Nothing here is excluded for being "slow". `continuation_e2e` needs
 /// the RUST_SANDBOX_BOOTSTRAP=1 Tier-1 fixture repos (gitignored
-/// bootstrap artifacts, suite self-skips without them);
-/// `prf_mcp_03_network_off_uat` needs `unshare -rn` (rootless network
-/// namespaces are not guaranteed on every CI runner image, and the
-/// suite hard-fails the anti-vacuity guard if unshare is missing).
+/// bootstrap artifacts, suite self-skips without them); the second entry this
+/// table used to carry, `prf_mcp_03_network_off_uat`, was a UAT and went away
+/// with the class on 2026-10-15 (ADR-TH-006).
 /// The rest of the MCP `tests/` surface is gated: every other suite
 /// runs as a named merge-gate or release-candidate step.
-const EXCLUDED_MCP_SUITES: &[(&str, &str)] = &[
-    (
-        "continuation_e2e",
-        "requires RUST_SANDBOX_BOOTSTRAP=1 Tier-1 fixture repos under sandbox/repos; self-skips without the bootstrap preflight",
-    ),
-    (
-        "prf_mcp_03_network_off_uat",
-        "requires unshare -rn (rootless network namespace); not guaranteed on every CI runner image and the suite's anti-vacuity guard fails without it",
-    ),
-];
+const EXCLUDED_MCP_SUITES: &[(&str, &str)] = &[(
+    "continuation_e2e",
+    "requires RUST_SANDBOX_BOOTSTRAP=1 Tier-1 fixture repos under sandbox/repos; self-skips without the bootstrap preflight",
+)];
 
 /// MCP suites that execute release-profile artifacts. Owner: candidate lane.
-const RELEASE_PROFILE_MCP_SUITES: &[&str] = &["prf_cli_04_two_process_uat"];
+///
+/// Empty since 2026-10-15: the only one was `prf_cli_04_two_process_uat`, a UAT,
+/// and the UAT class was retired (ADR-TH-006). The declaration stays because the
+/// measured-versus-declared test below keeps it honest: a future MCP suite that
+/// resolves release bytes has to be declared here and moved to the lane that
+/// builds them.
+const RELEASE_PROFILE_MCP_SUITES: &[&str] = &[];
 
 /// Every MCP integration-suite source file, sorted, `common` excluded
 /// (it is a shared harness module, not a test target).
@@ -550,23 +556,6 @@ fn the_release_profile_mcp_set_is_the_measured_one() {
     );
 }
 
-#[test]
-fn the_release_profile_mcp_suite_is_owned_by_the_candidate_lane() {
-    let merge = merge_authority_text();
-    let candidate = candidate_authority_text();
-    assert!(
-        !mcp_named_targets(&merge).contains(&"prf_cli_04_two_process_uat".to_string()),
-        "the merge authority still names prf_cli_04_two_process_uat, which spawns \
-         `cognicode` and `cognicode-mcp` from the release directory. That lane \
-         builds no release binary since B1, so the step is red until it is skipped."
-    );
-    assert!(
-        mcp_named_targets(&candidate).contains(&"prf_cli_04_two_process_uat".to_string()),
-        "{RELEASE_CANDIDATE_AUTHORITY} does not name prf_cli_04_two_process_uat, so \
-         once it leaves the merge lane nothing gates it."
-    );
-}
-
 /// Total named-or-excluded coverage for the MCP crate: each `tests/*.rs`
 /// must be named by some lane step or sit in the exclusion table with a
 /// reason.
@@ -578,9 +567,12 @@ fn every_mcp_suite_is_named_by_a_lane_or_excluded_with_a_reason() {
     named.dedup();
 
     let suites = mcp_integration_suite_names();
+    // 26 files before the UAT retirement of 2026-10-15, 9 after it: the floor
+    // tracks the surface that is actually there, and a drop below it means the
+    // contract stopped measuring rather than that the crate shrank on purpose.
     assert!(
-        suites.len() >= 20,
-        "expected the MCP crate to still carry its full integration \
+        suites.len() >= 9,
+        "expected the MCP crate to still carry its integration \
          surface, found only {} suites; the contract is not measuring \
          what it thinks it is: {suites:?}",
         suites.len()
