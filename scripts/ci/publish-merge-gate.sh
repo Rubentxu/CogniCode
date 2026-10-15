@@ -97,7 +97,17 @@ echo "    database: $PIPELINE_DB"
 mkdir -p "$(dirname "$PIPELINE_DB")"
 
 set +e
-pipelinek run --db "$PIPELINE_DB" merge-gate.pipeline.kts
+# MEDIDO 2026-10-15. Without `--rerun` the runtime serves stages from the
+# SQLite journal. Measured on a real run: 30 stages — clippy, four release
+# builds and all — replayed in 79 ms, and the journal marked every step
+# `RERUN`. The only steps that actually executed were the ones that failed.
+#
+# A check that republishes a replayed verdict is not evidence about the
+# tree it names. The bridge already costs a full gate run every time it is
+# invoked; caching on top of that is the one saving that turns it into a
+# rubber stamp. `--rerun` pays the full price and means the published
+# status corresponds to the SHA in its own description.
+pipelinek run --rerun --db "$PIPELINE_DB" merge-gate.pipeline.kts
 lane_rc=$?
 set -e
 
