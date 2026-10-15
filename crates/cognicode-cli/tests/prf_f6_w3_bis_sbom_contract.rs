@@ -89,11 +89,32 @@ fn remove_canonical_sboms(target: &str) {
     for p in canonical_sbom_paths(target) {
         let _ = std::fs::remove_file(&p);
     }
-    // Clean any leftover _bin.cdx.json from prior runs.
-    let _ = Command::new("bash")
-        .arg("-c")
-        .arg("rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json 2>/dev/null || true")
-        .output();
+    // Clean any leftover per-bin SBOM from prior runs.
+    //
+    // RED-PROBE(cognicode-cd5): esto era
+    //   rm -f crates/*/*_bin.cdx.json crates/*/*_cdylib-rlib.cdx.json
+    // El wildcard alcanzaba TODO el arbol `crates/`, asi que bajo un
+    // runner que ejecuta cada test en su propio proceso (cargo-nextest)
+    // este test podia borrar los fixtures de otro test que corria en
+    // paralelo. Con `cargo test` los tests de un mismo binario se
+    // serializan en un solo proceso y el defecto queda latente.
+    //
+    // Lo acotamos a una lista EXPLICITA de los `[[bin]]` que
+    // `build-sboms-for-lane.sh` puede emitir con `--describe binaries`,
+    // mas el propio `cognicode-release_bin.cdx.json` que este test
+    // planta como senuelo. Mismo efecto sobre el estado del repo,
+    // sin tocar ficheros ajenos a este contrato.
+    for (crate_name, bin_name) in [
+        ("cognicode-cli", "cogh"),
+        ("cognicode-cli", "cognicode"),
+        ("cognicode-cli", "cognicode-release"),
+        ("cognicode-mcp", "cognicode-mcp"),
+        ("cognicode-mcp", "mcp-client"),
+    ] {
+        let _ = std::fs::remove_file(
+            repo_root().join(format!("crates/{crate_name}/{bin_name}_bin.cdx.json")),
+        );
+    }
 }
 
 /// RAII guard: registers a spurious per-bin SBOM file path that
@@ -343,6 +364,101 @@ fn prf_f6_w3_bis_sbom_script_generated_sboms_have_correct_metadata() {
 
     // Drop guard `let _g = ...` (line 286) cleans up the canonical
     // SBOMs on every exit path; explicit cleanup removed: redundant.
+}
+
+// -------------------------------------------------------------------
+// Layer 2.5: helper isolation (CD-5)
+// -------------------------------------------------------------------
+
+/// CD-5: the bounded cleanup helper `remove_canonical_sboms` must
+/// not delete SBOM files in crates outside this contract test's
+/// domain. A previous version used `rm -f crates/*/*_bin.cdx.json`
+/// (a one-level wildcard), which would silently delete fixtures
+/// planted by other tests running in parallel under cargo-nextest
+/// — each test gets its own process there, so `#[serial]` does not
+/// protect (see `docs/roadmap/HANDOFF-C9.md` §"nextest: investigar,
+/// NO adoptar" for the reproduction).
+///
+/// This test pins the bounded contract: the helper only touches the
+/// per-bin SBOMs that this contract test (and the SBOM generation
+/// script) are responsible for. A regression to a wildcard pattern
+/// would re-introduce the parallel-test interference and fail this
+/// assertion.
+///
+/// Why the foreign crate is `cognicode-core`: it is a library with
+/// no `[[bin]]` targets, so a file under `crates/cognicode-core/`
+/// is guaranteed not to be in any contract test's domain.
+///
+/// Why the test changes cwd: the bug is latent under `cargo test`
+/// because all tests in one binary run from the same cwd
+/// (`crates/cognicode-cli/`), and the wildcard `crates/*/*_bin.cdx.json`
+/// from that cwd does not match workspace-root-relative paths. The
+/// bug is active when a process runs with cwd = workspace root,
+/// which is the case in any test that uses `repo_root()` for its
+/// fixtures. This test forces that cwd to reproduce the
+/// parallel-interference scenario deterministically.
+#[test]
+#[serial]
+fn cd5_helper_cleanup_does_not_delete_foreign_crate_sboms() {
+    let target = TIER1_TRIPLES[0];
+    // Clean the canonical slate WITHOUT calling the helper, so
+    // this test sets up its own state deterministically. The
+    // assertion below measures the helper alone.
+    for p in canonical_sbom_paths(target) {
+        let _ = std::fs::remove_file(&p);
+    }
+
+    // Plant a fixture in a crate this contract test does NOT own.
+    let foreign_path = repo_root().join("crates/cognicode-core/cd5-foreign-fixture_bin.cdx.json");
+    if let Some(parent) = foreign_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    std::fs::write(
+        &foreign_path,
+        br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
+    )
+    .unwrap();
+
+    // Save cwd, switch to the workspace root, run the helper, and
+    // restore cwd. The helper's bash subcommand (when the bug is
+    // present) inherits cwd, so the wildcard `crates/*/*_bin.cdx.json`
+    // resolves relative to the workspace root — which is where the
+    // foreign fixture lives. The fixed helper uses absolute paths
+    // via `repo_root()`, so it is cwd-independent and the foreign
+    // fixture is preserved either way.
+    let original_cwd = std::env::current_dir().expect("read current_dir");
+    std::env::set_current_dir(repo_root()).expect("set cwd to repo root");
+
+    // Direct call to the bounded helper, NOT through the script.
+    // The script has its own wildcard cleanup at
+    // scripts/ci/build-sboms-for-lane.sh:148-158; this test
+    // exercises the helper alone, which is the layer that
+    // parallel-test interference actually hits.
+    let helper_result = std::panic::catch_unwind(|| {
+        remove_canonical_sboms(target);
+    });
+    // Restore cwd BEFORE asserting, so a failed assertion does not
+    // leave the rest of the test binary in a wrong cwd.
+    std::env::set_current_dir(&original_cwd).expect("restore cwd");
+    if let Err(payload) = helper_result {
+        let _ = std::fs::remove_file(&foreign_path);
+        std::panic::resume_unwind(payload);
+    }
+
+    assert!(
+        foreign_path.exists(),
+        "remove_canonical_sboms deleted a fixture it does not own: {}. \
+         The helper must be bounded to the (crate, bin) pairs this contract \
+         test is responsible for; a wildcard cleanup (e.g. \
+         `crates/*/*_bin.cdx.json`) can clobber fixtures planted by other \
+         tests running in parallel under cargo-nextest.",
+        foreign_path.display(),
+    );
+
+    // Manual cleanup: the file lives in a crate this test does not
+    // own, so we remove it explicitly. The directory existed before
+    // the test and is left as-is.
+    let _ = std::fs::remove_file(&foreign_path);
 }
 
 // -------------------------------------------------------------------
