@@ -15208,3 +15208,58 @@ Cuarto bloque del evolutivo. Decisión:
   con el catálogo real, no lo genera.
 - AAT-30 no admite waiver: hoy la vacuidad siempre falla y un mecanismo de
   excepción aprobada sería otro ADR.
+
+## Recibo 2026-10-15 — B1b: el gate de rustdoc se paga una vez (no dos)
+
+Continuación de B1 (§12) sobre el mandato del operador de 2026-10-15 (segundo
+mensaje: reordenar el evolutivo hacia entrega de valor y bajar el presupuesto del
+merge). Auditoría con el perfil medido: `test-harness/docs/07-auditoria-merge-gate.md`
+§7 y §8.
+
+### Verificación de las tres afirmaciones del mandato
+
+| Afirmación | Estado en el árbol | Evidencia |
+|---|---|---|
+| `cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_suites_require` exige que merge construya release | **Obsoleta**: la función ya no existe. B1 la reescribió por cuatro propiedades más fuertes | `crates/cognicode-cli/tests/cli_gate_coverage_contract.rs` (cabecera: «no vacuous owner», «measured, not declared») |
+| `published_skill_bundles_are_required` debe incluirse en la migración | **Ya incluida**: está en `RELEASE_PROFILE_SUITES` con dueño en la lane de candidato | misma línea 179-183 del contrato |
+| Hay un build release duplicado (`-p cognicode-cli` y luego `--bin cognicode`) | **No existe hoy**: los builds release viven en candidato (`--bin cograph`-style por target con `--features evidence-kernel`) e integración (musl y `--bin cogh`), con configuraciones distintas | `grep 'cargo build --release' *.pipeline.kts` |
+
+### Lo que sí faltaba y se entrega
+
+- **Perfil medido del gate**: run durable `1b37e37b`, 58 etapas, 1 630 s (27,2 min);
+  las diez primeras etapas son el 94% y `rustdoc-gate` sola es el 41% (667 s).
+- **Corte implementado**: el gate de rustdoc (M0.11, un `cargo doc` completo del
+  workspace) corría en merge **y** en integración (`--all-targets` ejecuta el mismo
+  target): cada cambio lo pagaba dos veces. Ahora su dueño es la lane de integración,
+  con stage propia y nombrada; el merge no lo paga.
+- **Contrato actualizado, no retirado**: 
+  `the_rustdoc_gate_runs_in_exactly_one_authority` exige que corra en exactamente
+  una autoridad, nombrada explícitamente y distinta del merge. La aserción anterior
+  («el merge lo ejecuta») no detectaba la duplicación; la nueva la detecta en las
+  dos direcciones.
+- **Pruebas adversariales**: borrar la etapa de integración → el contrato falla
+  («runs in no pipeline, so it gates nothing»); volver a añadirla en merge → falla
+  («must run in exactly one authority», con la lista de runners). Restauradas, el
+  contrato vuelve a verde (11/11).
+
+### Medición
+
+| Medida | Antes | Después |
+|---|---|---|
+| Etapa `rustdoc-gate` en merge | **737,0 s medidos hoy** en esta máquina (`/usr/bin/time` sobre el mismo comando de la stage) | 0 s (etapa eliminada) |
+| Gate de merge, mismo entorno y mismo día | 1 316 s (579 s del gate + 737 s de la etapa) | **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`, db `merge-gate-b1b.db`) |
+| Gate de merge, corrida histórica con máquina cargada | 1 630 s (27,2 min), run `1b37e37b` | — (no comparable por carga) |
+| Coste del mismo target por cambio | 2 ejecuciones (merge + integración) | 1 ejecución (integración) |
+| Ahorro por iteración de merge | — | **−737 s (−56%)** |
+| `core_gate_coverage_contract` | 11/11 | 11/11 (con la aserción nueva) |
+
+### Límites declarados
+
+- Un enlace de rustdoc roto deja de bloquear el PR y pasa a bloquear la lane de
+  integración sobre `main` (fix-forward). Es el cambio de política que el mandato
+  autoriza al mover obligaciones, y está escrito en el ADR y en el contrato.
+- El presupuesto de 6–7 minutos **no se alcanza con este corte**: quedan ~963 s. El
+  camino medido es que merge ejecute las pruebas *afectadas* (selección por impacto
+  ya medida contra CR-08) y que la batería completa siga en integración.
+- No se tocó ninguna etapa por ser lenta sin dueño alternativo: lo movido ya se
+  ejecutaba dos veces.

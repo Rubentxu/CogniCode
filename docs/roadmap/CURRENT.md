@@ -10,8 +10,8 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `6fff1ab1665b6e3eb8639fc8de68ff95c90084ed` (TH-IMPL-04: AAT ejecutado), sobre el
-> árbol posterior a TH-IMPL-03;
+> `d73e7b08d24fd010b76f1fcb275b9e0406ac1d59` (B1b: el gate de rustdoc se paga una
+> vez), sobre el árbol posterior a TH-IMPL-04;
 > este snapshot describe el árbol de trabajo del worktree antes del commit de
 > recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -19,7 +19,13 @@
 > `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
 > como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-IMPL-04, registrada en `ROADMAP.md` §17
+> **Unidad cerrada en este worktree**: B1b, registrada en `ROADMAP.md` §18 y en
+> `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-011`. El perfil medido del
+> merge (58 etapas, 1 630 s) mostraba `rustdoc-gate` como 667 s ejecutados dos
+> veces por cambio; ahora su dueño es la lane de integración, con contrato que
+> exige dueño único y dos mutaciones adversariales que lo comprueban.
+>
+> La unidad anterior en este worktree fue TH-IMPL-04, registrada en `ROADMAP.md` §17
 > y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-010`. El AAT se
 > ejecuta por mutación: 21 de 30 filas se matan con test, 2 son `PARTIAL` y 7
 > `NOT_RUN` con motivo. Además: suelo de obligaciones críticas (borrar `clippy` o

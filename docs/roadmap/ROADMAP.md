@@ -500,3 +500,23 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Mantenedor (cobertura del AAT verificable en el gate), contribuidores (mutaciones reproducibles), auditoría (ADR-TH-010 y tabla de ejecución) |
 | Criterio de cierre | Cumplido: 101 tests del harness verdes, contrato del gate 10/10, 21 filas del AAT `KILLED` con test existente comprobado por contrato, y suelo de obligaciones verificado contra el catálogo real (0 inexistentes) |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 18. B1b — El gate de rustdoc se paga una vez (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y con contrato. Perfil medido del merge (run durable
+> `1b37e37b`): 58 etapas, 1 630 s, de los que `rustdoc-gate` era 667 s (41%) y se
+> ejecutaba **dos veces por cambio** (merge + integración). Ahora su dueño es la
+> lane de integración, con stage nombrada y contrato que exige dueño único.
+> Decisión:
+> [`test-harness/adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md`](../../test-harness/adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md);
+> medición en [`test-harness/docs/07-auditoria-merge-gate.md`](../../test-harness/docs/07-auditoria-merge-gate.md) §7-§8.
+
+| Item | Contrato |
+|---|---|
+| Valor | Dejar de pagar dos veces la misma comprobación en cada iteración: −667 s por merge (41% del tiempo medido), con la garantía de rustdoc intacta en la lane que bloquea `main` |
+| Clasificación | Cambio de CI del roadmap Post-PRF dentro del evolutivo del test harness, autorizado por el mandato del operador de 2026-10-15 (bloque B1b) |
+| Alcance | `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `crates/cognicode-core/tests/core_gate_coverage_contract.rs`, auditoría del merge-gate, ADR-TH-011 |
+| Fuera de alcance | Selección por impacto dentro del merge (W6), caché y reanudación (B3), otras etapas del perfil, advisories de `cargo deny` |
+| Consumidores | Contribuidores (coste de iteración), mantenedor (gate de merge e integración), auditoría (ADR-TH-011 y la medición) |
+| Criterio de cierre | Cumplido: contrato verde con la aserción nueva (11/11), dos mutaciones adversariales detectadas con su motivo, medición antes/después en el ledger durable y límites declarados (fix-forward de rustdoc; el presupuesto de 6-7 min exige el bloque siguiente) |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
