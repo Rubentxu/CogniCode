@@ -15,19 +15,19 @@
 
 ## Estado de las WU (2026-10-15)
 
-La primera implementación del harness cubre parte de W2, W3 y W4. Ninguna de las
-tres está CLOSED: el protocolo de bloque exige paridad medida y eso no se ha
-hecho. Lo que hay, y lo que falta:
+La primera implementación del harness cubre parte de W2, W3, W4 y W6. Ninguna de
+las cuatro está CLOSED: el protocolo de bloque exige revisión y decisión de
+adopción, y eso no se ha hecho. Lo que hay, y lo que falta:
 
 | WU | Estado | Qué existe hoy | Qué falta para cerrarla |
 |---|---|---|---|
 | W0 | NOT_STARTED | — | Informe de tiempos de referencia y mapa de cobertura |
 | W1 | NOT_STARTED | — | Fiabilidad del sandbox, `test-all.sh` |
 | W2 | EN_PROGRESO | Esqueleto `test-harness/{src,adapters,bin,tests}` con front propio, 60 tests dependency-free, contrato de gate | Delegaciones compat desde `scripts/`; paridad de argumentos y rc con `full` |
-| W3 | EN_PROGRESO | `ChangeSet` de merge-base + dirty + untracked con `-z`; grafo de `cargo metadata` con dependientes transitivos; `plan`/`explain` con motivo por decisión; fail-closed en ruta desconocida y borrado de test | Comparación automática con CR-08 y mutaciones de fallos de selección |
+| W3 | EN_PROGRESO | `ChangeSet` de merge-base + dirty + untracked con `-z`; grafo de `cargo metadata` con dependientes transitivos; `plan`/`explain` con motivo por decisión; fail-closed en ruta desconocida y borrado de test; **comparación automática con CR-08** (`parity --corpus`, 16 clases, 0 debilidades sin declarar) y acoplamientos del oráculo respetados | Mutaciones de fallos de selección como suite propia; migrar `test-fast.sh` |
 | W4 | EN_PROGRESO | Ledger append-only fuera del checkout, recibos inmutables, huellas de entrada con `policy_version`, `run/resume/status`, lease por run, recibo `RUNNING` antes de lanzar | Prueba de corte SIGKILL en CI, invalidación por cambio de features en el plan, política de GC |
 | W5 | NOT_STARTED | — | Nextest opcional, sandbox por escenario |
-| W6 | NOT_STARTED | — | Shadow plan en las lanes, paridad demostrada, ADR de política |
+| W6 | PARCIAL | Paridad con el oráculo medida y gated en la etapa de contratos (`parity --corpus`: 0 debilidades sin declarar en `change`, `merge` e `integration`) | Decidir si el plan sustituye alguna selección; ADR de política de reutilización en gates oficiales |
 | W7 | NOT_STARTED | — | Retirada de duplicados y guía de operación |
 
 ## Dependencias

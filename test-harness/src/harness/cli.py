@@ -23,6 +23,7 @@ from .orchestrator import (
     exit_code_for,
     explain,
     make_plan,
+    parity_corpus,
     prepare,
     resume,
     run_plan,
@@ -57,6 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--base", default=DEFAULT_BASE, help="gitref base para el merge-base")
     plan.add_argument("--allow-reuse", action="store_true", help="permite reutilizar fuera de la lane change")
     plan.add_argument("--allow-external", action="store_true", help="incluye suites que requieren sandbox/servicios")
+    plan.add_argument(
+        "--oracle",
+        choices=("none", "cr08"),
+        default="none",
+        help="compara con el selector vigente y nunca exige menos que él (cr08)",
+    )
     plan.add_argument("--shadow", action="store_true", help="modo observación: no ejecuta ni decide el gate")
     plan.add_argument("--run-id", default=None)
 
@@ -108,6 +115,17 @@ def build_parser() -> argparse.ArgumentParser:
     certify_parser.add_argument("--timeout", type=float, default=None)
     certify_parser.add_argument("--max-workers", type=int, default=1)
 
+    parity_parser = sub.add_parser(
+        "parity", help="compara la selección con el selector vigente (CR-08)"
+    )
+    parity_parser.add_argument("--lane", default="change")
+    parity_parser.add_argument("--base", default=DEFAULT_BASE)
+    parity_parser.add_argument(
+        "--corpus",
+        action="store_true",
+        help="mide las clases de cambio del corpus en vez del cambio actual",
+    )
+
     return parser
 
 
@@ -150,6 +168,13 @@ def _plan_text(plan_result, run_id: str, lane: str, context) -> str:
         lines.append("  indeterminación (el plan cae al fallback conservador):")
         for reason in plan.unknown_reasons:
             lines.append(f"    - {reason}")
+    if plan_result.parity is not None:
+        parity = plan_result.parity
+        lines.append(f"  paridad CR-08: {parity.verdict} (oráculo {parity.decision.strategy})")
+        if parity.missing:
+            lines.append(f"    scopes que el oráculo pedía y el plan no cubría: {', '.join(parity.missing)}")
+        for deviation in parity.deviations:
+            lines.append(f"    desviación declarada: {deviation[:160]}")
     for warning in (*context.warnings, *plan_result.warnings):
         lines.append(f"  aviso: {warning}")
     return "\n".join(lines)
@@ -198,11 +223,12 @@ def main(argv: list[str] | None = None) -> int:
                 lane=args.lane,
                 allow_reuse=args.allow_reuse,
                 allow_external=args.allow_external,
+                oracle=args.oracle,
                 run_id=args.run_id,
             )
             # El documento del plan cumple el contrato tal cual; los extras de la
-            # CLI (exclusiones con motivo, avisos) viajan al lado para no romper
-            # `additionalProperties: false` en el esquema.
+            # CLI (exclusiones con motivo, avisos y paridad) viajan al lado para no
+            # romper `additionalProperties: false` en el esquema.
             payload = {
                 "plan": plan_result.plan.to_json(),
                 "run_id": run_id,
@@ -213,6 +239,8 @@ def main(argv: list[str] | None = None) -> int:
                 ],
                 "warnings": [*context.warnings, *plan_result.warnings],
             }
+            if plan_result.parity is not None:
+                payload["parity"] = plan_result.parity.to_json()
             _emit(payload, args, _plan_text(plan_result, run_id, args.lane, context))
             if args.shadow:
                 return 0
@@ -374,6 +402,82 @@ def main(argv: list[str] | None = None) -> int:
             }
             _emit(payload, args, _outcome_text(outcome))
             return exit_code_for(outcome)
+
+        if args.command == "parity":
+            context = prepare(Path(args.repo), state_dir=state_dir, base_ref=args.base)
+            if args.corpus:
+                report = parity_corpus(context, lane=args.lane)
+                summary = report["summary"]
+                lines = [
+                    f"PARIDAD con CR-08  lane={args.lane}  clases={summary['total']}  "
+                    f"ok={summary['parity_ok']}",
+                ]
+                for entry in report["entries"]:
+                    verdict = entry["report"]["verdict"]
+                    lines.append(
+                        f"  {verdict:<17} {entry['path']}"
+                        f"  (harness exige {entry['harness_required']}; oráculo "
+                        f"{entry['report']['oracle']['strategy']}:{entry['report']['oracle']['reason']})"
+                    )
+                    for row in entry["report"]["rows"]:
+                        if row["verdict"] != "AGREE":
+                            lines.append(
+                                f"        scope {row['scope']}: oráculo="
+                                f"{'sí' if row['demanded_by_oracle'] else 'no'} "
+                                f"harness={row['harness_how']} -> {row['verdict']}"
+                            )
+                    for note in entry["report"]["deviations"]:
+                        lines.append(f"        desviación declarada: {note[:150]}")
+                lines.append(f"  resumen de veredictos: {summary['verdicts']}")
+                if summary["weak_undeclared"]:
+                    lines.append(
+                        "  SIN DESVIACIÓN DECLARADA (esto es un fallo, no un matiz): "
+                        + ", ".join(summary["weak_undeclared"])
+                    )
+                _emit(report, args, "\n".join(lines))
+                return 0 if summary["parity_ok"] else EXIT_UNDETERMINED
+
+            plan_result, run_id = make_plan(context, lane=args.lane, oracle="cr08")
+            report = plan_result.parity.to_json() if plan_result.parity else None
+            the_plan = plan_result.plan.to_json()
+            payload = {
+                "plan": the_plan,
+                "run_id": run_id,
+                "parity": report,
+                "excluded": [
+                    {"suite_id": entry.suite_id, "reason": reason}
+                    for entry, reason in plan_result.selection.excluded
+                ],
+            }
+            if report is None:
+                text = (
+                    f"PARIDAD  lane={args.lane}  sin oráculo: {plan_result.oracle.to_json() if plan_result.oracle else 'no consultado'}"
+                )
+                _emit(payload, args, text)
+                return EXIT_UNDETERMINED
+            lines = [
+                f"PARIDAD con CR-08  lane={args.lane}  veredicto={report['verdict']}",
+                f"  oráculo: {report['oracle']['strategy']} ({report['oracle']['reason']})",
+                f"  obligaciones exigidas por el harness: {len(plan_result.suites)}",
+                f"  scopes que el harness añade sobre el oráculo: {report['extra_scopes'] or 'ninguno'}",
+                f"  scopes que le faltarían: {report['missing_scopes'] or 'ninguno'}",
+            ]
+            for row in report["rows"]:
+                if row["verdict"] != "AGREE":
+                    lines.append(
+                        f"  scope {row['scope']}: oráculo={row['demanded_by_oracle']} "
+                        f"harness={row['harness_how']} -> {row['verdict']}"
+                    )
+            for deviation in report["deviations"]:
+                lines.append(f"  desviación declarada: {deviation}")
+            for note in report["notes"]:
+                lines.append(f"  nota: {note}")
+            _emit(payload, args, "\n".join(lines))
+            if report["verdict"] == "HARNESS_WEAKER":
+                return EXIT_UNDETERMINED
+            if report["verdict"] == "ORACLE_UNKNOWN":
+                return EXIT_UNDETERMINED
+            return 0
 
         raise HarnessError(f"comando desconocido: {args.command}")
     except HarnessError as exc:

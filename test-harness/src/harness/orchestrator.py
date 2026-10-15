@@ -26,11 +26,12 @@ from .domain import (
     digest_of,
 )
 from .gate import Coverage, aggregate
-from .planner import PlanResult, PlannedSuite, build_plan
+from .planner import PlanResult, PlannedSuite, build_plan, refutable_fallback, select
 from .policy import certify_requires_fresh, reuse_allowed
 from .validity import evaluate_reuse
 
-from adapters import cargo_workspace, git_repo, pipeline_catalog, process_runner
+from adapters import cargo_workspace, cr08_selector, git_repo, pipeline_catalog, process_runner
+from adapters.git_repo import ChangeSet
 from adapters.ledger_store import Ledger, now_iso, receipt_id_for, state_root
 
 EXIT_SATISFIED = 0
@@ -112,9 +113,20 @@ def make_plan(
     lane: str,
     allow_reuse: bool = False,
     allow_external: bool = False,
+    oracle: str = "none",
     run_id: str | None = None,
 ) -> tuple[PlanResult, str]:
+    """Plan de una lane. Con `oracle="cr08"` el plan nunca exige menos que el selector.
+
+    El oráculo se consulta con los paths del ChangeSet real. Cuando el ChangeSet
+    es desconocido, la lista va vacía y CR-08 responde `fallback` (todo), que es
+    lo mismo que ya exige el fallback conservador: no hay contradicción posible.
+    """
     identifier = run_id or new_run_id(lane, _provisional_fingerprint(context))
+    decision = None
+    if oracle == "cr08":
+        paths = tuple(getattr(context.changeset, "all_paths", lambda: ())())
+        decision = cr08_selector.run_selector(context.repo_root, paths)
     plan_result = build_plan(
         lane=lane,
         repo_id=context.repo_id,
@@ -125,10 +137,73 @@ def make_plan(
         toolchain=context.toolchain,
         allow_reuse=allow_reuse,
         allow_external=allow_external,
+        oracle=decision,
         run_id=identifier,
         created_at=now_iso(),
     )
     return plan_result, identifier
+
+
+def parity_corpus(context: Context, *, lane: str = "change") -> dict:
+    """Mide la paridad con CR-08 sobre el corpus de clases de cambio.
+
+    Cada entrada del corpus se planifica como si fuera el único cambio: un
+    ChangeSet sintético con ese path. Es honesto porque lo que se está midiendo es
+    el mapeo path → obligaciones, y el cambio real ya se planifica con su propio
+    ChangeSet (el comando `plan`).
+    """
+    from . import parity as parity_module
+
+    catalog = context.catalog_for_lane(lane)
+    head = getattr(context.changeset, "head", "") or ""
+    entries: list[dict] = []
+    for path, why in parity_module.CORPUS:
+        synthetic = ChangeSet(
+            repo_root=context.repo_root,
+            base_ref=None,
+            merge_base=None,
+            head=head,
+            changed=(path,),
+            dirty=True,
+        )
+        selection = select(
+            lane=lane,
+            changeset=synthetic,
+            graph=context.graph,
+            catalog=catalog,
+            repo_root=context.repo_root,
+        )
+        decision = cr08_selector.run_selector(context.repo_root, (path,))
+        report = parity_module.compare(
+            decision,
+            required=tuple(entry for entry, _ in selection.required),
+            catalog=catalog,
+            attributable=refutable_fallback(synthetic, context.graph),
+        )
+        entries.append(
+            {
+                "path": path,
+                "why": why,
+                "harness_required": len(selection.required),
+                "report": report.to_json(),
+            }
+        )
+
+    verdicts: dict[str, int] = {}
+    for entry in entries:
+        verdict = entry["report"]["verdict"]
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
+    weak_undeclared = [entry["path"] for entry in entries if entry["report"]["verdict"] == "HARNESS_WEAKER"]
+    return {
+        "lane": lane,
+        "entries": entries,
+        "summary": {
+            "total": len(entries),
+            "verdicts": verdicts,
+            "weak_undeclared": weak_undeclared,
+            "parity_ok": not weak_undeclared,
+        },
+    }
 
 
 def _provisional_fingerprint(context: Context) -> str:

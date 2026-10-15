@@ -23,17 +23,53 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .domain import ExecutionPlan, PlanAction, SuiteRef
+from .parity import ParityReport, compare, floor_entries
 from .policy import POLICY_VERSION, reuse_allowed
 from .validity import FingerprintInputs, evaluate_reuse
 
 from adapters.cargo_workspace import WorkspaceGraph, is_global_path
+from adapters.cr08_selector import SelectorDecision
 from adapters.git_repo import METADATA_ONLY_NAMES, ChangeSet
 from adapters.ledger_store import Ledger
 from adapters.pipeline_catalog import CatalogEntry
 
 SKIP_DIRS = {"target", ".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build"}
 CLOSURE_FILE_CAP = 4000
-DOCS_SCAN_BYTES_CAP = 4 << 20
+
+# Sólo se leen ficheros de texto: buscar una cita en un binario o en un artefacto
+# de build no aporta nada y consume el presupuesto que sí importa.
+TEXT_EXTENSIONS = (
+    ".rs",
+    ".py",
+    ".sh",
+    ".toml",
+    ".kts",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".js",
+    ".ts",
+    ".md",
+    ".txt",
+    ".cfg",
+    ".ini",
+)
+MAX_SCANNED_FILE_BYTES = 512 * 1024
+DOCS_SCAN_BYTES_CAP = 64 << 20
+# Tope de citas por documento. Quedarse con la primera era un error caro: la
+# atribución por paquete necesita saber **todos** los paquetes que citan el
+# fichero, no el primero que aparece en el orden del recorrido.
+MAX_CITATIONS_PER_DOC = 500
+
+# Acoplamientos que CR-08 declara explícitamente y que no son dependencias:
+# `mcp` consume el contrato de `core` y `explorer` recalibra sus constraints por
+# codegen, así que el selector vigente revalida `core` cuando tocan a sus
+# consumidores. El harness respeta esa regla mientras no demuestre lo contrario;
+# sin ella el plan ignoraría una obligación que el gate de hoy sí exige.
+ORACLE_COUPLINGS: dict[str, tuple[str, ...]] = {
+    "cognicode-explorer": ("cognicode-core",),
+    "cognicode-mcp": ("cognicode-core",),
+}
 
 
 @dataclass(frozen=True)
@@ -95,6 +131,8 @@ class PlanResult:
     toolchain: ToolchainInfo | None = None
     changeset: ChangeSet | None = None
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    parity: ParityReport | None = None
+    oracle: SelectorDecision | None = None
 
 
 def _walk_files(root: Path, subdir: str, cap: int = CLOSURE_FILE_CAP) -> tuple[list[str], bool]:
@@ -189,8 +227,16 @@ def _file_digest(path: Path) -> str:
     return digest.hexdigest()
 
 
-def docs_references(changed_docs: tuple[str, ...], roots: tuple[Path, ...]) -> tuple[tuple[str, str], ...]:
+def docs_references(
+    changed_docs: tuple[str, ...], roots: tuple[Path, ...], *, max_bytes: int | None = None
+) -> tuple[tuple[tuple[str, str], ...], bool]:
     """¿Alguna fuente bajo `roots` menciona textualmente un fichero cambiado?
+
+    Devuelve `(citas, completa)`. `completa=False` significa que el barrido se
+    agotó antes de terminar, y quien lo llama **no puede** declarar inerte la
+    documentación: una búsqueda incompleta que dice «nadie lo cita» es un falso
+    negativo caro (el harness llegó a producir uno: el presupuesto se agotaba a la
+    mitad del árbol y `AGENTS.md` aparecía como no citado por nadie).
 
     Es una clausura textual explícita, no una corazonada: si un test o un script
     cita `docs/roadmap/ROADMAP.md` (o `AGENTS.md`), tocar ese fichero puede
@@ -203,10 +249,10 @@ def docs_references(changed_docs: tuple[str, ...], roots: tuple[Path, ...]) -> t
     potencialmente inertes es una lista corta y explícita, no un patrón.
     """
     if not changed_docs:
-        return ()
+        return (), True
     needles = {doc: {doc, Path(doc).name} for doc in changed_docs}
     found: dict[str, set[str]] = {doc: set() for doc in changed_docs}
-    budget = DOCS_SCAN_BYTES_CAP
+    budget = DOCS_SCAN_BYTES_CAP if max_bytes is None else max_bytes
     for root in roots:
         if not root.exists():
             continue
@@ -214,24 +260,31 @@ def docs_references(changed_docs: tuple[str, ...], roots: tuple[Path, ...]) -> t
             dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS)
             for name in sorted(filenames):
                 path = Path(dirpath) / name
+                if path.suffix not in TEXT_EXTENSIONS:
+                    continue
                 try:
-                    if path.stat().st_size > 512 * 1024:
+                    if path.stat().st_size > MAX_SCANNED_FILE_BYTES:
                         continue
                     data = path.read_bytes()
                 except OSError:
                     continue
                 budget -= len(data)
                 if budget <= 0:
-                    return tuple((doc, "") for doc in changed_docs if found[doc])
+                    return tuple(
+                        (doc, ",".join(sorted(found[doc]))) for doc in changed_docs if found[doc]
+                    ), False
                 text = data.decode("utf-8", "replace")
                 for doc, variants in needles.items():
-                    if found[doc]:
+                    if len(found[doc]) >= MAX_CITATIONS_PER_DOC:
                         continue
                     for variant in variants:
                         if variant in text:
                             found[doc].add(str(path))
                             break
-    return tuple((doc, ",".join(sorted(found[doc]))) for doc in changed_docs if found[doc])
+    return (
+        tuple((doc, ",".join(sorted(found[doc]))) for doc in changed_docs if found[doc]),
+        True,
+    )
 
 
 def select(
@@ -309,7 +362,22 @@ def select(
         scripts_dir = repo_root / "scripts"
         if scripts_dir.exists():
             roots.append(scripts_dir)
-        citations = docs_references(cited_paths, tuple(roots))
+        citations, complete = docs_references(cited_paths, tuple(roots))
+        if not complete:
+            # Una búsqueda incompleta que dice «nadie lo cita» es el peor resultado
+            # posible: parece una prueba y no lo es. Se cae al fallback conservador.
+            reason = (
+                "la búsqueda de citas sobre "
+                f"{len(cited_paths)} fichero(s) de documentación no se pudo completar "
+                f"({DOCS_SCAN_BYTES_CAP >> 20} MB de presupuesto agotados): sin esa prueba no "
+                "se puede declarar inerte la documentación tocada"
+            )
+            selection.fallback_reason = reason
+            selection.unknown_reasons = (reason,)
+            selection.required = tuple(
+                (entry, f"fallback conservador: {reason}") for entry in catalog
+            )
+            return selection
 
     def _citation_for(directory: str | None) -> str | None:
         if not directory:
@@ -325,6 +393,10 @@ def select(
 
     required: list[tuple[CatalogEntry, str]] = []
     excluded: list[tuple[CatalogEntry, str]] = []
+    coupled: dict[str, str] = {}
+    for owner in sorted(owners):
+        for coupled_package in ORACLE_COUPLINGS.get(owner, ()):
+            coupled[coupled_package] = owner
     for entry in catalog:
         if entry.advisory:
             # El gate la deja fallar a propósito (`|| echo ADVISORY`). Copiar esa
@@ -340,6 +412,15 @@ def select(
         if entry.package and entry.package in affected:
             why = _reason_for(entry, owners, affected, graph, changeset)
             required.append((entry, why))
+            continue
+        if entry.package in coupled:
+            required.append(
+                (
+                    entry,
+                    f"CR-08 acopla {coupled[entry.package]} con {entry.package}: un cambio en el "
+                    "consumidor obliga a revalidar el contrato del proveedor",
+                )
+            )
             continue
         if entry.scope == "workspace":
             # Un `cargo fmt --all` o un `clippy --workspace` cubren todos los
@@ -437,14 +518,23 @@ def build_plan(
     toolchain: ToolchainInfo,
     allow_reuse: bool = False,
     allow_external: bool = False,
+    oracle: SelectorDecision | None = None,
     run_id: str,
     created_at: str,
 ) -> PlanResult:
-    """Construye el plan: selección, huellas, y decisión de reutilizar por suite."""
+    """Construye el plan: selección, huellas, y decisión de reutilizar por suite.
+
+    Con `oracle`, el plan nunca exige menos que el selector vigente: si CR-08 pide
+    un scope que la selección por impacto no cubre, se añade con ese motivo. Si el
+    oráculo no se puede leer, el plan exige todo y queda indeterminado, porque
+    entonces no hay forma de demostrar que no se está por debajo.
+    """
     repo_root = changeset.repo_root
     selection = select(
         lane=lane, changeset=changeset, graph=graph, catalog=catalog, repo_root=repo_root
     )
+    if oracle is not None:
+        selection = _apply_oracle(selection, oracle, catalog=catalog)
     lane_ok, lane_reason = reuse_allowed(lane, allow_reuse)
 
     planned: list[PlannedSuite] = []
@@ -547,6 +637,19 @@ def build_plan(
                 f"la clausura de {suite.entry.suite_id} superó el límite de ficheros: "
                 "la huella cubre lo leído, no todo"
             )
+    parity = None
+    if oracle is not None and oracle.ok:
+        parity = compare(
+            oracle,
+            required=tuple(entry for entry, _ in selection.required),
+            catalog=catalog,
+            attributable=refutable_fallback(changeset, graph),
+        )
+        if parity.verdict == "HARNESS_WEAKER":
+            warnings.append(
+                "el plan exige menos que el oráculo CR-08 sin desviación declarada: "
+                f"scopes ausentes {', '.join(parity.missing)}. Ejecuta `harness parity`"
+            )
     return PlanResult(
         plan=plan,
         selection=selection,
@@ -554,6 +657,65 @@ def build_plan(
         toolchain=toolchain,
         changeset=changeset,
         warnings=tuple(warnings),
+        parity=parity,
+        oracle=oracle,
+    )
+
+
+def refutable_fallback(changeset: ChangeSet, graph: WorkspaceGraph) -> bool:
+    """¿Puede el harness refutar la caída a ALL del oráculo con su propia clasificación?
+
+    Solo cuando **todos** los paths cambiados tienen clasificación positiva del
+    harness: documentación (`docs/**`), documentación de raíz de la lista
+    verificada, o un paquete del grafo. Si algún path cae al desconocido, el
+    harness no sabe más que el oráculo y la diferencia se reporta como debilidad.
+    """
+    paths = changeset.all_paths()
+    if not paths:
+        return False
+    for path in paths:
+        if path.startswith("docs/"):
+            continue
+        if "/" not in path and Path(path).name in METADATA_ONLY_NAMES:
+            continue
+        if graph.owner_of(path) is not None:
+            continue
+        return False
+    return True
+
+
+def _apply_oracle(
+    selection: Selection, oracle: SelectorDecision, *, catalog: tuple[CatalogEntry, ...]
+) -> Selection:
+    """Aplica el suelo del oráculo: nunca exigir menos que el selector vigente."""
+    if not oracle.ok:
+        reason = oracle.problem or "el oráculo no devolvió una decisión legible"
+        unknown = (f"oráculo CR-08 ilegible ({reason}): sin él no se puede demostrar paridad",)
+        return Selection(
+            required=tuple((entry, f"fallback conservador: {unknown[0]}") for entry in catalog),
+            excluded=selection.excluded,
+            fallback_reason=unknown[0],
+            unknown_reasons=selection.unknown_reasons + unknown,
+            global_reasons=selection.global_reasons,
+        )
+    additions = floor_entries(
+        oracle,
+        required=tuple(entry for entry, _ in selection.required),
+        catalog=catalog,
+    )
+    if not additions:
+        return selection
+    added_ids = {entry.suite_id for entry, _ in additions}
+    required = (*selection.required, *additions)
+    return Selection(
+        required=tuple(sorted(required, key=lambda item: item[0].suite_id)),
+        excluded=tuple(
+            (entry, f"{reason} (el oráculo no lo exigía)" if entry.suite_id not in added_ids else reason)
+            for entry, reason in selection.excluded
+        ),
+        fallback_reason=selection.fallback_reason,
+        unknown_reasons=selection.unknown_reasons,
+        global_reasons=selection.global_reasons,
     )
 
 

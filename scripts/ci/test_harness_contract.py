@@ -201,6 +201,33 @@ def test_a_declared_gap_cannot_become_a_pass():
         assert payload["pending"], "las obligaciones no ejecutadas deben quedar declaradas"
 
 
+def test_the_harness_is_never_weaker_than_the_current_selector():
+    """Paridad con CR-08 sobre el corpus: ninguna debilidad sin declarar.
+
+    El selector CR-08 sigue siendo la autoridad mientras no se demuestre paridad.
+    Esta comprobación recorre las clases de cambio del corpus, ejecuta el selector
+    de verdad y exige que el harness no se quede por debajo salvo en las
+    diferencias declaradas y razonadas (`docs/**`, y las caídas a ALL del oráculo
+    cuando el harness tiene clasificación propia del path).
+    """
+    with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:
+        proc = _run_cli(Path(tmp), "--format", "json", "parity", "--corpus", "--lane", "change")
+        assert proc.stdout.strip(), f"parity no imprimió JSON: {proc.stderr}"
+        report = json.loads(proc.stdout)
+        summary = report["summary"]
+        assert summary["total"] >= 10, summary
+        assert summary["parity_ok"] is True, (
+            "el harness exige menos que el selector vigente sin desviación declarada en: "
+            + ", ".join(summary["weak_undeclared"])
+        )
+        assert proc.returncode == 0, proc.stdout[-2000:]
+        verdicts = summary["verdicts"]
+        assert verdicts.get("HARNESS_WEAKER", 0) == 0, verdicts
+        # El corpus tiene que medir de verdad: si todo fuese AGREE por vacío, la
+        # comparación no estaría mirando nada.
+        assert verdicts.get("AGREE", 0) + verdicts.get("HARNESS_STRICTER", 0) >= 8, verdicts
+
+
 def test_the_harness_imports_only_the_standard_library():
     """Corre en el gate sin instalar nada: un import de terceros lo rompería allí."""
     allowed = set(sys.stdlib_module_names) | LOCAL_MODULES

@@ -44,6 +44,7 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | Si necesitas... | Empieza aquí |
 |---|---|
 | **Ejecutar el harness o entender su implementación** | [Uso](#uso) y [ADR-TH-007](adrs/ADR-TH-007-implementacion-nucleo.md) (decisiones del núcleo: lenguaje, ledger, huellas, fail-closed). |
+| **Comprobar que el harness no recorta cobertura** | [Paridad con el selector vigente](#paridad-con-el-selector-vigente) y [ADR-TH-008](adrs/ADR-TH-008-paridad-con-el-oraculo.md) (veredictos, desviaciones declaradas y medición). |
 | Ver hallazgos y rastrear evidencia del repositorio | [Auditoría de código](docs/00-auditoria-codigo.md) y [rutas y referencias](docs/06-rutas-y-referencias.md). |
 | Entender arquitectura, estados o migración | [Arquitectura](docs/01-arquitectura.md), [ontología](docs/02-ontologia-y-estados.md) y [compatibilidad](docs/03-migracion-y-compatibilidad.md). |
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
@@ -61,7 +62,7 @@ Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
 `path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
 obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
 el que se comprueba que el paquete entregado es el que se describe. Los ADR
-vigentes son TH-001..TH-007 y este paquete no incluye ningún plan de UAT
+vigentes son TH-001..TH-008 y este paquete no incluye ningún plan de UAT
 desde el 2026-10-15 (ADR-TH-006).
 
 ## Uso
@@ -87,6 +88,14 @@ python3 test-harness/bin/harness.py explain --suite 'cognicode-core:lib#-'
 
 # Certifica con evidencia fresca (no reutiliza nada, en ninguna lane).
 python3 test-harness/bin/harness.py certify --lane certification --candidate <sha>
+
+# Compara la selección con el selector vigente (CR-08) sobre el cambio actual,
+# o sobre el corpus de clases de cambio.
+python3 test-harness/bin/harness.py parity --base origin/main
+python3 test-harness/bin/harness.py parity --corpus --lane change
+
+# Plan con el suelo del oráculo: nunca exige menos que el selector vigente.
+python3 test-harness/bin/harness.py plan --lane merge --oracle cr08
 ```
 
 Códigos de salida: `0` gate satisfecho, `1` obligaciones incumplidas, `2` error
@@ -169,10 +178,49 @@ obligaciones de la lane `change` y excluye 12 con motivo, incluidas las 8 suites
 de `cognicode-core` y 4 scripts. Los 27 requeridos incluyen `cli`, `mcp` y
 `runtime` porque dependen de `cognicode-ladybug`, no por precaución.
 
+## Paridad con el selector vigente
+
+CR-08 (`scripts/ci/select-suites.sh`) sigue siendo la autoridad mientras no se
+demuestre paridad, así que el harness no lo sustituye: lo compara. `harness
+parity` traduce cada scope del oráculo a su paquete y clasifica la diferencia:
+
+| Veredicto | Significado |
+|---|---|
+| `AGREE` | El harness exige al menos lo mismo que el oráculo |
+| `HARNESS_STRICTER` | El harness exige más; el oráculo iba corto |
+| `DECLARED_DEVIATION` | El harness exige menos en una clase declarada y razonada |
+| `HARNESS_WEAKER` | El harness exige menos sin justificación: es un fallo, no un matiz |
+| `ORACLE_UNKNOWN` | El oráculo no se pudo leer: no se puede afirmar paridad |
+
+Medición del corpus (2026-10-15, repositorio real, 16 clases de cambio):
+
+| Lane | `AGREE` | `HARNESS_STRICTER` | `DECLARED_DEVIATION` | `HARNESS_WEAKER` |
+|---|---|---|---|---|
+| `change` | 9 | 5 | 2 | 0 |
+| `merge` | 9 | 5 | 2 | 0 |
+| `integration` | 9 | 5 | 2 | 0 |
+
+Las dos desviaciones declaradas son `docs/**` (CR-08 exige `ladybug` para
+cualquier documento; el harness exige los paquetes que lo citan) y la caída a
+ALL del oráculo para rutas que su lista de reglas no menciona, aceptada solo
+cuando el harness tiene clasificación propia de esos paths. La comparación vive
+dentro del contrato del gate, así que un recorte de cobertura sin justificar hace
+caer la etapa de contratos.
+
+La primera medición de paridad encontró tres diferencias reales y **dos bugs del
+harness**, los dos del tipo que produce falsos verdes: el presupuesto del barrido
+de citas se agotaba y devolvía «nadie cita» en falso, y la atribución se quedaba
+con la primera cita y perdía paquetes. Los dos están corregidos, con test.
+
+Acoplamientos: CR-08 revalida `core` cuando cambian `mcp` o `explorer` (contrato
+compartido). El harness copia esa regla mientras no demuestre lo contrario, y
+`plan --oracle cr08` añade además cualquier obligación que el oráculo pida y la
+selección por impacto no cubra.
+
 ## Pruebas del harness y cómo se gated
 
 ```shell
-python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 60 tests, ~35 s
+python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 75 tests, ~45 s
 python3 scripts/ci/test_harness_contract.py                          # contrato del gate
 ```
 
@@ -201,11 +249,13 @@ del gate.
 
 **No implementado, y no se afirma lo contrario**:
 
-- **Paridad con CR-08 medida.** El selector CR-08 sigue siendo el oráculo; el
-  harness no lo sustituye ni se ha comparado decisión a decisión contra él.
-- **Adopción en modo sombra en las pipelines.** El harness no añade ni quita
-  etapas: corre como contrato. Convertirlo en etapa de observación exige medir la
-  paridad antes (TH-S05 y ADR-TH-003).
+- **Sustituir a CR-08.** La paridad está medida sobre un corpus de 16 clases de
+  cambio (0 debilidades sin declarar en `change`, `merge` e `integration`) y el
+  contrato del gate la vuelve a medir en cada merge, pero el selector sigue siendo
+  la autoridad y el harness no decide cobertura en la lane de merge.
+- **Etapa de sombra en las pipelines.** El harness no añade ni quita etapas: corre
+  como contrato, y ahí dentro se mide la paridad. Una etapa `plan --shadow` no
+  añadiría evidencia nueva (ADR-TH-008).
 - **Reutilización en lanes oficiales.** `merge` ejecuta todo por defecto;
   reutilizar exige `--allow-reuse`, y la paridad no está demostrada.
 - **Ejecución en paralelo.** `--max-workers > 1` se rechaza con un motivo: sin
