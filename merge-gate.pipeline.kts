@@ -147,19 +147,7 @@ $cd && cargo clippy --workspace --all-targets -- -D warnings
             """.trimIndent())
         }
 
-        stage("docs") {
-            // the workspace builds its documentation with zero warnings
-            // Formerly 1 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── rustdoc-gate
-            # ─────────────────────────────────────────────
-$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
-            """.trimIndent())
-        }
-
-        stage("contracts") {
+                stage("contracts") {
             // the checks that keep every other gate honest
             // Formerly 2 stage(s); one stage, same commands, same order.
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
@@ -255,85 +243,7 @@ $cd && cargo deny check licenses
             """.trimIndent())
         }
 
-        stage("build") {
-            // every binary a release needs, built in release profile
-            // Formerly 6 stage(s); one stage, same commands, same order.
-            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
-            // and these blocks are sequenced with `set -euo pipefail` in force.
-            sh("""
-            # ── build-binary
-            # ─────────────────────────────────────────────
-
-                    $cd || exit 1
-                    set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
-                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
-                        fi
-                    done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
-
-            # ── build-cognicode-mcp-release
-            # ─────────────────────────────────────────────
-$cd && cargo build --release -p cognicode-mcp
-
-            # ── build-control-plane-release
-            # ─────────────────────────────────────────────
-$cd && cargo build --release --bin cognicode-control-plane
-
-            # ── build-cognicode-cli-release
-            # ─────────────────────────────────────────────
-$cd && cargo build --release -p cognicode-cli
-
-            # ── build-cognicode-release-bin
-            # ─────────────────────────────────────────────
-$cd && cargo build --release --bin cognicode
-
-            # ── verify-release-binaries
-            # ─────────────────────────────────────────────
-
-                    $cd || exit 1
-                    set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
-                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
-                        fi
-                    done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
-            """.trimIndent())
-        }
-
-        stage("selector") {
+                stage("selector") {
             // the CR-08 suite selector and its own contract
             // Formerly 2 stage(s); one stage, same commands, same order.
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,

@@ -240,6 +240,117 @@ pipeline {
             }
         }
 
+        // ------------------------------------------------------- host build + docs
+        // Moved here from `merge-gate` on 2026-10-15, with the operator's
+        // approval. Named `host-build-and-verify` because the `build` stage
+        // below is a container for the per-target cross builds, and two stages
+        // with one name in one file is the sort of thing nobody notices until
+        // a failure is attributed to the wrong one.
+        //
+        // Measured: in the merge gate these two cost ~700 s and ~472 s of a
+        // ~1900 s run — 62% of the gate producing artefacts a merge does not
+        // publish. Everything else it checks fits in 730 s.
+        //
+        // What that costs, stated plainly: a merge no longer proves the release
+        // binaries build. It is proved here, on the lane that actually cuts a
+        // release, so a broken release build surfaces when preparing to
+        // publish rather than when merging. One class of failure is detected
+        // later; nothing else changes.
+        //
+        // `cognicode-control-plane` is a HOST binary. The per-target stage below
+        // cross-compiles cogh, cognicode and cognicode-mcp; this is the only
+        // place in any lane where the control plane is built.
+
+            stage("public-docs") {
+            // the workspace builds its documentation with zero warnings
+            // Formerly 1 stage(s); one stage, same commands, same order.
+            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
+            // and these blocks are sequenced with `set -euo pipefail` in force.
+            sh("""
+            # ── rustdoc-gate
+            # ─────────────────────────────────────────────
+            $cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
+            """.trimIndent())
+            }
+
+            stage("host-build-and-verify") {
+            // every binary a release needs, built in release profile
+            // Formerly 6 stage(s); one stage, same commands, same order.
+            // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
+            // and these blocks are sequenced with `set -euo pipefail` in force.
+            sh("""
+            # ── build-binary
+            # ─────────────────────────────────────────────
+
+                    $cd || exit 1
+                    set -euo pipefail
+                    # The binaries were written wherever cargo says they go, which is
+                    # not necessarily the repository's `target/`. This stage asked a
+                    # hardcoded path for them and failed on 2026-10-02 with
+                    # "target/release/cognicode was not built" immediately after the
+                    # stage that builds it had succeeded. A verifier that hardcodes
+                    # where the artifact lands is not verifying the artifact.
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
+                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
+                            echo "  cargo target dir: ${'$'}TARGET_DIR"
+                            exit 1
+                        fi
+                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
+                            exit 1
+                        fi
+                    done
+                    "${'$'}TARGET_DIR/release/cognicode" --version
+                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
+                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
+
+            # ── build-cognicode-mcp-release
+            # ─────────────────────────────────────────────
+            $cd && cargo build --release -p cognicode-mcp
+
+            # ── build-control-plane-release
+            # ─────────────────────────────────────────────
+            $cd && cargo build --release --bin cognicode-control-plane
+
+            # ── build-cognicode-cli-release
+            # ─────────────────────────────────────────────
+            $cd && cargo build --release -p cognicode-cli
+
+            # ── build-cognicode-release-bin
+            # ─────────────────────────────────────────────
+            $cd && cargo build --release --bin cognicode
+
+            # ── verify-release-binaries
+            # ─────────────────────────────────────────────
+
+                    $cd || exit 1
+                    set -euo pipefail
+                    # The binaries were written wherever cargo says they go, which is
+                    # not necessarily the repository's `target/`. This stage asked a
+                    # hardcoded path for them and failed on 2026-10-02 with
+                    # "target/release/cognicode was not built" immediately after the
+                    # stage that builds it had succeeded. A verifier that hardcodes
+                    # where the artifact lands is not verifying the artifact.
+                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
+                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
+                            echo "  cargo target dir: ${'$'}TARGET_DIR"
+                            exit 1
+                        fi
+                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
+                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
+                            exit 1
+                        fi
+                    done
+                    "${'$'}TARGET_DIR/release/cognicode" --version
+                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
+                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
+            """.trimIndent())
+            }
+
         // ---------------------------------------------------------------- build
         // One stage group per platform, in the same order the matrix produced.
         stage("build") {
