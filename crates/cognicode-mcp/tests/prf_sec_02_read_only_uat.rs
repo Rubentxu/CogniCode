@@ -178,7 +178,14 @@ async fn default_mode_keeps_write_file_available() {
         "default mode must keep write_file advertised"
     );
 
-    // PRF-EXT-01: default mode flags exactly the three mutating tools.
+    // PRF-EXT-01: default mode flags exactly the tools that may write.
+    //
+    // Four, not three, since B5.W3 added `safe_refactor_apply`: it performs
+    // transactional writes with rollback, and the published catalog
+    // (`product/tools.json`) declares it mutating. The list stays written out
+    // here instead of being read from the catalog on purpose: this UAT is the
+    // independent statement "these tools may write", and `a016` already pins
+    // catalog against runtime. A fifth writer must fail here and be declared.
     let tools = all_tools_with_mutates(&mut s).await;
     let mut flagged: Vec<String> = tools
         .into_iter()
@@ -191,6 +198,7 @@ async fn default_mode_keeps_write_file_available() {
         vec![
             "edit_file".to_string(),
             "reparse_on_edit".to_string(),
+            "safe_refactor_apply".to_string(),
             "write_file".to_string()
         ],
         "exactly the declared mutating tools must be flagged"
