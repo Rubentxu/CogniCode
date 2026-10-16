@@ -9,15 +9,18 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-16, sobre `b5-v0.101.17` HEAD
-> `566c4ece2832` (post-D0) (seis gates que no podían
-> fallar reparados y probados por mutación: el veredicto publicado por
-> `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
-> adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
-> restauraba los bytes en vez de borrar el archivo, la validación de schema
-> del catálogo publicado dejaba de saltarse en silencio, y dos wrappers
-> `fast`/`full` dejaron de poder responder verde sin hacer nada;
-> estado de runtime de PipelineK des-trackeado de git).
+> **Snapshot**: 2026-10-16, sobre `cu-program-integration` HEAD
+> `ca59df5423556a42c2a2998074736842aec18a37` (CU-1 SDK de consumo
+> fiable entregado: `ConsumerAnalysisFacade` + `ServiceAnalyzer`
+> (primera impl de producción del trait `Analyze`, que existía desde
+> B2.W1 sin ninguna), CLI `graph full` vía presenter, y la ley de
+> paridad hallada por el UAT CU-1.4 de 3 canales — CLI/SDK/MCP ahora
+> reportan el MISMO estado (`partial` con gaps = ficheros saltados del
+> BuildReport) sobre el mismo workspace; antes CLI/SDK decían
+> `complete` mientras MCP decía `partial`. Gate de cobertura bumped
+> 65→68 con las 3 suites CU-1 como anchors. Bundle docs del programa
+> CU integrado (ROADMAP CU, SPEC-CU-001..006, ADR-CU-001..004) más
+> los fixes D0/PR#350.
 > Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
 > `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
 > publicado** — el tag remoto sigue en `v0.101.16`, que es la release
