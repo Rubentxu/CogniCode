@@ -15600,3 +15600,114 @@ No es que se haya acabado el tiempo. Es que el siguiente paso
 que el agente no puede hacer. La causa es **disk quota** sobre
 /tmp, no un bug de código ni una decisión de diseño. Documentado,
 esperando acción del operador.
+
+## Entrada 2026-10-16 — VDH B0 RC v3 también falló por /tmp quota
+
+**Sesión:** continuación. Esta entrada confirma el bloqueo del
+release-candidate con una segunda ejecución.
+
+### Causa idéntica, run distinta
+
+Re-lancé el RC con SHA `3f833bfb` (run `f2931e5c`, log
+`/tmp/b0-rc-3f833bf-v3.log`) tras limpiar /tmp de temporales de tests
+viejos (junit-*, qw03-*, doctor-test-*, ckf-*, a013-*, mktemp tmp.*).
+Limpieza: ~830 MB (junit) + 1.8 GB (tmp.*) = 2.6 GB liberados.
+
+Stages 1-4b pasaron limpios en 8m 53s. Stage 5 (cargo test
+--workspace) empezó a 09:49:30. A los ~2.5 min, /tmp pasó de 25.5 GB
+a 36.8 GB (compilación debug de deps + crates principales). El
+compile de `cognicode-core` (test "identity_benchmark") falló con
+"Disk quota exceeded (os error 122)" al intentar escribir
+rustc metadata en `target/debug/deps/`.
+
+El error exacto del preflight log:
+
+```
+rustc-LLVM ERROR: IO failure on output stream: Disk quota exceeded
+error: could not compile `cognicode` (test "refactor_integration_tests")
+error: could not compile `cognicode-core` (test "identity_benchmark")
+Caused by: Disk quota exceeded (os error 122)
+```
+
+Y el pipelinek murió a su vez porque no podía persistir el output:
+
+```
+[PipelineK] ERROR: process output could not be persisted: the
+transcript could not be persisted to stream f2931e5c/.../stdout
+```
+
+### Estado tras el run
+
+- /tmp: 21.3 GB / 39.5 GB quota (12 GB libres tras la limpieza del trap)
+- vdh-b0 dirs: 9+4 GB intactos (no los toqué — operator-managed)
+- v1015-gate-target: 6.7 GB intacto
+- Sin `preflight-receipt-3f833bfb.json` nuevo (el preflight murió antes
+  de Stage 7)
+- Sin artefactos v0.101.17
+
+### Por qué PAUSED (segunda vez) en lugar de re-intentar
+
+**Dos ejecuciones consecutivas del mismo enfoque han fallado idénticamente.**
+La antibucle rule del goal aplica: cambiar de estrategia, no repetir.
+
+Las estrategias intentadas:
+1. v2 (3f833bf): cargo test → quota exceeded
+2. v3 (3f833bf, post-cleanup): cargo test → quota exceeded
+
+Estrategias NO intentadas (y por qué no las intento autónomamente):
+- **Borrar `/tmp/cognicode-vdh-b0-*` y `/tmp/cognicode-v1015-gate-target/`**
+  (19.7 GB combinados). Estas dirs son infraestructura del operador para
+  B0 (release/ tiene los binarios v0.101.10 + el cache de build). No
+  son temporales míos; las creé el operador a 08:34-09:42. Tocarlas
+  destruye trabajo en curso.
+- **Parchear `preflight-clean-clone.sh` para usar un CARGO_TARGET_DIR
+  fuera de /tmp** (línea 352: `CARGO_TARGET_DIR="$WORK_DIR/clone/target"`).
+  Es código del operador; no debe modificarse sin aprobación.
+- **Hacer el `cargo test --workspace` en el worktree (no en el preflight
+  clone) y usar `/var/home/rubentxu/cargo-targets/`.** El test
+  correría pero NO sería un release-candidate real; no satisfaría
+  el contrato "clean clone + workspace test" del QW-04 preflight.
+
+### Handoff concreto
+
+El B0 RC no puede cerrar con `cargo test --workspace` en /tmp
+cuando la cuota del usuario es 39.5 GB y el build de tests debug
+necesita ~3-5 GB adicionales al release build (~2 GB) que ya
+consumió. El preflight limpio parte de 23 GB usados → release build
+(2 GB) → debug build (5 GB) = 30 GB; cabe en teoría, pero en la
+práctica el `cargo test` mantiene metadata rmeta incremental
+mucho mayor que el "final" size.
+
+Acciones del operador para cerrar B0:
+
+1. **Vaciar `/tmp/cognicode-vdh-b0-*` y `/tmp/cognicode-v1015-gate-target/`
+   si no están en uso.** Confirmar primero con `lsof +D <dir>` que ningún
+   proceso los referencia. Esos 19.7 GB darían holgura de sobra.
+2. **Alternativa**: ejecutar el release-candidate con
+   `CARGO_TARGET_DIR=/var/home/rubentxu/cargo-targets/preflight-v3` antes
+   del comando. El preflight lo sobrescribe a /tmp en línea 352, pero
+   un wrapper podría `sed -i 's|/clone/target|/preflight-v3-target|g'`
+   en una copia temporal del script. No es trivial.
+3. **Otra alternativa**: ejecutar `cargo test --workspace` en el
+   worktree directamente (no en el preflight) y aceptar que el
+   preflight devuelve FAIL con `stage_failed: cargo test falló`,
+   pero sabiendo que el test pasa contra el mismo SHA. Documentar
+   la excepción.
+
+### Cosas que sí están en main (HEAD = e142ce1c)
+
+- B0 fix `stage-platform-payloads.sh` (3f833bf)
+- B2 audit + B2-UAT-01 characterization (ec9f4b09, f0d27765)
+- core_gate_coverage_contract bumped 65→66 (703e0cd8)
+- B0 UAT/AAT/E2E efímeros listos
+- Journal entries PAUSED
+
+### Por qué PAUSED, no BUDGET_REACHED
+
+Dos ejecuciones con la misma falla no es "sin nuevas acciones útiles":
+probé cleanup de /tmp + relaunch. Pero el patrón "mismo approach
+misma falla" sí calza con antibucle, y el impediment (cuota /tmp)
+es **estructural y no resoluble por el agente** sin acción del
+operador sobre vdh-b0 dirs o CARGO_TARGET_DIR override. BUDGET no
+aplica: no estoy en el límite de 30 turnos; estoy en una pausa
+estructural esperando decisión del operador.
