@@ -92,6 +92,10 @@ python3 test-harness/bin/harness.py explain --suite 'cognicode-core:lib#-'
 # Certifica con evidencia fresca (no reutiliza nada, en ninguna lane).
 python3 test-harness/bin/harness.py certify --lane certification --candidate <sha>
 
+# Informe reproducible: perfil medido del gate y mapa de cobertura (W0).
+python3 test-harness/bin/harness.py report --lane merge --pipelinek-db .pipelinek/merge-gate.db \
+  --budget 420 --protect contracts --protect fmt --protect clippy
+
 # Concurrencia explícita con cerrojos declarados (por defecto sigue siendo 1).
 python3 test-harness/bin/harness.py run --lane merge --max-workers 4
 
@@ -184,6 +188,13 @@ deja de pagarla. El reparto completo y el camino hasta el presupuesto de 6–7
 minutos están en [`docs/07-auditoria-merge-gate.md`](docs/07-auditoria-merge-gate.md)
 §7-§8: el siguiente salto exige que el merge ejecute las pruebas **afectadas**
 (selección ya medida contra CR-08) y que la batería completa siga en integración.
+
+`harness report` responde a esa pregunta con aritmética declarada sobre el ledger
+real del orquestador: con `contracts`, `fmt`, `clippy` y la observación
+protegidas, **dejar de ejecutar tres etapas de test** (`cli-unit-tests` 62 s,
+`cli-integration-suites` 44 s, `core-unrestricted-evidence-kernel` 38 s) llevaría
+el gate de 550 s a **406 s**, dentro del presupuesto de 420 s. El informe no
+decide nada: identifica qué habría que mover y cuánto falta si no cabe.
 
 ## Etapa de sombra en el gate
 

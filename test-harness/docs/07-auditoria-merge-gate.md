@@ -421,11 +421,14 @@ etapa que **el repositorio ya ejecutaba dos veces por cambio**.
 | Antes | Después |
 |---|---|
 | `merge-gate.pipeline.kts` stage `rustdoc-gate` (**737 s medidos hoy** con `/usr/bin/time` sobre el mismo comando) **y** `integration.pipeline.kts` `cargo test --workspace --all-targets` (que ejecuta el mismo target) | `integration.pipeline.kts` stage `rustdoc-gate`, nombrada y explícita; el merge deja de pagarla |
-| Gate de merge: **1 316 s** (579 s + 737 s) en el mismo entorno y día | Gate de merge: **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`) |
+| Gate de merge: **1 240–1 320 s** en el mismo entorno y día (579 s medidos + la etapa: 667 s in-gate en la corrida histórica, 737 s standalone hoy; sumar standalone y gate sobreestima algo) | Gate de merge: **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`); 550 s con la etapa de sombra añadida (run `4d431256`, 58 etapas) |
 
-Ahorro medido por iteración de merge: **−737 s (−56%)**. La corrida histórica del
-perfil (1 630 s, run `1b37e37b`) se hizo con la máquina cargada y no es comparable;
-la comparación honesta es la de arriba, medida hoy y con el mismo comando.
+Ahorro por iteración de merge: **entre 680 s y 737 s (≈55%)**, con la fuente de cada
+cifra declarada en la tabla. La corrida histórica del perfil (1 630 s, run
+`1b37e37b`) se hizo con la máquina cargada y no es comparable; la comparación
+honesta es la de arriba. La varianza entre corridas de hoy (579 s y 550 s, con una
+etapa más en la segunda) es del mismo orden que el coste de la etapa de sombra: por
+eso el ahorro se declara como rango y no como una cifra exacta.
 
 - **Garantía conservada**: el workspace sigue teniendo que mantener cero avisos de
   rustdoc en las categorías de M0.11, verificado por el mismo target, en una lane
@@ -463,3 +466,27 @@ gate tras B1b. Devuelve, por cada PR, cuántas obligaciones tiene la lane, cuán
 exige el cambio por impacto y cuántas quedan bloqueadas por depender de estado
 externo; es el dato con el que el bloque siguiente decide qué etapas pasan a
 selección, en lugar de decidirlo por intuición.
+
+## 10. Informe reproducible y aritmética del presupuesto (2026-10-15)
+
+`harness report --lane merge --pipelinek-db .pipelinek/merge-gate.db` junta lo que
+antes vivía repartido entre un recibo y una consulta ad-hoc a la base de PipelineK:
+el perfil medido de las etapas (leído de la tabla `events`, en solo lectura), el
+mapa de cobertura del catálogo (por tipo y por pipeline de origen) y la aritmética
+del presupuesto.
+
+Medición sobre el run `4d431256` (58 etapas, 549,9 s):
+
+| Conjunto | Segundos | Nota |
+|---|---:|---|
+| `contracts` | 263,8 | protegida: contratos estructurales |
+| `cli-unit-tests` | 61,6 | candidata a selección por impacto |
+| `cli-integration-suites` | 44,2 | candidata |
+| `core-unrestricted-evidence-kernel` | 38,5 | candidata |
+| `cognicode-ladybug` | 29,7 | candidata |
+| resto | 112,1 | fmt, clippy, builds debug, gates pequeños |
+
+Con `contracts`, `fmt`, `clippy` y `harness-shadow-plan` protegidas, el presupuesto
+de 420 s se alcanza dejando de ejecutar las tres primeras candidatas: 550 s → 406 s.
+El informe declara qué etapas lo permitirían y cuánto falta si no cabe; **no decide
+nada por sí solo**, porque mover una etapa cambia cuándo bloquea un fallo.

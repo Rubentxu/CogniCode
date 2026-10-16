@@ -329,6 +329,49 @@ def test_gc_dry_run_never_deletes_evidence():
         assert payload["logs_to_delete"] == [], payload
 
 
+def test_the_report_reads_the_real_gate_ledger_without_writing_anything():
+    """El informe de tiempos (W0) lee la base de PipelineK y no la toca.
+
+    Es la evidencia con la que se decide qué etapas pueden pasar a selección, así
+    que tiene que funcionar sobre la base real del gate, cuadrar consigo misma
+    (suma de etapas = total) y dejar el repositorio como estaba.
+    """
+    db = REPO_ROOT / ".pipelinek" / "merge-gate.db"
+    if not db.exists():
+        return  # sin ledger local no hay perfil que leer; el informe lo declara
+    before = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(REPO_ROOT), capture_output=True, text=True, check=True
+    ).stdout
+    with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:
+        proc = _run_cli(
+            Path(tmp),
+            "--format",
+            "json",
+            "report",
+            "--lane",
+            "merge",
+            "--pipelinek-db",
+            ".pipelinek/merge-gate.db",
+            "--budget",
+            "420",
+        )
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout)
+        gate = payload["gate"]
+        assert gate["problem"] is None, gate["problem"]
+        assert len(gate["stages"]) >= 40, len(gate["stages"])
+        total = sum(stage["seconds"] for stage in gate["stages"])
+        assert abs(total - gate["total_seconds"]) < 1.0, (total, gate["total_seconds"])
+        assert payload["coverage"]["total"] > 0, payload["coverage"]
+        plan = payload["budget"]
+        assert plan["current_seconds"] > 0, plan
+        assert plan["after_seconds"] <= plan["current_seconds"], plan
+    after = subprocess.run(
+        ["git", "status", "--porcelain"], cwd=str(REPO_ROOT), capture_output=True, text=True, check=True
+    ).stdout
+    assert after == before, "el informe tocó el repositorio"
+
+
 def test_the_harness_imports_only_the_standard_library():
     """Corre en el gate sin instalar nada: un import de terceros lo rompería allí."""
     allowed = set(sys.stdlib_module_names) | LOCAL_MODULES

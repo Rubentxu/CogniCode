@@ -21,7 +21,7 @@ adopción, y eso no se ha hecho. Lo que hay, y lo que falta:
 
 | WU | Estado | Qué existe hoy | Qué falta para cerrarla |
 |---|---|---|---|
-| W0 | NOT_STARTED | — | Informe de tiempos de referencia y mapa de cobertura |
+| W0 | EN_PROGRESO | `harness report`: perfil medido del gate desde el ledger de PipelineK (solo lectura), mapa de cobertura por tipo y dueño, duraciones medidas por el harness y aritmética de presupuesto declarada; gated en el contrato | Fijar el baseline en un documento con fecha y commit (hoy el informe se genera a demanda) |
 | W1 | NOT_STARTED | — | Fiabilidad del sandbox, `test-all.sh` |
 | W2 | EN_PROGRESO | Esqueleto `test-harness/{src,adapters,bin,tests}` con front propio, 60 tests dependency-free, contrato de gate | Delegaciones compat desde `scripts/`; paridad de argumentos y rc con `full` |
 | W3 | EN_PROGRESO | `ChangeSet` de merge-base + dirty + untracked con `-z`; grafo de `cargo metadata` con dependientes transitivos; `plan`/`explain` con motivo por decisión; fail-closed en ruta desconocida y borrado de test; **comparación automática con CR-08** (`parity --corpus`, 16 clases, 0 debilidades sin declarar); acoplamientos del oráculo respetados; **mutaciones del AAT ejecutadas** (21/30 filas) y suelo de obligaciones críticas | Migrar `test-fast.sh`; ejecutar las filas del AAT que dependen de sandbox/nextest/release |

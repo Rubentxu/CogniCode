@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 22142,
+      "bytes": 22850,
       "path": "README.md",
-      "sha256": "bddfef1fca510bc62a88fd1f68308e84105ca137d8543bf7bdd9fb940f798313"
+      "sha256": "6106de0830e0250c8aa41d21cc9e10c1074a3cf566c02a63cffe23e442bcf85f"
     },
     {
       "bytes": 7968,
@@ -96,9 +96,9 @@
       "sha256": "9e8a063b8f473764649b6e083c82b1071fd29359bfd337c358ad645b5ef596f0"
     },
     {
-      "bytes": 3309,
+      "bytes": 3528,
       "path": "adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md",
-      "sha256": "d6199779773638c3972ef83b12a250b1f20a0df41f1a84601e42c02abd0828c2"
+      "sha256": "3ef407b888efd4083f006340f2f50987ebe243b6abbaf2f0d5adf9b39fa97dea"
     },
     {
       "bytes": 3278,
@@ -191,9 +191,9 @@
       "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c"
     },
     {
-      "bytes": 46899,
+      "bytes": 48520,
       "path": "docs/07-auditoria-merge-gate.md",
-      "sha256": "625fb0e8685fe8a88d42e357e7b63233066b454b1154177c36e58e97e7452c00"
+      "sha256": "e3883d142c9dd488815ab3a86236937b1baeea15f0a10c5c1d1fed0ecd20b0a0"
     },
     {
       "bytes": 96,
@@ -211,9 +211,9 @@
       "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27"
     },
     {
-      "bytes": 8586,
+      "bytes": 8837,
       "path": "roadmap/ROADMAP.md",
-      "sha256": "416ea735029a86e13d056d3909bc2f7e5eb4a35104dff39c0a4ddd7d3f661620"
+      "sha256": "bc88648f070126808d96547a0bae5efacf61ff4ab12cb8b1eec7b1abcbdc12d1"
     },
     {
       "bytes": 3420,
@@ -251,9 +251,9 @@
       "sha256": "2dc5c63952caeaef7ca2048cbd49b56e06a4d0affa1c2e4936faaa9ba2cf8d43"
     },
     {
-      "bytes": 30208,
+      "bytes": 34054,
       "path": "src/harness/cli.py",
-      "sha256": "20a228160c7eacf88e11fbbf535ad1d4e452c57ba9344e17eb83dd8a84657a41"
+      "sha256": "ba71c2da79ac55e8f4ed4b011fe2fe991485c7f471979e0ec487f69cfbb528b2"
     },
     {
       "bytes": 9406,
@@ -301,6 +301,11 @@
       "sha256": "f7a09297204d491fb63fee072cb4a92c7c0c7081ba924dcd54d421377b6a52f6"
     },
     {
+      "bytes": 7624,
+      "path": "src/harness/report.py",
+      "sha256": "2d2dc945cfa8a9620e801cb23c4d041a8a796e9e2d07b6ad6b8fc9cf0c1fee96"
+    },
+    {
       "bytes": 6848,
       "path": "src/harness/validity.py",
       "sha256": "c7ccbf022435904d75c59ee36705286a264325e02f19b362d7ea583bf432a57d"
@@ -339,6 +344,11 @@
       "bytes": 11342,
       "path": "tests/test_parity.py",
       "sha256": "357dc6b917d00d72103ac5211e15a024e51fe26bf18b7e302c9ea944ed13613a"
+    },
+    {
+      "bytes": 6926,
+      "path": "tests/test_report.py",
+      "sha256": "28ffc0621e6a8bfa8e15e1dc992caf8b97728bd20b626fb4307b347a9b7e865c"
     },
     {
       "bytes": 10613,

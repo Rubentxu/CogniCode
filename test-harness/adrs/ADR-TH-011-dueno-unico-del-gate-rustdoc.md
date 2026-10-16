@@ -45,7 +45,10 @@ alternativa: es trabajo duplicado.
 
 ## Consecuencias
 
-- El gate de merge deja de pagar 667 s por iteración (41% de su tiempo medido).
+- El gate de merge deja de pagar la etapa: 667 s medidos in-gate en la corrida
+  histórica (run `1b37e37b`) y 737 s standalone en esta máquina; el ahorro por
+  iteración se declara como rango (680–737 s, ≈55%) porque sumar la medición
+  standalone al total del gate sobreestima el «antes».
 - El presupuesto de 6–7 minutos **no se alcanza** con este cambio: quedan ~963 s.
   El camino medido es que el merge ejecute las pruebas **afectadas** (selección
   por impacto, ya medida contra CR-08 en `parity`) y que la batería completa siga

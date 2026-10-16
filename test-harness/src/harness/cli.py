@@ -32,6 +32,7 @@ from .orchestrator import (
     status,
 )
 from .policy import POLICY_VERSION, reuse_allowed
+from .report import budget_plan, coverage_map, harness_timings, read_gate_profile
 
 DEFAULT_BASE = "origin/main"
 
@@ -125,6 +126,28 @@ def build_parser() -> argparse.ArgumentParser:
     inventory_parser.add_argument("--check", action="store_true", help="compara el pin con los recibos")
     inventory_parser.add_argument("--from-run", default=None, help="run del que tomar los recuentos")
     inventory_parser.add_argument("--base", default=DEFAULT_BASE)
+
+    report_parser = sub.add_parser(
+        "report", help="informe reproducible de tiempos del gate y mapa de cobertura"
+    )
+    report_parser.add_argument("--lane", default="merge")
+    report_parser.add_argument(
+        "--pipelinek-db",
+        default=".pipelinek/merge-gate.db",
+        help="base durable de PipelineK de la que leer las duraciones (solo lectura)",
+    )
+    report_parser.add_argument(
+        "--budget",
+        type=float,
+        default=None,
+        help="presupuesto en segundos para el que calcular qué habría que dejar de ejecutar",
+    )
+    report_parser.add_argument(
+        "--protect",
+        action="append",
+        default=[],
+        help="etapa que no se puede tocar (contratos estructurales, lint, seguridad); repetible",
+    )
 
     gc_parser = sub.add_parser("gc", help="borra logs de runs antiguos y conserva la evidencia")
     gc_parser.add_argument("--keep", type=int, default=20, help="runs cuyos logs se conservan")
@@ -588,6 +611,65 @@ def main(argv: list[str] | None = None) -> int:
             if args.check and under:
                 _emit(payload, args, "\n".join(lines))
                 return EXIT_UNDETERMINED
+            _emit(payload, args, "\n".join(lines))
+            return 0
+
+        if args.command == "report":
+            context = prepare(Path(args.repo), state_dir=state_dir, base_ref=None)
+            catalog = context.catalog_for_lane(args.lane)
+            coverage = coverage_map(catalog, args.lane)
+            profile = read_gate_profile(Path(args.repo) / args.pipelinek_db)
+            timings = harness_timings(context.ledger, args.lane)
+            payload = {
+                "lane": args.lane,
+                "coverage": coverage,
+                "gate": profile.to_json(),
+                "harness_timings": timings.to_json(),
+            }
+            lines = [
+                f"INFORME lane={args.lane}  obligaciones catalogadas: {coverage['total']} "
+                f"{coverage['by_kind']}",
+                "  perfiles: " + ", ".join(
+                    f"{name}={count}" for name, count in sorted(coverage["by_origin"].items())
+                ),
+            ]
+            if profile.problem:
+                lines.append(f"  perfil del gate: sin datos ({profile.problem})")
+            else:
+                lines.append(
+                    f"  perfil del gate (PipelineK, run {(profile.run_id or '')[:8]}): "
+                    f"{len(profile.stages)} etapas, {profile.total_seconds:.1f} s"
+                )
+                for stage in sorted(profile.stages, key=lambda s: -s.seconds)[:8]:
+                    lines.append(f"    {stage.seconds:7.1f}s  {stage.name}")
+            if timings.by_suite:
+                lines.append(
+                    f"  duraciones medidas por el harness (run {(timings.run_id or '')[:8]}): "
+                    + ", ".join(
+                        f"{suite}={seconds:.0f}s"
+                        for suite, seconds in sorted(
+                            timings.by_suite.items(), key=lambda item: -item[1]
+                        )[:6]
+                    )
+                )
+            if args.budget is not None and not profile.problem:
+                plan = budget_plan(
+                    profile, args.budget, protected=tuple(args.protect)
+                )
+                payload["budget"] = plan
+                lines.append(
+                    f"  presupuesto {args.budget:.0f}s: actual {plan['current_seconds']:.0f}s → "
+                    f"{plan['after_seconds']:.0f}s dejando de ejecutar "
+                    f"{len(plan['skip_candidates'])} etapa(s); "
+                    + ("cabe" if plan["within_budget"] else f"faltan {plan['shortfall_seconds']:.0f}s")
+                )
+                for stage in plan["skip_candidates"][:8]:
+                    lines.append(f"    dejar de ejecutar: {stage['stage']} ({stage['seconds']:.0f}s)")
+                if plan["protected"]:
+                    lines.append("    protegidas: " + ", ".join(plan["protected"]))
+            lines.append(
+                "  aviso: el informe no decide nada; la adopción de la selección exige su ADR"
+            )
             _emit(payload, args, "\n".join(lines))
             return 0
 
