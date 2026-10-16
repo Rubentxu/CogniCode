@@ -73,11 +73,11 @@ if [ -z "$repo" ]; then
     # are the two spellings that appear in practice; either is enough to get
     # `owner/name`, which is all the statuses API needs.
     repo="$(printf '%s' "$origin" | sed -E 's#^git@[^:]+:##; s#^https?://[^/]+/##; s#\.git$##')"
-fi
-if [ -z "$repo" ] || [ "$repo" = "$origin" ]; then
-    echo "ERROR: cannot work out owner/name from the origin remote ($origin)." >&2
-    echo "       Pass it explicitly: publish-merge-gate.sh <sha> <owner/name>" >&2
-    exit 2
+    if [ -z "$repo" ] || [ "$repo" = "$origin" ]; then
+        echo "ERROR: cannot work out owner/name from the origin remote ($origin)." >&2
+        echo "       Pass it explicitly: publish-merge-gate.sh <sha> <owner/name>" >&2
+        exit 2
+    fi
 fi
 
 if ! command -v pipelinek >/dev/null 2>&1; then
