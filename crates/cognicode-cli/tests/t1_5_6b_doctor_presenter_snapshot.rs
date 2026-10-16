@@ -28,15 +28,15 @@
 //!     ejercitan juntos aquí; el de-serializado del `DoctorResult`
 //!     re-exporta `DoctorReport` del core.
 
-use cognicode_cli::presenter::{present_doctor_result_json, present_doctor_text};
-use cognicode_core::interface::cli::doctor::{
-    format_doctor_json, format_doctor_text, run_doctor_checks, DoctorSection,
-    DoctorSummary, DoctorSections, WorkspaceInfo, DoctorReport, DoctorCheck,
-};
-use cognicode_core::interface::cli::result::{DoctorError, DoctorResult};
-use cognicode_core::interface::cli::commands::Format as CliFormat;
 use cognicode_cli::presenter::present_output;
+use cognicode_cli::presenter::{present_doctor_result_json, present_doctor_text};
+use cognicode_core::interface::cli::commands::Format as CliFormat;
+use cognicode_core::interface::cli::doctor::{
+    DoctorCheck, DoctorReport, DoctorSection, DoctorSections, DoctorSummary, WorkspaceInfo,
+    format_doctor_json, format_doctor_text, run_doctor_checks,
+};
 use cognicode_core::interface::cli::result::CommandOutput;
+use cognicode_core::interface::cli::result::{DoctorError, DoctorResult};
 use std::path::Path;
 
 /// Snapshot de un `DoctorReport` construido a mano. El binario real
@@ -49,24 +49,26 @@ use std::path::Path;
 /// formatter.
 fn fixed_report() -> DoctorReport {
     let mut core = DoctorSection::new("Core");
-    core.add_check(DoctorCheck::ok("binary", "found at $COGNICODE_BIN_DIR/cogh"));
+    core.add_check(DoctorCheck::ok(
+        "binary",
+        "found at $COGNICODE_BIN_DIR/cogh",
+    ));
     core.add_check(DoctorCheck::info("version", "0.101.17"));
 
     let lsp = DoctorSection::new("LSP");
     let mut parsers = DoctorSection::new("Parsers");
     parsers.add_check(DoctorCheck::ok("tree-sitter-rust", "0.21.0"));
-    parsers.add_check(DoctorCheck::missing("tree-sitter-python", "pip install ..."));
+    parsers.add_check(DoctorCheck::missing(
+        "tree-sitter-python",
+        "pip install ...",
+    ));
 
     let summary = DoctorSummary {
         core: "ok".to_string(),
         lsp: "ok".to_string(),
         parsers: "missing".to_string(),
     };
-    let sections = DoctorSections {
-        core,
-        lsp,
-        parsers,
-    };
+    let sections = DoctorSections { core, lsp, parsers };
     let workspace = WorkspaceInfo {
         languages: vec!["rust".to_string()],
         path: ".".to_string(),

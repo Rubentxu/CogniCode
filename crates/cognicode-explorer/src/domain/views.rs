@@ -9773,7 +9773,10 @@ mod view_seam_tests {
         fn insert_issues(
             &self,
             _issues: &[cognicode_core::domain::ports::NewIssue],
-        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+        ) -> Result<
+            cognicode_core::domain::ports::UpsertSummary,
+            cognicode_core::domain::ports::QualityError,
+        > {
             Err(cognicode_core::domain::ports::QualityError::Store(
                 "simulated db down (write)".into(),
             ))
@@ -9813,10 +9816,7 @@ mod view_seam_tests {
             Some(true),
             "degraded flag must be true"
         );
-        let reason = body
-            .get("reason")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        let reason = body.get("reason").and_then(|v| v.as_str()).unwrap_or("");
         assert!(
             reason.contains("issues_for_file failed") || reason.contains("quality_gate failed"),
             "reason must cite the failed call: {reason}"

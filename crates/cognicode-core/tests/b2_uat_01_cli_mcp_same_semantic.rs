@@ -43,10 +43,10 @@
 //!     nodes whose labels match the question keywords (a single
 //!     node in the trivial case). Different semantics by construction.
 
-use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::aggregates::CallGraph;
-use cognicode_core::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
+use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::value_objects::dependency_type::DependencyType;
+use cognicode_core::domain::value_objects::{Location, SymbolKind, SymbolSearchQuery};
 use cognicode_core::infrastructure::graph::OnDemandGraphBuilder;
 
 /// Build a minimal CallGraph-shaped fixture: `a` → `b` → `c`.
@@ -55,7 +55,10 @@ use cognicode_core::infrastructure::graph::OnDemandGraphBuilder;
 /// mirrors `test_on_demand_graph_builder_with_sources` in shape
 /// (same source text) so any divergence vs that test is the test's
 /// own problem, not the fixture's.
-fn fixture_call_graph() -> (CallGraph, [cognicode_core::domain::aggregates::call_graph::SymbolId; 3]) {
+fn fixture_call_graph() -> (
+    CallGraph,
+    [cognicode_core::domain::aggregates::call_graph::SymbolId; 3],
+) {
     let mut g = CallGraph::new();
     let mk = |name: &str, line: u32| {
         let loc = Location::new("test.py", line, 0);
@@ -121,8 +124,10 @@ fn mcp_reachable_names(graph: &CallGraph, question: &str) -> Vec<String> {
         .map(|t| t.to_lowercase())
         .collect();
     let mut seeds: Vec<cognicode_core::domain::aggregates::call_graph::SymbolId> = Vec::new();
-    let mut all_syms: Vec<(cognicode_core::domain::aggregates::call_graph::SymbolId, String)> =
-        Vec::new();
+    let mut all_syms: Vec<(
+        cognicode_core::domain::aggregates::call_graph::SymbolId,
+        String,
+    )> = Vec::new();
     for (id, sym) in graph.symbol_ids() {
         all_syms.push((id.clone(), sym.name().to_string()));
     }

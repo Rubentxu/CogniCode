@@ -11,8 +11,8 @@ use crate::infrastructure::graph::{
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
 use crate::interface::cli::result::{
-    CommandOutput, DoctorError, DoctorResult, GraphResult, IndexError, IndexResult,
-    NavigateError, NavigateResult,
+    CommandOutput, DoctorError, DoctorResult, GraphResult, IndexError, IndexResult, NavigateError,
+    NavigateResult,
 };
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde_json::Value;

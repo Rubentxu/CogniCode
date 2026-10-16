@@ -1419,10 +1419,7 @@ pub fn present_doctor_text(report: &DoctorResult, w: &mut dyn Write) -> io::Resu
 /// without an extra trailing newline (matches the previous
 /// `println!("{}", ...)` shape — the bin's stdout flushes the
 /// line, so the consumer sees one JSON document per invocation).
-pub fn present_doctor_result_json(
-    report: &DoctorResult,
-    w: &mut dyn Write,
-) -> io::Result<()> {
+pub fn present_doctor_result_json(report: &DoctorResult, w: &mut dyn Write) -> io::Result<()> {
     let text = cognicode_core::interface::cli::doctor::format_doctor_json(report);
     write!(w, "{text}")
 }
