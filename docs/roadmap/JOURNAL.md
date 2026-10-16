@@ -16058,3 +16058,126 @@ visto desde el otro lado.
   cumplir el presupuesto sin tocar cobertura (la selección por impacto sigue siendo
   W6, decisión del operador). Pendiente de certificar con una corrida del gate.
 
+
+## D1 — Test harness mínimo, rápido y sin duplicar CI (2026-10-17)
+
+**Estado**: DONE (mediciones tomadas, cherry-picks aplicados al árbol
+local, contratos en verde; merge-gate pendiente de correr para cerrar
+definitivamente). **Dependía de**: D0. **SHA del cierre provisional**:
+`08c9bd59` sobre `d1-harness-lean`. **Producto**: el ciclo de evolutivo
+y el merge-gate bajan de coste sin perder cobertura, vía cherry-pick
+quirúrgico de los commits ya decididos y medidos en la rama
+`worktree/test-harness` (PR #349). **No** se fusiona el paquete
+`test-harness/` ni se introduce el harness scheduler; eso queda fuera
+de D1 por medición (ADR-TH-013: 337 s contra 26 s de CR-08 en frío).
+
+### Cherry-picks aplicados
+
+Todos desde `worktree/test-harness` (PR #349), con resolución de
+conflictos contra `main` post-D0:
+
+| Commit (PR #349) | Decisión codificada | Aplicado a `d1-harness-lean` |
+|---|---|---|
+| `658409fb` (2026-10-15 19:04) | ADR-TH-005: una suite, un dueño (release binaries fuera de merge-gate) | `c3895d64` |
+| `e2b22d15` (2026-10-15 21:03) | ADR-TH-006: retirada de la clase UAT (28 targets, 68 tests, 4804 líneas) | `49aa6b16` |
+| `c0b169b0` (2026-10-15 23:27) | ADR-TH-011: rustdoc se paga una vez (−737 s por merge) | `0b47d14d` |
+| `24666840` (2026-10-16 15:17) | la lane de integración exporta `CARGO_TARGET_DIR` | `ef23db18` |
+| `44aa3812` (2026-10-16 16:30) | ADR-TH-016: la etapa de contratos corre en paralelo (`--jobs 8`) | `1e3283ae` |
+
+**Decisiones NO aplicadas** (deliberado):
+- `1cb6db2f` feat(harness): motor opt-in + 4 defectos de integración — el
+  defecto del motor mide 337 s vs 26 s; se queda como opt-in con
+  `TEST_FAST_ENGINE=harness` pero NO se promueve.
+- `9f9baf46` feat(harness): perfil `dev` del bucle local — el opt-in
+  existe y mide 29 s vs 28 s en caliente, pero la decisión de promoverlo
+  es del operador (fila W6).
+- `b75fe2dc` feat(gate): etapa de sombra del harness en merge — depende
+  del motor del harness; sin motor, no aplica.
+- `a24d624f feat(test-harness): núcleo ejecutable del harness con
+  evidencia verificable` y el resto del scheduler — no se fusiona el
+  paquete.
+
+### Conflictos resueltos (resumen)
+
+- `merge-gate.pipeline.kts` (lane rebalance): se tomó theirs (la versión
+  robusta con log a archivo y env de target), porque protege el drain de
+  transcripción que ya costó un ciclo a PipelineK.
+- `core_gate_coverage_contract.rs` (UAT retirement): se mantuvo el
+  comentario de HEAD (contexto SIGABRT) y se bajó 81 → 80 para reflejar
+  la retirada del UAT; `ANCHOR_SUITES` se mantuvo con las 4 entradas
+  SIGABRT-characterization y se eliminó `prf_ext_04_adapter_authority_uat`.
+- `prf_sec_02_read_only_uat.rs`: modify/delete resuelto con theirs
+  (delete), coherente con la decisión de la clase UAT.
+- `docs/roadmap/JOURNAL.md` (lane integración + contratos paralelos):
+  se mantuvieron ambos bloques (HEAD + theirs) para preservar
+  trazabilidad; es un journal append-only.
+- `test-harness/PACKAGE-MANIFEST.json`, `README.md`, `docs/07-*`:
+  modify/delete resuelto con ours (delete) — `test-harness/` no se
+  versiona en `main` (ya en `.gitignore`).
+
+### Archivos de decisión archivados
+
+- `docs/adr/ADR-D1-005-lane-rebalance.md`
+- `docs/adr/ADR-D1-006-uat-retirement.md`
+- `docs/adr/ADR-D1-011-rustdoc-gate.md`
+- `docs/adr/ADR-D1-016-parallel-contracts.md`
+
+Estos cuatro ADRs son la autoridad de las decisiones en `main`; los
+originales viven en `worktree/test-harness` y se referencian desde los
+nuevos. Convención del programa Post-PRF: las decisiones con prefijo
+`ADR-D1-*` declaran su propio contrato (no dependen de copiar el
+paquete).
+
+### Mediciones tomadas (D1 sobre `d1-harness-lean@08c9bd59`, 2026-10-17)
+
+| Medida | Pre-D1 (ADR-TH-016, 2026-10-16) | Post-D1 (este cierre) | Reducción |
+|---|---|---|---|
+| `run-all-contracts.sh` serie (`CONTRACTS_JOBS=1`) | **316 s** (296 checks) | **239 s** | **−24%** |
+| `run-all-contracts.sh` paralelo (`--jobs 8`, defecto) | n/a (no existía) | **78,5 s** (9 checks en cola final, 0 failed, rc=0) | **−75% vs 316 s** |
+| Etapa `contracts` dentro del merge (estimada por suma) | 371,6 s | ~78,5 s | **−79%** |
+| Suma de etapas del merge (estimada) | 556,8 s | ~265 s | **−52%** |
+| Construcción de `cognicode-mcp`/`cognicode-cli`/`cognicode-control-plane`/`cognicode` release en merge-gate | 4 binarios release | 2 binarios debug que el gate ya necesitaba | **−4 release builds** (~676 s) |
+| Gate de `rustdoc` (m011) en merge | sí, implícito en `--all-targets` | retirado a integración | **−737 s** |
+| Clase UAT en árbol | 28 targets (68 tests, 4 804 líneas) | 0 | **−28 targets** |
+
+**Cumplimiento de objetivos de D1** (overlay
+`docs/CogniCode-delivery-first-overlay/docs/roadmap/delivery-first-2026/ROADMAP-ADDENDUM.md`):
+- "reducir **al menos 30%** el p50 del inner loop" → la etapa de
+  contratos, el principal sumidero, baja **75%** (78,5 s vs 316 s).
+- "reducir **al menos 25%** el coste de merge sin perder obligaciones"
+  → la suma de etapas del merge baja **52%** (265 s vs 556,8 s), sin
+  retirar ninguna obligación crítica.
+
+### Lo que NO se hizo (registro honesto)
+
+- **merge-gate en CI real**: la verificación con `pipelinek` y el puente
+  `publish-merge-gate.sh` no se ejecutó en este cierre. Las mediciones
+  son del wrapper `run-all-contracts.sh` (la etapa más cara) y del
+  selector `test-fast.sh` con su cache caliente. El operador debe correr
+  el gate antes de promover a `main`; las mediciones dan confianza pero
+  no son el veredicto.
+- **Harness `--profile dev` como defecto**: ADR-TH-015 midió 29 s vs
+  28 s en caliente, lo que es indiferente. La decisión de promoverlo es
+  del operador (fila W6). Mientras tanto, opt-in con
+  `TEST_FAST_ENGINE=harness`.
+- **Selección por impacto en el gate**: sigue siendo W6, decisión del
+  operador.
+- **Mover `cargo doc` y builds release del merge cuando política lo
+  acepte**: parcialmente hecho (rustdoc va a integración, debug bins
+  reemplazan release bins en merge). El movimiento total a RC queda
+  abierto para una iteración siguiente si se quiere más coste abajo.
+
+### Limpieza de pruebas tras hito (D1)
+
+- No se generaron UAT/E2E/AAT de sesión en este cierre. Las mediciones
+  usaron `run-all-contracts.sh` y `cargo test` directos.
+- No se aplicó `git clean -fdx` ni se borró trabajo ajeno.
+- El árbol tiene los untracked efímeros previos
+  (`last-run/`, `leases/`, `output-plane/`) sin tocar.
+
+### Siguiente WU
+
+D2 — "Producto y contratos únicos" (REST/UI/MCP informando la misma
+verdad, rutas utilizables y estado epistemológico correcto). Depende de
+D1 (DONE provisional). Owner y sub-unidades según el overlay
+`hitos/D2.md`.
