@@ -3,7 +3,7 @@
 **Estado: núcleo implementado y gated; adopción como sustituto del gate, no.** El
 paquete incluye un harness ejecutable (`bin/harness.py`, biblioteca estándar, sin
 dependencias) con `plan`, `run`, `status`, `resume`, `explain` y `certify`, un
-ledger de evidencia fuera del checkout y una suite de 125 tests que corre con el
+ledger de evidencia fuera del checkout y una suite de 127 tests que corre con el
 runner de contratos del repositorio. También existe la **delegación opt-in** del
 wrapper `scripts/test-fast.sh` (`TEST_FAST_ENGINE=harness`), con caída cerrada al
 motor CR-08 cuando no puede cubrir la demanda. Lo que **no** está hecho: adopción
@@ -312,7 +312,7 @@ selección por impacto no cubra.
 ## Pruebas del harness y cómo se gated
 
 ```shell
-python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 125 tests, ~65 s
+python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 127 tests, ~70 s
 python3 scripts/ci/test_harness_contract.py                          # contrato del gate
 ```
 
@@ -342,7 +342,7 @@ clasificación de procesos que no convierte un 101 en verde; agregación de gate
 huecos nombrados; suelo de obligaciones críticas; AAT ejecutado (21/30 filas con
 test, 9 declaradas); etapa de sombra advisory en el merge-gate que publica el plan
 real de cada PR; delegación opt-in del wrapper `fast` con paridad contrastada
-contra el plan real (ADR-TH-013); 125 tests dependency-free y el contrato del gate.
+contra el plan real (ADR-TH-013); 127 tests dependency-free y el contrato del gate.
 
 **No implementado, y no se afirma lo contrario**:
 
