@@ -73,7 +73,10 @@ fn graph_full_over_real_workspace_completes_with_real_counts() {
         OutcomeState::Partial => {
             assert!(!outcome.gaps().is_empty(), "Partial exige gaps no vacíos");
             assert!(
-                outcome.gaps().iter().any(|g| g.message.contains("Cargo.toml")),
+                outcome
+                    .gaps()
+                    .iter()
+                    .any(|g| g.message.contains("Cargo.toml")),
                 "el gap debe nombrar el fichero saltado (Cargo.toml), got {:?}",
                 outcome.gaps()
             );

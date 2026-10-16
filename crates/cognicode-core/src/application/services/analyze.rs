@@ -114,9 +114,8 @@ impl ServiceAnalyzer {
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
         if let Some(report) = self.service.get_last_build_report()
-            && let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                skipped,
-            } = report.status
+            && let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } =
+                report.status
             && !skipped.is_empty()
         {
             let gaps = skipped
