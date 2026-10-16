@@ -838,7 +838,19 @@ pipeline {
                 // was therefore missing from the check, the script
                 // bailed at the TIER1 sanity loop, and the pipeline
                 // died with no candidate produced.
-                sh("TIER1_TRIPLES_OVERRIDE=\"${targets.joinToString(" ")}\" $cd && bash scripts/ci/stage-platform-payloads.sh staging")
+                // 2026-10-16: v9b RC exposed a real shell-scoping bug in the
+                // env-var assignment. The original line had the form
+                //   TIER1_TRIPLES_OVERRIDE=... $cd && bash stage-platform-payloads.sh ...
+                // which sets the var only for `cd`; `bash` on the right of `&&`
+                // runs without it, the script defaults to BOTH triples
+                // (x86_64 + aarch64), the aarch64 lane is absent, and the
+                // script exits 1 with "no lane claimed Tier-1 platform
+                // aarch64-unknown-linux-gnu". MEDIDO at 18:53 UTC, RC run
+                // 3726e82c-9eab-4215-89bc-dbc677b492f8: payloads stage died
+                // here, release/ was never written, v9b PAUSED at the
+                // same spot v6/v7 reached. Move the assignment onto the
+                // `bash` invocation so the script actually sees it.
+                sh("$cd && TIER1_TRIPLES_OVERRIDE=\"${targets.joinToString(" ")}\" bash scripts/ci/stage-platform-payloads.sh staging")
             }
 
             stage("generate") {
@@ -887,7 +899,18 @@ pipeline {
                     # not name the commit it was built from cannot be tied to
                     # one, which is the first link of the chain this lane exists
                     # to keep.
-                    source=$(git rev-parse HEAD)
+                    #
+                    # 2026-10-16: the v0.101.17 v8 RC exposed a real identity
+                    # gap. Lines 195 (preflight) and 212 (tag-coherence) read
+                    # the RELEASE_SHA env var; this line read git rev-parse HEAD.
+                    # When HEAD moved during the run (e.g. a vN RC FAIL docs
+                    # commit landed 30 s after the launch), the preflight and
+                    # the build still ran against RELEASE_SHA, but the
+                    # manifest's source_commit captured the new HEAD -- a
+                    # docs-only commit that the binaries were not built from.
+                    # Resolve RELEASE_SHA explicitly so the manifest names
+                    # the same SHA the rest of the lane validated.
+                    source=$(git rev-parse "${'$'}{RELEASE_SHA:-HEAD}")
                     "${'$'}TARGET_DIR/release/cognicode-release" generate \
                         --staging staging \
                         --out release \
