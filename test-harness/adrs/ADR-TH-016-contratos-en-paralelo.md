@@ -62,6 +62,18 @@ W6 y decisión del operador). La medición standalone (316 s → 114 s) y la del
 (371,6 s → 113,3 s) coinciden dentro del ruido de la máquina, que es la señal de que el
 efecto es de la etapa y no del momento.
 
+### Estabilidad del modo paralelo (tres corridas consecutivas, mismo conjunto)
+
+| Corrida | Pared | Checks | Resultado |
+|---|---|---|---|
+| 1 | 114 s | 298 passed, 0 failed | rc=0 |
+| 2 | 119 s | 298 passed, 0 failed | rc=0 |
+| 3 | 114 s | 298 passed, 0 failed | rc=0 |
+
+Varianza del 5% y el mismo recuento las tres veces. Un modo paralelo que cambiara de
+resultado entre corridas sería peor que la lentitud que viene a quitar, así que el
+defecto se apoya en tres corridas y en la del gate, no en una.
+
 ## Consecuencias
 
 - El presupuesto de merge se alcanza por concurrencia, no por cobertura: ninguna

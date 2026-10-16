@@ -15774,3 +15774,8 @@ visto desde el otro lado.
   **sin dejar de ejecutar nada**: lo que cambió fue la concurrencia de la etapa, no su
   cobertura. La medición standalone (316 s → 114 s) y la del gate coinciden.
 
+- **Estabilidad del modo paralelo** (el defecto nuevo, tres corridas consecutivas):
+  114 s / 119 s / 114 s, con **298 checks y 0 fallos** las tres veces, más la corrida
+  del gate. Varianza del 5%; un paralelismo que cambiara de resultado entre corridas
+  sería peor que la lentitud que quita, así que no se apoya en una sola medición.
+
