@@ -190,6 +190,8 @@ pipeline {
         stage("coherence") {
             stage("tag-coherence") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_TAG:-}" ]; then
                         echo "RELEASE_TAG is unset, so this is a dry run: there is no tag to be coherent with."
@@ -223,6 +225,8 @@ pipeline {
         stage("toolchain") {
             stage("release-tool") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     cargo build --release --bin cognicode-release
                     # MEDIDO 2026-10-03. Esta stage se quedaba con "cargo
@@ -267,6 +271,8 @@ pipeline {
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
             sh("""
+            set -eo pipefail
+            set -eo pipefail
             # ── rustdoc-gate
             # ─────────────────────────────────────────────
             $cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
@@ -279,6 +285,8 @@ pipeline {
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
             sh("""
+                    set -eo pipefail
+                    set -eo pipefail
             # ── build-binary
             # ─────────────────────────────────────────────
 
@@ -357,6 +365,8 @@ pipeline {
             targets.forEach { target ->
                 stage("toolchain-for-$target") {
                     sh("""
+                        set -eo pipefail
+                        set -eo pipefail
                         $cd || exit 1
                         rustup target list --installed | grep -qx '$target' || {
                             echo "cargo target '$target' is not installed."
@@ -493,6 +503,8 @@ pipeline {
 
                 stage("binaries-$target") {
                     sh("""
+                        set -eo pipefail
+                        set -eo pipefail
                         $cd || exit 1
                         # cogh consumes evidence-gated types, so the feature is on for
                         # the whole cognicode-cli package, not per binary.
@@ -525,6 +537,7 @@ pipeline {
                 // property means producing the layout it consumes.
                 stage("package-$target") {
                     sh(releasePaths + "\n" + """
+                        set -eo pipefail
                         platform=${platformOf(target)}
                         lane="staging/payloads-${'$'}platform"
                         # This directory is this stage's output, and this stage is
@@ -644,6 +657,7 @@ pipeline {
 
                 stage("binary-smoke-$target") {
                     sh(releasePaths + "\n" + """
+                        set -eo pipefail
                         export HOME=$(mktemp -d)
                         export XDG_CONFIG_HOME="${'$'}HOME/.config"
                         export XDG_DATA_HOME="${'$'}HOME/.local/share"
@@ -679,6 +693,7 @@ pipeline {
 
                 stage("archive-standalone-$target") {
                     sh(releasePaths + "\n" + """
+                        set -eo pipefail
                         export HOME=$(mktemp -d)
                         work=$(mktemp -d)
                         for archive in "staging/payloads-${platformOf(target)}"/dist/*.tar.gz; do
@@ -709,6 +724,7 @@ pipeline {
             // missing part of what it publishes.
             stage("skill-bundles") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     # MEDIDO 2026-10-03. Esto hacia `mkdir -p staging`, y la
                     # raiz de `staging/` no se limpiaba. La lane de v0.101.5
                     # llego aqui y se rompio en la stage siguiente:
@@ -801,6 +817,7 @@ pipeline {
 
             stage("generate") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     # MEDIDO 2026-10-04. `release/` es la salida de esta stage y
                     # esta stage es su duena, y no lo era: se creaba con lo que
                     # hubiera. La lane v0.101.9, que corre en el worktree donde
@@ -860,6 +877,7 @@ pipeline {
             // about rebuilding anything.
             stage("verify") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     # MEDIDO 2026-10-03. Esta stage llevaba `--version` y nada
                     # mas, y `verify` exige tambien `--tag`:
                     #
@@ -876,6 +894,8 @@ pipeline {
 
             stage("install-smoke") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     bash scripts/ci/release-install-smoke.sh "$version" release
                 """.trimIndent())
@@ -883,6 +903,8 @@ pipeline {
 
             stage("candidate-manifest") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     test -f release/SHA256SUMS || {
                         echo "the candidate has no SHA256SUMS. Without it, the release lane has"
@@ -918,6 +940,8 @@ pipeline {
             // anuncia por que no firmo.
             stage("provenance") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_PROVENANCE_KEY:-}" ]; then
                         echo "provenance: NOT generated — no RELEASE_PROVENANCE_KEY on this host."
