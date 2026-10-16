@@ -121,8 +121,12 @@ if [ "$ENGINE" = "harness" ]; then
   if [ "$MODE" = "full" ]; then
     exec bash "${REPO_ROOT}/scripts/test-full.sh" --reason "test-fast --full"
   fi
+  # `--profile dev`: el bucle local ejecuta lo que cambió y lo que CR-08 exija, sin
+  # la clausura de dependientes ni las etapas de alcance workspace. Es el perfil que
+  # hace la comparación justa con CR-08 (sin él, el harness exige ~26 suites donde
+  # CR-08 pide una) y no puede recortar por debajo del oráculo.
   HARNESS_PLAN="$(python3 "$HARNESS" --repo "$REPO_ROOT" --format json plan \
-      --lane change --base "$BASE_REF" --oracle cr08 2>/dev/null)"
+      --lane change --base "$BASE_REF" --oracle cr08 --profile dev 2>/dev/null)"
   # La base se publica antes de decidir: es parte de la decisión. Un consumidor (o
   # un contrato) que quiera comprobar la paridad contra el plan del harness tiene
   # que planificar el MISMO cambio, y adivinarlo desde el estado del árbol hace que
@@ -146,7 +150,8 @@ if [ "$ENGINE" = "harness" ]; then
       printf '%s\n' "$HARNESS_PLAN"
       exit 0
     fi
-    python3 "$HARNESS" --repo "$REPO_ROOT" run --lane change --base "$BASE_REF" --oracle cr08
+    python3 "$HARNESS" --repo "$REPO_ROOT" run --lane change --base "$BASE_REF" \
+      --oracle cr08 --profile dev
     harness_rc=$?
     case "$harness_rc" in
       0) exit 0 ;;

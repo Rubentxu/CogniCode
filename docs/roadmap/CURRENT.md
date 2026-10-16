@@ -9,14 +9,14 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-16 (TH-IMPL-08/09), sobre branch `worktree/test-harness`, HEAD
-> `246668402c3151cbee06fb7c0aeb18e0079a6b66`. Unidades cerradas: el gate de rustdoc **volvió a la lane que bloquea
-> `main`** (700,2 s → **1,3 s** in-gate), el defecto `rerun-if-changed` de
-> `cognicode-cli` (163 s → 1 s, 0 unidades `Dirty`), el oráculo de frescura del
-> binario de MCP por clausura, el cableado del suelo de obligaciones y de los pines de
-> inventario a la CLI, la aceptación del README ejecutando sus comandos, y la lane de
-> integración ejecutada de verdad (defecto de `CARGO_TARGET_DIR` corregido; fallo
-> pre-existente de `core-no-default` declarado). Gate `24666840`: SUCCESS.
+> **Snapshot**: 2026-10-16 (TH-IMPL-10), sobre branch `worktree/test-harness`, HEAD
+> `7f47bcf8f40800d54c410560942fe09d21d817c5`. Unidades cerradas: el gate de rustdoc vuelve a la lane que bloquea `main`
+> (700,2 s → **1,1 s** in-gate), el defecto `rerun-if-changed` de `cognicode-cli`
+> (163 s → 1 s, 0 unidades `Dirty`), el oráculo de frescura del binario de MCP, el
+> cableado del suelo de obligaciones y de los pines de inventario a la CLI, la
+> aceptación del README ejecutando sus comandos, la lane de integración ejecutada de
+> verdad, y el **perfil `dev`** del bucle local (misma selección que CR-08, 29 s vs
+> 28 s en caliente, y **3 s** la repetición contra 28 s). Gate `24666840`: SUCCESS.
 > Los snapshots anteriores se conservan abajo como históricos.
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
 > `4329476fc0e2b9c5e4f42e7d0ad3435b8e3113fd` (TH-IMPL-06: informe reproducible de

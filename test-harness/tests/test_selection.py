@@ -510,3 +510,56 @@ def test_the_oracle_floor_adds_obligations_without_reordering_the_plan():
         planned = [suite.entry.suite_id for suite in plan_result.suites]
         assert planned.index("demo-core:cargo:build#-") < planned.index(CORE_SUITE), planned
         assert planned.index(CORE_SUITE) < planned.index(APP_SUITE), planned
+
+
+# ---------- perfil de selección (dev) ----------
+#
+# MEDIDO 2026-10-16. Sin perfil, la lane `change` exige la clausura de dependientes
+# y las etapas de alcance workspace: 26 suites donde CR-08 pide una para el mismo
+# cambio, y 337 s de pared en frío contra 29 s. Es correcto para un gate y caro para
+# el bucle local. El perfil `dev` lo recorta **sin** tocar el suelo del oráculo, y
+# sólo se permite en `change`.
+
+
+def test_the_dev_profile_drops_the_dependents_closure_and_workspace_stages():
+    with demo_repo() as repo:
+        graph, catalog = _context(repo)
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        gate_selection = _selection(repo, graph, catalog)
+        dev_selection = select(
+            lane="change",
+            changeset=read_changeset(repo, "main"),
+            graph=graph,
+            catalog=catalog,
+            repo_root=repo,
+            profile="dev",
+        )
+        gate_ids = {entry.suite_id for entry, _ in gate_selection.required}
+        dev_ids = {entry.suite_id for entry, _ in dev_selection.required}
+
+        # Lo que cambió sigue dentro, en los dos perfiles.
+        assert CORE_SUITE in dev_ids, dev_ids
+        # La clausura de dependientes (el consumidor) y las etapas de workspace, no.
+        assert APP_SUITE in gate_ids and APP_SUITE not in dev_ids, (gate_ids, dev_ids)
+        assert FMT_SUITE in gate_ids and FMT_SUITE not in dev_ids, (gate_ids, dev_ids)
+        # Y el recorte se explica, no se esconde.
+        reasons = {entry.suite_id: why for entry, why in dev_selection.excluded}
+        assert "perfil dev" in reasons[APP_SUITE], reasons[APP_SUITE]
+        assert "perfil dev" in reasons[FMT_SUITE], reasons[FMT_SUITE]
+
+
+def test_the_dev_profile_is_rejected_outside_the_change_lane():
+    from harness.policy import ProfileError, resolve_profile
+
+    with demo_repo() as repo:
+        graph, catalog = _context(repo)
+        for lane in ("merge", "integration", "release", "certification"):
+            try:
+                resolve_profile("dev", lane)
+            except ProfileError as exc:
+                assert "sólo se permite" in str(exc), exc
+            else:
+                raise AssertionError(f"el perfil dev se aceptó en la lane {lane}")
+        assert resolve_profile("dev", "change")[0] == "dev"
+        assert resolve_profile("gate", "merge")[0] == "gate"

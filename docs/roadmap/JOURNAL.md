@@ -15719,3 +15719,27 @@ Observación de proceso, porque explica los dos anteriores: la lane de integraci
 nadie los vea. Es el mismo agujero que ADR-TH-014 corrigió para el gate de rustdoc,
 visto desde el otro lado.
 
+## Recibo TH-IMPL-10 — Perfil `dev` del bucle local (2026-10-16)
+
+- **Qué se construyó**: `--profile dev` en el harness, admitido **sólo** en la lane
+  `change`, que ejecuta lo que cambió y lo que CR-08 exija sin la clausura de
+  dependientes ni las etapas de alcance workspace. El perfil viaja en el documento del
+  plan y en su esquema (`enum gate|dev`, requerido), y pedirlo en otra lane es error de
+  uso (`rc=2` con motivo). `POLICY_VERSION` sube a `th-policy/4` (la evidencia anterior
+  deja de reutilizarse: es el propósito de la versión).
+- **Medición** (clon, mismo cambio de una línea en `cognicode-ladybug`): CR-08 73 s la
+  primera vez (paga compilación) y **28 s** en caliente; harness `dev` **29 s** con el
+  ledger frío, misma selección (1 suite, 62 casos, `SATISFIED`); repetición sin cambios
+  **3 s** (recibo reutilizado) contra 28 s de CR-08. La regresión de 337 s que bloqueaba
+  la adopción en ADR-TH-013 desaparece.
+- **Defecto encontrado por los tests nuevos**: `parity.compare()` sólo iteraba los
+  scopes del mapeo, así que una demanda con un nombre desconocido no generaba fila, no
+  entraba en `untracked` y el veredicto decía `AGREE`. Ahora es una debilidad declarada
+  (fila `NOT_IN_CATALOG`, `missing_scopes` y nota), sin cambiar nada en el repositorio
+  real, donde CR-08 sólo emite scopes mapeados.
+- **Lo que NO se hizo**: cambiar el motor por defecto de `test-fast.sh` (es decisión del
+  operador, con esta medición delante), usar el perfil en el gate (prohibido por
+  construcción y verificado) y la selección por impacto (W6).
+- **Verificación**: suite del harness **131/131**; contrato de los wrappers OK (el
+  wrapper pasa `--profile dev` y su defecto sigue siendo CR-08).
+

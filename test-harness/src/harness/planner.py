@@ -26,7 +26,7 @@ from .domain import ExecutionPlan, PlanAction, SuiteRef
 from .inventory import Inventory, default_min_cases
 from .obligations import Floor, missing_from_catalog
 from .parity import ParityReport, compare, floor_entries
-from .policy import POLICY_VERSION, reuse_allowed
+from .policy import DEV_PROFILE, GATE_PROFILE, POLICY_VERSION, resolve_profile, reuse_allowed
 from .validity import FingerprintInputs, evaluate_reuse
 
 from adapters.cargo_workspace import WorkspaceGraph, is_global_path
@@ -310,8 +310,16 @@ def select(
     graph: WorkspaceGraph,
     catalog: tuple[CatalogEntry, ...],
     repo_root: Path,
+    profile: str = GATE_PROFILE,
 ) -> Selection:
-    """Obligaciones de la lane que este cambio obliga a ejecutar, con motivos."""
+    """Obligaciones de la lane que este cambio obliga a ejecutar, con motivos.
+
+    Con `profile="dev"` (sólo lane `change`) se ejecuta lo que cambió y lo que el
+    oráculo exija: no se añade la clausura de dependientes ni las etapas de alcance
+    workspace, que son lo que convierte la lane en un mini-gate. El suelo del
+    oráculo y el de obligaciones críticas siguen aplicándose desde `build_plan`, así
+    que un plan `dev` nunca exige menos que CR-08.
+    """
     selection = Selection()
     if changeset.is_unknown:
         reason = changeset.fallback_reason or "ChangeSet desconocido"
@@ -426,6 +434,16 @@ def select(
             )
             continue
         if entry.package and entry.package in affected:
+            if profile == DEV_PROFILE and entry.package not in owners and entry.package not in coupled:
+                # Entraba sólo por la clausura de dependientes: su paquete no cambió.
+                excluded.append(
+                    (
+                        entry,
+                        f"perfil dev: {entry.package} no cambió; entraba por la clausura de "
+                        "dependientes de un paquete tocado, que el bucle local no ejecuta",
+                    )
+                )
+                continue
             why = _reason_for(entry, owners, affected, graph, changeset)
             required.append((entry, why))
             continue
@@ -441,6 +459,15 @@ def select(
         if entry.scope == "workspace":
             # Un `cargo fmt --all` o un `clippy --workspace` cubren todos los
             # paquetes: en cuanto toca cualquier código, la obligación está viva.
+            if profile == DEV_PROFILE:
+                excluded.append(
+                    (
+                        entry,
+                        "perfil dev: las etapas de alcance workspace corren el workspace "
+                        "entero y son del gate, no del bucle local",
+                    )
+                )
+                continue
             if package_paths:
                 required.append(
                     (
@@ -551,6 +578,7 @@ def build_plan(
     repo_id_expected: str | None = None,
     run_id: str,
     created_at: str,
+    profile: str = GATE_PROFILE,
 ) -> PlanResult:
     """Construye el plan: selección, huellas, y decisión de reutilizar por suite.
 
@@ -570,9 +598,16 @@ def build_plan(
     variables = {}
     if not declared_targets or toolchain.target_triple in declared_targets:
         variables["target"] = toolchain.target_triple
+    profile, profile_reason = resolve_profile(profile, lane)
     selection = select(
-        lane=lane, changeset=changeset, graph=graph, catalog=catalog, repo_root=repo_root
+        lane=lane,
+        changeset=changeset,
+        graph=graph,
+        catalog=catalog,
+        repo_root=repo_root,
+        profile=profile,
     )
+
     if obligation_floor is not None:
         missing_critical = missing_from_catalog(
             obligation_floor, lane, {entry.suite_id for entry in catalog}
@@ -718,6 +753,7 @@ def build_plan(
         policy_version=POLICY_VERSION,
         unknown_reasons=selection.unknown_reasons,
         created_at=created_at,
+        profile=profile,
     )
 
     warnings: list[str] = []

@@ -658,3 +658,57 @@ def test_the_pinned_inventory_minimum_applies_through_the_cli():
         assert proc.returncode != 0, (proc.returncode, json.dumps(payload)[:300])
         gaps = payload["verdict"]["gaps"]
         assert any("999" in gap["reason"] for gap in gaps), gaps
+
+
+def test_the_dev_profile_cannot_swallow_an_oracle_demand():
+    """El perfil dev recorta el mini-gate, nunca el suelo del oráculo.
+
+    Es la propiedad que hace segura la bandera. El fixture no puede ejercer la
+    *adición* del suelo (sus paquetes no son los que `CR08_SCOPES` mapea), así que
+    aquí se ejerce lo que sí puede: con un selector que demanda algo, el plan dev no
+    puede declararse en paridad cuando no lo está. O lo exige, o lo dice.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        selector = repo / "scripts" / "ci" / "select-suites.sh"
+        selector.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf \'{"strategy":"changed","reason":"fixture exige app","suites":["app"]}\\n\'\n',
+            encoding="utf-8",
+        )
+        selector.chmod(0o755)
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        proc = run_cli(
+            repo, state, "--format", "json", "plan",
+            "--lane", "change", "--base", "main", "--profile", "dev", "--oracle", "cr08",
+        )
+        assert proc.returncode in (0, 3), (proc.returncode, proc.stderr[:200])
+        payload = json.loads(proc.stdout)
+        plan = payload["plan"]
+        assert plan["profile"] == "dev", plan["profile"]
+        parity = payload["parity"]
+        assert parity is not None, payload
+        demanded = [row for row in parity["rows"] if row["demanded_by_oracle"]]
+        assert demanded, parity
+        # La demanda no puede desaparecer: o está exigida, o el plan declara que no
+        # está en paridad. Lo que no vale es afirmar AGREE sin cubrirla.
+        covered = all(row["verdict"] in ("AGREE", "HARNESS_STRICTER") for row in demanded)
+        if not covered:
+            assert parity["verdict"] != "AGREE", parity
+            assert parity["missing_scopes"], parity
+        # Nota: escribir el selector en el repositorio hace el cambio *global* (un
+        # camino de `scripts/ci/` arrastra todas las obligaciones), así que aquí no
+        # se puede comprobar el recorte del perfil; eso lo cubre
+        # `test_the_dev_profile_drops_the_dependents_closure_and_workspace_stages`,
+        # que ejercita la selección directamente. Lo que sí se comprueba aquí es lo
+        # que hace segura la bandera: que una demanda del oráculo no desaparezca.
+
+
+def test_the_dev_profile_is_a_policy_error_not_a_traceback():
+    """El perfil dev fuera de `change` sale rc=2 con su motivo, no un traceback."""
+    with demo_repo() as repo:
+        state = _state(repo)
+        proc = run_cli(repo, state, "plan", "--lane", "merge", "--base", "main", "--profile", "dev")
+        assert proc.returncode == 2, (proc.returncode, proc.stdout[:200])
+        assert "sólo se permite" in proc.stderr, proc.stderr

@@ -581,6 +581,28 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon cuyo árbol no tenía binarios previos (el plan construye el que cada suite necesita antes de ejecutarla), y todos los códigos de salida y tiempos publicados sin maquillar, incluidas las dos corridas de gate que fallaron antes de los arreglos |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
 
+## 22c. TH-IMPL-10 — Perfil `dev`: el requisito que faltaba para el bucle local (2026-10-16)
+
+> **Estado**: IMPLEMENTADO y medido. ADR-TH-013 dejó escrito que el harness no podía
+> sustituir a CR-08 en el bucle local porque su lane `change` es un mini-gate (26
+> suites donde CR-08 pide una, 337 s contra 29 s). `--profile dev` cierra eso: sólo en
+> `change`, sin clausura de dependientes ni etapas de workspace, **con el suelo del
+> oráculo intacto**, declarado en el plan y en su esquema, y rechazado fuera de esa
+> lane como error de uso. Medido en un clon con el mismo cambio: misma selección que
+> CR-08 (1 suite), 29 s la primera pasada contra 28 s de CR-08 en caliente, y **3 s**
+> la repetición (recibo reutilizado) contra 28 s. Decisión:
+> [`test-harness/adrs/ADR-TH-015-perfil-dev-del-bucle-local.md`](../../test-harness/adrs/ADR-TH-015-perfil-dev-del-bucle-local.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Quitar el bloqueo medido para adoptar el harness en el bucle local (no perder selección ni pagar más) y hacer que la repetición cueste 3 s en vez de 28 s |
+| Clasificación | Evolutivo del test harness (fila W3/W7 y requisito declarado en ADR-TH-013) |
+| Alcance | `test-harness/src/harness/{policy,planner,domain,orchestrator,cli,parity}.py`, `contracts/plan.schema.json`, `scripts/test-fast.sh`, tests del harness, README, ADR-TH-015 |
+| Fuera de alcance | Cambiar el motor por defecto del wrapper (operador), usar el perfil en el gate (prohibido por construcción), selección por impacto (W6) |
+| Consumidores | Contribuidores (bucle local), operador (decisión de adopción con datos), auditoría (ADR-TH-015) |
+| Criterio de cierre | Cumplido: suite del harness 131/131 con cuatro tests nuevos (recorte del perfil por la CLI, rechazo fuera de `change`, demanda del oráculo que no puede tragarse, y comparación de selección); el hueco de paridad con scopes desconocidos, encontrado por esos tests, corregido con fila y debilidad declarada; medición antes/después publicada |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
 ## 22b. Qué queda para que el merge baje de 420 s (dato, no decisión) — 2026-10-16
 
 Aritmética publicada por `harness report` sobre la corrida `2f9d972d` (59 etapas,

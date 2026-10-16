@@ -55,6 +55,7 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
 | Integrar adaptadores, gates u operación segura | Specs [TH-S04](specs/TH-S04-adaptadores.md), [TH-S05](specs/TH-S05-gates-release.md) y [TH-S06](specs/TH-S06-operacion-seguridad.md). |
 | Consultar decisiones, contratos y entregas previstas | [ADRs](adrs/), [contratos JSON](contracts/README.md), [criterios](docs/04-metrica-y-criterios.md), [decisiones pendientes](docs/05-decision-pendientes.md) y [roadmap](roadmap/ROADMAP.md). |
+| Usar el harness en el bucle local sin pagar el mini-gate | `--profile dev` (sólo lane `change`): ejecuta lo que cambió y lo que CR-08 exija, sin clausura de dependientes ni etapas de workspace, y con el suelo del oráculo intacto. Medido 2026-10-16: misma selección que CR-08 (1 suite), 29 s la primera pasada contra 28 s de CR-08 en caliente, y **3 s** la repetición (recibo reutilizado) contra 28 s. Decisión: [ADR-TH-015](adrs/ADR-TH-015-perfil-dev-del-bucle-local.md) |
 | Entender el gate de merge y el reparto de obligaciones por lane | [Auditoría de `merge-gate`](docs/07-auditoria-merge-gate.md) (las 73 stages clasificadas y la medición antes/después de B1), [ADR-TH-005](adrs/ADR-TH-005-dueno-unico-por-suite.md) (una suite, un dueño) y [ADR-TH-006](adrs/ADR-TH-006-retirada-uat.md) (retirada de la clase UAT). |
 | Aceptar el diseño o buscar falsos verdes | [AAT](aat/AAT.md): **21 de 30 mutaciones se matan hoy con test** y las 9 restantes están declaradas con motivo (sandbox, nextest, release). El plan de UAT que acompañaba a este paquete se retiró el 2026-10-15 (ADR-TH-006). |
 | Preparar instrucciones para un agente implementador | [Mandato del agente](prompts/MANDATO-AGENTE.md). |
@@ -78,6 +79,7 @@ nada que instalar. Todos aceptan `--repo`, `--state-dir` y `--format text|json`.
 ```shell
 # Qué hay que ejecutar y por qué, sin ejecutar nada.
 python3 test-harness/bin/harness.py plan --lane change --base origin/main
+python3 test-harness/bin/harness.py plan --lane change --base origin/main --profile dev   # bucle local: sin clausura ni etapas de workspace
 
 # Ejecuta el plan, escribe recibos y agrega el veredicto.
 python3 test-harness/bin/harness.py run --lane change

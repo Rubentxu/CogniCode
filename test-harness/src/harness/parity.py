@@ -298,6 +298,33 @@ def compare(
             verdict = HARNESS_WEAKER
             deviations = ()
 
+    # MEDIDO 2026-10-16. Un scope que el oráculo pide y que no está en el mapeo
+    # (`CR08_SCOPES`) desaparecía del informe: no generaba fila, no entraba en
+    # `untracked` y el veredicto decía AGREE mientras el harness no podía demostrar
+    # nada sobre esa demanda. Un mapeo que no conoce una demanda no es una demanda
+    # cubierta: se declara y cuenta como debilidad, no como silencio. En el
+    # repositorio real esto no cambia nada (CR-08 sólo emite scopes mapeados), y su
+    # valor es no tragarse un scope nuevo el día que el selector emita uno.
+    unknown_scopes = sorted(
+        scope
+        for scope in demanded
+        if scope not in CR08_SCOPES and not decision.requires_everything
+    )
+    for scope in unknown_scopes:
+        untracked.append(scope)
+        missing.append(scope)
+        rows.append(
+            ParityRow(
+                scope=scope,
+                packages=(),
+                demanded_by_oracle=True,
+                harness_how="not_in_catalog",
+                verdict=NOT_IN_CATALOG,
+            )
+        )
+    if unknown_scopes and not deviations:
+        verdict = HARNESS_WEAKER if missing else verdict
+
     notes = []
     if decision.problem:
         notes.append(decision.problem)

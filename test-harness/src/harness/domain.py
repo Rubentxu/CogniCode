@@ -126,6 +126,10 @@ class ExecutionPlan:
     policy_version: str
     unknown_reasons: tuple[str, ...] = ()
     created_at: str = ""
+    # Perfil de selección con el que se construyó el plan: 'gate' (todo) o 'dev'
+    # (bucle local, sólo lane `change`). Va en el plan y en el esquema para que un
+    # consumidor no pueda confundir un plan recortado a propósito con el del gate.
+    profile: str = "gate"
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -140,6 +144,7 @@ class ExecutionPlan:
             "unknown_reasons": list(self.unknown_reasons),
             "policy_version": self.policy_version,
             "created_at": self.created_at,
+            "profile": self.profile,
         }
 
     def counts(self) -> dict[str, int]:

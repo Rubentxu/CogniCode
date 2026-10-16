@@ -75,6 +75,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
         help="compara con el selector vigente y nunca exige menos que él (cr08)",
     )
+    plan.add_argument(
+        "--profile",
+        choices=("gate", "dev"),
+        default="gate",
+        help="perfil de selección; 'dev' sólo en la lane change y nunca exige menos que el oráculo",
+    )
     plan.add_argument("--shadow", action="store_true", help="modo observación: no ejecuta ni decide el gate")
     plan.add_argument("--run-id", default=None)
 
@@ -83,6 +89,12 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--base", default=DEFAULT_BASE)
     run.add_argument("--allow-reuse", action="store_true")
     run.add_argument("--allow-external", action="store_true")
+    run.add_argument(
+        "--profile",
+        choices=("gate", "dev"),
+        default="gate",
+        help="perfil de selección; 'dev' sólo en la lane change y nunca exige menos que el oráculo",
+    )
     run.add_argument(
         "--oracle",
         choices=("none", "cr08"),
@@ -338,6 +350,7 @@ def main(argv: list[str] | None = None) -> int:
                 allow_external=args.allow_external,
                 oracle=args.oracle,
                 run_id=args.run_id,
+                profile=args.profile,
             )
             # El documento del plan cumple el contrato tal cual; los extras de la
             # CLI (exclusiones con motivo, avisos y paridad) viajan al lado para no
@@ -400,6 +413,7 @@ def main(argv: list[str] | None = None) -> int:
                 allow_external=args.allow_external,
                 run_id=args.run_id,
                 oracle=args.oracle,
+                profile=args.profile,
             )
             if args.plan_only:
                 # El camino de ejecución se puede inspeccionar sin ejecutar. Sin

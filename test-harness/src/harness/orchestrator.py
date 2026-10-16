@@ -33,7 +33,7 @@ from .gate import Coverage, aggregate
 from .inventory import Inventory, load_inventory
 from .obligations import Floor, load_floor
 from .planner import PlanResult, PlannedSuite, build_plan, refutable_fallback, select
-from .policy import certify_requires_fresh, reuse_allowed
+from .policy import ProfileError, certify_requires_fresh, reuse_allowed
 from .validity import evaluate_reuse
 
 from adapters import cargo_workspace, cr08_selector, git_repo, pipeline_catalog, process_runner
@@ -143,6 +143,7 @@ def make_plan(
     allow_external: bool = False,
     oracle: str = "none",
     run_id: str | None = None,
+    profile: str = "gate",
 ) -> tuple[PlanResult, str]:
     """Plan de una lane. Con `oracle="cr08"` el plan nunca exige menos que el selector.
 
@@ -155,23 +156,29 @@ def make_plan(
     if oracle == "cr08":
         paths = tuple(getattr(context.changeset, "all_paths", lambda: ())())
         decision = cr08_selector.run_selector(context.repo_root, paths)
-    plan_result = build_plan(
-        lane=lane,
-        repo_id=context.repo_id,
-        changeset=context.changeset,
-        graph=context.graph,
-        catalog=context.catalog_for_lane(lane),
-        ledger=context.ledger,
-        toolchain=context.toolchain,
-        allow_reuse=allow_reuse,
-        allow_external=allow_external,
-        oracle=decision,
-        inventory=context.inventory,
-        obligation_floor=context.obligation_floor,
-        repo_id_expected=context.repo_id,
-        run_id=identifier,
-        created_at=now_iso(),
-    )
+    try:
+        plan_result = build_plan(
+            lane=lane,
+            repo_id=context.repo_id,
+            changeset=context.changeset,
+            graph=context.graph,
+            catalog=context.catalog_for_lane(lane),
+            ledger=context.ledger,
+            toolchain=context.toolchain,
+            allow_reuse=allow_reuse,
+            allow_external=allow_external,
+            oracle=decision,
+            inventory=context.inventory,
+            obligation_floor=context.obligation_floor,
+            profile=profile,
+            repo_id_expected=context.repo_id,
+            run_id=identifier,
+            created_at=now_iso(),
+        )
+    except ProfileError as exc:
+        # Un perfil no permitido en esa lane es un error de uso: la CLI lo muestra
+        # con rc=2 y su mensaje, en vez de dejar un traceback.
+        raise HarnessError(str(exc)) from exc
     return plan_result, identifier
 
 

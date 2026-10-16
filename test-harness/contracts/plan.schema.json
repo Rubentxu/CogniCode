@@ -13,7 +13,8 @@
     "status",
     "required_suites",
     "actions",
-    "policy_version"
+    "policy_version",
+    "profile"
   ],
   "properties": {
     "schema_version": {
@@ -109,6 +110,14 @@
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "profile": {
+      "type": "string",
+      "enum": [
+        "gate",
+        "dev"
+      ],
+      "description": "Perfil de selección: 'gate' exige todo lo que la política del gate pide; 'dev' sólo cambia la lane `change` y nunca exige menos que el oráculo."
     }
   }
 }
