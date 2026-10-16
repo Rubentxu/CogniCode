@@ -8,6 +8,8 @@ pub mod file_ops_handlers;
 pub mod handlers;
 pub mod output_contracts;
 pub mod parameter_aliases;
+// CU-1.3 — presentadores puros AnalysisOutcome → BuildGraphOutput.
+pub mod presenter_bridge;
 pub mod prompts;
 pub mod resources;
 pub mod rmcp_adapter;

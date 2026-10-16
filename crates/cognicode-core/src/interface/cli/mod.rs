@@ -2,6 +2,8 @@
 
 pub mod commands;
 pub mod doctor;
+// CU-1.3 — presentadores puros AnalysisOutcome → GraphResult N−1.
+pub mod presenter_bridge;
 pub mod result;
 
 #[cfg(feature = "evidence-cli-ladybug")]
