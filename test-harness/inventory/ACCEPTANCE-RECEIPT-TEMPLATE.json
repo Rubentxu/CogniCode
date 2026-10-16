@@ -1,0 +1,42 @@
+{
+  "block": "B1",
+  "source_sha": "REPLACE_WITH_40_HEX_SOURCE_SHA",
+  "cases": [
+    {
+      "id": "B1-UAT-01",
+      "status": "NOT_RUN",
+      "exit_code": null,
+      "command": "",
+      "duration_ms": null,
+      "scenario_sha256": "",
+      "artifact_sha256": "",
+      "permanent_contract": "",
+      "negative_proof": "",
+      "ephemeral_path": "test-harness/.cycles/B1-<sha>/uat.rs"
+    },
+    {
+      "id": "B1-E2E-01",
+      "status": "NOT_RUN",
+      "exit_code": null,
+      "command": "",
+      "duration_ms": null,
+      "scenario_sha256": "",
+      "artifact_sha256": "",
+      "permanent_contract": "",
+      "negative_proof": "",
+      "ephemeral_path": "test-harness/.cycles/B1-<sha>/e2e.rs"
+    },
+    {
+      "id": "B1-AAT-01",
+      "status": "NOT_RUN",
+      "exit_code": null,
+      "command": "",
+      "duration_ms": null,
+      "scenario_sha256": "",
+      "artifact_sha256": "",
+      "permanent_contract": "",
+      "negative_proof": "",
+      "ephemeral_path": "test-harness/.cycles/B1-<sha>/aat.rs"
+    }
+  ]
+}

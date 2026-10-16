@@ -120,6 +120,12 @@ sddk/
 .sddk-last-cycle-complete
 .sddk-*                # Cycle markers / spike JSONs / etc. (e.g. .sddk-spike-wasm-compat.json)
 
+# VDH cycle-only acceptance artifacts (per docs/roadmap/initiatives/VDH-2026-10/).
+# Each Bn creates test-harness/.cycles/Bn-<sha>/ with scripts, fixtures, journals.
+# Tests with __vdh_cycle_<id>_*.rs live under crates/<crate>/tests/ and are
+# never tracked. ephemeral_guard.py enforces this at merge.
+/test-harness/.cycles/
+
 # Proposal documents (agent-generated, not user-requested documentation)
 docs/propuestas/
 rust-intelligence
