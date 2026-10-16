@@ -16127,3 +16127,86 @@ D2 — "Producto y contratos únicos" (REST/UI/MCP informando la misma
 verdad, rutas utilizables y estado epistemológico correcto). Depende
 de D1 (DONE provisional). Owner y sub-unidades según el overlay
 `hitos/D2.md`.
+
+## D1 — CIERRE DEFINITIVO (2026-10-17)
+
+**Estado**: DONE. **SHA del cierre definitivo**: `4996246e` (squash de PR
+#354 a `origin/main`). **PR**: #354 → MERGED. **merge-gate**:
+**SUCCESS** sobre `7193caa8`.
+
+### Resultado del merge-gate real
+
+Corrida verificada con `bash scripts/ci/publish-merge-gate.sh` en CI real
+(la autoridad es PipelineK, no el contrato). Resumen de la corrida:
+
+- **58 stages, todas SUCCESS** (clippy, build-binary, contract-toolchain,
+  contracts, select-suites-script, core-lib, core-adversarial-campaign,
+  core-prf-mcp-05, core-adversarial-e2e, core-unrestricted-evidence-kernel,
+  core-a014-product-asset-resolution, cli-no-default, cli-ladybug,
+  cli-serial, cli-integration-suites, cli-gate-coverage-contract,
+  cli-prf-f4-w2-binary-restart, build-cognicode-mcp-debug,
+  build-cognicode-cli-debug, build-control-plane-debug,
+  verify-debug-binaries, build-binary, qw08-crate-selector,
+  select-suites-script, selector, capabilities-drift-lint,
+  compat-matrix-0-97-x, core-gate-coverage-contract,
+  e91-w7-regression-budget, e91-w8-stage-profile, mcp-a010, mcp-a012,
+  mcp-a016, mcp-prf-f4-w3, mcp-prf-f5-w3, etc.)
+- **0 failures**, sin SKIPs silenciosos.
+- **Pared ~15 min** (la mayoría en clippy + cargo test build).
+- **Etapa contracts** (la dominada por la optimización D1): corrió en
+  paralelo (`--jobs 8` por defecto) sin errores.
+- **Publicación a GitHub**: `merge-gate=success` sobre `7193caa8`.
+
+### Incidencias de la integración (resueltas en esta misma sesión)
+
+El cherry-pick desde `worktree/test-harness` (PR #349, anterior a D0) dejó
+el merge-gate fuera de **tres contratos D0** que la rama origen no
+contemplaba. Encontradas y corregidas en commits
+`3b6f3886` y `7193caa8`:
+
+1. `build-isolation` stage ausente — añadida desde `origin/main` (D0 la
+   había introducido después del PR #349).
+2. `test_pipeline_fail_fast`: 6 stages sin `set -eo pipefail` como
+   primera línea del cuerpo del `sh(...)`; 2 stages con `exit $rc` en el
+   camino de éxito. Reordenadas y reescritas al patrón
+   `if ! cargo test; then tail; echo; exit 1; fi`.
+3. `test_pipeline_named_suites_exist`: `prf_h06_adversarial_e2e` estaba
+   bajo `-p cognicode-core` pero la suite se mudó a `-p cognicode-mcp`
+   en D0. Cambiado el package.
+4. `core_gate_coverage_contract` desactualizado: el cherry-pick
+   retuvo el número 65; D0 añadió 3 suites CU-1 (cu1_w2_facade_contract,
+   cu1_w2_service_analyzer_contract, cu1_w3_presenter_parity) más 4
+   analytics. Actualizado a 67 y ampliado ANCHOR_SUITES. Retirado
+   `prf_ext_04_adapter_authority_uat` de ANCHOR_SUITES.
+5. `tests/common/mod.rs`: `release_lane_text` y `release_lane_runs`
+   reintroducidos — el contrato `core_gate_coverage_contract:860` los
+   usa (`merge_authority_runs(GATE) || release_lane_runs(GATE)`); el
+   intento de retirarlos como dead code en `73e6c67c` era incorrecto.
+6. `docs/roadmap/CURRENT.md`: SHA `566c4ece2832` → `7c3fa54e9f86`
+   (8 commits de drift, fuera de la ventana de 5 del ratchet).
+
+### Versión
+
+Workspace: `0.101.17` → `0.101.18` (patch bump SemVer: D1 es una mejora
+interna de rendimiento y de mantenimiento del harness, sin cambios de
+contrato público).
+
+### Lo que queda fuera de D1 (registro honesto)
+
+- **`v0.101.18` tag anotado y release GitHub**: pendiente. El operador
+  decide el formato de release. Las lanes `release-candidate.pipeline.kts`
+  y `release.pipeline.kts` no se ejecutaron en esta sesión.
+- **`cargo doc` y builds release fuera del merge**: parcialmente hecho
+  (rustdoc va a integración, debug bins reemplazan release bins). El
+  movimiento total a RC queda abierto para una iteración siguiente si
+  se quiere más coste abajo.
+- **Harness `--profile dev` como defecto**: queda opt-in; decisión
+  del operador (fila W6 del overlay).
+- **Selección por impacto en el gate**: sigue siendo W6.
+
+### Siguiente WU
+
+D2 — "Producto y contratos únicos" (REST/UI/MCP informando la misma
+verdad, rutas utilizables y estado epistemológico correcto). Depende
+de D1 (DONE). Owner y sub-unidades según el overlay
+`hitos/D2.md`.
