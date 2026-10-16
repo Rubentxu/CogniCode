@@ -15368,3 +15368,22 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
   genera a demanda contra la última corrida del ledger. Queda como pendiente de W0.
 - `--protect` es una lista que se pasa a mano; el informe no adivina qué etapas son
   intocables por política.
+
+### Añadido en el mismo bloque: baseline versionado y observaciones de sombra
+
+- **`plan --shadow` deja una observación `plan_observed`** en el ledger append-only
+  (lane, head, catálogo, requeridas, EXECUTE/REUSE/BLOCK, veredicto de paridad y
+  huecos). Un `plan` normal sigue sin escribir nada. Un log de gate no se puede
+  agregar; el ledger sí.
+- **`report` agrega esas observaciones**: cuántos planes se han observado, qué
+  fracción de las obligaciones exige la selección de media (mínimo y máximo) y qué
+  dijo el oráculo. Es el dato de PRs reales que faltaba para decidir la adopción,
+  además del corpus.
+- **`report --write-baseline`** genera
+  [`test-harness/docs/08-baseline-tiempos.md`](../../test-harness/docs/08-baseline-tiempos.md):
+  fecha, commit medido, run de PipelineK, tabla de etapas, cobertura, aritmética
+  del presupuesto y el comando para regenerarlo. No se mantiene a mano.
+- **Contrato**: el baseline tiene que declarar fecha, commit y comando, y su commit
+  tiene que ser ancestro de HEAD (un baseline que describe un árbol que ya no
+  existe en la rama es evidencia muerta).
+- W0 del roadmap del harness pasa a **DONE**.

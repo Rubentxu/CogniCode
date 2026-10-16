@@ -90,6 +90,10 @@
   y 2 desviaciones declaradas por lane.
 * **Suite del harness**: 101/101 PASS (~55 s), con supervisor, paridad, inventario y AAT.
 * **AAT**: 21 filas `KILLED` (12 con test propio), 2 `PARTIAL`, 7 `NOT_RUN` con motivo.
+* **Baseline del gate**: [`test-harness/docs/08-baseline-tiempos.md`](../../test-harness/docs/08-baseline-tiempos.md)
+  (58 etapas, 549,9 s, commit `e9416628`), regenerable con `report --write-baseline`.
+* **Observaciones de sombra**: la etapa advisory guarda una por merge en el ledger;
+  `report` las agrega para la decisión de adopción.
 * **Contrato del harness**: 10/10 PASS (~70 s, incluye la suite y la comprobación del AAT).
 * **Suite de contratos del gate** (`bash scripts/ci/run-all-contracts.sh`):
   **286 passed, 0 failed** (incluye las 101 del harness y la comprobación del AAT).
