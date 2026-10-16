@@ -1,9 +1,9 @@
 {
  "files": [
   {
-   "bytes": 23545,
+   "bytes": 24219,
    "path": "README.md",
-   "sha256": "c40de2d538a69d0816a0f241f3500c939c7046a270e39c78b183ba3b37853c2f"
+   "sha256": "464eda1242d17dfea4a7c5cf7898dd17ce48e96bf608cdebc63228659f8d0288"
   },
   {
    "bytes": 7968,
@@ -96,9 +96,9 @@
    "sha256": "9e8a063b8f473764649b6e083c82b1071fd29359bfd337c358ad645b5ef596f0"
   },
   {
-   "bytes": 3528,
+   "bytes": 4436,
    "path": "adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md",
-   "sha256": "3ef407b888efd4083f006340f2f50987ebe243b6abbaf2f0d5adf9b39fa97dea"
+   "sha256": "9e4ac8097bdec52e63ecae0f38b34c6d9bc98882211e83a3b3c4b73dca8bb99b"
   },
   {
    "bytes": 3278,
@@ -109,6 +109,11 @@
    "bytes": 12311,
    "path": "adrs/ADR-TH-013-motor-opt-in-y-decision-de-adopcion.md",
    "sha256": "cb5f230785025469cc211185ccf9ba9c681f49b1e21299aacb4e877773fee1ad"
+  },
+  {
+   "bytes": 5802,
+   "path": "adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md",
+   "sha256": "8147a024d7c37a34afca7390ddab3ad9e6d70f3900725e2968facb8ee66226a4"
   },
   {
    "bytes": 1010,
@@ -196,9 +201,9 @@
    "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c"
   },
   {
-   "bytes": 48520,
+   "bytes": 50026,
    "path": "docs/07-auditoria-merge-gate.md",
-   "sha256": "e3883d142c9dd488815ab3a86236937b1baeea15f0a10c5c1d1fed0ecd20b0a0"
+   "sha256": "bad82f49fe1e967b438b39055a412cfb35965f630c841646103f5fbf1e950aff"
   },
   {
    "bytes": 2991,
@@ -211,9 +216,9 @@
    "sha256": "b310b2b04bcd4e62a87a9149c6a0b897cd50abcc390595eb01e1be52d583302d"
   },
   {
-   "bytes": 1102,
+   "bytes": 1070,
    "path": "obligations.json",
-   "sha256": "aa200ca143c78e338495068d63ca57dacd58dc396af7b0d2a44e98957a479b4e"
+   "sha256": "d96d406c33e0f393854fe8f377ee822e61d2684aa2949e24c8190b5344d2af0c"
   },
   {
    "bytes": 3483,

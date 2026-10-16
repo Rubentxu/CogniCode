@@ -580,3 +580,24 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Contribuidores (bucle local y sus planes), mantenedor (decisión de adopción con evidencia), cualquier consumidor del harness que ejecute etapas de build (los siete defectos eran de integración, no del wrapper) |
 | Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon cuyo árbol no tenía binarios previos (el plan construye el que cada suite necesita antes de ejecutarla), y todos los códigos de salida y tiempos publicados sin maquillar, incluidas las dos corridas de gate que fallaron antes de los arreglos |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 22. TH-IMPL-08 — La desviación del gate de rustdoc, declarada por máquina (2026-10-16)
+
+> **Estado**: IMPLEMENTADO y gated. La comprobación de rustdoc de M0.11 sigue
+> corriendo en la lane de integración, que **no** bloquea `main`: eso es una
+> **desviación declarada**, con precio medido (**700,2 s** por merge), fecha,
+> corrida y ADR, y el contrato la exige. Antes se justificaba con una frase falsa
+> —«integración es la lane que bloquea `main`»— y el contrato se había reescrito
+> para aceptarlo con una prosa que decía lo contrario de lo que comprobaba.
+> Decisión:
+> [`test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md`](../../test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Que una garantía no pueda salir de la lane que bloquea `main` sin quedar declarada, medida y fechada; y que un defecto de build inputs que gravaba toda compilación en un worktree (`.git/HEAD` inexistente ⇒ crate sucio en cada invocación) quede corregido y vigilado |
+| Clasificación | Evolutivo del test harness, continuación de TH-IMPL-07; toca una obligación del gate y por eso exige medición y contrato propio |
+| Alcance | `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `crates/cognicode-cli/build.rs`, `crates/cognicode-core/tests/core_gate_coverage_contract.rs`, `scripts/ci/declared_deviations.json` (nuevo), `scripts/ci/test_build_inputs_exist.py` (nuevo), `test-harness/obligations.json`, ADR-TH-011 (enmendada) y ADR-TH-014, auditoría §8, README del paquete |
+| Fuera de alcance | Pagar los 700 s para devolver la etapa al merge (decisión del operador sobre el presupuesto), selección por impacto (W6), rediseño del target `m011_rustdoc_gate` para que su caché se reutilice |
+| Consumidores | Operador (decisión de presupuesto con cifras), mantenedor (propiedad del gate y de la desviación), auditoría (ADR-TH-014 y auditoría §8) |
+| Criterio de cierre | Cumplido: cuatro mutaciones del contrato de dueño mueren (declaración ausente, dueño declarado incorrecto, precio cero, declaración obsoleta tras devolver la etapa) y dos del contrato de entradas de build (ruta literal inexistente, ruta dinámica sin guarda); `cargo doc` repetido pasa de 163 s a 1 s con 0 unidades `Dirty`; suite del harness 125/125; gate `595f1157` **SUCCESS, 58 etapas, 463,1 s** frente a los 1 027 s de pared de la corrida del mismo día antes de estos cambios (caché no idéntica entre corridas: el dato por unidad es el de §8.3); el guard de frescura del binario de MCP, que hizo fallar el gate en `mcp-a009-agent-safe-profile`, se corrigió a un oráculo por clausura de dependencias y se probó que sigue mordiendo |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

@@ -416,46 +416,81 @@ Es decir: el gate útil no se construye borrando etapas por lentas, sino cambian
 quién posee cada obligación y cuándo se paga. Lo que se ha movido aquí es una
 etapa que **el repositorio ya ejecutaba dos veces por cambio**.
 
-## 8. Dueño único para el gate de rustdoc (movimiento medido)
+## 8. El gate de rustdoc: dueño único, fuera de la autoridad y declarado
 
-| Antes | Después |
+| Hecho | Estado |
 |---|---|
-| `merge-gate.pipeline.kts` stage `rustdoc-gate` (**737 s medidos hoy** con `/usr/bin/time` sobre el mismo comando) **y** `integration.pipeline.kts` `cargo test --workspace --all-targets` (que ejecuta el mismo target) | `integration.pipeline.kts` stage `rustdoc-gate`, nombrada y explícita; el merge deja de pagarla |
-| Gate de merge: **1 240–1 320 s** en el mismo entorno y día (579 s medidos + la etapa: 667 s in-gate en la corrida histórica, 737 s standalone hoy; sumar standalone y gate sobreestima algo) | Gate de merge: **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`); 550 s con la etapa de sombra añadida (run `4d431256`, 58 etapas) |
+| Dueño nombrado | `integration.pipeline.kts`, stage `rustdoc-gate` |
+| Autoridad de merge | `merge-gate.pipeline.kts` (`MERGE_AUTHORITY`, `scripts/ci/pipeline_authority.py`); **no** ejecuta el target |
+| Naturaleza | Desviación **declarada**: la obligación no está en la lane que bloquea `main` |
+| Declaración | `scripts/ci/declared_deviations.json` (motivo, precio, fecha, corrida, ADR y comando para revertir) |
+| Precio de restaurarla | **700,2 s** por merge (medido 2026-10-16, run `e3465380`) |
+| Decisión | Pendiente del operador: es presupuesto de merge |
+| ADR | [ADR-TH-014](../../test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md), que enmienda ADR-TH-011 |
 
-Ahorro por iteración de merge: **entre 680 s y 737 s (≈55%)**, con la fuente de cada
-cifra declarada en la tabla. La corrida histórica del perfil (1 630 s, run
-`1b37e37b`) se hizo con la máquina cargada y no es comparable; la comparación
-honesta es la de arriba. La varianza entre corridas de hoy (579 s y 550 s, con una
-etapa más en la segunda) es del mismo orden que el coste de la etapa de sombra: por
-eso el ahorro se declara como rango y no como una cifra exacta.
+### 8.1 Lo que la justificación original decía de más
 
-- **Garantía conservada**: el workspace sigue teniendo que mantener cero avisos de
-  rustdoc en las categorías de M0.11, verificado por el mismo target, en una lane
-  que bloquea `main`.
-- **Garantía nueva**: el contrato
-  `core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority`
-  exige que el gate corra en **exactamente una** autoridad, nombrada de forma
-  explícita (no escondida dentro de `--all-targets`) y que no sea el merge. Antes
-  la aserción era «el merge lo ejecuta», que no detectaba la duplicación.
-- **Pruebas adversariales ejecutadas**: (a) borrar la etapa de integración → el
-  contrato falla con «runs in no pipeline, so it gates nothing»; (b) volver a
-  ponerla en merge → falla con «must run in exactly one authority … Runners found:
-  [merge-gate.pipeline.kts, integration.pipeline.kts]». Ambas mutaciones se
-  restauraron y el contrato volvió a verde (11/11).
+El movimiento del 2026-10-15 (ADR-TH-011) se apoyaba en una medición **correcta**
+—el target corría dos veces por cambio y la copia del merge costaba 667 s dentro de
+un merge de 1 630 s— y en una frase **falsa**: que integración «es la lane que
+bloquea `main`». No lo es. El contrato se reescribió entonces para exigir
+`runners == ["integration.pipeline.kts"]` mientras su prosa afirmaba «in a lane that
+blocks `main`»: prosa y aserción discrepantes, es decir un contrato que certificaba
+el agujero.
 
-### 7.1 Clasificación de las 57 etapas restantes (vocabulario del mandato)
+### 8.2 El precio se midió antes de arreglarlo
+
+El 2026-10-16 se intentó devolver la etapa al merge y se midió primero: en la
+corrida `e3465380`, `rustdoc-gate` costó **700,2 s** dentro del gate (18 etapas,
+1 183,7 s acumulados con ella). El coste es el `cargo doc --workspace --no-deps`
+completo del target, cuya caché no sobrevive a las invocaciones mezcladas con
+`clippy --all-targets` y el resto de suites sobre el mismo directorio de target:
+repetir `cargo doc` en un worktree quieto volvió a tardar más de 300 s. Con el
+presupuesto de merge declarado (6–7 min), pagarlo no es una decisión de este
+documento: se declara y se escala.
+
+### 8.3 El defecto que sí se corrigió
+
+`crates/cognicode-cli/build.rs` declaraba
+`cargo:rerun-if-changed=../../.git/HEAD` y `../../.git/refs/heads/`, rutas que
+existen en un checkout y **no** en un worktree (donde `.git` es un fichero). Cargo
+trata una entrada declarada y ausente como siempre sucia.
+
+| Medición en el worktree | Antes | Después |
+|---|---|---|
+| `cargo doc --workspace --no-deps`, segunda pasada | **163 s** | **1 s** |
+| Unidades `Dirty` en `cargo doc -v`, árbol quieto | 1+ | **0** |
+
+Afectaba a cualquier compilación de `cognicode-cli` y sus dependientes en el
+entorno del operador, no sólo a este gate. Lo vigila
+`scripts/ci/test_build_inputs_exist.py` (rutas literales que existen; rutas
+dinámicas con comprobación de existencia).
+
+### 8.4 Pruebas adversariales ejecutadas
+
+Con el contrato del dueño: (a) quitar la declaración de `declared_deviations.json` →
+rojo; (b) declarar un dueño distinto del que ejecuta la etapa → rojo; (c) precio en
+cero → rojo; (d) devolver la etapa al merge dejando la declaración → rojo
+(«stale declaration»). Las cuatro se restauraron y el contrato volvió a verde
+(11/11). Con el contrato de entradas de build: (e) volver a
+`rerun-if-changed=../../.git/HEAD` literal → rojo; (f) ruta dinámica sin
+comprobación de existencia → rojo.
+
+### 7.1 Clasificación de las 57 etapas del merge (vocabulario del mandato; `rustdoc-gate` no está entre ellas)
 
 | Clasificación | Etapas | Nota |
 |---|---|---|
-| `MERGE_REQUIRED` | 53 | Los contratos estructurales del repo (`contracts`, `fmt`, `clippy`, cobertura de CLI/core, `check-bin-tracking`, `verify-skills`), las suites de producto y seguridad de CLI/MCP/core y las construcciones debug que sus suites consumen. Clasificación heredada de §5 para las etapas que ya estaban |
-| `CERTIFICATION_REQUIRED` | 1 | `rustdoc-gate`, movida (ver §8): es una comprobación de calidad de documentación del workspace, no una precondición de integración |
+| `MERGE_REQUIRED` | 53 | Los contratos estructurales del repo (`contracts`, `fmt`, `clippy`, cobertura de CLI/core, `check-bin-tracking`, `verify-skills`), las suites de producto y seguridad de CLI/MCP/core y las construcciones debug que sus suites consumen |
+| `CERTIFICATION_REQUIRED` | 1 | `rustdoc-gate`: desviación **declarada** desde el 2026-10-16 (§8), con precio medido de 700,2 s para volver al merge. No es una equivalencia: la higiene de doc-links de M0.11 no puede tumbar un merge hoy, y la decisión de pagarla es del operador |
 | `RELEASE_REQUIRED` | 0 en esta lane | Las cuatro construcciones release y las seis suites de perfil release salieron en B1 (§12 del ROADMAP); su dueño es `release-candidate.pipeline.kts` |
 | `ADVISORY` | 3 | Los pasos cuya falla no bloquea por diseño (instalaciones de herramientas y sus equivalentes); el resto de `cargo deny` depende de una base de avisos externa y hoy se ejecuta en merge porque su resultado es contractual |
 
 Ninguna etapa se movió por ser lenta: la única que cambió de dueño (§8) ya se
-ejecutaba dos veces por cambio. Las 53 `MERGE_REQUIRED` son las que el siguiente
-bloque (selección por impacto) debe poder reducir a *afectadas*, no eliminar.
+ejecutaba dos veces por cambio, y su dueño declarado es hoy la lane de integración,
+con el precio de traerla de vuelta medido y con la decisión escalada al operador.
+Las 53 `MERGE_REQUIRED` son las que el siguiente bloque (selección por impacto)
+debe poder reducir a *afectadas*, no eliminar. La etapa `CERTIFICATION_REQUIRED`
+no se reduce por selección: se decide por presupuesto (§8.2).
 
 ## 9. Etapa de sombra (2026-10-15)
 

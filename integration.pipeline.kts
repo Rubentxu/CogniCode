@@ -36,20 +36,22 @@ pipeline {
     stages {
         // ------------------------------------------------------------ workspace
         stage("workspace") {
-            // El gate de rustdoc tiene dueño explícito aquí, no dentro de
-            // `--all-targets`. Motivo medido 2026-10-15: corría también en el
-            // merge-gate, donde costaba 667 s en cada PR; la garantía es la misma
-            // (documentación sin los avisos de rustdoc que M0.11 persigue) y se
-            // paga una vez, en la lane que bloquea `main`. La stage se nombra para
-            // que el contrato pueda comprobar el dueño en vez de confiar en que
-            // `--all-targets` "seguro que lo incluye".
+            // El gate de rustdoc tiene aquí su dueño **declarado**: esta lane no
+            // bloquea `main` (eso lo hace `merge-gate.pipeline.kts`), y esa
+            // diferencia está declarada con precio medido en
+            // `scripts/ci/declared_deviations.json` porque traerla al merge cuesta
+            // 700,2 s (medido 2026-10-16). El contrato
+            // `the_rustdoc_gate_runs_in_exactly_one_authority` exige que la
+            // desviación esté declarada, así que no puede volver a ocurrir en
+            // silencio: quien quite la declaración sin devolver la etapa al merge
+            // deja el contrato en rojo.
+            // The full suite. `--all-targets` is what compiles every
+            // `tests/*.rs` target in the workspace; without it the named
+            // contract suites below are the only thing being built.
             stage("rustdoc-gate") {
                 sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
             }
 
-            // The full suite. `--all-targets` is what compiles every
-            // `tests/*.rs` target in the workspace; without it the named
-            // contract suites below are the only thing being built.
             stage("all-targets") {
                 sh("$cd && cargo test --workspace --all-targets")
             }

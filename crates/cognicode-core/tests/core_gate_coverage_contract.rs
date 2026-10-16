@@ -34,7 +34,9 @@
 
 mod common;
 
-use common::{merge_authority_runs, not_run_message};
+use common::{
+    MERGE_AUTHORITY, merge_authority_runs, not_run_message, pipeline_paths, sh_bodies_with_offsets,
+};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -877,63 +879,131 @@ fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
     }
 }
 
-/// The M0.11 rustdoc gate must run in exactly one blocking authority.
+/// The M0.11 rustdoc gate must run in exactly one pipeline, and if that pipeline
+/// is not the merge authority, the deviation has to be declared and priced.
 ///
-/// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
-/// all. It was green, and it could not fail a single PR. An intra-doc link
-/// that ST-01 broke in `infrastructure/parser/syntax_analysis.rs` survived
-/// that commit, the whole branch, and six further commits — it surfaced only
-/// because someone happened to run `cargo test --workspace`.
+/// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at all.
+/// It was green, and it could not fail a single PR. An intra-doc link that ST-01
+/// broke in `infrastructure/parser/syntax_analysis.rs` survived that commit, the
+/// whole branch, and six further commits — it surfaced only because someone
+/// happened to run `cargo test --workspace`. The standard is written down in this
+/// repository: *"Un test que no corre en ningun sitio no es un gate."*
 ///
-/// The standard is already written down in this repository: *"Un test que no
-/// corre en ningun sitio no es un gate."* The gate was breaking that rule.
+/// Measured 2026-10-15: the target also ran inside integration's
+/// `cargo test --workspace --all-targets`, so every change paid for it twice, and
+/// the merge paid 667 s of a 1 630 s run. The stage was moved to integration.
 ///
-/// Measured 2026-10-15 in the gate's durable ledger: the same target was also
-/// being executed by the integration lane's `cargo test --workspace
-/// --all-targets`, so every change paid for it twice — 667 s of a 1 630 s
-/// merge. The guarantee is unchanged (the workspace still has to hold zero
-/// rustdoc warnings in the gated categories, in a lane that blocks `main`);
-/// what changed is that it is paid once. The assertion moved from "the merge
-/// authority runs it" to "exactly one authority runs it, and it must be named
-/// there explicitly rather than hidden inside `--all-targets`", because the
-/// owner has to be checkable, not assumed.
+/// CORRECTED 2026-10-16 (ADR-TH-014). That move was justified with a false
+/// sentence — that integration is the lane that blocks `main`; it is not,
+/// `pipeline_authority.MERGE_AUTHORITY` names `merge-gate.pipeline.kts` alone —
+/// and this contract was rewritten to assert the move, with prose claiming the
+/// opposite of what it checked. A contract whose prose and assertion disagree is
+/// worse than no contract: it certifies the hole.
 ///
-/// This assertion deliberately lives in the core crate rather than next to the
-/// gate it protects: the merge authority runs the core crate unrestricted, so
-/// if the rustdoc wiring is deleted from every lane the core suite still runs
-/// and this still fails. A contract that only the deleted wiring could execute
-/// would notice nothing — which is the failure mode it exists to catch.
+/// The natural fix was to restore the stage to the merge authority, so it was
+/// measured first: **700.2 s** in gate run `e3465380`, against a declared merge
+/// budget of 6–7 minutes. The cost is the target's full
+/// `cargo doc --workspace --no-deps`; it does not reuse its cache across the
+/// mixed invocations of one shared target directory. Paying 700 s unilaterally
+/// would decide a budget question that is not this contract's to decide.
+///
+/// So the deviation stays, *declared by machine*:
+/// `scripts/ci/declared_deviations.json` records the obligation, its owning
+/// pipeline, the reason, the measured seconds, the date, the run it was measured
+/// in, the ADR and the exact command that restores the guarantee. This test
+/// requires that declaration, and requires the opposite declaration to be absent
+/// when the merge authority does run it. A hole can no longer exist here without
+/// being declared, measured and dated.
+///
+/// Being the owner still has to be *named*: a target executed incidentally by a
+/// workspace-wide stage is not an owner, which is why the check looks at `sh(...)`
+/// bodies by name.
 #[test]
 fn the_rustdoc_gate_runs_in_exactly_one_authority() {
     const GATE: &str = "m011_rustdoc_gate";
+    const DECLARATIONS: &str = "scripts/ci/declared_deviations.json";
 
     let in_merge = merge_authority_runs(GATE);
-    let integration = std::fs::read_to_string(repo_root().join("integration.pipeline.kts"))
-        .expect("integration.pipeline.kts is readable");
-    let in_integration = integration.contains(GATE);
-    let runners: Vec<&str> = [
-        ("merge-gate.pipeline.kts", in_merge),
-        ("integration.pipeline.kts", in_integration),
-    ]
-    .iter()
-    .filter(|(_, runs)| *runs)
-    .map(|(name, _)| *name)
-    .collect();
+    let in_other_pipelines: Vec<String> = pipeline_paths()
+        .into_iter()
+        .filter(|path| path.file_name().and_then(|n| n.to_str()) != Some(MERGE_AUTHORITY))
+        .filter(|path| {
+            let text = std::fs::read_to_string(path).unwrap_or_default();
+            sh_bodies_with_offsets(&text)
+                .iter()
+                .any(|(_, body)| body.contains(GATE))
+        })
+        .filter_map(|path| path.file_name().and_then(|n| n.to_str()).map(str::to_owned))
+        .collect();
 
-    assert!(
-        !runners.is_empty(),
-        "{GATE} runs in no pipeline, so it gates nothing. That gate holds the \
-         workspace at zero rustdoc warnings in the gated categories; without it a \
-         broken doc link or a public-docs-to-private-item reference passes every \
-         PR.\n{}",
-        not_run_message(GATE, "Restore the stage in the integration lane.")
-    );
+    let owners: Vec<String> = if in_merge {
+        vec![MERGE_AUTHORITY.to_owned()]
+    } else {
+        in_other_pipelines.clone()
+    };
     assert_eq!(
-        runners,
-        vec!["integration.pipeline.kts"],
-        "{GATE} must run in exactly one authority. Running it in the merge \
-         authority as well costs 667 s of every merge for a check the integration \
-         lane already performs on the same target (measured 2026-10-15). Running it \
-         nowhere removes the guarantee. Runners found: {runners:?}"
+        owners.len(),
+        1,
+        "{GATE} must run in exactly one pipeline. Found {owners:?}. A gate that runs \
+         nowhere blocks nothing; a gate with two owners pays twice and makes `who owns \
+         this` unanswerable. A workspace-wide run (`cargo test --workspace \
+         --all-targets`) executing the target incidentally is not an owner, which is why \
+         this check looks at `sh(...)` bodies by name.\n{}",
+        not_run_message(GATE, "Name the stage in exactly one pipeline.")
+    );
+
+    let owner = owners.first().expect("exactly one owner checked above");
+    let declared_text = std::fs::read_to_string(repo_root().join(DECLARATIONS))
+        .unwrap_or_else(|e| panic!("{DECLARATIONS} must be readable: {e}"));
+    let declared: serde_json::Value = serde_json::from_str(&declared_text)
+        .unwrap_or_else(|e| panic!("{DECLARATIONS} must parse: {e}"));
+    let entry = declared["entries"]
+        .as_array()
+        .expect("`entries` must be an array")
+        .iter()
+        .find(|e| e["obligation"].as_str() == Some(GATE));
+
+    if owner == MERGE_AUTHORITY {
+        assert!(
+            entry.is_none(),
+            "{GATE} runs in the merge authority and {DECLARATIONS} still declares it as a \
+             deviation. The declaration is what forces the price of keeping a guarantee out \
+             of the blocking lane to be stated; a stale one teaches the next reader the wrong \
+             lesson. Delete the entry."
+        );
+        return;
+    }
+
+    let entry = entry.unwrap_or_else(|| {
+        panic!(
+            "{GATE} runs in {owner}, which is not the merge authority ({MERGE_AUTHORITY}), and \
+             {DECLARATIONS} does not declare it. A guarantee outside the blocking lane is a \
+             budget decision, not a free win: it must be declared with its price so nobody \
+             reads the merge gate as protected. Entry needed: obligation={GATE}, \
+             owner_pipeline={owner}, measured_seconds, measured_on, measured_in, adr."
+        )
+    });
+    assert_eq!(
+        entry["owner_pipeline"].as_str(),
+        Some(owner.as_str()),
+        "the declaration names a different owner than the pipeline that actually runs {GATE}"
+    );
+    let measured = entry["measured_seconds"].as_f64().unwrap_or(0.0);
+    assert!(
+        measured > 0.0,
+        "the declaration of {GATE} must state what it costs to restore the guarantee in the \
+         merge authority; without a number the deviation is a preference, not a decision"
+    );
+    for field in ["reason", "measured_on", "measured_in", "restores_guarantee"] {
+        assert!(
+            entry[field].as_str().is_some_and(|v| !v.trim().is_empty()),
+            "the declaration of {GATE} needs a non-empty `{field}`"
+        );
+    }
+    let adr = entry["adr"].as_str().expect("`adr` must be a string");
+    assert!(
+        repo_root().join(adr).is_file(),
+        "the declaration points at {adr}, which does not exist: the reasoning has to be \
+         readable, not just referenced"
     );
 }

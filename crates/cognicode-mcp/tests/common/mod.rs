@@ -513,8 +513,18 @@ mod tests {
         let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
         let binary_time =
             modified(&path).unwrap_or_else(|| panic!("cannot stat the resolved binary: {path:?}"));
-        let Some((newest, newest_time)) = newest_source_under(&workspace_root.join("crates"))
-        else {
+        // La clausura de dependencias manda; si no se puede resolver, se recorre
+        // todo `crates/` (conservador, como antes).
+        let dirs = binary_dependency_dirs();
+        let roots: Vec<PathBuf> = match &dirs {
+            Some(dirs) => dirs.clone(),
+            None => vec![workspace_root.join("crates")],
+        };
+        let newest = roots
+            .iter()
+            .filter_map(|dir| newest_source_under(dir))
+            .max_by_key(|(_, time)| *time);
+        let Some((newest, newest_time)) = newest else {
             // No sources to compare against: nothing to assert.
             return;
         };
@@ -526,12 +536,22 @@ mod tests {
         );
     }
 
-    /// The most recently modified compilable source under `root`, with mtime.
+    /// The most recently modified source that the binary is actually built from.
     ///
-    /// `tests/` is excluded on purpose: an integration test never links into
-    /// the server binary, so a test edited seconds ago must not make a
-    /// perfectly current binary look stale. Only files the binary is actually
-    /// built from are a valid oracle.
+    /// `tests/`, `benches/` and `target/` are excluded: an integration test never
+    /// links into the server binary, so a test edited seconds ago must not make a
+    /// perfectly current binary look stale.
+    ///
+    /// CORREGIDO 2026-10-16. El oráculo recorría **todo** `crates/`, así que el
+    /// `build.rs` de un crate que este binario no enlaza (`cognicode-cli`) lo hacía
+    /// fallar con el binario perfectamente al día: medido en el gate del 2026-10-16,
+    /// etapa `mcp-a009-agent-safe-profile`, rc=101, después de tocar
+    /// `crates/cognicode-cli/build.rs` y `crates/cognicode-core/tests/…` sin que
+    /// ninguno de los dos entre en el binario de `cognicode-mcp`. El oráculo se
+    /// calcula ahora sobre la clausura de dependencias de **path** del paquete,
+    /// resuelta con `cargo metadata`; si la resolución falla se conserva el
+    /// comportamiento conservador anterior (todo `crates/`), porque un oráculo que
+    /// no se puede calcular no es una excusa para no comprobar nada.
     fn newest_source_under(root: &Path) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut newest: Option<(PathBuf, std::time::SystemTime)> = None;
         // `target` holds build output, not sources; skipping it keeps the walk
@@ -558,6 +578,69 @@ mod tests {
             }
         }
         newest
+    }
+
+    /// Directorios de los paquetes de los que este binario se construye.
+    ///
+    /// Sólo dependencias **de path** (las del workspace): una dependencia del
+    /// registro no vive en el árbol y su código no puede cambiar sin cambiar el
+    /// lock. `None` cuando `cargo metadata` no responde, para que el llamante
+    /// pueda caer al comportamiento conservador.
+    fn binary_dependency_dirs() -> Option<Vec<PathBuf>> {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
+        let output = std::process::Command::new("cargo")
+            .args(["metadata", "--format-version", "1", "--manifest-path"])
+            .arg(&manifest)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let metadata: Value = serde_json::from_slice(&output.stdout).ok()?;
+        let packages = metadata.get("packages")?.as_array()?;
+        let by_name: std::collections::HashMap<&str, &Path> = packages
+            .iter()
+            .filter_map(|p| {
+                let name = p.get("name")?.as_str()?;
+                let dir = Path::new(p.get("manifest_path")?.as_str()?).parent()?;
+                Some((name, dir))
+            })
+            .collect();
+        let mut wanted: Vec<PathBuf> = Vec::new();
+        let mut pending: Vec<String> = vec![env!("CARGO_PKG_NAME").to_string()];
+        let mut seen: std::collections::HashSet<String> = pending.iter().cloned().collect();
+        while let Some(name) = pending.pop() {
+            let Some(dir) = by_name.get(name.as_str()).copied() else {
+                continue;
+            };
+            wanted.push(dir.to_path_buf());
+            let Some(package) = packages
+                .iter()
+                .find(|p| p.get("name").and_then(|n| n.as_str()) == Some(name.as_str()))
+            else {
+                continue;
+            };
+            for key in ["dependencies", "dev-dependencies", "build-dependencies"] {
+                let Some(list) = package.get(key).and_then(|v| v.as_array()) else {
+                    continue;
+                };
+                for dep in list {
+                    let Some(dep_name) = dep.get("name").and_then(|n| n.as_str()) else {
+                        continue;
+                    };
+                    let Some(path) = dep.get("path").and_then(|p| p.as_str()) else {
+                        continue;
+                    };
+                    if path.is_empty() || !by_name.contains_key(dep_name) {
+                        continue;
+                    }
+                    if seen.insert(dep_name.to_string()) {
+                        pending.push(dep_name.to_string());
+                    }
+                }
+            }
+        }
+        (!wanted.is_empty()).then_some(wanted)
     }
 
     fn modified(path: &Path) -> Option<std::time::SystemTime> {

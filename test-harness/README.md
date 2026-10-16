@@ -183,13 +183,23 @@ scripts.
 
 Medido en el ledger durable de PipelineK (run `1b37e37b`, 58 etapas, 1 630 s):
 las diez etapas más caras suman el 94%; `rustdoc-gate` sola era 667 s (41%) y se
-ejecutaba **dos veces por cambio** (merge + integración). Desde el 2026-10-15 su
-dueño es la lane de integración, con stage nombrada y contrato que exige dueño
-único ([ADR-TH-011](adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md)); el merge
-deja de pagarla. El reparto completo y el camino hasta el presupuesto de 6–7
-minutos están en [`docs/07-auditoria-merge-gate.md`](docs/07-auditoria-merge-gate.md)
-§7-§8: el siguiente salto exige que el merge ejecute las pruebas **afectadas**
-(selección ya medida contra CR-08) y que la batería completa siga en integración.
+ejecutaba **dos veces por cambio** (merge + integración). Su dueño nombrado es
+`integration.pipeline.kts`, y **eso es una desviación declarada**: esa lane no
+bloquea `main`, así que la higiene de doc-links de M0.11 no puede tumbar un
+merge. Se midió el precio de devolverla a la autoridad antes de decidir —
+**700,2 s** en la corrida `e3465380`, contra un presupuesto de merge de 6–7
+minutos— y la decisión es del operador. Lo que ya no puede pasar es que ocurra en
+silencio: `scripts/ci/declared_deviations.json` la declara con motivo, precio,
+fecha, corrida y ADR, y el contrato
+`the_rustdoc_gate_runs_in_exactly_one_authority` exige esa declaración
+([ADR-TH-014](adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md), que
+enmienda [ADR-TH-011](adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md)).
+Además, el 2026-10-16 se corrigió un defecto que gravaba **cualquier** compilación
+en un worktree: `crates/cognicode-cli/build.rs` declaraba
+`rerun-if-changed=../../.git/HEAD`, ruta que no existe cuando `.git` es un fichero,
+y cargo recompilaba el crate en cada invocación (`cargo doc --workspace --no-deps`:
+163 s con la documentación ya construida, 1 s después del arreglo); lo vigila
+`scripts/ci/test_build_inputs_exist.py`.
 
 El baseline medido queda versionado en
 [`docs/08-baseline-tiempos.md`](docs/08-baseline-tiempos.md), generado con

@@ -15450,3 +15450,66 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
 - **Límites declarados**: los cinco primeros defectos afectan a cualquier
   consumidor del harness (no sólo al wrapper); el perfil de desarrollo no existe;
   las corridas del harness dentro del gate siguen siendo opt-in (ADR-TH-007).
+## Recibo TH-IMPL-08 — desviación declarada del gate de rustdoc y defecto de build inputs (2026-10-16)
+
+- **Qué se encontró**: `rustdoc-gate` (M0.11) corría solo en
+  `integration.pipeline.kts`, y eso se había justificado diciendo que esa lane
+  «bloquea `main`». No lo hace: `MERGE_AUTHORITY` es `merge-gate.pipeline.kts` y
+  nada más. El contrato se había reescrito para exigir ese estado mientras su prosa
+  afirmaba lo contrario.
+- **Qué se midió antes de decidir**: en la corrida `e3465380`, devolver la etapa al
+  merge costaba **700,2 s** (18 etapas, 1 183,7 s acumulados con ella), contra un
+  presupuesto de merge de 6–7 min. El coste es el `cargo doc --workspace --no-deps`
+  del target, cuya caché no se reutiliza entre invocaciones mezcladas.
+- **Qué se decidió**: la etapa se queda en integración **como desviación
+  declarada**, no como equivalencia. `scripts/ci/declared_deviations.json` la
+  declara con dueño, motivo, precio, fecha, corrida, ADR y el comando exacto que
+  restaura la garantía. La decisión de pagar los 700 s es del operador.
+- **Qué se corrigió de verdad**: `crates/cognicode-cli/build.rs` declaraba
+  `rerun-if-changed=../../.git/HEAD`, ruta inexistente en un worktree (`.git` es un
+  fichero); cargo marca la unidad sucia en cada invocación. Medido: `cargo doc
+  --workspace --no-deps` repetido pasó de **163 s a 1 s** y `cargo doc -v` pasó a
+  reportar **0** unidades `Dirty` con el árbol quieto.
+- **Contratos**: `the_rustdoc_gate_runs_in_exactly_one_authority` ahora exige (a)
+  un dueño nombrado y único, (b) que si el dueño no es la autoridad de merge la
+  desviación esté declarada con precio, campos no vacíos y ADR existente, y (c) que
+  no haya declaración obsoleta cuando la autoridad sí la ejecuta. Nuevo
+  `scripts/ci/test_build_inputs_exist.py`: rutas literales de `rerun-if-changed` que
+  existen de verdad, y rutas dinámicas con comprobación de existencia, sobre los
+  `build.rs` de los miembros del workspace.
+- **Mutaciones ejecutadas**: (a) quitar la declaración → rojo; (b) declarar dueño
+  distinto del que ejecuta → rojo; (c) precio cero → rojo; (d) devolver la etapa al
+  merge dejando la declaración → rojo; (e) `rerun-if-changed` literal inexistente →
+  rojo; (f) ruta dinámica sin guarda → rojo. Las seis se restauraron y los
+  contratos volvieron a verde (11/11 y 2/2).
+- **Lo que NO se hizo**: pagar los 700 s, mover la etapa al merge, rediseñar
+  `m011_rustdoc_gate` para que su caché se reutilice, y decidir el presupuesto de
+  merge. Las tres primeras son trabajo identificado y no ejecutado; la cuarta es del
+  operador.
+
+### Añadido en el mismo bloque: el oráculo de frescura del binario
+
+- **Fallo medido en el gate** (etapa `mcp-a009-agent-safe-profile`, rc=101): el
+  guard `the_binary_under_test_is_not_older_than_the_sources_it_was_built_from`
+  recorría **todo** `crates/` como oráculo, así que el `build.rs` de
+  `cognicode-cli` —un crate que el binario de `cognicode-mcp` no enlaza— lo hacía
+  fallar con el binario al día. Reproducido fuera del gate: mismo test, mismo
+  rc=101.
+- **Corregido**: el oráculo se calcula sobre la clausura de dependencias **de
+  path** del paquete, resuelta con `cargo metadata`; si la resolución falla, se
+  conserva el recorrido conservador anterior (un oráculo que no se puede calcular
+  no es excusa para no comprobar nada).
+- **Que sigue mordiendo, probado**: con el binario retrasado a 2020 y sin pasar por
+  cargo, el guard falla nombrando el binario y el fichero más nuevo **de su
+  clausura** (`crates/cognicode-core/src/interface/cli/result.rs`); tras
+  reconstruir, pasa. No se debilitó: se hizo preciso.
+
+- **Gate ejecutado** (PipelineK `merge-gate.pipeline.kts`, `--rerun`, corrida
+  `595f1157`): **SUCCESS, 58 etapas, 463,1 s** de suma de etapas (470 s de pared).
+  Para comparar: la corrida del mismo día en el mismo worktree, antes de estos
+  cambios, dio **1 027 s de pared** con 58 etapas y sin `rustdoc-gate`; la corrida
+  intermedia intentando devolver la etapa al merge dio 700,2 s sólo esa etapa. El
+  estado de caché compartida no es idéntico entre corridas, así que el gate no se
+  presenta como ahorro atribuible a una sola causa: el mecanismo medido unidad por
+  unidad es el de §8.3 (163 s → 1 s y 0 unidades `Dirty`).
+
