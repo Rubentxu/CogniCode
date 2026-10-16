@@ -9,9 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-16, sobre branch `worktree/test-harness`, HEAD del
-> bloque TH-IMPL-07 (motor opt-in de `test-fast`, siete defectos de integración
-> corregidos y ADR-TH-013). Este snapshot describe este worktree, no la autoridad
+> **Snapshot**: 2026-10-16, sobre branch `worktree/test-harness`, HEAD
+> `3044e56b5f430b6b102d2ac7e7a632eb96458850` (TH-IMPL-07: motor opt-in de
+> `test-fast`, siete defectos de integración corregidos, ADR-TH-013). Este
+> snapshot describe este worktree, no la autoridad
 > de `main`; los snapshots anteriores se conservan abajo como históricos.
 >
 > **Unidad cerrada en este worktree**: TH-IMPL-07, registrada en `ROADMAP.md` §21 y
