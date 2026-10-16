@@ -64,6 +64,24 @@ fi
 echo "=== contract suite: ${#CI_CONTRACTS[@]} CI contracts + scripts/product/*.py ==="
 printf '  %s\n' "${CI_CONTRACTS[@]}"
 
-exec python3 scripts/run_contract_tests.py \
+# MEDIDO 2026-10-16. Esta etapa era 371,6 s de 556,8 s del gate de merge (el 67%):
+# el trabajo es lanzar procesos (cargo, git, python) desde contratos que el propio
+# fichero declara independientes. El runner ejecuta ahora **un proceso por
+# contrato**, hasta `CONTRACTS_JOBS` a la vez, con el mismo runner y el mismo
+# aislamiento; la semántica de fallo no cambia (un contrato que falla hace fallar
+# la etapa) y la salida se agrega en el orden de entrada para que el log se pueda
+# diffear entre corridas. `CONTRACTS_JOBS=1` vuelve al modo serie.
+JOBS="${CONTRACTS_JOBS:-$( { nproc 2>/dev/null || echo 4; } | head -1 )}"
+case "$JOBS" in
+    ''|*[!0-9]*) echo "ERROR: CONTRACTS_JOBS no es un número: $JOBS" >&2; exit 2 ;;
+esac
+if [ "$JOBS" -gt 8 ]; then
+    # Más de ocho a la vez no acelera más (los contratos esperan sobre todo a
+    # procesos externos) y sí compite con el resto de la máquina.
+    JOBS=8
+fi
+echo "=== contratos: ${JOBS} en paralelo (CONTRACTS_JOBS=1 para el modo serie) ==="
+
+exec python3 scripts/run_contract_tests.py --jobs "$JOBS" \
     scripts/product/test_*.py \
     "${CI_CONTRACTS[@]}"
