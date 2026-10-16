@@ -2080,9 +2080,9 @@ mod tests {
     // compile → run pipeline and produce a result envelope.
     // ========================================================================
 
-    async fn run_explorerql(view: &MoldQLView, q: &str) -> MoldQLResult {
+    async fn run_explorerql(view: &MoldQLView, q: &str) -> ExplorerResult<MoldQLResult> {
         let ast = crate::moldql::parser::parse(q).expect("parse ok");
-        view.executor().execute(ast).await.expect("execute ok")
+        view.executor().execute(ast).await
     }
 
     #[tokio::test]
@@ -2092,11 +2092,17 @@ mod tests {
             r.with_sym("b", "src/b.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "PATH FROM a TO b").await;
-        // The petgraph plan is wired through; for the MVP the
-        // executor returns an empty `MoldQLResult` (the plan is
-        // captured in the query field).
-        assert!(r.query.contains("Bfs"));
+        // VDH-TRUTH-02: a Petgraph plan must execute against the real
+        // graph or fail tipadamente as NotImplemented. The MVP that
+        // returned Ok(total=0) when no execution happened was a lie;
+        // the contract now is that absence reads as absence.
+        let err = run_explorerql(&view, "PATH FROM a TO b")
+            .await
+            .expect_err("PATH without graph execution must be NotImplemented, not Ok");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -2105,8 +2111,13 @@ mod tests {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "NEIGHBORS a DEPTH 1").await;
-        assert!(r.query.contains("DualRadius"));
+        let err = run_explorerql(&view, "NEIGHBORS a DEPTH 1")
+            .await
+            .expect_err("NEIGHBORS without graph execution must be NotImplemented");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -2115,8 +2126,13 @@ mod tests {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "SUBGRAPH ROOT a").await;
-        assert!(r.query.contains("DualRadius"));
+        let err = run_explorerql(&view, "SUBGRAPH ROOT a")
+            .await
+            .expect_err("SUBGRAPH without graph execution must be NotImplemented");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -2125,8 +2141,13 @@ mod tests {
             r.with_sym("a", "src/a.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "CLUSTER").await;
-        assert!(r.query.contains("DetectCycles"));
+        let err = run_explorerql(&view, "CLUSTER")
+            .await
+            .expect_err("CLUSTER without graph execution must be NotImplemented");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -2136,8 +2157,13 @@ mod tests {
             r.with_sym("b", "src/b.rs", 1);
         });
         let view = build_view(repo);
-        let r = run_explorerql(&view, "EXPLAIN FROM a TO b").await;
-        assert!(r.query.contains("ExplainPath"));
+        let err = run_explorerql(&view, "EXPLAIN FROM a TO b")
+            .await
+            .expect_err("EXPLAIN without graph execution must be NotImplemented");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     #[tokio::test]
@@ -2206,11 +2232,17 @@ mod tests {
         });
         let view = build_view(repo);
         let ast = crate::moldql::parser::parse("PATH FROM a TO b").expect("parse ok");
-        let r = view
+        // VDH-TRUTH-02: a Petgraph plan must execute or fail tipadamente;
+        // the MVP that returned Ok(total=0) is gone. This test now pins
+        // that the absence of execution reads as NotImplemented.
+        let err = view
             .executor()
             .execute_with_target(ast, crate::moldql::compile::CompileTarget::Petgraph)
-            .expect("ok");
-        assert!(r.query.contains("Bfs"));
+            .expect_err("Petgraph without graph execution must be NotImplemented, not Ok");
+        assert!(
+            matches!(err, ExplorerError::NotImplemented(_)),
+            "expected NotImplemented, got: {err:?}"
+        );
     }
 
     // -------------------------------------------------------------------------

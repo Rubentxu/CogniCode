@@ -609,16 +609,20 @@ pub fn run(
 }
 
 fn run_petgraph_plan(plan: PetgraphPlan, _view: &MoldQLView) -> ExplorerResult<MoldQLResult> {
-    // For the MVP we return an empty result with a marker query string
-    // so the executor wiring is exercised end-to-end. The real
-    // `cognicode_core::CallGraph` walk is wired in `execute_compiled`
-    // when the in-memory graph is available.
-    let query_str = format!("{:?}", plan);
-    Ok(MoldQLResult {
-        query: query_str,
-        total: 0,
-        items: Vec::new(),
-    })
+    // VDH-TRUTH-02 (2026-10-16): an MVP that returns `Ok(total=0)` when
+    // there is no real execution is not a green result, it is a lie.
+    // "We did not run the plan" must read as `NotImplemented`, so the
+    // caller (and the MCP / REST envelope above) reports the absence
+    // honestly rather than printing an empty table with authority.
+    //
+    // The real `cognicode_core::CallGraph` walk is the next step; the
+    // type system here records that the step has not been taken. The
+    // `let _ = plan;` keeps `plan` referenced for the future when it is
+    // actually executed.
+    let _ = plan;
+    Err(crate::error::ExplorerError::NotImplemented(
+        "petgraph plan execution requires the in-memory call-graph wiring (post-MVP)",
+    ))
 }
 
 fn run_composed(
