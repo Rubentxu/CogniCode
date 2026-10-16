@@ -967,8 +967,7 @@ impl CommandExecutor {
         command: &GraphCommand,
     ) -> Result<GraphResult, Box<dyn std::error::Error>> {
         use crate::interface::cli::result::{
-            DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SkippedFile,
-            SymbolRef,
+            DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SymbolRef,
         };
         match command {
             GraphCommand::OnDemand {
@@ -1050,7 +1049,7 @@ impl CommandExecutor {
                 format: _format,
                 path,
             } => {
-                let start = Instant::now();
+                let _start = Instant::now();
                 // T1-5.5d: the per-subcommand --format on
                 // GraphCommand::Full is now ignored; the top-level
                 // --format on Cli is canonical. Progress always goes
@@ -1061,71 +1060,34 @@ impl CommandExecutor {
                     if *rebuild { " (rebuild)" } else { "" }
                 );
 
-                // PRF-EXT-02 / H-03: `graph full` must go through the
-                // same application service (`AnalysisService`) as the
-                // MCP `build_graph` tool, so both interfaces share the
-                // canonical pipeline (caches, coverage, skipped-file
-                // reporting) instead of duplicating semantics in the
-                // adapter layer.
-                let service =
-                    crate::application::services::analysis_service::AnalysisService::new();
+                // CU-1.3: the use case runs through the consumer facade
+                // (ServiceAnalyzer implements the Analyze port); the CLI is
+                // a presenter. Same AnalysisService pipeline underneath
+                // (PRF-EXT-02 / H-03 constraint preserved).
+                let analyzer = crate::application::consumer_analysis::ServiceAnalyzer::new();
                 let dir = PathBuf::from(&path);
+                let basis = crate::application::analysis_basis::AnalysisBasis::for_workspace(
+                    std::path::PathBuf::from(&path),
+                );
+                let outcome = crate::application::analysis_basis::Analyze::execute(
+                    &analyzer,
+                    &basis,
+                    crate::application::analysis_basis::AnalysisOp::GraphFull {
+                        path: dir.clone(),
+                        rebuild: *rebuild,
+                    },
+                );
 
-                match service.build_full_graph(&dir) {
-                    Ok(()) => {
-                        let elapsed = start.elapsed().as_millis();
-                        let report = service.get_last_build_report();
-                        let (symbols, edges) = report
-                            .as_ref()
-                            .map(|r| (r.graph.symbol_count(), r.graph.edge_count()))
-                            .unwrap_or((0, 0));
-                        let skipped: Vec<String> = report
-                            .as_ref()
-                            .and_then(|r| {
-                                match &r.status {
-                                crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                                    skipped,
-                                } => Some(
-                                    skipped
-                                        .iter()
-                                        .map(|s| format!("{}: {:?}", s.path, s.reason))
-                                        .collect(),
-                                ),
-                                _ => None,
-                            }
-                            })
-                            .unwrap_or_default();
-                        let skipped_files: Vec<SkippedFile> = skipped
-                            .iter()
-                            .filter_map(|s| {
-                                let (p, r) = s.split_once(": ")?;
-                                Some(SkippedFile {
-                                    path: p.to_string(),
-                                    reason: r.to_string(),
-                                })
-                            })
-                            .collect();
-                        // T1-5.5d: text formatting is in the bin's
-                        // presenter (cognicode_cli::presenter). The
-                        // legacy ad-hoc FullGraphJson envelope
-                        // (`schema_version: "cognicode.graph.full/v1"`)
-                        // is gone — the bin emits the unified JSON
-                        // via `serde_json::to_writer_pretty(&GR::Full)`
-                        // which carries `kind: "full"`, `rebuild`, the
-                        // counts, `status`, and `skipped_files`.
-                        let result = GR::Full {
-                            path: path.clone(),
-                            rebuild: *rebuild,
-                            elapsed_ms: elapsed,
-                            symbols,
-                            dependencies: edges,
-                            status: if skipped.is_empty() {
-                                "complete".to_string()
-                            } else {
-                                "partial".to_string()
-                            },
-                            skipped_files,
-                        };
+                match outcome.state() {
+                    crate::application::analysis_basis::OutcomeState::Failed => {
+                        let msg = outcome
+                            .error()
+                            .map(|e| e.message.clone())
+                            .unwrap_or_else(|| "unknown build failure".to_string());
+                        eprintln!("Error building full graph: {}", msg);
+                        Err(msg.into())
+                    }
+                    _ => {
                         // Skipped lines go to stderr (matches the
                         // pre-migration eprintln!). The bin's text
                         // presenter emits them too via the `status`
@@ -1133,14 +1095,21 @@ impl CommandExecutor {
                         // here preserves the historical stderr stream
                         // for shell pipelines that grep "Building ..."
                         // or "Skipped:" independently of stdout.
-                        for s in &skipped {
-                            eprintln!("  Skipped: {}", s);
+                        let result = crate::interface::cli::presenter_bridge::present_graph_full(
+                            &outcome, path, *rebuild,
+                        );
+                        if let crate::interface::cli::result::GraphResult::Full {
+                            skipped_files,
+                            status,
+                            ..
+                        } = &result
+                            && status == "partial"
+                        {
+                            for s in skipped_files {
+                                eprintln!("  Skipped: {}: {}", s.path, s.reason);
+                            }
                         }
                         Ok(result)
-                    }
-                    Err(e) => {
-                        eprintln!("Error building full graph: {}", e);
-                        Err(Box::new(e))
                     }
                 }
             }

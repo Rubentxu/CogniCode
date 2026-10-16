@@ -50,8 +50,51 @@ fi
 
 # The product contracts are already globbed in the runner invocation below.
 # The CI contracts are discovered here so no orchestrator has to name them.
+#
+# Two files in scripts/ci/test_*.py are filtered out of the glob because
+# they are not contracts the runner's protocol (module-level test_*
+# functions, or a class with them, that record findings in a module-level
+# `failures` list) can run:
+#
+#   * scripts/ci/test_cargo_iso.py — its tests are unittest.TestCase
+#     subclasses; the runner reads only module-level test_* functions
+#     and reports "exposes no test_* function" because the class methods
+#     are not top-level attributes. The tests run via `python3
+#     scripts/ci/test_cargo_iso.py` directly; the gate sees that path
+#     in the worktree's own self-test.
+#   * scripts/ci/test_release_candidate_asset_set.py — it is a CLI
+#     tool, not a test, with an `if __name__ == "__main__": main()`
+#     that requires --version and --platform. It is invoked by the
+#     release-candidate lane after a build produces inventory +
+#     SHA256SUMS; the gate cannot run it because no release artifacts
+#     exist on a green-field tree.
+#
+# Both are pre-existing. The runner's protocol is enforced by
+# scripts/ci/test_ci_contracts.py, which says a file with no test_*
+# must be reported as failing, so widening the runner to accept
+# either pattern would be a contract change, not a glob change. The
+# honest, minimal fix is to keep the runner honest and exclude the
+# two files from the glob with this comment, until they are either
+# refactored to the runner's protocol (preferred) or the runner grows
+# a second protocol with its own contract.
 shopt -s nullglob
-CI_CONTRACTS=(scripts/ci/test_*.py)
+EXCLUDED_CI_CONTRACTS=(
+    scripts/ci/test_cargo_iso.py
+    scripts/ci/test_release_candidate_asset_set.py
+)
+CI_CONTRACTS=()
+for f in scripts/ci/test_*.py; do
+    skip=0
+    for excluded in "${EXCLUDED_CI_CONTRACTS[@]}"; do
+        if [[ "$f" == "$excluded" ]]; then
+            skip=1
+            break
+        fi
+    done
+    if [[ $skip -eq 0 ]]; then
+        CI_CONTRACTS+=("$f")
+    fi
+done
 shopt -u nullglob
 
 if [[ ${#CI_CONTRACTS[@]} -eq 0 ]]; then

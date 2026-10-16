@@ -232,10 +232,17 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
     // side, which is how the companion hole (the suite losing its gate step
     // entirely) was found.
+    // 65 -> 68 on 2026-10-16: CU-1 (SDK de consumo confiable) añade tres
+    // suites de contrato: cu1_w2_facade_contract (facade pura + smart
+    // ctor), cu1_w2_service_analyzer_contract (adaptador sobre el
+    // AnalysisService real, incluida la ley de paridad Partial por
+    // BuildReport hallada por UAT-CU-1) y cu1_w3_presenter_parity
+    // (CLI graph full via presenter, paridad con la orquestación
+    // manual previa).
     assert_eq!(
         suites.len(),
-        65,
-        "expected exactly 65 cognicode-core integration suites, found {}. \
+        68,
+        "expected exactly 68 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -377,6 +384,9 @@ const ANCHOR_SUITES: &[&str] = &[
     "checkpoint_integration",
     "clippy_gate_parity_contract",
     "cp5_tie_break",
+    "cu1_w2_facade_contract",
+    "cu1_w2_service_analyzer_contract",
+    "cu1_w3_presenter_parity",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
     "find_usages_cli_mcp_equivalence",

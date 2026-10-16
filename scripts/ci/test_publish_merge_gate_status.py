@@ -367,6 +367,103 @@ def test_the_published_status_cannot_be_a_journal_replay() -> None:
             )
 
 
+def test_the_bridge_runs_with_explicit_owner_name() -> None:
+    """`<sha> <owner/name>` is the documented invocation and must work.
+
+    The auto-detection path (no second arg) calls `git remote get-url
+    origin` and assigns `$origin` before checking it. The explicit-args
+    path (second arg given) skips that assignment, so the post-conditions
+    that reference `$origin` have to be rephrased to not require it when
+    the user gave the repo. Without this, the script is broken for every
+    operator who runs it the way the help text instructs:
+
+        bash scripts/ci/publish-merge-gate.sh <sha> <owner/name>
+
+    Measured 2026-10-16: the bug trips `set -u` on `$origin` and the
+    script exits before reaching `pipelinek run`. The bridge looks
+    identical to a successful run from the outside — it printed nothing
+    and returned non-zero — but the pull request gets no status and
+    `main`'s required check waits forever.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        bindir = Path(tmp) / "bin"
+        bindir.mkdir()
+        recorded = Path(tmp) / "posted.txt"
+
+        (bindir / "pipelinek").write_text(
+            "#!/usr/bin/env bash\n"
+            "echo 'gate ok'\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        (bindir / "gh").write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "%s\\n" "$*" > ' + str(recorded) + "\n"
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        for name in ("pipelinek", "gh"):
+            os.chmod(bindir / name, 0o755)
+
+        env = dict(os.environ)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+
+        proc = subprocess.run(
+            [
+                "bash",
+                str(SCRIPT),
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                "Rubentxu/CogniCode",
+            ],
+            capture_output=True,
+            text=True,
+            env=env,
+            cwd=REPO_ROOT,
+            check=False,
+        )
+
+        check(
+            proc.returncode == 0,
+            f"the bridge exited {proc.returncode} when called with explicit "
+            f"<sha> <owner/name>. The explicit-args path must not be broken. "
+            f"stderr: {proc.stderr.strip()[:400]}",
+        )
+        check(
+            "variable sin asignar" not in proc.stderr,
+            f"the bridge tripped `set -u` on the explicit-args path: "
+            f"{proc.stderr.strip()[:400]}",
+        )
+        check(
+            recorded.is_file(),
+            "nothing was posted. The explicit-args path must still publish "
+            "the status to the given owner/name.",
+        )
+        if recorded.is_file():
+            posted = recorded.read_text(encoding="utf-8")
+            check(
+                "state=success" in posted,
+                f"the bridge did not post a success after a green gate "
+                f"through the explicit-args path: {posted.strip()[:200]}",
+            )
+            check(
+                "context=merge-gate" in posted,
+                f"the explicit-args path lost the required context: "
+                f"{posted.strip()[:200]}",
+            )
+            check(
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef" in posted,
+                f"the explicit-args path did not post to the given SHA: "
+                f"{posted.strip()[:200]}",
+            )
+            check(
+                "Rubentxu/CogniCode" in posted,
+                f"the explicit-args path did not post to the given "
+                f"owner/name: {posted.strip()[:200]}",
+            )
+
+
 def main() -> int:
     check(SCRIPT.is_file(), f"{SCRIPT_REL} is missing")
     for name, func in sorted(globals().items()):

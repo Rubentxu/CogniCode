@@ -1,1 +1,0 @@
-cd "/var/mnt/DiscoChino2-fast/Proyectos/rust/CogniCode" && cargo fmt --all -- --check

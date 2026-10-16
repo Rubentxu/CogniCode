@@ -20,6 +20,11 @@ pub mod change_tracking;
 // inyecta el `&dyn Analyze` que quiera, el contrato solo pinea la
 // superficie.
 pub mod analysis_basis;
+// CU-1.2 — consumer analysis facade: CapabilityRequest → CapabilityPlan
+// (resolución pura) + ejecución delegada al puerto `Analyze`. Un único
+// punto de entrada para CLI/MCP/SDK-consumidor; sin segundo ADT de
+// resultado (reusa `AnalysisOutcome` upstream).
+pub mod consumer_analysis;
 // M7.4 Behavior Runtime adapters — Clock port + SystemClock (application, not domain).
 pub mod commands;
 pub mod dto;

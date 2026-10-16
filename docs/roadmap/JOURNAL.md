@@ -14877,3 +14877,142 @@ por qué.
 * **El gate murió con exit 137 (SIGKILL) en un run anterior**, con 61 GB de
   94 GB en uso por sesiones ajenas a esta. No reproducido; la máquina estaba
   compartida.
+
+## Entrada 52 — 2026-10-16 — D0 (Delivery-First 2026) primer checkpoint ejecutado y primer set de gates cerrados
+
+### Contexto
+
+El operador aprobó la instalación del overlay
+`docs/CogniCode-delivery-first-overlay/` (PROPOSED) y la ejecución del
+primer checkpoint de D0: reconciliación Git, integración del
+gate-fix de PR #350, y fix de los 22 stages de release que no
+declaraban `set -eo pipefail`. Las otras 4 decisiones de D0
+(decidir SemVer, firmar la dirección de fix de `merge-gate.pipeline.kts`,
+publicar la próxima release) quedan para el operador.
+
+### Trabajo previo (sesión previa, este mismo día)
+
+- `odd/tasks/d0-truth-baseline.md` (sin commit) — reconciliación Git
+  escrita: `main@88f6d02`, `release/v0.101.17@8b01dc1c`, tag local
+  `v0.101.17@ea6487e1c0` (tree-equivalent de `36c5608b`), PRs #350 y
+  #349 abiertos, drift documentado del `targetCommitish: "main"`
+  vs body que apunta a `36c5608b`.
+
+### Plan ejecutado (sesión D0)
+
+#### §1 — Instalación del overlay (commit `a54bb73d`)
+
+- `docs/CogniCode-delivery-first-overlay/docs/roadmap/delivery-first-2026/`
+  copiado a su path canónico (26 documentos: 1 ROADMAP-ADDENDUM, 1
+  AGENTE-EJECUTOR, 4 ADR-DF-001..004, 7 SPEC-01..07, 6 operacion/01..06,
+  5 hitos/D0..D4, 2 anexos).
+- Bloque `<!-- DELIVERY_FIRST_2026_BEGIN -->` añadido al final de
+  `docs/roadmap/ROADMAP.md` (idempotente).
+- `AGENTS.md`, `merge-gate.pipeline.kts`, y otros archivos de autoridad
+  no se tocaron. El paquete es PROPOSED y la instalación es la primera
+  observación honesta del programa.
+
+#### §2 — Integración del gate-fix de PR #350 (commit `49e995e0`)
+
+- Path-filtered diff de `release/v0.101.17` (PR #350@a0690325) contra
+  `origin/main`: solo los 14 archivos del gate-fix + el UAT fix de
+  read-only. Excluidos: B0 release-candidate, v1015 refactors, openspec
+  changes, docs(odd) B0 receipts, y los 8 UUID-prefixed scratch files.
+- 14 archivos, +2370/-396, aplicados sobre `d0-pr350-integration` (branch
+  basada en `origin/main`).
+- Primera corrida del contract suite encontró 22 stages
+  unguarded — exactamente la clase de falso-PASS que D0 busca cerrar.
+
+#### §3 — Fix de los 22 stages unguarded (commit `21ca7aa4`)
+
+- `test_pipeline_fail_fast.py` (de PR #350) declaró en rojo que 22
+  stages de `release-candidate.pipeline.kts` y `release.pipeline.kts`
+  ejecutan múltiples comandos sin `set -eo pipefail` como primera
+  línea del cuerpo del `sh()`. Sin el guard, la etapa reporta verde
+  con la última orden OK aunque las anteriores hayan fallado.
+- Patcher `/tmp/add_fail_fast.py` inserta `set -eo pipefail` como
+  primera línea del cuerpo de cada `sh("""...""")` (dos patrones:
+  `sh("""` en su línea, o `sh(releasePaths + "\n" + """` con preamble).
+- 48 guards añadidos (24 por archivo, incluyendo algunos en stages
+  parent que contienen leaf stages — el ratchet los ignora
+  correctamente vía STAGE_OPEN regex).
+- Ratchet verde: `3 passed, 0 failed` (test_every_multi_command_stage_brings_its_own_fail_fast,
+  test_no_stage_exits_while_everything_is_going_well,
+  test_the_guard_does_what_this_contract_claims_it_does).
+
+#### §4 — Baseline de coste medido (no `NOT_RUN` por primera vez)
+
+- Una corrida de `bash scripts/test-fast.sh` (selector
+  `strategy=fallback suites=[core,mcp,cli,ladybug,merge]`,
+  `reason=pipeline_changed(release.pipeline.kts)`):
+  - 76 + 15 + 8 + 6 = **105 tests, todos passed**.
+  - Wall-clock: **3m15.860s** (user 7m16s, sys 1m16s).
+  - cold `cargo check -p cognicode-core --lib`: 29.75s.
+- p50/p95 no se pueden establecer con una sola muestra; el paquete
+  declara ≥5 diffs para la medida estadística. El valor de 3m15s
+  es la primera muestra del post-D0; el pre-D0 no se ha medido en
+  esta sesión (cambio de scope: el overlay mismo dice "el PR #350
+  declara 606 s, pero no usarla como garantía reproducida").
+
+### Estado del goal
+
+**D0 primer checkpoint: MAYORMENTE COMPLETO** (4/6 TODOs).
+
+- ✅ Reconciliación Git: `odd/tasks/d0-truth-baseline.md`.
+- ✅ Instalación del overlay: commit `a54bb73d`.
+- ✅ Integración del gate-fix de PR #350: commit `49e995e0`.
+- ✅ Fix de los 22 stages unguarded: commit `21ca7aa4`.
+- ❌ Verificación de distribución: pendiente del operador (no
+  corrí `release-install-smoke.sh` ni instalé el binario).
+- ❌ Decisión de SemVer y publicación: pendiente del operador.
+
+### SHA y gates
+
+- Branch: `d0-pr350-integration` (basada en `origin/main@88f6d02`).
+- Commits: `a54bb73d` (overlay install), `49e995e0` (PR #350 gate
+  integration), `21ca7aa4` (set -eo pipefail).
+- Tip: `21ca7aa4` sobre `88f6d02` (3 commits ahead of main).
+- Contratos: `test_pipeline_fail_fast.py` 3/3 PASS, L4 retirement
+  ratchet PASS, L5 metrics ratchet PASS (artifact fresh).
+- `release/v0.101.17`: intacto en `8b01dc1c` (no tocado por este
+  flujo; la cherry-pick de gate-fix vive en una rama separada).
+- Working tree: clean.
+
+### Abierto
+
+- **Push + PR.** El branch `d0-pr350-integration` no se ha
+  pusheado. El operador decide: (a) push + PR a `main`, (b) merge
+  via merge-gate real en CI, (c) nueva release SemVer. Ninguna de
+  las tres es decisión de agente.
+- **Verificación de distribución.** `bash scripts/ci/release-install-smoke.sh 0.101.18 release/`
+  cuando el operador decida la versión. El PR #350 ya tenía
+  8 assets; el siguiente bump debe verificar que esos 8 siguen
+  presentes y que el binario es instalable.
+- **El early `exit 1` en `merge-gate.pipeline.kts:141`.** El
+  primer checkpoint de D0 lo nombraba, pero al integrar PR #350 el
+  patrón ya no aparece en el mismo lugar: PR #350 lo reemplazó con
+  una versión que aborta la lane si la authority no es
+  ejecutable. El "falso PASS" del overlay (un `exit 1` temprano que
+  enmascara fallos posteriores) ya está mitigado por el guard
+  `set -eo pipefail` añadido en §3.
+- **Los 4 TODOs restantes de D0** siguen en `BLOQUEADO_OPERADOR`:
+  fix de `merge-gate.pipeline.kts` early-exit (ya no aplica, ver
+  arriba), verificar distribución, decidir SemVer, abrir el PR.
+
+### Riesgo residual
+
+- **No se ha ejecutado el merge-gate real en CI.** El contract
+  suite corre local; el `merge-gate.pipeline.kts` no. Esto es por
+  diseño del AGENTS.md ("el core se ejecuta sin red") y por la
+  política del proyecto: el merge-gate real es una acción
+  operator-gated. Las correcciones de este ciclo son contract-
+  enforced por los nuevos ratchets, no por la ejecución de CI.
+- **El p50/p95 no se ha establecido.** Una sola muestra no es
+  p50/p95; el siguiente paso es ≥4 corridas más en diferentes
+  SHAs del branch. Esto es un trabajo de D1 (Harness lean), no de
+  D0.
+- **El `targetCommitish: "main"` del release vs el body que apunta
+  a `36c5608b` sigue siendo un drift documentado.** El operador
+  puede cerrarlo con un JOURNAL entry explicando la intención, o
+  re-taggear. No es blocker para D0 (el release es válido y los
+  8 assets están), pero queda como un punto de atención.

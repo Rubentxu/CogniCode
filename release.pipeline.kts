@@ -108,6 +108,8 @@ pipeline {
         stage("consume-candidate") {
             stage("candidate-present") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     for d in dist release; do
                         test -d "${'$'}d" || {
@@ -128,6 +130,7 @@ pipeline {
 
             stage("re-verify-candidate") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
@@ -139,6 +142,7 @@ pipeline {
         stage("negative") {
             stage("verify-rejects-missing-artifact") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     work=$(mktemp -d)
                     cp -r release "${'$'}work/release"
                     shopt -s nullglob
@@ -165,6 +169,7 @@ pipeline {
 
             stage("verify-rejects-altered-artifact") {
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     work=$(mktemp -d)
                     cp -r release "${'$'}work/release"
                     shopt -s nullglob
@@ -190,6 +195,8 @@ pipeline {
         stage("draft") {
             stage("create-draft") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}RELEASE_TAG" ]; then
                         echo "RELEASE_TAG is unset, so there is nothing to publish to."
@@ -210,6 +217,8 @@ pipeline {
 
             stage("upload-payloads") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     gh release upload "${'$'}RELEASE_TAG" release/*.tar.gz --clobber
                 """.trimIndent())
@@ -217,6 +226,8 @@ pipeline {
 
             stage("confirm-uploaded-set") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     expected=$(cd release && ls *.tar.gz | sort)
                     actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
@@ -231,6 +242,8 @@ pipeline {
 
             stage("upload-manifests") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     gh release upload "${'$'}RELEASE_TAG" \
                         release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
@@ -246,6 +259,8 @@ pipeline {
         stage("provenance") {
             stage("attestations") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     scripts/ci/verify-provenance.sh "${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}" \
                         release/*.tar.gz release/SHA256SUMS
@@ -272,12 +287,15 @@ pipeline {
                 // assets subidos y a partir de ahi no podia seguir. Las otras
                 // tres stages que nombran la variable si lo llevaban.
                 sh(releasePaths + "\n" + """
+                    set -eo pipefail
                     "${'$'}TARGET_DIR/release/cognicode-release" verify --staging release --version "$version" --tag "$tag"
                 """.trimIndent())
             }
 
             stage("publish-draft") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     gh release edit "${'$'}RELEASE_TAG" --draft=false
                 """.trimIndent())
@@ -301,6 +319,8 @@ pipeline {
             // un gate que mide lo que el gate cree medir es peor que no medir.
             stage("verify-latest-resolution") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     api="https://api.github.com/repos/${'$'}{GITHUB_REPOSITORY:-Rubentxu/CogniCode}"
                     resolved=$(curl -fsSL "${'$'}api/releases/latest" \
@@ -323,6 +343,8 @@ pipeline {
 
             stage("verify-as-consumer") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     draft=$(gh release view "${'$'}RELEASE_TAG" --json isDraft -q .isDraft)
                     if [ "${'$'}draft" != "false" ]; then
@@ -361,6 +383,8 @@ pipeline {
             // lane ya documenta para no repetir.
             stage("verify-asset-set") {
                 sh("""
+                    set -eo pipefail
+                    set -eo pipefail
                     $cd || exit 1
                     bash sandbox/scripts/test_release_asset_set.sh "${'$'}RELEASE_TAG"
                 """.trimIndent())

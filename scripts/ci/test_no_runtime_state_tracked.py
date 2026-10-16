@@ -25,9 +25,10 @@ Run:
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -102,6 +103,103 @@ def test_the_control_root_state_is_ignored() -> None:
     )
 
 
+# MEDIDO 2026-10-15. A second shape of the same leak, found because it nearly
+# went into a commit: a run writes one directory per *step* at the repository
+# root, named `<run-uuid>-s<index>-<step>/` and holding `script.sh`,
+# `result.txt`, `wrapper.sh` and `script.sh.copy`. Two of them were sitting
+# untracked in the working tree and `git add -A` swept them into a commit that
+# was about pipelines — four files whose entire content is "how this run went".
+#
+# The five directories above are named by the runtime, so they can be listed and
+# checked one by one. These cannot: the name contains the run id, so there is
+# no fixed list. The oracle is therefore the index filtered by what the runtime
+# writes inside such a directory, not a directory name.
+STEP_SCRATCH = ("script.sh", "wrapper.sh", "result.txt", "script.sh.copy")
+
+
+# El nombre del directorio que crea el runtime: `<run-uuid>-s<indice>-<step>`,
+# con un `\n` entre el id del run y el del step. Se ancla en el ULTIMO
+# componente del path para que un directorio real con esa forma en cualquier
+# sitio cuente, no solo en la raiz.
+STEP_DIR = re.compile(r"-s\d+-\d+$")
+
+
+def test_no_per_step_scratch_is_tracked() -> None:
+    """Any tracked file whose parent directory has the runtime's step shape.
+
+    MEDIDO: la primera version filtraba con `git ls-files -- result.txt`, y un
+    pathspec sin `:(glob)` solo casa con la raiz — asi que el fichero bajo
+    `<dir>/` no lo encontraba y el contrato paso verde con el scratch
+    trackeado. Un oráculo que no encuentra lo que busca no es un oraculo.
+
+    Se lista el indice entero y se filtra por la FORMA del directorio padre,
+    que es lo unico que se puede exigir sin conocer el id del run.
+    """
+    proc = subprocess.run(
+        ["git", "ls-files", "-z"],
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+        check=False,
+    )
+    if proc.returncode != 0:
+        failures.append(
+            f"git ls-files failed: {proc.stderr.strip()[:200]}. This contract "
+            f"cannot tell what is tracked, so it must not report a pass."
+        )
+        return
+    everything = [name for name in proc.stdout.split("\0") if name]
+    # Si el indice viniera vacio, la comprobacion de abajo pasaria sola. Que
+    # el repo tenga ficheros es la precondicion minima para que "ninguno" sea
+    # un resultado y no un fallo silencioso.
+    check(
+        len(everything) > 100,
+        f"git ls-files devolvio {len(everything)} ficheros; el indice no se "
+        f"puede leer, y un filtro sobre una lista vacia pasa siempre.",
+    )
+    tracked = [
+        name
+        for name in everything
+        if PurePosixPath(name).parent.name
+        and STEP_DIR.search(PurePosixPath(name).parent.name)
+    ]
+    check(
+        not tracked,
+        f"{len(tracked)} PipelineK per-step scratch file(s) are tracked and "
+        f"would ship in a release tarball:\n    "
+        + "\n    ".join(tracked[:8])
+        + "\nThey are written by the durable-shell runtime into a per-step "
+        "directory at the repository root. `git add -A` sweeps them in because "
+        "nothing ignores them; untrack and ignore the directory shape, which "
+        "carries the run id and so cannot be listed by name.",
+    )
+
+
+def test_a_step_directory_name_is_ignored() -> None:
+    """The rule has to match a name nobody can predict.
+
+    Probe uses the exact shape seen on disk, newlines and all: the runtime joins
+    the run id and the step id with `\\n`, so the directory name really does
+    contain one, and a rule written without `\\n` in mind misses.
+    """
+    probe = "aaaaaaaa-1111-2222-3333-444444444444\\nbbbbbbbb-5555-6666-7777-888888888888-s1-0/result.txt"
+    ignored = (
+        subprocess.run(
+            ["git", "check-ignore", "-q", probe],
+            cwd=REPO_ROOT,
+            check=False,
+        ).returncode
+        == 0
+    )
+    check(
+        ignored,
+        "a PipelineK per-step directory name is not ignored. Every run leaves "
+        "one per step at the repository root, so `git status` carries them as "
+        "noise and `git add -A` will eventually commit a directory whose "
+        "entire content is the transcript of one step.",
+    )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):
@@ -117,8 +215,9 @@ def main() -> int:
         return 1
 
     print(
-        "PASS — no PipelineK control-root state is tracked, and all five "
-        "directories are ignored so a run cannot put it back"
+        "PASS — no PipelineK run state is tracked: neither the five "
+        "control-root directories nor the per-step directories, and all of "
+        "them are ignored so a run cannot put them back"
     )
     return 0
 

@@ -280,3 +280,14 @@ out-*.json
 /output-plane/
 /retry-control/
 /wait-until-control/
+# PipelineK durable-shell per-step scratch directories: UUID-prefixed
+# runtime artifacts. They appear at the repo root and the run id cannot
+# be listed by name, so the pattern is a UUID match.
+
+# PipelineK durable-shell steps written at the repository root. MEDIDO
+# 2026-10-15: un run cuyo `--control-root` resuelve a `<cwd>` deja un
+# directorio por step, con nombre `<run-uuid>-s<indice>-<step>/`, que
+# contiene `script.sh`, `result.txt` y `wrapper.sh`. Son scratch de una
+# ejecucion, no producto, y aparecen como untracked en cada `git status`.
+# El mismo contrato que vigila `leases/` y `last-run/` los vigila ahora.
+/[0-9a-f][0-9a-f]*[0-9a-f]*-[0-9a-z]*-s[0-9]*-[0-9]*/

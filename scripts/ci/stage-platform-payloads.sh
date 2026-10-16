@@ -87,17 +87,39 @@ declare -A PLATFORM_SHORT_TO_TRIPLE=(
   ["linux-x86-64"]="x86_64-unknown-linux-gnu"
   ["linux-aarch64"]="aarch64-unknown-linux-gnu"
 )
+# TIER1_TRIPLES can be overridden by the calling pipeline to match its
+# actual `val targets` list. The default is the historical hard-coded
+# list, so the script stays correct in isolation (e.g. in tests that
+# exercise both platforms). The override exists because the lane
+# has been scoped to a single Tier-1 platform on aarch64-unavailable
+# runners (tracked in `odd/tasks/tf-6-aarch64-followup.md`); without
+# it, the final sanity check on line 320 forces aarch64 even when the
+# pipeline never built it. MEDIDO 2026-10-16 in release-candidate
+# run b3cb8bea-1104-4ce3-be31-cb1d1e1cf1aa: the script aborted at
+# `after flatten, no lane claimed Tier-1 platform aarch64-unknown-linux-gnu`
+# because the pipeline's `val targets = listOf("x86_64-unknown-linux-gnu")`
+# but TIER1_TRIPLES still required both.
 TIER1_TRIPLES=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
+if [[ -n "${TIER1_TRIPLES_OVERRIDE:-}" ]]; then
+  # shellcheck disable=SC2206  # word splitting is intentional
+  TIER1_TRIPLES=( ${TIER1_TRIPLES_OVERRIDE} )
+fi
 COMPONENTS=(cogh cognicode cognicode-mcp)
 
-# Reject any file at the staging root other than the lane dirs and
-# the portable skill bundle tarballs this run produced. `skill-bundles`
-# clears the root's loose files before writing its bundles, so nothing
-# from a previous run should reach here; this guard is the second
-# line, and what it still catches is a stray README/Markdown, an
-# accidental top-level upload, or a root the owner did not clean. The
-# downstream release factory would silently include such files in the
-# SHA256SUMS and break reproducibility.
+# Reject any file at the staging root other than the lane dirs, the
+# portable skill bundle tarballs this run produced, AND the SBOMs the
+# script itself writes at lines below (copy_unique copies them to the
+# staging root with the canonical name). The SBOMs are the script's
+# own output, so a re-run that finds them is finding its own previous
+# output, not a stray from elsewhere. The lane dirs are produced by
+# `package-$target`; the skill bundles are produced by `skill-bundles`.
+# The `skill-bundles` stage also clears the root's loose files before
+# writing its bundles (release-candidate.pipeline.kts:766), so the
+# pass-through case here is the second line; what it still catches
+# is a stray README/Markdown, an accidental top-level upload, or a
+# root the owner did not clean. The downstream release factory would
+# silently include such files in the SHA256SUMS and break
+# reproducibility.
 shopt -s nullglob
 for entry in "${STAGING}"/*; do
   if [[ -f "${entry}" ]]; then
@@ -106,9 +128,19 @@ for entry in "${STAGING}"/*; do
       # Skill bundles produced by `just bundle-skills` and staged by
       # the workflow before this script runs; pass through.
       *-*.tar.gz) ;;
+      # SBOMs the script itself writes via copy_unique. The naming
+      # is `<component>-<triple>.cdx.json`; allowing them here is
+      # what makes the script idempotent across re-runs in a
+      # long-lived worktree. MEDIDO 2026-10-16: without this case,
+      # a re-run on a tree that holds the previous run's SBOMs
+      # aborts at this check with
+      # "unexpected file at staging root: cogh-x86_64-unknown-linux-gnu.cdx.json"
+      # — the script's own output, rejected by its own guard.
+      *-*.cdx.json) ;;
       *)
         echo "::error::unexpected file at staging root: ${fname}" >&2
-        echo "       only payloads-* lane directories and pre-staged skill bundles are allowed" >&2
+        echo "       only payloads-* lane directories, pre-staged skill bundles," >&2
+        echo "       and SBOMs (<comp>-<triple>.cdx.json) are allowed" >&2
         exit 1
         ;;
     esac
@@ -301,7 +333,17 @@ done
 for platform in "${TIER1_TRIPLES[@]}"; do
   if [[ -z "${TRIPLE_OWNED_BY[$platform]+x}" ]]; then
     echo "::error::after flatten, no lane claimed Tier-1 platform ${platform}" >&2
-    echo "       present lanes owned: ${!TRIPLE_OWNED_BY[*]:-(none)}" >&2
+    # MEDIDO 2026-10-16: ${!array[*]:-(none)} is wrong — the `!` on an
+    # array expands to its KEYS, and the `:-` then tries to expand each
+    # key as a variable name. When keys contain hyphens (e.g. lane
+    # names like `payloads-linux-x86-64`), bash errors with
+    # `invalid variable name` and obscures the real diagnostic. The
+    # length check gives the same intent without that side effect.
+    if (( ${#TRIPLE_OWNED_BY[@]} > 0 )); then
+      echo "       present lanes owned: ${!TRIPLE_OWNED_BY[*]}" >&2
+    else
+      echo "       present lanes owned: (none)" >&2
+    fi
     exit 1
   fi
   for comp in "${COMPONENTS[@]}"; do
