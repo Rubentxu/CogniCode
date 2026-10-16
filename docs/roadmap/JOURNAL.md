@@ -15427,8 +15427,26 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
   (`scripts/ci/test_harness_contract.py`) → **13 PASS, 0 FAIL**. Dos de los tests
   nuevos se validaron revirtiendo el arreglo y viendo caer el test (orden de
   ejecución y clausura de dependencias).
-- **Corridas reales del gate**: pendientes de la corrida de merge-gate posterior a
-  este commit; no se declaran como PASS hasta que ocurran.
+- **Corridas reales del gate** (PipelineK, `merge-gate.pipeline.kts`, `--rerun`):
+  1. sobre `874bc6a1`: **FAIL** en la etapa `contracts`. Causa: el contrato M14
+     comparaba el plan del harness (`--base HEAD` fijo) con la decisión del
+     wrapper, que usa `HEAD` o `HEAD~1` según el diff; con el árbol limpio
+     (checkout del gate) comparaba dos cambios distintos. Arreglado en `9690a81a`
+     publicando la base que usa el wrapper.
+  2. sobre `9690a81a`: **FAIL** en `build-cognicode-cli-debug` con
+     `error[E0004]` sobre una variante `CommandOutput::Doctor` que **no existe** en
+     el árbol de este worktree. Reproducido con el mismo comando del gate
+     (`cargo build -p cognicode-cli --bins`, rc=101) y resuelto recompilando de
+     verdad (`touch` de los dos ficheros implicados → mismo comando, rc=0): eran
+     artefactos rancios en el directorio de target compartido
+     (`/var/home/rubentxu/cargo-targets/`), no un defecto del árbol. No se tocó la
+     configuración global de Cargo.
+  3. sobre `9690a81a` con los artefactos frescos: **SUCCESS**, 58 etapas, 1027 s
+     de pared (por encima de los 550 s históricos: corrida con cachés frías en
+     varias etapas y con otros procesos de PipelineK de otros agentes corriendo en
+     la misma máquina).
+- **Contratos**: etapa completa `scripts/ci/run-all-contracts.sh` → **294 PASS, 0
+  FAIL** (rc=0) en `9690a81a`.
 - **Límites declarados**: los cinco primeros defectos afectan a cualquier
   consumidor del harness (no sólo al wrapper); el perfil de desarrollo no existe;
   las corridas del harness dentro del gate siguen siendo opt-in (ADR-TH-007).
