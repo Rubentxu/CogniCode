@@ -9,19 +9,26 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre `release/v0.101.17`
-> `3d8906c267550a3ba4c5a3fca1e765ddc1082792` (base: PR #348 mergeado en `main`
+> **Snapshot**: 2026-10-16, sobre `release/v0.101.17`
+> `a06903257942ed137219edcfaf78180db1e5b7cd` (base: PR #348 mergeado en `main`
 > como `88f6d02a`; este trabajo corrige el gate sobre ella). Los seis
 > gates reparados que se listaban sobre
 > `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` siguen en el árbol, **pero el
 > veredicto que se les atribuyó era falso**: la etapa `tests` del merge gate
 > ejecutaba 4 de sus 39 `cargo test` y devolvía `success`. MEDIDO
 > 2026-10-15 — ver "Batería" más abajo, donde esas cifras quedan
-> marcadas como no válidas. `v0.101.17` está **suspendida**: la lane
-> `release-candidate` falló en `clean-clone` por esta causa.
-> Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
-> `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
-> publicado** — el tag remoto sigue en `v0.101.16`, que es la release
+> marcadas como no válidas. `v0.101.17` está **publicada**: tag anotado
+> `v0.101.17` → `36c5608b`, GitHub Release con los 8 assets verificados
+> (3 component tarballs, 2 portable skill bundles, bundle manifest,
+> release inventory, SHA256SUMS), post-publish install-smoke verde. Los
+> tres bugs de la pipeline (`source_commit` HEAD-drift, `TIER1` var scope,
+> `cognicode-release generate --platform`) se arreglaron sobre la release
+> branch (commits `2bbcb767`, `9367e571`); el `cargo fmt --all` se aplicó
+> tras el close-out (commit `a0690325`). El merge-gate queda pendiente
+> de un re-run verde contra `a0690325` para destrabar PR #350.
+> Regenerado tras **BLOQUE 5 + B0**: el workspace está en `0.101.17` per
+> `Cargo.toml`, el tag remoto `v0.101.17` apunta a `36c5608b`, y la release
+> viva es `v0.101.17` con el set completo de 8 assets.
 > que hoy publica 3 de los 8 assets. La release viva es `v0.101.16`.
 >
 > Próxima release objetivo: `v0.101.17` (re-publicar el set completo de
@@ -37,10 +44,12 @@
 * **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
   (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
   contenido dentro de #348).
-* **SHA**: `3d8906c267550a3ba4c5a3fca1e765ddc1082792`. **No hay SHA funcional**:
-  no existe ningún commit de esta rama con un veredicto de gate atribuible a él.
-* **Versión workspace**: `0.101.17` (bump en el árbol, **sin publicar**;
-  el tag remoto más reciente sigue siendo `v0.101.16`).
+* **SHA**: `a06903257942ed137219edcfaf78180db1e5b7cd`. **Sí hay SHA funcional**:
+  el tag anotado `v0.101.17` (`36c5608b`) y la pipeline post-build
+  (`2bbcb767`, `9367e571`, `a0690325`) son atribuibles a este árbol.
+  El merge-gate queda pendiente de un re-run verde contra `a0690325`.
+* **Versión workspace**: `0.101.17` (publicada el 2026-10-16;
+  tag anotado `v0.101.17` → `36c5608b`, GitHub Release con 8 assets).
 
 * **Los tres gates obligatorios, sin adornos.** Ninguno está `PASS`.
 
