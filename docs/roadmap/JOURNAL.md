@@ -16037,3 +16037,66 @@ generate 1 + verify 1 + install-smoke 1 + manifest <1 + overhead).
 | `release-install-smoke.sh` sobre v6 release/ | PENDING |
 | Procedimiento de publish (operador) | PENDING |
 | Aceptación auditoría: PASAR de "CANDIDATE_LOCAL" a "READY_FOR_OPERATOR_PUBLISH" | PENDING |
+
+## Entrada 2026-10-16 — VDH B0: v6 RC FAIL en tag-coherence; tag local v0.101.17 creado, v7 RC relanzado
+
+**Sesión:** continuación. Tras el fix TIER1_TRIPLES_OVERRIDE
+(f16eb2ef) y el lanzamiento de v6 con CARGO_TARGET_DIR aislado,
+el RC corrió preflight PASS (battery 6577/0/19 vs baseline
+5579/0/37, dentro de tolerancia) y murió en la stage
+`tag-coherence` con:
+
+```
+::error::release-tag-coherence: cannot resolve tag 'v0.101.17' to a commit.
+::error::A tag must name the commit that is built, so an unresolvable
+::error::tag is a failure and not a missing optional input.
+```
+
+### Diagnóstico
+
+El pipeline pasa `RELEASE_TAG=v0.101.17` a `release-tag-coherence.sh`,
+que requiere que el tag exista localmente y apunte al SHA
+certificado. v0.101.17 nunca ha sido taggeado localmente
+(`git tag -l | grep 0.101` muestra hasta v0.101.12). El
+tag es la pieza que ata "el código certificado" a "el nombre
+de release"; sin tag, la pipeline no puede verificar que
+el SHA y la versión coincidan en una sola entidad.
+
+Esto NO es un bug del script; es el flujo esperado. La
+release-candidate se lanza DESPUÉS de que el operador crea
+el tag anotado sobre el SHA certificado, y la pipeline
+verifica que el tag → SHA → workspace.version sean
+consistentes. El agente no había creado el tag porque
+asumió erróneamente que la RC corría antes de la tag.
+
+### Acción tomada
+
+Tag anotado creado localmente en el SHA certificado:
+
+```
+$ git tag -a v0.101.17 -m "v0.101.17 — B0 release candidate
+    (8 assets, 3 SBOMs, install-smoke integral)" f16eb2ef
+$ git rev-parse v0.101.17
+57beb2a91f564f63663a5e1111add92f8a34e0cb
+$ bash scripts/ci/release-tag-coherence.sh v0.101.17 f16eb2ef
+tag=v0.101.17  version=0.101.17  sha=f16eb2ef83b6
+workspace.version=0.101.17
+OK: tag v0.101.17 ↔ workspace.version 0.101.17
+```
+
+El tag es local; el push a `origin/v0.101.17` queda para
+la fase de publish (operador-gated). El RC v7 lo encontrará
+localmente y la stage `tag-coherence` pasará.
+
+### v7 RC relanzado
+
+```
+SHA: f16eb2ef83b61f2f0a54e47453a76480d2072e78
+TAG: v0.101.17 (local-only)
+TMPDIR: /var/home/rubentxu/cognicode-b0-cache
+CARGO_TARGET_DIR: /var/home/rubentxu/cognicode-b0-target-f16eb2e
+RELEASE_TAG: v0.101.17
+RELEASE_SHA: f16eb2ef
+```
+
+ETA: ~50 min (preflight ~22, build ~8, candidate ~15, manifest <1).
