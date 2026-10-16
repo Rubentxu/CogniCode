@@ -23,7 +23,6 @@ use std::path::PathBuf;
 
 /// The pipeline a merge is gated on. Declared here and nowhere else.
 pub const MERGE_AUTHORITY: &str = "merge-gate.pipeline.kts";
-pub const RELEASE_LANE: &str = "release-candidate.pipeline.kts";
 
 /// The repository root, for tests that need to reach other files.
 pub fn repo_root() -> PathBuf {
@@ -107,16 +106,6 @@ pub fn merge_authority_text() -> String {
     pipeline_text(MERGE_AUTHORITY)
 }
 
-/// The release candidate lane's source, same comment rule as the authority.
-///
-/// Added 2026-10-15 with the operator's approval moving the host binary build
-/// and the zero-warning rustdoc gate out of the merge authority. A gate that
-/// moves has to be findable in both places or its contract has to guess which
-/// file to read, and a guess is a gate that stops being checked.
-pub fn release_lane_text() -> String {
-    pipeline_text(RELEASE_LANE)
-}
-
 fn pipeline_text(name: &str) -> String {
     let path = repo_root().join(name);
     let text =
@@ -142,16 +131,6 @@ pub fn merge_authority_lines() -> Vec<String> {
 /// does not count, because it would run nothing.
 pub fn merge_authority_runs(command: &str) -> bool {
     sh_bodies_with_offsets(&merge_authority_text())
-        .iter()
-        .any(|(_, body)| body.contains(command))
-}
-
-/// Whether the release candidate lane runs `command` inside an `sh(...)` body.
-///
-/// Same `sh(` requirement as `merge_authority_runs`, for the same reason: a
-/// command quoted in a stage name or a surviving comment runs nothing.
-pub fn release_lane_runs(command: &str) -> bool {
-    sh_bodies_with_offsets(&release_lane_text())
         .iter()
         .any(|(_, body)| body.contains(command))
 }
