@@ -15263,3 +15263,52 @@ merge). Auditoría con el perfil medido: `test-harness/docs/07-auditoria-merge-g
   ya medida contra CR-08) y que la batería completa siga en integración.
 - No se tocó ninguna etapa por ser lenta sin dueño alternativo: lo movido ya se
   ejecutaba dos veces.
+
+## Recibo 2026-10-15 — TH-IMPL-05: etapa de sombra del harness en el gate
+
+Cierra lo que el README declaraba como «adopción en modo sombra, no implementada» y
+lo que TH-S05 pide antes de cambiar semántica. Decisión:
+`test-harness/adrs/ADR-TH-012-etapa-de-sombra.md`; contrato en
+`docs/roadmap/ROADMAP.md` §19.
+
+### Qué se hizo
+
+- **Resumen de sombra en la CLI**: `plan --shadow` imprime, en la primera línea,
+  que no decide nada, y a continuación las obligaciones de la lane, cuántas exige el
+  cambio por impacto, cuántas quedan bloqueadas por estado externo y qué dijo el
+  oráculo (con las desviaciones declaradas si las hay). Escrito para un log de gate.
+- **Etapa `harness-shadow-plan` en `merge-gate.pipeline.kts`**, advisory por
+  construcción: el comando termina en `|| echo 'ADVISORY: …'` porque PipelineK no
+  tiene `continue-on-error`. No ejecuta suites y no escribe en el repositorio (el
+  ledger de la observación vive en `$XDG_STATE_HOME`, como el de cualquier corrida).
+- **Solo en la lane de merge**: la observación es donde se va a decidir; duplicarla
+  en otras lanes sería coste sin decisión.
+- **Contrato**: `test_the_shadow_stage_observes_without_being_able_to_fail_the_lane`
+  comprueba que la etapa existe en merge, que es advisory (con `||`) y que no
+  aparece en las otras cinco pipelines.
+
+### Pruebas adversariales
+
+| Mutación | Resultado |
+|---|---|
+| Quitar el `|| echo 'ADVISORY'` de la etapa | El contrato falla: «la etapa de sombra puede fallar la lane» |
+| Borrar la etapa del gate | El contrato falla: «la lane de merge no observa el plan del harness» |
+| Control (restaurado) | 11/11 PASS; `merge-gate.pipeline.kts` idéntico al de partida |
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Coste de la etapa | **4,0 s medidos** (run durable `cfb7bea7`), plan + consulta al oráculo |
+| Etapas del gate | 58 (57 + la etapa de observación) |
+| Gate real con la etapa | corrida completa en `merge-gate-shadow2.db`; el primer intento se cortó por una recarga del servidor tras medir la etapa |
+| Contrato del gate | 11/11 PASS tras el cambio |
+
+### Límites declarados
+
+- La etapa **no adopta nada**: no decide qué se ejecuta, no reutiliza recibos y no
+  ejecuta suites. Los datos que produce son para el ADR que decida la adopción.
+- El plan de la observación consume el catálogo y la paridad, así que su coste
+  incluye `cargo metadata` (~2 s) y la consulta a CR-08.
+- No hay observación equivalente en integración ni en candidato: si el bloque
+  siguiente decide adoptar en esas lanes, sus etapas nacerán con esa decisión.

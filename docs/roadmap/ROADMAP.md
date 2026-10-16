@@ -520,3 +520,22 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Contribuidores (coste de iteración), mantenedor (gate de merge e integración), auditoría (ADR-TH-011 y la medición) |
 | Criterio de cierre | Cumplido: contrato verde con la aserción nueva (11/11), dos mutaciones adversariales detectadas con su motivo, medición antes/después en el ledger durable y límites declarados (fix-forward de rustdoc; el presupuesto de 6-7 min exige el bloque siguiente) |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 19. TH-IMPL-05 — Etapa de sombra del harness en el gate (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated. El merge deja constancia, en cada corrida, de lo
+> que el harness seleccionaría para ese cambio: obligaciones de la lane, requeridas
+> por impacto y bloqueadas por estado externo, con el veredicto de paridad del
+> oráculo. La etapa es advisory por construcción y no puede fallar la lane.
+> Decisión:
+> [`test-harness/adrs/ADR-TH-012-etapa-de-sombra.md`](../../test-harness/adrs/ADR-TH-012-etapa-de-sombra.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Sustituir la intuición por datos en la decisión pendiente (qué etapas del merge pasan a ejecutarse por impacto): cada PR deja en su log cuánto trabajo exigiría la selección y qué queda bloqueado |
+| Clasificación | Evolutivo del test harness (W6 parcial) sobre el mandato del operador de 2026-10-15, continuación de B1b |
+| Alcance | `merge-gate.pipeline.kts` (etapa `harness-shadow-plan`), `test-harness/src/harness/cli.py` (resumen de sombra), `scripts/ci/test_harness_contract.py`, README, auditoría §9, ADR-TH-012 |
+| Fuera de alcance | Decidir qué etapas pasan a selección (ADR propio con estos datos), reutilización de recibos en merge, caché/reanudación en PipelineK |
+| Consumidores | Mantenedor (decisión de adopción con evidencia), contribuidores (visibilidad de qué se ejecutaría), auditoría (ADR-TH-012) |
+| Criterio de cierre | Cumplido: contrato 11/11 con la comprobación nueva, dos mutaciones adversariales detectadas (etapa ausente; etapa que puede fallar la lane), gate verde con la etapa dentro y su coste medido |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
