@@ -195,6 +195,139 @@ def harness_timings(ledger, lane: str | None = None) -> HarnessTimings:
     return HarnessTimings(run_id=run.get("run_id"), by_suite=by_suite)
 
 
+def read_shadow_observations(ledger) -> list[dict]:
+    """Lee las observaciones `plan_observed` del ledger append-only del harness.
+
+    Las escribe la etapa de sombra en cada merge. Un log de gate no se puede
+    agregar; el ledger sí, y es el dato con el que se decide la adopción.
+    """
+    path = getattr(ledger, "ledger_path", None)
+    if path is None or not Path(path).exists():
+        return []
+    observations: list[dict] = []
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("event") == "plan_observed":
+            observations.append(payload)
+    return observations
+
+
+def shadow_summary(observations: list[dict], *, lane: str | None = None) -> dict:
+    """Agrega las observaciones: cuánto exigiría la selección en los PR reales."""
+    selected = [item for item in observations if lane is None or item.get("lane") == lane]
+    if not selected:
+        return {
+            "observations": 0,
+            "lane": lane,
+            "avg_required_share": 0.0,
+            "blocked_total": 0,
+            "parity_verdicts": {},
+            "latest": None,
+        }
+    shares = [
+        (item.get("required", 0) / item["catalog"]) if item.get("catalog") else 0.0
+        for item in selected
+    ]
+    verdicts: dict[str, int] = {}
+    for item in selected:
+        verdict = item.get("parity") or "sin oráculo"
+        verdicts[verdict] = verdicts.get(verdict, 0) + 1
+    return {
+        "observations": len(selected),
+        "lane": lane,
+        "avg_required_share": sum(shares) / len(shares),
+        "min_required_share": min(shares),
+        "max_required_share": max(shares),
+        "blocked_total": sum(int(item.get("block", 0)) for item in selected),
+        "parity_verdicts": verdicts,
+        "latest": selected[-1],
+    }
+
+
+def write_baseline(path: Path, payload: dict, *, commit: str) -> Path:
+    """Escribe el informe como documento versionado con fecha y commit.
+
+    El baseline no se mantiene a mano: se regenera con el comando y queda en el
+    repositorio con la corrida de la que salió. Así una comparación futura tiene
+    una referencia concreta en vez de «lo que midió alguien».
+    """
+    from datetime import timezone
+
+    stamp = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    gate = payload.get("gate", {})
+    coverage = payload.get("coverage", {})
+    budget = payload.get("budget")
+    shadows = payload.get("shadow", {})
+    lines: list[str] = [
+        "# Baseline de tiempos y cobertura del gate de merge",
+        "",
+        "Documento generado, no escrito a mano: se regenera con el comando de abajo.",
+        "",
+        f"- **Fecha**: {stamp}",
+        f"- **Commit del árbol medido**: `{commit or 'desconocido'}`",
+        f"- **Lane**: `{payload.get('lane')}`",
+        f"- **Run de PipelineK**: `{(gate.get('run_id') or 'sin datos')[:12] if gate.get('run_id') else 'sin datos'}` "
+        f"({'/'.join([str(gate.get('db'))]) if gate.get('db') else 'sin base'})",
+        f"- **Etapas medidas**: {len(gate.get('stages') or [])}",
+        f"- **Total medido**: {gate.get('total_seconds', 0)} s",
+        "",
+        "Regenerar:",
+        "",
+        "```shell",
+        f"python3 test-harness/bin/harness.py report --lane {payload.get('lane')} \\",
+        "  --pipelinek-db .pipelinek/merge-gate.db --budget 420 \\",
+        "  --protect contracts --protect fmt --protect clippy \\",
+        "  --write-baseline test-harness/docs/08-baseline-tiempos.md",
+        "```",
+        "",
+        "## Etapas medidas (mayor a menor)",
+        "",
+        "| Etapa | Segundos |",
+        "|---|---:|",
+    ]
+    for stage in sorted(gate.get("stages") or [], key=lambda item: -item["seconds"]):
+        lines.append(f"| `{stage['stage']}` | {stage['seconds']} |")
+    lines += [
+        "",
+        "## Cobertura del catálogo",
+        "",
+        f"- Obligaciones de la lane: {coverage.get('total', 0)}",
+        f"- Por tipo: {coverage.get('by_kind', {})}",
+        f"- Por pipeline de origen: {coverage.get('by_origin', {})}",
+        "",
+    ]
+    if budget:
+        lines += [
+            "## Presupuesto",
+            "",
+            f"- Presupuesto declarado: {budget['budget_seconds']} s",
+            f"- Actual: {budget['current_seconds']} s → {budget['after_seconds']} s dejando de ejecutar "
+            f"{len(budget['skip_candidates'])} etapa(s)",
+            f"- Cabe: {'sí' if budget['within_budget'] else 'no'} "
+            f"(faltan {budget['shortfall_seconds']} s)",
+            f"- Protegidas: {', '.join(budget['protected']) or 'ninguna'}",
+            "",
+        ]
+    if shadows.get("observations"):
+        lines += [
+            "## Observaciones de sombra",
+            "",
+            f"- Planes observados en la lane: {shadows['observations']}",
+            f"- Obligaciones exigidas de media: {shadows['avg_required_share']:.0%} "
+            f"(min {shadows['min_required_share']:.0%}, max {shadows['max_required_share']:.0%})",
+            f"- Bloqueadas por estado externo: {shadows['blocked_total']}",
+            f"- Paridad con el oráculo: {shadows['parity_verdicts']}",
+            "",
+        ]
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def coverage_map(catalog, lane: str) -> dict:
     """Inventario de obligaciones de la lane, con dueño y tipo."""
     by_kind: dict[str, int] = {}

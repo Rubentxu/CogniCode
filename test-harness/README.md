@@ -189,6 +189,13 @@ minutos están en [`docs/07-auditoria-merge-gate.md`](docs/07-auditoria-merge-ga
 §7-§8: el siguiente salto exige que el merge ejecute las pruebas **afectadas**
 (selección ya medida contra CR-08) y que la batería completa siga en integración.
 
+El baseline medido queda versionado en
+[`docs/08-baseline-tiempos.md`](docs/08-baseline-tiempos.md), generado con
+`report --write-baseline` (lleva fecha, commit y el comando para regenerarlo). La
+etapa de sombra deja además una observación `plan_observed` en el ledger por cada
+merge, y `report` la agrega (cuántas obligaciones exige la selección de media),
+para que la adopción se decida con PRs reales y no con el corpus solo.
+
 `harness report` responde a esa pregunta con aritmética declarada sobre el ledger
 real del orquestador: con `contracts`, `fmt`, `clippy` y la observación
 protegidas, **dejar de ejecutar tres etapas de test** (`cli-unit-tests` 62 s,

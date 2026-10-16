@@ -12,7 +12,7 @@ import sqlite3
 import tempfile
 from pathlib import Path
 
-from harness_support import demo_repo, run_cli  # noqa: F401 - ajusta sys.path
+from harness_support import commit_change, demo_repo, run_cli  # noqa: F401 - ajusta sys.path
 
 from harness.report import (
     GateProfile,
@@ -20,6 +20,7 @@ from harness.report import (
     budget_plan,
     coverage_map,
     read_gate_profile,
+    write_baseline,
 )
 
 EVENTS_SCHEMA = "create table events (event_id text, run_id text, sequence integer, kind text, occurred_at text, payload text)"
@@ -175,3 +176,91 @@ def test_the_report_says_so_when_there_is_no_database():
         proc = run_cli(repo, repo.parent / "th-state", "report", "--pipelinek-db", "no-existe.db")
         assert proc.returncode == 0, proc.stderr
         assert "sin datos" in proc.stdout, proc.stdout
+
+
+def test_plan_shadow_records_an_observation_and_plan_alone_does_not():
+    """La observación se guarda en el ledger; un `plan` normal no escribe nada."""
+    with demo_repo() as repo:
+        state = repo.parent / "th-state"
+        commit_change(repo, "scripts/slow-a.sh", "# cambio\n")
+        plain = run_cli(repo, state, "--format", "json", "plan", "--lane", "change", "--base", "main")
+        assert plain.returncode == 0, plain.stderr
+        ledger = state / "ledger.jsonl"
+        assert not ledger.exists() or "plan_observed" not in ledger.read_text(), "un plan normal escribió"
+
+        shadow = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "plan",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--shadow",
+        )
+        assert shadow.returncode == 0, shadow.stderr
+        events = [
+            json.loads(line)
+            for line in (state / "ledger.jsonl").read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        observed = [event for event in events if event.get("event") == "plan_observed"]
+        assert len(observed) == 1, events
+        payload = observed[0]
+        assert payload["catalog"] >= payload["required"] > 0, payload
+        assert payload["lane"] == "change" and payload["head"], payload
+
+
+def test_shadow_summary_aggregates_real_observations():
+    observations = [
+        {"lane": "merge", "catalog": 39, "required": 39, "block": 1, "parity": "AGREE"},
+        {"lane": "merge", "catalog": 39, "required": 12, "block": 0, "parity": "AGREE"},
+        {"lane": "change", "catalog": 39, "required": 39, "block": 0, "parity": "HARNESS_STRICTER"},
+    ]
+    from harness.report import shadow_summary
+
+    summary = shadow_summary(observations, lane="merge")
+    assert summary["observations"] == 2, summary
+    assert abs(summary["avg_required_share"] - ((39 + 12) / 39) / 2) < 0.01, summary
+    assert summary["min_required_share"] == 12 / 39, summary
+    assert summary["blocked_total"] == 1, summary
+    assert summary["parity_verdicts"] == {"AGREE": 2}, summary
+
+    empty = shadow_summary([], lane="merge")
+    assert empty["observations"] == 0 and empty["latest"] is None, empty
+
+
+def test_write_baseline_produces_a_versioned_document():
+    with tempfile.TemporaryDirectory(prefix="th-report-") as tmp:
+        target = Path(tmp) / "docs" / "08-baseline-tiempos.md"
+        payload = {
+            "lane": "merge",
+            "gate": {
+                "db": ".pipelinek/merge-gate.db",
+                "run_id": "4d431256-aaaa",
+                "total_seconds": 550.0,
+                "stages": [
+                    {"stage": "contracts", "seconds": 263.8},
+                    {"stage": "cli-unit-tests", "seconds": 61.6},
+                ],
+            },
+            "coverage": {"total": 39, "by_kind": {"test": 29}, "by_origin": {"merge-gate.pipeline.kts": 33}},
+            "budget": {
+                "budget_seconds": 420.0,
+                "current_seconds": 550.0,
+                "after_seconds": 406.0,
+                "within_budget": True,
+                "protected": ["contracts"],
+                "skip_candidates": [{"stage": "cli-unit-tests", "seconds": 61.6}],
+                "shortfall_seconds": 0.0,
+            },
+            "shadow": {"observations": 3, "avg_required_share": 0.75, "min_required_share": 0.3,
+                       "max_required_share": 1.0, "blocked_total": 1, "parity_verdicts": {"AGREE": 3}},
+        }
+        written = write_baseline(target, payload, commit="0" * 40)
+        text = written.read_text(encoding="utf-8")
+        assert written.exists()
+        for expected in ("0" * 40, "4d431256", "contracts", "263.8", "Observaciones de sombra", "Regenerar:"):
+            assert expected in text, expected

@@ -372,6 +372,28 @@ def test_the_report_reads_the_real_gate_ledger_without_writing_anything():
     assert after == before, "el informe tocó el repositorio"
 
 
+def test_the_versioned_baseline_is_regenerable_and_labelled():
+    """El baseline lleva fecha, commit y comando: una cifra sin procedencia no es evidencia."""
+    baseline = HARNESS_DIR / "docs" / "08-baseline-tiempos.md"
+    if not baseline.exists():
+        return  # W0 lo genera a demanda; sin fichero no hay nada que comprobar
+    text = baseline.read_text(encoding="utf-8")
+    for expected in ("**Fecha**", "**Commit del árbol medido**", "Regenerar:", "## Etapas medidas"):
+        assert expected in text, f"al baseline le falta {expected!r}"
+    commit = re.search(r"\*\*Commit del árbol medido\*\*: `([0-9a-f]{40})`", text)
+    assert commit, "el baseline no declara el commit medido"
+    inside = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", commit.group(1), "HEAD"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        check=False,
+    )
+    assert inside.returncode == 0, (
+        f"el baseline declara el commit {commit.group(1)[:12]}, que no es ancestro de HEAD: "
+        "el documento describe un árbol que ya no existe en esta rama"
+    )
+
+
 def test_the_harness_imports_only_the_standard_library():
     """Corre en el gate sin instalar nada: un import de terceros lo rompería allí."""
     allowed = set(sys.stdlib_module_names) | LOCAL_MODULES

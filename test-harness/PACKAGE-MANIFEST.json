@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 22850,
+      "bytes": 23285,
       "path": "README.md",
-      "sha256": "6106de0830e0250c8aa41d21cc9e10c1074a3cf566c02a63cffe23e442bcf85f"
+      "sha256": "f319b434b44209b69fa5e468a4e7fa613092bb479ea2be1a4235cc9a8dd9eb6b"
     },
     {
       "bytes": 7968,
@@ -196,6 +196,11 @@
       "sha256": "e3883d142c9dd488815ab3a86236937b1baeea15f0a10c5c1d1fed0ecd20b0a0"
     },
     {
+      "bytes": 2991,
+      "path": "docs/08-baseline-tiempos.md",
+      "sha256": "a8f2b38f1012b025946e57084c2067e4c8092228549e1b46f77682646ba7838e"
+    },
+    {
       "bytes": 96,
       "path": "inventory.json",
       "sha256": "b310b2b04bcd4e62a87a9149c6a0b897cd50abcc390595eb01e1be52d583302d"
@@ -211,9 +216,9 @@
       "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27"
     },
     {
-      "bytes": 8837,
+      "bytes": 8852,
       "path": "roadmap/ROADMAP.md",
-      "sha256": "bc88648f070126808d96547a0bae5efacf61ff4ab12cb8b1eec7b1abcbdc12d1"
+      "sha256": "f6645f113cfd81489890dceeed2609aee2dd9c80dcffe1a5f1cf29f8b86bf6df"
     },
     {
       "bytes": 3420,
@@ -251,9 +256,9 @@
       "sha256": "2dc5c63952caeaef7ca2048cbd49b56e06a4d0affa1c2e4936faaa9ba2cf8d43"
     },
     {
-      "bytes": 34054,
+      "bytes": 36811,
       "path": "src/harness/cli.py",
-      "sha256": "ba71c2da79ac55e8f4ed4b011fe2fe991485c7f471979e0ec487f69cfbb528b2"
+      "sha256": "2f3167fed2a8e884f5250ef2c0604850a100643d5e4d930e847a1e7c7ee546c4"
     },
     {
       "bytes": 9406,
@@ -301,9 +306,9 @@
       "sha256": "f7a09297204d491fb63fee072cb4a92c7c0c7081ba924dcd54d421377b6a52f6"
     },
     {
-      "bytes": 7624,
+      "bytes": 13105,
       "path": "src/harness/report.py",
-      "sha256": "2d2dc945cfa8a9620e801cb23c4d041a8a796e9e2d07b6ad6b8fc9cf0c1fee96"
+      "sha256": "8ecc524fa979fca306551577e9a01d218e5c9b5ef8e415d3e17ee47d0d37ce2d"
     },
     {
       "bytes": 6848,
@@ -346,9 +351,9 @@
       "sha256": "357dc6b917d00d72103ac5211e15a024e51fe26bf18b7e302c9ea944ed13613a"
     },
     {
-      "bytes": 6926,
+      "bytes": 10808,
       "path": "tests/test_report.py",
-      "sha256": "28ffc0621e6a8bfa8e15e1dc992caf8b97728bd20b626fb4307b347a9b7e865c"
+      "sha256": "a2f027b2f6d50024e7a7746a1b8d51afa4cb2b4f7806ef0627ded28f356200f5"
     },
     {
       "bytes": 10613,

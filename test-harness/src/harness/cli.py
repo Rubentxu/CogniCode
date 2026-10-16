@@ -32,7 +32,15 @@ from .orchestrator import (
     status,
 )
 from .policy import POLICY_VERSION, reuse_allowed
-from .report import budget_plan, coverage_map, harness_timings, read_gate_profile
+from .report import (
+    budget_plan,
+    coverage_map,
+    harness_timings,
+    read_gate_profile,
+    read_shadow_observations,
+    shadow_summary,
+    write_baseline,
+)
 
 DEFAULT_BASE = "origin/main"
 
@@ -141,6 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="presupuesto en segundos para el que calcular qué habría que dejar de ejecutar",
+    )
+    report_parser.add_argument(
+        "--write-baseline",
+        default=None,
+        help="escribe el informe como documento versionado en esa ruta",
     )
     report_parser.add_argument(
         "--protect",
@@ -328,6 +341,29 @@ def main(argv: list[str] | None = None) -> int:
                 if args.shadow
                 else _plan_text(plan_result, run_id, args.lane, context)
             )
+            if args.shadow:
+                # La observación se guarda como evento append-only: es el dato con
+                # el que se decide la adopción, y un log de gate no se puede
+                # agregar. Un `plan` normal no escribe nada.
+                counts = plan_result.plan.counts()
+                catalog = context.catalog_for_lane(args.lane)
+                context.ledger.append_event(
+                    {
+                        "event": "plan_observed",
+                        "run_id": run_id,
+                        "lane": args.lane,
+                        "head": getattr(context.changeset, "head", ""),
+                        "base": getattr(context.changeset, "base_ref", None),
+                        "catalog": len(catalog),
+                        "required": len(plan_result.plan.required_suites),
+                        "execute": counts.get("EXECUTE", 0),
+                        "reuse": counts.get("REUSE", 0),
+                        "block": counts.get("BLOCK", 0),
+                        "parity": plan_result.parity.verdict if plan_result.parity else None,
+                        "parity_missing": list(plan_result.parity.missing) if plan_result.parity else [],
+                        "fingerprint": plan_result.plan.source_fingerprint,
+                    }
+                )
             _emit(payload, args, text)
             if args.shadow:
                 return 0
@@ -620,11 +656,14 @@ def main(argv: list[str] | None = None) -> int:
             coverage = coverage_map(catalog, args.lane)
             profile = read_gate_profile(Path(args.repo) / args.pipelinek_db)
             timings = harness_timings(context.ledger, args.lane)
+            observations = read_shadow_observations(context.ledger)
+            shadows = shadow_summary(observations, lane=args.lane)
             payload = {
                 "lane": args.lane,
                 "coverage": coverage,
                 "gate": profile.to_json(),
                 "harness_timings": timings.to_json(),
+                "shadow": shadows,
             }
             lines = [
                 f"INFORME lane={args.lane}  obligaciones catalogadas: {coverage['total']} "
@@ -667,9 +706,29 @@ def main(argv: list[str] | None = None) -> int:
                     lines.append(f"    dejar de ejecutar: {stage['stage']} ({stage['seconds']:.0f}s)")
                 if plan["protected"]:
                     lines.append("    protegidas: " + ", ".join(plan["protected"]))
+            if shadows["observations"]:
+                lines.append(
+                    f"  observaciones de sombra (lane {args.lane}): {shadows['observations']} "
+                    f"planes, {shadows['avg_required_share']:.0%} de las obligaciones exigidas "
+                    f"de media, bloqueadas {shadows['blocked_total']}; paridad {shadows['parity_verdicts']}"
+                )
+            else:
+                lines.append(
+                    "  observaciones de sombra: ninguna todavía (la etapa "
+                    "harness-shadow-plan las guarda en cada merge)"
+                )
             lines.append(
                 "  aviso: el informe no decide nada; la adopción de la selección exige su ADR"
             )
+            if args.write_baseline:
+                target = Path(args.repo) / args.write_baseline
+                written = write_baseline(
+                    target,
+                    payload,
+                    commit=getattr(context.changeset, "head", ""),
+                )
+                lines.append(f"  baseline escrito en {target}")
+                payload["baseline_path"] = str(written)
             _emit(payload, args, "\n".join(lines))
             return 0
 
