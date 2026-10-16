@@ -87,6 +87,10 @@ detect_paths() {
       base_ref="HEAD~1"
     fi
   fi
+  # La base no se publica aquí: esta función devuelve DOS líneas (base y paths)
+  # y su salida se parsea línea a línea. Un printf de más desplazaba el parseo y
+  # dejaba los paths vacíos. Se publica en el camino del motor harness, que es
+  # donde alguien necesita leerla.
   if [ -n "$EXTRA_PATHS" ]; then
     paths="${paths} ${EXTRA_PATHS}"
   fi
@@ -119,6 +123,11 @@ if [ "$ENGINE" = "harness" ]; then
   fi
   HARNESS_PLAN="$(python3 "$HARNESS" --repo "$REPO_ROOT" --format json plan \
       --lane change --base "$BASE_REF" --oracle cr08 2>/dev/null)"
+  # La base se publica antes de decidir: es parte de la decisión. Un consumidor (o
+  # un contrato) que quiera comprobar la paridad contra el plan del harness tiene
+  # que planificar el MISMO cambio, y adivinarlo desde el estado del árbol hace que
+  # la comprobación pase o falle según haya o no cambios sin commitear.
+  printf 'harness base: %s\n' "$BASE_REF"
   if [ -n "$EXTRA_PATHS" ]; then
     # `--paths` es una entrada explícita del usuario y el harness lee su
     # ChangeSet de git: delegar aquí sería ejecutar un cambio distinto del que
@@ -163,6 +172,7 @@ STRATEGY="$(printf '%s' "$SELECTION" | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p
 SUITES="$(printf '%s' "$SELECTION" | sed -n 's/.*"suites":\[\([^]]*\)\].*/\1/p' | tr -d '"')"
 
 printf 'selector → strategy=%s suites=[%s]\n' "$STRATEGY" "$SUITES"
+printf '  base: %s\n' "$BASE_REF"
 printf '  paths: %s\n' "${PATHS:-<empty>}"
 
 if [ "$DRY_RUN" = "true" ]; then

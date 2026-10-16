@@ -410,7 +410,21 @@ def test_the_harness_engine_decides_with_the_oracle_floor() -> None:
     harness no ejecuta `explorer` (solo existe en integración), así que
     delegar sería devolver un veredicto sin cubrir lo demandado. La decisión
     tiene que depender del plan real, no de una lista escrita a mano.
+
+    MEDIDO 2026-10-16 (cazado por el gate): la versión anterior planificaba con
+    `--base HEAD` fijo mientras el wrapper usa `HEAD` o `HEAD~1` según el diff
+    detectado. Con el árbol limpio, el contrato comparaba dos cambios distintos y
+    fallaba en el gate y no en local. Ahora la base la publica el wrapper.
     """
+    done = run_fast_dry_run("harness")
+    delegated = "--- plan (motor harness) ---" in done.stdout
+    declined = "motor harness:" in done.stdout
+
+    declared_base = re.search(r"harness base: (\S+)", done.stdout)
+    assert declared_base is not None, (
+        f"FAIL: el motor harness no publicó la base con la que decide; el contrato "
+        f"no puede comprobar la paridad sin adivinarla. stdout:\n{done.stdout[:300]}"
+    )
     plan = subprocess.run(
         [
             sys.executable,
@@ -423,7 +437,7 @@ def test_the_harness_engine_decides_with_the_oracle_floor() -> None:
             "--lane",
             "change",
             "--base",
-            "HEAD",
+            declared_base.group(1),
             "--oracle",
             "cr08",
         ],
@@ -442,9 +456,6 @@ def test_the_harness_engine_decides_with_the_oracle_floor() -> None:
 
     parsed = json.loads(plan.stdout)
     not_in_catalog = parsed["parity"]["scopes_not_in_catalog"]
-    done = run_fast_dry_run("harness")
-    delegated = "--- plan (motor harness) ---" in done.stdout
-    declined = "motor harness:" in done.stdout
 
     if not_in_catalog:
         assert declined and not delegated, (
