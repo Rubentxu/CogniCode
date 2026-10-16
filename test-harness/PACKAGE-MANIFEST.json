@@ -106,9 +106,9 @@
    "sha256": "0e1ef6efd4468c7bbcf4e304d57ff6355895e0b48b6034a7f7a275a28a22de67"
   },
   {
-   "bytes": 12192,
+   "bytes": 12311,
    "path": "adrs/ADR-TH-013-motor-opt-in-y-decision-de-adopcion.md",
-   "sha256": "fcdda5ab1ffa8ad41c5720cbb709af8c060f356b716e3102c0ccb441d4096330"
+   "sha256": "cb5f230785025469cc211185ccf9ba9c681f49b1e21299aacb4e877773fee1ad"
   },
   {
    "bytes": 1010,

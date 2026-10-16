@@ -127,11 +127,12 @@ Y uno más, del lado del veredicto, que apareció al llegar al final del plan:
    ya las dependencias transitivas, y esa corrida pasó de «23 reutilizadas» a «0
    reutilizadas, 34 ejecutadas», que es lo correcto.
 
-Los siete llevan test que fallaba antes y pasa después (22 en `test_selection.py`,
-19 en `test_cli_e2e.py` y el invariante de PASS en `test_ledger_and_runner.py` con
-su caso negativo). Dos de ellos —el orden y las dependencias en la huella— se
-comprobaron revirtiendo el arreglo y viendo caer el test, para que no pasaran por
-casualidad.
+Los siete llevan test que fallaba antes y pasa después: 20 tests nuevos (8 en
+`test_selection.py`, 7 en `test_cli_e2e.py`, 5 contratos M12–M16 en
+`scripts/ci/test_fast_full_wrappers.py`) más el invariante de PASS ampliado en
+`test_ledger_and_runner.py` con su caso negativo. Dos de ellos —el orden de
+ejecución y las dependencias en la huella— se comprobaron además **revirtiendo el
+arreglo** y viendo caer el test, para que no pasaran por casualidad.
 
 ## Medición (2026-10-16)
 
