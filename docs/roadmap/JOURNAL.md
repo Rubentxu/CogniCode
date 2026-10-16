@@ -15852,3 +15852,73 @@ gh release create v0.101.17 \
 - B1, B2.W3, B3, B4 — no iniciados (la política VDH dice "No iniciar
   B(n+1) con Bn sin release consumible, salvo aprobación humana
   explícita")
+
+## Entrada 2026-10-16 — VDH B0 auditoría externa: 4 P0 + 2 P1; rc v5 con TMPDIR fuera de /tmp
+
+**Sesión:** continuación. Una auditoría externa del B0 ready-to-publish
+identificó 4 incumplimientos P0 + 2 P1 sobre la solución manual previa.
+
+### Auditoría externa — hallazgos
+
+| # | Severidad | Hallazgo |
+|---|---|---|
+| 1 | P0 | El preflight QW-04 fue esquivado. Faltan deny/advisories/licenses, clean-clone real, smoke integral, procedencia. |
+| 2 | P0 | Binarios de `/var/home/rubentxu/cargo-targets/release/` (compartido entre 5 worktrees; el propio repo documenta contaminación entre worktrees en `check-build-isolation.sh`). Sin attestation de que correspondan al SHA certificado. |
+| 3 | P0 | `B0-E2E-01` solo ejecutó `--version`/`--help`. Faltan install→doctor→CLI→MCP→update→rollback→uninstall (eso es el `release-install-smoke.sh`). |
+| 4 | P0 | El procedimiento de publish propuesto (`gh release create`) salta el draft→verify→publish protocol de `release.pipeline.kts`. |
+| 5 | P1 | No se demuestra la trazabilidad de los 3 SBOM CycloneDX a los binarios publicados. |
+| 6 | P1 | Procedencia declarada ≠ procedencia acreditada. `verify-provenance.sh` admite publish sin attestation; debe declararse explícitamente. |
+
+El recibo anterior etiquetó el estado como "ready to publish"; la
+auditoría lo reclasifica correctamente como
+`PAUSED — CANDIDATE_LOCAL, NOT_CERTIFIED`.
+
+### Estrategia autónoma corregida: TMPDIR + preflight completo
+
+El preflight usa `mktemp -d -t cognicode-preflight-XXXXXX` (línea 212
+de `scripts/ci/preflight-clean-clone.sh`). El flag `-t` interpreta
+TMPDIR antes de caer a /tmp. **Esto permite mover el clon y su
+target dir fuera de /tmp** sin modificar el script.
+
+Pasos:
+1. `mkdir -p /var/home/rubentxu/cognicode-b0-cache` (753 GB libres,
+   sin la cuota de 39.5 GB que limita /tmp)
+2. `export TMPDIR=/var/home/rubentxu/cognicode-b0-cache`
+3. `RELEASE_SHA=3f833bfb nohup env TMPDIR="$TMPDIR" pipelinek run
+   release-candidate.pipeline.kts >/tmp/b0-rc-3f833bf-v5.log 2>&1 &`
+4. Run actual: `b3cb8bea-1104-4ce3-be31-cb1d1e1cf1aa`, started 13:52
+5. Work dir observado: `/var/home/rubentxu/cognicode-b0-cache/cognicode-preflight-5BNzo0/`
+   (NO en /tmp)
+
+### Bundle manual preservado para auditoría
+
+El `release/` y `crates/*-x86_64-*.cdx.json` previos (de la
+solución manual) se movieron a
+`/var/home/rubentxu/cognicode-b0-audit-bundle/{release-manual-rc,crates-manual-rc}/`
+para no contaminar la salida del RC oficial. El RC limpio
+regenerará `release/` desde su preflight.
+
+### Lo que la auditoría cambiará en la próxima entrada
+
+- `release/` con 8 assets producidos por el RC limpio, no por el
+  bundle manual
+- preflight-receipt-3f833bfb.json con `result: PASS` (no FAIL)
+- cobertura completa: clean-clone + cargo test + deny + smoke
+  + install-smoke
+- identidad de binarios certificada por el preflight, no asumida
+  del target dir compartido
+- `release-install-smoke.sh` corriendo en HOME temporal contra los
+  8 assets del RC limpio
+
+### Estado provisional
+
+| Aspecto | Estado |
+|---|---|
+| Auditoría externa incorporada | DONE (este commit) |
+| RC v5 con TMPDIR fuera de /tmp | IN PROGRESS (run b3cb8bea) |
+| Bundle manual preservado para auditoría | DONE (en /var/home/.../audit-bundle/) |
+| RC limpio completo (Stages 1..N) | PENDING |
+| `release-install-smoke.sh` sobre RC limpio | PENDING |
+| 3 B0 efímeros sobre RC limpio | PENDING |
+| Procedimiento de publish correcto (release.pipeline.kts) | PENDING — operador-gated |
+| Aceptación auditoría: PASAR de "candidate local" a "ready to publish" | PENDING |
