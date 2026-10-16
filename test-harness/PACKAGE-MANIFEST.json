@@ -121,6 +121,11 @@
    "sha256": "f8b6dc82db82292e33f6cd3b4a0cd38572989780218a11b570bc9b49f81684cb"
   },
   {
+   "bytes": 3757,
+   "path": "adrs/ADR-TH-016-contratos-en-paralelo.md",
+   "sha256": "5841895922d92829ddae46788ebc9b50b37926cff2e0999c1e3477954cc67738"
+  },
+  {
    "bytes": 1010,
    "path": "bin/harness.py",
    "sha256": "9d24f1a56ed59eaa76fb080aeec253e8368f1ec6da78997d99a65546e6583a20"

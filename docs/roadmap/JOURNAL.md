@@ -15748,3 +15748,22 @@ visto desde el otro lado.
   gate en su etapa de sombra y en la suite de contratos, así que el perfil nuevo está
   cubierto por el gate sin que ninguna pipeline lo use.
 
+## Recibo TH-IMPL-11 — La etapa de contratos en paralelo (2026-10-16)
+
+- **Por qué**: `harness report` sobre la corrida `2f9d972d` dejó el presupuesto del
+  merge claro: `contracts` era **371,6 s de 556,8 s (67%)** y las tres mayores suites
+  de producto sumaban 99,5 s. La palanca estaba en la etapa, no en las pruebas.
+- **Qué se hizo**: `run_contract_tests.py --jobs N` (por defecto 1) ejecuta **un
+  contrato por proceso**, hasta N a la vez, con el mismo runner; el padre agrega en el
+  orden de entrada y devuelve 1 si alguno falló. `run-all-contracts.sh` pasa el número
+  de CPUs con tope 8 (`CONTRACTS_JOBS=1` fuerza el modo serie). El contrato del runner
+  cubre el modo nuevo: un fichero que falla hace fallar la corrida paralela.
+- **Medición** (37 ficheros, misma máquina, corridas consecutivas): serie **316 s** con
+  296 checks; `--jobs 8` **114 s** con 298. **2,8×**. Equivalencia comprobada fichero a
+  fichero: 36 de 37 con el mismo recuento y el único distinto es el contrato al que
+  este bloque añadió dos tests entre las dos corridas.
+- **Efecto esperado en el gate**: `contracts` de ~320-370 s a ~110-160 s, y el total
+  del merge en torno a 360-400 s **sin dejar de ejecutar nada** — que es la forma de
+  cumplir el presupuesto sin tocar cobertura (la selección por impacto sigue siendo
+  W6, decisión del operador). Pendiente de certificar con una corrida del gate.
+
