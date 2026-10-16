@@ -575,10 +575,18 @@ fn style_class_for_external() {
 }
 
 #[test]
-fn style_class_for_unknown_falls_back_to_function() {
-    // Unknown kinds must not panic; they map to the default.
-    assert_eq!(crate::api::style_class_for("wat"), "function");
-    assert_eq!(crate::api::style_class_for(""), "function");
+fn style_class_for_unknown_falls_back_to_node_unknown() {
+    // VDH-TRUTH-03 Scenario F (2026-10-16): unknown kinds must NOT
+    // be misclassified as `function`. The previous default silently
+    // drew a future / unknown node with the code-bucket styling,
+    // falsely confirming its taxonomy. The new fallback is
+    // `node-unknown` — a distinct, visually neutral class. The raw
+    // `kind` string remains on the GraphNode for inspection.
+    assert_eq!(crate::api::style_class_for("wat"), "node-unknown");
+    assert_eq!(crate::api::style_class_for(""), "node-unknown");
+    // Case-insensitive: a previously-unknown kind arriving in any
+    // case still hits the unknown bucket, not `function`.
+    assert_eq!(crate::api::style_class_for("Some-Future-Node"), "node-unknown");
 }
 
 // ============================================================================
@@ -609,8 +617,12 @@ fn edge_style_class_for_imports_is_uses() {
 }
 
 #[test]
-fn edge_style_class_for_unknown_falls_back_to_calls() {
-    assert_eq!(crate::api::edge_style_class_for("wires"), "edge.calls");
+fn edge_style_class_for_unknown_falls_back_to_edge_unknown() {
+    // VDH-TRUTH-03 mirror: an unknown relation must NOT be drawn
+    // as `edge.calls` just because the lookup did not match. The
+    // raw relation string stays on the underlying payload.
+    assert_eq!(crate::api::edge_style_class_for("wires"), "edge-unknown");
+    assert_eq!(crate::api::edge_style_class_for(""), "edge-unknown");
 }
 
 // ============================================================================

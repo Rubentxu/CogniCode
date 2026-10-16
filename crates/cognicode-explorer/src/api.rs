@@ -89,7 +89,12 @@ pub fn style_class_for(kind: &str) -> &'static str {
         "system" => "node-system",
         // ---- C4 Code (E6 ADR-039) ----
         "code" => "node-code",
-        _ => "function",
+        // VDH-TRUTH-03 Scenario F (2026-10-16): unknown / future
+        // kinds MUST NOT be misclassified as `function`. The raw
+        // `kind` string stays inspectable on the GraphNode; the
+        // stylesheet renders `node-unknown` as a neutral shape with
+        // no code-bucket colouring.
+        _ => "node-unknown",
     }
 }
 
@@ -106,7 +111,16 @@ pub fn style_class_for(kind: &str) -> &'static str {
 /// - `part_of` (C4 — `source` is part of `target`) → `"edge-part-of"`
 /// - `deployed_as` (C4 — `source` is deployed as `target`) → `"edge-deployed-as"`
 /// - `in_system` (C4 — `source` belongs to `target` system) → `"edge-in-system"`
-/// - anything else → `"edge.calls"` (default)
+/// - `depends_on` (C4) → `"edge-depends-on"`
+/// - anything else (unknown / future relations) → `"edge-unknown"`
+///
+/// VDH-TRUTH-03 mirror: an unknown relation MUST NOT be drawn with
+/// the `edge.calls` styling (arrow + colour) just because the lookup
+/// did not match. The previous `_ => "edge.calls"` conflated "I
+/// know this is a call edge" with "I do not know what this is" — the
+/// UI then rendered the relation as a call. The new fallback is
+/// `edge-unknown` (no specific arrow / colour), and the raw relation
+/// string stays on the underlying payload.
 #[inline]
 pub fn edge_style_class_for(relation: &str) -> &'static str {
     match relation.to_ascii_lowercase().as_str() {
@@ -128,7 +142,10 @@ pub fn edge_style_class_for(relation: &str) -> &'static str {
         "deployed_as" => "edge-deployed-as",
         "in_system" => "edge-in-system",
         "depends_on" => "edge-depends-on",
-        _ => "edge.calls",
+        // VDH-TRUTH-03 mirror: unknown relations get a distinct,
+        // visually neutral class; the raw relation stays on the
+        // payload so consumers can forward-port the taxonomy.
+        _ => "edge-unknown",
     }
 }
 

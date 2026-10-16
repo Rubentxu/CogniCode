@@ -63,6 +63,13 @@ export const KNOWN_NODE_CLASSES = new Set([
   "node-container",
   "node-system",
   "node-code",
+  // ---- VDH-TRUTH-03 (2026-10-16) honest unknown bucket ----
+  // The backend now emits `node-unknown` for any kind it does
+  // not recognise, instead of silently downgrading to `function`.
+  // The frontend mirrors that contract: this class is part of
+  // the known set so the resolver does not re-route it to a code
+  // bucket, and the stylesheet renders it as a neutral shape.
+  "node-unknown",
   // ---- Landing Page (E4 ADR-039) ----
   "entry-point",
   "hot",
@@ -93,6 +100,13 @@ export const KNOWN_EDGE_CLASSES = new Set([
   "edge-in-system",
   // ---- C4 dependency edges (E19 Phase 2) ----
   "edge-depends-on",
+  // ---- VDH-TRUTH-03 (2026-10-16) honest unknown bucket ----
+  // Symmetric to the node case: the backend emits `edge-unknown`
+  // for any relation it does not recognise instead of silently
+  // drawing it as `edge.calls`. The frontend mirrors that — the
+  // resolver keeps the bucket so the stylesheet can render it as
+  // a neutral line without a known arrow / colour.
+  "edge-unknown",
 ]);
 
 // Cytoscape's Css types are extremely strict (e.g. `text-max-width`
@@ -252,6 +266,25 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         // Smallest; code symbols are leaf-level entities
         width: 64,
         height: 28,
+      } as unknown as StylesheetStyle["style"],
+    },
+    // ---- VDH-TRUTH-03 (2026-10-16) honest unknown bucket ----
+    // The backend emits `node-unknown` for any kind it does not
+    // recognise. We render it as a neutral shape — light fill, no
+    // code-bucket colouring, no specific shape — so the graph
+    // still draws but does not falsely claim a taxonomy the data
+    // does not support. The raw `kind` string stays on the node
+    // label / payload so consumers can forward-port the taxonomy.
+    {
+      selector: 'node[style_class = "node-unknown"]',
+      style: {
+        "background-color": "#e5e7eb",
+        "border-color": "#9ca3af",
+        "border-style": "dashed",
+        "border-width": 1,
+        shape: "round-rectangle",
+        width: 72,
+        height: 32,
       } as unknown as StylesheetStyle["style"],
     },
     // === C4 OVERLAY SELECTORS (E19 Phase 2) ===
@@ -428,6 +461,20 @@ export function buildStylesheet(): (StylesheetStyle | StylesheetCSS)[] {
         "line-style": "dashed",
       } as unknown as StylesheetStyle["style"],
     },
+    // ---- VDH-TRUTH-03 (2026-10-16) honest unknown bucket ----
+    // Symmetric to the node case: an unknown relation is drawn as
+    // a thin, neutral line — no specific arrow, no specific
+    // colour — so the graph still renders but does not falsely
+    // claim a relation taxonomy the data does not support.
+    {
+      selector: 'edge[style_class = "edge-unknown"]',
+      style: {
+        "line-color": "#9ca3af",
+        "target-arrow-color": "#9ca3af",
+        "line-style": "dotted",
+        width: 1,
+      } as unknown as StylesheetStyle["style"],
+    },
     {
       selector: ".selected",
       style: {
@@ -505,6 +552,11 @@ export type ResolvedNodeStyleClass =
   | "node-container"
   | "node-system"
   | "node-code"
+  // ---- VDH-TRUTH-03 (2026-10-16) honest unknown bucket ----
+  // Backend emits `node-unknown` for any kind it does not
+  // recognise. The resolver keeps the bucket; the stylesheet
+  // renders it as a neutral shape with no code-bucket colouring.
+  | "node-unknown"
   // ---- Landing Page (E4 ADR-039) ----
   | "entry-point"
   | "hot"
@@ -527,10 +579,15 @@ export function resolveNodeStyleClass(raw: string | undefined): ResolvedNodeStyl
   if (raw && !warnedBuckets.has(raw)) {
     warnedBuckets.add(raw);
     console.warn(
-      `InteractiveGraph: unknown node style_class "${raw}" — falling back to "function"`,
+      `InteractiveGraph: unknown node style_class "${raw}" — falling back to "node-unknown"`,
     );
   }
-  return "function";
+  // VDH-TRUTH-03 (2026-10-16): unknown kinds are NOT a known
+  // code bucket. The previous fallback ("function") misclassified
+  // future / external kinds as code; the new fallback is a
+  // dedicated neutral class so the graph still renders, just
+  // without claiming a taxonomy the data does not support.
+  return "node-unknown";
 }
 
 /**
@@ -556,7 +613,11 @@ export function resolveEdgeStyleClass(
   | "edge-part-of"
   | "edge-deployed-as"
   | "edge-in-system"
-  | "edge-depends-on" {
+  | "edge-depends-on"
+  // VDH-TRUTH-03 (2026-10-16) honest unknown bucket — mirrors the
+  // node case so the resolver's return type and the stylesheet
+  // agree on the neutral class.
+  | "edge-unknown" {
   if (raw && KNOWN_EDGE_CLASSES.has(raw)) {
     return raw as
       | "edge.calls"
@@ -569,15 +630,20 @@ export function resolveEdgeStyleClass(
       | "edge-part-of"
       | "edge-deployed-as"
       | "edge-in-system"
-      | "edge-depends-on";
+      | "edge-depends-on"
+      | "edge-unknown";
   }
   if (raw && !warnedEdgeBuckets.has(raw)) {
     warnedEdgeBuckets.add(raw);
     console.warn(
-      `InteractiveGraph: unknown edge style_class "${raw}" — falling back to "edge.calls"`,
+      `InteractiveGraph: unknown edge style_class "${raw}" — falling back to "edge-unknown"`,
     );
   }
-  return "edge.calls";
+  // VDH-TRUTH-03 mirror: unknown relations are NOT a known code
+  // bucket. The previous fallback ("edge.calls") misclassified
+  // future / external relations as call edges; the new fallback
+  // is a dedicated neutral class.
+  return "edge-unknown";
 }
 
 /**
