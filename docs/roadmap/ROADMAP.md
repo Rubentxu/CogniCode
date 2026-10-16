@@ -581,6 +581,28 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon cuyo árbol no tenía binarios previos (el plan construye el que cada suite necesita antes de ejecutarla), y todos los códigos de salida y tiempos publicados sin maquillar, incluidas las dos corridas de gate que fallaron antes de los arreglos |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
 
+## 22d. TH-IMPL-11 — La etapa de contratos en paralelo: el presupuesto, cumplido sin recortar cobertura (2026-10-16)
+
+> **Estado**: IMPLEMENTADO y certificado en el gate. `harness report` dejó claro que la
+> palanca era `contracts` (371,6 s de 556,8 s, el 67%), no las pruebas de producto.
+> `run_contract_tests.py --jobs N` ejecuta un contrato por proceso (defecto 1: el de
+> siempre) y `run-all-contracts.sh` usa las CPUs con tope 8. Medido: 316 s → **114 s**
+> standalone y 371,6 s → **113,3 s** en el gate, con **la misma cobertura** (59 etapas,
+> ningún check menos; 36 de 37 ficheros con recuento idéntico y el distinto es el que
+> ganó dos tests entre las dos corridas). El merge pasa de 556,8 s a **258,1 s** de suma
+> de etapas. Decisión y límites:
+> [`test-harness/adrs/ADR-TH-016-contratos-en-paralelo.md`](../../test-harness/adrs/ADR-TH-016-contratos-en-paralelo.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Cumplir el presupuesto de merge que pedía el mandato (6-7 min) **sin dejar ninguna etapa fuera**, por concurrencia y no por cobertura |
+| Clasificación | Evolutivo del test harness y de la etapa de contratos del gate |
+| Alcance | `scripts/run_contract_tests.py`, `scripts/ci/run-all-contracts.sh`, `scripts/ci/test_ci_contracts.py`, ADR-TH-016 |
+| Fuera de alcance | Paralelizar las suites de producto (comparten directorio de target y su ganancia no está medida), selección por impacto (W6) |
+| Consumidores | Contribuidores (bucle de PR), mantenedor (presupuesto del gate), auditoría (ADR-TH-016) |
+| Criterio de cierre | Cumplido: modo paralelo con la misma semántica de fallo (contrato del runner ampliado, un fichero que falla tumba la corrida), equivalencia de checks comprobada fichero a fichero, medición standalone y certificación en el gate coincidentes, y `CONTRACTS_JOBS=1` para volver al modo serie |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
 ## 22c. TH-IMPL-10 — Perfil `dev`: el requisito que faltaba para el bucle local (2026-10-16)
 
 > **Estado**: IMPLEMENTADO y medido. ADR-TH-013 dejó escrito que el harness no podía

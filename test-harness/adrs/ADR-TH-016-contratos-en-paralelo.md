@@ -45,10 +45,22 @@ es lanzar procesos (cargo, git, python) y esperarlos.
 difiere es `test_ci_contracts.py` (7 → 9), porque entre las dos corridas **este mismo
 bloque añadió dos tests a ese fichero**. No falta ni un check y no se añade ninguno.
 
-Efecto en el gate: la etapa `contracts` debería bajar de ~320-370 s a ~110-160 s, y el
-total del merge quedaría alrededor de los 360-400 s **sin dejar de ejecutar nada**,
-que es la forma de cumplir el presupuesto que el mandato pedía (a diferencia de dejar
-etapas fuera por selección, que es W6 y decisión del operador).
+### Certificación en el gate (corrida `6464f8eb` sobre `44aa3812`)
+
+| Cifra | Antes (`2f9d972d`) | Después (`6464f8eb`) |
+|---|---|---|
+| Etapa `contracts` | 371,6 s | **113,3 s** |
+| Suma de etapas del merge | 556,8 s | **258,1 s** |
+| Pared | ~563 s | **265 s** |
+| Etapas ejecutadas | 59 | **59** (ninguna fuera) |
+| Veredicto | SUCCESS | SUCCESS |
+
+El presupuesto de 6-7 minutos que pedía el mandato queda cumplido **con margen**, y por
+concurrencia: no se dejó ninguna etapa fuera, así que la cobertura del gate es la misma
+y no hubo que decidir qué sacrificar (esa vía, la selección por impacto, sigue siendo
+W6 y decisión del operador). La medición standalone (316 s → 114 s) y la del gate
+(371,6 s → 113,3 s) coinciden dentro del ruido de la máquina, que es la señal de que el
+efecto es de la etapa y no del momento.
 
 ## Consecuencias
 

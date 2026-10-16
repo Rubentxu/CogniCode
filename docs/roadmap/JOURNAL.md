@@ -15767,3 +15767,10 @@ visto desde el otro lado.
   cumplir el presupuesto sin tocar cobertura (la selección por impacto sigue siendo
   W6, decisión del operador). Pendiente de certificar con una corrida del gate.
 
+- **Certificación del mismo recibo en el gate** (corrida `6464f8eb` sobre `44aa3812`):
+  **SUCCESS**, 59 etapas (ninguna fuera), `contracts` **113,3 s** y suma de etapas
+  **258,1 s** (265 s de pared) frente a 371,6 s y 556,8 s de la corrida `2f9d972d`.
+  El presupuesto de merge que pedía el mandato (6-7 min) queda cumplido con margen, y
+  **sin dejar de ejecutar nada**: lo que cambió fue la concurrencia de la etapa, no su
+  cobertura. La medición standalone (316 s → 114 s) y la del gate coinciden.
+

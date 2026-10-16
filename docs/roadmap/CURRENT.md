@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-16 (TH-IMPL-10), sobre branch `worktree/test-harness`, HEAD
-> `9f9baf46673d3c3be46e26e5f9852f3e7c44f3df`. Unidades cerradas: el gate de rustdoc vuelve a la lane que bloquea `main`
+> `44aa3812266f1d9ec941699b616f715bd7741161`. Unidades cerradas: el gate de rustdoc vuelve a la lane que bloquea `main`
 > (700,2 s → **1,1 s** in-gate), el defecto `rerun-if-changed` de `cognicode-cli`
 > (163 s → 1 s, 0 unidades `Dirty`), el oráculo de frescura del binario de MCP, el
 > cableado del suelo de obligaciones y de los pines de inventario a la CLI, la
