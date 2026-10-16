@@ -15676,3 +15676,8 @@ y causa para una unidad propia.
   por requerir estado externo. Las lanes de release siguen **NOT_RUN** (no hay
   artefacto de candidato en este worktree).
 
+- **Gate del cierre de este recibo** (corrida final sobre `24666840`, `--rerun`):
+  **SUCCESS, rc=0**. La lane de integración quedó con su defecto corregido
+  (`CARGO_TARGET_DIR`) y su fallo pre-existente declarado; el merge sigue verde con
+  `rustdoc-gate` dentro y sin coste apreciable.
+
