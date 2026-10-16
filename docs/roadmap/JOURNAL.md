@@ -15909,3 +15909,95 @@ y causa para una unidad propia.
   por requerir estado externo. Las lanes de release siguen **NOT_RUN** (no hay
   artefacto de candidato en este worktree).
 
+
+- **Gate del cierre de este recibo** (corrida final sobre `24666840`, `--rerun`):
+  **SUCCESS, rc=0**. La lane de integración quedó con su defecto corregido
+  (`CARGO_TARGET_DIR`) y su fallo pre-existente declarado; el merge sigue verde con
+  `rustdoc-gate` dentro y sin coste apreciable.
+
+## Recibo: qué se ha hecho más ligero y qué no (2026-10-16)
+
+**Corrección de una impresión que mi propio registro podía dejar**: este bloque **no**
+ha dejado el gate de merge medible-mente más ligero en su conjunto. Lo que sí está
+medido, unidad por unidad, es esto:
+
+| Cambio | Evidencia |
+|---|---|
+| Compilaciones en un worktree | `crates/cognicode-cli/build.rs` declaraba una entrada inexistente y dejaba el crate sucio en **cada** invocación: `cargo doc --workspace --no-deps` repetido pasaba de **163 s a 1 s** y `cargo doc -v` pasaba a **0** unidades `Dirty`. Beneficia a toda compilación del repo en este entorno, no sólo al gate |
+| Gate de rustdoc | Estaba fuera de la lane que bloquea `main` con una justificación falsa; vuelve a ella y cuesta **1,1-1,3 s** en el gate con la caché de documentación caliente (**124 s** en frío, **~70 s** tras tocar `core`), frente a los **700,2 s** que costaba cuando compartía directorio de target con las suites |
+| Total del gate | Las corridas de hoy dan 556,4 s de suma de etapas (59 etapas) y oscilan entre 463 y 1 039 s según caché y carga de la máquina. **No** se presenta como ahorro: la varianza entre corridas es mayor que cualquier efecto atribuible a estos cambios |
+
+**Dónde está ahora el presupuesto** (aritmética publicada por `harness report` sobre
+la corrida `2f9d972d`, con `contracts`, `fmt`, `clippy`, `advisories` y `licenses`
+protegidos): cuesta actual **556,8 s**; la etapa dominante es **`contracts`
+(371,6 s, el 67%)** y las suites de producto que quedan son 35,1 + 34,3 + 30,1 s entre
+las tres mayores. Dejar fuera esas cuatro etapas de test baja la aritmética a
+**418,7 s**, dentro del presupuesto de 420 s. **Esa decisión es del operador** (fila
+W6): el dato está calculado y los nombres de las etapas, publicados.
+
+**Estado real de la lane de integración** (ejecutada, no supuesta): **roja** en este
+worktree por motivos **pre-existentes**, ninguno de este bloque (`git log` de mis
+commits contra todo lo relacionado con release: vacío):
+
+1. `core-no-default`: `interface::catalog::tests::feature_filter_matches_current_cargo_config`
+   (`crates/cognicode-core/src/interface/catalog.rs:397`) asume las features por
+   defecto y la stage compila con `--no-default-features`.
+2. `check-release-matrix` (obligación del suelo de integración, ejecutada hoy por
+   primera vez): «FAIL: the contract publishes 'aarch64-unknown-linux-gnu' but no
+   lane builds it» — el contrato de release publica dos plataformas y la lane de
+   candidato declara una.
+3. Por eso las etapas posteriores de la lane siguen **NOT_RUN**.
+
+Observación de proceso, porque explica los dos anteriores: la lane de integración
+**no bloquea nada** (`contexts:[merge-gate]`), así que sus fallos se acumulan sin que
+nadie los vea. Es el mismo agujero que ADR-TH-014 corrigió para el gate de rustdoc,
+visto desde el otro lado.
+
+## Recibo TH-IMPL-10 — Perfil `dev` del bucle local (2026-10-16)
+
+- **Qué se construyó**: `--profile dev` en el harness, admitido **sólo** en la lane
+  `change`, que ejecuta lo que cambió y lo que CR-08 exija sin la clausura de
+  dependientes ni las etapas de alcance workspace. El perfil viaja en el documento del
+  plan y en su esquema (`enum gate|dev`, requerido), y pedirlo en otra lane es error de
+  uso (`rc=2` con motivo). `POLICY_VERSION` sube a `th-policy/4` (la evidencia anterior
+  deja de reutilizarse: es el propósito de la versión).
+- **Medición** (clon, mismo cambio de una línea en `cognicode-ladybug`): CR-08 73 s la
+  primera vez (paga compilación) y **28 s** en caliente; harness `dev` **29 s** con el
+  ledger frío, misma selección (1 suite, 62 casos, `SATISFIED`); repetición sin cambios
+  **3 s** (recibo reutilizado) contra 28 s de CR-08. La regresión de 337 s que bloqueaba
+  la adopción en ADR-TH-013 desaparece.
+- **Defecto encontrado por los tests nuevos**: `parity.compare()` sólo iteraba los
+  scopes del mapeo, así que una demanda con un nombre desconocido no generaba fila, no
+  entraba en `untracked` y el veredicto decía `AGREE`. Ahora es una debilidad declarada
+  (fila `NOT_IN_CATALOG`, `missing_scopes` y nota), sin cambiar nada en el repositorio
+  real, donde CR-08 sólo emite scopes mapeados.
+- **Lo que NO se hizo**: cambiar el motor por defecto de `test-fast.sh` (es decisión del
+  operador, con esta medición delante), usar el perfil en el gate (prohibido por
+  construcción y verificado) y la selección por impacto (W6).
+- **Verificación**: suite del harness **131/131**; contrato de los wrappers OK (el
+  wrapper pasa `--profile dev` y su defecto sigue siendo CR-08).
+
+- **Gate del cierre de TH-IMPL-10**: SUCCESS sobre `9f9baf46` (736 s de pared en una
+  corrida con la caché tibia y carga ajena en la máquina). El harness corre dentro del
+  gate en su etapa de sombra y en la suite de contratos, así que el perfil nuevo está
+  cubierto por el gate sin que ninguna pipeline lo use.
+
+## Recibo TH-IMPL-11 — La etapa de contratos en paralelo (2026-10-16)
+
+- **Por qué**: `harness report` sobre la corrida `2f9d972d` dejó el presupuesto del
+  merge claro: `contracts` era **371,6 s de 556,8 s (67%)** y las tres mayores suites
+  de producto sumaban 99,5 s. La palanca estaba en la etapa, no en las pruebas.
+- **Qué se hizo**: `run_contract_tests.py --jobs N` (por defecto 1) ejecuta **un
+  contrato por proceso**, hasta N a la vez, con el mismo runner; el padre agrega en el
+  orden de entrada y devuelve 1 si alguno falló. `run-all-contracts.sh` pasa el número
+  de CPUs con tope 8 (`CONTRACTS_JOBS=1` fuerza el modo serie). El contrato del runner
+  cubre el modo nuevo: un fichero que falla hace fallar la corrida paralela.
+- **Medición** (37 ficheros, misma máquina, corridas consecutivas): serie **316 s** con
+  296 checks; `--jobs 8` **114 s** con 298. **2,8×**. Equivalencia comprobada fichero a
+  fichero: 36 de 37 con el mismo recuento y el único distinto es el contrato al que
+  este bloque añadió dos tests entre las dos corridas.
+- **Efecto esperado en el gate**: `contracts` de ~320-370 s a ~110-160 s, y el total
+  del merge en torno a 360-400 s **sin dejar de ejecutar nada** — que es la forma de
+  cumplir el presupuesto sin tocar cobertura (la selección por impacto sigue siendo
+  W6, decisión del operador). Pendiente de certificar con una corrida del gate.
+
