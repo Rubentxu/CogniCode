@@ -15619,3 +15619,60 @@ documento sirviera para operar el paquete.
   caras son ahora `contracts` (323,2 s) y las suites de producto (28,8 / 28,7 /
   26,4 s).
 
+## Recibo: lane de integración ejecutada (TH-IMPL-08/09) — 2026-10-16
+
+**Qué se hizo**: ejecutar la lane de integración de verdad (`pipelinek run
+integration.pipeline.kts`, `--rerun`) en lugar de declararla NOT_RUN por suposición.
+La suposición era falsa: los pasos de sandbox/contenedor que creía bloqueantes están
+en `certification.pipeline.kts`, no aquí (el comentario del propio fichero dice que la
+comprobación de sandbox de `ci.yml` no se migró).
+
+| Etapa | Resultado observado |
+|---|---|
+| `workspace/*` incl. `all-targets` | **FALLO primera pasada** (rc=101) → corregido; **SUCCESS** en la segunda |
+| `cli-serial` | SUCCESS |
+| `release-binary-suite` | SUCCESS |
+| `core-no-default` | **FALLO pre-existente** (ver abajo); la lane se detiene ahí (fail-fast), así que las etapas siguientes no se observaron |
+
+### Defecto encontrado y corregido en la lane
+
+`all-targets` (`cargo test --workspace --all-targets`) fallaba con rc=101:
+`b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`
+lanza el binario `cognicode` por ruta y no lo encontraba —«binario `cognicode` no
+encontrado: … saltarlo sería un verde vacío»—. El binario **existía**; lo que faltaba
+era `CARGO_TARGET_DIR`: la configuración de cargo de esta máquina redirige el
+directorio de target, la lane de merge ya exporta esa variable en sus etapas
+equivalentes y esta lane no lo hacía. Corregido exportándola con
+`scripts/ci/target-dir.sh` (el script del repositorio, no un camino inventado) y
+verificado: la segunda corrida pasa `all-targets`, `cli-serial`,
+`release-binary-suite` y `workspace`.
+
+### Defecto declarado, no corregido (fuera de este bloque)
+
+`core-no-default` (`cargo test -p cognicode-core --no-default-features --lib`) falla
+en `interface::catalog::tests::feature_filter_matches_current_cargo_config`
+(`crates/cognicode-core/src/interface/catalog.rs:397`):
+`assertion failed: tool_feature_enabled(&Some("persistence".into()))`. La causa es una
+contradicción entre el test y la stage: el test asume el conjunto de features por
+defecto y la stage compila explícitamente sin ellas, y `tool_feature_enabled`
+resuelve el gate con `cfg!(feature = "persistence")`, que en esa configuración es
+falso. **No se toca aquí**: (a) el arreglo correcto exige decidir si el test debe
+expresar la expectativa por configuración o si la stage debe llevar la feature, y esa
+es una decisión de producto sobre la matriz de features; (b) un arreglo apresurado
+puede debilitar la comprobación que ese test protege (que el filtro del catálogo no
+discrepe de la configuración compilada). Queda declarado con archivo, línea, comando
+y causa para una unidad propia.
+
+### Límites de este recibo
+
+- La lane se detiene en el primer fallo: las etapas posteriores a `core-no-default`
+  (`core-default`, `core-all-features`, `runtime-*`, `mcp-all-features`,
+  `explorer-all-features`, `graph-algos-no-default`, `coverage`, `adversarial`,
+  `build-cogh`, `cogh-clean-home-install`, `release-contract`, `commit-lint`,
+  `advisory-only`) siguen **NOT_RUN** y no se afirman como verdes.
+- `certify` se ejecutó con el SHA real del candidato: rechaza con rc=1 y motivos
+  explícitos («certify exige ejecución fresca en 'certification': un recibo
+  reutilizado no certifica») y declara bloqueadas las dos obligaciones de esa lane
+  por requerir estado externo. Las lanes de release siguen **NOT_RUN** (no hay
+  artefacto de candidato en este worktree).
+
