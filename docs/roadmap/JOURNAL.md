@@ -15922,3 +15922,118 @@ regenerará `release/` desde su preflight.
 | 3 B0 efímeros sobre RC limpio | PENDING |
 | Procedimiento de publish correcto (release.pipeline.kts) | PENDING — operador-gated |
 | Aceptación auditoría: PASAR de "candidate local" a "ready to publish" | PENDING |
+
+## Entrada 2026-10-16 — VDH B0: v5 RC FAIL en payloads, fix TIER1_TRIPLES_OVERRIDE (f16eb2ef), v6 RC lanzado
+
+**Sesión:** continuación de la entrada anterior. SHA f3770bc1 (B0
+auditoría externa) era el último commit. v5 RC se había lanzado a
+las 13:52 con TMPDIR=/var/home/rubentxu/cognicode-b0-cache (estrategia
+autónoma recomendada por la auditoría). El RC corrió el preflight
+PASS, el build PASS, y murió en la stage `payloads` a las 15:02 con:
+
+```
+[PipelineK] [stage: payloads]
+[PipelineK] [step: payloads] payloads/sh-0
+[PipelineK] ERROR: step 'payloads/sh-0' failed [SCRIPT]: shell exited with code 1
+```
+
+### Diagnóstico
+
+`scripts/ci/stage-platform-payloads.sh` tiene un sanity check al
+final (línea 320 pre-fix) que itera sobre `TIER1_TRIPLES` —
+hard-coded a `(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)`.
+El check exige que **cada** Tier-1 esté representado en el staging.
+
+El pipeline `release-candidate.pipeline.kts` está scoped a
+`val targets = listOf("x86_64-unknown-linux-gnu")` desde v0.101.10
+(odd/tasks/tf-6-aarch64-followup.md). El scope está declarado al
+inicio del pipeline pero el script no lo sabe. La consecuencia:
+el RC de v0.101.17 (y los anteriores desde v0.101.10) mueren en
+`payloads` con `::error::after flatten, no lane claimed Tier-1
+platform aarch64-unknown-linux-gnu`.
+
+Esto no es nuevo: v1 RC y v3 RC fallaron en la misma stage con
+el mismo error. La fix idempotente de 3f833bfb arregló el caso
+de los SBOMs propios del script en la raíz, no el de TIER1_TRIPLES.
+
+### Fix (TDD: RED → GREEN)
+
+Commit `f16eb2ef83b61f2f0a54e47453a76480d2072e78` —
+"fix(ci): stage-platform-payloads.sh honors TIER1_TRIPLES_OVERRIDE".
+
+Tres cambios:
+
+1. `scripts/ci/stage-platform-payloads.sh`: TIER1_TRIPLES ahora
+   se inicializa al default (ambos Tier-1) y se sobreescribe
+   solo si `TIER1_TRIPLES_OVERRIDE` está definido. Default
+   preservado → tests aislados siguen funcionando.
+2. `scripts/ci/stage-platform-payloads.sh`: el diagnostic echo
+   `${!TRIPLE_OWNED_BY[*]:-(none)}` se reemplaza por length-check
+   explícito + key expansion. La forma `!array[*]:-default` no
+   funciona como se espera: el `!` expande las keys y el `:-`
+   intenta usar cada key como nombre de variable, lo que produce
+   `invalid variable name` cuando la key tiene guiones
+   (lane names). Esto ocultaba el error real en v5.
+3. `release-candidate.pipeline.kts`: la stage `payloads` ahora
+   pasa `TIER1_TRIPLES_OVERRIDE="${targets.joinToString(" ")}"`
+   para mantener script y pipeline en sync (la misma propiedad
+   que `scripts/product/release_lane.py` ya enforza entre
+   `val targets` y la `platformOf` mapping).
+
+Test efímero: `test-harness/.cycles/B0-3f833bf/B0-FIX-01.sh`
+con tres casos:
+
+| # | Override | Staging | Esperado | Resultado |
+|---|---|---|---|---|
+| 1 | (none) | x86_64-only | FAIL (bug repro) | OK — RED antes del fix |
+| 2 | x86_64-unknown-linux-gnu | x86_64-only | PASS (fix works) | OK — GREEN post-fix |
+| 3 | (none) | x86_64 + aarch64 | PASS (backward compat) | OK — sin regresión |
+
+### v6 RC lanzado
+
+Para v6 se aplicaron las tres correcciones de la auditoría:
+
+- **P0 #1 (preflight)**: el v5 ya invocó el preflight real con
+  QW-04 PASS, deny/advisories/licenses todos OK. v6 repite el
+  mismo path.
+- **P0 #2 (binarios procedencia)**: v6 se lanza con
+  `CARGO_TARGET_DIR=/var/home/rubentxu/cognicode-b0-target-f16eb2e`,
+  un target dir aislado por SHA, fuera del
+  `/var/home/rubentxu/cargo-targets/` compartido entre worktrees.
+  Los binarios de v6 nacen del preflight clone y de la build del
+  main checkout, ambos contra el target aislado.
+- **P0 #3 (E2E)**: v6 incluye la stage `install-smoke` que
+  ejecuta `scripts/ci/release-install-smoke.sh` (install→doctor→
+  CLI→MCP→update→rollback→uninstall en HOME temporal).
+- **P0 #4 (publish)**: el publish sigue siendo
+  `release.pipeline.kts` en modo operador, no `gh release create`.
+
+Lanzamiento:
+
+```
+SHA: f16eb2ef83b61f2f0a54e47453a76480d2072e78
+TMPDIR: /var/home/rubentxu/cognicode-b0-cache (740G libres)
+CARGO_TARGET_DIR: /var/home/rubentxu/cognicode-b0-target-f16eb2e
+RELEASE_TAG: v0.101.17
+PID: 340589
+log: /tmp/b0-rc-f16eb2ef-v6.log
+runId: 230c2a80-f819-4cc1-8641-ec0bf986ef3e
+```
+
+ETA: ~50 min (preflight 22 + build 8 + package 2 + payloads 1 +
+generate 1 + verify 1 + install-smoke 1 + manifest <1 + overhead).
+
+### Estado provisional
+
+| Aspecto | Estado |
+|---|---|
+| Diagnóstico v5 FAIL | DONE (TIER1_TRIPLES mismatch) |
+| Fix TIER1_TRIPLES_OVERRIDE | DONE (f16eb2ef, TDD red→green) |
+| TIER1_TRIPLES_OVERRIDE propagado al pipeline | DONE |
+| Diagnostic echo bash bug (`!array[*]:-default`) | DONE (parte de f16eb2ef) |
+| v6 RC con TMPDIR + CARGO_TARGET_DIR aislados | IN PROGRESS (PID 340589) |
+| release/ producido por v6 RC | PENDING |
+| 3 B0 efímeros (UAT/AAT/E2E) sobre v6 release/ | PENDING |
+| `release-install-smoke.sh` sobre v6 release/ | PENDING |
+| Procedimiento de publish (operador) | PENDING |
+| Aceptación auditoría: PASAR de "CANDIDATE_LOCAL" a "READY_FOR_OPERATOR_PUBLISH" | PENDING |
