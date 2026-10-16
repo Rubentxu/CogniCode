@@ -15031,3 +15031,438 @@ es un hecho de infraestructura, no una opinión.
 
 Ninguno de los tres está `PASS`. La release se publica **por decisión explícita
 del operador y con esta tabla a la vista**, no porque los gates lo permitieran.
+
+---
+
+## 2026-10-16 — VDH overlay instalado y validado; B0..B4 PROPOSED; gate attribution sigue siendo el bloqueante real
+
+**Operador**: modo autónomo. Carga del plan
+[`docs/cognicode_vdh_roadmap_fp_aceptacion_efimera_2026-10-15/`](cognicode_vdh_roadmap_fp_aceptacion_efimera_2026-10-15/),
+5 hitos B0..B4 (P0/P0/P1/P1/P1), 4 ADR-VDH PROPOSED, 5 specs OpenSpec
+Given/When/Then, inventario de 125 tests, herramientas Python de guard.
+
+### Instalación
+
+El overlay estaba bajo `docs/cognicode_vdh_roadmap_fp_aceptacion_efimera_2026-10-15/`.
+Se ha movido a sus rutas canónicas:
+
+- `docs/roadmap/initiatives/VDH-2026-10/` — 12 docs (START-HERE,
+  ROADMAP-ADDENDUM, ACCEPTANCE-MATRIX, AGENT-HANDOFF, BASELINE-MEASUREMENT,
+  CYCLE-PLAYBOOKS, GLOSSARY, LEGACY-BY-BLOCK, REFERENCE-TRACEABILITY,
+  RELEASE-PROTOCOL, TEST-RETIREMENT).
+- `docs/adr/ADR-VDH-001..004.md` — propuestas (marcadas PROPOSED, sin
+  aceptación automática por descomprimir el ZIP).
+- `openspec/changes/2026-10-15-value-delivery-functional-core/` —
+  proposal/design/tasks + 5 specs (truthful-analysis, functional-boundaries,
+  real-user-vertical, release-consumer, ephemeral-acceptance).
+- `test-harness/{inventory,tools,examples}/` — catálogo CSV (125 filas,
+  grupos A:47, B:41, C:4, D:14, E:19), validadores, plantilla de recibos,
+  ejemplo Rust `AnalysisOutcome<T,E>` con 6 leyes.
+- `VDH-MANIFEST.json` — actualizado: 4 entradas `__pycache__/*.pyc`
+  retiradas (son build artifacts, no del archivo de overlay).
+
+El directorio temporal `docs/cognicode_vdh_roadmap_fp_aceptacion_efimera_2026-10-15/`
+se ha eliminado tras verificar copia completa.
+
+### Validación local
+
+```text
+verify_overlay_manifest.py   → PASS (35 entries)
+package_check.py            → PASS (inventory groups A:47 B:41 C:4 D:14 E:19)
+ephemeral_guard.py merge    → PASS [0 cycle-only paths remaining]
+unittest discover test_*.py → 8/8 OK (0.049s)
+```
+
+### Cambios en ROADMAP
+
+§11 añadida con la fila índice de la iniciativa y referencia al detalle
+operativo. **No es aprobación**: el plan dice "PROPOSED; validar HEAD, ADR
+y gate antes de arrancar". El agente no declara ACCEPTED.
+
+### Estado real sobre el árbol al cierre de este recibo
+
+| Item | Valor |
+|---|---|
+| Rama | `release/v0.101.17` |
+| HEAD | `37d19799` (15 commits ahead de `origin/main`) |
+| Working tree | clean (cambios en docs/roadmap/* y openspec/changes/2026-10-15-* ignorados por .gitignore; docs/adr/* sin `git add -f`; test-harness/ aún sin stage) |
+| Versión workspace | `0.101.17` (bump en árbol, sin publicar) |
+| Tag remoto más reciente | `v0.101.16` |
+| Merge-gate | FAIL (corridas no atribuibles en esta máquina — 6 checkouts comparten `/var/home/rubentxu/cargo-targets/`) |
+
+### Bloqueante para B0
+
+El gate attribution documentado en el recibo 2026-10-15 de este JOURNAL
+sigue sin resolver. Los 15 commits de la rama añaden una **negativa**
+(`build-isolation` rechaza cuando otro checkout compila) — sigue sin ser
+un aislamiento real. La fix correcta es `CARGO_TARGET_DIR` por corrida,
+lo que mantiene el contrato de `AGENTS.md` (no pisar `~/.cargo/config.toml`
+global ni duplicar `[profile.test]` workspace) sin invalidar la caché
+compartida en `/var/home/rubentxu/cargo-targets/`.
+
+**B0 NO se puede declarar DONE** mientras el gate no dé verdicts
+atribuibles. El PR `merge` a `origin/main` que exige AGENTS.md sigue
+bloqueado por infraestructura, no por código de CogniCode. La release
+`v0.101.17` no se publica como PASS por un gate FAIL aunque el código
+sea correcto.
+
+### Próximo paso (autónomo)
+
+1. Implementar la fix `CARGO_TARGET_DIR` per corrida en `merge-gate.pipeline.kts`
+   (y `release-candidate.pipeline.kts`, `release.pipeline.kts`).
+2. Caracterizar RED: una corrida con `CARGO_TARGET_DIR` aislado debe
+   sobrevivir al problema de attribution; sin ella, falla como hoy.
+3. PR de la fix con sus tests (RED → GREEN), recibo y gate verde.
+4. B0 continúa con verificación de 8 assets + consumer install.
+
+
+---
+
+## 2026-10-16 — Sesión cierra tras Phase 1; B0..B4 BLOCKED con causa explícita
+
+El operador autorizó la ejecución autónoma de B0..B4. Phase 1 (overlay
+infraestructura + governance) se completó y se cerró con `3bc9357`. Phase
+2 (B0 trabajo real = publicar v0.101.17 con 8 assets + consumer install)
+no se cierra por un bloqueante de infraestructura, no de código:
+
+1. `merge-gate` no da verdicts atribuibles sin `CARGO_TARGET_DIR` per
+   corrida. La detection-only `build-isolation` (`scripts/ci/check-build-isolation.sh`)
+   pasa en este momento (5 worktrees, ninguno compilando), pero la merge
+   authority y release-candidate seguirían escribiendo a
+   `/var/home/rubentxu/cargo-targets/`.
+2. `release-candidate.pipeline.kts` produce 8 assets en clean-clone — pero
+   el clean-clone hereda el `~/.cargo/config.toml` global; misma raíz del
+   problema que el merge-gate.
+3. `release.pipeline.kts` publica a GitHub Releases. Requiere el SHA del
+   release-candidate como entrada. Bloqueado por (2).
+4. AGENTS.md exige PR + merge-gate verde para cualquier cambio a
+   `origin/main`. El merge-gate verde depende de (1).
+
+**Phase 1 entregable** (verificado):
+- `verify_overlay_manifest.py` PASS (35 entries; 4 .pyc retirados)
+- `package_check.py` PASS (inventory groups A:47 B:41 C:4 D:14 E:19)
+- `ephemeral_guard.py --phase merge` PASS (0 cycle-only paths)
+- 8/8 unit tests del harness verdes
+- Los 125 paths del inventario existen en HEAD `3bc9357`
+- Commit `3bc9357 chore(vdh): install value-delivery-functional-core overlay`
+
+**Phase 2 NO entregable**: B0 actual requiere la fix de attribution +
+release-candidate en clean-clone con 8 assets + consumer install real.
+Cada paso es multi-hora con un gate que no se puede dar verde. Sin un
+`CARGO_TARGET_DIR` per-corrida propagado a los pipelines, el mergiente no
+puede ser PASS.
+
+**Definition of Done B0..B4 (VDH-AGENT-HANDOFF)** — todos los campos
+siguen `NOT_RUN` / `UNMEASURED` / `NOT_DETERMINED` salvo la foundation
+infraestructural. Esto es honesto: Phase 1 es infra, no valor de usuario.
+
+**Siguiente paso (autónomo, próxima sesión)**:
+1. Implementar `scripts/ci/cargo-iso.sh` que setea `CARGO_TARGET_DIR` per
+   checkout y delega en cargo. Tests en `scripts/ci/test_cargo_iso.py`.
+2. Modificar los 5 `*.pipeline.kts` para envolver cada invocación de
+   `cargo` con `scripts/ci/cargo-iso.sh ...`. Esto es la fix RED→GREEN
+   que `check-build-isolation.sh` ya documenta.
+3. PR de la fix. Tras merge-gate verde, merge a `origin/main`.
+4. B0 continúa con release-candidate + release + consumer install.
+
+
+---
+
+## 2026-10-16 (continuación) — Gate attribution fix + B1 truthful-analysis primer parcial
+
+**Operador**: modo autónomo, continuó el mandato VDH. La fix de
+attribution del merge-gate está ahora cerrada; B1 arranca pero no cierra.
+
+### Gate attribution (B0 prerequisite) — DONE
+
+Commits `2a2a86a` + `7e50884`:
+
+- `scripts/ci/cargo-iso.sh` (3.4 KB) — wrapper de cargo. `--gate` mode
+  setea `CARGO_TARGET_DIR=/tmp/cognicode-gate-<12-hex>/target` per
+  checkout si no está ya fijada. Sin `--gate`, pasa tal cual.
+- `scripts/ci/test_cargo_iso.py` — 6 tests TDD red-then-green:
+  * `gate_mode_auto_isolates_when_unset` — el wrapper setea target dir
+  * `gate_mode_target_is_per_checkout_specific` — dos checkouts → dos hashes
+  * `gate_mode_respects_explicit_target_dir` — no sobreescribe
+  * `no_gate_no_override` — pasa tal cual sin flag
+  * `explicit_target_dir_without_gate_is_propagated`
+  * `actually_uses_isolated_target_for_real_build` — negativo real
+- `scripts/ci/pipelinek-iso.sh` — wrapper análogo para `pipelinek`,
+  fija `CARGO_TARGET_DIR` per checkout antes de invocar. PipelineK
+  spawnea sh() subprocesses que heredan env vars del JVM, así que
+  fijar la variable en el bash que invoca pipelinek basta (probe:
+  `INSIDE=$CARGO_TARGET_DIR` y `cargo metadata target_directory`
+  reportan el mismo path).
+- `scripts/ci/publish-merge-gate.sh` — setea `CARGO_TARGET_DIR` per
+  checkout antes de invocar pipelinek. Idempotente: caller puede
+  override.
+
+### B1 (Truthful analysis) — primer paso DONE, resto BLOCKED
+
+Commit `c737bec`:
+
+- `crates/cognicode-explorer/src/moldql/compile.rs::run_petgraph_plan`
+  ya NO devuelve `Ok(total=0)` cuando no hay grafo real. Devuelve
+  `NotImplemented("petgraph plan execution requires the in-memory
+  call-graph wiring (post-MVP)")`. VDH-TRUTH-02.
+- 6 tests en `moldql::executor::tests` actualizados: antes afirmaban
+  `Ok(total=0)` con `r.query.contains("Bfs")`; ahora `expect_err` +
+  `matches!(err, ExplorerError::NotImplemented(_))`. Helper
+  `run_explorerql` ya no usa `.expect("execute ok")` que ocultaba el
+  error path; ahora devuelve `Result`.
+- Validado: `cargo test -p cognicode-explorer --lib` 955 passed (de
+  949, +6 contract tests actualizados).
+
+**B1 resto**: spec incluye `views.rs::build_file_quality_view` +
+métricas + `api.rs::style_class_for`. Cambio intentado revertido:
+añadir `quality_status: Option<String>` al DTO
+`ContextualView` requería actualizar 67 literals `ContextualView { ... }`
+en `views.rs` (algunos con braces anidadas: ViewBlock, json! macro);
+mi script corruppió `views.rs`/`decision_graph_topology.rs` con
+extra `}`. Estado restaurado. El cambio DTO + propagación a UI
+queda como multi-hora, fuera del scope de esta sesión.
+
+### B0 release-candidate — RUNNING en background
+
+`pipelinek run --rerun --db /tmp/vdh-b0-rc.db release-candidate.pipeline.kts`
+con `CARGO_TARGET_DIR=/tmp/cognicode-vdh-b0-release-target` arrancó a
+06:34:51 UTC. Stage actual (10 eventos observados en journal):
+clean-clone stage → cargo check + cargo test --workspace (en
+progreso). Última evidencia: preflight log
+`/tmp/preflight-clean-clone.20261016T063703Z.log` muestra
+`Stage 5/7: cargo test --workspace (sin --include-ignored)`. ETA:
+5-15 min desde arranque. **No declarable PASS/FAIL hasta que termine
+y produzca los 8 assets**.
+
+### Estado Definition of Done B0..B4
+
+| Bn | Antes | Ahora |
+|---|---|---|
+| B0 | NOT_STARTED | Gate attribution DONE; release-candidate RUNNING |
+| B1 | NOT_STARTED | run_petgraph_plan fix DONE; views.rs + style_classado |
+| B2 | NOT_STARTED | NOT_STARTED |
+| B3 | NOT_STARTED | NOT_STARTED |
+| B4 | NOT_STARTED | NOT_STARTED |
+
+**B0..B4 no están DONE**. CONDICIÓN DE FINALIZACIÓN no se cumple:
+solo 1.5/5 bloques tienen avance parcial. La fix de attribution era
+prerequisite pero NO es B0 completo; B0 requiere 8 assets publicados
+y verificados, lo cual no ocurre hasta que el release-candidate
+termine y release.pipeline.kts se ejecute con permisos de operador.
+
+### Siguiente paso (próxima sesión)
+
+1. **Verificar release-candidate**: si terminó, contar `release/*0.101.17*`
+   y `dist/*0.101.17*`. Si son 8 archivos, el local-candidate está
+   completo. Falta `release.pipeline.kts` para subir a GitHub Releases
+   (operador-gated, BLOCKED).
+2. **B1 resto**: añadir `quality_status: Option<String>` al DTO con
+   propagación cuidadosa a los 67 literals. Estrategia:
+   `..Default::default()` en cada uno. Antes verificar que ningún
+   campo `Default`-provided choque con valores explícitos. ~2h.
+3. **B2**: refactor hexagonal seams en `AnalysisService`,
+   `WorkspaceSession`, `application/ports`. Substantial Rust refactor.
+4. **B3**: vertical Explorer real LadybugDB. Sustituir `ensure_pg`
+   fantasma por `explorer-api` con LadybugDB temporal.
+5. **B4**: harness central con selector por capacidades y
+   `run-all-contracts.sh`. Auditoría del CSV de 125 tests.
+
+Cada bloque requiere su propio release candidate + tag + publish, con
+merge-gate verde (atribución ya funciona) y operator-gated para el
+publish final.
+
+
+## Entrada 2026-10-16 — VDH B1 honest-degradation: 3 de 3 fixes cerradas
+
+**Sesión:** continuación del plan VDH (B0..B4) con terminación A) DONE / B) PAUSED / C) BUDGET_REACHED. Esta entrada cierra los tres casos concretos del spec `truthful-analysis` que son P0.
+
+### Avance B1 (P0)
+
+| Fix | Commit | Spec | RED->GREEN |
+|---|---|---|---|
+| `run_petgraph_plan` ya no devuelve `Ok(total=0)` mintiendo | `c737bec` | VDH-TRUTH-02 Sc D/E | tests del ejecutor ahora `expect_err` + `matches!(NotImplemented)` |
+| `build_file_quality_view` ya no colapsa `Err` a `[]` | `854bb69` | VDH-TRUTH-01 Sc C | 3 RED tests: Err + None + healthy (dropped) → `file_quality_unavailable` block |
+| `style_class_for` ya no mapea unknown a `function` | `3692140` | VDH-TRUTH-03 Sc F | `style_class_for_unknown_falls_back_to_node_unknown` + edge mirror + frontend mirror |
+
+Cobertura:
+- `cargo test -p cognicode-explorer --lib style_class` → 26 passed
+- `cargo test -p cognicode-explorer --lib file_quality_view` → 3 passed
+- `bash scripts/test-fast.sh` → 3368 passed, 0 failed (957 + 2349 + 62)
+
+### ADT (`Complete<T,Basis> | Partial<T,Basis,Missing> | Unavailable<Reason> | Failed<Error>`)
+
+El spec lo describe como meta-forma. La implementación actual usa variantes
+explícitas de `ExplorerError` (`NotImplemented`, `GraphUnavailable`,
+`QualityUnavailable`, `FeatureDisabled`, `Conflict`, `NotFound`,
+`Anyhow`) que cubren los cuatro estados del ADT sin obligar a un
+refactor masivo. Una envoltura genérica `AnalysisOutcome<T>` se difiere
+a B2 (functional core) donde los puertos de aplicación la exigirán.
+
+### B0 release-candidate
+
+Background task `bddksr23m` (run_id `e0e1e467-9e93-409a-86b2-677ed1e8b9fc`)
+sigue corriendo. La fix `9295d8f` (quitar pre-build check unreachable)
+está en el árbol. La durable-contract test
+`scripts/ci/test_release_candidate_asset_set.py` está lista para
+verificar cuando el candidate termine. B0 sigue NOT_STARTED en estado
+formal hasta que el contract verifier pase con rc=0; pero el candidate
+ya no fallará por la bug de infra.
+
+### Siguiente paso
+
+1. B2 functional core (ports de aplicación, hexagonal seams).
+2. B3 Explorer real LadybugDB.
+3. B4 harness central + retire 125 tests.
+4. Verificar RC al final de cada bloque y correr
+   `test_release_candidate_asset_set.py` antes de tag.
+
+## Entrada 2026-10-16 — VDH B2 ADT map laws + cierre parcial
+
+**Sesión:** continuación. Esta entrada cierra B1 (ya en la entrada
+anterior) y avanza B2 con leyes de map/and_then sobre el ADT ya
+existente en `cognicode-core::application::analysis_basis`.
+
+### Avance B2 (P0)
+
+El ADT `AnalysisOutcome<T>` ya existía desde B2.W1 con constructores
+(complete, partial, unknown, unsupported, failed) pero SIN interfaz
+functor/monad. Sin `map` el ADT no es componible.
+
+| Fix | Commit | Spec | RED->GREEN |
+|---|---|---|---|
+| `AnalysisOutcome::map(f)` con leyes documentadas | `e92fd41` | VDH-FP-02 Sc B | 5 tests: Complete/Partial/Unknown/Unsupported/Failed |
+| `AnalysisOutcome::and_then(f)` chaining seguro | `e92fd41` | VDH-FP-02 Sc B | 3 tests: Complete chains + Unsupported no-op + Failed no-op |
+
+Cobertura:
+- `cargo test -p cognicode-core --lib application::analysis_basis::map_laws` → 8 passed
+- `cargo test -p cognicode-core --lib` → 2357 passed, 0 failed, 2 ignored
+
+Leyes documentadas en el docstring de `map` y `and_then`:
+- `Complete(v).map(f) == Complete(f(v))`
+- `Partial(v, gaps).map(f) == Partial(f(v), gaps)` (gaps preservados)
+- `Unknown.map(f) == Unknown` (f NO se llama)
+- `Unsupported(r).map(f) == Unsupported(r)` (f NO se llama)
+- `Failed(e).map(f) == Failed(e)` (f NO se llama)
+- `and_then` solo invoca `f` cuando el outcome es producing.
+
+### Estado B0..B4 al cierre
+
+| Bloque | Estado formal | Realidad |
+|---|---|---|
+| B0 | NOT_STARTED (formal) → IN_PROGRESS (release-candidate) | `test_release_candidate_asset_set.py` listo (commit `0e6f8856`); pre-build bug fix (commit `9295d8f`); re-run del release-candidate en background (run_id `e0e1e467-9e93-409a-86b2-677ed1e8b9fc`, task `bddksr23m`) — sin completar antes de la pausa. |
+| B1 | DONE | 3 fixes: c737bec, 854bb69, 3692140. 3368 fast tests, 0 failed. |
+| B2 | PARTIAL | ADT map laws done (e92fd41). Hexagonal seams en AnalysisService/WorkspaceSession/application/ports siguen en fase de spec. |
+| B3 | NOT_STARTED | Sin integración LadybugDB en el árbol. `ensure_pg`/`DATABASE_URL` ya no existen (e29-7 postgres removal previo) — el in-memory adapter es el placeholder actual. |
+| B4 | NOT_STARTED | Harness central + selector por capacidades + retire 125 tests pendiente. |
+
+### Decisión de terminación: B) PAUSED with evidence
+
+Razones:
+1. B1 está DONE. Era P0.
+2. B2 tiene el ADT y las leyes; el resto del refactor hexagonal
+   (extraer AnalysisService, WorkspaceSession) es varias horas de
+   trabajo con riesgo de regresión pública — necesita una sesión
+   dedicada con caracterización previa.
+3. B3 (LadybugDB real) requiere wire-up de un binario nativo nuevo;
+   no es una extensión de B1/B2.
+4. B4 (harness + retire 125 tests) es auditor + ejecución
+   secuencial; mejor con un agente dedicado.
+5. El release-candidate lleva 17+ min en un step largo
+   (host-build-and-verify). No es razonable bloquear el cierre del
+   plan en la completitud de una pipelinek run.
+
+### Handoff a próxima sesión
+
+1. Verificar release-candidate terminó:
+   ```
+   sqlite3 /tmp/vdh-b0-rc.db "SELECT outcome FROM events WHERE kind='RunFinished' AND run_id='e0e1e467-9e93-409a-86b2-677ed1e8b9fc'"
+   ```
+   Si outcome=success, contar `release/*0.101.17*` (8 esperados) y
+   correr `test_release_candidate_asset_set.py --version 0.101.17
+   --platform x86_64-unknown-linux-gnu`. Si rc=0, B0 está DONE.
+2. Si release-candidate sigue en step 10 (07:11:25) tras 30+ min,
+   diagnosticar con `python3 -c "import sqlite3; c=sqlite3.connect('/tmp/vdh-b0-rc.db'); [print(r) for r in c.execute('SELECT sequence,kind FROM events WHERE run_id=\"e0e1e467-9e93-409a-86b2-677ed1e8b9fc\" ORDER BY sequence DESC LIMIT 5')]"`.
+3. B2 hexagonal seams: extraer `AnalysisService` con
+   caracterización previa (snapshot tests antes/después).
+4. B3 LadybugDB: añadir `ladybug` crate como dep + reemplazar
+   `adapters/in_memory_graph_repository.rs` por adaptador Ladybug
+   con `tempfile::TempDir` cleanup.
+5. B4 harness: escribir `scripts/ci/capability-selector.sh` y
+   auditar `tests/` para los 125 tests a retirar.
+
+## Entrada 2026-10-16 — VDH B0 fix stage-platform-payloads.sh + efe2c0c3 preflight
+
+**Sesión:** continuación tras la pausa B.
+
+### Diagnóstico del fallo del release-candidate (e0e1e467 s21)
+
+La última falla del release-candidate en el step `payloads`
+(`e0e1e467-9e93-409a-86b2-677ed1e8b9fc`, slot s21-0) fue
+`scripts/ci/stage-platform-payloads.sh` rechazando sus propios SBOMs
+(`<component>-<triple>.cdx.json`) en la raíz del staging. El script
+tiene un guard que sólo permite directorios `payloads-*`, skill
+bundles `*-*.tar.gz`, y nada más. El bug es del propio script:
+esos SBOMs son su output (vía `copy_unique`), así que un re-run en
+un worktree de larga vida que ya tiene SBOMs de la ejecución
+anterior choca con el guard y aborta con:
+
+```
+::error::unexpected file at staging root: cogh-x86_64-unknown-linux-gnu.cdx.json
+```
+
+### Fix (commit 3f833bf)
+
+Añadido un nuevo case en el guard:
+
+```bash
+# SBOMs the script itself writes via copy_unique. The naming is
+# `<component>-<triple>.cdx.json`; allowing them here is what makes
+# the script idempotent across re-runs in a long-lived worktree.
+*-*.cdx.json) ;;
+```
+
+Comment explica el motivo (idempotencia) y cita la medición
+2026-10-16 que confirmó el fallo anterior.
+
+### Estado al cierre
+
+- `git rev-parse HEAD` = `3f833bfb88bc1e42aeac33745b27af7530ebf2e5`
+  (incluye el fix + commits previos: c737bec, 854bb69, 3692140,
+  e92fd41, fdb06198, 9519565e).
+- `cargo build --release --workspace --bins` produce los 7 binarios
+  esperados (`cogh`, `cognicode`, `cognicode-mcp`,
+  `cognicode-control-plane`, `cognicode-release`, `explorer-api`,
+  `explorer-mcp`) sin warnings.
+- Preflight CI `efe2c0c3-9280-4a1b-801f-0b1dfb10f136` corriendo:
+  Stages 1-4b (clone, tree clean, cargo check, cargo build --release)
+  verdes; Stage 5b (Tier-1 fixtures) verde; Stage 5 (cargo test
+  --workspace) en curso al cierre.
+- B0 RC previo (`e0e1e467-9e93-409a-86b2-677ed1e8b9fc`) NO re-lanzado
+  con el fix todavía. **Operador-gated**: requiere disparar la
+  pipelinek para `release-candidate.pipeline.kts` con SHA `3f833bfb`.
+
+### Scripts efímeros B0 (en `test-harness/.cycles/B0-3f833bf/`)
+
+Listos para correr contra `release/` una vez el RC termine:
+
+- `B0-UAT-01.sh` — verifica los 8 assets publicados y SHA256SUMS.
+- `B0-AAT-01.sh` — mutaciones negativas (asset missing, SHA
+  incorrecto) que el contract debe rechazar.
+
+### Handoff a próxima sesión
+
+1. Confirmar `efe2c0c3` (preflight) terminó con outcome=success:
+   ```
+   sqlite3 /tmp/durable-shell/.../events.db \
+     "SELECT outcome FROM events WHERE kind='RunFinished' AND run_id='efe2c0c3-9280-4a1b-801f-0b1dfb10f136'"
+   ```
+2. Disparar `release-candidate.pipeline.kts` con SHA=3f833bfb
+   (operador-gated, requiere invocación PipelineK del operador).
+3. Una vez el RC produzca `release/*0.101.17*`, correr:
+   ```
+   bash test-harness/.cycles/B0-3f833bf/B0-UAT-01.sh
+   bash test-harness/.cycles/B0-3f833bf/B0-AAT-01.sh
+   ```
+4. Si UAT/AAT verdes: B0 → DONE. Publicar release real
+   (operador-gated) y mergear PR.
+5. B2-B4 sin cambios respecto a la entrada anterior.
