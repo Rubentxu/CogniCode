@@ -51,7 +51,19 @@ pipeline {
             // `tests/*.rs` target in the workspace; without it the named
             // contract suites below are the only thing being built.
             stage("all-targets") {
-                sh("$cd && cargo test --workspace --all-targets")
+                // MEDIDO 2026-10-16. Esta stage fallaba en una máquina cuya
+                // configuración de cargo redirige el directorio de target:
+                // `b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`
+                // lanza el binario `cognicode` por ruta y no lo encontraba
+                // («binario `cognicode` no encontrado: … saltarlo sería un verde
+                // vacío», rc=101). El binario existía; lo que faltaba era la
+                // variable que le dice dónde. La lane de merge ya exporta
+                // `CARGO_TARGET_DIR` en sus etapas equivalentes; aquí faltaba.
+                sh("""
+                    $cd || exit 1
+                    export CARGO_TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    cargo test --workspace --all-targets
+                """.trimIndent())
             }
 
             // The CLI shares process-global state across its own binaries, so
