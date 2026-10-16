@@ -147,27 +147,24 @@ pipeline {
                 sh("$cd && cargo clippy --workspace --all-targets -- -D warnings")
             }
 
-            // El gate de rustdoc (M0.11) NO corre aquí, y eso está **declarado y
-            // con precio medido**: su dueño es `integration.pipeline.kts`. La
-            // primera vez que se movió (2026-10-15) se justificó con una frase
-            // falsa —que integración es la lane que bloquea `main`—; el 2026-10-16
-            // se midió el coste real de traerlo de vuelta y no cabía en el
-            // presupuesto del merge.
+            // El gate de rustdoc (M0.11) tiene aquí su dueño: esta es la lane que
+            // bloquea `main` (`MERGE_AUTHORITY` en `scripts/ci/pipeline_authority.py`).
             //
-            // MEDIDO el 2026-10-16 en el ledger durable del gate (run `e3465380`):
-            // esta stage cuesta **700,2 s** de un merge que, sin ella, tenía 18
-            // etapas y 1 183,7 s acumulados. No es un defecto de caché: el `cargo
-            // doc --workspace` que ejecuta el target no reutiliza su caché entre
-            // invocaciones mezcladas con `clippy --all-targets` y las suites.
-            //
-            // Lo que hace legítimo dejar la garantía fuera de la autoridad no es la
-            // prosa: `scripts/ci/declared_deviations.json` la declara con su dueño,
-            // su motivo, su precio medido y su ADR, y
-            // `core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority`
-            // exige esa declaración. Quitar la desviación sin devolver la etapa al
-            // merge hace fallar el contrato; devolverla sin medir el precio,
-            // también.
+            // Historia, porque el recorrido importa: el 2026-10-15 se movió a
+            // integración con una justificación que incluía una frase falsa —que esa
+            // lane bloquea `main`— y con una medición correcta: la copia de aquí
+            // costaba 700,2 s de un merge. El 2026-10-16 se midió el **motivo** de
+            // esos 700 s: el `cargo doc --workspace --no-deps` que ejecuta el target
+            // compartía directorio de target con las suites y no reutilizaba su
+            // caché. Con un directorio propio (lo fija el propio target:
+            // `crates/cognicode-runtime/tests/m011_rustdoc_gate.rs`) cuesta **124 s**
+            // la primera vez, **1 s** en régimen estable y ~70 s tras tocar el `src`
+            // de `cognicode-core`. Con ese precio, la garantía vuelve a la lane donde
+            // puede bloquear un merge.
             // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority.
+            stage("rustdoc-gate") {
+                sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
+            }
 
             // MEDIDO 2026-10-15. Las dependencias Python del contrato se
             // declaran ANTES de `contracts`, no despues. `skills-toolchain`

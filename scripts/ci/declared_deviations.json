@@ -1,16 +1,5 @@
 {
   "schema_version": "ci.declared-deviations/v1",
-  "notes": "Obligaciones cuya garantía NO corre en la autoridad de merge (`MERGE_AUTHORITY` en scripts/ci/pipeline_authority.py). Cada entrada declara dueño, motivo, precio medido y ADR, y `core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority` exige que la desviación esté aquí. El objetivo no es permitir agujeros: es que un agujero no pueda existir sin estar declarado, medido y fechado. Quitar una entrada sin devolver su etapa a la autoridad deja el contrato en rojo.",
-  "entries": [
-    {
-      "obligation": "m011_rustdoc_gate",
-      "owner_pipeline": "integration.pipeline.kts",
-      "reason": "El target ejecuta un `cargo doc --workspace --no-deps` completo y su caché no se reutiliza entre invocaciones mezcladas con `clippy --all-targets` y las suites, así que cuesta ~700 s reales en cada corrida. El presupuesto de merge declarado por el operador (6–7 min) no lo admite.",
-      "measured_seconds": 700.2,
-      "measured_on": "2026-10-16",
-      "measured_in": "merge-gate pipelinek run e3465380 (etapa rustdoc-gate, 18 etapas y 1183.7 s acumulados sin ella dentro del presupuesto)",
-      "adr": "test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md",
-      "restores_guarantee": "Ejecutar `cargo test -p cognicode-runtime --test m011_rustdoc_gate` como stage nombrada en merge-gate.pipeline.kts y borrar esta entrada."
-    }
-  ]
+  "notes": "Obligaciones cuya garantía NO corre en la autoridad de merge (`MERGE_AUTHORITY` en scripts/ci/pipeline_authority.py). Hoy la lista está VACÍA: la única desviación declarada —el gate de rustdoc— se resolvió el 2026-10-16 abaratando el chequeo (directorio de target propio) en vez de mover la garantía fuera de la lane que bloquea `main`. Cada entrada declara dueño, motivo, precio medido, fecha, corrida y ADR, y `core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority` la exige cuando el dueño no es la autoridad, y exige su AUSENCIA cuando sí lo es. Una lista vacía aquí significa que ninguna garantía vive fuera de la lane que bloquea `main`.",
+  "entries": []
 }

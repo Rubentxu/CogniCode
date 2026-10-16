@@ -936,11 +936,16 @@ fn the_rustdoc_gate_runs_in_exactly_one_authority() {
         .filter_map(|path| path.file_name().and_then(|n| n.to_str()).map(str::to_owned))
         .collect();
 
-    let owners: Vec<String> = if in_merge {
-        vec![MERGE_AUTHORITY.to_owned()]
-    } else {
-        in_other_pipelines.clone()
-    };
+    // Un dueño es cualquiera que ejecute la obligación por nombre: el merge
+    // authority y cualquier otra pipeline. Contarlos por separado y quedarse sólo
+    // con uno de los dos lados era un agujero real de este contrato (lo cazó su
+    // propia mutación el 2026-10-16): con la etapa en el merge, una segunda copia
+    // nombrada en integración pasaba desapercibida.
+    let mut owners: Vec<String> = in_other_pipelines.clone();
+    if in_merge {
+        owners.push(MERGE_AUTHORITY.to_owned());
+    }
+    owners.sort();
     assert_eq!(
         owners.len(),
         1,

@@ -15513,3 +15513,32 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
   presenta como ahorro atribuible a una sola causa: el mecanismo medido unidad por
   unidad es el de §8.3 (163 s → 1 s y 0 unidades `Dirty`).
 
+### Cierre del recorrido: la garantía vuelve y el coste desaparece (2026-10-16)
+
+- **Medido el motivo de los 700,2 s**: `cargo doc --workspace --no-deps` no
+  reutilizaba su caché porque compartía directorio de target con `clippy
+  --all-targets` y las suites. Con un directorio propio
+  (`<target_directory>/doc-check`, resuelto con `cargo metadata`): **124 s** la
+  primera vez, **1 s** la repetición, **1 s** tras un build de tests en el
+  directorio compartido, **~70 s** tras tocar el `src` de `cognicode-core`.
+- **Decisión final**: la stage `rustdoc-gate` vuelve a `merge-gate.pipeline.kts`
+  (único dueño nombrado), `integration.pipeline.kts` se queda sin etapa nombrada, y
+  `declared_deviations.json` queda **vacío**: no hay ninguna garantía fuera de la
+  lane que bloquea `main`. La decisión de presupuesto que estaba pendiente deja de
+  existir: no hay 700 s que pagar.
+- **Hueco encontrado en mi propio contrato** por su mutación: cuando la etapa estaba
+  en el merge, una segunda copia nombrada en integración **no** se detectaba, porque
+  el contrato contaba un lado u otro y no los dos. Corregido y verificado: ahora
+  falla con `Found ["integration.pipeline.kts", "merge-gate.pipeline.kts"]`.
+- **Mutaciones del estado final**: sin etapa en la autoridad → rojo; dos dueños →
+  rojo; declaración obsoleta con la etapa en la autoridad → rojo; estado corregido →
+  verde (11/11).
+
+- **Gate final** (PipelineK `merge-gate.pipeline.kts`, `--rerun`, corrida
+  `4782aa7a`): **SUCCESS, 59 etapas** (58 + `rustdoc-gate`), 1 039,3 s de suma de
+  etapas y 1 047 s de pared. La etapa recuperada cuesta **26,6 s** in-gate, frente a
+  los **700,2 s** medidos en la corrida `e3465380` con la misma etapa y el mismo
+  worktree. El total de la corrida **no** se presenta como mejora: entre corridas
+  cambia el estado de la caché compartida y la máquina tiene otros trabajos de
+  PipelineK ajenos en marcha; lo comparable es la etapa consigo misma.
+

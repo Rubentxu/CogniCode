@@ -36,22 +36,17 @@ pipeline {
     stages {
         // ------------------------------------------------------------ workspace
         stage("workspace") {
-            // El gate de rustdoc tiene aquí su dueño **declarado**: esta lane no
-            // bloquea `main` (eso lo hace `merge-gate.pipeline.kts`), y esa
-            // diferencia está declarada con precio medido en
-            // `scripts/ci/declared_deviations.json` porque traerla al merge cuesta
-            // 700,2 s (medido 2026-10-16). El contrato
-            // `the_rustdoc_gate_runs_in_exactly_one_authority` exige que la
-            // desviación esté declarada, así que no puede volver a ocurrir en
-            // silencio: quien quite la declaración sin devolver la etapa al merge
-            // deja el contrato en rojo.
+            // El gate de rustdoc NO tiene dueño aquí: su dueño es la lane que bloquea
+            // `main` (`MERGE_AUTHORITY`), y volvió allí el 2026-10-16 cuando se midió
+            // que el coste que lo mantenía fuera —700,2 s dentro del gate— era el
+            // directorio de target compartido, no el chequeo: con un directorio
+            // propio cuesta 124 s la primera vez, 1 s en régimen estable y ~70 s tras
+            // tocar el `src` de `cognicode-core`. Esta lane sigue ejecutando el mismo
+            // target dentro de `all-targets` como consecuencia de correr el workspace
+            // entero, y eso no es una obligación nombrada ni un dueño.
             // The full suite. `--all-targets` is what compiles every
             // `tests/*.rs` target in the workspace; without it the named
             // contract suites below are the only thing being built.
-            stage("rustdoc-gate") {
-                sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
-            }
-
             stage("all-targets") {
                 sh("$cd && cargo test --workspace --all-targets")
             }

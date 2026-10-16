@@ -416,40 +416,34 @@ Es decir: el gate útil no se construye borrando etapas por lentas, sino cambian
 quién posee cada obligación y cuándo se paga. Lo que se ha movido aquí es una
 etapa que **el repositorio ya ejecutaba dos veces por cambio**.
 
-## 8. El gate de rustdoc: dueño único, fuera de la autoridad y declarado
+## 8. El gate de rustdoc: dueño único, y de vuelta en la autoridad (2026-10-16)
 
 | Hecho | Estado |
 |---|---|
-| Dueño nombrado | `integration.pipeline.kts`, stage `rustdoc-gate` |
-| Autoridad de merge | `merge-gate.pipeline.kts` (`MERGE_AUTHORITY`, `scripts/ci/pipeline_authority.py`); **no** ejecuta el target |
-| Naturaleza | Desviación **declarada**: la obligación no está en la lane que bloquea `main` |
-| Declaración | `scripts/ci/declared_deviations.json` (motivo, precio, fecha, corrida, ADR y comando para revertir) |
-| Precio de restaurarla | **700,2 s** por merge (medido 2026-10-16, run `e3465380`) |
-| Decisión | Pendiente del operador: es presupuesto de merge |
-| ADR | [ADR-TH-014](../../test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md), que enmienda ADR-TH-011 |
+| Dueño nombrado | `merge-gate.pipeline.kts`, stage `rustdoc-gate` |
+| `integration.pipeline.kts` | sin etapa nombrada; su `--all-targets` ejecuta el target como efecto colateral, no como dueño |
+| Desviación declarada | **ninguna** (`scripts/ci/declared_deviations.json` vacío) |
+| Coste del chequeo | **124 s** la primera vez (doc cache frío), **1 s** en régimen estable, **~70 s** tras tocar el `src` de `cognicode-core` |
+| ADR | [ADR-TH-014](../../test-harness/adrs/ADR-TH-014-rustdoc-vuelve-y-el-coste-era-el-target.md), que enmienda ADR-TH-011 |
 
-### 8.1 Lo que la justificación original decía de más
+### 8.1 El recorrido, porque corrige dos errores anteriores
 
-El movimiento del 2026-10-15 (ADR-TH-011) se apoyaba en una medición **correcta**
-—el target corría dos veces por cambio y la copia del merge costaba 667 s dentro de
-un merge de 1 630 s— y en una frase **falsa**: que integración «es la lane que
-bloquea `main`». No lo es. El contrato se reescribió entonces para exigir
-`runners == ["integration.pipeline.kts"]` mientras su prosa afirmaba «in a lane that
-blocks `main`»: prosa y aserción discrepantes, es decir un contrato que certificaba
-el agujero.
+1. **2026-10-15 (ADR-TH-011)**: la etapa se movió a integración con una medición
+   correcta (667 s de un merge de 1 630 s) y una frase falsa («integración es la lane
+   que bloquea `main`»). El contrato se reescribió para exigir ese estado mientras su
+   prosa afirmaba lo contrario: certificaba el agujero.
+2. **2026-10-16, primer intento**: devolverla al merge se midió antes de decidir, y
+   costaba **700,2 s** en el gate (corrida `e3465380`). Se declaró la desviación con
+   precio en `declared_deviations.json` y el contrato pasó a exigir esa declaración.
+3. **2026-10-16, medición del motivo**: los 700 s no eran del chequeo sino del
+   **directorio de target compartido**: `cargo doc --workspace --no-deps` no
+   reutiliza su caché cuando compila junto a `clippy --all-targets` y las suites. Con
+   un directorio propio (`<target_directory>/doc-check`, resuelto con
+   `cargo metadata`) el mismo chequeo cuesta 124 s en frío, **1 s** estable y ~70 s
+   tras tocar `cognicode-core`. Con ese precio, la garantía volvió a la lane que
+   bloquea `main` y la desviación quedó vacía.
 
-### 8.2 El precio se midió antes de arreglarlo
-
-El 2026-10-16 se intentó devolver la etapa al merge y se midió primero: en la
-corrida `e3465380`, `rustdoc-gate` costó **700,2 s** dentro del gate (18 etapas,
-1 183,7 s acumulados con ella). El coste es el `cargo doc --workspace --no-deps`
-completo del target, cuya caché no sobrevive a las invocaciones mezcladas con
-`clippy --all-targets` y el resto de suites sobre el mismo directorio de target:
-repetir `cargo doc` en un worktree quieto volvió a tardar más de 300 s. Con el
-presupuesto de merge declarado (6–7 min), pagarlo no es una decisión de este
-documento: se declara y se escala.
-
-### 8.3 El defecto que sí se corrigió
+### 8.2 El defecto que sí gravaba todo el trabajo de un worktree
 
 `crates/cognicode-cli/build.rs` declaraba
 `cargo:rerun-if-changed=../../.git/HEAD` y `../../.git/refs/heads/`, rutas que
@@ -461,36 +455,33 @@ trata una entrada declarada y ausente como siempre sucia.
 | `cargo doc --workspace --no-deps`, segunda pasada | **163 s** | **1 s** |
 | Unidades `Dirty` en `cargo doc -v`, árbol quieto | 1+ | **0** |
 
-Afectaba a cualquier compilación de `cognicode-cli` y sus dependientes en el
-entorno del operador, no sólo a este gate. Lo vigila
-`scripts/ci/test_build_inputs_exist.py` (rutas literales que existen; rutas
-dinámicas con comprobación de existencia).
+Lo vigila `scripts/ci/test_build_inputs_exist.py` (rutas literales que existen;
+rutas dinámicas con comprobación de existencia).
 
-### 8.4 Pruebas adversariales ejecutadas
+### 8.3 Pruebas adversariales ejecutadas
 
-Con el contrato del dueño: (a) quitar la declaración de `declared_deviations.json` →
-rojo; (b) declarar un dueño distinto del que ejecuta la etapa → rojo; (c) precio en
-cero → rojo; (d) devolver la etapa al merge dejando la declaración → rojo
-(«stale declaration»). Las cuatro se restauraron y el contrato volvió a verde
-(11/11). Con el contrato de entradas de build: (e) volver a
-`rerun-if-changed=../../.git/HEAD` literal → rojo; (f) ruta dinámica sin
-comprobación de existencia → rojo.
+Contrato del dueño y de la declaración: (a) quitar la etapa de la autoridad de merge
+→ rojo; (b) etapa nombrada también en integración → rojo («exactly one named owner»);
+(c) declarar una desviación **con** la etapa en la autoridad → rojo («stale
+declaration»); (d) declaración ausente con dueño fuera de la autoridad → rojo;
+(e) dueño declarado distinto del real → rojo; (f) precio cero → rojo. Contrato de
+entradas de build: (g) `rerun-if-changed=../../.git/HEAD` literal → rojo; (h) ruta
+dinámica sin guarda de existencia → rojo. Todas se restauraron y los contratos
+volvieron a verde (11/11 y 2/2).
 
-### 7.1 Clasificación de las 57 etapas del merge (vocabulario del mandato; `rustdoc-gate` no está entre ellas)
+### 7.1 Clasificación de las 57 etapas del merge restantes (vocabulario del mandato; `rustdoc-gate` está contada aparte en §8)
 
 | Clasificación | Etapas | Nota |
 |---|---|---|
-| `MERGE_REQUIRED` | 53 | Los contratos estructurales del repo (`contracts`, `fmt`, `clippy`, cobertura de CLI/core, `check-bin-tracking`, `verify-skills`), las suites de producto y seguridad de CLI/MCP/core y las construcciones debug que sus suites consumen |
-| `CERTIFICATION_REQUIRED` | 1 | `rustdoc-gate`: desviación **declarada** desde el 2026-10-16 (§8), con precio medido de 700,2 s para volver al merge. No es una equivalencia: la higiene de doc-links de M0.11 no puede tumbar un merge hoy, y la decisión de pagarla es del operador |
+| `MERGE_REQUIRED` | 54 | Los contratos estructurales del repo (`contracts`, `fmt`, `clippy`, cobertura de CLI/core, `check-bin-tracking`, `verify-skills`), las suites de producto y seguridad de CLI/MCP/core, las construcciones debug que sus suites consumen y `rustdoc-gate`, que volvió a la autoridad el 2026-10-16 cuando se midió que su coste era el target compartido y no el chequeo (§8) |
 | `RELEASE_REQUIRED` | 0 en esta lane | Las cuatro construcciones release y las seis suites de perfil release salieron en B1 (§12 del ROADMAP); su dueño es `release-candidate.pipeline.kts` |
 | `ADVISORY` | 3 | Los pasos cuya falla no bloquea por diseño (instalaciones de herramientas y sus equivalentes); el resto de `cargo deny` depende de una base de avisos externa y hoy se ejecuta en merge porque su resultado es contractual |
 
 Ninguna etapa se movió por ser lenta: la única que cambió de dueño (§8) ya se
 ejecutaba dos veces por cambio, y su dueño declarado es hoy la lane de integración,
 con el precio de traerla de vuelta medido y con la decisión escalada al operador.
-Las 53 `MERGE_REQUIRED` son las que el siguiente bloque (selección por impacto)
-debe poder reducir a *afectadas*, no eliminar. La etapa `CERTIFICATION_REQUIRED`
-no se reduce por selección: se decide por presupuesto (§8.2).
+Las 54 `MERGE_REQUIRED` son las que el siguiente bloque (selección por impacto)
+debe poder reducir a *afectadas*, no eliminar.
 
 ## 9. Etapa de sombra (2026-10-15)
 

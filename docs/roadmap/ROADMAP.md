@@ -581,23 +581,26 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon cuyo árbol no tenía binarios previos (el plan construye el que cada suite necesita antes de ejecutarla), y todos los códigos de salida y tiempos publicados sin maquillar, incluidas las dos corridas de gate que fallaron antes de los arreglos |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
 
-## 22. TH-IMPL-08 — La desviación del gate de rustdoc, declarada por máquina (2026-10-16)
+## 22. TH-IMPL-08 — El gate de rustdoc vuelve a la autoridad, y el coste era el target (2026-10-16)
 
-> **Estado**: IMPLEMENTADO y gated. La comprobación de rustdoc de M0.11 sigue
-> corriendo en la lane de integración, que **no** bloquea `main`: eso es una
-> **desviación declarada**, con precio medido (**700,2 s** por merge), fecha,
-> corrida y ADR, y el contrato la exige. Antes se justificaba con una frase falsa
-> —«integración es la lane que bloquea `main`»— y el contrato se había reescrito
-> para aceptarlo con una prosa que decía lo contrario de lo que comprobaba.
-> Decisión:
-> [`test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md`](../../test-harness/adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md).
+> **Estado**: IMPLEMENTADO y gated. La comprobación de rustdoc de M0.11 volvió a la
+> lane que bloquea `main`, y el recorrido importa: primero se midió que costaba
+> **700,2 s** dentro del gate, se declaró la desviación con precio en
+> `scripts/ci/declared_deviations.json` (con contrato que la exige), y después se
+> midió el **motivo** de esos 700 s: no era el chequeo sino el directorio de target
+> compartido, que impedía a `cargo doc` reutilizar su caché. Con un directorio propio
+> cuesta **124 s** en frío, **1 s** en régimen estable y ~70 s tras tocar
+> `cognicode-core`; la desviación quedó vacía y ninguna garantía vive fuera de la
+> autoridad. Decisión:
+> [`test-harness/adrs/ADR-TH-014-rustdoc-vuelve-y-el-coste-era-el-target.md`](../../test-harness/adrs/ADR-TH-014-rustdoc-vuelve-y-el-coste-era-el-target.md),
+> que enmienda ADR-TH-011.
 
 | Item | Contrato |
 |---|---|
-| Valor | Que una garantía no pueda salir de la lane que bloquea `main` sin quedar declarada, medida y fechada; y que un defecto de build inputs que gravaba toda compilación en un worktree (`.git/HEAD` inexistente ⇒ crate sucio en cada invocación) quede corregido y vigilado |
-| Clasificación | Evolutivo del test harness, continuación de TH-IMPL-07; toca una obligación del gate y por eso exige medición y contrato propio |
-| Alcance | `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `crates/cognicode-cli/build.rs`, `crates/cognicode-core/tests/core_gate_coverage_contract.rs`, `scripts/ci/declared_deviations.json` (nuevo), `scripts/ci/test_build_inputs_exist.py` (nuevo), `test-harness/obligations.json`, ADR-TH-011 (enmendada) y ADR-TH-014, auditoría §8, README del paquete |
-| Fuera de alcance | Pagar los 700 s para devolver la etapa al merge (decisión del operador sobre el presupuesto), selección por impacto (W6), rediseño del target `m011_rustdoc_gate` para que su caché se reutilice |
-| Consumidores | Operador (decisión de presupuesto con cifras), mantenedor (propiedad del gate y de la desviación), auditoría (ADR-TH-014 y auditoría §8) |
-| Criterio de cierre | Cumplido: cuatro mutaciones del contrato de dueño mueren (declaración ausente, dueño declarado incorrecto, precio cero, declaración obsoleta tras devolver la etapa) y dos del contrato de entradas de build (ruta literal inexistente, ruta dinámica sin guarda); `cargo doc` repetido pasa de 163 s a 1 s con 0 unidades `Dirty`; suite del harness 125/125; gate `595f1157` **SUCCESS, 58 etapas, 463,1 s** frente a los 1 027 s de pared de la corrida del mismo día antes de estos cambios (caché no idéntica entre corridas: el dato por unidad es el de §8.3); el guard de frescura del binario de MCP, que hizo fallar el gate en `mcp-a009-agent-safe-profile`, se corrigió a un oráculo por clausura de dependencias y se probó que sigue mordiendo |
+| Valor | Recuperar la comprobación de doc-links en el punto que puede bloquear un merge **sin** pagar 700 s, porque el coste era dónde compilaba y no lo que comprobaba; y dejar un mecanismo que impida que cualquier garantía salga de la autoridad sin declararse, medirse y fecharse |
+| Clasificación | Evolutivo del test harness, continuación de TH-IMPL-07; toca una obligación del gate y exige medición y contrato propio |
+| Alcance | `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `crates/cognicode-runtime/tests/m011_rustdoc_gate.rs` (target dir propio), `crates/cognicode-cli/build.rs`, `crates/cognicode-core/tests/core_gate_coverage_contract.rs`, `crates/cognicode-mcp/tests/common/mod.rs` (oráculo de frescura), `scripts/ci/declared_deviations.json` (nuevo), `scripts/ci/test_build_inputs_exist.py` (nuevo), `test-harness/obligations.json`, ADR-TH-011 enmendada y ADR-TH-014, auditoría §8, README del paquete |
+| Fuera de alcance | Selección por impacto (W6), rediseñar el target `m011_rustdoc_gate` más allá del directorio de target, y el presupuesto de merge en general |
+| Consumidores | Mantenedor (propiedad del gate), contribuidores (compilaciones en worktree sin reconstrucciones perpetuas), auditoría (ADR-TH-014 y auditoría §8) |
+| Criterio de cierre | Cumplido: el contrato del dueño muere en las tres mutaciones (sin dueño, dos dueños, declaración obsoleta) y el contrato de entradas de build en dos (ruta literal inexistente, ruta dinámica sin guarda); el hueco del propio contrato (un segundo dueño pasaba desapercibido con la etapa en el merge) se encontró con su mutación y se cerró; `cargo doc` repetido 163 s → 1 s con 0 unidades `Dirty`; gate `4782aa7a` **SUCCESS, 59 etapas** con la garantía dentro, y la etapa `rustdoc-gate` a **26,6 s** frente a los 700,2 s de la corrida `e3465380` (el total de corrida no se compara: la caché y la carga de la máquina cambian entre corridas) |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

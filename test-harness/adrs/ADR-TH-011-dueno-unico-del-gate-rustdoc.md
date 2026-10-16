@@ -1,17 +1,18 @@
 # ADR-TH-011 — El gate de rustdoc se paga una vez: dueño único en integración
 
 > **ENMENDADA el 2026-10-16 por
-> [ADR-TH-014](ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md).** Esta
+> [ADR-TH-014](ADR-TH-014-rustdoc-vuelve-y-el-coste-era-el-target.md).** Esta
 > decisión situó el dueño en `integration.pipeline.kts` con una justificación que
 > incluía una frase falsa —que esa lane bloquea `main`— y reescribió el contrato
-> para aceptarlo, con una prosa que afirmaba lo contrario de lo que comprobaba. El
-> dueño sigue siendo integración, pero ya no por prosa: la desviación está
-> declarada por máquina en `scripts/ci/declared_deviations.json` con su precio
-> medido (**700,2 s** de un merge, corrida `e3465380`) y el contrato exige esa
-> declaración. Lo que sigue siendo cierto de esta ADR: la duplicación que medía era
-> real y el contrato de dueño único sigue existiendo, ahora con la propiedad
-> correcta y sin poder certificar un agujero en silencio. No se reescribe el
-> cuerpo: se corrige a la vista.
+> para aceptarlo, con una prosa que afirmaba lo contrario de lo que comprobaba: el
+> merge se quedó sin la comprobación de rustdoc. El 2026-10-16 se midió el motivo
+> del coste que la mantenía fuera (700,2 s) y no era el chequeo sino el directorio
+> de target compartido: con un directorio propio cuesta 124 s la primera vez y 1 s
+> en régimen estable, así que la etapa volvió a la lane que bloquea `main`. Lo que
+> sigue siendo cierto de esta ADR: la duplicación que medía era real y el contrato
+> de dueño único sigue existiendo, ahora en las dos direcciones (exige declaración
+> cuando el dueño no es la autoridad y exige su ausencia cuando sí lo es). No se
+> reescribe el cuerpo: se corrige a la vista.
 
 **Estado:** AMENDED por ADR-TH-014 (2026-10-16). **Fecha:** 2026-10-15.
 **Contexto:** mandato del operador de 2026-10-15 (segundo bloque) para bajar el

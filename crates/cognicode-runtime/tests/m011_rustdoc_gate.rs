@@ -126,11 +126,45 @@ fn gate_covers_every_workspace_crate() {
     }
 }
 
+/// Directorio de target propio para esta comprobación.
+///
+/// MEDIDO 2026-10-16. Compartir el directorio de target con las suites hace que
+/// `cargo doc --workspace --no-deps` no reutilice su caché: medido en el gate, la
+/// etapa costaba **700,2 s** (corrida `e3465380`) y repetir el comando en un árbol
+/// quieto volvía a tardar más de 300 s. Con un directorio propio, medido en el
+/// mismo worktree: **124 s** la primera vez (12 crates), **1 s** la repetición, y
+/// **1 s** incluso después de un build de tests en el directorio compartido. Tocar
+/// el `src` de `cognicode-core` cuesta entonces ~70 s, que es el trabajo real de
+/// re-documentar lo afectado.
+///
+/// El valor sale de `cargo metadata`, así que es estable entre corridas y sigue
+/// respetando el `CARGO_TARGET_DIR` que la configuración del repositorio declare:
+/// es un subdirectorio suyo, no un camino inventado.
+fn doc_check_target_dir(root: &std::path::Path) -> std::path::PathBuf {
+    let output = Command::new("cargo")
+        .args(["metadata", "--no-deps", "--format-version", "1"])
+        .current_dir(root)
+        .output()
+        .expect("cargo metadata must be runnable");
+    assert!(
+        output.status.success(),
+        "cargo metadata failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("cargo metadata emits valid JSON");
+    let target = metadata["target_directory"]
+        .as_str()
+        .expect("target_directory is a string");
+    std::path::Path::new(target).join("doc-check")
+}
+
 #[test]
 fn workspace_documentation_is_warning_free() {
     let root = workspace_root();
     let output = Command::new("cargo")
         .args(["doc", "--workspace", "--no-deps"])
+        .env("CARGO_TARGET_DIR", doc_check_target_dir(&root))
         .current_dir(&root)
         .output()
         .expect("cargo doc must be runnable");

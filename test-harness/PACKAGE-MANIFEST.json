@@ -1,9 +1,9 @@
 {
  "files": [
   {
-   "bytes": 24219,
+   "bytes": 23919,
    "path": "README.md",
-   "sha256": "464eda1242d17dfea4a7c5cf7898dd17ce48e96bf608cdebc63228659f8d0288"
+   "sha256": "1021c1156d92527a06ee39ddc13d55710a03d0a2557359ae74d143563fa8774b"
   },
   {
    "bytes": 7968,
@@ -96,9 +96,9 @@
    "sha256": "9e8a063b8f473764649b6e083c82b1071fd29359bfd337c358ad645b5ef596f0"
   },
   {
-   "bytes": 4436,
+   "bytes": 4560,
    "path": "adrs/ADR-TH-011-dueno-unico-del-gate-rustdoc.md",
-   "sha256": "9e4ac8097bdec52e63ecae0f38b34c6d9bc98882211e83a3b3c4b73dca8bb99b"
+   "sha256": "cf4137726f0f57593874c0da704ee0554b890dc81ac1260263acf23341220b36"
   },
   {
    "bytes": 3278,
@@ -111,9 +111,9 @@
    "sha256": "cb5f230785025469cc211185ccf9ba9c681f49b1e21299aacb4e877773fee1ad"
   },
   {
-   "bytes": 5802,
-   "path": "adrs/ADR-TH-014-rustdoc-fuera-de-la-autoridad-declarado.md",
-   "sha256": "8147a024d7c37a34afca7390ddab3ad9e6d70f3900725e2968facb8ee66226a4"
+   "bytes": 4570,
+   "path": "adrs/ADR-TH-014-rustdoc-vuelve-y-el-coste-era-el-target.md",
+   "sha256": "96e950520dbc4b9adccaaf563148185765292548a52b5d612b6a93bb1a5e93e0"
   },
   {
    "bytes": 1010,
@@ -201,9 +201,9 @@
    "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c"
   },
   {
-   "bytes": 50026,
+   "bytes": 49638,
    "path": "docs/07-auditoria-merge-gate.md",
-   "sha256": "bad82f49fe1e967b438b39055a412cfb35965f630c841646103f5fbf1e950aff"
+   "sha256": "de412eb6395b2088e636031b86bba4e6d09153ba2a1614df81a77ab5c6b5ac44"
   },
   {
    "bytes": 2991,

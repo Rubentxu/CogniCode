@@ -10,10 +10,13 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-16 (TH-IMPL-08), sobre branch `worktree/test-harness`, HEAD
-> `60c60e155fe1adf183c6c2e85bb90aafdfe83e83`. Unidad cerrada: desviación declarada del gate de rustdoc con precio medido
-> (700,2 s), corrección del defecto `rerun-if-changed` de `cognicode-cli` que gravaba
-> toda compilación en un worktree, y oráculo de frescura del binario de MCP por
-> clausura de dependencias. Gate `595f1157`: SUCCESS, 58 etapas, 463,1 s.
+> `1af78dd39c3263e1a51a8df59a505bf7a1734623`. Unidad cerrada: el gate de rustdoc **volvió a la lane que bloquea `main`**
+> después de medir que su coste (700,2 s in-gate) era el directorio de target
+> compartido y no el chequeo (**26,6 s** in-gate con directorio propio, 1 s en régimen
+> estable); corregido el defecto `rerun-if-changed` de `cognicode-cli` que gravaba
+> toda compilación en un worktree (163 s → 1 s, 0 unidades `Dirty`), y el oráculo de
+> frescura del binario de MCP por clausura de dependencias. Gate `4782aa7a`:
+> SUCCESS, 59 etapas.
 > Los snapshots anteriores se conservan abajo como históricos.
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
 > `4329476fc0e2b9c5e4f42e7d0ad3435b8e3113fd` (TH-IMPL-06: informe reproducible de
