@@ -15743,3 +15743,8 @@ visto desde el otro lado.
 - **Verificación**: suite del harness **131/131**; contrato de los wrappers OK (el
   wrapper pasa `--profile dev` y su defecto sigue siendo CR-08).
 
+- **Gate del cierre de TH-IMPL-10**: SUCCESS sobre `9f9baf46` (736 s de pared en una
+  corrida con la caché tibia y carga ajena en la máquina). El harness corre dentro del
+  gate en su etapa de sombra y en la suite de contratos, así que el perfil nuevo está
+  cubierto por el gate sin que ninguna pipeline lo use.
+
