@@ -15681,3 +15681,41 @@ y causa para una unidad propia.
   (`CARGO_TARGET_DIR`) y su fallo pre-existente declarado; el merge sigue verde con
   `rustdoc-gate` dentro y sin coste apreciable.
 
+## Recibo: qué se ha hecho más ligero y qué no (2026-10-16)
+
+**Corrección de una impresión que mi propio registro podía dejar**: este bloque **no**
+ha dejado el gate de merge medible-mente más ligero en su conjunto. Lo que sí está
+medido, unidad por unidad, es esto:
+
+| Cambio | Evidencia |
+|---|---|
+| Compilaciones en un worktree | `crates/cognicode-cli/build.rs` declaraba una entrada inexistente y dejaba el crate sucio en **cada** invocación: `cargo doc --workspace --no-deps` repetido pasaba de **163 s a 1 s** y `cargo doc -v` pasaba a **0** unidades `Dirty`. Beneficia a toda compilación del repo en este entorno, no sólo al gate |
+| Gate de rustdoc | Estaba fuera de la lane que bloquea `main` con una justificación falsa; vuelve a ella y cuesta **1,1-1,3 s** en el gate con la caché de documentación caliente (**124 s** en frío, **~70 s** tras tocar `core`), frente a los **700,2 s** que costaba cuando compartía directorio de target con las suites |
+| Total del gate | Las corridas de hoy dan 556,4 s de suma de etapas (59 etapas) y oscilan entre 463 y 1 039 s según caché y carga de la máquina. **No** se presenta como ahorro: la varianza entre corridas es mayor que cualquier efecto atribuible a estos cambios |
+
+**Dónde está ahora el presupuesto** (aritmética publicada por `harness report` sobre
+la corrida `2f9d972d`, con `contracts`, `fmt`, `clippy`, `advisories` y `licenses`
+protegidos): cuesta actual **556,8 s**; la etapa dominante es **`contracts`
+(371,6 s, el 67%)** y las suites de producto que quedan son 35,1 + 34,3 + 30,1 s entre
+las tres mayores. Dejar fuera esas cuatro etapas de test baja la aritmética a
+**418,7 s**, dentro del presupuesto de 420 s. **Esa decisión es del operador** (fila
+W6): el dato está calculado y los nombres de las etapas, publicados.
+
+**Estado real de la lane de integración** (ejecutada, no supuesta): **roja** en este
+worktree por motivos **pre-existentes**, ninguno de este bloque (`git log` de mis
+commits contra todo lo relacionado con release: vacío):
+
+1. `core-no-default`: `interface::catalog::tests::feature_filter_matches_current_cargo_config`
+   (`crates/cognicode-core/src/interface/catalog.rs:397`) asume las features por
+   defecto y la stage compila con `--no-default-features`.
+2. `check-release-matrix` (obligación del suelo de integración, ejecutada hoy por
+   primera vez): «FAIL: the contract publishes 'aarch64-unknown-linux-gnu' but no
+   lane builds it» — el contrato de release publica dos plataformas y la lane de
+   candidato declara una.
+3. Por eso las etapas posteriores de la lane siguen **NOT_RUN**.
+
+Observación de proceso, porque explica los dos anteriores: la lane de integración
+**no bloquea nada** (`contexts:[merge-gate]`), así que sus fallos se acumulan sin que
+nadie los vea. Es el mismo agujero que ADR-TH-014 corrigió para el gate de rustdoc,
+visto desde el otro lado.
+

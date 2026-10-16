@@ -581,6 +581,26 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon cuyo árbol no tenía binarios previos (el plan construye el que cada suite necesita antes de ejecutarla), y todos los códigos de salida y tiempos publicados sin maquillar, incluidas las dos corridas de gate que fallaron antes de los arreglos |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
 
+## 22b. Qué queda para que el merge baje de 420 s (dato, no decisión) — 2026-10-16
+
+Aritmética publicada por `harness report` sobre la corrida `2f9d972d` (59 etapas,
+556,4 s de suma), con `contracts`, `fmt`, `clippy`, `advisories` y `licenses`
+protegidos:
+
+| Cifra | Valor |
+|---|---|
+| Coste actual | 556,8 s |
+| Etapa dominante | `contracts`, **371,6 s (67%)** |
+| Tres mayores suites de test | `cognicode-ladybug` 35,1 s, `core-unrestricted-evidence-kernel` 34,3 s, `cli-integration-suites` 30,1 s |
+| Aritmética con esas cuatro etapas fuera | **418,7 s** (dentro de 420) |
+| Decisión | Del operador (fila W6 del roadmap del harness): es selección por impacto, no un cambio que un agente pueda tomar |
+
+Lo que este bloque sí dejó medido, unidad por unidad: compilaciones de un worktree
+163 s → 1 s (0 unidades `Dirty`), y el gate de rustdoc de 700,2 s a 1,1-1,3 s con
+directorio de target propio. El total del gate **no** se presenta como mejora: la
+varianza entre corridas de hoy (463-1 039 s) es mayor que cualquier efecto atribuible
+a estos cambios.
+
 ## 22. TH-IMPL-08 — El gate de rustdoc vuelve a la autoridad, y el coste era el target (2026-10-16)
 
 > **Estado**: IMPLEMENTADO y gated. La comprobación de rustdoc de M0.11 volvió a la
