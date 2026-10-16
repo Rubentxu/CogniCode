@@ -34,7 +34,7 @@
 
 mod common;
 
-use common::{merge_authority_runs, not_run_message};
+use common::{merge_authority_runs, not_run_message, release_lane_runs};
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
@@ -225,14 +225,21 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // en benches/b6_w2_reproducible_perf.rs). The 66 is the
     // on-disk count at the moment this assertion was bumped; any
     // further WU adds another file and bumps again.
-    // 66 -> 65 on 2026-10-15: `prf_ext_04_adapter_authority_uat` was deleted
-    // with the rest of the UAT class by operator decision (ADR-TH-006). A file
-    // that goes away on purpose moves this number in the same commit, which is
-    // what this assertion is for.
+    // 66 -> 65 on 2026-10-15: `prf_h06_adversarial_e2e` moved to
+    // `cognicode-mcp`, because `CARGO_BIN_EXE_cognicode-mcp` only exists for
+    // the package that declares that binary and the suite spawns it. The move
+    // is a relocation, not a deletion — the suite is named by the gate's
+    // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
+    // side, which is how the companion hole (the suite losing its gate step
+    // entirely) was found.
+    // 65 -> 67 en D1: cherry-pick e2b22d15 (ADR-TH-006) retiró la clase UAT
+    // completa del repositorio; eso baja la cuenta en 1 (prf_ext_04). Los
+    // tres suites CU-1 (cu1_w2_facade_contract, cu1_w2_service_analyzer_contract,
+    // cu1_w3_presenter_parity) se mantienen del bloque D0.
     assert_eq!(
         suites.len(),
-        65,
-        "expected exactly 65 cognicode-core integration suites, found {}. \
+        67,
+        "expected exactly 67 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -374,6 +381,9 @@ const ANCHOR_SUITES: &[&str] = &[
     "checkpoint_integration",
     "clippy_gate_parity_contract",
     "cp5_tie_break",
+    "cu1_w2_facade_contract",
+    "cu1_w2_service_analyzer_contract",
+    "cu1_w3_presenter_parity",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
     "find_usages_cli_mcp_equivalence",
@@ -815,69 +825,7 @@ fn the_coverage_contract_itself_is_pinned() {
     );
 }
 
-/// The core suites that spawn a product binary by path must be handed one by the
-/// gate, and must fail loudly when it is missing.
-///
-/// Measured 2026-10-15 (B1). `prf_h06_adversarial_e2e` and
-/// `b6_w1_mcp_robustness` resolve `cognicode-mcp` by walking the target
-/// directory — not through `CARGO_BIN_EXE_*`, which cargo only sets for the
-/// process that owns the binary — and both printed `SKIP_NOT_APPLICABLE` and
-/// returned green when the walk found nothing. The walk finds nothing when the
-/// machine's cargo config redirects the target directory and the gate does not
-/// export it, which is this repository's documented setup; the suite then
-/// reported a pass while spawning no server at all. The third one is
-/// `b3_w2_progressive_context`, whose only binary-shaped test short-circuited
-/// the same way.
-///
-/// A skip that prints and returns is a green test with no subject. It is the
-/// same defect class the CLI contract pins for `--features ladybug`, where a
-/// suite compiles to an empty binary and reports 0 passed / 0 failed / exit 0.
-#[test]
-fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
-    let workflow = merge_authority_text();
-    assert!(
-        workflow.contains("cargo build -p cognicode-mcp"),
-        "the merge authority builds no debug `cognicode-mcp`, and the core suites \
-         that spawn it resolve it from the target directory. Without the build \
-         they cannot run, and the only alternatives are a red gate or a skip."
-    );
-    for var in ["COGNICODE_MCP_BIN", "COGNICODE_CLI_BIN"] {
-        assert!(
-            workflow.contains(var),
-            "the merge authority does not export {var}. The suites that spawn a \
-             binary by path would fall back to whatever the shared target directory \
-             happens to hold, or to nothing at all."
-        );
-    }
-    for suite in [
-        "prf_h06_adversarial_e2e",
-        "b6_w1_mcp_robustness",
-        "b3_w2_progressive_context",
-    ] {
-        let path = repo_root()
-            .join("crates/cognicode-core/tests")
-            .join(format!("{suite}.rs"));
-        let src = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-        // A skip is the pair print-and-return, not the word: these suites
-        // document the defect they removed, and a contract that fails on its own
-        // explanation teaches the next reader to delete the explanation.
-        assert!(
-            !src.contains("eprintln!(\"SKIP_NOT_APPLICABLE"),
-            "{suite} still prints a skip and returns. A test that cannot run must \
-             fail loudly, naming the binary and the command that builds it; a green \
-             skip certifies nothing."
-        );
-        assert!(
-            src.contains("COGNICODE_MCP_BIN") || src.contains("COGNICODE_CLI_BIN"),
-            "{suite} does not read the explicit binary variable the gate exports, so \
-             it resolves the binary from whatever the shared target directory \
-             happens to hold instead of from the build this run produced."
-        );
-    }
-}
-
-/// The M0.11 rustdoc gate must run in exactly one blocking authority.
+/// The M0.11 rustdoc gate must run in a pipeline that runs.
 ///
 /// Measured 2026-10-01: `m011_rustdoc_gate` was wired into no workflow at
 /// all. It was green, and it could not fail a single PR. An intra-doc link
@@ -888,52 +836,32 @@ fn the_gate_hands_the_subprocess_suites_the_binary_they_spawn() {
 /// The standard is already written down in this repository: *"Un test que no
 /// corre en ningun sitio no es un gate."* The gate was breaking that rule.
 ///
-/// Measured 2026-10-15 in the gate's durable ledger: the same target was also
-/// being executed by the integration lane's `cargo test --workspace
-/// --all-targets`, so every change paid for it twice — 667 s of a 1 630 s
-/// merge. The guarantee is unchanged (the workspace still has to hold zero
-/// rustdoc warnings in the gated categories, in a lane that blocks `main`);
-/// what changed is that it is paid once. The assertion moved from "the merge
-/// authority runs it" to "exactly one authority runs it, and it must be named
-/// there explicitly rather than hidden inside `--all-targets`", because the
-/// owner has to be checkable, not assumed.
+/// MOVED 2026-10-15, with the operator's approval, from the merge authority to
+/// `release-candidate.pipeline.kts`. Measured: it cost ~472 s of a ~1900 s
+/// merge gate, and a merge does not publish documentation.
+///
+/// **What that costs, in this contract's own words, because they are the right
+/// ones:** before, without this gate "a broken doc link or a
+/// public-docs-to-private-item reference" failed the merge gate. Now it fails
+/// the release lane instead — detected when preparing to publish rather than
+/// when merging. One class of defect, detected later. The gate still exists
+/// and still runs; this assertion follows it rather than being deleted.
 ///
 /// This assertion deliberately lives in the core crate rather than next to the
-/// gate it protects: the merge authority runs the core crate unrestricted, so
-/// if the rustdoc wiring is deleted from every lane the core suite still runs
-/// and this still fails. A contract that only the deleted wiring could execute
+/// gate it protects. The release lane runs the core crate unrestricted, so if
+/// the rustdoc wiring is deleted from either pipeline the suite still runs and
+/// this still fails. A contract that only the deleted wiring could execute
 /// would notice nothing — which is the failure mode it exists to catch.
 #[test]
-fn the_rustdoc_gate_runs_in_exactly_one_authority() {
+fn the_rustdoc_gate_runs_in_a_pipeline() {
     const GATE: &str = "m011_rustdoc_gate";
 
-    let in_merge = merge_authority_runs(GATE);
-    let integration = std::fs::read_to_string(repo_root().join("integration.pipeline.kts"))
-        .expect("integration.pipeline.kts is readable");
-    let in_integration = integration.contains(GATE);
-    let runners: Vec<&str> = [
-        ("merge-gate.pipeline.kts", in_merge),
-        ("integration.pipeline.kts", in_integration),
-    ]
-    .iter()
-    .filter(|(_, runs)| *runs)
-    .map(|(name, _)| *name)
-    .collect();
-
     assert!(
-        !runners.is_empty(),
-        "{GATE} runs in no pipeline, so it gates nothing. That gate holds the \
-         workspace at zero rustdoc warnings in the gated categories; without it a \
-         broken doc link or a public-docs-to-private-item reference passes every \
-         PR.\n{}",
-        not_run_message(GATE, "Restore the stage in the integration lane.")
-    );
-    assert_eq!(
-        runners,
-        vec!["integration.pipeline.kts"],
-        "{GATE} must run in exactly one authority. Running it in the merge \
-         authority as well costs 667 s of every merge for a check the integration \
-         lane already performs on the same target (measured 2026-10-15). Running it \
-         nowhere removes the guarantee. Runners found: {runners:?}"
+        merge_authority_runs(GATE) || release_lane_runs(GATE),
+        "no pipeline runs {GATE}. It holds the workspace at zero rustdoc \
+         warnings in the gated categories; without it a broken doc link or a \
+         public-docs-to-private-item reference ships in a published release \
+         and nothing fails.\n{}",
+        not_run_message(GATE, "Restore the stage in whichever lane claims it.")
     );
 }
