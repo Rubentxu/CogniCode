@@ -15247,10 +15247,10 @@ merge). Auditoría con el perfil medido: `test-harness/docs/07-auditoria-merge-g
 | Medida | Antes | Después |
 |---|---|---|
 | Etapa `rustdoc-gate` en merge | **737,0 s medidos hoy** en esta máquina (`/usr/bin/time` sobre el mismo comando de la stage) | 0 s (etapa eliminada) |
-| Gate de merge, mismo entorno y mismo día | 1 316 s (579 s del gate + 737 s de la etapa) | **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`, db `merge-gate-b1b.db`) |
+| Gate de merge, mismo entorno y mismo día | **1 240–1 320 s** (579 s medidos del gate + la etapa, que costó 667 s in-gate en la corrida histórica y 737 s standalone hoy; sumar standalone y gate sobreestima un poco porque las etapas previas calientan el target dir) | **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`, db `merge-gate-b1b.db`); con la etapa de sombra después: 550 s, 58 etapas, `SUCCESS` (run `4d431256`) |
 | Gate de merge, corrida histórica con máquina cargada | 1 630 s (27,2 min), run `1b37e37b` | — (no comparable por carga) |
 | Coste del mismo target por cambio | 2 ejecuciones (merge + integración) | 1 ejecución (integración) |
-| Ahorro por iteración de merge | — | **−737 s (−56%)** |
+| Ahorro por iteración de merge | — | **entre −680 s y −737 s (≈−55%)**, con la fuente de cada cifra declarada arriba |
 | `core_gate_coverage_contract` | 11/11 | 11/11 (con la aserción nueva) |
 
 ### Límites declarados
@@ -15313,3 +15313,58 @@ lo que TH-S05 pide antes de cambiar semántica. Decisión:
   incluye `cargo metadata` (~2 s) y la consulta a CR-08.
 - No hay observación equivalente en integración ni en candidato: si el bloque
   siguiente decide adoptar en esas lanes, sus etapas nacerán con esa decisión.
+
+## Recibo 2026-10-15 — TH-IMPL-06: informe reproducible de tiempos y cobertura (W0)
+
+Unidad del roadmap del harness (W0, hasta ahora NOT_STARTED) sobre el mandato del
+operador de 2026-10-15. Contrato en `docs/roadmap/ROADMAP.md` §20; medición en
+`test-harness/docs/07-auditoria-merge-gate.md` §10.
+
+### Qué se hizo
+
+- **`harness report`**: lee el ledger durable de PipelineK **en solo lectura**
+  (`sqlite3` con `mode=ro`), empareja `StageStarted`/`StageFinished` del último run
+  y publica: perfil medido del gate por etapa, mapa de cobertura del catálogo (por
+  tipo y por pipeline de origen), duraciones medidas por el propio harness en su
+  run más reciente y aritmética de presupuesto (`--budget`, `--protect`).
+- **Sin datos no inventa**: si la base no existe, no es legible o no tiene eventos,
+  el informe lo declara y sigue; no estima duraciones.
+- **Contrato del gate**: comprobación nueva que ejecuta el informe sobre la base
+  real del repositorio, exige que la suma de etapas cuadre con el total y que el
+  repositorio quede intacto (`git status` antes/después).
+- **6 tests propios** (`test-harness/tests/test_report.py`), con una base SQLite
+  sintética que replica el esquema de eventos de PipelineK para probar el parser y
+  la selección del último run.
+
+### Medición (run `4d431256`, 58 etapas, 549,9 s)
+
+| Etapa | Segundos | Clasificación |
+|---|---:|---|
+| `contracts` | 263,8 | protegida (contratos estructurales) |
+| `cli-unit-tests` | 61,6 | candidata a selección por impacto |
+| `cli-integration-suites` | 44,2 | candidata |
+| `core-unrestricted-evidence-kernel` | 38,5 | candidata |
+| `cognicode-ladybug` | 29,7 | candidata |
+| resto | 112,1 | fmt, clippy, builds debug, gates pequeños |
+
+Con contratos, lint y seguridad protegidos, **dejar de ejecutar las tres primeras
+candidatas lleva el gate de 550 s a 406 s**: dentro del presupuesto de 420 s que el
+operador fijó como orientativo. El informe lo declara y no decide: mover una etapa
+cambia cuándo bloquea un fallo, y eso es política, no aritmética.
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 107/107 |
+| `scripts/ci/test_harness_contract.py` | PASS, 12/12 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS, 288/288** |
+
+### Límites declarados
+
+- El informe **no decide** la adopción: qué etapas pasan a selección exige su
+  propio ADR con esta aritmética delante.
+- El baseline no está fijado en un documento con fecha y commit: el informe se
+  genera a demanda contra la última corrida del ledger. Queda como pendiente de W0.
+- `--protect` es una lista que se pasa a mano; el informe no adivina qué etapas son
+  intocables por política.

@@ -513,7 +513,7 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 
 | Item | Contrato |
 |---|---|
-| Valor | Dejar de pagar dos veces la misma comprobación en cada iteración: −667 s por merge (41% del tiempo medido), con la garantía de rustdoc intacta en la lane que bloquea `main` |
+| Valor | Dejar de pagar dos veces la misma comprobación en cada iteración: entre −680 s y −737 s por merge (≈55%; 667 s medidos in-gate en la corrida histórica, 737 s standalone hoy), con la garantía de rustdoc intacta en la lane que bloquea `main` |
 | Clasificación | Cambio de CI del roadmap Post-PRF dentro del evolutivo del test harness, autorizado por el mandato del operador de 2026-10-15 (bloque B1b) |
 | Alcance | `merge-gate.pipeline.kts`, `integration.pipeline.kts`, `crates/cognicode-core/tests/core_gate_coverage_contract.rs`, auditoría del merge-gate, ADR-TH-011 |
 | Fuera de alcance | Selección por impacto dentro del merge (W6), caché y reanudación (B3), otras etapas del perfil, advisories de `cargo deny` |
@@ -538,4 +538,23 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Fuera de alcance | Decidir qué etapas pasan a selección (ADR propio con estos datos), reutilización de recibos en merge, caché/reanudación en PipelineK |
 | Consumidores | Mantenedor (decisión de adopción con evidencia), contribuidores (visibilidad de qué se ejecutaría), auditoría (ADR-TH-012) |
 | Criterio de cierre | Cumplido: contrato 11/11 con la comprobación nueva, dos mutaciones adversariales detectadas (etapa ausente; etapa que puede fallar la lane), gate verde con la etapa dentro y su coste medido |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 20. TH-IMPL-06 — Informe reproducible de tiempos y cobertura (2026-10-15)
+
+> **Estado**: IMPLEMENTADO y gated. `harness report` lee el ledger durable de
+> PipelineK en solo lectura, publica el perfil medido del gate, el mapa de
+> cobertura del catálogo y la aritmética del presupuesto. Es la evidencia con la
+> que se decide qué etapas del merge pasan a ejecutarse por impacto (W0 del
+> roadmap del harness), y el contrato del gate comprueba que funciona sobre la base
+> real sin tocar el repositorio.
+
+| Item | Contrato |
+|---|---|
+| Valor | Convertir en reproducible y verificable la medición que hasta ahora era una consulta ad-hoc: con contratos, lint y seguridad protegidos, dejar de ejecutar tres etapas de test llevaría el gate de 550 s a 406 s, dentro del presupuesto de 420 s |
+| Clasificación | Evolutivo del test harness (W0) sobre el mandato del operador de 2026-10-15, continuación de TH-IMPL-05 |
+| Alcance | `test-harness/src/harness/report.py`, `cli.py` (comando `report`), `tests/test_report.py`, `scripts/ci/test_harness_contract.py`, README, auditoría §10, roadmap del harness |
+| Fuera de alcance | Decidir la adopción de la selección (ADR propio), caché/reanudación, escribir en la base de PipelineK |
+| Consumidores | Operador (decisión de política con números), mantenedor (perfil del gate), auditoría (auditoría §10) |
+| Criterio de cierre | Cumplido: 6 tests del informe verdes, contrato del gate 12/12 con la comprobación sobre la base real (suma de etapas = total, repositorio intacto) y la aritmética del presupuesto publicada |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

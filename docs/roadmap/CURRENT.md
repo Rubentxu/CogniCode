@@ -10,8 +10,8 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
-> `14cb5174408b2c500c5844061f7a0b80f9e5ab74` (TH-IMPL-05: etapa de sombra del
-> harness en el gate), sobre el árbol posterior a B1b;
+> `4329476fc0e2b9c5e4f42e7d0ad3435b8e3113fd` (TH-IMPL-06: informe reproducible de
+> tiempos y cobertura), sobre el árbol posterior a TH-IMPL-05 y B1b;
 > este snapshot describe el árbol de trabajo del worktree antes del commit de
 > recibos, que es el siguiente a este documento.
 > Este snapshot describe este worktree, no actualiza la autoridad de `main`.
@@ -19,7 +19,14 @@
 > `910ad2d3`) se conservan abajo como históricos; sus resultados no se presentan
 > como evidencia de este HEAD.
 >
-> **Unidad cerrada en este worktree**: TH-IMPL-05, registrada en `ROADMAP.md` §19
+> **Unidad cerrada en este worktree**: TH-IMPL-06, registrada en `ROADMAP.md` §20
+> y en `JOURNAL.md`. `harness report` publica el perfil medido del gate desde el
+> ledger de PipelineK (solo lectura), el mapa de cobertura del catálogo y la
+> aritmética del presupuesto: con contratos, lint y seguridad protegidos, tres
+> etapas de test menos llevarían el gate de 550 s a 406 s. El informe no decide
+> nada; la adopción sigue requiriendo su ADR.
+>
+> La unidad anterior en este worktree fue TH-IMPL-05, registrada en `ROADMAP.md` §19
 > y en `JOURNAL.md`, con decisión en `test-harness/adrs/ADR-TH-012`. El merge
 > observa en cada PR lo que el harness seleccionaría (obligaciones de la lane,
 > requeridas por impacto, bloqueadas) mediante una etapa advisory que no puede
