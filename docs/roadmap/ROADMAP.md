@@ -365,3 +365,26 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 (`docs(odd): close B5 — release receipts + veredicto + tag SHAs`).
 **Commits B6**: 8 (W1..W6 + close + release) + 2 follow-up (recibo + C8-R fill).
 
+---
+
+## 11. Iniciativa VDH — Value Delivery + Functional Core (2026-10-15)
+
+> **Estado**: PROPOSED; instalación overlay verificada por `python3 test-harness/tools/verify_overlay_manifest.py`, `package_check.py` y `ephemeral_guard.py --phase merge` (PASS, 0 cycle-only paths, 8/8 unit tests del harness verdes). Validación de HEAD pendiente; ADR-VDH-001..004 marcadas PROPOSED requieren aceptación humana.
+
+| ID | Descripción | Estado | Cierre |
+|---|---|---|---|
+| **VDH B0..B4** | Ver [iniciativa VDH](initiatives/VDH-2026-10/ROADMAP-ADDENDUM.md): verdad semántica + seams FP + Explorer real + poda controlada de pruebas. Reutiliza ST-03..05/CR-08/09/PRF-*; no reabre PRF. | PROPOSED; validar HEAD, ADR y gate antes de arrancar | 2026-10-15 |
+
+**Detalle operativo**:
+
+- `docs/roadmap/initiatives/VDH-2026-10/ROADMAP-ADDENDUM.md` — 5 hitos B0..B4, orden y dependencias
+- `docs/roadmap/initiatives/VDH-2026-10/ACCEPTANCE-MATRIX.md` — 15 oráculos UAT/E2E/AAT
+- `docs/roadmap/initiatives/VDH-2026-10/AGENT-HANDOFF.md` — mandato por hito
+- `docs/roadmap/initiatives/VDH-2026-10/RELEASE-PROTOCOL.md` — protocolo de release
+- `docs/roadmap/initiatives/VDH-2026-10/LEGACY-BY-BLOCK.md` — 125 tests a clasificar
+- `openspec/changes/2026-10-15-value-delivery-functional-core/` — proposal, design, tasks, 5 specs
+- `docs/adr/ADR-VDH-001..004.md` — propuestas (sin aceptación automática)
+- `test-harness/` — overlay de control de pruebas efímeras, recibos y catálogo
+
+**Mandato §Rehabilitación del gate (B0 prerequisite)**: la sesión anterior documentó que el `merge-gate` no podía dar verdicts atribuibles en esta máquina (6 worktrees compartiendo `/var/home/rubentxu/cargo-targets/`). Los 15 commits en `release/v0.101.17` ya añaden una etapa `build-isolation` que rechaza cuando hay otro checkout compilando; falta el aislamiento real (`CARGO_TARGET_DIR` por corrida). B0 no puede cerrar sin un gate verde y atribuible.
+

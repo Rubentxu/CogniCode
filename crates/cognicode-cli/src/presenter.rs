@@ -46,7 +46,8 @@ use cognicode_core::architecture::diagnostic::ArchitectureDiagnostic;
 use cognicode_core::infrastructure::semantic::outline::OutlineNode;
 use cognicode_core::interface::cli::commands::Format as CliFormat;
 use cognicode_core::interface::cli::result::{
-    CommandOutput, GraphResult, HoverResult, IndexResult, NavigateResult, ReferenceEntry,
+    CommandOutput, DoctorResult, GraphResult, HoverResult, IndexResult, NavigateResult,
+    ReferenceEntry,
 };
 
 /// Render an `IndexResult` as text into `w`.
@@ -1371,8 +1372,56 @@ pub fn present_output(
         (CommandOutput::Architecture(r), CliFormat::Json) => {
             present_architecture_diagnostic_json(r, w)
         }
+        // T1-5.6b — `cognicode doctor` migrated. The presenter wraps
+        // the existing `format_doctor_text` / `format_doctor_json` so
+        // the byte output stays identical to the pre-migration lib
+        // code (which called those same functions inline). The
+        // `std::process::exit(1)` for `Missing` is now the bin's
+        // responsibility (in `main.rs`, after `present_output` returns).
+        (CommandOutput::Doctor(r), CliFormat::Text) => present_doctor_text(r, w),
+        (CommandOutput::Doctor(r), CliFormat::Json) => present_doctor_result_json(r, w),
         (CommandOutput::Other, _) => Ok(()),
     }
+}
+
+// ============================================================================
+// T1-5.6b — `cognicode doctor` presenter
+// ============================================================================
+//
+// Pre-T1-5.6b, `execute_doctor` in `commands.rs` called
+// `format_doctor_text(&report)` and `format_doctor_json(&report)` inline
+// (and also called `std::process::exit(1)` for the Missing case). T1-5.6b
+// moves the lib/bin boundary: the lib now returns the typed
+// `DoctorResult` (= `DoctorReport` re-export), and these two functions
+// are the bin's view of that data.
+//
+// The text/JSON formatters are re-used verbatim from
+// `cognicode_core::interface::cli::doctor` — the byte output is
+// therefore byte-identical with the pre-migration `execute_doctor`
+// text and the corresponding JSON snapshot. The dispatch (`Text` vs
+// `Json`) is `CliFormat`, the same enum the rest of the migrated
+// sub-commands use.
+
+/// T1-5.6b — text dispatch for `CommandOutput::Doctor`.
+///
+/// Thin wrapper around `format_doctor_text` from the core. Kept
+/// `pub` so the snapshot test in
+/// `crates/cognicode-cli/tests/t1_5_6b_doctor_presenter_snapshot.rs`
+/// can drive it with a `Vec<u8>` and pin the byte stream.
+pub fn present_doctor_text(report: &DoctorResult, w: &mut dyn Write) -> io::Result<()> {
+    let text = cognicode_core::interface::cli::doctor::format_doctor_text(report);
+    write!(w, "{text}")
+}
+
+/// T1-5.6b — JSON dispatch for `CommandOutput::Doctor`.
+///
+/// Wraps `format_doctor_json` from the core. The wrapper writes
+/// without an extra trailing newline (matches the previous
+/// `println!("{}", ...)` shape — the bin's stdout flushes the
+/// line, so the consumer sees one JSON document per invocation).
+pub fn present_doctor_result_json(report: &DoctorResult, w: &mut dyn Write) -> io::Result<()> {
+    let text = cognicode_core::interface::cli::doctor::format_doctor_json(report);
+    write!(w, "{text}")
 }
 
 /// B4.W2 — Architecture diagnostic text output. Diagnostic is read-only

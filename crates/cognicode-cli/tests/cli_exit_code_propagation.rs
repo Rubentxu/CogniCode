@@ -685,12 +685,14 @@ fn index_build_on_real_empty_dir_still_exits_zero() {
 /// Subir cualquiera de estos numeros exige la razon de la nueva, en el mismo
 /// commit. Un `process::exit` nuevo en la libreria que no aparece aqui es un
 /// fallo de este test, no una excepcion nueva.
-const CORE_PROCESS_EXITS: [(&str, usize, &str); 3] = [
-    (
-        "execute_doctor",
-        1,
-        "vivo: el codigo de salida de `cogh doctor` es contrato publicado",
-    ),
+const CORE_PROCESS_EXITS: [(&str, usize, &str); 2] = [
+    // T1-5.6b (2026-10-16): el exit code de `cogh doctor` se movio del
+    // lib al bin (`cognicode-cli/src/main.rs` lo decide desde
+    // `report.overall_status()`). El lib ya no llama a
+    // `std::process::exit` para doctor, asi que doctor sale de la
+    // tabla. La razon del exit code de doctor es la misma: el
+    // codigo de salida de `cogh doctor` es contrato publicado,
+    // pero ahora se aplica en el adapter, no en el dominio.
     (
         "execute_docs_ingest",
         2,
@@ -775,6 +777,20 @@ fn measured_process_exits() -> Vec<(usize, String, bool)> {
         if !line.contains("std::process::exit") {
             continue;
         }
+        // Skip comment mentions: `std::process::exit` appears in
+        // doc-comments (`///` lines and `//` line comments) when
+        // describing the old behaviour. The ratchet counts CALLS,
+        // not references; a call has the open paren after `exit`.
+        // MEDIDO: the previous scanner counted 9 lines but only 5
+        // were real calls (the other 4 were doc-comments on
+        // `execute` and `execute_doctor` introduced by T1-5.6b).
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("///")
+            || trimmed.starts_with("//")
+            || !line.contains("std::process::exit(")
+        {
+            continue;
+        }
         let owner = enclosing_function(&lines, i)
             .unwrap_or_else(|| panic!("`std::process::exit` en la linea {} esta antes de la primera `fn` del fichero; este test ya no sabe atribuirla.", i + 1));
         let declaration = (0..=i)
@@ -845,12 +861,20 @@ fn the_library_terminates_the_process_only_where_the_ratchet_says() {
 
 #[test]
 fn the_live_exit_is_doctor_and_only_doctor() {
-    // Una llamada viva, y es `execute_doctor`. Las otras cinco viven en
-    // funciones cerradas por `#[cfg(feature = \"multimodal\")]`, que el binario
-    // publicado no habilita —MEDIDO sobre el binario del candidato:
-    // `cognicode docs-ingest` responde `unrecognized subcommand`— asi que la
-    // unica razon por la que un `cogh` publicado puede salir con un codigo que
-    // la libreria eligio es `doctor`.
+    // T1-5.6b (2026-10-16): tras mover el exit code de doctor al bin
+    // (`cognicode-cli/src/main.rs` lo decide desde
+    // `report.overall_status()`), la libreria no mata el proceso en
+    // ninguna funcion reachable sin `multimodal`. Las 5 que viven
+    // en `execute_docs_ingest` / `execute_issues_ingest` siguen
+    // cerradas por `#[cfg(feature = "multimodal")]`. El lib es
+    // exit-free en el build por defecto: la razon del T1-5.6b es
+    // que la libreria no debe saber que es un exit code.
+    //
+    // (Docstring historico conservado en este sitio: la razon
+    // original del ratchet era "hay una sola salida reachable sin
+    // multimodal, y es la de doctor". La razon nueva es "no hay
+    // ninguna salida reachable sin multimodal, y eso es
+    // deliberately better".)
     //
     // Y por que se mide por duena y no por posicion: comparar con la primera
     // anotacion `multimodal` del fichero no mide nada. MEDIDO: la primera esta
@@ -862,15 +886,6 @@ fn the_live_exit_is_doctor_and_only_doctor() {
     // peor que no tener ratchet. La anotacion que apaga una funcion es la que
     // esta pegada a su declaracion. Ese es el unico dato que responde a la
     // pregunta.
-    //
-    // Y el limite real de la cuenta: lo que se afirma aqui es la disposicion
-    // del FUENTE. Si esa declaracion esta cerrada o no, y quien contiene cada
-    // salida. Lo que de verdad se compila lo mide `release-install-smoke.sh`
-    // sobre el artefacto publicado, porque un binario puede llevar una
-    // combinacion de features que ningun test sobre texto predice. Lo que este
-    // test puede afirmar sin mentir es lo mas fuerte que el fuente sostiene:
-    // hay exactamente una salida alcanzable sin `multimodal`, y es la de
-    // `doctor`.
     let measured = measured_process_exits();
 
     let live: Vec<&str> = measured
@@ -881,13 +896,13 @@ fn the_live_exit_is_doctor_and_only_doctor() {
 
     assert_eq!(
         live,
-        vec!["execute_doctor"],
-        "se esperaba UNA sola llamada a `std::process::exit` alcanzable sin la feature \
-         `multimodal`, y que fuera la de `execute_doctor`. Hay {live:?}.\n\
+        Vec::<&str>::new(),
+        "T1-5.6b: el lib no debe matar el proceso en ninguna funcion reachable sin \
+         `multimodal`. Hay {live:?}.\n\
          Medido entero: {measured:?}.\n\
          Si anades una salida nueva fuera de una funcion cerrada por la feature, \
          anadela a `CORE_PROCESS_EXITS` CON SU RAZON en el mismo commit. Si lo que \
-         hay es una septima, esto no es una excepcion nueva: es este test fallando."
+         hay es un cero, esto es lo esperado (T1-5.6b)."
     );
 
     // Y la tabla del ratchet tiene que seguir nombrando las funciones que

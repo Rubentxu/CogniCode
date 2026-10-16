@@ -1,0 +1,184 @@
+{
+  "kind": "VDH-OVERLAY-MANIFEST/V1",
+  "base_repository": "Rubentxu/CogniCode",
+  "base_sha": "88f6d02afc9c90fe7ac3c5c4de975d9b9f8c8abb",
+  "generated": "2026-10-15",
+  "status": "PROPOSED_NOT_EXECUTED",
+  "files": [
+    {
+      "path": "VDH-INTEGRATION.md",
+      "sha256": "e825679f8aedc63b42f480353e530dba27e299039d2ddc53b7c7aec2a498ffac",
+      "bytes": 3031
+    },
+    {
+      "path": "docs/adr/ADR-VDH-001-truthful-analysis-outcomes.md",
+      "sha256": "f3e8ffdf6c774288d04a6e6bdaa2918d5766238e7e0158a2c860c86158a5913d",
+      "bytes": 2629
+    },
+    {
+      "path": "docs/adr/ADR-VDH-002-functional-core-minimal-ports.md",
+      "sha256": "5e10fe137529d52287d23bb142a46a53587fd1104edb80141ab614fd05d94de3",
+      "bytes": 3091
+    },
+    {
+      "path": "docs/adr/ADR-VDH-003-real-explorer-acceptance.md",
+      "sha256": "7e50e42338ea8e3789e9a578460c1f0d5f635e736cd891c81baf6898dbb989eb",
+      "bytes": 2386
+    },
+    {
+      "path": "docs/adr/ADR-VDH-004-ephemeral-acceptance-retirement.md",
+      "sha256": "58420ba7cc18630ba9c3a03caec5c810007724faaf61ad024ad57c14787b6bea",
+      "bytes": 3344
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/ACCEPTANCE-MATRIX.md",
+      "sha256": "7f0f28624867671ab940f8d762f37d37a8442d6b613340ea304579990244a8b4",
+      "bytes": 4121
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/AGENT-HANDOFF.md",
+      "sha256": "05acf2a0544634a83c75666f5e2af14701df94ef362686b0549978d7a7c2bb12",
+      "bytes": 3333
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/BASELINE-MEASUREMENT.md",
+      "sha256": "68aaca8ec4d4e4a25a8a8a55f6488e558d26e01db4560609128ecc1890dd7472",
+      "bytes": 1780
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/CYCLE-PLAYBOOKS.md",
+      "sha256": "b0ced326995a31f2d07917bc52de0dbe49f4f0990dad32c1f2f13eb922abeccf",
+      "bytes": 7826
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/GLOSSARY.md",
+      "sha256": "9d32fa499f87ae94ade24e3b5afe5127b2ccc6fa04342e9f87a06935a53d9ab0",
+      "bytes": 2284
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/LEGACY-BY-BLOCK.md",
+      "sha256": "7dc24ebd850a4d70a765ca0ce5f5e9a644ec33308228f5ee7b313dcd38083686",
+      "bytes": 40346
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/REFERENCE-TRACEABILITY.md",
+      "sha256": "8b91620d7afd3d31986de44c5641ae6c33a5143d5555fb505915cd6cd663b873",
+      "bytes": 2632
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/RELEASE-PROTOCOL.md",
+      "sha256": "c6854a5aa7ee8b2ef11aaed4afcdb9a59d08047877d00149bbb01cbce334db47",
+      "bytes": 4195
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/ROADMAP-ADDENDUM.md",
+      "sha256": "b0eb38d0a2428000f0ee09df142986204ff1f02fb4a547f0183b7e02853f596c",
+      "bytes": 13587
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/START-HERE.md",
+      "sha256": "1e7d5c251fd6de40ee2abf9587dfa10555d0a38cd7e1df1485a78994aedf360a",
+      "bytes": 3482
+    },
+    {
+      "path": "docs/roadmap/initiatives/VDH-2026-10/TEST-RETIREMENT.md",
+      "sha256": "aa362eff453a81a1df8cbaecbca1b753762da98e94a438b41ca140101b6bb9b0",
+      "bytes": 4774
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/design.md",
+      "sha256": "ad7166d306031da752e42f06f2b652230e45812066afefa47c03c2dd4f21afa3",
+      "bytes": 5153
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/proposal.md",
+      "sha256": "9dbc5ff3defdd60f0d5f053599f2117509004dd760555a1bb4a15e5e00d63ee6",
+      "bytes": 3275
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/specs/ephemeral-acceptance/spec.md",
+      "sha256": "888b591e791b5666070acf3ef18c661b3212bad7e2a8dd9dd516badba550a4cd",
+      "bytes": 4403
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/specs/functional-boundaries/spec.md",
+      "sha256": "3d32db5789d8df80c046e3ca3ec39454dc45abd7f019991107eaebc1414221e7",
+      "bytes": 3112
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/specs/real-user-vertical/spec.md",
+      "sha256": "00feebf210042c4bb12ae79d01a018683542384f88899f4412cfa3bccd89bfbf",
+      "bytes": 2388
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/specs/release-consumer/spec.md",
+      "sha256": "44aa544747c47dcd838e86dfb63461c966cae29b610acfe843a4115c8fe7b71e",
+      "bytes": 2565
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/specs/truthful-analysis/spec.md",
+      "sha256": "8c6e53ebe434836c473b95e5e2b6d52db49c63b13f995160f8be20afecdc6a51",
+      "bytes": 3275
+    },
+    {
+      "path": "openspec/changes/2026-10-15-value-delivery-functional-core/tasks.md",
+      "sha256": "2ce6614667f654872452962b6a7474b869d16005dd3582a0951d9f3191459e72",
+      "bytes": 3521
+    },
+    {
+      "path": "test-harness/README.md",
+      "sha256": "bd01d832496fd3d5c897c66aec666bdf209bf46e629c7ba7ad509d1339f91aee",
+      "bytes": 2021
+    },
+    {
+      "path": "test-harness/examples/analysis_outcome.rs",
+      "sha256": "4d3a886c37cd5b2db5c6a9f6ba9c191a6bf7e6248b7a2cad6f9611499e8b7f15",
+      "bytes": 4066
+    },
+    {
+      "path": "test-harness/inventory/ACCEPTANCE-RECEIPT-TEMPLATE.json",
+      "sha256": "eb94ea5d37922bfbe05cf9a763e6022206621ed1c11f8f84bd85ce6452dc77f4",
+      "bytes": 1044
+    },
+    {
+      "path": "test-harness/inventory/ORIGINAL-AUDIT-SNAPSHOT.md",
+      "sha256": "432ee63d946ee82b92b4a0b421a58d8a7caaba266fbd2260725c39d250707c93",
+      "bytes": 35136
+    },
+    {
+      "path": "test-harness/inventory/test_inventory.csv",
+      "sha256": "27022bf5edd0d461747ad0f02af9ff8a5697697bd19838f90ac24156a82de4d3",
+      "bytes": 46870
+    },
+    {
+      "path": "test-harness/tools/acceptance_receipt.py",
+      "sha256": "47fa53d5a7a2926e77e0f97c00261057abdc8e81ada37de64a3be4b21666bd2e",
+      "bytes": 4180
+    },
+    {
+      "path": "test-harness/tools/ephemeral_guard.py",
+      "sha256": "603f553181cbfd7f35ff1e1a9e84420f457c06ca51a275efcdc7b31a9d5f4a1e",
+      "bytes": 3376
+    },
+    {
+      "path": "test-harness/tools/package_check.py",
+      "sha256": "12f46e39b85229d455c762b47d8a53435eedb88fbed5c03bb7fbd190930f320e",
+      "bytes": 3423
+    },
+    {
+      "path": "test-harness/tools/test_acceptance_receipt.py",
+      "sha256": "889489dc7aca40fe7e542cd5e71de859135a542038b8ad8192e94ba197c76afc",
+      "bytes": 1894
+    },
+    {
+      "path": "test-harness/tools/test_ephemeral_guard.py",
+      "sha256": "9a96682f93514a2c00759cf63dfb7eb029ce9fa8d5a98ba24e4db4671fbe1e73",
+      "bytes": 1568
+    },
+    {
+      "path": "test-harness/tools/verify_overlay_manifest.py",
+      "sha256": "7cef34f043ccdda5c77563481638af58d55fbfa1d8d00c9cbc9680f3d2dc162a",
+      "bytes": 1194
+    }
+  ]
+}

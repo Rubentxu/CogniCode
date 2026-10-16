@@ -305,6 +305,71 @@ impl<T> AnalysisOutcome<T> {
     pub fn is_producing(&self) -> bool {
         matches!(self.state, OutcomeState::Complete | OutcomeState::Partial)
     }
+
+    /// Map the inner value through `f` while preserving the outcome
+    /// state. VDH-FP-02 Scenario B (2026-10-16): the map laws are
+    /// part of the contract — they are what makes this ADT useful
+    /// for compositional pipelines.
+    ///
+    /// Laws:
+    /// - `Complete(v).map(f) == Complete(f(v))`
+    /// - `Partial(v, gaps).map(f) == Partial(f(v), gaps)`
+    ///   (gaps / cobertura are preserved; f is applied to the value)
+    /// - `Unknown.map(f) == Unknown` (f is NOT called)
+    /// - `Unsupported(r).map(f) == Unsupported(r)` (f is NOT called)
+    /// - `Failed(e).map(f) == Failed(e)` (f is NOT called)
+    /// - provenance is preserved unchanged.
+    pub fn map<U, F: FnOnce(T) -> U>(self, f: F) -> AnalysisOutcome<U> {
+        let new_state = self.state;
+        let new_value = self.value.map(f);
+        let new_gaps = self.gaps;
+        let new_reason = self.reason;
+        let new_error = self.error;
+        let new_provenance = self.provenance;
+        AnalysisOutcome {
+            state: new_state,
+            value: new_value,
+            gaps: new_gaps,
+            reason: new_reason,
+            error: new_error,
+            provenance: new_provenance,
+        }
+    }
+
+    /// Run `f` on the inner value only when the outcome is producing
+    /// (Complete or Partial). For Unknown / Unsupported / Failed the
+    /// outcome is returned unchanged and `f` is not called. This is
+    /// the safe projection: callers cannot accidentally invoke an
+    /// effect on a value the contract says is missing.
+    pub fn and_then<U, F: FnOnce(T) -> AnalysisOutcome<U>>(self, f: F) -> AnalysisOutcome<U> {
+        match self.state {
+            OutcomeState::Complete => {
+                // The only way `value` is None here is a bug in
+                // the `complete` constructor; we panic to surface it.
+                let v = self.value.expect("Complete carries a value");
+                f(v)
+            }
+            OutcomeState::Partial => {
+                let v = self.value.expect("Partial carries a value");
+                let inner = f(v);
+                // Compose: if the inner is producing, lift its
+                // gaps; if it is non-producing, return it as-is.
+                // We do NOT merge gaps across the two levels here —
+                // the inner f owns its own degradation envelope.
+                inner
+            }
+            OutcomeState::Unknown | OutcomeState::Unsupported | OutcomeState::Failed => {
+                AnalysisOutcome {
+                    state: self.state,
+                    value: None,
+                    gaps: self.gaps,
+                    reason: self.reason,
+                    error: self.error,
+                    provenance: self.provenance,
+                }
+            }
+        }
+    }
 }
 
 /// Errores parciales / no fatales que un AnalysisOutcome puede
@@ -639,4 +704,100 @@ pub enum GraphValue {
         direct_dependents: usize,
         total_impacted_symbols: usize,
     },
+}
+
+// ============================================================================
+// VDH-FP-02 (2026-10-16) — map / and_then laws (durable regression)
+// ============================================================================
+//
+// These tests assert the functor / monad laws on `AnalysisOutcome<T>`.
+// They are the B2 durable regression for the truthful-analysis spec:
+// the ADT is only as useful as its map contract, and the contract
+// must NOT regress silently.
+
+#[cfg(test)]
+mod map_laws {
+    use super::*;
+
+    fn gap(cap: &str) -> AnalysisError {
+        AnalysisError::gap(cap, "missing data")
+    }
+
+    fn err() -> AnalysisError {
+        AnalysisError::generic("io blew up")
+    }
+
+    // ---- map -----------------------------------------------------------
+
+    #[test]
+    fn map_complete_applies_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::complete(3);
+        let mapped = o.map(|x| x * 2);
+        assert_eq!(mapped.state(), OutcomeState::Complete);
+        assert_eq!(mapped.value(), Some(&6));
+    }
+
+    #[test]
+    fn map_partial_preserves_gaps_and_applies_f() {
+        // VDH-FP-02 Scenario B: Partial.map(f) preserves coverage.
+        let gaps = vec![gap("hotspot"), gap("drift")];
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::partial(3, gaps.clone());
+        let mapped = o.map(|x| x * 2);
+        assert_eq!(mapped.state(), OutcomeState::Partial);
+        assert_eq!(mapped.value(), Some(&6));
+        assert_eq!(mapped.gaps(), gaps.as_slice());
+    }
+
+    #[test]
+    fn map_unknown_does_not_call_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::unknown();
+        let mapped = o.map(|_| panic!("f must not be called for Unknown"));
+        assert_eq!(mapped.state(), OutcomeState::Unknown);
+        assert_eq!(mapped.value(), None);
+    }
+
+    #[test]
+    fn map_unsupported_does_not_call_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::unsupported("feature disabled");
+        let mapped = o.map(|_| panic!("f must not be called for Unsupported"));
+        assert_eq!(mapped.state(), OutcomeState::Unsupported);
+        assert_eq!(mapped.value(), None);
+        assert_eq!(mapped.reason(), Some("feature disabled"));
+    }
+
+    #[test]
+    fn map_failed_does_not_call_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::failed(err());
+        let mapped = o.map(|_| panic!("f must not be called for Failed"));
+        assert_eq!(mapped.state(), OutcomeState::Failed);
+        assert_eq!(mapped.value(), None);
+        assert!(mapped.error().is_some());
+    }
+
+    // ---- and_then ------------------------------------------------------
+
+    #[test]
+    fn and_then_complete_chains() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::complete(3);
+        let chained = o.and_then(|x| AnalysisOutcome::complete(x * 2));
+        assert_eq!(chained.state(), OutcomeState::Complete);
+        assert_eq!(chained.value(), Some(&6));
+    }
+
+    #[test]
+    fn and_then_unsupported_does_not_call_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::unsupported("feature disabled");
+        let chained: AnalysisOutcome<i32> =
+            o.and_then(|_| panic!("f must not be called for Unsupported"));
+        assert_eq!(chained.state(), OutcomeState::Unsupported);
+        assert_eq!(chained.reason(), Some("feature disabled"));
+    }
+
+    #[test]
+    fn and_then_failed_does_not_call_f() {
+        let o: AnalysisOutcome<i32> = AnalysisOutcome::failed(err());
+        let chained: AnalysisOutcome<i32> =
+            o.and_then(|_| panic!("f must not be called for Failed"));
+        assert_eq!(chained.state(), OutcomeState::Failed);
+    }
 }

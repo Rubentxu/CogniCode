@@ -185,6 +185,12 @@ pub enum CommandOutput {
     /// `gate_authority: false` + `produces_observations_only: true` so an
     /// MCP client can verify the contract without reading the prompt.
     Architecture(crate::architecture::ArchitectureDiagnostic),
+    /// T1-5.6b — `cognicode doctor`. Antes de T1-5.6b el bin recibía
+    /// `Other`; el presenter nuevo emite text y JSON desde esta variante.
+    /// El exit code (Missing → 1, Ok/Warn/Info → 0) lo decide el bin
+    /// inspeccionando `report.overall_status()`; la librería no sabe
+    /// nada de exit codes.
+    Doctor(DoctorResult),
     /// Sub-comando no migrado a `*Result` aún. El texto ya fue
     /// emitido internamente por `execute_*`; el bin no hace nada.
     Other,
@@ -652,6 +658,48 @@ pub enum NavigateError {
         line: u32,
         column: u32,
         workspace: String,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+}
+
+// ============================================================================
+// T1-5.6b — `DoctorResult` re-export + `DoctorError`
+// ============================================================================
+//
+// Doctor is the first execute_* whose typed result is a struct (not an
+// enum): the pre-existing `DoctorReport` already carries the data the
+// presenter needs (sections, summary, workspace info, schema version).
+// The migration to T1-5.6b is therefore "return DoctorReport + move the
+// format dispatch to the bin" — no new enum of variants, just a new
+// error type and a new `CommandOutput` arm.
+//
+// Why a typed error at all if `run_doctor_checks` is currently infallible:
+// the lib's `execute_doctor` signature requires `Result<_, _>`, and a
+// future extension (custom doctor checks that read a state file, a
+// probe that runs cargo deny, etc.) will need to surface a typed error
+// rather than `Box<dyn Error>`. Defining `DoctorError` now is one line
+// in this file and zero callsite churn when the day comes.
+
+/// Resultado exitoso de `cognicode doctor`.
+///
+/// Re-export del struct ya público `DoctorReport` (definido en
+/// `interface::cli::doctor`) para que el `CommandOutput::Doctor` y el
+/// presenter del bin vivan en un solo namespace (`result::*`).
+pub use crate::interface::cli::doctor::DoctorReport as DoctorResult;
+
+/// Errores tipados de `cognicode doctor`.
+///
+/// El pre-migration `execute_doctor` siempre devolvía `Ok(())` (el lib
+/// no tenía errores de doctor). La variante única es un placeholder
+/// para extensiones futuras (custom checks, probes I/O) que necesiten
+/// preservar `#[source]` para logging estructurado del bin.
+#[derive(Debug, thiserror::Error)]
+pub enum DoctorError {
+    /// Una verificación futura falló de forma irrecuperable. El
+    /// `source` preserva la chain original (downcasteable por el bin).
+    #[error("Doctor check failed: {source}")]
+    Check {
         #[source]
         source: Box<dyn std::error::Error + Send + Sync>,
     },

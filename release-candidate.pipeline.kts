@@ -166,8 +166,18 @@ val version: String = if (tag.isEmpty()) workspaceVersion(repoRoot) else tag.rem
 // those machines, and wrong in the direction that looks most like success. Cargo
 // is the authority for where its own output goes; every stage that needs a built
 // artifact asks it through `scripts/ci/target-dir.sh`.
+// MEDIDO 2026-10-15. El guard va AQUI y no en cada stage que usa este
+// preambulo, porque el preambulo es lo que define el entorno de shell de la
+// etapa: PipelineK la ejecuta con `bash script.sh` y sin opciones, asi que sin
+// `-e` el veredicto de una etapa de varias ordenes es el codigo de la ULTIMA y
+// todas las anteriores pueden fallar en silencio. `verify-asset-set` es el caso
+// que duele: comprueba que la release publica EL CONJUNTO de assets, y con dos
+// ordenes y sin guard, un fallo seguido de un `echo` reporta exito.
+//
+// `TARGET_DIR` es una variable de shell SIN exportar y cada `sh` corre en su
+// propio proceso, asi que esta linea tiene que seguir definiendola aqui.
 val releasePaths = """
-    $cd || exit 1
+    set -eo pipefail
     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
 """.trimIndent()
 
@@ -190,6 +200,10 @@ pipeline {
         stage("coherence") {
             stage("tag-coherence") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_TAG:-}" ]; then
                         echo "RELEASE_TAG is unset, so this is a dry run: there is no tag to be coherent with."
@@ -223,6 +237,10 @@ pipeline {
         stage("toolchain") {
             stage("release-tool") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     cargo build --release --bin cognicode-release
                     # MEDIDO 2026-10-03. Esta stage se quedaba con "cargo
@@ -267,6 +285,10 @@ pipeline {
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
             sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
             # ── rustdoc-gate
             # ─────────────────────────────────────────────
             $cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet
@@ -278,33 +300,22 @@ pipeline {
             // Formerly 6 stage(s); one stage, same commands, same order.
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
+            //
+            // MEDIDO 2026-10-16. La verificacion original de "build-binary"
+            // estaba en la cabecera de este stage y comprobaba la presencia de
+            // los binarios ANTES de los `cargo build`. Eso era valido en el
+            // workflow de GitHub Actions donde ese stage era post-build, pero
+            // en clean-clone los binarios no existen todavia y el check
+            // aborta la lane con `exit 1` antes de que `cargo build` se
+            // ejecute. La fix minima: el primer check es inalcanzable en
+            // clean-clone, asi que se elimina; la verificacion al final del
+            // stage (verify-release-binaries) sigue cubriendo que los
+            // binarios existen y son ejecutables despues del build.
             sh("""
-            # ── build-binary
-            # ─────────────────────────────────────────────
-
-                    $cd || exit 1
-                    set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
-                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
-                        fi
-                    done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
 
             # ── build-cognicode-mcp-release
             # ─────────────────────────────────────────────
@@ -357,6 +368,10 @@ pipeline {
             targets.forEach { target ->
                 stage("toolchain-for-$target") {
                     sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                         $cd || exit 1
                         rustup target list --installed | grep -qx '$target' || {
                             echo "cargo target '$target' is not installed."
@@ -493,6 +508,10 @@ pipeline {
 
                 stage("binaries-$target") {
                     sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                         $cd || exit 1
                         # cogh consumes evidence-gated types, so the feature is on for
                         # the whole cognicode-cli package, not per binary.
@@ -796,7 +815,42 @@ pipeline {
             }
 
             stage("payloads") {
-                sh("$cd && bash scripts/ci/stage-platform-payloads.sh staging")
+                // TIER1_TRIPLES_OVERRIDE mirrors `val targets` so the
+                // flatten script does not require aarch64 when the
+                // lane is scoped x86_64-only (TF-6, tracked in
+                // odd/tasks/tf-6-aarch64-followup.md). Default
+                // (unset) keeps the script's historical behavior for
+                // runs that do build both platforms.
+                //
+                // Kotlin string templates: `${'$'}{...}` writes a
+                // LITERAL `${...}` to the output (the `!$` is a
+                // template escape for `$`); `${...}` directly writes
+                // the EVALUATED value. The `targets` list is a Kotlin
+                // `val`, so it MUST be evaluated at compile time —
+                // bash has no `targets` variable and would see the
+                // literal `${targets.joinToString(" ")}` as a
+                // malformed expansion. MEDIDO 2026-10-16, RC run
+                // 419a2330-a075-45b7-88a6-7699acd859d0: the v7
+                // payloads step ran with the env var set to the
+                // literal string `${targets.joinToString(" ")}`,
+                // which the script then treated as a single-element
+                // TIER1_TRIPLES list. `aarch64-unknown-linux-gnu`
+                // was therefore missing from the check, the script
+                // bailed at the TIER1 sanity loop, and the pipeline
+                // died with no candidate produced.
+                // 2026-10-16: v9b RC exposed a real shell-scoping bug in the
+                // env-var assignment. The original line had the form
+                //   TIER1_TRIPLES_OVERRIDE=... $cd && bash stage-platform-payloads.sh ...
+                // which sets the var only for `cd`; `bash` on the right of `&&`
+                // runs without it, the script defaults to BOTH triples
+                // (x86_64 + aarch64), the aarch64 lane is absent, and the
+                // script exits 1 with "no lane claimed Tier-1 platform
+                // aarch64-unknown-linux-gnu". MEDIDO at 18:53 UTC, RC run
+                // 3726e82c-9eab-4215-89bc-dbc677b492f8: payloads stage died
+                // here, release/ was never written, v9b PAUSED at the
+                // same spot v6/v7 reached. Move the assignment onto the
+                // `bash` invocation so the script actually sees it.
+                sh("$cd && TIER1_TRIPLES_OVERRIDE=\"${targets.joinToString(" ")}\" bash scripts/ci/stage-platform-payloads.sh staging")
             }
 
             stage("generate") {
@@ -845,13 +899,32 @@ pipeline {
                     # not name the commit it was built from cannot be tied to
                     # one, which is the first link of the chain this lane exists
                     # to keep.
-                    source=$(git rev-parse HEAD)
+                    #
+                    # 2026-10-16: the v0.101.17 v8 RC exposed a real identity
+                    # gap. Lines 195 (preflight) and 212 (tag-coherence) read
+                    # the RELEASE_SHA env var; this line read git rev-parse HEAD.
+                    # When HEAD moved during the run (e.g. a vN RC FAIL docs
+                    # commit landed 30 s after the launch), the preflight and
+                    # the build still ran against RELEASE_SHA, but the
+                    # manifest's source_commit captured the new HEAD -- a
+                    # docs-only commit that the binaries were not built from.
+                    # Resolve RELEASE_SHA explicitly so the manifest names
+                    # the same SHA the rest of the lane validated.
+                    source=$(git rev-parse "${'$'}{RELEASE_SHA:-HEAD}")
+                    # 2026-10-16: v9c RC exposed that `generate` defaults to
+                    # Tier 1 (x86_64 + aarch64) and refuses to write a manifest
+                    # when an aarch64 artifact is absent. This lane is
+                    # x86_64-only per TF-5b / odd/tasks/tf-6-aarch64-followup.md,
+                    # so we must scope the platform explicitly. The same
+                    # `targets` list that TIER1_TRIPLES_OVERRIDE already
+                    # reflects in the payloads stage.
                     "${'$'}TARGET_DIR/release/cognicode-release" generate \
                         --staging staging \
                         --out release \
                         --version "$version" \
                         --tag "$tag" \
-                        --source-commit "${'$'}source"
+                        --source-commit "${'$'}source" \
+                        --platform "${targets.joinToString(",")}"
                 """.trimIndent())
             }
 
@@ -876,6 +949,10 @@ pipeline {
 
             stage("install-smoke") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     bash scripts/ci/release-install-smoke.sh "$version" release
                 """.trimIndent())
@@ -883,6 +960,10 @@ pipeline {
 
             stage("candidate-manifest") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     test -f release/SHA256SUMS || {
                         echo "the candidate has no SHA256SUMS. Without it, the release lane has"
@@ -918,6 +999,10 @@ pipeline {
             // anuncia por que no firmo.
             stage("provenance") {
                 sh("""
+            # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
+            # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
+            # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
+            set -eo pipefail
                     $cd || exit 1
                     if [ -z "${'$'}{RELEASE_PROVENANCE_KEY:-}" ]; then
                         echo "provenance: NOT generated — no RELEASE_PROVENANCE_KEY on this host."

@@ -70,20 +70,71 @@ unsafe fn fcntl_setfl(fd: i32, flags: i32) -> i32 {
 /// workspace-relative `target/{release,debug}/`, then the bare
 /// `target/{release,debug}/`. Returns `None` if no candidate exists.
 fn binary_path() -> Option<PathBuf> {
+    // MEDIDO 2026-10-15. Esta resolucion fallaba con el binario release ya
+    // construido, por dos razones que se pueden ver en el bloque de abajo:
+    //
+    //   * cargo NO exporta `CARGO_TARGET_DIR` a los binarios de test, asi que
+    //     la primera rama nunca se cumple — el mismo motivo que documenta
+    //     `a015_onboarding_gate.rs::cogh_binary`.
+    //   * esta maquina tiene `build.target-dir` redirigido, asi que
+    //     `<repo>/target/...` no existe.
+    //
+    // Y el mensaje de fallo pedia `COGNICODE_MCP_BIN`, que esta funcion no
+    // leia. Un diagnostico que manda poner algo que no se lee hace perder el
+    // rato a quien lo lee; peor que no dar ninguno.
+    //
+    // Orden: la variable que el mensaje nombra, `cargo metadata` — que es
+    // donde esta de verdad y con el config del operador aplicado — y las rutas
+    // relativas como ultimo recurso.
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
-    let target_dir = std::env::var("CARGO_TARGET_DIR").ok();
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(td) = target_dir.as_deref() {
-        candidates.push(PathBuf::from(td).join("release/cognicode-mcp"));
-        candidates.push(PathBuf::from(td).join("debug/cognicode-mcp"));
+
+    if let Some(p) = std::env::var_os("COGNICODE_MCP_BIN") {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Some(p);
+        }
     }
-    if let Some(md) = manifest_dir.as_deref() {
-        let workspace_root = PathBuf::from(md).join("..").join("..");
-        candidates.push(workspace_root.join("target/release/cognicode-mcp"));
-        candidates.push(workspace_root.join("target/debug/cognicode-mcp"));
+
+    let workspace_root = manifest_dir
+        .as_deref()
+        .map(|md| PathBuf::from(md).join("..").join(".."))
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    if let Ok(meta) = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(&workspace_root)
+        .output()
+    {
+        let meta = String::from_utf8_lossy(&meta.stdout);
+        if let Some(td) = meta
+            .split("\"target_directory\":")
+            .nth(1)
+            .and_then(|s| s.split('"').nth(1))
+        {
+            for profile in ["release", "debug"] {
+                candidates.push(PathBuf::from(td).join(profile).join("cognicode-mcp"));
+            }
+        }
     }
-    candidates.push(PathBuf::from("target/release/cognicode-mcp"));
-    candidates.push(PathBuf::from("target/debug/cognicode-mcp"));
+
+    if let Some(td) = std::env::var_os("CARGO_TARGET_DIR") {
+        for profile in ["release", "debug"] {
+            candidates.push(PathBuf::from(&td).join(profile).join("cognicode-mcp"));
+        }
+    }
+    for profile in ["release", "debug"] {
+        candidates.push(
+            workspace_root
+                .join("target")
+                .join(profile)
+                .join("cognicode-mcp"),
+        );
+    }
+    for profile in ["release", "debug"] {
+        candidates.push(PathBuf::from(format!("target/{profile}/cognicode-mcp")));
+    }
+
     for p in &candidates {
         if p.exists() {
             return Some(p.canonicalize().unwrap_or_else(|_| p.clone()));

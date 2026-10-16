@@ -9,18 +9,26 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` (seis gates que no podían
-> fallar reparados y probados por mutación: el veredicto publicado por
-> `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
-> adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
-> restauraba los bytes en vez de borrar el archivo, la validación de schema
-> del catálogo publicado dejaba de saltarse en silencio, y dos wrappers
-> `fast`/`full` dejaron de poder responder verde sin hacer nada;
-> estado de runtime de PipelineK des-trackeado de git).
-> Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
-> `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
-> publicado** — el tag remoto sigue en `v0.101.16`, que es la release
+> **Snapshot**: 2026-10-16, sobre `release/v0.101.17`
+> `a06903257942ed137219edcfaf78180db1e5b7cd` (base: PR #348 mergeado en `main`
+> como `88f6d02a`; este trabajo corrige el gate sobre ella). Los seis
+> gates reparados que se listaban sobre
+> `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` siguen en el árbol, **pero el
+> veredicto que se les atribuyó era falso**: la etapa `tests` del merge gate
+> ejecutaba 4 de sus 39 `cargo test` y devolvía `success`. MEDIDO
+> 2026-10-15 — ver "Batería" más abajo, donde esas cifras quedan
+> marcadas como no válidas. `v0.101.17` está **publicada**: tag anotado
+> `v0.101.17` → `36c5608b`, GitHub Release con los 8 assets verificados
+> (3 component tarballs, 2 portable skill bundles, bundle manifest,
+> release inventory, SHA256SUMS), post-publish install-smoke verde. Los
+> tres bugs de la pipeline (`source_commit` HEAD-drift, `TIER1` var scope,
+> `cognicode-release generate --platform`) se arreglaron sobre la release
+> branch (commits `2bbcb767`, `9367e571`); el `cargo fmt --all` se aplicó
+> tras el close-out (commit `a0690325`). El merge-gate queda pendiente
+> de un re-run verde contra `a0690325` para destrabar PR #350.
+> Regenerado tras **BLOQUE 5 + B0**: el workspace está en `0.101.17` per
+> `Cargo.toml`, el tag remoto `v0.101.17` apunta a `36c5608b`, y la release
+> viva es `v0.101.17` con el set completo de 8 assets.
 > que hoy publica 3 de los 8 assets. La release viva es `v0.101.16`.
 >
 > Próxima release objetivo: `v0.101.17` (re-publicar el set completo de
@@ -33,29 +41,137 @@
 
 ## HEAD y batería (a 2026-10-15)
 
-* **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
-  también abiertos y `BLOCKED` a la espera de `merge-gate`).
-* **SHA funcional**: `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6`.
-* **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
-  el tag remoto más reciente sigue siendo `v0.101.16`).
-* **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`, con
-  `--rerun` para que las etapas ejecuten y no se sirvan del journal):
+* **Rama**: `release/v0.101.17` creada desde `origin/main` = `88f6d02a`
+  (PR #348 mergeado el 2026-10-15; #346 y #347 siguen abiertos y `BLOCKED`,
+  contenido dentro de #348).
+* **SHA**: `a06903257942ed137219edcfaf78180db1e5b7cd`. **Sí hay SHA funcional**:
+  el tag anotado `v0.101.17` (`36c5608b`) y la pipeline post-build
+  (`2bbcb767`, `9367e571`, `a0690325`) son atribuibles a este árbol.
+  El merge-gate queda pendiente de un re-run verde contra `a0690325`.
+* **Versión workspace**: `0.101.17` (publicada el 2026-10-16;
+  tag anotado `v0.101.17` → `36c5608b`, GitHub Release con 8 assets).
+
+* **Los tres gates obligatorios, sin adornos.** Ninguno está `PASS`.
+
+  | Gate | Estado | Motivo |
+  |---|---|---|
+  | `merge-gate` | **FAIL** | dos corridas; ambas con el veredicto contaminado entre checkouts |
+  | `integration` | **NOT_RUN** | arrancada y abortada; fuera del alcance mínimo que fijó el operador |
+  | `certification` | **NOT_RUN** | no ejecutada |
+
+  El operador decidió publicar `v0.101.17` sin el merge gate en verde, con
+  motivo declarado: el bloqueo es de entorno, no de código. El agente registra
+  esa decisión y **no la firma**.
+
+* **RETIRADO — «Gate en verde» sobre `fb0e9494`.** Este snapshot afirmaba, hasta
+  el 2026-10-15, que el gate había corrido en 606 s con 71 etapas declaradas, 71
+  ejecutadas y 0 fallos. **Se retira.** No porque las cifras fueran falsas —el
+  recuento se cruzó contra los nombres de etapa que el runtime imprimió— sino
+  porque **no son atribuibles a este árbol**: seis checkouts de este repo
+  compilan al mismo target dir (`/var/home/rubentxu/cargo-targets/`), cargo
+  decide frescura por mtime, y un mtime no dice de qué checkout salió un
+  binario. Las corridas 6 y 7 fallaron exactamente así, en las dos
+  direcciones: un test paniqueó en la línea 900 de un fichero de 861 nombrando
+  un test que no existe en este árbol, y otro comparó su `source_commit`
+  (`d5082848…`) contra `git rev-parse HEAD` (`d73e7b08…`), que es el HEAD de
+  `worktree-test-harness`.
+
+  Las corridas 7 y 8 se marcan **no atribuibles**, no «verdes». Un gate que
+  puede ejecutar el binario de cualquiera de los otros cinco checkouts no
+  decide nada: ni rojo ni verde.
+
+  La etapa `build-isolation` (`3d8906c2`) se antepone ahora a todo lo demás y
+  **se niega** cuando un checkout hermano de este repo está compilando,
+  nombrándolo. Falla, no avisa: el aviso caería en la misma pantalla que el
+  resultado. Y es una detección puntual, no una garantía — entre el preflight y
+  la última etapa otro checkout puede empezar a compilar. El aislamiento de
+  verdad es `CARGO_TARGET_DIR` por corrida.
+
+* **Flake abierto, sin reproducir**: `cr07_metrics_exposition_contract`
+  devolvió `shell exited with code 101` en la quinta corrida del gate, siendo la
+  etapa 32 de 67. En solitario no se ha reproducido: 3/3 y después 20/20. Pasó en
+  las corridas 6, 7 y 8, **ninguna atribuible**. **No está reproducido, así que
+  no está arreglado**, y un verde no atribuible no es ni la mitad de la prueba.
+
+* **Estado del gate**: diez corridas el 2026-10-15. Las seis primeras, cada una
+  con una avería distinta y real, y cada una encontrada por el gate y no por una
+  revisión — cuatro de ellas de este mismo trabajo. La 7 y la 8 salieron
+  verdes. La 9 y la 10 salieron rojas. **Ninguna de las cuatro es atribuible a
+  este árbol.**
+
+  | Corrida | Resultado | Causa |
+  |---|---|---|
+  | 1 | FAIL | `prf_h06_adversarial_e2e` nombrado bajo el crate que ya no lo contenía |
+  | 2 | FAIL | `build-binary` estaba *después* del primer consumidor |
+  | 3 | FAIL | `fmt` — dos líneas mías sin `cargo fmt`, en 13 s |
+  | 4 | FAIL | `contracts` — este mismo ratchet, por 4 commits de distancia |
+  | 5 | FAIL | `cr07-metrics-exposition`, flake sin reproducir (ver arriba) |
+  | 6 | FAIL | `mcp-prf-sec-02-read-only-uat`, UAT roja desde `e11016ff` |
+  | 7 | "verde", 606 s | **no atribuible** |
+  | 8 | "verde", 677 s | **no atribuible** |
+  | 9 | FAIL | test paniqueando en la línea 900 de un fichero de 861 — binario de otro checkout |
+  | 10 | FAIL | `source_commit (d5082848…) must match git rev-parse HEAD (d73e7b08…)` — `d73e7b08` es el HEAD de `worktree-test-harness` |
+
+  La primera medición del gate —687 s en 8 etapas— era de un gate que ejecutaba
+  4 de sus 39 tests. Las cifras de abajo son las que se midieron después de
+  arreglarlo, y **también están bajo la misma reserva**: son tiempos reales de
+  una máquina real, pero de una máquina donde seis checkouts compiten por el
+  mismo directorio.
+
+* **La sexta corrección era una UAT roja de meses, no una avería del gate.**
+  `prf_sec_02_read_only_uat` afirmaba que el modo por defecto marca
+  «exactamente las tres herramientas mutantes» nombrándolas una a una: esa
+  lista es una segunda fuente de verdad del campo `authority` de
+  `product/tools.json`. Cuando B5.W3 (`e11016ff`) declaró `safe_refactor_apply`
+  como mutante —con razón, escribe el refactor— la lista no se tocó y el test
+  quedó rojo. Nadie lo vio porque era una de las **35 pruebas que el gate
+  colapsado no ejecutaba**: salió al restaurar las etapas. El oráculo pasa a
+  ser el catálogo, leído con el mismo cargador que el runtime
+  (`load_tool_catalog_active`), y el test pasa a comprobar en negro, sobre un
+  proceso MCP real y con la paginación de `tools/list` de por medio, que el flag
+  que llega por el cable coincide con lo que el catálogo declara.
+
+* **Batería — MEDIDAS, y ya no son las de antes.** Las cifras de este
+  snapshot se retiraron el 2026-10-15 porque se midieron sobre el gate
+  colapsado de 73 a 8 etapas, en el que la etapa `tests` ejecutaba **4 de sus
+  39 `cargo test`** y devolvía `success`. Causa: un `exit $rc` heredado de un
+  sub-bloque termina el proceso, no el sub-bloque; pegado en medio de una etapa
+  de 39 órdenes se come las 35 siguientes. Y PipelineK corre el cuerpo con
+  `bash script.sh` **sin opciones de shell**, así que sin `-e` el veredicto de
+  una etapa de muchas órdenes es el de la última.
+
+  Coste real medido el 2026-10-15, orden por orden:
+  * 37 invocaciones con selector de target → **692 s**, de las cuales
+    `cargo test -p cognicode-core --lib` son **477 s** en solitario.
+  * Los cuatro builds de perfil release, en un target dir **vacío**:
+    `cognicode-mcp` 358 s, `cognicode-control-plane` 123 s,
+    `cognicode-cli` 174 s, `cognicode` 38 s → **693 s**. En un runner limpio
+    es ese el precio de que las cuatro suites UAT de release puedan correr.
+
+  * **Coste por etapa: 124 ms.** Dos pipelines de sonda con trabajo idéntico
+    (30 órdenes `true`), mejor de 5: 1 etapa 5827 ms, 30 etapas 9432 ms.
+    Restaurar las 73 etapas cuesta **8,9 s**. El colapso de etapas no era el
+    problema que parecía, y su precio —un gate que miente— sí lo era.
+
+  * **El presupuesto de 15 min que se aprobó con este gate ya no es
+    alcanzable**, y la cifra que lo sostenía (687 s) era la de un gate que no
+    ejecutaba su batería. El orden de magnitud real, frío, es de decenas de
+    minutos. Volver a decidir el presupuesto con el número viejo sería repetir
+    el error.
+
+  Historial de lo que se afirmó entonces, para no reutilizarlo:
   * `toolchain` → success (0,2 s).
   * `repo-contract` → success (0,1 s).
   * `fmt` → success (4,5 s).
   * `clippy` (`-D warnings`) → success (83,8 s).
-  * `rustdoc-gate` → success (434,0 s = 7,2 min).
-  * `contracts` → sin medir a fondo; la etapa anterior agota por sí sola
-    más de la mitad del presupuesto de 15 min acordado para el gate.
+  * `rustdoc-gate` → success (434,0 s = 7,2 min) — ya no está en el merge
+    gate; vive en la lane de release-candidate.
+  * `contracts` → sin medir a fondo.
 
-  Los tiempos son por etapa, leídos del journal SQLite del propio run. Antes
-  de `--rerun` los mismos stages se replayaban en 79 ms marcados `RERUN`, de
-  modo que ninguna de estas cifras correspondía a trabajo ejecutado.
-
-  **Bloqueo conocido**: `rustdoc-gate` es `cargo doc --workspace --no-deps`
-  envuelto en un test, y consume 7,2 min por sí solo. El gate no cabe en
-  15 min sin segmentarlo; la segmentación propuesta es un work item abierto,
-  no un hecho.
+  **Nota sobre el presupuesto**: el gate ya no cabe en 15 min, y la razón
+  no es la segmentación de etapas —medida a 124 ms por etapa— sino el trabajo
+  que hace: la batería de tests y los cuatro builds de release. `rustdoc-gate`
+  ya no forma parte del merge gate; vive en la lane de release-candidate.
 * **Batería workspace** (medida sobre este SHA):
   * `cargo fmt --all --check` → exit 0.
   * `cargo build -p cognicode-core` → 0 errors (T1-5.5).

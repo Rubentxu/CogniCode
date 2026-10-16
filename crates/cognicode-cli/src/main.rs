@@ -108,10 +108,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let output = CommandExecutor::execute(cli).await?;
 
+    use cognicode_core::interface::cli::doctor::DoctorStatus;
     use cognicode_core::interface::cli::result::CommandOutput;
     if !matches!(output, CommandOutput::Other) {
         let mut stdout = std::io::stdout();
         cognicode_cli::presenter::present_output(&output, cli_format, &mut stdout)?;
+    }
+
+    // T1-5.6b — `cognicode doctor` exit code. Pre-T1-5.6b the lib called
+    // `std::process::exit(1)` inline for `Missing` and `exit(0)` for
+    // `Ok/Warn/Info`. The migration moves the decision to the bin so
+    // the lib no longer knows what an exit code is; the bin inspects
+    // the typed `DoctorReport` and sets the exit code accordingly.
+    // All other sub-commands exit 0 (the default).
+    let exit_code: i32 = match &output {
+        CommandOutput::Doctor(report) => match report.overall_status() {
+            DoctorStatus::Missing => 1,
+            DoctorStatus::Ok | DoctorStatus::Warn | DoctorStatus::Info => 0,
+        },
+        _ => 0,
+    };
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 
     Ok(())

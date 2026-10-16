@@ -11,7 +11,8 @@ use crate::infrastructure::graph::{
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
 use crate::interface::cli::result::{
-    CommandOutput, GraphResult, IndexError, IndexResult, NavigateError, NavigateResult,
+    CommandOutput, DoctorError, DoctorResult, GraphResult, IndexError, IndexResult, NavigateError,
+    NavigateResult,
 };
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use serde_json::Value;
@@ -787,9 +788,16 @@ impl CommandExecutor {
                 let result = Self::execute_navigate(command).await.map_err(Box::new)?;
                 Ok(CommandOutput::Navigate(result))
             }
-            Some(CliCommand::Doctor { format, cwd }) => {
-                Self::execute_doctor(format, cwd).await?;
-                Ok(CommandOutput::Other)
+            Some(CliCommand::Doctor { format: _, cwd }) => {
+                // T1-5.6b: execute_doctor returns Result<DoctorResult,
+                // DoctorError>. The bin (cognicode-cli) dispatches
+                // text/JSON via the presenter and sets the exit code
+                // from `report.overall_status()` (Missing → 1, else 0).
+                // Pre-T1-5.6b the lib did both: it picked text vs JSON
+                // via the `format` arg, printed to stdout, and called
+                // std::process::exit. That coupling is gone.
+                let report = Self::execute_doctor(cwd).await.map_err(Box::new)?;
+                Ok(CommandOutput::Doctor(report))
             }
             Some(CliCommand::ExportAssurance { command }) => {
                 Self::execute_export_assurance(command).await?;
@@ -2084,10 +2092,27 @@ impl CommandExecutor {
         Ok(())
     }
 
-    async fn execute_doctor(format: &str, cwd: &str) -> Result<(), Box<dyn std::error::Error>> {
-        use crate::interface::cli::doctor::{
-            format_doctor_json, format_doctor_text, run_doctor_checks,
-        };
+    /// T1-5.6b — `cognicode doctor` returns `Result<DoctorResult,
+    /// DoctorError>` instead of formatting + `std::process::exit`.
+    ///
+    /// Pre-T1-5.6b (snippet):
+    /// ```ignore
+    /// async fn execute_doctor(format: &str, cwd: &str) -> Result<(), Box<dyn Error>> {
+    ///     // ... compute report ...
+    ///     match format { "json" => println!(...), _ => println!(...) }
+    ///     std::process::exit(exit_code); // bypasses the dispatch return
+    /// }
+    /// ```
+    ///
+    /// Post-T1-5.6b (this function): the `format` argument is gone (it
+    /// was a CLI concern; the bin's presenter now picks text vs JSON).
+    /// The `std::process::exit` is gone (the bin sets the exit code
+    /// from `report.overall_status()`; the library doesn't know what
+    /// an exit code is). The function is now `Result<DoctorResult,
+    /// DoctorError>` — `DoctorError` is a placeholder for future
+    /// checks that may fail; today's `run_doctor_checks` is infallible.
+    async fn execute_doctor(cwd: &str) -> Result<DoctorResult, DoctorError> {
+        use crate::interface::cli::doctor::run_doctor_checks;
 
         let workspace_path = std::path::Path::new(cwd);
         let workspace_path = if workspace_path.exists() && workspace_path.is_dir() {
@@ -2096,26 +2121,12 @@ impl CommandExecutor {
             None
         };
 
+        // Today's `run_doctor_checks` is infallible. When a future check
+        // surfaces a typed error, this is the seam: wrap the call in a
+        // closure that maps the (currently `Infallible`) error into
+        // `DoctorError::Check { source }` without changing the signature.
         let report = run_doctor_checks(workspace_path);
-
-        match format {
-            "json" => {
-                println!("{}", format_doctor_json(&report));
-            }
-            _ => {
-                println!("{}", format_doctor_text(&report));
-            }
-        }
-
-        // Set exit code based on overall status
-        let exit_code = match report.overall_status() {
-            crate::interface::cli::doctor::DoctorStatus::Missing => 1,
-            crate::interface::cli::doctor::DoctorStatus::Ok
-            | crate::interface::cli::doctor::DoctorStatus::Warn
-            | crate::interface::cli::doctor::DoctorStatus::Info => 0,
-        };
-
-        std::process::exit(exit_code);
+        Ok(report)
     }
 
     /// Execute the capabilities subcommand (A-014 / CP2.4).

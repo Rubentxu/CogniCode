@@ -255,13 +255,35 @@ fn intent_tags_in_catalog_match_route_intent() {
 // -----------------------------------------------------------------------
 
 fn cognicode_bin() -> Option<PathBuf> {
-    // Mirror the resolution strategy used in cognicode-cli/tests:
-    // 1. CARGO_BIN_EXE_cognicode at compile time (set when running
-    //    `cargo test` against the cognicode-cli crate).
-    // 2. Same env var at runtime (cargo-nextest, manual wrappers).
-    // 3. CARGO_TARGET_DIR override (this environment uses one).
-    // 4. Workspace-relative target/.
+    // MEDIDO 2026-10-15. Esta resolucion fallaba en el merge gate con el
+    // binario release ya construido, y el motivo es el mismo que documenta
+    // `a015_onboarding_gate.rs::cogh_binary`: **cargo no exporta
+    // `CARGO_TARGET_DIR` a los binarios de test**, asi que la rama 3 de abajo
+    // nunca se cumple. Y la rama 4 mira `<repo>/target`, que no existe en un
+    // checkout con `build.target-dir` redirigido — que es el caso de esta
+    // maquina. Resultado: `None`, con el binario release construido y al lado.
+    //
+    // Lo que faltaba era la misma fuente de verdad que usan los demas: preguntar
+    // a cargo donde pone las cosas.
+    //
+    // Y el mensaje de panic de este test pedia `COGNICODE_CLI_BIN`, variable
+    // que esta funcion NO leia. Un diagnostico que manda a poner algo que no
+    // se lee hace perder el rato a quien lo lee, y es peor que no dar ninguno.
+    //
+    // Orden:
+    // 1. `COGNICODE_CLI_BIN` — lo que el mensaje de error ya prometia.
+    // 2. `CARGO_BIN_EXE_cognicode`, en tiempo de compilacion y de ejecucion.
+    // 3. `cargo metadata`, que es donde esta de verdad, release antes que
+    //    debug porque el gate construye los de release.
+    // 4. `CARGO_TARGET_DIR` y `<repo>/target`, por si el binario corre fuera
+    //    de cargo.
 
+    if let Some(p) = std::env::var_os("COGNICODE_CLI_BIN") {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
     if let Some(p) = option_env!("CARGO_BIN_EXE_cognicode") {
         let p = PathBuf::from(p);
         if p.exists() {
@@ -274,33 +296,47 @@ fn cognicode_bin() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        let release = PathBuf::from(&target).join("release").join("cognicode");
-        if release.exists() {
-            return Some(release);
-        }
-        let debug = PathBuf::from(&target).join("debug").join("cognicode");
-        if debug.exists() {
-            return Some(debug);
-        }
-    }
+
+    // La misma fuente que `cogh_binary`: `cargo metadata` responde donde esta
+    // de verdad el target dir, con el config del operador aplicado.
     let manifest_dir = std::env::var_os("CARGO_MANIFEST_DIR")
         .map(PathBuf::from)
         .unwrap_or_default();
     let workspace_root = manifest_dir.join("..").join("..");
-    let release = workspace_root
-        .join("target")
-        .join("release")
-        .join("cognicode");
-    if release.exists() {
-        return Some(release.canonicalize().ok().unwrap_or(release));
+    let meta = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(&workspace_root)
+        .output()
+        .ok()?;
+    let meta = String::from_utf8_lossy(&meta.stdout);
+    let target_dir = meta
+        .split("\"target_directory\":")
+        .nth(1)
+        .and_then(|s| s.split('"').nth(1))
+        .map(PathBuf::from)?;
+    for profile in ["release", "debug"] {
+        let p = target_dir.join(profile).join("cognicode");
+        if p.is_file() {
+            return Some(p);
+        }
     }
-    let debug = workspace_root
-        .join("target")
-        .join("debug")
-        .join("cognicode");
-    if debug.exists() {
-        return Some(debug.canonicalize().ok().unwrap_or(debug));
+
+    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
+        for profile in ["release", "debug"] {
+            let p = PathBuf::from(&target).join(profile).join("cognicode");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    for profile in ["release", "debug"] {
+        let p = workspace_root
+            .join("target")
+            .join(profile)
+            .join("cognicode");
+        if p.exists() {
+            return Some(p.canonicalize().ok().unwrap_or(p));
+        }
     }
     None
 }

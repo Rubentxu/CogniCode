@@ -203,9 +203,16 @@ describe("KNOWN_NODE_CLASSES — Phase 1 adds the 3 C4 node classes", () => {
   });
 
   // 4 C4 = component + container + system + code (code is ADR-039 C4 leaf)
-  // Total: 14 prior + 5 E19 overlays + 3 boundary violations + 4 C4 = 22
-  it("total node class count is 22 (14 prior + 5 E19 overlays + 3 boundary violations + 4 C4)", () => {
-    expect(KNOWN_NODE_CLASSES.size).toBe(22);
+  // + 1 VDH-TRUTH-03 honest unknown bucket = 23
+  // Total: 14 prior + 5 E19 overlays + 3 boundary violations + 4 C4 + 1 unknown = 23
+  it("total node class count is 23 (14 prior + 5 E19 overlays + 3 boundary violations + 4 C4 + 1 VDH unknown)", () => {
+    expect(KNOWN_NODE_CLASSES.size).toBe(23);
+  });
+
+  // VDH-TRUTH-03 (2026-10-16): the honest unknown bucket is a
+  // known class, not a misclassification to a code bucket.
+  it("includes the VDH-TRUTH-03 node-unknown bucket", () => {
+    expect(KNOWN_NODE_CLASSES.has("node-unknown")).toBe(true);
   });
 });
 
@@ -220,9 +227,15 @@ describe("KNOWN_EDGE_CLASSES — Phase 1 adds the 3 C4 edge classes", () => {
     }
   });
 
-  // 3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on = 11
-  it("total edge class count is 11 (3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on)", () => {
-    expect(KNOWN_EDGE_CLASSES.size).toBe(11);
+  // 3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on + 1 VDH unknown = 12
+  it("total edge class count is 12 (3 legacy + 4 multimodal + 3 C4 + 1 E19 depends-on + 1 VDH unknown)", () => {
+    expect(KNOWN_EDGE_CLASSES.size).toBe(12);
+  });
+
+  // VDH-TRUTH-03 (2026-10-16) mirror: the honest unknown bucket
+  // is a known edge class.
+  it("includes the VDH-TRUTH-03 edge-unknown bucket", () => {
+    expect(KNOWN_EDGE_CLASSES.has("edge-unknown")).toBe(true);
   });
 });
 
@@ -237,14 +250,19 @@ describe("resolveNodeStyleClass — T18 console.warn regression", () => {
     warnSpy.mockRestore();
   });
 
-  it("falls back to function and warns once for an unknown bucket", async () => {
+  it("falls back to node-unknown and warns once for an unknown bucket", async () => {
+    // VDH-TRUTH-03 (2026-10-16): unknown buckets are NOT a known
+    // code class. The previous fallback ("function") misclassified
+    // future / external kinds as code; the new fallback is a
+    // dedicated neutral class so the graph still renders, just
+    // without claiming a taxonomy the data does not support.
     // Re-import so the module-level warnedBuckets Set is reset by
     // vitest's per-test module cache. (We can't reset it from
     // outside the module; using a unique key per test is the
     // documented workaround.)
     const { resolveNodeStyleClass } = await import("./stylesheet");
     const out = resolveNodeStyleClass("node-bogus-test-1");
-    expect(out).toBe("function");
+    expect(out).toBe("node-unknown");
     expect(warnSpy).toHaveBeenCalled();
     const msg = warnSpy.mock.calls[0]?.[0] as string;
     expect(msg).toContain("node-bogus-test-1");

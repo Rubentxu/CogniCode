@@ -232,10 +232,15 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
     // side, which is how the companion hole (the suite losing its gate step
     // entirely) was found.
+    // 65 -> 66 on 2026-10-16: `b2_uat_01_cli_mcp_same_semantic` (B2-UAT-01
+    // characterization — pins the CLI≡MCP semantic-equality contract for the
+    // trivial a→b→c fixture; gates B2.W3's full-graph owner extraction).
+    // The 66 is the on-disk count at the moment this assertion was bumped;
+    // any further WU adds another file and bumps again.
     assert_eq!(
         suites.len(),
-        65,
-        "expected exactly 65 cognicode-core integration suites, found {}. \
+        66,
+        "expected exactly 66 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -351,6 +356,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "architecture_e77_1_wu3_canonical_grounding_e2e",
     "architecture_self_host_e2e",
     "b2_w1_analysis_outcome_contract",
+    "b2_uat_01_cli_mcp_same_semantic",
     "b2_w2_catalog_parity",
     "b2_w3_output_schema_contract",
     "b2_w4_export_invariants",
