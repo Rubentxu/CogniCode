@@ -15466,3 +15466,62 @@ Listos para correr contra `release/` una vez el RC termine:
 4. Si UAT/AAT verdes: B0 → DONE. Publicar release real
    (operador-gated) y mergear PR.
 5. B2-B4 sin cambios respecto a la entrada anterior.
+
+## Entrada 2026-10-16 — VDH B2 audit + B2-UAT-01 characterization
+
+**Sesión:** continuación tras handoff de B0 fix. Esta entrada cierra
+B2 audit y deja B2-UAT-01 en estado de caracterización.
+
+### Avance B2 (P1)
+
+`AnalysisService` y `WorkspaceSession` ya estaban extraídos (B2.W1
+previo: commit e92fd41 con `map`/`and_then` sobre el ADT). El audit
+documenta lo que falta:
+
+| Ítem | Estado |
+|---|---|
+| `ports/mod.rs` con 6 traits hexagonales | DONE (ST-01) |
+| `analysis_basis` ADT + leyes | DONE (B2.W1) |
+| `AnalysisService` + 10 sub-servicios | DONE (estructura) |
+| `WorkspaceSession` facade | DONE (estructura) |
+| Migrar `PetGraphStore::new()` en services | NOT_STARTED (8 sitios) |
+| Retirar `petgraph` de `graph_analytics.rs` | NOT_STARTED |
+| Agrupar `RuntimePorts` por capacidad | NOT_STARTED (23 fields planos) |
+| Owner único para full graph semantics | NOT_STARTED |
+| B2-UAT-01 (CLI≡MCP semántica) | CHARACTERIZATION (test pinned) |
+| Reducir `handlers/mod.rs` (7992L) y `sandbox/main.rs` (7788L) | NOT_STARTED |
+
+**B2-UAT-01 efímero**:
+- `test-harness/.cycles/B2-3f833bf/B2-UAT-01.sh` ejecuta el test
+  y reporta PASS.
+- Test en `crates/cognicode-core/tests/b2_uat_01_cli_mcp_same_semantic.rs`
+  (2 tests, ambos verdes para fixture a→b→c).
+- **GAP documentado**: el CLI `OnDemandStrategy::build_subgraph` y el
+  MCP `handle_graph_query` BFS-por-keywords son dos traversal paths
+  distintos. Para el fixture trivial convergen; con fixtures complejos
+  divergen. B2.W3 (no en esta sesión) cierra el gap creando
+  `WorkspaceSession::query_call_graph` como owner único que ambos
+  transports consumen.
+
+**Audit doc**: `test-harness/.cycles/B2-3f833bf/B2-AUDIT.md` (5 KB)
+detalla el estado actual, los 5 gaps contra el addendum, y el plan
+de extracción mínimo (migrar `PetGraphStore::new` a `SharedGraph` +
+extraer owner único del full graph).
+
+### B0 RC v2
+
+Re-lanzado con SHA `3f833bfb` tras tocar `result.rs` para forzar
+recache de cargo (el run v1 falló por stale `cognicode-core` cache
+— `DoctorResult` y `CommandOutput::Doctor` introducidos por T1-5.6b
+no eran visibles para el test build de `cognicode-cli`). El v2 está
+en Stage 4b/7 (cargo build --release --bins) al cierre.
+
+### Siguiente paso
+
+1. Verificar B0 RC v2 termina con los 8 assets esperados en
+   `release/*0.101.17*` y correr `B0-UAT-01.sh` + `B0-AAT-01.sh`.
+2. B2.W3 (no trivial): extraer `WorkspaceSession::query_call_graph`
+   y migrar CLI + MCP. Caracterización previa obligatoria.
+3. B2 hexagonal seams restantes: 5 ítems NOT_STARTED arriba.
+4. B3 (LadybugDB real) y B4 (harness + retire 125 tests) intactos.
+5. C8-R firma humana pendiente.
