@@ -15299,10 +15299,11 @@ lo que TH-S05 pide antes de cambiar semántica. Decisión:
 
 | Medida | Valor |
 |---|---|
-| Coste de la etapa | **4,0 s medidos** (run durable `cfb7bea7`), plan + consulta al oráculo |
+| Coste de la etapa | **3,6 s medidos** (run `4d431256`), plan + consulta al oráculo |
 | Etapas del gate | 58 (57 + la etapa de observación) |
-| Gate real con la etapa | corrida completa en `merge-gate-shadow2.db`; el primer intento se cortó por una recarga del servidor tras medir la etapa |
+| Gate real con la etapa | **SUCCESS**, 58/58 etapas, **550 s (9,2 min)** (run `4d431256`, db `merge-gate-final.db`) |
 | Contrato del gate | 11/11 PASS tras el cambio |
+| Nota de infraestructura | Los dos primeros relanzamientos fallaron con `INFRASTRUCTURE: transcript could not be persisted` por los streams del run cortado en `.pipelinek/durable-shell/`; se resolvió con un `--control-root` nuevo y `--rerun` (el estado apartado quedó en `$JCODE_SCRATCH_DIR/th-durable-stale`, reversible). No era un fallo del harness ni del gate |
 
 ### Límites declarados
 
