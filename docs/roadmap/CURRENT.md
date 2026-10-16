@@ -10,7 +10,7 @@
 > drift que QW-02 define como contradictorio.
 
 > **Snapshot**: 2026-10-15, sobre `b5-v0.101.17` HEAD
-> `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6` (seis gates que no podían
+> `21ca7aa44c78` (post-D0) (seis gates que no podían
 > fallar reparados y probados por mutación: el veredicto publicado por
 > `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
 > adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
@@ -35,7 +35,7 @@
 
 * **Rama**: `b5-v0.101.17` (PR #348 abierto contra `main`; #346 y #347
   también abiertos y `BLOCKED` a la espera de `merge-gate`).
-* **SHA funcional**: `0fcfb724b09fc99769c30bdc606bf1b0fd0991b6`.
+* **SHA funcional**: `21ca7aa44c787adf120dab1d6dae1ad55b5ebe1e` (post-D0, regenerado por D0 first-checkpoint integration).
 * **Versión workspace**: `0.101.17` (bump preparado, **sin publicar**;
   el tag remoto más reciente sigue siendo `v0.101.16`).
 * **Batería** (medida sobre este árbol, `pipelinek 0.61.0-rc2`, con
