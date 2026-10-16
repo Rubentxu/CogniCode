@@ -15611,3 +15611,11 @@ documento sirviera para operar el paquete.
 - Los demás comandos del README ya se habían ejecutado con sus códigos de salida
   observados (tabla anterior); `parity` da `AGREE` contra CR-08 en el estado actual.
 
+- **Gate final del bloque** (corrida `d75b3e2e`, `--rerun`): **SUCCESS, 59 etapas**,
+  475,6 s de suma de etapas y 485 s de pared. La etapa `rustdoc-gate` —la garantía que
+  volvió a la lane que bloquea `main`— cuesta **1,3 s** con la caché de documentación
+  caliente (26,6 s en la corrida anterior con la caché a medio construir, 124 s en
+  frío, 700,2 s cuando compartía directorio de target con las suites). Las etapas más
+  caras son ahora `contracts` (323,2 s) y las suites de producto (28,8 / 28,7 /
+  26,4 s).
+
