@@ -300,37 +300,22 @@ pipeline {
             // Formerly 6 stage(s); one stage, same commands, same order.
             // Fail-fast is unchanged: PipelineK aborts the run on a non-zero exit,
             // and these blocks are sequenced with `set -euo pipefail` in force.
+            //
+            // MEDIDO 2026-10-16. La verificacion original de "build-binary"
+            // estaba en la cabecera de este stage y comprobaba la presencia de
+            // los binarios ANTES de los `cargo build`. Eso era valido en el
+            // workflow de GitHub Actions donde ese stage era post-build, pero
+            // en clean-clone los binarios no existen todavia y el check
+            // aborta la lane con `exit 1` antes de que `cargo build` se
+            // ejecute. La fix minima: el primer check es inalcanzable en
+            // clean-clone, asi que se elimina; la verificacion al final del
+            // stage (verify-release-binaries) sigue cubriendo que los
+            // binarios existen y son ejecutables despues del build.
             sh("""
             # PipelineK ejecuta el cuerpo con `bash script.sh` y sin opciones
             # de shell: sin `-e`, el veredicto de una etapa de varias ordenes
             # es el codigo de la ULTIMA. MEDIDO 2026-10-15 con una sonda.
             set -eo pipefail
-            # ── build-binary
-            # ─────────────────────────────────────────────
-
-                    $cd || exit 1
-                    set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
-                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
-                        fi
-                    done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
 
             # ── build-cognicode-mcp-release
             # ─────────────────────────────────────────────
