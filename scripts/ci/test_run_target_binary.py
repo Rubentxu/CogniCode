@@ -83,6 +83,16 @@ def run_runner(args: list[str], **env_extra: str) -> subprocess.CompletedProcess
             "HOME": raw,
             "TMPDIR": raw,
         }
+        # The rustup proxy needs RUSTUP_HOME to find the toolchain when HOME
+        # is overridden (the proxy's default of $HOME/.rustup would point
+        # at this tempfile). Without it, `rustc -vV` hangs and the runner
+        # script reports a host it could not read. Prefer the parent env
+        # value, then fall back to the standard location so the proxy
+        # resolves in <100 ms the same way it does on a developer machine.
+        rustup_home = os.environ.get("RUSTUP_HOME") or os.path.expanduser("~/.rustup")
+        env["RUSTUP_HOME"] = rustup_home
+        cargo_home = os.environ.get("CARGO_HOME") or os.path.expanduser("~/.cargo")
+        env["CARGO_HOME"] = cargo_home
         env.update({k: v for k, v in env_extra.items() if v})
         return subprocess.run(
             [str(RUNNER), *args],
