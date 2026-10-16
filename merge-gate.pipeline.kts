@@ -111,12 +111,32 @@ pipeline {
     stages {
         // ---------------------------------------------------------------- check
         stage("check") {
+            stage("build-isolation") {
+                // MEDIDO 2026-10-15. Esta etapa se antepone a todo lo demás a
+                // propósito. Seis checkouts de este repo compilan al mismo
+                // target dir, así que un binario de cualquiera de los cinco
+                // worktrees puede ejecutarse como si fuera de este árbol: cargo
+                // decide frescura por mtime, y un mtime no dice de dónde salió
+                // el binario. Pasó dos veces en un día, en las dos
+                // direcciones — un test paniqueando en la línea 900 de un
+                // fichero de 861, y otro comparando su `source_commit` contra
+                // el HEAD de otro worktree.
+                //
+                // Sin esta etapa el gate produce un veredicto que no se puede
+                // atribuir, y falla después de 11 minutos explicando un test
+                // que en realidad no falla. Con ella, no arranca y dice por
+                // qué. El negativo está probado: dos checkouts y nadie
+                // compilando sale 0.
+                sh("bash scripts/ci/check-build-isolation.sh")
+            }
+
             stage("toolchain") {
                 sh("cargo --version && rustc --version")
             }
 
             stage("repo-contract") {
                 sh("""
+                    set -eo pipefail
                     test -f "$repoRoot/Cargo.toml" || {
                         echo "FAIL: $repoRoot has no Cargo.toml"
                         exit 1
@@ -221,6 +241,7 @@ pipeline {
             stage("install-cargo-deny") {
                 sh(
                     """
+                    set -eo pipefail
                     $cd || exit 1
                     if command -v cargo-deny >/dev/null 2>&1; then
                         echo "cargo-deny already present, skipping install"
@@ -268,6 +289,7 @@ pipeline {
             stage("install-rust-analyzer") {
                 sh(
                     """
+                    set -eo pipefail
                     $cd || exit 1
                     if rust-analyzer --version >/dev/null 2>&1; then
                         echo "rust-analyzer already present, skipping install"
@@ -281,6 +303,7 @@ pipeline {
             stage("rust-analyzer-answers") {
                 sh(
                     """
+                    set -eo pipefail
                     $cd || exit 1
                     # Un shim en el PATH que sale con 1 haria que el paso
                     # anterior pasara y los tests se saltaran igual. Preguntar
@@ -348,8 +371,8 @@ pipeline {
             // lane (`binary-smoke-$target`), with the artifacts it verifies.
             stage("verify-debug-binaries") {
                 sh("""
-                    $cd || exit 1
                     set -euo pipefail
+                    $cd || exit 1
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
                     missing=0
                     for bin in cognicode cognicode-mcp cognicode-control-plane; do
@@ -385,8 +408,8 @@ pipeline {
             // green contract over a script nothing calls is the A-013 shape.
             stage("select-suites-script") {
                 sh("""
-                    $cd || exit 1
                     set -euo pipefail
+                    $cd || exit 1
                     PATHS="scripts/ci/run-all-contracts.sh"
                     SELECT_OUTPUT="${'$'}(SELECT_PATHS="${'$'}PATHS" bash scripts/ci/select-suites.sh)"
                     echo "${'$'}SELECT_OUTPUT"
@@ -417,11 +440,12 @@ pipeline {
                 // directory, and the suite reported a green skip. It now fails loudly
                 // instead, and the gate hands it the debug binary it just built.
                 sh("""
+                    set -eo pipefail
                     $cd || exit 1
                     TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
                     export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
                     export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
-                    cargo test -p cognicode-core --test prf_h06_adversarial_e2e --quiet
+                    cargo test -p cognicode-mcp --test prf_h06_adversarial_e2e --quiet
                 """.trimIndent())
             }
 
@@ -445,6 +469,7 @@ pipeline {
                 // Same shape as `cli-unrestricted-ladybug` below: log to a
                 // file, show only the tail, and say where the full log is.
                 sh("""
+                    set -eo pipefail
                     $cd || exit 1
                     $cdLog || exit 1
                     # The two suites inside this run that spawn a product binary by
@@ -457,14 +482,12 @@ pipeline {
                     export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
                     export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
                     export COGNICODE_CLI_BIN="${'$'}TARGET_DIR/debug/cognicode"
-                    set +e
-                    cargo test -p cognicode-core --features evidence-kernel --quiet \
-                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1
-                    rc=${'$'}?
-                    set -e
-                    tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
-                    echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
-                    exit ${'$'}rc
+                    if ! cargo test -p cognicode-core --features evidence-kernel --quiet \
+                        > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1; then
+                        tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
+                        echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
+                        exit 1
+                    fi
                 """.trimIndent())
             }
 
@@ -580,10 +603,10 @@ pipeline {
             // command that exits 0 when its output goes to a file.
             stage("cli-integration-suites") {
                 sh("""
+                    set -eo pipefail
                     $cd || exit 1
                     $cdLog || exit 1
-                    set +e
-                    cargo test -p cognicode-cli --features ladybug --quiet \
+                    if ! cargo test -p cognicode-cli --features ladybug --quiet \
                         --test a013_lifecycle_gate_contract \
                         --test a014_capabilities_json \
                         --test a015_licenses_gate \
@@ -625,12 +648,11 @@ pipeline {
                         --test t1_5_5_json_dispatch \
                         --test t1_5_6a_navigate_presenter_snapshot \
                         --test t1_5_snapshot \
-                        > "$logDir/cli-integration-suites.log" 2>&1
-                    rc=${'$'}?
-                    set -e
-                    tail -40 "$logDir/cli-integration-suites.log"
-                    echo "the full log is $logDir/cli-integration-suites.log"
-                    exit ${'$'}rc
+                        > "$logDir/cli-integration-suites.log" 2>&1; then
+                        tail -40 "$logDir/cli-integration-suites.log"
+                        echo "the full log is $logDir/cli-integration-suites.log"
+                        exit 1
+                    fi
                 """.trimIndent())
             }
 
@@ -789,6 +811,7 @@ pipeline {
             // the matrix ran.
             stage("compat-matrix-0-97-x") {
                 sh("""
+                    set -eo pipefail
                     $cd || exit 1
                     if [ -x sandbox/.compat/0.97.3/cognicode-mcp ]; then
                         echo "compat fixture present, running the matrix"
