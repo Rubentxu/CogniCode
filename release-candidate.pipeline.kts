@@ -911,12 +911,20 @@ pipeline {
                     # Resolve RELEASE_SHA explicitly so the manifest names
                     # the same SHA the rest of the lane validated.
                     source=$(git rev-parse "${'$'}{RELEASE_SHA:-HEAD}")
+                    # 2026-10-16: v9c RC exposed that `generate` defaults to
+                    # Tier 1 (x86_64 + aarch64) and refuses to write a manifest
+                    # when an aarch64 artifact is absent. This lane is
+                    # x86_64-only per TF-5b / odd/tasks/tf-6-aarch64-followup.md,
+                    # so we must scope the platform explicitly. The same
+                    # `targets` list that TIER1_TRIPLES_OVERRIDE already
+                    # reflects in the payloads stage.
                     "${'$'}TARGET_DIR/release/cognicode-release" generate \
                         --staging staging \
                         --out release \
                         --version "$version" \
                         --tag "$tag" \
-                        --source-commit "${'$'}source"
+                        --source-commit "${'$'}source" \
+                        --platform "${targets.joinToString(",")}"
                 """.trimIndent())
             }
 
