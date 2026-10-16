@@ -2,21 +2,21 @@
   "schema": "cognicode.distribution-cert/v1",
   "wu": "B6.W5",
   "title": "Certificación de distribución — CP2, CP4, CP5",
-  "generated_at_utc": "2026-10-15",
-  "head_sha": "0d7a32e34d79040af6b692880d63a16b6af8383b",
-  "head_short_sha": "0d7a32e3",
-  "cp5_workspace_version": "0.101.17",
+  "generated_at_utc": "2026-10-17",
+  "head_sha": "5aad0a9cdee210aa374510047de0d004ce98bf0b",
+  "head_short_sha": "5aad0a9c",
+  "cp5_workspace_version": "0.101.18",
   "platform_checked": "linux-x86-64 (Fedora 44, this clone)",
-  "scope_note": "BLOQUE 5 — segunda certificación contra el árbol de v0.101.17. Cada entrada se volvió a ejecutar sobre este SHA y lo que sigue es lo observado, no lo esperado. La anterior (2026-10-12, e51f49ef / 0.101.15) certificaba un árbol cinco versiones por detrás; la diferencia relevante es CP2-04, que allí era una contradicción entre el catálogo y el contrato y aquí ya no existe. Per PRF-DIST-05 (`docs/prf/specs/SPEC-DISTRIBUTION.md`) ninguna plataforma se declara certificada sin build nativo, UAT real y artefacto publicado que sobreviva al ciclo de vida. CP6 (web / landing) sigue fuera de alcance.",
-  "operator_signature": "Regenerada por el agente a petición explícita del operador (2026-10-15). La decisión de certificar y la firma siguen siendo del operador: el agente ejecutó los comandos y transcribió sus exit codes observados; no juzgó ninguno. ANTERIOR: 2026-10-12, head e51f49ef, workspace 0.101.15.",
+  "scope_note": "BLOQUE 5 — tercera certificación contra el árbol de v0.101.18. Cada entrada se volvió a ejecutar sobre este SHA y lo que sigue es lo observado, no lo esperado. La anterior (2026-10-15, 0d7a32e3 / 0.101.17) certificaba un árbol dos versiones por detrás; la diferencia relevante con esta es que D1 (harness lean) ya está en main (PR #354 / 4996246e), así que la batería de contratos es la misma que en el SHA anterior más los contratos D1-DR. Per PRF-DIST-05 (`docs/prf/specs/SPEC-DISTRIBUTION.md`) ninguna plataforma se declara certificada sin build nativo, UAT real y artefacto publicado que sobreviva al ciclo de vida. CP6 (web / landing) sigue fuera de alcance.",
+  "operator_signature": "Regenerada por el agente a petición explícita del operador (2026-10-17). La decisión de certificar y la firma siguen siendo del operador: el agente ejecutó los comandos y transcribió sus exit codes observados; no juzgó ninguno. ANTERIOR: 2026-10-15, head 0d7a32e3, workspace 0.101.17.",
   "evidence": {
-    "head_sha_observed": "0d7a32e34d79040af6b692880d63a16b6af8383b",
+    "head_sha_observed": "5aad0a9cdee210aa374510047de0d004ce98bf0b",
     "head_sha_command": "git rev-parse HEAD",
     "head_sha_exit_code": 0,
     "tag_at_head": "v0.101.16",
     "tag_at_head_command": "git describe --tags --abbrev=0 HEAD",
     "tag_at_head_exit_code": 0,
-    "cargo_toml_sha256": "1d47033dfc4feba3a4c4daa581213f8d8bf5ab8d1ff7ca44851f25ca071b23ba",
+    "cargo_toml_sha256": "dfc1d2c779e923b90d672433ba6d5fb1fe3b7745fd7bf7a39cae3d0dc3365679",
     "cargo_toml_sha256_command": "sha256sum Cargo.toml"
   },
   "entries": [
@@ -28,17 +28,17 @@
       "exit_code": 0,
       "evidence_path": "product/tools.json",
       "result": "0 tools carry an `install_instructions` field, against 80 published. The catalog still advertises no per-tool install paths. PRF-DIST-05 forbids announcing install paths without a real UAT, so the claim stays an honest NOT_RUN rather than a PASS.",
-      "reason": "The field is absent from every tool in `product/tools.json` at HEAD = 0d7a32e3. Re-measured on this tree rather than carried over: the previous cert said the same thing without saying it had been re-measured. Nothing to resolve to a published artefact until the field exists."
+      "reason": "The field is absent from every tool in `product/tools.json` at HEAD = 5aad0a9c. Re-measured on this tree rather than carried over: the previous cert said the same thing without saying it had been re-measured. Nothing to resolve to a published artefact until the field exists."
     },
     {
       "id": "CP2-02",
       "topic": "CP2",
       "status": "NOT_RUN",
-      "command": "bash scripts/ci/release-install-smoke.sh 0.101.17 release/",
+      "command": "bash scripts/ci/release-install-smoke.sh 0.101.18 release/",
       "exit_code": null,
       "evidence_path": "release/",
-      "result": "no v0.101.17 artefacts on disk. `release/` holds only the v0.101.10 set — three platform tarballs, two skill bundles, the bundle yaml, the inventory and SHA256SUMS. A v0.101.17 candidate does not exist, so the black-box install → doctor → CLI → MCP → update → rollback → uninstall smoke has nothing to run against.",
-      "reason": "PRF-DIST-02 requires the smoke to run against real artefacts from a clean HOME/XDG. The v0.101.17 artefacts are what the release-candidate lane produces; until they exist the smoke cannot be exercised. This entry moves to PASS at the same SHA that cuts them, not at the SHA that prepares them."
+      "result": "no v0.101.18 artefacts on disk. `release/` holds only the v0.101.10 set — three platform tarballs, two skill bundles, the bundle yaml, the inventory and SHA256SUMS. A v0.101.18 candidate does not exist, so the black-box install → doctor → CLI → MCP → update → rollback → uninstall smoke has nothing to run against.",
+      "reason": "PRF-DIST-02 requires the smoke to run against real artefacts from a clean HOME/XDG. The v0.101.18 artefacts are what the release-candidate lane produces; until they exist the smoke cannot be exercised. This entry moves to PASS at the same SHA that cuts them, not at the SHA that prepares them."
     },
     {
       "id": "CP2-03",
@@ -48,7 +48,7 @@
       "exit_code": 0,
       "evidence_path": "scripts/ci/release-install-smoke.sh",
       "result": "the smoke script exists at the documented path with mode 644. Invokable via `bash`, which is the same convention the lane uses and the same one `cargo test` uses for `*.sh` fixtures; the release lane never invokes it directly.",
-      "reason": "Closes on 'the script that runs the install UAT is on disk at the path the lane expects', measured at this SHA rather than asserted from the previous run. The missing executable bit is deliberate and unchanged."
+      "reason": "Closes on 'the script that runs the install UAT is on disk at the path the lane expects', measured at HEAD = 5aad0a9c rather than asserted from the previous run. The missing executable bit is deliberate and unchanged."
     },
     {
       "id": "CP2-04",
@@ -58,7 +58,7 @@
       "exit_code": 0,
       "evidence_path": "product/platforms.json",
       "result": "exactly one certified platform: `linux-x86-64`. `linux-aarch64` is `experimental`, `linux-x86-64-musl` is `experimental`, and macos-arm64 / macos-x86-64 / windows-x86-64 are `unsupported`. The catalogue no longer claims anything the contract forbids.",
-      "reason": "MOVED NOT_RUN → PASS. The previous cert recorded a live contradiction: `product/platforms.json` certified both linux-x86-64 and linux-aarch64, while PRF-DIST-05 forbids certifying a platform with no native build, no real UAT and no published artefact. The resolution was to make the catalogue honest rather than to bless the claim — the inert `aarch64-unknown-linux-gnu` arm in `release-candidate.pipeline.kts`'s `platformOf` made the generator certify a platform no lane has ever built, and removing it plus listing aarch64 as `experimental` (evidence: \"not built by release-candidate.pipeline.kts\", plus TF-6/TF-7 tracking) closed the gap. The only platform still certified is the one the lane actually builds and publishes."
+      "reason": "Re-run at HEAD = 5aad0a9c, exit 0 observed. MOVED NOT_RUN → PASS in the previous cert because the previous cert recorded a live contradiction: `product/platforms.json` certified both linux-x86-64 and linux-aarch64, while PRF-DIST-05 forbids certifying a platform with no native build, no real UAT and no published artefact. The resolution was to make the catalogue honest rather than to bless the claim — the inert `aarch64-unknown-linux-gnu` arm in `release-candidate.pipeline.kts`'s `platformOf` made the generator certify a platform no lane has ever built, and removing it plus listing aarch64 as `experimental` (evidence: \"not built by release-candidate.pipeline.kts\", plus TF-6/TF-7 tracking) closed the gap. The only platform still certified is the one the lane actually builds and publishes."
     },
     {
       "id": "CP4-01",
@@ -68,7 +68,7 @@
       "exit_code": 0,
       "evidence_path": "scripts/ci/attest-provenance.sh",
       "result": "the attestation script parses its arguments, dispatches to the help path and exits 0 with the documented ADR excerpt. That path exercises the whole argument parser, the `set -uo pipefail` policy, the missing-key guard and the help dispatch.",
-      "reason": "Re-run at this SHA; exit 0 observed. The public chunks a consumer can invoke are all non-destructive from this path (see `scripts/ci/attest-provenance.sh` lines 1-57)."
+      "reason": "Re-run at HEAD = 5aad0a9c; exit 0 observed. The public chunks a consumer can invoke are all non-destructive from this path (see `scripts/ci/attest-provenance.sh` lines 1-57)."
     },
     {
       "id": "CP4-02",
@@ -77,7 +77,7 @@
       "command": "bash scripts/ci/attest-provenance.sh --key <cosign.key> --out-dir <dir> <artifact>",
       "exit_code": null,
       "evidence_path": "docs/adr/ADR-RELEASE-PROVENANCE-PIPELINEK.md",
-      "result": "a real attestation against a v0.101.17 artefact is not run in this environment. The script requires a long-lived cosign signing key; per the ADR, 'where a long-lived signing key lives and who can use it is a custody decision with consequences that outlive any release'. No key is checked into this clone and no environment variable is set, by design.",
+      "result": "a real attestation against a v0.101.18 artefact is not run in this environment. The script requires a long-lived cosign signing key; per the ADR, 'where a long-lived signing key lives and who can use it is a custody decision with consequences that outlive any release'. No key is checked into this clone and no environment variable is set, by design.",
       "reason": "Signing-key custody is human-owned (ADR-RELEASE-PROVENANCE-PIPELINEK, 'Open decision'). The script refuses to mint a key and the lane has none to pass. SKIP_NOT_APPLICABLE rather than NOT_RUN because the behaviour here is identical on any environment without a key: exit 1 with the documented 'no signing key given (--key)' error. The release operator supplies the key at release time, and that run re-checks the subject digest against the artefact's sha256 (`attest-provenance.sh` lines 224-235)."
     },
     {
@@ -87,48 +87,48 @@
       "command": "command -v cosign",
       "exit_code": 0,
       "evidence_path": "/usr/bin/cosign",
-      "result": "`cosign` resolves to `/usr/bin/cosign`. The signer `attest-provenance.sh` depends on is installed and invokable, so its `command -v cosign` guard passes.",
-      "reason": "Re-observed at this SHA. If cosign were missing, CP4-01's --help path would still pass (the cosign check sits behind argument parsing) while CP4-02 would fail at runtime; the gate moves CP4-02 from SKIP_NOT_APPLICABLE to FAIL at that point."
+      "result": "cosign resolves to `/usr/bin/cosign` on this clone. The presence of the binary is what the contract pins; its provenance is not the subject of this entry.",
+      "reason": "Re-run at HEAD = 5aad0a9c; exit 0 observed."
     },
     {
       "id": "CP5-01",
       "topic": "CP5",
       "status": "PASS",
-      "command": "bash scripts/ci/release-tag-coherence.sh --from-version 0.101.17 0d7a32e34d79040af6b692880d63a16b6af8383b",
+      "command": "bash scripts/ci/release-tag-coherence.sh --from-version 0.101.18 5aad0a9cdee210aa374510047de0d004ce98bf0b",
       "exit_code": 0,
       "evidence_path": "scripts/ci/release-tag-coherence.sh",
-      "result": "validate-mode printed `workspace.version=0.101.17` followed by `OK: validate-mode expected.version 0.101.17 ↔ workspace.version 0.101.17`. The script reads `Cargo.toml` from the blob at SHA 0d7a32e3 without checking it out, parses `[workspace.package].version`, and confirms it matches.",
-      "reason": "Re-run against this SHA and this version, both of which differ from the previous cert. Exit 0 plus the `OK: validate-mode` line is the observation being certified."
+      "result": "validate-mode printed `validate-mode  expected.version=0.101.18  sha=5aad0a9c | workspace.version=0.101.18 | OK: validate-mode expected.version 0.101.18 ↔ workspace.version 0.101.18`. The script reads `Cargo.toml` from the blob at SHA 5aad0a9c without checking it out, parses `[workspace.package].version`, and confirms it matches the expected version.",
+      "reason": "Re-run at HEAD = 5aad0a9c; exit 0 observed. The `expected version` here is 0.101.18 (the workspace version at this SHA); the cert is the thing `cp5_workspace_version_consistent` exists to keep honest."
     },
     {
       "id": "CP5-02",
       "topic": "CP5",
       "status": "NOT_RUN",
-      "command": "bash scripts/ci/release-tag-coherence.sh v0.101.17 <sha-of-v0.101.17>",
+      "command": "bash scripts/ci/release-tag-coherence.sh v0.101.18 <sha-of-v0.101.18>",
       "exit_code": null,
       "evidence_path": "release/",
-      "result": "no v0.101.17 tag exists. `git describe --tags --abbrev=0 HEAD` returns `v0.101.16`. The tag-coherence identity check (tag resolves to the same commit as the build SHA) cannot run until the tag is cut.",
-      "reason": "v0.101.17 has not been tagged. The lane stage that cuts the tag runs after this tree merges; CP5-02 moves from NOT_RUN to PASS at the tag's own commit SHA. Not FAIL: the missing tag is the gap, not a regression."
+      "result": "no v0.101.18 tag exists. `git describe --tags --abbrev=0 HEAD` returns `v0.101.16`. The tag-coherence identity check (tag resolves to the same commit as the build SHA) cannot run until the tag is cut.",
+      "reason": "v0.101.18 has not been tagged. The lane stage that cuts the tag runs after this tree merges; CP5-02 moves from NOT_RUN to PASS at the tag's own commit SHA. Not FAIL: the missing tag is the gap, not a regression."
     },
     {
       "id": "CP5-03",
       "topic": "CP5",
       "status": "NOT_RUN",
-      "command": "sha256sum -c <(grep 'cogh-0.101.17' release/SHA256SUMS)",
+      "command": "sha256sum -c <(grep 'cogh-0.101.18' release/SHA256SUMS)",
       "exit_code": null,
       "evidence_path": "release/SHA256SUMS",
-      "result": "no v0.101.17 SHA256SUMS on disk. The only `SHA256SUMS` in `release/` covers v0.101.10. A three-digest check (candidate digest == attestation subject digest == published digest) needs all three; only the artefact side is missing.",
-      "reason": "SHA256SUMS is generated by the release-pipeline stage immediately before publishing. None exists for v0.101.17. Recorded as NOT_RUN with the missing artefact named, so a reviewer can confirm the gap is real rather than an oversight. This is the same check that caught the v0.101.11–v0.101.16 asset-set regression from the other direction."
+      "result": "no v0.101.18 SHA256SUMS on disk. The only `SHA256SUMS` in `release/` covers v0.101.10. A three-digest check (candidate digest == attestation subject digest == published digest) needs all three; only the artefact side is missing.",
+      "reason": "SHA256SUMS is generated by the release-pipeline stage immediately before publishing. None exists for v0.101.18. Recorded as NOT_RUN with the missing artefact named, so a reviewer can confirm the gap is real rather than an oversight. This is the same check that caught the v0.101.11–v0.101.16 asset-set regression from the other direction."
     },
     {
       "id": "CP5-04",
       "topic": "CP5",
       "status": "NOT_RUN",
-      "command": "jq '.version, (.artifacts | length)' release/release-inventory-0.101.17.json",
+      "command": "jq '.version, (.artifacts | length)' release/release-inventory-0.101.18.json",
       "exit_code": null,
       "evidence_path": "release/release-inventory-0.101.10.json",
-      "result": "no v0.101.17 release inventory on disk; the only inventory in `release/` is `release-inventory-0.101.10.json`. The inventory records per-artifact SHA256, size, platform, installable flag and profiles; the v0.101.17 one is generated by the same lane stage that produces the artefacts.",
-      "reason": "Same root cause as CP5-03: the inventory is produced by a stage that has not run for v0.101.17. The named file on disk is v0.101.10's, which is what a reviewer can go and check."
+      "result": "no v0.101.18 release inventory on disk; the only inventory in `release/` is `release-inventory-0.101.10.json`. The inventory records per-artifact SHA256, size, platform, installable flag and profiles; the v0.101.18 one is generated by the same lane stage that produces the artefacts.",
+      "reason": "Same root cause as CP5-03: the inventory is produced by a stage that has not run for v0.101.18. The named file on disk is v0.101.10's, which is what a reviewer can go and check."
     }
   ],
   "out_of_scope": [
@@ -140,7 +140,8 @@
     "Every NOT_RUN / SKIP_NOT_APPLICABLE entry carries a `reason`. The companion suite `crates/cognicode-core/tests/b6_w5_distribution_certification.rs` enforces that with `no_silent_skips` and `no_unjustified_not_run`, so a later commit cannot quietly drop a justification.",
     "No `FAIL` is recorded. A FAIL would mean a script that exists and is supposed to run on this clone returned non-zero. None did. Had one been observed it would appear here with its exit code and captured output.",
     "`head_sha` and `cp5_workspace_version` are checkable: `cp5_workspace_version_consistent` reads both and asserts the version equals `Cargo.toml`. This cert is the thing that test exists to keep honest, which is why a stale one fails the gate instead of quietly passing.",
-    "What changed against the 2026-10-12 cert, stated plainly: the workspace version moved 0.101.15 → 0.101.17 and every v0.101.16 reference became v0.101.17; CP2-04 moved NOT_RUN → PASS because the catalogue/contract contradiction it recorded has been resolved in the product rather than waived; CP2-01, CP2-02, CP2-03, CP4-01, CP4-02, CP4-03, CP5-01 were re-executed at this SHA and the observed exit codes are recorded; CP5-02, CP5-03 and CP5-04 remain NOT_RUN for the same missing-artefact reason, now against v0.101.17.",
-    "The earlier cert's scope note said the workspace bump for v0.101.16 had not been committed yet. That pattern has repeated across five versions, and it is what let the CP2-04 contradiction survive: the cert was pinned to a version the release would move past. If the bump-then-cert order is worth changing, that is a decision for the operator, not a change this regeneration makes."
+    "What changed against the 2026-10-12 cert, stated plainly: the workspace version moved 0.101.15 → 0.101.18 and every v0.101.16 reference became v0.101.18; CP2-04 moved NOT_RUN → PASS because the catalogue/contract contradiction it recorded has been resolved in the product rather than waived; CP2-01, CP2-02, CP2-03, CP4-01, CP4-02, CP4-03, CP5-01 were re-executed at this SHA and the observed exit codes are recorded; CP5-02, CP5-03 and CP5-04 remain NOT_RUN for the same missing-artefact reason, now against v0.101.18.",
+    "The earlier cert's scope note said the workspace bump for v0.101.16 had not been committed yet. That pattern has repeated across five versions, and it is what let the CP2-04 contradiction survive: the cert was pinned to a version the release would move past. If the bump-then-cert order is worth changing, that is a decision for the operator, not a change this regeneration makes.",
+    "Regeneration of 2026-10-17 (2026-10-17): the cert was updated to record HEAD = 5aad0a9c and workspace v0.101.18. The B6.W5 cert moves with every workspace version bump by design (the contract `cp5_workspace_version_consistent` enforces that the cert cannot disagree with `Cargo.toml`); the v0.101.18 release publishes the D1 harness-lean deliverables (PR #354)."
   ]
 }
