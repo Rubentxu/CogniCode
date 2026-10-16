@@ -815,7 +815,13 @@ pipeline {
             }
 
             stage("payloads") {
-                sh("$cd && bash scripts/ci/stage-platform-payloads.sh staging")
+                // TIER1_TRIPLES_OVERRIDE mirrors `val targets` so the
+                // flatten script does not require aarch64 when the
+                // lane is scoped x86_64-only (TF-6, tracked in
+                // odd/tasks/tf-6-aarch64-followup.md). Default
+                // (unset) keeps the script's historical behavior for
+                // runs that do build both platforms.
+                sh("TIER1_TRIPLES_OVERRIDE=\"${'$'}{targets.joinToString(\" \")}\" $cd && bash scripts/ci/stage-platform-payloads.sh staging")
             }
 
             stage("generate") {
