@@ -821,7 +821,24 @@ pipeline {
                 // odd/tasks/tf-6-aarch64-followup.md). Default
                 // (unset) keeps the script's historical behavior for
                 // runs that do build both platforms.
-                sh("TIER1_TRIPLES_OVERRIDE=\"${'$'}{targets.joinToString(\" \")}\" $cd && bash scripts/ci/stage-platform-payloads.sh staging")
+                //
+                // Kotlin string templates: `${'$'}{...}` writes a
+                // LITERAL `${...}` to the output (the `!$` is a
+                // template escape for `$`); `${...}` directly writes
+                // the EVALUATED value. The `targets` list is a Kotlin
+                // `val`, so it MUST be evaluated at compile time —
+                // bash has no `targets` variable and would see the
+                // literal `${targets.joinToString(" ")}` as a
+                // malformed expansion. MEDIDO 2026-10-16, RC run
+                // 419a2330-a075-45b7-88a6-7699acd859d0: the v7
+                // payloads step ran with the env var set to the
+                // literal string `${targets.joinToString(" ")}`,
+                // which the script then treated as a single-element
+                // TIER1_TRIPLES list. `aarch64-unknown-linux-gnu`
+                // was therefore missing from the check, the script
+                // bailed at the TIER1 sanity loop, and the pipeline
+                // died with no candidate produced.
+                sh("TIER1_TRIPLES_OVERRIDE=\"${targets.joinToString(" ")}\" $cd && bash scripts/ci/stage-platform-payloads.sh staging")
             }
 
             stage("generate") {
