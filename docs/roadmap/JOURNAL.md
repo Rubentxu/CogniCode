@@ -15542,3 +15542,72 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
   cambia el estado de la caché compartida y la máquina tiene otros trabajos de
   PipelineK ajenos en marcha; lo comparable es la etapa consigo misma.
 
+### TH-IMPL-09 — Dos guardas que existían y no se aplicaban (2026-10-16)
+
+- **Encontrado al intentar verificar el suelo de obligaciones por el camino real**:
+  `prepare()` cargaba `test-harness/obligations.json` y `inventory.json`, avisaba si
+  eran ilegibles… y construía el `Context` **sin pasárselos**, así que el valor por
+  defecto (vacío) viajaba a todos los planes de la CLI. Efecto: el suelo de
+  obligaciones críticas no podía marcar un plan como indeterminado por perder una
+  obligación, y los mínimos pinados del inventario no se aplicaban, en ningún camino
+  real. Dos guardas documentadas como activas que nunca se activaron.
+- **Por qué no lo cazó nada**: los tests de esos mecanismos llamaban a `build_plan`
+  con el suelo y el inventario cargados a mano. Probaban el mecanismo, no el
+  cableado. Corregido el cableado, y añadidos dos tests por la CLI: uno sobre un repo
+  cuyo suelo promete una obligación que sus pipelines no ejecutan (el plan debe ser
+  `UNKNOWN_INPUT`), y otro con un mínimo pinado imposible (el run debe rechazarlo).
+  Los dos fallan con el cableado original y pasan con el arreglo (probado revirtiéndolo).
+- **Verificación por el camino real, con el escenario que lo destapó**: quitando la
+  etapa `rustdoc-gate` de `merge-gate.pipeline.kts`, `harness plan --lane merge`
+  devuelve **`UNKNOWN_INPUT`** con el motivo «faltan obligaciones críticas del suelo
+  en la lane 'merge': cognicode-runtime:m011_rustdoc_gate#-…»; restaurada, el plan
+  vuelve a exigir la obligación. El suelo del merge incluye ahora esa garantía
+  (antes estaba en el de integración, de cuando la etapa vivía allí).
+- **AAT corregida**: las filas AAT-04 y AAT-12 siguen `KILLED`, pero su evidencia
+  ahora incluye el camino de la CLI, y la nota dice que la evidencia anterior no lo
+  cubría.
+
+## Recibo de aceptación del README del paquete (TH-DOC-01 revisado) — 2026-10-16
+
+**Qué se hizo**: seguir el README ejecutando **sus comandos documentados**, tal cual,
+sobre este repositorio, y contrastar sus afirmaciones comprobables. Es la prueba que
+faltaba: el cierre de TH-DOC-01 había validado navegación y enlaces, no que el
+documento sirviera para operar el paquete.
+
+| Comando del README | Resultado observado |
+|---|---|
+| `plan --lane change --base origin/main` | rc=0, `estado=READY`, plan con `run_id` |
+| `run --lane change` | primera pasada rc=1 `UNSATISFIED` por `workspace:script:run-all-contracts` → `INFRA_ERROR`, `classification=infra`, 336,7 s. Causa: **mi propia edición de la AAT** dejó dos nombres de test en la columna de evidencia y el contrato `test_every_aat_row_has_a_status_and_a_real_test_when_it_is_killed` lo rechazó. Corregido (un nombre por fila, el otro en la nota) |
+| `status` | rc=1 con `estado=FAILED` y la nota de fail-fast: coherente con el run anterior |
+| `explain --suite 'cognicode-core:lib#-'` | rc=0, `acción=EXECUTE` con el motivo («cambio global: … ») |
+| `inventory --check` | rc=0, compara pin (1 suite) con lo observado (5) |
+| `gc --keep 20 --dry-run` | rc=0, «logs a borrar=0» |
+| `parity --base origin/main` | rc=0, **`AGREE`** contra CR-08 en el estado actual del repo |
+| `report --lane merge --pipelinek-db .pipelinek/merge-gate.db` | rc=0, 40 obligaciones catalogadas y el perfil medido |
+| `certify --lane certification --candidate HEAD` | rc=2 con el motivo: «el candidato HEAD no es el HEAD de este checkout (998b9b6a…)» — el `--candidate HEAD` fue un error mío al invocarlo, y el mensaje es el correcto |
+
+- **Afirmaciones comprobadas**: 125 tests en la suite (el README lo dice y el runner lo
+  confirma); 20 enlaces relativos del README y 44 en todo el paquete, **0 roto**
+  (comprobado con las anclas aparte; la del README hacia la AAT resuelve al encabezado
+  `## Ejecución (2026-10-15)`); «sin pytest» (el runner es stdlib) y los comandos
+  declarados existen y responden.
+- **Corregido en esta revisión**: el rango de ADR vigentes decía `TH-001..TH-012`
+  cuando el paquete va por TH-014.
+- **Lo que sigue siendo cierto**: el README no promete ejecución en CI, ni UAT, ni
+  sustituir al gate; sus tres secciones de «no implementado» coinciden con el árbol
+  (adopción como motor por defecto del bucle local, nextest y lanes de release).
+- **Límite declarado**: `certify` no se aceptó con el SHA real del candidato porque no
+  hay artefacto de release en este worktree; su camino completo sigue **NOT_RUN**.
+
+### Cierre del mismo recibo: el flujo documentado pasa
+
+- Tras corregir la fila de la AAT, el comando documentado
+  `python3 test-harness/bin/harness.py run --lane change` (estado aislado,
+  `--base HEAD`) termina **`SATISFIED`: 39 suites ejecutadas, 0 pendientes, 0
+  bloqueadas, rc=0** — incluye la suite completa de contratos (295 comprobaciones) y
+  las etapas de lint y build que la lane exige. Antes de este bloque el mismo comando
+  fallaba (`UNSATISFIED`) y el motivo era un defecto del propio paquete, no del
+  entorno.
+- Los demás comandos del README ya se habían ejecutado con sus códigos de salida
+  observados (tabla anterior); `parity` da `AGREE` contra CR-08 en el estado actual.
+

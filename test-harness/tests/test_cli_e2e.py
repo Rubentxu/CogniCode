@@ -593,3 +593,68 @@ def test_a_change_in_a_dependency_invalidates_the_dependent_suite():
         reused = {receipt["suite_id"] for receipt in payload["reused"]}
         assert APP_SUITE in executed, (executed, reused)
         assert APP_SUITE not in reused, reused
+
+
+def test_the_critical_obligation_floor_applies_through_the_cli():
+    """El suelo de obligaciones tiene que aplicarse en el camino que usa el usuario.
+
+    MEDIDO 2026-10-16. `prepare()` cargaba `test-harness/obligations.json`, avisaba
+    si era ilegible… y construía el `Context` sin pasárselo, así que todos los
+    planes de la CLI llevaban el suelo vacío por defecto. El mecanismo existía y sus
+    tests lo llamaban con los objetos cargados a mano: probaban el mecanismo, no el
+    camino real. Aquí se ejerce la CLI sobre un repositorio cuyo suelo promete una
+    obligación que sus pipelines **no** ejecutan, y el plan tiene que declararse
+    indeterminado en vez de dar la lane por cubierta.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        floor = repo / "test-harness" / "obligations.json"
+        floor.parent.mkdir(parents=True, exist_ok=True)
+        floor.write_text(
+            json.dumps(
+                {
+                    "schema_version": "th.obligations/v1",
+                    "notes": "fixture: promete una obligación que este repo no ejecuta",
+                    "entries": {"change": ["workspace:script:no-existe"]},
+                }
+            ),
+            encoding="utf-8",
+        )
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        proc = run_cli(repo, state, "--format", "json", "plan", "--lane", "change", "--base", "main")
+        assert proc.returncode == 3, (proc.returncode, proc.stdout[:300])
+        payload = json.loads(proc.stdout)
+        assert payload["plan"]["status"] == "UNKNOWN_INPUT", payload["plan"]["status"]
+        reasons = " ".join(payload["plan"]["unknown_reasons"])
+        assert "workspace:script:no-existe" in reasons, reasons
+
+
+def test_the_pinned_inventory_minimum_applies_through_the_cli():
+    """Los mínimos pinados del inventario tienen que llegar al plan y al veredicto.
+
+    MEDIDO 2026-10-16: `inventory.json` se cargaba y no viajaba al `Context`, así que
+    el pin no se aplicaba en ningún camino de la CLI y un PASS con menos casos del
+    pinado se aceptaba igual. Aquí se pincha un mínimo imposible y el run tiene que
+    rechazarlo con un hueco que lo nombre.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        inventory = repo / "test-harness" / "inventory.json"
+        inventory.parent.mkdir(parents=True, exist_ok=True)
+        inventory.write_text(
+            json.dumps(
+                {
+                    "schema_version": "th.inventory/v1",
+                    "entries": {"demo-core:lib#-": 999},
+                }
+            ),
+            encoding="utf-8",
+        )
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        proc = run_cli(repo, state, "--format", "json", "run", "--lane", "change", "--base", "main")
+        payload = json.loads(proc.stdout)
+        assert proc.returncode != 0, (proc.returncode, json.dumps(payload)[:300])
+        gaps = payload["verdict"]["gaps"]
+        assert any("999" in gap["reason"] for gap in gaps), gaps

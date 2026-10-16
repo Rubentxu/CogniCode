@@ -67,7 +67,7 @@ Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
 `path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
 obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
 el que se comprueba que el paquete entregado es el que se describe. Los ADR
-vigentes son TH-001..TH-012 y este paquete no incluye ningún plan de UAT
+vigentes son TH-001..TH-014 y este paquete no incluye ningún plan de UAT
 desde el 2026-10-15 (ADR-TH-006).
 
 ## Uso

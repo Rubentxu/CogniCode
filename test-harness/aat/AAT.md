@@ -61,7 +61,7 @@ alcance actual, con motivo.
 | AAT-01 | NOT_RUN | — | Requiere campaña real de sandbox; fuera del alcance del harness |
 | AAT-02 | KILLED | test_aat_02_a_required_suite_without_receipt_turns_the_gate_red | |
 | AAT-03 | KILLED | test_aat_03_removing_features_changes_the_fingerprint_and_the_reuse | |
-| AAT-04 | KILLED | test_aat_04_a_missing_critical_obligation_leaves_the_plan_indeterminate | |
+| AAT-04 | KILLED | test_the_critical_obligation_floor_applies_through_the_cli | (También la mata `test_aat_04_a_missing_critical_obligation_leaves_the_plan_indeterminate`.) Hasta 2026-10-16 la evidencia llamaba a `build_plan` **con el suelo cargado a mano**: probaba el mecanismo, no el cableado, y el cableado estaba roto (la CLI cargaba el suelo y no lo pasaba al `Context`, así que ningún plan real podía quedar indeterminado por perder una obligación). El segundo test ejerce la CLI sobre un repo cuyo suelo promete algo que sus pipelines no ejecutan |
 | AAT-05 | PARTIAL | test_a_serial_suite_never_overlaps_even_with_workers_available | El mecanismo de exclusión está probado; la declaración de qué suite del CLI es serial es un dato de `config/suite-metadata.json` y su auditoría es manual |
 | AAT-06 | KILLED | test_aat_06_removing_clippy_from_the_gate_is_detected_as_indeterminate | |
 | AAT-07 | KILLED | test_unknown_path_forces_everything | |
@@ -69,7 +69,7 @@ alcance actual, con motivo.
 | AAT-09 | KILLED | test_docs_change_alone_selects_nothing | |
 | AAT-10 | KILLED | test_fingerprint_is_stable_and_input_sensitive | |
 | AAT-11 | KILLED | test_working_tree_and_untracked_files_with_spaces | |
-| AAT-12 | KILLED | test_inventory_pin_flags_a_suite_that_lost_cases | |
+| AAT-12 | KILLED | test_the_pinned_inventory_minimum_applies_through_the_cli | (También la mata `test_inventory_pin_flags_a_suite_that_lost_cases`.) Ídem: esa evidencia era unitaria (`check_receipt_against_inventory`). El pin no llegaba al plan por el mismo defecto de cableado, así que un PASS con menos casos que el pinado se aceptaba. El segundo test pincha un mínimo imposible y comprueba, por la CLI, que el run lo rechaza con un hueco que lo nombra |
 | AAT-13 | KILLED | test_corrupt_receipt_is_not_evidence | |
 | AAT-14 | KILLED | test_sigkill_leaves_no_pass_and_resume_reexecutes | |
 | AAT-15 | KILLED | test_two_runs_with_the_same_id_do_not_both_write | |

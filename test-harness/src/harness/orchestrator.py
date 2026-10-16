@@ -114,6 +114,17 @@ def prepare(
         changeset=changeset,
         graph=graph,
         catalog=catalog,
+        # MEDIDO 2026-10-16. Estas dos líneas faltaban: `prepare()` cargaba el
+        # inventario y el suelo de obligaciones, avisaba si no se podían leer… y
+        # construía el `Context` sin ellos, así que el valor por defecto (vacío)
+        # viajaba a cada plan. Efecto real: el suelo de obligaciones críticas nunca
+        # podía marcar un plan como indeterminado por perder una obligación, y los
+        # mínimos pinados de `inventory.json` nunca se aplicaban, en **ningún**
+        # camino de la CLI. Los tests que cubrían esos mecanismos llamaban a
+        # `build_plan` con los objetos ya cargados a mano, así que probaban el
+        # mecanismo y no el camino que el usuario ejecuta.
+        inventory=inventory,
+        obligation_floor=obligation_floor,
         warnings=tuple(warnings),
     )
 

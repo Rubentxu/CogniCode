@@ -16,6 +16,7 @@
    "cognicode-core:lib#-",
    "cognicode-core:prf_sec_07_adversarial_campaign#-",
    "cognicode-mcp:cargo:build#-",
+   "cognicode-runtime:m011_rustdoc_gate#-",
    "workspace:cargo:build#-",
    "workspace:cargo:clippy#-",
    "workspace:cargo:fmt#-",
@@ -26,7 +27,6 @@
   "integration": [
    "cognicode-core:lib#-",
    "cognicode-explorer:lib#-",
-   "cognicode-runtime:m011_rustdoc_gate#-",
    "workspace:script:check-release-matrix"
   ]
  }
