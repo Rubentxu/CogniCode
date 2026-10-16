@@ -96,6 +96,27 @@ echo "==> running the merge authority for $resolved"
 echo "    database: $PIPELINE_DB"
 mkdir -p "$(dirname "$PIPELINE_DB")"
 
+# Gate attribution fix (2026-10-16). On machines where `~/.cargo/config.toml`
+# sets `build.target-dir` to a shared location, cargo writes every invocation's
+# build output to the same directory regardless of which checkout invoked it.
+# Six checkouts of this repo do that here, and cargo deciding freshness by
+# mtime means a binary from a sibling checkout can be executed as if it were
+# this tree's — measured twice on 2026-10-15. The merge gate needs verdicts
+# that are attributable to the SHA being checked; if another checkout is
+# compiling, the verdict can be polluted mid-run. The detection-only fix in
+# `scripts/ci/check-build-isolation.sh` refuses the run when a sibling
+# process is visible; the *isolation* is `CARGO_TARGET_DIR` per run, which
+# propagates through pipelinek into every sh() subprocess and the cargo
+# invocations inside them (probe: INSIDE_PROBE shows the variable and
+# `cargo metadata` reports the same target dir). Set it once here unless the
+# caller has already done so.
+if [ -z "${CARGO_TARGET_DIR:-}" ]; then
+    check_id="$(git rev-parse --show-toplevel | md5sum | cut -c1-12)"
+    export CARGO_TARGET_DIR="/tmp/cognicode-merge-gate-${check_id}/target"
+    mkdir -p "$CARGO_TARGET_DIR"
+    echo "    target dir: $CARGO_TARGET_DIR (per-checkout isolation)"
+fi
+
 set +e
 # MEDIDO 2026-10-15. Without `--rerun` the runtime serves stages from the
 # SQLite journal. Measured on a real run: 30 stages — clippy, four release

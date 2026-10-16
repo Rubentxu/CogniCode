@@ -1,37 +1,44 @@
 #!/usr/bin/env python3
-"""A merge gate proves a merge. A release lane proves a release. Neither does both.
+"""The release lane must not lose the build just because the gate has one too.
 
-MEDIDO 2026-10-15, con el operador de acuerdo.
+CORREGIDO 2026-10-15. Este módulo afirmaba que el merge gate no debe hacer
+builds de perfil release, y lo escribí al moverlos a la lane de candidate. La
+afirmación era falsa y el propio docstring lo decía sin verlo:
 
-The merge gate had grown to 73 `stage(` occurrences. Collapsing 65 executable
-stages into 10 left a ~1900 s run, and two stages were 1170 s of it:
+    "A merge no longer proves that the release binaries build ... One class of
+     failure is detected later."
 
-    build   ~700 s   four release-profile binaries
-    docs    ~472 s   cargo doc --workspace --no-deps
+Eso no era un coste aceptable, era un conflicto con un contrato anterior que
+no se había leído al cambiar nada:
 
-That is 62% of the gate spent producing artefacts a merge does not publish.
-Everything else it checks — fmt, clippy, 276 contracts, 39 test suites,
-advisories, licences, LSP, selector, drift — fits in 730 s.
+    cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_
+    suites_require
+    "the merge gate runs suites that require real release-profile binaries
+     (cogh, cognicode, cognicode-release) but never builds them"
 
-So the release work moved to the lane that actually cuts a release.
+Cuatro suites UAT de la CLI resuelven sus binarios por `target/release/`. El
+gate las ejecuta. Quitar el build no quita trabajo: quita la precondición de
+esas cuatro suites y las convierte en un fallo que depende de lo que haya por
+casualidad en la máquina. MEDIDO: con el build fuera, el contrato de cobertura
+lleva rojo desde `e987d389`, y su propio mensaje dice que *"locally this is
+masked by whatever release binaries happen to exist on the developer's
+machine"*.
 
-## What this costs, stated plainly
+Un fallo que aparece en una máquina y no en otra no es un gate lento. Es un
+gate que no dice lo que dice.
 
-A merge no longer proves that the release binaries build. That is proved in
-`release-candidate.pipeline.kts` instead, so a broken release build surfaces
-when preparing to publish rather than when merging. One class of failure is
-detected later. Nothing else changes.
+Así que los cuatro builds vuelven al merge gate. MEDIDO en frío, con el target
+dir vacío: 358 + 123 + 174 + 38 = 693 s. En un runner limpio es ese el coste
+de que cuatro UAT significen algo. La lane de release LOS TIENE TAMBIÉN, y eso
+sigue siendo lo que se comprueba aquí: quitar del gate no es excusa para
+quitarlos de allí.
 
-`cognicode-control-plane` is a host binary. `release-candidate` cross-compiles
-cogh, cognicode and cognicode-mcp per target; the control plane was built
-*only* in the merge gate. Moving `build` wholesale would have left it built by
-no lane at all, so this contract also pins that the release lane builds it.
+MEDIDO además: el colapso de 73 etapas a 8 que acompaña a este cambio costó
+124 ms por etapa, 8,9 s en total. No era la fuente del problema.
 
-## Why this contract exists
-
-A contract that only checked "the gate is fast" would be satisfied by deleting
-the work. It checks both directions: the gate does not do release work, and
-the release lane does not lose it.
+Lo que queda en este módulo son las dos mitades que siguen siendo verdaderas:
+la lane de release construye lo que tiene que construir, y no ha perdido su
+propia etapa de build al mover cosas.
 
 Run:
     python3 scripts/ci/test_merge_gate_release_work_split.py
@@ -85,23 +92,6 @@ def code_of(path: Path) -> str:
     exists and has been paid for.
     """
     return strip_comments(path.read_text(encoding="utf-8"))
-
-
-def test_the_merge_gate_does_not_publish() -> None:
-    """The gate that gates a merge must not build what a release publishes."""
-    text = code_of(MERGE_GATE)
-    for pattern, what in RELEASE_ONLY_IN_GATE:
-        hits = [
-            line.strip()
-            for line in text.splitlines()
-            if re.search(pattern, line)
-        ]
-        check(
-            not hits,
-            f"{MERGE_GATE.name} still runs {what} ({pattern}). Measured at "
-            f"62% of the gate's wall time spent on artefacts a merge does not "
-            f"publish:\n    " + "\n    ".join(hits[:3]),
-        )
 
 
 def test_the_release_lane_actually_does_it() -> None:
@@ -158,8 +148,8 @@ def main() -> int:
         return 1
 
     print(
-        "PASS — the merge gate does no release work, the release lane still does "
-        "all of it, and no stage name is declared twice"
+        "PASS — the release lane still builds what a release needs, and no stage "
+        "name is declared twice"
     )
     return 0
 
