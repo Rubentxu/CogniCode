@@ -13,6 +13,16 @@
 #   bash scripts/test-fast.sh --dry-run        # solo imprime el plan
 #   bash scripts/test-fast.sh --no-baseline    # omite check_known_failures
 #
+# Motor de selección (opt-in, por defecto sin cambios):
+#   TEST_FAST_ENGINE=cr08     (por defecto) selector CR-08 + runner de suites.
+#   TEST_FAST_ENGINE=harness  plan/run del test harness con el suelo del oráculo.
+#                             Si CR-08 pide un scope que la lane `change` no
+#                             ejecuta (hoy `explorer`, que solo corre en
+#                             integración), cae al motor CR-08 en vez de
+#                             ejecutar de menos. La paridad está medida en
+#                             `harness parity --corpus` y comprobada por
+#                             scripts/ci/test_fast_engine_parity.py.
+#
 # Política contractual: ver AGENTS.md § "Estrategia de tests".
 set -uo pipefail
 
@@ -32,6 +42,12 @@ MODE="auto"
 DRY_RUN="false"
 USE_BASELINE="true"
 EXTRA_PATHS=""
+ENGINE="${TEST_FAST_ENGINE:-cr08}"
+
+case "$ENGINE" in
+  cr08|harness) ;;
+  *) echo "ERROR: TEST_FAST_ENGINE desconocido: $ENGINE (cr08|harness)" >&2; exit 2 ;;
+esac
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,25 +64,89 @@ while [ $# -gt 0 ]; do
 done
 
 # ---------- detectar paths ----------
+# BASE_REF es la base que corresponde a los paths detectados, y se pasa al motor
+# harness para que su ChangeSet describa el mismo cambio. Sin esto, un árbol
+# limpio daba al harness un cambio vacío (base HEAD) mientras el wrapper miraba
+# HEAD~1..HEAD: dos motores midiendo cosas distintas es exactamente lo que la
+# paridad de este wrapper existe para evitar.
 detect_paths() {
-  # working + staged vs HEAD; si no hay HEAD (repo recién clonado), usar
-  # todo el árbol contra main como aproximación.
+  # Imprime DOS líneas: la base que corresponde al cambio y los paths. La base
+  # se devuelve así, y no en una variable, porque esta función se invoca en una
+  # sustitución de comando: una asignación dentro del subshell no llega al
+  # shell padre, y el harness acababa planificando con base HEAD un cambio que
+  # el wrapper había leído como HEAD~1..HEAD.
+  local base_ref="HEAD"
   local paths
   paths="$(git diff --name-only HEAD 2>/dev/null | tr '\n' ' ')"
   if [ -z "$(printf '%s' "$paths" | tr -d '[:space:]')" ]; then
     paths="$(git diff --cached --name-only 2>/dev/null | tr '\n' ' ')"
   fi
   if [ -z "$(printf '%s' "$paths" | tr -d '[:space:]')" ]; then
-    # working tree dirty vs HEAD sin nada: caer a HEAD~1..HEAD
     paths="$(git diff --name-only HEAD~1 HEAD 2>/dev/null | tr '\n' ' ')"
+    if [ -n "$(printf '%s' "$paths" | tr -d '[:space:]')" ]; then
+      base_ref="HEAD~1"
+    fi
   fi
   if [ -n "$EXTRA_PATHS" ]; then
     paths="${paths} ${EXTRA_PATHS}"
   fi
-  printf '%s' "$paths"
+  printf '%s\n%s' "$base_ref" "$paths"
 }
 
-PATHS="$(detect_paths)"
+DETECTED="$(detect_paths)"
+BASE_REF="$(printf '%s' "$DETECTED" | sed -n '1p')"
+PATHS="$(printf '%s' "$DETECTED" | sed -n '2p')"
+[ -n "$BASE_REF" ] || BASE_REF="HEAD"
+
+# ---------- motor harness (opt-in) ----------
+# La delegación va antes del selector porque decide si puede sustituirlo. Reglas:
+#  * `--base HEAD` es la base correcta para la semántica de este wrapper: el
+#    ChangeSet del harness incluye working tree + staged vs HEAD y los untracked,
+#    que es exactamente lo que `detect_paths` mira.
+#  * `--oracle cr08` aplica el suelo del selector: el harness nunca exige menos
+#    que CR-08 en este camino.
+#  * Si el plan declara un scope NOT_IN_CATALOG, la lane `change` no puede
+#    ejecutar lo que CR-08 pide: se cae al motor CR-08 y se dice por qué. Un
+#    wrapper que ejecuta de menos en silencio es peor que uno lento.
+if [ "$ENGINE" = "harness" ]; then
+  HARNESS="${REPO_ROOT}/test-harness/bin/harness.py"
+  if [ ! -f "$HARNESS" ]; then
+    echo "ERROR: motor harness pedido y no existe $HARNESS" >&2
+    exit 2
+  fi
+  if [ "$MODE" = "full" ]; then
+    exec bash "${REPO_ROOT}/scripts/test-full.sh" --reason "test-fast --full"
+  fi
+  HARNESS_PLAN="$(python3 "$HARNESS" --repo "$REPO_ROOT" --format json plan \
+      --lane change --base "$BASE_REF" --oracle cr08 2>/dev/null)"
+  if [ -n "$EXTRA_PATHS" ]; then
+    # `--paths` es una entrada explícita del usuario y el harness lee su
+    # ChangeSet de git: delegar aquí sería ejecutar un cambio distinto del que
+    # el usuario pidió. Se queda el motor CR-08, que sí consume esos paths.
+    echo "motor harness: --paths es una entrada explícita y el harness lee git; se usa el motor CR-08"
+    ENGINE="cr08"
+  elif [ -z "$HARNESS_PLAN" ]; then
+    echo "motor harness: el plan no se pudo construir; se usa el motor CR-08" >&2
+    ENGINE="cr08"
+  elif printf '%s' "$HARNESS_PLAN" | grep -q '"NOT_IN_CATALOG"'; then
+    echo "motor harness: CR-08 pide scopes que la lane change no ejecuta; se usa el motor CR-08"
+    ENGINE="cr08"
+  else
+    if [ "$DRY_RUN" = "true" ]; then
+      echo "--- plan (motor harness) ---"
+      printf '%s\n' "$HARNESS_PLAN"
+      exit 0
+    fi
+    python3 "$HARNESS" --repo "$REPO_ROOT" run --lane change --base "$BASE_REF" --oracle cr08
+    harness_rc=$?
+    case "$harness_rc" in
+      0) exit 0 ;;
+      2) echo "ERROR: el harness no pudo ejecutar el plan" >&2; exit 2 ;;
+      *) # 1 (obligaciones incumplidas) y 3 (indeterminado) no son verdes.
+         exit 1 ;;
+    esac
+  fi
+fi
 
 # ---------- invocar selector ----------
 if [ ! -x "$SELECTOR" ]; then

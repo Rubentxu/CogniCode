@@ -7,6 +7,12 @@ import sys
 import tempfile
 from pathlib import Path
 
+# `harness_support` va primero, y no es estilo: es quien pone
+# `test-harness/src` y `test-harness` en sys.path. Importar `adapters` o
+# `harness` antes sólo funciona si otro módulo del mismo proceso ya lo hizo,
+# así que el test pasaba en la suite completa y fallaba al correr solo.
+from harness_support import CORE_SUITE, make_receipt
+
 from adapters.ledger_store import LeaseError, Ledger, receipt_from_json, state_root
 from adapters.process_runner import CaseCounts, classify, execute, parse_counts
 from harness_support import CORE_SUITE, make_receipt
@@ -227,4 +233,32 @@ def test_script_runner_does_not_demand_case_counts():
     assert script_receipt.is_well_formed_pass() is True
 
     cargo_receipt = make_receipt(executed=0, passed=0, discovered=0)
-    assert cargo_receipt.is_well_formed_pass() is False
+    assert cargo_receipt.is_well_formed_pass() is False, (
+        "una corrida de tests con 0 casos es un vacío, no un verde"
+    )
+
+    # MEDIDO 2026-10-16: `cargo test --doc` sin doc-tests en el paquete es 0 casos
+    # con exit 0, y eso no es un vacío: es que no hay ejemplos que ejecutar. Antes
+    # se rechazaba, así que `cli-doc` era un hueco permanente y el run de la lane
+    # change se detenía ahí por fail-fast sin llegar al resto del plan.
+    doc_receipt = make_receipt(
+        suite_id="demo-cli:doc#-",
+        argv=("cargo", "test", "-p", "demo-cli", "--doc", "--quiet"),
+        executed=0,
+        passed=0,
+        discovered=0,
+    )
+    assert doc_receipt.is_well_formed_pass() is True
+
+    # Y sigue sin valer para una corrida de doc-tests que falló.
+    failing_doc = make_receipt(
+        suite_id="demo-cli:doc#-",
+        argv=("cargo", "test", "-p", "demo-cli", "--doc", "--quiet"),
+        status="FAILED",
+        exit_code=101,
+        executed=1,
+        passed=0,
+        failed=1,
+        discovered=1,
+    )
+    assert failing_doc.is_well_formed_pass() is False

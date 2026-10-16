@@ -167,6 +167,19 @@ def demo_repo(prefix: str = "th-demo-") -> Iterator[Path]:
             path = root / "scripts" / f"{name}.sh"
             path.write_text(SLOW_SCRIPT, encoding="utf-8")
             path.chmod(0o755)
+        # Selector legible para que `--oracle cr08` tenga qué leer. Sin él, el
+        # harness no puede demostrar el suelo del oráculo y el plan sale
+        # UNDETERMINED, que es lo correcto pero no permite probar el camino
+        # feliz. El fixture no pretende replicar CR-08: declara que no exige
+        # nada, y así lo que se prueba es la propagación de la bandera.
+        (root / "scripts" / "ci").mkdir(parents=True, exist_ok=True)
+        (root / "scripts" / "ci" / "select-suites.sh").write_text(
+            "#!/usr/bin/env bash\n"
+            "# Selector del fixture: no exige nada, pero es legible.\n"
+            'printf \'{"strategy":"noop","reason":"fixture","suites":[]}\\n\'\n',
+            encoding="utf-8",
+        )
+        (root / "scripts" / "ci" / "select-suites.sh").chmod(0o755)
         (root / "product-fast.pipeline.kts").write_text(PIPELINE, encoding="utf-8")
         # La lane de merge ejecuta las mismas obligaciones, como en el repositorio
         # real: lo que cambia entre lanes es la política, no los comandos.

@@ -248,7 +248,15 @@ class Receipt:
         if self.executed_cases != self.passed_cases + self.failed_cases + self.skipped_cases:
             return False
         if self.runner.name == "cargo-test" and self.executed_cases < 1:
-            return False
+            # Una corrida de doc-tests puede no encontrar ninguno: `cargo test
+            # --doc` recorre los ejemplos de la documentación, y un paquete sin
+            # ejemplos ejecutables devuelve 0 casos con exit 0. MEDIDO 2026-10-16:
+            # `cognicode-cli:doc#-` es exactamente eso, y rechazarlo convertía el
+            # plan de la lane change en UNSATISFIED permanente; con fail-fast,
+            # además, el run se detenía ahí y las 17 suites siguientes ni se
+            # intentaban. El suelo sigue en pie para el resto: una corrida de
+            # tests con filtro que no casa sigue siendo un vacío, no un verde.
+            return "--doc" in self.runner.argv
         return True
 
     def digest(self) -> str:

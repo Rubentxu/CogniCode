@@ -324,3 +324,185 @@ def test_unknown_suite_explain_is_honest():
         assert proc.returncode == 0, proc.stderr
         payload = json.loads(proc.stdout)
         assert payload["decision"]["action"] == "UNKNOWN", payload
+
+
+def test_run_accepts_the_oracle_floor_and_executes_what_plan_promised():
+    """`run --oracle cr08` tiene que existir y exigir lo mismo que `plan`.
+
+    MEDIDO 2026-10-16. `plan` aceptaba `--oracle` y `run` no, así que el
+    consumidor que delega el motor (`scripts/test-fast.sh`) construía un argv
+    que la CLI rechazaba: la delegación estaba rota en su camino de ejecución.
+    Plan y run con la misma bandera tienen que producir el mismo conjunto, y el
+    JSON del run tiene que traer la paridad: si `parity` sale nulo con
+    `--oracle cr08`, la bandera se aceptó y no llegó al planificador.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        planned = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "plan",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--oracle",
+            "cr08",
+        )
+        assert planned.returncode == 0, (planned.returncode, planned.stderr)
+        plan_payload = json.loads(planned.stdout)
+        assert plan_payload["plan"]["required_suites"], "un plan vacío no prueba nada"
+        assert plan_payload["parity"] is not None, plan_payload
+
+        inspected = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "run",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--oracle",
+            "cr08",
+            "--plan-only",
+        )
+        assert inspected.returncode == 0, (inspected.returncode, inspected.stderr)
+        run_payload = json.loads(inspected.stdout)
+        assert run_payload["parity"] is not None, "la bandera no llegó al planificador"
+        assert set(run_payload["plan"]["required_suites"]) == set(
+            plan_payload["plan"]["required_suites"]
+        ), (run_payload["plan"]["required_suites"], plan_payload["plan"]["required_suites"])
+
+
+def test_run_rejects_an_oracle_value_it_cannot_honour():
+    """Un valor de oráculo desconocido es error de uso, no un `none` silencioso."""
+    with demo_repo() as repo:
+        proc = run_cli(
+            repo,
+            _state(repo),
+            "run",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--oracle",
+            "cr09",
+            "--plan-only",
+        )
+        assert proc.returncode != 0, proc.stdout
+        assert "cr09" in proc.stderr or "invalid choice" in proc.stderr, proc.stderr
+
+
+def test_plan_only_does_not_execute_anything():
+    """`--plan-only` inspecciona el camino de ejecución sin ejecutarlo.
+
+    Es la razón de existir de la bandera: sin ella, comprobar que un argv de
+    consumidor es aceptable obligaba a correr el plan entero, y en la práctica
+    no se comprobaba.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        commit_change(repo, "crates/core/src/lib.rs")
+        proc = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "run",
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--plan-only",
+        )
+        assert proc.returncode == 0, (proc.returncode, proc.stderr)
+        payload = json.loads(proc.stdout)
+        assert payload["plan_only"] is True, payload
+        assert payload["would_execute"], "con un cambio real hay suites que ejecutar"
+        assert not (state / "runs").exists(), "el modo plan-only no debe crear un run"
+        assert not git_dirty(repo), git_dirty(repo)
+
+
+def test_resume_accepts_the_oracle_floor():
+    """`resume --oracle cr08` existe: reanudar no puede exigir menos que plan.
+
+    Una reanudación sin suelo podría continuar un run declarando menos
+    obligaciones que las que el run original anunció.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        commit_change(repo, "crates/core/src/lib.rs")
+        first = run_cli(
+            repo, state, "--format", "json", "run", "--lane", "change", "--base", "main"
+        )
+        assert first.returncode == 0, (first.returncode, first.stderr)
+        run_id = json.loads(first.stdout)["run_id"]
+
+        done = run_cli(
+            repo,
+            state,
+            "--format",
+            "json",
+            "resume",
+            "--run-id",
+            run_id,
+            "--lane",
+            "change",
+            "--base",
+            "main",
+            "--oracle",
+            "cr08",
+        )
+        assert done.returncode == 0, (done.returncode, done.stderr)
+        payload = json.loads(done.stdout)
+        assert payload["run_id"] == run_id, payload
+        assert payload["verdict"]["verdict"] == "SATISFIED", payload["verdict"]
+
+
+def test_a_suite_with_unresolved_pipeline_variables_is_never_executed():
+    """Una variable sin expandir no llega a cargo: el veredicto es indeterminado.
+
+    MEDIDO 2026-10-16. El catálogo tomaba el argv literal de la pipeline, así que
+    `cargo build --release --target $target` llegaba a cargo con `$target` dentro y
+    devolvía `could not find specification for target "$target"`. El harness lo
+    anotaba como INFRA_ERROR de una obligación que sí había que cubrir. Lo
+    correcto es no ejecutarla y decirlo: el run queda INCONCLUSIVE y esa suite no
+    tiene recibo, en vez de tener un fallo que no era suyo.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        pipeline = repo / "product-fast.pipeline.kts"
+        pipeline.write_text(
+            pipeline.read_text(encoding="utf-8").replace(
+                '    stage("fmt") {',
+                '    stage("binaries") {\n'
+                '        sh("$cd && cargo build --release --tag $tag -p demo-core")\n'
+                "    }\n"
+                '    stage("fmt") {',
+            ),
+            encoding="utf-8",
+        )
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        proc = run_cli(
+            repo, state, "--format", "json", "run", "--lane", "change", "--base", "main"
+        )
+        payload = json.loads(proc.stdout)
+        assert proc.returncode == 3, (proc.returncode, payload.get("executed"))
+
+        assert payload["verdict"]["verdict"] == "INCONCLUSIVE", payload["verdict"]["verdict"]
+        executed = {receipt["suite_id"] for receipt in payload["executed"]}
+        assert "demo-core:cargo:build#-" not in executed, executed
+        gap = [g for g in payload["verdict"]["gaps"] if g["suite_id"] == "demo-core:cargo:build#-"]
+        assert gap, payload["verdict"]["gaps"]
+        assert "$tag" in payload["unknown_reasons"][0], payload["unknown_reasons"]
+
+        # Y el resto del plan sí corrió: no ejecutar lo indeterminado no puede
+        # convertirse en no ejecutar nada.
+        assert payload["executed"], "el plan tenía suites ejecutables"

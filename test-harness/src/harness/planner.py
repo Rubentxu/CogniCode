@@ -23,13 +23,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .domain import ExecutionPlan, PlanAction, SuiteRef
-from .inventory import Inventory
+from .inventory import Inventory, default_min_cases
 from .obligations import Floor, missing_from_catalog
 from .parity import ParityReport, compare, floor_entries
 from .policy import POLICY_VERSION, reuse_allowed
 from .validity import FingerprintInputs, evaluate_reuse
 
 from adapters.cargo_workspace import WorkspaceGraph, is_global_path
+from adapters.pipeline_catalog import expand_variables, read_declared_targets
 from adapters.cr08_selector import SelectorDecision
 from adapters.git_repo import METADATA_ONLY_NAMES, ChangeSet
 from adapters.ledger_store import Ledger
@@ -123,6 +124,10 @@ class PlannedSuite:
     action_reason: str
     receipt_id: str | None = None
     blocked: bool = False
+    # El argv que se va a ejecutar de verdad: el de esta lane, con las variables
+    # de la pipeline ya resueltas. La decisión que se acepta y el comando que
+    # corre tienen que ser el mismo objeto, no dos reconstrucciones parecidas.
+    argv: tuple[str, ...] = ()
 
 
 @dataclass
@@ -540,6 +545,15 @@ def build_plan(
     """
     repo_root = changeset.repo_root
     inventory = inventory or Inventory(entries={})
+    # Variables que las pipelines esperan que alguien expanda (PipelineK lo hace
+    # con su propio intérprete; el harness, si puede demostrar el valor). Solo se
+    # sustituye `$target`, y solo si la máquina es un target que las pipelines
+    # declaran construir: inventar el valor sería ejecutar un comando que nadie
+    # declaró, que es la clase de error que este fichero existe para no cometer.
+    declared_targets = read_declared_targets(repo_root)
+    variables = {}
+    if not declared_targets or toolchain.target_triple in declared_targets:
+        variables["target"] = toolchain.target_triple
     selection = select(
         lane=lane, changeset=changeset, graph=graph, catalog=catalog, repo_root=repo_root
     )
@@ -570,11 +584,12 @@ def build_plan(
 
     for entry, reason in selection.required:
         closure = closure_for(entry, repo_root=repo_root, graph=graph)
-        features = _features_of(entry)
-        runner_name = "cargo-test" if entry.argv[:2] == ("cargo", "test") else "script"
+        argv, unresolved = expand_variables(entry.argv_for(lane), variables)
+        features = _features_of(argv)
+        runner_name = "cargo-test" if argv[:2] == ("cargo", "test") else "script"
         fingerprint = FingerprintInputs(
             suite_id=entry.suite_id,
-            argv=entry.argv,
+            argv=argv,
             features=features,
             target_triple=toolchain.target_triple,
             runner_name=runner_name,
@@ -590,16 +605,44 @@ def build_plan(
             expected_min_cases=(
                 inventory.expected_min_for(entry.suite_id)
                 if inventory.expected_min_for(entry.suite_id) > 0
-                else (1 if runner_name == "cargo-test" else 0)
+                else default_min_cases(argv, runner_name)
             ),
         )
-        external = _needs_external_state(entry)
+        external = _needs_external_state(entry, argv)
         receipt = None
         integrity_ok = True
         if ledger is not None:
             receipt, problem = ledger.latest_receipt_for_suite(entry.suite_id)
             if problem:
                 integrity_ok = False
+        if unresolved:
+            # No se ejecuta, no se reutiliza y no se declara verde: se declara
+            # indeterminado con el nombre de lo que falta.
+            unresolved_reason = (
+                f"el comando de esta lane contiene variables de pipeline que el harness "
+                f"no puede expandir ({', '.join('$' + name for name in unresolved)}): "
+                "no se ejecuta, porque un argv con una expansión viva no es un comando"
+            )
+            selection.unknown_reasons = (*selection.unknown_reasons, unresolved_reason)
+            planned.append(
+                PlannedSuite(
+                    entry=entry,
+                    reason=reason,
+                    fingerprint=fingerprint,
+                    action="UNKNOWN",
+                    action_reason=unresolved_reason,
+                    blocked=True,
+                    argv=argv,
+                )
+            )
+            actions.append(
+                PlanAction(
+                    suite_id=entry.suite_id,
+                    action="UNKNOWN",
+                    reason=unresolved_reason,
+                )
+            )
+            continue
         decision = evaluate_reuse(
             receipt,
             fingerprint,
@@ -629,6 +672,7 @@ def build_plan(
                 action_reason=reason_text,
                 receipt_id=decision.receipt_id,
                 blocked=blocked,
+                argv=argv,
             )
         )
         actions.append(
@@ -750,9 +794,10 @@ def _apply_oracle(
     )
 
 
-def _features_of(entry: CatalogEntry) -> tuple[str, ...]:
+def _features_of(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Features declaradas en el argv **que se va a ejecutar**."""
     features: list[str] = []
-    argv = list(entry.argv)
+    argv = list(argv)
     for index, token in enumerate(argv):
         if token == "--features" and index + 1 < len(argv):
             features.extend(argv[index + 1].split(","))
@@ -772,12 +817,12 @@ EXTERNAL_PIPELINES = (
 )
 
 
-def _needs_external_state(entry: CatalogEntry) -> bool:
+def _needs_external_state(entry: CatalogEntry, argv: tuple[str, ...]) -> bool:
     if entry.target == "cargo:deny":
         # `cargo deny` consulta una base de avisos externa: su resultado depende de
         # estado que la huella de fuentes no captura.
         return True
-    blob = " ".join(entry.argv) + " " + entry.target
+    blob = " ".join(argv) + " " + entry.target
     if any(marker in blob for marker in EXTERNAL_MARKERS):
         return True
     return entry.origin in EXTERNAL_PIPELINES
@@ -799,6 +844,6 @@ def suite_ref_for(suite: PlannedSuite) -> SuiteRef:
         suite_id=suite.entry.suite_id,
         package=suite.entry.package,
         target=suite.entry.target,
-        argv=suite.entry.argv,
+        argv=suite.argv or suite.entry.argv,
         lanes=suite.entry.lanes,
     )

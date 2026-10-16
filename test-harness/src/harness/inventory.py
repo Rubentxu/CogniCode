@@ -38,6 +38,27 @@ class Inventory:
         }
 
 
+def default_min_cases(argv: tuple[str, ...], runner_name: str) -> int:
+    """Mínimo de casos que un PASS tiene que poder demostrar sin pin explícito.
+
+    Una corrida de **doc-tests** puede no encontrar ninguno: `cargo test --doc`
+    recorre los ejemplos de la documentación, y un paquete sin ejemplos
+    ejecutables devuelve 0 casos con exit 0. Eso no es un vacío, y exigirle 1
+    convertía `cognicode-cli:doc#-` en un hueco permanente del plan de la lane
+    change (medido 2026-10-16: 18 suites ejecutadas, veredicto UNSATISFIED por
+    esa única suite). El resto de corridas de Cargo sí exige ≥1: un filtro que
+    no casa o una feature que apaga pruebas es un verde vacío, no un verde.
+
+    Un pin explícito en `inventory.json` sigue mandando sobre esto: si un
+    paquete concreto debe tener doc-tests, se pincha y se exige.
+    """
+    if runner_name != "cargo-test":
+        return 0
+    if "--doc" in argv:
+        return 0
+    return 1
+
+
 def load_inventory(repo_root: Path) -> Inventory:
     """Lee el pin. Ausente no es un error; ilegible sí: no se adivina un mínimo."""
     path = repo_root / INVENTORY_PATH

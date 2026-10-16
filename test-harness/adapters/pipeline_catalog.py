@@ -46,6 +46,84 @@ _SCRIPT_RE = re.compile(r"\bbash\s+(scripts/[\w./-]+\.sh)\b")
 CHECK_SUBCOMMANDS = ("fmt", "clippy", "deny", "build")
 
 
+# Una expansión sin resolver. El detector es deliberadamente más ancho que la
+# sustitución: `$1`, `$(cmd)` o `$$` no se pueden resolver aquí, así que cuentan
+# como variables pendientes y la suite no se ejecuta. Lo que no puede pasar es
+# que un token llegue a cargo con un `$` dentro y se interprete como un target
+# literal, que es exactamente el fallo medido el 2026-10-16:
+# `cargo build --release --target $target` llegaba a cargo con `$target` sin
+# expandir y devolvía «could not find specification for target "$target"`.
+_EXPANSION_RE = re.compile(r"\$[A-Za-z0-9_{(@*#?!$-]")
+_NAMED_VAR_RE = re.compile(r"\$(?:\{)?([A-Za-z_][A-Za-z0-9_]*)(?:\})?")
+_KOTLIN_ESCAPED_DOLLAR = re.compile(r"\$\{'\$'\}")
+_DECLARED_TARGETS_RE = re.compile(
+    r"val\s+targets\s*=\s*listOf\(([^)]*)\)", re.S
+)
+
+
+def unescape_kotlin(text: str) -> str:
+    """`${'$'}VAR` en el fuente de la pipeline es un `$VAR` para el shell.
+
+    El pipeline escribe `${'$'}TARGET_DIR` cuando quiere que la expansión la haga
+    el shell y no Kotlin. Si no se revierte, el catálogo ve una variable con un
+    nombre que no existe (`{`$`}TARGET_DIR`) y el diagnóstico sería una mentira.
+    """
+    return _KOTLIN_ESCAPED_DOLLAR.sub("$", text)
+
+
+def variables_in(argv: tuple[str, ...]) -> tuple[str, ...]:
+    """Nombres de variable que aparecen en el argv, únicos y ordenados."""
+    names: set[str] = set()
+    for token in argv:
+        for match in _NAMED_VAR_RE.finditer(token):
+            names.add(match.group(1))
+        if _EXPANSION_RE.search(_NAMED_VAR_RE.sub("", token)):
+            # Queda una expansión que no tiene forma de nombre (`$1`, `$(...)`).
+            names.add(token[token.index("$") :])
+    return tuple(sorted(names))
+
+
+def expand_variables(
+    argv: tuple[str, ...], variables: dict[str, str]
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Sustituye `$nombre`/`${nombre}` y devuelve lo que quedó sin resolver.
+
+    Lo que no se puede resolver se devuelve en vez de dejarse pasar: un argv con
+    una expansión viva no es un comando, es una promesa.
+    """
+    resolved: list[str] = []
+    for token in argv:
+        def _replace(match: re.Match[str]) -> str:
+            name = match.group(1)
+            return variables.get(name, match.group(0))
+
+        resolved.append(_NAMED_VAR_RE.sub(_replace, token))
+    expanded = tuple(resolved)
+    return expanded, variables_in(expanded)
+
+
+def read_declared_targets(repo_root: Path) -> tuple[str, ...]:
+    """Targets que las pipelines declaran construir (`val targets = listOf(...)`).
+
+    Se leen para no inventar un target: si la máquina no es uno de los declarados,
+    el harness no sustituye `$target` y la suite queda sin ejecutar en vez de
+    ejecutarse contra un target que esa lane no construye.
+    """
+    found: set[str] = set()
+    for names in LANE_PIPELINES.values():
+        for name in names:
+            path = Path(repo_root) / name
+            if not path.exists():
+                continue
+            text = unescape_kotlin(path.read_text(encoding="utf-8"))
+            for match in _DECLARED_TARGETS_RE.finditer(text):
+                for item in match.group(1).split(","):
+                    value = item.strip().strip('"').strip("'")
+                    if value:
+                        found.add(value)
+    return tuple(sorted(found))
+
+
 @dataclass(frozen=True)
 class CatalogEntry:
     """Una obligación tal y como aparece hoy en las pipelines."""
@@ -61,9 +139,22 @@ class CatalogEntry:
     advisory: bool = False  # el gate la deja fallar a propósito
     serial: bool = False  # muta el entorno: corre sola, con barrera
     locks: tuple[str, ...] = ()  # recursos compartidos que necesita
+    # El mismo suite_id no siempre se ejecuta igual en cada lane: merge-gate hace
+    # `cargo build -p cognicode-cli --bins` y release-candidate hace
+    # `cargo build --release --target $target -p cognicode-cli --bin cogh`. El
+    # catálogo antiguo se quedaba con uno de los dos y lo presentaba como «la»
+    # obligación, así que la lane change ejecutaba el comando de release-candidate.
+    argv_by_lane: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def sort_key(self) -> tuple[str, str]:
         return (self.package, self.target)
+
+    def argv_for(self, lane: str) -> tuple[str, ...]:
+        """El comando que **esta** lane declara, no el de otra."""
+        for name, argv in self.argv_by_lane:
+            if name == lane:
+                return argv
+        return self.argv
 
 
 def _join_continuations(text: str) -> str:
@@ -181,23 +272,62 @@ def _is_advisory(text: str, end: int) -> bool:
     return "ADVISORY" in window and "||" in window.split("ADVISORY")[0]
 
 
+def _in_comment(text: str, index: int) -> bool:
+    """¿El punto `index` cae dentro de un comentario de Kotlin?
+
+    MEDIDO 2026-10-16. `release.pipeline.kts` explica en un comentario que el
+    candidato construye `cargo build --release --bin cognicode-release`, y el
+    lector lo tomó por una obligación: la lane `release` quedó con un argv que
+    incluía la prosa del comentario (`... appearing in all three of its`). Una
+    obligación inventada es peor que una perdida: se planifica y, si se ejecuta,
+    corre un comando que nadie declaró.
+    """
+    line_start = text.rfind("\n", 0, index) + 1
+    prefix = text[line_start:index].lstrip()
+    return prefix.startswith("//") or prefix.startswith("*") or prefix.startswith("/*")
+
+
 def _observed_argv(text: str, start: int) -> tuple[tuple[str, ...], int]:
     tokens, end = _tokenize_after(text, start)
     return tuple(tokens), end
 
 
 def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
-    """Catálogo completo: todas las obligaciones de todas las pipelines conocidas."""
-    entries: dict[str, CatalogEntry] = {}
+    """Catálogo completo: todas las obligaciones de todas las pipelines conocidas.
+
+    Un mismo suite_id puede declararse en varias pipelines con comandos distintos,
+    y cada lane debe ejecutar **el suyo**. El argv canónico (y el `origin`) es el
+    de la primera lane que lo declara, en el orden de `LANE_PIPELINES`: así el
+    valor por defecto es el del lane más cercano al desarrollador y el de
+    release-candidate no se cuela en `change`.
+    """
+    observed: dict[str, dict[str, object]] = {}
+    by_lane: dict[str, dict[str, tuple[str, ...]]] = {}
     root = Path(repo_root)
+
+    def register(suite_id: str, lane: str, argv: tuple[str, ...], name: str, **fields: object) -> None:
+        entry = observed.get(suite_id)
+        lanes = tuple(sorted({lane, *((entry or {}).get("lanes") or ())}))
+        if entry is None:
+            observed[suite_id] = {"lanes": lanes, "argv": argv, "origin": name, **fields}
+        else:
+            entry["lanes"] = lanes
+            # `advisory` es pegajoso: si una pipeline la deja fallar a propósito,
+            # el plan no puede convertirla en obligación dura por mirar otra.
+            entry["advisory"] = bool(entry.get("advisory")) or bool(fields.get("advisory"))
+            if fields.get("serial"):
+                entry["serial"] = True
+        by_lane.setdefault(suite_id, {})[lane] = argv
 
     for lane, files in LANE_PIPELINES.items():
         for name in files:
             path = root / name
             if not path.exists():
                 continue
-            text = _join_continuations(path.read_text(encoding="utf-8"))
+            text = unescape_kotlin(_join_continuations(path.read_text(encoding="utf-8")))
             for match in _CARGO_TEST_RE.finditer(text):
+                if _in_comment(text, match.start()):
+                    continue
                 tokens, end = _observed_argv(text, match.start())
                 if len(tokens) < 3:
                     continue
@@ -205,58 +335,71 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                 if parsed is None:
                     continue
                 suite_id, target, _ = parsed
-                argv = tuple(tokens)
-                existing = entries.get(suite_id)
-                lanes = tuple(sorted({*(existing.lanes if existing else ()), lane}))
-                entries[suite_id] = CatalogEntry(
-                    suite_id=suite_id,
-                    package=suite_id.split(":", 1)[0],
+                register(
+                    suite_id,
+                    lane,
+                    tuple(tokens),
+                    name,
                     target=target,
-                    argv=argv,
-                    lanes=lanes,
-                    origin=existing.origin if existing else name,
+                    package=suite_id.split(":", 1)[0],
                     scope="package",
                     kind="test",
-                    advisory=_is_advisory(text, end) or bool(existing and existing.advisory),
+                    advisory=_is_advisory(text, end),
                 )
             for match in _CARGO_CHECK_RE.finditer(text):
+                if _in_comment(text, match.start()):
+                    continue
                 tokens, end = _observed_argv(text, match.start())
                 parsed_check = _parse_cargo_check(list(tokens))
                 if parsed_check is None:
                     continue
                 suite_id, package, scope = parsed_check
-                existing = entries.get(suite_id)
-                lanes = tuple(sorted({*(existing.lanes if existing else ()), lane}))
-                entries[suite_id] = CatalogEntry(
-                    suite_id=suite_id,
-                    package=package,
+                register(
+                    suite_id,
+                    lane,
+                    tuple(tokens),
+                    name,
                     target=f"cargo:{tokens[1]}",
-                    argv=tuple(tokens),
-                    lanes=lanes,
-                    origin=existing.origin if existing else name,
+                    package=package,
                     scope=scope,
                     kind="check",
-                    advisory=_is_advisory(text, end) or bool(existing and existing.advisory),
+                    advisory=_is_advisory(text, end),
                 )
             for match in _SCRIPT_RE.finditer(text):
+                if _in_comment(text, match.start()):
+                    continue
                 script = match.group(1)
                 suite_id = f"workspace:script:{Path(script).name.removesuffix('.sh')}"
-                existing = entries.get(suite_id)
-                end = match.end()
-                lanes = tuple(sorted({*(existing.lanes if existing else ()), lane}))
-                entries[suite_id] = CatalogEntry(
-                    suite_id=suite_id,
-                    package="",
+                register(
+                    suite_id,
+                    lane,
+                    ("bash", script),
+                    name,
                     target=f"script:{script}",
-                    argv=("bash", script),
-                    lanes=lanes,
-                    origin=existing.origin if existing else name,
+                    package="",
                     scope="script",
                     kind="script",
-                    advisory=_is_advisory(text, end) or bool(existing and existing.advisory),
+                    advisory=_is_advisory(text, match.end()),
                 )
 
-    return tuple(entries[key] for key in sorted(entries))
+    entries: list[CatalogEntry] = []
+    for suite_id in sorted(observed):
+        fields = dict(observed[suite_id])
+        lanes = tuple(sorted(fields.pop("lanes") or ()))
+        argv = tuple(fields.pop("argv"))
+        origin = str(fields.pop("origin"))
+        per_lane = tuple(sorted(by_lane.get(suite_id, {}).items()))
+        entries.append(
+            CatalogEntry(
+                suite_id=suite_id,
+                argv=argv,
+                lanes=lanes,
+                origin=origin,
+                argv_by_lane=per_lane,
+                **fields,
+            )
+        )
+    return tuple(entries)
 
 
 SUITE_METADATA = Path("test-harness/config/suite-metadata.json")

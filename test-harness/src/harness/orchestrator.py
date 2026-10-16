@@ -357,11 +357,11 @@ def _snapshot(context: Context) -> SourceSnapshot:
 
 
 def _runner_info(suite: PlannedSuite) -> RunnerInfo:
-    is_cargo = suite.entry.argv[:2] == ("cargo", "test")
+    is_cargo = suite.argv[:2] == ("cargo", "test")
     return RunnerInfo(
         name="cargo-test" if is_cargo else "script",
         version=suite.fingerprint.runner_version,
-        argv=suite.entry.argv,
+        argv=suite.argv,
         features=suite.fingerprint.features,
         target_triple=suite.fingerprint.target_triple,
     )
@@ -467,7 +467,13 @@ def run_plan(
             pending.append(suite_id)
             _record(suite_id, {"action": suite.action, "status": "SKIPPED_BY_FILTER"})
             return "filtered"
-        if suite.action == "BLOCK":
+        if suite.action in ("BLOCK", "UNKNOWN"):
+            # `UNKNOWN` no se ejecuta. El dispatch antiguo trataba cualquier
+            # acción distinta de REUSE como «ejecutar», así que una suite que el
+            # planificador declaraba indeterminada (por una variable de pipeline
+            # sin expandir, por ejemplo) habría corrido igual: el veredicto
+            # indeterminado se convertía en un intento de ejecución con un argv
+            # que no era un comando.
             _record(
                 suite_id,
                 {"action": "BLOCK", "status": "BLOCKED", "reason": suite.action_reason},
@@ -519,7 +525,7 @@ def run_plan(
                 }
             )
             outcome, text = process_runner.execute(
-                suite.entry.argv,
+                suite.argv,
                 cwd=context.repo_root,
                 env_overrides=options.env_overrides,
                 timeout_s=options.timeout_s,
@@ -737,6 +743,7 @@ def resume(
     timeout_s: float | None = None,
     fail_fast: bool | None = None,
     max_workers: int = 1,
+    oracle: str = "none",
 ) -> RunOutcome:
     """Reanuda un run recalculando el plan con el snapshot de ahora."""
     previous = context.ledger.read_run(run_id)
@@ -764,6 +771,7 @@ def resume(
         allow_reuse=allow_reuse,
         allow_external=allow_external,
         run_id=run_id,
+        oracle=oracle,
     )
     if mode == "failed-only":
         executed_before = {
@@ -856,7 +864,7 @@ def explain(context: Context, suite_id: str, *, lane: str, allow_reuse: bool = F
                 "input_fingerprint": suite.fingerprint.digest(),
                 "fingerprint_inputs": suite.fingerprint.canonical(),
                 "lanes": list(suite.entry.lanes),
-                "argv": list(suite.entry.argv),
+                "argv": list(suite.argv),
                 "origin": suite.entry.origin,
             }
             history = context.ledger.receipts_for_suite(suite_id)

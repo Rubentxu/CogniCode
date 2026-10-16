@@ -83,6 +83,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--base", default=DEFAULT_BASE)
     run.add_argument("--allow-reuse", action="store_true")
     run.add_argument("--allow-external", action="store_true")
+    run.add_argument(
+        "--oracle",
+        choices=("none", "cr08"),
+        default="none",
+        help="igual que en `plan`: el plan que se ejecuta nunca exige menos que el selector (cr08)",
+    )
+    run.add_argument(
+        "--plan-only",
+        dest="plan_only",
+        action="store_true",
+        help="calcula y muestra el plan de esta ejecución sin ejecutar ninguna suite",
+    )
     run.add_argument("--selection", default=None, help="plan-id que se pretende ejecutar")
     run.add_argument("--only", action="append", default=[], help="limita la ejecución a estas suites")
     run.add_argument("--timeout", type=float, default=None, help="segundos por suite")
@@ -106,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--only", action="append", default=[])
     resume_parser.add_argument("--timeout", type=float, default=None)
     resume_parser.add_argument("--max-workers", type=int, default=1)
+    resume_parser.add_argument(
+        "--oracle",
+        choices=("none", "cr08"),
+        default="none",
+        help="igual que en `plan`/`run`: la reanudación no exige menos que el selector (cr08)",
+    )
 
     status_parser = sub.add_parser("status", help="estado de un run")
     status_parser.add_argument("--run-id", default=None)
@@ -381,7 +399,31 @@ def main(argv: list[str] | None = None) -> int:
                 allow_reuse=args.allow_reuse or args.lane == "change",
                 allow_external=args.allow_external,
                 run_id=args.run_id,
+                oracle=args.oracle,
             )
+            if args.plan_only:
+                # El camino de ejecución se puede inspeccionar sin ejecutar. Sin
+                # esto, la única forma de comprobar que el argv que construye un
+                # consumidor (p. ej. scripts/test-fast.sh) es aceptable era
+                # correr el plan entero, así que en la práctica no se comprobaba
+                # nada: `run --oracle cr08` estuvo roto y nadie lo vio.
+                payload = {
+                    "plan": plan_result.plan.to_json(),
+                    "parity": plan_result.parity.to_json() if plan_result.parity else None,
+                    "run_id": run_id,
+                    "plan_only": True,
+                    "would_execute": [
+                        suite.entry.suite_id
+                        for suite in plan_result.suites
+                        if suite.action == "EXECUTE"
+                    ],
+                }
+                _emit(payload, args, f"PLAN-ONLY run={run_id} lane={args.lane}")
+                if plan_result.plan.status == "UNKNOWN_INPUT":
+                    return EXIT_UNDETERMINED
+                if plan_result.plan.status == "BLOCKED":
+                    return EXIT_UNDETERMINED
+                return 0
             if args.selection and args.selection != plan_result.plan.plan_id:
                 raise HarnessError(
                     f"el plan calculado ahora es {plan_result.plan.plan_id} y se pidió ejecutar "
@@ -405,6 +447,10 @@ def main(argv: list[str] | None = None) -> int:
                 "reused": [
                     {"suite_id": r.suite_id, "receipt_id": r.receipt_id} for r in outcome.reused
                 ],
+                # El veredicto INCONCLUSIVE llega con su motivo: quien solo llama a
+                # `run` (el wrapper fast, por ejemplo) tiene que poder decir por qué
+                # el resultado no es determinable sin pedir el plan otra vez.
+                "unknown_reasons": list(plan_result.plan.unknown_reasons),
                 "pending": list(outcome.pending),
             }
             _emit(payload, args, _outcome_text(outcome))
@@ -421,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
                 only=tuple(args.only),
                 timeout_s=args.timeout,
                 max_workers=max(1, args.max_workers),
+                oracle=args.oracle,
             )
             payload = {
                 "run_id": outcome.run_id,

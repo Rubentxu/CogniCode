@@ -6,6 +6,12 @@ roto, recibo no terminal, PASS vacuo, hueco declarado y veredicto indeterminado.
 
 from __future__ import annotations
 
+# `harness_support` va primero, y no es estilo: es quien pone
+# `test-harness/src` y `test-harness` en sys.path. Importar `adapters` o
+# `harness` antes sólo funciona si otro módulo del mismo proceso ya lo hizo,
+# así que el test pasaba en la suite completa y fallaba al correr solo.
+from harness_support import CORE_SUITE, make_fingerprint, make_receipt
+
 from harness.domain import PlanAction, digest_of
 from harness.gate import Coverage, aggregate
 from harness.policy import POLICY_VERSION, reuse_allowed

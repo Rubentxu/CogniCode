@@ -7,7 +7,14 @@ reducir obligaciones, y un borrado de test **no** puede pasar por "no cambió na
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
+
+# `harness_support` va primero, y no es estilo: es quien pone
+# `test-harness/src` y `test-harness` en sys.path. Importar `adapters` o
+# `harness` antes sólo funciona si otro módulo del mismo proceso ya lo hizo,
+# así que el test pasaba en la suite completa y fallaba al correr solo.
+from harness_support import APP_SUITE, CORE_SUITE, FMT_SUITE, commit_change, demo_repo, git
 
 from adapters.cargo_workspace import GRAPH_UNKNOWN, WorkspaceGraph, load_graph
 from adapters.git_repo import read_changeset
@@ -279,3 +286,158 @@ def test_graph_unknown_forces_everything():
         selection = _selection(repo, unknown, catalog)
         assert _required_ids(selection) == _all_ids(catalog), selection
         assert "metadata ilegible" in selection.unknown_reasons[0]
+
+
+# ---------- argv por lane y variables de pipeline (medido 2026-10-16) ----------
+#
+# Tres defectos reales, encontrados al ejecutar el plan del harness por primera
+# vez sobre un cambio pequeño: el catálogo se quedaba con el argv de OTRA lane
+# (release-candidate) para una obligación de `change`, tomaba obligaciones de
+# comentarios, y no expandía variables que PipelineK sí expande. El tercero hacía
+# que `cargo build --target $target` llegara a cargo con el `$target` literal.
+
+
+def _write_pipelines(root: Path, product_fast: str, release_candidate: str = "") -> None:
+    (root / "product-fast.pipeline.kts").write_text(product_fast, encoding="utf-8")
+    if release_candidate:
+        (root / "release-candidate.pipeline.kts").write_text(
+            release_candidate, encoding="utf-8"
+        )
+
+
+def test_the_catalog_keeps_the_argv_each_lane_declares():
+    """`change` ejecuta el comando de `change`, no el de `release-candidate`."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _check_the_catalog_keeps_the_argv_each_lane_declares(Path(tmp))
+
+
+def _check_the_catalog_keeps_the_argv_each_lane_declares(tmp_path: Path):
+    _write_pipelines(
+        tmp_path,
+        'pipeline("demo") {\n  stage("build") {\n    sh("$cd && cargo build -p demo-core")\n  }\n}\n',
+        'pipeline("demo-release") {\n  stage("binaries") {\n'
+        '    sh("$cd && cargo build --release --target $target -p demo-core")\n  }\n}\n',
+    )
+    entries = {entry.suite_id: entry for entry in read_catalog(tmp_path)}
+    entry = entries["demo-core:cargo:build#-"]
+
+    assert entry.argv_for("change") == ("cargo", "build", "-p", "demo-core"), entry.argv_for(
+        "change"
+    )
+    assert entry.argv_for("release-candidate") == (
+        "cargo",
+        "build",
+        "--release",
+        "--target",
+        "$target",
+        "-p",
+        "demo-core",
+    ), entry.argv_for("release-candidate")
+    assert "demo-core:cargo:build#-" in entries
+
+
+def test_a_command_inside_a_comment_is_not_an_obligation():
+    """Una obligación inventada se planifica y corre: peor que perderla."""
+    with tempfile.TemporaryDirectory() as tmp:
+        _check_a_command_inside_a_comment_is_not_an_obligation(Path(tmp))
+
+
+def _check_a_command_inside_a_comment_is_not_an_obligation(tmp_path: Path):
+    _write_pipelines(
+        tmp_path,
+        'pipeline("demo") {\n'
+        '  // cargo build --release --bin inventado por un comentario\n'
+        '  stage("real") {\n    sh("$cd && cargo test -p demo-core --lib")\n  }\n}\n',
+    )
+    ids = {entry.suite_id for entry in read_catalog(tmp_path)}
+    assert "demo-core:lib#-" in ids, ids
+    assert not any("inventado" in " ".join(entry.argv) for entry in read_catalog(tmp_path))
+
+
+def test_expanding_pipeline_variables_says_what_it_cannot_resolve():
+    from adapters.pipeline_catalog import expand_variables, variables_in
+
+    argv = ("cargo", "build", "--target", "$target", "-p", "demo-core")
+    expanded, missing = expand_variables(argv, {"target": "x86_64-unknown-linux-gnu"})
+    assert expanded[3] == "x86_64-unknown-linux-gnu", expanded
+    assert missing == (), missing
+
+    _, missing_unknown = expand_variables(argv, {})
+    assert missing_unknown == ("target",), missing_unknown
+
+    # Formas que no son un nombre no se pueden resolver y deben contarse igual:
+    # dejarlas pasar es enviar `$(rm -rf)` o `$1` a cargo como si fuese un valor.
+    assert variables_in(("--flag", "$1")) == ("$1",), variables_in(("--flag", "$1"))
+    assert variables_in(("--flag=$(date)",)) == ("$(date)",), variables_in(("--flag=$(date)",))
+
+
+def test_a_suite_with_unresolved_variables_is_unknown_and_never_executed():
+    """Una variable sin expandir no se ejecuta: el plan queda indeterminado.
+
+    `$tag` no lo puede resolver el harness (sale del entorno del release), así que
+    la obligación se declara y el plan no puede decir READY. El AAT pedía esto
+    mismo por otra puerta: ningún camino puede convertir «no sé» en «verde».
+    """
+    with demo_repo() as repo:
+        graph, catalog = _context(repo)
+        tagged = CatalogEntry(
+            suite_id="demo-core:cargo:build#-",
+            package="demo-core",
+            target="cargo:build",
+            argv=("cargo", "build", "--release", "--tag", "$tag", "-p", "demo-core"),
+            lanes=("change",),
+            origin="product-fast.pipeline.kts",
+            kind="check",
+        )
+        commit_change(repo, "crates/core/src/lib.rs")
+
+        plan_result = _plan(repo, graph, (*catalog, tagged))
+
+        actions = {action.suite_id: action for action in plan_result.plan.actions}
+        assert actions[tagged.suite_id].action == "UNKNOWN", actions[tagged.suite_id]
+        assert "$tag" in actions[tagged.suite_id].reason
+        assert plan_result.plan.status == "UNKNOWN_INPUT", plan_result.plan.status
+        unknown = next(s for s in plan_result.suites if s.entry.suite_id == tagged.suite_id)
+        assert unknown.argv == tagged.argv, unknown.argv
+
+
+def test_the_declared_target_is_the_only_one_the_harness_accepts():
+    """`$target` se resuelve al triple de la máquina, y sólo si está declarado.
+
+    Si las pipelines construyen un target que esta máquina no es, sustituir por
+    el triple local sería ejecutar un comando que nadie declaró.
+    """
+    from adapters.pipeline_catalog import read_declared_targets
+
+    with demo_repo() as repo:
+        assert read_declared_targets(repo) == (), "el fixture no declara targets"
+        (repo / "release-candidate.pipeline.kts").write_text(
+            'val targets = listOf("aarch64-unknown-linux-gnu")\n'
+            'pipeline("demo-release") {\n  stage("x") {\n'
+            '    sh("$cd && cargo build --release --target $target -p demo-core")\n  }\n}\n',
+            encoding="utf-8",
+        )
+        assert read_declared_targets(repo) == ("aarch64-unknown-linux-gnu",), (
+            read_declared_targets(repo)
+        )
+
+
+def test_a_doc_suite_does_not_demand_cases_it_cannot_have():
+    """Un `--doc` sin doc-tests es 0 casos legítimos, no un verde vacío.
+
+    MEDIDO 2026-10-16. Con el mínimo de 1 para todo runner de Cargo, el plan de
+    la lane change ejecutaba 18 suites y quedaba UNSATISFIED por
+    `cognicode-cli:doc#-` (0 casos, exit 0). El suelo tiene que seguir en pie
+    para el resto: un `--lib` con filtro que no casa sigue exigiendo 1.
+    """
+    from harness.inventory import default_min_cases
+
+    assert default_min_cases(("cargo", "test", "-p", "x", "--doc", "--quiet"), "cargo-test") == 0
+    assert default_min_cases(("cargo", "test", "-p", "x", "--lib"), "cargo-test") == 1
+    assert default_min_cases(("bash", "scripts/x.sh"), "script") == 0
+
+    # Un pin explícito sigue mandando: si un paquete debe tener doc-tests, se pincha.
+    from harness.inventory import Inventory
+
+    pinned = Inventory(entries={"demo-core:doc#-": 2})
+    assert pinned.expected_min_for("demo-core:doc#-") == 2

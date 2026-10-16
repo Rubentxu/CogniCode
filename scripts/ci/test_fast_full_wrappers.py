@@ -55,6 +55,7 @@ FULL = REPO_ROOT / "scripts" / "test-full.sh"
 SELECTOR = REPO_ROOT / "scripts" / "ci" / "select-suites.sh"
 BASELINE = REPO_ROOT / "scripts" / "known_failures.yaml"
 BASELINE_CHECK = REPO_ROOT / "scripts" / "check_known_failures.py"
+HARNESS = REPO_ROOT / "test-harness" / "bin" / "harness.py"
 
 
 def _read(path: Path) -> str:
@@ -347,6 +348,150 @@ def test_baseline_dependencies_exist() -> None:
     assert BASELINE_CHECK.is_file(), f"FAIL: {BASELINE_CHECK} no existe"
 
 
+# ---------- motor opt-in del harness (W7) ----------
+#
+# `test-fast.sh` acepta `TEST_FAST_ENGINE=harness` para planificar y ejecutar
+# con el harness en vez de con el selector CR-08. Es opt-in a propósito: el
+# defecto no cambia y estos tests fijan las tres condiciones que hacen que la
+# delegación sea segura en vez de una pérdida silenciosa de cobertura.
+
+
+def fast_engine_env(engine: str) -> dict[str, str]:
+    return {**os.environ, "TEST_FAST_ENGINE": engine, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
+def run_fast_dry_run(engine: str, paths: str | None = None) -> subprocess.CompletedProcess[str]:
+    """Invoca el wrapper en modo plan: decide, no ejecuta."""
+    argv = ["bash", str(FAST), "--dry-run"]
+    if paths:
+        argv += ["--paths", paths]
+    return subprocess.run(
+        argv,
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        env=fast_engine_env(engine),
+    )
+
+
+def test_the_default_engine_is_still_cr08() -> None:
+    """M12: sin TEST_FAST_ENGINE, el motor sigue siendo CR-08.
+
+    La delegación es opt-in. Si el defecto pasara a `harness`, cada evolutivo
+    cambiaría de motor sin que nadie lo decidiera, y este contrato convertiría
+    ese cambio en un hecho consumado en vez de en una decisión medida.
+    """
+    text = _code(FAST)
+    assert 'ENGINE="${TEST_FAST_ENGINE:-cr08}"' in text, (
+        f"FAIL: el defecto del motor ya no es cr08. Sin la variable de entorno, "
+        f"test-fast debe comportarse como antes."
+    )
+
+
+def test_an_unknown_engine_is_a_usage_error() -> None:
+    """M13: un motor desconocido sale rc=2, no corre el defecto en silencio.
+
+    Aceptar cualquier valor y caer al defecto haría que un typo
+    (`TEST_FAST_ENGINE=harnesss`) ejecutara otro motor del que el usuario cree.
+    """
+    done = run_fast_dry_run("definitely-not-an-engine")
+    assert done.returncode == 2, (
+        f"FAIL: motor desconocido devolvió rc={done.returncode}. Se espera 2 "
+        f"(error de uso). stdout:\n{done.stdout}"
+    )
+
+
+def test_the_harness_engine_decides_with_the_oracle_floor() -> None:
+    """M14: el motor harness consulta el plan ANTES de ejecutar.
+
+    Un cambio con un path que CR-08 no conoce hace que CR-08 caiga a su
+    subconjunto conservador, que incluye `explorer`. La lane `change` del
+    harness no ejecuta `explorer` (solo existe en integración), así que
+    delegar sería devolver un veredicto sin cubrir lo demandado. La decisión
+    tiene que depender del plan real, no de una lista escrita a mano.
+    """
+    plan = subprocess.run(
+        [
+            sys.executable,
+            str(HARNESS),
+            "--repo",
+            str(REPO_ROOT),
+            "--format",
+            "json",
+            "plan",
+            "--lane",
+            "change",
+            "--base",
+            "HEAD",
+            "--oracle",
+            "cr08",
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+    if plan.returncode != 0 or not plan.stdout.strip():
+        raise AssertionError(
+            f"FAIL: no se pudo planificar con el harness (rc={plan.returncode}). "
+            f"stderr:\n{plan.stderr[:400]}"
+        )
+    import json
+
+    parsed = json.loads(plan.stdout)
+    not_in_catalog = parsed["parity"]["scopes_not_in_catalog"]
+    done = run_fast_dry_run("harness")
+    delegated = "--- plan (motor harness) ---" in done.stdout
+    declined = "motor harness:" in done.stdout
+
+    if not_in_catalog:
+        assert declined and not delegated, (
+            f"FAIL: el plan declara scopes que la lane change no ejecuta "
+            f"({not_in_catalog}) y el wrapper delegó igualmente: devolvería un "
+            f"veredicto sin cubrir la demanda. stdout:\n{done.stdout[:400]}"
+        )
+    else:
+        assert delegated, (
+            f"FAIL: sin demandas pendientes el wrapper debería delegar y no lo "
+            f"hizo. stdout:\n{done.stdout[:400]}"
+        )
+
+
+def test_the_harness_engine_does_not_override_explicit_paths() -> None:
+    """M15: con `--paths`, el wrapper no delega.
+
+    `--paths` es entrada explícita del usuario; el ChangeSet del harness sale
+    de git. Delegar con `--paths` no es correr de más ni de menos: es correr
+    OTRO cambio del que se pidió, y devolver su veredicto como si fuera de este.
+    """
+    done = run_fast_dry_run("harness", paths="crates/cognicode-ladybug/src/lib.rs")
+    assert "es una entrada explícita" in done.stdout, (
+        f"FAIL: con `--paths` el motor harness delegó (o no dijo por qué no lo "
+        f"hace). stdout:\n{done.stdout[:400]}"
+    )
+
+
+def test_the_harness_engine_never_flattens_failure_to_green() -> None:
+    """M16: los códigos 1 (incumplido) y 3 (indeterminado) salen como 1.
+
+    El harness distingue "no satisfecho" de "no se pudo determinar". El
+    wrapper solo tiene dos veredictos; lo que no puede pasar es que
+    "indeterminado" se convierta en 0, porque entonces un cambio sin evidencia
+    suficiente se reportaría como verde.
+    """
+    text = _code(FAST)
+    assert "y 3 (indeterminado) no son verdes" in text, (
+        f"FAIL: el mapeo de códigos del harness ya no declara que 1 y 3 no son "
+        f"verdes. Un camino que aplana 3 a 0 convierte falta de evidencia en OK."
+    )
+    assert '--base "$BASE_REF"' in text, (
+        f"FAIL: el harness ya no recibe la base alineada con el diff que leyó el "
+        f"wrapper; el plan describiría otro cambio."
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for fn in (
@@ -362,6 +507,11 @@ def main() -> int:
         test_an_unknown_suite_is_a_hard_error_not_a_warning,
         test_the_merge_suite_is_not_silently_substituted,
         test_the_selector_doc_and_the_runner_agree,
+        test_the_default_engine_is_still_cr08,
+        test_an_unknown_engine_is_a_usage_error,
+        test_the_harness_engine_decides_with_the_oracle_floor,
+        test_the_harness_engine_does_not_override_explicit_paths,
+        test_the_harness_engine_never_flattens_failure_to_green,
     ):
         try:
             fn()
