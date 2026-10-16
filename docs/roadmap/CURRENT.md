@@ -9,6 +9,17 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
+> **Snapshot**: 2026-10-16, sobre branch `worktree/test-harness`, HEAD del
+> bloque TH-IMPL-07 (motor opt-in de `test-fast`, siete defectos de integración
+> corregidos y ADR-TH-013). Este snapshot describe este worktree, no la autoridad
+> de `main`; los snapshots anteriores se conservan abajo como históricos.
+>
+> **Unidad cerrada en este worktree**: TH-IMPL-07, registrada en `ROADMAP.md` §21 y
+> en `JOURNAL.md`. `scripts/test-fast.sh` acepta `TEST_FAST_ENGINE=harness` y cae
+> al motor CR-08 cuando el harness no puede cubrir la demanda. La adopción como
+> motor por defecto **no** se toma: 337 s del harness frente a 26 s de CR-08 para
+> el mismo cambio, con 11-42 s en la repetición sin cambios y 533 s cuando el
+> cambio toca un paquete del que todos dependen.
 > **Snapshot**: 2026-10-15, sobre branch `worktree/test-harness`, HEAD
 > `4329476fc0e2b9c5e4f42e7d0ad3435b8e3113fd` (TH-IMPL-06: informe reproducible de
 > tiempos y cobertura), sobre el árbol posterior a TH-IMPL-05 y B1b;

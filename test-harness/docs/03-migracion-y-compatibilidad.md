@@ -6,7 +6,7 @@
 
 | Desde (existe hoy) | Destino lógico | Estrategia de transición |
 |---|---|---|
-| `scripts/test-fast.sh` | `test-harness/bin` + planner | Wrapper de compatibilidad que delega sin cambiar flags, rc ni outputs antes de H3 |
+| `scripts/test-fast.sh` | `test-harness/bin` + planner | Wrapper de compatibilidad: delegación **opt-in** (`TEST_FAST_ENGINE=harness`) con el defecto intacto, caída cerrada al motor CR-08 cuando el harness no cubre la demanda y medida de coste antes/después (ADR-TH-013) |
 | `scripts/test-full.sh` | `test-harness/bin` + lane full | Wrapper mínimo, preservar comportamiento full hasta política nueva |
 | `scripts/test-all.sh` | Alias protegido o mensaje de deprecación explícito | Primero test de consumidor y destino; retirar referencias a crates parked |
 | `scripts/ci/select-suites.sh` | `test-harness/src/planner` | Fijar tabla contractual CR-08; tests differential/characterization |

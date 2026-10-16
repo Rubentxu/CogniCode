@@ -145,6 +145,13 @@ class CatalogEntry:
     # catálogo antiguo se quedaba con uno de los dos y lo presentaba como «la»
     # obligación, así que la lane change ejecutaba el comando de release-candidate.
     argv_by_lane: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # Posición de la declaración en la pipeline (la de la primera lane que la
+    # declara). MEDIDO 2026-10-16: la pipeline declara `cargo build -p
+    # cognicode-mcp` (línea 324 de merge-gate) antes que la suite
+    # `prf_h06_adversarial_e2e` (línea 444) porque la suite necesita ese binario.
+    # Ordenar el plan por paquete rompía esa dependencia: la suite corría primero,
+    # no encontraba el binario y, con fail-fast, el run se detenía ahí.
+    order: int = 0
 
     def sort_key(self) -> tuple[str, str]:
         return (self.package, self.target)
@@ -305,11 +312,24 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
     by_lane: dict[str, dict[str, tuple[str, ...]]] = {}
     root = Path(repo_root)
 
-    def register(suite_id: str, lane: str, argv: tuple[str, ...], name: str, **fields: object) -> None:
+    def register(
+        suite_id: str,
+        lane: str,
+        argv: tuple[str, ...],
+        name: str,
+        position: int,
+        **fields: object,
+    ) -> None:
         entry = observed.get(suite_id)
         lanes = tuple(sorted({lane, *((entry or {}).get("lanes") or ())}))
         if entry is None:
-            observed[suite_id] = {"lanes": lanes, "argv": argv, "origin": name, **fields}
+            observed[suite_id] = {
+                "lanes": lanes,
+                "argv": argv,
+                "origin": name,
+                "order": position,
+                **fields,
+            }
         else:
             entry["lanes"] = lanes
             # `advisory` es pegajoso: si una pipeline la deja fallar a propósito,
@@ -340,6 +360,7 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                     lane,
                     tuple(tokens),
                     name,
+                    match.start(),
                     target=target,
                     package=suite_id.split(":", 1)[0],
                     scope="package",
@@ -359,6 +380,7 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                     lane,
                     tuple(tokens),
                     name,
+                    match.start(),
                     target=f"cargo:{tokens[1]}",
                     package=package,
                     scope=scope,
@@ -375,6 +397,7 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                     lane,
                     ("bash", script),
                     name,
+                    match.start(),
                     target=f"script:{script}",
                     package="",
                     scope="script",
@@ -383,7 +406,11 @@ def read_catalog(repo_root: Path) -> tuple[CatalogEntry, ...]:
                 )
 
     entries: list[CatalogEntry] = []
-    for suite_id in sorted(observed):
+    # Orden de declaración: el plan hereda el orden en el que la lane declara sus
+    # obligaciones, que es el que PipelineK ejecuta. El desempate por `suite_id`
+    # mantiene el plan reproducible donde la posición no existe (entradas
+    # añadidas por el suelo del oráculo, por ejemplo).
+    for suite_id in sorted(observed, key=lambda key: (int(observed[key]["order"]), key)):
         fields = dict(observed[suite_id])
         lanes = tuple(sorted(fields.pop("lanes") or ()))
         argv = tuple(fields.pop("argv"))

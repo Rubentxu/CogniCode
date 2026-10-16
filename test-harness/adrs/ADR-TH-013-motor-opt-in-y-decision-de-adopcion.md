@@ -102,71 +102,72 @@ Y uno más, del lado del veredicto, que apareció al llegar al final del plan:
    exigir más) y sigue exigiendo ≥1 para el resto: un filtro que no casa o una
    feature que apaga pruebas sigue siendo un verde vacío.
 
-Los cuatro llevan test que fallaba antes y pasa después (20 en
-`test_selection.py`, 17 en `test_cli_e2e.py`, y el invariante de PASS en
-`test_ledger_and_runner.py` con su caso negativo).
+5. **El plan no respetaba el orden de la pipeline.** `select` y `_apply_oracle`
+   ordenaban por `suite_id` (alfabético por paquete) en vez de por el orden en el
+   que la lane declara sus obligaciones. `merge-gate.pipeline.kts` declara
+   `cargo build -p cognicode-mcp` (línea 324) **antes** que
+   `prf_h06_adversarial_e2e` (línea 444) precisamente porque la suite necesita ese
+   binario; el plan ponía la suite primero y, con fail-fast, el run se detenía ahí
+   sin ejecutar el resto. El orden es ahora el declarado, con `suite_id` como
+   desempate para que el plan siga siendo reproducible.
+6. **Las suites no recibían el entorno de la lane.** El pipeline exporta
+   `CARGO_TARGET_DIR="$(scripts/ci/target-dir.sh)"` para las etapas que buscan
+   binarios construidos (líneas 441-442 y 476-477) y el harness ejecutaba con el
+   entorno ambiente: `prf_h06` buscaba `cognicode-mcp` en `$CARGO_TARGET_DIR` y no
+   lo encontraba mientras el gate sí. El harness resuelve ahora el target con **el
+   script del repositorio** (la misma autoridad que el gate) y lo deja escrito en
+   el estado del run como evidencia.
+7. **La huella de una suite no incluía sus dependencias.** Sólo miraba el subárbol
+   de su propio paquete, así que un cambio en `cognicode-core` **no** invalidaba
+   los recibos de `cognicode-cli`: la suite se seleccionaba por impacto (bien) y se
+   reutilizaba un resultado de antes del cambio (mal). Es el peor modo de fallo del
+   harness —un verde falso por construcción— y estaba escondido detrás de los dos
+   anteriores: parecía «reutilización eficiente» (23 suites reutilizadas tras un
+   cambio en `core`) cuando era un resultado que ya no valía. La clausura incluye
+   ya las dependencias transitivas, y esa corrida pasó de «23 reutilizadas» a «0
+   reutilizadas, 34 ejecutadas», que es lo correcto.
+
+Los siete llevan test que fallaba antes y pasa después (22 en `test_selection.py`,
+19 en `test_cli_e2e.py` y el invariante de PASS en `test_ledger_and_runner.py` con
+su caso negativo). Dos de ellos —el orden y las dependencias en la huella— se
+comprobaron revirtiendo el arreglo y viendo caer el test, para que no pasaran por
+casualidad.
 
 ## Medición (2026-10-16)
 
-Cambio medido: una línea añadida en `crates/cognicode-ladybug/src/lib.rs`, commit
-que sólo toca ese fichero, árbol limpio. Clon del repositorio, caché de Cargo
-compartida, ejecuciones secuenciales sin carga competidora. El ledger del harness
-se aísla con `--state-dir` para poder medir el caso frío.
+Cambio medido: una línea añadida en un crate, commit que sólo toca ese fichero,
+árbol limpio. Clon del repositorio, caché de Cargo compartida, ejecuciones
+secuenciales sin carga competidora. El ledger del harness se aísla con
+`--state-dir` para poder medir el caso frío.
 
-| Motor | Selección | Pared | Código |
-|---|---|---|---|
-| CR-08, primera invocación | 1 suite | **26 s** | 0 |
-| CR-08, segunda invocación (mismo árbol) | 1 suite | **26 s** | 0 |
-| Harness, ledger frío | 26 suites, 20 ejecutadas | **251 s** | 1 |
-| Harness, ledger caliente (mismo árbol) | 26 suites, 3 ejecutadas y 23 reutilizadas | **11 s** | 0 |
-| Harness, cambio nuevo en otro paquete (`cognicode-core`) | 27 suites, 7 ejecutadas | **206 s** | 1 |
-
-El código de salida 1 de las dos corridas frías no es del camino de la delegación:
-las dos se detienen en `cognicode-core:prf_h06_adversarial_e2e`, que exige el
-binario `cognicode-mcp` y **no lo encuentra porque la obligación que lo construye
-(`cargo build -p cognicode-mcp`) aparece después en el plan**. Es un defecto real
-del orden de ejecución, está declarado abajo y no se disimula con un re-run: la
-corrida caliente pasa porque el binario ya existía en el directorio de Cargo
-compartido. La medición de tiempos sigue siendo válida (es pared de reloj de las
-mismas suites), y el veredicto se reporta como es.
+| Motor | Cambio | Selección | Pared | Código |
+|---|---|---|---|---|
+| CR-08, invocación 1 | ladybug | 1 suite | **26 s** | 0 |
+| CR-08, invocación 2 (mismo árbol) | ladybug | 1 suite | **29 s** | 0 |
+| Harness, ledger **frío** | ladybug | 26 suites, 26 ejecutadas | **337 s** | 0 (SATISFIED) |
+| Harness, repetición sin cambios | ladybug | 26 suites, 3 ejecutadas / 23 reutilizadas | **11 s** | 0 |
+| Harness, repetición sin cambios (vía wrapper) | ladybug | 26 suites, 4 ejecutadas / 22 reutilizadas | **42 s** | 0 |
+| Harness, cambio en otro paquete | `core` | 34 suites, 34 ejecutadas | **533 s** | 0 (SATISFIED) |
+| CR-08 sobre el mismo cambio | `core` | 1 suite | **89 s** | 0 |
 
 Lo que dicen los números, sin adornos:
 
 - **La primera pasada es mucho más lenta** que CR-08: 26 suites contra 1, con
-  compilación de release y `clippy` de workspace dentro. No es una regresión del
-  harness —es su política, deliberadamente conservadora— pero sí la razón para
-  **no** cambiar el motor por defecto: el wrapper existe para dar feedback rápido
-  y el camino estricto tarda varias veces más.
-- **La repetición sin cambios es donde el harness gana por goleada**: 22 s contra
-  34 s del mismo CR-08, y sin volver a compilar nada. Ese es el caso real «no
-  toqué nada, ¿sigue verde?», que CR-08 paga entero cada vez. La ventaja crece con
-  el tamaño del plan: el coste de la repetición no depende de cuántas suites haya,
-  sólo de cuántas cambiaron.
-- **La primera pasada sigue siendo el precio de entrada**, y es el que decide.
-  Con 251 s frente a 26 s del mismo CR-08, adoptar el harness como motor por
-  defecto haría el bucle del evolutivo unas diez veces más lento en cada cambio
-  nuevo, con la caché de Cargo ya caliente.
-- **Un cambio incremental no es una primera pasada**: tocar otro paquete cuesta
-  206 s, no 251 s, porque la huella sólo invalida lo que depende de ese paquete.
-  Sigue siendo muy por encima de CR-08: la diferencia la marca el trabajo que el
-  harness exige y el selector no.
-
-## Defecto declarado y abierto: orden de ejecución
-
-`cognicode-core:prf_h06_adversarial_e2e` necesita el binario `cognicode-mcp`
-(construido por `cargo build -p cognicode-mcp`, que en merge-gate aparece en la
-línea 324 del pipeline y la suite en la 444). El harness **no respeta todavía el
-orden declarado de la pipeline**: el plan agrupa y ordena por paquete, así que la
-suite puede caer antes que la obligación que la prepara. Con `fail-fast` en la
-lane `change`, el run se detiene ahí y las suites siguientes ni se intentan.
-
-No se tapa con un re-run ni con un `--fail-collect`, porque el defecto es de
-orden, no de política. El arreglo es que el plan herede el orden en el que la lane
-declara sus obligaciones (la misma autoridad que el catálogo ya lee), y va en el
-bloque siguiente con su propia medición: es el único defecto de los cinco que
-queda abierto, y es la razón por la que la corrida fría no llega a verde en un
-clon sin binarios construidos. En una máquina con los binarios ya construidos el
-mismo plan da `SATISFIED` (11 s), que es lo que mide la fila caliente.
+  `clippy` de workspace y compilaciones dentro. No es una regresión del harness
+  —es su política, deliberadamente conservadora— pero es la razón para **no**
+  cambiar el motor por defecto: el wrapper existe para dar feedback rápido y el
+  camino estricto tarda más de diez veces más con la caché de Cargo ya caliente.
+- **La repetición sin cambios es donde el harness gana**: 11-42 s contra 26-29 s
+  del mismo CR-08 y sin recompilar. El caso real «no toqué nada, ¿sigue verde?»
+  cuesta una fracción, y el coste no crece con el tamaño del plan: sólo se ejecuta
+  lo que cambió.
+- **Un cambio en un paquete del que todos dependen se paga entero.** Tocar
+  `cognicode-core` invalida 34 suites: la huella es honesta y no hay atajo. Es el
+  precio de no reutilizar resultados que ya no valen, y se declara como lo que es,
+  no como una regresión de rendimiento.
+- **La adopción como motor por defecto queda descartada con datos**: 337 s frente
+  a 26 s en el caso más común. Lo que este ADR entrega es el mecanismo, la paridad,
+  los siete defectos corregidos y el número con el que decidir.
 
 ## Consecuencias
 
@@ -183,10 +184,9 @@ mismo plan da `SATISFIED` (11 s), que es lo que mide la fila caliente.
   este ADR.
 - Mientras tanto la puerta es barata: `TEST_FAST_ENGINE=harness` produce planes y
   recibos reales por cada corrida, y esa es la evidencia con la que se decide.
-- Los cuatro defectos corregidos valen para **cualquier** consumidor del harness,
-  no sólo para este wrapper: la lane de merge o de integración habría ejecutado
-  el comando de release-candidate y habría inventado obligaciones de comentarios
-  exactamente igual.
+- Los siete defectos corregidos valen para **cualquier** consumidor del harness.
+  El más grave —la huella sin dependencias— habría reutilizado en la lane de merge
+  recibos de suites cuyo código compilado cambió, no sólo aquí.
 
 ## Lo que este ADR no decide
 

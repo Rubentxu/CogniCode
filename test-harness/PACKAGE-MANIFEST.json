@@ -1,9 +1,9 @@
 {
  "files": [
   {
-   "bytes": 23285,
+   "bytes": 23545,
    "path": "README.md",
-   "sha256": "f319b434b44209b69fa5e468a4e7fa613092bb479ea2be1a4235cc9a8dd9eb6b"
+   "sha256": "c40de2d538a69d0816a0f241f3500c939c7046a270e39c78b183ba3b37853c2f"
   },
   {
    "bytes": 7968,
@@ -16,9 +16,9 @@
    "sha256": "2d2aecc688525222b2147955b598c47d2fddf2be1df71f40e0862f3353be78d5"
   },
   {
-   "bytes": 7255,
+   "bytes": 8195,
    "path": "adapters/cargo_workspace.py",
-   "sha256": "2c6c237709c617962b18e8d155362213e5be59638c320c29e68c55dc46d73fc3"
+   "sha256": "c4d0063dbec5a1e864f84afbf206d07f0c581c7faad9dc4eda7d8773557fa89e"
   },
   {
    "bytes": 3991,
@@ -36,9 +36,9 @@
    "sha256": "3b6a95e1561e6689714037f789e8bb476a1673b2995813c861b10adf092bacab"
   },
   {
-   "bytes": 18665,
+   "bytes": 19781,
    "path": "adapters/pipeline_catalog.py",
-   "sha256": "2ad790a790635148f7d87060dd89512232a689d00fef89686320bcbf3cc75f24"
+   "sha256": "c090277bf6d5a25c054a154655acc13d6566bf6ef4a9044a1f503f609222ff3c"
   },
   {
    "bytes": 6595,
@@ -106,9 +106,9 @@
    "sha256": "0e1ef6efd4468c7bbcf4e304d57ff6355895e0b48b6034a7f7a275a28a22de67"
   },
   {
-   "bytes": 11834,
+   "bytes": 12192,
    "path": "adrs/ADR-TH-013-motor-opt-in-y-decision-de-adopcion.md",
-   "sha256": "1c8dc54c7f2d0d13883f8159281667308051a8a2d5813b85ea59915f0d9deb4a"
+   "sha256": "fcdda5ab1ffa8ad41c5720cbb709af8c060f356b716e3102c0ccb441d4096330"
   },
   {
    "bytes": 1010,
@@ -176,9 +176,9 @@
    "sha256": "59b45eccc554877ec0d6ce40f4bae5266ba5317333710aec928a2d7cbaeee0ba"
   },
   {
-   "bytes": 4486,
+   "bytes": 4621,
    "path": "docs/03-migracion-y-compatibilidad.md",
-   "sha256": "f7d502d9f7278420413d7950ae62738840aba17fca2d70856ca382a450d0bcf3"
+   "sha256": "7803a3d1b4d3a95a2cbc85b81705b217e67eae9bda2edb1beac256cc6cd62395"
   },
   {
    "bytes": 3107,
@@ -221,9 +221,9 @@
    "sha256": "102249f490c748604787494cde4067c0799a5e1d5914dab3de2d1b6715999a27"
   },
   {
-   "bytes": 9589,
+   "bytes": 9770,
    "path": "roadmap/ROADMAP.md",
-   "sha256": "2f948db15f74e8e335a79933afbe6f59d61f0ba8d0e3174ca2c11109b5c4dfe6"
+   "sha256": "5be0b7d9fcd080f9c1a79f9ea1cf9a6ee00e925734895d7c781e161290524718"
   },
   {
    "bytes": 3420,
@@ -291,9 +291,9 @@
    "sha256": "b48f2978de348691425a5c90980060adc415249d04d8882c696248bcdcf7f730"
   },
   {
-   "bytes": 35239,
+   "bytes": 37559,
    "path": "src/harness/orchestrator.py",
-   "sha256": "fe7ed8824e343d8464082ffce6e3d03ed390b303483eebb9edd7272cc4486777"
+   "sha256": "a21c955a572d16b389828e70d3bb7a69892b61c54daeec60ccec999afc7cb35c"
   },
   {
    "bytes": 15413,
@@ -301,9 +301,9 @@
    "sha256": "d7b4b1869a65f0cc15cbafac022cb68c46a8781487bea5b56b25b5797a42e49f"
   },
   {
-   "bytes": 33682,
+   "bytes": 34975,
    "path": "src/harness/planner.py",
-   "sha256": "ba04ea89c3a781ffb95b4dffd337049c829d07d5bac84f90c40b5f540a18b6b4"
+   "sha256": "fa09ff11f17302caf774f0511a0a1451a5141fe0880a10a32e5a51785d5aed64"
   },
   {
    "bytes": 2614,
@@ -321,9 +321,9 @@
    "sha256": "c7ccbf022435904d75c59ee36705286a264325e02f19b362d7ea583bf432a57d"
   },
   {
-   "bytes": 11603,
+   "bytes": 12380,
    "path": "tests/harness_support.py",
-   "sha256": "9884702334eee8d2677a0906f46d35fb03e21f092651a6f4af499b8d2b574c1e"
+   "sha256": "2462753c8fe95faf82d0e0af71bd878005959e3e791500a9f0cd2715792e3b4b"
   },
   {
    "bytes": 12480,
@@ -336,9 +336,9 @@
    "sha256": "c38b08bf74fd3c052cb89e4a525d43c4a59b29f405dad5a4c80b20c3c3634a76"
   },
   {
-   "bytes": 20136,
+   "bytes": 24464,
    "path": "tests/test_cli_e2e.py",
-   "sha256": "df5a774a1ee730488d0e5a9d87d77cd5afa70c1f07cb56746ae147f0b7806ae3"
+   "sha256": "730826171f9bc7eda48f3373a62c2a3756afc6c902e5c736f18970792349a7e0"
   },
   {
    "bytes": 7197,
@@ -361,9 +361,9 @@
    "sha256": "a2f027b2f6d50024e7a7746a1b8d51afa4cb2b4f7806ef0627ded28f356200f5"
   },
   {
-   "bytes": 17938,
+   "bytes": 21125,
    "path": "tests/test_selection.py",
-   "sha256": "dc6e01dbae7b2fdf8fa353c111604010933646016bdeaa3b5a205d7091f771f1"
+   "sha256": "bbe9cc9380d46130371a0aed5503806b9098cca7f68f2b0a10cadc1369e20837"
   },
   {
    "bytes": 18326,

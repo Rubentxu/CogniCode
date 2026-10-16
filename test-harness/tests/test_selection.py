@@ -441,3 +441,72 @@ def test_a_doc_suite_does_not_demand_cases_it_cannot_have():
 
     pinned = Inventory(entries={"demo-core:doc#-": 2})
     assert pinned.expected_min_for("demo-core:doc#-") == 2
+
+
+def test_the_plan_executes_in_the_order_the_lane_declares():
+    """El plan hereda el orden de la pipeline, no el alfabético por paquete.
+
+    MEDIDO 2026-10-16. `merge-gate.pipeline.kts` declara `cargo build -p
+    cognicode-mcp` (línea 324) antes que `prf_h06_adversarial_e2e` (línea 444)
+    porque la suite necesita ese binario. Un plan ordenado por `suite_id` ponía la
+    suite primero: no encontraba el binario, fallaba, y con fail-fast el run se
+    detenía ahí sin ejecutar el resto.
+
+    El cambio del test es de paquete (no toca ficheros de CI) a propósito: el
+    camino de cambio global ya usaba el orden del catálogo, así que un test que
+    tocara un `*.pipeline.kts` pasaría sin probar el camino que fallaba.
+    """
+    with demo_repo(with_build_stage=True) as repo:
+        commit_change(repo, "crates/core/src/lib.rs")
+        graph, catalog = _context(repo)
+
+        ids = [entry.suite_id for entry in catalog]
+        assert ids.index("demo-core:cargo:build#-") < ids.index(CORE_SUITE), ids
+
+        selection = _selection(repo, graph, catalog)
+        assert not selection.global_reasons, selection.global_reasons
+        required = [entry.suite_id for entry, _ in selection.required]
+        assert required.index("demo-core:cargo:build#-") < required.index(CORE_SUITE), required
+        # Discrimina de verdad: en el fixture `demo-core:lib` se declara antes que
+        # `demo-app:lib`, pero alfabéticamente `demo-app` va primero.
+        assert required.index(CORE_SUITE) < required.index(APP_SUITE), required
+
+        plan_result = _plan(repo, graph, catalog)
+        planned = [suite.entry.suite_id for suite in plan_result.suites]
+        assert planned == required, (planned, required)
+
+
+def test_the_oracle_floor_adds_obligations_without_reordering_the_plan():
+    """El suelo del oráculo añade obligaciones; no reordena el plan.
+
+    MEDIDO 2026-10-16. `_apply_oracle` volvía a ordenar por `suite_id`, así que el
+    único camino que usa el wrapper (`--oracle cr08`) deshacía el orden de
+    declaración de la pipeline: la suite `prf_h06_adversarial_e2e` quedaba antes
+    que el `cargo build` que le da el binario que necesita.
+    """
+    from adapters.cr08_selector import SelectorDecision
+
+    with demo_repo(with_build_stage=True) as repo:
+        commit_change(repo, "crates/core/src/lib.rs")
+        graph, catalog = _context(repo)
+        oracle = SelectorDecision(
+            strategy="changed",
+            reason="fixture",
+            suites=("app",),
+            argv=("bash", "select-suites.sh"),
+        )
+        plan_result = build_plan(
+            lane="change",
+            repo_id="demo",
+            changeset=read_changeset(repo, "main"),
+            graph=graph,
+            catalog=catalog,
+            ledger=None,
+            toolchain=ToolchainInfo.read(repo),
+            oracle=oracle,
+            run_id="run-test",
+            created_at=PLAN_TIME,
+        )
+        planned = [suite.entry.suite_id for suite in plan_result.suites]
+        assert planned.index("demo-core:cargo:build#-") < planned.index(CORE_SUITE), planned
+        assert planned.index(CORE_SUITE) < planned.index(APP_SUITE), planned

@@ -506,3 +506,90 @@ def test_a_suite_with_unresolved_pipeline_variables_is_never_executed():
         # Y el resto del plan sí corrió: no ejecutar lo indeterminado no puede
         # convertirse en no ejecutar nada.
         assert payload["executed"], "el plan tenía suites ejecutables"
+
+
+def test_the_run_gives_suites_the_target_dir_the_lane_declares():
+    """Las suites corren con el entorno que la lane da por hecho.
+
+    MEDIDO 2026-10-16: `merge-gate.pipeline.kts` exporta
+    `CARGO_TARGET_DIR="$(scripts/ci/target-dir.sh)"` para las etapas que buscan
+    binarios construidos. El harness corría con el entorno ambiente, así que
+    `prf_h06_adversarial_e2e` no encontraba `cognicode-mcp` y fallaba como si el
+    fallo fuera suyo. El valor no se inventa: lo dice el script del repositorio,
+    el mismo que usa el gate.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        target_dir = repo.parent / "target-dir-de-la-lane"
+        target_dir.mkdir()
+        scripts_ci = repo / "scripts" / "ci"
+        scripts_ci.mkdir(parents=True, exist_ok=True)
+        resolver = scripts_ci / "target-dir.sh"
+        resolver.write_text(f"#!/usr/bin/env bash\nprintf '%s\\n' '{target_dir}'\n", encoding="utf-8")
+        resolver.chmod(0o755)
+
+        mark = repo.parent / "env-mark"
+        probe = repo / "scripts" / "env-probe.sh"
+        # El destino va dentro del script, no como argumento: el catálogo ejecuta
+        # los scripts que la pipeline declara como `bash <ruta>` y una obligación
+        # de script no arrastra argumentos.
+        probe.write_text(
+            "#!/usr/bin/env bash\n"
+            'printf "%s" "${CARGO_TARGET_DIR:-sin-target-dir}" > ' + repr(str(mark)) + "\n",
+            encoding="utf-8",
+        )
+        probe.chmod(0o755)
+        pipeline = repo / "product-fast.pipeline.kts"
+        pipeline.write_text(
+            pipeline.read_text(encoding="utf-8").replace(
+                '    stage("slow-a") {',
+                '    stage("env-probe") {\n        sh("$cd && bash scripts/env-probe.sh")\n    }\n'
+                '    stage("slow-a") {',
+            ),
+            encoding="utf-8",
+        )
+        # El cambio toca `scripts/ci/` a propósito: una obligación de script sólo
+        # entra en el plan si cambió o si la cita la documentación tocada, y un
+        # camino de infraestructura de CI arrastra todas las obligaciones.
+        commit_change(
+            repo,
+            "scripts/ci/target-dir.sh",
+            "#!/usr/bin/env bash\nprintf '%s\\n' " + repr(str(target_dir)) + "\n",
+        )
+
+        proc = run_cli(repo, state, "--format", "json", "run", "--lane", "change", "--base", "main")
+        assert proc.returncode in (0, 1), (proc.returncode, proc.stderr)
+        assert mark.read_text(encoding="utf-8") == str(target_dir), mark.read_text(encoding="utf-8")
+
+        run_state = json.loads(
+            sorted((state / "runs").glob("*.json"))[-1].read_text(encoding="utf-8")
+        )
+        assert run_state["environment"]["resolved"] == str(target_dir), run_state["environment"]
+
+
+def test_a_change_in_a_dependency_invalidates_the_dependent_suite():
+    """Un resultado compilado depende de todo lo que compila, no sólo de su crate.
+
+    MEDIDO 2026-10-16. La huella de una suite miraba sólo el subárbol de su
+    paquete, así que un cambio en `demo-core` no invalidaba el recibo de
+    `demo-app`: la suite se seleccionaba por impacto (bien) y se reutilizaba un
+    resultado de antes del cambio (mal). Reutilizar un resultado cuyo código
+    compilado cambió es un verde falso, y es el peor modo de fallo del harness.
+    """
+    with demo_repo() as repo:
+        state = _state(repo)
+        commit_change(repo, "crates/core/src/lib.rs", "// core v1\n")
+        first = run_cli(repo, state, "--format", "json", "run", "--lane", "change", "--base", "main")
+        assert first.returncode == 0, first.stderr
+        assert APP_SUITE in {r["suite_id"] for r in json.loads(first.stdout)["executed"]}, (
+            "el fixture declara que `demo-app` depende de `demo-core`"
+        )
+
+        commit_change(repo, "crates/core/src/lib.rs", "// core v2 distinta\n")
+        proc = run_cli(repo, state, "--format", "json", "run", "--lane", "change", "--base", "main")
+        assert proc.returncode == 0, proc.stderr
+        payload = json.loads(proc.stdout)
+        executed = {receipt["suite_id"] for receipt in payload["executed"]}
+        reused = {receipt["suite_id"] for receipt in payload["reused"]}
+        assert APP_SUITE in executed, (executed, reused)
+        assert APP_SUITE not in reused, reused

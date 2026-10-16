@@ -136,7 +136,7 @@ def git(root: Path, *args: str) -> str:
 
 
 @contextmanager
-def demo_repo(prefix: str = "th-demo-") -> Iterator[Path]:
+def demo_repo(prefix: str = "th-demo-", with_build_stage: bool = False) -> Iterator[Path]:
     """Workspace de Cargo mínimo con git, dos paquetes y dos pipelines.
 
     Se aísla `CARGO_TARGET_DIR` en un directorio temporal propio: el workspace
@@ -180,7 +180,21 @@ def demo_repo(prefix: str = "th-demo-") -> Iterator[Path]:
             encoding="utf-8",
         )
         (root / "scripts" / "ci" / "select-suites.sh").chmod(0o755)
-        (root / "product-fast.pipeline.kts").write_text(PIPELINE, encoding="utf-8")
+        # `with_build_stage` declara un build delante de los tests, como hace
+        # merge-gate (`cargo build` antes de las suites que necesitan el binario).
+        # Va en el commit base a propósito: si el test lo añadiera después, el
+        # cambio tocaría un `*.pipeline.kts` y entraría por el camino de cambio
+        # global, que ya respetaba el orden —y el test pasaría sin probar nada.
+        product_fast = PIPELINE
+        if with_build_stage:
+            product_fast = product_fast.replace(
+                '    stage("fmt") {',
+                '    stage("build") {\n'
+                '        sh("$cd && cargo build -p demo-core")\n'
+                "    }\n"
+                '    stage("fmt") {',
+            )
+        (root / "product-fast.pipeline.kts").write_text(product_fast, encoding="utf-8")
         # La lane de merge ejecuta las mismas obligaciones, como en el repositorio
         # real: lo que cambia entre lanes es la política, no los comandos.
         (root / "merge-gate.pipeline.kts").write_text(PIPELINE, encoding="utf-8")

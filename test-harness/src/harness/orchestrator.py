@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import signal
+import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
@@ -403,6 +404,47 @@ def _running_receipt(
     )
 
 
+TARGET_DIR_SCRIPT = "scripts/ci/target-dir.sh"
+
+
+def resolve_lane_environment(repo_root: Path) -> tuple[dict[str, str], dict]:
+    """Entorno que la lane da por hecho, resuelto con las herramientas del repo.
+
+    MEDIDO 2026-10-16. `merge-gate.pipeline.kts` exporta
+    `CARGO_TARGET_DIR="$(scripts/ci/target-dir.sh)"` para las etapas que necesitan
+    binarios construidos (líneas 441-442 y 476-477). El harness ejecutaba las
+    suites con el entorno ambiente, así que `prf_h06_adversarial_e2e` —que busca
+    el binario en `$CARGO_TARGET_DIR/{release,debug}`— fallaba con «cognicode-mcp
+    binary not found» mientras el gate lo encontraba. El target no se inventa: se
+    pregunta al script del repositorio, que es la autoridad que el gate ya usa.
+    """
+    script = repo_root / TARGET_DIR_SCRIPT
+    evidence: dict = {"script": TARGET_DIR_SCRIPT}
+    if not script.is_file():
+        evidence["problem"] = "no existe el script del repositorio; no se resuelve el target dir"
+        return {}, evidence
+    try:
+        proc = subprocess.run(
+            ["bash", TARGET_DIR_SCRIPT],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        evidence["problem"] = f"no se pudo ejecutar {TARGET_DIR_SCRIPT}: {exc}"
+        return {}, evidence
+    resolved = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
+    if proc.returncode != 0 or not resolved:
+        evidence["problem"] = (
+            f"{TARGET_DIR_SCRIPT} salió con {proc.returncode} y no dio un directorio"
+        )
+        return {}, evidence
+    evidence["resolved"] = resolved
+    return {"CARGO_TARGET_DIR": resolved}, evidence
+
+
 def run_plan(
     context: Context,
     plan_result: PlanResult,
@@ -414,6 +456,11 @@ def run_plan(
     lane = options.lane
     snapshot = _snapshot(context)
     fail_fast = options.fail_fast if options.fail_fast is not None else lane in FAIL_FAST_LANES
+    env_overrides = dict(options.env_overrides or {})
+    environment_evidence: dict = {"source": "opciones explícitas"}
+    if not env_overrides:
+        env_overrides, environment_evidence = resolve_lane_environment(context.repo_root)
+        environment_evidence["source"] = TARGET_DIR_SCRIPT
     lease = context.ledger.acquire_lease(run_id, purpose=f"run:{lane}")
     if not lease.acquired:
         raise HarnessError(
@@ -436,6 +483,9 @@ def run_plan(
         "finished_at": "",
         "suites": {},
         "pending": [],
+        # El entorno con el que corrieron las suites es parte de la evidencia: un
+        # resultado que depende del target dir no se puede leer sin saber cuál era.
+        "environment": environment_evidence,
     }
     context.ledger.write_run(run_id, state)
     context.ledger.append_event(
@@ -527,7 +577,7 @@ def run_plan(
             outcome, text = process_runner.execute(
                 suite.argv,
                 cwd=context.repo_root,
-                env_overrides=options.env_overrides,
+                env_overrides=env_overrides or None,
                 timeout_s=options.timeout_s,
             )
         _, log_digest = context.ledger.write_log(run_id, suite_id, text.encode("utf-8"))

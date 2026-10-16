@@ -3,10 +3,12 @@
 **Estado: núcleo implementado y gated; adopción como sustituto del gate, no.** El
 paquete incluye un harness ejecutable (`bin/harness.py`, biblioteca estándar, sin
 dependencias) con `plan`, `run`, `status`, `resume`, `explain` y `certify`, un
-ledger de evidencia fuera del checkout y una suite de 60 tests que corre con el
-runner de contratos del repositorio. Lo que **no** está hecho: paridad medida
-contra CR-08, adopción en modo sombra dentro de las pipelines, ejecución en
-paralelo, adaptador nextest y lanes de release. Está declarado más abajo, en
+ledger de evidencia fuera del checkout y una suite de 125 tests que corre con el
+runner de contratos del repositorio. También existe la **delegación opt-in** del
+wrapper `scripts/test-fast.sh` (`TEST_FAST_ENGINE=harness`), con caída cerrada al
+motor CR-08 cuando no puede cubrir la demanda. Lo que **no** está hecho: adopción
+como motor por defecto del bucle local, sustitución de la selección del gate,
+adaptador nextest y lanes de release. Está declarado más abajo, en
 «Estado».
 
 PipelineK sigue siendo la autoridad del gate (ADR-TH-003). El harness no
@@ -305,7 +307,7 @@ selección por impacto no cubra.
 ## Pruebas del harness y cómo se gated
 
 ```shell
-python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 101 tests, ~55 s
+python3 scripts/run_contract_tests.py test-harness/tests/test_*.py   # 125 tests, ~65 s
 python3 scripts/ci/test_harness_contract.py                          # contrato del gate
 ```
 
@@ -334,7 +336,8 @@ que conserva evidencia; supervisor con concurrencia, cerrojos y SIGKILL probado;
 clasificación de procesos que no convierte un 101 en verde; agregación de gate con
 huecos nombrados; suelo de obligaciones críticas; AAT ejecutado (21/30 filas con
 test, 9 declaradas); etapa de sombra advisory en el merge-gate que publica el plan
-real de cada PR; 101 tests dependency-free y el contrato del gate.
+real de cada PR; delegación opt-in del wrapper `fast` con paridad contrastada
+contra el plan real (ADR-TH-013); 125 tests dependency-free y el contrato del gate.
 
 **No implementado, y no se afirma lo contrario**:
 

@@ -85,6 +85,26 @@ class WorkspaceGraph:
                     best = (length, member.name)
         return best[1] if best else None
 
+    def dependency_closure(self, name: str) -> set[str]:
+        """El paquete y **todo lo que compila**: sus dependencias transitivas.
+
+        MEDIDO 2026-10-16. La huella de una suite sólo miraba el subárbol de su
+        propio paquete, así que un cambio en `cognicode-core` no invalidaba los
+        recibos de `cognicode-cli`: la suite se seleccionaba por impacto (bien) y
+        se reutilizaba su recibo de antes del cambio (mal). Reutilizar un
+        resultado cuyo código compilado cambió es un verde falso, y es el peor
+        modo de fallo de este harness.
+        """
+        seen = {name}
+        pending = [name]
+        while pending:
+            current = pending.pop()
+            for dependency in self.dependencies.get(current, ()):  # lo que `current` compila
+                if dependency not in seen:
+                    seen.add(dependency)
+                    pending.append(dependency)
+        return seen
+
     def reverse_closure(self, names: set[str]) -> set[str]:
         """Los paquetes dados más todos los que dependen de ellos, transitivamente."""
         closure = set(names)

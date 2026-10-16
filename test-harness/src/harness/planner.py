@@ -190,10 +190,15 @@ def closure_for(entry: CatalogEntry, *, repo_root: Path, graph: WorkspaceGraph) 
             files.extend(walked)
             truncated = truncated or cut
     elif entry.package:
-        member_dir = next((m.dir for m in graph.members if m.name == entry.package), None)
-        if member_dir:
-            walked, truncated = _walk_files(repo_root, member_dir)
+        # El subárbol del paquete **más** el de sus dependencias transitivas: un
+        # resultado compilado depende de todo lo que compila, no sólo de su crate.
+        for package in sorted(graph.dependency_closure(entry.package)):
+            member_dir = next((m.dir for m in graph.members if m.name == package), None)
+            if not member_dir:
+                continue
+            walked, cut = _walk_files(repo_root, member_dir)
             files.extend(walked)
+            truncated = truncated or cut
     elif entry.target.startswith("script:"):
         script = entry.target.split(":", 1)[1]
         if (repo_root / script).exists():
@@ -481,8 +486,19 @@ def select(
             detail += "; solo cambió documentación que su paquete no cita"
         excluded.append((entry, detail))
 
-    selection.required = tuple(sorted(required, key=lambda item: item[0].suite_id))
-    selection.excluded = tuple(sorted(excluded, key=lambda item: item[0].suite_id))
+    # Orden de ejecución = orden de declaración en la pipeline, con `suite_id` como
+    # desempate para que el plan siga siendo reproducible. MEDIDO 2026-10-16:
+    # `merge-gate.pipeline.kts` declara `cargo build -p cognicode-mcp` (línea 324)
+    # antes que `prf_h06_adversarial_e2e` (línea 444) porque la suite necesita ese
+    # binario. Ordenar por `suite_id` ponía la suite primero, no encontraba el
+    # binario y, con fail-fast, el run se detenía ahí sin ejecutar el resto. El
+    # camino de cambio global ya usaba el orden del catálogo; el camino normal no.
+    selection.required = tuple(
+        sorted(required, key=lambda item: (item[0].order, item[0].suite_id))
+    )
+    selection.excluded = tuple(
+        sorted(excluded, key=lambda item: (item[0].order, item[0].suite_id))
+    )
     return selection
 
 
@@ -782,8 +798,14 @@ def _apply_oracle(
         return selection
     added_ids = {entry.suite_id for entry, _ in additions}
     required = (*selection.required, *additions)
+    # Mismo orden que en `select`: el suelo del oráculo **añade** obligaciones, no
+    # reordena el plan. Ordenar por `suite_id` aquí deshacía el orden de
+    # declaración de la pipeline justo en el camino que usa el wrapper con
+    # `--oracle cr08`, que es el único que importa para la delegación.
     return Selection(
-        required=tuple(sorted(required, key=lambda item: item[0].suite_id)),
+        required=tuple(
+            sorted(required, key=lambda item: (item[0].order, item[0].suite_id))
+        ),
         excluded=tuple(
             (entry, f"{reason} (el oráculo no lo exigía)" if entry.suite_id not in added_ids else reason)
             for entry, reason in selection.excluded

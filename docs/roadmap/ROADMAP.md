@@ -558,3 +558,25 @@ implementación del harness W0..W7 requiere una unidad Post-PRF separada.
 | Consumidores | Operador (decisión de política con números), mantenedor (perfil del gate), auditoría (auditoría §10) |
 | Criterio de cierre | Cumplido: 6 tests del informe verdes, contrato del gate 12/12 con la comprobación sobre la base real (suma de etapas = total, repositorio intacto) y la aritmética del presupuesto publicada |
 | Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |
+
+## 21. TH-IMPL-07 — Motor opt-in de `test-fast` y siete defectos de integración (2026-10-16)
+
+> **Estado**: IMPLEMENTADO y gated, con la adopción como motor por defecto
+> **NO** tomada (y con el motivo medido). `scripts/test-fast.sh` acepta
+> `TEST_FAST_ENGINE=harness`: planifica con el harness bajo el suelo del oráculo
+> y ejecuta desde su ledger, y cae al motor CR-08 —diciendo por qué— cuando no
+> puede cubrir la demanda o cuando el usuario pasó `--paths`. Ejecutar un plan
+> completo por primera vez destapó siete defectos de integración que ningún test
+> cubría; los siete están corregidos con test que fallaba antes.
+> Decisión:
+> [`test-harness/adrs/ADR-TH-013-motor-opt-in-y-decision-de-adopcion.md`](../../test-harness/adrs/ADR-TH-013-motor-opt-in-y-decision-de-adopcion.md).
+
+| Item | Contrato |
+|---|---|
+| Valor | Saber con números si el harness puede sustituir al wrapper del bucle local, en vez de suponerlo: la delegación existe, está gated y su coste está medido (26-29 s de CR-08 contra 337 s en frío y 11-42 s con el ledger caliente, mismo cambio) |
+| Clasificación | Evolutivo del test harness (fila W3 y W7 del roadmap del harness) sobre el mandato del operador de 2026-10-15, continuación de TH-IMPL-06 |
+| Alcance | `scripts/test-fast.sh`, `scripts/ci/test_fast_full_wrappers.py` (M12–M16), `test-harness/src/harness/{cli,planner,orchestrator,domain,inventory}.py`, `test-harness/adapters/pipeline_catalog.py`, `test-harness/tests/{test_selection,test_cli_e2e,test_ledger_and_runner,test_domain_gate_validity,harness_support}.py`, roadmap del harness, ADR-TH-013, manifiesto del paquete |
+| Fuera de alcance | Cambiar el motor por defecto del wrapper, el perfil de desarrollo del harness (requisito identificado y no construido), selección por impacto en el merge (W6), caché o reanudación en PipelineK |
+| Consumidores | Contribuidores (bucle local y sus planes), mantenedor (decisión de adopción con evidencia), cualquier consumidor del harness que ejecute etapas de build (los cinco defectos eran de integración, no del wrapper) |
+| Criterio de cierre | Cumplido: suite del harness 125/125, contrato de wrappers con las cinco comprobaciones nuevas (M12–M16), contrato del harness 13/13, corridas en frío e incremental del harness SATISFIED sobre un clon sin binarios construidos, y todos los códigos de salida y tiempos publicados sin maquillar, incluida la corrida que falló antes de los arreglos |
+| Estado y recibos | Recibo en [`JOURNAL.md`](JOURNAL.md); snapshot en [`CURRENT.md`](CURRENT.md); PR #349 contra `main` |

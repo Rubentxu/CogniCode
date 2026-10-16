@@ -15387,3 +15387,48 @@ cambia cuándo bloquea un fallo, y eso es política, no aritmética.
   tiene que ser ancestro de HEAD (un baseline que describe un árbol que ya no
   existe en la rama es evidencia muerta).
 - W0 del roadmap del harness pasa a **DONE**.
+## Recibo TH-IMPL-07 — motor opt-in de `test-fast` y siete defectos de integración (2026-10-16)
+
+- **Baseline**: HEAD `1cb6db2f` (`feat(harness): motor opt-in de test-fast, paridad
+  contrastada y cuatro defectos de integración corregidos`) sobre
+  `worktree/test-harness`, más el bloque de orden de ejecución, entorno de lane y
+  clausura de dependencias que cierra este recibo.
+- **Qué se entregó**: `TEST_FAST_ENGINE=harness` en `scripts/test-fast.sh`, con el
+  defecto intacto (sin la variable el wrapper es el de siempre), caída cerrada al
+  motor CR-08 cuando el plan declara un scope `NOT_IN_CATALOG` o cuando el usuario
+  pasó `--paths`, y la base del ChangeSet alineada con el diff que leyó el wrapper.
+  `harness run` acepta `--oracle` y `--plan-only`; `resume` acepta `--oracle`.
+- **Por qué se hizo**: la fila W3 del roadmap del harness listaba «Migrar
+  `test-fast.sh`» como pendiente. La pregunta era si el harness puede sustituir al
+  wrapper; la respuesta solo se podía dar midiendo, y medir exigió ejecutar un plan
+  completo, que es donde aparecieron los siete defectos.
+- **Defectos corregidos** (cada uno con test que fallaba antes y pasa después):
+  catálogo ciego a la lane (la lane `change` ejecutaba el comando de
+  release-candidate); obligaciones inventadas desde comentarios; variables de
+  pipeline (`$target`) llegando literales a cargo; un `--doc` sin doc-tests
+  tratado como verde vacío; el plan ordenado por `suite_id` en vez de por el orden
+  declarado en la pipeline; las suites sin el `CARGO_TARGET_DIR` que la lane
+  exporta; y la huella de una suite sin sus dependencias transitivas (falso verde
+  por reutilización).
+- **Medición** (clon, caché de Cargo compartida, ejecuciones secuenciales): CR-08
+  26 s y 29 s para un cambio de una línea en `ladybug` (1 suite) contra 337 s del
+  harness con ledger frío (26 suites, SATISFIED) y 11-42 s en la repetición sin
+  cambios (3-4 ejecutadas, 22-23 reutilizadas). Para un cambio en `core`: 89 s de
+  CR-08 (1 suite) contra 533 s del harness (34 suites, 0 reutilizadas,
+  SATISFIED), que es la consecuencia honesta de invalidar todo lo que compila el
+  paquete tocado.
+- **Decisión de adopción**: no se adopta el harness como motor por defecto del
+  bucle local. El requisito para poder hacerlo —un perfil de desarrollo sin
+  clausura de dependientes ni etapas de alcance workspace— queda identificado y
+  **no** construido. ADR-TH-013.
+- **Gates ejecutados**: suite del harness `test-harness/tests/test_*.py` → **125
+  PASS, 0 FAIL**; contrato de los wrappers (`scripts/ci/test_fast_full_wrappers.py`,
+  con M12–M16 nuevos) → **OK**; contrato del harness
+  (`scripts/ci/test_harness_contract.py`) → **13 PASS, 0 FAIL**. Dos de los tests
+  nuevos se validaron revirtiendo el arreglo y viendo caer el test (orden de
+  ejecución y clausura de dependencias).
+- **Corridas reales del gate**: pendientes de la corrida de merge-gate posterior a
+  este commit; no se declaran como PASS hasta que ocurran.
+- **Límites declarados**: los cinco primeros defectos afectan a cualquier
+  consumidor del harness (no sólo al wrapper); el perfil de desarrollo no existe;
+  las corridas del harness dentro del gate siguen siendo opt-in (ADR-TH-007).
