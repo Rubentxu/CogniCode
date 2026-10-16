@@ -288,6 +288,35 @@ def test_every_aat_row_has_a_status_and_a_real_test_when_it_is_killed():
     assert int(summary.group(1)) == killed, "el resumen no coincide con la tabla"
 
 
+def test_the_shadow_stage_observes_without_being_able_to_fail_the_lane():
+    """La etapa de sombra no decide nada, y no puede fallar la lane.
+
+    PipelineK no tiene `continue-on-error`: una etapa solo es advisory si su
+    comando no puede devolver un código distinto de cero. Y la observación tiene
+    que existir en la lane de merge (es donde se acumulan los datos de adopción)
+    sin colarse en las demás.
+    """
+    merge = (REPO_ROOT / "merge-gate.pipeline.kts").read_text(encoding="utf-8")
+    marker = 'stage("harness-shadow-plan")'
+    assert marker in merge, "la lane de merge no observa el plan del harness"
+    start = merge.index(marker)
+    body = merge[start : merge.index("\n            }\n", start)]
+    assert "harness.py plan" in body and "--shadow" in body, body
+    assert "ADVISORY" in body and "||" in body, (
+        "la etapa de sombra puede fallar la lane: en PipelineK no hay "
+        "continue-on-error, así que un plan roto rompería el merge.\n" + body
+    )
+    for name in (
+        "integration.pipeline.kts",
+        "release-candidate.pipeline.kts",
+        "release.pipeline.kts",
+        "certification.pipeline.kts",
+        "product-fast.pipeline.kts",
+    ):
+        text = (REPO_ROOT / name).read_text(encoding="utf-8")
+        assert "--shadow" not in text, f"{name} observa el plan fuera de la lane de merge"
+
+
 def test_gc_dry_run_never_deletes_evidence():
     """La recolección dice qué borraría y no toca ni un recibo."""
     with tempfile.TemporaryDirectory(prefix="th-contract-") as tmp:

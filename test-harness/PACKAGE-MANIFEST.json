@@ -1,9 +1,9 @@
 {
   "files": [
     {
-      "bytes": 21105,
+      "bytes": 22142,
       "path": "README.md",
-      "sha256": "4d09a1485d02ccb71bd93163da2e4dc8f2233e57d2c55d0a152e1394f1816f4b"
+      "sha256": "bddfef1fca510bc62a88fd1f68308e84105ca137d8543bf7bdd9fb940f798313"
     },
     {
       "bytes": 7968,
@@ -101,6 +101,11 @@
       "sha256": "d6199779773638c3972ef83b12a250b1f20a0df41f1a84601e42c02abd0828c2"
     },
     {
+      "bytes": 3278,
+      "path": "adrs/ADR-TH-012-etapa-de-sombra.md",
+      "sha256": "0e1ef6efd4468c7bbcf4e304d57ff6355895e0b48b6034a7f7a275a28a22de67"
+    },
+    {
       "bytes": 1010,
       "path": "bin/harness.py",
       "sha256": "9d24f1a56ed59eaa76fb080aeec253e8368f1ec6da78997d99a65546e6583a20"
@@ -186,9 +191,9 @@
       "sha256": "574c77a25bf13a419900166965418e6b1b4070070126cd723e57dccc676e705c"
     },
     {
-      "bytes": 46331,
+      "bytes": 46899,
       "path": "docs/07-auditoria-merge-gate.md",
-      "sha256": "5c44974691e187d4c8b56f42bb9ea2f47cc8264e67610ed6f31f886068c2ce9e"
+      "sha256": "625fb0e8685fe8a88d42e357e7b63233066b454b1154177c36e58e97e7452c00"
     },
     {
       "bytes": 96,
@@ -246,9 +251,9 @@
       "sha256": "2dc5c63952caeaef7ca2048cbd49b56e06a4d0affa1c2e4936faaa9ba2cf8d43"
     },
     {
-      "bytes": 27843,
+      "bytes": 30208,
       "path": "src/harness/cli.py",
-      "sha256": "efc9f23a1a34371c72fefc9096f7ca79b11335983c563cbfd4ddac56002669a8"
+      "sha256": "20a228160c7eacf88e11fbbf535ad1d4e452c57ba9344e17eb83dd8a84657a41"
     },
     {
       "bytes": 9406,

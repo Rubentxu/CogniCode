@@ -379,6 +379,26 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-cli --test qw08_crate_selector --quiet")
             }
 
+            // TH-S05: observar antes de adoptar. Esta etapa imprime lo que el
+            // harness seleccionaría para este cambio y **no decide nada**: es
+            // advisory por construcción (`|| echo`) porque PipelineK no tiene
+            // continue-on-error, así que la única forma de que no altere la
+            // semántica de la lane es que no pueda fallarla.
+            //
+            // Sirve para lo que exige el bloque siguiente: acumular datos reales
+            // de selección (cuántas obligaciones de la lane exige cada cambio y
+            // qué bloquea) antes de decidir qué etapas pasan a ejecutarse por
+            // impacto. La paridad con CR-08 ya está medida en `harness parity
+            // --corpus`; esto añade el cambio real de cada PR.
+            stage("harness-shadow-plan") {
+                sh("""
+                    $cd || exit 1
+                    python3 test-harness/bin/harness.py plan --lane merge \
+                      --base origin/main --oracle cr08 --shadow \
+                      || echo 'ADVISORY: harness shadow plan no pudo construir el plan; el gate sigue igual'
+                """.trimIndent())
+            }
+
             // pr-ci.yml also runs the selector script itself, not only its
             // contract. The contract pins what the script decides; running the
             // script is what proves the decision is consumable downstream. A

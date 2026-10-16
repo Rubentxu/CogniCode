@@ -453,3 +453,13 @@ la comparación honesta es la de arriba, medida hoy y con el mismo comando.
 Ninguna etapa se movió por ser lenta: la única que cambió de dueño (§8) ya se
 ejecutaba dos veces por cambio. Las 53 `MERGE_REQUIRED` son las que el siguiente
 bloque (selección por impacto) debe poder reducir a *afectadas*, no eliminar.
+
+## 9. Etapa de sombra (2026-10-15)
+
+`harness-shadow-plan` entra en la lane de merge como paso de observación
+(ADR-TH-012). Clasificación: `ADVISORY` — no puede fallar la lane y no ejecuta
+suites. Coste medido: ~4 s (plan + consulta al oráculo CR-08) sobre los 579 s del
+gate tras B1b. Devuelve, por cada PR, cuántas obligaciones tiene la lane, cuántas
+exige el cambio por impacto y cuántas quedan bloqueadas por depender de estado
+externo; es el dato con el que el bloque siguiente decide qué etapas pasan a
+selección, en lugar de decidirlo por intuición.

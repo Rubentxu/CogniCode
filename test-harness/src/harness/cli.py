@@ -196,6 +196,49 @@ def _plan_text(plan_result, run_id: str, lane: str, context) -> str:
     return "\n".join(lines)
 
 
+def _shadow_text(plan_result, context, lane: str) -> str:
+    """Resumen de observación: qué seleccionaría el harness, sin ejecutar nada.
+
+    Va a un log de gate, así que dice lo que el lector necesita para decidir la
+    adopción: cuántas obligaciones hay en la lane, cuántas exige este cambio, qué
+    queda bloqueado por depender de estado externo y qué dijo el oráculo. Y dice,
+    en la primera línea, que no decide nada: un log que se lee como un gate es
+    peligroso.
+    """
+    catalog = context.catalog_for_lane(lane)
+    plan = plan_result.plan
+    counts = plan.counts()
+    required = len(plan.required_suites)
+    total = len(catalog)
+    skipped = max(0, total - required)
+    share = f"{skipped * 100 // total}%" if total else "n/a"
+    lines = [
+        "SHADOW: observación, no decide el gate. No se ha ejecutado nada y el gate "
+        "sigue ejecutando sus etapas completas.",
+        f"  lane={lane}  estado={plan.status}  head={getattr(context.changeset, 'head', '')[:12]}  "
+        f"base={getattr(context.changeset, 'base_ref', None)}",
+        f"  obligaciones de la lane: {total} catalogadas, {required} requeridas por impacto "
+        f"(EXECUTE {counts.get('EXECUTE', 0)}, REUSE {counts.get('REUSE', 0)}, "
+        f"BLOCK {counts.get('BLOCK', 0)}); {skipped} sin tocar ({share})",
+        f"  source_fingerprint={plan.source_fingerprint}",
+    ]
+    blocked = [suite.entry.suite_id for suite in plan_result.suites if suite.blocked]
+    if blocked:
+        lines.append(f"  bloqueadas por estado externo: {', '.join(blocked)}")
+    if plan_result.parity is not None:
+        parity = plan_result.parity
+        lines.append(f"  paridad CR-08: {parity.verdict} (oráculo {parity.decision.strategy}: {parity.decision.reason})")
+        for deviation in parity.deviations:
+            lines.append(f"  desviación declarada: {deviation[:160]}")
+    for warning in (*context.warnings, *plan_result.warnings):
+        lines.append(f"  aviso: {warning}")
+    lines.append(
+        "  adopción: esta observación no cambia ninguna etapa; decidir qué etapas "
+        "pasarían a selección exige su propio ADR con la paridad delante"
+    )
+    return "\n".join(lines)
+
+
 def _outcome_text(outcome) -> str:
     verdict = outcome.verdict
     lines = [
@@ -257,7 +300,12 @@ def main(argv: list[str] | None = None) -> int:
             }
             if plan_result.parity is not None:
                 payload["parity"] = plan_result.parity.to_json()
-            _emit(payload, args, _plan_text(plan_result, run_id, args.lane, context))
+            text = (
+                _shadow_text(plan_result, context, args.lane)
+                if args.shadow
+                else _plan_text(plan_result, run_id, args.lane, context)
+            )
+            _emit(payload, args, text)
             if args.shadow:
                 return 0
             if plan_result.plan.status == "UNKNOWN_INPUT":

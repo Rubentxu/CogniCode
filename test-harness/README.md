@@ -47,6 +47,7 @@ Las rutas antiguas solo se eliminarían cuando no quede consumidor y exista una 
 | **Comprobar que el harness no recorta cobertura** | [Paridad con el selector vigente](#paridad-con-el-selector-vigente) y [ADR-TH-008](adrs/ADR-TH-008-paridad-con-el-oraculo.md) (veredictos, desviaciones declaradas y medición). |
 | **Concurrencia, inventario pinado y GC del ledger** | [Concurrencia, cerrojos y pin de inventario](#concurrencia-cerrojos-y-pin-de-inventario) y [ADR-TH-009](adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md) (cerrojos, SIGKILL, lease huérfano). |
 | **Ver qué mutaciones se matan de verdad** | [Ejecución del AAT](aat/AAT.md#ejecución-2026-10-15) y [ADR-TH-010](adrs/ADR-TH-010-aat-ejecutado.md) (estados, suelo de obligaciones, identidad e inestabilidad). |
+| **Saber qué seleccionaría el harness en un PR real** | La etapa `harness-shadow-plan` del merge-gate (advisory, no decide) y [ADR-TH-012](adrs/ADR-TH-012-etapa-de-sombra.md): qué observa, qué no cambia y cómo se usan los datos. |
 | Ver hallazgos y rastrear evidencia del repositorio | [Auditoría de código](docs/00-auditoria-codigo.md) y [rutas y referencias](docs/06-rutas-y-referencias.md). |
 | Entender arquitectura, estados o migración | [Arquitectura](docs/01-arquitectura.md), [ontología](docs/02-ontologia-y-estados.md) y [compatibilidad](docs/03-migracion-y-compatibilidad.md). |
 | Implementar selección, validez o reanudación | Specs [TH-S01](specs/TH-S01-seleccion.md), [TH-S02](specs/TH-S02-evidencia-invalidez.md) y [TH-S03](specs/TH-S03-ejecucion-resume.md). |
@@ -64,7 +65,7 @@ Manifiesto del paquete: [`PACKAGE-MANIFEST.json`](PACKAGE-MANIFEST.json) declara
 `path`, `sha256` y `bytes` de cada fichero, se excluye a sí mismo y queda
 obsoleto en cuanto se edita un documento sin recalcularlo: es el inventario con
 el que se comprueba que el paquete entregado es el que se describe. Los ADR
-vigentes son TH-001..TH-010 y este paquete no incluye ningún plan de UAT
+vigentes son TH-001..TH-012 y este paquete no incluye ningún plan de UAT
 desde el 2026-10-15 (ADR-TH-006).
 
 ## Uso
@@ -183,6 +184,16 @@ deja de pagarla. El reparto completo y el camino hasta el presupuesto de 6–7
 minutos están en [`docs/07-auditoria-merge-gate.md`](docs/07-auditoria-merge-gate.md)
 §7-§8: el siguiente salto exige que el merge ejecute las pruebas **afectadas**
 (selección ya medida contra CR-08) y que la batería completa siga en integración.
+
+## Etapa de sombra en el gate
+
+`merge-gate.pipeline.kts` ejecuta `harness.py plan --lane merge --base origin/main
+--oracle cr08 --shadow` en una etapa **advisory**: imprime el resumen (obligaciones
+de la lane, cuántas exige el cambio, cuáles quedan bloqueadas por estado externo y
+qué dijo el oráculo) y no puede fallar la lane, porque PipelineK no tiene
+`continue-on-error` y el comando termina en `|| echo 'ADVISORY: …'`. No ejecuta
+suites ni escribe en el repositorio. El contrato comprueba que existe, que es
+advisory y que solo vive en la lane de merge.
 
 ## Suelo de obligaciones críticas
 
@@ -304,7 +315,8 @@ inmutables, índice reconstruible, lease con reconciliación de dueños muertos 
 que conserva evidencia; supervisor con concurrencia, cerrojos y SIGKILL probado;
 clasificación de procesos que no convierte un 101 en verde; agregación de gate con
 huecos nombrados; suelo de obligaciones críticas; AAT ejecutado (21/30 filas con
-test, 9 declaradas); 101 tests dependency-free y el contrato del gate.
+test, 9 declaradas); etapa de sombra advisory en el merge-gate que publica el plan
+real de cada PR; 101 tests dependency-free y el contrato del gate.
 
 **No implementado, y no se afirma lo contrario**:
 
@@ -312,9 +324,11 @@ test, 9 declaradas); 101 tests dependency-free y el contrato del gate.
   cambio (0 debilidades sin declarar en `change`, `merge` e `integration`) y el
   contrato del gate la vuelve a medir en cada merge, pero el selector sigue siendo
   la autoridad y el harness no decide cobertura en la lane de merge.
-- **Etapa de sombra en las pipelines.** El harness no añade ni quita etapas: corre
-  como contrato, y ahí dentro se mide la paridad. Una etapa `plan --shadow` no
-  añadiría evidencia nueva (ADR-TH-008).
+- **Adopción de la selección en el gate.** La etapa de sombra ya existe
+  ([ADR-TH-012](adrs/ADR-TH-012-etapa-de-sombra.md)): cada merge deja en su log el
+  plan real (obligaciones de la lane, requeridas por impacto, bloqueadas). Lo que
+  sigue sin decidirse es **qué etapas pasan a ejecutarse por impacto**; eso exige su
+  propio ADR con esos datos delante.
 - **Reutilización en lanes oficiales.** `merge` ejecuta todo por defecto;
   reutilizar exige `--allow-reuse`, y la paridad no está demostrada.
 - **Paralelismo de compilación.** `--max-workers` reparte suites con cerrojos, pero
