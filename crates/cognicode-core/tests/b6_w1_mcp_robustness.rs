@@ -3,10 +3,11 @@
 //! pagination, isolation, clean shutdown).
 //!
 //! Every test in this suite spawns the compiled `cognicode-mcp` binary
-//! as a subprocess and exchanges JSON-RPC frames over its stdio. If
-//! the binary is not present in `target/{release,debug}/`, the suite
-//! short-circuits with a clear `SKIP_NOT_APPLICABLE` style message so
-//! CI does not fail when only the library has been compiled.
+//! as a subprocess and exchanges JSON-RPC frames over its stdio. The
+//! binary must exist before the suite runs: build it with
+//! `cargo build --bin cognicode-mcp`, or point `COGNICODE_MCP_BIN` at an
+//! existing build. A missing binary is a hard failure, never a skip: a
+//! skipped contract test is a green result that certifies nothing.
 //!
 //! The contract is intentionally adversarial: a server that ships
 //! observability on stdout, that blocks past its timeout, or that
@@ -65,11 +66,38 @@ unsafe fn fcntl_setfl(fd: i32, flags: i32) -> i32 {
 
 /// Locate the compiled `cognicode-mcp` binary.
 ///
-/// Mirrors the helper in `prf_h06_adversarial_e2e.rs`: walk
-/// `CARGO_TARGET_DIR` first (this environment sets it), then the
-/// workspace-relative `target/{release,debug}/`, then the bare
-/// `target/{release,debug}/`. Returns `None` if no candidate exists.
+/// Resolution order (first match wins):
+///
+/// 1. `COGNICODE_MCP_BIN` — explicit override. When it is set it is
+///    asserted to exist and to be executable, and no fallback happens:
+///    a typo must fail here instead of silently testing another build.
+/// 2. `CARGO_TARGET_DIR/{release,debug}/cognicode-mcp`, the same path
+///    `prf_h06_adversarial_e2e.rs` walks (this environment sets
+///    `CARGO_TARGET_DIR`).
+/// 3. workspace-relative
+///    `<workspace_root>/target/{release,debug}/cognicode-mcp`.
+/// 4. bare `target/{release,debug}/cognicode-mcp`.
+///
+/// Returns `None` if no candidate exists. Callers must fail loudly on
+/// `None` (see `require_binary!`), never skip.
 fn binary_path() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN") {
+        let path = PathBuf::from(explicit);
+        assert!(
+            path.exists(),
+            "COGNICODE_MCP_BIN={} does not exist. Point it at the compiled \
+             `cognicode-mcp` binary (`cargo build --bin cognicode-mcp`) or unset \
+             it to fall back to the target-dir search.",
+            path.display()
+        );
+        assert!(
+            is_executable(&path),
+            "COGNICODE_MCP_BIN={} exists but is not executable. \
+             `cargo build --bin cognicode-mcp` produces an executable file.",
+            path.display()
+        );
+        return Some(path.canonicalize().unwrap_or(path));
+    }
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
     let target_dir = std::env::var("CARGO_TARGET_DIR").ok();
     let mut candidates: Vec<PathBuf> = Vec::new();
@@ -91,6 +119,18 @@ fn binary_path() -> Option<PathBuf> {
     }
     eprintln!("binary_path: no candidate found. tried: {candidates:#?}");
     None
+}
+
+/// `true` when `path` is a regular file with at least one execute bit.
+///
+/// Used by the `COGNICODE_MCP_BIN` override: a path that exists but
+/// cannot be spawned would otherwise fail later with a bare
+/// `PermissionDenied` that says nothing about which env var is wrong.
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
 }
 
 /// Spawn `cognicode-mcp` rooted at `cwd` and return the child handle.
@@ -320,20 +360,26 @@ fn shutdown_and_reap(mut child: Child) -> std::io::Result<std::process::ExitStat
     }
 }
 
-/// Skip the current test with an honest reason if the binary is absent.
+/// Fail the current test loudly when `cognicode-mcp` is not built.
+///
+/// This macro used to print `SKIP_NOT_APPLICABLE` and `return`, which
+/// turned a missing binary into a green test: the suite reported success
+/// while asserting nothing. A vacuous pass is worse than a failure,
+/// because nothing distinguishes it from a real one.
 macro_rules! require_binary {
     () => {
         match binary_path() {
             Some(p) => p,
-            None => {
-                eprintln!(
-                    "SKIP_NOT_APPLICABLE: cognicode-mcp binary not built. Run \
-                     `cargo build --bin cognicode-mcp` and re-run. Manual UAT: \
-                     spawn the binary, send `initialize` + `tools/list`, \
-                     observe JSON-only stdout and clean exit."
-                );
-                return;
-            }
+            None => panic!(
+                "cognicode-mcp binary not found: b6_w1_mcp_robustness.rs cannot \
+                 verify the stdio MCP contract without it, and skipping would be \
+                 a vacuous pass (a green test that asserts nothing).\n\
+                 Build it with `cargo build --bin cognicode-mcp` (add `--release`, \
+                 and set CARGO_TARGET_DIR if your config redirects it), or point \
+                 the harness at an existing build with \
+                 COGNICODE_MCP_BIN=/abs/path/to/cognicode-mcp, then re-run \
+                 `cargo test -p cognicode-core --test b6_w1_mcp_robustness`."
+            ),
         }
     };
 }

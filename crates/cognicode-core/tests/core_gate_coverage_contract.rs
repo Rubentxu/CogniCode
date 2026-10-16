@@ -232,17 +232,14 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // `tests` stage and is counted by `cli_gate_coverage_contract` on the MCP
     // side, which is how the companion hole (the suite losing its gate step
     // entirely) was found.
-    // 65 -> 68 on 2026-10-16: CU-1 (SDK de consumo confiable) añade tres
-    // suites de contrato: cu1_w2_facade_contract (facade pura + smart
-    // ctor), cu1_w2_service_analyzer_contract (adaptador sobre el
-    // AnalysisService real, incluida la ley de paridad Partial por
-    // BuildReport hallada por UAT-CU-1) y cu1_w3_presenter_parity
-    // (CLI graph full via presenter, paridad con la orquestación
-    // manual previa).
+    // 65 -> 67 en D1: cherry-pick e2b22d15 (ADR-TH-006) retiró la clase UAT
+    // completa del repositorio; eso baja la cuenta en 1 (prf_ext_04). Los
+    // tres suites CU-1 (cu1_w2_facade_contract, cu1_w2_service_analyzer_contract,
+    // cu1_w3_presenter_parity) se mantienen del bloque D0.
     assert_eq!(
         suites.len(),
-        68,
-        "expected exactly 68 cognicode-core integration suites, found {}. \
+        67,
+        "expected exactly 67 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -398,7 +395,6 @@ const ANCHOR_SUITES: &[&str] = &[
     "identity_benchmark",
     "inc007_integration",
     "intelligence_event_log_e2e",
-    "prf_ext_04_adapter_authority_uat",
     "provider_conformance",
     "read_set_e2e",
     "roadmap_claims_contract",

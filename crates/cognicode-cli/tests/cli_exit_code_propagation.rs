@@ -24,10 +24,10 @@
 //!
 //! ## Por qué el argv es lo que es
 //!
-//! `prf_cli_01_uat::graph_full_nonexistent_path_does_not_exit_zero` pasa
+//! El UAT retirado (ADR-TH-006) que cubria este caso pasaba
 //! `--path /nonexistent/...`, y `graph full` no tiene `--path`: su
-//! firma real es `graph full [PATH]`. Clap rechaza el flag con exit 2
-//! y el test pasa **sin ejecutar el brazo**. Su comentario dice "already
+//! firma real es `graph full [PATH]`. Clap rechazaba el flag con exit 2
+//! y el test pasaba **sin ejecutar el brazo**. Su comentario decia "already
 //! the case; pins the contract", y lo que realmente mide es que clap
 //! conoce la aridad. Aquí se usa el positional, que sí llega al brazo.
 //! ## Los dos sentidos
@@ -193,9 +193,9 @@ fn analyze_valid_empty_dir_still_exits_zero() {
 ///
 /// La firma real es `navigate definition <POSITION> [PATH]`: el workspace
 /// es un **positional**, no `--path`. Usar `--path` haría que clap
-/// rechazara el comando con exit 2 y el test pasaría sin ejecutar el brazo
-/// — que es exactamente el defecto que este fichero documenta arriba
-/// encuentra en `prf_cli_01_uat`.
+/// rechazara el comando con exit 2 y el test pasaria sin ejecutar el brazo
+/// — que es exactamente el defecto que este fichero documenta arriba y que el
+/// UAT retirado tenia.
 #[test]
 fn navigate_with_wellformed_position_does_not_fail_on_missing_definition() {
     let tmp = tempfile::tempdir().expect("tempdir");

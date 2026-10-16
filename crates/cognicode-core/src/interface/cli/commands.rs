@@ -641,9 +641,11 @@ impl CommandExecutor {
             Some(CliCommand::Analyze { path }) => {
                 // PRF-CLI-01: do NOT swallow the Analyze error.
                 // "No `exit 0` if the operation was not performed":
-                // a failed analyze must surface a non-zero exit code
-                // so scripts and CI can detect it (UAT:
-                // `crates/cognicode-cli/tests/prf_cli_01_uat.rs`).
+                // a failed analyze must surface a non-zero exit code so
+                // scripts and CI can detect it. The UAT that named this
+                // contract was retired with the class on 2026-10-15
+                // (ADR-TH-006); the exit-code contract itself lives in
+                // `crates/cognicode-cli/tests/cli_exit_code_propagation.rs`.
                 Self::execute_analyze(path).await?;
                 Ok(CommandOutput::Other)
             }

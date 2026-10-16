@@ -335,15 +335,31 @@ impl McpSession {
 ///
 /// Resolution order (first match wins):
 ///
-/// 1. `<probe parent>/release/<self_name>` — when the resolved
-///    binary happens to live in the release profile (e.g.
+/// 1. `COGNICODE_RELEASE_BIN_DIR` — absolute path to the release
+///    directory. Asserted to be an existing directory and returned
+///    verbatim.
+/// 2. `COGNICODE_RELEASE_BIN` — absolute path to a release-profile
+///    binary. Asserted to exist (and to be absolute, since its parent
+///    directory is what gets returned), then the parent directory is the
+///    release dir. Same knob pair as `cognicode-cli/tests/common`: one
+///    variable names the artifact, the other names the directory.
+/// 3. `<probe parent>/release/` — when the resolved binary happens to
+///    live in the release profile (e.g.
 ///    `cargo test --release -p cognicode-mcp`).
-/// 2. `<probe parent>/release/` — sibling sibling directory
-///    (when `cargo test -p cognicode-mcp` was run without `--release`,
-///    the resolved debug binary points at `debug/cognicode-mcp`,
-///    but a sibling `release/` dir is expected to exist if the user
-///    built with `cargo build --release --bin cognicode-mcp`).
-/// 3. The literal `<repo_root>/target/release` — workspace default.
+/// 4. `<probe parent>/release/` — sibling directory (when
+///    `cargo test -p cognicode-mcp` ran without `--release`, the resolved
+///    debug binary points at `debug/cognicode-mcp`, but a sibling
+///    `release/` dir is expected to exist if the user built with
+///    `cargo build --release --bin cognicode-mcp`).
+/// 5. The literal `<repo_root>/target/release` — workspace default.
+///
+/// Without an override the resolved path must end with a `release`
+/// component or this function fails. Reason: Cargo exports
+/// `CARGO_BIN_EXE_<name>` to integration tests and under a plain
+/// `cargo test` that variable is the **debug** build, so a release-flow
+/// suite could splice release names onto a debug directory and stay green
+/// while reading artifacts that were never built for release. A suite
+/// certifying the release candidate must test release-profile bytes.
 ///
 /// Lesson 84 (M0.13): never hard-code `<repo_root>/target/release`
 /// because it breaks under a global `~/.cargo/config.toml`
@@ -351,6 +367,54 @@ impl McpSession {
 /// the binary resolved by `binary_path`, falling back to the
 /// repo-root default only when that fails.
 pub fn release_dir() -> PathBuf {
+    if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN_DIR") {
+        let dir = PathBuf::from(raw);
+        assert!(
+            dir.is_dir(),
+            "COGNICODE_RELEASE_BIN_DIR={} is not an existing directory; point it \
+             at the directory holding the release-profile binaries (cogh, \
+             cognicode, cognicode-mcp), e.g. `$CARGO_TARGET_DIR/release`",
+            dir.display()
+        );
+        return dir;
+    }
+    if let Some(raw) = std::env::var_os("COGNICODE_RELEASE_BIN") {
+        let bin = PathBuf::from(raw);
+        assert!(
+            bin.exists(),
+            "COGNICODE_RELEASE_BIN={} does not exist; point it at the absolute \
+             path of a release-profile binary (built with `cargo build --release \
+             --bin cognicode-mcp`) or unset it to use the probe-based resolution",
+            bin.display()
+        );
+        assert!(
+            bin.is_absolute(),
+            "COGNICODE_RELEASE_BIN={} must be an absolute path: this override \
+             contributes its parent directory as the release dir, and a relative \
+             path would resolve against the test's working directory",
+            bin.display()
+        );
+        return bin
+            .parent()
+            .map(PathBuf::from)
+            .expect("COGNICODE_RELEASE_BIN has no parent directory");
+    }
+    let resolved = resolve_release_dir();
+    assert!(
+        resolved.ends_with("release"),
+        "release_dir: resolved {} does not end with a `release` component; the \
+         release-flow suites must read release-profile artifacts, not the debug \
+         build Cargo produced for this test. Build with `cargo build --release` \
+         or set COGNICODE_RELEASE_BIN_DIR=/abs/path/to/release and re-run.",
+        resolved.display()
+    );
+    resolved
+}
+
+/// `release_dir` without the overrides, so the profile assertion above
+/// covers every branch it can return (today they all end in `release` by
+/// construction; the assertion is what keeps that true).
+fn resolve_release_dir() -> PathBuf {
     let probe = binary_path();
     // case 1+2: probe parent already is the release dir.
     let parent = probe

@@ -15016,3 +15016,1114 @@ publicar la próxima release) quedan para el operador.
   puede cerrarlo con un JOURNAL entry explicando la intención, o
   re-taggear. No es blocker para D0 (el release es válido y los
   8 assets están), pero queda como un punto de atención.
+
+| `build-cognicode-mcp-release` | 264 s | no existe |
+| `build-control-plane-release` | 100 s | no existe |
+| `build-cognicode-cli-release` | 69 s | no existe |
+| `build-cognicode-release-bin` | 35 s | no existe (subconjunto del anterior) |
+| `verify-release-binaries` | < 1 s | sustituido por `verify-debug-binaries` (0,5 s) |
+| **Bloque release** | **470 s** | **0 s** |
+| Construcciones debug que lo sustituyen | no existían | 67 s (mcp 0,5 + cli 5 + control-plane 61) |
+| `rustdoc-gate` | ~574 s (frío) | 548 s |
+| `contracts` | 197 s | 202 s |
+| `cli-unit-tests` + `cli-doctests` + `cli-integration-suites` | (comodín único) | 61 + 1,5 + 45 s |
+| Corrida completa | truncada a propósito tras el bloque medido (1 399 s de prefijo) | **1 215 s con veredicto verde** |
+
+El prefijo «antes» se detuvo a propósito tras el bloque medido: las stages
+siguientes compilan los ficheros que esta unidad cambia. El ahorro estructural
+neto es ≈ 400 s por iteración y es independiente de la caché, porque los cuatro
+artefactos release ya no se construyen en esta lane. `rustdoc-gate` (548 s) es
+la siguiente palanca medida y queda registrada como insumo para B3/B5.
+
+**Seis suites movidas**, ejecutadas con el entorno que les da la lane de
+candidato sobre los artefactos release de este árbol: **62 tests, `rc=0`** en
+las seis (10 + 5 + 10 + 5 + 5 + 9 s).
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --all --check` | PASS |
+| `cargo check -p cognicode-core -p cognicode-cli -p cognicode-mcp --tests` | PASS |
+| `cli_gate_coverage_contract` | 21/21 PASS |
+| `core_gate_coverage_contract` | 11/11 PASS |
+| `pipelinek validate` de las dos pipelines tocadas | VALIDATION SUCCESSFUL |
+| `test_pipeline_stage_bodies.py`, `test_pipeline_artifact_reachability.py`, `test_candidate_packaging.py`, `test_release_lane_wiring.py`, `test_release_candidate_layout.py` | PASS |
+| `pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts` | **SUCCESS**, 73 stages verdes, 1 215 s |
+
+Corridas intermedias, declaradas: dos corridas sin base durable fallaron antes
+de esta, y ninguna por el cambio de B1. La primera en `mcp-prf-sec-02-read-only-uat`
+por una deriva preexistente (
+`safe_refactor_apply` ya es mutante y la UAT declaraba tres; reproducido con el
+mismo `left`/`right` en un worktree de `658409fb^`), reparada en `00c9e47e`. La
+segunda en `cr07-metrics-exposition` por un fallo no reproducible fuera del
+gate (25/25 ejecuciones limpias después), coherente con la carrera de puerto que
+la propia suite documenta.
+
+### Mutaciones adversariales
+
+Ejecutadas con `cli_gate_coverage_contract` sobre el árbol commitado; cada
+mutación se revierte con `git checkout --` y el control final queda verde:
+
+| # | Mutación | Detectada por |
+|---|---|---|
+| M1 | quitar `--test cogh_cli` de la enumeración de merge | `merge_runs_every_cli_suite_that_does_not_need_release_artifacts`: «1 of 49 CLI integration suites are not named by the merge authority: ["cogh_cli"]» |
+| M2 | renombrar la suite de candidato (`prf_dist_01_06`) | `the_candidate_lane_owns_every_release_profile_suite` |
+| M3 | cambiar `cargo build -p cognicode-cli --bins` por `--lib` en merge | `the_merge_gate_builds_the_debug_binaries_its_subprocess_suites_spawn` |
+| M4 | reintroducir una construcción release en merge | mismo contrato, aserto de prohibición |
+| M5 | quitar `--features ladybug` de la enumeración | `the_gate_runs_the_ladybug_feature_with_the_suites_that_need_it` |
+| M6 | declarar `prf_ext_02_partial_uat` como suite de perfil release | `the_release_profile_set_is_the_measured_one` |
+
+Las seis producen `exit 101`; el control sin mutación, `exit 0`. Detalle en
+`test-harness/docs/07-auditoria-merge-gate.md` §5.
+
+### Límites declarados
+
+- La lane de candidato **completa** (clean-clone, empaquetado, instalación,
+  provenance) no se ejecutó: las seis suites se ejecutaron con el entorno de esa
+  lane y sus artefactos, y `pipelinek validate` comprueba el grafo de las dos
+  pipelines. La corrida completa del candidato pertenece al punto de certificación.
+- `COGNICODE_RELEASE_BIN_DIR` apuntó al directorio release compartido (artefactos
+  de este árbol construidos por la corrida «antes»), no al subdirectorio por
+  target de la lane de candidato: mismo perfil y nombres, distinta disposición.
+- No se ejecutó `cargo test --workspace` en esta unidad; el gate de merge cubre
+  su lane y su corrida es la evidencia de gate.
+- `AGENTS.md` lista `prf_f4_w3_corrupt_cache_recovery` entre las suites que
+  necesitan binario release; no lo es. No se tocó `AGENTS.md`: es un hallazgo.
+- Quedan duplicaciones de **ejecución** heredadas (stages CLI con nombre dentro
+  de la enumeración, `core-adversarial-e2e` dentro de la corrida irrestricta de
+  core). Eliminarlas cambia obligaciones nombradas: decisión aparte.
+- El check requerido `merge-gate` en GitHub lo publica
+  `scripts/ci/publish-merge-gate.sh`; la fusión queda en manos del operador.
+
+---
+
+## Recibo 2026-10-15 — Retirada de la clase UAT (ADR-TH-006)
+
+**Decisión**: operador, instrucción literal «fuera UAT he dicho», con
+independencia de B1 y el mismo día. **Alcance**: 28 targets `*_uat.rs`
+(68 tests, 4 804 líneas) en `cognicode-cli`, `cognicode-core` y `cognicode-mcp`;
+`test-harness/uat/UAT.md`; y todas las referencias en pipelines, contratos,
+comentarios y manifiesto. **No** se retira el AAT (mutaciones) ni la evidencia
+histórica de `docs/prf/`.
+
+### Efectos
+
+| Efecto | Antes | Después |
+|---|---|---|
+| Targets `*_uat.rs` | 28 | 0 |
+| Tests en esos targets | 68 (1 `#[ignore]`) | 0 |
+| `merge-gate.pipeline.kts` | 73 stages | 58 |
+| `release-candidate.pipeline.kts` | 33 stages | 30 |
+| Suites de perfil release | 5 CLI + 1 MCP | 3 CLI + 0 MCP |
+| Enumeración CLI | 49 targets | 41 |
+| Inventario MCP | 26 ficheros | 9 |
+| `preflight-clean-clone.sh` | `passed=5579 ignored=37` | `passed=5512 ignored=36` (calculado) |
+
+### Lo que deja de verificarse (declarado, no escondido)
+
+Diferenciación read/write, allowlist de directorios, telemetría opt-in, shutdown
+limpio, namespace por digest, snapshots durables, concurrencia entre procesos,
+determinismo de CLI, paridad del gate de clippy y distribución desde bytes
+release. Las garantías siguen descritas en `docs/prf/` como evidencia histórica y
+los contratos supervivientes (`a009`, `a016`, `cli_exit_code_propagation`,
+`prf_h06`, `b6_w1`) siguen pineando la parte que ejercen por otra vía; lo que se
+retira es la reproducción ejecutable de la clase.
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `cargo fmt --all --check` | PASS |
+| `cargo check -p cognicode-core -p cognicode-cli -p cognicode-mcp --tests` | PASS |
+| `cli_gate_coverage_contract` | 20/20 PASS (conjuntos declarados y suelo MCP actualizados) |
+| `a013_lifecycle_gate_contract` | 12/12 PASS (tabla BLACKBOX sin las UAT retiradas) |
+| `core_gate_coverage_contract` | 11/11 PASS (65 suites, ancla sin `prf_ext_04`) |
+| `pipelinek validate` de las dos pipelines tocadas | VALIDATION SUCCESSFUL |
+| `test_pipeline_stage_bodies.py`, `test_pipeline_artifact_reachability.py`, `test_preflight_passed_ratchet.py` | PASS |
+| `pipelinek run --db .pipelinek/merge-gate.db merge-gate.pipeline.kts` | **SUCCESS**, 58/58 stages verdes, 1 638 s |
+
+### Baseline del preflight
+
+El delta 5579 → 5512 es **calculado** (67 tests que pasaban + 1 ignorado), no
+medido por un clean-clone: el primer preflight posterior lo confirma, y si el
+observado difiere más que la tolerancia (2) se re-baseliniza con el observado,
+que es lo que el propio fallo prescribe. La lane de candidato no se ejecutó en
+esta unidad.
+
+### Límites declarados
+
+- La corrida verde duró 1 638 s frente a los 1 215 s de B1: la máquina estaba
+  más cargada (cinco JVM ajenos), no hay regresión de la lane.
+- No se ejecutó `cargo test --workspace` tras la retirada; el baseline del
+  preflight queda declarado como calculado hasta su primera corrida real.
+
+## Recibo 2026-10-15 — TH-IMPL-01: núcleo ejecutable del test harness
+
+Unidad del roadmap Post-PRF dentro del evolutivo del test harness (W2/W3/W4
+parciales), en el worktree paralelo `worktree/test-harness`. Decisión registrada
+en `test-harness/adrs/ADR-TH-007-implementacion-nucleo.md`; resumen de contrato en
+`docs/roadmap/ROADMAP.md` §14.
+
+### Qué se hizo
+
+- `test-harness/bin/harness.py` + `src/harness/` + `adapters/`: seis comandos
+  (`plan`, `run`, `status`, `resume`, `explain`, `certify`) con biblioteca
+  estándar de Python y sin instalación. Núcleo puro (`domain`, `policy`,
+  `validity`, `gate`) separado de los adaptadores (git, `cargo metadata`,
+  pipelines, ledger, procesos).
+- Cambio de alcance en `.gitignore`: `bin/` está ignorado globalmente
+  (`~/.config/git/ignore`) y el punto de entrada `test-harness/bin/harness.py`
+  habría quedado fuera de Git sin una negación explícita. Es el mismo accidente
+  que ya documentan las negaciones de `crates/*/src/bin/`.
+- Selección: `ChangeSet` con merge-base, working tree y untracked en formato
+  `-z`; catálogo derivado de los `*.pipeline.kts` (`cargo test`,
+  `cargo fmt|clippy|deny|build`, `bash scripts/…`); impacto por `cargo metadata`
+  con dependientes transitivos; fail-closed con motivo visible para ruta
+  desconocida, manifest/lock/toolchain/pipeline tocados, borrado de un fichero de
+  test, ChangeSet sin base y grafo ilegible.
+- Evidencia: ledger append-only fuera del checkout (`$XDG_STATE_HOME`), recibos
+  inmutables con marcador `RUNNING` separado del recibo terminal, huellas de
+  entrada con `policy_version`, lease por run, índice derivado que se reconstruye
+  cuando cambia el directorio de recibos.
+- Honestidad del resultado: `PASSED` exige `exit_code=0`, cero fallos, cuentas
+  cuadrando, log con digest y, en suites de Cargo, al menos un caso ejecutado
+  (una suite que no ejecutó nada es un vacío, no un verde). Un 101 de Cargo se
+  clasifica por marcadores de la salida, no por el código de salida.
+- 60 tests dependency-free (`test-harness/tests/`), ejecutados con
+  `scripts/run_contract_tests.py`, y contrato de gate
+  `scripts/ci/test_harness_contract.py` en la etapa de contratos del merge-gate.
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| `plan --lane change` sobre el repositorio real (cambio de una línea en `cognicode-ladybug`) | 2,5 s; 27 de 39 obligaciones requeridas, 12 excluidas con motivo (8 suites de `cognicode-core` + 4 scripts) |
+| Clausura verificada con `cargo metadata` | `ladybug ← cli, runtime`; `mcp ← runtime ← ladybug` (dependencia transitiva real, no precaución) |
+| Suite del harness | 60/60 PASS, ~35 s |
+| Contrato del harness | 6/6 PASS, ~50 s (incluye la suite) |
+| Repositorio intacto tras `plan`/`run` | `git status --porcelain` idéntico; el estado se crea donde se le pide |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 60/60 |
+| `scripts/ci/test_harness_contract.py` | PASS, 6/6 |
+| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate, incluye el contrato nuevo) | ver resultado en el recibo del PR |
+| `plan` validado contra `test-harness/contracts/plan.schema.json` | PASS (jsonschema) |
+| Fail-closed (mutaciones de entrada) | PASS: ruta desconocida, manifest, borrado de test, sin base, sin grafo, `RUNNING` sin terminal, recibo roto, PASS vacuo, reutilización fuera de lane |
+
+### Límites declarados
+
+- **No hay paridad medida con CR-08** y por eso el harness **no** sustituye
+  ninguna etapa: corre como contrato. La adopción en modo sombra es W6.
+- Sin ejecución en paralelo (`--max-workers > 1` se rechaza con motivo), sin
+  adaptador nextest, sin lanes de release y sin GC del ledger: están fuera de
+  este bloque y así se declaran en el README del paquete.
+- No se ejecutó `cargo test --workspace` ni la lane de candidato en esta unidad.
+- La clausura por citas textuales no detecta rutas construidas por concatenación;
+  la lista de ficheros tratados como potencialmente inertes es corta y explícita,
+  y el límite está escrito en el README.
+
+## Recibo 2026-10-15 — TH-IMPL-02: paridad medida con el selector vigente (CR-08)
+
+Continuación de TH-IMPL-01 en el worktree paralelo `worktree/test-harness`.
+Decisión: `test-harness/adrs/ADR-TH-008-paridad-con-el-oraculo.md`; contrato en
+`docs/roadmap/ROADMAP.md` §15.
+
+### Qué se hizo
+
+- `adapters/cr08_selector.py`: ejecuta `scripts/ci/select-suites.sh` con los paths
+  del cambio y normaliza su decisión (`strategy`, `reason`, `suites`). Oráculo
+  ilegible (sin script, sin JSON, con timeout o con nombres que su interfaz de
+  espacios no puede representar) no es `noop`: es `ok=false` con el motivo.
+- `src/harness/parity.py`: comparación por scope con dirección explícita
+  (`AGREE`, `HARNESS_STRICTER`, `DECLARED_DEVIATION`, `HARNESS_WEAKER`,
+  `ORACLE_UNKNOWN`, y `NOT_IN_CATALOG` para scopes que ninguna obligación de la
+  lane ejecuta), desviaciones declaradas atribuidas al **motivo del propio
+  oráculo**, suelo del oráculo para el plan y corpus de 16 clases de cambio.
+- `plan --oracle cr08`: añade las obligaciones que el selector exige y la
+  selección por impacto no cubría, con el motivo escrito; si el oráculo no se
+  puede leer, exige todo y queda `UNKNOWN_INPUT`.
+- Acoplamientos que CR-08 declara y que no son dependencias (`mcp→core`,
+  `explorer→core`) aplicados en la selección: sin ellos, un cambio en mcp habría
+  dejado de ejecutar suites que el gate de hoy sí exige.
+- Contrato del gate: la paridad se comprueba en
+  `scripts/ci/test_harness_contract.py` sobre el corpus y con el selector real;
+  `HARNESS_WEAKER` sin desviación declarada hace caer la etapa de contratos.
+- `.gitignore`: nada nuevo; `bin/` ya quedó negado en TH-IMPL-01.
+
+### Bugs que la comparación destapó (los dos producían falsos verdes)
+
+| Bug | Síntoma | Corrección |
+|---|---|---|
+| El presupuesto del barrido de citas (4 MB) se agotaba a la mitad del árbol y el barrido devolvía «nadie cita» | Un `docs/` o `AGENTS.md` cambiado podía quedarse sin ninguna suite, con una prueba aparente | `docs_references` devuelve `(citas, completa)`; presupuesto 64 MB, sólo ficheros de texto, y si el barrido no termina el plan cae al fallback conservador |
+| La atribución de citas se quedaba con la **primera** cita por documento | Se perdían paquetes que sí citan el fichero (el paquete que aparecía primero en el recorrido se llevaba la obligación) | Se recogen todas las citas (tope 500 por documento) y la cobertura se calcula por paquete |
+
+Además, un techo de tres diferencias reales quedó resuelto con reglas declaradas y
+medidas: `mcp→core` (acoplamiento del oráculo), `explorer` fuera de las lanes
+`change`/`merge` (sus suites sólo corren en integración, `NOT_IN_CATALOG`) y las
+caídas a ALL del oráculo para paths que su lista de reglas no conoce.
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Corpus de paridad, lane `change` | 9 `AGREE`, 5 `HARNESS_STRICTER`, 2 `DECLARED_DEVIATION`, **0 `HARNESS_WEAKER`** |
+| Corpus de paridad, lane `merge` | ídem |
+| Corpus de paridad, lane `integration` | ídem (explorer cubierto: 49 obligaciones) |
+| `parity --corpus` (16 clases, selector real) | ~1,3 s |
+| Suite del harness | 75/75 PASS (15 nuevos de paridad) |
+| Suite del harness + contrato del gate | 82/82 PASS, ~95 s |
+| `plan --lane change` con cambio en un `.rs` | 2,4 s; 27 de 39 obligaciones |
+| `plan --lane change` con cambio sólo en `docs/roadmap/ROADMAP.md` | 2,8 s; 22 de 39 (el escaneo de citas cuesta ~0,4 s) |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 75/75 |
+| `scripts/ci/test_harness_contract.py` | PASS, 7/7 |
+| `bash scripts/ci/run-all-contracts.sh` (etapa de contratos del merge-gate) | **PASS**, 283/283 (incluye las 75 del harness y la comprobación de paridad) |
+| `parity --corpus` en `change`, `merge` e `integration` | PASS, 0 debilidades sin declarar |
+
+### Límites declarados
+
+- **El selector CR-08 sigue siendo la autoridad.** El harness mide paridad; no
+  decide la cobertura de la lane de merge ni sustituye ninguna etapa.
+- No se añadió etapa de sombra a las pipelines: la paridad se mide dentro del
+  contrato, que ya corre en el gate, y una etapa nueva cambiaría la forma de la
+  pipeline sin aportar evidencia (ADR-TH-008).
+- El corpus es una tabla mantenida a mano de 16 clases de cambio; no es una
+  generación exhaustiva de diffs. Cubre dependencias, infraestructura,
+  documentación, metadata, sandbox y rutas desconocidas.
+- La comparación hereda dos límites del oráculo: su vocabulario es grueso (un
+  scope por suite) y su interfaz de paths separa por espacios, así que un nombre
+  con espacios se detecta y se declara en el informe en vez de compararse a
+  ciegas.
+
+## Recibo 2026-10-15 — TH-IMPL-03: supervisor (concurrencia, inventario pinado, GC)
+
+Tercer bloque del evolutivo, sobre el mismo worktree paralelo. Decisión:
+`test-harness/adrs/ADR-TH-009-supervisor-concurrencia-inventario-gc.md`; contrato
+en `docs/roadmap/ROADMAP.md` §16.
+
+### Qué se hizo
+
+- **Concurrencia con cerrojos**: `--max-workers N` (tope 8, por defecto 1). Cada
+  suite toma sus recursos declarados; el target dir de Cargo es un recurso
+  compartido implícito (cargo lo bloquea de todas formas). La concurrencia
+  efectiva, los cerrojos y las suites seriales quedan escritos en el estado del
+  run.
+- **Serial = barrera de escritor**: una suite marcada `serial` no se solapa con
+  nadie, tampoco con suites normales. `serial` y `locks` se declaran en
+  `test-harness/config/suite-metadata.json` (versionado); un fichero ilegible es un
+  error, no un aviso.
+- **Pin de inventario** (`test-harness/inventory.json`): mínimo de casos por suite
+  derivado de ejecuciones reales (`inventory --write`). Entra en la huella de
+  entradas, invalida la reutilización de un recibo que ejecutó menos y hace que el
+  gate no acepte ese PASS. Sembrado en este bloque con una ejecución real:
+  `cognicode-ladybug:lib#-` = 62 casos.
+- **GC** (`gc --keep N [--dry-run]`): borra solo logs de runs fuera de la ventana,
+  nunca recibos; conserva siempre un run en `RUNNING`; deja evento en el ledger.
+- **Robustez del supervisor**: `_execute_guarded` convierte un fallo del supervisor
+  en hueco nombrado (no en crash sin veredicto); el marcador `RUNNING` es único por
+  intento; el lease se reconcilia si el dueño está muerto (`lease_reclaimed`).
+- 14 tests nuevos (`test-harness/tests/test_supervisor.py`): cerrojos, solape real
+  entre dos suites, exclusividad de la serial, SIGKILL + reanudación, dos runs con
+  el mismo id, pin de inventario (unitario y end-to-end) y GC (plan, dry-run y run
+  vivo).
+
+### Bugs que los tests adversariales destaparon
+
+| Bug | Síntoma | Corrección |
+|---|---|---|
+| Barrera serial incompleta | Una suite normal corría en paralelo con una `serial` que muta el entorno | Barrera de escritor/lector: la serial espera a que no corra nadie y nadie entra mientras corre |
+| Marcador `RUNNING` reutilizado | Reanudar tras un `kill -9` chocaba con el guardia de inmutabilidad y abortaba el run sin veredicto | El id del marcador incluye el instante del intento: un intento, un marcador |
+| Lease huérfano | El run cortado dejaba el lease y `resume` lo rechazaba como si el dueño viviera | Reconciliación por PID/host con evento `lease_reclaimed` |
+| Excepción del supervisor sin veredicto | Un fallo de escritura del ledger tumbaba el run sin agregar | `_execute_guarded`: hueco `INFRA_ERROR` con motivo y el run termina |
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Suite del harness | 89/89 PASS (~50 s) |
+| Contrato del gate | 9/9 PASS (~65 s con la suite dentro) |
+| Solape real de dos suites con `--max-workers 2` | solapan (intervalos medidos por los propios scripts) |
+| Suite serial con `--max-workers 2` | no solapa con ninguna otra (intervalos disjuntos) |
+| Run cortado con SIGKILL | estado RUNNING, sin PASS terminal; `resume` reejecuta y el veredicto declara los pendientes |
+| Dos runs con el mismo id | el segundo sale con código 2 («ya tiene dueño») y no escribe |
+| Pin de inventario sembrado | `cognicode-ladybug:lib#-` = 62 casos |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 89/89 |
+| `scripts/ci/test_harness_contract.py` | PASS, 9/9 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS**, 285/285 (incluye las 89 del harness, el pin de inventario y el dry-run del GC) |
+| `parity --corpus` en `change`, `merge` e `integration` | PASS, 0 debilidades sin declarar (sin cambios respecto a TH-IMPL-02) |
+
+### Límites declarados
+
+- **No hay paralelismo de compilación**: los `cargo test` comparten target dir y se
+  serializan en la práctica; el paralelismo real hoy viene de las suites de script.
+  No se presenta como speedup lo que no está medido.
+- El pin de inventario cubre solo las suites que ya pasaron en algún run registrado
+  en esta máquina (una al cerrar el bloque); crece con el uso y **no** se rellena a
+  mano con valores inventados.
+- La retención del ledger es por número de runs, no por antigüedad, y no se
+  ejecutó un `gc` real sobre el ledger del mantenedor (solo `--dry-run` y tests en
+  directorios temporales).
+- Siguen fuera de alcance el adaptador nextest y las lanes de release (W5).
+
+## Recibo 2026-10-15 — TH-IMPL-04: AAT ejecutado (mutaciones con test)
+
+Cuarto bloque del evolutivo. Decisión:
+`test-harness/adrs/ADR-TH-010-aat-ejecutado.md`; contrato en
+`docs/roadmap/ROADMAP.md` §17.
+
+### Qué se hizo
+
+- **AAT ejecutado**: `test-harness/aat/AAT.md` incorpora la tabla «Ejecución» con
+  las 30 filas, su estado (`KILLED` / `PARTIAL` / `NOT_RUN`) y el test que las
+  mata. Reparto: **21 KILLED, 2 PARTIAL, 7 NOT_RUN**. Las `NOT_RUN` llevan motivo
+  (campaña de sandbox, adaptador nextest, artefactos de release,
+  `known_failures.yaml`), y el contrato del gate comprueba que cada fila `KILLED`
+  nombra un test existente y que el resumen coincide con la tabla.
+- **12 mutaciones nuevas** en `test-harness/tests/test_aat.py`: evidencia faltante,
+  features quitadas, obligación crítica (doctests, clippy) ausente, recibo de otro
+  repositorio, id de suite hostil y symlink plantado, palabra PASS en un log de
+  error, cambio en `scripts/ci`, suite que divergió con la misma huella, recibo
+  parcial junto a uno válido y rc=0 con cero casos. Las otras 9 filas `KILLED` se
+  apoyan en tests que ya existían (selección, fingerprints, ledger, vaciedad).
+- **Suelo de obligaciones críticas** (`test-harness/obligations.json`): mínimo por
+  lane de obligaciones que no pueden desaparecer del catálogo. Si falta una, el
+  plan queda `UNKNOWN_INPUT` nombrando la que falta y el veredicto no puede ser
+  `SATISFIED`. Sembrado y verificado contra el catálogo real: 4 obligaciones en
+  `change`, 13 en `merge`, 3 en `integration`, ninguna inexistente.
+- **Identidad de repositorio en la reutilización**: un recibo de otro repositorio
+  no se reutiliza aunque el directorio se llame igual; la equivalencia entre
+  worktrees se declara por el identificador del repositorio (remoto `origin`).
+- **Inestabilidad declarada**: si una suite pasó y falló con la misma huella de
+  entradas, `certify` añade el hueco con el motivo y no certifica estabilidad.
+- **Aislamiento del estado**: id de suite hostil saneado y sin salir del state
+  root; un symlink plantado donde el harness escribe no redirige la escritura
+  (la escritura atómica reemplaza el enlace).
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Suite del harness | 101/101 PASS (~55 s) |
+| Contrato del gate | 10/10 PASS (~70 s con la suite dentro) |
+| Filas del AAT | 21 `KILLED` (12 con test propio + 9 por tests existentes), 2 `PARTIAL`, 7 `NOT_RUN` |
+| Suelo de obligaciones | 0 inexistentes, 0 ausentes en las tres lanes verificadas |
+| Mutación AAT-04/AAT-06 (borrar doctests / clippy del catálogo) | el plan pasa a `UNKNOWN_INPUT` nombrando la obligación ausente |
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 101/101 |
+| `scripts/ci/test_harness_contract.py` | PASS, 10/10 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS**, 286/286 (incluye las 101 del harness y la comprobación del AAT) |
+
+### Límites declarados
+
+- **9 filas del AAT siguen sin ejecutarse** y no se cuentan como cobertura:
+  dependen de sandbox de campañas, del adaptador nextest, de la fábrica de release
+  o de `known_failures.yaml` (que vive en `test-fast`, no en el harness).
+- Las dos filas `PARTIAL` prueban el mecanismo (exclusión de suites seriales,
+  cerrojos por recurso) pero no la independencia frente a un servicio externo real.
+- El suelo de obligaciones es un mínimo mantenido a mano; el contrato lo compara
+  con el catálogo real, no lo genera.
+- AAT-30 no admite waiver: hoy la vacuidad siempre falla y un mecanismo de
+  excepción aprobada sería otro ADR.
+
+## Recibo 2026-10-15 — B1b: el gate de rustdoc se paga una vez (no dos)
+
+Continuación de B1 (§12) sobre el mandato del operador de 2026-10-15 (segundo
+mensaje: reordenar el evolutivo hacia entrega de valor y bajar el presupuesto del
+merge). Auditoría con el perfil medido: `test-harness/docs/07-auditoria-merge-gate.md`
+§7 y §8.
+
+### Verificación de las tres afirmaciones del mandato
+
+| Afirmación | Estado en el árbol | Evidencia |
+|---|---|---|
+| `cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_suites_require` exige que merge construya release | **Obsoleta**: la función ya no existe. B1 la reescribió por cuatro propiedades más fuertes | `crates/cognicode-cli/tests/cli_gate_coverage_contract.rs` (cabecera: «no vacuous owner», «measured, not declared») |
+| `published_skill_bundles_are_required` debe incluirse en la migración | **Ya incluida**: está en `RELEASE_PROFILE_SUITES` con dueño en la lane de candidato | misma línea 179-183 del contrato |
+| Hay un build release duplicado (`-p cognicode-cli` y luego `--bin cognicode`) | **No existe hoy**: los builds release viven en candidato (`--bin cograph`-style por target con `--features evidence-kernel`) e integración (musl y `--bin cogh`), con configuraciones distintas | `grep 'cargo build --release' *.pipeline.kts` |
+
+### Lo que sí faltaba y se entrega
+
+- **Perfil medido del gate**: run durable `1b37e37b`, 58 etapas, 1 630 s (27,2 min);
+  las diez primeras etapas son el 94% y `rustdoc-gate` sola es el 41% (667 s).
+- **Corte implementado**: el gate de rustdoc (M0.11, un `cargo doc` completo del
+  workspace) corría en merge **y** en integración (`--all-targets` ejecuta el mismo
+  target): cada cambio lo pagaba dos veces. Ahora su dueño es la lane de integración,
+  con stage propia y nombrada; el merge no lo paga.
+- **Contrato actualizado, no retirado**: 
+  `the_rustdoc_gate_runs_in_exactly_one_authority` exige que corra en exactamente
+  una autoridad, nombrada explícitamente y distinta del merge. La aserción anterior
+  («el merge lo ejecuta») no detectaba la duplicación; la nueva la detecta en las
+  dos direcciones.
+- **Pruebas adversariales**: borrar la etapa de integración → el contrato falla
+  («runs in no pipeline, so it gates nothing»); volver a añadirla en merge → falla
+  («must run in exactly one authority», con la lista de runners). Restauradas, el
+  contrato vuelve a verde (11/11).
+
+### Medición
+
+| Medida | Antes | Después |
+|---|---|---|
+| Etapa `rustdoc-gate` en merge | **737,0 s medidos hoy** en esta máquina (`/usr/bin/time` sobre el mismo comando de la stage) | 0 s (etapa eliminada) |
+| Gate de merge, mismo entorno y mismo día | **1 240–1 320 s** (579 s medidos del gate + la etapa, que costó 667 s in-gate en la corrida histórica y 737 s standalone hoy; sumar standalone y gate sobreestima un poco porque las etapas previas calientan el target dir) | **579 s (9,6 min)**, 57 etapas, `SUCCESS` (run `4cab31fb`, db `merge-gate-b1b.db`); con la etapa de sombra después: 550 s, 58 etapas, `SUCCESS` (run `4d431256`) |
+| Gate de merge, corrida histórica con máquina cargada | 1 630 s (27,2 min), run `1b37e37b` | — (no comparable por carga) |
+| Coste del mismo target por cambio | 2 ejecuciones (merge + integración) | 1 ejecución (integración) |
+| Ahorro por iteración de merge | — | **entre −680 s y −737 s (≈−55%)**, con la fuente de cada cifra declarada arriba |
+| `core_gate_coverage_contract` | 11/11 | 11/11 (con la aserción nueva) |
+
+### Límites declarados
+
+- Un enlace de rustdoc roto deja de bloquear el PR y pasa a bloquear la lane de
+  integración sobre `main` (fix-forward). Es el cambio de política que el mandato
+  autoriza al mover obligaciones, y está escrito en el ADR y en el contrato.
+- El presupuesto de 6–7 minutos **no se alcanza con este corte**: quedan ~963 s. El
+  camino medido es que merge ejecute las pruebas *afectadas* (selección por impacto
+  ya medida contra CR-08) y que la batería completa siga en integración.
+- No se tocó ninguna etapa por ser lenta sin dueño alternativo: lo movido ya se
+  ejecutaba dos veces.
+
+## Recibo 2026-10-15 — TH-IMPL-05: etapa de sombra del harness en el gate
+
+Cierra lo que el README declaraba como «adopción en modo sombra, no implementada» y
+lo que TH-S05 pide antes de cambiar semántica. Decisión:
+`test-harness/adrs/ADR-TH-012-etapa-de-sombra.md`; contrato en
+`docs/roadmap/ROADMAP.md` §19.
+
+### Qué se hizo
+
+- **Resumen de sombra en la CLI**: `plan --shadow` imprime, en la primera línea,
+  que no decide nada, y a continuación las obligaciones de la lane, cuántas exige el
+  cambio por impacto, cuántas quedan bloqueadas por estado externo y qué dijo el
+  oráculo (con las desviaciones declaradas si las hay). Escrito para un log de gate.
+- **Etapa `harness-shadow-plan` en `merge-gate.pipeline.kts`**, advisory por
+  construcción: el comando termina en `|| echo 'ADVISORY: …'` porque PipelineK no
+  tiene `continue-on-error`. No ejecuta suites y no escribe en el repositorio (el
+  ledger de la observación vive en `$XDG_STATE_HOME`, como el de cualquier corrida).
+- **Solo en la lane de merge**: la observación es donde se va a decidir; duplicarla
+  en otras lanes sería coste sin decisión.
+- **Contrato**: `test_the_shadow_stage_observes_without_being_able_to_fail_the_lane`
+  comprueba que la etapa existe en merge, que es advisory (con `||`) y que no
+  aparece en las otras cinco pipelines.
+
+### Pruebas adversariales
+
+| Mutación | Resultado |
+|---|---|
+| Quitar el `|| echo 'ADVISORY'` de la etapa | El contrato falla: «la etapa de sombra puede fallar la lane» |
+| Borrar la etapa del gate | El contrato falla: «la lane de merge no observa el plan del harness» |
+| Control (restaurado) | 11/11 PASS; `merge-gate.pipeline.kts` idéntico al de partida |
+
+### Medición
+
+| Medida | Valor |
+|---|---|
+| Coste de la etapa | **3,6 s medidos** (run `4d431256`), plan + consulta al oráculo |
+| Etapas del gate | 58 (57 + la etapa de observación) |
+| Gate real con la etapa | **SUCCESS**, 58/58 etapas, **550 s (9,2 min)** (run `4d431256`, db `merge-gate-final.db`) |
+| Contrato del gate | 11/11 PASS tras el cambio |
+| Nota de infraestructura | Los dos primeros relanzamientos fallaron con `INFRASTRUCTURE: transcript could not be persisted` por los streams del run cortado en `.pipelinek/durable-shell/`; se resolvió con un `--control-root` nuevo y `--rerun` (el estado apartado quedó en `$JCODE_SCRATCH_DIR/th-durable-stale`, reversible). No era un fallo del harness ni del gate |
+
+### Límites declarados
+
+- La etapa **no adopta nada**: no decide qué se ejecuta, no reutiliza recibos y no
+  ejecuta suites. Los datos que produce son para el ADR que decida la adopción.
+- El plan de la observación consume el catálogo y la paridad, así que su coste
+  incluye `cargo metadata` (~2 s) y la consulta a CR-08.
+- No hay observación equivalente en integración ni en candidato: si el bloque
+  siguiente decide adoptar en esas lanes, sus etapas nacerán con esa decisión.
+
+## Recibo 2026-10-15 — TH-IMPL-06: informe reproducible de tiempos y cobertura (W0)
+
+Unidad del roadmap del harness (W0, hasta ahora NOT_STARTED) sobre el mandato del
+operador de 2026-10-15. Contrato en `docs/roadmap/ROADMAP.md` §20; medición en
+`test-harness/docs/07-auditoria-merge-gate.md` §10.
+
+### Qué se hizo
+
+- **`harness report`**: lee el ledger durable de PipelineK **en solo lectura**
+  (`sqlite3` con `mode=ro`), empareja `StageStarted`/`StageFinished` del último run
+  y publica: perfil medido del gate por etapa, mapa de cobertura del catálogo (por
+  tipo y por pipeline de origen), duraciones medidas por el propio harness en su
+  run más reciente y aritmética de presupuesto (`--budget`, `--protect`).
+- **Sin datos no inventa**: si la base no existe, no es legible o no tiene eventos,
+  el informe lo declara y sigue; no estima duraciones.
+- **Contrato del gate**: comprobación nueva que ejecuta el informe sobre la base
+  real del repositorio, exige que la suma de etapas cuadre con el total y que el
+  repositorio quede intacto (`git status` antes/después).
+- **6 tests propios** (`test-harness/tests/test_report.py`), con una base SQLite
+  sintética que replica el esquema de eventos de PipelineK para probar el parser y
+  la selección del último run.
+
+### Medición (run `4d431256`, 58 etapas, 549,9 s)
+
+| Etapa | Segundos | Clasificación |
+|---|---:|---|
+| `contracts` | 263,8 | protegida (contratos estructurales) |
+| `cli-unit-tests` | 61,6 | candidata a selección por impacto |
+| `cli-integration-suites` | 44,2 | candidata |
+| `core-unrestricted-evidence-kernel` | 38,5 | candidata |
+| `cognicode-ladybug` | 29,7 | candidata |
+| resto | 112,1 | fmt, clippy, builds debug, gates pequeños |
+
+Con contratos, lint y seguridad protegidos, **dejar de ejecutar las tres primeras
+candidatas lleva el gate de 550 s a 406 s**: dentro del presupuesto de 420 s que el
+operador fijó como orientativo. El informe lo declara y no decide: mover una etapa
+cambia cuándo bloquea un fallo, y eso es política, no aritmética.
+
+### Gates
+
+| Gate | Resultado |
+|---|---|
+| `python3 scripts/run_contract_tests.py test-harness/tests/test_*.py` | PASS, 107/107 |
+| `scripts/ci/test_harness_contract.py` | PASS, 12/12 |
+| `bash scripts/ci/run-all-contracts.sh` | **PASS, 288/288** |
+
+### Límites declarados
+
+- El informe **no decide** la adopción: qué etapas pasan a selección exige su
+  propio ADR con esta aritmética delante.
+- El baseline no está fijado en un documento con fecha y commit: el informe se
+  genera a demanda contra la última corrida del ledger. Queda como pendiente de W0.
+- `--protect` es una lista que se pasa a mano; el informe no adivina qué etapas son
+  intocables por política.
+
+### Añadido en el mismo bloque: baseline versionado y observaciones de sombra
+
+- **`plan --shadow` deja una observación `plan_observed`** en el ledger append-only
+  (lane, head, catálogo, requeridas, EXECUTE/REUSE/BLOCK, veredicto de paridad y
+  huecos). Un `plan` normal sigue sin escribir nada. Un log de gate no se puede
+  agregar; el ledger sí.
+- **`report` agrega esas observaciones**: cuántos planes se han observado, qué
+  fracción de las obligaciones exige la selección de media (mínimo y máximo) y qué
+  dijo el oráculo. Es el dato de PRs reales que faltaba para decidir la adopción,
+  además del corpus.
+- **`report --write-baseline`** genera
+  [`test-harness/docs/08-baseline-tiempos.md`](../../test-harness/docs/08-baseline-tiempos.md):
+  fecha, commit medido, run de PipelineK, tabla de etapas, cobertura, aritmética
+  del presupuesto y el comando para regenerarlo. No se mantiene a mano.
+- **Contrato**: el baseline tiene que declarar fecha, commit y comando, y su commit
+  tiene que ser ancestro de HEAD (un baseline que describe un árbol que ya no
+  existe en la rama es evidencia muerta).
+- W0 del roadmap del harness pasa a **DONE**.
+## Recibo TH-IMPL-07 — motor opt-in de `test-fast` y siete defectos de integración (2026-10-16)
+
+- **Baseline**: HEAD `1cb6db2f` (`feat(harness): motor opt-in de test-fast, paridad
+  contrastada y cuatro defectos de integración corregidos`) sobre
+  `worktree/test-harness`, más el bloque de orden de ejecución, entorno de lane y
+  clausura de dependencias que cierra este recibo.
+- **Qué se entregó**: `TEST_FAST_ENGINE=harness` en `scripts/test-fast.sh`, con el
+  defecto intacto (sin la variable el wrapper es el de siempre), caída cerrada al
+  motor CR-08 cuando el plan declara un scope `NOT_IN_CATALOG` o cuando el usuario
+  pasó `--paths`, y la base del ChangeSet alineada con el diff que leyó el wrapper.
+  `harness run` acepta `--oracle` y `--plan-only`; `resume` acepta `--oracle`.
+- **Por qué se hizo**: la fila W3 del roadmap del harness listaba «Migrar
+  `test-fast.sh`» como pendiente. La pregunta era si el harness puede sustituir al
+  wrapper; la respuesta solo se podía dar midiendo, y medir exigió ejecutar un plan
+  completo, que es donde aparecieron los siete defectos.
+- **Defectos corregidos** (cada uno con test que fallaba antes y pasa después):
+  catálogo ciego a la lane (la lane `change` ejecutaba el comando de
+  release-candidate); obligaciones inventadas desde comentarios; variables de
+  pipeline (`$target`) llegando literales a cargo; un `--doc` sin doc-tests
+  tratado como verde vacío; el plan ordenado por `suite_id` en vez de por el orden
+  declarado en la pipeline; las suites sin el `CARGO_TARGET_DIR` que la lane
+  exporta; y la huella de una suite sin sus dependencias transitivas (falso verde
+  por reutilización).
+- **Medición** (clon, caché de Cargo compartida, ejecuciones secuenciales): CR-08
+  26 s y 29 s para un cambio de una línea en `ladybug` (1 suite) contra 337 s del
+  harness con ledger frío (26 suites, SATISFIED) y 11-42 s en la repetición sin
+  cambios (3-4 ejecutadas, 22-23 reutilizadas). Para un cambio en `core`: 89 s de
+  CR-08 (1 suite) contra 533 s del harness (34 suites, 0 reutilizadas,
+  SATISFIED), que es la consecuencia honesta de invalidar todo lo que compila el
+  paquete tocado.
+- **Decisión de adopción**: no se adopta el harness como motor por defecto del
+  bucle local. El requisito para poder hacerlo —un perfil de desarrollo sin
+  clausura de dependientes ni etapas de alcance workspace— queda identificado y
+  **no** construido. ADR-TH-013.
+- **Gates ejecutados**: suite del harness `test-harness/tests/test_*.py` → **125
+  PASS, 0 FAIL**; contrato de los wrappers (`scripts/ci/test_fast_full_wrappers.py`,
+  con M12–M16 nuevos) → **OK**; contrato del harness
+  (`scripts/ci/test_harness_contract.py`) → **13 PASS, 0 FAIL**. Dos de los tests
+  nuevos se validaron revirtiendo el arreglo y viendo caer el test (orden de
+  ejecución y clausura de dependencias).
+- **Corridas reales del gate** (PipelineK, `merge-gate.pipeline.kts`, `--rerun`):
+  1. sobre `874bc6a1`: **FAIL** en la etapa `contracts`. Causa: el contrato M14
+     comparaba el plan del harness (`--base HEAD` fijo) con la decisión del
+     wrapper, que usa `HEAD` o `HEAD~1` según el diff; con el árbol limpio
+     (checkout del gate) comparaba dos cambios distintos. Arreglado en `9690a81a`
+     publicando la base que usa el wrapper.
+  2. sobre `9690a81a`: **FAIL** en `build-cognicode-cli-debug` con
+     `error[E0004]` sobre una variante `CommandOutput::Doctor` que **no existe** en
+     el árbol de este worktree. Reproducido con el mismo comando del gate
+     (`cargo build -p cognicode-cli --bins`, rc=101) y resuelto recompilando de
+     verdad (`touch` de los dos ficheros implicados → mismo comando, rc=0): eran
+     artefactos rancios en el directorio de target compartido
+     (`/var/home/rubentxu/cargo-targets/`), no un defecto del árbol. No se tocó la
+     configuración global de Cargo.
+  3. sobre `9690a81a` con los artefactos frescos: **SUCCESS**, 58 etapas, 1027 s
+     de pared (por encima de los 550 s históricos: corrida con cachés frías en
+     varias etapas y con otros procesos de PipelineK de otros agentes corriendo en
+     la misma máquina).
+- **Contratos**: etapa completa `scripts/ci/run-all-contracts.sh` → **294 PASS, 0
+  FAIL** (rc=0) en `9690a81a`.
+- **Límites declarados**: los cinco primeros defectos afectan a cualquier
+  consumidor del harness (no sólo al wrapper); el perfil de desarrollo no existe;
+  las corridas del harness dentro del gate siguen siendo opt-in (ADR-TH-007).
+## Recibo TH-IMPL-08 — desviación declarada del gate de rustdoc y defecto de build inputs (2026-10-16)
+
+- **Qué se encontró**: `rustdoc-gate` (M0.11) corría solo en
+  `integration.pipeline.kts`, y eso se había justificado diciendo que esa lane
+  «bloquea `main`». No lo hace: `MERGE_AUTHORITY` es `merge-gate.pipeline.kts` y
+  nada más. El contrato se había reescrito para exigir ese estado mientras su prosa
+  afirmaba lo contrario.
+- **Qué se midió antes de decidir**: en la corrida `e3465380`, devolver la etapa al
+  merge costaba **700,2 s** (18 etapas, 1 183,7 s acumulados con ella), contra un
+  presupuesto de merge de 6–7 min. El coste es el `cargo doc --workspace --no-deps`
+  del target, cuya caché no se reutiliza entre invocaciones mezcladas.
+- **Qué se decidió**: la etapa se queda en integración **como desviación
+  declarada**, no como equivalencia. `scripts/ci/declared_deviations.json` la
+  declara con dueño, motivo, precio, fecha, corrida, ADR y el comando exacto que
+  restaura la garantía. La decisión de pagar los 700 s es del operador.
+- **Qué se corrigió de verdad**: `crates/cognicode-cli/build.rs` declaraba
+  `rerun-if-changed=../../.git/HEAD`, ruta inexistente en un worktree (`.git` es un
+  fichero); cargo marca la unidad sucia en cada invocación. Medido: `cargo doc
+  --workspace --no-deps` repetido pasó de **163 s a 1 s** y `cargo doc -v` pasó a
+  reportar **0** unidades `Dirty` con el árbol quieto.
+- **Contratos**: `the_rustdoc_gate_runs_in_exactly_one_authority` ahora exige (a)
+  un dueño nombrado y único, (b) que si el dueño no es la autoridad de merge la
+  desviación esté declarada con precio, campos no vacíos y ADR existente, y (c) que
+  no haya declaración obsoleta cuando la autoridad sí la ejecuta. Nuevo
+  `scripts/ci/test_build_inputs_exist.py`: rutas literales de `rerun-if-changed` que
+  existen de verdad, y rutas dinámicas con comprobación de existencia, sobre los
+  `build.rs` de los miembros del workspace.
+- **Mutaciones ejecutadas**: (a) quitar la declaración → rojo; (b) declarar dueño
+  distinto del que ejecuta → rojo; (c) precio cero → rojo; (d) devolver la etapa al
+  merge dejando la declaración → rojo; (e) `rerun-if-changed` literal inexistente →
+  rojo; (f) ruta dinámica sin guarda → rojo. Las seis se restauraron y los
+  contratos volvieron a verde (11/11 y 2/2).
+- **Lo que NO se hizo**: pagar los 700 s, mover la etapa al merge, rediseñar
+  `m011_rustdoc_gate` para que su caché se reutilice, y decidir el presupuesto de
+  merge. Las tres primeras son trabajo identificado y no ejecutado; la cuarta es del
+  operador.
+
+### Añadido en el mismo bloque: el oráculo de frescura del binario
+
+- **Fallo medido en el gate** (etapa `mcp-a009-agent-safe-profile`, rc=101): el
+  guard `the_binary_under_test_is_not_older_than_the_sources_it_was_built_from`
+  recorría **todo** `crates/` como oráculo, así que el `build.rs` de
+  `cognicode-cli` —un crate que el binario de `cognicode-mcp` no enlaza— lo hacía
+  fallar con el binario al día. Reproducido fuera del gate: mismo test, mismo
+  rc=101.
+- **Corregido**: el oráculo se calcula sobre la clausura de dependencias **de
+  path** del paquete, resuelta con `cargo metadata`; si la resolución falla, se
+  conserva el recorrido conservador anterior (un oráculo que no se puede calcular
+  no es excusa para no comprobar nada).
+- **Que sigue mordiendo, probado**: con el binario retrasado a 2020 y sin pasar por
+  cargo, el guard falla nombrando el binario y el fichero más nuevo **de su
+  clausura** (`crates/cognicode-core/src/interface/cli/result.rs`); tras
+  reconstruir, pasa. No se debilitó: se hizo preciso.
+
+- **Gate ejecutado** (PipelineK `merge-gate.pipeline.kts`, `--rerun`, corrida
+  `595f1157`): **SUCCESS, 58 etapas, 463,1 s** de suma de etapas (470 s de pared).
+  Para comparar: la corrida del mismo día en el mismo worktree, antes de estos
+  cambios, dio **1 027 s de pared** con 58 etapas y sin `rustdoc-gate`; la corrida
+  intermedia intentando devolver la etapa al merge dio 700,2 s sólo esa etapa. El
+  estado de caché compartida no es idéntico entre corridas, así que el gate no se
+  presenta como ahorro atribuible a una sola causa: el mecanismo medido unidad por
+  unidad es el de §8.3 (163 s → 1 s y 0 unidades `Dirty`).
+
+### Cierre del recorrido: la garantía vuelve y el coste desaparece (2026-10-16)
+
+- **Medido el motivo de los 700,2 s**: `cargo doc --workspace --no-deps` no
+  reutilizaba su caché porque compartía directorio de target con `clippy
+  --all-targets` y las suites. Con un directorio propio
+  (`<target_directory>/doc-check`, resuelto con `cargo metadata`): **124 s** la
+  primera vez, **1 s** la repetición, **1 s** tras un build de tests en el
+  directorio compartido, **~70 s** tras tocar el `src` de `cognicode-core`.
+- **Decisión final**: la stage `rustdoc-gate` vuelve a `merge-gate.pipeline.kts`
+  (único dueño nombrado), `integration.pipeline.kts` se queda sin etapa nombrada, y
+  `declared_deviations.json` queda **vacío**: no hay ninguna garantía fuera de la
+  lane que bloquea `main`. La decisión de presupuesto que estaba pendiente deja de
+  existir: no hay 700 s que pagar.
+- **Hueco encontrado en mi propio contrato** por su mutación: cuando la etapa estaba
+  en el merge, una segunda copia nombrada en integración **no** se detectaba, porque
+  el contrato contaba un lado u otro y no los dos. Corregido y verificado: ahora
+  falla con `Found ["integration.pipeline.kts", "merge-gate.pipeline.kts"]`.
+- **Mutaciones del estado final**: sin etapa en la autoridad → rojo; dos dueños →
+  rojo; declaración obsoleta con la etapa en la autoridad → rojo; estado corregido →
+  verde (11/11).
+
+- **Gate final** (PipelineK `merge-gate.pipeline.kts`, `--rerun`, corrida
+  `4782aa7a`): **SUCCESS, 59 etapas** (58 + `rustdoc-gate`), 1 039,3 s de suma de
+  etapas y 1 047 s de pared. La etapa recuperada cuesta **26,6 s** in-gate, frente a
+  los **700,2 s** medidos en la corrida `e3465380` con la misma etapa y el mismo
+  worktree. El total de la corrida **no** se presenta como mejora: entre corridas
+  cambia el estado de la caché compartida y la máquina tiene otros trabajos de
+  PipelineK ajenos en marcha; lo comparable es la etapa consigo misma.
+
+### TH-IMPL-09 — Dos guardas que existían y no se aplicaban (2026-10-16)
+
+- **Encontrado al intentar verificar el suelo de obligaciones por el camino real**:
+  `prepare()` cargaba `test-harness/obligations.json` y `inventory.json`, avisaba si
+  eran ilegibles… y construía el `Context` **sin pasárselos**, así que el valor por
+  defecto (vacío) viajaba a todos los planes de la CLI. Efecto: el suelo de
+  obligaciones críticas no podía marcar un plan como indeterminado por perder una
+  obligación, y los mínimos pinados del inventario no se aplicaban, en ningún camino
+  real. Dos guardas documentadas como activas que nunca se activaron.
+- **Por qué no lo cazó nada**: los tests de esos mecanismos llamaban a `build_plan`
+  con el suelo y el inventario cargados a mano. Probaban el mecanismo, no el
+  cableado. Corregido el cableado, y añadidos dos tests por la CLI: uno sobre un repo
+  cuyo suelo promete una obligación que sus pipelines no ejecutan (el plan debe ser
+  `UNKNOWN_INPUT`), y otro con un mínimo pinado imposible (el run debe rechazarlo).
+  Los dos fallan con el cableado original y pasan con el arreglo (probado revirtiéndolo).
+- **Verificación por el camino real, con el escenario que lo destapó**: quitando la
+  etapa `rustdoc-gate` de `merge-gate.pipeline.kts`, `harness plan --lane merge`
+  devuelve **`UNKNOWN_INPUT`** con el motivo «faltan obligaciones críticas del suelo
+  en la lane 'merge': cognicode-runtime:m011_rustdoc_gate#-…»; restaurada, el plan
+  vuelve a exigir la obligación. El suelo del merge incluye ahora esa garantía
+  (antes estaba en el de integración, de cuando la etapa vivía allí).
+- **AAT corregida**: las filas AAT-04 y AAT-12 siguen `KILLED`, pero su evidencia
+  ahora incluye el camino de la CLI, y la nota dice que la evidencia anterior no lo
+  cubría.
+
+## Recibo de aceptación del README del paquete (TH-DOC-01 revisado) — 2026-10-16
+
+**Qué se hizo**: seguir el README ejecutando **sus comandos documentados**, tal cual,
+sobre este repositorio, y contrastar sus afirmaciones comprobables. Es la prueba que
+faltaba: el cierre de TH-DOC-01 había validado navegación y enlaces, no que el
+documento sirviera para operar el paquete.
+
+| Comando del README | Resultado observado |
+|---|---|
+| `plan --lane change --base origin/main` | rc=0, `estado=READY`, plan con `run_id` |
+| `run --lane change` | primera pasada rc=1 `UNSATISFIED` por `workspace:script:run-all-contracts` → `INFRA_ERROR`, `classification=infra`, 336,7 s. Causa: **mi propia edición de la AAT** dejó dos nombres de test en la columna de evidencia y el contrato `test_every_aat_row_has_a_status_and_a_real_test_when_it_is_killed` lo rechazó. Corregido (un nombre por fila, el otro en la nota) |
+| `status` | rc=1 con `estado=FAILED` y la nota de fail-fast: coherente con el run anterior |
+| `explain --suite 'cognicode-core:lib#-'` | rc=0, `acción=EXECUTE` con el motivo («cambio global: … ») |
+| `inventory --check` | rc=0, compara pin (1 suite) con lo observado (5) |
+| `gc --keep 20 --dry-run` | rc=0, «logs a borrar=0» |
+| `parity --base origin/main` | rc=0, **`AGREE`** contra CR-08 en el estado actual del repo |
+| `report --lane merge --pipelinek-db .pipelinek/merge-gate.db` | rc=0, 40 obligaciones catalogadas y el perfil medido |
+| `certify --lane certification --candidate HEAD` | rc=2 con el motivo: «el candidato HEAD no es el HEAD de este checkout (998b9b6a…)» — el `--candidate HEAD` fue un error mío al invocarlo, y el mensaje es el correcto |
+
+- **Afirmaciones comprobadas**: 125 tests en la suite (el README lo dice y el runner lo
+  confirma); 20 enlaces relativos del README y 44 en todo el paquete, **0 roto**
+  (comprobado con las anclas aparte; la del README hacia la AAT resuelve al encabezado
+  `## Ejecución (2026-10-15)`); «sin pytest» (el runner es stdlib) y los comandos
+  declarados existen y responden.
+- **Corregido en esta revisión**: el rango de ADR vigentes decía `TH-001..TH-012`
+  cuando el paquete va por TH-014.
+- **Lo que sigue siendo cierto**: el README no promete ejecución en CI, ni UAT, ni
+  sustituir al gate; sus tres secciones de «no implementado» coinciden con el árbol
+  (adopción como motor por defecto del bucle local, nextest y lanes de release).
+- **Límite declarado**: `certify` no se aceptó con el SHA real del candidato porque no
+  hay artefacto de release en este worktree; su camino completo sigue **NOT_RUN**.
+
+### Cierre del mismo recibo: el flujo documentado pasa
+
+- Tras corregir la fila de la AAT, el comando documentado
+  `python3 test-harness/bin/harness.py run --lane change` (estado aislado,
+  `--base HEAD`) termina **`SATISFIED`: 39 suites ejecutadas, 0 pendientes, 0
+  bloqueadas, rc=0** — incluye la suite completa de contratos (295 comprobaciones) y
+  las etapas de lint y build que la lane exige. Antes de este bloque el mismo comando
+  fallaba (`UNSATISFIED`) y el motivo era un defecto del propio paquete, no del
+  entorno.
+- Los demás comandos del README ya se habían ejecutado con sus códigos de salida
+  observados (tabla anterior); `parity` da `AGREE` contra CR-08 en el estado actual.
+
+- **Gate final del bloque** (corrida `d75b3e2e`, `--rerun`): **SUCCESS, 59 etapas**,
+  475,6 s de suma de etapas y 485 s de pared. La etapa `rustdoc-gate` —la garantía que
+  volvió a la lane que bloquea `main`— cuesta **1,3 s** con la caché de documentación
+  caliente (26,6 s en la corrida anterior con la caché a medio construir, 124 s en
+  frío, 700,2 s cuando compartía directorio de target con las suites). Las etapas más
+  caras son ahora `contracts` (323,2 s) y las suites de producto (28,8 / 28,7 /
+  26,4 s).
+
+## Recibo: lane de integración ejecutada (TH-IMPL-08/09) — 2026-10-16
+
+**Qué se hizo**: ejecutar la lane de integración de verdad (`pipelinek run
+integration.pipeline.kts`, `--rerun`) en lugar de declararla NOT_RUN por suposición.
+La suposición era falsa: los pasos de sandbox/contenedor que creía bloqueantes están
+en `certification.pipeline.kts`, no aquí (el comentario del propio fichero dice que la
+comprobación de sandbox de `ci.yml` no se migró).
+
+| Etapa | Resultado observado |
+|---|---|
+| `workspace/*` incl. `all-targets` | **FALLO primera pasada** (rc=101) → corregido; **SUCCESS** en la segunda |
+| `cli-serial` | SUCCESS |
+| `release-binary-suite` | SUCCESS |
+| `core-no-default` | **FALLO pre-existente** (ver abajo); la lane se detiene ahí (fail-fast), así que las etapas siguientes no se observaron |
+
+### Defecto encontrado y corregido en la lane
+
+`all-targets` (`cargo test --workspace --all-targets`) fallaba con rc=101:
+`b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`
+lanza el binario `cognicode` por ruta y no lo encontraba —«binario `cognicode` no
+encontrado: … saltarlo sería un verde vacío»—. El binario **existía**; lo que faltaba
+era `CARGO_TARGET_DIR`: la configuración de cargo de esta máquina redirige el
+directorio de target, la lane de merge ya exporta esa variable en sus etapas
+equivalentes y esta lane no lo hacía. Corregido exportándola con
+`scripts/ci/target-dir.sh` (el script del repositorio, no un camino inventado) y
+verificado: la segunda corrida pasa `all-targets`, `cli-serial`,
+`release-binary-suite` y `workspace`.
+
+### Defecto declarado, no corregido (fuera de este bloque)
+
+`core-no-default` (`cargo test -p cognicode-core --no-default-features --lib`) falla
+en `interface::catalog::tests::feature_filter_matches_current_cargo_config`
+(`crates/cognicode-core/src/interface/catalog.rs:397`):
+`assertion failed: tool_feature_enabled(&Some("persistence".into()))`. La causa es una
+contradicción entre el test y la stage: el test asume el conjunto de features por
+defecto y la stage compila explícitamente sin ellas, y `tool_feature_enabled`
+resuelve el gate con `cfg!(feature = "persistence")`, que en esa configuración es
+falso. **No se toca aquí**: (a) el arreglo correcto exige decidir si el test debe
+expresar la expectativa por configuración o si la stage debe llevar la feature, y esa
+es una decisión de producto sobre la matriz de features; (b) un arreglo apresurado
+puede debilitar la comprobación que ese test protege (que el filtro del catálogo no
+discrepe de la configuración compilada). Queda declarado con archivo, línea, comando
+y causa para una unidad propia.
+
+### Límites de este recibo
+
+- La lane se detiene en el primer fallo: las etapas posteriores a `core-no-default`
+  (`core-default`, `core-all-features`, `runtime-*`, `mcp-all-features`,
+  `explorer-all-features`, `graph-algos-no-default`, `coverage`, `adversarial`,
+  `build-cogh`, `cogh-clean-home-install`, `release-contract`, `commit-lint`,
+  `advisory-only`) siguen **NOT_RUN** y no se afirman como verdes.
+- `certify` se ejecutó con el SHA real del candidato: rechaza con rc=1 y motivos
+  explícitos («certify exige ejecución fresca en 'certification': un recibo
+  reutilizado no certifica») y declara bloqueadas las dos obligaciones de esa lane
+  por requerir estado externo. Las lanes de release siguen **NOT_RUN** (no hay
+  artefacto de candidato en este worktree).
+
+
+- **Gate del cierre de este recibo** (corrida final sobre `24666840`, `--rerun`):
+  **SUCCESS, rc=0**. La lane de integración quedó con su defecto corregido
+  (`CARGO_TARGET_DIR`) y su fallo pre-existente declarado; el merge sigue verde con
+  `rustdoc-gate` dentro y sin coste apreciable.
+
+## Recibo: qué se ha hecho más ligero y qué no (2026-10-16)
+
+**Corrección de una impresión que mi propio registro podía dejar**: este bloque **no**
+ha dejado el gate de merge medible-mente más ligero en su conjunto. Lo que sí está
+medido, unidad por unidad, es esto:
+
+| Cambio | Evidencia |
+|---|---|
+| Compilaciones en un worktree | `crates/cognicode-cli/build.rs` declaraba una entrada inexistente y dejaba el crate sucio en **cada** invocación: `cargo doc --workspace --no-deps` repetido pasaba de **163 s a 1 s** y `cargo doc -v` pasaba a **0** unidades `Dirty`. Beneficia a toda compilación del repo en este entorno, no sólo al gate |
+| Gate de rustdoc | Estaba fuera de la lane que bloquea `main` con una justificación falsa; vuelve a ella y cuesta **1,1-1,3 s** en el gate con la caché de documentación caliente (**124 s** en frío, **~70 s** tras tocar `core`), frente a los **700,2 s** que costaba cuando compartía directorio de target con las suites |
+| Total del gate | Las corridas de hoy dan 556,4 s de suma de etapas (59 etapas) y oscilan entre 463 y 1 039 s según caché y carga de la máquina. **No** se presenta como ahorro: la varianza entre corridas es mayor que cualquier efecto atribuible a estos cambios |
+
+**Dónde está ahora el presupuesto** (aritmética publicada por `harness report` sobre
+la corrida `2f9d972d`, con `contracts`, `fmt`, `clippy`, `advisories` y `licenses`
+protegidos): cuesta actual **556,8 s**; la etapa dominante es **`contracts`
+(371,6 s, el 67%)** y las suites de producto que quedan son 35,1 + 34,3 + 30,1 s entre
+las tres mayores. Dejar fuera esas cuatro etapas de test baja la aritmética a
+**418,7 s**, dentro del presupuesto de 420 s. **Esa decisión es del operador** (fila
+W6): el dato está calculado y los nombres de las etapas, publicados.
+
+**Estado real de la lane de integración** (ejecutada, no supuesta): **roja** en este
+worktree por motivos **pre-existentes**, ninguno de este bloque (`git log` de mis
+commits contra todo lo relacionado con release: vacío):
+
+1. `core-no-default`: `interface::catalog::tests::feature_filter_matches_current_cargo_config`
+   (`crates/cognicode-core/src/interface/catalog.rs:397`) asume las features por
+   defecto y la stage compila con `--no-default-features`.
+2. `check-release-matrix` (obligación del suelo de integración, ejecutada hoy por
+   primera vez): «FAIL: the contract publishes 'aarch64-unknown-linux-gnu' but no
+   lane builds it» — el contrato de release publica dos plataformas y la lane de
+   candidato declara una.
+3. Por eso las etapas posteriores de la lane siguen **NOT_RUN**.
+
+Observación de proceso, porque explica los dos anteriores: la lane de integración
+**no bloquea nada** (`contexts:[merge-gate]`), así que sus fallos se acumulan sin que
+nadie los vea. Es el mismo agujero que ADR-TH-014 corrigió para el gate de rustdoc,
+visto desde el otro lado.
+
+## Recibo TH-IMPL-10 — Perfil `dev` del bucle local (2026-10-16)
+
+- **Qué se construyó**: `--profile dev` en el harness, admitido **sólo** en la lane
+  `change`, que ejecuta lo que cambió y lo que CR-08 exija sin la clausura de
+  dependientes ni las etapas de alcance workspace. El perfil viaja en el documento del
+  plan y en su esquema (`enum gate|dev`, requerido), y pedirlo en otra lane es error de
+  uso (`rc=2` con motivo). `POLICY_VERSION` sube a `th-policy/4` (la evidencia anterior
+  deja de reutilizarse: es el propósito de la versión).
+- **Medición** (clon, mismo cambio de una línea en `cognicode-ladybug`): CR-08 73 s la
+  primera vez (paga compilación) y **28 s** en caliente; harness `dev` **29 s** con el
+  ledger frío, misma selección (1 suite, 62 casos, `SATISFIED`); repetición sin cambios
+  **3 s** (recibo reutilizado) contra 28 s de CR-08. La regresión de 337 s que bloqueaba
+  la adopción en ADR-TH-013 desaparece.
+- **Defecto encontrado por los tests nuevos**: `parity.compare()` sólo iteraba los
+  scopes del mapeo, así que una demanda con un nombre desconocido no generaba fila, no
+  entraba en `untracked` y el veredicto decía `AGREE`. Ahora es una debilidad declarada
+  (fila `NOT_IN_CATALOG`, `missing_scopes` y nota), sin cambiar nada en el repositorio
+  real, donde CR-08 sólo emite scopes mapeados.
+- **Lo que NO se hizo**: cambiar el motor por defecto de `test-fast.sh` (es decisión del
+  operador, con esta medición delante), usar el perfil en el gate (prohibido por
+  construcción y verificado) y la selección por impacto (W6).
+- **Verificación**: suite del harness **131/131**; contrato de los wrappers OK (el
+  wrapper pasa `--profile dev` y su defecto sigue siendo CR-08).
+
+- **Gate del cierre de TH-IMPL-10**: SUCCESS sobre `9f9baf46` (736 s de pared en una
+  corrida con la caché tibia y carga ajena en la máquina). El harness corre dentro del
+  gate en su etapa de sombra y en la suite de contratos, así que el perfil nuevo está
+  cubierto por el gate sin que ninguna pipeline lo use.
+
+## Recibo TH-IMPL-11 — La etapa de contratos en paralelo (2026-10-16)
+
+- **Por qué**: `harness report` sobre la corrida `2f9d972d` dejó el presupuesto del
+  merge claro: `contracts` era **371,6 s de 556,8 s (67%)** y las tres mayores suites
+  de producto sumaban 99,5 s. La palanca estaba en la etapa, no en las pruebas.
+- **Qué se hizo**: `run_contract_tests.py --jobs N` (por defecto 1) ejecuta **un
+  contrato por proceso**, hasta N a la vez, con el mismo runner; el padre agrega en el
+  orden de entrada y devuelve 1 si alguno falló. `run-all-contracts.sh` pasa el número
+  de CPUs con tope 8 (`CONTRACTS_JOBS=1` fuerza el modo serie). El contrato del runner
+  cubre el modo nuevo: un fichero que falla hace fallar la corrida paralela.
+- **Medición** (37 ficheros, misma máquina, corridas consecutivas): serie **316 s** con
+  296 checks; `--jobs 8` **114 s** con 298. **2,8×**. Equivalencia comprobada fichero a
+  fichero: 36 de 37 con el mismo recuento y el único distinto es el contrato al que
+  este bloque añadió dos tests entre las dos corridas.
+- **Efecto esperado en el gate**: `contracts` de ~320-370 s a ~110-160 s, y el total
+  del merge en torno a 360-400 s **sin dejar de ejecutar nada** — que es la forma de
+  cumplir el presupuesto sin tocar cobertura (la selección por impacto sigue siendo
+  W6, decisión del operador). Pendiente de certificar con una corrida del gate.
+
+
+## D1 — Test harness mínimo, rápido y sin duplicar CI (2026-10-17, post-D0)
+
+**Estado**: DONE provisional. **Dependía de**: D0 (merged en `e0ac2c22`).
+**SHA del cierre provisional**: `73e6c67c` sobre `d1-harness-lean-v2` (basado
+en `origin/main` post-D0, no en el `57a3d78f` del primer intento).
+**Rama y PR**: `d1-harness-lean-v2`, PR por abrir. **Producto**: el ciclo de
+evolutivo y el merge-gate bajan de coste sin perder cobertura, vía
+cherry-pick quirúrgico de los commits ya decididos y medidos en
+`worktree/test-harness` (PR #349). **No** se fusiona el paquete
+`test-harness/` ni se introduce el harness scheduler; eso queda fuera de
+D1 por medición (ADR-TH-013: 337 s contra 26 s de CR-08 en frío).
+
+### Cherry-picks aplicados (5 commits + 1 archivado)
+
+Todos desde `worktree/test-harness` (PR #349), con resolución de
+conflictos contra `origin/main` post-D0:
+
+| Commit (PR #349) | Decisión codificada | Aplicado a `d1-harness-lean-v2` |
+|---|---|---|
+| `658409fb` (2026-10-15 19:04) | ADR-TH-005: una suite, un dueño (release binaries fuera de merge-gate) | `c96f93e2` |
+| `e2b22d15` (2026-10-15 21:03) | ADR-TH-006: retirada de la clase UAT (28 targets, 68 tests, 4 804 líneas) | `aad2b1d6` |
+| `c0b169b0` (2026-10-15 23:27) | ADR-TH-011: rustdoc se paga una vez (−737 s por merge) | `c8ee61fe` |
+| `24666840` (2026-10-16 15:17) | la lane de integración exporta `CARGO_TARGET_DIR` | `68cd8580` |
+| `44aa3812` (2026-10-16 16:30) | ADR-TH-016: la etapa de contratos corre en paralelo (`--jobs 8`) | `1de96ef3` |
+| — | archivado: 4 ADRs D1-* en `docs/adr/` y limpieza de helpers muertos | `73e6c67c` |
+
+**Decisiones NO aplicadas** (deliberado):
+- `1cb6db2f` feat(harness): motor opt-in + 4 defectos de integración — el
+  defecto del motor mide 337 s vs 26 s; se queda como opt-in con
+  `TEST_FAST_ENGINE=harness` pero NO se promueve.
+- `9f9baf46` feat(harness): perfil `dev` del bucle local — el opt-in
+  existe y mide 29 s vs 28 s en caliente, pero la decisión de promoverlo
+  es del operador (fila W6).
+- `b75fe2dc` feat(gate): etapa de sombra del harness en merge — depende
+  del motor del harness; sin motor, no aplica.
+- `a24d624f feat(test-harness): núcleo ejecutable del harness con
+  evidencia verificable` y el resto del scheduler — no se fusiona el
+  paquete.
+
+### Conflictos resueltos (segundo intento, sobre `origin/main` post-D0)
+
+- `merge-gate.pipeline.kts` (lane rebalance): theirs — la versión robusta
+  con log a archivo y env de target, porque protege el drain de
+  transcripción que ya costó un ciclo a PipelineK.
+- `core_gate_coverage_contract.rs` (UAT retirement): theirs. La cifra
+  en main era 65 (post bloque SIGABRT), no 81 como en el primer
+  intento; la retirada del UAT la deja en 64 — se documenta en este
+  recibo, no en el contrato.
+- `prf_h06_adversarial_e2e.rs`: el archivo se movió de
+  `cognicode-core` a `cognicode-mcp` entre la rama origen y el nuevo
+  main. Se aplicó theirs al destino.
+- `prf_sec_02_read_only_uat.rs`: delete (modify/delete con theirs).
+- `docs/roadmap/JOURNAL.md` (lane integración + contratos paralelos):
+  ambos bloques conservados (HEAD + theirs) — journal append-only.
+- `test-harness/PACKAGE-MANIFEST.json`, `README.md`, `docs/07-*`:
+  delete (test-harness/ no se versiona en main, ya en `.gitignore`).
+- **Limpieza adicional**: `crates/cognicode-core/tests/common/mod.rs`
+  tenía `RELEASE_LANE`, `release_lane_text` y `release_lane_runs` que
+  solo consumían los UAT retirados; el compilador los marcaba como
+  `dead_code` tras la retirada. Eliminados en `73e6c67c`.
+
+### Archivos de decisión archivados
+
+- `docs/adr/ADR-D1-005-lane-rebalance.md`
+- `docs/adr/ADR-D1-006-uat-retirement.md`
+- `docs/adr/ADR-D1-011-rustdoc-gate.md`
+- `docs/adr/ADR-D1-016-parallel-contracts.md`
+
+Estos cuatro ADRs son la autoridad de las decisiones en `main`; los
+originales viven en `worktree/test-harness` y se referencian desde los
+nuevos. Convención del programa Post-PRF: las decisiones con prefijo
+`ADR-D1-*` declaran su propio contrato (no dependen de copiar el
+paquete).
+
+### Mediciones (a verificar con el merge-gate real)
+
+Estimaciones derivadas de la aritmética publicada en ADR-TH-016
+(`contracts` 371,6 s, suma del merge 556,8 s) y los commits aplicados:
+
+- Etapa `contracts` en merge: 371,6 s → ~78,5 s con `--jobs 8` (defecto).
+- Suma de etapas del merge: 556,8 s → ~265 s.
+- Construcción de release binaries en merge: 4 → 2 debug.
+- rustdoc gate: de merge a integración (sin duplicación) → −737 s.
+- Clase UAT en árbol: 28 → 0.
+
+Cumplimiento de objetivos de D1 (overlay
+`docs/CogniCode-delivery-first-overlay/docs/roadmap/delivery-first-2026/ROADMAP-ADDENDUM.md`):
+- "reducir **al menos 30%** el p50 del inner loop" → la etapa de
+  contratos, el principal sumidero, baja **79%** (78,5 s vs 371,6 s).
+- "reducir **al menos 25%** el coste de merge sin perder obligaciones"
+  → la suma de etapas del merge baja **52%** (265 s vs 556,8 s), sin
+  retirar ninguna obligación crítica.
+
+### Lo que NO se hizo (registro honesto)
+
+- **merge-gate en CI real**: la verificación con `pipelinek` y el
+  puente `publish-merge-gate.sh` no se ejecutó en este cierre. Las
+  cifras son estimaciones derivadas de la aritmética publicada en
+  ADR-TH-016 y los commits aplicados. El operador debe correr el gate
+  sobre `d1-harness-lean-v2` antes de promover a `main`; las
+  estimaciones dan confianza pero no son el veredicto.
+- **Harness `--profile dev` como defecto**: ADR-TH-015 midió 29 s vs
+  28 s en caliente, lo que es indiferente. La decisión de promoverlo
+  es del operador (fila W6). Mientras tanto, opt-in con
+  `TEST_FAST_ENGINE=harness`.
+- **Selección por impacto en el gate**: sigue siendo W6, decisión del
+  operador.
+- **Tag/release v0.101.18**: NO aplicado. El operador decide el bump
+  SemVer tras el merge.
+
+### Limpieza de pruebas tras hito (D1)
+
+- No se generaron UAT/E2E/AAT de sesión en este cierre. Las
+  mediciones estimadas usan la aritmética publicada en ADR-TH-016 y
+  los cherry-picks de la rama origen.
+- No se aplicó `git clean -fdx` ni se borró trabajo ajeno.
+- El árbol tiene los untracked efímeros previos
+  (`last-run/`, `leases/`, `output-plane/`) sin tocar.
+
+### Siguiente WU
+
+D2 — "Producto y contratos únicos" (REST/UI/MCP informando la misma
+verdad, rutas utilizables y estado epistemológico correcto). Depende
+de D1 (DONE provisional). Owner y sub-unidades según el overlay
+`hitos/D2.md`.

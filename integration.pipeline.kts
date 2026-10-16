@@ -36,11 +36,34 @@ pipeline {
     stages {
         // ------------------------------------------------------------ workspace
         stage("workspace") {
+            // El gate de rustdoc tiene dueño explícito aquí, no dentro de
+            // `--all-targets`. Motivo medido 2026-10-15: corría también en el
+            // merge-gate, donde costaba 667 s en cada PR; la garantía es la misma
+            // (documentación sin los avisos de rustdoc que M0.11 persigue) y se
+            // paga una vez, en la lane que bloquea `main`. La stage se nombra para
+            // que el contrato pueda comprobar el dueño en vez de confiar en que
+            // `--all-targets` "seguro que lo incluye".
+            stage("rustdoc-gate") {
+                sh("$cd && cargo test -p cognicode-runtime --test m011_rustdoc_gate --quiet")
+            }
+
             // The full suite. `--all-targets` is what compiles every
             // `tests/*.rs` target in the workspace; without it the named
             // contract suites below are the only thing being built.
             stage("all-targets") {
-                sh("$cd && cargo test --workspace --all-targets")
+                // MEDIDO 2026-10-16. Esta stage fallaba en una máquina cuya
+                // configuración de cargo redirige el directorio de target:
+                // `b3_w2_progressive_context::inspect_subcommand_does_not_panic_on_arbitrary_input`
+                // lanza el binario `cognicode` por ruta y no lo encontraba
+                // («binario `cognicode` no encontrado: … saltarlo sería un verde
+                // vacío», rc=101). El binario existía; lo que faltaba era la
+                // variable que le dice dónde. La lane de merge ya exporta
+                // `CARGO_TARGET_DIR` en sus etapas equivalentes; aquí faltaba.
+                sh("""
+                    $cd || exit 1
+                    export CARGO_TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
+                    cargo test --workspace --all-targets
+                """.trimIndent())
             }
 
             // The CLI shares process-global state across its own binaries, so

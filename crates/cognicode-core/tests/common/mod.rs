@@ -108,11 +108,6 @@ pub fn merge_authority_text() -> String {
 }
 
 /// The release candidate lane's source, same comment rule as the authority.
-///
-/// Added 2026-10-15 with the operator's approval moving the host binary build
-/// and the zero-warning rustdoc gate out of the merge authority. A gate that
-/// moves has to be findable in both places or its contract has to guess which
-/// file to read, and a guess is a gate that stops being checked.
 pub fn release_lane_text() -> String {
     pipeline_text(RELEASE_LANE)
 }

@@ -409,3 +409,63 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+def test_parallel_mode_keeps_the_failure_semantics() -> None:
+    """`--jobs N` no puede convertir un fallo en verde ni perder contratos.
+
+    MEDIDO 2026-10-16: la etapa `contracts` del merge era 371,6 s de 556,8 s del gate
+    (el 67%). El modo paralelo ejecuta **cada contrato en su propio proceso**, con el
+    mismo runner, y agrega en el orden de entrada. Lo que no puede cambiar es el
+    veredicto: si un contrato falla, el padre sale distinto de cero, y todos los
+    contratos se ejecutan igual.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        ok = base / "test_ok.py"
+        ok.write_text("def test_pasa():\n    assert True\n", encoding="utf-8")
+        bad = base / "test_bad.py"
+        bad.write_text("def test_falla():\n    assert False, 'no'\n", encoding="utf-8")
+
+        serial = subprocess.run(
+            [sys.executable, str(RUNNER), str(ok), str(bad)],
+            capture_output=True, text=True, check=False,
+        )
+        parallel = subprocess.run(
+            [sys.executable, str(RUNNER), "--jobs", "2", str(ok), str(bad)],
+            capture_output=True, text=True, check=False,
+        )
+
+    check(
+        serial.returncode != 0 and parallel.returncode != 0,
+        f"con un contrato que falla, serie y paralelo deben salir != 0 "
+        f"(serie={serial.returncode}, paralelo={parallel.returncode})",
+    )
+    for label, done in (("serie", serial), ("paralelo", parallel)):
+        check("test_falla" in done.stdout, f"{label} debe nombrar el contrato que falla")
+        check("test_ok.py" in done.stdout, f"{label} debe ejecutar también el contrato sano")
+        check("test_pasa" in done.stdout, f"{label} debe reportar el test que pasa")
+
+
+def test_parallel_mode_defaults_to_serial() -> None:
+    """Sin `--jobs`, el runner es el de siempre: un solo proceso, mismo orden."""
+    module = run_contract_tests_parse()
+    check(module(["a.py"])[0] == 1, "sin --jobs el número de trabajos debe ser 1")
+    check(module(["--jobs", "4", "a.py"])[0] == 4, "--jobs debe leerse")
+    check(module(["a.py", "--jobs", "3"])[1] == ["a.py"], "--jobs puede ir después")
+    try:
+        module(["--jobs", "no-un-numero", "a.py"])
+    except SystemExit as exc:
+        check(exc.code == 2, f"un --jobs ilegible es error de uso, no un default silencioso (code={exc.code})")
+    else:
+        raise AssertionError("--jobs con un valor no numérico debe ser error de uso")
+
+
+def run_contract_tests_parse():
+    """Importa `parse_argv` del runner para poder comprobarlo sin lanzarlo."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("_runner_for_tests", RUNNER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module.parse_argv

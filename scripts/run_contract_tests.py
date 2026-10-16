@@ -25,11 +25,13 @@ Two properties matter and are asserted by `scripts/ci/test_ci_contracts.py`:
 
 Usage:
     python3 scripts/run_contract_tests.py <script.py> [<script.py> ...]
+    python3 scripts/run_contract_tests.py --jobs 8 <script.py> [...]
 """
 
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -135,10 +137,80 @@ def run_one(path: Path) -> tuple[int, int, list[str]]:
     return passed, len(failures), failures
 
 
+def parse_argv(argv: list[str]) -> tuple[int, list[str]]:
+    """Separa `--jobs N` de la lista de ficheros. Devuelve (jobs, ficheros)."""
+    jobs = 1
+    files: list[str] = []
+    index = 0
+    while index < len(argv):
+        item = argv[index]
+        if item == "--jobs":
+            if index + 1 >= len(argv):
+                print("usage: --jobs necesita un número", file=sys.stderr)
+                raise SystemExit(2)
+            try:
+                jobs = max(1, int(argv[index + 1]))
+            except ValueError:
+                print(f"usage: --jobs espera un entero, no {argv[index + 1]!r}", file=sys.stderr)
+                raise SystemExit(2) from None
+            index += 2
+            continue
+        files.append(item)
+        index += 1
+    return jobs, files
+
+
+def run_files_parallel(jobs: int, files: list[str]) -> int:
+    """Un proceso por contrato, hasta `jobs` a la vez.
+
+    MEDIDO 2026-10-16. La etapa `contracts` del merge era 371,6 s de 556,8 s del
+    gate (el 67%), y su trabajo es lanzar procesos (cargo, git, python) desde
+    contratos que declaran ser independientes. El paralelismo aquí es **por
+    fichero**: cada contrato se ejecuta en su propio proceso, con el mismo runner
+    y el mismo aislamiento que tendría invocado a mano, así que no comparte estado
+    con los demás. Un fichero que falla sigue fallando, y el padre devuelve 1 si
+    alguno lo hizo: lo que cambia es cuándo se paga el tiempo, no qué se comprueba.
+
+    La salida se imprime **en el orden de entrada**, no según terminan: un log de
+    gate que cambia de orden entre corridas es un log que nadie puede diffear.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    results: dict[str, subprocess.CompletedProcess[str]] = {}
+
+    def _run(raw: str) -> tuple[str, subprocess.CompletedProcess[str]]:
+        done = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), raw],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return raw, done
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        for raw, done in pool.map(_run, files):
+            results[raw] = done
+
+    failed = 0
+    for raw in files:
+        done = results[raw]
+        print(done.stdout, end="")
+        if done.stderr:
+            print(done.stderr, end="", file=sys.stderr)
+        if done.returncode != 0:
+            print(f"  !! {Path(raw).name} salió con {done.returncode}", file=sys.stderr)
+            failed += 1
+    return 1 if failed else 0
+
+
 def main(argv: list[str]) -> int:
+    jobs, argv = parse_argv(argv)
     if not argv:
-        print("usage: run_contract_tests.py <script.py> [...]", file=sys.stderr)
+        print("usage: run_contract_tests.py [--jobs N] <script.py> [...]", file=sys.stderr)
         return 2
+
+    if jobs > 1 and len(argv) > 1:
+        return run_files_parallel(jobs, argv)
 
     total_passed = 0
     total_failed = 0
