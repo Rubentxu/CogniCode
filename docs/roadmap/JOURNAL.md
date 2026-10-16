@@ -15525,3 +15525,78 @@ en Stage 4b/7 (cargo build --release --bins) al cierre.
 3. B2 hexagonal seams restantes: 5 ítems NOT_STARTED arriba.
 4. B3 (LadybugDB real) y B4 (harness + retire 125 tests) intactos.
 5. C8-R firma humana pendiente.
+
+## Entrada 2026-10-16 — VDH B0 PAUSED por /tmp disk quota
+
+**Sesión:** continuación tras B2 audit. Esta entrada documenta el
+bloqueo del release-candidate de B0 en el preflight Stage 5.
+
+### Lo que pasó
+
+Re-lancé el release-candidate con SHA `3f833bfb` (run 21bc05c0) tras
+forzar el re-compile de cognicode-core con `touch result.rs`. Stages
+1-4b del preflight pasaron limpios:
+
+| Stage | Resultado |
+|---|---|
+| 1/7 clone sparse | OK (3f833bfb) |
+| 2/7 tree clean | OK |
+| 3/7 QW-03 guard | OK |
+| 4/7 cargo check --workspace --all-targets | OK |
+| 4b/7 cargo build --release --workspace --bins | OK (8m 43s, todos los 7 binarios) |
+| 5b/7 Tier-1 fixture bootstrap | OK (serde, ripgrep, anyhow, tokio, clap clonados) |
+| 5/7 cargo test --workspace | **FAIL — Disk quota exceeded (os error 122)** |
+
+El error concreto del preflight:
+
+```
+rustc-LLVM ERROR: IO failure on output sterror: could not compile
+`cognicode-cli` (test "b1_w2_identity") due to 1 previous error
+error: could not compile `cognicode-core` (lib test)
+Caused by: Disk quota exceeded (os error 122)
+error: linking with `cc` failed: exit status: 1
+collect2: fatal error: ld terminated with signal 7 [Bus error], core dumped
+```
+
+El `target/debug/deps` del preflight (en `/tmp/cognicode-preflight-y794HM/clone/target/`)
+llenó la cuota del usuario sobre /tmp. La release build pasó (8m 43s
+en `/var/home/rubentxu/cargo-targets/release/`) pero la debug build
+del test de cognicode-core con `codegen-units=256, debug=1` (config
+global en `~/.cargo/config.toml`, no la toco per AGENTS.md) necesita
+~3-5 GB que la cuota no admite.
+
+### Estado
+
+- `release/` sigue con v0.101.10 (release anterior), no hay v0.101.17.
+- `staging/` con sólo `payloads-linux-x86-64/` (limpio tras el run v1
+  que sí se ejecutó hasta la última lane).
+- `preflight-receipt-3f833bfb.json`:
+  `{"result": "FAIL", "stage_failed": "cargo test falló"}`
+- No hay artefactos de v0.101.17 producidos.
+
+### Handoff a la siguiente sesión
+
+Esto es un **impedimento no resoluble autónomamente**: la cuota de
+disco del usuario en /tmp está al límite. La acción del operador es:
+
+1. **Liberar /tmp**: `find /tmp -maxdepth 1 -name "cognicode-*" -type d -mmin +60 -exec rm -rf {} +` y borrar las `cognicode-doctor-test-XXX-16` que quedaron de runs anteriores. NO borrar `/tmp/cognicode-vdh-b0-release-target/` (lo usa el pipeline).
+2. **Verificar cuota**: `quota -u $(id -u)` o `df -h /tmp` debe mostrar al menos 8 GB libres.
+3. **Re-lanzar** el RC: `RELEASE_SHA=3f833bfb pipelinek run release-candidate.pipeline.kts > /tmp/b0-rc-3f833bf-v3.log 2>&1 &`
+4. **Cuando termine**: `bash test-harness/.cycles/B0-3f833bf/B0-UAT-01.sh && bash test-harness/.cycles/B0-3f833bf/B0-AAT-01.sh && bash test-harness/.cycles/B0-3f833bf/B0-E2E-01.sh`
+5. **Si verde**: B0 → DONE. Operador publica el release real (operador-gated).
+
+### Cosas que sí quedaron en main (HEAD = 703e0cd8)
+
+- B0 fix `stage-platform-payloads.sh` (3f833bf)
+- B2 audit + B2-UAT-01 characterization test (ec9f4b09, f0d27765)
+- core_gate_coverage_contract bumped 65→66 + anchor set (703e0cd8)
+- B0-UAT-01.sh, B0-AAT-01.sh, B0-E2E-01.sh efímeros listos
+  (en `test-harness/.cycles/B0-3f833bf/`, ignorados por .gitignore)
+
+### Por qué PAUSED, no BUDGET_REACHED
+
+No es que se haya acabado el tiempo. Es que el siguiente paso
+(lanzar el RC v3) requiere una acción del operador (liberar /tmp)
+que el agente no puede hacer. La causa es **disk quota** sobre
+/tmp, no un bug de código ni una decisión de diseño. Documentado,
+esperando acción del operador.
