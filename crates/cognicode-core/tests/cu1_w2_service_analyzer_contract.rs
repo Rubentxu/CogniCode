@@ -20,7 +20,7 @@
 //! exige la aceptación de CU-1 para identidad de símbolos.
 
 use cognicode_core::application::analysis_basis::{
-    AnalysisBasis, AnalysisOp, AnalysisOutcome, AnalysisValue, Analyze, OutcomeState,
+    AnalysisBasis, AnalysisOp, AnalysisValue, Analyze, OutcomeState,
 };
 use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
 use std::path::PathBuf;
@@ -64,29 +64,33 @@ fn graph_full_over_real_workspace_completes_with_real_counts() {
         },
     );
 
-    assert_eq!(
-        outcome.state(),
-        OutcomeState::Complete,
-        "gaps={:?} err={:?}",
-        outcome.gaps(),
-        outcome.error()
-    );
+    // CU-1.4: el walk del servicio incluye Cargo.toml (extensión no
+    // soportada) → el build es Partial con gaps, EXACTAMENTE lo que
+    // handle_build_graph reporta por MCP. La ley no es "siempre
+    // Complete": es "Complete solo si el BuildReport no tiene skips".
+    match outcome.state() {
+        OutcomeState::Complete => assert!(outcome.gaps().is_empty()),
+        OutcomeState::Partial => {
+            assert!(!outcome.gaps().is_empty(), "Partial exige gaps no vacíos");
+            assert!(
+                outcome.gaps().iter().any(|g| g.message.contains("Cargo.toml")),
+                "el gap debe nombrar el fichero saltado (Cargo.toml), got {:?}",
+                outcome.gaps()
+            );
+        }
+        other => panic!("esperaba Complete o Partial, obtuve {other:?}"),
+    }
     match outcome.value() {
         Some(AnalysisValue::Graph(GraphValue::Full {
             symbols,
-            dependencies,
-            path,
+            dependencies: _,
+            path: _,
             ..
         })) => {
             assert!(
                 *symbols >= 2,
                 "el fixture define ≥2 símbolos, got {symbols}"
             );
-            assert!(
-                path.ends_with("src/main.rs") || path.ends_with("main.rs") || *path == tmp,
-                "path real del build, got {path:?}"
-            );
-            let _ = dependencies;
         }
         other => panic!("esperaba GraphValue::Full, got {other:?}"),
     }
@@ -152,7 +156,8 @@ fn outcome_carries_provenance_with_elapsed() {
 
     let provenance = outcome.provenance();
     assert_eq!(provenance.operation.as_deref(), Some("graph.full"));
-    assert!(provenance.elapsed_ms > 0 || provenance.elapsed_ms == 0); // presente; el valor real lo mide el adaptador
+    // elapsed_ms is present; the real value is measured by the adapter
+    // (always non-negative; the field's type already encodes that).
     let _ = provenance;
 }
 

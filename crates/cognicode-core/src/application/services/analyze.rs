@@ -106,6 +106,40 @@ impl ServiceAnalyzer {
             )));
         }
 
+        // CU-1.4 (paridad con MCP): el estado del build lo decide el
+        // BuildReport compartido, no la mera existencia de símbolos.
+        // Un walk con ficheros saltados es Partial con gaps = ficheros
+        // saltados — exactamente lo que handle_build_graph reporta. Sin
+        // esto, CLI/SDK decían "complete" mientras MCP decía "partial"
+        // sobre el MISMO workspace (divergencia real detectada por el
+        // UAT-CU-1 del 2026-10-16).
+        if let Some(report) = self.service.get_last_build_report()
+            && let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped,
+            } = report.status
+            && !skipped.is_empty()
+        {
+            let gaps = skipped
+                .iter()
+                .map(|s| {
+                    AnalysisError::gap(
+                        "graph",
+                        &format!("{}: {}", s.path, skip_reason_text(&s.reason)),
+                    )
+                })
+                .collect();
+            let stats = self.service.get_graph_stats();
+            return AnalysisOutcome::partial(
+                AnalysisValue::Graph(GraphValue::Full {
+                    path: path.to_path_buf(),
+                    symbols: stats.symbol_count,
+                    dependencies: stats.edge_count,
+                    elapsed_ms: 0,
+                }),
+                gaps,
+            );
+        }
+
         let stats = self.service.get_graph_stats();
         AnalysisOutcome::complete(AnalysisValue::Graph(GraphValue::Full {
             path: path.to_path_buf(),
@@ -121,13 +155,13 @@ impl ServiceAnalyzer {
         // Complejidad global del grafo: reusa el grafo cacheado; si no
         // hay, construye. Una métrica global no recalcula el análisis
         // por símbolo (SPEC-CU-001.4).
-        if self.service.get_project_graph().symbol_count() == 0 {
-            if let Err(e) = self.service.build_full_graph(path) {
-                return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
-                    "build_full_graph falló sobre {}: {e:?}",
-                    path.display()
-                )));
-            }
+        if self.service.get_project_graph().symbol_count() == 0
+            && let Err(e) = self.service.build_full_graph(path)
+        {
+            return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
+                "build_full_graph falló sobre {}: {e:?}",
+                path.display()
+            )));
         }
         let graph = self.service.get_project_graph();
         if graph.symbol_count() == 0 {
@@ -156,6 +190,26 @@ impl ServiceAnalyzer {
             path: path.to_path_buf(),
             metrics,
         }))
+    }
+}
+
+/// Texto estable para el motivo de skip, paralelo al `reason_kind` del
+/// DTO MCP. Proyección explícita: el ADT de infraestructura no se
+/// filtra al contrato de aplicación.
+fn skip_reason_text(reason: &crate::infrastructure::graph::per_file_graph::SkipReason) -> String {
+    match reason {
+        crate::infrastructure::graph::per_file_graph::SkipReason::Read(d) => {
+            format!("read error: {d}")
+        }
+        crate::infrastructure::graph::per_file_graph::SkipReason::Parse(d) => {
+            format!("parse error: {d}")
+        }
+        crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(d) => {
+            format!("unsupported extension: {d}")
+        }
+        crate::infrastructure::graph::per_file_graph::SkipReason::Other(d) => {
+            format!("other: {d}")
+        }
     }
 }
 

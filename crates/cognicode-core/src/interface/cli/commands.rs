@@ -967,8 +967,7 @@ impl CommandExecutor {
         command: &GraphCommand,
     ) -> Result<GraphResult, Box<dyn std::error::Error>> {
         use crate::interface::cli::result::{
-            DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SkippedFile,
-            SymbolRef,
+            DepthBucket, DepthEntry, GraphResult as GR, HotPathEntry, PathHop, SymbolRef,
         };
         match command {
             GraphCommand::OnDemand {
@@ -1050,7 +1049,7 @@ impl CommandExecutor {
                 format: _format,
                 path,
             } => {
-                let start = Instant::now();
+                let _start = Instant::now();
                 // T1-5.5d: the per-subcommand --format on
                 // GraphCommand::Full is now ignored; the top-level
                 // --format on Cli is canonical. Progress always goes
@@ -1086,7 +1085,7 @@ impl CommandExecutor {
                             .map(|e| e.message.clone())
                             .unwrap_or_else(|| "unknown build failure".to_string());
                         eprintln!("Error building full graph: {}", msg);
-                        return Err(msg.into());
+                        Err(msg.into())
                     }
                     _ => {
                         // Skipped lines go to stderr (matches the
@@ -1104,11 +1103,10 @@ impl CommandExecutor {
                             status,
                             ..
                         } = &result
+                            && status == "partial"
                         {
-                            if status == "partial" {
-                                for s in skipped_files {
-                                    eprintln!("  Skipped: {}: {}", s.path, s.reason);
-                                }
+                            for s in skipped_files {
+                                eprintln!("  Skipped: {}: {}", s.path, s.reason);
                             }
                         }
                         Ok(result)
