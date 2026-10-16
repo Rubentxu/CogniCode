@@ -421,17 +421,40 @@ pub fn build_file_quality_view(
 ) -> ContextualView {
     let evidence_id = "evidence:file_quality".to_string();
     let mvp = format!("file:{file_path}");
-    let issues: Vec<QualityIssue> = quality
-        .map(|q| q.issues_for_file(file_path).unwrap_or_default())
-        .unwrap_or_default();
-    let gate = quality
-        .map(|q| q.quality_gate(None).unwrap_or_default())
-        .unwrap_or_default();
+    // VDH-TRUTH-01 Scenario C (2026-10-16): a QualityStore error must NOT
+    // collapse into `[]` (which the UI reads as "no findings / clean"). The
+    // previous `unwrap_or_default()` conflated "store said clean" with "store
+    // failed to read"; both paths produced an empty `issues` list and the
+    // downstream caller could not tell them apart. We now capture the Err
+    // and surface it as a dedicated `file_quality_unavailable` block; the
+    // rest of the view still renders the empty issues list (it just no
+    // longer claims to be authoritative).
+    let (issues, issues_err) = match quality {
+        Some(q) => match q.issues_for_file(file_path) {
+            Ok(v) => (v, None),
+            Err(e) => (Vec::new(), Some(format!("issues_for_file failed: {e}"))),
+        },
+        None => (Vec::new(), Some("quality store not wired".into())),
+    };
+    let (gate, gate_err) = match quality {
+        Some(q) => match q.quality_gate(None) {
+            Ok(v) => (v, None),
+            Err(e) => (
+                cognicode_core::domain::ports::quality_store::QualityGateSummary::default(),
+                Some(format!("quality_gate failed: {e}")),
+            ),
+        },
+        None => (
+            cognicode_core::domain::ports::quality_store::QualityGateSummary::default(),
+            None,
+        ),
+    };
+    let unavailable_note = issues_err.or(gate_err);
 
     let relations: Vec<TypedRelation> = issues
         .iter()
         .map(|i| TypedRelation {
-            relation_type: "FOUND_IN".to_string(),
+            relation_type: "FOUND_IN".into(),
             direction: RelationDirection::Outgoing,
             target_object_id: format!("issue:{}", i.id),
             target_label: format!("{}: {} (L{})", i.severity, i.rule_id, i.line),
@@ -441,7 +464,7 @@ pub fn build_file_quality_view(
         })
         .collect();
 
-    let blocks = vec![
+    let mut blocks = vec![
         ViewBlock {
             id: "file_quality_identity".into(),
             title: "Quality".into(),
@@ -471,6 +494,19 @@ pub fn build_file_quality_view(
             }),
         },
     ];
+    if let Some(note) = unavailable_note.as_ref() {
+        // Honest degradation: emit an extra block the UI can render
+        // instead of letting `issues.is_empty()` look like a clean file.
+        blocks.push(ViewBlock {
+            id: "file_quality_unavailable".into(),
+            title: "Quality store unavailable".into(),
+            body: json!({
+                "degraded": true,
+                "reason": note,
+                "note": "issues list is NOT authoritative; the store could not be read",
+            }),
+        });
+    }
 
     let evidence = vec![EvidenceBlock {
         id: evidence_id,
@@ -9664,6 +9700,139 @@ mod view_seam_tests {
         assert!(
             matches!(err, crate::error::ExplorerError::FeatureDisabled(_)),
             "expected FeatureDisabled, got: {err}"
+        );
+    }
+
+    // VDH-TRUTH-01 Scenario C (2026-10-16): when the QualityStore returns
+    // Err, the view must NOT look like a clean file. The previous
+    // `unwrap_or_default()` conflated "store said clean" with "store failed
+    // to read"; the new contract is a dedicated `file_quality_unavailable`
+    // block carrying the Err message, so the UI can render degradation
+    // instead of printing an empty table with authority.
+    use cognicode_core::domain::ports::{IssueFilter, QualityGateSummary, QualityStore};
+    struct FailingQuality;
+    impl QualityStore for FailingQuality {
+        fn issues_for_file(
+            &self,
+            _file: &str,
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down".into(),
+            ))
+        }
+        fn issues_for_scope(
+            &self,
+            _scope_prefix: &str,
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down".into(),
+            ))
+        }
+        fn issues_at_line(
+            &self,
+            _file: &str,
+            _line: u32,
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            Ok(Vec::new())
+        }
+        fn issue_by_id(
+            &self,
+            _id: i64,
+        ) -> Result<Option<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::NotFound(0))
+        }
+        fn rule_summary(
+            &self,
+            _rule_id: &str,
+        ) -> Result<RuleSummary, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::NotFound(0))
+        }
+        fn quality_gate(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<QualityGateSummary, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down".into(),
+            ))
+        }
+        fn open_issues_count(
+            &self,
+            _workspace_id: Option<&str>,
+        ) -> Result<usize, cognicode_core::domain::ports::QualityError> {
+            Ok(0)
+        }
+        fn issues_for_workspace(
+            &self,
+            _workspace_id: Option<&str>,
+            _filter: &IssueFilter,
+        ) -> Result<Vec<QualityIssue>, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down".into(),
+            ))
+        }
+        fn insert_issues(
+            &self,
+            _issues: &[cognicode_core::domain::ports::NewIssue],
+        ) -> Result<cognicode_core::domain::ports::UpsertSummary, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down (write)".into(),
+            ))
+        }
+        fn delete_issue(
+            &self,
+            _workspace: &str,
+            _rule_id: &str,
+            _file: &str,
+            _line: u32,
+        ) -> Result<bool, cognicode_core::domain::ports::QualityError> {
+            Err(cognicode_core::domain::ports::QualityError::Store(
+                "simulated db down (write)".into(),
+            ))
+        }
+    }
+
+    #[test]
+    fn file_quality_view_marks_degradation_when_store_errors() {
+        let view = build_file_quality_view("src/foo.rs", Some(&FailingQuality));
+        let ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert!(
+            ids.contains(&"file_quality_unavailable"),
+            "view must contain a degradation block when QualityStore Errs; got {ids:?}"
+        );
+        let degraded_block = view
+            .blocks
+            .iter()
+            .find(|b| b.id == "file_quality_unavailable")
+            .expect("block must be present");
+        let body = degraded_block
+            .body
+            .as_object()
+            .expect("body must be an object");
+        assert_eq!(
+            body.get("degraded").and_then(|v| v.as_bool()),
+            Some(true),
+            "degraded flag must be true"
+        );
+        let reason = body
+            .get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        assert!(
+            reason.contains("issues_for_file failed") || reason.contains("quality_gate failed"),
+            "reason must cite the failed call: {reason}"
+        );
+    }
+
+    #[test]
+    fn file_quality_view_marks_degradation_when_store_is_none() {
+        // `quality: None` (the store is not wired at all) is the same honest
+        // absence; the view must carry a degradation block instead of an
+        // empty issues list that reads as "clean".
+        let view = build_file_quality_view("src/foo.rs", None);
+        let ids: Vec<&str> = view.blocks.iter().map(|b| b.id.as_str()).collect();
+        assert!(
+            ids.contains(&"file_quality_unavailable"),
+            "degradation block must appear when the store is not wired; got {ids:?}"
         );
     }
 }
