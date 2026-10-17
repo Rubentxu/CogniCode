@@ -399,7 +399,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   `EvidenceId` a `SnapshotId` por construcción.
 > - CU-2.3 ✅ contrato de transferencia a Guard (PR #368, closeout #369).
 > - CU-2.4 ✅ consumidor vivo en aislamiento (PR #371, closeout #372).
-> - CU-2.5 🔄 en vuelo: corte v0.101.21 (PR #374), release pendiente al
->   cierre de esta edición.
+> - CU-2.5 ✅ v0.101.21 publicada y verificada (PR #374; gate en 3 rounds
+>   con golden+snapshot reparados, RC 32 etapas, 8 assets, smoke real).
+>   **CU-2 completo.** Siguiente: CU-3 y/o K0 (cobertura honesta).
 
 <!-- consumer-contracts:end -->

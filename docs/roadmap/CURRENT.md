@@ -9,15 +9,17 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-17, sobre `release/v0.101.21` HEAD `0738adf9ad218d9cf07ea0528cc8b8cccf22a4a7`
-> (= `main` `bf2f2d58` post-veredicto v0.101.20 PR #375 + corte v0.101.21:
-> bump 4 superficies + golden regenerado; PR #374 abierto, pendiente de
-> merge/tag/RC/publicación; `v0.101.20` publicada en GitHub Release el
-> 2026-10-17T13:22:48Z con 8 assets verificados — sumas, asset-set y
-> tag-coherence comprobados en
-> `production-ready/veredictos/2026-10-17-cu1-release-v0.101.20.md`).
+> **Snapshot**: 2026-10-17, sobre `main` HEAD `755e97a6a33b4f2788798aaf2115c1855d39cb23`
+> (squash del PR #374: corte CU-2.5 — bump 4 superficies + golden
+> regenerado + snapshot reconciliado). **`v0.101.21` publicada y verificada**
+> (2026-10-17T18:27:37Z, 8 assets: sumas 8/8, asset-set PASS,
+> tag-coherence OK, instalación y smoke JSON reales sobre los bytes
+> descargados — ver
+> `production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`).
+> **CU-2 completo (5/5).**
 >
-> Próxima release objetivo: `v0.101.21` (corte CU-2.5, PR #374) per
+> Próxima unidad: CU-3 (experiencia agent-first) o K0 (cobertura honesta,
+> línea Kotlin subordinada) per
 > [`docs/roadmap/ROADMAP.md`](ROADMAP.md) §11.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe

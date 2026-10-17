@@ -16697,3 +16697,46 @@ Próximo desbloqueado: **CU-2.5** "Release" — integrar y
 publicar el core y binarios afectados, registrar N−1 y un
 ejemplo de consumidor instalable. Bump objetivo: `v0.101.20 →
 v0.101.21`.
+
+---
+
+## Entrada 53 — 2026-10-17 — CU-2.5 cerrado: v0.101.21 publicada y verificada (corte CU-2 completo)
+
+### Contexto
+
+Corte de release del bloque CU-2 sobre `release/v0.101.21` (PR #374), con
+gates humanos del operador aprobados para el ciclo. Detalle completo y
+defectos latentes en
+`production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`; este
+recibo registra lo observable.
+
+### Ejecución
+
+- Gate: 3 rounds (`993bf0db` golden omitido → `0738adf9` ratchet de
+  snapshot → `754bb9f6` **success**, 116 etapas `--rerun`).
+- Merge squash `755e97a6`; tag anotado `v0.101.21` (objeto `9ef28e25…`);
+  `release-tag-coherence.sh` OK.
+- RC: 4 intentos (quota tmpfs INFRASTRUCTURE → tag-coherence por checkout
+  en rama → muerte silenciosa de compilación → **success**, 32 etapas
+  desde el commit taggeado).
+- Lane de publicación: 11 etapas success; `verify-as-consumer` falló
+  ambiental (defecto #2 conocido) y su equivalente se ejecutó a mano.
+
+### Evidencia
+
+- Release pública: 8 assets, `isDraft=false`, 2026-10-17T18:27:37Z.
+- Descarga limpia + `sha256sum -c SHA256SUMS` → 8/8.
+- `test_release_asset_set.sh v0.101.21` → PASS; tag-coherence OK.
+- Smoke instalación real: `cognicode`/`cognicode-mcp`/`cogh` → 0.101.21;
+  `--format json index build` → `{"kind":"build",...}` exit 0.
+
+### N−1 y consumidor
+
+Baseline Guard `v0.101.10` (ADR-CU-001) sin cambios; paridad por suites
+del gate (CU-1.3). Cross-repo queda como estado externo para CU-4.3.
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19). CU-2: **5/5 WUs** (v0.101.21). CU-3: 0/4.
+CU-4: 0/5. Línea Kotlin K0–K3 integrada como extensión subordinada
+(esta misma edición). Siguiente unidad: CU-3 o K0.
