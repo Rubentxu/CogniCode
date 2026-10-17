@@ -16426,3 +16426,40 @@ ids verificables, gaps NonEmpty.
   Mitigación: CU-2.4 (UAT real) lo valida.
 - Feature flags del evidence_kernel pueden desconectar grounding.
   Mitigación: CU-2.5 (release) valida con binario real.
+
+---
+
+## Entrada 53 — 2026-10-17 — Corte v0.101.20: v0.101.19 quedó bloqueado por TIER1, tag inmutable
+
+### Contexto
+
+La RC de `v0.101.19` (tag `be649eb1` → commit `16f1a726`) pasó 25 stages
+verdes y falló en `payloads`: `TIER1_PLATFORMS` declaraba
+`[LinuxX86_64, LinuxAarch64]` pero ningún lane construye aarch64. La corrección
+(#361, `TIER1_PLATFORMS` a solo `x86_64`) es un cambio de código Rust y no puede
+entrar en un tag ya publicado: la política de este repo es tag inmutable.
+Decisión del operador (opción B recursiva): cortar `v0.101.20` desde
+`main@2764a2ab` con el fix TIER1 dentro.
+
+### Delta v0.101.19 → v0.101.20
+
+- `TIER1_PLATFORMS` restringido a `LinuxX86_64` hasta que TF-7 provea lane
+  aarch64 (PR #361, ya en main).
+- Re-bump de las 4 superficies (Cargo.toml, SECURITY.md, README.md,
+  product-manifest.json) a `0.101.20`.
+- Golden `assurance_export` regenerado: SHA256 `868b4a65…`, pin e historial
+  actualizados en `scripts/ci/test_assurance_export_golden.py`.
+- CHANGELOG con entrada `0.101.20` explicando el bloqueo de `v0.101.19`.
+- Esta entrada JOURNAL satisface el ratchet M1
+  (`test_roadmap_or_journal_cites_the_workspace_version`) para `0.101.20`.
+
+### Próximos pasos
+
+- merge-gate verde sobre PR #362 (rama `cu1-release-020`, bump `6f33152c`)
+- `git tag -a v0.101.20` sobre el commit de merge de #362
+- RC (`release-candidate.pipeline.kts`) desde worktree aislado del tag
+- `release.pipeline.kts` con `RELEASE_TAG=v0.101.20`, verificación remota
+  de assets/SHA256/smoke
+
+Owner: operador (gates de promoción humana).
+>>>>>>> 3c28685e (docs(journal): Entrada 53 — corte v0.101.20 (ratchet M1))
