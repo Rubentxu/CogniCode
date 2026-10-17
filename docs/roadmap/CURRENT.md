@@ -9,8 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-16, sobre `b5-v0.101.17` HEAD
-> `7c3fa54e9f86` (post-D0 + D1 provisional — 5 cherry-picks + 1 archivado)
+> **Snapshot**: 2026-10-17, sobre `cu1-release-019` HEAD
+> `858bcb6485e963f433d41697348da219e1517983` (post-D1 + CU-1 release prep —
+> v0.101.19 bump, cert regen, journal delta y assurance golden
+> regenerados sobre `e20946ab`; PR #359 abierto)
 > fallar reparados y probados por mutación: el veredicto publicado por
 > `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
 > adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
