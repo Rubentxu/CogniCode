@@ -10,23 +10,44 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
-## [v0.101.20] — 2026-10-17
+## [v0.101.21] — 2026-10-17
 
-**Corte de release de CU-1.** El RC de `v0.101.19` llegó a la etapa
-`payloads` (25 etapas verdes) y falló con "no lane claimed Tier-1
-platform aarch64-unknown-linux-gnu": `TIER1_PLATFORMS` exigía aarch64
-pero ninguna lane lo construye (bug preexistente que D1 arrastró al
-perder `TIER1_TRIPLES_OVERRIDE` del pipeline; la v0.101.17 publicada
-lo llevaba). El fix (#361) cambia código Rust y no puede entrar en un
-tag ya cortado, así que este corte lo integra y publica.
+**Corte de release de CU-2 (Evidencia con autoridad correcta).** Publica
+los contratos del bloque CU-2 sobre la v0.101.20: la proyección
+read-side del finding y el transfer a Guard. Cierra el bloque CU-2
+4/5 (CU-2.1..CU-2.4; CU-2.5 es este mismo corte).
 
-Contiene todo lo de v0.101.19 (que queda como corte no publicado): el
-SDK CU-1 completo, la corrección de divergencia real CLI/SDK/MCP, la ley
-de versión del provider derivada del workspace y la D1 harness-lean, más:
+- **`domain::findings::projection` (CU-2.2, PR #367):** ADT
+  `FindingProjection` (Verified | Advisory | Inconclusive) y
+  `ProjectionError` (Unsupported | Inconclusive | Failed) con
+  `TypedEvidenceHandle` que vincula cada `EvidenceId` a su
+  `SnapshotId` por construcción. 6 tests permanentes en
+  `cu2_w2_finding_projection`.
+- **`domain::findings::guard_transfer` (CU-2.3, PR #368):** ADT
+  `GuardObservation` (Verifiable | Advisory | Inconclusive | Unsupported
+  | Failed) y única función `to_guard_observation`. El transfer es
+  passthrough: no firma, no fabrica `admitted_at`, no inventa
+  `AdmitterRole::HumanPromoter`. 8 tests permanentes en
+  `cu2_w3_guard_transfer`.
+- **CU-2.4 live consumer in isolation (PR #371):** integración
+  end-to-end del seam `project_finding` + `to_guard_observation` con
+  7 tests permanentes en `cu2_w4_live_consumer` que pinan: working copy
+  change → Unsupported, evidence forjada → passthrough fiel, precisión
+  heurística (D/C/A|B) preservada, causal chain con Ungrounded visible,
+  cadena total de los 5 discriminantes.
+- **`core_gate_coverage_contract` ANCHOR_SUITES bumped 68 → 70** con
+  las 3 suites CU-2 como anclas del gate de cobertura.
+- Contenido de v0.101.20 (SDK CU-1 + corrección CLI/SDK/MCP + ley de
+  versión del provider + D1 harness-lean + TIER1_PLATFORMS x86_64-only)
+  preservado tal cual.
 
-- **TIER1_PLATFORMS pasa a x86_64-only** hasta que TF-7 provisione
-  aarch64 (#361). El release tool dejaba de exigir binarios aarch64 que
-  el pipeline nunca construyó.
+**Compatibilidad Guard (N-1):** el cambio es aditivo puro. Consumidores
+existentes del API Rust (CU-1 facade) no se ven afectados. La nueva
+superficie de projection+transfer es opcional; los kernels de findings
+siguen produciendo el mismo `Finding`. Guard puede migrar a
+`guard_transfer` sin prisa: hasta que lo haga, sigue siendo válido
+interpretar el `Finding` directamente (N-1 explícito: contrato anterior
+no roto).
 
 ## [v0.101.19] — 2026-10-17
 
