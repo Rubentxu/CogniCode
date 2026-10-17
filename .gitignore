@@ -200,6 +200,8 @@ CONTEXT.md
 docs/roadmap/*
 !/docs/roadmap/production-ready/
 !/docs/roadmap/production-ready/**/
+!/docs/roadmap/consumer-contracts/
+!/docs/roadmap/consumer-contracts/**/
 
 # NOTE: docs/debts/ is deliberately NOT exempted. It looks like it should be —
 # `advisory_ignore_backing_contract` reads DEBT-SEC-001 in CI, so the register
