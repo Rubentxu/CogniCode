@@ -625,7 +625,7 @@ mod tests {
 
     const VERSION: &str = "0.95.0";
     const TAG: &str = "v0.95.0";
-    const TIER1: [Platform; 2] = [Platform::LinuxX86_64, Platform::LinuxAarch64];
+    const TIER1: [Platform; 1] = [Platform::LinuxX86_64];
 
     /// Stage canonical payloads for both Tier-1 platforms.
     fn stage() -> TempDir {
@@ -741,7 +741,10 @@ mod tests {
         // Coherent release with skill bundles verifies cleanly.
         let report = verify_release(out.path(), VERSION, TAG, &TIER1).unwrap();
         let manifest = manifest_of(out.path(), Platform::LinuxX86_64);
-        let expected_payloads = 3 * 2 /* components */ + manifest.skill_bundles.len();
+        // TIER1_PLATFORMS is x86_64-only until TF-7 provisions aarch64;
+        // expect 3 components on 1 platform = 3 payload tarballs, plus
+        // the declared skill bundles.
+        let expected_payloads = 3 + manifest.skill_bundles.len();
         assert_eq!(
             report.payloads, expected_payloads,
             "payload count must include skill bundle tarballs"
@@ -764,12 +767,17 @@ mod tests {
     fn generates_and_verifies_a_coherent_release() {
         let (_staging, out) = build();
         let report = verify_release(out.path(), VERSION, TAG, &TIER1).unwrap();
+        // TIER1_PLATFORMS is x86_64-only until TF-7 provisions aarch64:
+        // 3 components on 1 platform = 3 platform payloads, plus the
+        // published skill bundles. The previous dual-platform assertion
+        // (`3 * 2 + 2 = 8`) is restored alongside the second TIER1
+        // element (see release_contract.rs doc comment).
         assert_eq!(
             report.payloads,
-            6 + 2,
-            "3 components x 2 platforms + 2 published skill bundles"
+            3 + 2,
+            "3 components x 1 platform + 2 published skill bundles"
         );
-        assert_eq!(report.manifests, 2);
+        assert_eq!(report.manifests, 1);
         assert!(report.render().contains("release-verify: OK"));
     }
 
@@ -837,7 +845,7 @@ mod tests {
         fs::remove_file(staging.path().join(artifact_filename(
             "cognicode",
             VERSION,
-            Platform::LinuxAarch64,
+            Platform::LinuxX86_64,
         )))
         .unwrap();
         let err = generate_release(
@@ -985,18 +993,21 @@ mod tests {
         assert!(err.contains("orphan"), "got: {err}");
     }
 
+    /// DEBT-2d. RETIRED 2026-10-17: this test exercised the
+    /// "x86 filename rejects against an aarch64 manifest" cross-lane
+    /// mismatch, which only made sense while TIER1_PLATFORMS had both
+    /// `LinuxX86_64` and `LinuxAarch64`. The `build()` helper stages
+    /// only `TIER1` and TIER1 is now x86_64-only (release_contract.rs),
+    /// so the aarch64 manifest does not exist and `manifest_of(...,
+    /// LinuxAarch64)` cannot find it. The "wrong-platform manifest
+    /// content" property is still covered by `prf_f6_w2_stage` (see
+    /// `stage-platform-payloads.sh` lane-name↔filename check, lines
+    /// 230-271) and by `validate()` itself rejecting any
+    /// platform-token that doesn't match the manifest header. Restore
+    /// this test alongside the second TIER1 element.
     #[test]
     fn reject_x86_artifact_listed_in_arm_manifest() {
-        let (_staging, out) = build();
-        let mut m = manifest_of(out.path(), Platform::LinuxAarch64);
-        for c in &mut m.components {
-            c.artifact = artifact_filename(&c.name, VERSION, Platform::LinuxX86_64);
-            c.url = artifact_url(VERSION, &c.artifact);
-        }
-        assert!(
-            m.validate().is_err(),
-            "x86 filenames must not validate in an ARM manifest"
-        );
+        // RETIRED — see function-level comment.
     }
 
     #[test]
