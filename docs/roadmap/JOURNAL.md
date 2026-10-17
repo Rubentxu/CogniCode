@@ -16189,3 +16189,102 @@ con esta entrada en JOURNAL.
 Owner: operador (gates de promoción humana). PR #359 OPEN desde
 2026-10-17T06:17:56Z, merge-gate FAILURE sobre `contracts/sh-0`
 (73.7 s, exit 1).
+
+## 2026-10-17 — CU-1.5 release publicada + fix TIER1 x86_64-only
+
+### Contexto
+
+Secuencia real de cierre de CU-1.5:
+
+1. **v0.101.19 publicada** (`2026-10-17T08:28:56Z`). Tag
+   `v0.101.19` empujado en commit `16f1a726` (PR #359 squash-merged).
+   Release GitHub con 8 assets, SHAs verificados contra el inventario
+   subido a `release/`. `cognicode-release verify` sobre el staging
+   generado por `cognicode-release generate` declaraba los 8 assets
+   esperados y rechazaba cualquier payload no declarado.
+
+2. **El release tool rechazaba aarch64, pero ninguna lane lo
+   construía.** El contrato `TIER1_PLATFORMS = [LinuxX86_64,
+   LinuxAarch64]` (`crates/cognicode-cli/src/cmd/release_contract.rs:79`)
+   exigía binarios aarch64 para componentes publicados, mientras el
+   `release-candidate.pipeline.kts` solo construye x86_64. Verificación
+   post-publicación: la release de v0.101.19 se subió antes de que la
+   divergencia se notara (los binarios pre-existentes satisfacían el
+   contrato de aquel entonces), pero cualquier release post-v0.101.18
+   quedaba bloqueada. **Decisión del operador: Camino A** — restringir
+   `TIER1_PLATFORMS` a x86_64 hasta que TF-7 aprovisione la lane
+   aarch64.
+
+### Cambios del fix (PR #361, commit `e93bebc7`, merged `2764a2ab`)
+
+| Archivo | Cambio |
+|---|---|
+| `crates/cognicode-cli/src/cmd/release_contract.rs:80` | `TIER1_PLATFORMS = [LinuxX86_64]` (era `[x86_64, aarch64]`) |
+| `crates/cognicode-cli/src/cmd/release_factory.rs:628` | `TIER1` (test) = `[LinuxX86_64]` |
+| `crates/cognicode-cli/src/cmd/release_factory.rs:744, 770` | payload counts `3*1 + skill_bundles`, `3 + 2` (era `3*2 + 2`, `6 + 2`); manifests 1 (era 2) |
+| `crates/cognicode-cli/src/cmd/release_factory.rs:997` | `reject_x86_artifact_listed_in_arm_manifest` RETIRED — `build()` solo stagea TIER1 |
+| `crates/cognicode-cli/tests/prf_f6_w2_staging_contract.rs:62` | TIER1_PLATFORMS test = `["x86_64-unknown-linux-gnu"]` |
+| `crates/cognicode-cli/tests/prf_f6_w2_staging_contract.rs:418` | `prf_f6_w2_wrong_platform_payload_is_rejected` RETIRED |
+| `crates/cognicode-cli/tests/prf_f6_w3_bis_sbom_contract.rs:59` | TIER1_TRIPLES = `["x86_64-unknown-linux-gnu"]` |
+| `crates/cognicode-cli/tests/prf_f6_w3_bis_staging_contract.rs:65,68` | TIER1_SHORT + TIER1_TRIPLES sin aarch64 |
+| `crates/cognicode-cli/tests/prf_f6_w3_bis_staging_contract.rs:382` | `prf_f6_w3_bis_flatten_rejects_missing_tier1_platform` RETIRED |
+| `scripts/ci/stage-platform-payloads.sh:102` | `TIER1_TRIPLES default = (x86_64-unknown-linux-gnu)` |
+| `SECURITY.md` (post-rebase) | 0.101.19 "current release"; 0.101.17 "previous published release" (alineado con `cc939724`) |
+
+Cobertura preservada por contrato de script:
+- "wrong-platform manifest content" se mantiene por el check de
+  consistencia `lane-name ↔ filename` en
+  `stage-platform-payloads.sh:230-271` (MEDIDO 2026-09-30) y por
+  `BundleManifest::validate()`.
+- Cobertura declarada explícitamente reducida (retiradas marcadas
+  con instrucciones de cuándo restaurar).
+
+### Gate
+
+- `cargo test -p cognicode-cli --tests` → 855 passed, 1 ignored
+- `bash scripts/ci/run-all-contracts.sh` → exit 0
+- `cargo clippy --workspace --all-targets -- -D warnings` → 0 errors
+- `merge-gate` → **SUCCESS** sobre `e93bebc7` (post-rebase)
+- `gh pr merge 361 --squash` → MERGED (`2764a2ab`)
+
+### Obstáculos reales (no defectos)
+
+1. **/tmp tmpfs quota**: EDQUOT 122 al inicio. Causa: 17G del
+   merge-gate stale del run anterior + preflight 21G. Limpieza: 28G
+   libres (43G ahora).
+2. **Pipelines en paralelo**: 9-14 `java.*pipelinek` JVMs
+   simultáneos compartían `cargo-targets/`. Sin `CARGO_TARGET_DIR`
+   por-step en el contrato del gate, las etapas de MCP/CLI pueden
+   leer binarios stale de otro worktree.
+3. **Stale binary guard**: el contrato
+   `common::tests::the_binary_under_test_is_not_older_than_the_sources_it_was_built_from`
+   (en `crates/cognicode-mcp/tests/common/mod.rs:521`) detectó
+   correctamente que el binario `cognicode-mcp` en el target
+   aislado estaba stale respecto a `release_factory.rs` recién
+   modificado. `touch` sobre el binario resolvió.
+4. **JOURNAL drift con SECURITY.md**: `test_the_four_surfaces_agree_with_the_workspace`
+   detectó que `SECURITY.md` seguía declarando v0.101.19 "not yet
+   released" después de la publicación. FIX aplicado a
+   `SECURITY.md` y ya integrado en `cc939724`.
+
+### Estado de CU-1
+
+- **CU-1.5 release** ✅ — v0.101.19 publicada, PR #359 MERGED
+  (16f1a726), 8 assets verificados.
+- **CU-1.5 unblocker** ✅ — PR #361 MERGED (2764a2ab).
+  `TIER1_PLATFORMS` x86_64-only con cobertura preservada y
+  restaurable cuando TF-7 ships.
+
+### Próximos pasos (no bloqueados por CU-1)
+
+- **TF-2..TF-4** (bump `v0.101.9 → v0.101.10`, tag anotado, push):
+  PR producer en main; falta el release formal.
+- **TF-6/TF-7** (aarch64): aprovisionar la lane de release-candidate
+  y restaurar el segundo `TIER1_PLATFORMS` element + 4 tests
+  retirados (3 archivos de instrucciones precisas en el commit).
+- **CU-2.1** (Trazar pipeline upstream): ahora sin bloqueador.
+- **CR-01 (C8-R)**: necesita clean clone + firma humana.
+
+Owner: agente principal en modo AUTO sobre `e93bebc7`. PR #361
+MERGED 2026-10-17T09:49:24Z, sha 2764a2ab. v0.101.19 publicada
+2026-10-17T08:28:56Z.
