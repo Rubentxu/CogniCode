@@ -16518,3 +16518,85 @@ rompió (4 contratos rojos en el merge-gate de `fe8b4498`).
 Anoto aquí el delta para que el snapshot sea fiel: el workspace
 está en `v0.101.20` y la próxima release objetivo (corte CU-2)
 será `v0.101.21`.
+
+## 2026-10-17 — CU-2.3 contrato de transferencia a Guard (PR #368, merge `0d51e1a1`)
+
+### Hito
+
+CU-2.3 del roadmap `consumer-contracts`: el seam CogniCode → Guard.
+NO transfiere autoridad: el transfer es passthrough, no firma, no
+fabrica `admitted_at`, no inventa `AdmitterRole::HumanPromoter`.
+
+### Implementación
+
+`crates/cognicode-core/src/domain/findings/guard_transfer.rs` (nuevo):
+
+- **`GuardObservation`** (ADT cerrado, 5 variantes):
+  - `Verifiable { snapshot_id, detector, evidence, causes }` — única
+    variante que Guard puede considerar como base de un `Block`,
+    solo después de verificar admission contra su trust root.
+  - `Advisory { snapshot_id, detector, evidence, message }` —
+    consultivo, NUNCA gateable.
+  - `Inconclusive { snapshot_id, detector, gaps }` — gaps visibles
+    al consumer.
+  - `Unsupported { reason: UnknownReason }` — fail-closed.
+  - `Failed { message: String }` — error estructural, distinto de
+    Unsupported.
+- **`to_guard_observation(&Result<FindingProjection, ProjectionError>) -> GuardObservation`**:
+  única función de decisión. Determinista, sin I/O, sin estado
+  compartido. Passthrough fiel: nunca enriquece la proyección con
+  datos de autoridad.
+
+### Tests permanentes (8/8)
+
+`crates/cognicode-core/tests/cu2_w3_guard_transfer.rs`:
+
+1. `verified_finding_transfers_to_verifiable`
+2. `advisory_finding_transfers_to_advisory_never_verifiable`
+3. `inconclusive_finding_transfers_to_inconclusive`
+4. `snapshot_mismatch_projects_to_unsupported`
+5. `evidence_handle_carries_snapshot_into_guard_observation`
+6. `adversarial_signature_bytes_never_carry_into_observation` —
+   pinea por debug-format que `signature`/`admitted_at`/
+   `AdmitterRole` NO aparecen en la salida.
+7. `adversarial_fabricated_evidence_id_does_not_promote_to_advisory`
+   — el transfer es passthrough, no escala el hallazgo.
+8. `adversarial_ungrounded_step_is_observable_in_verifiable_causes`
+
+### Cambios formales
+
+- `crates/cognicode-core/src/domain/findings/mod.rs`: `pub mod
+  guard_transfer;`.
+- `crates/cognicode-core/tests/core_gate_coverage_contract.rs`:
+  `cu2_w3_guard_transfer` añadido a `ANCHOR_SUITES`; conteo
+  esperado 68 -> 69.
+
+### Lo que NO hace
+
+- No toca el envelope `assurance-evidence/v1` (wire format
+  contractual con consumer Kotlin).
+- No toca `domain::findings::projection` (kernel puro, el transfer
+  es read-only).
+- No toca `admission.rs` (autoridad de Guard, sigue siendo de
+  Guard).
+- No introduce autoridad: ni firma, ni `admitted_at`, ni
+  `AdmitterRole`.
+
+### Validación
+
+- `cargo test -p cognicode-core --test cu2_w3_guard_transfer` -> 8/8
+- `cargo test -p cognicode-core --test core_gate_coverage_contract` -> 10/10
+- `bash scripts/ci/run-all-contracts.sh` -> 292/292
+- `bash scripts/ci/publish-merge-gate.sh 2681433c` -> SUCCESS
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19 publicada).
+CU-2: 3/5 WUs (CU-2.1 trazado, CU-2.2 projection, CU-2.3 transfer).
+CU-3: 0/4 WUs.
+CU-4: 0/5 WUs.
+
+Próximo desbloqueado: **CU-2.4** "Consumidor vivo en aislamiento"
+— repetir caso real Rust con hallazgo técnico y decisión Guard
+sobre copia de trabajo; validar cambios de snapshot, evidencia
+inexistente y precisión heurística.
