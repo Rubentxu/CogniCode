@@ -9,29 +9,16 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-17, sobre `main` HEAD `446d34627323d30d2a040b766f9cd9f235f415d5` (post-CU-1.5
-> release + fix TIER1 x86_64-only en PR #361 + fix scope stale-binary
-> guard en PR #363 + CU-2.1 pipeline trace en PR #365 + CU-2.2
-> finding projection en PR #367 + CU-2.3 guard transfer contract en
-> PR #368 + closeout CU-2.3 en PR #369 + CU-2.4 live consumer en
-> PR #371 + CU-2.4 closeout en PR #372; workspace `v0.101.20` per
-> `Cargo.toml`; v0.101.19 publicada en GitHub Release el 08:28:56Z
-> con 8 assets)
-> fallar reparados y probados por mutación: el veredicto publicado por
-> `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
-> adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor
-> restauraba los bytes en vez de borrar el archivo, la validación de schema
-> del catálogo publicado dejaba de saltarse en silencio, y dos wrappers
-> `fast`/`full` dejaron de poder responder verde sin hacer nada;
-> estado de runtime de PipelineK des-trackeado de git).
-> Regenerado tras **BLOQUE 5**: el workspace está en `0.101.17` per
-> `Cargo.toml`, y el bump 0.101.16 → 0.101.17 todavía **no está
-> publicado** — el tag remoto sigue en `v0.101.16`, que es la release
-> que hoy publica 3 de los 8 assets. La release viva es `v0.101.16`.
+> **Snapshot**: 2026-10-17, sobre `release/v0.101.21` HEAD `0738adf9ad218d9cf07ea0528cc8b8cccf22a4a7`
+> (= `main` `bf2f2d58` post-veredicto v0.101.20 PR #375 + corte v0.101.21:
+> bump 4 superficies + golden regenerado; PR #374 abierto, pendiente de
+> merge/tag/RC/publicación; `v0.101.20` publicada en GitHub Release el
+> 2026-10-17T13:22:48Z con 8 assets verificados — sumas, asset-set y
+> tag-coherence comprobados en
+> `production-ready/veredictos/2026-10-17-cu1-release-v0.101.20.md`).
 >
-> Próxima release objetivo: `v0.101.17` (re-publicar el set completo de
-> 8 assets) per
-> [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](2026-Q4-CLI-MCP-ROADMAP.md).
+> Próxima release objetivo: `v0.101.21` (corte CU-2.5, PR #374) per
+> [`docs/roadmap/ROADMAP.md`](ROADMAP.md) §11.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
