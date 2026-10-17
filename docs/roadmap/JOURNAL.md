@@ -16368,3 +16368,61 @@ El codigo refleja exactamente la vista que cargo tiene: per-target
 incremental build. El doc del test explica el por que, y el test
 nuevo es un test del test (pinning de contrato, no test de la
 feature).
+
+## 2026-10-17 — CU-2.1 pipeline trace (PR #365, merged `1945b4f5`)
+
+### Hito
+
+CU-2.1 del roadmap `consumer-contracts`: "Trazar pipeline upstream
+ya existente" — sin código nuevo, solo documentar.
+
+### Salida
+
+`docs/roadmap/consumer-contracts/traceability/CU-2-1-PIPELINE-TRACE.md`
+
+Contenido del documento:
+
+  - Diagrama del flujo principal
+    `Detector → FindingAssembler → FindingVerifier → FindingGate (gateable verificado)`.
+  - Diagrama paralelo consultivo
+    `ArchitectureViolation → ArchitectureGroundingBridge → ProducedEvidence`
+    (NO gateable aunque `severity=error`).
+  - Type map con autoridad:
+    - CogniCode (técnica): `FindingAssembler`, `FindingVerifier`,
+      `VerificationError`, `EvidenceBinding`, `ProducedEvidence`,
+      `AnalysisScope`, `ArchitectureViolation`,
+      `ArchitectureGroundingBridge`, `GroundedFindingReport`.
+    - Guard (admisión): `AdmittedDetector`, `AdmissionRef`,
+      `ApprovalVerifier` (trait).
+    - DTO read-only: `EvidenceExport` (envelope) en
+      `assurance_export/envelope.rs`.
+  - Listado de tests que ya cubren caminos REAL
+    (verifier.rs:524, 549, 562, 576 + architecture/grounding.rs
+    unit tests + e2e tests en tests/).
+  - 6 negativos AAT-CU-2 separados: 4 ya cubiertos en CogniCode
+    (CU-2.2 los convierte en AAT parametrizado), 2 son
+    territorio Guard (CU-2.3 cierra signature + AdmissionRef).
+  - 3 riesgos identificados (no bloqueantes) con su mitigación
+    en hitos posteriores.
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19 publicada, PR #354/356/359/361 MERGED).
+CU-2: 1/5 WUs (CU-2.1 trazado).
+CU-3: 0/4 WUs.
+CU-4: 0/5 WUs.
+
+Próximo desbloqueado: **CU-2.2** "Publicar lectura verificable sin
+mutación" — proyección tipada del envelope con snapshot, evidence
+ids verificables, gaps NonEmpty.
+
+### Riesgos
+
+- Firma/AdmissionRef fuera del repo CogniCode (territorio Guard).
+  Mitigación: CU-2.3 codifica el contrato de transferencia con
+  negativos parametrizados.
+- ArchitectureViolation con severity=error puede ser promovida
+  por error si el consumer (Guard) no etiqueta como consultivo.
+  Mitigación: CU-2.4 (UAT real) lo valida.
+- Feature flags del evidence_kernel pueden desconectar grounding.
+  Mitigación: CU-2.5 (release) valida con binario real.

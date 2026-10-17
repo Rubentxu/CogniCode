@@ -382,5 +382,13 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 > affordances/consultas progresivas tras CU-1; CU-4 compatibilidad,
 > incrementalidad y release. Cada CU exige merge remoto + release real
 > y eliminación justificada de UAT/E2E/AAT efímeros al cierre.
+>
+> **Progreso (2026-10-17):**
+> - CU-1.1..CU-1.5 ✅ v0.101.19 publicada con SDK + paridad semántica
+>   (PR #354, #356, #359, #361).
+> - CU-2.1 ✅ pipeline upstream trazado
+>   ([`traceability/CU-2-1-PIPELINE-TRACE.md`](consumer-contracts/traceability/CU-2-1-PIPELINE-TRACE.md),
+>   PR #365). Hito de trazado, sin código.
+> - CU-2.2..CU-2.5 pendientes.
 
 <!-- consumer-contracts:end -->
