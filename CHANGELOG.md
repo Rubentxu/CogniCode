@@ -10,7 +10,52 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.19] — 2026-10-17
+
+**CU-1: reliable consumption SDK.** Un consumidor Rust recibe el mismo
+`AnalysisOutcome` que CLI y MCP, con error, cobertura y capacidades tipados.
+
+- **Facade tipada y estable** (`application/consumer_analysis.rs`):
+  `CapabilityRequest` → `CapabilityPlan` con `Complete` / `Partial` /
+  `Unsupported`. `AnalysisScope`, `SymbolId` y la precisión se conservan.
+  Sin crate nuevo: amplía `cognicode-core` in-place.
+- **`ServiceAnalyzer` de producción** (`application/services/analyze.rs`)
+  sobre el `AnalysisService` real: operaciones de grafo y complejidad, y
+  fallo honesto ante workspace vacío en vez de un `Complete` falso.
+- **CLI y MCP como presentadores** (`interface/cli/presenter_bridge.rs`,
+  `interface/mcp/presenter_bridge.rs`): un caso de uso común implementa el
+  análisis y cada canal traduce al contrato existente. `tools/list`, la
+  salida JSON y el catálogo describen prestaciones reales.
+
+**Corrección de divergencia real entre los tres canales.** Durante la
+prueba del consumidor, CLI y SDK devolvían `Complete` mientras MCP
+devolvía `Partial` sobre el MISMO workspace. Causa raíz:
+`ServiceAnalyzer.graph_full` no consultaba `get_last_build_report()`, así
+que un fichero saltado en el build no se reflejaba en el plan.
+`BuildStatus::Partial { skipped }` se mapea ahora a
+`AnalysisOutcome::partial` con un gap por fichero saltado. Sin este fix, un
+consumidor podía recibir un grafo incompleto como completo.
+
+**Ley de versión del provider derivada del workspace.** El contrato ya no
+fija `0.101.17` como literal: lo lee de `Cargo.toml`. El bump a
+`0.101.18` lo rompió exactamente así y ya no puede volver a romperlo
+(`SPEC-CU-001.6`).
+
+Cobertura permanente: `cu1_w2_facade_contract` (6),
+`cu1_w2_service_analyzer_contract` (4), `cu1_w3_presenter_parity` (5).
+La UAT efímera del consumidor se retiró tras promover sus garantías; la
+paridad de tres canales quedó como regresión permanente.
+
+Ningún cambio en Guard es requerido: la facade cubre lo que Guard consume
+hoy de `AnalysisService` + `CallGraphAnalyzer`. La migración de Guard es
+CU-2, no parte de CU-1.
+
 ## [v0.101.18] — 2026-10-17
+
+**Corte no publicado.** El tag `v0.101.18` existe en el remoto pero nunca
+llegó a publicarse como release de GitHub, así que no hay assets que
+consumir. La tabla de versiones soportadas de `SECURITY.md` no lo trata
+como release. Lo que el corte pretendía (D1) se publica en v0.101.19.
 
 **D1 (harness lean).** Cherry-pick quirúrgico de las decisiones medidas
 del worktree de test-harness (PR #349), sin fusionar el paquete ni el
