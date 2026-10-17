@@ -16426,3 +16426,81 @@ ids verificables, gaps NonEmpty.
   Mitigación: CU-2.4 (UAT real) lo valida.
 - Feature flags del evidence_kernel pueden desconectar grounding.
   Mitigación: CU-2.5 (release) valida con binario real.
+
+## 2026-10-17 — CU-2.2 read-side projection of verified findings (PR #367, merged `050db27f`)
+
+### Hito
+
+CU-2.2 del roadmap `consumer-contracts`: "Publicar lectura
+verificable sin mutación".
+
+### Implementación
+
+`crates/cognicode-core/src/domain/findings/projection.rs` (nuevo):
+
+- **`FindingProjection`** (ADT cerrado):
+  - `Verified { snapshot_id, detector, severity, evidence, causes, message }`
+  - `Advisory { snapshot_id, detector, evidence, message }`
+  - `Inconclusive { snapshot_id, detector, gaps }`
+- **`ProjectionError`** (discriminado):
+  - `Unsupported(UnknownReason)` para snapshot mismatch, evidence
+    class desconocida, no evidence handles.
+  - `Inconclusive(Vec<Gap>)` para clase D (heurística) con gap
+    list no-vacía.
+  - `Failed(String)` para errores estructurales.
+- **`TypedEvidenceHandle`**: `id: EvidenceId` + `snapshot: SnapshotId`
+  vinculados por construcción. Sin posibilidad de promotion
+  cross-snapshot.
+- **`CauseProjection`**: `Grounded { fact, evidence, subject } |
+  Ungrounded`. La cadena se inspecciona para detectar pasos
+  sin grounding (no basta con que el finding tenga evidence
+  global si una CausalStep no la trae).
+- **`project_finding(&Finding, &SnapshotId)`**: única función
+  de decisión. Fail-closed por defecto (clase desconocida →
+  Unsupported, no evidence → Unsupported, sin context → fail,
+  snapshot mismatch → Unsupported).
+
+### Tests permanentes (6/6)
+
+`crates/cognicode-core/tests/cu2_w2_finding_projection.rs`:
+
+1. `verified_finding_projects_to_verified` — clase A con context
+   produce `Verified` con snapshot, evidence, causes correctos.
+2. `advisory_observation_projects_to_advisory` — clase C produce
+   `Advisory`, no `Verified` colapsado.
+3. `missing_snapshot_makes_finding_unsupported` — finding en
+   snapshot 42 preguntado por snapshot 99 devuelve
+   `Unsupported(SnapshotMismatch)`.
+4. `unknown_evidence_class_makes_finding_inconclusive` — clase D
+   devuelve `Inconclusive` con `Gap::EvidenceClassBelowThreshold`.
+5. `evidence_handle_carries_snapshot_bound` — `TypedEvidenceHandle`
+   tiene `snapshot == requested_snapshot` siempre.
+6. `cause_preserves_fact_id_and_evidence_id` — `Grounded` lleva
+   fact+evidence del `CausalStep`.
+
+No regresión: 143 findings unit tests siguen verde.
+
+### Lo que NO hace
+
+- No toca el envelope `assurance-evidence/v1` (wire format
+  contractual con consumer Kotlin; formato externo separado).
+- No introduce autoridad: Guard sigue dueño de `PolicyDecision`,
+  `RuleAdmission`, firmas. La proyección lleva `EvidenceId`s que
+  Guard verifica contra su `ApprovalVerifier`.
+- No es un comando: solo un ADT que futuros call sites pueden
+  invocar. La integración real con Guard es CU-2.3.
+- No es un servicio: `project_finding` es función pura, sin
+  I/O, sin red, sin estado compartido.
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19 publicada).
+CU-2: 2/5 WUs (CU-2.1 trazado, CU-2.2 projection).
+CU-3: 0/4 WUs.
+CU-4: 0/5 WUs.
+
+Próximo desbloqueado: **CU-2.3** "Contrato de transferencia a
+Guard" — definir `VerifiedFinding | AdvisoryObservation |
+Inconclusive` como adaptador Guard-side (el lado CogniCode ya
+tiene el ADT; ahora hay que producir el `AdmittedFinding` y
+demostrar con negativos que `signature.len()>0` no es autoridad).

@@ -33,6 +33,7 @@ pub mod grounding;
 pub mod namespaced;
 pub mod outcome;
 pub mod ports;
+pub mod projection;
 pub mod quality_projection;
 pub mod scope;
 pub mod verifier;

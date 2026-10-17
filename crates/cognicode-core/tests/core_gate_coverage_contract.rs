@@ -236,10 +236,11 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // completa del repositorio; eso baja la cuenta en 1 (prf_ext_04). Los
     // tres suites CU-1 (cu1_w2_facade_contract, cu1_w2_service_analyzer_contract,
     // cu1_w3_presenter_parity) se mantienen del bloque D0.
+    // 67 -> 68 en CU-2.2 (PR #367): cu2_w2_finding_projection anadido.
     assert_eq!(
         suites.len(),
-        67,
-        "expected exactly 67 cognicode-core integration suites, found {}. \
+        68,
+        "expected exactly 68 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -384,6 +385,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "cu1_w2_facade_contract",
     "cu1_w2_service_analyzer_contract",
     "cu1_w3_presenter_parity",
+    "cu2_w2_finding_projection",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
     "find_usages_cli_mcp_equivalence",
