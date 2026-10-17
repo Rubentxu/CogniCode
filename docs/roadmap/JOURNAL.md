@@ -16740,3 +16740,39 @@ del gate (CU-1.3). Cross-repo queda como estado externo para CU-4.3.
 CU-1: 5/5 WUs (v0.101.19). CU-2: **5/5 WUs** (v0.101.21). CU-3: 0/4.
 CU-4: 0/5. Línea Kotlin K0–K3 integrada como extensión subordinada
 (esta misma edición). Siguiente unidad: CU-3 o K0.
+
+## Entry 54 — K0 cerrado (línea Kotlin K0–K3) + bump PATCH v0.101.22
+
+**Fecha:** 2026-10-17
+**SHA:** `4e1821f534b443328f1f4e4299731af09174b1a1` (squash del PR #377 sobre main)
+**Versión workspace:** `0.101.22`
+**Estado:** PASS (merge-gate verde sobre `52a75343`; squash a main; bump PATCH)
+
+### Cambio funcional
+
+Cierre del headline de la línea Kotlin K0 (cobertura honesta). El
+walk del grafo declara sus huecos en lugar de simularlos:
+
+- `per_file_graph::WalkClassification::{Analyze, KnownUnsupportedGap, LegitExclusion}` único, autoridad única. Los 3 sitios que preguntaban al `match` literal en `strategy.rs` y el de `analysis_service.rs` derivan al clasificador compartido.
+- `kotlin` retirado de `ALL_TREE_SITTER_LANGS` (22 → 21). `capabilities_drift_lint.py --strict` pinea el constant contra `CAPABILITIES-MATRIX.md`.
+- `KNOWN_UNSUPPORTED_EXTENSIONS = ["kt", "kts"]` con `KnownUnsupportedGap` tipado, no `SkipReason::UnsupportedExtension` silencioso.
+- 3 tests RED→GREEN en `k0_honest_coverage_tests` pinean las tres invariantes.
+
+### Subprograma Kotlin (integración)
+
+- `docs/roadmap/consumer-contracts/kotlin-evolution/` (17 archivos del paquete upstream + `INTEGRATION.md` con baseline actualizado a `main@755e97a6`/v0.101.21 y K0 marcado [x] en criterios 1 (parcial), 2, 3 (parcial) y 6).
+- `MILESTONES.md` añade **K0.1** (BUGFIX / release intermedio, mismo PATCH SemVer) cerrando los criterios 3 (resto), 4 (`CompleteForScope` con `ScopeManifest`) y 5 (diagnóstico CLI/MCP con compatibilidad N-1).
+- El upstream `docs/cognicode-kotlin-roadmap/` queda en working tree (gitignored); `INTEGRATION.md` documenta la reconciliación y la decisión de NO tocar `.gitignore` (línea 200, decisión operador 2026-06-24).
+
+### Veredicto y trazabilidad
+
+- `docs/roadmap/production-ready/veredictos/2026-10-17-k0-honest-coverage.md`: 197 líneas. Caracteriza los 3 defectos del walk, RED→GREEN de los 3 tests, UAT-K0/AAT-K0 efímero (borrado, evidencia en el veredicto), y el defecto pre-existente PRF f6.w1 (`cogh generate`, no enumerado en `merge-gate.pipeline.kts:604–656`, no bloquea).
+- `docs/prf/specs/CAPABILITIES-MATRIX.md` (K0 fix `107b90f0`): 22→21 lenguajes, kotlin fuera, kt/kts documentados como gap tipado hasta K1.
+- `test_publish_merge_gate_status.py` confirma `merge-gate=success` publicado contra `52a75343`.
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19). CU-2: 5/5 WUs (v0.101.21). CU-3: 0/4.
+CU-4: 0/5. **Línea Kotlin K0–K3: 1/4 WUs (K0 cerrado en v0.101.22;
+K0.1 propuesta, K1–K3 pendientes)**. Siguiente unidad: K0.1
+(taxonomía por fichero) o K1 (tree-sitter-kotlin).
