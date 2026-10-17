@@ -672,9 +672,7 @@ impl AnalysisService {
         if let Ok(entries) = std::fs::read_dir(project_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file()
-                    && Language::from_extension(path.extension()).is_some()
-                {
+                if path.is_file() && Language::from_extension(path.extension()).is_some() {
                     let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
                 }
             }
