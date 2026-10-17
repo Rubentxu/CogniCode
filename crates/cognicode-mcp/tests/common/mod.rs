@@ -499,22 +499,30 @@ mod tests {
     /// stale build, the suite stays green, and the results describe code that
     /// no longer exists.
     ///
-    /// The oracle is the newest library source under `crates/`, not the test
-    /// binary. Comparing against the test binary looks tempting and is
-    /// wrong: Cargo links the two in the same build and their mtimes differ
-    /// by however long the link step took, so a correct setup fails by
-    /// milliseconds. Source mtime is the thing that decides whether the
-    /// binary reflects the tree.
+    /// The oracle is the newest source under the binary's own crate
+    /// (`crates/<this-crate>/`), not the workspace as a whole. The
+    /// workspace-wide scan was wrong: cargo's per-target incremental build
+    /// watches the bin's own crate plus the fingerprints of crates it
+    /// depends on, so source edits in *unrelated* crates are not a reason
+    /// to rebuild this bin. Walking the whole tree made the guard a
+    /// duplicate (and coarser) freshness check that fired on edits the
+    /// build system would not, and made every test stage that ran in an
+    /// isolated target dir panic when an unrelated file (e.g. a CHANGELOG
+    /// edit or a sibling crate's test) was touched after the build.
+    ///
+    /// Cargo handles cross-crate staleness itself through fingerprint
+    /// propagation, so this test only needs to mirror its per-crate view.
+    /// Comparing against the test binary is also wrong: cargo links the
+    /// two in the same build and their mtimes differ by however long the
+    /// link step took, so a correct setup fails by milliseconds.
     #[test]
     fn the_binary_under_test_is_not_older_than_the_sources_it_was_built_from() {
         let path = binary_path();
         assert!(path.exists(), "resolved binary does not exist: {path:?}");
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let workspace_root = manifest_dir.parent().unwrap().parent().unwrap();
         let binary_time =
             modified(&path).unwrap_or_else(|| panic!("cannot stat the resolved binary: {path:?}"));
-        let Some((newest, newest_time)) = newest_source_under(&workspace_root.join("crates"))
-        else {
+        let Some((newest, newest_time)) = newest_source_under(&manifest_dir) else {
             // No sources to compare against: nothing to assert.
             return;
         };
@@ -562,5 +570,63 @@ mod tests {
 
     fn modified(path: &Path) -> Option<std::time::SystemTime> {
         std::fs::metadata(path).ok()?.modified().ok()
+    }
+
+    /// Pin the scope of `newest_source_under` (and the caller
+    /// `the_binary_under_test_is_not_older_than_the_sources_it_was_built_from`):
+    /// the walk must NOT cross into sibling crates' `src/` trees. An edit
+    /// to a file outside this crate is not a reason to rebuild this bin
+    /// (cargo's per-crate incremental build agrees), and the guard
+    /// pretending it is makes the merge-gate red for unrelated changes.
+    ///
+    /// The temporary file lives only for the duration of the test; it is
+    /// placed inside a subdirectory of the current crate so the walk
+    /// actually visits it. The other file is placed OUTSIDE the crate
+    /// (sibling directory) and the walk must skip it.
+    #[test]
+    fn newest_source_under_does_not_see_sibling_crate_sources() {
+        let tmp = std::env::temp_dir().join(format!("newest-source-scope-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+
+        // Fake crate layout: tmp/crate_a/src/ and tmp/crate_b/src/. The
+        // walk is rooted at tmp/crate_a and must only see crate_a/src/.
+        let in_scope = tmp.join("crate_a").join("src");
+        let out_of_scope = tmp.join("crate_b").join("src");
+        std::fs::create_dir_all(&in_scope).unwrap();
+        std::fs::create_dir_all(&out_of_scope).unwrap();
+
+        // Both files exist before we muck with mtimes. The in-scope
+        // file is older than the out-of-scope one, so a buggy walk
+        // would report the out-of-scope file as the "newest".
+        let in_path = in_scope.join("main.rs");
+        let out_path = out_of_scope.join("main.rs");
+        std::fs::write(&in_path, b"// inside\n").unwrap();
+        std::fs::write(&out_path, b"// outside, newer\n").unwrap();
+
+        let t_in = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        let t_out = std::time::SystemTime::now();
+        filetime_set(&in_path, t_in);
+        filetime_set(&out_path, t_out);
+
+        fn filetime_set(p: &Path, t: std::time::SystemTime) {
+            let f = std::fs::OpenOptions::new().write(true).open(p).unwrap();
+            f.set_modified(t).unwrap();
+        }
+
+        let root = tmp.join("crate_a");
+        let (found_path, found_time) =
+            newest_source_under(&root).expect("walk must find at least one source");
+
+        assert!(
+            found_path.starts_with(&in_scope),
+            "walk crossed into a sibling crate: {found_path:?}"
+        );
+        assert_eq!(
+            found_time, t_in,
+            "the newest source under the crate must come from inside it"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
