@@ -9,18 +9,19 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-17, sobre `main` HEAD `755e97a6a33b4f2788798aaf2115c1855d39cb23`
-> (squash del PR #374: corte CU-2.5 — bump 4 superficies + golden
-> regenerado + snapshot reconciliado). **`v0.101.21` publicada y verificada**
-> (2026-10-17T18:27:37Z, 8 assets: sumas 8/8, asset-set PASS,
-> tag-coherence OK, instalación y smoke JSON reales sobre los bytes
-> descargados — ver
-> `production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`).
-> **CU-2 completo (5/5).**
+> **Snapshot**: 2026-10-17, sobre `main` HEAD
+> `4e1821f534b443328f1f4e4299731af09174b1a1` (squash del PR #377:
+> K0 cerrado y bumpeado a **v0.101.22**). La release v0.101.21
+> (CU-2.5) está en `755e97a6` (HEAD previo) y se publicó
+> 2026-10-17T18:27:37Z, 8 assets, asset-set PASS — ver
+> `production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`.
+> **K0 cerrado (línea Kotlin K0–K3), CU-2 sigue completo (5/5).**
 >
-> Próxima unidad: CU-3 (experiencia agent-first) o K0 (cobertura honesta,
-> línea Kotlin subordinada) per
-> [`docs/roadmap/ROADMAP.md`](ROADMAP.md) §11.
+> Próxima unidad: K0.1 (`taxonomía por fichero` +
+> `CompleteForScope`, mismo PATCH SemVer) o K1 (tree-sitter-kotlin,
+> primera release de Kotlin utilizable). Ver
+> `consumer-contracts/kotlin-evolution/MILESTONES.md` y
+> `consumer-contracts/kotlin-evolution/INTEGRATION.md`.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir

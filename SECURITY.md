@@ -82,7 +82,8 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.101.21 (current release, `v0.101.21`) | yes |
+| 0.101.22 (current release, `v0.101.22`) | yes |
+| 0.101.21 (previous published release, `v0.101.21`) | yes |
 | 0.101.20 (previous published release, `v0.101.20`) | yes |
 | 0.101.17 (previous published release, `v0.101.17`) | yes |
 | 0.101.9 (previous release, `v0.101.9`) | yes |

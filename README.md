@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.21`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.22`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.21`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.22`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -437,16 +437,18 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.21` — cut from this tree as `v0.101.21`.
+- **Current release:** `v0.101.22` — cut from this tree as `v0.101.22`.
   The last release with published assets is
-  [`v0.101.17`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.17),
-  which is what an unpinned `install.sh` serves today. v0.101.21 ships the
-  CU-1 reliable consumption SDK (typed `CapabilityRequest`/`CapabilityPlan`
+  [`v0.101.22`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.22),
+  which is what an unpinned `install.sh` serves today. v0.101.22 ships the
+  K0 honest Kotlin coverage walk (new `KnownUnsupportedGap` classification,
+  kotlin removed from advertised support, kt/kts bridged to typed gap),
+  the CU-1 reliable consumption SDK (typed `CapabilityRequest`/`CapabilityPlan`
   facade with identical semantics across CLI, SDK and MCP), the version-law
   fix, the D1 harness-lean improvements and the x86_64-only TIER1 scoping
   that unblocks the release lane, restoring the full asset set.
-- **Binaries report:** `0.101.21` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.21`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.21).
+- **Binaries report:** `0.101.22` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.22`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.22).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18` and `v0.101.19` exist and were never published. Each
   has a changelog entry

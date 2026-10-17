@@ -10,6 +10,45 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.22] — 2026-10-17
+
+**Corte de release de K0 (línea Kotlin K0–K3 subordinada a CU-2).**
+Bump PATCH sobre v0.101.21. Cierra el headline de cobertura honesta
+del walk: tres defectos latentes del grafo (clasificación dispersa,
+registro de lenguajes ignorado, kotlin anunciado sin gramática
+cableada) se cierran con un clasificador único, una autoridad
+única (`Language::from_extension`), y un tipo dedicado
+`WalkClassification::KnownUnsupportedGap` para extensiones
+anunciadas sin parser (`kt`/`kts` hasta K1).
+
+- `per_file_graph::classify_walk_extension` único: `Analyze |
+  KnownUnsupportedGap | LegitExclusion`. 3 sitios en
+  `strategy.rs` (legacy walk, `build_full_graph`,
+  `build_full_graph_report`) y 1 en `analysis_service.rs` derivan
+  al clasificador compartido.
+- `interface/mcp/capabilities.rs`: `kotlin` retirado de
+  `ALL_TREE_SITTER_LANGS` (22 → 21). `capabilities_drift_lint.py
+  --strict` pinea el constant contra `CAPABILITIES-MATRIX.md`.
+- 3 tests RED→GREEN en `k0_honest_coverage_tests`:
+  `registered_source_symbols_reach_the_graph`,
+  `complete_requires_no_unprocessed_registered_sources`,
+  `known_unsupported_source_is_an_honest_gap`.
+- `docs/roadmap/consumer-contracts/kotlin-evolution/`: 17 archivos
+  del paquete upstream `docs/cognicode-kotlin-roadmap/` (working
+  tree only) integrados a un destino tracked, con baseline
+  actualizado a `main@755e97a6`/v0.101.21 y `MILESTONES.md`
+  reescrito: K0 marcado [x] en criterios 1 (parcial), 2, 3
+  (parcial) y 6; K0.1 propuesto cerrando los criterios restantes
+  (taxonomía 7+ variantes, `CompleteForScope`, diagnóstico
+  CLI/MCP).
+
+Defectos separados, anotados en
+`docs/roadmap/production-ready/veredictos/2026-10-17-k0-honest-coverage.md`:
+PRF f6.w1 (test huérfano de `cogh generate`, no enumerado en
+`merge-gate.pipeline.kts`, no bloquea); K0 criterios restantes
+(K0.1); K1 tree-sitter-kotlin (dependencia dura del primer Kotlin
+utilizable).
+
 ## [v0.101.21] — 2026-10-17
 
 **Corte de release de CU-2 (Evidencia con autoridad correcta).** Publica
