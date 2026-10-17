@@ -329,9 +329,18 @@ impl GraphStrategy for PerFileStrategy {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
+            // K0: clasificación única compartida — el registro decide qué
+            // se analiza (la lista rígida `rs|py|js|ts` descartaba en
+            // silencio ~22 lenguajes registrados). Este método legacy no
+            // reporta: las exclusiones/gaps se observan por
+            // `build_full_graph_report`.
             if path.is_file()
-                && let Some(ext) = path.extension()
-                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
+                && matches!(
+                    crate::infrastructure::graph::per_file_graph::classify_walk_extension(
+                        path.extension().and_then(|e| e.to_str())
+                    ),
+                    crate::infrastructure::graph::per_file_graph::WalkClassification::Analyze
+                )
             {
                 paths.push(path.to_path_buf());
             }
@@ -365,7 +374,9 @@ impl PerFileStrategy {
         &self,
         project_dir: &Path,
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        use crate::infrastructure::graph::per_file_graph::{SkipReason, SkippedFile};
+        use crate::infrastructure::graph::per_file_graph::{
+            SkipReason, SkippedFile, WalkClassification, classify_walk_extension,
+        };
         use walkdir::WalkDir;
 
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -386,11 +397,26 @@ impl PerFileStrategy {
                 }
             };
             let path = entry.path();
-            if path.is_file()
-                && let Some(ext) = path.extension()
-                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
-            {
-                paths.push(path.to_path_buf());
+            // K0: clasificación única compartida (ver
+            // `per_file_graph::classify_walk_extension`). Una fuente
+            // registrada que no llegue a parsearse queda en `skipped`
+            // con razón (la capa per-file ya emite
+            // `Read/Parse/UnsupportedExtension`); una extensión
+            // irrelevante (README.md) se excluye legítimamente sin gap;
+            // una conocida-sin-soporte (`kt`/`kts`) sí es gap.
+            if path.is_file() {
+                match classify_walk_extension(path.extension().and_then(|e| e.to_str())) {
+                    WalkClassification::Analyze => paths.push(path.to_path_buf()),
+                    WalkClassification::KnownUnsupportedGap => walk_skipped.push(SkippedFile {
+                        path: path.to_string_lossy().to_string(),
+                        reason: SkipReason::UnsupportedExtension(
+                            path.extension()
+                                .map(|e| e.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                        ),
+                    }),
+                    WalkClassification::LegitExclusion => {}
+                }
             }
         }
 
@@ -446,7 +472,9 @@ impl FullGraphStrategy {
         &self,
         project_dir: &Path,
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        use crate::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason, SkippedFile};
+        use crate::infrastructure::graph::per_file_graph::{
+            BuildStatus, SkipReason, SkippedFile, WalkClassification, classify_walk_extension,
+        };
         use walkdir::WalkDir;
 
         let mut store = crate::infrastructure::graph::PetGraphStore::new();
@@ -479,22 +507,30 @@ impl FullGraphStrategy {
                 continue;
             }
 
-            // Unsupported language: report as UnsupportedExtension (H-02).
-            let language =
-                match crate::infrastructure::parser::Language::from_extension(path.extension()) {
-                    Some(lang) => lang,
-                    None => {
-                        parse_skipped.push(SkippedFile {
-                            path: path.to_string_lossy().to_string(),
-                            reason: SkipReason::UnsupportedExtension(
-                                path.extension()
-                                    .map(|e| e.to_string_lossy().to_string())
-                                    .unwrap_or_default(),
-                            ),
-                        });
-                        continue;
-                    }
-                };
+            // K0: clasificación única compartida. El registro decide qué
+            // se analiza; una extensión irrelevante (README.md) es
+            // exclusión legítima y NO genera gap (antes H-02 la listaba
+            // como `UnsupportedExtension`, inflando el `Partial`); una
+            // conocida-sin-soporte (`kt`/`kts`) sí es gap tipado.
+            let language = match classify_walk_extension(path.extension().and_then(|e| e.to_str()))
+            {
+                WalkClassification::Analyze => {
+                    crate::infrastructure::parser::Language::from_extension(path.extension())
+                        .expect("classify_walk_extension::Analyze implica registro")
+                }
+                WalkClassification::KnownUnsupportedGap => {
+                    parse_skipped.push(SkippedFile {
+                        path: path.to_string_lossy().to_string(),
+                        reason: SkipReason::UnsupportedExtension(
+                            path.extension()
+                                .map(|e| e.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                        ),
+                    });
+                    continue;
+                }
+                WalkClassification::LegitExclusion => continue,
+            };
 
             // Read error: report as Read (H-02).
             let source = match std::fs::read_to_string(path) {
@@ -870,6 +906,143 @@ mod tests {
     fn test_strategy_factory_default() {
         let s = GraphStrategyFactory::create("unknown");
         assert_eq!(s.name(), "OnDemandStrategy"); // Default
+    }
+}
+
+#[cfg(test)]
+mod k0_honest_coverage_tests {
+    //! K0 — línea Kotlin, cobertura honesta: el walk de `PerFileStrategy`
+    //! no puede descartar en silencio fuentes de lenguajes registrados.
+    //!
+    //! Caracterización del defecto (RED antes del fix): el walk filtraba
+    //! `rs|py|js|ts` a mano mientras el registro `Language::from_extension`
+    //! resuelve ~25 lenguajes (go, java, c/cpp, tsx, rb, ...). Un proyecto
+    //! cuyo código estuviera fuera de esos cuatro producía un grafo
+    //! incompleto reportado como `Complete`, y ni siquiera
+    //! `build_full_graph_report` listaba las fuentes caídas en `skipped`.
+    //!
+    //! Contrato K0 (disyunción honesta): una fuente con lenguaje
+    //! registrado, o se analiza (sus símbolos aparecen), o queda en
+    //! `skipped` con razón — desaparecer en silencio es el defecto. Un
+    //! fichero de lenguaje NO registrado (README.md) se excluye
+    //! legítimamente y no genera gap.
+    use super::*;
+    use crate::infrastructure::graph::per_file_graph::BuildStatus;
+    use crate::infrastructure::parser::Language;
+    use std::io::Write as _;
+
+    fn write(path: &std::path::Path, content: &str) {
+        std::fs::File::create(path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+    }
+
+    fn mixed_corpus() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("main.rs"),
+            "fn main() {\n    helper();\n}\n\nfn helper() {}\n",
+        );
+        write(
+            &dir.path().join("util.go"),
+            "package main\n\nfunc Util() int {\n    return 1;\n}\n",
+        );
+        write(
+            &dir.path().join("Util.kt"),
+            "package corpus\n\nfun util(): Int = 1\n",
+        );
+        write(&dir.path().join("README.md"), "# corpus\n");
+        dir
+    }
+
+    fn simple_names(graph: &crate::domain::aggregates::call_graph::CallGraph) -> Vec<String> {
+        graph.symbols().map(|s| s.name().to_string()).collect()
+    }
+
+    /// La fuente Go del corpus está en el registro y su símbolo `Util`
+    /// debe existir tras el análisis. Hoy el walk la descarta en silencio
+    /// y este test cae: esa es la señal RED que caracteriza el defecto.
+    #[test]
+    fn k0_registered_source_symbols_reach_the_graph() {
+        // Precondición del corpus: `go` es un lenguaje registrado.
+        assert!(Language::from_extension(Some(std::ffi::OsStr::new("go"))).is_some());
+
+        let dir = mixed_corpus();
+        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
+
+        let names = simple_names(&report.graph);
+        assert!(
+            names.iter().any(|n| n == "Util"),
+            "la fuente registrada util.go desaparecio en silencio: \
+             simbolos = {:?}, status = {:?}",
+            names,
+            report.status
+        );
+    }
+
+    /// Disyunción por-fuente para `util.go` (registrada): o sus símbolos
+    /// están, o está listada en `skipped`. Y `Complete` global solo es
+    /// honesto si ninguna fuente registrada quedó sin procesar —
+    /// independiente de que Util.kt (gap conocido) degrade a `Partial`.
+    #[test]
+    fn k0_complete_requires_no_unprocessed_registered_sources() {
+        let dir = mixed_corpus();
+        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
+
+        let go_analyzed = simple_names(&report.graph).iter().any(|n| n == "Util");
+        let go_listed = match &report.status {
+            BuildStatus::Partial { skipped } => skipped.iter().any(|s| s.path.ends_with("util.go")),
+            BuildStatus::Complete => false,
+        };
+        assert!(
+            go_analyzed || go_listed,
+            "util.go (registrada) ni analizada ni listada: desaparicion silenciosa; \
+             status = {:?}, simbolos = {:?}",
+            report.status,
+            simple_names(&report.graph)
+        );
+
+        if let BuildStatus::Partial { skipped } = &report.status {
+            assert!(
+                !skipped.iter().any(|s| s.path.ends_with("README.md")),
+                "README.md es exclusion legitima (lenguaje no registrado), no un gap: {:?}",
+                skipped
+            );
+        }
+    }
+
+    /// Puente K0: `Util.kt` es un lenguaje conocido-sin-soporte, no una
+    /// exclusión legítima. El reporte debe degradar a `Partial`,
+    /// listarla con `UnsupportedExtension` y no declarar `Complete`
+    /// mientras exista una fuente Kotlin sin analizar.
+    #[test]
+    fn k0_known_unsupported_source_is_an_honest_gap() {
+        let dir = mixed_corpus();
+        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
+
+        match &report.status {
+            BuildStatus::Complete => {
+                panic!(
+                    "Complete con Util.kt sin analizar: kotlin es un gap conocido, no una exclusion legitima"
+                );
+            }
+            BuildStatus::Partial { skipped } => {
+                let kt = skipped
+                    .iter()
+                    .find(|s| s.path.ends_with("Util.kt"))
+                    .expect("Util.kt debe listar en skipped");
+                assert!(
+                    matches!(
+                        &kt.reason,
+                        crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(ext)
+                            if ext == "kt"
+                    ),
+                    "la razon de Util.kt debe ser UnsupportedExtension(\"kt\"), no {:?}",
+                    kt.reason
+                );
+            }
+        }
     }
 }
 

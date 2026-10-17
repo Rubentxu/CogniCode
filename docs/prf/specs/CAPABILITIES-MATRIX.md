@@ -20,17 +20,26 @@ el operador).
 
 ## Lenguajes con parser tree-sitter
 
-Lista oficial inferida de `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs::from_extension`
-(22 lenguajes):
+Lista oficial inferida de `crates/cognicode-core/src/interface/mcp/capabilities.rs::ALL_TREE_SITTER_LANGS`
+(21 lenguajes). Sincronizada con `Language::from_extension` y
+`tree_sitter_parser.rs::from_extension`:
 
 ```
 Python, Rust, JavaScript, TypeScript, JSX, TSX, Go, Java,
 C, Cpp, CSharp, Hcl (Terraform), Yaml, Ruby, Php, Swift,
-Scala, Lua, Luau, Zig, Dart, Kotlin (todos via tree-sitter)
+Scala, Lua, Luau, Zig, Dart (todos via tree-sitter)
 ```
 
 Cualquier archivo con extensión distinta a la lista cae en
-**unsupported** (U15, `SkipReason::UnsupportedExtension`, §96).
+**unsupported** (U15, `SkipReason::UnsupportedExtension`, §96). Las
+extensiones `kt`/`kts` son una excepción tipada: a partir de K0 (línea
+Kotlin, veredicto `2026-10-17-k0-honest-coverage.md`) viven en
+`per_file_graph::KNOWN_UNSUPPORTED_EXTENSIONS` con la clasificación
+explícita `WalkClassification::KnownUnsupportedGap`, no en
+`SkipReason::UnsupportedExtension` — son un gap anunciado del que el
+walk da cuenta, no un fallo silencioso. La línea Kotlin K1 los
+re-añade a esta matriz cuando cablee `tree-sitter-kotlin` en el
+registro `Language::from_extension`.
 
 ## Lenguajes con provider LSP (override de tree-sitter para navigation)
 

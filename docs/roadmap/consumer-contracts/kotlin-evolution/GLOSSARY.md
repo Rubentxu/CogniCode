@@ -1,0 +1,25 @@
+# Anexo: lenguaje ubicuo
+
+- **Análisis de alcance / `ScanScope`**: conjunto de archivos que la operación se compromete a considerar, con política de exclusión explícita.
+- **Universo de archivos**: todo el conjunto descubierto, anterior al filtrado de extensiones y errores.
+- **Elegible**: fichero cuyo lenguaje, política y acceso permiten analizarlo bajo un scope dado.
+- **Cobertura**: descripción comprobable de qué del alcance se analizó realmente. No equivale al número de nodos o tests.
+- **`Complete`**: se procesó el alcance elegible prometido; no significa entender toda la semántica de Kotlin ni todo el repositorio.
+- **`Partial/Unknown/Unsupported`**: análisis incompleto, imposibilidad de determinar, o ausencia de capacidad; no son éxito total ni sinónimos de grafo vacío.
+- **Símbolo (`SymbolIdentity`)**: identidad canónica de una declaración, incluyendo ámbito, owner y firma cuando es posible.
+- **Observación (`Observation`)**: dato extraído con fuente y límite, distinto de una conclusión.
+- **Arista (`RelationObservation`)**: relación tipada con callsite, símbolo de origen, destino y evidencia/proveedor.
+- **`Resolved`**: destino de arista inequívoco; **`Ambiguous`**: varios candidatos; **`Unresolved`**: sin prueba suficiente; **`External`**: fuera del índice/alcance.
+- **S0/S1/S2/S3/S4**: tiers existentes Tree-sitter / resolver local / LSP / SCIP-LSIF (reservado) / IR de compilador (reservado).
+- **Provider**: productor de observaciones (parser, local resolver, LSP, índice), no segunda autoridad de grafo.
+- **LSP**: protocolo de lenguaje para definiciones, referencias y jerarquías, con permisos y readiness propios.
+- **SCIP**: índice semántico serializado que vincula símbolos y ocurrencias, no parser de texto.
+- **Kotlin script**: fichero `.kts` cuya semántica de aplicación no se infiere de parsear DSL.
+- **Interop JVM**: identidad y relaciones compartidas Kotlin↔Java; no simple coincidencia textual.
+- **UAT**: aceptación del consumidor; **E2E**: flujo de punta a punta con binario/protocolo real; **AAT**: comportamiento de agente, incluida selección de herramientas y límites.
+- **Prueba efímera**: instrumento de sesión retirado tras registrar evidencia y decidir cobertura de regresión.
+- **Contrato permanente**: test pequeño que protege una garantía estable con fallo discriminante.
+- **Lente**: pregunta especializada `delivery-first-testing`, no test runner ni servicio.
+- **Hito**: bloque de capacidad utilizable que finaliza en merge remoto + release distribuita e instalable.
+- **Source basis**: versión/código/config y snapshot que dan validez a la evidencia.
+- **Artefacto de release**: producto consumible (binario, bundle o SDK), no `Source code.zip` generado automáticamente.

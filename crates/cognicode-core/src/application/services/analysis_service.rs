@@ -664,15 +664,15 @@ impl AnalysisService {
 
         let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
 
-        // Index all supported files first — merge_all only merges cached entries
-        let supported_extensions = ["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"];
+        // Index all supported files first — merge_all only merges cached entries.
+        // K0: la autoridad de "soportado" es el registro
+        // `Language::from_extension`, no una lista paralela (la lista
+        // previa de 9 extensiones descartaba tsx/jsx/rb/php/... en
+        // silencio).
         if let Ok(entries) = std::fs::read_dir(project_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file()
-                    && let Some(ext) = path.extension().and_then(|e| e.to_str())
-                    && supported_extensions.contains(&ext)
-                {
+                if path.is_file() && Language::from_extension(path.extension()).is_some() {
                     let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
                 }
             }

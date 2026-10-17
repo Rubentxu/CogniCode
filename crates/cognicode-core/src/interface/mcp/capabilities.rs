@@ -23,9 +23,18 @@ pub struct ToolCapabilities {
     pub precision: &'static str,
 }
 
-/// Lista completa de lenguajes con parser tree-sitter (22 entradas).
-/// Mantener sincronizada con
-/// `crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs::from_extension`.
+/// Lenguajes con parser tree-sitter realmente cableado (21 entradas).
+/// Autoridades de sincronía: el registro
+/// `crate::domain::value_objects::language::Language::from_extension`
+/// (qué extensiones existen como lenguaje) y
+/// `crate::infrastructure::parser::language_config::LanguageConfig`
+/// (qué lenguajes tienen gramática y mapeo de símbolos), más las
+/// dependencias `tree-sitter-*` de `Cargo.toml`.
+///
+/// K0 (2026-10-17): `kotlin` se retiró de esta lista — se anunciaba sin
+/// gramática cableada ni entrada en el registro (CapabilityAdvertised ≠
+/// CapabilityVerified). La línea Kotlin (K1) lo re-añade junto con la
+/// gramática y el registro reales.
 pub const ALL_TREE_SITTER_LANGS: &[&str] = &[
     "python",
     "rust",
@@ -48,7 +57,6 @@ pub const ALL_TREE_SITTER_LANGS: &[&str] = &[
     "luau",
     "zig",
     "dart",
-    "kotlin",
 ];
 
 /// Lenguajes con provider LSP nativo

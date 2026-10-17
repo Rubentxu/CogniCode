@@ -707,6 +707,51 @@ pub struct SkippedFile {
     pub reason: SkipReason,
 }
 
+/// Extensiones de lenguajes que el producto reconoce como relevantes
+/// pero que aún no tienen gramática cableada (puente K0, línea Kotlin).
+///
+/// Una fuente con una de estas extensiones no se descarta en silencio:
+/// el reporte la lista en `skipped` con razón `UnsupportedExtension` y
+/// el estado pasa a `Partial`. Es la distinción entre «lenguaje conocido
+/// sin soporte» (gap honesto) y «extensión irrelevante» como un
+/// README.md (exclusión legítima, sin gap).
+///
+/// Cada entrada vive aquí SOLO hasta que su gramática aterriza en el
+/// registro (`Language::from_extension`) — la línea Kotlin (K1) mueve
+/// `kt`/`kts` de esta lista al registro.
+pub const KNOWN_UNSUPPORTED_EXTENSIONS: &[&str] = &["kt", "kts"];
+
+/// K0 — clasificación única de un archivo de walk, compartida por las
+/// estrategias. Una misma semántica, un dueño: el registro
+/// `Language::from_extension` decide qué se analiza; esta clasificación
+/// decide qué es gap y qué es exclusión legítima.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WalkClassification {
+    /// Extensión en el registro: la fuente se analiza (sus fallos de
+    /// lectura/parse se reportan aparte, con razón tipada).
+    Analyze,
+    /// Lenguaje conocido-sin-soporte: gap honesto con razón
+    /// `UnsupportedExtension`.
+    KnownUnsupportedGap,
+    /// Extensión irrelevante para el análisis (README, imágenes, datos):
+    /// exclusión legítima, no genera gap ni entrada en `skipped`.
+    LegitExclusion,
+}
+
+/// Clasifica la extensión de un archivo de walk según el contrato K0.
+pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
+    use crate::infrastructure::parser::Language;
+    match ext {
+        Some(e) if Language::from_extension(Some(std::ffi::OsStr::new(e))).is_some() => {
+            WalkClassification::Analyze
+        }
+        Some(e) if KNOWN_UNSUPPORTED_EXTENSIONS.contains(&e) => {
+            WalkClassification::KnownUnsupportedGap
+        }
+        _ => WalkClassification::LegitExclusion,
+    }
+}
+
 /// Overall status of a `merge_with_report` operation.
 ///
 /// Three states are distinguished on purpose. A "Complete" result means
