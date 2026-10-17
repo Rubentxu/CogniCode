@@ -10,6 +10,24 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.20] — 2026-10-17
+
+**Corte de release de CU-1.** El RC de `v0.101.19` llegó a la etapa
+`payloads` (25 etapas verdes) y falló con "no lane claimed Tier-1
+platform aarch64-unknown-linux-gnu": `TIER1_PLATFORMS` exigía aarch64
+pero ninguna lane lo construye (bug preexistente que D1 arrastró al
+perder `TIER1_TRIPLES_OVERRIDE` del pipeline; la v0.101.17 publicada
+lo llevaba). El fix (#361) cambia código Rust y no puede entrar en un
+tag ya cortado, así que este corte lo integra y publica.
+
+Contiene todo lo de v0.101.19 (que queda como corte no publicado): el
+SDK CU-1 completo, la corrección de divergencia real CLI/SDK/MCP, la ley
+de versión del provider derivada del workspace y la D1 harness-lean, más:
+
+- **TIER1_PLATFORMS pasa a x86_64-only** hasta que TF-7 provisione
+  aarch64 (#361). El release tool dejaba de exigir binarios aarch64 que
+  el pipeline nunca construyó.
+
 ## [v0.101.19] — 2026-10-17
 
 **CU-1: reliable consumption SDK.** Un consumidor Rust recibe el mismo
