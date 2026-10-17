@@ -77,7 +77,13 @@ pub const ALL_PLATFORMS: [Platform; 5] = [
 ];
 
 /// Platforms e85 actually publishes. Tier 1 (e84 WU9).
-pub const TIER1_PLATFORMS: [Platform; 2] = [Platform::LinuxX86_64, Platform::LinuxAarch64];
+///
+/// Restricted to `LinuxX86_64` while `linux-aarch64` remains
+/// `experimental` per `product/platforms.json` and the cross-build
+/// lane (TF-6/TF-7) is not provisioned. Aarch64 returns to Tier 1
+/// once the runner ships; the only change required then is restoring
+/// the second element of this array.
+pub const TIER1_PLATFORMS: [Platform; 1] = [Platform::LinuxX86_64];
 
 /// The Rust target triple for a platform. Total over all variants.
 pub fn platform_token(platform: Platform) -> &'static str {

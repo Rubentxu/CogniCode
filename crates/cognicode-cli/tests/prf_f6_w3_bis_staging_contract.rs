@@ -62,10 +62,15 @@ fn flatten_script() -> PathBuf {
 
 /// Tier-1 platform short identifiers, matching the `platformOf` mapping
 /// `release-candidate.pipeline.kts` packages each target under.
-const TIER1_SHORT: &[&str] = &["linux-x86-64", "linux-aarch64"];
+///
+/// TIER1_PLATFORMS is x86_64-only until TF-7 provisions aarch64
+/// (release_contract.rs). Restore the second element when the lane
+/// ships; the staging contract is per-lane, so a single target is
+/// enough to pin it.
+const TIER1_SHORT: &[&str] = &["linux-x86-64"];
 /// Tier-1 platform target triples, matching the tarball + SBOM
 /// filename suffix produced by `cognicode-release name`.
-const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"];
+const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu"];
 const PLATFORM_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 const SKILL_BUNDLES: &[&str] = &["cognicode", "cognicode-mcp"];
 
@@ -321,51 +326,23 @@ fn prf_f6_w3_bis_flatten_rejects_unknown_platform() {
 /// Missing a Tier-1 platform must be rejected. If only the x86_64
 /// lane is uploaded (e.g. a CI failure on aarch64) the flatten
 /// script must not silently produce a release missing one platform.
+///
+/// RETIRED 2026-10-17: this test exercises the dual-platform case
+/// ("only x86_64 is uploaded → must reject"). With TIER1_PLATFORMS
+/// x86_64-only (release_contract.rs), shipping only x86_64 IS the
+/// complete state, not a partial one; the script's "must reject"
+/// branch no longer applies. Restore alongside the second TIER1
+/// element. The "no Tier-1 lanes at all" rejection is still covered
+/// by the empty staging test in the same file.
 #[test]
 fn prf_f6_w3_bis_flatten_rejects_missing_tier1_platform() {
-    use std::fs;
-    let tmp = std::env::temp_dir().join(format!("prf-f6-w3bis-missingplat-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&tmp);
-    let staging = tmp.join("staging");
-    fs::create_dir_all(&staging).unwrap();
-
-    // Only ship the x86_64 lane using short ids.
-    let lane = staging.join("payloads-linux-x86-64");
-    fs::create_dir_all(lane.join("dist")).unwrap();
-    for comp in PLATFORM_COMPONENTS {
-        fs::write(
-            lane.join("dist").join(format!(
-                "{comp}-{}-x86_64-unknown-linux-gnu.tar.gz",
-                env!("CARGO_PKG_VERSION")
-            )),
-            b"x86_64\n",
-        )
-        .unwrap();
-        fs::create_dir_all(lane.join("crates")).unwrap();
-        fs::write(
-            lane.join("crates")
-                .join(format!("{comp}-x86_64-unknown-linux-gnu.cdx.json")),
-            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-        )
-        .unwrap();
-    }
-
-    let out = Command::new("bash")
-        .arg(flatten_script())
-        .arg(&staging)
-        .output()
-        .unwrap();
-    assert!(
-        !out.status.success(),
-        "flatten must reject a layout that omits a Tier-1 platform"
-    );
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        stderr.contains("aarch64-unknown-linux-gnu"),
-        "error must reference the missing Tier-1 platform; got: {stderr}"
-    );
-
-    let _ = fs::remove_dir_all(&tmp);
+    // RETIRED — see function-level doc comment. The test body
+    // asserted "only x86_64 lane is rejected", which is the wrong
+    // outcome in a TIER1-x86_64-only world: shipping only x86_64 is
+    // the COMPLETE state, not a partial one. The original assertions
+    // are intentionally removed to keep the suite green while TIER1
+    // is x86_64-only; restoring requires also restoring the aarch64
+    // lane (TF-7) and the second TIER1_PLATFORMS element.
 }
 
 /// A short-form lane and its target-triple alias lane together
@@ -379,11 +356,11 @@ fn prf_f6_w3_bis_flatten_rejects_short_and_triple_alias_collision() {
     let staging = tmp.join("staging");
     fs::create_dir_all(&staging).unwrap();
 
-    // Short id + triple alias for x86_64; aarch64 lane only via short id.
+    // Short id + triple alias for x86_64. TIER1 is x86_64-only
+    // (release_contract.rs); no aarch64 lane to add.
     let short_x86 = staging.join("payloads-linux-x86-64");
     let triple_x86 = staging.join("payloads-x86_64-unknown-linux-gnu");
-    let short_aarch = staging.join("payloads-linux-aarch64");
-    for lane in [&short_x86, &triple_x86, &short_aarch] {
+    for lane in [&short_x86, &triple_x86] {
         fs::create_dir_all(lane.join("dist")).unwrap();
         fs::create_dir_all(lane.join("crates")).unwrap();
     }
@@ -407,22 +384,8 @@ fn prf_f6_w3_bis_flatten_rejects_short_and_triple_alias_collision() {
             .unwrap();
         }
     }
-    for comp in PLATFORM_COMPONENTS {
-        fs::write(
-            short_aarch.join("dist").join(format!(
-                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
-                env!("CARGO_PKG_VERSION")
-            )),
-            b"aarch64 payload\n",
-        )
-        .unwrap();
-        fs::write(
-            short_aarch
-                .join("crates")
-                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
-            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-        )
-        .unwrap();
+    for _comp in PLATFORM_COMPONENTS {
+        // (aarch64 lane dropped — TIER1 is x86_64-only)
     }
 
     let out = Command::new("bash")
@@ -485,28 +448,10 @@ fn prf_f6_w3_bis_flatten_rejects_wrong_triple_inside_lane() {
         )
         .unwrap();
     }
-    // Add a valid aarch64 lane so the missing-platform check does
-    // not trip first.
-    let aarch = staging.join("payloads-linux-aarch64");
-    fs::create_dir_all(aarch.join("dist")).unwrap();
-    fs::create_dir_all(aarch.join("crates")).unwrap();
-    for comp in PLATFORM_COMPONENTS {
-        fs::write(
-            aarch.join("dist").join(format!(
-                "{comp}-{}-aarch64-unknown-linux-gnu.tar.gz",
-                env!("CARGO_PKG_VERSION")
-            )),
-            b"real aarch64\n",
-        )
-        .unwrap();
-        fs::write(
-            aarch
-                .join("crates")
-                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
-            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-        )
-        .unwrap();
-    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only, so no second
+    // platform to satisfy. The defensive cross-lane mismatch is still
+    // exercised: x86_64 lane claims x86_64 but ships aarch64 tarballs,
+    // and the script must reject that.)
 
     let out = Command::new("bash")
         .arg(flatten_script())
@@ -581,27 +526,7 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_overmatch_into_mcp() {
         )
         .unwrap();
     }
-    // Add a valid aarch64 lane so the missing-platform check does
-    // not trip first.
-    let aarch = staging.join("payloads-linux-aarch64");
-    fs::create_dir_all(aarch.join("dist")).unwrap();
-    fs::create_dir_all(aarch.join("crates")).unwrap();
-    for comp in ["cogh", "cognicode", "cognicode-mcp"] {
-        fs::write(
-            aarch
-                .join("dist")
-                .join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
-            format!("payload {comp} aarch64\n").as_bytes(),
-        )
-        .unwrap();
-        fs::write(
-            aarch
-                .join("crates")
-                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
-            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-        )
-        .unwrap();
-    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only.)
 
     let out = Command::new("bash")
         .arg(flatten_script())
@@ -656,25 +581,7 @@ fn prf_f6_w3_bis_flatten_rejects_cognicode_mcp_overmatch_into_cognicode() {
         )
         .unwrap();
     }
-    let aarch = staging.join("payloads-linux-aarch64");
-    fs::create_dir_all(aarch.join("dist")).unwrap();
-    fs::create_dir_all(aarch.join("crates")).unwrap();
-    for comp in ["cogh", "cognicode", "cognicode-mcp"] {
-        fs::write(
-            aarch
-                .join("dist")
-                .join(format!("{comp}-{version}-aarch64-unknown-linux-gnu.tar.gz")),
-            format!("payload {comp} aarch64\n").as_bytes(),
-        )
-        .unwrap();
-        fs::write(
-            aarch
-                .join("crates")
-                .join(format!("{comp}-aarch64-unknown-linux-gnu.cdx.json")),
-            br#"{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}"#,
-        )
-        .unwrap();
-    }
+    // (aarch64 lane dropped — TIER1 is x86_64-only.)
 
     let out = Command::new("bash")
         .arg(flatten_script())

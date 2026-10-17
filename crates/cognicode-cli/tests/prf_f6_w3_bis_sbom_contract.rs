@@ -56,7 +56,12 @@ fn sbom_script() -> PathBuf {
     repo_root().join("scripts/ci/build-sboms-for-lane.sh")
 }
 
-const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"];
+// TIER1_PLATFORMS is x86_64-only until TF-7 provisions aarch64
+// (release_contract.rs). Restore the second element when the lane
+// exists. The SBOM contract is per-lane, so a single target is enough
+// to pin it; a second would be a coverage gain, not a correctness
+// requirement.
+const TIER1_TRIPLES: &[&str] = &["x86_64-unknown-linux-gnu"];
 const PUBLISHED_COMPONENTS: &[&str] = &["cogh", "cognicode", "cognicode-mcp"];
 
 /// Set of canonical SBOM paths the script must produce.

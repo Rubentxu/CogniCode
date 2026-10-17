@@ -99,7 +99,9 @@ declare -A PLATFORM_SHORT_TO_TRIPLE=(
 # `after flatten, no lane claimed Tier-1 platform aarch64-unknown-linux-gnu`
 # because the pipeline's `val targets = listOf("x86_64-unknown-linux-gnu")`
 # but TIER1_TRIPLES still required both.
-TIER1_TRIPLES=(x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu)
+# 2026-10-17: defaulted to x86_64-only to match the release-candidate
+# pipeline's actual publishable lane. Restored to both when TF-7 ships.
+TIER1_TRIPLES=(x86_64-unknown-linux-gnu)
 if [[ -n "${TIER1_TRIPLES_OVERRIDE:-}" ]]; then
   # shellcheck disable=SC2206  # word splitting is intentional
   TIER1_TRIPLES=( ${TIER1_TRIPLES_OVERRIDE} )
