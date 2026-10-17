@@ -142,7 +142,11 @@ fn forged_evidence_id_never_acquires_block_authority_at_seam() {
     // kernel) — but the *observation* does not claim authority: it
     // exposes the id and snapshot so Guard can decide.
     match observation {
-        GuardObservation::Verifiable { evidence, snapshot_id, .. } => {
+        GuardObservation::Verifiable {
+            evidence,
+            snapshot_id,
+            ..
+        } => {
             assert_eq!(evidence.len(), 1);
             assert_eq!(evidence[0].id, EvidenceId(999_999));
             assert_eq!(evidence[0].snapshot, snapshot_id);
@@ -193,12 +197,19 @@ fn verified_finding_full_pipeline_preserves_causal_chain() {
     let finding = detector_finding(EvidenceClass::A, SnapshotId(5));
     let observation = pipeline(&finding, &SnapshotId(5));
     match observation {
-        GuardObservation::Verifiable { causes, evidence, snapshot_id, .. } => {
+        GuardObservation::Verifiable {
+            causes,
+            evidence,
+            snapshot_id,
+            ..
+        } => {
             assert_eq!(snapshot_id, SnapshotId(5));
             assert_eq!(evidence.len(), 2);
             assert_eq!(causes.len(), 1);
             match &causes[0] {
-                CauseProjection::Grounded { fact, evidence: e, .. } => {
+                CauseProjection::Grounded {
+                    fact, evidence: e, ..
+                } => {
                     assert_eq!(*fact, Some(FactId(11)));
                     assert_eq!(*e, Some(EvidenceId(101)));
                 }
