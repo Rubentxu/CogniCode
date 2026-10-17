@@ -365,3 +365,22 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 (`docs(odd): close B5 — release receipts + veredicto + tag SHAs`).
 **Commits B6**: 8 (W1..W6 + close + release) + 2 follow-up (recibo + C8-R fill).
 
+<!-- consumer-contracts:begin -->
+## 11. CU — Consumer-First SDK/CLI/MCP (propuesto, 2026-10-16)
+
+> **Estado inicial: PROPOSED / NOT_STARTED**. Subprograma aditivo sobre el Post-PRF.
+> Preserva B1–B6, la firma C8-R pendiente y PRODUCT-1.0; este `ROADMAP.md`
+> sigue siendo la única agenda activa. Prioridad al contrato real de consumidor
+> CogniCode Guard, sin segunda implementación de análisis.
+>
+> **Plan detallado:** [`consumer-contracts/ROADMAP.md`](consumer-contracts/ROADMAP.md).
+> **Especificaciones:** `consumer-contracts/specs/SPEC-CU-001..006`.
+> **ADRs propuestos:** `consumer-contracts/adr/ADR-CU-001..004`.
+> **Pruebas:** `consumer-contracts/acceptance/TEST-CHARTER.md`.
+>
+> **Orden:** CU-1 API común → CU-2 evidencia verificable; CU-3
+> affordances/consultas progresivas tras CU-1; CU-4 compatibilidad,
+> incrementalidad y release. Cada CU exige merge remoto + release real
+> y eliminación justificada de UAT/E2E/AAT efímeros al cierre.
+
+<!-- consumer-contracts:end -->
