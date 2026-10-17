@@ -9,13 +9,15 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-17, sobre `main` HEAD `95a09468` (post-CU-1.5
+> **Snapshot**: 2026-10-17, sobre `main` HEAD
+> `009bccc878eedd005dda92d5edae771b40c944c2` (post-CU-1.5
 > release + fix TIER1 x86_64-only en PR #361 + fix scope stale-binary
 > guard en PR #363 + CU-2.1 pipeline trace en PR #365 + CU-2.2
 > finding projection en PR #367 + CU-2.3 guard transfer contract en
-> PR #368 + closeout CU-2.3 en PR #369; workspace `v0.101.20` per
-> `Cargo.toml`; v0.101.19 publicada en GitHub Release el 08:28:56Z
-> con 8 assets)
+> PR #368 + closeout CU-2.3 en PR #369 + CU-2.4 live consumer en
+> PR #371; **v0.101.20 publicada** el 2026-10-17 en GitHub Releases
+> con 8 assets verificados — gate 58/58, RC verde, tag `v0.101.20` →
+> `7d4d288f`; v0.101.19 quedó bloqueada en `payloads` por TIER1)
 > fallar reparados y probados por mutación: el veredicto publicado por
 > `publish-merge-gate.sh` ejecutaba en vez de rejugar el journal, la suite
 > adversarial PRF-H06 pasa de 0 tests ejecutados a 15, el rollback de refactor

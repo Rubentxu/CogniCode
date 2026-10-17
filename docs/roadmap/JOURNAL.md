@@ -16600,3 +16600,74 @@ Próximo desbloqueado: **CU-2.4** "Consumidor vivo en aislamiento"
 — repetir caso real Rust con hallazgo técnico y decisión Guard
 sobre copia de trabajo; validar cambios de snapshot, evidencia
 inexistente y precisión heurística.
+
+---
+
+## Entrada 54 — 2026-10-17 — v0.101.20 publicada: gate 58/58, RC verde, 8 assets verificados
+
+### Contexto
+
+`v0.101.19` había quedado bloqueada en `payloads`: `TIER1_PLATFORMS` exigía
+`aarch64-unknown-linux-gnu` y ninguna lane lo construye. El fix (#361) cambia
+código Rust, así que no podía entrar en un tag ya publicado. Corte recursivo
+(opción B): `v0.101.20` desde `main@2764a2ab` con el fix dentro.
+
+El PR #362 acabó llevando, además del bump: `Cargo.lock` sincronizado (el bump
+lo había dejado en 0.101.19), golden `assurance_export` regenerado
+(`868b4a65…`), Entrada 53 del JOURNAL (ratchet M1), snapshot de CURRENT.md al
+día (ratchet M2) y el certificado B6.W5 regenerado ejecutando sus comandos
+sobre `d0c12f3d` (`cp5_workspace_version=0.101.20`).
+
+### Evidencia de promoción
+
+- **Gate de merge**: `scripts/ci/publish-merge-gate.sh c150aa5c` sobre el árbol
+  de la rama, con `CARGO_TARGET_DIR` propio y DB `.pipelinek/merge-gate.db`:
+  **58/58 etapas verdes**, `merge-gate=success` publicado en GitHub para
+  `c150aa5c9e616cfec898920bc7a7f1eabf20f03e`.
+- **Merge**: squash de #362 → `7d4d288f` en `main`.
+- **Tag**: anotado `v0.101.20` (objeto `9ed4eb74`) → `7d4d288f`, pusheado.
+- **RC desde el tag** (`RELEASE_TAG=v0.101.20 pipelinek run
+  release-candidate.pipeline.kts`): todas las etapas verdes, incluida
+  `payloads` — la que bloqueó v0.101.19. `TIER1_PLATFORMS: [Platform; 1] =
+  [Platform::LinuxX86_64]` medido en `crates/cognicode-cli/src/cmd/release_contract.rs`
+  del tag.
+- **Release lane** (`release.pipeline.kts`): `candidate-present`,
+  `re-verify-candidate`, `create-draft`, `upload-payloads`,
+  `confirm-uploaded-set`, `upload-manifests`, `attestations`,
+  `re-verify-after-upload`, `publish-draft`, `verify-latest-resolution`: OK.
+  Publicada en https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.20
+  (`isDraft=false`).
+- **Verificación sobre los bytes publicados** (la etapa que el lane no pudo
+  completar, ejecutada a mano con `GH_REPO`): `gh release download v0.101.20`
+  en directorio limpio + `sha256sum -c SHA256SUMS` → las 8 sumas coinciden.
+- `sandbox/scripts/test_release_asset_set.sh v0.101.20` → **PASS**: los 8
+  assets esperados para `linux-x86-64` están en la release.
+- `release-tag-coherence.sh v0.101.20 7d4d288f` → **OK**: tag ↔ commit ↔
+  `workspace.version=0.101.20`.
+
+### Defectos latentes encontrados (no bloquean esta release; siguen abiertos)
+
+1. **RC y release no comparten layout**. Desde E1 (#339) el RC escribe
+   `staging/payloads-<plataforma>/dist/`, pero `release.pipeline.kts` sigue
+   exigiendo un `dist/` en la raíz ("this lane publishes a candidate; it does
+   not build one. No dist/ directory"). El check y la salida del RC deben
+   moverse juntos. En este corte el `dist/` se materializó a mano desde
+   `staging/payloads-linux-x86-64/dist/` (los mismos tres tarballs).
+2. **`verify-as-consumer` no puede resolver el repo**. Hace
+   `gh release download` dentro de `mktemp -d`, fuera de cualquier repo git, y
+   sin `-R`/`GH_REPO` falla con `fatal: no es un repositorio git`. Añadir
+   `-R "$GITHUB_REPOSITORY"` (o exportar `GH_REPO`) lo arregla.
+3. **El contrato golden lee un binario global mutable**. Prefiere
+   `/var/home/rubentxu/cargo-targets/release/cognicode` antes que cualquier
+   otro candidato; otro checkout lo recompiló a 0.101.19 entre el build y el
+   stage `contracts` y el gate falló dos veces por eso. Debería preferir el
+   `CARGO_TARGET_DIR` del run o construir el binario desde el árbol.
+4. **`build-isolation` cuenta huérfanos propios como ajenos**. Al matar un run
+   a los 600 s quedaron `cargo` del propio worktree vivos, y el siguiente run
+   se negó a arrancar ("sibling is compiling"). El mensaje es correcto; lo que
+   faltaba era matar el grupo de procesos del run anterior.
+5. **Squash + snapshots**: un snapshot que declara el tip de una rama deja de
+   ser ancestro tras el squash-merge; el ratchet M2 lo tolera solo dentro de 5
+   commits. El snapshot se refresca en este commit contra `95a09468`.
+
+Owner: operador (gates de promoción humana).
