@@ -16600,3 +16600,100 @@ Próximo desbloqueado: **CU-2.4** "Consumidor vivo en aislamiento"
 — repetir caso real Rust con hallazgo técnico y decisión Guard
 sobre copia de trabajo; validar cambios de snapshot, evidencia
 inexistente y precisión heurística.
+
+## 2026-10-17 — CU-2.4 consumidor vivo en aislamiento (PR #371, commit `6f583c87`)
+
+### Hito
+
+CU-2.4 del roadmap `consumer-contracts`: la integración
+end-to-end del seam `project_finding` + `to_guard_observation`
+sobre Findings shaped como los que un detector real emitiría,
+validado en una copia de trabajo aislada (`/tmp`).
+
+### Implementación
+
+`crates/cognicode-core/tests/cu2_w4_live_consumer.rs` (nuevo,
+7 tests). El seam completo se ejercita con un único helper
+`pipeline(finding, snapshot) -> GuardObservation` que une
+`project_finding` y `to_guard_observation` y permite validar
+discriminación sobre el output final, no por etapas separadas.
+
+### Tests permanentes (7/7)
+
+1. `working_copy_change_yields_unsupported_at_seam` — snapshot
+   drift (Finding observado en S1, preguntado sobre S2) →
+   `Unsupported` con discriminant explícito; **no** `Verifiable`
+   stale que Guard pudiera promover.
+2. `forged_evidence_id_never_acquires_block_authority_at_seam` —
+   EvidenceId(999_999) inventado produce `Verifiable` (passthrough
+   fiel: el seam expone el id y su snapshot, **no** promueve a
+   algo que Guard pueda block-ear sin verificar contra su
+   `EvidenceLookup`).
+3. `heuristic_precision_preserved_across_seam_for_class_d` — D
+   (heurística pura) → `Inconclusive` con gaps no vacíos.
+4. `heuristic_precision_preserved_across_seam_for_class_c` — C
+   (parcial) → `Advisory`, **nunca** `Verifiable`.
+5. `verified_finding_full_pipeline_preserves_causal_chain` —
+   A|B con chain grounded → `Verifiable` con `FactId`/`EvidenceId`
+   preservados.
+6. `ungrounded_step_remains_visible_in_transfer` — causal step
+   sin fact/evidence se mantiene `Ungrounded` en la observación
+   `Verifiable`; el transfer no lo reclasifica como `Grounded`.
+7. `consumer_chain_covers_all_five_discriminants` — los 5
+   variantes de `GuardObservation` son alcanzables desde inputs
+   realistas; **ninguno** colapsa a un default.
+
+### Cambios formales
+
+- `crates/cognicode-core/tests/core_gate_coverage_contract.rs`:
+  `cu2_w4_live_consumer` añadido a `ANCHOR_SUITES`; conteo
+  esperado 69 -> 70.
+- `docs/roadmap/CURRENT.md`: SHA actualizado a `95a09468`
+  (post-CU-2.3 closeout) y referencia a CU-2.4 en curso.
+
+### UAT efímero (no versionado)
+
+`/tmp/cognicode-cu24-uat/run_uat.sh` ejecuta sobre una copia
+de trabajo aislada:
+
+1. Crea fixture Rust real con homónimos `alpha.rs::helper` y
+   `beta.rs::helper` (paridad con fixture CU-1.4) y función
+   `complex` con cyclomatic 12.
+2. Ejecuta `cognicode graph full` (binario real v0.101.20) →
+   detecta 3 símbolos, reporta `Skipped: Cargo.toml` (paridad
+   con CU-1.4).
+3. Ejecuta `cognicode analyze` → Score 100.0/100, 0 cycles.
+4. Ejecuta `cargo test --test cu2_w4_live_consumer` → 7 passed.
+5. Modifica el fixture (añade comentario al final de alpha.rs),
+   re-ejecuta `graph full` → 3 símbolos, re-parse (no stale
+   cache).
+6. Evidencia: `/tmp/cognicode-cu24-uat/evidence.txt`. PASS.
+
+### Disposición de pruebas
+
+- **PROMOTE** (permanente): los 7 tests de `cu2_w4_live_consumer`
+  protegen el seam completo y son un ancla del gate de cobertura.
+- **RETIRE** (al cerrar CU-2.5): el guion UAT efímero en
+  `/tmp/cognicode-cu24-uat/` se elimina tras registrar la
+  evidencia en este JOURNAL. La garantía equivalente ya vive en
+  los tests permanentes.
+
+### Validación
+
+- `cargo test -p cognicode-core --test cu2_w4_live_consumer` -> 7/7
+- `cargo test -p cognicode-core --test core_gate_coverage_contract` -> 10/10
+- `bash scripts/test-fast.sh` -> 62/62 (subset afectado)
+- `bash /tmp/cognicode-cu24-uat/run_uat.sh` -> UAT PASS
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19 publicada).
+CU-2: 4/5 WUs (CU-2.1 trazado, CU-2.2 projection, CU-2.3
+        transfer, CU-2.4 live consumer).
+CU-3: 0/4 WUs.
+CU-4: 0/5 WUs.
+
+Próximo desbloqueado: **CU-2.5** "Release" — integrar y
+publicar el core y binarios afectados, registrar N−1 y un
+ejemplo de consumidor instalable. Bump objetivo: `v0.101.20 →
+v0.101.21`.
