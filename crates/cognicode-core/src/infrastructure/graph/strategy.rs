@@ -319,6 +319,7 @@ impl GraphStrategy for PerFileStrategy {
     }
 
     fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
+        use crate::infrastructure::parser::Language;
         use walkdir::WalkDir;
 
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
@@ -329,10 +330,11 @@ impl GraphStrategy for PerFileStrategy {
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if path.is_file()
-                && let Some(ext) = path.extension()
-                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
-            {
+            // K0: la autoridad de qué extensiones son analizables es el
+            // registro `Language::from_extension`, no una lista paralela.
+            // La lista rígida `rs|py|js|ts` descartaba en silencio ~22
+            // lenguajes registrados (go, java, tsx, rb, c/cpp, ...).
+            if path.is_file() && Language::from_extension(path.extension()).is_some() {
                 paths.push(path.to_path_buf());
             }
         }
@@ -386,9 +388,15 @@ impl PerFileStrategy {
                 }
             };
             let path = entry.path();
+            // K0: mismo contrato que `build_full_graph` — decide el
+            // registro, no una lista paralela. Una fuente registrada que
+            // no llegue a parsearse queda en `skipped` con razón (la capa
+            // per-file ya emite `Read/Parse/UnsupportedExtension`); una
+            // extensión no registrada (p.ej. README.md) se excluye
+            // legítimamente y no genera gap.
             if path.is_file()
-                && let Some(ext) = path.extension()
-                && matches!(ext.to_str(), Some("rs" | "py" | "js" | "ts"))
+                && crate::infrastructure::parser::Language::from_extension(path.extension())
+                    .is_some()
             {
                 paths.push(path.to_path_buf());
             }
@@ -870,6 +878,109 @@ mod tests {
     fn test_strategy_factory_default() {
         let s = GraphStrategyFactory::create("unknown");
         assert_eq!(s.name(), "OnDemandStrategy"); // Default
+    }
+}
+
+#[cfg(test)]
+mod k0_honest_coverage_tests {
+    //! K0 — línea Kotlin, cobertura honesta: el walk de `PerFileStrategy`
+    //! no puede descartar en silencio fuentes de lenguajes registrados.
+    //!
+    //! Caracterización del defecto (RED antes del fix): el walk filtraba
+    //! `rs|py|js|ts` a mano mientras el registro `Language::from_extension`
+    //! resuelve ~25 lenguajes (go, java, c/cpp, tsx, rb, ...). Un proyecto
+    //! cuyo código estuviera fuera de esos cuatro producía un grafo
+    //! incompleto reportado como `Complete`, y ni siquiera
+    //! `build_full_graph_report` listaba las fuentes caídas en `skipped`.
+    //!
+    //! Contrato K0 (disyunción honesta): una fuente con lenguaje
+    //! registrado, o se analiza (sus símbolos aparecen), o queda en
+    //! `skipped` con razón — desaparecer en silencio es el defecto. Un
+    //! fichero de lenguaje NO registrado (README.md) se excluye
+    //! legítimamente y no genera gap.
+    use super::*;
+    use crate::infrastructure::graph::per_file_graph::BuildStatus;
+    use crate::infrastructure::parser::Language;
+    use std::io::Write as _;
+
+    fn write(path: &std::path::Path, content: &str) {
+        std::fs::File::create(path)
+            .unwrap()
+            .write_all(content.as_bytes())
+            .unwrap();
+    }
+
+    fn mixed_corpus() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("main.rs"),
+            "fn main() {\n    helper();\n}\n\nfn helper() {}\n",
+        );
+        write(
+            &dir.path().join("util.go"),
+            "package main\n\nfunc Util() int {\n    return 1;\n}\n",
+        );
+        write(&dir.path().join("README.md"), "# corpus\n");
+        dir
+    }
+
+    fn simple_names(graph: &crate::domain::aggregates::call_graph::CallGraph) -> Vec<String> {
+        graph.symbols().map(|s| s.name().to_string()).collect()
+    }
+
+    /// La fuente Go del corpus está en el registro y su símbolo `Util`
+    /// debe existir tras el análisis. Hoy el walk la descarta en silencio
+    /// y este test cae: esa es la señal RED que caracteriza el defecto.
+    #[test]
+    fn k0_registered_source_symbols_reach_the_graph() {
+        // Precondición del corpus: `go` es un lenguaje registrado.
+        assert!(Language::from_extension(Some(std::ffi::OsStr::new("go"))).is_some());
+
+        let dir = mixed_corpus();
+        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
+
+        let names = simple_names(&report.graph);
+        assert!(
+            names.iter().any(|n| n == "Util"),
+            "la fuente registrada util.go desaparecio en silencio: \
+             simbolos = {:?}, status = {:?}",
+            names,
+            report.status
+        );
+    }
+
+    /// `Complete` solo es honesto cuando ninguna fuente registrada quedó
+    /// sin procesar. Con util.go parseada el reporte es `Complete` y
+    /// README.md (lenguaje no registrado) no genera gap.
+    #[test]
+    fn k0_complete_requires_no_unprocessed_registered_sources() {
+        let dir = mixed_corpus();
+        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
+
+        match report.status {
+            BuildStatus::Complete => {
+                // Completo honesto: util.go tuvo que ser analizada.
+                assert!(
+                    simple_names(&report.graph).iter().any(|n| n == "Util"),
+                    "status Complete sin la fuente registrada util.go: mentira"
+                );
+            }
+            BuildStatus::Partial { ref skipped } => {
+                assert!(
+                    skipped.iter().any(|s| s.path.ends_with("util.go")),
+                    "Partial sin listar util.go en skipped: {:?}",
+                    skipped
+                );
+            }
+        }
+
+        if let BuildStatus::Partial { skipped } = &report.status {
+            assert!(
+                !skipped.iter().any(|s| s.path.ends_with("README.md")),
+                "README.md es exclusion legitima (lenguaje no registrado), no un gap: {:?}",
+                skipped
+            );
+        }
     }
 }
 
