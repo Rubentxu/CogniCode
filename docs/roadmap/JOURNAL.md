@@ -16127,3 +16127,65 @@ D2 — "Producto y contratos únicos" (REST/UI/MCP informando la misma
 verdad, rutas utilizables y estado epistemológico correcto). Depende
 de D1 (DONE provisional). Owner y sub-unidades según el overlay
 `hitos/D2.md`.
+
+## v0.101.19 — CU-1 release prep (2026-10-17)
+
+Cierre del paso de release pendiente de CU-1.5. Branch
+`cu1-release-019`, PR #359 (`216414bf`).
+
+### Bump 0.101.18 → 0.101.19
+
+El tag `v0.101.18` en origin (apuntando a `36d35dd9`) es inmutable por
+ley del repo (`a published one is not moved`) pero nunca se publicó
+como release de GitHub: no hay binarios que consumir. v0.101.18
+también excluye el fix #358 (release-candidate log-redirect) y todo
+el trabajo de CU-1. Publicar v0.101.18 exigiría construir desde un
+commit que no es `main`. Este corte publica el estado completo y
+verificable de main.
+
+### Coherencia de superficies (release-truth contract en verde)
+
+- `Cargo.toml [workspace.package]` → 0.101.19
+- `Cargo.lock` regenerado (12 entries con bumps de versión consistentes)
+- `README.md` → pins de instalación y bloque Versioning
+- `SECURITY.md` → 0.101.19 como corte pendiente; v0.101.17 sigue
+  siendo la última release publicada (lo que sirve un `install.sh`
+  sin pin)
+- `product/product-manifest.json` → 0.101.19
+- `CHANGELOG.md` → entrada de v0.101.19 con SDK CU-1, corrección de
+  divergencia CLI/SDK/MCP, y nota de que v0.101.18 es un corte no
+  publicado
+
+### Cuello del ratchet detectado y corregido
+
+`scripts/ci/test_roadmap_version_ratchet.py::test_roadmap_or_journal_cites_the_workspace_version`
+falla en PR #359 merge-gate con:
+
+```
+AssertionError: FAIL: workspace version '0.101.19' no aparece en
+ROADMAP.md ni en JOURNAL.md. Anota el delta en uno antes de promover.
+```
+
+El bump se hizo sin documentar el delta. Este apéndice al JOURNAL es
+la corrección mínima que el ratchet exige: el contrato sigue siendo
+que la versión workspace aparece en ROADMAP o JOURNAL reciente, y el
+operador debe registrar el delta antes de promover. Test RED medido
+en `f0d2a2d3-0b3b-452d-885c-b4947b656055` (run merge-gate sobre
+`216414bf`), exit code 1, stage `contracts/sh-0` = `bash
+scripts/ci/run-all-contracts.sh` con `bash scripts/ci/run-all-contracts.sh`
+reproducido localmente sobre el árbol actual: `3 passed, 2 failed`
+(las dos son el mismo fallo visto desde `test_roadmap_or_journal_cites_the_workspace_version`
+y `test_control_all_green` que lo re-invoca). Test GREEN se observa
+con esta entrada en JOURNAL.
+
+### Próximos pasos
+
+- merge-gate verde sobre PR #359 (CU-1.5 release pre)
+- `git tag -a v0.101.19 -m 'release: v0.101.19 (CU-1 reliable consumption SDK)' 216414bf`
+- `git push origin v0.101.19`
+- `pipelinek run release.pipeline.kts` con RELEASE_TAG=v0.101.19
+- Verificar release REMOTA con inventario de assets y hashes
+
+Owner: operador (gates de promoción humana). PR #359 OPEN desde
+2026-10-17T06:17:56Z, merge-gate FAILURE sobre `contracts/sh-0`
+(73.7 s, exit 1).
