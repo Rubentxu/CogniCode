@@ -221,9 +221,26 @@ fn provenance_carries_provider_version_not_consumer_version() {
         !provider_version.is_empty(),
         "provider_version no puede ser vacío"
     );
-    // El provider es cognicode-core: su versión workspace es 0.101.17.
-    // Si esto falla tras un bump, actualizar el expected.
-    assert_eq!(provider_version, "0.101.17");
+    // El provider es cognicode-core: su versión es la del workspace, la
+    // misma que publica el binario. Derivarla del propio Cargo.toml en
+    // vez de pinear un literal: un literal caduca en cada bump de
+    // release (rompió exactamente así en el bump 0.101.17→0.101.18 de
+    // D1) y lo que la ley exige es IDENTIDAD con el workspace, no un
+    // número concreto.
+    let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
+    let ws = std::fs::read_to_string(manifest).expect("leer Cargo.toml del workspace");
+    let expected = ws
+        .lines()
+        .find_map(|l| {
+            l.trim()
+                .strip_prefix("version = ")
+                .map(|v| v.trim().trim_matches('"').to_string())
+        })
+        .expect("Cargo.toml del workspace declara versión");
+    assert_eq!(
+        provider_version, expected,
+        "provider_version debe ser la versión del workspace ({expected})"
+    );
 }
 
 // ---------------------------------------------------------------------------

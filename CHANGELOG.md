@@ -10,6 +10,31 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.18] — 2026-10-17
+
+**D1 (harness lean).** Cherry-pick quirúrgico de las decisiones medidas
+del worktree de test-harness (PR #349), sin fusionar el paquete ni el
+harness scheduler:
+
+- **ADR-TH-005 — lane rebalance**: las construcciones de binarios en
+  perfil release salen del gate de merge; ahora se construyen dos
+  binarios en debug. ~676 s/merge ahorrados.
+- **ADR-TH-006 — retirada de la clase UAT**: 28 targets `*_uat.rs`
+  (68 tests, 4 804 líneas) eliminados. Las garantías supervivientes
+  viven en los contratos del gate.
+- **ADR-TH-011 — rustdoc se paga una vez**: el target `m011_rustdoc_gate`
+  se ejecuta solo en la lane de integración, no en el merge.
+  −737 s/merge.
+- **ADR-TH-016 — contratos en paralelo**: `run-all-contracts.sh` corre
+  hasta 8 contratos a la vez (`--jobs N`); 316 s → ~78,5 s en el
+  modo por defecto.
+- ADR-D1-* en `docs/adr/` archivan las decisiones con autoridad
+  propia (no se versiona el paquete `test-harness/` en main).
+
+Mediciones del merge-gate (corrida PipelineK real sobre
+`7193caa8`): 58 stages SUCCESS, 0 failures, ~15 min de pared
+(versus ~30 min pre-D1). Contratos: 292/292 PASS.
+
 ## [v0.101.17] — 2026-10-15
 
 **Patch de release pipeline.** v0.101.11–v0.101.16 publicaron solo 3
