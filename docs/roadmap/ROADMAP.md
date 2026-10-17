@@ -366,17 +366,21 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 **Commits B6**: 8 (W1..W6 + close + release) + 2 follow-up (recibo + C8-R fill).
 
 <!-- consumer-contracts:begin -->
-## 11. CU — Consumer-First SDK/CLI/MCP (propuesto, 2026-10-16)
+## 11. CU — Consumer-First SDK/CLI/MCP (en ejecución desde 2026-10-17)
 
-> **Estado inicial: PROPOSED / NOT_STARTED**. Subprograma aditivo sobre el Post-PRF.
-> Preserva B1–B6, la firma C8-R pendiente y PRODUCT-1.0; este `ROADMAP.md`
-> sigue siendo la única agenda activa. Prioridad al contrato real de consumidor
-> CogniCode Guard, sin segunda implementación de análisis.
+> **Estado: EN EJECUCIÓN** (CU-1 cerrado, CU-2 casi cerrado). Subprograma
+> aditivo sobre el Post-PRF. Preserva B1–B6, la firma C8-R pendiente y
+> PRODUCT-1.0; este `ROADMAP.md` sigue siendo la única agenda activa.
+> Prioridad al contrato real de consumidor CogniCode Guard, sin segunda
+> implementación de análisis.
 >
 > **Plan detallado:** [`consumer-contracts/ROADMAP.md`](consumer-contracts/ROADMAP.md).
 > **Especificaciones:** `consumer-contracts/specs/SPEC-CU-001..006`.
 > **ADRs propuestos:** `consumer-contracts/adr/ADR-CU-001..004`.
 > **Pruebas:** `consumer-contracts/acceptance/TEST-CHARTER.md`.
+> **Línea Kotlin (K0–K3):** extensión subordinada integrada 2026-10-17;
+> detalle y dependencias en la sección
+> *Línea Kotlin* de [`consumer-contracts/ROADMAP.md`](consumer-contracts/ROADMAP.md).
 >
 > **Orden:** CU-1 API común → CU-2 evidencia verificable; CU-3
 > affordances/consultas progresivas tras CU-1; CU-4 compatibilidad,
@@ -393,6 +397,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   (`domain::findings::projection`, PR #367). ADT
 >   `FindingProjection` con `TypedEvidenceHandle` que vincula
 >   `EvidenceId` a `SnapshotId` por construcción.
-> - CU-2.3..CU-2.5 pendientes.
+> - CU-2.3 ✅ contrato de transferencia a Guard (PR #368, closeout #369).
+> - CU-2.4 ✅ consumidor vivo en aislamiento (PR #371, closeout #372).
+> - CU-2.5 🔄 en vuelo: corte v0.101.21 (PR #374), release pendiente al
+>   cierre de esta edición.
 
 <!-- consumer-contracts:end -->

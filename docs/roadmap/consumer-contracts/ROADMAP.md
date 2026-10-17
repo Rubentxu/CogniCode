@@ -108,6 +108,49 @@ Un agente puede usar CogniCode indistintamente por biblioteca Rust, CLI y MCP; r
 
 **Equipos paralelos:** A invalidación/caché; B contrato consumer; C release audit/inventario; D economía test harness. Solo integrador ejecuta merge/tag/release.
 
+## Línea Kotlin (K0–K3) — extensión subordinada al programa CU
+
+> **Origen:** integración 2026-10-17 del documento del operador
+> [`kotlin/KOTLIN-LINE-K0-K3.md`](kotlin/KOTLIN-LINE-K0-K3.md) (revisión de
+> código remoto sobre `main@c67cc05e`, release `v0.101.20` verificada). Ese
+> documento es el detalle normativo de la línea; esta sección solo fija su
+> sitio en la agenda y sus dependencias. Un paquete previo
+> `cognicode-kotlin-roadmap/` (programa K0–K4 con SPECs y ADRs nuevos,
+> baseline `88f6d02a`/v0.101.17) queda **descartado como fuente**: creaba el
+> roadmap paralelo y los documentos nuevos que la línea vigente prohíbe; no
+> se commitea.
+
+Kotlin **no** está implementado en el core (verificado 2026-10-17: sin
+variante `Language::Kotlin`, sin gramática tree-sitter, sin entrada en
+`product/languages.json`). La línea se ejecuta reutilizando los contratos
+CU: SDK/facade, `AnalysisOutcome`, ADTs de evidencia, CLI/MCP, distribución
+y pruebas. Números SemVer según la regla del repo al momento de cada corte;
+no se fijan por adelantado.
+
+| Bloque | Valor observable | Estado |
+|---|---|---|
+| **K0** — Cobertura honesta | El consumidor sabe qué código se inspeccionó: un proyecto con Kotlin aún sin parsear responde `Partial/Unsupported` con gaps, nunca «grafo completo sin Kotlin». Elimina el filtro rígido `rs\|py\|js\|ts` de `PerFileStrategy` (dos sitios: `strategy.rs:334`/`:391`) y alinea `product/languages.json` (drift medido: versión 0.101.17) con capacidades comprobadas. | [ ] |
+| **K1** — Símbolos Kotlin sin JVM | `get_file_symbols`, búsqueda y código reconocen funciones, clases, interfaces, propiedades, `object`, `companion` y extensiones vía gramática tree-sitter Kotlin; una sola dependencia nueva, sin Kotlin Compiler/Gradle en el parser. | [ ] |
+| **K2** — Relaciones sin aristas falsas | Llamadas Kotlin/Kotlin y Kotlin/Java solo con evidencia suficiente; sobrecargas, funciones de extensión y homónimos en paquetes distintos quedan `Ambiguous/Unknown`, nunca aristas por coincidencia textual. | [ ] |
+| **K3** — Semántico agent-first | LSP Kotlin opcional vía `CompositeProvider` con degradación y procedencia honestas; SCIP (S3) y compilador (S4) siguen **reservados**, no requisito. | [ ] |
+
+**Reglas de prioridad:**
+
+1. K0 no pisa la ventana de publicación de CU-2.5: puede prepararse en
+   worktree aislado sin tocar `application/consumer_analysis.rs`,
+   `domain/findings/*` ni el catálogo durante la publicación; la release
+   la serializa un único integrador.
+2. K0→K1→K2 son dependencias estrictas. K3 puede preparar investigación
+   LSP en paralelo con K2, pero no publica semántica hasta disponer de
+   identidades/cobertura correctas.
+3. K3 comparte dueño único de navegación/affordances con CU-3; reutiliza
+   la identidad incremental, N−1 y release de CU-4. Los nombres K0–K3 son
+   agrupadores de trabajo, **no** IDs de especificaciones ni documentos
+   nuevos.
+4. Cada bloque cierra con PR integrado, gates verdes, RC verificada,
+   release publicada y smoke sobre el binario descargado, según el
+   protocolo común y `RELEASE-CHECKLIST.md`.
+
 ## Definición de DONE de cada bloque (sin atajos)
 
 1. Cambios de comportamiento usados por consumidor real o fallo declarado; criterio de aceptación y prueba discriminante roja/verde registrados.
