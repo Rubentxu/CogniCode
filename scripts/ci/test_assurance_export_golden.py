@@ -110,8 +110,11 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
+# Pin vigente: 84008ccd810a1ea516ed968092b8401a7c01262ca6242e8aa3ec0c32a95251b1
+# (v0.101.19, regenerate 2026-10-17 al bump 0.101.18 → 0.101.19; corte CU-1.
+# Lo que cambia respecto al pin anterior es producer.version y el workspace rev.)
 GOLDEN_SHA256 = (
-    "2e9e26bc7bce21ec0be078b22d1d4b6db9ee2d7fa292a9017002f6143779d298"
+    "84008ccd810a1ea516ed968092b8401a7c01262ca6242e8aa3ec0c32a95251b1"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
