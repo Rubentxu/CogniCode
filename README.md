@@ -437,15 +437,15 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.19` — cut from this tree; **not yet published**.
-  The last published release is [`v0.101.17`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.17),
+- **Current release:** `v0.101.19` — cut from this tree as `v0.101.19`.
+  The last release with published assets is
+  [`v0.101.17`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.17),
   which is what an unpinned `install.sh` serves today. v0.101.19 ships the
   CU-1 reliable consumption SDK (typed `CapabilityRequest`/`CapabilityPlan`
   facade with identical semantics across CLI, SDK and MCP), the version-law
   fix and the D1 harness-lean improvements, and restores the full asset set.
 - **Binaries report:** `0.101.19` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** not yet cut for `v0.101.19`; the published tag is
-  [`origin/v0.101.17`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.17).
+- **Tag:** [`origin/v0.101.19`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.19).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8` and `v0.101.18` exist and were never published. Each has a
   changelog entry
