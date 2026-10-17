@@ -16504,3 +16504,17 @@ Guard" — definir `VerifiedFinding | AdvisoryObservation |
 Inconclusive` como adaptador Guard-side (el lado CogniCode ya
 tiene el ADT; ahora hay que producir el `AdmittedFinding` y
 demostrar con negativos que `signature.len()>0` no es autoridad).
+
+## 2026-10-17 — workspace en `0.101.20` (post PR #362, no documentado en su momento)
+
+El bump `0.101.19 → 0.101.20` del release de CU-1 (PR #362, merge
+`7d4d288f`) actualizó `Cargo.toml` pero no dejó una entrada en
+`JOURNAL.md` ni en `ROADMAP.md`. El ratchet
+`scripts/ci/test_roadmap_version_ratchet.py` exige que la versión
+del workspace aparezca en ROADMAP o JOURNAL; al rebase de
+`feat/cu-2-2-finding-projection` sobre `main` post-#362, el ratchet
+rompió (4 contratos rojos en el merge-gate de `fe8b4498`).
+
+Anoto aquí el delta para que el snapshot sea fiel: el workspace
+está en `v0.101.20` y la próxima release objetivo (corte CU-2)
+será `v0.101.21`.
