@@ -65,7 +65,12 @@ Un agente puede usar CogniCode indistintamente por biblioteca Rust, CLI y MCP; r
   - **Hecho 2026-10-17 (PR #368, merge `0d51e1a1`):** Nuevo módulo `domain::findings::guard_transfer` con ADT `GuardObservation` (Verifiable | Advisory | Inconclusive | Unsupported | Failed) y única función `to_guard_observation(&Result<FindingProjection, ProjectionError>) -> GuardObservation`. El transfer es passthrough: no firma, no fabrica `admitted_at`, no inventa `AdmitterRole::HumanPromoter` (test `adversarial_signature_bytes_never_carry_into_observation` pinea por debug-format que esos nombres no aparecen en la salida). 8 tests permanentes en `cu2_w3_guard_transfer`. `core_gate_coverage_contract` bumped 68 -> 69 con `cu2_w3_guard_transfer` como nuevo anchor.
 - [x] CU-2.4 **Consumidor vivo en aislamiento**: repetir caso real Rust con hallazgo técnico y decisión Guard sobre copia de trabajo; validar cambios de snapshot, evidencia inexistente y precisión heurística.
   - **Hecho 2026-10-17 (PR #371, merge `009bccc8`):** `crates/cognicode-core/tests/cu2_w4_live_consumer.rs` con 7 tests que ejercitan el seam completo `project_finding` + `to_guard_observation` sobre Findings shaped como los que un detector real emitiría. Helper `pipeline(finding, snapshot) -> GuardObservation` une proyección y transfer. Cubre: working copy change (`Unsupported` no `Verifiable` stale), evidence id forjado (passthrough fiel, no promotion), precisión heurística (D→`Inconclusive`, C→`Advisory`, A|B→`Verifiable`), causal chain preservada (Grounded/Ungrounded visibles), total chain (los 5 discriminantes alcanzables). UAT efímero en `/tmp/cognicode-cu24-uat/run_uat.sh` (fixture Rust real con homónimos alpha.rs/beta.rs + `cognicode graph full` + `cognicode analyze` + re-parse tras modificación) ejecutado PASS; evidencia en `/tmp/cognicode-cu24-uat/evidence.txt`. `core_gate_coverage_contract` bumped 69 → 70 con `cu2_w4_live_consumer` como nuevo anchor.
-- [ ] CU-2.5 **Release**: integrar y publicar el core y binarios afectados, registrar N−1 y un ejemplo de consumidor instalable.
+- [x] CU-2.5 **Release**: integrar y publicar el core y binarios afectados, registrar N−1 y un ejemplo de consumidor instalable.
+  - **Hecho 2026-10-17 (PR #374, release `v0.101.21`):** gate verde en `754bb9f6` (3 rounds: golden y snapshot del corte
+  reparados en la ventana), squash `755e97a6`, tag anotado, RC de 32 etapas verdes desde el commit taggeado, lane de
+  publicación con 8 assets verificados (sumas, asset-set, tag-coherence, instalación y smoke JSON reales). N−1 Guard
+  (`v0.101.10`, ADR-CU-001) sin cambios; verificación cross-repo queda como estado externo para CU-4.3. Veredicto:
+  `production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`.
 
 **Aceptación:** misma evidencia causa mismo resultado; evidence-id inexistente o snapshot distinto jamás gatea; observaciones sin grounding son informativas; la firma de autorización debe verificarse en Guard, no en CogniCode. **Tests permanentes:** dos leyes de verificación (scope/evidencia); UAT-CU-2 y AAT-CU-2 efímeros.
 
@@ -107,6 +112,49 @@ Un agente puede usar CogniCode indistintamente por biblioteca Rust, CLI y MCP; r
 **Referencias:** `SPEC-CU-005`, `SPEC-CU-006`, `ADR-CU-004`, `odd/tasks/b6-agent-ready-runtime.md`, `docs/adr/ADR-034-cognicode-distribution-package.md`, `docs/cognicode-community-productization/13-ROADMAP-COMMUNITY-PRODUCTIZATION.md`.
 
 **Equipos paralelos:** A invalidación/caché; B contrato consumer; C release audit/inventario; D economía test harness. Solo integrador ejecuta merge/tag/release.
+
+## Línea Kotlin (K0–K3) — extensión subordinada al programa CU
+
+> **Origen:** integración 2026-10-17 del documento del operador
+> [`kotlin/KOTLIN-LINE-K0-K3.md`](kotlin/KOTLIN-LINE-K0-K3.md) (revisión de
+> código remoto sobre `main@c67cc05e`, release `v0.101.20` verificada). Ese
+> documento es el detalle normativo de la línea; esta sección solo fija su
+> sitio en la agenda y sus dependencias. Un paquete previo
+> `cognicode-kotlin-roadmap/` (programa K0–K4 con SPECs y ADRs nuevos,
+> baseline `88f6d02a`/v0.101.17) queda **descartado como fuente**: creaba el
+> roadmap paralelo y los documentos nuevos que la línea vigente prohíbe; no
+> se commitea.
+
+Kotlin **no** está implementado en el core (verificado 2026-10-17: sin
+variante `Language::Kotlin`, sin gramática tree-sitter, sin entrada en
+`product/languages.json`). La línea se ejecuta reutilizando los contratos
+CU: SDK/facade, `AnalysisOutcome`, ADTs de evidencia, CLI/MCP, distribución
+y pruebas. Números SemVer según la regla del repo al momento de cada corte;
+no se fijan por adelantado.
+
+| Bloque | Valor observable | Estado |
+|---|---|---|
+| **K0** — Cobertura honesta | El consumidor sabe qué código se inspeccionó: un proyecto con Kotlin aún sin parsear responde `Partial/Unsupported` con gaps, nunca «grafo completo sin Kotlin». Elimina el filtro rígido `rs\|py\|js\|ts` de `PerFileStrategy` (dos sitios: `strategy.rs:334`/`:391`) y alinea `product/languages.json` (drift medido: versión 0.101.17) con capacidades comprobadas. | [ ] |
+| **K1** — Símbolos Kotlin sin JVM | `get_file_symbols`, búsqueda y código reconocen funciones, clases, interfaces, propiedades, `object`, `companion` y extensiones vía gramática tree-sitter Kotlin; una sola dependencia nueva, sin Kotlin Compiler/Gradle en el parser. | [ ] |
+| **K2** — Relaciones sin aristas falsas | Llamadas Kotlin/Kotlin y Kotlin/Java solo con evidencia suficiente; sobrecargas, funciones de extensión y homónimos en paquetes distintos quedan `Ambiguous/Unknown`, nunca aristas por coincidencia textual. | [ ] |
+| **K3** — Semántico agent-first | LSP Kotlin opcional vía `CompositeProvider` con degradación y procedencia honestas; SCIP (S3) y compilador (S4) siguen **reservados**, no requisito. | [ ] |
+
+**Reglas de prioridad:**
+
+1. K0 no pisa la ventana de publicación de CU-2.5: puede prepararse en
+   worktree aislado sin tocar `application/consumer_analysis.rs`,
+   `domain/findings/*` ni el catálogo durante la publicación; la release
+   la serializa un único integrador.
+2. K0→K1→K2 son dependencias estrictas. K3 puede preparar investigación
+   LSP en paralelo con K2, pero no publica semántica hasta disponer de
+   identidades/cobertura correctas.
+3. K3 comparte dueño único de navegación/affordances con CU-3; reutiliza
+   la identidad incremental, N−1 y release de CU-4. Los nombres K0–K3 son
+   agrupadores de trabajo, **no** IDs de especificaciones ni documentos
+   nuevos.
+4. Cada bloque cierra con PR integrado, gates verdes, RC verificada,
+   release publicada y smoke sobre el binario descargado, según el
+   protocolo común y `RELEASE-CHECKLIST.md`.
 
 ## Definición de DONE de cada bloque (sin atajos)
 
