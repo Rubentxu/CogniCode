@@ -16427,39 +16427,94 @@ ids verificables, gaps NonEmpty.
 - Feature flags del evidence_kernel pueden desconectar grounding.
   Mitigación: CU-2.5 (release) valida con binario real.
 
----
+## 2026-10-17 — CU-2.2 read-side projection of verified findings (PR #367, merged `050db27f`)
 
-## Entrada 53 — 2026-10-17 — Corte v0.101.20: v0.101.19 quedó bloqueado por TIER1, tag inmutable
+### Hito
 
-### Contexto
+CU-2.2 del roadmap `consumer-contracts`: "Publicar lectura
+verificable sin mutación".
 
-La RC de `v0.101.19` (tag `be649eb1` → commit `16f1a726`) pasó 25 stages
-verdes y falló en `payloads`: `TIER1_PLATFORMS` declaraba
-`[LinuxX86_64, LinuxAarch64]` pero ningún lane construye aarch64. La corrección
-(#361, `TIER1_PLATFORMS` a solo `x86_64`) es un cambio de código Rust y no puede
-entrar en un tag ya publicado: la política de este repo es tag inmutable.
-Decisión del operador (opción B recursiva): cortar `v0.101.20` desde
-`main@2764a2ab` con el fix TIER1 dentro.
+### Implementación
 
-### Delta v0.101.19 → v0.101.20
+`crates/cognicode-core/src/domain/findings/projection.rs` (nuevo):
 
-- `TIER1_PLATFORMS` restringido a `LinuxX86_64` hasta que TF-7 provea lane
-  aarch64 (PR #361, ya en main).
-- Re-bump de las 4 superficies (Cargo.toml, SECURITY.md, README.md,
-  product-manifest.json) a `0.101.20`.
-- Golden `assurance_export` regenerado: SHA256 `868b4a65…`, pin e historial
-  actualizados en `scripts/ci/test_assurance_export_golden.py`.
-- CHANGELOG con entrada `0.101.20` explicando el bloqueo de `v0.101.19`.
-- Esta entrada JOURNAL satisface el ratchet M1
-  (`test_roadmap_or_journal_cites_the_workspace_version`) para `0.101.20`.
+- **`FindingProjection`** (ADT cerrado):
+  - `Verified { snapshot_id, detector, severity, evidence, causes, message }`
+  - `Advisory { snapshot_id, detector, evidence, message }`
+  - `Inconclusive { snapshot_id, detector, gaps }`
+- **`ProjectionError`** (discriminado):
+  - `Unsupported(UnknownReason)` para snapshot mismatch, evidence
+    class desconocida, no evidence handles.
+  - `Inconclusive(Vec<Gap>)` para clase D (heurística) con gap
+    list no-vacía.
+  - `Failed(String)` para errores estructurales.
+- **`TypedEvidenceHandle`**: `id: EvidenceId` + `snapshot: SnapshotId`
+  vinculados por construcción. Sin posibilidad de promotion
+  cross-snapshot.
+- **`CauseProjection`**: `Grounded { fact, evidence, subject } |
+  Ungrounded`. La cadena se inspecciona para detectar pasos
+  sin grounding (no basta con que el finding tenga evidence
+  global si una CausalStep no la trae).
+- **`project_finding(&Finding, &SnapshotId)`**: única función
+  de decisión. Fail-closed por defecto (clase desconocida →
+  Unsupported, no evidence → Unsupported, sin context → fail,
+  snapshot mismatch → Unsupported).
 
-### Próximos pasos
+### Tests permanentes (6/6)
 
-- merge-gate verde sobre PR #362 (rama `cu1-release-020`, bump `6f33152c`)
-- `git tag -a v0.101.20` sobre el commit de merge de #362
-- RC (`release-candidate.pipeline.kts`) desde worktree aislado del tag
-- `release.pipeline.kts` con `RELEASE_TAG=v0.101.20`, verificación remota
-  de assets/SHA256/smoke
+`crates/cognicode-core/tests/cu2_w2_finding_projection.rs`:
 
-Owner: operador (gates de promoción humana).
->>>>>>> 3c28685e (docs(journal): Entrada 53 — corte v0.101.20 (ratchet M1))
+1. `verified_finding_projects_to_verified` — clase A con context
+   produce `Verified` con snapshot, evidence, causes correctos.
+2. `advisory_observation_projects_to_advisory` — clase C produce
+   `Advisory`, no `Verified` colapsado.
+3. `missing_snapshot_makes_finding_unsupported` — finding en
+   snapshot 42 preguntado por snapshot 99 devuelve
+   `Unsupported(SnapshotMismatch)`.
+4. `unknown_evidence_class_makes_finding_inconclusive` — clase D
+   devuelve `Inconclusive` con `Gap::EvidenceClassBelowThreshold`.
+5. `evidence_handle_carries_snapshot_bound` — `TypedEvidenceHandle`
+   tiene `snapshot == requested_snapshot` siempre.
+6. `cause_preserves_fact_id_and_evidence_id` — `Grounded` lleva
+   fact+evidence del `CausalStep`.
+
+No regresión: 143 findings unit tests siguen verde.
+
+### Lo que NO hace
+
+- No toca el envelope `assurance-evidence/v1` (wire format
+  contractual con consumer Kotlin; formato externo separado).
+- No introduce autoridad: Guard sigue dueño de `PolicyDecision`,
+  `RuleAdmission`, firmas. La proyección lleva `EvidenceId`s que
+  Guard verifica contra su `ApprovalVerifier`.
+- No es un comando: solo un ADT que futuros call sites pueden
+  invocar. La integración real con Guard es CU-2.3.
+- No es un servicio: `project_finding` es función pura, sin
+  I/O, sin red, sin estado compartido.
+
+### Progreso del roadmap
+
+CU-1: 5/5 WUs (v0.101.19 publicada).
+CU-2: 2/5 WUs (CU-2.1 trazado, CU-2.2 projection).
+CU-3: 0/4 WUs.
+CU-4: 0/5 WUs.
+
+Próximo desbloqueado: **CU-2.3** "Contrato de transferencia a
+Guard" — definir `VerifiedFinding | AdvisoryObservation |
+Inconclusive` como adaptador Guard-side (el lado CogniCode ya
+tiene el ADT; ahora hay que producir el `AdmittedFinding` y
+demostrar con negativos que `signature.len()>0` no es autoridad).
+
+## 2026-10-17 — workspace en `0.101.20` (post PR #362, no documentado en su momento)
+
+El bump `0.101.19 → 0.101.20` del release de CU-1 (PR #362, merge
+`7d4d288f`) actualizó `Cargo.toml` pero no dejó una entrada en
+`JOURNAL.md` ni en `ROADMAP.md`. El ratchet
+`scripts/ci/test_roadmap_version_ratchet.py` exige que la versión
+del workspace aparezca en ROADMAP o JOURNAL; al rebase de
+`feat/cu-2-2-finding-projection` sobre `main` post-#362, el ratchet
+rompió (4 contratos rojos en el merge-gate de `fe8b4498`).
+
+Anoto aquí el delta para que el snapshot sea fiel: el workspace
+está en `v0.101.20` y la próxima release objetivo (corte CU-2)
+será `v0.101.21`.

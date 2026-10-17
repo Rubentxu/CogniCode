@@ -389,6 +389,10 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 > - CU-2.1 ✅ pipeline upstream trazado
 >   ([`traceability/CU-2-1-PIPELINE-TRACE.md`](consumer-contracts/traceability/CU-2-1-PIPELINE-TRACE.md),
 >   PR #365). Hito de trazado, sin código.
-> - CU-2.2..CU-2.5 pendientes.
+> - CU-2.2 ✅ proyección tipada read-side
+>   (`domain::findings::projection`, PR #367). ADT
+>   `FindingProjection` con `TypedEvidenceHandle` que vincula
+>   `EvidenceId` a `SnapshotId` por construcción.
+> - CU-2.3..CU-2.5 pendientes.
 
 <!-- consumer-contracts:end -->
