@@ -63,6 +63,8 @@ import java.io.File
 
 val repoRoot: String = File(".").canonicalPath
 val cd = "cd \"$repoRoot\""
+val logDir: String = File(System.getProperty("java.io.tmpdir"), "cognicode-logs").absolutePath
+val cdLog = "mkdir -p \"$logDir\""
 
 // The platforms release.yml builds for. Declared once, used by every stage
 // below, so that adding a platform is one edit rather than a hunt for the four
@@ -231,7 +233,24 @@ pipeline {
             // The clean clone is the property that a build of a dirty tree does
             // not have. It stays the first thing that runs.
             stage("clean-clone") {
-                sh("$cd && bash scripts/ci/preflight-clean-clone.sh \"${'$'}{RELEASE_SHA:-HEAD}\"")
+                // MEDIDO 2026-10-17. El transcript de cargo build --release
+                // --workspace --bins se desborda del persister de PipelineK
+                // (10s drain, varios MB de stdout). Misma forma que
+                // `core-unrestricted-evidence-kernel` en merge-gate.pipeline.kts:
+                // redirigir a archivo, hacer tail en pantalla, decir donde
+                // esta el log completo. El stage sigue siendo PASS/FAIL por
+                // exit code, no por bytes emitidos.
+                sh("""
+                    set -eo pipefail
+                    $cd || exit 1
+                    mkdir -p "$logDir" || exit 1
+                    if ! bash scripts/ci/preflight-clean-clone.sh "${'$'}{RELEASE_SHA:-HEAD}" \
+                        > "$logDir/clean-clone.log" 2>&1; then
+                        tail -40 "$logDir/clean-clone.log"
+                        echo "the full log is $logDir/clean-clone.log"
+                        exit 1
+                    fi
+                """.trimIndent())
             }
         }
 
