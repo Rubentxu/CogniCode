@@ -238,10 +238,11 @@ fn every_core_suite_is_either_named_or_covered_by_an_unrestricted_step() {
     // cu1_w3_presenter_parity) se mantienen del bloque D0.
     // 67 -> 68 en CU-2.2 (PR #367): cu2_w2_finding_projection anadido.
     // 68 -> 69 en CU-2.3: cu2_w3_guard_transfer anadido.
+    // 69 -> 70 en CU-2.4: cu2_w4_live_consumer anadido (seam integration).
     assert_eq!(
         suites.len(),
-        69,
-        "expected exactly 69 cognicode-core integration suites, found {}. \
+        70,
+        "expected exactly 70 cognicode-core integration suites, found {}. \
          If a suite was removed on purpose, update this number in the same \
          commit. If it was not, the gate contract is blind to a lost suite: \
          {suites:?}",
@@ -388,6 +389,7 @@ const ANCHOR_SUITES: &[&str] = &[
     "cu1_w3_presenter_parity",
     "cu2_w2_finding_projection",
     "cu2_w3_guard_transfer",
+    "cu2_w4_live_consumer",
     "e2_w1_canonical_control_query",
     "equivalence_harness",
     "find_usages_cli_mcp_equivalence",
