@@ -182,6 +182,7 @@ tokio-test.workspace = true
 serial_test.workspace = true
 mockall.workspace = true
 tempfile.workspace = true
+filetime.workspace = true
 criterion.workspace = true
 
 [[bench]]

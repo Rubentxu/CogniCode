@@ -122,6 +122,7 @@ walkdir = "2"
 tempfile = "3.27"
 glob = "0.3"
 which = "6"
+filetime = "0.2"
 
 # Time
 chrono = { version = "0.4", features = ["clock"] }

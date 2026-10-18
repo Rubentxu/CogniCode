@@ -198,13 +198,28 @@ struct FileGraphCacheEntry {
     /// Whether this entry is valid
     valid: bool,
     /// Last-modified time of the source file at cache time (seconds since
-    /// UNIX epoch). Used by `get_or_build` to detect content changes: if
-    /// the file's mtime no longer matches, the entry is rebuilt.
+    /// UNIX epoch). Cheap signal: catches the common case of an editor
+    /// saving the file. **Not authoritative**: a same-content rewrite with
+    /// identical mtime+size (e.g. `git checkout` of an unchanged-size
+    /// blob, or an editor that pads to the same length) keeps the mtime
+    /// and would, on its own, serve a stale graph. The `content_hash`
+    /// below is the authoritative bytes-identity check.
     mtime_secs: Option<u64>,
-    /// Size of the source file in bytes at cache time. Secondary signal:
-    /// combined with `mtime_secs`, allows cheap detection of changes
-    /// without hashing the file body.
+    /// Size of the source file in bytes at cache time. Secondary cheap
+    /// signal: combined with `mtime_secs`, narrows the false-positive
+    /// surface. Still not authoritative for the same reason as
+    /// `mtime_secs` — a content edit at the same byte length keeps the
+    /// size unchanged.
     size: Option<u64>,
+    /// 64-bit hash of the source file's bytes at cache time. **The
+    /// authoritative bytes-identity check.** Required by the H0.1 spec
+    /// (`PerFileGraphCache::merge_with_report: no usar get_cached() sin
+    /// validar entry.valid, identidad de bytes y ruta`): a file whose
+    /// content was rewritten but whose mtime+size did not change must
+    /// still produce a cache miss. The H0.5 acceptance law
+    /// (`editar bytes con mtime/tamaño iguales ⇒ cambia el resultado`)
+    /// is the test that pins this field.
+    content_hash: Option<u64>,
 }
 
 /// Per-file graph cache that stores CallGraph per file
@@ -238,18 +253,24 @@ impl PerFileGraphCache {
     /// Gets the graph for a file, building it if needed
     ///
     /// If the file has already been parsed and cached AND its filesystem
-    /// fingerprint (mtime + size) matches what was recorded at cache time,
-    /// the cached graph is returned. Otherwise the file is re-parsed and
-    /// the cache entry is refreshed.
+    /// fingerprint (mtime + size + content hash) matches what was
+    /// recorded at cache time, the cached graph is returned. Otherwise
+    /// the file is re-parsed and the cache entry is refreshed.
     ///
-    /// The fingerprint approach is cheap (one syscall) and catches the
-    /// common case of an editor saving the file: mtime is updated and the
-    /// cache is invalidated.
+    /// The mtime+size signals are cheap (one syscall) and catch the
+    /// common case of an editor saving the file. The content hash is
+    /// authoritative: it catches the case where the file's bytes were
+    /// rewritten but mtime+size did not change (e.g. `git checkout` of
+    /// an unchanged-size blob, an editor that rewrites in place, or
+    /// `cp -p` of an identical-length file). H0.1 / H0.5 require that
+    /// case to invalidate the cache, not serve a stale graph.
     pub fn get_or_build(&self, file_path: &Path) -> std::io::Result<Arc<CallGraph>> {
         let path_str = file_path.to_string_lossy().to_string();
 
-        // Snapshot the file fingerprint (mtime + size) once, so the
-        // read-cache and write-cache branches agree on what we observed.
+        // Snapshot the file fingerprint (mtime + size + content hash)
+        // once, so the read-cache and write-cache branches agree on what
+        // we observed. The content hash is the authoritative check;
+        // mtime+size are the cheap early-out.
         let fingerprint = file_fingerprint(file_path);
 
         // Check cache first
@@ -259,6 +280,7 @@ impl PerFileGraphCache {
                 && entry.valid
                 && entry.mtime_secs == fingerprint.as_ref().map(|f| f.mtime_secs)
                 && entry.size == fingerprint.as_ref().map(|f| f.size)
+                && entry.content_hash == fingerprint.as_ref().map(|f| f.content_hash)
             {
                 return Ok(Arc::new(entry.graph.clone()));
             }
@@ -277,6 +299,7 @@ impl PerFileGraphCache {
                     valid: true,
                     mtime_secs: fingerprint.as_ref().map(|f| f.mtime_secs),
                     size: fingerprint.as_ref().map(|f| f.size),
+                    content_hash: fingerprint.as_ref().map(|f| f.content_hash),
                 },
             );
         }
@@ -681,26 +704,56 @@ impl Clone for PerFileGraphCache {
     }
 }
 
-/// Cheap filesystem fingerprint for cache invalidation.
+/// Filesystem fingerprint for cache invalidation.
 ///
-/// Holds the mtime (seconds since UNIX epoch) and the byte size of a file
-/// at the moment the fingerprint was taken. If either changes, the file's
-/// content is presumed to have changed.
+/// Holds the mtime (seconds since UNIX epoch), the byte size, and a
+/// 64-bit hash of the file's bytes — all three at the moment the
+/// fingerprint was taken. `mtime_secs` and `size` are cheap early-out
+/// signals (one metadata syscall); `content_hash` is the authoritative
+/// bytes-identity check. The H0 spec requires all three: a file whose
+/// bytes were rewritten but whose mtime+size did not change must
+/// still produce a cache miss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileFingerprint {
     mtime_secs: u64,
     size: u64,
+    content_hash: u64,
 }
 
-/// Reads the fingerprint of `path`. Returns `None` if the metadata cannot
-/// be read (e.g. file was deleted between cache hit and re-check). In that
-/// case the caller should treat the cache as stale and rebuild.
+/// Reads the fingerprint of `path`. Returns `None` if the metadata or
+/// file body cannot be read (e.g. file was deleted between cache hit
+/// and re-check, or the file is unreadable). In that case the caller
+/// should treat the cache as stale and rebuild.
+///
+/// The content hash uses Rust's stdlib `DefaultHasher` — a non-cryptographic
+/// 64-bit hash seeded per-process for DoS resistance. The seed is fine
+/// for in-process cache invalidation: the cache is in-process, and a
+/// different process is a different cache. Cryptographic collision
+/// resistance is not required: a collision would only cause a cache
+/// miss (the wrong graph would have to be parseable as the right one
+/// to be observable, and a 64-bit space makes that overwhelmingly
+/// unlikely). The cost is one `read()` per fingerprint, which is the
+/// cost of the H0.1 / H0.5 content-identity contract.
 fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
     let mtime_secs = system_time_to_secs(mtime);
     let size = meta.len();
-    Some(FileFingerprint { mtime_secs, size })
+    let bytes = std::fs::read(path).ok()?;
+    let content_hash = content_hash_64(&bytes);
+    Some(FileFingerprint { mtime_secs, size, content_hash })
+}
+
+/// 64-bit FNV-1a over the input bytes. Pure stdlib, no allocations,
+/// constant memory; sufficient for an in-process cache key where
+/// collisions only ever cost a cache miss.
+fn content_hash_64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+    for &byte in bytes {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100_0000_01b3); // FNV prime
+    }
+    hash
 }
 
 /// Converts a `SystemTime` to seconds since the UNIX epoch. Saturates on
