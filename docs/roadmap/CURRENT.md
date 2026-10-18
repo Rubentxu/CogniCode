@@ -9,9 +9,12 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-18, sobre `47b21cc7293ca77b0ecd30506f9b8c1cd44807e0` (rama `chore/dft-radical-pruning`,
-> PR #379: el catálogo de herramientas MCP sobrevive a una instalación que
-> no distribuye `product/`). **v0.101.23 publicada** 2026-10-18T15:26:15Z,
+> **Snapshot**: 2026-10-18, sobre `e41108e0c53199eece7f270d0180f3823d6ca0cd` (rama
+> `fix/tools-list-only-announces-deliverable`: `tools/list` solo anuncia
+> lo que `tools/call` puede despachar). Snapshot previo (2026-10-18,
+> `47b21cc7`, rama `chore/dft-radical-pruning`, PR #379: el catálogo de
+> herramientas MCP sobrevive a una instalación que no distribuye
+> `product/`) conservado abajo. **v0.101.23 publicada** 2026-10-18T15:26:15Z,
 > 8 assets, `sha256sum -c` verde sobre los bytes redescargados, asset-set
 > PASS, `/releases/latest` resolviendo al tag nuevo, y `tools/list`
 > anunciando 20 herramientas desde el binario descomprimido fuera de
@@ -48,8 +51,39 @@
 > `rc=0`; con uno vacío → `rc=1` y el mensaje nombra las rutas reales. Detalle
 > en `JOURNAL.md`.
 >
-> Próxima unidad: H4.1 (`modelo de observación tipado`), H3
-> (tree-sitter-kotlin) o H4.2/H4.4. Ver `ROADMAP.md`.
+> **Entrada 78**: `tools/list` anunciaba cuatro herramientas que
+> `tools/call` respondía con `ToolNotFound`. Dos tenían capacidad real y
+> eran cableado puro (`composite_impact_query`, `safe_refactor_preview`);
+> las otras dos no podían cumplir su contrato y se retiraron del catálogo
+> en vez de anunciarse (`safe_refactor_apply` exigía un
+> `authorization_token` fuera de banda, que MCP no tiene;
+> `safe_refactor_revalidate` era un stub cuya descripción mentía).
+> Superficie 80 → 78. La guarda que debería haberlo detectado comparaba
+> `tools/list` contra una lista de 100 líneas escrita a mano en el test:
+> cuatro herramientas fantasma y verde. Sustituida por un oráculo que lee
+> el `match tool_name` real de `rmcp_adapter.rs`, con su propia prueba
+> anti-vacuidad. Es la quinta lista maintained a mano retirada de este
+> repositorio por la misma clase de defecto.
+>
+> En la misma rama, `merge_graphs` fusionaba `file_paths[0].parent()` —
+> el directorio del primer archivo — con una estrategia que traga los
+> errores del walk, y contaba como `file_count` lo pedido en lugar de lo
+> leído. Ahora fusiona los archivos pedidos, valida cada ruta contra el
+> validator antes de leer, y reporta la cobertura como un ADT donde
+> `Complete` no puede llevar lista de omitidos.
+>
+> Deuda observada y **no** corregida aquí, porque no pertenece a esta
+> unidad: 20 nombres de herramienta en `sandbox/manifests/**` no existen
+> en `product/tools.json` (`semantic_search`, `validate_syntax`,
+> `get_outline`, `http_get`, `merge_file_graphs`, …). El harness del
+> sandbox se escribió contra una superficie mayor que la que se publica;
+> decidir por herramienta si se publica o se borra el escenario es un
+> bloque propio.
+>
+> Próxima unidad: CU-3 y/o K0 (cobertura honesta). Ver `ROADMAP.md:404`.
+> La línea anterior de este snapshot apuntaba a `H4.1`, `H3`, `H4.2` y
+> `H4.4`, que no existen en el ROADMAP: era drift, y el ratchet de
+> contratos no lo detecta porque sólo vigila el SHA. Corregido aquí.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir
