@@ -142,16 +142,77 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
-def find_cognicode_binary() -> str:
-    """Busca el binario `cognicode` en el target-dir global.
+def cargo_target_dir() -> Path | None:
+    """Le pregunta a cargo dónde escribe, en vez de suponer `<repo>/target`.
 
-    El `~/.cargo/config.toml` de esta maquina fija `target-dir` a un
-    directorio compartido. Si no se encuentra el binario release, cae
-    a debug.
+    MEDIDO 2026-10-18. Esta función tenía cuatro rutas escritas a mano, dos
+    de ellas absolutas y específicas de la máquina de un desarrollador
+    (`/var/home/rubentxu/cargo-targets/...`). La suite pasaba en local porque
+    ese directorio compartido tenía un `cognicode`; en el `merge-gate` —
+    que aísla `CARGO_TARGET_DIR` en `/tmp/cognicode-merge-gate-*/target` y
+    construye ahí sus propios binarios — las cuatro rutas apuntaban a otro
+    sitio y el contrato era rojo.
+
+    Lo grave no era que fallara: era que su verde dependía de qué hubiera
+    en el disco de quien ejecutaba. Un gate que pide prestado su veredicto a
+    la máquina del desarrollador no es un gate. La misma clase que
+    `crates/cognicode-cli/tests/common/mod.rs` (`cargo_target_dir()`), y la
+    misma solución: cargo es la autoridad sobre dónde escribe, y `cargo
+    metadata` es la forma de preguntarle sin reimplementar su resolución de
+    configuración.
+
+    NO confundir con `test_cargo_iso.py::cargo_metadata_target_dir`, que se
+    llama casi igual. La de ahí borra `CARGO_TARGET_DIR` del entorno a
+    propósito: su pregunta es "qué hace el *wrapper* con este entorno", y
+    para eso necesita controlarla. La de aquí es la pregunta contraria —
+    "dónde escribe cargo *para este proceso*" — y por eso tiene que honrar
+    la variable que la lane fija. Importar una en la otra rompería una de las
+    dos en silencio: la de `test_cargo_iso` perdería exactamente el caso que
+    existe para cubrir, y esta volvería a ignorar el directorio aislado del
+    gate. MEDIDO: 5 llamadas ≈ 0,31 s en total, así que el subproceso no
+    necesita memoización y la función se queda sin estado.
+
+    Devuelve `None` en vez de propagar: si cargo no responde, esta función no
+    puede saber dónde está el binario, y un `None` la deja caer al último
+    recurso con el mismo error loud de siempre. Explotar aquí escondería el
+    mensaje que dice qué construir.
     """
-    candidate_dirs = [
-        Path("/var/home/rubentxu/cargo-targets/release"),
-        Path("/var/home/rubentxu/cargo-targets/debug"),
+    try:
+        out = subprocess.check_output(
+            ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+            cwd=str(REPO_ROOT),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    try:
+        resolved = json.loads(out)["target_directory"]
+    except (json.JSONDecodeError, KeyError):
+        return None
+    return Path(resolved)
+
+
+def find_cognicode_binary() -> str:
+    """Localiza el binario `cognicode` donde cargo escribe de verdad.
+
+    Release antes que debug: los bytes release son el artefacto que el golden
+    describe, y un binario debug que resulta estar ahí es un recurso, no un
+    equivalente. `cargo metadata` resuelve el directorio destino —incluida la
+    variable `CARGO_TARGET_DIR` cuando la lane fija una— así que esto sigue
+    al build en vez de a una lista de rutas que tiene que ser cierta en todas
+    las máquinas a la vez.
+
+    Los candidatos `<repo>/target` se quedan como último recurso. Son la forma
+    que cargo usa en una máquina que no configura nada, y quitarlos haría que
+    este contrato fallara en un runner limpio por un motivo que no es un
+    defecto.
+    """
+    target = cargo_target_dir()
+    candidate_dirs = []
+    if target is not None:
+        candidate_dirs += [target / "release", target / "debug"]
+    candidate_dirs += [
         REPO_ROOT / "target" / "release",
         REPO_ROOT / "target" / "debug",
     ]

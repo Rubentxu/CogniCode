@@ -36,6 +36,18 @@
 > alternativa descartada: **269 s** por merge, el 40% de lo que ADR-TH-005
 > ahorró con cuatro binarios. Detalle en `JOURNAL.md`.
 >
+> **Entrada 77**: el `merge-gate` de `365b5a52` falló en `contracts/sh-0` y
+> la causa fue la tercera del mismo tipo en este ciclo, la primera en Python.
+> `test_assurance_export_golden.py` localizaba el binario `cognicode` en cuatro
+> rutas escritas a mano — dos de ellas absolutas y de una máquina concreta — e
+> ignoraba `cargo metadata`. El gate sí construye ese binario, en su directorio
+> aislado; el contrato nunca miraba allí. Su verde no era suyo: lo tomaba
+> prestado del disco de quien lo ejecutaba. Ahora pregunta a cargo, la misma
+> autoridad que `target-dir.sh` y que `common::cargo_target_dir()` usan desde
+> `db1f0c32`. Verificado en las dos direcciones: con el target dir del gate →
+> `rc=0`; con uno vacío → `rc=1` y el mensaje nombra las rutas reales. Detalle
+> en `JOURNAL.md`.
+>
 > Próxima unidad: H4.1 (`modelo de observación tipado`), H3
 > (tree-sitter-kotlin) o H4.2/H4.4. Ver `ROADMAP.md`.
 >

@@ -197,6 +197,32 @@ pipeline {
                 sh("$cd && python3 -m pip install --disable-pip-version-check \"PyYAML==6.0.3\" \"jsonschema==4.25.1\"")
             }
 
+            // MEDIDO 2026-10-18. `test_assurance_export_golden.py` ejecuta el
+            // binario `cognicode` para comparar su export contra el golden, y
+            // esta era la primera etapa del gate que lo corría: nada antes lo
+            // producía. El contrato localizaba el binario en cuatro rutas
+            // escritas a mano, dos de ellas el target dir compartido de una
+            // máquina concreta, así que su verde NO era suyo — lo tomaba
+            // prestado del disco de quien ejecutaba. Corregido el contrato para
+            // que pregunte a cargo (MEDIDO: en el gate, con su target dir
+            // aislado, pasa; con uno vacío, falla con el mensaje que dice qué
+            // construir), la falta del productor dejó de estar tapada.
+            //
+            // Por eso esta etapa existe y va aquí. `build-cognicode-cli-debug`
+            // (más abajo, dentro de `build-binary`) produce los mismos binarios
+            // un rato después, así que esto no es un segundo build: cargo
+            // compila `cognicode` una vez y el `--bins` de más abajo reutiliza
+            // ese artefacto y solo añade `cogh` y `cognicode-release`. El coste
+            // es que `contracts` espera un binario en vez de tres, a cambio de
+            // que la suite deixe de depender de lo que hubiera en el disco.
+            //
+            // `verify-debug-binaries` se queda donde está, con la inmediatez
+            // que tiene: verifica lo que `build-cognicode-cli-debug` acaba de
+            // producir, no un artefacto de una etapa anterior.
+            stage("build-cognicode-for-contracts") {
+                sh("$cd && cargo build -p cognicode-cli --bin cognicode")
+            }
+
             // The contract suite. One entry point, no list: the pipeline names a
             // script, the script discovers `scripts/ci/test_*.py` by glob. The
             // previous shape named eight contract files inside pr-ci.yml, which

@@ -17755,3 +17755,129 @@ command was executed directly and passes
 - A contract that forces a classification is stronger than one that forces a
   behaviour. The compat skip is not a defect; the absence of a place to say
   "this is not a lane move" is.
+
+---
+
+## Entry 77 — the contract that was asking the developer's disk where cargo writes
+
+**What**: `scripts/ci/test_assurance_export_golden.py` resolved the `cognicode`
+binary through a list of four hardcoded paths, two of them absolute and
+machine-specific (`/var/home/rubentxu/cargo-targets/{release,debug}`). It now
+asks cargo — `cargo metadata --format-version 1 --no-deps`, the same authority
+`scripts/ci/target-dir.sh` and `crates/cognicode-cli/tests/common/mod.rs`
+(`cargo_target_dir()`, commit `db1f0c32`) already use — and keeps the
+`<repo>/target` pair only as a last resort.
+
+**Why it mattered**: this is the third instance of one class in this cycle,
+and the first one where the failure was invisible rather than loud. The merge
+gate on `365b5a52` failed at `contracts/sh-0`, five tests red with
+`FileNotFoundError`. The gate does build the binary —
+`build-cognicode-cli-debug` puts `debug/cognicode` in its isolated
+`/tmp/cognicode-merge-gate-287812fbef51/target` — and the contract never
+looked there. It only looked at the shared target dir and `<repo>/target`.
+
+So the contract had been *borrowing its verdict*. It passed on this machine
+because the developer's shared target dir happened to hold a `cognicode`; on a
+clean runner it would have failed for a reason that is not a defect, and on
+this machine it had started failing as soon as that binary was replaced by
+`cognicode-guard`. A gate whose green depends on what is on the disk of
+whoever ran it is not a gate.
+
+**How it was verified** (both directions, because a fix that only makes a red
+go green is not evidence):
+- `CARGO_TARGET_DIR=/tmp/cognicode-merge-gate-287812fbef51/target` →
+  `rc=0`. The binary the gate builds is now found.
+- `CARGO_TARGET_DIR=/tmp/empty-target-probe` → `rc=1`, all five still fail,
+  and the message now names the *actual* candidate directories. The fix did
+  not paper over the missing binary; it stopped looking in the wrong place.
+- `cargo metadata` with `CARGO_TARGET_DIR` set returns exactly that
+  directory — the authority resolves, it is not a coincidence of the
+  `<repo>/target` fallback.
+
+**The second half, found while verifying the first**: ese `rc=0` no era la
+prueba que parecía. El directorio aislado del gate **conservaba** binarios de
+la ejecución anterior — `publish-merge-gate.sh` deriva `check_id` de la rama,
+así que el directorio se reutiliza — así que el contrato pasaba con un binario
+de otro run. Estaba haciendo exactamente lo mismo que antes, un nivel más abajo:
+tomar prestado. La pregunta honesta no era "¿encuentra el binario?", sino
+"¿hay algo en este pipeline que lo produzca *antes*?".
+
+La respuesta era no, y es un defecto de orden real:
+`stage("contracts")` es la primera etapa que lo corre y el primer `cargo
+build` del gate está 150 líneas después, en `build-cognicode-cli-debug`, dentro
+de `build-binary`. En un runner con aislamiento recién creado, ese contrato no
+puede pasar. Que hasta ahora pasara era el préstamo, otra vez.
+
+El arreglo es el que prescribe la convención del propio gate — *"a step that
+consumes a produced path must come after a step that produces it"*, la misma
+propiedad que `scripts/ci/test_pipeline_artifact_reachability.py` declara —:
+producir antes de consumir. Se añadió `stage("build-cognicode-for-contracts")`
+justo antes de `contracts`, con `cargo build -p cognicode-cli --bin cognicode`.
+
+No es un segundo build: cargo compila `cognicode` una vez y el `--bins` de más
+abajo reutiliza ese artefacto y solo añade `cogh` y `cognicode-release`. El
+coste es que `contracts` espere un binario en vez de tres. Y
+`verify-debug-binaries` se queda donde está, con la inmediatez que tiene:
+verifica lo que `build-cognicode-cli-debug` acaba de producir, no un artefacto
+de una etapa anterior. Reordenar para arreglar un orden cambia a qué fallo se
+ve primero; no cambia el trabajo total, porque las etapas son secuenciales.
+
+**Y el pin**: `test_pipeline_artifact_reachability.py` no podía ver este caso.
+Su `CONSUMES` busca `target/(release|debug)/...` escrito literalmente en el
+cuerpo de una etapa, y una ruta que resuelve `cargo metadata` no aparece nunca
+en el texto del pipeline. Se añadió una aserción de orden, deliberadamente
+estrecha: sólo exige que un `--bin <nombre>` *explícito* preceda a la llamada,
+porque permitir `--bins` haría depender la respuesta de qué bins declara cada
+`Cargo.toml` — un hecho que este fichero no puede ver y no debe suponer.
+
+Probada con mutación antes de confiar en ella: quitar la etapa produce el FAIL
+esperado nombrando las dos etapas que invocan el runner (`contracts` y
+`select-suites-script`), y restaurar el fichero lo devuelve a PASS. La primera
+versión de esa aserción tenía dos defectos que la mutación sí dejó ver — un
+`stage_of` al que se le pasaba una posición mal calculada, que reportaba
+`(top level)`, y un aviso que habría dado falso positivo si alguien usara
+`--bins`. Los dos se corrigieron antes de commitear.
+
+**What this did NOT need**: `full` is already self-sufficient. It runs
+`cargo test --workspace` (step 3) before contracts (step 5), and that builds
+the debug binary into whatever target dir cargo resolved. A bare
+`run-all-contracts.sh` on a virgin target dir still needs the binary — the
+same documented precondition class as the release binaries, and the error
+message names the exact command that produces it.
+
+**Where**: `scripts/ci/test_assurance_export_golden.py` (`cargo_target_dir()`
+new, `find_cognicode_binary()` rewritten).
+
+**Gates**: `scripts/test-full.sh` rc=0. `scripts/ci/run-all-contracts.sh`
+rc=0, 0 FAIL across every contract.
+
+**Learned**:
+- Same defect, three languages. Rust harness: fixed in `common/mod.rs`. Python
+  contracts: fixed here. The class is not "a file forgot `cargo metadata`" — it
+  is "a verifier and its producer disagreed about a location, and the
+  disagreement only showed up when the machine stopped being cooperative". A
+  fix in one language does not inoculate the next one.
+- The dangerous property was not the hardcoded path. A hardcoded path that is
+  wrong everywhere fails everywhere, which is loud. A hardcoded path that is
+  *right on one machine* passes silently and fails on another — the only
+  reliable detector is running the gate in the isolated environment the gate
+  itself creates. That is why the per-checkout `CARGO_TARGET_DIR` isolation in
+  `publish-merge-gate.sh` earned its keep before anyone needed it.
+- Rejecting a fix needs the same evidence as accepting one. The tempting
+  alternative here was to add `build-cognicode-cli-debug`'s output directory to
+  the list; that keeps the duplicate authority and would need a fourth entry
+  the next time the layout changes. Asking cargo deletes the disagreement
+  instead of encoding it.
+- **Auditor, sobre el propio arreglo**: al revisar el diff, `cargo_metadata_target_dir`
+  apareció ya en `scripts/ci/test_cargo_iso.py:38` con el mismo objetivo y casi
+  el mismo nombre. La lección de `EvidenceStore` (una regla, una fuente de
+  verdad) exigía importar. Importarla habría sido un bug: la de `test_cargo_iso`
+  **borra** `CARGO_TARGET_DIR` del entorno a propósito, porque su pregunta es
+  "qué hace el wrapper con este entorno", mientras que la de aquí es "dónde
+  escribe cargo para este proceso" y depende de esa variable. Mismo nombre,
+  semántica opuesta; fusionarlas rompe una de las dos en silencio y ninguna
+  complains. Se quedan separadas, y la docstring de una dice por qué — porque
+  la próxima vez que alguien tropiece con las dos, la reacción por defecto
+  ("esto ya existe") es justo la que rompe el gate. MEDIDO también el coste:
+  5 llamadas ≈ 0,31 s, así que el subproceso no justifica memoización y la
+  función queda sin estado global.
