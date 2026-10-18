@@ -15,11 +15,11 @@
     {
       "id": "D-02",
       "question": "Is the tool `safe_refactor_apply` available here, and what feature gates it?",
-      "expected_tools": ["safe_refactor_apply"],
+      "expected_tools": ["safe_refactor_preview"],
       "expected_outcome": "complete",
       "acceptable_answers": [
-        "safe_refactor_apply is available, stability=stable, authority=mutating, feature=None (no gate required)",
-        "Available with no feature gate; mutates the workspace"
+        "No. `safe_refactor_apply` is not in the catalogue at all, so no feature gate applies; the only safe_refactor tool is safe_refactor_preview, read-only and ungated. Announcing it would be a ghost tool",
+        "It does not exist here — not feature-gated, absent. Do not offer an apply step: only safe_refactor_preview (read, stable) is advertised"
       ]
     },
     {
