@@ -60,6 +60,37 @@ pub trait GraphStrategy: Send + Sync {
     /// Builds the full project call graph
     fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph>;
 
+    /// Builds the full project call graph **with an honest coverage report**.
+    ///
+    /// The default implementation calls [`Self::build_full_graph`] and
+    /// wraps the result in a `BuildStatus::Complete` report. Strategies
+    /// that have a typed `_report` (FullGraphStrategy, PerFileStrategy)
+    /// override this to surface walk/read/parse failures via
+    /// [`BuildStatus::Partial`](crate::infrastructure::graph::per_file_graph::BuildStatus::Partial).
+    ///
+    /// H1.2 invariant: a `&dyn GraphStrategy` (the shape a generic
+    /// dispatcher has, e.g. the MCP/SDK path) can ask for the typed
+    /// status of the build, not just the `CallGraph`. The seven CLI
+    /// commands in `interface/cli/commands.rs` already do this against
+    /// the concrete type; this trait method makes it available to any
+    /// code that has only the trait object.
+    ///
+    /// H1.2 honesty contract: the default MUST NOT synthesise `Partial`.
+    /// A strategy that doesn't measure coverage (LightweightStrategy,
+    /// OnDemandStrategy) reports `Complete` — the truth is "we didn't
+    /// check", not "we checked and it was partial". A lie about
+    /// coverage is worse than a silent gap.
+    fn build_full_graph_report(
+        &self,
+        project_dir: &Path,
+    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
+        let graph = self.build_full_graph(project_dir)?;
+        Ok(crate::infrastructure::graph::per_file_graph::BuildReport {
+            graph,
+            status: crate::infrastructure::graph::per_file_graph::BuildStatus::Complete,
+        })
+    }
+
     /// Returns the strategy name for debugging
     fn name(&self) -> &'static str;
 }
@@ -348,6 +379,19 @@ impl GraphStrategy for PerFileStrategy {
 
         let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
         Ok(self.cache.merge(&path_refs))
+    }
+
+    fn build_full_graph_report(
+        &self,
+        project_dir: &Path,
+    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
+        // Delegates to the inherent `build_full_graph_report` that
+        // already classifies via `WalkClassification` and surfaces
+        // `.kt`/`.kts` as `KnownUnsupportedGap` (H1.1 K0 honest gap).
+        // The trait method exists so a `&dyn GraphStrategy` (the
+        // shape a generic dispatcher has) can ask for the typed
+        // status without downcasting to the concrete type.
+        Ok(self.build_full_graph_report(project_dir))
     }
 
     fn name(&self) -> &'static str {
@@ -822,6 +866,17 @@ impl GraphStrategy for FullGraphStrategy {
         }
 
         Ok(store.to_call_graph())
+    }
+
+    fn build_full_graph_report(
+        &self,
+        project_dir: &Path,
+    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
+        // Delegates to the inherent `build_full_graph_report` (line
+        // 471, "PRF audit H-02"). The trait method exists so a
+        // `&dyn GraphStrategy` can ask for the typed `BuildReport`
+        // without downcasting — H1.2 propagation.
+        Ok(self.build_full_graph_report(project_dir))
     }
 
     fn name(&self) -> &'static str {
