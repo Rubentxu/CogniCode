@@ -17273,3 +17273,59 @@ necesidad de tocar el gate; el push ocurre al final del ciclo para
 **Learned**: The test was RED on first run. The defect: when the input is purely relative (`.`, `..`, `""`), `normalize_path` strips it to an empty `PathBuf`, then `std::path::absolute("")` returns the empty path unchanged on stable Rust, and the existing `unwrap_or(normalized)` fallback kept the empty string. The fix is a 6-line explicit branch: empty after normalize → anchor at cwd; non-empty relative → prefer `std::path::absolute`, fall back to `cwd.join(normalized)` if the syscall layer is unavailable. The docstring contract ("si el path es relativo, se resuelve contra el cwd") now matches the implementation, not just the intent.
 
 Fast suite: 2355/2355 passing, baseline check OK.
+
+## Entry 61 — H0.4 verification (cycle 3)
+
+**What**: H0.4 (the `project_finding() → to_guard_observation()` seam) verified. Two structural defects fixed in one cycle:
+
+1. `guard_transfer.rs` had a `SnapshotId(0)` sentinel and a `synthetic_detector()` constructor that fabricated provenance to fill the non-optional `snapshot_id` and `detector` fields of `GuardObservation::Inconclusive`. An `Ungrounded { gaps: Vec<Gap> }` variant replaces them; absence of provenance is now a type-level discriminant, not a magic number.
+2. `projection.rs` conflated "below threshold" (D-class finding) with "no provenance": it emitted `Err(ProjectionError::Inconclusive(gaps))` for D-class, dropping the snapshot_id and detector it had in hand. The D-class branch now emits `Ok(FindingProjection::Inconclusive { snapshot_id, detector, gaps })`. The error variant is reserved for genuinely-missing-provenance cases, making the contract honest.
+
+**Why**: H0.4 acceptance ("Ungrounded jamas implica admision") is enforceable only when the type system distinguishes grounded from ungrounded. With the sentinel approach, a downstream consumer (Guard) could pattern-match on `Inconclusive` and accidentally promote evidence the seam could not provenance. With the new `Ungrounded` variant, the discriminant alone is sufficient for the consumer to refuse.
+
+**Where**:
+- `crates/cognicode-core/src/domain/findings/guard_transfer.rs` — added `Ungrounded` variant, simplified the `Err(Inconclusive)` arm, removed `synthetic_detector()` (~20 lines net deletion).
+- `crates/cognicode-core/src/domain/findings/projection.rs` — D-class branch returns `Ok(Inconclusive)` with full provenance.
+- `crates/cognicode-core/tests/h04_ungrounded_no_sentinels_contract.rs` — 6 tests pinning: discriminant is `Ungrounded`, gaps round-trip, no confusion with `Verifiable`/`Advisory`/`Inconclusive`, `SnapshotId(0)` and synthetic detector id must not appear anywhere in the seam output, and regression: `Ok(Inconclusive)` still maps to full `Inconclusive`.
+
+**Learned**: When I wrote the RED test, the cu2_w4 regression surfaced a real second defect: D-class was also being routed through the `Err(Inconclusive)` arm even though the kernel had full provenance. The fix is to make the two epistemic states distinct at the type level. Without that distinction, the H0.4 invariant holds in name but not in substance — D-class findings would still arrive at the seam via the no-provenance path.
+
+Fast suite: 2355/2355 passing, baseline check OK.
+
+## Entry 62 — H0.5 acceptance (cycle 4)
+
+**What**: H0.5 acceptance pinned as 3 cross-cutting laws (within the "2-4" range from hitos §H0.5). The 5 individual H0 properties were already covered by the per-H0 test files; the gap was verifying they work TOGETHER as a system through the public API. The new file `crates/cognicode-core/tests/h05_acceptance_laws.rs` exercises the production `ServiceAnalyzer` and the `to_guard_observation` seam in three cross-cutting tests:
+
+  - **LAW A** (state honesty through the production adapter): `graph.full` and `graph.complexity` on the same workspace with a skip return Partial with **identical** gaps. Pins H0.2 + H0.4 simultaneously: a divergence would mean the seam translated `BuildStatus` twice.
+  - **LAW B** (workspace identity through analyzer lifetime): two distinct workspaces analyzed on the same `ServiceAnalyzer` do not leak graph data into each other. Pins H0.3 + H0.1 at the adapter level: the `Full` value's `path` field reflects the requested workspace, not the cache owner.
+  - **LAW C** (causal honesty in the seam): an `Err(Inconclusive)` without provenance produces `Ungrounded`, distinct from every other variant. Pins H0.4: the discriminant alone is sufficient for Guard to refuse.
+
+**Why**: Per-H0 unit tests cover the contracts in isolation. A regression that breaks two H0 properties at once (e.g., H0.1 stops invalidating AND H0.3 stops normalizing) would still pass each unit test individually. Cross-cutting tests at the public API surface catch the interaction regressions.
+
+**Where**: `crates/cognicode-core/tests/h05_acceptance_laws.rs` (3 tests, ~150 lines, reuses the rust fixture pattern from cu1_w2).
+
+**Learned**: The hitos says "2-4 leyes pequeñas reaprovechando suites existentes." Three is the lower end of the range and matches the user's "simplifica, reduce tests" feedback. Each law is small (20-50 lines) and uses the same fixture helpers and `AnalysisBasis::for_workspace` infrastructure that the per-H0 tests already validated.
+
+Fast suite: 26/26 in the H0.* scope, 2355/2355 in cognicode-core lib, baseline check OK. The H0 block (H0.1, H0.2, H0.3, H0.4, H0.5) is now closed with structural guarantees on each property and a system-level acceptance.
+
+## Entry 63 — H1.1 unified classification envelope (cycle 1)
+
+**What**: H1.1's first verification cycle. The spec (§H1.1 in 01-HITOS-Y-TODO.md, §Invariantes in AC-01) names a five-variant logical model for every file the walk encounters: `Parsed | ExcludedByPolicy | UnsupportedRelevant | ReadFailed | ParseFailed`. Until this cycle that model existed only as scattered vocabulary across three types:
+
+  - `WalkClassification` (Analyze | KnownUnsupportedGap | LegitExclusion) in `per_file_graph.rs`
+  - `SkipReason` (Read | Parse | UnsupportedExtension | Other) in `per_file_graph.rs`
+  - presence-in-graph (no type-level witness)
+
+A downstream consumer (CLI/MCP/SDK) could not answer "what happened to this file?" without pattern-matching all three. With three call sites (FullGraphStrategy, PerFileStrategy, AnalysisService) and a sixth implicit state (Unknown) sneaking in via `filter_map(|e| e.ok())`, the silent-discard bug was structurally possible. This cycle adds the envelope — the type that says "every file lands in exactly one of the five states" — and pins it with a 10-test contract.
+
+**Why**: AC-01 §Invariantes names the five variants by name; a downstream tool may match on the name. The H1.1 invariant "Unificar descubrimiento/clasificación" is enforceable only when the type exists; without it, every consumer re-implements the projection (or skips it). The `SkipReason::Other` → `ExcludedByPolicy` mapping is the most important non-obvious decision: we don't claim a gap we can't name (a sixth "Unknown" state would re-introduce the bug the envelope was created to prevent).
+
+**Where**:
+- `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` — added `enum FileDisposition` (~110 lines including docstring), 3 projection constructors (`from_walk_classification`, `from_walk_decision`, `from_skipped`), and a `name() -> &'static str` for diagnostics. Import of `WalkDecision` extended.
+- `crates/cognicode-core/tests/h11_unified_classification_contract.rs` — 10 tests pinning: 5-variant exhaustiveness and exact names; `.kt`/`.kts` K0 honest gap; README/assets as `ExcludedByPolicy` (no completeness impact, per AC-01 §Invariantes); `WalkFilter::Prune` → `ExcludedByPolicy`; `SkipReason::{Read, Parse, UnsupportedExtension, Other}` → `{ReadFailed, ParseFailed, UnsupportedRelevant, ExcludedByPolicy}`; the happy path of an analyzed-and-merged file → `Parsed`.
+
+**Learned**: H1.1 is a "name the existing taxonomy" cycle, not a "rewrite the strategies" cycle. The two scopes are easy to confuse: the spec says "Unificar ... para FullGraphStrategy, PerFileStrategy y AnalysisService," which sounds like it touches the three strategies. But the unification at the *type* level — the single envelope every call site projects to — is the invariant. Callsite changes (route the trait through `_report`, route `build_graph_per_file` through the classifier, dedupe `USAGE_SKIP_DIRS`) are H1.2/H1.3, pinned by separate test files. Splitting the cycle by what each one *verifies* (type unification vs. callsite propagation) keeps each commit small and reversible; the per-H0 cadence was the same: H0.1, H0.2, H0.3, H0.4 each fix one defect, H0.5 verifies the system. H1.1 verifies the type; H1.2+ will verify the propagation. AC-01 is explicit: "reutilizar los tipos que ya existan, evolucionar solo si es preciso." The envelope is evolution; the taxonomy reuse is the discipline.
+
+Backfill note: this commit also lands the H0.4 (Entry 61) and H0.5 (Entry 62) journal entries that were created but uncommitted in the previous session. The empty `chore(roadmap)` commits `93f23c21` and `5b38bc01` on the branch claim these entries but contain no file changes; they remain on the branch as a historical artifact. Future maintainers will find the H0.4 + H0.5 journal content anchored to this cycle's commit (3496fba) instead of the empty chore commits.
+
+Fast suite: 10/10 new contract tests + 14/14 per_file_graph unit tests + 62/62 lib tests pass, baseline OK. H1.1 cycle 1 closed at the type level; callsite propagation is queued for H1.2.
