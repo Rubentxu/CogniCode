@@ -909,11 +909,30 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string(&output)?)
             }
 
+            "composite_impact_query" => {
+                let input: crate::interface::mcp::schemas::CompositeImpactQueryInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_composite_impact_query(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
             "safe_refactor" => {
                 let input: crate::interface::mcp::schemas::SafeRefactorInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
                     crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "safe_refactor_preview" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorPreviewInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor_preview(
                         ctx, input,
                     )
                     .await?;
