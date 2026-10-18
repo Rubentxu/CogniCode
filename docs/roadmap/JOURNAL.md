@@ -17410,3 +17410,35 @@ Belt-and-suspenders pins:
 - H2.1 is the first WU in the H2 (CU-3) program that has zero production code. The audit IS the WU. Future H2.x cycles build on the contract the audit pins, so any new tool that lands in the answer path can re-use the same test harness (mutating-set assertion, read-authority assertion, catalog parity assertion) without inventing a new one.
 
 H2.1 cycle 1 closed. H2.1 acceptance: PASS. H2 (CU-3) program: 1/4 open cycles (0/4 → 1/4 done).
+
+## Entry 68 — H2.2 typed permissions and affordances from the catalog (cycle 1)
+
+**What**: H2.2 cycle 1 closes the second half of the CU-3 acceptance. The new file `crates/cognicode-core/tests/h22_affordances_typed.rs` (7 tests, ~290 lines) pins the typed-permissions and affordances contract that the catalog already encodes:
+
+  - **Typed authority enum** — every tool's `authority` is exactly `read` or `mutating`. A third value (e.g. `"delegated"`, `"internal"`, `"admin"`) would be a permissions regression; consumers dispatch on `authority` and would silently treat the new value as read, which is a security defect.
+  - **Read never mutates** — every read tool has `runtime_metadata.mutates_workspace = false`. Belt and suspenders for the typed capability flag.
+  - **Metadata desync guard** — `runtime_metadata.authority` must equal the top-level `authority`. A drift is a catalog desync: tools/list would say one thing and the runtime envelope would say another.
+  - **Typed preconditions resolve** — every entry in `prerequisites` is a tool name that exists in the catalog. A dangling pointer breaks the consumer's "I can call this only if X has run" chain silently.
+  - **Typed affordances resolve** — every entry in `follow_ups` is a tool name in the catalog. A dangling follow-up is the "suggested next action" the consumer can't take.
+  - **CORE H2.2 INVARIANT** — a read tool's `follow_ups` must point only at other read tools. Pointing a read tool at a mutating tool would mean: "this read result, with no further authorization, can mutate the workspace" — that violates "una lectura nunca ofrece acción mutante sin capacidad explícita."
+  - **Requirements block self-consistency** — `requirements.{graph,persistence}` must agree with `runtime_metadata.{requires_graph,requires_persistence}`. A drift is a preconditions desync.
+
+**Why**: H2.2 spec is explicit: "Affordances derivadas del catálogo existente, precondiciones y permisos tipados." The catalog already encodes the three pieces; the test pins the contract so a future change that breaks it (an off-enum authority, a read tool declaring mutates_workspace=true, a read tool pointing to a mutating follow-up) is visible in the diff rather than a silent regression. The CORE H2.2 invariant is the one that protects the operator's mental model: "a read result cannot, by itself, mutate the workspace." Today the catalog satisfies that perfectly. The test makes the satisfaction non-vacuous — a future contributor who wants to add a read→mutating affordance has to add the explicit capability declaration AND update the test exception, both in the same diff.
+
+**Where**:
+- `crates/cognicode-core/tests/h22_affordances_typed.rs` — 7 tests, read-only. No production code change.
+- `product/tools.json` and `product/tool-catalog-runtime.json` — confirmed invariants hold on both:
+  - 80/80 authority ∈ {read, mutating}
+  - 0 read tools with mutates_workspace=true
+  - 0 unresolved prerequisites (44/44 prerequisites resolve)
+  - 0 unresolved follow_ups (28/28 follow_ups resolve)
+  - 0 read → mutating follow-up links
+  - 0 authority desyncs between top-level and runtime_metadata
+  - 0 graph/persistence desyncs between requirements and runtime_metadata
+
+**Learned**:
+- The catalog is the contract. H2.1 and H2.2 are both pure-characterization cycles; the WU is the test, the production code already exists in `product/tools.json`. This is the rare case where a "no production code change" cycle is the right answer — the operator's hard work of hand-authoring 80 tools with consistent metadata is what makes the audit non-vacuous.
+- The CORE H2.2 invariant has a deliberate exception path: a future read tool CAN offer a mutating follow-up if it first declares the capability. The current catalog has no such annotation, so the test is strict. The exception is the comment in `read_tools_never_offer_mutating_follow_ups` explaining what shape the capability declaration should take when the day comes. The contract is intentionally narrow: a security boundary worth a comment is one worth a deliberate exception mechanism.
+- The test's path-resolution pattern (`env!("CARGO_MANIFEST_DIR")` + `/../../product/tools.json`) is now the canonical way to reach a workspace-relative file from an integration test. The H2.1 audit fixed the same lesson; the H2.2 audit applies it without re-deriving it.
+
+H2.2 cycle 1 closed. H2.2 acceptance: PASS. H2 (CU-3) program: 2/4 done.
