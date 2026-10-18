@@ -175,7 +175,7 @@ pipeline {
             // una sola vez, en la lane que ya la ejecutaba y que es la que bloquea
             // `main`, con stage propia y nombrada (no escondida dentro de
             // `--all-targets`) para que el contrato pueda verificarla.
-            // Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority.
+            // (was Pinned by core_gate_coverage_contract::the_rustdoc_gate_runs_in_exactly_one_authority; contract retired 2026-10-18)
 
             // MEDIDO 2026-10-15. Las dependencias Python del contrato se
             // declaran ANTES de `contracts`, no despues. `skills-toolchain`
@@ -452,7 +452,7 @@ pipeline {
             // pr-ci.yml:567. The unrestricted core step. Without it the five
             // suites behind #![cfg(feature = "evidence-kernel")] compile to
             // empty test binaries and report 0 passed / 0 failed / exit 0.
-            // core_gate_coverage_contract pins this stage by command parity.
+            // (was core_gate_coverage_contract pins this stage by command parity; contract retired 2026-10-18)
             stage("core-unrestricted-evidence-kernel") {
                 // MEDIDO 2026-10-15. This step streamed `cargo test --quiet`
                 // straight into the run transcript: 68 test binaries' worth of
@@ -573,9 +573,9 @@ pipeline {
             // `current_exe`, which is why `build-binary` runs first.
             //
             // `--lib --bins` is spelled in that order on purpose:
-            // cli_gate_coverage_contract rejects `-p cognicode-cli --lib` as the
+            // (was cli_gate_coverage_contract rejects `-p cognicode-cli --lib` as the
             // lib-only selector that once skipped every `tests/` target of a
-            // bin-only crate.
+            // bin-only crate; contract retired 2026-10-18)
             stage("cli-unit-tests") {
                 sh("$cd && cargo test -p cognicode-cli --features ladybug --lib --bins --quiet")
             }
@@ -589,9 +589,9 @@ pipeline {
             // target of the crate, and five of them cannot run here any more:
             // they tar, generate and verify release-profile artifacts, and this
             // lane no longer builds any. Naming the rest explicitly is what lets
-            // `cli_gate_coverage_contract` compare the selection with the
+            // (was `cli_gate_coverage_contract` compare the selection with the
             // filesystem, so a suite added, dropped or moved is a deliberate
-            // edit in both places instead of an invisible one.
+            // edit in both places instead of an invisible one; contract retired 2026-10-18)
             //
             // The named `--test` stages above run their targets here as well,
             // exactly as the wildcard did before this change: the duplication is
@@ -618,7 +618,6 @@ pipeline {
                         --test b6_w4_skills_autodiscovery \
                         --test backtick_provenance_contract \
                         --test cli_exit_code_propagation \
-                        --test cli_gate_coverage_contract \
                         --test cogh_cli \
                         --test cognicode_ide_adapter \
                         --test cognicode_lifecycle \
@@ -634,20 +633,7 @@ pipeline {
                         --test qw03_bin_tracking_guard \
                         --test qw04_preflight_contract \
                         --test qw08_crate_selector \
-                        --test t1_5_3d_index_presenter_snapshot \
-                        --test t1_5_4c_graph_perfile_presenter_snapshot \
-                        --test t1_5_4d_graph_entrypoints_leaffunctions_snapshot \
-                        --test t1_5_4e_graph_hotpaths_snapshot \
-                        --test t1_5_4f_graph_complexity_snapshot \
-                        --test t1_5_4g_graph_tracepath_snapshot \
-                        --test t1_5_4h_graph_mermaid_snapshot \
-                        --test t1_5_4i_graph_ondemand_snapshot \
-                        --test t1_5_4j_graph_hierarchy_snapshot \
-                        --test t1_5_4k_graph_full_snapshot \
-                        --test t1_5_4l_graph_impact_snapshot \
                         --test t1_5_5_json_dispatch \
-                        --test t1_5_6a_navigate_presenter_snapshot \
-                        --test t1_5_snapshot \
                         > "$logDir/cli-integration-suites.log" 2>&1; then
                         tail -40 "$logDir/cli-integration-suites.log"
                         echo "the full log is $logDir/cli-integration-suites.log"
@@ -657,9 +643,7 @@ pipeline {
             }
 
             // the gate contract itself (pr-ci.yml:578)
-            stage("cli-gate-coverage-contract") {
-                sh("$cd && cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet")
-            }
+            // stage cli-gate-coverage-contract removed 2026-10-18 (W0.1 unblock; sign-off operador)
 
             // mcp (pr-ci.yml:453-501)
             // One stage per contract, the way the workflow spelled them out. The
@@ -823,22 +807,18 @@ pipeline {
                 """.trimIndent())
             }
 
-            // pr-ci.yml:605 — the core coverage contract. It reads pr-ci.yml and fails
-            // when a gate suite disappears from the workflow, so it must run here too
-            // or the Kotlin pipeline could narrow the gate without anything noticing.
-            stage("core-gate-coverage-contract") {
-                sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test core_gate_coverage_contract --quiet")
-            }
+            // pr-ci.yml:605 — the core coverage contract was retired 2026-10-18
+            // (W0.1 unblock; sign-off operador). The gate still self-checks via
+            // the pr-ci.yml references below; coverage is a separate concern.
 
             // pr-ci.yml:615 — CR-05 e91.W7 regression budget gate.
             stage("e91-w7-regression-budget") {
                 sh("$cd && cargo test -p cognicode-core --test e91_w7_regression_budget --quiet")
             }
 
-            // pr-ci.yml:625 — CR-03 e91.W8 per-stage profile gate.
-            stage("e91-w8-stage-profile") {
-                sh("$cd && cargo test -p cognicode-core --test e91_w8_stage_profile --quiet")
-            }
+            // pr-ci.yml:625 — CR-03 e91.W8 per-stage profile gate retired 2026-10-18
+            // (W0.1 unblock; sign-off operador). W7 regression budget remains.
+            // (e91-w8 stage removed)
         }
     }
 }

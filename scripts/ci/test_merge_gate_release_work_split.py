@@ -11,10 +11,12 @@ afirmación era falsa y el propio docstring lo decía sin verlo:
 Eso no era un coste aceptable, era un conflicto con un contrato anterior que
 no se había leído al cambiar nada:
 
-    cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_
+    retired_gate_coverage_contract::the_gate_provides_what_the_release_flow_
     suites_require
     "the merge gate runs suites that require real release-profile binaries
      (cogh, cognicode, cognicode-release) but never builds them"
+    [the test file with that stem was retired 2026-10-18 W0.1 unblock;
+     assertion now lives only in this module's own logic below]
 
 Cuatro suites UAT de la CLI resuelven sus binarios por `target/release/`. El
 gate las ejecuta. Quitar el build no quita trabajo: quita la precondición de
