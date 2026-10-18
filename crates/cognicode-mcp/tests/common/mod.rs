@@ -68,7 +68,21 @@ fn resolve_binary_path_for(name: &str) -> PathBuf {
         }
     }
 
-    // 4. Workspace-relative fallback.
+    // 4. The directory cargo itself reports. Covers a `target-dir` set in
+    //    ~/.cargo/config.toml, which is how this machine coexists with four
+    //    other OpenCode instances and is invisible as an environment variable.
+    if let Some(target) = cargo_target_dir() {
+        let release = target.join("release").join(name);
+        if release.exists() {
+            return release;
+        }
+        let debug = target.join("debug").join(name);
+        if debug.exists() {
+            return debug;
+        }
+    }
+
+    // 5. Workspace-relative fallback (the default layout).
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
@@ -81,15 +95,6 @@ fn resolve_binary_path_for(name: &str) -> PathBuf {
     }
     let debug = workspace_root.join("target").join("debug").join(name);
     if debug.exists() {
-        // A stale binary here is worse than no binary at all: a UAT would run
-        // against whatever was built hours ago and report a green result that
-        // says nothing about the code under review. When Cargo is actually
-        // writing somewhere else (a shared `CARGO_TARGET_DIR`, or the
-        // `.cargo/config.toml` this workspace sets), prefer that build even
-        // though `CARGO_TARGET_DIR` is unset in the test's environment.
-        if let Some(fresh) = cargo_configured_target_dir(workspace_root.join("target")) {
-            return fresh.join("debug").join(name);
-        }
         return debug;
     }
     debug
@@ -100,36 +105,26 @@ fn resolve_binary_path_for(name: &str) -> PathBuf {
 ///
 /// Returns `None` when the build lands in the default location, in which case
 /// the caller already has the right path and this is all noise.
-fn cargo_configured_target_dir(default: PathBuf) -> Option<PathBuf> {
-    let workspace_root = default.parent()?;
-    let config = workspace_root.join(".cargo").join("config.toml");
-    let text = std::fs::read_to_string(config).ok()?;
-    for line in text.lines() {
-        let line = line.trim();
-        // Skip commented-out or section-header lines; only a real
-        // `target-dir = "..."` under `[build]` redirects the output.
-        if line.starts_with('#') || line.starts_with('[') {
-            continue;
+fn cargo_target_dir() -> Option<PathBuf> {
+    // The only authority that answers "where is Cargo actually writing".
+    // `CARGO_TARGET_DIR` is unset here, and a `target-dir` set in
+    // ~/.cargo/config.toml is invisible to both the environment and any
+    // workspace-local config file, so heuristics that read those two
+    // sources report a directory that does not exist. Asking cargo is one
+    // subprocess and is right in every configuration.
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let out = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
         }
-        let Some(value) = line.strip_prefix("target-dir") else {
-            continue;
-        };
-        let value = value
-            .trim_start()
-            .strip_prefix('=')?
-            .trim()
-            .trim_matches('"');
-        if value.is_empty() {
-            continue;
-        }
-        let resolved = PathBuf::from(value);
-        return Some(if resolved.is_absolute() {
-            resolved
-        } else {
-            workspace_root.join(resolved)
-        });
-    }
-    None
+        let v: Value = serde_json::from_slice(&out.stdout).ok()?;
+        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
+    })
+    .clone()
 }
 
 fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
@@ -258,15 +253,108 @@ impl McpSession {
         }
     }
 
+    /// Fetch every advertised tool name, following `next_cursor` to the
+    /// last page.
+    ///
+    /// The catalogue is paginated at 20 tools per page, so a single
+    /// `tools/list` call does not return the whole surface. Tests that
+    /// assert on the advertised set must walk the pages; hand-rolling that
+    /// walk in each test is how a suite ends up with three slightly
+    /// different paginations, one of which only reads page 1 and calls the
+    /// result "the tool list". One implementation, used everywhere.
+    pub async fn list_tools(&mut self) -> Result<Vec<String>, String> {
+        let mut names = Vec::new();
+        let mut cursor: Option<String> = None;
+        // Bounded so a server that returns a self-referential cursor
+        // fails the test instead of hanging it.
+        for _ in 0..64 {
+            let params = match &cursor {
+                Some(c) => json!({"cursor": c}),
+                None => json!({}),
+            };
+            let resp = self.request("tools/list", params).await?;
+            let result = resp
+                .get("result")
+                .ok_or_else(|| format!("tools/list sin result: {resp}"))?;
+            if let Some(arr) = result.get("tools").and_then(|v| v.as_array()) {
+                for t in arr {
+                    if let Some(n) = t.get("name").and_then(|v| v.as_str()) {
+                        names.push(n.to_string());
+                    }
+                }
+            }
+            match result.get("nextCursor").and_then(|v| v.as_str()) {
+                Some(c) => cursor = Some(c.to_string()),
+                None => break,
+            }
+        }
+        Ok(names)
+    }
+
     /// Spawn an extra `cognicode-mcp` child process with the given
     /// extra CLI flags, initialize it, and return a `McpSession`
     /// over it. Used by A-013 to test `--read-only` posture in
     /// isolation without coupling to A-009's hand-rolled Session.
     pub async fn spawn_with_flags(ws: &Path, extra_args: &[&str]) -> Result<Self, String> {
+        Self::spawn_raw(ws, extra_args, None).await
+    }
+
+    /// Spawn the server with an explicit **process** working directory,
+    /// independent of the `--cwd` value passed to the child.
+    ///
+    /// Why this exists: `spawn` and `spawn_with_flags` both inherit the
+    /// test process's CWD, which is the crate root — always inside the
+    /// repository. A real MCP client (Claude Code, Cursor, an agent
+    /// runtime) spawns the server with CWD set to *the user's project*,
+    /// which is outside the repository. That difference is invisible to
+    /// every other test in this suite and it hid a real regression: the
+    /// tool catalogue is resolved by walking up from the **process** CWD,
+    /// so a server launched from outside the repository resolved an empty
+    /// catalogue and answered `tools/list` with `[]`.
+    ///
+    /// A test that cannot reproduce the launch context of its consumers
+    /// is a test that cannot catch their failures. Pinning the launch
+    /// context is what makes this suite honest about the deployment it
+    /// actually has.
+    pub async fn spawn_from(ws: &Path, process_cwd: &Path) -> Result<Self, String> {
+        Self::spawn_raw(ws, &[], Some(process_cwd)).await
+    }
+
+    /// [`Self::spawn_from`] with extra CLI flags, so a test can reproduce the
+    /// launch context of a real client *and* the posture the client asked for.
+    /// Without this, "spawned outside the repo in read-only mode" is a
+    /// combination no test can express, which is precisely the combination
+    /// that regressed to zero advertised tools.
+    pub async fn spawn_from_with_flags(
+        ws: &Path,
+        process_cwd: &Path,
+        extra_args: &[&str],
+    ) -> Result<Self, String> {
+        Self::spawn_raw(ws, extra_args, Some(process_cwd)).await
+    }
+
+    /// Shared spawn body for [`Self::spawn_with_flags`] and
+    /// [`Self::spawn_from`]. `process_cwd` of `None` means "inherit ours",
+    /// which is what the pre-existing harness did.
+    async fn spawn_raw(
+        ws: &Path,
+        extra_args: &[&str],
+        process_cwd: Option<&Path>,
+    ) -> Result<Self, String> {
         let mut cmd = Command::new(binary_path());
         cmd.arg("--cwd").arg(ws);
         for a in extra_args {
             cmd.arg(a);
+        }
+        // The harness must not lend the child any build-time context it
+        // would not have in production. `cargo` sets `CARGO_MANIFEST_DIR`
+        // for the test process and every child inherits it, which is how a
+        // suite can stay green while the deployed server — which never has
+        // that variable — finds no catalogue at all. Removing it here makes
+        // the child indistinguishable from a published binary.
+        cmd.env_remove("CARGO_MANIFEST_DIR");
+        if let Some(dir) = process_cwd {
+            cmd.current_dir(dir);
         }
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())

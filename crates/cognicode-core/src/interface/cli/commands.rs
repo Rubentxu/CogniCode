@@ -3041,6 +3041,12 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
 
 /// Resolve the root that carries `product/*.json` for the **running** binary.
 ///
+/// Thin wrapper over [`crate::interface::catalog::resolve_product_assets_root_from`],
+/// which owns the anchors and the reasoning behind them. The CLI and the MCP
+/// catalogue must resolve product assets the same way; the second copy of this
+/// logic is what let an installed server advertise an empty tool catalogue
+/// while the CLI worked perfectly against the same binary.
+///
 /// **Why not `env!("CARGO_MANIFEST_DIR")`.** That macro is resolved at compile
 /// time and bakes the *build machine's* directory into the binary. Proven
 /// failure: a binary compiled inside worktree `/tmp/a014vanish`, run after
@@ -3051,66 +3057,13 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
 /// have, and the command whose entire purpose is machine-readable discovery
 /// advertised zero capabilities.
 ///
-/// **The anchors, in order.**
-/// 1. The current working directory and its parents. Covers a checkout, a
-///    `cargo run` from a subdirectory, and — for a packaged install where
-///    the launcher is invoked from anywhere — the case where the user runs
-///    the binary from inside their project.
-/// 2. The directory of the running executable and its parents. This is what
-///    makes the packaged layout work: data beside the binary, or one level up
-///    when the binary lives in `bin/`.
-///
-/// **Why cwd first.** An installed binary is normally reached through a
-/// launcher on `PATH`, so `current_exe` is the real binary and the data sits
-/// beside it. But during development the executable lives in
-/// `target/{debug,release}/`, which carries no data, while the cwd is the
-/// checkout that does. Anchoring on the executable first made
-/// `cargo test` see zero tools, because the test's cwd is the crate
-/// directory and the binary is three levels away. Both orders are wrong for
-/// one of the two layouts; trying both is what makes it right, and the
-/// executable is kept as the fallback because it is the anchor that still
-/// exists when the user has no checkout at all.
+/// The returned value is a path even when nothing was found: the caller
+/// already warns on stderr and falls back to built-in defaults, and a wrong
+/// absolute path there would only make the warning point at somewhere
+/// meaningless.
 fn resolve_product_assets_root() -> PathBuf {
-    fn holds(root: &std::path::Path) -> bool {
-        root.join("product").join("tools.json").is_file()
-            || root.join("product").join("profiles.json").is_file()
-    }
-
-    fn walk_up(start: &std::path::Path) -> Option<PathBuf> {
-        let mut cursor: Option<&std::path::Path> = Some(start);
-        // Bounded so a symlink loop cannot turn discovery into a hang.
-        let mut hops = 0usize;
-        while let Some(dir) = cursor {
-            if holds(dir) {
-                return Some(dir.to_path_buf());
-            }
-            cursor = dir.parent();
-            hops += 1;
-            if hops > 32 {
-                break;
-            }
-        }
-        None
-    }
-
-    if let Ok(cwd) = std::env::current_dir()
-        && let Some(found) = walk_up(&cwd)
-    {
-        return found;
-    }
-
-    if let Some(exe) = std::env::current_exe().ok()
-        && let Some(parent) = exe.parent()
-        && let Some(found) = walk_up(parent)
-    {
-        return found;
-    }
-
-    // Neither anchor carries the data. Return the cwd: the caller already
-    // warns on stderr and falls back to built-in defaults, and a wrong
-    // absolute path there would only make the warning point at somewhere
-    // meaningless.
-    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    crate::interface::catalog::resolve_product_assets_root_from(None)
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 
 /// Resolve `source_commit` for the capabilities document.

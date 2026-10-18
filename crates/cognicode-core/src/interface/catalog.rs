@@ -168,30 +168,154 @@ pub fn tool_feature_enabled(feature: &Option<String>) -> bool {
 /// and the MCP `build_all_tools` are expected to consume this view
 /// so the parity test can compare them on equal footing.
 pub fn load_tool_catalog_active() -> Vec<ToolDescriptor> {
-    load_tool_catalog()
+    load_tool_catalog_active_from(None)
+}
+
+/// [`load_tool_catalog_active`], anchored on an explicitly configured root.
+///
+/// The MCP handler knows the workspace the operator configured with
+/// `--cwd`; the catalogue must resolve from that root rather than
+/// from whatever directory the process happened to inherit. See
+/// [`resolve_product_assets_root_from`] for why that distinction is
+/// the difference between a working server and an empty one.
+pub fn load_tool_catalog_active_from(anchor: Option<&Path>) -> Vec<ToolDescriptor> {
+    load_tool_catalog_from(anchor)
         .into_iter()
         .filter(|d| tool_feature_enabled(&d.feature))
         .collect()
 }
 
-/// Load the tool catalog from `product/tools.json`.
+/// The catalogue baked into the binary at compile time.
 ///
-/// Walks the same anchors as the private
-/// `resolve_product_assets_root` helper in
-/// `crate::interface::cli::commands`: cwd and its parents first,
-/// then `CARGO_MANIFEST_DIR` and its parents. Returns an empty
-/// vector when the file cannot be found or fails to deserialise;
-/// callers that need a fail-closed signal should log their own
-/// diagnostics.
-pub fn load_tool_catalog() -> Vec<ToolDescriptor> {
-    for path in catalog_candidate_paths() {
+/// `product/tools.json` is versioned and hand-authored; `include_str!`
+/// compiles that exact file in, so there is still **one** source of truth —
+/// it is simply also *inside* the binary, where no install layout can lose
+/// it. The filesystem lookup above stays as the first choice so a checkout
+/// can be inspected and edited without a rebuild.
+///
+/// This is the third time the same failure has been reached from a different
+/// direction: `env!("CARGO_MANIFEST_DIR")` named the build machine's tree, the
+/// runtime resolver then named the process CWD, and the installer shipped no
+/// product data at all. Each of those produced the *same* observable symptom —
+/// a healthy server, exit code 0, valid JSON-RPC, and an empty `tools/list` —
+/// and each one was invisible to the suite because the suite ran where the
+/// data happened to be. A catalogue that cannot be found is indistinguishable
+/// from a product with no tools, so the binary carries its own answer.
+const EMBEDDED_TOOLS: &str = include_str!("../../../../product/tools.json");
+
+/// The catalogue as it ships inside the binary, parsed.
+///
+/// Falls back to an empty vector if `tools.json` ever stops being valid
+/// JSON — a malformed catalogue must not abort the process, and an empty
+/// advertisement is the honest failure (the parity tests catch a drifted or
+/// broken file at build time, not at runtime).
+pub fn embedded_tool_catalog() -> Vec<ToolDescriptor> {
+    serde_json::from_str::<CatalogFile>(EMBEDDED_TOOLS)
+        .map(|parsed| parsed.tools)
+        .unwrap_or_default()
+}
+
+/// Load the tool catalog from `product/tools.json`, anchored on
+/// `anchor` when one is supplied.
+///
+/// Falls back to the catalogue compiled into the binary when no anchor
+/// carries one on disk.
+pub fn load_tool_catalog_from(anchor: Option<&Path>) -> Vec<ToolDescriptor> {
+    load_tool_catalog_report(anchor).tools
+}
+
+/// Where a loaded catalogue came from, and whether it is usable.
+///
+/// The bare `Vec<ToolDescriptor>` that used to cross this boundary could not
+/// distinguish "the product genuinely declares zero tools" from "the catalogue
+/// could not be found or parsed". Those are the same wire response and
+/// opposite meanings, and conflating them is exactly what made the MCP
+/// regression invisible: a server that had lost its catalogue reported the
+/// same `{"tools": []}` as a healthy one, with exit code 0 and no diagnostic.
+/// An empty vector is a *state*, not an outcome; the outcome is this enum.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CatalogReport {
+    pub tools: Vec<ToolDescriptor>,
+    pub source: CatalogSource,
+}
+
+/// The provenance of a loaded catalogue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CatalogSource {
+    /// Read and parsed from `product/tools.json` at this path.
+    Disk(PathBuf),
+    /// Served from the catalogue compiled into the binary. Reached when no
+    /// anchor carried one on disk — the normal state of a packaged install.
+    Embedded,
+    /// Nothing could be loaded: no catalogue on disk *and* the compiled-in
+    /// copy failed to parse. This is the state that must never be reported
+    /// as "the product has no tools", and the one the callers warn about.
+    Unavailable,
+}
+
+impl CatalogReport {
+    /// Whether the catalogue describes the product, as opposed to failing to.
+    pub fn is_usable(&self) -> bool {
+        !matches!(self.source, CatalogSource::Unavailable)
+    }
+
+    /// One line naming the failure, for stderr. Empty when usable.
+    ///
+    /// Diagnostics never belong on stdout: MCP speaks JSON-RPC there, and a
+    /// human-readable line in the protocol stream corrupts the session.
+    pub fn diagnostic(&self) -> Option<String> {
+        match &self.source {
+            CatalogSource::Unavailable => Some(
+                "the tool catalogue could not be loaded from disk or from the \
+                 copy compiled into this binary; advertising an empty tool \
+                 list, which is NOT the same as this product having no tools"
+                    .to_string(),
+            ),
+            _ => None,
+        }
+    }
+}
+
+/// [`load_tool_catalog_from`], reporting where the catalogue came from.
+pub fn load_tool_catalog_report(anchor: Option<&Path>) -> CatalogReport {
+    for path in catalog_candidate_paths(anchor) {
         if let Ok(text) = std::fs::read_to_string(&path)
             && let Ok(parsed) = serde_json::from_str::<CatalogFile>(&text)
         {
-            return parsed.tools;
+            return CatalogReport {
+                tools: parsed.tools,
+                source: CatalogSource::Disk(path),
+            };
         }
     }
-    Vec::new()
+    match serde_json::from_str::<CatalogFile>(EMBEDDED_TOOLS) {
+        Ok(parsed) => CatalogReport {
+            tools: parsed.tools,
+            source: CatalogSource::Embedded,
+        },
+        // A malformed compiled-in catalogue is a build defect, not a runtime
+        // condition. Saying so, rather than quietly serving nothing, is the
+        // only way anyone finds out.
+        Err(_) => CatalogReport {
+            tools: Vec::new(),
+            source: CatalogSource::Unavailable,
+        },
+    }
+}
+
+/// Load the tool catalog from `product/tools.json`.
+///
+/// Resolution is delegated to [`resolve_product_assets_root_from`],
+/// which is the **single** product-asset resolver for the whole
+/// workspace: the CLI capabilities document and the MCP `tools/list`
+/// catalogue must never be able to disagree about where the shipped
+/// data lives.
+///
+/// Returns an empty vector when the file cannot be found or fails to
+/// deserialise; callers that need a fail-closed signal should log
+/// their own diagnostics.
+pub fn load_tool_catalog() -> Vec<ToolDescriptor> {
+    load_tool_catalog_from(None)
 }
 
 #[derive(Deserialize)]
@@ -199,33 +323,121 @@ struct CatalogFile {
     tools: Vec<ToolDescriptor>,
 }
 
-fn catalog_candidate_paths() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-
-    if let Ok(cwd) = std::env::current_dir() {
-        walk_up(cwd.as_path(), &mut out);
-    }
-
-    if let Ok(manifest) = std::env::var("CARGO_MANIFEST_DIR") {
-        walk_up(Path::new(&manifest), &mut out);
-    }
-
-    out
+fn catalog_candidate_paths(anchor: Option<&Path>) -> Vec<PathBuf> {
+    resolve_product_assets_root_from(anchor)
+        .map(|root| vec![root.join("product").join("tools.json")])
+        .unwrap_or_default()
 }
 
-/// Mirror `commands::walk_up`: walk parents, bounded so a symlink loop
-/// cannot turn discovery into a hang. 32 hops matches the CLI anchor.
-fn walk_up(start: &Path, out: &mut Vec<PathBuf>) {
-    let mut cursor: Option<&Path> = Some(start);
-    let mut hops = 0usize;
-    while let Some(dir) = cursor {
-        out.push(dir.join("product").join("tools.json"));
-        cursor = dir.parent();
-        hops += 1;
-        if hops > 32 {
-            break;
-        }
+/// The workspace root the running server was configured with, published once
+/// at construction.
+///
+/// Why a process global instead of a parameter threaded through every call:
+/// the authority and dependency maps are `OnceLock`-cached for the lifetime of
+/// the process, so they cannot consult a per-call anchor. An MCP server has
+/// exactly one configured workspace per process (`--cwd`), which makes "the
+/// configured root" a genuine process-level fact rather than a workaround.
+/// Publishing it once lets every consumer — the catalogue, the authority map,
+/// the dependency map — agree without each of them inventing its own
+/// resolution.
+///
+/// First writer wins: a second handler in the same process keeps the first
+/// root, because two servers sharing a process cannot both own one global
+/// cache anyway. Returns `false` when a root was already published.
+pub fn configure_product_assets_root(root: PathBuf) -> bool {
+    CONFIGURED_ROOT.set(root).is_ok()
+}
+
+/// The root published by [`configure_product_assets_root`], if any.
+pub fn configured_product_assets_root() -> Option<&'static Path> {
+    CONFIGURED_ROOT.get().map(PathBuf::as_path)
+}
+
+/// The single cell both accessors above share. One static, not one per
+/// function: two `OnceLock`s would be two truths.
+static CONFIGURED_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+/// Resolve the directory that holds `product/tools.json`.
+///
+/// **This is the single source of truth for product-asset location.**
+/// `crate::interface::cli::commands::resolve_product_assets_root`
+/// delegates here; so does the MCP catalogue. Two resolvers with two
+/// answers is how an installed server ends up advertising an empty
+/// tool catalogue while the CLI works perfectly against the same
+/// binary.
+///
+/// Anchors, in priority order:
+///
+/// 1. `anchor` — a workspace passed explicitly by the caller.
+/// 2. The root the server published via [`configure_product_assets_root`]
+///    (`--cwd`). This outranks the process directory because a real MCP
+///    client launches the server with CWD set to the *user's project*.
+/// 3. The process current directory — development ergonomics; the
+///    checkout the developer is standing in.
+/// 4. The executable's own location — the anchor that still exists
+///    when the user has no checkout at all, which is the normal state
+///    of an installed deployment.
+///
+/// `CARGO_MANIFEST_DIR` is deliberately **not** an anchor. It is a
+/// build-time constant: `cargo` sets it while compiling and while
+/// running tests, so a test process passes it down to every child it
+/// spawns. A published binary never has it. Depending on it makes the
+/// test suite green while the deployed server has no catalogue at all
+/// — the exact shape of the regression this resolver exists to close,
+/// and the reason `a014_product_asset_resolution` forbids it.
+pub fn resolve_product_assets_root_from(anchor: Option<&Path>) -> Option<PathBuf> {
+    fn holds(root: &Path) -> bool {
+        root.join("product").join("tools.json").is_file()
+            || root.join("product").join("profiles.json").is_file()
     }
+
+    fn walk_up(start: &Path) -> Option<PathBuf> {
+        let mut cursor: Option<&Path> = Some(start);
+        // Bounded so a symlink loop cannot turn discovery into a hang.
+        let mut hops = 0usize;
+        while let Some(dir) = cursor {
+            if holds(dir) {
+                return Some(dir.to_path_buf());
+            }
+            cursor = dir.parent();
+            hops += 1;
+            if hops > 32 {
+                break;
+            }
+        }
+        None
+    }
+
+    // 1. Explicit argument.
+    if let Some(dir) = anchor
+        && let Some(found) = walk_up(dir)
+    {
+        return Some(found);
+    }
+
+    // 2. The workspace this process was configured with.
+    if let Some(dir) = configured_product_assets_root()
+        && let Some(found) = walk_up(dir)
+    {
+        return Some(found);
+    }
+
+    // 3. Process working directory.
+    if let Ok(cwd) = std::env::current_dir()
+        && let Some(found) = walk_up(&cwd)
+    {
+        return Some(found);
+    }
+
+    // 4. The executable's location — the installed-deployment anchor.
+    if let Some(exe) = std::env::current_exe().ok()
+        && let Some(parent) = exe.parent()
+        && let Some(found) = walk_up(parent)
+    {
+        return Some(found);
+    }
+
+    None
 }
 
 #[cfg(test)]
