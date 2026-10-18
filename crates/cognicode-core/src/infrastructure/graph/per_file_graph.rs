@@ -557,13 +557,26 @@ impl PerFileGraphCache {
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
-        let mut name_to_symbol: HashMap<String, crate::domain::aggregates::call_graph::SymbolId> =
+        // H4.3 — multimap keyed by lowercase name. A single-symbol
+        // map overwrote homonyms (e.g. `Foo` then `foo` both
+        // lowercased to `foo`): the second insert clobbered the
+        // first, and a call site that should be observed as
+        // "ambiguous, no edge" was silently resolved to whichever
+        // symbol the parser inserted last. A list-valued entry
+        // makes the homonym visible: a call site with a single
+        // candidate resolves; with multiple candidates drops
+        // (H4: "llamadas ambiguas quedan observadas sin una
+        // dependencia falsa").
+        let mut name_to_symbol: HashMap<String, Vec<crate::domain::aggregates::call_graph::SymbolId>> =
             HashMap::new();
 
         // Add symbols to graph
         for symbol in symbols {
             let symbol_id = graph.add_symbol(symbol.clone());
-            name_to_symbol.insert(symbol.name().to_lowercase(), symbol_id);
+            name_to_symbol
+                .entry(symbol.name().to_lowercase())
+                .or_default()
+                .push(symbol_id);
         }
 
         // Add call relationships.
@@ -595,8 +608,29 @@ impl PerFileGraphCache {
                 crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
 
             // 1. Local lookup first (covers intra-file edges).
-            if let Some(callee_id) = name_to_symbol.get(&callee_name.to_lowercase()).cloned() {
-                let _ = graph.add_dependency(&caller_id, &callee_id, DependencyType::Calls);
+            //    H4.3 — the local map is now a multimap; multiple
+            //    symbols under the same lowercase name are an
+            //    ambiguous homonym and the resolver drops the call
+            //    rather than invent an edge against a random one.
+            if let Some(candidates) = name_to_symbol.get(&callee_name.to_lowercase()) {
+                match candidates.as_slice() {
+                    [] => {}
+                    [callee_id] => {
+                        let _ = graph.add_dependency(
+                            &caller_id,
+                            callee_id,
+                            DependencyType::Calls,
+                        );
+                    }
+                    _ => {
+                        // Genuine local homonym (e.g. two symbols
+                        // `Foo` and `foo`). The H4 spec calls for
+                        // "llamadas ambiguas quedan observadas sin
+                        // una dependencia falsa" — drop the call
+                        // edge. A future diagnostics pass can
+                        // surface the unresolved call site.
+                    }
+                }
                 continue;
             }
 
