@@ -17520,3 +17520,33 @@ The new file `crates/cognicode-core/tests/w0_post_pruning_orthodoxy.rs` (3 tests
 W0 cycle 1 closed at HEAD `c64cc3b`. W0 acceptance: PASS (3/3 new + 62/62 lib fast suite, baseline OK, negative control verified). L0 (poda radical) program: L0-C PASS, L0-B PASS, L0-A BLOCKED (no podman postgres container), W0 (post-pruning orthodoxy) PASS.
 
 **Next work units open**: H3 (Kotlin tree-sitter), H4 (correct calls: no invented edges), H5 (incremental/distribution). The L0-A UI poda remains BLOCKED until the postgres container can be mounted; the W0 regression test makes sure L0-C and L0-B do not silently regress while the H3/H4/H5 program advances.
+
+**What**: H4.3 cycle 1 — no invented local-homonym edges (H-R4-3 fix). The H4 spec says: "Eliminar el atajo de `name_to_symbol` que sobreescribe homónimos locales; llamadas ambiguas quedan observadas sin una dependencia falsa." The previous `build_file_graph` in `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` used `HashMap<String, SymbolId>` keyed by `symbol.name().to_lowercase()`. A file that declares two symbols whose names collide under case-folding — a common shape in Python, Kotlin, and Java where methods can be cased differently even when the language treats the names as distinct — would silently overwrite the first insert with the second. A call site whose name lowercases to the colliding key resolved to whichever symbol the parser happened to insert last. That is a false dependency in the call graph: an analyst chasing an impact path lands in the wrong callee.
+
+The fix turns the map into a multimap `HashMap<String, Vec<SymbolId>>` keyed by lowercase name. The local resolver becomes a 3-way match:
+
+  * **0 candidates** → drop (the call site references a name that has no symbol in this file; the cross-file `global_index` resolver is tried next, unchanged).
+  * **1 candidate** → resolve (the ordinary intra-file case; behaviour unchanged for every non-homonym file).
+  * **≥ 2 candidates** → drop, exactly per the H4 spec ("llamadas ambiguas quedan observadas sin una dependencia falsa"). A future diagnostics pass can surface the unresolved call site as an observation without forcing a choice.
+
+The new file `crates/cognicode-core/tests/h43_no_invented_local_homonym_edges.rs` (2 tests, 152 lines) contains two orthogonal assertions that bound the contract from both sides:
+
+  1. **`h43_local_homonym_drops_the_call_edge`** — Python fixture with `caller`, `Foo`, and `foo`. The caller invokes `Foo`; under the previous code the call resolved to the second-inserted `foo` (false dependency). The corrected resolver drops the call. RED on previous code: "found 1 outgoing edges from `caller`". GREEN after the fix.
+
+  2. **`h43_single_symbol_still_resolves_locally`** — Python fixture with `caller` and `Foo` only. The caller invokes `Foo`; the single-symbol map correctly resolved the call. The corrected multimap must still resolve it. Without this assertion, a future fix that drops every local call would pass the first test but break the contract the operator actually rides on.
+
+**Why**: H4.3 is the WU where a "no invented edges" promise can be pinned with a single fixture and a one-line multimap change. The fix is bounded to `build_file_graph` and its three call sites; the public API is unchanged. The bug was real: the test failed RED on the first run with the exact failure mode the spec describes — a false dependency `caller → foo` in the call graph. The multimap makes the homonym visible: a Vec of length > 1 is an honest "we don't know", and the resolver drops the call.
+
+**Where**:
+- `crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs` — the `name_to_symbol` map type changed from `HashMap<String, SymbolId>` to `HashMap<String, Vec<SymbolId>>`; the local resolver at the top of the relationships loop now matches on the slice length. +38 lines, −4 lines, single function.
+- `crates/cognicode-core/tests/h43_no_invented_local_homonym_edges.rs` — new file, 2 tests, 152 lines. No new dependencies. Uses the existing `tempfile` + `PerFileGraphCache::merge_with_report` public API.
+- `docs/roadmap/JOURNAL.md` — this entry.
+
+**Learned**:
+- The H4 spec rule for ambiguity is the right shape for many call-graph heuristics: when in doubt, drop honestly. The fix is not "be smarter about picking the right callee" (which is brittle and language-dependent), it is "recognize the ambiguity and let the observation layer handle it". The multimap is the data structure that makes the ambiguity visible to the resolver; the resolver then makes the policy decision (drop) at the right level.
+- The "second test" (legitimate case) is what separates a regression test from a regression. Without it, a future fix that swings too far (drops every local call) would still pass the first test. The pair (homonym drops, no-homonym resolves) is a one-line contract: "be honest about ambiguity, never lie about certainty".
+- The H4 program is two cycles (H4.1 — typed observation, H4.2 — heuristic fix) and a deferred sub-item (H4.3 — overloads/extensions without known receiver). H4.3 cycle 1 is the smallest unit and the highest-confidence fix; it is the right WU to ship before touching H4.2 (which is harder to pin because the resolver's "drop on 2+ candidates" rule already saves the wire from emitting a wrong edge in the cross-file case, even with the path-prefix heuristic). When the next cycle is hard, the cycle before it should be small.
+
+H4.3 cycle 1 closed at HEAD `ab81e3a`. H4.3 acceptance: PASS (2359/2359 lib + 14/14 per_file_graph unit tests + 2/2 new, baseline OK, RED→GREEN verified).
+
+**Next work units open**: H4.2 (`shared_crate_root` heuristic refinement, harder to pin because the current path-prefix rule is masked by the "drop on 2+ candidates" fallback); H4.1 (typed observation model with `Resolved | Ambiguous | Unresolved`); H4.4 (UAT fixtures for Kotlin↔Java homonyms); H0.1 (PerFileGraphCache::merge_with_report integrity, RED already filed as `h01_per_file_cache_invalidate_contract`); H3 (Kotlin tree-sitter); H5 (incremental/distribution).
