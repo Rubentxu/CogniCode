@@ -154,17 +154,16 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     let expected_gap_messages: Vec<String> =
         full.gaps().iter().map(|g| g.message.clone()).collect();
     assert!(
-        expected_gap_messages.iter().any(|m| m.contains("Cargo.toml")),
+        expected_gap_messages
+            .iter()
+            .any(|m| m.contains("Cargo.toml")),
         "precondición: el gap debe nombrar Cargo.toml, got {:?}",
         expected_gap_messages
     );
 
     // 2) graph_complexity sobre el MISMO basis (mismo service, mismo
     //    last_build_report) debe heredar el estado Partial y los gaps.
-    let complexity = analyzer.execute(
-        &basis,
-        AnalysisOp::GraphComplexity { path: tmp.clone() },
-    );
+    let complexity = analyzer.execute(&basis, AnalysisOp::GraphComplexity { path: tmp.clone() });
 
     assert_eq!(
         complexity.state(),
@@ -174,12 +173,13 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
          last_build_report (analyze.rs:151-192). got {:?}",
         complexity.state()
     );
-    let actual_gap_messages: Vec<String> =
-        complexity.gaps().iter().map(|g| g.message.clone()).collect();
+    let actual_gap_messages: Vec<String> = complexity
+        .gaps()
+        .iter()
+        .map(|g| g.message.clone())
+        .collect();
     assert!(
-        actual_gap_messages
-            .iter()
-            .any(|m| m.contains("Cargo.toml")),
+        actual_gap_messages.iter().any(|m| m.contains("Cargo.toml")),
         "graph.complexity debe propagar el gap Cargo.toml; got {:?}",
         actual_gap_messages
     );

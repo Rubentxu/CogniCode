@@ -33,9 +33,7 @@
 //! invisible to both, and find_symbol_usages prunes everything
 //! the WalkFilter prunes.
 
-use cognicode_core::application::services::analysis_service::{
-    AnalysisService, UsageSearchParams,
-};
+use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use cognicode_core::infrastructure::graph::per_file_graph::{
     BuildStatus, FileDisposition, SkippedFile,
 };
@@ -75,10 +73,22 @@ fn adversarial_corpus(dir: &std::path::Path) {
         ),
     )
     .unwrap();
-    std::fs::write(dir.join("src").join("alpha.rs"), "pub fn helper() -> u32 { 1 }\n").unwrap();
-    std::fs::write(dir.join("src").join("beta.rs"), "pub fn helper() -> u32 { 2 }\n").unwrap();
+    std::fs::write(
+        dir.join("src").join("alpha.rs"),
+        "pub fn helper() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("beta.rs"),
+        "pub fn helper() -> u32 { 2 }\n",
+    )
+    .unwrap();
     // K0 honest gap: Kotlin is a real source we have not wired.
-    std::fs::write(dir.join("src").join("Other.kt"), "class Other { fun x() = 1 }\n").unwrap();
+    std::fs::write(
+        dir.join("src").join("Other.kt"),
+        "class Other { fun x() = 1 }\n",
+    )
+    .unwrap();
     // Legit exclusion: README does not affect completeness.
     std::fs::write(dir.join("README.md"), "# Fixture\n").unwrap();
     // Security blocklist: must be pruned BEFORE the read.
@@ -110,18 +120,14 @@ fn adversarial_corpus(dir: &std::path::Path) {
     .unwrap();
 }
 
-fn kt_skip<'a>(skipped: &'a [SkippedFile]) -> &'a SkippedFile {
+fn kt_skip(skipped: &[SkippedFile]) -> &SkippedFile {
     skipped
         .iter()
         .find(|s| s.path.ends_with("Other.kt"))
         .expect("K0 gap must be in skipped (the H1.1 K0 honest gap invariant)")
 }
 
-fn assert_compatible_partial(
-    label: &str,
-    skipped: &[SkippedFile],
-    other_skipped_paths: &[&str],
-) {
+fn assert_compatible_partial(label: &str, skipped: &[SkippedFile], other_skipped_paths: &[&str]) {
     assert!(
         !skipped.is_empty(),
         "{label}: expected Partial because of the K0 gap, got Complete"
@@ -173,7 +179,9 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
 
     // Both sides name the .kt as a skip (K0 honest gap).
     assert!(
-        strategy_skipped.iter().any(|s| s.path.ends_with("Other.kt")),
+        strategy_skipped
+            .iter()
+            .any(|s| s.path.ends_with("Other.kt")),
         "strategy side: K0 gap must surface, got {strategy_skipped:?}"
     );
     assert!(
@@ -296,9 +304,7 @@ fn analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus() {
     std::fs::write(tmp.join(".env"), "KEY=val\n").unwrap();
 
     let svc = AnalysisService::new();
-    let report = svc
-        .build_graph_per_file_with_report(&tmp)
-        .expect("ok");
+    let report = svc.build_graph_per_file_with_report(&tmp).expect("ok");
     assert_eq!(
         report.status,
         BuildStatus::Complete,
@@ -306,9 +312,7 @@ fn analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus() {
     );
 
     let strategy: Box<dyn GraphStrategy> = Box::new(FullGraphStrategy::new());
-    let strategy_report = strategy
-        .build_full_graph_report(&tmp)
-        .expect("ok");
+    let strategy_report = strategy.build_full_graph_report(&tmp).expect("ok");
     assert_eq!(
         strategy_report.status,
         BuildStatus::Complete,
@@ -321,8 +325,8 @@ fn h14_helper_compat_partial_invariants_remain_anchored() {
     // Belt-and-suspenders for the helper used by the other three
     // tests: assert_compatible_partial itself. If this drifts,
     // the seam invariants above are not actually being checked.
-    use std::path::Path;
     use cognicode_core::infrastructure::graph::per_file_graph::SkipReason;
+    use std::path::Path;
     let kt = SkippedFile {
         path: "fixture/Other.kt".to_string(),
         reason: SkipReason::UnsupportedExtension("kt".into()),

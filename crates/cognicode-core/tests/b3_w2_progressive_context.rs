@@ -254,6 +254,31 @@ fn intent_tags_in_catalog_match_route_intent() {
 // CLI scaffold: cognicode inspect must not panic on arbitrary input
 // -----------------------------------------------------------------------
 
+/// The directory cargo is actually building into, as cargo itself reports it.
+///
+/// `CARGO_TARGET_DIR` covers the env-var case only. A `target-dir` set in
+/// `~/.cargo/config.toml` — which is how this machine coexists with four other
+/// OpenCode instances — is invisible to the environment, so the only
+/// authoritative answer is to ask cargo. `None` when cargo is unavailable or
+/// unparseable, in which case the caller falls through to the workspace-relative
+/// default layout.
+fn cargo_target_dir() -> Option<PathBuf> {
+    use std::sync::OnceLock;
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let out = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
+    })
+    .clone()
+}
+
 fn cognicode_bin() -> Option<PathBuf> {
     // Mirror the resolution strategy used in cognicode-cli/tests:
     // 1. COGNICODE_CLI_BIN: override explícito. Cuando está seteado es la
@@ -263,8 +288,15 @@ fn cognicode_bin() -> Option<PathBuf> {
     // 2. CARGO_BIN_EXE_cognicode at compile time (set when running
     //    `cargo test` against the cognicode-cli crate).
     // 3. Same env var at runtime (cargo-nextest, manual wrappers).
-    // 4. CARGO_TARGET_DIR override (this environment uses one).
-    // 5. Workspace-relative target/.
+    // 4. The target directory cargo is *actually* using, per
+    //    `cargo metadata`. This environment redirects `target-dir` in
+    //    ~/.cargo/config.toml, and that redirect is invisible as an env
+    //    var, so the old `CARGO_TARGET_DIR`-then-workspace-relative
+    //    fallback searched two directories that do not exist and reported
+    //    "binary not found" for a binary that was sitting right there.
+    //    A harness that cannot find the artifact it tests is a harness
+    //    lying about the state of the world.
+    // 5. Workspace-relative target/ (the default layout).
 
     if let Some(explicit) = std::env::var_os("COGNICODE_CLI_BIN") {
         let p = PathBuf::from(explicit);
@@ -295,12 +327,12 @@ fn cognicode_bin() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    if let Some(target) = std::env::var_os("CARGO_TARGET_DIR") {
-        let release = PathBuf::from(&target).join("release").join("cognicode");
+    if let Some(target) = cargo_target_dir() {
+        let release = target.join("release").join("cognicode");
         if release.exists() {
             return Some(release);
         }
-        let debug = PathBuf::from(&target).join("debug").join("cognicode");
+        let debug = target.join("debug").join("cognicode");
         if debug.exists() {
             return Some(debug);
         }

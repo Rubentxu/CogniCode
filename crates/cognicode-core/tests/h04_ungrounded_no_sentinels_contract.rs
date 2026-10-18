@@ -27,9 +27,9 @@
 //!   - Regression: `Ok(Inconclusive { snapshot_id, detector, gaps })`
 //!     still maps to the full-provenance `GuardObservation::Inconclusive`.
 
+use cognicode_core::domain::findings::EvidenceClass;
 use cognicode_core::domain::findings::guard_transfer::{GuardObservation, to_guard_observation};
 use cognicode_core::domain::findings::projection::{Gap, ProjectionError};
-use cognicode_core::domain::findings::EvidenceClass;
 use cognicode_core::domain::kernel_ids::SnapshotId;
 
 fn sample_gaps() -> Vec<Gap> {
@@ -47,8 +47,7 @@ fn err_inconclusive_maps_to_ungrounded_without_synthetic_provenance() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > =
-        Err(ProjectionError::Inconclusive(sample_gaps()));
+    > = Err(ProjectionError::Inconclusive(sample_gaps()));
     let observation = to_guard_observation(&result);
     assert!(
         matches!(observation, GuardObservation::Ungrounded { .. }),
@@ -70,8 +69,7 @@ fn ungrounded_carries_gaps_and_nothing_else() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > =
-        Err(ProjectionError::Inconclusive(sample_gaps()));
+    > = Err(ProjectionError::Inconclusive(sample_gaps()));
     let observation = to_guard_observation(&result);
     match observation {
         GuardObservation::Ungrounded { gaps } => {
@@ -95,8 +93,7 @@ fn ungrounded_cannot_be_misread_as_verifiable() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > =
-        Err(ProjectionError::Inconclusive(sample_gaps()));
+    > = Err(ProjectionError::Inconclusive(sample_gaps()));
     let observation = to_guard_observation(&result);
     if let GuardObservation::Verifiable { .. } = &observation {
         panic!(
@@ -106,9 +103,7 @@ fn ungrounded_cannot_be_misread_as_verifiable() {
         );
     }
     if let GuardObservation::Advisory { .. } = &observation {
-        panic!(
-            "Ungrounded must never be confusable with Advisory; got: {observation:?}"
-        );
+        panic!("Ungrounded must never be confusable with Advisory; got: {observation:?}");
     }
     if let GuardObservation::Inconclusive { .. } = &observation {
         panic!(
@@ -129,8 +124,7 @@ fn snapshot_id_zero_must_not_appear_anywhere_in_the_seam_output() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > =
-        Err(ProjectionError::Inconclusive(sample_gaps()));
+    > = Err(ProjectionError::Inconclusive(sample_gaps()));
     let observation = to_guard_observation(&result);
     if let GuardObservation::Inconclusive { snapshot_id, .. } = &observation {
         assert_ne!(
@@ -152,8 +146,7 @@ fn synthetic_detector_marker_must_not_appear_anywhere_in_the_seam_output() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > =
-        Err(ProjectionError::Inconclusive(sample_gaps()));
+    > = Err(ProjectionError::Inconclusive(sample_gaps()));
     let observation = to_guard_observation(&result);
     if let GuardObservation::Inconclusive { detector, .. } = &observation {
         let id_str = detector.id.to_string();

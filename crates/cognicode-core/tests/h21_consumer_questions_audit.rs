@@ -42,13 +42,11 @@ const RUNTIME: &str = concat!(
 );
 
 fn load(path: &str) -> Value {
-    let bytes = std::fs::read(path)
-        .unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
-    serde_json::from_slice::<Value>(&bytes)
-        .unwrap_or_else(|e| panic!("cannot parse {path}: {e}"))
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {path}: {e}"));
+    serde_json::from_slice::<Value>(&bytes).unwrap_or_else(|e| panic!("cannot parse {path}: {e}"))
 }
 
-fn by_name<'a>(catalog: &'a Value) -> Vec<&'a Value> {
+fn by_name(catalog: &Value) -> Vec<&Value> {
     catalog
         .get("tools")
         .and_then(Value::as_array)
@@ -115,10 +113,8 @@ fn homonym_question_is_answered_by_query_symbol_index() {
         .and_then(|s| s.get("required"))
         .and_then(Value::as_array)
         .expect("query_symbol_index must declare its required inputs");
-    let input_names: std::collections::BTreeSet<&str> = inputs
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
+    let input_names: std::collections::BTreeSet<&str> =
+        inputs.iter().filter_map(Value::as_str).collect();
     assert!(
         input_names.contains("symbol_name"),
         "Q1 requires `symbol_name`; the audit pins that file_path/line/column are NOT required (those would force a callsite-level question, not a name-level one)"
@@ -153,10 +149,8 @@ fn api_impact_question_is_answered_by_analyze_impact() {
         .and_then(|s| s.get("required"))
         .and_then(Value::as_array)
         .expect("analyze_impact must declare its required inputs");
-    let input_names: std::collections::BTreeSet<&str> = inputs
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
+    let input_names: std::collections::BTreeSet<&str> =
+        inputs.iter().filter_map(Value::as_str).collect();
     assert!(input_names.contains("symbol_name"));
     assert_eq!(
         tool.get("authority").and_then(Value::as_str),
@@ -172,7 +166,10 @@ fn api_impact_question_is_answered_by_analyze_impact() {
         prereq_names.contains(&"build_graph"),
         "the impact tool must require a real graph (H0.1: no fake impact without a build)"
     );
-    let description = tool.get("description").and_then(Value::as_str).unwrap_or("");
+    let description = tool
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     assert!(
         description.contains("impacted files") && description.contains("risk"),
         "analyze_impact must promise the two things the consumer needs from an impact answer"
@@ -239,7 +236,10 @@ fn finding_justification_is_a_typed_refusal_with_evidence() {
         Some("string"),
         "verdict_refused_reason must be a typed string (the consumer cannot parse a free-form refusal)"
     );
-    let description = tool.get("description").and_then(Value::as_str).unwrap_or("");
+    let description = tool
+        .get("description")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     // The canonical reason string lives in the tool description
     // (the field-level description is a meta-comment pointing at
     // the source). The audit pins BOTH: the tool's surfaced
@@ -264,7 +264,11 @@ fn the_three_question_covering_tools_are_all_read_authority() {
     // surfacing in the same name space as a read tool would be
     // a security defect, and the audit catches it.
     let catalog = load(CATALOG);
-    for name in ["query_symbol_index", "analyze_impact", "composite_impact_query"] {
+    for name in [
+        "query_symbol_index",
+        "analyze_impact",
+        "composite_impact_query",
+    ] {
         let tool = find_tool(&catalog, name);
         assert_eq!(
             tool.get("authority").and_then(Value::as_str),
@@ -287,11 +291,7 @@ fn mutating_tools_are_not_in_the_three_question_path() {
     let mutating: std::collections::BTreeSet<String> = by_name(&catalog)
         .iter()
         .filter(|t| t.get("authority").and_then(Value::as_str) == Some("mutating"))
-        .filter_map(|t| {
-            t.get("name")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-        })
+        .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
         .collect();
     let answering: std::collections::BTreeSet<&str> = [
         "query_symbol_index",

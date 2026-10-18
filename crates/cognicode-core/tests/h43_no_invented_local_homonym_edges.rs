@@ -67,9 +67,7 @@ fn h43_local_homonym_drops_the_call_edge() {
     let file_path = tmp.path().join("homonyms.py");
     std::fs::write(&file_path, FIXTURE_HOMONYMS).expect("write fixture");
 
-    let cache = PerFileGraphCache::with_project_dir(
-        tmp.path().to_string_lossy().into_owned(),
-    );
+    let cache = PerFileGraphCache::with_project_dir(tmp.path().to_string_lossy().into_owned());
     let report = cache.merge_with_report(&[file_path.as_path()]);
 
     let graph: &CallGraph = &report.graph;
@@ -91,7 +89,7 @@ fn h43_local_homonym_drops_the_call_edge() {
     // of call edges from `caller` must be zero.
     let outgoing = graph
         .dependencies(&caller_id)
-        .map(|(_from, to)| to.clone())
+        .map(|(_from, to)| *to)
         .collect::<Vec<_>>();
     assert!(
         outgoing.is_empty(),
@@ -129,9 +127,7 @@ fn h43_single_symbol_still_resolves_locally() {
     let file_path = tmp.path().join("single.py");
     std::fs::write(&file_path, FIXTURE_NO_HOMONYM).expect("write fixture");
 
-    let cache = PerFileGraphCache::with_project_dir(
-        tmp.path().to_string_lossy().into_owned(),
-    );
+    let cache = PerFileGraphCache::with_project_dir(tmp.path().to_string_lossy().into_owned());
     let report = cache.merge_with_report(&[file_path.as_path()]);
 
     let graph: &CallGraph = &report.graph;
@@ -152,7 +148,9 @@ fn h43_single_symbol_still_resolves_locally() {
     // add the edge. Dropping this edge would be a regression
     // of the ordinary intra-file resolution.
     assert!(
-        graph.dependencies(&caller_id).any(|(t, _kind)| t == &foo_id),
+        graph
+            .dependencies(&caller_id)
+            .any(|(t, _kind)| t == &foo_id),
         "single-symbol `Foo` must still be reachable from `caller`; \
          the corrected resolver must not drop the legitimate case"
     );

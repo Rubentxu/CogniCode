@@ -64,6 +64,30 @@ unsafe fn fcntl_setfl(fd: i32, flags: i32) -> i32 {
 // Helpers
 // ===========================================================================
 
+/// The directory cargo is actually building into, as cargo itself reports it.
+///
+/// `CARGO_TARGET_DIR` covers the env-var case only. A `target-dir` set in
+/// `~/.cargo/config.toml` — which is how this machine coexists with four other
+/// OpenCode instances — is invisible to the environment, so the only
+/// authoritative answer is to ask cargo. `None` when cargo is unavailable or
+/// unparseable, in which case the caller falls through to the workspace-relative
+/// default layout.
+fn cargo_target_dir() -> Option<PathBuf> {
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let out = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        Some(PathBuf::from(v.get("target_directory")?.as_str()?))
+    })
+    .clone()
+}
+
 /// Locate the compiled `cognicode-mcp` binary.
 ///
 /// Resolution order (first match wins):
@@ -71,12 +95,16 @@ unsafe fn fcntl_setfl(fd: i32, flags: i32) -> i32 {
 /// 1. `COGNICODE_MCP_BIN` — explicit override. When it is set it is
 ///    asserted to exist and to be executable, and no fallback happens:
 ///    a typo must fail here instead of silently testing another build.
-/// 2. `CARGO_TARGET_DIR/{release,debug}/cognicode-mcp`, the same path
-///    `prf_h06_adversarial_e2e.rs` walks (this environment sets
-///    `CARGO_TARGET_DIR`).
-/// 3. workspace-relative
+/// 2. `CARGO_TARGET_DIR/{release,debug}/cognicode-mcp`.
+/// 3. The directory `cargo metadata` reports. This is the step that matters on
+///    a machine whose `target-dir` lives in `~/.cargo/config.toml`: both
+///    `CARGO_TARGET_DIR` and the workspace-relative `target/` name directories
+///    that do not exist, so a resolver without this step reports "binary not
+///    found" for a binary that is sitting right there. A harness that cannot
+///    find the artifact it tests is a harness lying about the world.
+/// 4. workspace-relative
 ///    `<workspace_root>/target/{release,debug}/cognicode-mcp`.
-/// 4. bare `target/{release,debug}/cognicode-mcp`.
+/// 5. bare `target/{release,debug}/cognicode-mcp`.
 ///
 /// Returns `None` if no candidate exists. Callers must fail loudly on
 /// `None` (see `require_binary!`), never skip.
@@ -98,18 +126,22 @@ fn binary_path() -> Option<PathBuf> {
         );
         return Some(path.canonicalize().unwrap_or(path));
     }
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").ok();
-    let target_dir = std::env::var("CARGO_TARGET_DIR").ok();
     let mut candidates: Vec<PathBuf> = Vec::new();
-    if let Some(td) = target_dir.as_deref() {
-        candidates.push(PathBuf::from(td).join("release/cognicode-mcp"));
-        candidates.push(PathBuf::from(td).join("debug/cognicode-mcp"));
+    if let Some(td) = std::env::var_os("CARGO_TARGET_DIR") {
+        let td = PathBuf::from(td);
+        candidates.push(td.join("release/cognicode-mcp"));
+        candidates.push(td.join("debug/cognicode-mcp"));
     }
-    if let Some(md) = manifest_dir.as_deref() {
-        let workspace_root = PathBuf::from(md).join("..").join("..");
-        candidates.push(workspace_root.join("target/release/cognicode-mcp"));
-        candidates.push(workspace_root.join("target/debug/cognicode-mcp"));
+    if let Some(target) = cargo_target_dir() {
+        candidates.push(target.join("release/cognicode-mcp"));
+        candidates.push(target.join("debug/cognicode-mcp"));
     }
+    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .to_path_buf();
+    candidates.push(workspace_root.join("target/release/cognicode-mcp"));
+    candidates.push(workspace_root.join("target/debug/cognicode-mcp"));
     candidates.push(PathBuf::from("target/release/cognicode-mcp"));
     candidates.push(PathBuf::from("target/debug/cognicode-mcp"));
     for p in &candidates {
@@ -1179,14 +1211,9 @@ fn wire_tools_list_matches_hand_authored_catalog() {
         rpc_send(&mut child, req_id, "tools/list", params);
         let (resp, _) = rpc_recv_by_id(&mut child, req_id, Duration::from_secs(10));
         let frame = resp.expect("tools/list page within 10s");
-        let tools = frame["result"]["tools"]
-            .as_array()
-            .expect("tools array");
+        let tools = frame["result"]["tools"].as_array().expect("tools array");
         for tool in tools {
-            let name = tool["name"]
-                .as_str()
-                .expect("tool name")
-                .to_string();
+            let name = tool["name"].as_str().expect("tool name").to_string();
             assert!(
                 wire_names.insert(name.clone()),
                 "duplicate tool name {name} across pages (cursor contract broken)"
@@ -1282,18 +1309,25 @@ fn wire_tools_list_matches_hand_authored_catalog() {
 /// H2.4 spec: "prueba cliente MCP stdio sobre binario de release
 /// si la UAT de este bloque no lo prueba ya." The other tests in
 /// this file prefer release via `binary_path()`; this test makes
-/// the release-binary coverage EXPLICIT. If the release binary
-/// is not built, the test prints a clear message and skips — a
-/// vacuous pass would be a worse failure mode than a missing
-/// binary. A future contributor can build with
-/// `cargo build --release --bin cognicode-mcp` and re-run.
+/// the release-binary coverage EXPLICIT. A missing release binary
+/// fails the test rather than skipping: this file's doctrine is that a
+/// skip is a vacuous green, and release coverage that silently never
+/// ran is exactly that. Build with `cargo build --release --bin
+/// cognicode-mcp` and re-run.
 #[test]
 fn release_binary_stdio_round_trip_smoke() {
-    // Locate the release binary: prefer the env override, then
-    // the canonical target-dir path. The test does NOT fall back
-    // to debug — release-only is the spec.
+    // Locate the release binary: prefer the env override, then the
+    // directory cargo reports. The test does NOT fall back to debug —
+    // release-only is the spec.
+    //
+    // A missing release binary fails loudly. This test used to print a
+    // `SKIP:` line and `return`, which is the vacuous green that its own
+    // doc comment calls a worse failure mode than a missing binary: the
+    // suite would report release coverage it never ran.
     let release_path = if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN_RELEASE") {
         std::path::PathBuf::from(explicit)
+    } else if let Some(target) = cargo_target_dir() {
+        target.join("release").join("cognicode-mcp")
     } else {
         std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -1302,15 +1336,13 @@ fn release_binary_stdio_round_trip_smoke() {
             .join("release")
             .join("cognicode-mcp")
     };
-    if !release_path.exists() {
-        eprintln!(
-            "SKIP: release binary not found at {}; build with \
-             `cargo build --release --bin cognicode-mcp` and re-run, or set \
-             COGNICODE_MCP_BIN_RELEASE=/path/to/cognicode-mcp",
-            release_path.display()
-        );
-        return;
-    }
+    assert!(
+        release_path.exists(),
+        "release binary not found at {}: build with \
+         `cargo build --release --bin cognicode-mcp` and re-run, or set \
+         COGNICODE_MCP_BIN_RELEASE=/path/to/cognicode-mcp",
+        release_path.display()
+    );
     assert!(
         is_executable(&release_path),
         "release binary at {} is not executable",

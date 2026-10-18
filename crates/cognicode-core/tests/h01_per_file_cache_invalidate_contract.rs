@@ -24,11 +24,7 @@ fn per_file_graph_cache_invalidate_makes_get_cached_return_none() {
     let tmp = tempfile::tempdir().expect("create tempdir");
     let src_dir = tmp.path().join("src");
     std::fs::create_dir_all(&src_dir).expect("create src dir");
-    std::fs::write(
-        src_dir.join("lib.rs"),
-        "pub fn helper() -> u32 { 1 }\n",
-    )
-    .expect("write lib.rs");
+    std::fs::write(src_dir.join("lib.rs"), "pub fn helper() -> u32 { 1 }\n").expect("write lib.rs");
     let project_dir = tmp.path().to_string_lossy().into_owned();
     let file_path = src_dir.join("lib.rs");
 

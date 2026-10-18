@@ -354,7 +354,7 @@ impl PerFileGraphCache {
     ///
     /// **Note:** Files that cannot be read or parsed are silently dropped;
     /// the resulting graph may be incomplete without indication. Prefer
-    /// [`PerFileGraphCache::merge_with_report`] when callers need to know
+    /// `PerFileGraphCache::merge_with_report` when callers need to know
     /// whether coverage is complete or partial.
     pub fn merge(&self, file_paths: &[&Path]) -> CallGraph {
         self.merge_with_report(file_paths).graph
@@ -590,8 +590,10 @@ impl PerFileGraphCache {
         // candidate resolves; with multiple candidates drops
         // (H4: "llamadas ambiguas quedan observadas sin una
         // dependencia falsa").
-        let mut name_to_symbol: HashMap<String, Vec<crate::domain::aggregates::call_graph::SymbolId>> =
-            HashMap::new();
+        let mut name_to_symbol: HashMap<
+            String,
+            Vec<crate::domain::aggregates::call_graph::SymbolId>,
+        > = HashMap::new();
 
         // Add symbols to graph
         for symbol in symbols {
@@ -639,11 +641,7 @@ impl PerFileGraphCache {
                 match candidates.as_slice() {
                     [] => {}
                     [callee_id] => {
-                        let _ = graph.add_dependency(
-                            &caller_id,
-                            callee_id,
-                            DependencyType::Calls,
-                        );
+                        let _ = graph.add_dependency(&caller_id, callee_id, DependencyType::Calls);
                     }
                     _ => {
                         // Genuine local homonym (e.g. two symbols
@@ -741,7 +739,11 @@ fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let size = meta.len();
     let bytes = std::fs::read(path).ok()?;
     let content_hash = content_hash_64(&bytes);
-    Some(FileFingerprint { mtime_secs, size, content_hash })
+    Some(FileFingerprint {
+        mtime_secs,
+        size,
+        content_hash,
+    })
 }
 
 /// 64-bit FNV-1a over the input bytes. Pure stdlib, no allocations,
@@ -861,6 +863,7 @@ pub enum FileDisposition {
     ///     lockfile), OR
     ///   - an unknown I/O error mapped to `SkipReason::Other`
     ///     (honest default: we don't claim a gap we can't name).
+    ///
     /// Never affects `BuildStatus`.
     ExcludedByPolicy { reason: String },
     /// The file is a *source* in a language we know about but have
@@ -924,11 +927,9 @@ impl FileDisposition {
     ) -> FileDisposition {
         match class {
             WalkClassification::Analyze => FileDisposition::Parsed,
-            WalkClassification::KnownUnsupportedGap => {
-                FileDisposition::UnsupportedRelevant {
-                    extension: ext.unwrap_or("?").to_string(),
-                }
-            }
+            WalkClassification::KnownUnsupportedGap => FileDisposition::UnsupportedRelevant {
+                extension: ext.unwrap_or("?").to_string(),
+            },
             WalkClassification::LegitExclusion => FileDisposition::ExcludedByPolicy {
                 reason: format!("irrelevant extension: {}", ext.unwrap_or("?")),
             },
@@ -969,11 +970,9 @@ impl FileDisposition {
             SkipReason::Parse(reason) => FileDisposition::ParseFailed {
                 reason: reason.clone(),
             },
-            SkipReason::UnsupportedExtension(extension) => {
-                FileDisposition::UnsupportedRelevant {
-                    extension: extension.clone(),
-                }
-            }
+            SkipReason::UnsupportedExtension(extension) => FileDisposition::UnsupportedRelevant {
+                extension: extension.clone(),
+            },
             // `SkipReason::Other` is the honest fallback for I/O
             // errors we can't name precisely. Mapping it to
             // UnsupportedRelevant would falsely demote BuildStatus

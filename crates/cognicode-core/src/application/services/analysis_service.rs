@@ -661,36 +661,37 @@ impl AnalysisService {
     /// Useful when incremental, file-level invalidation is important.
     ///
     /// H1.3 (delivery-first-radical, package integration): this is now
-    /// a thin shim over [`build_graph_per_file_with_report`]. The
+    /// a thin shim over `build_graph_per_file_with_report`. The
     /// typed method is the single source of truth; the legacy method
     /// keeps the `AppResult<()>` signature for callers that do not
     /// need the report. `get_last_build_report()` is updated either
     /// way.
     pub fn build_graph_per_file(&self, project_dir: &Path) -> AppResult<()> {
-        self.build_graph_per_file_with_report(project_dir).map(|_| ())
+        self.build_graph_per_file_with_report(project_dir)
+            .map(|_| ())
     }
 
     /// Per-file strategy with the H1.1 typed report. Walks the tree
     /// through [`WalkFilter::default`] (security blocklist + perf
-    /// skips), routes every file through [`classify_walk_extension`],
-    /// feeds the `Analyze` set to [`PerFileGraphCache::merge_with_report`],
+    /// skips), routes every file through `classify_walk_extension`,
+    /// feeds the `Analyze` set to `PerFileGraphCache::merge_with_report`,
     /// and records the K0 honest gap (`.kt`/`.kts`) as
     /// `SkipReason::UnsupportedExtension` so the consumer can see the
     /// K0 bridge instead of a silent discard.
     ///
     /// The returned `BuildReport` is also stored in `last_build_report`
     /// and `graph_cache` is updated with the merged graph. The legacy
-    /// [`build_graph_per_file`] is a shim over this.
+    /// `build_graph_per_file` is a shim over this.
     pub fn build_graph_per_file_with_report(
         &self,
         project_dir: &Path,
     ) -> AppResult<crate::infrastructure::graph::per_file_graph::BuildReport> {
-        use crate::infrastructure::graph::per_file_graph::{
-            classify_walk_extension, BuildReport as PfgBuildReport, BuildStatus as PfgBuildStatus,
-            SkippedFile as PfgSkippedFile, SkipReason as PfgSkipReason,
-            WalkClassification as PfgWalkClassification,
-        };
         use crate::infrastructure::graph::PerFileGraphCache;
+        use crate::infrastructure::graph::per_file_graph::{
+            BuildReport as PfgBuildReport, BuildStatus as PfgBuildStatus,
+            SkipReason as PfgSkipReason, SkippedFile as PfgSkippedFile,
+            WalkClassification as PfgWalkClassification, classify_walk_extension,
+        };
 
         let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
         let walk = WalkFilter::default();
@@ -719,9 +720,7 @@ impl AnalysisService {
                     // the K0 bridge, not a silent "no findings".
                     k0_skipped.push(PfgSkippedFile {
                         path: path.to_string_lossy().into_owned(),
-                        reason: PfgSkipReason::UnsupportedExtension(
-                            ext.unwrap_or("").to_string(),
-                        ),
+                        reason: PfgSkipReason::UnsupportedExtension(ext.unwrap_or("").to_string()),
                     });
                 }
                 PfgWalkClassification::LegitExclusion => {
@@ -746,7 +745,9 @@ impl AnalysisService {
         let final_status = if all_skipped.is_empty() {
             PfgBuildStatus::Complete
         } else {
-            PfgBuildStatus::Partial { skipped: all_skipped }
+            PfgBuildStatus::Partial {
+                skipped: all_skipped,
+            }
         };
         let final_report = PfgBuildReport {
             graph,
@@ -1648,16 +1649,14 @@ pub struct ContextData {
     pub after: Vec<String>,
 }
 
-/// H1.3 (delivery-first-radical, package integration): the
-/// usage-search walk used to consult a local `USAGE_SKIP_DIRS` const
-/// that duplicated `WalkFilter::with_performance_skips` and missed
-/// the security blocklist (a `.env` file was searched even though
-/// it carries credentials). The const is gone; the canonical
-/// `WalkFilter::default()` (security + performance) is the single
-/// source of truth. The constant used to live in this module; the
-/// `// Directories skipped during usage-search traversal` block
-/// above is the deliberate no-op marker for the diff that removed
-/// it.
+// H1.3 (delivery-first-radical, package integration): the
+// usage-search walk used to consult a local `USAGE_SKIP_DIRS` const
+// that duplicated `WalkFilter::with_performance_skips` and missed
+// the security blocklist (a `.env` file was searched even though
+// `WalkFilter::default()` skips directories, and because it therefore does not
+// carry credentials). The const is gone; the canonical
+// `WalkFilter::default()` (security + performance) is the single
+// source of truth.
 
 /// Gets surrounding context lines for a given 0-indexed line
 fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {

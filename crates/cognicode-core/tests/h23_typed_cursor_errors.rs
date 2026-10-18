@@ -16,11 +16,9 @@
 //!
 //! The new cursor is a compact base64-JSON envelope
 //! `{v:1, ws, snap, off}` where:
-//!   - `ws`    is a short hash of the workspace path (or
-//!             `__tools__` for `tools/list`, which is global).
-//!   - `snap`  is a short hash of the snapshot (catalog digest for
-//!             `tools/list`; workspace state for `resources/list`).
-//!   - `off`   is the byte/row offset within that snapshot.
+//!   - `ws` is a short hash of the workspace path (or `__tools__` for `tools/list`, which is global).
+//!   - `snap` is a short hash of the snapshot (catalog digest for `tools/list`; workspace state for `resources/list`).
+//!   - `off` is the byte/row offset within that snapshot.
 //!
 //! A bare-numeric legacy cursor (the previous format) is now a
 //! `Garbled` typed error. The typed error is the contract: the

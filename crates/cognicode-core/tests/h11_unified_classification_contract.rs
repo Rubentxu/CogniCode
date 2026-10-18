@@ -185,9 +185,8 @@ fn skip_reason_read_projects_to_read_failed() {
 
 #[test]
 fn skip_reason_parse_projects_to_parse_failed() {
-    let disp = FileDisposition::from_skipped(&skipped_with(SkipReason::Parse(
-        "unexpected EOF".into(),
-    )));
+    let disp =
+        FileDisposition::from_skipped(&skipped_with(SkipReason::Parse("unexpected EOF".into())));
     assert!(
         matches!(disp, FileDisposition::ParseFailed { .. }),
         "SkipReason::Parse must project to ParseFailed, got {disp:?}"
@@ -205,9 +204,8 @@ fn skip_reason_unsupported_extension_projects_to_unsupported_relevant() {
     // must still surface it as UnsupportedRelevant, not ReadFailed
     // (the read succeeded) and not ExcludedByPolicy (the path is
     // relevant source).
-    let disp = FileDisposition::from_skipped(&skipped_with(SkipReason::UnsupportedExtension(
-        "kt".into(),
-    )));
+    let disp =
+        FileDisposition::from_skipped(&skipped_with(SkipReason::UnsupportedExtension("kt".into())));
     assert!(
         matches!(disp, FileDisposition::UnsupportedRelevant { .. }),
         "SkipReason::UnsupportedExtension must project to UnsupportedRelevant, got {disp:?}"

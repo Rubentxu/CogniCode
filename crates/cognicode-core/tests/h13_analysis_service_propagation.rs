@@ -26,9 +26,7 @@
 //! now honored, and pin that the `USAGE_SKIP_DIRS` const is no
 //! longer the source of truth.
 
-use cognicode_core::application::services::analysis_service::{
-    AnalysisService, UsageSearchParams,
-};
+use cognicode_core::application::services::analysis_service::{AnalysisService, UsageSearchParams};
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildStatus, FileDisposition};
 
 fn tempdir(suffix: &str) -> std::path::PathBuf {
@@ -59,9 +57,21 @@ fn rust_with_kt_and_readme(dir: &std::path::Path) {
         "mod alpha;\nmod beta;\nfn main() { alpha::helper(); beta::helper(); }\n",
     )
     .unwrap();
-    std::fs::write(dir.join("src").join("alpha.rs"), "pub fn helper() -> u32 { 1 }\n").unwrap();
-    std::fs::write(dir.join("src").join("beta.rs"), "pub fn helper() -> u32 { 2 }\n").unwrap();
-    std::fs::write(dir.join("src").join("Other.kt"), "class Other { fun x() = 1 }\n").unwrap();
+    std::fs::write(
+        dir.join("src").join("alpha.rs"),
+        "pub fn helper() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("beta.rs"),
+        "pub fn helper() -> u32 { 2 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("Other.kt"),
+        "class Other { fun x() = 1 }\n",
+    )
+    .unwrap();
     std::fs::write(dir.join("README.md"), "# Fixture\n").unwrap();
 }
 
@@ -111,9 +121,9 @@ fn build_graph_per_file_now_sets_last_build_report() {
                 "the K0 gap must survive the legacy entry point, got {skipped:?}"
             );
         }
-        BuildStatus::Complete => panic!(
-            "build_graph_per_file must record the .kt gap, not silently swallow it"
-        ),
+        BuildStatus::Complete => {
+            panic!("build_graph_per_file must record the .kt gap, not silently swallow it")
+        }
     }
 }
 

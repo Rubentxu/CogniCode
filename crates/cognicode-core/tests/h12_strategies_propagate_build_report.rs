@@ -44,10 +44,26 @@ fn rust_fixture_with_kt(dir: &std::path::Path) {
         "mod alpha;\nmod beta;\nfn main() { alpha::helper(); beta::helper(); }\n",
     )
     .unwrap();
-    std::fs::write(dir.join("src").join("alpha.rs"), "pub fn helper() -> u32 { 1 }\n").unwrap();
-    std::fs::write(dir.join("src").join("beta.rs"), "pub fn helper() -> u32 { 2 }\n").unwrap();
-    std::fs::write(dir.join("src").join("Other.kt"), "class Other { fun x() = 1 }\n").unwrap();
-    std::fs::write(dir.join("README.md"), "# Fixture\n\nRust + .kt corpus for H1.2.\n").unwrap();
+    std::fs::write(
+        dir.join("src").join("alpha.rs"),
+        "pub fn helper() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("beta.rs"),
+        "pub fn helper() -> u32 { 2 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("Other.kt"),
+        "class Other { fun x() = 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("README.md"),
+        "# Fixture\n\nRust + .kt corpus for H1.2.\n",
+    )
+    .unwrap();
 }
 
 fn tempdir() -> std::path::PathBuf {

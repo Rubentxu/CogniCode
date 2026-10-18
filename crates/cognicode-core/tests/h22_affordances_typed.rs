@@ -49,7 +49,7 @@ fn load() -> Value {
     serde_json::from_slice::<Value>(&bytes).expect("parse catalog")
 }
 
-fn index<'a>(catalog: &'a Value) -> BTreeMap<&'a str, &'a Value> {
+fn index(catalog: &Value) -> BTreeMap<&str, &Value> {
     catalog
         .get("tools")
         .and_then(Value::as_array)
@@ -96,7 +96,10 @@ fn authority_is_typed_as_read_or_mutating_only() {
         .values()
         .filter(|t| t.get("authority").and_then(Value::as_str) == Some("mutating"))
         .count();
-    assert!(reads > 0 && muts > 0, "the catalog must contain both kinds (else the audit is vacuous); got {reads} read, {muts} mutating");
+    assert!(
+        reads > 0 && muts > 0,
+        "the catalog must contain both kinds (else the audit is vacuous); got {reads} read, {muts} mutating"
+    );
 }
 
 #[test]
@@ -233,10 +236,10 @@ fn read_tools_never_offer_mutating_follow_ups() {
         if let Some(arr) = t.get("follow_ups").and_then(Value::as_array) {
             for f in arr {
                 let fname = f.as_str().expect("string follow_up");
-                if let Some(target) = tools.get(fname) {
-                    if target.get("authority").and_then(Value::as_str) == Some("mutating") {
-                        violations.push((name.to_string(), fname.to_string()));
-                    }
+                if let Some(target) = tools.get(fname)
+                    && target.get("authority").and_then(Value::as_str) == Some("mutating")
+                {
+                    violations.push((name.to_string(), fname.to_string()));
                 }
             }
         }
@@ -283,7 +286,12 @@ fn requirements_block_is_self_consistent() {
             .and_then(Value::as_bool)
             .unwrap_or(false);
         if pers_req != pers_meta {
-            bad.push((name.to_string(), "persistence".to_string(), pers_req, pers_meta));
+            bad.push((
+                name.to_string(),
+                "persistence".to_string(),
+                pers_req,
+                pers_meta,
+            ));
         }
     }
     assert!(

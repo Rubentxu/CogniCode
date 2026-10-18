@@ -164,10 +164,7 @@ fn no_active_pipeline_invokes_a_retired_test() {
             // and the block-comment opener `/*` followed by text on
             // the same line. We do not parse nested block comments;
             // the pipeline kts in this repo do not nest.
-            if trimmed.starts_with("//")
-                || trimmed.starts_with("/*")
-                || trimmed.starts_with("*")
-            {
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with("*") {
                 continue;
             }
             // The failure mode is `cargo test ... <basename>`. A

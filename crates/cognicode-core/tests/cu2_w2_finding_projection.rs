@@ -126,17 +126,26 @@ fn missing_snapshot_makes_finding_unsupported() {
 
 #[test]
 fn unknown_evidence_class_makes_finding_inconclusive() {
-    // Class D (heuristic) projects to Inconclusive with a gap list.
+    // Class D (heuristic) with full provenance projects to
+    // `Ok(Inconclusive { gaps })`, not to `Err(Inconclusive)`.
+    //
+    // The distinction is the point: `ProjectionError::Inconclusive` is
+    // reserved for a finding whose snapshot or detector context the
+    // projection cannot recover. A D-class finding that DOES carry that
+    // context is a legitimate projection a consumer can rely on, so
+    // reporting it as an error would erase the difference between "the
+    // heuristic said so" and "the kernel could not read the finding".
     let f = test_finding_with_class_and_snapshot(EvidenceClass::D, SnapshotId(42));
     let p = project_finding(&f, &SnapshotId(42));
     match p {
-        Err(ProjectionError::Inconclusive(gaps)) => {
+        Ok(FindingProjection::Inconclusive { gaps, .. }) => {
             assert!(
                 gaps.iter()
-                    .any(|g| matches!(g, Gap::EvidenceClassBelowThreshold { .. }))
+                    .any(|g| matches!(g, Gap::EvidenceClassBelowThreshold { .. })),
+                "an Inconclusive D-class projection must name the class gap; got {gaps:?}"
             );
         }
-        other => panic!("expected Inconclusive, got {other:?}"),
+        other => panic!("expected Ok(Inconclusive), got {other:?}"),
     }
 }
 

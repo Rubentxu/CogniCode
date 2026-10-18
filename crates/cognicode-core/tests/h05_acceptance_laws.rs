@@ -6,8 +6,7 @@
 //! admision) tienen tests unitarios en:
 //!
 //!   - h01_per_file_cache_invalidate_contract.rs       (H0.1)
-//!   - cu1_w2_service_analyzer_contract.rs::graph_complexity_inherits_partial
-//!                                                    (H0.2)
+//!   - cu1_w2_service_analyzer_contract.rs::graph_complexity_inherits_partial (H0.2)
 //!   - h03_workspace_root_identity_contract.rs         (H0.3)
 //!   - h04_ungrounded_no_sentinels_contract.rs         (H0.4)
 //!
@@ -27,11 +26,9 @@ use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, AnalysisValue, Analyze, OutcomeState,
 };
 use cognicode_core::application::consumer_analysis::ServiceAnalyzer;
-use cognicode_core::domain::findings::guard_transfer::{
-    GuardObservation, to_guard_observation,
-};
-use cognicode_core::domain::findings::projection::{Gap, ProjectionError};
 use cognicode_core::domain::findings::EvidenceClass;
+use cognicode_core::domain::findings::guard_transfer::{GuardObservation, to_guard_observation};
+use cognicode_core::domain::findings::projection::{Gap, ProjectionError};
 
 use cognicode_core::application::analysis_basis::GraphValue;
 
@@ -63,8 +60,16 @@ fn rust_fixture(dir: &std::path::Path) {
         "mod alpha;\nmod beta;\nfn main() { alpha::helper(); beta::helper(); }\n",
     )
     .unwrap();
-    std::fs::write(dir.join("src").join("alpha.rs"), "pub fn helper() -> u32 { 1 }\n").unwrap();
-    std::fs::write(dir.join("src").join("beta.rs"), "pub fn helper() -> u32 { 2 }\n").unwrap();
+    std::fs::write(
+        dir.join("src").join("alpha.rs"),
+        "pub fn helper() -> u32 { 1 }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("src").join("beta.rs"),
+        "pub fn helper() -> u32 { 2 }\n",
+    )
+    .unwrap();
 }
 
 /// LAW A: estado honesto a traves del adaptador de produccion.
@@ -102,17 +107,17 @@ fn law_a_state_is_honest_through_the_production_adapter() {
     // 2) graph.complexity hereda el mismo Partial con los mismos
     //    gaps (H0.2 + H0.4 honesty: la traduccion es UNICA, no
     //    se reinventa con sentinels en esta op).
-    let complexity = analyzer.execute(
-        &basis,
-        AnalysisOp::GraphComplexity { path: tmp.clone() },
-    );
+    let complexity = analyzer.execute(&basis, AnalysisOp::GraphComplexity { path: tmp.clone() });
     assert_eq!(
         complexity.state(),
         OutcomeState::Partial,
         "graph.complexity must inherit Partial from the shared BuildReport (H0.2)"
     );
-    let complexity_gaps: Vec<String> =
-        complexity.gaps().iter().map(|g| g.message.clone()).collect();
+    let complexity_gaps: Vec<String> = complexity
+        .gaps()
+        .iter()
+        .map(|g| g.message.clone())
+        .collect();
     assert_eq!(
         complexity_gaps, full_gaps,
         "graph.complexity must carry the EXACT same gaps as graph.full on the \
@@ -171,7 +176,10 @@ fn law_b_workspace_identity_is_preserved_across_analyzer_lifetime() {
         Some(AnalysisValue::Graph(GraphValue::Full { symbols, .. })) => *symbols,
         _ => panic!("graph.full on A must produce a Full value"),
     };
-    assert!(symbols_a >= 2, "fixture A defines >= 2 symbols, got {symbols_a}");
+    assert!(
+        symbols_a >= 2,
+        "fixture A defines >= 2 symbols, got {symbols_a}"
+    );
 
     // Ahora pide graph.full sobre B SIN rebuild (cache lookup).
     // El grafo de A no debe filtrarse al resultado de B (H0.1 + H0.3).
@@ -222,9 +230,11 @@ fn law_c_ungrounded_cannot_be_promoted_by_any_caller() {
     let result: Result<
         cognicode_core::domain::findings::projection::FindingProjection,
         ProjectionError,
-    > = Err(ProjectionError::Inconclusive(vec![Gap::EvidenceClassBelowThreshold {
-        class: EvidenceClass::D,
-    }]));
+    > = Err(ProjectionError::Inconclusive(vec![
+        Gap::EvidenceClassBelowThreshold {
+            class: EvidenceClass::D,
+        },
+    ]));
     let observation = to_guard_observation(&result);
     assert!(
         matches!(observation, GuardObservation::Ungrounded { .. }),
