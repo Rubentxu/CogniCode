@@ -860,150 +860,205 @@ fn simple_function() {
             );
         }
 
-        /// Static dispatch allowlist for listed public tools.
-        /// This is the set of tool names that have a corresponding dispatch arm
-        /// in call_tool_handler. It is manually maintained and provides a
-        /// compile-time-checked proxy for the async dispatch test.
+        // ------------------------------------------------------------------
+        // The dispatch oracle.
+        //
+        // MEDIDO 2026-10-18. A pair of tests replaced by this one compared the
+        // catalogue with `dispatchable_tool_names()` — a third hand-maintained
+        // list — and never asked the dispatch anything. Together they proved
+        // `catalogue == allowlist` and nothing else, so they stayed green with
+        // four advertised tools that answer `InterfaceError::ToolNotFound`.
+        // That is the exact class the pair was written to catch, and it shipped.
+        //
+        // The fix is not a fourth list. It is reading the dispatch itself: the
+        // property "tools/list only announces what tools/call can deliver" is a
+        // fact about the `match tool_name` block, so the block is what gets read.
+        // That deletes ~100 lines of list maintenance and removes a third source
+        // of truth, rather than adding a guard on top of one.
+
+        /// The text of the `match tool_name { … }` block inside
+        /// `call_tool_handler`, braces matched and string/char literals skipped.
         ///
-        /// To add a new tool: implement the handler, add the dispatch arm in
-        /// rmcp_adapter::call_tool_handler, then add the name here.
-        /// To remove a tool: remove the dispatch arm, then remove the name here.
-        ///
-        /// GATED_OK tools (generate_contract) are listed here because they
-        /// have real dispatch arms that return explicit capability/config
-        /// errors at runtime, not ToolNotFound.
-        fn dispatchable_tool_names() -> &'static [&'static str] {
-            &[
-                "analyze_impact",
-                "ask_about_code",
-                "build_call_subgraph",
-                "build_graph",
-                "build_lightweight_index",
-                "cfg_per_function",
-                "check_architecture",
-                "codebase_map",
-                "composite_impact_query",
-                #[cfg(feature = "persistence")]
-                "detect_drift",
-                "detect_god_functions",
-                "detect_long_parameter_lists",
-                "dominators_cfg",
-                "edit_file",
-                "export_callflow",
-                "export_mermaid",
-                "find_pattern_by_intent",
-                "find_references",
-                "find_usages",
-                "generate_contract",
-                "get_call_hierarchy",
-                "get_complexity",
-                "get_entry_points",
-                "get_file_symbols",
-                "get_hot_paths",
-                "get_implementors",
-                "get_imports",
-                "get_leaf_functions",
-                "get_members",
-                "get_per_file_graph",
-                "get_symbol_code",
-                "get_type_references",
-                "go_to_definition",
-                "graph_analyze",
-                "graph_all_paths",
-                "graph_checkpoint",
-                "graph_communities",
-                "graph_community_detail",
-                "graph_condensed",
-                "graph_explain",
-                "graph_feedback_arcs",
-                "graph_god_nodes",
-                "graph_insights",
-                "graph_pagerank",
-                "graph_query",
-                "graph_query_filtered",
-                "graph_reduced",
-                "graph_search_idf",
-                "graph_suggest_questions",
-                "graph_surprising_connections",
-                "iac_query",
-                "hover",
-                // DEBT-SDDK-006: the interproc_summary tool is
-                // #[cfg(feature = "program-analysis-server")] in
-                // rmcp_adapter.rs; the expectation must carry the same gate.
-                #[cfg(feature = "program-analysis-server")]
-                "interproc_summary",
-                "list_files",
-                "list_view_specs",
-                "merge_graphs",
-                "nl_to_symbol",
-                "project_insights",
-                "project_overview",
-                "query_symbol_index",
-                "read_file",
-                "read_view_spec",
-                #[cfg(feature = "persistence")]
-                "reparse_on_edit",
-                #[cfg(feature = "persistence")]
-                "detect_drift",
-                "retrieve_and_verify",
-                "review_pr",
-                "safe_refactor",
-                "safe_refactor_preview",
-                "safe_refactor_apply",
-                "safe_refactor_revalidate",
-                "search_content",
-                "slice_backward",
-                "slice_forward",
-                "smart_search",
-                "solid_audit",
-                "taint_flow",
-                "trace_path",
-                "validate_contract",
-                "write_file",
-            ]
+        /// Brace counting alone is not enough, and this file is the proof: it
+        /// contains byte literals like `b'{'` (the token-stream scanner in the
+        /// stderr-demux helpers), and it contains lifetimes like `&'static str`.
+        /// A `'` that opens a lifetime must not be read as the start of a char
+        /// literal, or the scanner swallows the rest of the file and reports an
+        /// implausible arm count instead of failing.
+        fn dispatch_block(source: &str, header: &str) -> String {
+            let start = source.find(header).unwrap_or_else(|| {
+                panic!(
+                    "`{header}` is not in rmcp_adapter.rs. This oracle reads the real \
+                     dispatch and has no list to fall back to; if the match was \
+                     renamed, rename it here too."
+                )
+            });
+            let open = start
+                + source[start..]
+                    .find('{')
+                    .unwrap_or_else(|| panic!("`{header}` has no opening brace"));
+
+            let bytes = source.as_bytes();
+            let mut i = open;
+            let mut depth = 0usize;
+            // `'` followed by a backslash or by exactly one char and then `'`
+            // opens a char literal; `'` followed by an identifier char is a
+            // lifetime and must be left alone.
+            let char_literal_at = |at: usize| -> bool {
+                let Some(&q) = bytes.get(at) else {
+                    return false;
+                };
+                if q != b'\'' {
+                    return false;
+                }
+                // `b'x'` / `r'x'` / `r#"x"#` — a prefix makes it a literal.
+                if at > 0 && matches!(bytes[at - 1], b'b' | b'r' | b'B' | b'R') {
+                    return true;
+                }
+                let Some(&first) = bytes.get(at + 1) else {
+                    return false;
+                };
+                if first == b'\\' {
+                    return true;
+                }
+                matches!(bytes.get(at + 2), Some(b'\''))
+            };
+
+            while i < bytes.len() {
+                let b = bytes[i];
+                match b {
+                    b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                        while i < bytes.len() && bytes[i] != b'\n' {
+                            i += 1;
+                        }
+                    }
+                    b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                        i += 2;
+                        while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                            i += 1;
+                        }
+                        i += 2;
+                    }
+                    b'"' => {
+                        i += 1;
+                        while i < bytes.len() && bytes[i] != b'"' {
+                            i += if bytes[i] == b'\\' { 2 } else { 1 };
+                        }
+                        i += 1;
+                    }
+                    b'\'' if char_literal_at(i) => {
+                        i += 1;
+                        while i < bytes.len() && bytes[i] != b'\'' {
+                            i += if bytes[i] == b'\\' { 2 } else { 1 };
+                        }
+                        i += 1;
+                    }
+                    b'{' => {
+                        depth += 1;
+                        i += 1;
+                    }
+                    b'}' => {
+                        depth -= 1;
+                        i += 1;
+                        if depth == 0 {
+                            return source[start..i].to_string();
+                        }
+                    }
+                    _ => i += 1,
+                }
+            }
+            panic!("`{header}` never closes; the oracle found no complete match block")
         }
 
-        /// Verify every listed tool appears in the static dispatch allowlist.
-        /// This prevents ghost tools (listed but no dispatch arm) from being
-        /// added without deliberate allowlist maintenance.
+        /// Every dispatch arm of `call_tool_handler`: tool name -> the
+        /// `feature` its `#[cfg(…)]` gates it by, or `None` when unconditional.
+        fn dispatch_arms() -> std::collections::BTreeMap<String, Option<String>> {
+            let source = include_str!("rmcp_adapter.rs");
+            let block = dispatch_block(source, "match tool_name");
+            let mut arms = std::collections::BTreeMap::new();
+            let mut gate: Option<String> = None;
+            for line in block.lines() {
+                let trimmed = line.trim();
+                if let Some(rest) = trimmed.strip_prefix("#[cfg(") {
+                    // `#[cfg(feature = "x")]` -> `x`. Any other cfg shape is
+                    // recorded as itself so a mismatch is visible rather than
+                    // silently treated as "ungated".
+                    gate = Some(
+                        rest.trim_end_matches(')')
+                            .trim_start_matches("feature")
+                            .trim_start_matches('=')
+                            .trim()
+                            .trim_matches('"')
+                            .to_string(),
+                    );
+                    continue;
+                }
+                let Some(name) = trimmed
+                    .strip_prefix('"')
+                    .and_then(|rest| rest.split_once('"'))
+                    .map(|(name, _)| name.to_string())
+                    .filter(|_| trimmed.contains("=>"))
+                else {
+                    continue;
+                };
+                arms.insert(name, gate.take());
+            }
+            arms
+        }
+
+        /// Anti-vacuity: an oracle that reads the wrong block, or a DSL that
+        /// moved, must fail here rather than report an empty dispatch and pass
+        /// the forward check for the wrong reason. The last arm of
+        /// `call_tool_handler`'s match is the `ToolNotFound` fallthrough, so its
+        /// presence is the proof that the block ends where this says it does.
         #[test]
-        fn test_all_listed_tools_are_dispatchable() {
-            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
-            let listed_names: Vec<_> = tools.iter().map(|t| t.name.as_ref()).collect();
-            let allowlist = dispatchable_tool_names();
-            let allowset: HashSet<_> = allowlist.iter().copied().collect();
-
-            let not_in_allowlist: Vec<_> = listed_names
-                .iter()
-                .filter(|n| !allowset.contains(*n))
-                .collect();
-
+        fn the_dispatch_oracle_reads_a_real_match_block() {
+            let source = include_str!("rmcp_adapter.rs");
+            let block = dispatch_block(source, "match tool_name");
+            // The extracted block ends with the match's own `}`; the arm before
+            // it is the `ToolNotFound` fallthrough. Both facts together are the
+            // proof that the brace matcher stopped where this oracle claims.
+            let last_arm = block
+                .trim_end()
+                .strip_suffix('}')
+                .unwrap_or_else(|| panic!("the extracted dispatch block does not close: …{block}"))
+                .trim_end()
+                .trim_end_matches(',');
             assert!(
-                not_in_allowlist.is_empty(),
-                "Listed tools missing from dispatch allowlist: {:?}. \
-                 Add them to dispatchable_tool_names() if they have a dispatch arm, \
-                 or remove them from the tools/list if they are ghost tools.",
-                not_in_allowlist
+                last_arm.ends_with("_ => Err(InterfaceError::ToolNotFound(tool_name.to_string()))"),
+                "the last arm of the extracted dispatch block is not the ToolNotFound \
+                 fallthrough, so its boundary is wrong: …{last_arm}"
+            );
+            let arms = dispatch_arms();
+            assert!(
+                arms.len() >= 50,
+                "the oracle found only {} dispatch arms; the DSL it reads has probably \
+                 drifted ({} names parsed)",
+                arms.len(),
+                arms.keys().cloned().collect::<Vec<_>>().join(", ")
             );
         }
 
-        /// Verify every allowlisted tool is actually listed.
-        /// This ensures the allowlist doesn't drift from the actual tool surface.
+        /// The invariant. A tool the catalogue announces and a tool the server
+        /// cannot dispatch is the worst kind of surface: the client trusts
+        /// `tools/list` to enumerate what exists, calls it, and gets an error
+        /// with no hint that the tool was never there.
         #[test]
-        fn test_allowlist_subset_of_listed() {
-            let tools = crate::interface::mcp::rmcp_adapter::build_all_tools();
-            let listed_names: HashSet<_> = tools.iter().map(|t| t.name.as_ref()).collect();
-            let allowlist = dispatchable_tool_names();
-
-            let not_listed: Vec<_> = allowlist
+        fn every_advertised_tool_has_a_dispatch_arm() {
+            let arms = dispatch_arms();
+            let ghosts: Vec<_> = crate::interface::catalog::load_tool_catalog()
                 .iter()
-                .filter(|n| !listed_names.contains(*n))
+                .filter(|d| !arms.contains_key(&d.name))
+                .map(|d| d.name.clone())
                 .collect();
-
             assert!(
-                not_listed.is_empty(),
-                "Allowlisted tools not found in tools/list: {:?}",
-                not_listed
+                ghosts.is_empty(),
+                "tools/list announces {} tool(s) that tools/call cannot dispatch: {}. \
+                 Either add the dispatch arm in rmcp_adapter::call_tool_handler, or \
+                 stop advertising them — precedent: get_graph_report was removed from \
+                 the catalogue rather than left to fail at runtime.",
+                ghosts.len(),
+                ghosts.join(", ")
             );
         }
     }
