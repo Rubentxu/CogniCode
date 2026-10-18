@@ -9,15 +9,32 @@ use serde_json::Value;
 use std::path::Path;
 
 /// Handle resources/list request
-/// Lists workspace files as resources using ignore::WalkBuilder
-pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
-    let cursor_offset = cursor
-        .and_then(|c| base64::Engine::decode(&base64::engine::general_purpose::STANDARD, c).ok())
-        .and_then(|bytes| String::from_utf8(bytes).ok())
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(0);
+/// Lists workspace files as resources using ignore::WalkBuilder.
+///
+/// H2.3: the cursor is now an anchored envelope. A cursor minted
+/// in a different workspace or before the workspace state
+/// changed is a typed error (kind + reason), not a silent reset
+/// to page 0. The previous bare-numeric cursor is a typed
+/// `Garbled` error.
+pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Result<Value, String> {
+    use crate::interface::mcp::cursor::{CursorContext, encode_cursor, verify_cursor};
 
     let workspace_path = Path::new(workspace);
+    // The snapshot is the workspace path. A more precise anchor
+    // (mtime, git head) can be added later without breaking the
+    // format — the same context shape, a sharper snapshot.
+    let cursor_ctx = CursorContext {
+        workspace: workspace.to_string(),
+        snapshot: workspace.to_string(),
+    };
+
+    let cursor_offset: usize = match cursor {
+        Some(c) => match verify_cursor(c, &cursor_ctx) {
+            Ok(off) => off,
+            Err(e) => return Err(format!("{e}")),
+        },
+        None => 0,
+    };
 
     let mut resources = Vec::new();
     let mut count = 0;
@@ -38,10 +55,9 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
         }
 
         if resources.len() >= PAGE_SIZE {
-            // Encode next cursor
+            // Encode next cursor anchored to the same context.
             let next_offset = cursor_offset + PAGE_SIZE;
-            next_cursor =
-                Some(base64::engine::general_purpose::STANDARD.encode(next_offset.to_string()));
+            next_cursor = Some(encode_cursor(&cursor_ctx, next_offset));
             break;
         }
 
@@ -72,7 +88,7 @@ pub fn handle_resources_list(workspace: &str, cursor: Option<&str>) -> Value {
         result["nextCursor"] = Value::String(cursor);
     }
 
-    result
+    Ok(result)
 }
 
 /// Handle resources/read request
@@ -215,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_resources_list_returns_valid_structure() {
-        let result = handle_resources_list(".", None);
+        let result = handle_resources_list(".", None).expect("ok");
         assert!(result.get("resources").is_some());
         assert!(result.get("resources").unwrap().is_array());
     }

@@ -2,6 +2,7 @@
 
 pub mod capabilities;
 pub mod completion;
+pub mod cursor;
 pub mod dto_mapping;
 pub mod error;
 pub mod file_ops_handlers;

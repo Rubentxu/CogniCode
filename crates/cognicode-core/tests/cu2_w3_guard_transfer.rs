@@ -111,8 +111,13 @@ fn advisory_finding_transfers_to_advisory_never_verifiable() {
 fn inconclusive_finding_transfers_to_inconclusive() {
     let snapshot = SnapshotId(42);
     let finding = test_finding(EvidenceClass::D, snapshot, true);
-    let projection_err = project_finding(&finding, &snapshot).expect_err("class D errors");
-    let observation = to_guard_observation(&Err(projection_err));
+    // A class-D finding that carries its provenance projects to
+    // `Ok(Inconclusive { gaps })`; `Err(Inconclusive)` is reserved for a
+    // finding whose context the projection cannot recover. Either way the
+    // Guard must observe Inconclusive — that is what this test is about:
+    // an inconclusive verdict never silently becomes Verifiable.
+    let projection = project_finding(&finding, &snapshot).expect("class D projects");
+    let observation = to_guard_observation(&Ok(projection));
     match observation {
         GuardObservation::Inconclusive { gaps, .. } => {
             assert!(!gaps.is_empty(), "Inconclusive must carry non-empty gaps");

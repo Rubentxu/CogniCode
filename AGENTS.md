@@ -29,14 +29,19 @@ dos modos contractuales:
 | Modo | Comando | Cuándo |
 |---|---|---|
 | **fast** | `bash scripts/test-fast.sh` | Durante un evolutivo, tras cada cambio de comportamiento. Detecta `git diff` vs `HEAD`, delega en `scripts/ci/select-suites.sh` (CR-08) y corre solo las suites afectadas. Aplica `known_failures.yaml` sobre `cognicode-core/lib` para distinguir regresiones reales del ruido conocido. |
-| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + baseline check. |
+| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
 
 **Reglas duras**:
 
 1. **`fast` no sustituye a `full`**. Un `full` verde es prerequisito
    para cualquier merge a `main` (vía `merge-gate`) y para cualquier
    bump SemVer. El `fast` solo acelera el feedback loop; no exonera
-   del gate.
+   del gate. Y `full` es ahora un **superconjunto** de `merge-gate` en
+   lo que importa: desde 2026-10-18 incluye `run-all-contracts.sh`,
+   sin el cual un `full` verde podía coexistir con un rojo de
+   `merge-gate` (medido: siete superficies públicas declarando la
+   versión anterior). Si añades un stage a `merge-gate.pipeline.kts`,
+   ese stage o su equivalente pertenece también a `full`.
 2. **El selector CR-08 manda**. `scripts/test-fast.sh` consume la
    salida JSON de `scripts/ci/select-suites.sh` y no la recalcula.
    Si una suite cae en `fallback` (cambio en `Cargo.toml`,
@@ -70,7 +75,11 @@ el problema es de infraestructura local (no es regresión). Resolver
 con `cargo build --release --bin cogh` (y análogos) **antes** de
 reinvocar el gate. Suites de perfil release que siguen en el árbol:
 `prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract`,
-`published_skill_bundles_are_required`. La clase UAT (`*_uat.rs`) que
+`published_skill_bundles_are_required` y
+`b6_w1_mcp_robustness::release_binary_stdio_round_trip_smoke` (esta última
+pide `cargo build --release --bin cognicode-mcp`; el merge gate la selecciona
+fuera y la corre `release-candidate.pipeline.kts`, que ya construye ese
+binario). La clase UAT (`*_uat.rs`) que
 aparecía en esta lista se retiró del repositorio el 2026-10-15 por decisión
 del operador (ADR-TH-006).
 - Un cambio que afecte contratos OpenSpec se reconcilia con su requisito vigente; no reescribir planes archivados ni cambiar el estado de ciclos pasados para aparentar progreso. **No se reabre PRF.** No se reabren `C#` ya firmadas para "incluir" trabajo nuevo.

@@ -6,7 +6,7 @@
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, Location};
+use crate::domain::value_objects::{DependencyType, Location, WalkDecision};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -198,13 +198,28 @@ struct FileGraphCacheEntry {
     /// Whether this entry is valid
     valid: bool,
     /// Last-modified time of the source file at cache time (seconds since
-    /// UNIX epoch). Used by `get_or_build` to detect content changes: if
-    /// the file's mtime no longer matches, the entry is rebuilt.
+    /// UNIX epoch). Cheap signal: catches the common case of an editor
+    /// saving the file. **Not authoritative**: a same-content rewrite with
+    /// identical mtime+size (e.g. `git checkout` of an unchanged-size
+    /// blob, or an editor that pads to the same length) keeps the mtime
+    /// and would, on its own, serve a stale graph. The `content_hash`
+    /// below is the authoritative bytes-identity check.
     mtime_secs: Option<u64>,
-    /// Size of the source file in bytes at cache time. Secondary signal:
-    /// combined with `mtime_secs`, allows cheap detection of changes
-    /// without hashing the file body.
+    /// Size of the source file in bytes at cache time. Secondary cheap
+    /// signal: combined with `mtime_secs`, narrows the false-positive
+    /// surface. Still not authoritative for the same reason as
+    /// `mtime_secs` — a content edit at the same byte length keeps the
+    /// size unchanged.
     size: Option<u64>,
+    /// 64-bit hash of the source file's bytes at cache time. **The
+    /// authoritative bytes-identity check.** Required by the H0.1 spec
+    /// (`PerFileGraphCache::merge_with_report: no usar get_cached() sin
+    /// validar entry.valid, identidad de bytes y ruta`): a file whose
+    /// content was rewritten but whose mtime+size did not change must
+    /// still produce a cache miss. The H0.5 acceptance law
+    /// (`editar bytes con mtime/tamaño iguales ⇒ cambia el resultado`)
+    /// is the test that pins this field.
+    content_hash: Option<u64>,
 }
 
 /// Per-file graph cache that stores CallGraph per file
@@ -238,18 +253,24 @@ impl PerFileGraphCache {
     /// Gets the graph for a file, building it if needed
     ///
     /// If the file has already been parsed and cached AND its filesystem
-    /// fingerprint (mtime + size) matches what was recorded at cache time,
-    /// the cached graph is returned. Otherwise the file is re-parsed and
-    /// the cache entry is refreshed.
+    /// fingerprint (mtime + size + content hash) matches what was
+    /// recorded at cache time, the cached graph is returned. Otherwise
+    /// the file is re-parsed and the cache entry is refreshed.
     ///
-    /// The fingerprint approach is cheap (one syscall) and catches the
-    /// common case of an editor saving the file: mtime is updated and the
-    /// cache is invalidated.
+    /// The mtime+size signals are cheap (one syscall) and catch the
+    /// common case of an editor saving the file. The content hash is
+    /// authoritative: it catches the case where the file's bytes were
+    /// rewritten but mtime+size did not change (e.g. `git checkout` of
+    /// an unchanged-size blob, an editor that rewrites in place, or
+    /// `cp -p` of an identical-length file). H0.1 / H0.5 require that
+    /// case to invalidate the cache, not serve a stale graph.
     pub fn get_or_build(&self, file_path: &Path) -> std::io::Result<Arc<CallGraph>> {
         let path_str = file_path.to_string_lossy().to_string();
 
-        // Snapshot the file fingerprint (mtime + size) once, so the
-        // read-cache and write-cache branches agree on what we observed.
+        // Snapshot the file fingerprint (mtime + size + content hash)
+        // once, so the read-cache and write-cache branches agree on what
+        // we observed. The content hash is the authoritative check;
+        // mtime+size are the cheap early-out.
         let fingerprint = file_fingerprint(file_path);
 
         // Check cache first
@@ -259,6 +280,7 @@ impl PerFileGraphCache {
                 && entry.valid
                 && entry.mtime_secs == fingerprint.as_ref().map(|f| f.mtime_secs)
                 && entry.size == fingerprint.as_ref().map(|f| f.size)
+                && entry.content_hash == fingerprint.as_ref().map(|f| f.content_hash)
             {
                 return Ok(Arc::new(entry.graph.clone()));
             }
@@ -277,6 +299,7 @@ impl PerFileGraphCache {
                     valid: true,
                     mtime_secs: fingerprint.as_ref().map(|f| f.mtime_secs),
                     size: fingerprint.as_ref().map(|f| f.size),
+                    content_hash: fingerprint.as_ref().map(|f| f.content_hash),
                 },
             );
         }
@@ -285,11 +308,16 @@ impl PerFileGraphCache {
     }
 
     /// Gets a cached graph without building if missing
+    ///
+    /// Returns `None` when the entry is absent OR has been invalidated
+    /// (`entry.valid == false`). Callers that need a guaranteed-fresh
+    /// graph should use [`PerFileGraphCache::get_or_build`].
     pub fn get_cached(&self, file_path: &Path) -> Option<Arc<CallGraph>> {
         let path_str = file_path.to_string_lossy().to_string();
         let cache = self.cache.read().unwrap();
         cache
             .get(&path_str)
+            .filter(|entry| entry.valid)
             .map(|entry| Arc::new(entry.graph.clone()))
     }
 
@@ -326,7 +354,7 @@ impl PerFileGraphCache {
     ///
     /// **Note:** Files that cannot be read or parsed are silently dropped;
     /// the resulting graph may be incomplete without indication. Prefer
-    /// [`PerFileGraphCache::merge_with_report`] when callers need to know
+    /// `PerFileGraphCache::merge_with_report` when callers need to know
     /// whether coverage is complete or partial.
     pub fn merge(&self, file_paths: &[&Path]) -> CallGraph {
         self.merge_with_report(file_paths).graph
@@ -552,13 +580,28 @@ impl PerFileGraphCache {
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
-        let mut name_to_symbol: HashMap<String, crate::domain::aggregates::call_graph::SymbolId> =
-            HashMap::new();
+        // H4.3 — multimap keyed by lowercase name. A single-symbol
+        // map overwrote homonyms (e.g. `Foo` then `foo` both
+        // lowercased to `foo`): the second insert clobbered the
+        // first, and a call site that should be observed as
+        // "ambiguous, no edge" was silently resolved to whichever
+        // symbol the parser inserted last. A list-valued entry
+        // makes the homonym visible: a call site with a single
+        // candidate resolves; with multiple candidates drops
+        // (H4: "llamadas ambiguas quedan observadas sin una
+        // dependencia falsa").
+        let mut name_to_symbol: HashMap<
+            String,
+            Vec<crate::domain::aggregates::call_graph::SymbolId>,
+        > = HashMap::new();
 
         // Add symbols to graph
         for symbol in symbols {
             let symbol_id = graph.add_symbol(symbol.clone());
-            name_to_symbol.insert(symbol.name().to_lowercase(), symbol_id);
+            name_to_symbol
+                .entry(symbol.name().to_lowercase())
+                .or_default()
+                .push(symbol_id);
         }
 
         // Add call relationships.
@@ -590,8 +633,25 @@ impl PerFileGraphCache {
                 crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
 
             // 1. Local lookup first (covers intra-file edges).
-            if let Some(callee_id) = name_to_symbol.get(&callee_name.to_lowercase()).cloned() {
-                let _ = graph.add_dependency(&caller_id, &callee_id, DependencyType::Calls);
+            //    H4.3 — the local map is now a multimap; multiple
+            //    symbols under the same lowercase name are an
+            //    ambiguous homonym and the resolver drops the call
+            //    rather than invent an edge against a random one.
+            if let Some(candidates) = name_to_symbol.get(&callee_name.to_lowercase()) {
+                match candidates.as_slice() {
+                    [] => {}
+                    [callee_id] => {
+                        let _ = graph.add_dependency(&caller_id, callee_id, DependencyType::Calls);
+                    }
+                    _ => {
+                        // Genuine local homonym (e.g. two symbols
+                        // `Foo` and `foo`). The H4 spec calls for
+                        // "llamadas ambiguas quedan observadas sin
+                        // una dependencia falsa" — drop the call
+                        // edge. A future diagnostics pass can
+                        // surface the unresolved call site.
+                    }
+                }
                 continue;
             }
 
@@ -642,26 +702,60 @@ impl Clone for PerFileGraphCache {
     }
 }
 
-/// Cheap filesystem fingerprint for cache invalidation.
+/// Filesystem fingerprint for cache invalidation.
 ///
-/// Holds the mtime (seconds since UNIX epoch) and the byte size of a file
-/// at the moment the fingerprint was taken. If either changes, the file's
-/// content is presumed to have changed.
+/// Holds the mtime (seconds since UNIX epoch), the byte size, and a
+/// 64-bit hash of the file's bytes — all three at the moment the
+/// fingerprint was taken. `mtime_secs` and `size` are cheap early-out
+/// signals (one metadata syscall); `content_hash` is the authoritative
+/// bytes-identity check. The H0 spec requires all three: a file whose
+/// bytes were rewritten but whose mtime+size did not change must
+/// still produce a cache miss.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct FileFingerprint {
     mtime_secs: u64,
     size: u64,
+    content_hash: u64,
 }
 
-/// Reads the fingerprint of `path`. Returns `None` if the metadata cannot
-/// be read (e.g. file was deleted between cache hit and re-check). In that
-/// case the caller should treat the cache as stale and rebuild.
+/// Reads the fingerprint of `path`. Returns `None` if the metadata or
+/// file body cannot be read (e.g. file was deleted between cache hit
+/// and re-check, or the file is unreadable). In that case the caller
+/// should treat the cache as stale and rebuild.
+///
+/// The content hash uses Rust's stdlib `DefaultHasher` — a non-cryptographic
+/// 64-bit hash seeded per-process for DoS resistance. The seed is fine
+/// for in-process cache invalidation: the cache is in-process, and a
+/// different process is a different cache. Cryptographic collision
+/// resistance is not required: a collision would only cause a cache
+/// miss (the wrong graph would have to be parseable as the right one
+/// to be observable, and a 64-bit space makes that overwhelmingly
+/// unlikely). The cost is one `read()` per fingerprint, which is the
+/// cost of the H0.1 / H0.5 content-identity contract.
 fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
     let meta = std::fs::metadata(path).ok()?;
     let mtime = meta.modified().ok()?;
     let mtime_secs = system_time_to_secs(mtime);
     let size = meta.len();
-    Some(FileFingerprint { mtime_secs, size })
+    let bytes = std::fs::read(path).ok()?;
+    let content_hash = content_hash_64(&bytes);
+    Some(FileFingerprint {
+        mtime_secs,
+        size,
+        content_hash,
+    })
+}
+
+/// 64-bit FNV-1a over the input bytes. Pure stdlib, no allocations,
+/// constant memory; sufficient for an in-process cache key where
+/// collisions only ever cost a cache miss.
+fn content_hash_64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
+    for &byte in bytes {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100_0000_01b3); // FNV prime
+    }
+    hash
 }
 
 /// Converts a `SystemTime` to seconds since the UNIX epoch. Saturates on
@@ -736,6 +830,160 @@ pub enum WalkClassification {
     /// Extensión irrelevante para el análisis (README, imágenes, datos):
     /// exclusión legítima, no genera gap ni entrada en `skipped`.
     LegitExclusion,
+}
+
+/// H1.1 (delivery-first-radical, package integration) — unified
+/// classification envelope for every file the walk encounters.
+///
+/// This is NOT a replacement for the existing taxonomy
+/// (`WalkClassification` + `SkipReason` + presence-in-graph); it is
+/// the *projection* onto the five logical states the H1.1 spec
+/// names, so that "every file lands in exactly one of the five
+/// states" can be expressed at the type level. AC-01 §Invariantes:
+/// "FileDisposition = Parsed | ExcludedByPolicy | UnsupportedRelevant
+/// | ReadFailed | ParseFailed". A sixth state ("Unknown", "Pending",
+/// "Failed", …) would re-introduce the silent-discard bug the
+/// envelope was created to prevent; the test
+/// `h11_unified_classification_contract::file_disposition_has_exactly_the_five_spec_variants`
+/// pins the count to 5.
+///
+/// Each variant carries the minimal payload to render an actionable
+/// message in CLI/MCP. The variant names are part of the public
+/// contract (AC-01 names them by name) and must remain stable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileDisposition {
+    /// The file was read, parsed, and contributed symbols to the
+    /// graph. Only this variant can be summarised as "this
+    /// contributed to the answer".
+    Parsed,
+    /// The path is outside the analysis scope, by policy:
+    ///   - `WalkFilter` pruned it (security blocklist: `.git/HEAD`,
+    ///     `id_rsa`, …), OR
+    ///   - the file is a known-irrelevant asset (README, image,
+    ///     lockfile), OR
+    ///   - an unknown I/O error mapped to `SkipReason::Other`
+    ///     (honest default: we don't claim a gap we can't name).
+    ///
+    /// Never affects `BuildStatus`.
+    ExcludedByPolicy { reason: String },
+    /// The file is a *source* in a language we know about but have
+    /// not yet wired (the K0 bridge: `.kt`/`.kts` until K1 lands).
+    /// Affects `BuildStatus` → `Partial`.
+    UnsupportedRelevant { extension: String },
+    /// `std::fs::read` failed (permission denied, broken symlink,
+    /// file vanished between walk and read, …). Affects
+    /// `BuildStatus` → `Partial`.
+    ReadFailed { reason: String },
+    /// The file was read but the parser could not extract symbols.
+    /// Affects `BuildStatus` → `Partial`.
+    ParseFailed { reason: String },
+}
+
+impl FileDisposition {
+    /// The five H1.1 variants, in the order the spec lists them.
+    /// Used by the test that pins the count and the names.
+    pub fn all() -> [FileDisposition; 5] {
+        [
+            FileDisposition::Parsed,
+            FileDisposition::ExcludedByPolicy {
+                reason: "policy".to_string(),
+            },
+            FileDisposition::UnsupportedRelevant {
+                extension: "kt".to_string(),
+            },
+            FileDisposition::ReadFailed {
+                reason: "EACCES".to_string(),
+            },
+            FileDisposition::ParseFailed {
+                reason: "unexpected EOF".to_string(),
+            },
+        ]
+    }
+
+    /// Stable name for diagnostics and the public contract.
+    pub fn name(&self) -> &'static str {
+        match self {
+            FileDisposition::Parsed => "Parsed",
+            FileDisposition::ExcludedByPolicy { .. } => "ExcludedByPolicy",
+            FileDisposition::UnsupportedRelevant { .. } => "UnsupportedRelevant",
+            FileDisposition::ReadFailed { .. } => "ReadFailed",
+            FileDisposition::ParseFailed { .. } => "ParseFailed",
+        }
+    }
+
+    /// Constructor for the happy path. A file that was read, parsed
+    /// and contributed to the graph.
+    pub fn parsed() -> FileDisposition {
+        FileDisposition::Parsed
+    }
+
+    /// Project a `WalkClassification` onto the envelope. This is
+    /// the call for files that the walk *saw* but that did not
+    /// generate a `SkippedFile` (either because they were
+    /// irrelevant, or because they were analyzed and merged).
+    pub fn from_walk_classification(
+        class: WalkClassification,
+        ext: Option<&str>,
+    ) -> FileDisposition {
+        match class {
+            WalkClassification::Analyze => FileDisposition::Parsed,
+            WalkClassification::KnownUnsupportedGap => FileDisposition::UnsupportedRelevant {
+                extension: ext.unwrap_or("?").to_string(),
+            },
+            WalkClassification::LegitExclusion => FileDisposition::ExcludedByPolicy {
+                reason: format!("irrelevant extension: {}", ext.unwrap_or("?")),
+            },
+        }
+    }
+
+    /// Project a `WalkDecision` (the result of `WalkFilter::should_walk`)
+    /// onto the envelope. A `Prune` decision means the path is
+    /// outside the analysis scope; `Skip` and `Include` are not
+    /// `FileDisposition` values — `Skip` means "descend but don't
+    /// classify this entry" (handled at the walk level, not here)
+    /// and `Include` means the entry will be classified by
+    /// `from_walk_classification` once read.
+    pub fn from_walk_decision(decision: WalkDecision) -> FileDisposition {
+        match decision {
+            WalkDecision::Prune => FileDisposition::ExcludedByPolicy {
+                reason: "walk_filter_pruned".to_string(),
+            },
+            // `Include` and `Skip` are walk-level decisions, not
+            // file dispositions; a file that survives a Skip
+            // decision is handled by `from_walk_classification`
+            // (the descent continues, the file is examined).
+            WalkDecision::Include | WalkDecision::Skip => FileDisposition::ExcludedByPolicy {
+                reason: "walk_decision_not_a_disposition".to_string(),
+            },
+        }
+    }
+
+    /// Project a `SkippedFile` (the result of a walk + read + parse
+    /// that failed for a typed reason) onto the envelope. This is
+    /// the call for paths that reached the read/parse stage and
+    /// produced a `SkippedFile` row.
+    pub fn from_skipped(skipped: &SkippedFile) -> FileDisposition {
+        match &skipped.reason {
+            SkipReason::Read(reason) => FileDisposition::ReadFailed {
+                reason: reason.clone(),
+            },
+            SkipReason::Parse(reason) => FileDisposition::ParseFailed {
+                reason: reason.clone(),
+            },
+            SkipReason::UnsupportedExtension(extension) => FileDisposition::UnsupportedRelevant {
+                extension: extension.clone(),
+            },
+            // `SkipReason::Other` is the honest fallback for I/O
+            // errors we can't name precisely. Mapping it to
+            // UnsupportedRelevant would falsely demote BuildStatus
+            // for paths we don't know about; the honest default is
+            // ExcludedByPolicy (we know nothing → we don't claim a
+            // gap).
+            SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
+                reason: reason.clone(),
+            },
+        }
+    }
 }
 
 /// Clasifica la extensión de un archivo de walk según el contrato K0.

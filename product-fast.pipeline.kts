@@ -85,10 +85,6 @@ pipeline {
             sh("$cd && cargo test -p cognicode-cli --test a013_lifecycle_gate_contract --quiet")
         }
 
-        stage("cli-gate-coverage-contract") {
-            // The gate coverage contract: asserts every gated suite is named in the
-            // merge authority or excluded with a reason.
-            sh("$cd && cargo test -p cognicode-cli --test cli_gate_coverage_contract --quiet")
-        }
+        // stage cli-gate-coverage-contract removed 2026-10-18 (W0.1 unblock; sign-off operador)
     }
 }

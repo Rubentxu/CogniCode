@@ -23,7 +23,7 @@ use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
-use crate::domain::value_objects::DependencyType;
+use crate::domain::value_objects::{DependencyType, WalkFilter};
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
@@ -659,28 +659,104 @@ impl AnalysisService {
     /// `graph_cache`.
     ///
     /// Useful when incremental, file-level invalidation is important.
-    fn build_graph_per_file(&self, project_dir: &Path) -> AppResult<()> {
+    ///
+    /// H1.3 (delivery-first-radical, package integration): this is now
+    /// a thin shim over `build_graph_per_file_with_report`. The
+    /// typed method is the single source of truth; the legacy method
+    /// keeps the `AppResult<()>` signature for callers that do not
+    /// need the report. `get_last_build_report()` is updated either
+    /// way.
+    pub fn build_graph_per_file(&self, project_dir: &Path) -> AppResult<()> {
+        self.build_graph_per_file_with_report(project_dir)
+            .map(|_| ())
+    }
+
+    /// Per-file strategy with the H1.1 typed report. Walks the tree
+    /// through [`WalkFilter::default`] (security blocklist + perf
+    /// skips), routes every file through `classify_walk_extension`,
+    /// feeds the `Analyze` set to `PerFileGraphCache::merge_with_report`,
+    /// and records the K0 honest gap (`.kt`/`.kts`) as
+    /// `SkipReason::UnsupportedExtension` so the consumer can see the
+    /// K0 bridge instead of a silent discard.
+    ///
+    /// The returned `BuildReport` is also stored in `last_build_report`
+    /// and `graph_cache` is updated with the merged graph. The legacy
+    /// `build_graph_per_file` is a shim over this.
+    pub fn build_graph_per_file_with_report(
+        &self,
+        project_dir: &Path,
+    ) -> AppResult<crate::infrastructure::graph::per_file_graph::BuildReport> {
         use crate::infrastructure::graph::PerFileGraphCache;
+        use crate::infrastructure::graph::per_file_graph::{
+            BuildReport as PfgBuildReport, BuildStatus as PfgBuildStatus,
+            SkipReason as PfgSkipReason, SkippedFile as PfgSkippedFile,
+            WalkClassification as PfgWalkClassification, classify_walk_extension,
+        };
 
         let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
+        let walk = WalkFilter::default();
 
-        // Index all supported files first — merge_all only merges cached entries.
-        // K0: la autoridad de "soportado" es el registro
-        // `Language::from_extension`, no una lista paralela (la lista
-        // previa de 9 extensiones descartaba tsx/jsx/rb/php/... en
-        // silencio).
-        if let Ok(entries) = std::fs::read_dir(project_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() && Language::from_extension(path.extension()).is_some() {
-                    let _ = cache.get_or_build(&path); // best-effort; ignore parse errors
+        let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
+        let mut k0_skipped: Vec<PfgSkippedFile> = Vec::new();
+
+        for entry in walkdir::WalkDir::new(project_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(|e| !walk.matches_any_component(e.path()))
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let ext = path.extension().and_then(|e| e.to_str());
+            match classify_walk_extension(ext) {
+                PfgWalkClassification::Analyze => file_paths.push(path.to_path_buf()),
+                PfgWalkClassification::KnownUnsupportedGap => {
+                    // K0 honest gap: the file is a real source in a
+                    // language we know about but have not yet wired
+                    // (Kotlin). The H1.1 envelope requires it to
+                    // surface in `skipped` so the consumer can see
+                    // the K0 bridge, not a silent "no findings".
+                    k0_skipped.push(PfgSkippedFile {
+                        path: path.to_string_lossy().into_owned(),
+                        reason: PfgSkipReason::UnsupportedExtension(ext.unwrap_or("").to_string()),
+                    });
+                }
+                PfgWalkClassification::LegitExclusion => {
+                    // README, image, lockfile: outside the analysis
+                    // scope by policy. Not a gap, not a skip — just
+                    // not part of the answer.
                 }
             }
         }
 
-        let graph = cache.merge_all();
-        self.graph_cache.replace(graph);
-        Ok(())
+        let file_path_refs: Vec<&Path> = file_paths.iter().map(|p| p.as_path()).collect();
+        let cache_report = cache.merge_with_report(&file_path_refs);
+
+        // Merge the per-file cache's own report (.rs parse/read
+        // failures) with our K0 honest-gap skips. The envelope
+        // collapses to Complete only when BOTH lists are empty.
+        let (graph, mut all_skipped) = match cache_report.status {
+            PfgBuildStatus::Complete => (cache_report.graph, Vec::new()),
+            PfgBuildStatus::Partial { skipped } => (cache_report.graph, skipped),
+        };
+        all_skipped.extend(k0_skipped);
+        let final_status = if all_skipped.is_empty() {
+            PfgBuildStatus::Complete
+        } else {
+            PfgBuildStatus::Partial {
+                skipped: all_skipped,
+            }
+        };
+        let final_report = PfgBuildReport {
+            graph,
+            status: final_status,
+        };
+
+        *self.last_build_report.lock().unwrap() = Some(final_report.clone());
+        self.graph_cache.replace(final_report.graph.clone());
+        Ok(final_report)
     }
 
     /// Builds a call graph for a subgraph limited to specific directories.
@@ -1573,25 +1649,14 @@ pub struct ContextData {
     pub after: Vec<String>,
 }
 
-/// Directories skipped during usage-search traversal
-/// (dependency/build/cache directories).
-const USAGE_SKIP_DIRS: &[&str] = &[
-    "node_modules",
-    ".git",
-    "target",
-    "vendor",
-    "dist",
-    "build",
-    "__pycache__",
-    ".cache",
-    ".next",
-    ".nuxt",
-    "coverage",
-    ".tox",
-    "venv",
-    ".venv",
-    "env",
-];
+// H1.3 (delivery-first-radical, package integration): the
+// usage-search walk used to consult a local `USAGE_SKIP_DIRS` const
+// that duplicated `WalkFilter::with_performance_skips` and missed
+// the security blocklist (a `.env` file was searched even though
+// `WalkFilter::default()` skips directories, and because it therefore does not
+// carry credentials). The const is gone; the canonical
+// `WalkFilter::default()` (security + performance) is the single
+// source of truth.
 
 /// Gets surrounding context lines for a given 0-indexed line
 fn context_data(source: &str, line: usize, context_size: usize) -> ContextData {
@@ -1639,18 +1704,16 @@ impl AnalysisService {
     pub fn find_symbol_usages(&self, params: UsageSearchParams) -> AppResult<Vec<UsageResult>> {
         let mut usages = Vec::new();
         let mut seen_first_definition = false;
+        // H1.3: WalkFilter::default() is the canonical
+        // security-blocklist + performance-skip set. The previous
+        // local USAGE_SKIP_DIRS const duplicated only the perf
+        // skips and missed `.env` and friends.
+        let walk = WalkFilter::default();
 
         for entry in walkdir::WalkDir::new(&params.project_dir)
             .follow_links(true)
             .into_iter()
-            .filter_entry(|e| {
-                // Skip known dependency/build/cache directories
-                if let Some(name) = e.file_name().to_str() {
-                    !USAGE_SKIP_DIRS.contains(&name)
-                } else {
-                    true
-                }
-            })
+            .filter_entry(|e| !walk.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();

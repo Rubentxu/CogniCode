@@ -10,6 +10,36 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/ROADMAP.md` (working doc local, no versionado).
 
+## [v0.101.23] — 2026-10-18
+
+**Corte de release que arregla la superficie MCP.** Un servidor MCP
+publicado respondía a `tools/list` con una lista vacía mientras el CLI
+funcionaba contra el mismo binario. Medido: desde dentro del repositorio
+toda versión anuncia 20 herramientas; desde fuera, v0.101.21 y anteriores
+anuncian 0. Eran tres defectos con un solo síntoma, y cada uno por sí solo
+lo habría ocultado:
+
+1. **Dos resolvers, dos respuestas.** El catálogo se resoltaba en
+   `catalog.rs` (CWD + `CARGO_MANIFEST_DIR`) y en `commands.rs` (CWD +
+   `current_exe`). El `--cwd` que el operador configura no llegaba a ninguno.
+   Ahora hay un solo resolver, con cuatro anclas en orden de prioridad, y
+   `CARGO_MANIFEST_DIR` ha desaparecido de la ruta de resolución.
+2. **Un global de proceso.** `tool_authority_map` y `tool_graph_deps_map`
+   son cachés `OnceLock` de por vida del proceso. Primados desde el CWD
+   heredado, veían un catálogo vacío; la regla fail-closed (una herramienta
+   no declarada se trata como mutante) ocultaba entonces todo el conjunto de
+   lectura. Por eso el modo read-only anunciaba cero y no simplemente menos.
+3. **El instalador no distribuye datos de producto.** No hay `product/`
+   bajo `~/.cognicode`. `product/tools.json` se compila ahora dentro del
+   binario con `include_str!`: sigue habiendo una única fuente de verdad — el
+   mismo fichero escrito a mano — pero también vive dentro del binario,
+   donde ningún layout de instalación puede perderlo.
+
+Harness: tres resolvers de binarios que contestaban tres preguntas
+distintas sobre dónde escribe cargo, uno de ellos parseando el JSON de
+cargo partiendo el texto. Ahora hay una autoridad por crate. Y el lane de
+publicaciónresultó no ser idempotente: sólo se había ejecutado una vez.
+
 ## [v0.101.22] — 2026-10-17
 
 **Corte de release de K0 (línea Kotlin K0–K3 subordinada a CU-2).**

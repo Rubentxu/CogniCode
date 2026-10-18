@@ -784,11 +784,17 @@ pipeline {
 
         // ------------------------------------------------------ release-contracts
         //
-        // 2026-10-15 / B1 (ADR-TH-005). These six suites are the reason a merge
+        // 2026-10-15 / B1 (ADR-TH-005). These suites are the reason a merge
         // used to build four release artifacts: they tar, generate and verify
         // release-profile bytes, or spawn them as two processes. They run here
         // now, against the artifacts this lane builds and packages, and the
-        // merge lane no longer pays for binaries none of its own suites read.
+        // merge lane no longer pays for binaries it does not read.
+        //
+        // MEDIDO 2026-10-18. "binaries it does not read" era la premisa, y era
+        // falsa por uno: `b6_w1_mcp_robustness` leía release y se quedó aquí
+        // porque el merge gate corre el fichero entero. No se notó porque el test
+        // se saltaba en silencio. Ese caso se corrige dos entradas más abajo, con
+        // su propia stage y su nombre.
         //
         // The group sits outside `targets.forEach` on purpose: the suites execute
         // host binaries, so they are evidence for the host target once, not for
@@ -810,6 +816,35 @@ pipeline {
             stage("published-skill-bundles-are-required") {
                 sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
                     cargo test -p cognicode-cli --test published_skill_bundles_are_required --quiet
+                """.trimIndent())
+            }
+
+            // MEDIDO 2026-10-18. `b6_w1_mcp_robustness` trae un test que
+            // consume bytes EN RELEASE y que el merge gate corría, con la lane
+            // sin construir release: el test pedía release y el gate no
+            // construía release. Antes de endurecer su aserción imprimía `SKIP:`
+            // y hacía `return`, así que el rojo no existía y la cobertura era
+            // nominal — un gate que declara medir release sin medirlo.
+            //
+            // Su sitio es aquí, con los otros, por la razón de siempre: esta lane
+            // ya construyó este binario en release (`build-cognicode-mcp-release`)
+            // y `releaseContractEnv` ya lo verificó ejecutándolo. Correrlo aquí
+            // no cuesta un build; correrlo en el merge gate costaba 269 s.
+            //
+            // La ruta se pasa explícita. `cargo metadata` resolvería el mismo
+            // binario, pero el test entonces mide "lo que cargo dice" en vez de
+            // "el artefacto que esta lane verificó", que es la diferencia entre
+            // una prueba y una suposición.
+            stage("core-b6-w1-release-stdio-smoke") {
+                sh(releasePaths + "\n" + releaseContractEnv(targets.first()) + "\n" + """
+                    set -eo pipefail
+                    export COGNICODE_MCP_BIN_RELEASE="${'$'}TARGET_DIR/release/cognicode-mcp"
+                    if [ ! -x "${'$'}COGNICODE_MCP_BIN_RELEASE" ]; then
+                        echo "FAIL: ${'$'}COGNICODE_MCP_BIN_RELEASE is missing or not executable."
+                        exit 1
+                    fi
+                    cargo test -p cognicode-core --test b6_w1_mcp_robustness --quiet \\
+                        -- release_binary_stdio_round_trip_smoke
                 """.trimIndent())
             }
         }

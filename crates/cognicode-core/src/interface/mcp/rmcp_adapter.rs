@@ -138,6 +138,7 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
+        crate::interface::catalog::configure_product_assets_root(project_root.clone());
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
@@ -159,6 +160,7 @@ impl CogniCodeHandler {
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
+        crate::interface::catalog::configure_product_assets_root(project_root.clone());
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
@@ -188,6 +190,16 @@ impl CogniCodeHandler {
     ) -> HandlerContext {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
+
+        // Publish the configured workspace before anything reads the
+        // catalogue. The authority and dependency maps are `OnceLock`-cached
+        // for the process lifetime, so they cannot consult a per-call anchor:
+        // whichever view they prime from becomes the server's answer for
+        // good. Priming them from the inherited process CWD is what made
+        // read-only mode advertise zero tools when the server was launched
+        // from outside the repository — the catalogue was empty, so every
+        // tool looked undeclared, and the fail-closed rule hid all of them.
+        crate::interface::catalog::configure_product_assets_root(canonical_root.clone());
 
         // Create validator and FileOperationsService for shared use across handlers
         let validator = Arc::new(
@@ -473,6 +485,24 @@ pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
 /// Public so the A-012 contract suite can compare what the catalog advertises
 /// against what the derive produces. Read-only: it rebuilds the vector.
 pub fn build_all_tools() -> Vec<Tool> {
+    build_all_tools_from(None)
+}
+
+/// [`build_all_tools`], anchored on an explicitly configured workspace root.
+///
+/// `anchor` is the `--cwd` the operator (or the MCP client config) supplied.
+/// The server already treats it as the analysis workspace, so the catalogue
+/// must be read from the same place: an MCP client launches the process with
+/// CWD set to the *user's project*, which is not the checkout, and a catalogue
+/// resolved from the inherited CWD is empty. That is the difference between a
+/// server advertising 20 tools and one advertising none while looking perfectly
+/// healthy — exit 0, well-formed JSON-RPC, no diagnostic.
+///
+/// Same argument for `tool_authority_map` and `tool_graph_deps_map`: both
+/// are `OnceLock`-cached for the process lifetime, so they must be primed from
+/// the same anchored view or a server that starts in one workspace and is asked
+/// about another keeps answering with the first workspace's catalogue.
+pub fn build_all_tools_from(anchor: Option<&std::path::Path>) -> Vec<Tool> {
     // B2.W2: the catalog is the single source of truth. The previous
     // implementation was a 970-line inline `vec![Tool::new(...)...]`
     // that listed every tool in code; any drift between this list and
@@ -487,7 +517,8 @@ pub fn build_all_tools() -> Vec<Tool> {
     // feature-gated tool that slipped past the catalog filter would
     // still fail to dispatch — defence in depth, not a single point
     // of failure.
-    crate::interface::catalog::load_tool_catalog_active()
+    build_report_from(anchor)
+        .tools
         .into_iter()
         .map(descriptor_to_tool)
         .map(|mut tool| {
@@ -508,6 +539,27 @@ pub fn build_all_tools() -> Vec<Tool> {
             tool
         })
         .collect()
+}
+
+/// The active catalogue plus its provenance, warning when it is unusable.
+///
+/// A server that cannot load its catalogue says so on stderr. stdout belongs
+/// to JSON-RPC; an empty `tools/list` with no diagnostic is how this shipped
+/// broken in the first place, and nothing downstream can distinguish "the
+/// product has no tools" from "this build lost its catalogue".
+fn build_report_from(anchor: Option<&std::path::Path>) -> crate::interface::catalog::CatalogReport {
+    let report = crate::interface::catalog::load_tool_catalog_report(anchor);
+    if let Some(message) = report.diagnostic() {
+        eprintln!("cognicode-mcp: warning: {message}");
+    }
+    crate::interface::catalog::CatalogReport {
+        tools: report
+            .tools
+            .into_iter()
+            .filter(|d| crate::interface::catalog::tool_feature_enabled(&d.feature))
+            .collect(),
+        source: report.source,
+    }
 }
 
 /// Project a `ToolDescriptor` into the rmcp `Tool` model.
@@ -605,26 +657,55 @@ impl ServerHandler for CogniCodeHandler {
     ) -> impl std::future::Future<Output = Result<ListToolsResult, rmcp::ErrorData>> + Send + '_
     {
         async move {
-            use base64::Engine;
+            use crate::interface::mcp::cursor::{CursorContext, encode_cursor, verify_cursor};
 
-            // Parse cursor for pagination (base64 encoded offset)
-            let cursor_offset = request
-                .as_ref()
-                .and_then(|p| p.cursor.as_ref())
-                .and_then(|c| base64::engine::general_purpose::STANDARD.decode(c).ok())
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
+            // The catalogue is read from the workspace this server was
+            // configured with (`--cwd`), never from the inherited process
+            // CWD: an MCP client launches the process inside the *user's*
+            // project, which is not the checkout, and a catalogue resolved
+            // from there is empty — a healthy-looking server advertising no
+            // tools at all. Built once and shared with the cursor snapshot
+            // below, so the two cannot disagree.
+            let visible_tools: Vec<Tool> = build_all_tools_from(Some(self.ctx.working_dir()))
+                .into_iter()
+                .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
+                .collect();
+
+            // H2.3: anchored cursor with typed errors. The cursor
+            // is a compact base64-JSON envelope; a tampered or
+            // expired cursor surfaces as a JSON-RPC error with
+            // `kind` + `reason`, not a silent reset to page 0.
+            let cursor_ctx = {
+                let visible = visible_tools
+                    .iter()
+                    .map(|t| t.name.as_ref())
+                    .collect::<Vec<_>>()
+                    .join("|");
+                CursorContext {
+                    workspace: "__tools__".to_string(),
+                    snapshot: format!("read_only:{}|{}", self.ctx.is_read_only(), visible),
+                }
+            };
+            let cursor_offset: usize = match request.as_ref().and_then(|p| p.cursor.as_deref()) {
+                Some(c) => match verify_cursor(c, &cursor_ctx) {
+                    Ok(off) => off,
+                    Err(e) => {
+                        return Err(rmcp::ErrorData {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("{e}").into(),
+                            data: Some(serde_json::to_value(&e).unwrap_or(serde_json::Value::Null)),
+                        });
+                    }
+                },
+                None => 0,
+            };
 
             const PAGE_SIZE: usize = 20;
 
             // PRF-SEC-02 + PRF-MCP-05: in read-only mode mutating tools are not advertised.
             // Authority comes from the declared `cognicode.authority` field (primary
             // oracle), with no second list to fall back to.
-            let all_tools: Vec<_> = build_all_tools()
-                .into_iter()
-                .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
-                .collect();
+            let all_tools = visible_tools;
 
             // Paginate
             let total = all_tools.len();
@@ -635,10 +716,7 @@ impl ServerHandler for CogniCodeHandler {
                 .collect();
 
             let next_cursor = if cursor_offset + PAGE_SIZE < total {
-                Some(
-                    base64::engine::general_purpose::STANDARD
-                        .encode((cursor_offset + PAGE_SIZE).to_string()),
-                )
+                Some(encode_cursor(&cursor_ctx, cursor_offset + PAGE_SIZE))
             } else {
                 None
             };

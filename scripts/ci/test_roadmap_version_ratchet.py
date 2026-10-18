@@ -112,9 +112,19 @@ def roadmap_or_journal_cites(version: str) -> tuple[bool, str]:
 
 
 def current_snapshot_sha() -> str | None:
-    """Extract the long SHA quoted in CURRENT.md header."""
+    """Extract the long SHA the CURRENT.md snapshot header declares.
+
+    Anchored to the same `Snapshot**:` declaration that carries the date,
+    not to the first 40-hex token in the file. CURRENT.md also quotes SHAs
+    in its historical body — the previous snapshot, the "SHA funcional"
+    line, per-release receipts — and reading the first match anywhere meant
+    a stale SHA in that body could satisfy the ratchet while the header
+    declared a different tree, or the reverse: a header update could be
+    masked by an unrelated historical line. A ratchet that measures a
+    different SHA than the one it claims to measure is not a ratchet.
+    """
     text = _read(CURRENT)
-    m = re.search(r"\b([0-9a-f]{40})\b", text)
+    m = re.search(r"Snapshot\*\*:[^\n]*?\b([0-9a-f]{40})\b", text)
     return m.group(1) if m else None
 
 

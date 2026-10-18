@@ -104,10 +104,24 @@ impl AnalysisBasis {
     ///     un directorio vacio).
     pub fn for_workspace(workspace_root: PathBuf) -> Self {
         let normalized = normalize_path(&workspace_root);
-        let absolute = if normalized.is_absolute() {
+        // Step 2: absolutize against the cwd. The empty-after-normalize
+        // case (".", "", "./..") is anchored at the cwd directly because
+        // `std::path::absolute("")` returns the empty path unchanged on
+        // stable Rust, which would otherwise produce a relative basis
+        // and break the cache key. When the input is a non-empty
+        // relative path, prefer `std::path::absolute` and fall back to
+        // `cwd.join(normalized)` if the syscall layer is unavailable
+        // (sandbox without a working dir, e.g. chroot scenarios).
+        let absolute = if normalized.as_os_str().is_empty() {
+            std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"))
+        } else if normalized.is_absolute() {
             normalized
         } else {
-            std::path::absolute(&normalized).unwrap_or(normalized)
+            std::path::absolute(&normalized).unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|cwd| cwd.join(&normalized))
+                    .unwrap_or(normalized)
+            })
         };
         let workspace_root = if absolute.exists() {
             absolute.canonicalize().unwrap_or(absolute)

@@ -225,6 +225,76 @@ def test_every_consumer_has_an_earlier_producer() -> None:
         failures.extend(check_pipeline(path))
 
 
+# The consumer `check_pipeline` cannot see: a contract that EXECUTES a binary
+# whose path it resolves at runtime, instead of naming it in the pipeline text.
+#
+# `test_assurance_export_golden.py` runs `cognicode export assurance` and finds
+# the binary through `cargo metadata`. `CONSUMES` matches `target/(release|
+# debug)/...` written literally in a step body; a path cargo resolves never
+# appears in the pipeline text, so the check above walks straight past this.
+#
+# MEDIDO 2026-10-18. `merge-gate.pipeline.kts` runs `contracts` as its first
+# real stage and nothing before it built `cognicode`. The contract survived on
+# the gate only because it also looked in a hardcoded developer-machine path
+# that happened to hold a binary; on a fresh checkout-isolation directory it
+# has nothing to run. The consumer was first, the producer second, and the
+# stage order is the whole invariant this file exists to state.
+#
+# Deliberately narrow, and deliberately only about ORDER. This is not "every
+# binary every contract runs must be built" — that would need a runtime trace,
+# and a static check that guesses it would be the self-satisfying checker the
+# PRODUCES comment above warns about. It is the one case measured to have
+# bitten, stated as exactly that case.
+#
+# Only `--bin <name>` counts as producing, not `--bins`: naming the package and
+# letting cargo choose would make the answer depend on which bins that package
+# happens to declare, which is a fact about a `Cargo.toml` this file cannot see
+# and must not assume. Naming the bin is the explicit form, so it is the one
+# this requires — and `build-cognicode-cli-debug --bins` does not satisfy it,
+# by design rather than by oversight.
+CONTRACT_BINARY = "cognicode"
+BUILDS_BINARY = re.compile(r"cargo\s+build\b[^\n]*--bin\s+([\w-]+)")
+
+
+def test_the_contract_runner_runs_after_the_binary_it_executes_is_built() -> None:
+    """`run-all-contracts.sh` executes `cognicode`; build it before calling it."""
+    path = REPO_ROOT / "merge-gate.pipeline.kts"
+    text = path.read_text(encoding="utf-8")
+
+    # Positions, not just bodies: `stage_of` needs where the step sits to name
+    # the enclosing stage, and locating it by searching the file for the body
+    # text reports "(top level)" the moment a comment quotes the same words.
+    steps = [
+        (
+            match.start(),
+            (match.group(1) if match.group(1) is not None else match.group(2) or "")
+            .replace("${'$'}", "$"),
+        )
+        for match in STEP.finditer(text)
+    ]
+
+    runners = [(pos, body) for pos, body in steps if "run-all-contracts.sh" in body]
+    check(
+        bool(runners),
+        f"{path.name} no longer runs `run-all-contracts.sh`. If the contract "
+        f"suite moved to another lane, this check is following a dead pipeline "
+        f"and the new owner has to be named here instead.",
+    )
+
+    for position, _ in runners:
+        earlier = "\n".join(
+            body for start, body in steps if start < position
+        )
+        check(
+            CONTRACT_BINARY in BUILDS_BINARY.findall(earlier),
+            f"{path.name} runs the contract suite in stage "
+            f"`{stage_of(text, position)}` with no earlier step building "
+            f"`{CONTRACT_BINARY}`. Stages share the filesystem, so ordering is "
+            f"the whole invariant: the consumer has to come after the producer, "
+            f"in this file's declaration order.",
+        )
+
+
 def main() -> int:
     for name, func in sorted(globals().items()):
         if name.startswith("test_") and callable(func):

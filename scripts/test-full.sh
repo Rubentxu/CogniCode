@@ -6,7 +6,12 @@
 #   2. cargo clippy --workspace --all-targets -- -D warnings
 #   3. cargo test --workspace
 #   4. cargo test --workspace --doc
-#   5. check_known_failures sobre cognicode-core/lib
+#   5. scripts/ci/run-all-contracts.sh
+#   6. check_known_failures sobre cognicode-core/lib
+#
+# El paso 5 se anadio el 2026-10-18; antes, este script era un subconjunto
+# del gate de merge y un verde aqui no significaba "mergable". Ver el
+# comentario junto al paso.
 #
 # Política contractual: ver AGENTS.md § "Estrategia de tests".
 # Modo de uso: antes de tag / antes de PR a main / antes de bump SemVer.
@@ -42,6 +47,24 @@ run_step "fmt --check"           bash -c "cargo fmt --all --check"
 run_step "clippy -D warnings"    bash -c "cargo clippy --workspace --all-targets -- -D warnings"
 run_step "test --workspace"      bash -c "cargo test --workspace"
 run_step "test --workspace --doc" bash -c "cargo test --workspace --doc"
+
+# MEDIDO 2026-10-18. Este paso no estaba aqui, y su ausencia hacia que un
+# `test-full` VERDE no significara "esto se puede mergear". El gate de
+# merge corre `scripts/ci/run-all-contracts.sh`; `test-full.sh` no. Medido en
+# db1f0c32: la bateria Rust rc=0 en los cinco pasos, y las superficies
+# publicas seguian declarando v0.101.22 mientras el workspace estaba en
+# 0.101.23 — README (release actual, binarios, tag, pin de mise, pin de
+# install), CHANGELOG y SECURITY.md. El battery Rust no puede ver ninguna de
+# esas siete afirmaciones, porque ninguna vive en codigo compilado.
+#
+# El modo de fallo que produce la diferencia es peor que un rojo: el
+# operador ve verde, hace push, y descubre el rojo en el merge gate, donde el
+# gate real ya fallo y el trabajo esta a medias. Un gate que es un subconjunto
+# del gate que de verdad decide no es un gate previo; es una estimacion.
+#
+# La suite es un superconjunto, no una sustitucion: anade cobertura, no quita
+# ninguna. El mismo script, el mismo codigo, un paso mas.
+run_step "contracts"             bash -c "bash scripts/ci/run-all-contracts.sh"
 
 if [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
   run_step "known_failures (core/lib)" \

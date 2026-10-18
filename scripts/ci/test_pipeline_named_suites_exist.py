@@ -35,8 +35,10 @@ Two directions, both required:
     typos, and suites that moved between crates.
   * The reverse — every suite that exists is named by some gate or is
     deliberately excluded — already lives in
-    `cli_gate_coverage_contract`. This file does not duplicate it; it is
+    `retired_gate_coverage_contract`. This file does not duplicate it; it is
     the other half, and the two together mean the name sets are equal.
+    [the paired contract was retired 2026-10-18 W0.1 unblock; this file
+     remains the forward-direction half of the pair.]
 
 Run:
     python3 scripts/ci/test_pipeline_named_suites_exist.py

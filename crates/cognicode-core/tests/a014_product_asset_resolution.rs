@@ -104,35 +104,41 @@ fn walk_up_for_product_data(start: &Path) -> Option<PathBuf> {
 /// This reads the source rather than the behaviour because the behaviour
 /// depends on whether the build directory still exists, which a test cannot
 /// control. The source is the stable thing to pin.
+///
+/// **Scope.** The rule applies to every function that participates in
+/// product-asset resolution, in both files that take part: `commands.rs`
+/// (CLI capabilities document) and `catalog.rs` (the catalogue the MCP
+/// `tools/list` is derived from). Checking only `commands.rs` is what let
+/// the MCP regression through — the two had separate resolvers, one of
+/// which grew the literal back while the test watched the other.
 #[test]
 fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
-    let source = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/interface/cli/commands.rs"),
-    )
-    .expect("commands.rs must be readable");
+    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
-    // Inspect the two functions that together resolve the assets:
-    // `resolve_product_assets_root` (the search) and
+    // Inspect every function that together resolves the assets. In
+    // `commands.rs` that is `resolve_product_assets_root` (the search) and
     // `build_capabilities_doc` (the caller). Inspecting only the former let
     // the defect through: restoring `env!("CARGO_MANIFEST_DIR")` in the
     // caller while leaving the resolver defined still passed 3/3, which is a
     // contract that proves nothing.
-    let offenders: Vec<&str> = [
-        "fn build_capabilities_doc",
-        "fn resolve_product_assets_root",
-    ]
-    .iter()
-    .map(|sig| {
-        let start = source
-            .find(sig)
-            .unwrap_or_else(|| panic!("{sig} must exist in commands.rs"));
-        let rest = &source[start..];
-        // End at the next top-level `fn ` so the slice covers exactly
-        // one function, not the rest of the file.
-        let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
-        &rest[..end]
-    })
-    .collect();
+    let inspected: &[(&str, &[&str])] = &[
+        (
+            "src/interface/cli/commands.rs",
+            &[
+                "fn build_capabilities_doc",
+                "fn resolve_product_assets_root",
+            ],
+        ),
+        (
+            "src/interface/catalog.rs",
+            &[
+                "fn resolve_product_assets_root_from",
+                "fn load_tool_catalog_from",
+                "fn catalog_candidate_paths",
+                "fn load_tool_catalog_active_from",
+            ],
+        ),
+    ];
 
     // The doc comment of a function precedes its signature, so a
     // signature-anchored slice also captures the comment above it — and a
@@ -150,27 +156,85 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
             .join("\n")
     };
 
-    for body in &offenders {
-        let code = strip_line_comments(body);
-        // The compile-time env! macro is the defect. A runtime
-        // `std::env::var("CARGO_MANIFEST_DIR")` would also be wrong, so both
-        // spellings are rejected.
-        assert!(
-            !code.contains("env!(\"CARGO_MANIFEST_DIR\")"),
-            "the capabilities path uses env!(\"CARGO_MANIFEST_DIR\") in \
-             executable code, which is frozen at compile time and names the \
-             build machine. A published binary would resolve product/ \
-             against a path its user does not have, and would advertise \
-             zero tools."
-        );
-        assert!(
-            !code.contains("std::env::var(\"CARGO_MANIFEST_DIR\")"),
-            "the capabilities path reads CARGO_MANIFEST_DIR at runtime in \
-             executable code. Cargo does not export it to the running \
-             binary in any meaningful way, and it is the wrong anchor \
-             regardless."
-        );
+    for (rel_path, signatures) in inspected {
+        let source = std::fs::read_to_string(crate_dir.join(rel_path))
+            .unwrap_or_else(|e| panic!("{rel_path} must be readable: {e}"));
+
+        for sig in *signatures {
+            let start = source
+                .find(sig)
+                .unwrap_or_else(|| panic!("{sig} must exist in {rel_path}"));
+            let rest = &source[start..];
+            // End at the next top-level `fn ` so the slice covers exactly
+            // one function, not the rest of the file. Nested helpers are
+            // indented and therefore do not terminate the slice.
+            let end = rest[1..].find("\nfn ").map(|i| i + 1).unwrap_or(rest.len());
+            let code = strip_line_comments(&rest[..end]);
+
+            // The compile-time env! macro is the defect. A runtime
+            // `std::env::var("CARGO_MANIFEST_DIR")` would also be wrong, so
+            // both spellings are rejected.
+            assert!(
+                !code.contains("env!(\"CARGO_MANIFEST_DIR\")"),
+                "`{sig}` in {rel_path} uses env!(\"CARGO_MANIFEST_DIR\") in \
+                 executable code, which is frozen at compile time and names \
+                 the build machine. A published binary would resolve \
+                 product/ against a path its user does not have, and would \
+                 advertise zero tools."
+            );
+            assert!(
+                !code.contains("CARGO_MANIFEST_DIR"),
+                "`{sig}` in {rel_path} references CARGO_MANIFEST_DIR in \
+                 executable code. Cargo sets it while compiling and while \
+                 running tests, and passes it down to every spawned child, \
+                 but a published binary never has it. Depending on it keeps \
+                 the test suite green while the deployed server finds no \
+                 catalogue at all — the exact regression this rule exists to \
+                 prevent."
+            );
+        }
     }
+}
+
+/// The explicit anchor outranks everything the process can infer.
+///
+/// An MCP client launches the server with CWD set to the *user's project* and
+/// passes the analysis workspace separately. When the two disagree — which is
+/// every real deployment — the configured workspace is the one that must win,
+/// because that is the only anchor the operator actually chose. This test
+/// pins that priority: the tempdir has the product data, the process CWD
+/// (inside the checkout) also has it, and the resolver must return the
+/// tempdir.
+#[test]
+fn explicit_anchor_outranks_the_inherited_working_directory() {
+    use cognicode_core::interface::catalog::resolve_product_assets_root_from;
+
+    let tmp = tempfile::tempdir().expect("create tempdir");
+    let product = tmp.path().join("product");
+    std::fs::create_dir_all(&product).expect("create product dir");
+    std::fs::write(
+        product.join("tools.json"),
+        r#"{"schema_version":"cognicode.tools/v1","tools":[]}"#,
+    )
+    .expect("write tools.json");
+
+    // Precondition: the process CWD does carry product data, so a resolver
+    // that ignored the anchor would return something *different* and fail.
+    // Without this assertion the test could pass for the wrong reason.
+    assert!(
+        resolve_product_assets_root_from(None).is_some(),
+        "precondition: the test process CWD is inside the checkout and must \
+         resolve product data on its own, otherwise this test proves nothing \
+         about anchor priority"
+    );
+
+    let resolved = resolve_product_assets_root_from(Some(tmp.path()))
+        .expect("the explicit anchor carries product/tools.json");
+    assert_eq!(
+        resolved,
+        tmp.path(),
+        "the explicit anchor must outrank the inherited working directory"
+    );
 }
 
 // ============================================================================

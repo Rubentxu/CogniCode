@@ -11,10 +11,12 @@ afirmación era falsa y el propio docstring lo decía sin verlo:
 Eso no era un coste aceptable, era un conflicto con un contrato anterior que
 no se había leído al cambiar nada:
 
-    cli_gate_coverage_contract::the_gate_provides_what_the_release_flow_
+    retired_gate_coverage_contract::the_gate_provides_what_the_release_flow_
     suites_require
     "the merge gate runs suites that require real release-profile binaries
      (cogh, cognicode, cognicode-release) but never builds them"
+    [the test file with that stem was retired 2026-10-18 W0.1 unblock;
+     assertion now lives only in this module's own logic below]
 
 Cuatro suites UAT de la CLI resuelven sus binarios por `target/release/`. El
 gate las ejecuta. Quitar el build no quita trabajo: quita la precondición de
@@ -36,9 +38,11 @@ quitarlos de allí.
 MEDIDO además: el colapso de 73 etapas a 8 que acompaña a este cambio costó
 124 ms por etapa, 8,9 s en total. No era la fuente del problema.
 
-Lo que queda en este módulo son las dos mitades que siguen siendo verdaderas:
-la lane de release construye lo que tiene que construir, y no ha perdido su
-propia etapa de build al mover cosas.
+Lo que queda en este módulo son las tres mitades que siguen siendo verdaderas:
+la lane de release construye lo que tiene que construir, no ha perdido su
+propia etapa de build al mover cosas, y lo que el gate de merge saca de su
+lado tiene dueño — una lane que lo corre, o una razón escrita de por qué no
+es un traspaso.
 
 Run:
     python3 scripts/ci/test_merge_gate_release_work_split.py
@@ -58,11 +62,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 MERGE_GATE = REPO_ROOT / "merge-gate.pipeline.kts"
 RELEASE_LANE = REPO_ROOT / "release-candidate.pipeline.kts"
 
-# What a merge must not build, and what a release must.
-RELEASE_ONLY_IN_GATE = (
-    (r"cargo\s+build\s+--release", "a release-profile build"),
-    (r"cargo\s+doc\s+--workspace", "the workspace documentation build"),
-)
+# What a release must build.
+#
+# MEDIDO 2026-10-18. `RELEASE_ONLY_IN_GATE` vivió aquí hasta este commit y no
+# lo leía nadie: era el resto de la aserción que este módulo retiró el
+# 2026-10-15, y al retirarla se dejó la constante. El docstring de arriba
+# explica por qué esa aserción era falsa — y el nombre de la constante decía
+# lo contrario, en voz alta, a quien abriera el fichero después.
+#
+# Un contrato que nombra lo que NO se debe hacer y no lo comprueba es peor
+# que un contrato ausente: no falla, informa. La regla que queda aquí es la
+# que este módulo sabe defender — la lane de release construye lo que una
+# release necesita — y la otra mitad, el reparto, vive donde el reparto
+# está escrito: ADR-TH-005 y las cabeceras de `merge-gate.pipeline.kts`.
 REQUIRED_IN_LANE = (
     ("host-build-and-verify", "the host binary build"),
     ("public-docs", "the zero-warning documentation build"),
@@ -70,6 +82,18 @@ REQUIRED_IN_LANE = (
 )
 
 failures: list[str] = []
+
+# Skips the merge gate makes that are NOT "this moved to the release lane".
+# Each entry carries its reason, because the classification is the whole value:
+# an unexplained skip in this list is indistinguishable from a deleted test.
+SKIPS_NOT_A_LANE_MOVE = {
+    # The compat matrix runs only when the legacy 0.97.3 fixture is present
+    # (ADR-PRF-008 policy R1), and this one test inside it is excluded on its
+    # own terms. It is an exclusion inside a conditional stage, not a handoff:
+    # no lane builds the 0.97.3 server, so "move it to the release lane" is not
+    # an available answer to it.
+    "compat_forward_0973_server_handles_modern_request",
+}
 
 
 def check(condition: bool, message: str) -> None:
@@ -105,6 +129,50 @@ def test_the_release_lane_actually_does_it() -> None:
             f"checks it anywhere. `cognicode-control-plane` is a host binary and "
             f"the per-target stage cross-compiles only cogh, cognicode and "
             f"cognicode-mcp, so dropping this leaves it built by no lane.",
+        )
+
+
+def test_a_test_the_gate_selects_out_is_claimed_by_the_release_lane() -> None:
+    """A `--skip` in the gate is a promise, and a promise belongs to a lane.
+
+    MEDIDO 2026-10-18. `b6_w1_mcp_robustness` trae un test que consume bytes
+    EN RELEASE. El merge gate corre el fichero entero y ADR-TH-005 quita al
+    gate todo build release, así que el test recibía una precondición que la
+    lane no cumple. No se notó porque imprimía `SKIP:` y hacía `return`: un
+    gate que declara medir release sin construir release, en silencio.
+
+    Endurecer la aserción lo volvió rojo, y la respuesta honesta no fue
+    devolver el build al gate — MEDIDO en 269 s en target dir vacío, el 40% de
+    lo que ADR-TH-005 ahorró al dejar de construir cuatro binarios — sino
+    mover el test a donde el binario ya se construye.
+
+    Eso deja un `--skip` en el gate, que es código invisible para quien lee el
+    test y silencioso para quien lee la etapa. Un skip sin dueño es cobertura
+    perdida con sintaxis de cobertura. Este contrato le pone dueño: lo que el
+    gate saca, la lane de release lo tiene que correr.
+
+    Un skip puede ser otra cosa.
+    `compat_forward_0973_server_handles_modern_request` se salta dentro de una
+    etapa que ya es condicional (el fixture 0.97.3, ADR-PRF-008 R1) y no es un
+    traspaso entre lanes: es una exclusión puntual dentro de la propia matriz de
+    compatibilidad. Escalar eso a "la lane de release debe correrlo" sería
+    falso, y un contrato que miente para poder pasar no es un contrato. Lo que
+    se exige es más estrecho y más honesto: cada skip que el gate hace está
+    clasificado aquí, con su motivo. Un skip nuevo sin clasificar falla.
+    """
+    skipped = set(re.findall(r"--skip[= ]+([A-Za-z0-9_]+)", code_of(MERGE_GATE)))
+    release_text = code_of(RELEASE_LANE)
+    for name in sorted(skipped):
+        if name in SKIPS_NOT_A_LANE_MOVE:
+            continue
+        check(
+            name in release_text,
+            f"{MERGE_GATE.name} selects `{name}` out of the merge gate, and "
+            f"{RELEASE_LANE.name} never names it. A test the gate skips and no "
+            f"lane runs is not a moved test, it is a deleted one — and a deleted "
+            f"test that still reads like coverage is the failure mode this "
+            f"contract exists for. If this skip is not a lane move, classify it "
+            f"in SKIPS_NOT_A_LANE_MOVE with its reason.",
         )
 
 

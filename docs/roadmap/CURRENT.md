@@ -9,19 +9,47 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-17, sobre `main` HEAD
-> `4e1821f534b443328f1f4e4299731af09174b1a1` (squash del PR #377:
-> K0 cerrado y bumpeado a **v0.101.22**). La release v0.101.21
-> (CU-2.5) está en `755e97a6` (HEAD previo) y se publicó
-> 2026-10-17T18:27:37Z, 8 assets, asset-set PASS — ver
-> `production-ready/veredictos/2026-10-17-cu2-release-v0.101.21.md`.
-> **K0 cerrado (línea Kotlin K0–K3), CU-2 sigue completo (5/5).**
+> **Snapshot**: 2026-10-18, sobre `47b21cc7293ca77b0ecd30506f9b8c1cd44807e0` (rama `chore/dft-radical-pruning`,
+> PR #379: el catálogo de herramientas MCP sobrevive a una instalación que
+> no distribuye `product/`). **v0.101.23 publicada** 2026-10-18T15:26:15Z,
+> 8 assets, `sha256sum -c` verde sobre los bytes redescargados, asset-set
+> PASS, `/releases/latest` resolviendo al tag nuevo, y `tools/list`
+> anunciando 20 herramientas desde el binario descomprimido fuera de
+> cualquier repositorio y sin `CARGO_MANIFEST_DIR` en el entorno.
+> Snapshot previo (2026-10-17, v0.101.22 / K0 cerrado, CU-2 completo 5/5)
+> conservado en el historial de este fichero.
 >
-> Próxima unidad: K0.1 (`taxonomía por fichero` +
-> `CompleteForScope`, mismo PATCH SemVer) o K1 (tree-sitter-kotlin,
-> primera release de Kotlin utilizable). Ver
-> `consumer-contracts/kotlin-evolution/MILESTONES.md` y
-> `consumer-contracts/kotlin-evolution/INTEGRATION.md`.
+> Nota de proceso: este snapshot estaba congelado en `4e1821f534b4` y el
+> ratchet de contratos — que `scripts/test-full.sh` **no** ejecuta — lo
+> detectó al publicar. La batería Rust puede estar verde y la verdad de
+> release incoherentente al mismo tiempo; son dos gates distintos. Corregido
+> en `47b21cc7`: `full` incluye ahora `run-all-contracts.sh`, y ese ratchet es
+> una de las cosas que ve.
+>
+> **Entrada 76**: el `merge-gate` cerró el hueco que esa incoherencia dejó
+> detrás. `release_binary_stdio_round_trip_smoke` es el séptimo consumidor de
+> bytes release — ADR-TH-005 movió seis a la lane de release y éste se quedó
+> porque el gate corre el fichero entero — y llevaba años imprimiendo
+> `SKIP:`. La cobertura no se rebajó ni se devolvió al gate: se movió a
+> `release-candidate.pipeline.kts`, donde el binario ya se construye, y el
+> `--skip` que deja el gate tiene ahora dueño comprobable. Coste medido de la
+> alternativa descartada: **269 s** por merge, el 40% de lo que ADR-TH-005
+> ahorró con cuatro binarios. Detalle en `JOURNAL.md`.
+>
+> **Entrada 77**: el `merge-gate` de `365b5a52` falló en `contracts/sh-0` y
+> la causa fue la tercera del mismo tipo en este ciclo, la primera en Python.
+> `test_assurance_export_golden.py` localizaba el binario `cognicode` en cuatro
+> rutas escritas a mano — dos de ellas absolutas y de una máquina concreta — e
+> ignoraba `cargo metadata`. El gate sí construye ese binario, en su directorio
+> aislado; el contrato nunca miraba allí. Su verde no era suyo: lo tomaba
+> prestado del disco de quien lo ejecutaba. Ahora pregunta a cargo, la misma
+> autoridad que `target-dir.sh` y que `common::cargo_target_dir()` usan desde
+> `db1f0c32`. Verificado en las dos direcciones: con el target dir del gate →
+> `rc=0`; con uno vacío → `rc=1` y el mensaje nombra las rutas reales. Detalle
+> en `JOURNAL.md`.
+>
+> Próxima unidad: H4.1 (`modelo de observación tipado`), H3
+> (tree-sitter-kotlin) o H4.2/H4.4. Ver `ROADMAP.md`.
 >
 > Ratchet `python3 scripts/ci/test_roadmap_version_ratchet.py` debe
 > pasar al regenerar este snapshot. Si vuelve a fallar, reintroducir

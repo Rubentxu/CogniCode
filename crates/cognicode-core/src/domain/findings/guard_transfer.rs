@@ -72,6 +72,16 @@ pub enum GuardObservation {
     /// desconocida, sin evidence). Fail-closed: el consumer no
     /// puede promover esto a un `Block`.
     Unsupported { reason: UnknownReason },
+    /// La proyeccion llevo solo gaps, sin `SnapshotId` ni
+    /// `DetectorExecutionRef` (caso de
+    /// `ProjectionError::Inconclusive(Vec<Gap>)`). NO se
+    /// promueve a `Block`: el discriminante solo es
+    /// suficiente para que Guard lo rechace. La ausencia de
+    /// provenance es estructural, no un magic number.
+    /// (H0.4 — antes el seam fabricaba `SnapshotId(0)` y un
+    /// detector sintetico, lo que ocultaba que la proyeccion
+    /// no tenia contexto.)
+    Ungrounded { gaps: Vec<Gap> },
     /// Error estructural en la proyeccion. Distinto de
     /// `Unsupported` para que el consumer pueda distinguir
     /// "datos invalidos" de "datos faltantes".
@@ -126,49 +136,15 @@ pub fn to_guard_observation(
             reason: reason.clone(),
         },
         Err(ProjectionError::Inconclusive(gaps)) => {
-            // El error lleva solo gaps (no snapshot/detector). El
-            // caller tiene que haberlos recogido en el contexto del
-            // finding; aqui emitimos un Inconclusive sin detector
-            // concreto (fail-closed por falta de contexto).
-            GuardObservation::Inconclusive {
-                snapshot_id: SnapshotId(0),
-                detector: synthetic_detector(),
-                gaps: gaps.clone(),
-            }
+            // El error lleva solo gaps (no snapshot/detector). H0.4:
+            // emitimos un Ungrounded, no un Inconclusive con
+            // sentinel. La ausencia de provenance es ahora parte del
+            // tipo — el consumer no puede confundirla con un
+            // Inconclusive con provenance real.
+            GuardObservation::Ungrounded { gaps: gaps.clone() }
         }
         Err(ProjectionError::Failed(message)) => GuardObservation::Failed {
             message: message.clone(),
         },
-    }
-}
-
-/// Constructor sintetico del detector cuando el error de proyeccion
-/// no preserva el `DetectorExecutionRef` (caso de gaps sin contexto).
-/// Devuelve un `DetectorExecutionRef` con campos vacios que el
-/// consumer puede reconocer como "no provenance".
-///
-/// Esto es una decision explicita: preferimos emitir un detector
-/// sintetico visible a perder la observacion. El consumer puede
-/// descartar el Inconclusive si no le sirve.
-fn synthetic_detector() -> DetectorExecutionRef {
-    use crate::domain::findings::{DetectorAuthority, DetectorDigests, DetectorId};
-    // Creamos un DetectorId vacio; si falla, caemos a un valor fijo.
-    let id = DetectorId::new("synthetic@0.0.0")
-        .unwrap_or_else(|_| DetectorId::new("invalid@0.0.0").expect("fallback detector id"));
-    let empty_digest = crate::domain::findings::DetectorDigest::new(
-        "sha256:0000000000000000000000000000000000000000000000000000000000000000",
-    )
-    .expect("empty digest");
-    DetectorExecutionRef {
-        id,
-        version: "0.0".to_string(),
-        authority_at_execution: DetectorAuthority::Candidate,
-        digests: DetectorDigests {
-            logic: empty_digest.clone(),
-            policy: empty_digest.clone(),
-            semantic: empty_digest.clone(),
-            instance: empty_digest,
-        },
-        context: None,
     }
 }
