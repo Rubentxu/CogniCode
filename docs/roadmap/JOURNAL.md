@@ -17384,3 +17384,29 @@ Fast suite: 5/5 new + 10/10 h11 + 5/5 h12 + 2355/2355 lib + 2 ignored, baseline 
 - The cu2_w2_finding_projection test (`expected Inconclusive, got Ok(Inconclusive)`) is a pre-existing failure in the test contract — it fails on a clean tree without the H1.4 changes. The fast suite selector does not include it, so the regression guard is the `known_failures.yaml` baseline (which is the contractually correct place for it). H1.4 is not affected.
 
 Fast suite: 4/4 new + 10/10 h11 + 5/5 h12 + 5/5 h13 + 2355/2355 lib + 2 ignored, baseline OK. H1.4 cycle 1 closed. H1 program complete.
+
+## Entry 67 — H2.1 inventory + measurement of the three consumer questions (cycle 1)
+
+**What**: H2.1 cycle 1 closes the first half of the CU-3 acceptance: the three consumer questions (homonym, API impact, finding justification) have a clear answer path through tools that are already in the catalog. The new file `crates/cognicode-core/tests/h21_consumer_questions_audit.rs` (6 tests, ~290 lines) inventories both `product/tools.json` (hand-authored) and `product/tool-catalog-runtime.json` (runtime-derived) and pins:
+
+  - **Q1 homonym** → `query_symbol_index`. Required input: `symbol_name`. Authority: `read`. No file/line/column required (a name-level resolution, not a callsite question).
+  - **Q2 API impact** → `analyze_impact`. Required input: `symbol_name`. Authority: `read`. Prerequisite: `build_graph` (no fake impact without a real graph). Description promises "impacted files" + "risk".
+  - **Q3 finding justification** → `composite_impact_query`. The answer is a typed refusal: `verdict_refused: bool = true`, with a string `verdict_refused_reason` carrying the canonical literal `composite queries return evidence, not verdicts; investigate each piece`. The output also carries `impact`, `architecture`, `findings`, `suggested_follow_ups`, `suggested_prerequisites` — the consumer is never promised a verdict, only an evidence bundle.
+
+**Why**: H2.1 spec is explicit: "no añadir endpoint que ya exista." The audit is the proof: every consumer question is answerable today, with the existing 80-tool surface. H2.2+ (affordances, paginación, same semantics CLI/MCP) can build on this contract without re-deriving the mapping.
+
+Belt-and-suspenders pins:
+- `hand_authored_and_runtime_catalogs_agree_on_tool_names` — a drift between the operator-maintained catalog and the runtime catalog is a deployment hazard. The test fails on the first tool name in one catalog but not the other.
+- `the_three_question_covering_tools_are_all_read_authority` — a mutating tool with the same name as a read tool would be an authz defect; the audit catches it.
+- `mutating_tools_are_not_in_the_three_question_path` — explicit boundary: the 5 mutating tools in the catalog are NOT in the answer path. A future refactor that moves a mutating tool into a read path trips this test.
+
+**Where**:
+- `crates/cognicode-core/tests/h21_consumer_questions_audit.rs` — 6 tests, read-only. No production code change.
+- `product/tools.json` and `product/tool-catalog-runtime.json` — confirmed identical 80-tool surface (no delta; per memory: `product/tools.json is hand-authored — never regenerate it; compare tool names against a full-feature capture`).
+
+**Learned**:
+- `env!("CARGO_MANIFEST_DIR")` is the right way to resolve a workspace-relative path from an integration test. cargo runs integration tests with cwd = package root, not the `tests/` directory, so a literal `../../../product/tools.json` resolves outside the repo. The audit pins the resolution.
+- The `verdict_refused_reason` field's *meta-description* is "Canonical reason string pinned in the source" — a pointer, not the literal. The actual literal `composite queries return evidence, not verdicts; investigate each piece` lives in the tool-level `description`. The test pins both, so a future contributor who changes the canonical string without updating the audit breaks the test on purpose.
+- H2.1 is the first WU in the H2 (CU-3) program that has zero production code. The audit IS the WU. Future H2.x cycles build on the contract the audit pins, so any new tool that lands in the answer path can re-use the same test harness (mutating-set assertion, read-authority assertion, catalog parity assertion) without inventing a new one.
+
+H2.1 cycle 1 closed. H2.1 acceptance: PASS. H2 (CU-3) program: 1/4 open cycles (0/4 → 1/4 done).
