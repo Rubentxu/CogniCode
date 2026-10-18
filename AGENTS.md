@@ -75,7 +75,11 @@ el problema es de infraestructura local (no es regresión). Resolver
 con `cargo build --release --bin cogh` (y análogos) **antes** de
 reinvocar el gate. Suites de perfil release que siguen en el árbol:
 `prf_f6_w1_release_coherence`, `prf_f6_w2_staging_contract`,
-`published_skill_bundles_are_required`. La clase UAT (`*_uat.rs`) que
+`published_skill_bundles_are_required` y
+`b6_w1_mcp_robustness::release_binary_stdio_round_trip_smoke` (esta última
+pide `cargo build --release --bin cognicode-mcp`; el merge gate la selecciona
+fuera y la corre `release-candidate.pipeline.kts`, que ya construye ese
+binario). La clase UAT (`*_uat.rs`) que
 aparecía en esta lista se retiró del repositorio el 2026-10-15 por decisión
 del operador (ADR-TH-006).
 - Un cambio que afecte contratos OpenSpec se reconcilia con su requisito vigente; no reescribir planes archivados ni cambiar el estado de ciclos pasados para aparentar progreso. **No se reabre PRF.** No se reabren `C#` ya firmadas para "incluir" trabajo nuevo.

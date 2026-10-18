@@ -17649,3 +17649,109 @@ The string split is the one that actually misbehaves: it returns `None` the mome
 - "The first run passes" is weaker evidence than "the first and second run pass". The asymmetry is always in the same direction: gates that depend on state the previous run created.
 - Four copies of one lookup is the shape a codebase takes when each copy arrived solving a different visible symptom. None of the four was wrong *where it was written*; all four were wrong somewhere else. The fix is not to make them agree but to make one of them the only one — and the unit of agreement has to be the crate, because that is the boundary cargo enforces.
 - Silently degrading to a slower path is a defect even when the suite stays green. `a015` would have kept passing forever with a full rebuild inside it.
+
+## Entry 76 — the seventh release consumer, and a contract that named a rule it did not check
+
+**What**: the merge gate went red on a test whose name says exactly what it
+measures, and the honest answer turned out to be neither "add the build" nor
+"soften the assertion". It was: the test is the seventh of a class that
+ADR-TH-005 moved to the release lane, it was left behind, and it moved.
+
+`release_binary_stdio_round_trip_smoke` in
+`crates/cognicode-core/tests/b6_w1_mcp_robustness.rs` spawns the
+**release-profile** `cognicode-mcp` and round-trips `initialize` +
+`tools/list` over stdio. The merge gate runs that whole file. ADR-TH-005 moved
+the release bytes out of the gate and moved six release-consuming suites to
+`release-candidate.pipeline.kts`; this seventh one stayed, because the gate
+runs the file rather than the test. For years it printed `SKIP:` and
+`return`ed. Hardening it to a hard assertion earlier this cycle turned the
+latent incoherence into a red gate:
+
+    release binary not found at /tmp/cognicode-merge-gate-*/target/release/cognicode-mcp
+
+Two fixes were available. Both were rejected on measurement.
+
+**Rejected: build release in the merge gate.** `cargo build --release
+-p cognicode-mcp` in an empty target directory costs **269 s**, measured, on
+every merge. ADR-TH-005 saved 676 s by removing *four* release builds; putting
+one back gives back 40% of that to assert one stdio round-trip. The stage
+would also have contradicted a decision that is written down in
+`merge-gate.pipeline.kts:329`, in `release-candidate.pipeline.kts:787` and in
+the D1 changelog entry, on the strength of a single test.
+
+**Rejected: the silent `SKIP:`.** That is what was there. It is the failure
+mode this cycle is about — a gate that declares it measures release while
+measuring nothing.
+
+**Chosen: the coverage moves, and the move is checked.** The merge gate now
+selects the test out explicitly (`--skip release_binary_stdio_round_trip_smoke`)
+with the measurement in the comment, and `release-candidate.pipeline.kts` runs
+it in a new stage, `core-b6-w1-release-stdio-smoke`, inside the existing
+`release-contracts` group. That lane already builds the release MCP binary
+(`build-cognicode-mcp-release`) and `releaseContractEnv` already executes it
+to verify it, so the test costs one `cargo test` and no build at all. The path
+is passed explicitly through `COGNICODE_MCP_BIN_RELEASE` rather than left to
+`cargo metadata`: the test then measures the artifact the lane verified, not
+the one cargo happened to resolve.
+
+**A contract that named a rule it did not check.** Writing the above surfaced
+a second defect in `scripts/ci/test_merge_gate_release_work_split.py`:
+`RELEASE_ONLY_IN_GATE` was defined and never referenced. It was the residue of
+the assertion that module retired on 2026-10-15, and its *name* — "what a merge
+must not build" — told every later reader the opposite of what the module's own
+docstring explains at length. A contract that names what must not happen and
+does not check it does not fail, it informs. Removed.
+
+The same module gained one assertion, because the fix I had just made is
+invisible from both sides: a `--skip` in the gate is not in the test and not in
+the stage's name, so a moved test and a deleted test look identical in review.
+Every `--skip` the merge gate makes is now required to be named by the release
+lane, or to be classified in `SKIPS_NOT_A_LANE_MOVE` with its reason. Writing
+that rule immediately found a pre-existing skip —
+`compat_forward_0973_server_handles_modern_request` — which is *not* a lane
+move: it is an exclusion inside a stage that is already conditional on the
+legacy 0.97.3 fixture (ADR-PRF-008 R1), and no lane builds that server. It is
+classified with that reason rather than forced into a rule that would be false
+about it.
+
+**Where**:
+- `merge-gate.pipeline.kts` — `core-unrestricted-evidence-kernel` selects the
+  test out, with the 269 s measurement and the lane that owns it in the body.
+- `release-candidate.pipeline.kts` — new stage `core-b6-w1-release-stdio-smoke`
+  in `release-contracts`; the group header no longer claims the gate reads no
+  release bytes, because for one file that was false.
+- `scripts/ci/test_merge_gate_release_work_split.py` — dead
+  `RELEASE_ONLY_IN_GATE` removed; new assertion that every gate `--skip` has an
+  owner.
+- `AGENTS.md` — the documented release-binary precondition list gains this
+  suite, so a fresh checkout's `test-full` failure is a known remedy rather
+  than a surprise.
+
+**Gates**: `scripts/test-full.sh` rc=0 — `fmt --check`, `clippy -D warnings`,
+`test --workspace`, `test --workspace --doc`, `contracts`, `known_failures`,
+all OK. `scripts/ci/run-all-contracts.sh` 292 passed / 0 failed. The new
+assertion was proved to bite before being trusted: substituting a nonexistent
+`--skip` into `merge-gate.pipeline.kts` produced the expected FAIL with its
+message, and restoring the file returned it to PASS. The new release stage's
+command was executed directly and passes
+(`1 passed; 0 failed; 10 filtered out`).
+
+**Learned**:
+- The skip is the dangerous edit. Moving a stage between lanes is visible in a
+  diff; adding `--skip` to a command is one token and reads like a filter. It
+  is the same class as the `SKIP:` this entry removes, one level up: both hide
+  the loss of coverage behind syntax that means something innocent.
+- "This test needs release bytes" is not a property of the test, it is a
+  property of the *lane that runs it*. The merge gate was not broken by running
+  a release consumer; it was broken by running it without its precondition and
+  hiding the absence. Naming the precondition is what makes the lane assignment
+  decidable instead of a matter of taste.
+- Measuring the rejected fix is what made the choice cheap. Without the 269 s,
+  the argument for putting the build back is a paragraph of good intentions;
+  with it, the argument is one number against a documented saving.
+- A retired assertion leaves its name behind, and the name outlives the
+  retirement. `RELEASE_ONLY_IN_GATE` was wrong to any reader who skipped the
+  docstring, and no test could catch it because it asserted nothing.
+- A contract that forces a classification is stronger than one that forces a
+  behaviour. The compat skip is not a defect; the absence of a place to say
+  "this is not a lane move" is.

@@ -9,7 +9,7 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-18, sobre `db1f0c32cbf5849602a1dbad083f4646ba552060` (rama `chore/dft-radical-pruning`,
+> **Snapshot**: 2026-10-18, sobre `47b21cc7293ca77b0ecd30506f9b8c1cd44807e0` (rama `chore/dft-radical-pruning`,
 > PR #379: el catálogo de herramientas MCP sobrevive a una instalación que
 > no distribuye `product/`). **v0.101.23 publicada** 2026-10-18T15:26:15Z,
 > 8 assets, `sha256sum -c` verde sobre los bytes redescargados, asset-set
@@ -22,7 +22,19 @@
 > Nota de proceso: este snapshot estaba congelado en `4e1821f534b4` y el
 > ratchet de contratos — que `scripts/test-full.sh` **no** ejecuta — lo
 > detectó al publicar. La batería Rust puede estar verde y la verdad de
-> release incoherentente al mismo tiempo; son dos gates distintos.
+> release incoherentente al mismo tiempo; son dos gates distintos. Corregido
+> en `47b21cc7`: `full` incluye ahora `run-all-contracts.sh`, y ese ratchet es
+> una de las cosas que ve.
+>
+> **Entrada 76**: el `merge-gate` cerró el hueco que esa incoherencia dejó
+> detrás. `release_binary_stdio_round_trip_smoke` es el séptimo consumidor de
+> bytes release — ADR-TH-005 movió seis a la lane de release y éste se quedó
+> porque el gate corre el fichero entero — y llevaba años imprimiendo
+> `SKIP:`. La cobertura no se rebajó ni se devolvió al gate: se movió a
+> `release-candidate.pipeline.kts`, donde el binario ya se construye, y el
+> `--skip` que deja el gate tiene ahora dueño comprobable. Coste medido de la
+> alternativa descartada: **269 s** por merge, el 40% de lo que ADR-TH-005
+> ahorró con cuatro binarios. Detalle en `JOURNAL.md`.
 >
 > Próxima unidad: H4.1 (`modelo de observación tipado`), H3
 > (tree-sitter-kotlin) o H4.2/H4.4. Ver `ROADMAP.md`.

@@ -482,7 +482,28 @@ pipeline {
                     export CARGO_TARGET_DIR="${'$'}TARGET_DIR"
                     export COGNICODE_MCP_BIN="${'$'}TARGET_DIR/debug/cognicode-mcp"
                     export COGNICODE_CLI_BIN="${'$'}TARGET_DIR/debug/cognicode"
+                    # MEDIDO 2026-10-18. `b6_w1_mcp_robustness` trae un test que
+                    # consume bytes EN RELEASE, y es el séptimo de esa clase:
+                    # ADR-TH-005 movió seis a `release-candidate.pipeline.kts` y
+                    # este se quedó, porque el gate corre el fichero entero.
+                    # La cobertura no baja de nivel, cambia de lane — y ahí ya
+                    # existe: `release-candidate.pipeline.kts` construye este
+                    # mismo binario en release (`host-build-and-verify`), así que
+                    # correrlo allí no cuesta un build.
+                    #
+                    # La alternativa — construirlo aquí — se midió antes de
+                    # descartarla: `cargo build --release -p cognicode-mcp` en un
+                    # target dir vacío son 269 s en cada merge, el 40% de los
+                    # 676 s que ADR-TH-005 ahorró al dejar de construir cuatro
+                    # binarios release. Pagar 269 s por un round-trip de stdio no
+                    # es una cobertura que falte: es una cobertura que ya tiene
+                    # casa.
+                    #
+                    # MEDIDO también por qué el rojo aparecía ahora y no antes:
+                    # ese test imprimía `SKIP:` y hacía `return`. Con aserción
+                    # dura, el gate que decía medir release no lo medía.
                     if ! cargo test -p cognicode-core --features evidence-kernel --quiet \
+                        -- --skip release_binary_stdio_round_trip_smoke \
                         > "$logDir/core-unrestricted-evidence-kernel.log" 2>&1; then
                         tail -40 "$logDir/core-unrestricted-evidence-kernel.log"
                         echo "the full log is $logDir/core-unrestricted-evidence-kernel.log"
