@@ -113,20 +113,7 @@ impl ServiceAnalyzer {
         // esto, CLI/SDK decían "complete" mientras MCP decía "partial"
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
-        if let Some(report) = self.service.get_last_build_report()
-            && let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } =
-                report.status
-            && !skipped.is_empty()
-        {
-            let gaps = skipped
-                .iter()
-                .map(|s| {
-                    AnalysisError::gap(
-                        "graph",
-                        &format!("{}: {}", s.path, skip_reason_text(&s.reason)),
-                    )
-                })
-                .collect();
+        if let Some(gaps) = self.partial_gaps_from_last_build() {
             let stats = self.service.get_graph_stats();
             return AnalysisOutcome::partial(
                 AnalysisValue::Graph(GraphValue::Full {
@@ -185,10 +172,60 @@ impl ServiceAnalyzer {
             "entry_point_count": report.entry_point_count,
             "leaf_function_count": report.leaf_function_count,
         });
+
+        // H0.2 (delivery-first-radical, package integration): el Partial
+        // lo decide el BuildReport compartido, no la op. Si el walk fue
+        // Partial, devolvemos Partial con los mismos gaps que
+        // graph_full sobre el mismo workspace, llevando la métrica
+        // calculada sobre el grafo parcial como valor. La traducción
+        // BuildStatus→gaps vive SOLO en `partial_gaps_from_last_build`
+        // (H0.2): añadir otra copia en una tercera op reintroduciría la
+        // divergencia CLI/SDK/MCP que UAT-CU-1 detectó el 2026-10-16.
+        if let Some(gaps) = self.partial_gaps_from_last_build() {
+            return AnalysisOutcome::partial(
+                AnalysisValue::Graph(GraphValue::Complexity {
+                    path: path.to_path_buf(),
+                    metrics,
+                }),
+                gaps,
+            );
+        }
+
         AnalysisOutcome::complete(AnalysisValue::Graph(GraphValue::Complexity {
             path: path.to_path_buf(),
             metrics,
         }))
+    }
+
+    /// Traducción ÚNICA de `BuildReport` → `Vec<AnalysisError>` (gaps) en
+    /// este adaptador. Devuelve `Some(gaps)` si y solo si el último
+    /// build del service fue `BuildStatus::Partial` con al menos un
+    /// skip. Cualquier op del adaptador que necesite reportar Partial
+    /// CONSULTA este helper — no copia la traducción. Si el helper
+    /// cambiara, todas las ops cambian a la vez, y la paridad
+    /// CLI/SDK/MCP queda garantizada por construcción, no por
+    /// disciplina.
+    fn partial_gaps_from_last_build(&self) -> Option<Vec<AnalysisError>> {
+        let report = self.service.get_last_build_report()?;
+        let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } =
+            report.status
+        else {
+            return None;
+        };
+        if skipped.is_empty() {
+            return None;
+        }
+        Some(
+            skipped
+                .iter()
+                .map(|s| {
+                    AnalysisError::gap(
+                        "graph",
+                        &format!("{}: {}", s.path, skip_reason_text(&s.reason)),
+                    )
+                })
+                .collect(),
+        )
     }
 }
 

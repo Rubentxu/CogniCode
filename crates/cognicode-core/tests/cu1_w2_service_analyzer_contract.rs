@@ -122,6 +122,78 @@ fn graph_full_without_rust_material_fails_honestly() {
 }
 
 #[test]
+fn graph_complexity_inherits_partial_from_last_build_report() {
+    // H0.2 (delivery-first-radical, package integration). Contrato:
+    // graph_complexity hereda Partial + gaps del BuildReport compartido,
+    // IGUAL que graph_full. El adaptador NO copia la traducción de
+    // BuildStatus en cada op: una sola traducción vive en
+    // `partial_from_build_report` y ambas ops la consultan. Sin este
+    // contrato, un workspace con skips reportaba "complete" en
+    // graph.complexity mientras MCP decía "partial" sobre el MISMO
+    // grafo (divergencia real detectada por UAT-CU-1 2026-10-16).
+    let tmp = tempdir();
+    rust_fixture(&tmp);
+    let basis = AnalysisBasis::for_workspace(tmp.clone());
+    let analyzer = ServiceAnalyzer::new();
+
+    // 1) graph_full puebla last_build_report con el estado real del
+    //    walk (Partial con gaps = Cargo.toml skipped).
+    let full = analyzer.execute(
+        &basis,
+        AnalysisOp::GraphFull {
+            path: tmp.clone(),
+            rebuild: true,
+        },
+    );
+    assert_eq!(
+        full.state(),
+        OutcomeState::Partial,
+        "precondición: el fixture con Cargo.toml produce Partial (gap = Cargo.toml), got {:?}",
+        full.state()
+    );
+    let expected_gap_messages: Vec<String> =
+        full.gaps().iter().map(|g| g.message.clone()).collect();
+    assert!(
+        expected_gap_messages.iter().any(|m| m.contains("Cargo.toml")),
+        "precondición: el gap debe nombrar Cargo.toml, got {:?}",
+        expected_gap_messages
+    );
+
+    // 2) graph_complexity sobre el MISMO basis (mismo service, mismo
+    //    last_build_report) debe heredar el estado Partial y los gaps.
+    let complexity = analyzer.execute(
+        &basis,
+        AnalysisOp::GraphComplexity { path: tmp.clone() },
+    );
+
+    assert_eq!(
+        complexity.state(),
+        OutcomeState::Partial,
+        "graph.complexity debe heredar Partial del BuildReport; implementación \
+         actual devuelve Complete porque graph_complexity no consulta \
+         last_build_report (analyze.rs:151-192). got {:?}",
+        complexity.state()
+    );
+    let actual_gap_messages: Vec<String> =
+        complexity.gaps().iter().map(|g| g.message.clone()).collect();
+    assert!(
+        actual_gap_messages
+            .iter()
+            .any(|m| m.contains("Cargo.toml")),
+        "graph.complexity debe propagar el gap Cargo.toml; got {:?}",
+        actual_gap_messages
+    );
+    assert_eq!(
+        actual_gap_messages.len(),
+        expected_gap_messages.len(),
+        "graph.complexity debe propagar los MISMOS gaps que graph_full sobre el \
+         mismo workspace (mismas fuentes, mismo skip set), got {:?} vs {:?}",
+        actual_gap_messages,
+        expected_gap_messages
+    );
+}
+
+#[test]
 fn unsupported_op_is_reported_not_panicked() {
     let tmp = tempdir();
     rust_fixture(&tmp);
