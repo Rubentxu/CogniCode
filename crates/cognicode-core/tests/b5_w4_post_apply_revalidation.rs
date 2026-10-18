@@ -25,7 +25,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use cognicode_core::application::analysis_basis::AnalysisBasis;
-use cognicode_core::interface::catalog::{ToolDescriptor, load_tool_catalog};
+use cognicode_core::interface::catalog::load_tool_catalog;
 use cognicode_core::refactor::apply::ApplyOutcome;
 use cognicode_core::refactor::plan::RefactorPlan;
 use cognicode_core::refactor::revalidate::IncrementalAnalysis;
@@ -66,10 +66,6 @@ fn stub_outcome(plan_id: Uuid, files: Vec<PathBuf>) -> ApplyOutcome {
 
 fn catalog_names() -> HashSet<String> {
     load_tool_catalog().into_iter().map(|d| d.name).collect()
-}
-
-fn find_tool(name: &str) -> Option<ToolDescriptor> {
-    load_tool_catalog().into_iter().find(|d| d.name == name)
 }
 
 // =============================================================================
@@ -160,25 +156,28 @@ fn revalidation_uses_incremental_analysis_only() {
     );
 }
 
-/// El tool MCP `safe_refactor_revalidate` figura en el catalogo
-/// `product/tools.json` con `authority: read` y `stability: stable`
-/// (la unica autoridad admisible para un revalidation: NO muta).
+/// MEDIDO 2026-10-18. `safe_refactor_revalidate` se retiro del catalogo.
+///
+/// El dominio B5.W4 existe y sus tests de nucleo siguen verdes, pero no
+/// hay forma honesta de exponerlo por MCP: `run_revalidation` es un stub,
+/// no existe indice `plan_id -> plan` que resolver, y el texto del
+/// catalogo describia un servicio que no existe. Anunciarlo hacia un
+/// cliente era peor que no anunciarlo.
+///
+/// Precedente en este repo: `get_graph_report` se resolvio quitandolo del
+/// catalogo, no despachandolo. La invariante que lo sustituye esta en
+/// `mcp_roundtrip_tests::tool_surface_parity::every_advertised_tool_has_a
+/// _dispatch_arm`: una herramienta anunciada tiene brazo de dispatch, y
+/// este test ya no puede volver a fijarse en una que no existe.
 #[test]
-fn mcp_safe_refactor_revalidate_is_listed_in_catalog() {
+fn revalidation_is_not_advertised_over_mcp() {
     let names = catalog_names();
     assert!(
-        names.contains("safe_refactor_revalidate"),
-        "safe_refactor_revalidate MUST be listed in product/tools.json; \
-         found tools: {:?}",
+        !names.contains("safe_refactor_revalidate"),
+        "safe_refactor_revalidate has no honest MCP surface; announcing it \
+         again re-creates the ghost this unit removed. found tools: {:?}",
         names
     );
-    let tool = find_tool("safe_refactor_revalidate")
-        .expect("safe_refactor_revalidate must be present and loadable");
-    assert_eq!(
-        tool.authority, "read",
-        "read-only — revalidation never mutates"
-    );
-    assert_eq!(tool.stability, "stable");
 }
 
 /// `executed_checks` documenta los 3 chequeos B4 ejecutados:

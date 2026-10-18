@@ -95,7 +95,7 @@ fn hand_authored_and_runtime_catalogs_agree_on_tool_names() {
          a drift means the catalog the operator maintains is no longer the catalog the MCP \
          server ships"
     );
-    assert_eq!(hand_names.len(), 80, "H2.1 audit pins the 80-tool surface");
+    assert_eq!(hand_names.len(), 78, "H2.1 audit pins the 78-tool surface");
 }
 
 #[test]
@@ -282,7 +282,7 @@ fn the_three_question_covering_tools_are_all_read_authority() {
 fn mutating_tools_are_not_in_the_three_question_path() {
     // The H2.1 spec is explicit: "una lectura nunca ofrece acción
     // mutante sin capacidad explícita." The 5 mutating tools in
-    // the catalog (edit_file, reparse_on_edit, safe_refactor_apply,
+    // the catalog (edit_file, reparse_on_edit,
     // write_file, ...) are NOT in the answer path for the 3
     // consumer questions. This test pins that boundary so a
     // future refactor that moves a mutating tool into the read

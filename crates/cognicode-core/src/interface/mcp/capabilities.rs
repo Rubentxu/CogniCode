@@ -190,14 +190,6 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             langs: ALL_TREE_SITTER_LANGS,
             precision: "AST",
         },
-        "safe_refactor_apply" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
-            precision: "AST",
-        },
-        "safe_refactor_revalidate" => ToolCapabilities {
-            langs: ALL_TREE_SITTER_LANGS,
-            precision: "AST",
-        },
 
         // ----------------------------------------------------------------
         // Composite (combina varias tools subordinadas)
@@ -315,8 +307,6 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         // Refactor stable
         "safe_refactor",
         "safe_refactor_preview",
-        "safe_refactor_apply",
-        "safe_refactor_revalidate",
         // Composite stable
         "codebase_map",
         "solid_audit",
