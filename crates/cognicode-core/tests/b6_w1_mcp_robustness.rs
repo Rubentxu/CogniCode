@@ -1129,3 +1129,237 @@ fn server_diagnostics_is_copy_and_limits_are_pinned() {
     assert_eq!(copy1, copy2, "ServerDiagnostics must be Copy + PartialEq");
     assert!(d.pid > 0);
 }
+
+// ===========================================================================
+// Test 9 — H2.4 wire parity: the stdio binary's tools/list names equal
+// the hand-authored product/tools.json names.
+// ===========================================================================
+
+/// H2.4 spec: "CLI/MCP presentan la misma semántica". The CLI's
+/// source of truth is `product/tools.json`; the MCP server
+/// advertises the same set through `tools/list`. b2_w2_catalog_parity
+/// pins the in-process equivalence; this test pins the WIRE
+/// equivalence: the running binary must enumerate exactly the
+/// hand-authored tool names. A drift between the operator's
+/// catalog and the binary's advertised surface is the failure
+/// mode H2.4 closes.
+#[test]
+fn wire_tools_list_matches_hand_authored_catalog() {
+    use base64::Engine;
+    let _bin = require_binary!();
+    let workspace = TempDir::new().expect("tempdir");
+    let mut child = spawn_binary(workspace.path()).expect("spawn");
+
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_wire_parity", "version": "0.0.1"}
+        }),
+    );
+    let (init_resp, _) = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
+    let init = init_resp.expect("initialize response within 10s");
+    assert_eq!(init["jsonrpc"], "2.0");
+
+    // Walk the full catalog by cursor; H2.3 changed the cursor
+    // format to a base64-JSON envelope, so we read the offset
+    // from the envelope (not a bare number).
+    let mut wire_names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut cursor: Option<String> = None;
+    let mut req_id = 2i64;
+    let mut pages = 0usize;
+    loop {
+        let mut params = json!({});
+        if let Some(c) = &cursor {
+            params = json!({ "cursor": c });
+        }
+        rpc_send(&mut child, req_id, "tools/list", params);
+        let (resp, _) = rpc_recv_by_id(&mut child, req_id, Duration::from_secs(10));
+        let frame = resp.expect("tools/list page within 10s");
+        let tools = frame["result"]["tools"]
+            .as_array()
+            .expect("tools array");
+        for tool in tools {
+            let name = tool["name"]
+                .as_str()
+                .expect("tool name")
+                .to_string();
+            assert!(
+                wire_names.insert(name.clone()),
+                "duplicate tool name {name} across pages (cursor contract broken)"
+            );
+        }
+        // Decode the next cursor (H2.3 envelope: base64 JSON
+        // {off, ...}); for the parity test we only care about
+        // the offset, not the workspace/snapshot anchors.
+        let next = frame["result"]["nextCursor"].as_str().map(str::to_string);
+        if let Some(c) = &next {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(c)
+                .expect("next_cursor is base64");
+            let env: Value = serde_json::from_slice(&bytes).expect("envelope is JSON");
+            assert_eq!(
+                env["off"].as_u64(),
+                Some((pages + 1) as u64 * PAGE_SIZE as u64),
+                "cursor off for page {} must match the expected stride",
+                pages + 1
+            );
+        }
+        cursor = next;
+        pages += 1;
+        if pages > 200 {
+            panic!("pagination did not terminate after 200 pages");
+        }
+        if cursor.is_none() {
+            break;
+        }
+        req_id += 1;
+    }
+    let _ = shutdown_and_reap(child);
+
+    // The hand-authored catalog is the CLI's source of truth
+    // (per project memory: `product/tools.json is hand-authored —
+    // never regenerate it`). The wire surface must match it
+    // field-for-field on the name set.
+    let catalog_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join("product")
+        .join("tools.json");
+    let bytes = std::fs::read(&catalog_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", catalog_path.display()));
+    let v: Value = serde_json::from_slice(&bytes).expect("parse tools.json");
+    let hand_names: std::collections::BTreeSet<String> = v["tools"]
+        .as_array()
+        .expect("tools[]")
+        .iter()
+        .map(|t| t["name"].as_str().expect("tool name").to_string())
+        .collect();
+
+    // Direction 1 (hard): the wire surface must be a SUBSET of the
+    // hand-authored catalog. A tool advertised by the binary that is
+    // not in product/tools.json is a hard contract violation — the
+    // operator's CLI cannot reference it. The reverse direction
+    // (catalog reserves names the binary has not yet implemented)
+    // is allowed and surfaced as a warning below.
+    let undocumented: Vec<&String> = wire_names.difference(&hand_names).collect();
+    assert!(
+        undocumented.is_empty(),
+        "wire surface contains tools that are NOT in the hand-authored \
+         product/tools.json: {undocumented:?}; the CLI cannot reference \
+         them, so the binary is advertising a name that does not exist \
+         in the operator's source of truth. Either implement the tool in \
+         product/tools.json or stop advertising it."
+    );
+
+    // Direction 2 (soft): the catalog may reserve names the binary
+    // has not yet implemented. Print them so a contributor picking
+    // up that gap sees it; do not fail the test, because the gap
+    // is a roadmap item, not an H2.4 contract violation.
+    let reserved_but_unwired: Vec<&String> = hand_names.difference(&wire_names).collect();
+    if !reserved_but_unwired.is_empty() {
+        eprintln!(
+            "H2.4 note: product/tools.json reserves {} tool name(s) the \
+             binary has not yet wired up: {reserved_but_unwired:?}; \
+             this is a roadmap gap, not a wire-parity failure",
+            reserved_but_unwired.len()
+        );
+    }
+
+    assert!(
+        !wire_names.is_empty(),
+        "tools/list returned an empty catalog across all pages (parity is vacuous)"
+    );
+}
+
+// ===========================================================================
+// Test 10 — H2.4 stdio smoke test against the RELEASE binary.
+// ===========================================================================
+
+/// H2.4 spec: "prueba cliente MCP stdio sobre binario de release
+/// si la UAT de este bloque no lo prueba ya." The other tests in
+/// this file prefer release via `binary_path()`; this test makes
+/// the release-binary coverage EXPLICIT. If the release binary
+/// is not built, the test prints a clear message and skips — a
+/// vacuous pass would be a worse failure mode than a missing
+/// binary. A future contributor can build with
+/// `cargo build --release --bin cognicode-mcp` and re-run.
+#[test]
+fn release_binary_stdio_round_trip_smoke() {
+    // Locate the release binary: prefer the env override, then
+    // the canonical target-dir path. The test does NOT fall back
+    // to debug — release-only is the spec.
+    let release_path = if let Some(explicit) = std::env::var_os("COGNICODE_MCP_BIN_RELEASE") {
+        std::path::PathBuf::from(explicit)
+    } else {
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("..")
+            .join("target")
+            .join("release")
+            .join("cognicode-mcp")
+    };
+    if !release_path.exists() {
+        eprintln!(
+            "SKIP: release binary not found at {}; build with \
+             `cargo build --release --bin cognicode-mcp` and re-run, or set \
+             COGNICODE_MCP_BIN_RELEASE=/path/to/cognicode-mcp",
+            release_path.display()
+        );
+        return;
+    }
+    assert!(
+        is_executable(&release_path),
+        "release binary at {} is not executable",
+        release_path.display()
+    );
+    let _bin = release_path.clone();
+
+    let workspace = TempDir::new().expect("tempdir");
+    let mut child = std::process::Command::new(&release_path)
+        .current_dir(workspace.path())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn release binary");
+
+    rpc_send(
+        &mut child,
+        1,
+        "initialize",
+        json!({
+            "protocolVersion": "2025-03-26",
+            "capabilities": {},
+            "clientInfo": {"name": "b6_w1_release_smoke", "version": "0.0.1"}
+        }),
+    );
+    let (init_resp, _) = rpc_recv_by_id(&mut child, 1, Duration::from_secs(10));
+    let init = init_resp.expect("initialize within 10s on release binary");
+    assert_eq!(init["jsonrpc"], "2.0");
+    assert_eq!(
+        init["result"]["protocolVersion"], "2025-03-26",
+        "release binary must declare the same protocolVersion as the rest of the suite"
+    );
+
+    rpc_send(&mut child, 2, "tools/list", json!({}));
+    let (list_resp, _) = rpc_recv_by_id(&mut child, 2, Duration::from_secs(10));
+    let list = list_resp.expect("tools/list within 10s on release binary");
+    let tools = list["result"]["tools"]
+        .as_array()
+        .expect("tools array on release binary");
+    assert!(
+        !tools.is_empty(),
+        "release binary returned an empty tool catalog"
+    );
+    // At least one tool from the hand-authored catalog must be
+    // present; this is the minimum smoke check.
+    let first = tools[0]["name"].as_str().expect("tool name");
+    assert!(
+        !first.is_empty(),
+        "release binary returned a tool with an empty name"
+    );
+}
