@@ -17261,3 +17261,15 @@ estructural, mismo enfoque de helper único.
 Si la batería post-merge-gate ya fue verde antes del ciclo 1, no hay
 necesidad de tocar el gate; el push ocurre al final del ciclo para
 "integra todo en remoto" (instrucción del operador).
+
+## Entry 60 — H0.3 verification (cycle 2)
+
+**What**: H0.3 ("otro workspace ⇒ error/identidad distinta") verified at the type level. The `AnalysisBasis::for_workspace` pipeline has three normalization steps declared in the docstring (syntactic `.`/`..`, absolute via cwd, canonicalize if exists) but until this cycle no test pinned any of them. Wrote a new test file `crates/cognicode-core/tests/h03_workspace_root_identity_contract.rs` with 4 sub-tests: determinism for the same path, absolutization of a relative path, canonicalization of an existing path, and dot-dot normalization to the same workspace.
+
+**Why**: A consumer (CLI / MCP / `graph_full` cache key) cannot reason about workspace identity if `for_workspace(".")` returns an empty `PathBuf`. The cache would key on empty-string, two sessions in the same cwd would not collide on the same workspace, and a symlink-vs-realpath pair would map to two cache slots. The property the test pins is the one `H0.5` acceptance depends on.
+
+**Where**: `crates/cognicode-core/src/application/analysis_basis.rs` (the absolutize step) and the new test file.
+
+**Learned**: The test was RED on first run. The defect: when the input is purely relative (`.`, `..`, `""`), `normalize_path` strips it to an empty `PathBuf`, then `std::path::absolute("")` returns the empty path unchanged on stable Rust, and the existing `unwrap_or(normalized)` fallback kept the empty string. The fix is a 6-line explicit branch: empty after normalize → anchor at cwd; non-empty relative → prefer `std::path::absolute`, fall back to `cwd.join(normalized)` if the syscall layer is unavailable. The docstring contract ("si el path es relativo, se resuelve contra el cwd") now matches the implementation, not just the intent.
+
+Fast suite: 2355/2355 passing, baseline check OK.
