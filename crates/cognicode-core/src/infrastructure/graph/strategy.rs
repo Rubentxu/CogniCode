@@ -306,6 +306,20 @@ impl PerFileStrategy {
             cache: Arc::new(PerFileGraphCache::with_project_dir(project_dir)),
         }
     }
+
+    /// Merge an explicit list of files and report what could not be read.
+    ///
+    /// The honest counterpart of the trait's `build_full_graph`, for the
+    /// case where the caller named the files instead of a directory to
+    /// walk. It exists so [`PerFileGraphCache`] can stay private: the
+    /// cache is the strategy's own state, and a caller that needs an
+    /// explicit merge asks the strategy, not the cache behind it.
+    pub fn merge_files_with_report(
+        &self,
+        file_paths: &[&Path],
+    ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
+        self.cache.merge_with_report(file_paths)
+    }
 }
 
 impl Default for PerFileStrategy {
@@ -412,8 +426,10 @@ impl PerFileStrategy {
     /// represents complete coverage of the project directory or whether
     /// some files were skipped. The legacy `build_full_graph` is kept
     /// for backward compatibility with the seven CLI consumers in
-    /// `interface/cli/commands.rs` and the `merge_file_graphs` MCP tool,
-    /// which will be migrated to this method in F2.W2-followup commits.
+    /// `interface/cli/commands.rs`. The `merge_graphs` MCP tool has
+    /// already moved off it: that tool names its files rather than a
+    /// directory, so it goes through
+    /// [`PerFileStrategy::merge_files_with_report`] instead.
     pub fn build_full_graph_report(
         &self,
         project_dir: &Path,

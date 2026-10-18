@@ -890,11 +890,69 @@ pub struct MergeGraphsInput {
     pub file_paths: Vec<String>,
 }
 
+/// Why a requested file did not make it into the merged graph.
+///
+/// A projection of [`crate::infrastructure::graph::per_file_graph::SkipReason`]
+/// with the provider's message kept in a separate field, so a consumer can
+/// branch on the kind without parsing prose. The conversion is exhaustive:
+/// a new `SkipReason` variant fails to compile here rather than silently
+/// collapsing into `Other`.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkippedReasonKind {
+    Read,
+    Parse,
+    UnsupportedExtension,
+    Other,
+}
+
+/// One requested file the merge could not include.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkippedFileInfo {
+    pub path: String,
+    pub reason: SkippedReasonKind,
+    /// The provider's own message. Diagnostic only — never branch on it.
+    pub detail: String,
+}
+
+/// How much of what was asked for is actually in the answer.
+///
+/// This is an ADT on purpose: `Complete` carries no list, so "complete but
+/// here are four gaps" is unrepresentable, and `Partial` is only ever
+/// constructed through [`MergeCoverage::from`], which yields `Complete`
+/// when the skip list is empty. `file_count`-style counts cannot express
+/// that, which is how a partial merge used to read as a clean one.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum MergeCoverage {
+    Complete,
+    Partial { skipped_files: Vec<SkippedFileInfo> },
+}
+
+impl MergeCoverage {
+    /// The only constructor, and the only place the empty-vs-non-empty
+    /// decision is made.
+    pub fn from(skipped: Vec<SkippedFileInfo>) -> Self {
+        if skipped.is_empty() {
+            MergeCoverage::Complete
+        } else {
+            MergeCoverage::Partial {
+                skipped_files: skipped,
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MergeGraphsOutput {
-    pub file_count: usize,
+    /// How many paths the caller asked for.
+    pub requested_file_count: usize,
+    /// How many of them actually reached the graph. Differs from the
+    /// request whenever `coverage` is `Partial`.
+    pub merged_file_count: usize,
     pub merged_symbol_count: usize,
     pub merged_dependency_count: usize,
+    pub coverage: MergeCoverage,
     pub symbols: Vec<SymbolLocationEntry>,
     pub dependencies: Vec<DependencyInfo>,
 }
