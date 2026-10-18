@@ -605,16 +605,40 @@ impl ServerHandler for CogniCodeHandler {
     ) -> impl std::future::Future<Output = Result<ListToolsResult, rmcp::ErrorData>> + Send + '_
     {
         async move {
-            use base64::Engine;
+            use crate::interface::mcp::cursor::{CursorContext, encode_cursor, verify_cursor};
 
-            // Parse cursor for pagination (base64 encoded offset)
-            let cursor_offset = request
+            // H2.3: anchored cursor with typed errors. The cursor
+            // is a compact base64-JSON envelope; a tampered or
+            // expired cursor surfaces as a JSON-RPC error with
+            // `kind` + `reason`, not a silent reset to page 0.
+            let cursor_ctx = {
+                let visible = build_all_tools()
+                    .into_iter()
+                    .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
+                    .map(|t| t.name)
+                    .collect::<Vec<_>>()
+                    .join("|");
+                CursorContext {
+                    workspace: "__tools__".to_string(),
+                    snapshot: format!("read_only:{}|{}", self.ctx.is_read_only(), visible),
+                }
+            };
+            let cursor_offset: usize = match request
                 .as_ref()
-                .and_then(|p| p.cursor.as_ref())
-                .and_then(|c| base64::engine::general_purpose::STANDARD.decode(c).ok())
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-                .and_then(|s| s.parse::<usize>().ok())
-                .unwrap_or(0);
+                .and_then(|p| p.cursor.as_deref())
+            {
+                Some(c) => match verify_cursor(c, &cursor_ctx) {
+                    Ok(off) => off,
+                    Err(e) => {
+                        return Err(rmcp::ErrorData {
+                            code: rmcp::model::ErrorCode::INVALID_PARAMS,
+                            message: format!("{e}").into(),
+                            data: Some(serde_json::to_value(&e).unwrap_or(serde_json::Value::Null)),
+                        });
+                    }
+                },
+                None => 0,
+            };
 
             const PAGE_SIZE: usize = 20;
 
@@ -635,10 +659,7 @@ impl ServerHandler for CogniCodeHandler {
                 .collect();
 
             let next_cursor = if cursor_offset + PAGE_SIZE < total {
-                Some(
-                    base64::engine::general_purpose::STANDARD
-                        .encode((cursor_offset + PAGE_SIZE).to_string()),
-                )
+                Some(encode_cursor(&cursor_ctx, cursor_offset + PAGE_SIZE))
             } else {
                 None
             };

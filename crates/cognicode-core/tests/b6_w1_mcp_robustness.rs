@@ -230,18 +230,18 @@ fn rpc_recv_by_id(
 
 /// Decode a `tools/list` cursor into the byte offset it encodes.
 ///
-/// `rmcp_adapter::list_tools` encodes the offset as the base64 of its
-/// decimal string, so this is the inverse. A cursor that does not
-/// decode to a number is not an offset, and the caller asserts on
-/// `None` rather than skipping the check — that is precisely the
-/// "cursor is a fingerprint, not a position" failure the pagination
-/// test exists to catch.
+/// H2.3: the cursor is now a compact base64-JSON envelope
+/// `{v, ws, snap, off}`. The pagination test still asserts on
+/// the offset specifically (a cursor that is not a real offset
+/// is the failure the test exists to catch). A cursor that
+/// does not match the envelope is `None`, not a silent fallback.
 fn decode_cursor(cursor: &str) -> Option<usize> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(cursor)
         .ok()?;
-    String::from_utf8(bytes).ok()?.parse().ok()
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    v.get("off").and_then(|n| n.as_u64()).map(|n| n as usize)
 }
 
 /// Extract the text payload of a `tools/call` response frame.
