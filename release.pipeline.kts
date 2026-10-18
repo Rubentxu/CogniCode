@@ -229,7 +229,18 @@ pipeline {
                     set -eo pipefail
                     set -eo pipefail
                     $cd || exit 1
-                    expected=$(cd release && ls *.tar.gz | sort)
+                    # MEDIDO 2026-10-18. Este stage comparaba `release/*.tar.gz`
+                    # contra el conjunto publicado COMPLETO. Los tres manifiestos
+                    # (bundle por plataforma, release-inventory, SHA256SUMS) los
+                    # sube `upload-manifests`, la etapa siguiente — asi que en una
+                    # primera publicacion la diferencia era 0 y el stage pasaba.
+                    # Al re-ejecutar el lane sobre un tag ya publicado, esos tres ya
+                    # estaban ahi y el stage caia: no se podia volver a pasar por
+                    # el lane sin republicar. La invariante real es "el conjunto
+                    # publicado es el que este lane produce", y eso incluye los
+                    # manifiestos. Un gate que solo se puede ejecutar una vez no es
+                    # un gate: es un rito.
+                    expected=$(cd release && ls *.tar.gz bundle-*.yaml release-inventory-*.json SHA256SUMS | sort)
                     actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
                     if [ "${'$'}expected" != "${'$'}actual" ]; then
                         echo "the uploaded asset set does not match the produced payload set"
@@ -357,7 +368,16 @@ pipeline {
                     # this proves the candidate a consumer would actually get.
                     work=$(mktemp -d)
                     cd "${'$'}work"
-                    gh release download "${'$'}RELEASE_TAG"
+                    # MEDIDO 2026-10-18. Este stage es el UNICO que sale del
+                    # repo — y por eso era el UNICO que podia fallar aqui. Sin
+                    # `--repo`, `gh` deduce el repositorio del directorio actual
+                    # con git; dentro de un `mktemp -d` no hay repo, y gh aborta
+                    # con "failed to run git: not a git repository" ANTES de
+                    # descargar un byte. Medido en v0.101.23: la release estaba
+                    # publicada y correcta, y este gate la marcaba FAILURE. Un
+                    # gate que no puede distinguir "los bytes publicados estan
+                    # mal" de "mi contexto esta mal" no es un gate.
+                    gh release download "${'$'}RELEASE_TAG" --repo "$repo"
                     sha256sum -c SHA256SUMS
                     echo "published release verified from re-downloaded bytes"
                 """.trimIndent())
