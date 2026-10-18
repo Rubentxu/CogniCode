@@ -285,11 +285,16 @@ impl PerFileGraphCache {
     }
 
     /// Gets a cached graph without building if missing
+    ///
+    /// Returns `None` when the entry is absent OR has been invalidated
+    /// (`entry.valid == false`). Callers that need a guaranteed-fresh
+    /// graph should use [`PerFileGraphCache::get_or_build`].
     pub fn get_cached(&self, file_path: &Path) -> Option<Arc<CallGraph>> {
         let path_str = file_path.to_string_lossy().to_string();
         let cache = self.cache.read().unwrap();
         cache
             .get(&path_str)
+            .filter(|entry| entry.valid)
             .map(|entry| Arc::new(entry.graph.clone()))
     }
 
