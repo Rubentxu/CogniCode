@@ -6,7 +6,7 @@
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, Location};
+use crate::domain::value_objects::{DependencyType, Location, WalkDecision};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -741,6 +741,163 @@ pub enum WalkClassification {
     /// Extensión irrelevante para el análisis (README, imágenes, datos):
     /// exclusión legítima, no genera gap ni entrada en `skipped`.
     LegitExclusion,
+}
+
+/// H1.1 (delivery-first-radical, package integration) — unified
+/// classification envelope for every file the walk encounters.
+///
+/// This is NOT a replacement for the existing taxonomy
+/// (`WalkClassification` + `SkipReason` + presence-in-graph); it is
+/// the *projection* onto the five logical states the H1.1 spec
+/// names, so that "every file lands in exactly one of the five
+/// states" can be expressed at the type level. AC-01 §Invariantes:
+/// "FileDisposition = Parsed | ExcludedByPolicy | UnsupportedRelevant
+/// | ReadFailed | ParseFailed". A sixth state ("Unknown", "Pending",
+/// "Failed", …) would re-introduce the silent-discard bug the
+/// envelope was created to prevent; the test
+/// `h11_unified_classification_contract::file_disposition_has_exactly_the_five_spec_variants`
+/// pins the count to 5.
+///
+/// Each variant carries the minimal payload to render an actionable
+/// message in CLI/MCP. The variant names are part of the public
+/// contract (AC-01 names them by name) and must remain stable.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FileDisposition {
+    /// The file was read, parsed, and contributed symbols to the
+    /// graph. Only this variant can be summarised as "this
+    /// contributed to the answer".
+    Parsed,
+    /// The path is outside the analysis scope, by policy:
+    ///   - `WalkFilter` pruned it (security blocklist: `.git/HEAD`,
+    ///     `id_rsa`, …), OR
+    ///   - the file is a known-irrelevant asset (README, image,
+    ///     lockfile), OR
+    ///   - an unknown I/O error mapped to `SkipReason::Other`
+    ///     (honest default: we don't claim a gap we can't name).
+    /// Never affects `BuildStatus`.
+    ExcludedByPolicy { reason: String },
+    /// The file is a *source* in a language we know about but have
+    /// not yet wired (the K0 bridge: `.kt`/`.kts` until K1 lands).
+    /// Affects `BuildStatus` → `Partial`.
+    UnsupportedRelevant { extension: String },
+    /// `std::fs::read` failed (permission denied, broken symlink,
+    /// file vanished between walk and read, …). Affects
+    /// `BuildStatus` → `Partial`.
+    ReadFailed { reason: String },
+    /// The file was read but the parser could not extract symbols.
+    /// Affects `BuildStatus` → `Partial`.
+    ParseFailed { reason: String },
+}
+
+impl FileDisposition {
+    /// The five H1.1 variants, in the order the spec lists them.
+    /// Used by the test that pins the count and the names.
+    pub fn all() -> [FileDisposition; 5] {
+        [
+            FileDisposition::Parsed,
+            FileDisposition::ExcludedByPolicy {
+                reason: "policy".to_string(),
+            },
+            FileDisposition::UnsupportedRelevant {
+                extension: "kt".to_string(),
+            },
+            FileDisposition::ReadFailed {
+                reason: "EACCES".to_string(),
+            },
+            FileDisposition::ParseFailed {
+                reason: "unexpected EOF".to_string(),
+            },
+        ]
+    }
+
+    /// Stable name for diagnostics and the public contract.
+    pub fn name(&self) -> &'static str {
+        match self {
+            FileDisposition::Parsed => "Parsed",
+            FileDisposition::ExcludedByPolicy { .. } => "ExcludedByPolicy",
+            FileDisposition::UnsupportedRelevant { .. } => "UnsupportedRelevant",
+            FileDisposition::ReadFailed { .. } => "ReadFailed",
+            FileDisposition::ParseFailed { .. } => "ParseFailed",
+        }
+    }
+
+    /// Constructor for the happy path. A file that was read, parsed
+    /// and contributed to the graph.
+    pub fn parsed() -> FileDisposition {
+        FileDisposition::Parsed
+    }
+
+    /// Project a `WalkClassification` onto the envelope. This is
+    /// the call for files that the walk *saw* but that did not
+    /// generate a `SkippedFile` (either because they were
+    /// irrelevant, or because they were analyzed and merged).
+    pub fn from_walk_classification(
+        class: WalkClassification,
+        ext: Option<&str>,
+    ) -> FileDisposition {
+        match class {
+            WalkClassification::Analyze => FileDisposition::Parsed,
+            WalkClassification::KnownUnsupportedGap => {
+                FileDisposition::UnsupportedRelevant {
+                    extension: ext.unwrap_or("?").to_string(),
+                }
+            }
+            WalkClassification::LegitExclusion => FileDisposition::ExcludedByPolicy {
+                reason: format!("irrelevant extension: {}", ext.unwrap_or("?")),
+            },
+        }
+    }
+
+    /// Project a `WalkDecision` (the result of `WalkFilter::should_walk`)
+    /// onto the envelope. A `Prune` decision means the path is
+    /// outside the analysis scope; `Skip` and `Include` are not
+    /// `FileDisposition` values — `Skip` means "descend but don't
+    /// classify this entry" (handled at the walk level, not here)
+    /// and `Include` means the entry will be classified by
+    /// `from_walk_classification` once read.
+    pub fn from_walk_decision(decision: WalkDecision) -> FileDisposition {
+        match decision {
+            WalkDecision::Prune => FileDisposition::ExcludedByPolicy {
+                reason: "walk_filter_pruned".to_string(),
+            },
+            // `Include` and `Skip` are walk-level decisions, not
+            // file dispositions; a file that survives a Skip
+            // decision is handled by `from_walk_classification`
+            // (the descent continues, the file is examined).
+            WalkDecision::Include | WalkDecision::Skip => FileDisposition::ExcludedByPolicy {
+                reason: "walk_decision_not_a_disposition".to_string(),
+            },
+        }
+    }
+
+    /// Project a `SkippedFile` (the result of a walk + read + parse
+    /// that failed for a typed reason) onto the envelope. This is
+    /// the call for paths that reached the read/parse stage and
+    /// produced a `SkippedFile` row.
+    pub fn from_skipped(skipped: &SkippedFile) -> FileDisposition {
+        match &skipped.reason {
+            SkipReason::Read(reason) => FileDisposition::ReadFailed {
+                reason: reason.clone(),
+            },
+            SkipReason::Parse(reason) => FileDisposition::ParseFailed {
+                reason: reason.clone(),
+            },
+            SkipReason::UnsupportedExtension(extension) => {
+                FileDisposition::UnsupportedRelevant {
+                    extension: extension.clone(),
+                }
+            }
+            // `SkipReason::Other` is the honest fallback for I/O
+            // errors we can't name precisely. Mapping it to
+            // UnsupportedRelevant would falsely demote BuildStatus
+            // for paths we don't know about; the honest default is
+            // ExcludedByPolicy (we know nothing → we don't claim a
+            // gap).
+            SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
+                reason: reason.clone(),
+            },
+        }
+    }
 }
 
 /// Clasifica la extensión de un archivo de walk según el contrato K0.
