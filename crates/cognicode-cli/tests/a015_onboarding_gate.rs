@@ -181,46 +181,30 @@ fn fn_body(text: &str, signature: &str) -> Option<String> {
     None
 }
 
-/// The `cogh` binary, resolved from the target directory Cargo reports.
+/// The `cogh` binary this test drives.
 ///
-/// Not from `<repo>/target`: this checkout sets `target_directory` to
-/// `/var/home/rubentxu/cargo-targets`, so a contract that assumed
-/// `<root>/target` would fail to find a binary that cargo had just built.
-/// That is the same class of defect as the scanner that only accepted
-/// directories: the assumption, not the code, was wrong.
+/// `common::binary_path` is this crate's single answer to "where is this
+/// binary": `CARGO_BIN_EXE_cogh` captured at compile time, the runtime
+/// variable set by cargo-nextest, `CARGO_TARGET_DIR`, the directory
+/// `cargo metadata` reports, and only then `<repo>/target`. It preserves
+/// the profile: cargo points `CARGO_BIN_EXE_cogh` at the profile the test
+/// itself is running under, which is the profile this gate always wanted.
 ///
-/// A fresh build is the last resort, so the assertion is self-contained
-/// rather than depending on the operator having run `cargo build` first.
+/// This function used to re-derive that whole chain locally and read
+/// cargo's answer by splitting the JSON on `"target_directory":`. That
+/// split returns `None` the moment cargo emits a space after the colon,
+/// and `None` here is silent — the chain falls through to a full
+/// `cargo build` *inside a test*. The test still passes. It just takes
+/// minutes, for a reason that has nothing to do with `cogh setup`.
+///
+/// The build fallback stays: a contract that only passes when the
+/// operator happened to run `cargo build` first is not hermetic.
 fn cogh_binary() -> PathBuf {
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        let p = PathBuf::from(dir).join(profile_dir()).join("cogh");
-        if p.is_file() {
-            return p;
-        }
-    }
-    let root = repo_root();
-    let p = root.join("target").join(profile_dir()).join("cogh");
+    let p = common::binary_path("cogh");
     if p.is_file() {
         return p;
     }
-    // Ask cargo where it actually puts things, then build if still absent.
-    let out = Command::new("cargo")
-        .args(["metadata", "--format-version", "1", "--no-deps"])
-        .current_dir(&root)
-        .output()
-        .expect("cannot run `cargo metadata`");
-    let meta = String::from_utf8_lossy(&out.stdout);
-    let target_dir = meta
-        .split("\"target_directory\":")
-        .nth(1)
-        .and_then(|s| s.split('"').nth(1))
-        .map(PathBuf::from);
-    if let Some(dir) = &target_dir {
-        let p = dir.join(profile_dir()).join("cogh");
-        if p.is_file() {
-            return p;
-        }
-    }
+    let root = repo_root();
     let build = Command::new("cargo")
         .args(["build", "-p", "cognicode-cli", "--bin", "cogh", "--quiet"])
         .current_dir(&root)
@@ -231,35 +215,13 @@ fn cogh_binary() -> PathBuf {
         "`cargo build -p cognicode-cli --bin cogh` failed:\n{}",
         String::from_utf8_lossy(&build.stderr)
     );
-    // Re-read the location: the build may have created a new target dir.
-    if let Ok(dir) = std::env::var("CARGO_TARGET_DIR") {
-        let p = PathBuf::from(dir).join(profile_dir()).join("cogh");
-        if p.is_file() {
-            return p;
-        }
-    }
-    if let Some(dir) = &target_dir {
-        let p = dir.join(profile_dir()).join("cogh");
-        if p.is_file() {
-            return p;
-        }
-    }
-    let p = root.join("target").join(profile_dir()).join("cogh");
-    if p.is_file() {
-        return p;
-    }
-    panic!(
-        "cannot find the cogh binary after building it. Looked in \
-         CARGO_TARGET_DIR, <repo>/target and the directory `cargo metadata` \
-         reports, under the {} profile.",
-        profile_dir()
-    )
-}
-
-fn profile_dir() -> &'static str {
-    if cfg!(debug_assertions) {
-        "debug"
-    } else {
-        "release"
-    }
+    // Re-resolve: the build may have written where the pre-build probe
+    // did not look.
+    let p = common::binary_path("cogh");
+    assert!(
+        p.is_file(),
+        "cannot find the cogh binary after building it; common::binary_path resolved {}",
+        p.display()
+    );
+    p
 }

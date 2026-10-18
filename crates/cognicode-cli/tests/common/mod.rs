@@ -19,10 +19,15 @@
 //! 3. `CARGO_TARGET_DIR/release/<NAME>` y
 //!    `CARGO_TARGET_DIR/debug/<NAME>` — honra el override de target-dir
 //!    del usuario.
-//! 4. `<workspace_root>/target/{release,debug}/<NAME>` — fallback
+//! 4. `<target_directory>/{release,debug}/<NAME>` — donde cargo dice que
+//!    escribe (`cargo metadata`), no `<repo>/target`: un checkout con
+//!    `target-dir` en `~/.cargo/config.toml` no escribe ahí, y cargo NO
+//!    exporta `CARGO_TARGET_DIR` a los procesos de test, así que la
+//!    variable no es una autoridad.
+//! 5. `<workspace_root>/target/{release,debug}/<NAME>` — fallback
 //!    histórico.
 //!
-//! Las branches 2-4 son robustas bajo `cargo-nextest` (que solo setea
+//! Las branches 2-5 son robustas bajo `cargo-nextest` (que solo setea
 //! env vars en runtime, no en compile-time) y bajo `CARGO_TARGET_DIR`
 //! custom.
 
@@ -69,7 +74,30 @@ fn resolve_binary_path(name: &str) -> PathBuf {
         }
     }
 
-    // 4. Workspace-relative fallback.
+    // 4. Where cargo says it writes.
+    //
+    // `<repo>/target` is an assumption, and on this repository it is
+    // simply false: `~/.cargo/config.toml` sets `target-dir`, and cargo
+    // does NOT export `CARGO_TARGET_DIR` to test processes. A resolver
+    // that stops here returns a path that does not exist, and the test
+    // that consumes it reports "binary not found" — a message about the
+    // harness, dressed as a message about the code.
+    //
+    // This branch only ever returns a path that exists, and every branch
+    // above it is consulted first, so it can never change which bytes a
+    // currently-passing test runs.
+    if let Some(target) = cargo_target_dir() {
+        let release = target.join("release").join(name);
+        if release.exists() {
+            return release;
+        }
+        let debug = target.join("debug").join(name);
+        if debug.exists() {
+            return debug;
+        }
+    }
+
+    // 5. Workspace-relative fallback.
     let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("crate parent")
@@ -81,6 +109,31 @@ fn resolve_binary_path(name: &str) -> PathBuf {
         return release;
     }
     workspace_root.join("target").join("debug").join(name)
+}
+
+/// Where cargo is actually writing, according to cargo.
+///
+/// `<repo>/target` is an assumption; `CARGO_TARGET_DIR` is an override
+/// that cargo does not propagate to test processes. `cargo metadata` is
+/// the only authority for a checkout that redirects `target-dir`.
+///
+/// Cached for the life of the process: the answer cannot change while a
+/// test binary runs, and the alternative is one `cargo metadata`
+/// subprocess per resolution.
+pub fn cargo_target_dir() -> Option<PathBuf> {
+    static DIR: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        let out = std::process::Command::new("cargo")
+            .args(["metadata", "--no-deps", "--format-version", "1"])
+            .output()
+            .ok()?;
+        if !out.status.success() {
+            return None;
+        }
+        let meta: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+        Some(PathBuf::from(meta.get("target_directory")?.as_str()?))
+    })
+    .clone()
 }
 
 fn compile_time_bin_exe(name: &str) -> Option<&'static str> {
