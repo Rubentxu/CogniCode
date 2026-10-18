@@ -17495,3 +17495,28 @@ H2.3 cycle 1 closed. H2.3 acceptance: PASS for the typed-error half; PARTIAL for
 H2.4 cycle 1 closed. H2.4 acceptance: PASS. H2 (CU-3) program: 4/4 done. The H2 program closes with all 4 quarters green: H2.1 (consumer questions), H2.2 (affordances), H2.3 (typed cursor errors), H2.4 (wire parity + release binary).
 
 **Next work units open**: H3 (Kotlin tree-sitter grammar), H4 (correct calls: no invented edges), H5 (incremental/distribution). The H2 (CU-3) program is the demonstration that "MCP surface = CLI surface" is a contract the test harness can pin cheaply; the next two programs build on the same evidence basis.
+
+**What**: W0 cycle 1 — post-pruning orthodoxy (regression for the L0 poda radical v0 itself). The L0 cleanup (commits `013a11d1` and `c8a96e64`) retired 19 test binaries and rewrote two active pipeline kts so no `cargo test` invocation references a retired path. Without a regression test, a future merge, cherry-pick, or manual restore can re-introduce a retired path on disk or wire it back into a pipeline without the orchestrator noticing. The L0-A UI half is BLOCKED (no podman postgres container, per the poda recipe rule "si no puede montarse, declarar BLOCKED; no sustituirlo por otro smoke mock"), so the next WU is the cheap test that pins the L0-C/L0-B outcome.
+
+The new file `crates/cognicode-core/tests/w0_post_pruning_orthodoxy.rs` (3 tests, 200 lines) contains three orthogonal assertions, each one the right shape for the failure mode it catches:
+
+  1. **`retired_test_paths_are_not_on_disk`** — walks the 19 retired paths from the poda manifest; a present path is a hard failure with the path printed. The `env!("CARGO_MANIFEST_DIR")` macro resolves the workspace root from the test crate, so the assertion is hermetic (no cwd dependence).
+
+  2. **`protected_test_paths_are_still_on_disk`** — walks the 9 protected paths (the spine: `workspace_isolation`, `prf_sec_07_adversarial_campaign`, `prf_h06_adversarial_e2e` for the security boundary; `cu2_w2/w3/w4` for the consumer contract; `a009_agent_safe_profile`, `a010_tool_authority_audit` for the agent-safe profile; `cli_exit_code_propagation` for the exit code contract). A missing path is a hard failure.
+
+  3. **`no_active_pipeline_invokes_a_retired_test`** — scans the 6 active pipeline kts (`merge-gate`, `product-fast`, `integration`, `release-candidate`, `release`, `certification`); a non-comment line that contains `cargo test` AND a retired basename is a hard failure with the scope, line number, basename, full retired path, and remediation hint. Comment lines (`//`, `/*`, `*`) are the right shape (the pipeline kts in this repo use them to document the retirement) and are skipped.
+
+**Why**: The L0 poda recipe is explicit about the trade-off: "Conservar siempre la garantía, no necesariamente el fichero… Reducir variaciones, duplicados y mutantes, no dar por cubierta una ley porque un test tiene nombre apropiado. La sustituta pasa un caso positivo y falla ante una mutación negativa real." A future change that re-adds an active reference to a retired path defeats the cleanup; a future change that drops a protected path defeats the manifest's KEEP set. The test pins both failure modes. Negative control: injecting a synthetic `cargo test --test core_gate_coverage_contract` line into `merge-gate.pipeline.kts` makes test 3 panic with a precise, actionable message; removing the synthetic line returns the suite to green.
+
+**Where**:
+- `crates/cognicode-core/tests/w0_post_pruning_orthodoxy.rs` — new file, 3 tests, no new dependencies, no production code change. Uses `std::path::Path` and `std::fs` only.
+- `docs/roadmap/JOURNAL.md` — this entry.
+
+**Learned**:
+- The hard/soft asymmetry that worked in H2.4 (binary ⊆ catalog is security-relevant, catalog ⊃ binary is roadmap) has the same shape here: a path *on disk* that should be gone is a hard failure (it's a regression of the cleanup); a path *in history* (journal, roadmap, manifest) that mentions a retired name is a soft pass (it's the right shape for the historical record). The test only scans the active pipeline kts, by design — the day the next journal entry is written, that entry must be free to mention the retired names.
+- Hermetic path resolution via `env!("CARGO_MANIFEST_DIR")` + two `..` joins is the right idiom for a workspace test crate. cargo runs integration tests with `cwd` = the package root, not the workspace root, so a test that reads "the file at relative path X" is brittle. The macro is a compile-time constant, so the resolution is also faster than `cargo_manifest_dir`-style runtime discovery.
+- The 200-line cost includes ~110 lines of doc comments, not just assertion bodies. The doc comments are load-bearing for the same reason they were in H2.4: a future contributor reading "why does the active-scope scan skip `//` lines" should not have to re-derive the answer from the loop body. The poda recipe's "fallar ante una mutación negativa real" rule is the test's reason to exist; the doc comments encode the rule so a future edit doesn't accidentally break it.
+
+W0 cycle 1 closed at HEAD `c64cc3b`. W0 acceptance: PASS (3/3 new + 62/62 lib fast suite, baseline OK, negative control verified). L0 (poda radical) program: L0-C PASS, L0-B PASS, L0-A BLOCKED (no podman postgres container), W0 (post-pruning orthodoxy) PASS.
+
+**Next work units open**: H3 (Kotlin tree-sitter), H4 (correct calls: no invented edges), H5 (incremental/distribution). The L0-A UI poda remains BLOCKED until the postgres container can be mounted; the W0 regression test makes sure L0-C and L0-B do not silently regress while the H3/H4/H5 program advances.
