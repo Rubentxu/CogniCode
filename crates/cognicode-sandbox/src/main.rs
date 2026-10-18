@@ -746,9 +746,16 @@ fn execute_scenario(
     }
 
     // ── Phase 0: Implicit build_graph for tools that need a pre-built graph ──
-    // Tools whose descriptions contain "Requires build_graph first." (detected via
-    // lookup_tool_deps) need the graph constructed first. We call build_graph
-    // implicitly so scenarios don't need to explicitly include it.
+    // Tools whose catalogue entry lists a prerequisite (looked up via
+    // lookup_tool_deps, which reads the typed `prerequisites` field) need
+    // that graph constructed first. We call build_graph implicitly so
+    // scenarios don't need to explicitly include it.
+    //
+    // This used to be a regex over each tool's English description, which
+    // matched 26 tools where the catalogue declares 41. A scenario for
+    // `analyze_impact`, `ask_about_code`, `smart_search` or any of the
+    // other 15 ran here without a graph at all, and then reported its
+    // outcome.
     let needs_graph = lookup_tool_deps(scenario.tool.as_str());
     if needs_graph.is_some() {
         if let Some(ref mut srv) = server {
