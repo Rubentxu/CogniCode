@@ -29,14 +29,19 @@ dos modos contractuales:
 | Modo | Comando | Cuándo |
 |---|---|---|
 | **fast** | `bash scripts/test-fast.sh` | Durante un evolutivo, tras cada cambio de comportamiento. Detecta `git diff` vs `HEAD`, delega en `scripts/ci/select-suites.sh` (CR-08) y corre solo las suites afectadas. Aplica `known_failures.yaml` sobre `cognicode-core/lib` para distinguir regresiones reales del ruido conocido. |
-| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + baseline check. |
+| **full** | `bash scripts/test-full.sh` | Antes de tag anotado, antes de PR a `main`, antes de bump SemVer. Ejecuta fmt + clippy `-D warnings` + `cargo test --workspace` + `cargo test --workspace --doc` + `scripts/ci/run-all-contracts.sh` + baseline check. |
 
 **Reglas duras**:
 
 1. **`fast` no sustituye a `full`**. Un `full` verde es prerequisito
    para cualquier merge a `main` (vía `merge-gate`) y para cualquier
    bump SemVer. El `fast` solo acelera el feedback loop; no exonera
-   del gate.
+   del gate. Y `full` es ahora un **superconjunto** de `merge-gate` en
+   lo que importa: desde 2026-10-18 incluye `run-all-contracts.sh`,
+   sin el cual un `full` verde podía coexistir con un rojo de
+   `merge-gate` (medido: siete superficies públicas declarando la
+   versión anterior). Si añades un stage a `merge-gate.pipeline.kts`,
+   ese stage o su equivalente pertenece también a `full`.
 2. **El selector CR-08 manda**. `scripts/test-fast.sh` consume la
    salida JSON de `scripts/ci/select-suites.sh` y no la recalcula.
    Si una suite cae en `fallback` (cambio en `Cargo.toml`,
