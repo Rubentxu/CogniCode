@@ -17167,3 +17167,97 @@ Recomendación de commits (en este orden, mensajes con prefijo
 
 Pido sign-off por commit individual vs. un commit único (convención
 histórica CogniCode: commits atómicos por unidad lógica).
+
+## Entry 59 — 2026-10-18 — Ciclo 1 del /loop 10m — H0.2 verificación
+
+### Resultado
+
+H0.2 era defecto real, mismo patrón que H0.1 pero con un twist:
+el fix elegante es **extraer la traducción BuildStatus → gaps a un
+helper único** en lugar de copiarla en cada op del adaptador. La
+divergencia CLI/SDK/MCP que UAT-CU-1 detectó el 2026-10-16 queda
+así cerrada por construcción, no por disciplina.
+
+### Defecto (analyze.rs:151-192 pre-fix)
+
+`graph_complexity`:
+1. NO consultaba `self.service.get_last_build_report()`.
+2. Devolvía `AnalysisOutcome::complete(...)` aunque el walk hubiera
+   sido `BuildStatus::Partial` con skips.
+3. `graph_full` y MCP reportaban Partial sobre el MISMO workspace.
+
+Esto es la versión "complejidad" del bug que el comentario
+existente en `graph_full:111-115` documenta, pero que el adaptador
+reintrodujo al añadir la segunda op.
+
+### Fix
+
+Helper privado `partial_gaps_from_last_build` en
+`crates/cognicode-core/src/application/services/analyze.rs`. Retorna
+`Some(Vec<AnalysisError>)` si y solo si el último build fue
+`BuildStatus::Partial` con `!skipped.is_empty()`. `graph_full` y
+`graph_complexity` consultan el MISMO helper. Si una tercera op se
+añade, la disciplina "consultar el helper" es estructural, no
+convencional. Docstring del helper lo dice explícitamente.
+
+`graph_complexity` ahora:
+- Calcula metrics (igual que antes).
+- Si el helper retorna `Some(gaps)`, devuelve `AnalysisOutcome::partial(
+  AnalysisValue::Graph(GraphValue::Complexity { path, metrics }), gaps)`.
+- Si el helper retorna `None`, devuelve `Complete` (sin cambios).
+
+### RED→GREEN
+
+Test añadido (no nuevo fichero) a
+`crates/cognicode-core/tests/cu1_w2_service_analyzer_contract.rs`:
+
+```rust
+fn graph_complexity_inherits_partial_from_last_build_report()
+```
+
+Pasos del test:
+1. `graph_full` sobre el fixture (Cargo.toml + 3 .rs) — precondición:
+   `state == Partial`, gap contiene "Cargo.toml".
+2. `graph_complexity` sobre el MISMO basis (mismo `ServiceAnalyzer`,
+   mismo `AnalysisService` interno, mismo `last_build_report`).
+3. Assert: `state == Partial`, mismo número de gaps, "Cargo.toml"
+   presente en los gaps.
+
+Pre-fix output: `left: Complete, right: Partial` (test RED, mensaje
+cita analyze.rs:151-192).
+Post-fix: 5/5 tests en cu1_w2_service_analyzer_contract verde.
+
+### Batería
+
+- `cargo test -p cognicode-core --test cu1_w2_service_analyzer_contract`:
+  5/5 passed.
+- `bash scripts/test-fast.sh`: 2,355 passed / 0 failed / 2 ignored.
+  Cero regresión.
+
+### Commits nuevos (ciclo 1)
+
+```
+86048756 fix(analyzer): graph_complexity hereda Partial del BuildReport (H0.2)
+```
+
+Branch `chore/dft-radical-pruning` ahora 5 commits ahead de
+v0.101.22 (103d80e6).
+
+### Working tree al cierre del ciclo
+
+- `M crates/cognicode-core/src/application/services/analyze.rs` (H0.2 fix)
+- `M crates/cognicode-core/tests/cu1_w2_service_analyzer_contract.rs`
+  (H0.2 test)
+- `M docs/roadmap/JOURNAL.md` (Entries 55-58 ya en entries anteriores;
+  Entry 59 aquí)
+
+### Próximo ciclo (orientación)
+
+H0.3 (workspace_root identity) es el siguiente bounded del paquete
+delivery-first-radical. Mismo patrón: leer el código, escribir test
+RED, fix si defect, report. Si el ciclo 2 descubre otro defecto
+estructural, mismo enfoque de helper único.
+
+Si la batería post-merge-gate ya fue verde antes del ciclo 1, no hay
+necesidad de tocar el gate; el push ocurre al final del ciclo para
+"integra todo en remoto" (instrucción del operador).
