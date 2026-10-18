@@ -17615,3 +17615,37 @@ The fix promotes one resolver to be the single source of truth: `catalog::resolv
 - The test harness itself was part of the defect. A harness that spawns children in a directory the product never sees cannot find bugs about directory-dependence. `spawn_from` and `spawn_from_with_flags` exist so that "launched the way a real client launches it" is expressible at all.
 - Read this entry as the third instance of one class: a runtime dependency on *where the file is* (`env!("CARGO_MANIFEST_DIR")`, then the process CWD, then nothing at all). Each instance presented as a healthy process reporting an empty result. Baked-in product data removes the class, not the third instance.
 - I introduced one real regression while refactoring and want it on the record: rewriting `load_tool_catalog_active` dropped its feature filter. `b2_w2_catalog_parity` caught it immediately (80 advertised vs 77 expected). The lesson is that a wrapper refactor is not behaviour-preserving until a parity test says so — and this repo had exactly the right test for it, which is the strongest argument for keeping parity tests over the tool list they protect.
+
+## Entry 75 — v0.101.23 published; the publication lane turned out to be unmeasured
+
+**What**: v0.101.23 is published and verified from its own bytes, and the lane that published it turned out to have two defects that only a second execution could reveal.
+
+The release itself needed no further code work. `gh release view v0.101.23` reports `draft: false`, all 8 assets present, `/releases/latest` resolves to the new tag, and re-downloading every asset and running `sha256sum -c SHA256SUMS` matches on all 7 listed checksums. The consumer proof is the same one that diagnosed the incident in Entry 74, run against the *published* archive this time: extract `cognicode-mcp-0.101.23-x86_64-unknown-linux-gnu.tar.gz` into an empty directory with no `product/` anywhere above it, run the binary from a working directory outside any repository with `CARGO_MANIFEST_DIR` removed from the environment, and `tools/list` answers **20 tools** in the default posture, **20** with `--read-only`, and **20** with `--cwd`.
+
+What this cycle actually produced is the discovery that `release.pipeline.kts` had never been executed twice.
+
+**Defect 1 — `verify-as-consumer` could not pass.** It is the only stage that leaves the repository: it downloads into a `mktemp -d` precisely so that it verifies the bytes a consumer would receive rather than the local candidate. Without `--repo`, `gh` resolves the repository from the current directory using git; inside a temp directory there is none, so `gh` aborts with `failed to run git: fatal: no es un repositorio git` **before downloading a single byte**. The published release was correct and the gate that exists to prove exactly that reported FAILURE.
+
+**Defect 2 — the lane was not idempotent.** `confirm-uploaded-set` compared `release/*.tar.gz` against the full published asset set. The bundle yaml, the release-inventory and `SHA256SUMS` are uploaded by `upload-manifests`, the *next* stage. On a first publish the difference is zero and the stage passes; on any re-run those three are already present and the stage fails. The lane could not be executed twice for a published tag. It now compares against the set the lane actually produces.
+
+Both defects fail for reasons unrelated to what they claim to measure. That is the point worth recording: a gate that cannot distinguish "the published bytes are wrong" from "my context is wrong" is not a gate, it is a ceremony. Neither was visible on a first run because both only manifest on a re-run or outside the repository.
+
+**Harness consolidation.** The workspace carried four divergent answers to "where does cargo write on this machine". Two were correct (`cognicode-core` and `cognicode-mcp` asking `cargo metadata`), `a015_onboarding_gate.rs` read cargo's JSON by splitting the text on `"target_directory":`, and the CLI crate's shared resolver — used by roughly ten suites — had no cargo branch and stopped at `<repo>/target`, which is false on any checkout that redirects `target-dir`. Cargo does not export `CARGO_TARGET_DIR` to test processes, so that assumption cannot be rescued by reading the variable.
+
+The string split is the one that actually misbehaves: it returns `None` the moment cargo emits a space after the colon, and `None` is silent there — a015 falls through to a full `cargo build` *inside a test*, and the suite still passes, just slowly, for a reason unrelated to `cogh setup`. That is the same failure shape as the silent `SKIP` removed from the release smoke test earlier this cycle: a harness that degrades without saying so.
+
+`common::cargo_target_dir()` now lives in the CLI crate's shared module and is parsed as JSON. `resolve_binary_path` consults it before the `<repo>/target` fallback; the new branch only returns paths that exist and runs after every branch that used to decide, so it cannot change which bytes a currently-passing test executes. a015 delegates to `common::binary_path` and keeps its build fallback, deleting 65 lines that re-derived a chain the crate already had an answer for. One authority per crate; the shape is identical everywhere; no hand-parsed text.
+
+**Where**:
+- `release.pipeline.kts` — `gh release download --repo "$repo"` in `verify-as-consumer`; `confirm-uploaded-set` expects tarballs plus manifests. Commit `df6ab861`.
+- `crates/cognicode-cli/tests/common/mod.rs` — `cargo_target_dir()`, wired into `resolve_binary_path` as branch 4.
+- `crates/cognicode-cli/tests/a015_onboarding_gate.rs` — `cogh_binary()` delegates to `common::binary_path`; `profile_dir()` deleted. Commit `db1f0c32`.
+
+**Gates**: `scripts/test-full.sh` rc=0 on `db1f0c32` — `fmt --check`, `clippy -D warnings`, `test --workspace`, `test --workspace --doc` and the `known_failures` baseline, all OK. One earlier attempt returned rc=137 (`SIGKILL`) on the `test --workspace` step: `m011_rustdoc_gate` had just spent 482 s holding a 7.3 GB `rustdoc`, and the process was killed immediately after it finished. Infrastructure, not regression — the only change between that attempt and the green one is a `.pipeline.kts` no Rust test reads. Recorded as such rather than reported as a pass.
+
+**Learned**:
+- A gate that has only ever been executed once is unmeasured. Re-running it against an already-published tag is cheap and is the only way to see the class of defect where the gate's own assumptions about its environment are wrong.
+- `mktemp -d` removes more than the target directory: it removes the git context too. Any tool that infers the repository from the cwd is being handed an answer that only exists inside a checkout.
+- "The first run passes" is weaker evidence than "the first and second run pass". The asymmetry is always in the same direction: gates that depend on state the previous run created.
+- Four copies of one lookup is the shape a codebase takes when each copy arrived solving a different visible symptom. None of the four was wrong *where it was written*; all four were wrong somewhere else. The fix is not to make them agree but to make one of them the only one — and the unit of agreement has to be the crate, because that is the boundary cargo enforces.
+- Silently degrading to a slower path is a defect even when the suite stays green. `a015` would have kept passing forever with a full rebuild inside it.
