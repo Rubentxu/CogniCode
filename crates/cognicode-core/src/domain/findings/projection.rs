@@ -178,9 +178,12 @@ pub enum CauseProjection {
 ///   different snapshot, has unknown evidence class, or has no
 ///   evidence. A consumer (Guard) receiving this cannot promote
 ///   the finding; it must surface the reason.
-/// - `ProjectionError::Inconclusive(Vec<Gap>)` when the finding has
-///   an `EvidenceClass::C` (partial) or `D` (heuristic) and the
-///   projection requires `A|B`.
+/// - `ProjectionError::Inconclusive(Vec<Gap>)` is reserved for
+///   cases where the projection cannot recover snapshot or detector
+///   context (a malformed or synthetic finding). D-class findings
+///   with full context are projected as `Ok(Inconclusive {...})`,
+///   not as the error variant, so the absence of provenance is a
+///   structural discriminant the consumer can rely on.
 /// - `ProjectionError::Failed` on structural problems (e.g. an
 ///   invalid detector reference). This is the only way the
 ///   projection reports an internal error; the consumer must not
@@ -248,12 +251,19 @@ pub fn project_finding(
             evidence,
             message: finding.message.clone(),
         }),
-        EvidenceClass::D => Err(ProjectionError::Inconclusive(vec![
-            Gap::EvidenceClassBelowThreshold {
+        EvidenceClass::D => Ok(FindingProjection::Inconclusive {
+            snapshot_id,
+            detector,
+            // D-class is below the A|B threshold for Verifiable, but
+            // the finding has full provenance: snapshot, detector
+            // and evidence are all known. The gap explains the
+            // reason; the consumer can render it. H0.4: the Err arm
+            // is reserved for "no provenance" cases, not "below
+            // threshold with full context".
+            gaps: vec![Gap::EvidenceClassBelowThreshold {
                 class: finding.evidence_class,
-            },
-            Gap::NoEvidenceHandles,
-        ])),
+            }],
+        }),
     }
 }
 
