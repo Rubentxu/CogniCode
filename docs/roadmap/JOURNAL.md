@@ -17365,3 +17365,22 @@ The new public method `build_graph_per_file_with_report` is the single source of
 - The test fixture for H1.3 needs the same `.kt` corpus as H1.1/H1.2 to exercise the K0 honest gap. The fixture duplication (5 lines of fixture code in three test files) is a smell; the right move is to extract it into a `tests/common/h1_fixture.rs` module under H1.4 (acceptance), not before, because H1.4 is the "the H1 system holds" test that benefits from a single fixture.
 
 Fast suite: 5/5 new + 10/10 h11 + 5/5 h12 + 2355/2355 lib + 2 ignored, baseline OK. H1.3 cycle 1 closed. H1.4 (acceptance: the H1 system holds end-to-end) is the next cycle.
+
+## Entry 66 — H1 acceptance (cycle 1)
+
+**What**: H1.4 closes the H1 program. The cross-cutting test `h14_system_holds_end_to_end.rs` (4 tests, 336 lines) exercises the H1.1 envelope + H1.2 trait dispatch + H1.3 AnalysisService propagation on ONE adversarial corpus and asserts they all tell the same story. The fixture is intentionally mean: 3 analyzed `.rs` files, 1 `.kt` K0 gap, 1 README (legit exclusion), 1 `.env` (security blocklist), and 4 decoy files inside `target/`, `node_modules/`, `.venv/`, `.env/` — each with a unique marker that would match `find_symbol_usages` if the directory was walked.
+
+**Why**: Three independent pin points (H1.1 type, H1.2 trait method, H1.3 service propagation) can each be true in isolation while the seam between them lies. A `&dyn GraphStrategy` might surface the K0 gap while the service path silently discards it. A `find_symbol_usages` over a `.env` might read the secret while the build report's skipped list is empty (because the prune happened pre-walk). H1.4 is the test that says: on the same corpus, the strategy side, the service side, the symbol-search side, and the `get_last_build_report` accessor all agree.
+
+**Where**:
+- `crates/cognicode-core/tests/h14_system_holds_end_to_end.rs` — 4 tests pinning:
+  - **`full_graph_strategy_and_analysis_service_agree_on_k0_gap`** — the cross-cutting claim. Both sides name the `.kt` as a skip, project it to `UnsupportedRelevant`, agree that the README is `LegitExclusion` (not a skip), agree that the pruned directories never surface, and the `get_last_build_report` accessor agrees with the return value of `build_graph_per_file_with_report`.
+  - **`find_symbol_usages_prunes_security_and_performance_at_the_same_seam`** — the dedup from H1.3 holds: target, node_modules, .venv (perf) and .env (security) are all invisible to the search. The legal marker in `src/main.rs` is found.
+  - **`analysis_service_typed_method_does_not_lie_about_a_pure_rust_corpus`** — the other half of the truth: a pure-Rust corpus with README and `.env` is `Complete` on BOTH sides. A lie the other way (false Partial) is just as bad as a missed Partial.
+  - **`h14_helper_compat_partial_invariants_remain_anchored`** — regression guard for the helper the other three use; if it drifts, the seam invariants above are not actually being checked.
+
+**Learned**: Two technical notes worth recording:
+- The `tests/common/` directory exists but it is dedicated to merge-gate authority (`MERGE_AUTHORITY`, `merge_authority_runs`). Mixing the H1 fixture into it would conflate two unrelated concerns (pipeline authority vs. analysis fixture). The right move is to leave h11/h12/h13/h14 each owning their own 5-line fixture, and accept the duplication. The smell is real, the refactor is not.
+- The cu2_w2_finding_projection test (`expected Inconclusive, got Ok(Inconclusive)`) is a pre-existing failure in the test contract — it fails on a clean tree without the H1.4 changes. The fast suite selector does not include it, so the regression guard is the `known_failures.yaml` baseline (which is the contractually correct place for it). H1.4 is not affected.
+
+Fast suite: 4/4 new + 10/10 h11 + 5/5 h12 + 5/5 h13 + 2355/2355 lib + 2 ignored, baseline OK. H1.4 cycle 1 closed. H1 program complete.
