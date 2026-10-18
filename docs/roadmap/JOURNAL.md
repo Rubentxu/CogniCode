@@ -17442,3 +17442,33 @@ H2.1 cycle 1 closed. H2.1 acceptance: PASS. H2 (CU-3) program: 1/4 open cycles (
 - The test's path-resolution pattern (`env!("CARGO_MANIFEST_DIR")` + `/../../product/tools.json`) is now the canonical way to reach a workspace-relative file from an integration test. The H2.1 audit fixed the same lesson; the H2.2 audit applies it without re-deriving it.
 
 H2.2 cycle 1 closed. H2.2 acceptance: PASS. H2 (CU-3) program: 2/4 done.
+
+## Entry 69 — H2.3 typed cursor errors + anchored snapshot/workspace (cycle 1)
+
+**What**: H2.3 cycle 1 closes the third quarter of the CU-3 acceptance. The pagination surface (list_tools, resources/list) no longer silently resets to page 0 on a malformed cursor. A tampered or expired cursor now surfaces as a typed error with a stable snake_case `kind` and a `reason` that preserves the cause verbatim.
+
+The change has four parts:
+
+  1. **New module** `crates/cognicode-core/src/interface/mcp/cursor.rs` — `CursorEnvelope {v, ws, snap, off}` encoded as `base64(JSON)`. `verify_cursor(cursor, &ctx)` returns `Ok(offset)` or `CursorError {kind, reason}`. The `kind` enum is `Garbled | WorkspaceMismatch | SnapshotExpired` (extensible). `ws` and `snap` are short SipHash-1-3 hex digests of the workspace path and snapshot digest, so the original strings do not leak into the wire shape (compact, ~100 bytes on the wire).
+  2. **list_tools wire integration** (`rmcp_adapter.rs`) — the `unwrap_or(0)` is gone. The cursor is verified against a context whose snapshot is `read_only-mode` joined with the visible tool names. A tampered cursor returns `rmcp::ErrorData { code: INVALID_PARAMS, message, data: <typed CursorError as JSON> }`.
+  3. **handle_resources_list wire integration** (`resources.rs`) — same swap; the function signature gains `Result<Value, String>` so a tampered cursor surfaces as a typed error string instead of an empty page. The internal test caller is updated.
+  4. **b6_w1_mcp_robustness.rs `decode_cursor` helper** — updated to read the new envelope (parses JSON, returns the `off` field). The existing pagination test still pins: pages are full, no skipped rows, no duplicate names, cursor is a real offset.
+
+**Why**: H2.3 spec is explicit: "anclar snapshot, workspace, filtros y orden. Error tipado para cursor manipulado o caducado. Formato compacto por defecto sin perder causas." The previous `.unwrap_or(0)` was a silent reset — a consumer could mint a cursor in one workspace, replay it in another, and receive page-1 of a different catalog without any indication that the anchor was wrong. Worse, a tampered legacy cursor (the previous bare-base64-number format) just rewound to offset 0. The new format is intentionally versioned (`v: 1`); legacy cursors are typed `Garbled` with a `reason` that explains the rejection.
+
+Belt-and-suspenders: the typed error is a stable, exhaustive, snake_case-string set on the wire. The consumer routing on `kind` is safe; an unmapped kind is a wire-protocol break the consumer sees as a JSON parse error, not a silent pass.
+
+**Where**:
+- `crates/cognicode-core/src/interface/mcp/cursor.rs` — new module (~190 lines, 4 unit tests).
+- `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs` — list_tools wire integration. `unwrap_or(0)` replaced with typed verify + JSON-RPC error response.
+- `crates/cognicode-core/src/interface/mcp/resources.rs` — handle_resources_list wire integration. Signature changed to `Result<Value, String>`; internal test updated.
+- `crates/cognicode-core/src/interface/mcp/mod.rs` — registers `pub mod cursor`.
+- `crates/cognicode-core/tests/h23_typed_cursor_errors.rs` — 6 tests pinning the contract.
+- `crates/cognicode-core/tests/b6_w1_mcp_robustness.rs` — `decode_cursor` helper updated for the new envelope; the existing pagination test stays as the wire-level witness.
+
+**Learned**:
+- The new format is intentionally **incompatible** with the legacy bare-number cursor. Backward compatibility would be a security anti-pattern here: a legacy cursor would silently accept the old offset, defeating the typed-error contract. A future contributor who wants to keep a legacy mode must add it as an explicit option (`legacy_cursors: true`) AND update the test — the contract change is then visible in the diff.
+- Filter and order anchoring are reserved for a future H2.3 cycle. Today neither list_tools nor resources/list exposes a filter or order parameter to the consumer; anchoring slots exist in the `CursorContext` (workspace + snapshot) and adding filters/order is a non-breaking extension. The journal will track this as a follow-on.
+- The H2.3 cycle intentionally touches production code (not pure characterization like H2.1 / H2.2). The touch is load-bearing: list_tools and resources/list. The 2 atomic commits keep the change reviewable — one for test+module+wire, one for the journal. The fast suite confirms no regressions.
+
+H2.3 cycle 1 closed. H2.3 acceptance: PASS for the typed-error half; PARTIAL for the full spec (filters/order anchoring deferred). H2 (CU-3) program: 3/4 done.
