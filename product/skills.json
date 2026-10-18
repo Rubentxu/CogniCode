@@ -35,11 +35,9 @@
     },
     {
       "name": "cognicode-refactor",
-      "description": "Preview a safe refactor, apply it with explicit authority, and revalidate after the change. The refactor is always read-first (preview shows what will change), the apply step requires authority, and revalidation reports evidence (never a verdict) about the post-apply state.",
+      "description": "Preview a safe refactor without mutating the workspace: the preview shows what would change, per-file, with the workspace state digest an authorized apply would later check.",
       "tools_used": [
-        "safe_refactor_preview",
-        "safe_refactor_apply",
-        "safe_refactor_revalidate"
+        "safe_refactor_preview"
       ],
       "feature_gates": [],
       "evaluation": "evals/refactor.json"

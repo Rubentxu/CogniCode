@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::impact::composite::CompositeImpactQuery;
 use crate::interface::symbol_identity::Precision;
+use crate::interface::symbol_identity::SymbolId;
 
 // Re-export types from dto for MCP protocol use
 // These types are shared between MCP schemas and application DTOs
@@ -349,6 +351,73 @@ pub enum RefactorAction {
     Inline,
     Move,
     ChangeSignature,
+}
+
+/// `composite_impact_query` input, in the shape the catalogue publishes.
+///
+/// The core query (`impact::composite::CompositeImpactQuery`) nests the symbol
+/// under `symbol` and carries a `workspace_root`. Both of those are the
+/// adapter's business rather than the caller's: `ctx.working_dir` already
+/// anchors the workspace, and the catalogue's flat `qualified_name` /
+/// `file_path` shape is the published contract other consumers may already be
+/// written against. So the wire shape is what deserializes here, and one `From`
+/// below is the only place the two representations meet.
+///
+/// `deny_unknown_fields` on purpose: a typo'd argument must be an error the
+/// caller sees, not a field silently dropped into a query that then answers
+/// "no findings" — which is exactly the shape of a false negative.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompositeImpactQueryInput {
+    pub qualified_name: String,
+    #[serde(default)]
+    pub file_path: Option<String>,
+}
+
+impl CompositeImpactQueryInput {
+    /// Map onto the core query, anchored on the session's working directory.
+    ///
+    /// Two coordinates the core type demands but the published contract does not
+    /// carry: `file_path` and `byte_range`. Both are recorded here rather than
+    /// defaulted somewhere deeper so the next reader sees they are gaps in the
+    /// published contract, not coincidences.
+    ///
+    /// An absent `file_path` becomes the empty path, not `workspace_root.join
+    /// ("<unspecified>")`: the only consumer of this field is the follow-up
+    /// argument the result suggests, and a fabricated directory name would be
+    /// handed back to the agent as if the tool had located the symbol. `SymbolId`
+    /// cannot express "unknown" — that is a hole in the core type, and until it
+    /// is closed the empty path is the least-lying value available.
+    pub fn into_core_query(self, workspace_root: &std::path::Path) -> CompositeImpactQuery {
+        let file_path = self
+            .file_path
+            .map(std::path::PathBuf::from)
+            .unwrap_or_default();
+        CompositeImpactQuery {
+            symbol: SymbolId {
+                qualified_name: self.qualified_name,
+                file_path,
+                byte_range: 0..0,
+            },
+            workspace_root: workspace_root.to_path_buf(),
+            depth_limit: None,
+        }
+    }
+}
+
+/// `safe_refactor_preview` input, in the shape the catalogue publishes.
+///
+/// `plan_path` and `plan_json` are alternatives (the catalogue's `oneOf`), so
+/// exactly one has to arrive. Resolving which one is a precondition, not a
+/// default: silently preferring one would mean a caller who sent the other got
+/// a preview of the wrong thing.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SafeRefactorPreviewInput {
+    #[serde(default)]
+    pub plan_path: Option<String>,
+    #[serde(default)]
+    pub plan_json: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -821,11 +890,69 @@ pub struct MergeGraphsInput {
     pub file_paths: Vec<String>,
 }
 
+/// Why a requested file did not make it into the merged graph.
+///
+/// A projection of [`crate::infrastructure::graph::per_file_graph::SkipReason`]
+/// with the provider's message kept in a separate field, so a consumer can
+/// branch on the kind without parsing prose. The conversion is exhaustive:
+/// a new `SkipReason` variant fails to compile here rather than silently
+/// collapsing into `Other`.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SkippedReasonKind {
+    Read,
+    Parse,
+    UnsupportedExtension,
+    Other,
+}
+
+/// One requested file the merge could not include.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SkippedFileInfo {
+    pub path: String,
+    pub reason: SkippedReasonKind,
+    /// The provider's own message. Diagnostic only — never branch on it.
+    pub detail: String,
+}
+
+/// How much of what was asked for is actually in the answer.
+///
+/// This is an ADT on purpose: `Complete` carries no list, so "complete but
+/// here are four gaps" is unrepresentable, and `Partial` is only ever
+/// constructed through [`MergeCoverage::from`], which yields `Complete`
+/// when the skip list is empty. `file_count`-style counts cannot express
+/// that, which is how a partial merge used to read as a clean one.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum MergeCoverage {
+    Complete,
+    Partial { skipped_files: Vec<SkippedFileInfo> },
+}
+
+impl MergeCoverage {
+    /// The only constructor, and the only place the empty-vs-non-empty
+    /// decision is made.
+    pub fn from(skipped: Vec<SkippedFileInfo>) -> Self {
+        if skipped.is_empty() {
+            MergeCoverage::Complete
+        } else {
+            MergeCoverage::Partial {
+                skipped_files: skipped,
+            }
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MergeGraphsOutput {
-    pub file_count: usize,
+    /// How many paths the caller asked for.
+    pub requested_file_count: usize,
+    /// How many of them actually reached the graph. Differs from the
+    /// request whenever `coverage` is `Partial`.
+    pub merged_file_count: usize,
     pub merged_symbol_count: usize,
     pub merged_dependency_count: usize,
+    pub coverage: MergeCoverage,
     pub symbols: Vec<SymbolLocationEntry>,
     pub dependencies: Vec<DependencyInfo>,
 }

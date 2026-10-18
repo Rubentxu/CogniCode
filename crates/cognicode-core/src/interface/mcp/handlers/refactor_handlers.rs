@@ -1086,3 +1086,102 @@ main()
         assert!(output.is_valid);
     }
 }
+
+/// Which side of the line a preview failure falls on.
+///
+/// Five of `PreviewError`'s seven variants describe a plan the caller has to
+/// fix: a file outside the workspace, a missing file, a symlink escape, two
+/// overlapping edits, a range past end-of-file. Reporting those as `Internal`
+/// tells the operator their server is broken when the request is what is —
+/// and per the project contract an `Internal` answer must never stand in for
+/// a clean one. The other two — no usable workspace root, and a read that
+/// failed for a reason we did not classify — genuinely are this side's
+/// problem, so they stay `Internal`.
+///
+/// The split is exhaustive on purpose: a new variant fails to compile here
+/// rather than silently inheriting one of the two answers.
+fn classify_preview_error(e: crate::refactor::preview::PreviewError) -> HandlerError {
+    use crate::refactor::preview::PreviewError;
+    match e {
+        PreviewError::PathEscapesWorkspace(_)
+        | PreviewError::AffectedFileMissing(_)
+        | PreviewError::SymlinkEscape(_)
+        | PreviewError::OverlappingEdits { .. }
+        | PreviewError::RangeOutOfBounds { .. } => {
+            HandlerError::InvalidInput(format!("refactor plan rejected: {e}"))
+        }
+        PreviewError::InvalidWorkspaceRoot(_) | PreviewError::IoError(_) => {
+            HandlerError::Internal(format!("refactor preview failed: {e}"))
+        }
+    }
+}
+
+/// `safe_refactor_preview`: render a `RefactorPlan` as a deterministic,
+/// non-mutating preview with a unified diff per file.
+///
+/// MEDIDO 2026-10-18. This capability has existed in `refactor::preview`
+/// since B5.W2, fully implemented and tested, with no caller outside tests:
+/// it was announced in `product/tools.json` and had no dispatch arm, so a
+/// client that trusted `tools/list` got `ToolNotFound`. The gap was not the
+/// preview — it was the wire.
+///
+/// The handler is read-only by construction: `render_preview` writes nothing
+/// (pinned by `preview_does_not_modify_files`), and the input carries no
+/// authorization field, so a `--read-only` session can serve it.
+#[cognicode_macros::aix_tool(
+    name = "safe_refactor_preview",
+    description = "Render a deterministic, non-mutating preview of a RefactorPlan.",
+    input_schema = SafeRefactorPreviewInput
+)]
+pub async fn handle_safe_refactor_preview(
+    ctx: &HandlerContext,
+    input: SafeRefactorPreviewInput,
+) -> HandlerResult<crate::refactor::preview::RefactorPreview> {
+    // Exactly one source for the plan. Falling back from a missing `plan_json`
+    // to an empty plan, or preferring `plan_path` when the caller sent the
+    // other, would answer with a preview of something nobody asked for.
+    let plan = match (input.plan_path, input.plan_json) {
+        (Some(_), Some(_)) => {
+            return Err(HandlerError::InvalidInput(
+                "safe_refactor_preview takes `plan_path` or `plan_json`, not both".to_string(),
+            ));
+        }
+        (Some(path), None) => {
+            let raw = std::path::Path::new(&path);
+            let absolute = if raw.is_absolute() {
+                raw.to_path_buf()
+            } else {
+                ctx.working_dir.join(raw)
+            };
+            ctx.validator.validate_path(&absolute)?;
+            crate::refactor::plan::load_plan_from_file(&absolute).map_err(|e| match e {
+                // Every variant here is the caller's file being wrong —
+                // absent, unreadable, malformed, empty, or edited since it was
+                // written. None of them is a fault of this server, and calling
+                // one `Internal` would hand the caller a fault report for
+                // their own typo.
+                crate::refactor::plan::PlanIoError::Io(ref io)
+                    if io.kind() == std::io::ErrorKind::NotFound =>
+                {
+                    HandlerError::NotFound(format!("no RefactorPlan at {}", absolute.display()))
+                }
+                other => HandlerError::InvalidInput(format!("refactor plan unusable: {other}")),
+            })?
+        }
+        (None, Some(raw)) => serde_json::from_str::<crate::refactor::plan::RefactorPlan>(
+            raw.as_str(),
+        )
+        .map_err(|e| HandlerError::InvalidInput(format!("invalid RefactorPlan JSON: {e}")))?,
+        (None, None) => {
+            return Err(HandlerError::InvalidInput(
+                "safe_refactor_preview needs either `plan_path` or `plan_json`".to_string(),
+            ));
+        }
+    };
+
+    // The workspace is the session's anchor, not a caller-supplied path: a
+    // preview reads files to render diffs, and the caller choosing which
+    // directory that is would put the read boundary in the wrong hands.
+    crate::refactor::preview::render_preview(&plan, &ctx.working_dir)
+        .map_err(classify_preview_error)
+}

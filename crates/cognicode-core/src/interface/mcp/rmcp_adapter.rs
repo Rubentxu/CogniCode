@@ -23,8 +23,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use regex::Regex;
-
 /// CogniCodeHandler implements the rmcp ServerHandler trait
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
@@ -448,35 +446,61 @@ fn lookup_category(tool_name: &str) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-/// M3.4: Lazily-built map from tool name to its graph-dependency string
-/// (extracted from the tool description via regex). The regex matches
-/// "Requires build_graph first." and any similar dependency markers.
-/// Returns `None` for tools that have no graph dependency requirement.
-pub(crate) fn tool_graph_deps_map() -> &'static HashMap<String, String> {
+/// M3.4: Lazily-built map from tool name to the tools that must run first.
+///
+/// Read from `ToolDescriptor::prerequisites`, the typed field B3.W3 added
+/// to `product/tools.json` for exactly this question. It used to be
+/// extracted with a regex over each tool's English description, matching
+/// "Requires build_graph first." — a functional dependency inferred
+/// from prose, which is the same defect class as the ghost tools this
+/// branch removed: the real state sat in a typed field nobody read,
+/// and a second, weaker source was consulted instead.
+///
+/// The measured cost was silent under-coverage, not a wrong value. The
+/// regex matched 26 tools; 41 declare prerequisites. The 15 it missed —
+/// `analyze_impact`, `ask_about_code`, `codebase_map`, `smart_search`,
+/// `project_overview`, … — were run by `cognicode-sandbox` with no
+/// graph built, because the sandbox gates its implicit `build_graph`
+/// call on this lookup. A scenario for one of those tools reported
+/// `expected_outcome: pass` for a run that never had its input.
+///
+/// Note that `requirements.graph` (44 tools) is a *different* question
+/// and is not the right source here: it means "this tool touches the
+/// graph", which includes the three tools that build their own
+/// (`build_call_subgraph`, `build_lightweight_index`,
+/// `get_per_file_graph`). Prerequisites means "a graph must already
+/// exist".
+pub(crate) fn tool_graph_deps_map() -> &'static HashMap<String, Vec<String>> {
     use std::sync::OnceLock;
-    static MAP: OnceLock<HashMap<String, String>> = OnceLock::new();
+    static MAP: OnceLock<HashMap<String, Vec<String>>> = OnceLock::new();
     MAP.get_or_init(|| {
         let mut m = HashMap::new();
-        // Regex to capture "Requires X first." patterns from tool descriptions
-        let re = Regex::new(r"(?i)(?:requires?\s+(\w+(?:\s+\w+)*)\s+first\.)")
-            .expect("regex compilation error");
-        for tool in build_all_tools() {
-            if let Some(desc) = tool.description.as_deref()
-                && let Some(caps) = re.captures(desc)
-                && let Some(dep) = caps.get(1)
+        for descriptor in crate::interface::catalog::load_tool_catalog() {
+            if let Some(prereqs) = descriptor.prerequisites
+                && !prereqs.is_empty()
             {
-                m.insert(tool.name.to_string(), dep.as_str().to_string());
+                m.insert(descriptor.name, prereqs);
             }
         }
         m
     })
 }
 
-/// Returns the graph dependency requirement for a tool, if any.
-/// For example, "iac_query" returns `Some("build_graph")` because its
-/// description contains "Requires build_graph first."
+/// The first tool `tool_name` must run before it can answer, if any.
+///
+/// For example, `iac_query` returns `Some("build_graph")` because its
+/// catalogue entry lists it under `prerequisites` — not because its
+/// description happens to read a certain way.
+///
+/// Singular because every entry in the catalogue declares exactly one, and
+/// because the only caller asks a yes/no question. If a second
+/// prerequisite is ever declared, this returns the first and the caller
+/// that needs all of them wants `tool_graph_deps_map` directly.
 pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
-    tool_graph_deps_map().get(tool_name).cloned()
+    tool_graph_deps_map()
+        .get(tool_name)
+        .and_then(|v| v.first())
+        .cloned()
 }
 
 /// Returns the complete list of public MCP tool definitions.
@@ -909,11 +933,30 @@ async fn call_tool_handler(
                 Ok(serde_json::to_string(&output)?)
             }
 
+            "composite_impact_query" => {
+                let input: crate::interface::mcp::schemas::CompositeImpactQueryInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::handle_composite_impact_query(ctx, input)
+                        .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+
             "safe_refactor" => {
                 let input: crate::interface::mcp::schemas::SafeRefactorInput =
                     serde_json::from_value(arguments.into())?;
                 let output =
                     crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor(
+                        ctx, input,
+                    )
+                    .await?;
+                Ok(serde_json::to_string(&output)?)
+            }
+            "safe_refactor_preview" => {
+                let input: crate::interface::mcp::schemas::SafeRefactorPreviewInput =
+                    serde_json::from_value(arguments.into())?;
+                let output =
+                    crate::interface::mcp::handlers::refactor_handlers::handle_safe_refactor_preview(
                         ctx, input,
                     )
                     .await?;
@@ -2006,68 +2049,88 @@ mod tests {
     // M3.4 — Tool graph-dependency extraction
     // ============================================================================
 
+    // ============================================================================
+    // Graph dependency — read from the catalogue, not from prose
+    // ============================================================================
+
+    /// The load-bearing one, and the reason the four tests it replaces
+    /// are gone.
+    ///
+    /// `analyze_impact` declares `requirements.graph = true` and its
+    /// description never says "Requires build_graph first." The old
+    /// implementation inferred the dependency from that prose with a
+    /// regex, so it answered `false` here — and the sandbox, which uses
+    /// this to decide whether to pre-build the graph, ran 18 such tools
+    /// with no graph at all. The number is the finding: 26 tools matched
+    /// the regex, 44 declare the requirement.
     #[test]
-    fn test_tool_graph_deps_map_extracts_requires_build_graph() {
-        // The regex should extract "build_graph" from tool descriptions
-        // that contain "Requires build_graph first."
-        let map = tool_graph_deps_map();
-        // iac_query now has "Requires build_graph first." in its description
-        assert_eq!(
-            map.get("iac_query").map(|s| s.as_str()),
-            Some("build_graph"),
-            "iac_query should have build_graph as a dependency"
+    fn a_tool_that_declares_a_graph_requirement_is_reported_even_without_the_prose() {
+        let tool = build_all_tools()
+            .into_iter()
+            .find(|t| t.name == "analyze_impact")
+            .expect("analyze_impact is in the catalogue");
+
+        assert!(
+            !tool
+                .description
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase()
+                .contains("requires build_graph first"),
+            "this test is only discriminating while the description omits the              phrase; if someone adds it back, the test has stopped testing              anything and should be replaced"
         );
-        // get_call_hierarchy has "Requires build_graph first." in its description
-        assert_eq!(
-            map.get("get_call_hierarchy").map(|s| s.as_str()),
-            Some("build_graph"),
-            "get_call_hierarchy should have build_graph as a dependency"
+        assert!(
+            lookup_tool_deps("analyze_impact").is_some(),
+            "a declared requirement must not depend on how the description \
+             happens to be worded"
         );
     }
 
+    /// Both directions, so the replacement cannot quietly become
+    /// "everything needs a graph".
     #[test]
-    fn test_lookup_tool_deps_returns_optional_deps() {
-        // lookup_tool_deps should return Some("build_graph") for tools
-        // that require it, and None for tools that don't.
+    fn graph_requirement_follows_the_catalogue_in_both_directions() {
         assert_eq!(
-            lookup_tool_deps("iac_query"),
-            Some("build_graph".to_string())
+            lookup_tool_deps("iac_query").as_deref(),
+            Some("build_graph"),
+            "iac_query declares the requirement"
         );
         assert_eq!(
-            lookup_tool_deps("get_call_hierarchy"),
-            Some("build_graph".to_string())
+            lookup_tool_deps("get_call_hierarchy").as_deref(),
+            Some("build_graph"),
+            "and so does get_call_hierarchy"
         );
         assert_eq!(
             lookup_tool_deps("read_file"),
             None,
-            "read_file should not have graph dependencies"
+            "read_file does not declare one"
         );
         assert_eq!(
             lookup_tool_deps("nonexistent_tool"),
             None,
-            "nonexistent tools should return None"
+            "an unknown tool cannot declare anything"
         );
     }
 
+    /// Pins the gap that made the old map wrong, so a future change to
+    /// the catalogue cannot quietly shrink the detected set again
+    /// without this number moving.
     #[test]
-    fn test_tool_graph_deps_map_consistency() {
-        // Every tool in build_all_tools() that has "Requires build_graph first."
-        // in its description must be present in the deps map.
-        let deps_map = tool_graph_deps_map();
-        let re = Regex::new(r"(?i)(?:requires?\s+(\w+(?:\s+\w+)*)\s+first\.)").unwrap();
-        for tool in build_all_tools() {
-            if let Some(desc) = tool.description.as_deref() {
-                if re.captures(desc).is_some() {
-                    // Verify the tool is in the deps map by name matching
-                    let tool_name = tool.name.to_string();
-                    assert!(
-                        deps_map.contains_key(&tool_name),
-                        "Tool '{}' has a requires clause but is not in tool_graph_deps_map",
-                        tool_name
-                    );
-                }
-            }
-        }
+    fn the_detected_set_is_not_smaller_than_the_declared_one() {
+        let catalog = crate::interface::catalog::load_tool_catalog();
+        let declared = catalog
+            .iter()
+            .filter(|d| d.prerequisites.as_ref().is_some_and(|p| !p.is_empty()))
+            .count();
+        let detected = catalog
+            .iter()
+            .filter(|d| lookup_tool_deps(d.name.as_str()).is_some())
+            .count();
+        assert_eq!(
+            detected, declared,
+            "every tool declaring prerequisites must be detected; the regex \
+             over descriptions found only 26 of these"
+        );
     }
 
     // PRF-MCP-05: every public MCP tool MUST declare its required authority

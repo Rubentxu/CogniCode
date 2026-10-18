@@ -88,6 +88,7 @@ use crate::interface::mcp::schemas::{
     CheckArchitectureOutput,
     CompareCallGraphsInput,
     ComplexityMetrics,
+    CompositeImpactQueryInput,
     ContextFormatDetail,
     ContextLines,
     DeadCodeEntry,
@@ -149,6 +150,7 @@ use crate::interface::mcp::schemas::{
     HotPathEntry,
     HoverInput,
     HoverOutput,
+    MergeCoverage,
     MergeGraphsInput,
     MergeGraphsOutput,
     NlToSymbolInput,
@@ -170,9 +172,12 @@ use crate::interface::mcp::schemas::{
     RiskLevel,
     SafeRefactorInput,
     SafeRefactorOutput,
+    SafeRefactorPreviewInput,
     SearchResultDto,
     SemanticSearchInput,
     SemanticSearchOutput,
+    SkippedFileInfo,
+    SkippedReasonKind,
     SmartOverviewInput,
     SolidPrinciple,
     // SOLID Audit schemas
@@ -1810,6 +1815,29 @@ pub async fn handle_structural_search(
         matches,
         total: 0,
     })
+}
+
+/// Handler for composite_impact_query tool.
+///
+/// Mirrors `cognicode graph impact-composite` (B4.W5). The result is
+/// **investigative, not authoritative**: it carries `verdict_refused:
+/// true` by construction (R-B4-W5), so a consumer cannot mistake it
+/// for a shipped verdict. This handler only translates the MCP input
+/// into the core query and serialises the core result — the semantics
+/// live in exactly one place, `impact::composite`.
+#[cognicode_macros::aix_tool(
+    name = "composite_impact_query",
+    description = "Investigative composite impact query over a qualified symbol name. \
+                  The result is explicitly non-authoritative (verdict_refused).",
+    input_schema = CompositeImpactQueryInput
+)]
+pub async fn handle_composite_impact_query(
+    ctx: &HandlerContext,
+    input: CompositeImpactQueryInput,
+) -> HandlerResult<crate::impact::composite::CompositeImpactResult> {
+    ctx.validator.validate_query(&input.qualified_name)?;
+    let query = input.into_core_query(&ctx.working_dir);
+    Ok(crate::impact::composite::execute_composite(&query))
 }
 
 /// Handler for analyze_impact tool
@@ -3538,9 +3566,9 @@ pub async fn handle_get_per_file_graph(
     }
 }
 
-/// Handler for merge_file_graphs tool
+/// Handler for merge_graphs tool
 #[cognicode_macros::aix_tool(
-    name = "merge_file_graphs",
+    name = "merge_graphs",
     description = "Merge call graphs from multiple files into a single graph.",
     input_schema = MergeGraphsInput
 )]
@@ -3551,32 +3579,79 @@ pub async fn handle_merge_graphs(
     // Handle empty file paths case
     if input.file_paths.is_empty() {
         return Ok(MergeGraphsOutput {
-            file_count: 0,
+            requested_file_count: 0,
+            merged_file_count: 0,
             merged_symbol_count: 0,
             merged_dependency_count: 0,
+            coverage: MergeCoverage::Complete,
             symbols: Vec::new(),
             dependencies: Vec::new(),
         });
     }
 
-    // Validate and resolve file paths
-    let file_paths: Vec<PathBuf> = input
-        .file_paths
-        .iter()
-        .map(|p| {
-            if Path::new(p).is_absolute() {
-                PathBuf::from(p)
-            } else {
-                ctx.working_dir.join(p)
-            }
-        })
-        .collect();
+    // Every requested path crosses the same read boundary as every other
+    // graph tool: anchor it on the session first, then let the validator
+    // judge the anchored string.
+    //
+    // The order matters and is not interchangeable. `validate_file_path`
+    // canonicalises what it is given and compares against the workspace
+    // root, so a bare relative path is judged against the *process* CWD —
+    // which is how a relative `../../etc/passwd` would sail through. The
+    // join happens first, so the validator sees an absolute path anchored
+    // on the session, and a surviving `..` is still caught: `Path::join`
+    // preserves it and the traversal check sees it. Validating and then
+    // anchoring would leave the read using an unresolved relative path.
+    let mut file_paths: Vec<PathBuf> = Vec::with_capacity(input.file_paths.len());
+    for p in &input.file_paths {
+        let raw = Path::new(p);
+        let anchored = if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            ctx.working_dir.join(raw)
+        };
+        file_paths.push(
+            ctx.validator
+                .validate_file_path(&anchored.to_string_lossy())?,
+        );
+    }
+    let requested_file_count = file_paths.len();
 
-    // Use per-file strategy with merge
-    let strategy = PerFileStrategy::new();
-    let merged = strategy
-        .build_full_graph(file_paths[0].parent().unwrap_or(&ctx.working_dir))
-        .unwrap_or_else(|_| CallGraph::new());
+    // The merge is over the requested files, not over the directory they
+    // happen to live in, and it reports what it could not read. This used
+    // to be `build_full_graph(file_paths[0].parent())`: the caller's list
+    // was discarded, walk errors were dropped by `filter_map(ok)`, and the
+    // failure path turned an unreadable tree into an empty graph reported
+    // as a clean merge.
+    let report = PerFileStrategy::new()
+        .merge_files_with_report(&file_paths.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+    let merged = report.graph;
+
+    let (coverage, skipped_count) = match report.status {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
+            (MergeCoverage::Complete, 0)
+        }
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+            let skipped: Vec<SkippedFileInfo> = skipped
+                .into_iter()
+                .map(|s| {
+                    use crate::infrastructure::graph::per_file_graph::SkipReason as R;
+                    let (reason, detail) = match s.reason {
+                        R::Read(d) => (SkippedReasonKind::Read, d),
+                        R::Parse(d) => (SkippedReasonKind::Parse, d),
+                        R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
+                        R::Other(d) => (SkippedReasonKind::Other, d),
+                    };
+                    SkippedFileInfo {
+                        path: s.path,
+                        reason,
+                        detail,
+                    }
+                })
+                .collect();
+            let n = skipped.len();
+            (MergeCoverage::from(skipped), n)
+        }
+    };
 
     let symbols: Vec<SymbolLocationEntry> = merged
         .symbols()
@@ -3603,9 +3678,11 @@ pub async fn handle_merge_graphs(
         .collect();
 
     Ok(MergeGraphsOutput {
-        file_count: input.file_paths.len(),
+        requested_file_count,
+        merged_file_count: requested_file_count.saturating_sub(skipped_count),
         merged_symbol_count: symbols.len(),
         merged_dependency_count: dependencies.len(),
+        coverage,
         symbols,
         dependencies,
     })
@@ -4828,8 +4905,118 @@ mod tests {
         let result = handle_merge_graphs(&ctx, input).await;
         assert!(result.is_ok());
         let output = result.unwrap();
-        assert_eq!(output.file_count, 0);
+        assert_eq!(output.requested_file_count, 0);
+        assert_eq!(output.merged_file_count, 0);
         assert_eq!(output.merged_symbol_count, 0);
+        assert_eq!(output.coverage, MergeCoverage::Complete);
+    }
+
+    // ------------------------------------------------------------------
+    // merge_graphs: the merge must be the one that was asked for
+    //
+    // MEDIDO 2026-10-18. El handler fusionaba `file_paths[0].parent()`
+    // con `build_full_graph`, que traga los errores del walk. Tres
+    // consecuencias, todas corregidas aquí: la lista pedida se
+    // ignoraba, un directorio ilegible se volvía un grafo vacío
+    // reportado como éxito, y `file_count` contaba lo pedido en lugar
+    // de lo leído.
+    // ------------------------------------------------------------------
+
+    /// The decisive one: asking for one file must not answer with the
+    /// whole directory it happens to live in.
+    #[tokio::test]
+    async fn merge_graphs_merges_the_requested_files_not_their_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join("asked.rs"), "fn asked() {}\n").unwrap();
+        // Same directory, never requested. If the handler walks the
+        // parent, `unasked` shows up in the answer.
+        std::fs::write(root.join("unasked.rs"), "fn unasked() {}\n").unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(root.clone())
+            .build();
+        let output = handle_merge_graphs(
+            &ctx,
+            MergeGraphsInput {
+                file_paths: vec!["asked.rs".to_string()],
+            },
+        )
+        .await
+        .expect("one readable file must answer");
+
+        assert_eq!(output.merged_file_count, 1);
+        assert!(
+            output.symbols.iter().all(|s| s.file.ends_with("asked.rs")),
+            "the merge leaked symbols from a file nobody asked for: {:?}",
+            output.symbols
+        );
+        assert_eq!(output.coverage, MergeCoverage::Complete);
+    }
+
+    /// A file that cannot be read is a gap in coverage, and a gap the
+    /// caller has to see. Reporting zero symbols as a clean answer is
+    /// exactly the "Partial presented as Complete" the contract forbids.
+    #[tokio::test]
+    async fn merge_graphs_surfaces_a_file_it_could_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::write(root.join("there.rs"), "fn there() {}\n").unwrap();
+
+        let ctx = HandlerContext::builder()
+            .with_working_dir(root.clone())
+            .build();
+        let output = handle_merge_graphs(
+            &ctx,
+            MergeGraphsInput {
+                file_paths: vec!["there.rs".to_string(), "vanished.rs".to_string()],
+            },
+        )
+        .await
+        .expect("a missing sibling is a partial result, not a failure");
+
+        assert_eq!(output.requested_file_count, 2);
+        assert_eq!(output.merged_file_count, 1, "one file was actually read");
+        match &output.coverage {
+            MergeCoverage::Partial { skipped_files } => {
+                assert_eq!(skipped_files.len(), 1);
+                assert!(
+                    skipped_files[0].path.ends_with("vanished.rs"),
+                    "the skipped list names the file that was skipped: {skipped_files:?}"
+                );
+            }
+            MergeCoverage::Complete => {
+                panic!("a file that was never read cannot be Complete coverage")
+            }
+        }
+    }
+
+    /// The read boundary belongs to the validator, like every other
+    /// graph tool. Asserting the *kind* is the point: a plain `is_err`
+    /// also passes today, because walking an outside directory happens
+    /// to succeed and returns an empty graph.
+    #[tokio::test]
+    async fn merge_graphs_confines_the_requested_paths_to_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let stray = outside.path().join("stray.rs");
+        std::fs::write(&stray, "fn stray() {}\n").unwrap();
+
+        let ctx = HandlerContext::builder().with_working_dir(root).build();
+        let result = handle_merge_graphs(
+            &ctx,
+            MergeGraphsInput {
+                file_paths: vec![stray.display().to_string()],
+            },
+        )
+        .await;
+
+        assert!(
+            matches!(result, Err(HandlerError::Security(_))),
+            "a file outside the working directory must be refused at the \
+             boundary, not silently merged: {result:?}"
+        );
     }
 
     #[tokio::test]

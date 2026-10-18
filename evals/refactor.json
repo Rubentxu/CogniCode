@@ -1,63 +1,65 @@
 {
   "skill": "cognicode-refactor",
-  "description": "Agent-first evaluations for the refactor skill: questions an agent must answer about the safe-refactor flow (preview, apply with authority, post-apply revalidation).",
+  "description": "Agent-first evaluations for the refactor skill: questions an agent must answer about the safe-refactor surface that exists today (a read-only preview).",
   "evaluations": [
     {
       "id": "R-01",
-      "question": "What does the safe refactor flow look like, and which tools are involved?",
+      "question": "What does the safe refactor flow look like today, and which tools are involved?",
       "expected_tools": [
-        "safe_refactor_preview",
-        "safe_refactor_apply",
-        "safe_refactor_revalidate"
+        "safe_refactor_preview"
       ],
       "expected_outcome": "complete",
       "acceptable_answers": [
-        "preview -> apply (with authority) -> revalidate; preview is read-only, apply requires authority, revalidate returns evidence (never a verdict)",
-        "Three steps: safe_refactor_preview (read), safe_refactor_apply (mutating, requires authority), safe_refactor_revalidate (read, evidence not verdict)"
+        "One step: safe_refactor_preview, read-only. It renders a deterministic per-file diff plus the workspace state digest and never mutates the workspace",
+        "A single read-only step: safe_refactor_preview (read, stable). There is no apply tool over MCP"
       ]
     },
     {
       "id": "R-02",
-      "question": "Is `safe_refactor_apply` mutating? What authority is required?",
-      "expected_tools": ["safe_refactor_apply"],
+      "question": "Can I apply the refactor that safe_refactor_preview showed me?",
+      "expected_tools": [
+        "safe_refactor_preview"
+      ],
       "expected_outcome": "complete",
       "acceptable_answers": [
-        "authority=mutating; the call must carry explicit authority (RefactorPlan.id + workspace_identity); preview must run first",
-        "Mutating; requires authority declared via the plan contract"
+        "No. Over MCP there is no apply tool. The preview's workspace_state_digest exists so a future authorized apply can detect concurrent modification, but nothing over the wire accepts a token and writes the workspace",
+        "Not over MCP. safe_refactor_preview is the only safe_refactor tool in the catalogue; it is read-only and its input schema rejects an authorization_token"
       ]
     },
     {
       "id": "R-03",
-      "question": "After applying a refactor, what does `safe_refactor_revalidate` return?",
-      "expected_tools": ["safe_refactor_revalidate"],
+      "question": "What does safe_refactor_preview give me back?",
+      "expected_tools": [
+        "safe_refactor_preview"
+      ],
       "expected_outcome": "complete",
       "acceptable_answers": [
-        "Returns a RevalidationReport with executed_checks and a RevalidationVerdict that defaults to VerdictRefused; the verdict flips to InvariantsHold only when the evidence digest is recorded",
-        "Returns RevalidationReport (evidence, never a verdict); the verdict is the canonical VerdictRefused by default"
+        "A RefactorPreview: per-file unified diff, original vs new bytes, the workspace state digest, and a preconditions/risks summary",
+        "Per-file diff plus the workspace_state_digest an apply step would check, and a preconditions/risks summary"
       ]
     },
     {
       "id": "R-04",
-      "question": "Can I run `safe_refactor_apply` without first running `safe_refactor_preview`?",
-      "expected_tools": ["safe_refactor_preview", "safe_refactor_apply"],
-      "expected_outcome": "failed",
+      "question": "Does safe_refactor_preview touch my files?",
+      "expected_tools": [
+        "safe_refactor_preview"
+      ],
+      "expected_outcome": "complete",
       "acceptable_answers": [
-        "No; the apply step requires the preview to have produced a RefactorPlan that the apply can carry forward (B5.W1..W3 contract). Without a preview, apply fails closed",
-        "Apply requires authority derived from a prior preview; no preview -> no apply"
+        "No. The function is pure: the same plan plus the same bytes yields a byte-equal preview, and it NEVER mutates the workspace",
+        "Read-only and deterministic; it renders a preview, it does not apply it"
       ]
     },
     {
       "id": "R-05",
       "question": "Which safe_refactor tools are listed in the catalog today?",
       "expected_tools": [
-        "safe_refactor_preview",
-        "safe_refactor_apply",
-        "safe_refactor_revalidate"
+        "safe_refactor_preview"
       ],
       "expected_outcome": "complete",
       "acceptable_answers": [
-        "Three: safe_refactor_preview (read, stable), safe_refactor_apply (mutating, stable), safe_refactor_revalidate (read, stable)",
-        "The catalog exposes exactly three safe_refactor tools; none are experimental, none are feature-gated"
+        "One: safe_refactor_preview (read, stable, not feature-gated). safe_refactor_apply and safe_refactor_revalidate were removed from the catalogue rather than left to fail at runtime",
+        "Exactly one, read and stable. The catalogue does not announce a tool that tools/call cannot dispatch"
       ]
     }
   ]
