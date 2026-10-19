@@ -30,6 +30,20 @@
 > Snapshots previos (2026-10-18 `47b21cc7`; 2026-10-17, v0.101.22 / K0
 > cerrado, CU-2 completo 5/5) conservados en el historial de este fichero.
 >
+> Segunda corrección de encuadre (2026-10-19, ciclo de los cuatro
+> verificadores). La regla de arriba —«cita el commit mergeado»— y la
+> ventana de cinco commits **no eran satisfacibles a la vez**: cualquier
+> rama con más de cinco commits obligaba a violar una de las dos, y la
+> única salida era citar la cabeza de la rama, que el squash invalidaba
+> enseguida. Medido: este snapshot, que cita el merge-base correcto, fue
+> marcado rojo por estar a seis commits de HEAD — mientras seis commits de
+> trabajo sin publicar no son estado que nadie pueda depender aún. La
+> distancia se mide ahora **desde donde esta historia se encontró con
+> `main`**, no desde HEAD. En `main` los dos refs coinciden y la ventana
+> sigue mordiendo igual; el SHA inalcanzable que este mismo guard dejó
+> pasar antes (mutación vista caer, `e41108e0`) sigue cayéndose. Ningún
+> snapshot necesitó regenerarse: la invariante era incorrecta, no el valor.
+>
 > Nota de proceso: un snapshot anterior estaba congelado en `4e1821f534b4` y el
 > ratchet de contratos — que `scripts/test-full.sh` **no** ejecutaba — lo
 > detectó al publicar. La batería Rust puede estar verde y la verdad de

@@ -174,13 +174,14 @@ def test_current_sha_matches_head() -> None:
     El ratchet pinea que la cabecera no puede mentir sin que el contrato
     lo detecte.
 
-    Se acepta cualquier ancestro dentro de SNAPSHOT_MAX_DRIFT commits. La
-    ventana existe porque el snapshot es contenido del commit: cuando el
-    operador commitea 'snapshot describe HEAD', el commit que lo contiene
-    es, por construccion, posterior al SHA descrito. Sin ventana, cada
-    commit que toca CURRENT.md dispara el ratchet al siguiente run. La
-    ventana pequena mantiene la disciplina (5 commits: drift > eso ya es
-    silencio) sin crear el loop.
+    Se acepta cualquier ancestro dentro de SNAPSHOT_MAX_DRIFT commits **de
+    la base donde esta historia se encontró con `main`**. La distancia se
+    mide ahí y no contra HEAD: los commits propios de una rama son trabajo
+    sin publicar, que ningun lector puede depender aun, y medirlos hacia
+    atras hacia que el guard disparase en casi cualquier rama real — y la
+    unica salida era citar la cabeza de la rama, que un squash-merge
+    invalida enseguida. En `main` los dos refs coinciden y la ventana
+    sigue mordiendo igual. Ver `_is_recent_ancestor`.
     """
     declared = current_snapshot_sha()
     actual = head_sha()
@@ -188,40 +189,93 @@ def test_current_sha_matches_head() -> None:
         f"FAIL: {CURRENT.name} no contiene un SHA de 40 chars. "
         f"Regenera el snapshot."
     )
-    assert _is_recent_ancestor(declared, actual, SNAPSHOT_MAX_DRIFT), (
+    base = _merge_base(actual, "main") or actual
+    assert _is_recent_ancestor(declared, actual, SNAPSHOT_MAX_DRIFT, base), (
         f"FAIL: {CURRENT.name} declara SHA {declared[:12]}, "
-        f"HEAD es {actual[:12]}. El SHA declarado debe ser HEAD o un "
-        f"ancestro dentro de los ultimos {SNAPSHOT_MAX_DRIFT} commits. "
-        f"Regenera el snapshot."
+        f"HEAD es {actual[:12]} y la base con main es {base[:12]}. El SHA "
+        f"declarado debe ser alcanzable desde HEAD y estar a mas de "
+        f"{SNAPSHOT_MAX_DRIFT} commits de esa base. Regenera el snapshot."
     )
 
 
-def _is_recent_ancestor(sha: str, ancestor: str, max_drift: int) -> bool:
-    """True if `sha` is reachable from `ancestor` within max_drift commits."""
+def _merge_base(a: str, b: str) -> str | None:
+    """Where the two histories last met, or None if they are unrelated."""
+    out = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "merge-base", a, b],
+        capture_output=True, text=True,
+    )
+    return out.stdout.strip() or None
+
+
+def _is_recent_ancestor(
+    sha: str, ancestor: str, max_drift: int, distance_to: str | None = None
+) -> bool:
+    """True if `sha` is reachable from `ancestor` and near `distance_to`.
+
+    Two independent questions, and the old code answered only the first
+    badly:
+
+    * **Is it on this history at all?** `rev-list --count A..B` alone
+      counts the commits B has that A does not, which a SHA from a
+      squash-merged side branch satisfies with 1 — so a snapshot could
+      cite a tree that was never on this branch. Reachability is checked
+      first, because a guard that cannot detect what its docstring names
+      is not a guard.
+
+    * **How far behind is it?** Measured to `distance_to`, which is
+      where this line of history last met `main` — not to `ancestor`.
+      On a feature branch the commits in between are unreleased work
+      that no reader can depend on yet, so charging the snapshot for
+      them made this fire on almost every real branch. And the only way
+      to silence it was to cite the branch head, which a squash-merge
+      then invalidates — the two halves of the old rule could not both
+      be satisfied by any value once a branch passed five commits.
+
+      On `main` the two refs coincide, so the window bites exactly as
+      before: a `main` commit that nobody regenerated against is still
+      a `main` commit nobody regenerated against.
+    """
     if sha == ancestor:
         return True
     try:
-        # Reachability FIRST. `rev-list --count A..B` alone counts the
-        # commits B has that A does not, which a SHA from a squash-merged
-        # side branch satisfies with 1 — so a snapshot could cite a tree
-        # that was never on this branch and the count guard would wave it
-        # through. A guard that cannot detect what its docstring names is
-        # not a guard.
         reachable = subprocess.run(
             ["git", "-C", str(REPO_ROOT), "merge-base", "--is-ancestor", sha, ancestor],
             capture_output=True, text=True,
         )
         if reachable.returncode != 0:
             return False
-        # Then the distance.
         out = subprocess.check_output(
-            ["git", "-C", str(REPO_ROOT), "rev-list", "--count", f"{sha}..{ancestor}"],
+            ["git", "-C", str(REPO_ROOT), "rev-list", "--count", f"{sha}..{distance_to or ancestor}"],
             text=True, stderr=subprocess.DEVNULL,
         ).strip()
         distance = int(out)
         return 0 <= distance <= max_drift
     except (subprocess.CalledProcessError, ValueError):
         return False
+
+
+def test_distance_is_measured_to_the_merge_base_not_the_branch_head() -> None:
+    """The window follows the base, not the tip — on any ref.
+
+    Pinned with the repository's own root commit so it holds on a
+    branch and on `main` alike: the root is reachable from every tip,
+    and it is certainly more than `SNAPSHOT_MAX_DRIFT` commits back
+    from one.
+    """
+    head = head_sha()
+    root = subprocess.check_output(
+        ["git", "-C", str(REPO_ROOT), "rev-list", "--max-parents=0", head],
+        text=True,
+    ).strip().splitlines()[-1]
+
+    assert not _is_recent_ancestor(root, head, SNAPSHOT_MAX_DRIFT, head), (
+        "measured against the tip, a commit far behind must be refused"
+    )
+    assert _is_recent_ancestor(root, head, SNAPSHOT_MAX_DRIFT, root), (
+        "measured against a base at that commit, the distance is zero and it "
+        "must be accepted — this is what lets a long feature branch keep a "
+        "snapshot that names the last merge"
+    )
 
 
 def test_current_snapshot_is_fresh() -> None:
@@ -260,6 +314,7 @@ def main() -> int:
         test_workspace_version_exists,
         test_roadmap_or_journal_cites_the_workspace_version,
         test_current_sha_matches_head,
+        test_distance_is_measured_to_the_merge_base_not_the_branch_head,
         test_current_snapshot_is_fresh,
         test_control_all_green,
     ):
