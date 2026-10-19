@@ -201,7 +201,19 @@ def _is_recent_ancestor(sha: str, ancestor: str, max_drift: int) -> bool:
     if sha == ancestor:
         return True
     try:
-        # Count commits between sha (exclusive) and ancestor (inclusive).
+        # Reachability FIRST. `rev-list --count A..B` alone counts the
+        # commits B has that A does not, which a SHA from a squash-merged
+        # side branch satisfies with 1 — so a snapshot could cite a tree
+        # that was never on this branch and the count guard would wave it
+        # through. A guard that cannot detect what its docstring names is
+        # not a guard.
+        reachable = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "merge-base", "--is-ancestor", sha, ancestor],
+            capture_output=True, text=True,
+        )
+        if reachable.returncode != 0:
+            return False
+        # Then the distance.
         out = subprocess.check_output(
             ["git", "-C", str(REPO_ROOT), "rev-list", "--count", f"{sha}..{ancestor}"],
             text=True, stderr=subprocess.DEVNULL,

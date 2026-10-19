@@ -401,6 +401,19 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 > - CU-2.4 ✅ consumidor vivo en aislamiento (PR #371, closeout #372).
 > - CU-2.5 ✅ v0.101.21 publicada y verificada (PR #374; gate en 3 rounds
 >   con golden+snapshot reparados, RC 32 etapas, 8 assets, smoke real).
->   **CU-2 completo.** Siguiente: CU-3 y/o K0 (cobertura honesta).
+>   **CU-2 completo.** Siguiente: ambos programas que este bloque
+>   nombraba ya están cerrados — **CU-3** (programa H2) cerró 4/4 en
+>   el Journal Entry 70, y **K0** (clasificación de walk) cerró en
+>   Entry 54 / v0.101.22. Las unidades realmente abiertas son las que
+>   hasta ahora solo vivían en los trailers del Journal:
+>   **H3** (gramática tree-sitter de Kotlin), **H4.1** (modelo de
+>   observación tipado `Resolved | Ambiguous | Unresolved`), **H4.2**
+>   (refinamiento del heurístico `shared_crate_root`), **H4.4**
+>   (fixtures UAT para homónimos Kotlin↔Java), **H5**
+>   (incremental/distribución) y **H0.1** (integridad de
+>   `PerFileGraphCache::merge_with_report`, con RED ya presentado como
+>   `h01_per_file_cache_invalidate_contract`). Ninguna tiene fichero
+>   de spec propio: el detalle vive en los trailers del Journal hasta
+>   que se abra el ciclo que las cierre.
 
 <!-- consumer-contracts:end -->
