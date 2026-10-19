@@ -406,14 +406,23 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   el Journal Entry 70, **K0** (clasificación de walk) cerró en
 >   Entry 54 / v0.101.22, y **H0** (integridad de caché por fichero)
 >   cerró H0.1..H0.5 en `bc3733a`. Las unidades realmente abiertas son
->   las que hasta ahora solo vivían en los trailers del Journal:
+>   las que el Journal había seguido por nombre de H-unit, sin el
+>   nombre de spec con el que se escribieron:
 >   **H3** (gramática tree-sitter de Kotlin), **H4.1** (modelo de
 >   observación tipado `Resolved | Ambiguous | Unresolved`), **H4.2**
 >   (refinamiento del heurístico `shared_crate_root`), **H4.4**
 >   (fixtures UAT para homónimos Kotlin↔Java) y **H5**
->   (incremental/distribución). Ninguna tiene fichero de spec propio: el
->   detalle vive en los trailers del Journal hasta que se abra el ciclo
->   que las cierre. Esta lista deriva del Journal y
+>   (incremental/distribución). **Sí tienen spec propio**, aunque no con
+>   esos nombres: H3 y H4 son **K1** y **K2** en
+>   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, con la
+>   autoridad normativa en `.../kotlin-evolution/adr/ADR-K003.md`; H5 vive
+>   en el HITOS del programa delivery-first. Este párrafo decía lo
+>   contrario —"ninguna tiene fichero de spec propio"— y mandaba a
+>   abrir un ciclo a diseñar desde cero unas unidades ya especificadas.
+>   H4.1 se cierra con **tres** variantes (`Resolved | Ambiguous |
+>   Unresolved`), no las cuatro que propone ADR-K003: `External` exige una
+>   tabla de símbolos externos que hoy no existe, y una variante que nada
+>   puede construir no es una garantía. La lista deriva del Journal y
 >   `scripts/ci/test_roadmap_open_units_coherence.py` no deja que nombre
 >   una unidad ya cerrada.
 
