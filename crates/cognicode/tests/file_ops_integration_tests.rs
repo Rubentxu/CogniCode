@@ -909,7 +909,7 @@ mod e2e_search_list_tests {
 }
 
 // ============================================================================
-// Spec Compliance Tests - Runtime验证 for critical spec scenarios
+// Spec Compliance Tests - Runtime validation for critical spec scenarios
 // ============================================================================
 
 mod spec_compliance_tests {

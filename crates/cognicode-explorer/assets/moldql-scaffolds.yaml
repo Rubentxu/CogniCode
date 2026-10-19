@@ -29,7 +29,7 @@ scaffolds:
     label: "Focus"
     description: >
       Centers the view on the selected symbol, showing its definition,
-      doc comments, and immediate邻居 (callers/callees in the same file).
+      doc comments, and immediate neighbours (callers/callees in the same file).
     query_template: "symbols where id = '{{object_id}}'"
     view_kind: vertical_slice
     renderer_kind: composite

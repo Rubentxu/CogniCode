@@ -45,7 +45,7 @@ handle_request(line, &mut ctx)
     └─► stdout JSON line
             │
             ├─► Response OR
-            └─► notifications/progress (穿插 during long ops)
+            └─► notifications/progress (interleaved during long ops)
 ```
 
 ## File Changes

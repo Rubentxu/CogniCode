@@ -45,7 +45,7 @@ rama equivocada no es una politica de soporte.
 no sobre el arbol. Comprobarlas exige red y una release publicada, asi que
 pertenecen al UAT de R1, que las mide despues de publicar. Un contrato que
 midiera eso en cada commit seria un contrato que falla cuando no hay release, y
-un gate que se apaga solo teaches a no mirar el绿灯.
+un gate que se apaga solo teaches a no mirar la luz verde.
 
 Lo que si se comprueba aqui, y es la parte que hace posible lo de despues: que
 el arbol sea internamente coherente, de modo que cuando la release se publique

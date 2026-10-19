@@ -127,7 +127,7 @@ for Symbol, Scope, and Issue objects after the executor is registered.
 
 ## Model Notes
 
-**Why `rule_id` as ownership proxy?** A SonarQube/SonarJS rule like `S2583` (抽像) has a known author/team at SonarSource — the rule itself encodes ownership. Similarly, a project-specific rule carries the author's intent. `rule_id` is the best available proxy for "who is responsible for this code quality problem" in v1.
+**Why `rule_id` as ownership proxy?** A SonarQube/SonarJS rule like `S2583` (abstract) has a known author/team at SonarSource — the rule itself encodes ownership. Similarly, a project-specific rule carries the author's intent. `rule_id` is the best available proxy for "who is responsible for this code quality problem" in v1.
 
 **Why not GitHub Issue `author`/`assignee`?** `InspectionTarget::Issue(QualityIssue)` carries a `QualityIssue` struct from the `issues` table. This struct has **no** `author`/`assignee` fields — those live on a separate GitHub Issues system (graph nodes with `properties.author`/`properties.assignee`) that is not reachable from `InspectionTarget::Issue`. See ADR-046 §7 on system boundary.
 

@@ -225,7 +225,7 @@ async fn a_real_language_gap_survives_on_every_route() {
         assert!(
             !is_complete(status),
             "un `.kt` es una fuente real en un lenguaje conocido-sin-soporte: \
-             es un hueco honesto y la ruta {name} lo报告中 como complete"
+             es un hueco honesto y la ruta {name} lo reporta como complete"
         );
         assert_eq!(
             skipped_names(status),
