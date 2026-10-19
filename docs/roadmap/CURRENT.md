@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `f8195f24c6b8eda39172fe93feb7431b8a80ed3b` (`main`, squash-merge del
-> PR #389: la capa semántica tiene que LLEGAR al grafo que consulta el
-> usuario). Sustituye al de
-> `b32b8b2b13478dd107233e0e1e5a7e48f8d49ec7` (PR #388). **v0.101.23
+> **Snapshot**: 2026-10-20, sobre `3b75b0a89b3dde0bf68e2472f90e9be366804f27` (`main`, squash-merge del
+> PR #390: la relación de Terraform sale del AST, no de la cabecera del
+> bloque). Sustituye al de
+> `f8195f24c6b8eda39172fe93feb7431b8a80ed3b` (PR #389). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -21,7 +21,20 @@
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
 >
-> **Estado del ciclo 2026-10-20 (H18, en este mismo PR).** Las referencias de
+> **Segunda unidad del ciclo 2026-10-20 (PR #391, en este mismo PR).** Una
+> palabra española o inglesa con letras de otro alfabeto pegadas dentro: 33
+> líneas en 18 ficheros versionados, y el texto se entendía —solo que una
+> palabra no era la que decía—. El inventario que el repo se había hecho
+> solo recogía cuatro, dos de los cuales ya no existían. Reparadas todas, y
+> añadido el guardián que faltaba: **un carácter de un sistema distinto del
+> latino y del griego sólo puede aparecer en un fichero exento, y la
+> exención dice por qué**. El guardián se ha visto fallar con un canario de
+> cirílico deliberado, y comprueba que el expediente congelado de
+> certificación contiene exactamente la contaminación que se le conoce. La
+> lección que lo pedía estaba escrita desde hacía días; lo que faltaba era
+> el contrato. Detalle en `JOURNAL.md`, entrada de la segunda unidad.
+>
+> **Estado del ciclo 2026-10-20 (H18, PR #390).** Las referencias de
 > Terraform salen del AST y llegan al grafo que consulta el usuario. MEDIDO
 > sobre el fixture real: de **0** aristas de referencia a **54**, de las
 > cuales **17** resuelven contra lo declarado en ese fichero y **37** quedan
@@ -334,8 +347,10 @@ parcialmente en la serie v0.101.x:
    759 líneas de comentario en 208 ficheros llevan referencias,
    identificadores de tarea, especificaciones o fechas. Este ciclo lo aplicó
    a la familia de la capa semántica; el resto es barrido mecánico, y
-   conviene hacerlo por zonas con un contrato que impida que vuelva a
-   crecer.
+   conviene hacerlo por zonas. El guardián de scripts de escritura
+   (`scripts/ci/test_prose_script_contamination.py`) ya impide que la
+   contaminación de alfabetos vuelva a crecer; el de comentarios es el
+   siguiente hermano.
 2. **T1-5 (mover presenter)** — refactor substancial, 194 `println!`
    en `cognicode-core::interface::cli::commands.rs`. Multi-commit.
 3. **T1-1b (schemas SymbolKind newtype)** — bounded, consolida el

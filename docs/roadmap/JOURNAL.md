@@ -18662,3 +18662,94 @@ diluido el diff. Queda medido y en el roadmap.
 Gates: `fast rc=0` (2370 passed, clippy `-D warnings`, baseline 0
 entradas); `full rc=0` (fmt, clippy `-D warnings`, workspace, doc, `OK:
 contracts`, baseline 0 entradas).
+
+---
+
+## 2026-10-20 — La palabra que venía de otro alfabeto, y el guardián que faltaba (PR #391)
+
+### MEDIDO antes del cambio, sobre el árbol trackeado
+
+**33 líneas en 18 ficheros** tenían una palabra española o inglesa con
+letras de otro alfabeto pegadas dentro. La forma era siempre la misma —una
+palabra sustituida por otra de otro sistema de escritura— y el defecto era
+invisible al leer: el texto se entendía, solo que una palabra no era la que
+decía.
+
+El inventario que el propio repositorio se había hecho solo (N+76.9)
+recogía **cuatro** casos, y **dos** de ellos ya no existían: el de
+`MAINTENANCE.md` estaba catalogado pero el carácter había cambiado, y la
+clasificación del cuarto —«texto ruso íntegro»— era errónea: no era un
+pasaje en ruso, eran cuatro frases españolas con un adjetivo sustituido.
+
+Lo que el barrido encontró y el inventario no recogía:
+
+| fichero | qué era |
+|---|---|
+| `docs/roadmap/JOURNAL.md` | un adjetivo en rus donde iba `detectado`, en cuatro sitios; `obligó` en cirílico; tres letras árabes dentro de una palabra, en el propio journal |
+| `docs/roadmap/MAINTENANCE.md` | `olvidó` con la primera letra en hangul |
+| `docs/roadmap/certifications/C8-POST-PRF-GA.md` | una palabra entera en cirílico donde iba `será` |
+| `docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md` | `poly形式` —dos veces— |
+| `crates/cognicode-ladybug/src/lib.rs` | `poly形式` en un comentario |
+| `crates/cognicode/tests/file_ops_integration_tests.rs` | `Runtime验证` en un comentario |
+| `crates/cognicode-core/tests/h16_walk_classification_coherence.rs` | `lo报告中` en el mensaje de una aserción |
+| `crates/cognicode-explorer/assets/moldql-scaffolds.yaml` | `immediate邻居` |
+| `scripts/ci/test_release_truth_convergence.py` | `el绿灯` |
+| `scripts/ci/test_skill_cli_invocations.py` | `ense馃a` —la `ñ`— |
+| `uat-plan.yaml`, `uat-guided.html`, `uat-matrix.html` | `kinds区分` —la palabra «distingue»— |
+| `openspec/changes/archive/**` (3 ficheros) | `原始`, `并行`, `必须在`, `穿插`, `浅浅` |
+| `openspec/specs/ownership-map/spec.md` | `(抽像)` |
+
+### La lección 171 estaba escrita, pero no había guardián
+
+> La defensa útil pregunta «¿qué scripts no pueden aparecer aquí?», no «¿vi
+> esto alguna vez?».
+
+El guardián que faltaba hace exactamente eso:
+
+    un carácter de un sistema distinto del latino y del griego sólo puede
+    aparecer en un fichero exento, y la exención dice por qué.
+
+El latino y el griego se permiten: el latino es el idioma y el griego es la
+notación de la matemática de grafos. Todo lo demás se declara.
+
+**Ocho exenciones**, cada una con su motivo: el expediente congelado de
+certificación —se reporta y no se repara— y siete ficheros de test que
+contienen a propósito rutas, mensajes o nombres de fichero no latinos.
+
+### El guardián no es un adorno: se ha visto fallar
+
+Un contrato que no puede fallar no es un contrato. Con un canario de
+cirílico deliberado en el árbol, el guardián lo ve y falla, nombrando el
+fichero y el punto de código:
+
+```text
+FAIL a versioned file contains a script that its prose has no business using.
+  canary_probe.md: line 1: Cyrillic U+0431
+```
+
+Retirado el canario, vuelve a verde. Y comprueba dos cosas más que lo
+mantienen honesto: que el expediente congelado contiene **exactamente** la
+contaminación que se le conoce —es lo único que un árbol congelado puede
+prometer—, y que **cada exención sigue eximiendo algo**: una exención que
+ya no exime nada es un agujero sin motivo, y el guardián obliga a
+retirarla.
+
+El inventario del journal se reescribió describiendo los caracteres **por
+punto de código**: un inventario que contiene lo que inventaría no puede
+contenerlo sin ensuciar el fichero que se supone que protege.
+
+### Lo que queda abierto (medido, no supuesto)
+
+- **La superficie heredada de comentarios con referencias** (759 líneas en
+  208 ficheros) sigue sin barrer. Este ciclo aplicó el estándar a la
+  familia de la capa semántica; el resto es trabajo mecánico por zonas.
+- **El handler de Ansible sigue muerto**: el extractor YAML genérico no
+  emite ningún nodo para ninguna forma de documento (medido: 1 nodo, el del
+  fichero), luego `is_ansible_playbook` nunca ve `hosts:`. Es otra ley, y la
+  arregla el extractor YAML, no el handler.
+- **El guardián no cubre los ficheros binarios**, porque no tienen
+  escritura que contaminar, ni los ficheros que no están versionados: lo
+  no versionado no es parte del contrato.
+
+Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
+doc, `OK: contracts` —con el guardián nuevo dentro—, baseline 0 entradas).
