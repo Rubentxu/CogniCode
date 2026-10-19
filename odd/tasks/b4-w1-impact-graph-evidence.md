@@ -1,6 +1,7 @@
 # B4.W1 — Impact graph with evidence and provenance (v0.101.14)
 
-> **Estado**: PENDING. Desbloqueado por B3.W1 cerrado (SymbolId + precision).
+> **Estado**: CLOSED 2026-10-12 (`49d8c25`); B4 publicado en v0.101.14.
+> Estado derivado de `docs/roadmap/ROADMAP.md` §10, que es la autoridad.
 > Roadmap padre: [`b4-impact-architecture-quality.md`](./b4-impact-architecture-quality.md).
 
 ## Objetivo
