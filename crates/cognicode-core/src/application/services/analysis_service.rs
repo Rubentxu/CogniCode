@@ -167,7 +167,6 @@ impl AnalysisService {
     }
 
     pub fn build_project_graph(&self, project_dir: &Path) -> AppResult<()> {
-        use ignore::WalkBuilder;
         use rayon::prelude::*;
 
         info!("Building project graph for directory: {:?}", project_dir);
@@ -230,14 +229,35 @@ impl AnalysisService {
 
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-        let files: Vec<_> = WalkBuilder::new(project_dir)
+        let files: Vec<_> = crate::infrastructure::walk_policy::contained_ignore_walk(project_dir)
             .hidden(true)
             .git_ignore(true)
             .git_exclude(true)
             .build()
             .filter_map(|e| e.ok())
             .filter(|e| !walk_filter.matches_any_component(e.path()))
-            .filter(|e| e.path().is_file())
+            .filter_map(|e| {
+                if crate::infrastructure::walk_policy::ignore_is_real_file(&e) {
+                    return Some(e);
+                }
+                // A symlink is declined, not forgotten. This path is
+                // the one MCP's `handle_build_graph` reaches, and its
+                // `BuildStatus` gates `save_durable_snapshot` — so a
+                // silent decline would leave the snapshot claiming
+                // `complete` over a graph that is missing whatever the
+                // link pointed at.
+                if let Some(reason) =
+                    crate::infrastructure::graph::per_file_graph::classify_declined_ignore_entry(&e)
+                {
+                    skipped_files.lock().unwrap().push(
+                        crate::infrastructure::graph::per_file_graph::SkippedFile {
+                            path: e.path().to_string_lossy().to_string(),
+                            reason,
+                        },
+                    );
+                }
+                None
+            })
             .map(|e| {
                 let path = e.path().to_path_buf();
                 let language = Language::from_extension(path.extension());
@@ -698,14 +718,27 @@ impl AnalysisService {
 
         let mut file_paths: Vec<std::path::PathBuf> = Vec::new();
         let mut k0_skipped: Vec<PfgSkippedFile> = Vec::new();
+        let mut walk_skipped: Vec<PfgSkippedFile> = Vec::new();
 
-        for entry in walkdir::WalkDir::new(project_dir)
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_entry(|e| !walk.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
             if !crate::infrastructure::walk_policy::is_real_file(&entry) {
+                // This method exists so a caller can see what it did
+                // not cover. Dropping the symlink without recording it
+                // would return `Complete`, which is the same lie the
+                // walk was fixed to stop telling, one layer down.
+                if let Some(reason) =
+                    crate::infrastructure::graph::per_file_graph::classify_declined_entry(&entry)
+                {
+                    walk_skipped.push(PfgSkippedFile {
+                        path: path.to_string_lossy().into_owned(),
+                        reason,
+                    });
+                }
                 continue;
             }
             let ext = path.extension().and_then(|e| e.to_str());
@@ -741,6 +774,7 @@ impl AnalysisService {
             PfgBuildStatus::Partial { skipped } => (cache_report.graph, skipped),
         };
         all_skipped.extend(k0_skipped);
+        all_skipped.extend(walk_skipped);
         let final_status = if all_skipped.is_empty() {
             PfgBuildStatus::Complete
         } else {
@@ -779,7 +813,6 @@ impl AnalysisService {
         project_dir: &Path,
         include_dirs: &[&Path],
     ) -> AppResult<CallGraph> {
-        use ignore::WalkBuilder;
         use rayon::prelude::*;
 
         let mut store = PetGraphStore::new();
@@ -791,7 +824,10 @@ impl AnalysisService {
         let mut unresolved_edges: usize = 0;
 
         // Use include_dirs as an allowlist - only include files under these directories
-        let files: Vec<_> = WalkBuilder::new(project_dir)
+        // No report channel here: this method returns a bare `AppResult`,
+        // so a declined symlink cannot be surfaced. `build_project_graph`
+        // is the one that owes the caller an honest `BuildStatus`.
+        let files: Vec<_> = crate::infrastructure::walk_policy::contained_ignore_walk(project_dir)
             .hidden(true)
             .git_ignore(true)
             .git_exclude(true)
@@ -803,7 +839,7 @@ impl AnalysisService {
                 // include_dirs are absolute paths, so compare directly with the file path
                 include_dirs.iter().any(|dir| path.starts_with(dir))
             })
-            .filter(|e| e.path().is_file())
+            .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
             .map(|e| {
                 let path = e.path().to_path_buf();
                 let language = Language::from_extension(path.extension());
@@ -998,38 +1034,38 @@ impl AnalysisService {
                 let mut parsed_files: usize = 0;
                 let mut unresolved_edges: usize = 0;
 
-                use ignore::WalkBuilder;
                 use rayon::prelude::*;
 
                 let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-                let files: Vec<_> = WalkBuilder::new(&dir_path)
-                    .hidden(true)
-                    .git_ignore(true)
-                    .git_exclude(true)
-                    .build()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| !walk_filter.matches_any_component(e.path()))
-                    .filter(|e| e.path().is_file())
-                    .map(|e| {
-                        let path = e.path().to_path_buf();
-                        let language = Language::from_extension(path.extension());
-                        let file_path = path.to_string_lossy().into_owned();
-                        let mtime = std::fs::metadata(&path)
-                            .ok()
-                            .and_then(|m| m.modified().ok())
-                            .map(|t| {
-                                t.duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_secs()
-                            })
-                            .unwrap_or(0);
-                        // F2.W9: emit size alongside mtime for cache invalidation
-                        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-                        (path, language, file_path, mtime, size)
-                    })
-                    .filter(|(_, lang, _, _, _)| lang.is_some())
-                    .collect();
+                let files: Vec<_> =
+                    crate::infrastructure::walk_policy::contained_ignore_walk(&dir_path)
+                        .hidden(true)
+                        .git_ignore(true)
+                        .git_exclude(true)
+                        .build()
+                        .filter_map(|e| e.ok())
+                        .filter(|e| !walk_filter.matches_any_component(e.path()))
+                        .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
+                        .map(|e| {
+                            let path = e.path().to_path_buf();
+                            let language = Language::from_extension(path.extension());
+                            let file_path = path.to_string_lossy().into_owned();
+                            let mtime = std::fs::metadata(&path)
+                                .ok()
+                                .and_then(|m| m.modified().ok())
+                                .map(|t| {
+                                    t.duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_secs()
+                                })
+                                .unwrap_or(0);
+                            // F2.W9: emit size alongside mtime for cache invalidation
+                            let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+                            (path, language, file_path, mtime, size)
+                        })
+                        .filter(|(_, lang, _, _, _)| lang.is_some())
+                        .collect();
 
                 let total_files = files.len();
 
@@ -1709,7 +1745,7 @@ impl AnalysisService {
         // skips and missed `.env` and friends.
         let walk = WalkFilter::default();
 
-        for entry in walkdir::WalkDir::new(&params.project_dir)
+        for entry in crate::infrastructure::walk_policy::contained_walk(&params.project_dir)
             .into_iter()
             .filter_entry(|e| !walk.matches_any_component(e.path()))
             .filter_map(|e| e.ok())

@@ -7,9 +7,9 @@
 //! This needs saying because the obvious way to write it fails twice,
 //! and each failure hides the other:
 //!
-//! - `WalkDir::follow_links(true)` descends through symlinked
-//!   directories. A project containing `linked -> ~/.cargo/registry`
-//!   indexes a registry.
+//! - `follow_links(true)` descends through symlinked directories. A
+//!   project containing `linked -> ~/.cargo/registry` indexes a
+//!   registry.
 //! - `Path::is_file()` is `fs::metadata(path).is_file()`, and
 //!   `fs::metadata` *follows* symlinks. So switching to
 //!   `follow_links(false)` alone does not close the hole: a symlinked
@@ -19,8 +19,30 @@
 //! Only the pair closes it. Because every caller needs the pair, and
 //! a caller who remembers one half has reintroduced the bug they were
 //! fixing, the pair lives here and nowhere else. Use
-//! [`contained_walk`] plus [`is_real_file`].
+//! [`contained_walk`] plus [`is_real_file`], or
+//! [`contained_ignore_walk`] plus [`ignore_is_real_file`].
+//!
+//! There are two walkers because there are two crates in play:
+//! `walkdir` and `ignore`. `ignore` is the one that skips `.gitignore`,
+//! which is what a project walk actually wants — and `ignore` is what
+//! the *production* graph path uses. A law that only governed
+//! `walkdir` would have been a law the wired path did not obey.
+//!
+//! ## What this law does not govern
+//!
+//! Walks that only enumerate *names* for a caller-initiated search —
+//! filename completion, MCP `resources/list`, `find file` — are not
+//! covered, and should not be. They never read a byte through the
+//! link, so the content behind it stays unrevealed, and they make no
+//! claim about coverage that a symlink could falsify. A caller who
+//! then asks to read one of those names is naming the path itself.
+//!
+//! The line is **read or index through the link**, not *walk near one*.
+//! Drawing it here, rather than leaving it to the next reader's
+//! judgement, is what keeps this module from creeping into every
+//! `WalkBuilder` in the tree.
 
+use ignore::WalkBuilder;
 use std::path::Path;
 use walkdir::{DirEntry, WalkDir};
 
@@ -40,6 +62,29 @@ pub fn contained_walk(root: impl AsRef<Path>) -> WalkDir {
 /// directory reaches the caller.
 pub fn is_real_file(entry: &DirEntry) -> bool {
     entry.file_type().is_file()
+}
+
+/// The same law for the `ignore` walker, which additionally honours
+/// `.gitignore`.
+///
+/// `WalkBuilder::follow_links` already defaults to `false`, so this
+/// spells the default out rather than changing it. It matters that the
+/// default is written down: the whole defect here was a walker that
+/// behaved correctly *by accident of a default nobody had read*, and a
+/// reader had no way to tell that from one that was pinned.
+pub fn contained_ignore_walk(root: impl AsRef<Path>) -> WalkBuilder {
+    let mut walk = WalkBuilder::new(root);
+    walk.follow_links(false);
+    walk
+}
+
+/// Whether an `ignore` entry is a real file.
+///
+/// Same lstat semantics as [`is_real_file`]: `ignore::DirEntry`
+/// delegates `file_type` straight to its `walkdir` entry, so a symlink
+/// reports `is_symlink() == true` and `is_file() == false`.
+pub fn ignore_is_real_file(entry: &ignore::DirEntry) -> bool {
+    entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
 }
 
 #[cfg(test)]

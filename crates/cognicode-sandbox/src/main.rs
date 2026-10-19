@@ -3349,11 +3349,13 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     // Walk all subdirectories and read result.json files from timestamped run dirs
     for entry in WalkDir::new(results_dir)
         .max_depth(5)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
     {
         let path = entry.path();
-        if path.is_file() && path.file_name().is_some_and(|n| n == "result.json") {
+        if path.file_name().is_some_and(|n| n == "result.json") {
             let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
             if let Ok(result) = serde_json::from_str::<ScenarioResult>(&content) {
                 results.push(result);

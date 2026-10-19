@@ -1022,6 +1022,25 @@ pub fn classify_declined_entry(entry: &walkdir::DirEntry) -> Option<SkipReason> 
     Some(SkipReason::Symlink { target })
 }
 
+/// The same classification for the `ignore` walker.
+///
+/// Two functions rather than a trait: a trait would ask the caller to
+/// name the trait at every call site, and the whole reason this
+/// classification exists is that a caller should not have to remember
+/// to write it.
+pub fn classify_declined_ignore_entry(entry: &ignore::DirEntry) -> Option<SkipReason> {
+    if !entry.file_type().map(|ft| ft.is_symlink()).unwrap_or(false) {
+        return None;
+    }
+    let target = match std::fs::read_link(entry.path()) {
+        Ok(t) => t.to_string_lossy().to_string(),
+        // A dangling or unreadable link: we still declined it, we
+        // just cannot say where it pointed.
+        Err(_) => "<unreadable>".to_string(),
+    };
+    Some(SkipReason::Symlink { target })
+}
+
 /// Clasifica la extensión de un archivo de walk según el contrato K0.
 pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
     use crate::infrastructure::parser::Language;
