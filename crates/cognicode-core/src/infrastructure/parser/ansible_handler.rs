@@ -12,9 +12,17 @@ use crate::domain::value_objects::{NodeKind, Provenance, SymbolKind};
 /// Post-process a YAML extraction result to detect Ansible structure.
 /// If the file is an Ansible playbook, adds play/task/module nodes and edges.
 /// If not (plain YAML), returns the result unchanged.
+///
+/// `_source` arrives through the handler seam, and this layer does not need
+/// it yet: its decision, `is_ansible_playbook`, reads labels. Those labels
+/// carry nothing today —a generic YAML extraction emits a single node per
+/// file, the node of the file itself— so the decision never sees `hosts:`
+/// and this layer never runs. Parsing the file here, as the Terraform
+/// handler does, is what would give it something to read.
 pub fn interpret_ansible(
     source_path: &str,
     source_hash: &str,
+    _source: &str,
     result: &ExtractionResult,
 ) -> ExtractionResult {
     // Quick check: does the file look like an Ansible playbook?
