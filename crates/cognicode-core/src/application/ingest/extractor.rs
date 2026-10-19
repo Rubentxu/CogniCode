@@ -205,10 +205,19 @@ pub fn extract_file(
             nodes.push(symbol_node);
         }
 
-        // Push children (dedup by byte range to avoid revisiting)
+        // Push children (dedup to avoid revisiting)
+        //
+        // MEDIDO 2026-10-19. La clave era (start_byte, end_byte), y hay
+        // gramaticas —HCL entre ellas— donde un envoltorio contiene un
+        // unico hijo que ocupa EXACTAMENTE el mismo rango: en
+        // `config_file > body > block`, `body` y `block` comparten inicio
+        // y fin. Al insertar el hijo, la clave ya estaba vista y el nodo
+        // nunca se visitaba. MEDIDO: un `main.tf` con UN solo recurso
+        // producia cero simbolos; con dos producia cuatro. El mismo
+        // rango no es la misma identidad: el kind forma parte de ella.
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            let key = (child.start_byte(), child.end_byte());
+            let key = (child.kind(), child.start_byte(), child.end_byte());
             if seen.insert(key) {
                 stack.push(child);
             }
@@ -245,22 +254,50 @@ pub fn extract_file(
 // Helpers
 // ============================================================================
 
-/// Extract the `name` field text from a node, falling back to the first
-/// named child if no `name` field exists.
+/// Extract the `name` field text from a node, falling back to the node's
+/// HEADER when no `name` field exists.
+///
+/// MEDIDO 2026-10-19. El fallback anterior devolvia "el primer hijo que sea
+/// un identifier", lo cual para una gramatica de cabeceras no nombra nada:
+/// en HCL el nodo `block` es `identifier(string_lit|identifier)* block_start
+/// body? block_end` y NO tiene campo `name`, asi que el primer identifier es
+/// la palabra clave y solo la palabra clave. Sobre el fixture real
+/// `sandbox/fixtures/terraform-iac/main.tf` eso producia 144 etiquetas todas
+/// iguales a `"resource"`, destruyendo el tipo y el nombre antes de que
+/// `terraform_handler` los viera, haciendo que todos los bloques del fichero
+/// compartieran identidad y dejando el guardia `is_terraform_file` (que
+/// busca `"resource "` con espacio) sin cumplir.
+///
+/// La regla general es la correcta y no es una excepcion de HCL: **un nodo
+/// sin campo `name` se nombra por su cabecera**. Se recorren los hijos
+/// DIRECTOS que sean `identifier` o `string_lit` y se paran en cuanto aparece
+/// algo que no lo es —el cuerpo empieza ahi—, de modo que un `block_mapping`
+/// de YAML (cuyos hijos son `pair`) sigue sin nombre, igual que antes.
+///
+/// Solo se alcanza este camino donde ya no habia campo `name`: los lenguajes
+/// que si lo tienen (Rust, Python, TypeScript, Go, Java...) no cambian.
 fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
     if let Some(name_node) = node.child_by_field_name("name") {
         return Some(node_text(&name_node, source));
     }
-    // Fallback: first named child that is an identifier
+
+    // Header: leading identifier / string-literal children, up to the body.
+    let mut header: Vec<String> = Vec::new();
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i)
-            && child.is_named()
-            && child.kind() == "identifier"
-        {
-            return Some(node_text(&child, source));
+        let Some(child) = node.child(i) else { break };
+        if !child.is_named() {
+            break;
+        }
+        match child.kind() {
+            "identifier" | "string_lit" => header.push(node_text(&child, source)),
+            _ => break,
         }
     }
-    None
+
+    if header.is_empty() {
+        return None;
+    }
+    Some(header.join(" "))
 }
 
 /// Extract the imported module/package name from an import node.
