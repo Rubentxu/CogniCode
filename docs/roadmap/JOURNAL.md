@@ -18110,3 +18110,74 @@ PR #381 sigue abierta; este commit se añade. Unidades abiertas sin
 cambio: H3, H4.1, H4.2, H4.4, H5, H0.1. La deriva de 99 escenarios en
 `sandbox/manifests/` sigue siendo deuda honesta del operador, sin gate
 que la cubra.
+
+## 2026-10-19 — Entry 80: el arbusto que nadie miró porque el árbol bueno lo tapaba
+
+### El título mentía, y el motivo mentía más
+
+H4.2 era, por su ficha, "refinamiento del heurístico `shared_crate_root`". Y
+la Entry anterior añadía el porqué de su aplazamiento: *"más difícil de
+fijar porque la regla actual de prefijo de ruta está enmascarada por el
+fallback de soltar cuando hay 2+ candidatos"*.
+
+Eso es cierto — **de una de las tres funciones**. `build_project_graph`
+resolvía con `GlobalSymbolIndex` y suelta la arista ante dos homónimos. Las
+otras dos no tenían fallback ninguno: resolvían con un
+`HashMap<String, SymbolId>` plano cuyo segundo `insert` **pisa** al
+primero, así que `get` devolvía exactamente un símbolo y **todas** las
+llamadas se cableaban contra el que sobrevivió por orden de recorrido.
+
+No era un heuristic que mejorara. Era una arista falsa por construcción, y
+en las dos rutas que MCP alcanza de verdad:
+
+| Constructor | Resolvía con | Aristas falsas |
+|---|---|---|
+| `build_project_graph` | `GlobalSymbolIndex::resolve` | no |
+| `build_project_graph_filtered` (`workspace_session.rs:1161`) | `HashMap` plano | **sí** |
+| `build_project_graph_async` (`aix_handlers.rs:1979`) | `HashMap` plano | **sí** |
+
+**Un árbol correcto tapa un arbusto.** La función que se leía con atención
+era la única bien escrita, y su honestidad hacía que las otras dos no
+llamaran la atención.
+
+### RED, medido en las dos entradas
+
+Dos ficheros con `helper()` cada uno y un tercero que la llama: sin regla
+que los desambigue no hay destino probado, así que no hay arista.
+
+- `h42_filtered_graph_invents_no_edge_against_a_homonym` → `left: 1, right: 0`
+- `h42_async_graph_invents_no_edge_against_a_homonym` → `left: 1, right: 0`
+
+El segundo se verificó **revirtiendo solo ese camino** y reejecutando, no
+por argumento: la prueba que no se ha visto fallar antes no prueba nada.
+Los dos contratos viven ahora en los dos puntos de entrada, porque un guard
+que solo ejercite el constructor filtrado deja MCP sin cubrir.
+
+### El arreglo son quince líneas por sitio
+
+Sin abstracción nueva: reutilizar el tipo que ya existía y ya estaba
+probado. Lo único que las dos rotas no recogían era el **fichero del
+llamante**, que es lo que activa las reglas "mismo fichero" y "misma raíz
+de crate". `SymbolInfo` ya lo traía en `location()`.
+
+`grep -c name_to_symbol_id` sobre el fichero devuelve **0**: el mapa
+last-writer-wins ya no existe en ninguna parte.
+
+### Lo que NO se hizo, y por qué
+
+`unresolved_edges` sigue sin partirse entre ambigua y ausente. Se plantó
+como el H4.2 original, y al medir el radio resultó que
+`GraphCoverageMetrics::unresolved_edges` es **inerte en la frontera**:
+ningún presenter lo emite, no está en `product/tools.json` ni en
+`product/schemas/`. Partirlo no cambiaría un byte de JSON hoy — sería un
+cambio de reporte disfrazado de corrección de grafo.
+
+### Gates
+
+`fast rc=0`, `full rc=0` (el primer `full` salió en `fmt --check`: el
+hand-edit no estaba formateado; `cargo fmt` y re-run).
+
+### Estado
+
+**H4.1 y H4.2 cerradas.** Abiertas: H3, H4.4, H5, más H0.1. H5.2 sigue
+`BLOCKED_EXTERNAL` (no hay checkout de Guard en esta máquina).

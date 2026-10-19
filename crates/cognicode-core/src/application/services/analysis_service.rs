@@ -24,7 +24,7 @@ use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{DependencyType, WalkFilter};
-use crate::infrastructure::graph::per_file_graph::TargetResolution;
+use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, TargetResolution};
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
@@ -825,8 +825,12 @@ impl AnalysisService {
         use rayon::prelude::*;
 
         let mut store = PetGraphStore::new();
-        let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
-            std::collections::HashMap::new();
+        // H4.2: un `HashMap<String, SymbolId>` no distingue dos homónimos —
+        // el segundo `insert` pisa al primero y el `get` devuelve siempre
+        // uno, así que toda llamada se cableaba contra el que sobrevivió por
+        // orden de recorrido. `GlobalSymbolIndex` guarda el multiconjunto y
+        // solo resuelve cuando una regla lo demuestra.
+        let mut global_index = GlobalSymbolIndex::new();
 
         // Coverage tracking
         let mut parsed_files: usize = 0;
@@ -976,22 +980,40 @@ impl AnalysisService {
             for symbol in symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&symbol_id, symbol.clone());
-                name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
+                global_index.insert(
+                    symbol_id,
+                    std::path::PathBuf::from(&file_path),
+                    symbol.name(),
+                );
             }
 
             for (caller, callee_name) in relationships {
-                all_relationships.push((caller, callee_name));
+                // El fichero del llamante es lo que permite las reglas
+                // "mismo fichero" y "misma raíz de crate".
+                all_relationships.push((
+                    caller.fully_qualified_name().to_string(),
+                    caller.location().file().to_string(),
+                    callee_name,
+                ));
             }
         }
 
-        for (caller, callee_name) in all_relationships {
-            let caller_id = SymbolId::new(caller.fully_qualified_name());
-            if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
-                store
-                    .add_dependency(&caller_id, callee_id, DependencyType::Calls)
-                    .ok();
-            } else {
-                unresolved_edges += 1;
+        for (caller_fqn, caller_file, callee_name) in all_relationships {
+            let caller_id = SymbolId::new(&caller_fqn);
+            let caller_path = std::path::Path::new(&caller_file);
+            match global_index.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
+                TargetResolution::Resolved(callee_id) => {
+                    store
+                        .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
+                        .ok();
+                }
+                // Sin destino probado no hay arista: ambigua y ausente se
+                // cuentan igual porque ambas dejan el grafo igual de
+                // completo, y distinguirlas es trabajo de reporte, no del
+                // grafo.
+                TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
+                    unresolved_edges += 1;
+                }
             }
         }
 
@@ -1036,8 +1058,12 @@ impl AnalysisService {
                 // Create a minimal service context for building the graph
                 let store =
                     std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
-                let mut name_to_symbol_id: std::collections::HashMap<String, SymbolId> =
-                    std::collections::HashMap::new();
+                // H4.2: mismo defecto que `build_project_graph_filtered` — un
+                // `HashMap<String, SymbolId>` no distingue dos homónimos, así que
+                // toda llamada se cableaba contra el que sobrevivió por orden de
+                // recorrido. `GlobalSymbolIndex` guarda el multiconjunto y solo
+                // resuelve cuando una regla lo demuestra.
+                let mut global_index = GlobalSymbolIndex::new();
 
                 // Coverage tracking
                 let mut parsed_files: usize = 0;
@@ -1191,24 +1217,38 @@ impl AnalysisService {
                             .lock()
                             .unwrap()
                             .add_symbol_with_location(&symbol_id, symbol.clone());
-                        name_to_symbol_id.insert(symbol.name().to_lowercase(), symbol_id);
+                        global_index.insert(
+                            symbol_id,
+                            std::path::PathBuf::from(&file_path),
+                            symbol.name(),
+                        );
                     }
 
                     for (caller, callee_name) in relationships {
-                        all_relationships.push((caller, callee_name));
+                        // El fichero del llamante es lo que permite las reglas
+                        // "mismo fichero" y "misma raíz de crate".
+                        all_relationships.push((
+                            caller.fully_qualified_name().to_string(),
+                            caller.location().file().to_string(),
+                            callee_name,
+                        ));
                     }
                 }
 
-                for (caller, callee_name) in all_relationships {
-                    let caller_id = SymbolId::new(caller.fully_qualified_name());
-                    if let Some(callee_id) = name_to_symbol_id.get(&callee_name.to_lowercase()) {
-                        store
-                            .lock()
-                            .unwrap()
-                            .add_dependency(&caller_id, callee_id, DependencyType::Calls)
-                            .ok();
-                    } else {
-                        unresolved_edges += 1;
+                for (caller_fqn, caller_file, callee_name) in all_relationships {
+                    let caller_id = SymbolId::new(&caller_fqn);
+                    let caller_path = std::path::Path::new(&caller_file);
+                    match global_index.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
+                        TargetResolution::Resolved(callee_id) => {
+                            store
+                                .lock()
+                                .unwrap()
+                                .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
+                                .ok();
+                        }
+                        TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
+                            unresolved_edges += 1;
+                        }
                     }
                 }
 
@@ -2762,6 +2802,102 @@ def d():
             "Should contain 'validate' node"
         );
         assert!(mermaid.contains("-->"), "Should contain edges");
+    }
+
+    // =========================================================================
+    // H4.2 - no invented edges
+    // =========================================================================
+
+    /// MEDIDO (RED): este proyecto producía una arista `main → helper`.
+    ///
+    /// `helper` está declarada en `alpha.rs` **y** en `beta.rs`. El
+    /// constructorFiltered resolvía contra un `HashMap<String, SymbolId>`
+    /// plano, donde el segundo `insert` pisa al primero: el `get` devolvía
+    /// siempre exactamente un símbolo y la arista se dibujaba contra el
+    /// homónimo que sobrevivió por azar de orden de recorrido.
+    ///
+    /// Eso es la arista falsa que toda la ley de H4/K2 prohíbe, y que la
+    /// ruta `build_project_graph` ya evita usando `GlobalSymbolIndex`.
+    /// La ley se cumple por construcción cuando solo `Resolved` nombra
+    /// un destino: aquí no hay regla que desambigue dos homónimos, así
+    /// que no puede haber destino.
+    #[test]
+    fn h42_filtered_graph_invents_no_edge_against_a_homonym() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+        for (file, body) in [
+            ("alpha.rs", "pub fn helper() -> i32 { 1 }"),
+            ("beta.rs", "pub fn helper() -> i32 { 2 }"),
+            ("main.rs", "pub fn caller() -> i32 { helper() }"),
+        ] {
+            std::fs::write(root.join(file), body).unwrap();
+        }
+
+        let service = AnalysisService::new();
+        let graph = service
+            .build_project_graph_filtered(root, &[root])
+            .expect("filtered graph should build");
+
+        let helper_edges = graph
+            .all_dependencies()
+            .filter(|(_, target, _)| {
+                graph
+                    .get_symbol(target)
+                    .map(|s| s.name().eq_ignore_ascii_case("helper"))
+                    .unwrap_or(false)
+            })
+            .count();
+
+        assert_eq!(
+            helper_edges, 0,
+            "two homonyms with no rule to disambiguate must produce no edge, \
+             got {helper_edges}"
+        );
+    }
+
+    /// H4.2, second site. `build_project_graph_async` was a separate
+    /// implementation with the same last-writer-wins `HashMap`, and it is the
+    /// one MCP `reparse_on_edit` reaches. A guard that only exercised the
+    /// filtered builder would leave that one unprotected, so the contract is
+    /// stated once and checked at both entry points.
+    #[tokio::test]
+    async fn h42_async_graph_invents_no_edge_against_a_homonym() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+        for (file, body) in [
+            ("alpha.rs", "pub fn helper() -> i32 { 1 }"),
+            ("beta.rs", "pub fn helper() -> i32 { 2 }"),
+            ("main.rs", "pub fn caller() -> i32 { helper() }"),
+        ] {
+            std::fs::write(root.join(file), body).unwrap();
+        }
+
+        let service = AnalysisService::new();
+        service
+            .build_project_graph_async(root)
+            .await
+            .expect("async graph should build");
+
+        let graph = service.graph_cache().get();
+        let helper_edges = graph
+            .all_dependencies()
+            .filter(|(_, target, _)| {
+                graph
+                    .get_symbol(target)
+                    .map(|s| s.name().eq_ignore_ascii_case("helper"))
+                    .unwrap_or(false)
+            })
+            .count();
+
+        assert_eq!(
+            helper_edges, 0,
+            "two homonyms with no rule to disambiguate must produce no edge, \
+             got {helper_edges}"
+        );
     }
 
     // =========================================================================

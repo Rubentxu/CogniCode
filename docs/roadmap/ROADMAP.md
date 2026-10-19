@@ -408,9 +408,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   cerró H0.1..H0.5 en `bc3733a`. Las unidades realmente abiertas son
 >   las que el Journal había seguido por nombre de H-unit, sin el
 >   nombre de spec con el que se escribieron:
->   **H3** (gramática tree-sitter de Kotlin), **H4.1** (modelo de
->   observación tipado `Resolved | Ambiguous | Unresolved`), **H4.2**
->   (refinamiento del heurístico `shared_crate_root`), **H4.4**
+>   **H3** (gramática tree-sitter de Kotlin), **H4.4**
 >   (fixtures UAT para homónimos Kotlin↔Java) y **H5**
 >   (incremental/distribución). **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
@@ -422,7 +420,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   H4.1 se cierra con **tres** variantes (`Resolved | Ambiguous |
 >   Unresolved`), no las cuatro que propone ADR-K003: `External` exige una
 >   tabla de símbolos externos que hoy no existe, y una variante que nada
->   puede construir no es una garantía. La lista deriva del Journal y
+>   puede construir no es una garantía. **H4.2 tampoco era lo que decía
+>   su título**: no era refinar el heurístico `shared_crate_root` sino
+>   dejar de cablear llamadas contra un homónimo arbitrario — dos de los
+>   tres constructores de grafo resolvían con un `HashMap<String, SymbolId>`
+>   cuyo último `insert` pisaba al anterior, así que toda llamada se
+>   atribuía al símbolo que sobrevivió por orden de recorrido. Cerrada
+>   con los tres constructores sobre `GlobalSymbolIndex`. La lista deriva
+>   del Journal y
 >   `scripts/ci/test_roadmap_open_units_coherence.py` no deja que nombre
 >   una unidad ya cerrada.
 
