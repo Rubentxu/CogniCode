@@ -445,5 +445,29 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   del Journal y
 >   `scripts/ci/test_roadmap_open_units_coherence.py` no deja que nombre
 >   una unidad ya cerrada.
+>
+>   **H17 (2026-10-19) también era un título, no una descripción**: «la capa
+>   semántica tiene que llegar al grafo». La capa semántica —HCL y Ansible,
+>   los únicos dos lenguajes con `semantic_handler`— se invocaba en **un**
+>   sitio, `extractor.rs`, y el camino que construye el grafo
+>   (`per_file_graph.rs`, vía `TreeSitterParser`) nunca la consultaba. H15
+>   había arreglado el seam y dado por hecho que llegar al grafo era
+>   consecuencia. Eran dos autoridades para la misma pregunta y ganaba la
+>   que se preguntar. Cerrada enrutando los nodos del handler a `CallGraph`.
+>   Medido al cerrar: un bloque HCL entra en `graph.full` como
+>   `aws_s3_bucket.app_bucket`, no como `resource`/`bucket`.
+>
+>   **Lo que H17 NO cierra.** Las referencias Terraform siguen en 0, y el
+>   motivo es concreto: `extract_terraform_refs` lee la etiqueta del
+>   bloque, y la etiqueta es la cabecera —sin cuerpo, no puede ver lo que el
+>   cuerpo referencia—. La relación que hace falta existe en
+>   `sandbox/fixtures/terraform-iac/main.tf` y es un **atravesamiento de
+>   atributos** (`bucket = aws_s3_bucket.app_bucket.id`), no una referencia
+>   plana, así que exigirla obliga a leer expresiones del AST. Ese es el
+>   siguiente bloque. Y el handler de **Ansible está muerto**: el extractor
+>   YAML genérico no emite ningún nodo para ninguna forma de documento
+>   (medido: 1 nodo, el del fichero), luego `is_ansible_playbook` nunca ve
+>   `hosts:`. Es otra ley —«la capa semántica tiene algo que interpretar»—
+>   y no se mezcló con H17.
 
 <!-- consumer-contracts:end -->

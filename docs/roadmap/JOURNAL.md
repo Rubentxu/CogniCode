@@ -18423,3 +18423,120 @@ frase que le importa al consumidor.
 
 Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
 doc, `OK: contracts`, baseline 0 entradas).
+
+---
+
+## 2026-10-19 — H17: la capa semántica tiene que LLEGAR al grafo (PR #389)
+
+### MEDIDO antes del cambio, sobre `PerFileGraphCache::merge_with_report`
+
+Un `main.tf` con dos bloques `resource "aws_s3_bucket" ...` producía
+cuatro símbolos, y ninguno era el bloque:
+
+```text
+.../main.tf:resource:1  name="resource"
+.../main.tf:resource:5  name="resource"
+.../main.tf:bucket:2    name="bucket"
+.../main.tf:bucket:6    name="bucket"
+```
+
+Dos para `resource` (la palabra clave, dos veces) y dos para `bucket` (el
+nombre del atributo, dos veces). HCL está anunciado en
+`product/languages.json`.
+
+### Por qué no lo arreglaba H15 (PR #387)
+
+`LanguageConfig::semantic_handler` existe y está cableado —para HCL y para
+Ansible, los únicos dos lenguajes que lo tienen— pero se invoca en **un**
+sitio: `application/ingest/extractor.rs:238`. El camino que construye el
+grafo (`infrastructure/graph/per_file_graph.rs`, vía
+`TreeSitterParser::new`) nunca lo consulta.
+
+H15 comprobó que el parser entregaba la identidad del bloque — sobre
+`extract_file`, el seam — y su comentario daba por hecho que llegar al
+grafo era consecuencia. No lo era. Eran **dos autoridades para la misma
+pregunta** («qué es un símbolo en este lenguaje»), y la que gana es la que
+se pregunta: `graph.full`, el índice global y el snapshot persistido.
+
+### El arreglo
+
+Una función libre, `semantic_graph(language, source, file_path) -> Option<CallGraph>`:
+enruta los nodos y aristas del handler a `CallGraph` usando el mapa
+`by_handler_id` (el id del handler y el FQN del símbolo son gramáticas
+distintas), y `build_file_graph` la consulta antes de construir el parser.
+`build_global_index` se aparta para los lenguajes con handler: sus aristas
+son intra-fichero, y meter sus símbolos genéricos en el índice reintroduciría
+la segunda autoridad.
+
+El seam es `Option` a propósito: los veintisiete lenguajes sin handler
+siguen su camino exacto, byte a byte. Por eso el cuarto test de `h17` no
+es sobre Terraform — es sobre Rust, y existe para que la rama `None` se
+ejercite y no pueda colarse en el camino caliente.
+
+### Elantic: se parecía y no lo era
+
+Al fortalecer la aserción de `contains` a conjunto EXACTO, la suite pasó de
+verde a roja con `left: ["aws_s3_bucket.only", "main.tf"]`: el nodo de
+fichero que emiten los dos handlers (`NodeId::new(source_path)`) se colaba
+como símbolo. Un repo de IaC habría tenido un símbolo más que cualquier
+otro. Cuarta vez esta temporada que «un contrato verde no es un contrato
+que mira lo que dice mirar»; la forma se repite porque la trampa es la
+misma: una aserción de inclusión no puede ver lo que sobra.
+
+### Lo que el seam NO hace: la guarda de honestidad
+
+MEDIDO: el extractor YAML genérico no emite **ningún** nodo para ninguna
+forma de documento (`flat`, `nested`, `list`, playbook completo: 1 nodo, el
+del fichero). Por eso `is_ansible_playbook` nunca ve `hosts:` y el handler
+de Ansible devuelve el resultado intacto: Ansible está anunciado y no
+produce nada jamás. **No es una regresión de este cambio** — se midió la
+línea base sin el seam y también da 0 — pero la primera versión de
+`semantic_graph` devolvía `Some(grafo_vacío)` solo porque existía un
+handler, es decir, una autoridad vacía: el seam se atribuía un fichero que
+no había interpretado. Ahora `by_handler_id.is_empty()` devuelve `None` y
+el camino genérico conserva la última palabra.
+
+`semantic_seam_tests` (test unitario, porque la función es privada) fija
+las dos ramas.
+
+### Cuatro correcciones que la auditoría y el gate sacaron a la luz
+
+1. **`--filter` no llegaba a `core`.** Solo `explorer` recibía
+   `$(cargo_filter)`. `core` corría sus ~2370 tests sin acotar y no pasaba
+   por `run_counting`, así que `SELECTED` se quedaba en 0: el filtro no
+   acotaba nada *y* reportaba «no seleccionó ninguna prueba» cuando sí
+   había. Las cinco suites pasan ahora por `run_counting`.
+2. **`fast` no corría clippy en `changed`.** Solo en `fallback`. El ciclo
+   diario se cerraba verde con tres lints en el árbol (`clone_on_copy`,
+   `needless_borrow` ×2) y el gate los encontraba al final. `fast` existe
+   para acortar el feedback loop, no para recortarlo.
+3. **`h15` podía pasar sin comprobar nada.** La auditoría lo señaló: la
+   lectura del fixture real hacia `return` si el fichero no estaba. El
+   fixture está versionado y el test corre en el repo: su ausencia es una
+   regresión. Además las dos aserciones usaban `contains`, y
+   `contains("app_bucket")` la satisface también
+   `aws_s3_bucket_versioning.app_bucket_versioning` — la segunda era la
+   primera repetida. Ahora se piden identidades EXACTAS.
+4. **`cr07` era intermitente bajo carga, y era suyo.** La espera de
+   arranque abría una conexión TCP de sondeo y la soltaba sin enviar nada,
+   y luego `scrape` abría una segunda. Con el servidor cargado, esa
+   conexión abandonada se cruzaba con la segunda y el `read` de la línea de
+   estado caía en `ConnectionReset`: dos `test-full` rojos seguidos, verde
+   en aislamiento. El sondeo **es** ahora el scrape — una conexión por
+   intento, y `scrape` devuelve `Scrape` en vez de una tupla que clippy
+   rechazaba por complejidad de tipo.
+
+### Lo que sigue abierto (medido, no supuesto)
+
+- **Referencias Terraform = 0.** `extract_terraform_refs` lee etiquetas, y
+  la etiqueta de un bloque es su cabecera: no tiene cuerpo, luego no puede
+  ver lo que el cuerpo referencia. La relación que la auditoría nombra
+  existe en el fixture y es un **atravesamiento de atributos**, no una
+  referencia plana:
+  `bucket = aws_s3_bucket.app_bucket.id`. Extraerla exige el AST.
+- **El handler de Ansible está muerto** (arriba). Es una ley distinta:
+  «la capa semántica tiene algo que interpretar». No se mezcló aquí.
+- **Ontología HCL**: los bloques siguen siendo `SymbolKind::Function`.
+
+Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
+doc, `OK: contracts`, baseline 0 entradas).

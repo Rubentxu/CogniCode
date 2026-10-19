@@ -9,11 +9,11 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-19, sobre `6429361af58fea56044af1d472cc0e4cadb9b404` (`main`, squash-merge del
-> PR #387: el noop del selector que atribuía el sandbox a metadata, y las
-> tres citas de §11 que no resolvía nadie). Sustituye al de
-> `ff9132c60b94770f35cb3b72b5f34e88332478b5` (PR #386), que quedó a tres
-> commits por el merge de #387 y por este ciclo. **v0.101.23
+> **Snapshot**: 2026-10-19, sobre `b32b8b2b13478dd107233e0e1e5a7e48f8d49ec7` (`main`, squash-merge del
+> PR #388: un README no es un hueco de cobertura, y por eso el snapshot
+> nunca se guardaba). Sustituye al de
+> `6429361af58fea56044af1d472cc0e4cadb9b404` (PR #387), que quedó dos
+> commits por detrás. **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -21,6 +21,20 @@
 > `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
+>
+> **Estado del ciclo 2026-10-19 (H17, en este mismo PR).** La capa semántica
+> ya llega al grafo que consulta el usuario: un bloque HCL entra en
+> `graph.full` como `aws_s3_bucket.app_bucket`, no como `resource`/`bucket`.
+> Bloquea lo que la auditoría указа como pendiente en su punto 3 —«llevar
+> las relaciones Terraform al grafo consultado por CLI/MCP»— en su mitad de
+> infraestructura. **No** cierra su punto 1: las referencias siguen en 0,
+> porque `extract_terraform_refs` lee etiquetas y la etiqueta de un bloque
+> es su cabecera, sin cuerpo. Cerrarlas exige el AST, y la relación del
+> fixture (`bucket = aws_s3_bucket.app_bucket.id`) es un atravesamiento de
+> atributos, no una referencia plana. Sigue abierto además el handler de
+> Ansible, que está muerto porque el extractor YAML genérico no emite nodos
+> (medido: 1 nodo —el del fichero— para toda forma de documento). Detalle y
+> mediciones en `JOURNAL.md`, entrada H17.
 >
 > Corrección de encuadre (2026-10-19). El snapshot anterior declaraba
 > `e41108e0c53199eece7f270d0180f3823d6ca0cd`, que era la cabeza de la rama
@@ -310,15 +324,28 @@ parcialmente en la serie v0.101.x:
 
 ## Próximo trabajo ejecutable
 
-1. **TF-2..TF-4** (goal v1015-consolidation-and-promote) — bump
+0. **Referencias Terraform desde el AST** (siguiente bloque de H17) —
+   `extract_terraform_refs` lee la etiqueta del bloque, y la etiqueta es la
+   cabecera: no ve el cuerpo. La relación que hace falta ya está en
+   `sandbox/fixtures/terraform-iac/main.tf` y es un **atravesamiento de
+   atributos** (`bucket = aws_s3_bucket.app_bucket.id`), no una referencia
+   plana, así que el test decisivo es
+   `aws_s3_bucket_versioning.app_bucket_versioning → aws_s3_bucket.app_bucket`
+   y exige leer expresiones, no etiquetas. Con H17 ya cerrado, estas
+   relaciones tienen por dónde aparecer en el grafo público.
+1. **Handler de Ansible muerto** — el extractor YAML genérico no emite
+   ningún nodo para ninguna forma de documento, así que
+   `is_ansible_playbook` nunca ve `hosts:`. Es una ley distinta de la
+   anterior: «la capa semántica tiene algo que interpretar».
+2. **TF-2..TF-4** (goal v1015-consolidation-and-promote) — bump
    `v0.101.9 → v0.101.10` + tag anotado + push. El producer está en
    main (`4f1bb29`); falta el release formal.
-2. **T1-5 (mover presenter)** — refactor substancial, 194 `println!`
+3. **T1-5 (mover presenter)** — refactor substancial, 194 `println!`
    en `cognicode-core::interface::cli::commands.rs`. Multi-commit.
-3. **T1-1b (schemas SymbolKind newtype)** — bounded, consolida el
+4. **T1-1b (schemas SymbolKind newtype)** — bounded, consolida el
    contract del MCP wire format (lowercase) con el canonical.
-4. **CR-01 (C8-R)** — necesita clean clone + firma humana.
-5. **Auditoría #[ignore]** — repetir la búsqueda de tests con motivo
+5. **CR-01 (C8-R)** — necesita clean clone + firma humana.
+6. **Auditoría #[ignore]** — repetir la búsqueda de tests con motivo
    "Flaky" o incompatibilidad de versión (lesson 70). Ya dio frutos en
    M0.5/M0.6/M0.10; patrón replicable.
 
