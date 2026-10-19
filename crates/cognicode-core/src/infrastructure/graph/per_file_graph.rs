@@ -298,6 +298,100 @@ pub struct PerFileGraphCache {
     project_dir: Option<String>,
 }
 
+/// The semantic layer's view of one file, when the language has one.
+///
+/// MEDIDO 2026-10-19. `LanguageConfig::semantic_handler` — la autoridad
+/// que dice si un lenguaje necesita extracción con dominio (HCL →
+/// bloques Terraform, YAML → tareas Ansible) — se consultaba en un solo
+/// sitio: `ingest::extractor::extract_file`. Este módulo, que es lo que
+/// responde a `graph.full`, al índice global y al snapshot persistido,
+/// iba directo a `TreeSitterParser` y se saltaba la capa. Un repo de
+/// Terraform producía símbolos llamados `resource` y `bucket`: cuatro
+/// símbolos para dos bloques, ninguno con la identidad del bloque.
+///
+/// Dos autoridades para la misma pregunta, y la que se pregunta es la que
+/// gana. La ley no es «el handler debe correr»: es que quien consulta el
+/// grafo vea lo que el handler produjo.
+fn semantic_graph(language: Language, source: &str, file_path: &str) -> Option<CallGraph> {
+    let config =
+        crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
+    config.semantic_handler?;
+    let extracted = crate::application::ingest::extractor::extract_file(
+        config,
+        Path::new(file_path),
+        source,
+        &format!("{:016x}", content_hash_64(source.as_bytes())),
+    );
+    if extracted.error.is_some() {
+        return None;
+    }
+
+    let mut graph = CallGraph::new();
+    // El id del handler y el FQN del símbolo son gramáticas distintas, así
+    // que las aristas se resuelven por este mapa y no por comparación de
+    // strings. `add_symbol` deduplica por FQN, de modo que el nodo
+    // duplicado que emite la extracción genérica (misma línea, misma
+    // columna) no infla el conteo.
+    let mut by_handler_id: HashMap<String, SymbolId> = HashMap::new();
+    for node in &extracted.nodes {
+        // `CallGraph` modela símbolos. Un `NodeKind` que no sea símbolo no
+        // tiene a dónde ir, y no se inventa un sitio donde meterlo.
+        let crate::domain::value_objects::NodeKind::Symbol(kind) = &node.kind else {
+            continue;
+        };
+        // El nodo del fichero no es una declaración. Los dos handlers lo
+        // identifican por `NodeId::new(source_path)` — la misma regla que
+        // usan ellos — y el camino genérico no lo emits como símbolo:
+        // dejarlo entrar haría que un repo de IaC tuviera un símbolo más
+        // que cualquier otro, y que un fichero llamado igual que un símbolo
+        // colisionara en el índice de nombres.
+        if node.id.as_str() == file_path {
+            continue;
+        }
+        let symbol = Symbol::new(&node.label, *kind, Location::new(file_path, 0, 0));
+        by_handler_id.insert(node.id.as_str().to_string(), graph.add_symbol(symbol));
+    }
+
+    for edge in &extracted.edges {
+        // Una arista cuyo extremo no se resolvió no se inventa: se cuenta
+        // su ausencia, que es lo que ya hacía el camino genérico.
+        let crate::application::ingest::types::TargetRef::Resolved(target) = &edge.target_ref
+        else {
+            continue;
+        };
+        let (Some(from), Some(to)) = (
+            by_handler_id.get(edge.source.as_str()),
+            by_handler_id.get(target.as_str()),
+        ) else {
+            continue;
+        };
+        let Some(kind) = edge
+            .kind
+            .strip_prefix("dependency.")
+            .and_then(|k| k.parse::<DependencyType>().ok())
+        else {
+            continue;
+        };
+        let _ = graph.add_dependency(from, to, kind);
+    }
+
+    // Que exista un handler no significa que interpretara este fichero.
+    // MEDIDO 2026-10-19: el extractor YAML generico no emite ningun nodo
+    // para ninguna forma de documento, asi que `is_ansible_playbook` nunca
+    // ve `hosts:` y el handler de Ansible devuelve el resultado intacto.
+    // Devolver `Some` ahi seria una autoridad vacia — el seam se
+    // atribuiria un fichero que no interpreto y, si el extractor generico
+    // mejorara manana, estos ficheros seguirian sin sus simbolos por un
+    // camino que ya no se consulta. Sin simbolos, el seam se aparta y
+    // responde el camino generico: la capa semantique manda solo cuando
+    // tiene algo que decir.
+    if by_handler_id.is_empty() {
+        return None;
+    }
+
+    Some(graph)
+}
+
 impl PerFileGraphCache {
     /// Creates a new empty PerFileGraphCache
     pub fn new() -> Self {
@@ -554,6 +648,19 @@ impl PerFileGraphCache {
                 Some(l) => l,
                 None => continue,
             };
+            // Un lenguaje con capa semántica no aporta call targets al
+            // índice: sus aristas (`contains`, `references`) son
+            // intra-fichero y las resuelve el handler. Indexar aquí sus
+            // símbolos genéricos (`resource`, `bucket`) solo volvería a
+            // introducir la segunda autoridad que este módulo evita.
+            if crate::infrastructure::parser::language_config::LanguageConfig::for_language(
+                language,
+            )
+            .semantic_handler
+            .is_some()
+            {
+                continue;
+            }
             let parser = match TreeSitterParser::new(language) {
                 Ok(p) => p,
                 Err(_) => continue,
@@ -617,6 +724,13 @@ impl PerFileGraphCache {
                     format!("Unsupported file type: {}", file_path),
                 )
             })?;
+
+        // La capa semántica manda cuando el lenguaje declara una. Sus
+        // aristas son intra-fichero, así que `cross_file_edges` queda
+        // vacío por construcción y el índice global no interviene.
+        if let Some(graph) = semantic_graph(language, &source, file_path) {
+            return Ok((graph, Vec::new()));
+        }
 
         let parser =
             TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -1517,6 +1631,45 @@ mod tests {
         if let Err(msg) = outcome {
             panic!("{}", msg);
         }
+    }
+}
+
+#[cfg(test)]
+mod semantic_seam_tests {
+    //! H17 — el seam se atribuye un fichero SOLO si produjo un símbolo.
+    //!
+    //! Es la contraparte interna de la ley que `h17_semantic_layer_
+    //! reaches_the_graph.rs` prueba por fuera. Allí se ve que un bloque
+    //! HCL llega al grafo; aquí se ve la regla que hace que un handler
+    //! mudo NO se lleve el mérito, porque esa regla es privada y no hay
+    //! forma de observarla desde el API público mientras el extractor
+    //! genérico de YAML siga sin emitir nodos.
+    use super::*;
+
+    #[test]
+    fn a_handler_that_produced_nothing_does_not_claim_the_file() {
+        // MEDIDO 2026-10-19: el extractor YAML genérico no emite ningún
+        // nodo para ninguna forma de documento, así que el handler de
+        // Ansible devuelve el resultado intacto. `None` es la respuesta
+        // honesta: el camino genérico sigue teniendo la última palabra
+        // sobre este fichero.
+        let playbook =
+            "- hosts: all\n  tasks:\n    - name: install\n      apt:\n        name: nginx\n";
+        assert!(
+            semantic_graph(Language::Yaml, playbook, "/tmp/playbook.yml").is_none(),
+            "un handler que no interpretaba nada no puede reclamar el fichero; \
+             devolver un grafo vacío haría que la capa semántica se atribuyera \
+             un fichero que no miró"
+        );
+    }
+
+    #[test]
+    fn a_language_without_a_handler_is_never_routed_here() {
+        assert!(
+            semantic_graph(Language::Rust, "pub fn a() {}\n", "/tmp/lib.rs").is_none(),
+            "sin handler no hay seam: la función debe retirarse antes de \
+             construir nada"
+        );
     }
 }
 
