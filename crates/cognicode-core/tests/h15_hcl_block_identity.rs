@@ -103,21 +103,35 @@ fn the_real_fixture_yields_resolvable_block_identities() {
     // aws_s3_bucket`.
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../sandbox/fixtures/terraform-iac/main.tf");
-    let Ok(source) = std::fs::read_to_string(&fixture) else {
-        // El fixture no viaja en todos los empaquetados: no se inventa un fallo.
-        return;
-    };
+    // MEDIDO 2026-10-19 (auditoria): este test hacia `return` si el fixture
+    // no estaba, de modo que borrar el fixture lo dejaba verde. El fixture
+    // esta versionado en el repo y este test corre en el repo: su ausencia
+    // es una regresion, y caerse es la unica lectura honesta.
+    let source = std::fs::read_to_string(&fixture).unwrap_or_else(|e| {
+        panic!(
+            "el fixture real debe existir: esta versionado en el repo y este test \
+             corre en el repo. Si falta, se borro o se movio. Path: {} ({e})",
+            fixture.display()
+        )
+    });
     let labels = labels_for(&source);
-    assert!(
-        labels
-            .iter()
-            .any(|l| l.contains("aws_s3_bucket_versioning")),
-        "el fixture real debe producir la identidad del recurso versionado; \
-         se obtuvo {} etiquetas, ninguna con ese nombre",
-        labels.len()
-    );
-    assert!(
-        labels.iter().any(|l| l.contains("app_bucket")),
-        "el fixture real debe producir la identidad del bucket de origen"
-    );
+
+    // MEDIDO 2026-10-19 (auditoria): las dos aserciones usaban `contains`, y
+    // `contains("app_bucket")` la satisface tambien
+    // `aws_s3_bucket_versioning.app_bucket_versioning`. La segunda asercion
+    // era la primera repetida: el test comprobaba un recurso, no dos. Ahora
+    // cada identidad se pide EXACTA, que es lo que distingue dos recursos
+    // de uno.
+    for expected in [
+        "aws_s3_bucket.app_bucket",
+        "aws_s3_bucket_versioning.app_bucket_versioning",
+    ] {
+        assert!(
+            labels.iter().any(|l| l == expected),
+            "el fixture real debe producir la identidad exacta `{expected}`; \
+             se obtuvo {} etiquetas y ninguna coincide exactamente. \
+             Con `contains` esta comprobacion no distingue los dos recursos.",
+            labels.len()
+        );
+    }
 }
