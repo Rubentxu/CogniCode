@@ -1,6 +1,7 @@
 # B2.W4 — Evidence Export y análisis reproducible
 
-> **Estado**: ACTIVE 2026-10-11. Desbloqueado por B2.W2.
+> **Estado**: CLOSED 2026-10-11 (`e748f272`); B2 publicado en v0.101.12.
+> Estado derivado de `docs/roadmap/ROADMAP.md` §10, que es la autoridad.
 > Padre: [`b2-shared-analysis-capability-contracts.md`](b2-shared-analysis-capability-contracts.md).
 > Spec autoridad: [`docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`](../docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md) §B2.W4.
 

@@ -111,9 +111,20 @@
 
 | Bloque | Release | Estado | Próxima WU |
 |---|---|---|---|
-| B1 | v0.101.11 | PENDING | B1.W1 (reconciliación de versión) |
-| B2 | — | BLOCKED (B1 prerequisite) | — |
-| B3 | — | BLOCKED (B2 prerequisite) | — |
-| B4 | — | BLOCKED (B3 prerequisite) | — |
-| B5 | — | BLOCKED (B4 prerequisite) | — |
-| B6 | — | BLOCKED (B5 prerequisite) | — |
+| B1 | v0.101.11 | CLOSED | — |
+| B2 | v0.101.12 | CLOSED | — |
+| B3 | v0.101.13 | CLOSED | — |
+| B4 | v0.101.14 | CLOSED | — |
+| B5 | v0.101.15 | CLOSED | — |
+| B6 | v0.101.16 | CLOSED (firma C8-R pendiente) | — |
+
+**B1..B6 está cerrado.** El programa terminó el 2026-10-12 con la
+publicación de `v0.101.16` y su veredicto C8-R. La tabla anterior seguía
+diciendo `B1 PENDING` / `B2..B6 BLOCKED` cuatro días después, que es
+precisamente el caso que `scripts/ci/test_block_ledger_coherence.py` impide
+volver a ocurrir.
+
+El trabajo en marcha no está aquí: es **CU — Consumer-First SDK/CLI/MCP**
+(`docs/roadmap/ROADMAP.md` §11), un subprograma aditivo sobre el Post-PRF que
+preserva B1–B6 y la firma C8-R pendiente. Para el estado vigente de CU, lee
+ROADMAP §11, no esta tabla.

@@ -22,27 +22,27 @@ planifican refactorizaciones.
 
 ## Work units
 
-- [ ] **B4.W1** — Grafo de impacto con evidencia. Consolidar
+- [x] **B4.W1** — Grafo de impacto con evidencia. Consolidar
   `analyze_impact`, `graph_explain`, `trace_path`, `graph_query`,
   `graph_query_filtered` y dependency queries. Orientación correcta,
   límites de profundidad, identidades (B3.W1 `SymbolId`),
   explicación de caminos. Distinguir observadas de heurísticas.
-- [ ] **B4.W2** — Arquitectura como diagnóstico. Conectar
+- [x] **B4.W2** — Arquitectura como diagnóstico. Conectar
   `check_architecture`, `ArchitectureRegistry`,
   `ArchitectureEvaluator` + grounding canónico. Constraints →
   observations + evidences. NO autoridad de gate automática.
   Superficie read-only coherente CLI/MCP.
-- [ ] **B4.W3** — Calidad y hallazgos. Integrar complejidad, parámetros
+- [x] **B4.W3** — Calidad y hallazgos. Integrar complejidad, parámetros
   largos, god functions, `solid_audit` y análisis de relaciones.
   Normalizar: categoría + severidad + confianza + fuente + location
   + regla + procedencia. NO declarar equivalentes análisis de
   lenguajes con capacidades diferentes.
-- [ ] **B4.W4** — Evidence Export enriquecido. Reutilizar puertos
+- [x] **B4.W4** — Evidence Export enriquecido. Reutilizar puertos
   del core para publicar relaciones y diagnósticos reales a
   consumidores externos, incluido PipelineK Assurance. Solo datos
   con procedencia verificable. Pruebas cruzadas con
   `pipelinek-assurance` cuando el contrato cambie.
-- [ ] **B4.W5** — Consulta de impacto para agentes. Experiencia
+- [x] **B4.W5** — Consulta de impacto para agentes. Experiencia
   compuesta: impactos + contexto + restricciones + pruebas
   recomendadas. Sin veredicto definitivo. El agente investiga
   cada evidencia de forma incremental.
