@@ -18181,3 +18181,169 @@ hand-edit no estaba formateado; `cargo fmt` y re-run).
 
 **H4.1 y H4.2 cerradas.** Abiertas: H3, H4.4, H5, más H0.1. H5.2 sigue
 `BLOCKED_EXTERNAL` (no hay checkout de Guard en esta máquina).
+
+## 2026-10-19 — El noop decía "solo metadata" y era mentira (CU-3 / cobertura honesta)
+
+### El defecto, medido
+
+Cambiar un manifiesto de `sandbox/**` y correr `test-fast.sh` imprimía:
+
+```
+noop: cambios no impactan suites (solo metadata).
+```
+
+La segunda mitad es **falsa**. Un manifiesto de escenario no es
+documentación: es un artefacto ejecutable, con su propio lane
+(`certification.pipeline.kts`, etapa `sandbox-ci-smoke`, que exige podman
+rootless). Peor: la regla 11 del selector justificaba ese noop con *«sandbox
+vive en ci.yml local-only»*, y **`ci.yml` no existe** — tampoco
+`.github/workflows/` verificado con `git ls-files`. Una regla que cita a un
+dueño inexistente no protege a nadie: invita a confiar en un noop que nadie
+va a correr.
+
+Mi hipótesis inicial fue más grave —«una superficie sin gate que reporte»—
+y era **incorrecta**. Medir antes de reportar evitó escribir una avería
+inexistente en el journal.
+
+### El arreglo: usar lo que el selector ya sabía
+
+El selector **ya emitía** el motivo correcto en su campo `reason`
+(`"no_cargo_suite(...); sandbox vive en certification.pipeline.kts"`) y
+`test-fast.sh` **lo descartaba**, sustituyéndolo por una generalización.
+El arreglo no añade maquinaria: lee un campo que existía y lo enseña.
+
+`noop_verdict()` es **función**, no bloque suelto, por la misma razón que
+`filter_verdict`: `--paths` se mezcla con el diff del árbol de quien lo
+corre, así que con el árbol sucio la rama noop ni se alcanza y una prueba
+de script entero mediría el entorno en vez del código. Una función se
+ejecuta sola. El contrato M15 la extrae y la corre de verdad.
+
+### El que NO cambió: `merge-gate.pipeline.kts`
+
+`merge-gate` corre etapas fijas y nunca consume el selector's `suites`.
+Medido, no supuesto. La exposición del sandbox es del **bucle del
+desarrollador**, no del gate de merge. Corregir el mensaje sin corregir ese
+hecho habría sido media verdad; se dice aquí entero.
+
+### Tres contratos RED, tres controles verdes
+
+M15 no se acepta por estar escrito: se acepta por **encenderse**. Y al
+reestructurarlo para la convención de la casa (`test_*` + `main()` sobre
+`failures`, que es lo que exige `run_contract_tests.py`, que **importa**
+los contratos en vez de ejecutarlos) volvió a probarse:
+
+- `noop_verdict` con motivo de sandbox → nombra `certification.pipeline.kts`, no dice "solo metadata" → **PASS**
+- mismo motivo con docs → **no** menciona sandbox → **PASS**
+- `sandbox/manifests/**` real → `fast rc=0`
+
+### Y el cuarto defecto, de otra familia
+
+Las tres autoridades normativas que §11 citaba estaban **mal por el mismo
+motivo**: un clon limpio no resolvía ninguna. K1 y K2 compartían un único
+ADR cuya línea 3 declara `Aplica a: K2`, y H4.4/H5 remitían a un HITOS bajo
+`docs/*` en `.gitignore`, con **0 ficheros versionados**.
+
+`test_roadmap_authority_attribution.py` no decide cuál es la mejor
+autoridad —eso es juicio humano—; comprueba lo mecánico: que la ruta citada
+esté versionada y que el ADR no desmienta la unidad a la que se le
+atribuye. Complementario de `test_roadmap_open_units_coherence.py`, que
+vigila el CIERRE; este vigila la AUTORIDAD.
+
+**Tres contratos anti-vacuedad nacieron hoy, y los tres
+fallaron primero.** Eso es el que los hace credibles: una regla que nunca
+se ha visto arder no se sabe si mira o si solo se sienta.
+
+Gates: `fast rc=0`, `full rc=0` (contracts `OK: contracts`,
+known_failures `0 entries`). Snapshot regenerado a `ff9132c6` con Entrada 79.
+
+## 2026-10-19 — Terraform tenía 144 nodos y UN nombre (K-SYM-05)
+
+Una auditoría externa reapareció con cinco propuestas sobre Bash y
+Terraform. No vine con la respuesta: vine con mediciones, y **cuatro de sus
+cinco afirmaciones se confirmaron**, una de ellas siendo más grave de lo que
+decía.
+
+### Lo que medí, en vez de leer
+
+Escribí una sonda efímera que pasa el fixture real
+`sandbox/fixtures/terraform-iac/main.tf` por `extract_file` e imprime
+etiquetas y aristas. Resultado:
+
+```
+kind=Symbol(Function) label="resource"
+kind=Symbol(Class)    label="resource"
+... (144 veces)
+total nodes=144 edges=391
+```
+
+**144 nodos y una sola etiqueta distinta.** El tipo y el nombre
+desaparecían antes de que nadie pudiera verlos.
+
+### Tres defectos, y el que de verdad importaba
+
+**1. `extract_name` devolvía la palabra clave.** El nodo `block` de
+tree-sitter-hcl NO tiene campo `name` (verificado en `node-types.json`), así
+que caía al fallback —"el primer hijo identifier"— que es exactamente la
+palabra clave. El arreglo es la regla general, no una excepción de HCL: *un
+nodo sin campo `name` se nombra por su cabecera*, tomando los hijos directos
+`identifier`/`string_lit` hasta que empieza el cuerpo.
+
+**2. El DFS deduplicaba por rango de bytes, y el rango no es identidad.**
+En `config_file > body > block`, `body` y `block` ocupan EXACTAMENTE el mismo
+rango: al insertar el hijo, la clave ya estaba vista y el nodo nunca se
+visitaba. MEDIDO: un `main.tf` con **un** recurso producía **cero** símbolos;
+con **dos**, cuatro. Este no es un defecto de Terraform —afecta a cualquier
+gramática con un envoltorio de un solo hijo— y era invisible sin el fixture
+real. El `kind` pasa a formar parte de la clave.
+
+**3. Cinco funciones, ninguna quitaba las comillas.** `parse_terraform_*`
+repetían `split_whitespace` con índices distintos y devolvían
+`"aws_s3_bucket"` *con las comillas dentro*, contaminando label y NodeId.
+Ahora hay un lector de cabecera (`hcl_header`) y las cinco se apoyan en él.
+Un bloque HCL no tiene aridad fija: el único patrón real es "palabra clave
+seguida de sus argumentos".
+
+### Lo que cambió el comportamiento, y no es cosmético
+
+Con el arreglo, el guardia `is_terraform_file` —que busca `"resource "` con
+espacio— **empieza a pasar**. El handler llevaba tiempo muerto sin que nadie
+lo notara. MEDIDO sobre el fixture real:
+
+| | antes | después |
+|---|---|---|
+| etiquetas distintas | **1** | **20** |
+| `aws_s3_bucket.app_bucket` identificable | no | sí |
+| nodos | 144 (ruido: cada `attribute` como Variable) | 39 (identidades IaC) |
+| aristas de referencia | 0, y de ruido (`Unresolved("environment}-alerts\"")`) | **0** |
+
+Los 105 nodos que desaparecen eran `attribute` de HCL etiquetados como
+variable sin relación con nada. No eran cobertura: eran ruido que la
+auditoría cuenta como "258 símbolos".
+
+### Lo que SIGUE roto, y no voy a disfrazarlo
+
+`references = 0`. `extract_terraform_refs` todavía lee la ETIQUETA, y la
+etiqueta no contiene el cuerpo del bloque: la referencia
+`aws_s3_bucket_versioning → aws_s3_bucket` sigue sin llegar al grafo. Es el
+trabajo de verdad de la propuesta P0#2 de la auditoría, y necesita el AST.
+Lo que he hecho es **quitarle la excusa**: ahora los símbolos tienen
+identidad real, y el hueco que queda es visible y medible en vez de estar
+escondido detrás de 144 etiquetas idénticas.
+
+### Los cuatro contratos que nacen de este bloque
+
+| contrato | qué caza | RED primero |
+|---|---|---|
+| `h15_hcl_block_identity` | un bloque pierde tipo y nombre | sí |
+| `h11_unified_classification` (existente) | la clasificación de walk | sí, por diseño |
+| `test_roadmap_authority_attribution` | §11 cita autoridad inexistente | sí |
+| M15 en `test_fast_full_wrappers` | el noop no dice quién cubre | sí |
+
+**Cinco, contando el DFS.** Ninguno se acepta por estar escrito: se acepta
+por haberse visto arder. Y el DFS no es de Terraform — es el tipo de defecto
+que se descubre cuando por fin miras los datos en vez del código.
+
+Gates: `fast rc=0`, `full rc=0` (el primer `full` salió en `fmt --check`:
+el test escrito a mano no estaba formateado; `cargo fmt` y re-run). Core
+entero: 84 binarios, 2369 tests de librería, 0 fallos — el cambio de
+`extract_name` alcanza a todos los lenguajes y no movió ninguna otra suite.

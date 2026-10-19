@@ -9,13 +9,18 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-19, sobre `cf11d46935502aec0ae7fc808a5ba43ae63d145a`
-> (`main`, squash-merge del PR #380: `tools/list` solo anuncia lo que
-> `tools/call` puede despachar). **v0.101.23 publicada** 2026-10-18T15:26:15Z,
-> 8 assets, `sha256sum -c` verde sobre los bytes redescargados, asset-set
-> PASS, `/releases/latest` resolviendo al tag nuevo, y `tools/list`
-> anunciando 20 herramientas desde el binario descomprimido fuera de
-> cualquier repositorio y sin `CARGO_MANIFEST_DIR` en el entorno.
+> **Snapshot**: 2026-10-19, sobre `ff9132c60b94770f35cb3b72b5f34e88332478b5`
+> (`main`, squash-merge del PR #386: `test-fast.sh --filter`, con la guarda
+> que hace fallar un filtro que no selecciona ninguna prueba). Sustituye al
+> de `cf11d46935502aec0ae7fc808a5ba43ae63d145a` (PR #380), que quedó a seis
+> commits de la base y dejó el ratchet rojo — ver **Entrada 79**. **v0.101.23
+> publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
+> bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
+> nuevo, y `tools/list` anunciando 20 herramientas desde el binario
+> descomprimido fuera de cualquier repositorio y sin
+> `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
+> reverificado en este refresco: se arrastra del snapshot anterior, que sí
+> la verificó. Refrescar el puntero no revalida la release.
 >
 > Corrección de encuadre (2026-10-19). El snapshot anterior declaraba
 > `e41108e0c53199eece7f270d0180f3823d6ca0cd`, que era la cabeza de la rama
@@ -101,6 +106,28 @@
 > sandbox se escribió contra una superficie mayor que la que se publica;
 > decidir por herramienta si se publica o se borra el escenario es un
 > bloque propio.
+>
+> **Entrada 79**: el ratchet de este snapshot se puso rojo en `main` por
+> cuarta vez, y esta no la causaron los verificadores. El puntero citaba
+> `cf11d469` (PR #380) y los seis merges siguientes —#381, #382, #383, la
+> serie H4.1/H4.2 en #385 y #386— no lo refrescaron, así que la distancia
+> llegó a **6** y `test_current_sha_matches_head` falla con el mensaje
+> correcto. MEDIDO: `git rev-list --count cf11d469..ff9132c6` = 6.
+>
+> Lo relevante no es que arda ahora: es que **ardía para todos**. Mientras
+> el puntero cayese a seis commits, ninguna ejecución del gate podía
+> pasar en ninguna rama. Un control que se apaga por el ritmo de merges es
+> un control que hay que pagar cada cinco PRs, y eso no estaba escrito
+> como coste en ningún sitio.
+>
+> Y hay un matiz que cuesta, porque la corrección de encuadre anterior —
+> *medir la distancia desde la base con `main`, no desde HEAD* — exime a
+> las ramas y **no** exime a `main`, donde los dos refs coinciden. La
+> invariante es correcta; el que falló es el procedimiento. Regla que sale
+> de aquí, y que sí es operativa: **el puntero del snapshot se actualiza
+> en el mismo commit que pasa a rojo**, o ese commit no pasa. Refrescar el
+> SHA no revalida nada: este bloque reescribe la cabecera **y** lo dice, para
+> que nadie lea "snapshot al día" como "release verificada hoy".
 >
 > Próxima unidad: CU-3 y/o K0 (cobertura honesta). Ver `ROADMAP.md:404`.
 > La línea anterior de este snapshot apuntaba a `H4.1`, `H3`, `H4.2` y

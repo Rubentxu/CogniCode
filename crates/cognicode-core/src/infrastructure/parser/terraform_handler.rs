@@ -172,50 +172,56 @@ fn is_terraform_file(result: &ExtractionResult) -> bool {
         || text.contains("terraform ")
 }
 
+/// HCL block header: `resource "aws_s3_bucket" "app_bucket"` →
+/// `Some(("resource", ["aws_s3_bucket", "app_bucket"]))`.
+///
+/// MEDIDO 2026-10-19. Antes de este lector había cinco funciones que
+/// repetían el mismo `split_whitespace` con índices distintos —y NINGUNA
+/// quitaba las comillas del literal HCL—. Con la etiqueta que produce el
+/// parser de verdad, `resource "aws_s3_bucket" "app_bucket"`, devolvían
+/// `"aws_s3_bucket"` *con las comillas dentro*, y ese texto contaminaba
+/// el label y el NodeId del nodo.
+///
+/// Una cabecera HCL no tiene aridad fija: el único patrón real es
+/// "palabra clave seguida de sus argumentos", y cada consumidor decide
+/// cuántos le interesan. Una función, no cinco.
+fn hcl_header(label: &str) -> Option<(&str, Vec<String>)> {
+    let mut parts = label.split_whitespace();
+    let keyword = parts.next()?;
+    Some((
+        keyword,
+        parts.map(|arg| arg.trim_matches('"').to_string()).collect(),
+    ))
+}
+
 /// Parse "resource aws_instance web" → Some(("aws_instance", "web"))
 fn parse_terraform_resource(label: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = label.split_whitespace().collect();
-    // Pattern: "resource" type name
-    if parts.len() >= 3 && parts[0] == "resource" {
-        return Some((parts[1].to_string(), parts[2].to_string()));
-    }
-    None
+    let (keyword, args) = hcl_header(label)?;
+    (keyword == "resource" && args.len() >= 2).then(|| (args[0].clone(), args[1].clone()))
 }
 
 /// Parse "data aws_ami ubuntu" → Some(("aws_ami", "ubuntu"))
 fn parse_terraform_data(label: &str) -> Option<(String, String)> {
-    let parts: Vec<&str> = label.split_whitespace().collect();
-    if parts.len() >= 3 && parts[0] == "data" {
-        return Some((parts[1].to_string(), parts[2].to_string()));
-    }
-    None
+    let (keyword, args) = hcl_header(label)?;
+    (keyword == "data" && args.len() >= 2).then(|| (args[0].clone(), args[1].clone()))
 }
 
 /// Parse "variable region" → Some("region")
 fn parse_terraform_variable(label: &str) -> Option<String> {
-    let parts: Vec<&str> = label.split_whitespace().collect();
-    if parts.len() >= 2 && parts[0] == "variable" {
-        return Some(parts[1].to_string());
-    }
-    None
+    let (keyword, args) = hcl_header(label)?;
+    (keyword == "variable" && !args.is_empty()).then(|| args[0].clone())
 }
 
 /// Parse "module vpc" → Some("vpc")
 fn parse_terraform_module(label: &str) -> Option<String> {
-    let parts: Vec<&str> = label.split_whitespace().collect();
-    if parts.len() >= 2 && parts[0] == "module" {
-        return Some(parts[1].to_string());
-    }
-    None
+    let (keyword, args) = hcl_header(label)?;
+    (keyword == "module" && !args.is_empty()).then(|| args[0].clone())
 }
 
 /// Parse "output instance_ip" → Some("instance_ip")
 fn parse_terraform_output(label: &str) -> Option<String> {
-    let parts: Vec<&str> = label.split_whitespace().collect();
-    if parts.len() >= 2 && parts[0] == "output" {
-        return Some(parts[1].to_string());
-    }
-    None
+    let (keyword, args) = hcl_header(label)?;
+    (keyword == "output" && !args.is_empty()).then(|| args[0].clone())
 }
 
 /// Extract References edges from a label containing dotted expressions.

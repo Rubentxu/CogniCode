@@ -449,6 +449,87 @@ def test_a_filtered_run_announces_that_it_is_not_the_gate() -> None:
     )
 
 
+def run_noop_verdict(reason: str) -> subprocess.CompletedProcess[str]:
+    """Ejecuta `noop_verdict()` de verdad con un REASON dado.
+
+    Se ejecuta la FUNCION, no el script entero, por la razon que el propio
+    script documenta: `--paths` se mezcla con el diff del arbol de quien
+    corre, asi que lanzar el wrapper entero mediria el estado del arbol en
+    lugar del codigo. Igual que `run_filter_verdict` y `run_suite_case`.
+    """
+    text = _read(FAST)
+    start = text.find("noop_verdict() {")
+    assert start != -1, f"FAIL: {FAST.name} ya no define noop_verdict()"
+    end = text.find("\n}\n", start)
+    assert end != -1, f"FAIL: no se pudo delimitar noop_verdict() en {FAST.name}"
+    body = text[start : end + 3]
+
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "noop_only.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\nset -uo pipefail\n"
+            + body
+            + f'\nREASON="{reason}"\nnoop_verdict\n',
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, check=False
+        )
+
+
+def test_a_noop_names_the_lane_that_owns_the_surface() -> None:
+    """M15: un noop dice QUE lane cubre la superficie, no "solo metadata".
+
+    MEDIDO 2026-10-19: un cambio solo en `sandbox/**` produce
+    `strategy=noop` y `fast` contestaba "cambios no impactan suites (solo
+    metadata)". Eso es FALSO — un manifiesto de escenario es un artefacto
+    ejecutable con su propio lane (`certification.pipeline.kts`, etapa
+    `sandbox` -> `sandbox-ci-smoke`), no documentacion. Y la regla 11 del
+    selector justificaba el noop con "vive en ci.yml local", fichero que no
+    existe (tampoco `.github/workflows/`).
+
+    Un noop que no nombra a quien cubre la superficie se lee como "aqui no
+    hay nada que probar", y de ahi sale el falso verde.
+
+    Este contrato NO obliga a que `fast` corra el sandbox —no puede, exige
+    podman rootless—. Obliga a que el noop diga en voz alta que la cubre
+    otro lane, y cual es.
+    """
+    sandbox = run_noop_verdict(
+        "no_cargo_suite(sandbox/manifests/e31/demo.json); "
+        "sandbox vive en certification.pipeline.kts"
+    )
+    assert sandbox.returncode == 0, (
+        f"FAIL: `noop_verdict` devolvio rc={sandbox.returncode}. Un noop que "
+        "detiene el wrapper tiene que salir limpio; si no, `fast` no podria "
+        f"terminar. stderr:\n{sandbox.stderr}"
+    )
+    assert "solo metadata" not in sandbox.stdout, (
+        "FAIL: el noop sigue afirmando que el cambio es metadata. Un manifiesto "
+        "de escenario es ejecutable: se prueba en certification.pipeline.kts. "
+        f"stdout:\n{sandbox.stdout}"
+    )
+    assert "certification.pipeline.kts" in sandbox.stdout, (
+        "FAIL: el noop no nombra el lane que cubre la superficie. Sin el nombre, "
+        "'noop' se lee como 'no hay nada que probar aqui', que es el falso verde. "
+        f"stdout:\n{sandbox.stdout}"
+    )
+
+    # Un noop que NO sea de sandbox no debe inventar un lane que no toca.
+    # Sin este caso, el arreglo pasa por imprimir el nombre del lane siempre,
+    # que es ruido que hace creer al Sandbox de algo que no dijo.
+    docs = run_noop_verdict("doc_or_metadata_changed(docs/roadmap/ROADMAP.md)")
+    assert docs.returncode == 0, (
+        f"FAIL: `noop_verdict` devolvio rc={docs.returncode} en un noop sin "
+        f"lane. stderr:\n{docs.stderr}"
+    )
+    assert "certification.pipeline.kts" not in docs.stdout, (
+        "FAIL: el noop nombra el lane del sandbox para un cambio que no es del "
+        "sandbox. Un aviso que aparece donde no toca entrena al lector a "
+        f"ignorarlo. stdout:\n{docs.stdout}"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for fn in (
@@ -466,6 +547,7 @@ def main() -> int:
         test_the_selector_doc_and_the_runner_agree,
         test_a_filter_that_matches_nothing_is_not_a_green_light,
         test_a_filtered_run_announces_that_it_is_not_the_gate,
+        test_a_noop_names_the_lane_that_owns_the_surface,
     ):
         try:
             fn()
