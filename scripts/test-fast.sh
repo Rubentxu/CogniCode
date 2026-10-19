@@ -12,6 +12,20 @@
 #   bash scripts/test-fast.sh --full           # fuerzo batería completa
 #   bash scripts/test-fast.sh --dry-run        # solo imprime el plan
 #   bash scripts/test-fast.sh --no-baseline    # omite check_known_failures
+#   bash scripts/test-fast.sh --filter h42_    # acota a las pruebas que casen
+#
+# `--filter` es el segundo eje de acotado: el selector CR-08 elige QUE suite
+# correr por los paths tocados, y el filtro elige QUE PRUEBAS de dentro. Un
+# evolutivo de una unidad con nombre propio no necesita 4384 pruebas para
+# saber si su contrato sigue valiendo.
+#
+# `--filter` NO es evidencia de gate, y no se puede confundir con ella:
+#   - desactiva el baseline (compara el conjunto completo de fallos, que un
+#     subconjunto filtrado nunca reproduce) y lo dice;
+#   - falla si el filtro no selecciona NINGUNA prueba, porque libtest sale
+#     con rc=0 cuando no encuentra nada. Sin ese fallo, un typo en el
+#     nombre se lee como un verde con todas las garantias.
+#   El gate es `bash scripts/test-full.sh`, sin filtro y sin atajos.
 #
 # Política contractual: ver AGENTS.md § "Estrategia de tests".
 set -uo pipefail
@@ -32,6 +46,7 @@ MODE="auto"
 DRY_RUN="false"
 USE_BASELINE="true"
 EXTRA_PATHS=""
+FILTER=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,6 +54,7 @@ while [ $# -gt 0 ]; do
     --full)    MODE="full"; shift ;;
     --dry-run) DRY_RUN="true"; shift ;;
     --no-baseline) USE_BASELINE="false"; shift ;;
+    --filter)  FILTER="$2"; shift 2 ;;
     -h|--help)
       sed -n '2,/^set -uo/s/^# \{0,1\}//p' "$0" | head -25
       exit 0
@@ -46,6 +62,49 @@ while [ $# -gt 0 ]; do
     *) echo "ERROR: flag desconocida: $1" >&2; exit 2 ;;
   esac
 done
+
+# ---------- acotado por nombre de prueba ----------
+# Sin esto, `--filter h42_z` (typo) y `--filter h42_` (correcto) dan el
+# mismo rc=0. Uno ejecuto pruebas; el otro no ejecuto ninguna. La
+# diferencia es el riesgo entero de un filtro mal escrito, y por eso se
+# cuenta antes de decir que la unidad esta verde.
+#
+# Es FUNCION y no un bloque al final porque el camino de fallback sale
+# antes de llegar al final. Un guard que solo vigila un camino no
+# vigila: MEDIDO, un filtro typo en fallback salia rc=0.
+filter_verdict() {
+  if [ -z "$FILTER" ] || [ "$SELECTED" -gt 0 ]; then
+    return 0
+  fi
+  printf 'ERROR: el filtro `%s` no selecciono ninguna prueba.\n' "$FILTER" >&2
+  printf '  libtest sale con rc=0 cuando no encuentra nada: un filtro mal\n' >&2
+  printf '  escrito se lee como un verde sin haber ejecutado un solo test.\n' >&2
+  return 1
+}
+
+# `cargo_filter` es el unico sitio donde `--filter` se convierte en
+# argumentos de libtest, para que las cinco suites no puedan divergir.
+cargo_filter() {
+  [ -n "$FILTER" ] && printf -- " -- %s" "$FILTER"
+}
+
+# `SELECTED` acumula cuantas pruebas eligio el filtro entre todas las
+# suites. Es el guard anti-vacuidad: libtest sale con rc=0 cuando el
+# filtro no casa con nada, y ese 0 es indistinguible de un todo verde
+# mientras no se cuente lo que se ejecuto.
+SELECTED=0
+
+# Corre un comando de cargo, deja ver su salida y suma sus pruebas
+# `passed` a SELECTED. Devuelve el rc del comando, sin adornos.
+run_counting() {
+  local out rc
+  out="$(mktemp)"
+  "$@" >"$out" 2>&1; rc=$?
+  cat "$out"
+  SELECTED=$(( SELECTED + $(awk 'match($0,/[0-9]+ passed/){s+=substr($0,RSTART,RLENGTH)-0} END{print s+0}' "$out") ))
+  rm -f "$out"
+  return $rc
+}
 
 # ---------- detectar paths ----------
 detect_paths() {
@@ -67,6 +126,15 @@ detect_paths() {
 }
 
 PATHS="$(detect_paths)"
+
+if [ -n "$FILTER" ]; then
+  # El baseline compara el conjunto COMPLETO de fallos observados contra
+  # `known_failures.yaml`. Un run filtrado produce un subconjunto, asi que
+  # compararlo no es una medicion: es ruido con apariencia de control.
+  USE_BASELINE="false"
+  printf 'filtro: `%s` - run acotado, NO es evidencia de gate.\n' "$FILTER"
+  printf '        para el gate: bash scripts/test-full.sh\n'
+fi
 
 # ---------- invocar selector ----------
 if [ ! -x "$SELECTOR" ]; then
@@ -115,11 +183,19 @@ if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
   # el gate: el gate es `bash scripts/test-full.sh`.
   echo "  AVISO: este subconjunto NO incluye los tests de integracion"
   echo "  contractuales (b5_*, b6_*, prf_*). Para eso: bash scripts/test-full.sh"
-  cargo test --workspace --lib --quiet
+  if [ -n "$FILTER" ]; then
+    run_counting cargo test --workspace --lib --quiet -- "$FILTER"
+  else
+    run_counting cargo test --workspace --lib --quiet
+  fi
   cargo_clippy_rc=$?
   cargo clippy --workspace --all-targets --quiet -- -D warnings >/dev/null 2>&1
   clippy_rc=$?
-  [ "$cargo_clippy_rc" -eq 0 ] && [ "$clippy_rc" -eq 0 ] && exit 0 || exit 1
+  if [ "$cargo_clippy_rc" -ne 0 ] || [ "$clippy_rc" -ne 0 ]; then
+    exit 1
+  fi
+  filter_verdict
+  exit $?
 fi
 
 # ---------- mapear suites a comandos ----------
@@ -127,7 +203,7 @@ run_suite() {
   local suite="$1"
   case "$suite" in
     core)     cargo test -p cognicode-core --lib ;;
-    explorer) cargo test -p cognicode-explorer --lib ;;
+    explorer) run_counting cargo test -p cognicode-explorer --lib $(cargo_filter) ;;
     mcp)      cargo test -p cognicode-mcp --lib ;;
     cli)      cargo test -p cognicode-cli --lib ;;
     ladybug)  cargo test -p cognicode-ladybug --lib ;;
@@ -172,6 +248,9 @@ for s in $(printf '%s' "$SUITES" | tr ',' ' '); do
     overall_rc=1
   fi
 done
+
+# ---------- veredicto del acotado ----------
+filter_verdict || overall_rc=1
 
 # ---------- baseline check (core) ----------
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then

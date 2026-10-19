@@ -60,10 +60,30 @@ dos modos contractuales:
    en `/var/home/rubentxu/cargo-targets/` y rompe a los otros
    workspaces vecinos.
 
+**Cómo se decide qué probar** (regla dura, no recomendación):
+
+5. **Cada vez que se vaya a escribir o lanzar pruebas se navega por la
+   skill `delivery-first-testing`**, entrando por su router
+   `references/navigation.md`, y se aplican **solo las lentes que el
+   estado real pida**. Sin navegación no se declara qué prueba hace falta
+   ni para qué: proponer pruebas "porque sí" es la vía corta a un harness
+   más caro que el producto que guarda.
+6. **Las pruebas son progresivas y acotadas a lo que se está probando.**
+   Nunca se lanza la batería entera "por si acaso": se lanza el conjunto
+   mínimo que detecta el riesgo del cambio. El acotado es mecánico, no
+   memoria —`bash scripts/test-fast.sh --filter <substr>` acota dentro de
+   las suites que el selector CR-08 ya eligió, y
+   `bash scripts/test-fast.sh --dry-run` imprime el plan antes de gastar
+   un solo ciclo de compilación—. Un filtro que no selecciona ninguna
+   prueba **falla**, para que un nombre mal escrito no se lea como un
+   verde. Un run filtrado **no es evidencia de gate** y se declara en
+   pantalla: el gate es `bash scripts/test-full.sh`, sin filtro.
+
 **Disciplina diaria**:
 
 - TDD red → green → refactor: `bash scripts/test-fast.sh` entre
-  iteraciones (sub-segundo de feedback cuando el subset está en cache).
+  iteraciones, con `--filter` mientras la unidad sea una sola. El
+  sub-segundo de feedback es del subset acotado, no de la batería.
 - Antes de pedir review: `bash scripts/test-full.sh` debe terminar
   con `rc=0`.
 - Antes de tag: `bash scripts/test-full.sh` con `git status` limpio
