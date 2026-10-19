@@ -18255,3 +18255,95 @@ se ha visto arder no se sabe si mira o si solo se sienta.
 
 Gates: `fast rc=0`, `full rc=0` (contracts `OK: contracts`,
 known_failures `0 entries`). Snapshot regenerado a `ff9132c6` con Entrada 79.
+
+## 2026-10-19 — Terraform tenía 144 nodos y UN nombre (K-SYM-05)
+
+Una auditoría externa HrJeIIt reapareció con cinco propuestas sobre Bash y
+Terraform. No vine con la respuesta: vine con mediciones, y **cuatro de sus
+cinco afirmaciones se confirmaron**, una de ellas siendo más grave de lo que
+decía.
+
+### Lo que medí, en vez de leer
+
+Escribí una sonda efímera que pasa el fixture real
+`sandbox/fixtures/terraform-iac/main.tf` por `extract_file` e imprime
+etiquetas y aristas. Resultado:
+
+```
+kind=Symbol(Function) label="resource"
+kind=Symbol(Class)    label="resource"
+... (144 veces)
+total nodes=144 edges=391
+```
+
+**144 nodos y una sola etiqueta distinta.** El tipo y el nombre
+desaparecían antes de que nadie pudiera verlos.
+
+### Tres defectos, y el que de verdad importaba
+
+**1. `extract_name` devolvía la palabra clave.** El nodo `block` de
+tree-sitter-hcl NO tiene campo `name` (verificado en `node-types.json`), así
+que caía al fallback —"el primer hijo identifier"— que es exactamente la
+palabra clave. El arreglo es la regla general, no una excepción de HCL: *un
+nodo sin campo `name` se nombra por su cabecera*,cknowled los hijos directos
+`identifier`/`string_lit` hasta que empieza el cuerpo.
+
+**2. El DFS deduplicaba por rango de bytes, y el rango no es identidad.**
+En `config_file > body > block`, `body` y `block` ocupan EXACTAMENTE el mismo
+rango: al insertar el hijo, la clave ya estaba vista y el nodo nunca se
+visitaba. MEDIDO: un `main.tf` con **un** recurso producía **cero** símbolos;
+con **dos**, cuatro. Este no es un defecto de Terraform —afecta a cualquier
+gramática con un envoltorio de un solo hijo— y era invisible sin el fixture
+real. El `kind` pasa a formar parte de la clave.
+
+**3. Cinco funciones, ninguna quitaba las comillas.** `parse_terraform_*`
+repetían `split_whitespace` con índices distintos y devolvían
+`"aws_s3_bucket"` *con las comillas dentro*, contaminando label y NodeId.
+Ahora hay un lector de cabecera (`hcl_header`) y las cinco se apoyan en él.
+Un bloque HCL no tiene aridad fija: el único patrón real es "palabra clave
+seguida de sus argumentos".
+
+### Lo que cambió el comportamiento, y no es cosmético
+
+Con el arreglo, el guardia `is_terraform_file` —que busca `"resource "` con
+espacio— **empieza a pasar**. El handler llevaba tiempo muerto sin que nadie
+lo notara. MEDIDO sobre el fixture real:
+
+| | antes | después |
+|---|---|---|
+| etiquetas distintas | **1** | **20** |
+| `aws_s3_bucket.app_bucket` identificable | no | sí |
+| nodos | 144 (ruido: cada `attribute` como Variable) | 39 (identidades IaC) |
+| aristas de referencia | 0, y de ruido (`Unresolved("environment}-alerts\"")`) | **0** |
+
+Los 105 nodos que desaparecen eran `attribute` de HCL etiquetados como
+variable sin relación con nada. No eran cobertura: eran ruido que la
+auditoría cuenta como "258 símbolos".
+
+### Lo que SIGUE roto, y no voy a disguise
+
+`references = 0`. `extract_terraform_refs` todavía lee la ETIQUETA, y la
+etiqueta no contiene el cuerpo del bloque: la referencia
+`aws_s3_bucket_versioning → aws_s3_bucket` sigue sin llegar al grafo. Es el
+trabajo de verdad de la propuesta P0#2 de la auditoría, y necesita el AST.
+Lo que he hecho es **quitarle la excusa**: ahora los símbolos tienen
+identidad real, y el hueco que queda es visible y medible en vez de estar
+escondido detrás de 144 etiquetas idénticas.
+
+### Los cuatro contratos que nacen de este bloque
+
+| contrato | qué caza | RED primero |
+|---|---|---|
+| `h15_hcl_block_identity` | un bloque pierde tipo y nombre | sí |
+| `h11_unified_classification` (existente) | la clasificación de walk | sí, por diseño |
+| `test_roadmap_authority_attribution` | §11 cita autoridad inexistente | sí |
+| M15 en `test_fast_full_wrappers` | el noop no dice quién cubre | sí |
+
+**Cinco, contando el DFS.** Ninguno se acepta por estar escrito: se acepta
+por haberse visto arder. Y el DFS no es de Terraform — es el tipo de defecto
+que se descubre cuando por fin miras los datos en vez del código.
+
+Gates: `fast rc=0`, `full rc=0` (el primer `full` salió en `fmt --check`:
+el test escrito a mano no estaba formateado; `cargo fmt` y re-run). Core
+entero: 84 binarios, 2369 tests de librería, 0 fallos — el cambio de
+`extract_name` alcanza a todos los lenguajes y no movió ninguna otra suite.
