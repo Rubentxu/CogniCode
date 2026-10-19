@@ -243,6 +243,9 @@ fn skip_reason_text(reason: &crate::infrastructure::graph::per_file_graph::SkipR
         crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(d) => {
             format!("unsupported extension: {d}")
         }
+        crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
+            format!("symlink to {target}, not followed")
+        }
         crate::infrastructure::graph::per_file_graph::SkipReason::Other(d) => {
             format!("other: {d}")
         }

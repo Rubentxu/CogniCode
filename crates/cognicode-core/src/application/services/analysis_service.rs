@@ -700,13 +700,12 @@ impl AnalysisService {
         let mut k0_skipped: Vec<PfgSkippedFile> = Vec::new();
 
         for entry in walkdir::WalkDir::new(project_dir)
-            .follow_links(true)
             .into_iter()
             .filter_entry(|e| !walk.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
             let ext = path.extension().and_then(|e| e.to_str());
@@ -1711,13 +1710,12 @@ impl AnalysisService {
         let walk = WalkFilter::default();
 
         for entry in walkdir::WalkDir::new(&params.project_dir)
-            .follow_links(true)
             .into_iter()
             .filter_entry(|e| !walk.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
 

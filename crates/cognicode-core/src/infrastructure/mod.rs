@@ -30,3 +30,4 @@ pub mod telemetry;
 pub mod testing;
 pub mod verification;
 pub mod vfs;
+pub mod walk_policy;

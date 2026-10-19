@@ -789,6 +789,16 @@ pub enum SkipReason {
     Parse(String),
     /// The file extension is not in the supported set (rs|py|js|ts).
     UnsupportedExtension(String),
+    /// A symlink, which the walk declines to follow so that it cannot
+    /// leave the root the caller named.
+    ///
+    /// This is a skip and not a silent omission because the caller
+    /// needs to know the coverage is partial: a project that
+    /// symlinks its sources in from elsewhere is **not** fully
+    /// described by the graph it gets back, and reporting `Complete`
+    /// here would be the same class of lie as indexing the target and
+    /// recording the link's path as if it were the target's.
+    Symlink { target: String },
     /// Any other I/O error not covered above.
     Other(String),
 }
@@ -979,11 +989,37 @@ impl FileDisposition {
             // for paths we don't know about; the honest default is
             // ExcludedByPolicy (we know nothing → we don't claim a
             // gap).
+            // A symlink is not a policy exclusion — the walk is
+            // refusing to leave the root, which is a coverage gap the
+            // caller must be able to name.
+            SkipReason::Symlink { target } => FileDisposition::ExcludedByPolicy {
+                reason: format!("symlink to {target}, not followed"),
+            },
             SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
         }
     }
+}
+
+/// Classify the entry a walk declined to index, if it declined one.
+///
+/// The one case that is a *decision* rather than an error is the
+/// symlink: the walk can see it, understands it, and chooses not to
+/// follow it. That still belongs in `skipped`, because `skipped` is
+/// how a caller learns the coverage is not complete.
+pub fn classify_declined_entry(entry: &walkdir::DirEntry) -> Option<SkipReason> {
+    if !entry.file_type().is_symlink() {
+        return None;
+    }
+
+    let target = match std::fs::read_link(entry.path()) {
+        Ok(t) => t.to_string_lossy().to_string(),
+        // A dangling or unreadable link: we still declined it, we
+        // just cannot say where it pointed.
+        Err(_) => "<unreadable>".to_string(),
+    };
+    Some(SkipReason::Symlink { target })
 }
 
 /// Clasifica la extensión de un archivo de walk según el contrato K0.

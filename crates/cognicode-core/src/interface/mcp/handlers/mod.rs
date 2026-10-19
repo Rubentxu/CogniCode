@@ -1362,6 +1362,7 @@ pub async fn handle_build_graph(
                             crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
                             crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
                         },
                         reason: match &sf.reason {
@@ -1369,6 +1370,9 @@ pub async fn handle_build_graph(
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
+                                format!("symlink to {target}, not followed")
+                            }
                         },
                     })
                     .collect();
@@ -3639,6 +3643,10 @@ pub async fn handle_merge_graphs(
                         R::Read(d) => (SkippedReasonKind::Read, d),
                         R::Parse(d) => (SkippedReasonKind::Parse, d),
                         R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
+                        R::Symlink { target } => (
+                            SkippedReasonKind::Symlink,
+                            format!("symlink to {target}, not followed"),
+                        ),
                         R::Other(d) => (SkippedReasonKind::Other, d),
                     };
                     SkippedFileInfo {
