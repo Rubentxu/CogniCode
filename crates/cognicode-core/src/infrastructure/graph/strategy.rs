@@ -9,7 +9,9 @@ use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::graph::lightweight_index::LightweightIndex;
 use crate::infrastructure::graph::on_demand_graph::{CallHierarchyResult, OnDemandGraphBuilder};
-use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, PerFileGraphCache};
+use crate::infrastructure::graph::per_file_graph::{
+    GlobalSymbolIndex, PerFileGraphCache, TargetResolution,
+};
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
 use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
@@ -686,9 +688,11 @@ impl FullGraphStrategy {
                 let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
                     caller.fully_qualified_name(),
                 );
-                let callee_id =
-                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()));
-                if let Some(callee_id) = callee_id {
+                // Only `Resolved` names a target; an ambiguous or unknown
+                // name drops the edge rather than inventing a homonym.
+                if let TargetResolution::Resolved(callee_id) =
+                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()))
+                {
                     store
                         .add_dependency(
                             &caller_id,
@@ -883,9 +887,11 @@ impl GraphStrategy for FullGraphStrategy {
                 let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
                     caller.fully_qualified_name(),
                 );
-                let callee_id =
-                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()));
-                if let Some(callee_id) = callee_id {
+                // Only `Resolved` names a target; an ambiguous or unknown
+                // name drops the edge rather than inventing a homonym.
+                if let TargetResolution::Resolved(callee_id) =
+                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()))
+                {
                     store
                         .add_dependency(
                             &caller_id,

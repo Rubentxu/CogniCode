@@ -24,6 +24,7 @@ use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{DependencyType, WalkFilter};
+use crate::infrastructure::graph::per_file_graph::TargetResolution;
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
@@ -537,12 +538,20 @@ impl AnalysisService {
             let caller_id = SymbolId::new(&caller_fqn);
             let name_lower = callee_name.to_lowercase();
             let caller_path = std::path::Path::new(&caller_file);
-            if let Some(callee_id) = global_index.resolve(&name_lower, Some(caller_path)) {
-                store
-                    .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
-                    .ok();
-            } else {
-                unresolved_edges += 1;
+            match global_index.resolve(&name_lower, Some(caller_path)) {
+                TargetResolution::Resolved(callee_id) => {
+                    store
+                        .add_dependency(&caller_id, &callee_id, DependencyType::Calls)
+                        .ok();
+                }
+                // Both refusals mean the same thing to this statistic: no
+                // edge was created. They are now distinguishable upstream,
+                // but `unresolved_edges` is published in the summary, and
+                // splitting it there is a report change, not a resolver
+                // one — H4.2.
+                TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {
+                    unresolved_edges += 1;
+                }
             }
         }
 

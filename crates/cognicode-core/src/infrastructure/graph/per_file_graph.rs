@@ -62,6 +62,58 @@ pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>);
 /// work even though F2.W5's happy path does not exercise them. The
 /// non-happy path (dropped edges, ambiguous resolutions) will need
 /// them in F3/C3 diagnostics.
+/// The outcome of resolving one callee name to one target.
+///
+/// ## Why this exists
+///
+/// The resolver used to answer `Option<SymbolId>`, which is honest about
+/// *not* naming a target but dishonest about *why*: a name that matched
+/// nothing and a name that matched two homonyms both collapsed to `None`.
+/// For impact analysis those are different facts. "This call goes to
+/// either `a.rs:foo` or `b.rs:foo`, and we could not prove which" tells
+/// the user where the uncertainty is; "there is no `foo`" tells them
+/// nothing is unknown. Collapsing them means a consumer cannot surface
+/// a gap it never learned exists.
+///
+/// Naming a target stays the privilege of `Resolved` alone. That is what
+/// keeps the "no invented edges" guarantee structural rather than a rule
+/// someone has to remember: an ambiguous call cannot become an edge
+/// because there is no variant that both says "ambiguous" and carries a
+/// target.
+///
+/// ## Relation to `ingest::types::TargetRef`
+///
+/// Not a duplicate of it. `TargetRef` is an extraction-stage *work item* —
+/// `Unresolved(name)` means "a later stage will try to match this". This
+/// is the *result* of that matching, produced against a built index of
+/// `SymbolId`s. Different stage, different payload, different lifetime.
+///
+/// ## Why no `External` variant
+///
+/// `ADR-K003` proposes a fourth variant for callees known to live outside
+/// the analyzed project. Nothing in the current pipeline can produce it —
+/// there is no external-symbol table — so it would be a variant no code
+/// can construct and no test could exercise. The rule that pays is the one
+/// that forbids representing a fact you cannot observe: an unused variant
+/// is an assumption that will survive longer than the code that should
+/// have filled it in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetResolution {
+    /// Exactly one target, proven by a disambiguation rule.
+    Resolved(SymbolId),
+    /// The name matched, but the target cannot be proven. The candidates
+    /// are retained so a consumer can report the uncertainty instead of
+    /// silently shrinking the graph.
+    Ambiguous {
+        /// The lowercased callee name that was being resolved.
+        name: String,
+        /// Every candidate, in index insertion order.
+        candidates: Vec<SymbolId>,
+    },
+    /// The name matched nothing in the project.
+    Unresolved(String),
+}
+
 #[allow(dead_code)]
 pub struct GlobalSymbolIndex {
     /// `name_lower → Vec<SymbolId>` in insertion order. Symbols with the
@@ -94,62 +146,75 @@ impl GlobalSymbolIndex {
         self.by_id.insert(symbol_id, (file, name.to_string()));
     }
 
-    /// Resolves a callee name to a `SymbolId`, preferring the caller-file
-    /// symbol when ambiguity exists. Returns `None` when no rule yields
-    /// an unambiguous answer — the caller MUST drop the edge instead of
-    /// inventing one against a random homonym.
-    pub fn resolve(&self, name_lower: &str, caller_file: Option<&Path>) -> Option<SymbolId> {
-        let candidates = self.by_name.get(name_lower)?;
+    /// Resolves a callee name to a target, preferring the caller-file
+    /// symbol when ambiguity exists.
+    ///
+    /// Only [`TargetResolution::Resolved`] names a target. Every other
+    /// outcome means the caller MUST drop the edge — an ambiguous call
+    /// is never wired to a homonym — but each says a different thing
+    /// about why, and that difference is what lets a consumer report a
+    /// gap instead of silently shrinking the graph.
+    pub fn resolve(&self, name_lower: &str, caller_file: Option<&Path>) -> TargetResolution {
+        let Some(candidates) = self.by_name.get(name_lower) else {
+            return TargetResolution::Unresolved(name_lower.to_string());
+        };
         if candidates.is_empty() {
-            return None;
+            return TargetResolution::Unresolved(name_lower.to_string());
         }
         if candidates.len() == 1 {
-            return Some(candidates[0].clone());
+            return TargetResolution::Resolved(candidates[0].clone());
         }
+
+        // Multiple homonyms. Every refusal below is the SAME fact —
+        // "the name exists, the target cannot be proven" — so they all
+        // return the one construction that says it.
+        let ambiguous = TargetResolution::Ambiguous {
+            name: name_lower.to_string(),
+            candidates: candidates.clone(),
+        };
 
         // Multiple homonyms. Try to disambiguate by caller-file proximity.
-        let caller_path = caller_file.map(|p| p.to_path_buf());
-        if let Some(caller) = caller_path.as_ref() {
-            // Rule 1: exact same file path.
-            let same_file: Vec<&SymbolId> = candidates
-                .iter()
-                .filter(|sid| {
-                    self.by_id
-                        .get(*sid)
-                        .map(|(p, _)| p == caller)
-                        .unwrap_or(false)
-                })
-                .collect();
-            if same_file.len() == 1 {
-                return Some(same_file[0].clone());
-            }
-            if same_file.len() > 1 {
-                // Genuine intra-file duplicate (e.g. two `same_name` in
-                // `dup.rs` — one top, one inside `inner`). Without module
-                // context we cannot pick the right one, so we drop the
-                // edge rather than guess.
-                return None;
-            }
-            // Rule 2: shared crate root (first N path components match).
-            let in_same_crate: Vec<&SymbolId> = candidates
-                .iter()
-                .filter(|sid| {
-                    self.by_id
-                        .get(*sid)
-                        .map(|(p, _)| shared_crate_root(p, caller).is_some())
-                        .unwrap_or(false)
-                })
-                .collect();
-            if in_same_crate.len() == 1 {
-                return Some(in_same_crate[0].clone());
-            }
-            // Multiple symbols across files in the same crate, no
-            // further rule applies — drop the edge.
-            return None;
+        let Some(caller) = caller_file else {
+            // No caller context → nothing to disambiguate with.
+            return ambiguous;
+        };
+
+        // Rule 1: exact same file path.
+        let same_file: Vec<&SymbolId> = candidates
+            .iter()
+            .filter(|sid| {
+                self.by_id
+                    .get(*sid)
+                    .map(|(p, _)| p == caller)
+                    .unwrap_or(false)
+            })
+            .collect();
+        if same_file.len() == 1 {
+            return TargetResolution::Resolved(same_file[0].clone());
+        }
+        if same_file.len() > 1 {
+            // Genuine intra-file duplicate (e.g. two `same_name` in
+            // `dup.rs` — one top, one inside `inner`). Without module
+            // context we cannot pick the right one.
+            return ambiguous;
         }
 
-        // No caller context → ambiguous → drop.
-        None
+        // Rule 2: shared crate root (first N path components match).
+        let in_same_crate: Vec<&SymbolId> = candidates
+            .iter()
+            .filter(|sid| {
+                self.by_id
+                    .get(*sid)
+                    .map(|(p, _)| shared_crate_root(p, caller).is_some())
+                    .unwrap_or(false)
+            })
+            .collect();
+        if in_same_crate.len() == 1 {
+            return TargetResolution::Resolved(in_same_crate[0].clone());
+        }
+        // Multiple symbols across files in the same crate, no
+        // further rule applies.
+        ambiguous
     }
 
     /// Returns the candidate `SymbolId`s for a given name (used by callers
@@ -659,16 +724,23 @@ impl PerFileGraphCache {
             //    supplied. If the resolver finds an unambiguous match
             //    in another file, defer the edge to the post-merge
             //    step where both endpoints exist in the merged graph.
-            if let Some(idx) = global_index
-                && let Some(callee_id) = idx.resolve(&callee_name.to_lowercase(), Some(caller_path))
-            {
-                cross_file_edges.push((caller_id, callee_id));
+            if let Some(idx) = global_index {
+                match idx.resolve(&callee_name.to_lowercase(), Some(caller_path)) {
+                    TargetResolution::Resolved(callee_id) => {
+                        cross_file_edges.push((caller_id, callee_id));
+                    }
+                    // Both refusals drop the edge, and neither arm can
+                    // produce one: naming a target is exclusive to
+                    // `Resolved`. The two are distinct facts now, so a
+                    // later pass can count them separately instead of
+                    // reading a single silent `None`.
+                    TargetResolution::Ambiguous { .. } | TargetResolution::Unresolved(_) => {}
+                }
             }
             // 3. Otherwise: drop honestly. The call site references a
-            //    name that has no symbol in the project (or is
-            //    ambiguous). Logging the drop is left for a future
-            //    diagnostics pass; here we keep the resolver contract
-            //    small and explicit.
+            //    name with no symbol in the project, or one whose target
+            //    cannot be proven. The graph stays free of invented
+            //    edges; counting and surfacing the drops is H4.2.
         }
 
         Ok((graph, cross_file_edges))
@@ -1468,44 +1540,86 @@ mod global_index_tests {
         let mut idx = GlobalSymbolIndex::new();
         idx.insert(sid("src/lib.rs:foo:1"), PathBuf::from("src/lib.rs"), "foo");
         let r = idx.resolve("foo", Some(&PathBuf::from("src/lib.rs")));
-        assert_eq!(r, Some(sid("src/lib.rs:foo:1")));
+        assert_eq!(r, TargetResolution::Resolved(sid("src/lib.rs:foo:1")));
         assert!(!idx.is_empty());
         assert_eq!(idx.len(), 1);
         assert_eq!(idx.candidates("foo").len(), 1);
     }
 
-    /// Rule: 0 candidates → resolver returns None (call site referencing
-    /// a name that has no symbol in the project).
+    /// Rule: 0 candidates → the name exists nowhere in the project.
     #[test]
-    fn w5_resolve_no_candidates_returns_none() {
+    fn w5_resolve_no_candidates_is_unresolved() {
         let idx = GlobalSymbolIndex::new();
-        assert_eq!(idx.resolve("does_not_exist", None), None);
+        assert_eq!(
+            idx.resolve("does_not_exist", None),
+            TargetResolution::Unresolved("does_not_exist".into())
+        );
         assert_eq!(idx.len(), 0);
         assert!(idx.is_empty());
     }
 
-    /// Rule: multiple candidates in different files → resolver drops
-    /// the edge when no scope disambiguates (no caller file passed).
+    /// Rule: multiple candidates in different files → the name is known
+    /// but its target cannot be proven. That is a *different* fact from
+    /// "no such name", and the resolver must say so.
     #[test]
-    fn w5_resolve_ambiguous_without_caller_drops() {
+    fn w5_resolve_ambiguous_without_caller_is_ambiguous() {
         let mut idx = GlobalSymbolIndex::new();
         idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
         idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
         let r = idx.resolve("foo", None);
-        assert!(r.is_none(), "expected None when caller context is missing");
+        assert_eq!(
+            r,
+            TargetResolution::Ambiguous {
+                name: "foo".into(),
+                candidates: vec![sid("a.rs:foo:1"), sid("b.rs:foo:1")],
+            },
+            "two homonyms must read as Ambiguous, not as a missing name"
+        );
     }
 
     /// Rule: multiple candidates in different files with caller context
-    /// but NO shared crate root → drop.
+    /// but NO shared crate root → still ambiguous, still not "missing".
     #[test]
-    fn w5_resolve_no_shared_root_drops() {
+    fn w5_resolve_no_shared_root_is_ambiguous() {
         let mut idx = GlobalSymbolIndex::new();
         idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
         idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
         let r = idx.resolve("foo", Some(&PathBuf::from("caller.rs")));
         assert!(
-            r.is_none(),
-            "expected None when files share no path components"
+            matches!(r, TargetResolution::Ambiguous { .. }),
+            "candidates exist but no rule disambiguates: that is Ambiguous, \
+             not Unresolved. Got {r:?}"
+        );
+    }
+
+    /// The guarantee that must survive the retype: an ambiguous call is
+    /// still never wired to a homonym. `Resolved` is the only variant
+    /// that names a target, so no other code path can invent one.
+    #[test]
+    fn w5_ambiguity_still_produces_no_target() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
+        idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
+        let r = idx.resolve("foo", Some(&PathBuf::from("caller.rs")));
+        assert!(
+            !matches!(r, TargetResolution::Resolved(_)),
+            "an unresolved-by-ambiguity call must never become an edge"
+        );
+    }
+
+    /// Anti-vacuity: ambiguity and absence are not the same observation.
+    /// If both collapse to one variant this fails, which is the whole
+    /// point of the change — the previous `Option<SymbolId>` merged them.
+    #[test]
+    fn w5_ambiguity_and_absence_are_distinguishable() {
+        let mut idx = GlobalSymbolIndex::new();
+        idx.insert(sid("a.rs:foo:1"), PathBuf::from("a.rs"), "foo");
+        idx.insert(sid("b.rs:foo:1"), PathBuf::from("b.rs"), "foo");
+        let ambiguous = idx.resolve("foo", Some(&PathBuf::from("caller.rs")));
+        let absent = idx.resolve("nothing_here", None);
+        assert_ne!(
+            ambiguous, absent,
+            "a known-but-unprovable name must not read like a missing one"
         );
     }
 }
