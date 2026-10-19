@@ -24,7 +24,9 @@ use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::services::{ComplexityCalculator, CycleDetector, ImpactAnalyzer};
 use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::{DependencyType, WalkFilter};
-use crate::infrastructure::graph::per_file_graph::{GlobalSymbolIndex, TargetResolution};
+use crate::infrastructure::graph::per_file_graph::{
+    GlobalSymbolIndex, TargetResolution, WalkClassification, classify_walk_extension,
+};
 use crate::infrastructure::graph::{GraphCache, LightweightIndex, PetGraphStore, SymbolLocation};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use sha2::{Digest, Sha256};
@@ -312,23 +314,41 @@ impl AnalysisService {
         // paso, un cliente que ejecute `cognicode graph full` sobre
         // corpus mixto recibiría status=Complete aunque el WalkBuilder
         // descubrió archivos que nunca se procesaron.
+        //
+        // MEDIDO 2026-10-19. La condición era `language.is_none()`, un
+        // predicado binario que decía "no hay parser" para un README y
+        // para un lockfile igual que para un `.kt`. Los tres acababan en
+        // `skipped`, y `skipped` no vacío es `BuildStatus::Partial`; como
+        // `mod.rs:1312` BORRA el snapshot durable cuando el build no es
+        // `Complete`, un repo Rust normal —Cargo.toml y README incluidos—
+        // nunca persistía nada. MEDIDO: 2 "huecos" falsos frente a los 0
+        // reales de la ruta per-file sobre el mismo árbol.
+        //
+        // El clasificador de K0 ya separa las tres ramas. Se lee en vez de
+        // reimplementarse a medias: `Analyze` se procesa más abajo,
+        // `KnownUnsupportedGap` es un hueco honesto, y `LegitExclusion` no
+        // es un hueco sino una decisión.
         {
             let mut guard = skipped_files.lock().unwrap();
             for (path, language, file_path, _mtime, _size) in &files {
-                if language.is_none() {
-                    let ext = path
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("<no extension>");
-                    guard.push(
-                        crate::infrastructure::graph::per_file_graph::SkippedFile {
-                            path: file_path.clone(),
-                            reason: crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
-                                format!("extension '.{}' is not in the supported parser set", ext),
-                            ),
-                        },
-                    );
+                if language.is_some() {
+                    continue;
                 }
+                let ext = path.extension().and_then(|e| e.to_str());
+                if !matches!(
+                    classify_walk_extension(ext),
+                    WalkClassification::KnownUnsupportedGap
+                ) {
+                    continue;
+                }
+                guard.push(
+                    crate::infrastructure::graph::per_file_graph::SkippedFile {
+                        path: file_path.clone(),
+                        reason: crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
+                            ext.unwrap_or_default().to_string(),
+                        ),
+                    },
+                );
             }
         }
 
@@ -719,7 +739,6 @@ impl AnalysisService {
         use crate::infrastructure::graph::per_file_graph::{
             BuildReport as PfgBuildReport, BuildStatus as PfgBuildStatus,
             SkipReason as PfgSkipReason, SkippedFile as PfgSkippedFile,
-            WalkClassification as PfgWalkClassification, classify_walk_extension,
         };
 
         let cache = PerFileGraphCache::with_project_dir(project_dir.to_string_lossy().into_owned());
@@ -752,8 +771,8 @@ impl AnalysisService {
             }
             let ext = path.extension().and_then(|e| e.to_str());
             match classify_walk_extension(ext) {
-                PfgWalkClassification::Analyze => file_paths.push(path.to_path_buf()),
-                PfgWalkClassification::KnownUnsupportedGap => {
+                WalkClassification::Analyze => file_paths.push(path.to_path_buf()),
+                WalkClassification::KnownUnsupportedGap => {
                     // K0 honest gap: the file is a real source in a
                     // language we know about but have not yet wired
                     // (Kotlin). The H1.1 envelope requires it to
@@ -764,7 +783,7 @@ impl AnalysisService {
                         reason: PfgSkipReason::UnsupportedExtension(ext.unwrap_or("").to_string()),
                     });
                 }
-                PfgWalkClassification::LegitExclusion => {
+                WalkClassification::LegitExclusion => {
                     // README, image, lockfile: outside the analysis
                     // scope by policy. Not a gap, not a skip — just
                     // not part of the answer.
@@ -1052,9 +1071,20 @@ impl AnalysisService {
         let file_cache = self.file_cache.clone();
         let dir_path = dir.to_path_buf();
 
-        // Spawn blocking task to run the heavy computation
-        let result: Result<Result<GraphCoverageMetrics, AppError>, tokio::task::JoinError> =
-            tokio::task::spawn_blocking(move || {
+        // Spawn blocking task to run the heavy computation. Devuelve tambien el
+        // grafo y los huecos: el `BuildReport` se publica fuera del
+        // closure, que exige `'static` y no puede tocar `self`.
+        let result: Result<
+            Result<
+                (
+                    GraphCoverageMetrics,
+                    CallGraph,
+                    Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+                ),
+                AppError,
+            >,
+            tokio::task::JoinError,
+        > = tokio::task::spawn_blocking(move || {
                 // Create a minimal service context for building the graph
                 let store =
                     std::sync::Mutex::new(crate::infrastructure::graph::PetGraphStore::new());
@@ -1073,7 +1103,7 @@ impl AnalysisService {
 
                 let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-                let files: Vec<_> =
+                let walked: Vec<_> =
                     crate::infrastructure::walk_policy::contained_ignore_walk(&dir_path)
                         .hidden(true)
                         .git_ignore(true)
@@ -1099,8 +1129,43 @@ impl AnalysisService {
                             let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
                             (path, language, file_path, mtime, size)
                         })
-                        .filter(|(_, lang, _, _, _)| lang.is_some())
                         .collect();
+
+                // MEDIDO 2026-10-19. Este camino filtraba por
+                // `lang.is_some()` y NO registraba nada de lo que
+                // descartaba: la ruta no publicaba `BuildReport`, asi que
+                // un consumidor que llamara despues leia el reporte del
+                // build anterior. Ahora clasifica con la misma funcion que
+                // las otras dos rutas, y solo `KnownUnsupportedGap` cuenta
+                // como hueco; un README o un lockfile son decision, no
+                // carencia.
+                let mut k0_skipped: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
+                    Vec::new();
+                let mut files: Vec<_> = Vec::new();
+                for (path, language, file_path, mtime, size) in walked {
+                    if language.is_some() {
+                        files.push((path, language, file_path, mtime, size));
+                        continue;
+                    }
+                    let ext = path.extension().and_then(|e| e.to_str());
+                    match classify_walk_extension(ext) {
+                        WalkClassification::KnownUnsupportedGap => {
+                            k0_skipped.push(
+                                crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                    path: file_path,
+                                    reason:
+                                        crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
+                                            ext.unwrap_or_default().to_string(),
+                                        ),
+                                },
+                            );
+                        }
+                        // `Analyze` ya no puede llegar aqui (sin lenguaje no
+                        // hay parser que lo analyze) y `LegitExclusion` es
+                        // una decision, no una carencia: no se registra.
+                        WalkClassification::Analyze | WalkClassification::LegitExclusion => {}
+                    }
+                }
 
                 let total_files = files.len();
 
@@ -1253,7 +1318,7 @@ impl AnalysisService {
                 }
 
                 let call_graph = store.into_inner().unwrap().to_call_graph();
-                graph_cache.replace(call_graph);
+                graph_cache.replace(call_graph.clone());
 
                 // Compute coverage
                 let coverage_percent = if total_files > 0 {
@@ -1268,16 +1333,35 @@ impl AnalysisService {
                     coverage_percent,
                 };
 
-                Ok(coverage)
+                Ok((coverage, call_graph, k0_skipped))
             })
             .await;
 
-        let coverage = result
+        let (coverage, call_graph, k0_skipped) = result
             .map_err(|e| AppError::AnalysisError(format!("Task join error: {}", e)))?
             .map_err(|e| AppError::AnalysisError(format!("Build error: {}", e)))?;
 
         // Store coverage metrics
         *self.coverage_metrics.lock().unwrap() = Some(coverage);
+
+        // MEDIDO 2026-10-19: esta ruta no publicaba `BuildReport`, asi que
+        // `get_last_build_report()` devolvia lo que hubiera dejado la ultima
+        // ruta CORRIDA, no lo que acababa de pasar esta. `reparse_on_edit`
+        // usa esta ruta, asi que tras editar un consumidor leia cobertura
+        // pre-edicion. Se publica aqui, fuera del `spawn_blocking`, porque
+        // el reporte pertenece al servicio y no a la tarea bloqueante.
+        let status = if k0_skipped.is_empty() {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
+        } else {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped: k0_skipped,
+            }
+        };
+        *self.last_build_report.lock().unwrap() =
+            Some(crate::infrastructure::graph::per_file_graph::BuildReport {
+                graph: call_graph,
+                status,
+            });
 
         Ok(())
     }
@@ -3846,21 +3930,41 @@ def b():
     }
 
     // ============================================================================
-    // U15 — corpus mixto LSP-ausente: archivos sin lenguaje reconocido
-    // deben aparecer EXPLICITAMENTE en BuildReport.skipped. El filtro silencioso
-    // (filter is_some() en línea ~312 antes de añadirlos a skipped) hace que
-    // status=Complete sin reportar el soporte. Contrato: "fallback y nivel de
-    // soporte explícitos, sin resolución inventada".
+    // U15 — cobertura honesta en corpus mixto.
+    //
+    // MEDIDO 2026-10-19. Esta prueba fijaba la regla ORIGINAL de U15
+    // (2026-09-23): todo archivo sin parser cuenta como hueco, asi que
+    // un `.txt` o un `.cob` obligaban a `Partial`. K0/H1.1 (2026-10-18,
+    // 25 dias posterior, y la decision vigente en ROADMAP §11) la
+    // sustituyo por una distincion de tres ramas: un lenguaje fuente
+    // conocido-sin-soporte es un hueco; un asset es una DECISION.
+    //
+    // La preocupacion de U15 —"no digas Complete mientras descartas cosas
+    // en silencio"— sigue siendo valida y sigue fijada aqui. Lo que
+    // cambia es que se responde con una exclusion con nombre en vez de
+    // con un hueco inflado. MEDIDO antes del arreglo: un repo Rust
+    // normal (Cargo.toml + README.md, cero fuentes sin soporte) salia
+    // `Partial skipped=2` por dos assets, y como `mod.rs:1312` borra el
+    // snapshot durable cuando el build no es Complete, ese repo nunca
+    // persistia nada.
+    //
+    // No se borra U15: se reemplaza por la version vigente de su
+    // preocupacion, que es mas barata (una asercion) y mas discriminante
+    // (distingue las dos clases en vez de contarlas).
     // ============================================================================
     #[test]
-    fn test_u15_unsupported_files_must_appear_in_build_report_skipped() {
+    fn test_u15_a_source_language_gap_is_reported_and_an_asset_is_not() {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path();
 
         // 1 archivo soportado (Python)
         std::fs::write(temp_path.join("supported.py"), "def a():\n    pass\n").unwrap();
 
-        // 2 archivos NO soportados (extensiones sin parser asignado)
+        // 1 hueco real: fuente en un lenguaje que conocemos y no hemos
+        // conectado (el puente K0, hasta que K1 aterrice).
+        std::fs::write(temp_path.join("Main.kt"), "class Main { fun x() = 1 }\n").unwrap();
+
+        // 2 assets: fuera del alcance por decision, no por carencia.
         std::fs::write(
             temp_path.join("unsupported.cob"),
             "       IDENTIFICATION DIVISION.\n       PROGRAM-ID. HELLO.\n",
@@ -3880,38 +3984,36 @@ def b():
             .expect("build_project_graph debe poblar last_build_report");
 
         use crate::infrastructure::graph::per_file_graph::BuildStatus;
-        match report.status {
-            BuildStatus::Complete => {
-                panic!(
-                    "U15: status=Complete con archivos no soportados (cob/txt) \
-                     implica soporte silencioso. Report.skipped_files_objs debe \
-                     incluirlos para reportar cobertura honesta. BuildReport: {:?}",
-                    report
-                );
-            }
-            BuildStatus::Partial { skipped } => {
-                let reported = skipped
-                    .iter()
-                    .map(|s| {
-                        std::path::Path::new(&s.path)
-                            .file_name()
-                            .unwrap()
-                            .to_str()
-                            .unwrap()
-                            .to_string()
-                    })
-                    .collect::<Vec<_>>();
-                assert!(
-                    reported.iter().any(|n| n == "unsupported.cob"),
-                    "U15: 'unsupported.cob' debe aparecer en skipped. Reported: {:?}",
-                    reported
-                );
-                assert!(
-                    reported.iter().any(|n| n == "notes.txt"),
-                    "U15: 'notes.txt' debe aparecer en skipped. Reported: {:?}",
-                    reported
-                );
-            }
+        let skipped = match &report.status {
+            BuildStatus::Complete => panic!(
+                "U15: hay un `.kt` sin registrar y el build se declara Complete. \
+                 Eso si es soporte silencioso: un `.kt` es fuente real en un \
+                 lenguaje conocido-sin-soporte y debe aparecer en skipped. \
+                 BuildReport: {report:?}"
+            ),
+            BuildStatus::Partial { skipped } => skipped
+                .iter()
+                .map(|s| {
+                    std::path::Path::new(&s.path)
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                })
+                .collect::<Vec<_>>(),
+        };
+
+        assert!(
+            skipped.iter().any(|n| n == "Main.kt"),
+            "U15: el hueco real debe aparecer en skipped. Reported: {skipped:?}"
+        );
+        for asset in ["unsupported.cob", "notes.txt"] {
+            assert!(
+                !skipped.iter().any(|n| n == asset),
+                "U15: `{asset}` es un asset, no una fuente. Contarlo infla el hueco \
+                 y degrada el build a Partial sin motivo. Reported: {skipped:?}"
+            );
         }
     }
 }

@@ -9,11 +9,11 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-19, sobre `ff9132c60b94770f35cb3b72b5f34e88332478b5`
-> (`main`, squash-merge del PR #386: `test-fast.sh --filter`, con la guarda
-> que hace fallar un filtro que no selecciona ninguna prueba). Sustituye al
-> de `cf11d46935502aec0ae7fc808a5ba43ae63d145a` (PR #380), que quedó a seis
-> commits de la base y dejó el ratchet rojo — ver **Entrada 79**. **v0.101.23
+> **Snapshot**: 2026-10-19, sobre `6429361af58fea56044af1d472cc0e4cadb9b404` (`main`, squash-merge del
+> PR #387: el noop del selector que atribuía el sandbox a metadata, y las
+> tres citas de §11 que no resolvía nadie). Sustituye al de
+> `ff9132c60b94770f35cb3b72b5f34e88332478b5` (PR #386), que quedó a tres
+> commits por el merge de #387 y por este ciclo. **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario

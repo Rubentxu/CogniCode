@@ -131,13 +131,25 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     // contrato, un workspace con skips reportaba "complete" en
     // graph.complexity mientras MCP decía "partial" sobre el MISMO
     // grafo (divergencia real detectada por UAT-CU-1 2026-10-16).
+    //
+    // MEDIDO 2026-10-19: el gap de este contrato era `Cargo.toml`. K0/H1.1
+    // (2026-10-18) declaro `Cargo.toml` exclusion legitima y no hueco, asi
+    // que el fixture dejaba de producir Partial y el contrato perdia su
+    // precondicion. El contrato NO se debilita: se le da un hueco REAL
+    // (`.kt`, fuente en lenguaje conocido-sin-soporte) para que siga
+    // detectando exactamente la divergencia que nacio para cazar.
     let tmp = tempdir();
     rust_fixture(&tmp);
+    std::fs::write(
+        tmp.join("src").join("Legacy.kt"),
+        "class Legacy { fun x() = 1 }\n",
+    )
+    .unwrap();
     let basis = AnalysisBasis::for_workspace(tmp.clone());
     let analyzer = ServiceAnalyzer::new();
 
     // 1) graph_full puebla last_build_report con el estado real del
-    //    walk (Partial con gaps = Cargo.toml skipped).
+    //    walk (Partial con gaps = el `.kt` sin registrar).
     let full = analyzer.execute(
         &basis,
         AnalysisOp::GraphFull {
@@ -148,7 +160,7 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     assert_eq!(
         full.state(),
         OutcomeState::Partial,
-        "precondición: el fixture con Cargo.toml produce Partial (gap = Cargo.toml), got {:?}",
+        "precondición: el fixture con un `.kt` produce Partial (gap = Legacy.kt), got {:?}",
         full.state()
     );
     let expected_gap_messages: Vec<String> =
@@ -156,8 +168,8 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
     assert!(
         expected_gap_messages
             .iter()
-            .any(|m| m.contains("Cargo.toml")),
-        "precondición: el gap debe nombrar Cargo.toml, got {:?}",
+            .any(|m| m.contains("Legacy.kt")),
+        "precondición: el gap debe nombrar Legacy.kt, got {:?}",
         expected_gap_messages
     );
 
@@ -179,8 +191,8 @@ fn graph_complexity_inherits_partial_from_last_build_report() {
         .map(|g| g.message.clone())
         .collect();
     assert!(
-        actual_gap_messages.iter().any(|m| m.contains("Cargo.toml")),
-        "graph.complexity debe propagar el gap Cargo.toml; got {:?}",
+        actual_gap_messages.iter().any(|m| m.contains("Legacy.kt")),
+        "graph.complexity debe propagar el gap Legacy.kt; got {:?}",
         actual_gap_messages
     );
     assert_eq!(

@@ -75,17 +75,27 @@ fn rust_fixture(dir: &std::path::Path) {
 /// LAW A: estado honesto a traves del adaptador de produccion.
 ///
 /// graph.full y graph.complexity sobre el MISMO workspace, cuando
-/// el walk del kernel produjo un skip (Cargo.toml skipped), deben
-/// ambos devolver Partial con los MISMOS gaps. Esto ejercita H0.2
-/// (complexity hereda Partial del BuildReport compartido) y H0.4
-/// (el seam no fabrica provenance: los gaps son los del walk, no
-/// una traduccion sentinel). Si H0.1 o H0.2 se rompe, esta ley
-/// cae; si H0.4 introduce un sentinel en este path, los gaps
-/// dejarian de coincidir.
+/// el walk del kernel produjo un skip, deben ambos devolver Partial
+/// con los MISMOS gaps. Esto ejercita H0.2 (complexity hereda
+/// Partial del BuildReport compartido) y H0.4 (el seam no fabrica
+/// provenance: los gaps son los del walk, no una traduccion
+/// sentinel). Si H0.1 o H0.2 se rompe, esta ley cae; si H0.4
+/// introduce un sentinel en este path, los gaps dejarian de
+/// coincidir.
+///
+/// MEDIDO 2026-10-19: el skip del fixture era `Cargo.toml`, que K0/H1.1
+/// (2026-10-18) declaro exclusion legitima y no hueco. La ley no se
+/// debilita: se le da un hueco REAL (`.kt`) para que siga detectando
+/// la divergencia H0.2/H0.4 para la que nacio.
 #[test]
 fn law_a_state_is_honest_through_the_production_adapter() {
     let tmp = tempdir();
     rust_fixture(&tmp);
+    std::fs::write(
+        tmp.join("src").join("Legacy.kt"),
+        "class Legacy { fun x() = 1 }\n",
+    )
+    .unwrap();
     let basis = AnalysisBasis::for_workspace(tmp.clone());
     let analyzer = ServiceAnalyzer::new();
 
@@ -100,8 +110,8 @@ fn law_a_state_is_honest_through_the_production_adapter() {
     assert_eq!(full.state(), OutcomeState::Partial);
     let full_gaps: Vec<String> = full.gaps().iter().map(|g| g.message.clone()).collect();
     assert!(
-        full_gaps.iter().any(|m| m.contains("Cargo.toml")),
-        "graph.full must surface the Cargo.toml skip: {full_gaps:?}"
+        full_gaps.iter().any(|m| m.contains("Legacy.kt")),
+        "graph.full must surface the Legacy.kt skip: {full_gaps:?}"
     );
 
     // 2) graph.complexity hereda el mismo Partial con los mismos
