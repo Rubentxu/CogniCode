@@ -1,7 +1,7 @@
-//! H17 — la capa semántica tiene que llegar al grafo que consulta el usuario.
+//! The semantic layer has to reach the graph the user queries.
 //!
-//! MEDIDO 2026-10-19 sobre `PerFileGraphCache::merge_with_report` con un
-//! `main.tf` de dos bloques. Símbolos que salen:
+//! A `main.tf` with two blocks used to produce four symbols, and none of
+//! them carried the identity of the block:
 //!
 //! ```text
 //! .../main.tf:resource:1  name="resource"
@@ -10,34 +10,28 @@
 //! .../main.tf:bucket:6    name="bucket"
 //! ```
 //!
-//! Cuatro símbolos, ninguno con la identidad del bloque. HCL está
-//! anunciado en `product/languages.json` y su bloque produce dos
-//! símbolos: la palabra clave y el nombre del atributo.
+//! Four symbols: the keyword and the name of the attribute. HCL is an
+//! announced language, and its block produced two symbols.
 //!
-//! ## Por qué
+//! ## Why
 //!
-//! `LanguageConfig::semantic_handler` existe y está cableado —para HCL y
-//! para Ansible— pero se invoca en UN solo sitio:
-//! `application/ingest/extractor.rs:238`. El camino que construye el
-//! grafo (`infrastructure/graph/per_file_graph.rs`, vía
-//! `TreeSitterParser::new`) nunca lo consulta. Son dos autoridades para
-//! la misma pregunta («qué es un símbolo en este lenguaje») y la
-//! segunda gana porque es la que se pregunta.
+//! The semantic handler exists and is wired up, but it was invoked in ONE
+//! place: the extraction seam. The path that builds the graph never
+//! consulted it. Those are two authorities for the same question —"what is
+//! a symbol in this language?"— and the second one won because it was the
+//! one being asked.
 //!
-//! Esto no es un defecto de HCL: es que un seam construido para ser
-//! opcional se quedó opcional en un sentido que nadie eligió. H15
-//! (PR #387) comprobó que el parser entregaba la identidad del bloque —
-//! sobre `extract_file`, el seam— y su comentario daba por hecho que
-//! llegar al grafo era consecuencia. No lo era. Este fichero mueve la
-//! ley del seam al producto.
+//! This is not a defect of HCL: a seam built to be optional stayed optional
+//! in a sense nobody chose. The block identity was already delivered on the
+//! extraction seam, and reaching the graph was assumed to follow. It did
+//! not. This file moves the law from the seam to the product.
 //!
-//! ## La forma
+//! ## The shape
 //!
-//! El cuarto test no es sobre Terraform: es sobre un lenguaje que NO
-//! tiene capa semántica. El seam es `Option`, y un `Option` que nadie
-//! ejercita en su rama `None` no es un seam: es un `if` que se puede
-//! colar en el camino caliente sin que ninguna suite lo note. Este
-//! fichero obliga a que ambos lados estén probados.
+//! The fourth test is not about Terraform: it is about a language that has
+//! no semantic layer. The seam is optional, and an optional branch nobody
+//! exercises is not a seam: it is an `if` that can slip into the hot path
+//! without any suite noticing. This file forces both sides to be covered.
 
 use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::infrastructure::graph::per_file_graph::PerFileGraphCache;
@@ -58,8 +52,8 @@ resource "aws_s3_bucket" "audit_bucket" {
 }
 "#;
 
-/// Nombres de símbolo del grafo, ordenados: compara sin depender del
-/// tempdir.
+/// The symbol names of the graph, sorted: comparison without depending on
+/// the temporary directory.
 fn symbol_names(graph: &CallGraph) -> Vec<String> {
     let mut names: Vec<String> = graph
         .symbol_ids()
@@ -84,12 +78,12 @@ fn graph_for(dir: &std::path::Path, files: &[(&str, &str)]) -> CallGraph {
     cache.merge_with_report(&borrowed).graph
 }
 
-/// La ley central: el bloque llega al grafo con su identidad de dominio,
-/// no con la palabra clave de su cabecera.
+/// The central law: the block reaches the graph with its domain identity,
+/// not with the keyword of its header.
 ///
-/// El conjunto es EXACTO, no una coincidencia: un símbolo de más
-/// significa que algo del camino genético sobrevive mezclado con la capa
-/// semántica, que es exactamente el defecto que este seam elimina.
+/// The set is EXACT, not a match: one symbol too many means that something
+/// from the generic path survives mixed with the semantic layer, which is
+/// exactly the defect this seam removes.
 #[test]
 fn a_terraform_block_reaches_the_graph_with_its_domain_identity() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -99,17 +93,17 @@ fn a_terraform_block_reaches_the_graph_with_its_domain_identity() {
     assert_eq!(
         names,
         vec!["aws_s3_bucket.only".to_string()],
-        "un bloque HCL debe llegar al grafo como exactamente un símbolo con su \
-         identidad de dominio. Un símbolo llamado `resource` significa que el camino \
-         del grafo sigue preguntando al parser genérico; uno de más significa que \
-         las dos autoridades se están mezclando."
+        "an HCL block must reach the graph as exactly one symbol with its \
+         domain identity. A symbol named `resource` means the graph path is \
+         still asking the generic parser; one symbol too many means the two \
+         authorities are being mixed."
     );
 }
 
-/// Un bloque, un símbolo. La extracción genérica entrega el nodo del
-/// bloque dos veces (misma línea, misma columna), y el handler lo
-/// convertía en dos nodos con el MISMO id: el conteo de símbolos de un
-/// repo de IaC salía inflado y sin que nada lo delatara.
+/// One block, one symbol. The generic extraction delivers the node of the
+/// block twice (same line, same column), and the domain layer turned it
+/// into two nodes with the SAME id: the symbol count of an infrastructure
+/// repository came out inflated and nothing revealed it.
 #[test]
 fn one_terraform_block_is_one_symbol() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -121,14 +115,13 @@ fn one_terraform_block_is_one_symbol() {
         .count();
     assert_eq!(
         occurrences, 1,
-        "un bloque produce un símbolo; se contaron {occurrences}. \
-         La extracción genérica entrega el nodo del bloque dos veces y, \
-         sin deduplicar, el grafo cuenta cada bloque de dos."
+        "a block produces one symbol; {occurrences} were counted. The generic \
+         extraction delivers the node of the block twice and, without \
+         deduplication, the graph counts every block twice."
     );
 }
 
-/// Dos bloques del mismo tipo no son el mismo símbolo — la razón por la
-/// que H15 arregló la etiqueta, retomada sobre el grafo.
+/// Two blocks of the same type are not the same symbol.
 #[test]
 fn two_terraform_blocks_of_the_same_type_stay_distinct() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -138,14 +131,14 @@ fn two_terraform_blocks_of_the_same_type_stay_distinct() {
     assert!(
         names.iter().any(|n| n == "aws_s3_bucket.app_bucket")
             && names.iter().any(|n| n == "aws_s3_bucket.audit_bucket"),
-        "dos recursos del mismo tipo deben llegar como dos símbolos; se obtuvo {names:?}"
+        "two resources of the same type must reach the graph as two symbols; got {names:?}"
     );
 }
 
-/// La frontera. Un lenguaje SIN capa semántica no puede enterarse de que
-/// existe: mismo símbolo, misma arista, mismo nombre. Este test no es
-/// sobre Terraform a propósito — es la garantía de que el seam no se ha
-/// colado en el camino caliente de los otros veintisiete lenguajes.
+/// The border. A language WITHOUT a semantic layer must not find out that
+/// it exists: same symbol, same edge, same name. This test is not about
+/// Terraform on purpose — it is the guarantee that the seam has not slipped
+/// into the hot path of the other languages.
 #[test]
 fn a_language_without_a_semantic_layer_is_untouched() {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -155,12 +148,12 @@ fn a_language_without_a_semantic_layer_is_untouched() {
     let names = symbol_names(&graph);
     assert!(
         names.iter().any(|n| n == "alpha") && names.iter().any(|n| n == "caller"),
-        "el camino genérico debe seguir produciendo sus símbolos; se obtuvo {names:?}"
+        "the generic path must keep producing its symbols; got {names:?}"
     );
     assert!(
         graph.edge_count() >= 1,
-        "`caller` llama a `alpha`: la arista genérica debe seguir existiendo; \
-         se contaron {} aristas",
+        "`caller` calls `alpha`: the generic edge must still exist; {} edges \
+         were counted",
         graph.edge_count()
     );
 }

@@ -60,12 +60,21 @@ pub struct LanguageConfig {
     pub semantic_handler: Option<SemanticHandlerFn>,
 }
 
-/// Function signature for a semantic handler (ADR-024).
+/// Function signature for a semantic handler.
 /// Post-processes a generic `ExtractionResult` to add domain-specific
 /// nodes and edges. Used by IaC languages (Ansible, Terraform).
+///
+/// `source` is the text of the file, not an ornament. A generic extraction
+/// leaves a language layer with the labels it chose to keep, and that is
+/// enough for the *blocks* of a configuration but not for its *relations*:
+/// a reference lives in the body of a block, and the body is not part of a
+/// label. A handler that can only see what the other pass decided to keep
+/// is not the authority of the language — it is a reader of the other's
+/// judgement.
 pub type SemanticHandlerFn = fn(
     source_path: &str,
     source_hash: &str,
+    source: &str,
     result: &crate::application::ingest::types::ExtractionResult,
 ) -> crate::application::ingest::types::ExtractionResult;
 

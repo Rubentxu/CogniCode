@@ -238,7 +238,7 @@ pub fn extract_file(
     if let Some(handler) = config.semantic_handler {
         let source_path_str = path.to_string_lossy();
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            handler(&source_path_str, content_hash, &result)
+            handler(&source_path_str, content_hash, source, &result)
         }))
         .unwrap_or_else(|_| {
             // semantic_handler panicked — return the original result

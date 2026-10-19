@@ -18540,3 +18540,115 @@ las dos ramas.
 
 Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
 doc, `OK: contracts`, baseline 0 entradas).
+
+---
+
+## 2026-10-20 — H18: la relación de Terraform sale del AST, no de la cabecera (PR #390)
+
+### MEDIDO antes del cambio, sobre `f8195f24`
+
+Sobre `sandbox/fixtures/terraform-iac/main.tf`, con el camino de siempre:
+
+```text
+nodos:       39
+aristas:     38
+referencias:  0
+```
+
+Cero referencias, y no por falta de relación en el fichero: la relación
+existe y es un **atravesamiento de atributos**
+(`bucket = aws_s3_bucket.app_bucket.id`, línea 55).
+
+### Las dos roturas, y por qué una no tapaba a la otra
+
+1. **El lector no veía el cuerpo.** `extract_terraform_refs` leía la
+   ETIQUETA del bloque, y la etiqueta de un bloque HCL es su CABECERA:
+   `resource "aws_s3_bucket" "app_bucket"` es un nombre, y el cuerpo no es
+   parte de él. El lector buscaba un punto en una frase que no lo tenía. Su
+   propio test unitario lo demostraba sin decirlo: pasaba a mano
+   `"resource aws_instance web { ami = data.aws_ami.ubuntu.id }"` como
+   etiqueta —una forma que el pipeline no produce nunca—. Verde sobre una
+   capacidad falsa.
+2. **El grafo descartaba lo no resuelto.** `semantic_graph` deja pasar
+   solo aristas `TargetRef::Resolved` —«una arista cuyo extremo no se
+   resolvió no se inventa»—, y el lector emitía `TargetRef::Unresolved`
+   siempre. Aunque encontrara la relación, no llegaría.
+
+### El arreglo: el handler parsea su propio lenguaje
+
+`SemanticHandlerFn` recibe ahora el **texto del fichero**
+(`source: &str`), y `terraform_handler` parsea el HCL él mismo en vez de
+post-procesar el `ExtractionResult` genérico.
+
+La ley que lo sostiene: *un handler que solo puede ver lo que el otro
+decidió conservar no es la autoridad del lenguaje: es un lector del
+criterio del otro*. El camino genérico reduce un bloque a su cabecera
+porque una cabecera es un nombre; una relación vive en el cuerpo.
+
+La resolución es contra las identidades **declaradas en ese fichero**: la
+lectura más larga que nombre algo declarado gana
+(`aws_s3_bucket.app_bucket.id` → `aws_s3_bucket.app_bucket`), y si ninguna
+lo hace la arista sale `Unresolved` **sin inventar el nodo**.
+
+### MEDIDO después del cambio, sobre el mismo fixture
+
+```text
+nodos:       20
+aristas:     73
+referencias: 54   (17 resueltas, 37 sin resolver)
+```
+
+Las 37 sin resolver son reales y no son ruido: `var.environment`,
+`var.project_name`, `var.db_username`… se **usan** dentro de `main.tf` y se
+**declaran** en `variables.tf`. La cobertura de referencias es **por
+fichero**, y el test lo dice en voz alta en vez de fingir que es global.
+
+Los nodos bajan de 39 a 20 porque el camino genérico duplicaba: los bloques
+HCL aparecían dos veces —la palabra clave y el nombre del atributo— y la
+capa semántica los sustituye por una identidad.
+
+### La forma del test
+
+Siete tests, todos sobre el **fixture real** versionado: su ausencia es una
+regresión, y el test cae. Dos de ellos son los que importan.
+
+- La resolución es contra lo **declarado**: `module.compute` resuelve
+  `module.vpc` —declarado en este fichero— y deja `var.*` sin resolver, las
+  dos cosas en el mismo bloque, para que ninguna pueda pasar sin la otra.
+- La resolución **no depende del orden**: el uso (línea 250) precede a la
+  declaración (línea 258) y la relación sigue existiendo. Un acierto
+  posicional no distinguiría los dos casos.
+
+Y una aserción de conjunto **exacto** donde antes había una de inclusión:
+`contains("app_bucket")` la satisface también
+`aws_s3_bucket_versioning.app_bucket_versioning`, así que la comprobación
+anterior no distinguía dos recursos de uno.
+
+### El estándar de comentarios, aplicado a la familia
+
+Los comentarios del código de este ciclo no llevan referencias, ni
+identificadores de tarea, ni especificaciones, ni fechas: explican la
+funcionalidad y su motivo. Se aplicó a los tres ficheros de la capa
+semántica y a los tres tests de la familia, que además quedaban en español
+dentro de un codebase cuyo idioma de comentarios es el inglés.
+
+MEDIDO: la superficie heredada son **759 líneas de comentario en 208
+ficheros** que sí llevan ese tipo de referencias. No se barrió en este
+ciclo: es un trabajo mecánico y grande, y mezclado con la lógica habría
+diluido el diff. Queda medido y en el roadmap.
+
+### Lo que sigue abierto (medido, no supuesto)
+
+- **El handler de Ansible está muerto.** El extractor YAML genérico no
+  emite ningún nodo para ninguna forma de documento (medido: 1 nodo, el del
+  fichero), luego `is_ansible_playbook` nunca ve `hosts:`. Es una ley
+  distinta —«la capa semántica tiene algo que interpretar»—: la arregla el
+  extractor YAML, no el handler.
+- **Ontología HCL**: los bloques siguen siendo `SymbolKind::Function`.
+- **Las referencias entre ficheros**: 37 relaciones siguen sin resolver
+  porque su destino vive en otro fichero. Resolverlas es trabajo de la
+  etapa de resolución, no de este handler.
+
+Gates: `fast rc=0` (2370 passed, clippy `-D warnings`, baseline 0
+entradas); `full rc=0` (fmt, clippy `-D warnings`, workspace, doc, `OK:
+contracts`, baseline 0 entradas).
