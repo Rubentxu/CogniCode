@@ -18347,3 +18347,79 @@ Gates: `fast rc=0`, `full rc=0` (el primer `full` salió en `fmt --check`:
 el test escrito a mano no estaba formateado; `cargo fmt` y re-run). Core
 entero: 84 binarios, 2369 tests de librería, 0 fallos — el cambio de
 `extract_name` alcanza a todos los lenguajes y no movió ninguna otra suite.
+
+---
+
+## Recibo — K-CLAS: las tres rutas que caminan el repo no contaban lo mismo
+
+**SHA**: `e0b8cbf6` · **Fecha**: 2026-10-19 · **Origen**: auditoría externa
+sobre Terraform/Bash, filtrada por la medición.
+
+### Lo que la auditoría nombraba y lo que había
+
+La auditoría proponía, como P0, unificar la cobertura de omitidos en
+`Parsed | ExcludedByPolicy | UnsupportedRelevant | ReadFailed | ParseFailed`.
+Ese ADT **ya existía** (`per_file_graph.rs:936`, contrato `h11`, con sus
+cinco proyecciones). La propuesta, medida, resultó estar superada.
+
+Lo que sí quedaba era más estrecho y más caro: **el ADT no escapaba nunca de
+`per_file_graph.rs`**. Ningún productor fuera de ese fichero lo construía.
+Y no por descuido de integración, sino porque dos de las cuatro rutas
+vivas filtraban por `language.is_none()` en vez de llamar al clasificador.
+
+### La medición que lo decidió
+
+Un repo Rust ordinario —`Cargo.toml`, `README.md`, dos `.rs`, **cero fuentes
+sin soporte**— por las tres rutas, mismo proceso:
+
+| ruta | status | omitidos |
+|---|---|---|
+| `build_project_graph` | **Partial** | 2 (`README.md`, `Cargo.toml`) |
+| `build_graph_per_file_with_report` | Complete | 0 |
+| `build_project_graph_async` | — | no publica `BuildReport` |
+
+Con un `Other.kt` real: 3 / 1 / nada.
+
+### Por qué eso no era cosmético
+
+Dos consumidores, medidos en el código:
+
+- `mod.rs:1295` usa `Complete` para decidir si persiste snapshot, y
+  `mod.rs:1312` **borra el snapshot durable** cuando no lo es. Un repo Rust
+  normal nunca persistía nada, y perdía el que tuviera.
+- `mod.rs:1358` traduce el motivo a `reason_kind: "unsupported_extension"`
+  en la respuesta MCP: hueco de cobertura falso, servido por la superficie
+  pública.
+
+La segunda ruta async no publicaba reporte, así que
+`get_last_build_report()` devolvía el de la última ruta **corrida**:
+`reparse_on_edit` deja vivo un reporte de cobertura pre-edición.
+
+### Por qué sobrevivió tanto
+
+Cada ruta tenía su test. Todas pasaban. **Nadie comparaba dos rutas entre
+sí.** Ese es el hueco real, y la forma del contrato nuevo lo refleja: `h16`
+no tiene un test por ruta, tiene uno que exige que las tres digan lo mismo.
+Cuatro tests, los cuatro rojos antes del arreglo.
+
+### Tres reglas que se encontraron superadas a la vez
+
+U15 (`analysis_service.rs`, 2026-09-23) decía que todo archivo sin parser
+es hueco. K0/H1.1 (`h11`, 2026-10-18 — 25 días posterior, y la decisión
+vigente en ROADMAP §11) lo contradice para los assets: un `.md` es una
+decisión, no una carencia. Tres tests distintos usaban `Cargo.toml` como
+stand-in del hueco, y por eso los tres cayeron a la vez.
+
+**No se borraron ni se baselinaron**: se reemplazaron por la versión vigente
+de su preocupación. U15 ahora exige un hueco real (`.kt`) *y* prohíbe los
+assets; LAW A (h05) y CU-1/W2 reciben un `.kt` en lugar del `Cargo.toml`.
+
+### La lección que se repite
+
+Tres veces este ciclo, con la misma forma: **un contrato verde no es un
+contrato que mira lo que dice mirar**. Una regla que colapsa tres estados
+en dos puede seguir pasando todos sus tests mientras miente en la única
+frase que le importa al consumidor.
+
+Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
+doc, `OK: contracts`, baseline 0 entradas).
