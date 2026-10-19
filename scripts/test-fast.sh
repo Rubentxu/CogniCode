@@ -232,14 +232,23 @@ if [ "$STRATEGY" != "changed" ] || [ -z "$SUITES" ]; then
 fi
 
 # ---------- mapear suites a comandos ----------
+# MEDIDO 2026-10-19: solo `explorer` recibia `$(cargo_filter)`. `core`
+# corria sus ~2370 tests SIN acotar y tampoco pasaba por `run_counting`,
+# asi que SELECTED se quedaba en 0 y `--filter` sobre core terminaba en
+# dos fallos a la vez: no acotaba nada, y ademas reportaba "el filtro no
+# selecciono ninguna prueba" cuando si habia pruebas. Un filtro que solo
+# puede mentir es peor que un filtro ausente: el que lo usa creyendo que
+# acota el feedback loop esta corriendo la suite entera. Las cinco suites
+# pasan por `run_counting` para que el acotado y el recuento sean el mismo
+# hecho, no dos que puedan divergir.
 run_suite() {
   local suite="$1"
   case "$suite" in
-    core)     cargo test -p cognicode-core --lib ;;
+    core)     run_counting cargo test -p cognicode-core --lib $(cargo_filter) ;;
     explorer) run_counting cargo test -p cognicode-explorer --lib $(cargo_filter) ;;
-    mcp)      cargo test -p cognicode-mcp --lib ;;
-    cli)      cargo test -p cognicode-cli --lib ;;
-    ladybug)  cargo test -p cognicode-ladybug --lib ;;
+    mcp)      run_counting cargo test -p cognicode-mcp --lib $(cargo_filter) ;;
+    cli)      run_counting cargo test -p cognicode-cli --lib $(cargo_filter) ;;
+    ladybug)  run_counting cargo test -p cognicode-ladybug --lib $(cargo_filter) ;;
     merge)
       # `merge` es, segun el propio selector, "merge-gate completo (e2e +
       # pineados)" (scripts/ci/select-suites.sh). Su comando correcto es
@@ -284,6 +293,21 @@ done
 
 # ---------- veredicto del acotado ----------
 filter_verdict || overall_rc=1
+
+# ---------- clippy ----------
+# MEDIDO 2026-10-19: `fast` solo corria clippy en el camino `fallback`.
+# En `changed` —el camino del trabajo diario— el ciclo se cerraba verde
+# con tres lints en el arbol (`clone_on_copy`, `needless_borrow` x2) y el
+# gate los encontraba al final, dos minutos despues. `fast` existe para
+# acortar el feedback loop, no para recortarlo: lo que el gate exige hay
+# que verlo antes. El diagnostics salen a pantalla a proposito — el
+# camino `fallback` los descarta con `>/dev/null`, y un error de clippy
+# que no se ve es un error que se re-descubre cada vez.
+printf '\n=== clippy -D warnings ===\n'
+if ! cargo clippy --workspace --all-targets --quiet -- -D warnings; then
+  printf 'ERROR: clippy -D warnings. El gate lo exige tambien.\n' >&2
+  overall_rc=1
+fi
 
 # ---------- baseline check (core) ----------
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
