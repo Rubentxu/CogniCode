@@ -38,7 +38,7 @@
 //! (id/result/error envelopes, content blocks, pagination) — those are
 //! B6.W1's concern. It covers the typed DTO shape only.
 
-use cognicode_core::application::analysis_basis::{AnalysisError, AnalysisOutcome, OutcomeState};
+use cognicode_core::application::analysis_basis::{AnalysisError, OutcomeState};
 use cognicode_core::interface::mcp::output_contracts::{
     compat, output_schema_for, published_output_schemas, tools_with_output_schema,
 };
@@ -319,36 +319,6 @@ fn unknown_response_carries_no_payload() {
         response.get("error").is_none(),
         "Unknown must not advertise an error"
     );
-}
-
-/// Convenience helper: `shape_response_from_outcome` produces the same
-/// wire value as `serde_json::to_value(&outcome)` for a `Complete`
-/// outcome, and does NOT collapse a `Partial` outcome's gaps.
-///
-/// This is the integration check between B2.W1's contract
-/// (`AnalysisOutcome<T>`) and B2.W3's wire shape. Two paths to the
-/// same shape must agree, byte for byte; otherwise a future refactor
-/// could pick one and silently break the other.
-#[test]
-fn shape_response_from_outcome_matches_typed_serialization() {
-    // Complete: both paths must produce the same value.
-    let complete: AnalysisOutcome<u32> = AnalysisOutcome::complete(42);
-    let from_helper = compat::shape_response_from_outcome(&complete);
-    let from_serde: Value = serde_json::to_value(&complete).expect("serialise");
-    assert_eq!(
-        from_helper, from_serde,
-        "shape_response_from_outcome diverged from serde for a Complete outcome"
-    );
-
-    // Partial: the helper must carry the gaps; a path that silently
-    // dropped them would be the regression AAT-B2-03 forbids.
-    let partial: AnalysisOutcome<u32> =
-        AnalysisOutcome::partial(42, vec![AnalysisError::gap("x", "y")]);
-    let response = compat::shape_response_from_outcome(&partial);
-    assert_eq!(response["state"], "partial");
-    assert_eq!(response["value"], 42);
-    assert_eq!(response["gaps"][0]["capability"], "x");
-    assert_eq!(response["gaps"][0]["message"], "y");
 }
 
 // ---------------------------------------------------------------------------

@@ -17881,3 +17881,232 @@ rc=0, 0 FAIL across every contract.
   ("esto ya existe") es justo la que rompe el gate. MEDIDO también el coste:
   5 llamadas ≈ 0,31 s, así que el subproceso no justifica memoización y la
   función queda sin estado global.
+
+---
+
+## Entry 78 — tres checkers que no veían, y un guard que no podía ver
+
+**Qué**: tres verificadores que daban verde sin mirar el phenomenon, más un
+cuarto — encontrado por el propio ciclo — que no podía detectar lo que su
+docstring declara.
+
+### 1. El veredicto del sandbox podía proceder sin herramienta
+
+`classify_outcome` (`crates/cognicode-sandbox/src/main.rs`) tenía una rama
+`any_stage_ran`: si el pipeline de validación había construido y probado el
+proyecto, su resultado decidía el veredicto del escenario. Pero ese pipeline
+construye y prueba el código **sin modificar**, así que un `pass` suyo no dice
+nada sobre si la herramienta funcionó.
+
+La cadena causal era completa, no una sospecha. En `main.rs:1621`,
+`full_mcp_response.as_ref().or(tool_response.as_ref())` resuelve la ambigüedad:
+`None` en `classify_outcome` significa exactamente *la herramienta no produjo
+ninguna salida*. Dej nevertheless se leía como "pasó".
+
+Consecuencia medida: **99 escenarios** de `sandbox/manifests/` nombran una
+herramienta que `tools.json` no publica, y 30 de ellos son de análisis o
+mutación — los que de verdad se ejecutan. Esos 30 podían reportar `pass`
+sin que la herramienta llegara a correr.
+
+Arreglo: `response.is_some()` **y** al menos una etapa ejecutada son
+condición necesaria para puntuar. Un escenario que nombra una capacidad
+inexistente es `no_result`, que es una respuesta; `pass` no lo era. Siete tests
+existentes pasaban `None` como atajo — el mismo defecto con las manos atadas —
+así que se reescribieron para pasar una respuesta real.
+
+**Auditor, sobre sí mismo**: `test_classify_outcome_pass` se llamaba "basic pass
+case", pasaba `None` y afirmaba `"pass"`. Ningún arreglo honesto podía romperlo.
+La mitad útil de su intención —*un escenario cuya herramienta respondió y cuyo
+pipeline pasó sí es un pass`*— se conservó, y ahora la ley discrimina en las dos
+direcciones.
+
+### 2. Nueve walks podían salir del directorio que se les dijo
+
+Todos los recorridos de proyecto usaban `WalkDir::follow_links(true)`, y el
+filtro por entrada no cerraba el agujero: `Path::is_file()` es
+`fs::metadata(path).is_file()`, y `fs::metadata` **sigue** el enlace. Un
+proyecto con `linked -> ~/.cargo/registry` indexaba el registro, y el informe
+decía `Complete`.
+
+Solo el par cierra el agujero, y ambos fallan por mecanismos distintos: el
+`follow_links(true)` deja entrar directorios enlazados; el `is_file()` deja
+entrar archivos enlazados. Un sitio que recuerda una mitad ha reintroducido el
+bug que estaba arreglando, así que el par vive en un sitio y en ninguno más —
+`crates/cognicode-core/src/infrastructure/walk_policy.rs`, con
+`contained_walk` + `is_real_file`.
+
+**Auditor, sobre el arreglo**: la primera versión solo conmutaba el par, y eso
+introducía un defecto **nuevo de la misma clase** que los tres anteriores —
+antes el symlink se indexaba (dato correcto, ruta mentirosa), ahora se omitía
+en silencio y el informe seguía diciendo `Complete`. La ausencia de datos
+degradada a mentira es peor que la mentira, porque desaparece de la vista. Por
+eso `SkipReason` gana una variante `Symlink { target }`: el enlace que el walk
+rechaza se nombra en `skipped` y el `BuildStatus` degrada a `Partial` con el
+destino a la vista. El compilador обязаó a las cuatro proyecciones a decidir
+(`per_file_graph`, `schemas`, `handlers`, `analyze`), que es exactamente para
+lo que existe un ADT.
+
+En `SkippedReasonKind` (enum publicado) la variante es **aditiva**: no
+desaparece ningún valor que un consumidor ya maneje. `Other` documenta ser el
+cajón de sastre para lo que no se nombra con precisión, y un symlink rechazado
+se nombra con precisión, así que `Other` habría sido la etiqueta que miente.
+
+### 3. Dos formas de dar forma a la misma respuesta, y una que no podía fallar
+
+`compat::shape_response_from_outcome` afirmaba en su doc que produce "the wire
+shape this produces is identical to `serde_json::to_value(&outcome)`". Su cuerpo
+era literalmente esa llamada, y el test que lo custodiaba comparaba `f(x)`
+contra `f(x)`. La mitad útil —*un partial no puede perder sus gaps*— ya la
+cubría `partial_response_carries_its_gaps` sobre la ruta real.
+
+Las dos formas **divergen**, medido antes de borrar nada:
+
+| state | contrato publicado | la otra ruta |
+|---|---|---|
+| `complete` | `{"state","value"}` | 6 claves: `gaps:[]`, `reason:null`, `error:null`, `provenance` |
+| `unsupported` | `{"state","reason"}` | 6 claves, incluida `value:null` |
+| `unknown` | `{"state"}` | 6 claves, incluida `value:null` |
+
+La segunda ruta emite `value:null` en un `unknown` — exactamente la mentira que
+`shape_response` documenta que se niega a decir. Cero llamadores en producción,
+así que nada salía mal; era una segunda fuente de verdad esperando a que alguien
+la usara. AGENTS.md lo llama por su nombre: *no crear dos fuentes de verdad*.
+Se borró la función, su test y la afirmación falsa.
+
+### 4. El guard que no podía ver
+
+Encontrado por el ciclo, no por un reporte: `_is_recent_ancestor` en
+`scripts/ci/test_roadmap_version_ratchet.py` declara "True if `sha` is reachable
+from `ancestor`" y mide `rev-list --count sha..HEAD` — que cuenta commits que
+HEAD tiene y sha no, sin comprobar que sha esté en la historia. Un SHA de una
+rama ya mergeada con squash satisface eso con `1`.
+
+Y no era teórico: `CURRENT.md` declaraba `e41108e0c531`, la cabeza de la rama
+del PR #380, que entró por squash y **nunca fue ancestro de `main`**. El
+ratchet decía OK. Ahora comprueba alcanzabilidad antes que distancia, y en
+verde sobre el árbol correcto.
+
+Regla operativa que sale de aquí, escrita en la cabecera de `CURRENT.md`: **tras
+un merge con squash, el snapshot cita el commit mergeado, no la cabeza de la
+rama.** Con `gh pr merge --squash` como práctica por defecto, este patrón se
+repetía en cada entrega.
+
+**Por qué importa**: es el noveno caso del mismo patrón en el ciclo, y el
+primero en un guard de gobernanza. Los cuatro anteriores fallaban ruidosamente
+o Balkan en silencio dentro del producto; este hacía pasar una afirmación falsa
+sobre el estado del proyecto. Un verificador que no puede detectar lo que
+declara no verifica: estorba.
+
+**Gobernanza corregida**: `ROADMAP.md` apuntaba a «Siguiente: CU-3 y/o K0» — los
+dos programas cerrados (CU-3 cerró 4/4 en el Entry 70; K0 en el Entry 54 /
+v0.101.22). Las unidades realmente abiertas (H3, H4.1, H4.2, H4.4, H5, H0.1)
+vivían solo en los trailers del Journal; ahora están nombradas donde el
+operador las lee. Ninguna tiene fichero de spec propio: deuda registrada, no
+resuelta en este ciclo.
+
+**Deuda que este ciclo deja explícita, no resuelta**: los 99 escenarios de
+`sandbox/manifests/` que nombran herramientas no publicadas. La puerta del CI
+no los ejecuta —los tests in-repo solo comprueban que los manifiestos parsean—
+así que el gate sigue verde, pero un operador que lance `sandbox-orchestrator`
+localmente verá ahora `no_result` donde antes veía un `pass` falso. Esa es la
+señal correcta y es exactamente el trabajo pendiente: para cada escenario,
+publicar la herramienta o borrar el escenario. Es un bloque propio con su
+propia verificación; no se resuelve de paso.
+
+**Gates**: `bash scripts/test-fast.sh` rc=0; `bash scripts/test-full.sh` rc=0;
+`scripts/ci/test_roadmap_version_ratchet.py` OK. RED→GREEN verificado en los
+tres hallazgos: el escenario del sandbox, los nueve walks, el test tautológico
+y el ratchet seocomprometen en rojo antes del arreglo.
+
+**Unidades abiertas**: H3 (gramática tree-sitter de Kotlin), H4.1 (modelo de
+observación tipado `Resolved | Ambiguous | Unresolved`), H4.2 (heurístico
+`shared_crate_root`), H4.4 (fixtures UAT Kotlin↔Java), H5 (incremental/
+distribución), H0.1 (integridad de `PerFileGraphCache::merge_with_report`, RED ya
+presentado como `h01_per_file_cache_invalidate_contract`), y el bloque de
+alineación de `sandbox/manifests/` descrito arriba.
+
+## 2026-10-19 — Entry 79: la ley nueva no cubría la ruta que MCP usa
+
+**WU**: continuación de Entry 78. **Commit**: `51ca2be5`.
+
+### El hueco
+
+`walk_policy` (Entry 78) se escribió sobre `walkdir`. El grafo que
+construye MCP de verdad no pasa por `strategy.rs`: sale de
+`AnalysisService`, que corre su propio `ignore::WalkBuilder` y filtraba
+con `e.path().is_file()` — la llamada a `fs::metadata`, que **sigue**
+el enlace. El fallo anterior lo dejó medio cerrado: con
+`follow_links(false)` los directorios enlazados ya no se bajan, pero un
+*archivo* enlazado se seguía leyendo y se seguía reportando `Complete`.
+
+RED medido sobre la ruta real:
+
+    the symlink indexed a symbol defined outside the root:
+    ["leaked_fn", "inside_fn", "main"]
+
+Es decir: la Entry 78 dejó dos estrategias negándose a seguir enlaces
+mientras la ruta cableada seguía seguirlos. Dos caminos sobre el mismo
+directorio discrepando sobre cobertura, y el que discrepaba era el que
+los callers alcanzan.
+
+### Lo corregido
+
+- La ley cubre ahora los dos walkers: `contained_ignore_walk` +
+  `ignore_is_real_file`, junto a los de `walkdir`.
+- Once sitios delegan en ella en vez de re-derivar el par a mano:
+  `build_project_graph`, `build_project_graph_filtered`,
+  `build_project_graph_async`, `build_graph_per_file_with_report`,
+  `WorkspaceSession::save_to_store` y su vecina incremental (que
+  hashean el contenido para el manifiesto), `lsp/providers/fallback.rs`,
+  `semantic_search`, dos walks de handlers MCP, y el lector de
+  resultados del sandbox.
+- Dos de ellos deben un estado honesto, así que la negativa se registra
+  como `SkipReason::Symlink` y degrada el informe a `Partial`. Sin eso,
+  "sin datos y `Complete` convincente" sustituye a "datos erróneos y
+  ruta errónea" como la mentira — la misma clase, más callada.
+
+### Dos que el agente no vio
+
+`build_project_graph_async` (cableada en `aix_handlers.rs:1979`) y los
+dos walks de `workspace_session.rs` no aparecieron en el informe del
+agente. Los encontré grepando `\.path()\.is_file()` yo mismo. **Un
+grep dirigido por el síntoma es más fiable que un agente que ya sabía
+dónde mirar.**
+
+### El límite de la ley, escrito
+
+`walk_policy` declara ahora lo que **no** gobierna: los walks que solo
+enumeran *nombres* para una búsqueda iniciada por el caller —completion,
+`resources/list`, `find file`— quedan fuera. No leen nada a través del
+enlace y no hacen una afirmación de cobertura que un symlink pueda
+falsar. La línea es **leer o indexar a través del enlace**, no *caminar
+ cerca de uno*. Escrito, no dejado al juicio del siguiente lector: eso es
+justo lo que evita que el módulo crezca a los catorce `WalkBuilder` del
+árbol.
+
+### Deuda declarada
+
+Tres sitios pierden cobertura sin canal que la reporte, y no lo oculto:
+
+| Sitio | Canal |
+|---|---|
+| `analysis_service.rs:1747` `find_symbol_usages` | devuelve `Vec<UsageResult>` |
+| `refactor_service.rs:645` `build_minimal_graph` | privado, `AppResult<()>` |
+| `lightweight_index.rs:145` `build_index` | `io::Result<()>` |
+
+Ninguno afirma cobertura, así que el silencio no miente. Abrir los tres
+canales es trabajo por unidad, no un efecto secundario de este arreglo.
+
+### Gates
+
+`test-full rc=0` (4384 tests, clippy `-D warnings` limpio, contratos
+verdes). Los cuatro `redundant_closure` que clippy sacaron son la
+función sola en vez de `|e| f(e)` — clippy tenía razón y el código quedó
+más legible.
+
+### Estado
+
+PR #381 sigue abierta; este commit se añade. Unidades abiertas sin
+cambio: H3, H4.1, H4.2, H4.4, H5, H0.1. La deriva de 99 escenarios en
+`sandbox/manifests/` sigue siendo deuda honesta del operador, sin gate
+que la cubra.

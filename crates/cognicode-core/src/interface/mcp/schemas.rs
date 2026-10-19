@@ -903,6 +903,15 @@ pub enum SkippedReasonKind {
     Read,
     Parse,
     UnsupportedExtension,
+    /// The walk met a symlink and declined to follow it, so the
+    /// content behind the link is not in the graph.
+    ///
+    /// Its own tag rather than `Other` because `Other` is documented
+    /// as the catch-all for conditions we cannot name precisely, and a
+    /// declined symlink is precisely named. The addition is additive:
+    /// no value a consumer already handles disappears, and the module
+    /// doc records that there is no hard-coded `v1` client to break.
+    Symlink,
     Other,
 }
 

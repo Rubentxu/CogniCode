@@ -9,7 +9,6 @@ use crate::infrastructure::parser::{Language, TreeSitterParser};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use walkdir::WalkDir;
 
 /// Represents a location of a symbol in source code
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -133,16 +132,17 @@ impl LightweightIndex {
             ));
         }
 
-        for entry in WalkDir::new(project_dir)
-            .follow_links(true)
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_entry(|e| !should_skip_path(e.path(), project_dir))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
 
-            // Skip directories - only process files
-            if path.is_dir() {
+            // Only real files: `path.is_dir()` follows symlinks, so a
+            // symlinked file elsewhere on the machine reported
+            // `is_dir() == false` and was read as if it were ours.
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
 

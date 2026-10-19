@@ -636,16 +636,13 @@ impl RefactorService {
         project_dir: &Path,
         _symbol_name: &str,
     ) -> AppResult<()> {
-        use walkdir::WalkDir;
-
         // Walk the directory and process source files
-        for entry in WalkDir::new(project_dir)
-            .follow_links(true)
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
 

@@ -1996,16 +1996,27 @@ fn classify_outcome(
         return "mcp_error".into();
     }
 
-    // For non-MCP scenarios (JS/TS with direct filesystem fallback), we still get a tool_response
-    // even when full_mcp_response is None. Treat presence of tool_response as a valid result.
-    if !has_result && !validation.stages.is_empty() {
-        // Check if validation stages produced results - this indicates the scenario ran
-        let any_stage_ran = validation.stages.iter().any(|s| s.exit_code.is_some());
-        if any_stage_ran {
-            // Scenario ran (even if validation failed) - treat as having a result
-            // Proceed to validation check below
-        } else {
-            // For capability probes or declared expected_fail scenarios, no_result is expected
+    // A tool that produced no output cannot be scored on what the
+    // validation pipeline found.
+    //
+    // The pipeline builds and tests the *unchanged* source, so a clean
+    // result says nothing about whether the tool worked. Letting it
+    // stand in for the tool is how a scenario naming a tool the
+    // catalogue does not publish reports `pass` without the tool ever
+    // running — 99 such scenarios existed across `sandbox/manifests/`.
+    //
+    // `response` is `None` here from exactly one situation: the caller
+    // resolved `full_mcp_response.or(tool_response)` and both were
+    // absent, which happens only when the tool call itself failed. The
+    // JS/TS filesystem-fallback scenarios that have no MCP envelope
+    // still set `tool_response`, so they arrive as `Some`.
+    if !has_result {
+        let tool_answered = response.is_some();
+        let validation_ran = validation.stages.iter().any(|s| s.exit_code.is_some());
+        if !(tool_answered && validation_ran) {
+            // For capability probes or declared expected_fail scenarios,
+            // no_result is expected. This is an expected failure, not an
+            // infrastructure failure.
             if scenario.expected_outcome == "capability_missing"
                 || scenario.expected_outcome == "expected_fail"
             {
@@ -2013,15 +2024,8 @@ fn classify_outcome(
             }
             return "no_result".into();
         }
-    } else if !has_result {
-        // For capability probes or declared expected_fail scenarios, no_result is expected
-        // This is an expected failure, not an infrastructure failure
-        if scenario.expected_outcome == "capability_missing"
-            || scenario.expected_outcome == "expected_fail"
-        {
-            return "expected_fail".into();
-        }
-        return "no_result".into();
+        // The tool answered and the validation pipeline ran: fall
+        // through to the validation check below.
     }
 
     // Check for edit_file where MCP server rejected the edit (applied: false).
@@ -3345,11 +3349,13 @@ fn report(args: ReportArgs) -> Result<i32, String> {
     // Walk all subdirectories and read result.json files from timestamped run dirs
     for entry in WalkDir::new(results_dir)
         .max_depth(5)
+        .follow_links(false)
         .into_iter()
         .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
     {
         let path = entry.path();
-        if path.is_file() && path.file_name().is_some_and(|n| n == "result.json") {
+        if path.file_name().is_some_and(|n| n == "result.json") {
             let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
             if let Ok(result) = serde_json::from_str::<ScenarioResult>(&content) {
                 results.push(result);
@@ -4315,6 +4321,16 @@ mod classify_outcome_tests {
         }
     }
 
+    /// A tool that ran and answered normally.
+    ///
+    /// Tests about the *validation* branch need the tool to have
+    /// answered, or they are really tests about a tool that never ran —
+    /// which, since `the tool that never answered is not a pass`, is no
+    /// longer the branch they were written to cover.
+    fn tool_answered() -> serde_json::Value {
+        serde_json::json!({ "result": { "content": [] } })
+    }
+
     fn validation_with_stage(stage_name: &str, status: &str) -> ValidationResult {
         ValidationResult {
             stages: vec![PipelineStageResult {
@@ -4477,8 +4493,10 @@ mod classify_outcome_tests {
         scenario.preview_only = false;
 
         let validation = validation_with_stage("build", "pass");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "unexpected_pass");
     }
@@ -4491,8 +4509,10 @@ mod classify_outcome_tests {
         scenario.scenario_class = "mutation".into();
 
         let validation = validation_with_stage("test", "fail");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "semantic_regression");
     }
@@ -4516,8 +4536,10 @@ mod classify_outcome_tests {
     fn test_classify_outcome_capability_missing() {
         let scenario = make_test_scenario("capability_missing");
         let validation = validation_with_stage("build", "fail");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "capability_missing");
     }
@@ -4528,10 +4550,39 @@ mod classify_outcome_tests {
     fn test_classify_outcome_pass() {
         let scenario = make_test_scenario("pass");
         let validation = validation_with_stage("build", "pass");
+        let response = serde_json::json!({ "result": { "content": [] } });
+
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
+
+        assert_eq!(outcome, "pass");
+    }
+
+    // --- a scenario whose tool never answered is never a pass ---
+    //
+    // `None` reaches `classify_outcome` from exactly one situation: the
+    // caller resolved `full_mcp_response.or(tool_response)` and both were
+    // absent, which happens only when the tool call itself failed. The
+    // JS/TS filesystem-fallback scenarios that have no MCP envelope still
+    // set `tool_response`, so they arrive as `Some`, not `None`.
+    //
+    // So `None` is not an ambiguous "no envelope"; it is a fact about the
+    // tool: it produced no output. A validation pipeline that then builds
+    // and tests the *unchanged* source says nothing whatsoever about
+    // whether the tool worked, and letting it decide the verdict is how a
+    // scenario naming a tool the catalogue does not publish (99 of them
+    // do) reports `pass` without the tool ever running.
+    #[test]
+    fn test_a_scenario_whose_tool_never_answered_is_not_a_pass() {
+        let scenario = make_test_scenario("pass");
+        let validation = validation_with_stage("build", "pass");
 
         let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
 
-        assert_eq!(outcome, "pass");
+        assert_eq!(
+            outcome, "no_result",
+            "a passing validation pipeline must not stand in for a tool that never answered"
+        );
     }
 
     // --- expected_fail with preview_only ---
@@ -4542,8 +4593,10 @@ mod classify_outcome_tests {
         scenario.preview_only = true;
 
         let validation = validation_with_stage("build", "pass");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         // preview_only + validation passed + expected_fail = expected_fail
         assert_eq!(outcome, "expected_fail");
@@ -4555,8 +4608,10 @@ mod classify_outcome_tests {
     fn test_classify_outcome_capability_missing_no_validation_failure() {
         let scenario = make_test_scenario("capability_missing");
         let validation = validation_with_stage("build", "pass");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "expected_fail");
     }
@@ -4567,8 +4622,10 @@ mod classify_outcome_tests {
     fn test_classify_outcome_build_failure() {
         let scenario = make_test_scenario("pass");
         let validation = validation_with_stage("build", "fail");
+        let response = tool_answered();
 
-        let outcome = classify_outcome(&scenario, None, &validation, false, false, false);
+        let outcome =
+            classify_outcome(&scenario, Some(&response), &validation, false, false, false);
 
         assert_eq!(outcome, "build_failure");
     }

@@ -175,7 +175,7 @@ pub mod compat {
 
     use serde_json::{Map, Value};
 
-    use crate::application::analysis_basis::{AnalysisError, AnalysisOutcome, OutcomeState};
+    use crate::application::analysis_basis::{AnalysisError, OutcomeState};
 
     /// Current published schema version.
     ///
@@ -309,20 +309,6 @@ pub mod compat {
         }
 
         Value::Object(object)
-    }
-
-    /// Convenience helper: shape an `AnalysisOutcome<T>` directly.
-    ///
-    /// The wire shape this produces is identical to
-    /// `serde_json::to_value(&outcome)`. The helper exists so the
-    /// boundary code does not have to remember which serialiser to
-    /// call when it has an outcome in hand.
-    pub fn shape_response_from_outcome<T: serde::Serialize>(outcome: &AnalysisOutcome<T>) -> Value {
-        // Round-trip through serde so the helper and the direct path
-        // agree byte-for-byte. The performance cost is one allocation
-        // per response, which the boundary already does many of; not a
-        // hot path.
-        serde_json::to_value(outcome).expect("AnalysisOutcome serialises")
     }
 
     /// The string discriminator emitted on the wire.

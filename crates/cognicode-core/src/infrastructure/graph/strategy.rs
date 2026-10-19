@@ -364,12 +364,9 @@ impl GraphStrategy for PerFileStrategy {
     }
 
     fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
-        use walkdir::WalkDir;
-
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
 
-        for entry in WalkDir::new(project_dir)
-            .follow_links(true)
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_map(|e| e.ok())
         {
@@ -379,7 +376,7 @@ impl GraphStrategy for PerFileStrategy {
             // silencio ~22 lenguajes registrados). Este método legacy no
             // reporta: las exclusiones/gaps se observan por
             // `build_full_graph_report`.
-            if path.is_file()
+            if crate::infrastructure::walk_policy::is_real_file(&entry)
                 && matches!(
                     crate::infrastructure::graph::per_file_graph::classify_walk_extension(
                         path.extension().and_then(|e| e.to_str())
@@ -435,14 +432,14 @@ impl PerFileStrategy {
         project_dir: &Path,
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
         use crate::infrastructure::graph::per_file_graph::{
-            SkipReason, SkippedFile, WalkClassification, classify_walk_extension,
+            SkipReason, SkippedFile, WalkClassification, classify_declined_entry,
+            classify_walk_extension,
         };
-        use walkdir::WalkDir;
 
         let mut paths: Vec<std::path::PathBuf> = Vec::new();
         let mut walk_skipped: Vec<SkippedFile> = Vec::new();
 
-        for entry in WalkDir::new(project_dir).follow_links(true).into_iter() {
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir).into_iter() {
             let entry = match entry {
                 Ok(e) => e,
                 Err(err) => {
@@ -464,19 +461,28 @@ impl PerFileStrategy {
             // `Read/Parse/UnsupportedExtension`); una extensión
             // irrelevante (README.md) se excluye legítimamente sin gap;
             // una conocida-sin-soporte (`kt`/`kts`) sí es gap.
-            if path.is_file() {
-                match classify_walk_extension(path.extension().and_then(|e| e.to_str())) {
-                    WalkClassification::Analyze => paths.push(path.to_path_buf()),
-                    WalkClassification::KnownUnsupportedGap => walk_skipped.push(SkippedFile {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
+                // A symlink is declined, not forgotten: the coverage
+                // really is partial and the caller has to be told.
+                if let Some(reason) = classify_declined_entry(&entry) {
+                    walk_skipped.push(SkippedFile {
                         path: path.to_string_lossy().to_string(),
-                        reason: SkipReason::UnsupportedExtension(
-                            path.extension()
-                                .map(|e| e.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                        ),
-                    }),
-                    WalkClassification::LegitExclusion => {}
+                        reason,
+                    });
                 }
+                continue;
+            }
+            match classify_walk_extension(path.extension().and_then(|e| e.to_str())) {
+                WalkClassification::Analyze => paths.push(path.to_path_buf()),
+                WalkClassification::KnownUnsupportedGap => walk_skipped.push(SkippedFile {
+                    path: path.to_string_lossy().to_string(),
+                    reason: SkipReason::UnsupportedExtension(
+                        path.extension()
+                            .map(|e| e.to_string_lossy().to_string())
+                            .unwrap_or_default(),
+                    ),
+                }),
+                WalkClassification::LegitExclusion => {}
             }
         }
 
@@ -533,9 +539,9 @@ impl FullGraphStrategy {
         project_dir: &Path,
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
         use crate::infrastructure::graph::per_file_graph::{
-            BuildStatus, SkipReason, SkippedFile, WalkClassification, classify_walk_extension,
+            BuildStatus, SkipReason, SkippedFile, WalkClassification, classify_declined_entry,
+            classify_walk_extension,
         };
-        use walkdir::WalkDir;
 
         let mut store = crate::infrastructure::graph::PetGraphStore::new();
         let mut global_index = GlobalSymbolIndex::new();
@@ -543,7 +549,7 @@ impl FullGraphStrategy {
         let mut walk_skipped: Vec<SkippedFile> = Vec::new();
         let mut parse_skipped: Vec<SkippedFile> = Vec::new();
 
-        let iter = WalkDir::new(project_dir).follow_links(true).into_iter();
+        let iter = crate::infrastructure::walk_policy::contained_walk(project_dir).into_iter();
 
         for entry in iter {
             let entry = match entry {
@@ -563,7 +569,15 @@ impl FullGraphStrategy {
             };
 
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
+                // A symlink is declined, not forgotten: the coverage
+                // really is partial and the caller has to be told.
+                if let Some(reason) = classify_declined_entry(&entry) {
+                    walk_skipped.push(SkippedFile {
+                        path: entry.path().to_string_lossy().to_string(),
+                        reason,
+                    });
+                }
                 continue;
             }
 
@@ -786,8 +800,6 @@ impl GraphStrategy for FullGraphStrategy {
     fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
         let mut store = crate::infrastructure::graph::PetGraphStore::new();
 
-        use walkdir::WalkDir;
-
         // PRF F2.W5 — H-R4-2: pre-walk to build the global symbol
         // index. We parse each source file once just for its symbols;
         // edges are resolved in a second pass using `GlobalSymbolIndex`
@@ -798,13 +810,17 @@ impl GraphStrategy for FullGraphStrategy {
         let mut global_index = GlobalSymbolIndex::new();
         let mut per_file_data: Vec<FileData> = Vec::new();
 
-        for entry in WalkDir::new(project_dir)
-            .follow_links(true)
+        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() {
+            // No report channel here: this legacy method returns a bare
+            // `CallGraph`, so a declined symlink cannot be surfaced.
+            // That is a pre-existing limitation of the method, not of
+            // the walk — `build_full_graph_report` is the one that owes
+            // the caller an honest `BuildStatus`.
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
             let language =

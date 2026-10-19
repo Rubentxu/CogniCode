@@ -359,7 +359,6 @@ impl WorkspaceSession {
     pub async fn save_to_store(&self) -> WorkspaceResult<()> {
         use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use ignore::WalkBuilder;
 
         let graph_guard = self.graph.read().await;
         let graph = graph_guard
@@ -379,42 +378,43 @@ impl WorkspaceSession {
         // Build and save a manifest for the current state
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-        let files: Vec<_> = WalkBuilder::new(&self.workspace_root)
-            .hidden(true)
-            .git_ignore(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(|e| e.ok())
-            .filter(|e| !walk_filter.matches_any_component(e.path()))
-            .filter(|e| e.path().is_file())
-            .filter_map(|e| {
-                let path = e.path();
-                let language = Language::from_extension(path.extension());
-                language?;
-                let content = std::fs::read_to_string(path).ok()?;
-                let content_hash = blake3::hash(content.as_bytes()).to_string();
-                let mtime = std::fs::metadata(path)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
-                    })
-                    .unwrap_or(0);
-                let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
-                // Count symbols in this file from the current graph
-                let symbol_count = graph
-                    .symbols()
-                    .filter(|s| {
-                        s.location()
-                            .file()
-                            .ends_with(relative_path.to_string_lossy().as_ref())
-                    })
-                    .count();
-                Some((relative_path, content_hash, mtime, symbol_count))
-            })
-            .collect();
+        let files: Vec<_> =
+            crate::infrastructure::walk_policy::contained_ignore_walk(&self.workspace_root)
+                .hidden(true)
+                .git_ignore(true)
+                .git_exclude(true)
+                .build()
+                .filter_map(|e| e.ok())
+                .filter(|e| !walk_filter.matches_any_component(e.path()))
+                .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
+                .filter_map(|e| {
+                    let path = e.path();
+                    let language = Language::from_extension(path.extension());
+                    language?;
+                    let content = std::fs::read_to_string(path).ok()?;
+                    let content_hash = blake3::hash(content.as_bytes()).to_string();
+                    let mtime = std::fs::metadata(path)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .map(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        })
+                        .unwrap_or(0);
+                    let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
+                    // Count symbols in this file from the current graph
+                    let symbol_count = graph
+                        .symbols()
+                        .filter(|s| {
+                            s.location()
+                                .file()
+                                .ends_with(relative_path.to_string_lossy().as_ref())
+                        })
+                        .count();
+                    Some((relative_path, content_hash, mtime, symbol_count))
+                })
+                .collect();
 
         let mut manifest = FileManifest::new(self.workspace_root.clone());
         manifest.update_entries(&files);
@@ -432,7 +432,6 @@ impl WorkspaceSession {
     pub async fn incremental_reindex(&self) -> WorkspaceResult<IncrementalResult> {
         use crate::domain::value_objects::Language;
         use crate::domain::value_objects::file_manifest::FileManifest;
-        use ignore::WalkBuilder;
         use std::collections::HashSet;
 
         // First, ensure we have a graph to work with
@@ -454,33 +453,34 @@ impl WorkspaceSession {
         // Scan current files and compute hashes
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-        let current_files: Vec<_> = WalkBuilder::new(&self.workspace_root)
-            .hidden(true)
-            .git_ignore(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(|e| e.ok())
-            .filter(|e| !walk_filter.matches_any_component(e.path()))
-            .filter(|e| e.path().is_file())
-            .filter_map(|e| {
-                let path = e.path();
-                let language = Language::from_extension(path.extension());
-                language?;
-                let content = std::fs::read_to_string(path).ok()?;
-                let content_hash = blake3::hash(content.as_bytes()).to_string();
-                let mtime = std::fs::metadata(path)
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
-                    })
-                    .unwrap_or(0);
-                let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
-                Some((relative_path, content_hash, mtime, content))
-            })
-            .collect();
+        let current_files: Vec<_> =
+            crate::infrastructure::walk_policy::contained_ignore_walk(&self.workspace_root)
+                .hidden(true)
+                .git_ignore(true)
+                .git_exclude(true)
+                .build()
+                .filter_map(|e| e.ok())
+                .filter(|e| !walk_filter.matches_any_component(e.path()))
+                .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
+                .filter_map(|e| {
+                    let path = e.path();
+                    let language = Language::from_extension(path.extension());
+                    language?;
+                    let content = std::fs::read_to_string(path).ok()?;
+                    let content_hash = blake3::hash(content.as_bytes()).to_string();
+                    let mtime = std::fs::metadata(path)
+                        .ok()
+                        .and_then(|m| m.modified().ok())
+                        .map(|t| {
+                            t.duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs()
+                        })
+                        .unwrap_or(0);
+                    let relative_path = path.strip_prefix(&self.workspace_root).ok()?.to_path_buf();
+                    Some((relative_path, content_hash, mtime, content))
+                })
+                .collect();
 
         // Detect changes
         let file_tuples: Vec<_> = current_files

@@ -998,16 +998,14 @@ fn is_manifest_stale(
     project_dir: &Path,
 ) -> bool {
     use sha2::{Digest, Sha256};
-    use walkdir::WalkDir;
     let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
     let mut checked = 0usize;
-    for entry in WalkDir::new(project_dir)
-        .follow_links(false)
+    for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
         .into_iter()
         .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
+        .filter(crate::infrastructure::walk_policy::is_real_file)
     {
         let path = entry.path();
         // Only check supported source extensions
@@ -1059,7 +1057,6 @@ fn build_manifest(
 ) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
     use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
     use sha2::{Digest, Sha256};
-    use walkdir::WalkDir;
     const SKIP_DIRS: &[&str] = &[
         "target",
         "node_modules",
@@ -1082,8 +1079,7 @@ fn build_manifest(
 
     let mut manifest = FileManifest::new(project_dir.to_path_buf());
 
-    for entry in WalkDir::new(project_dir)
-        .follow_links(false)
+    for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
         .into_iter()
         .filter_entry(|e| {
             !e.file_name()
@@ -1092,7 +1088,7 @@ fn build_manifest(
                 .unwrap_or(false)
         })
         .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
+        .filter(crate::infrastructure::walk_policy::is_real_file)
     {
         let path = entry.path();
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -1362,6 +1358,7 @@ pub async fn handle_build_graph(
                             crate::infrastructure::graph::per_file_graph::SkipReason::Read(_) => "read",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
                             crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
                         },
                         reason: match &sf.reason {
@@ -1369,6 +1366,9 @@ pub async fn handle_build_graph(
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
+                                format!("symlink to {target}, not followed")
+                            }
                         },
                     })
                     .collect();
@@ -3639,6 +3639,10 @@ pub async fn handle_merge_graphs(
                         R::Read(d) => (SkippedReasonKind::Read, d),
                         R::Parse(d) => (SkippedReasonKind::Parse, d),
                         R::UnsupportedExtension(d) => (SkippedReasonKind::UnsupportedExtension, d),
+                        R::Symlink { target } => (
+                            SkippedReasonKind::Symlink,
+                            format!("symlink to {target}, not followed"),
+                        ),
                         R::Other(d) => (SkippedReasonKind::Other, d),
                     };
                     SkippedFileInfo {

@@ -336,14 +336,13 @@ impl SemanticSearchService {
 
         let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
-        for entry in walkdir::WalkDir::new(dir)
-            .follow_links(true)
+        for entry in crate::infrastructure::walk_policy::contained_walk(dir)
             .into_iter()
             .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 continue;
             }
             let extension = path.extension().and_then(|e| e.to_str());

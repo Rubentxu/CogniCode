@@ -205,12 +205,14 @@ impl CodeIntelligenceProvider for TreesitterFallbackProvider {
         }
 
         let dir = file_path.parent().unwrap_or(Path::new("."));
-        for entry in walkdir::WalkDir::new(dir)
+        for entry in crate::infrastructure::walk_policy::contained_walk(dir)
             .into_iter()
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
-            if !path.is_file() || Language::from_extension(path.extension()).is_none() {
+            if !crate::infrastructure::walk_policy::is_real_file(&entry)
+                || Language::from_extension(path.extension()).is_none()
+            {
                 continue;
             }
             if let Ok(content) = std::fs::read_to_string(path) {

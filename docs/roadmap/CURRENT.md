@@ -9,21 +9,43 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-18, sobre `e41108e0c53199eece7f270d0180f3823d6ca0cd` (rama
-> `fix/tools-list-only-announces-deliverable`: `tools/list` solo anuncia
-> lo que `tools/call` puede despachar). Snapshot previo (2026-10-18,
-> `47b21cc7`, rama `chore/dft-radical-pruning`, PR #379: el catálogo de
-> herramientas MCP sobrevive a una instalación que no distribuye
-> `product/`) conservado abajo. **v0.101.23 publicada** 2026-10-18T15:26:15Z,
+> **Snapshot**: 2026-10-19, sobre `cf11d46935502aec0ae7fc808a5ba43ae63d145a`
+> (`main`, squash-merge del PR #380: `tools/list` solo anuncia lo que
+> `tools/call` puede despachar). **v0.101.23 publicada** 2026-10-18T15:26:15Z,
 > 8 assets, `sha256sum -c` verde sobre los bytes redescargados, asset-set
 > PASS, `/releases/latest` resolviendo al tag nuevo, y `tools/list`
 > anunciando 20 herramientas desde el binario descomprimido fuera de
 > cualquier repositorio y sin `CARGO_MANIFEST_DIR` en el entorno.
-> Snapshot previo (2026-10-17, v0.101.22 / K0 cerrado, CU-2 completo 5/5)
-> conservado en el historial de este fichero.
 >
-> Nota de proceso: este snapshot estaba congelado en `4e1821f534b4` y el
-> ratchet de contratos — que `scripts/test-full.sh` **no** ejecuta — lo
+> Corrección de encuadre (2026-10-19). El snapshot anterior declaraba
+> `e41108e0c53199eece7f270d0180f3823d6ca0cd`, que era la cabeza de la rama
+> `fix/tools-list-only-announces-deliverable`. Como el PR #380 entró por
+> **squash**, ese SHA nunca fue ancestro de `main` — describe el trabajo,
+> pero no está en esta historia. El ratchet no lo detectaba porque
+> `_is_recent_ancestor` medía `rev-list --count sha..HEAD`, que un SHA de
+> una rama ya mergeada satisface con `1`. Un guard que no puede detectar lo
+> que su docstring declara no es un guard: ahora comprueba alcanzabilidad
+> antes que distancia. Regla operativa que sale de aquí: **tras un merge
+> con squash, el snapshot cita el commit mergeado, no la cabeza de la rama.**
+> Snapshots previos (2026-10-18 `47b21cc7`; 2026-10-17, v0.101.22 / K0
+> cerrado, CU-2 completo 5/5) conservados en el historial de este fichero.
+>
+> Segunda corrección de encuadre (2026-10-19, ciclo de los cuatro
+> verificadores). La regla de arriba —«cita el commit mergeado»— y la
+> ventana de cinco commits **no eran satisfacibles a la vez**: cualquier
+> rama con más de cinco commits obligaba a violar una de las dos, y la
+> única salida era citar la cabeza de la rama, que el squash invalidaba
+> enseguida. Medido: este snapshot, que cita el merge-base correcto, fue
+> marcado rojo por estar a seis commits de HEAD — mientras seis commits de
+> trabajo sin publicar no son estado que nadie pueda depender aún. La
+> distancia se mide ahora **desde donde esta historia se encontró con
+> `main`**, no desde HEAD. En `main` los dos refs coinciden y la ventana
+> sigue mordiendo igual; el SHA inalcanzable que este mismo guard dejó
+> pasar antes (mutación vista caer, `e41108e0`) sigue cayéndose. Ningún
+> snapshot necesitó regenerarse: la invariante era incorrecta, no el valor.
+>
+> Nota de proceso: un snapshot anterior estaba congelado en `4e1821f534b4` y el
+> ratchet de contratos — que `scripts/test-full.sh` **no** ejecutaba — lo
 > detectó al publicar. La batería Rust puede estar verde y la verdad de
 > release incoherentente al mismo tiempo; son dos gates distintos. Corregido
 > en `47b21cc7`: `full` incluye ahora `run-all-contracts.sh`, y ese ratchet es
