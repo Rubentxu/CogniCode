@@ -69,7 +69,9 @@
 #   10. Touch en `docs/**` -> ['ladybug'] (cousin del vector e29/e30).
 #       Conservative: docs no rompen binarios, pero el pupitre de
 #       evidence si toca docs/architecture -> explorer+core.
-#   11. Touch en `sandbox/**` -> [] (no se valida en PR-CI; vive en ci.yml local).
+#   11. Touch en `sandbox/**` -> [] (no hay suite cargo que lo cubra; su lane
+#       es `certification.pipeline.kts`, que exige podman rootless y por eso
+#       no cabe ni en fast ni en el merge-gate).
 #   12. Paths vacíos o sólo whitespace -> fallback ALL (safe default).
 #   13. Cualquier path desconocido -> fallback ALL.
 #
@@ -282,12 +284,17 @@ for p in $PATHS; do
       [ -z "$reason" ] && reason="docs_changed($p)"
       ;;
     # Regla 11: sandbox / compat / metadata file => marca noop
-    # sandbox vive en ci.yml local-only; no impacta PR-CI.
+    # MEDIDO 2026-10-19: el motivo decia "vive en ci.yml local" y ese
+    # fichero no existe (tampoco `.github/workflows/`). La regla seguia
+    # siendo correcta —no hay suite cargo para un manifiesto JSON— pero
+    # citaba a un dueno inexistente, que es como una regla acaba
+    # protegiendolo a nadie. El dueno real es `certification.pipeline.kts`,
+    # etapa `sandbox`, que exige podman rootless.
     # README/LICENSE/.gitignore/etc. son metadata que no tocan
     # código ni pines contractuales. Acumulamos como "noop" para
     # emitir al final si no hay suites en juego.
     sandbox/*|sandbox|.compat/*|.compat|README.md|LICENSE|LICENSE.*|.gitignore|.gitattributes|.editorconfig|.markdownlint.yaml|.markdownlintignore)
-      noop "doc_or_sandbox_meta_changed($p)"
+      noop "no_cargo_suite($p); sandbox vive en certification.pipeline.kts"
       ;;
     # Regla 13: root *.rs (NO contiene /) => ALL.
     # Los *.rs con slash ya habrían hecho match con reglas

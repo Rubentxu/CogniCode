@@ -144,6 +144,7 @@ fi
 
 SELECTION="$(bash "$SELECTOR" --paths "$PATHS" 2>/dev/null)"
 STRATEGY="$(printf '%s' "$SELECTION" | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p')"
+REASON="$(printf '%s' "$SELECTION" | sed -n 's/.*"reason":"\([^"]*\)".*/\1/p')"
 # Strip JSON string quotes that the sed captures verbatim — the inner
 # content of ["core","mcp"] is "core","mcp" (with literal quotes), which
 # must be normalized before the case dispatch. The tr handles both single
@@ -151,6 +152,9 @@ STRATEGY="$(printf '%s' "$SELECTION" | sed -n 's/.*"strategy":"\([^"]*\)".*/\1/p
 SUITES="$(printf '%s' "$SELECTION" | sed -n 's/.*"suites":\[\([^]]*\)\].*/\1/p' | tr -d '"')"
 
 printf 'selector → strategy=%s suites=[%s]\n' "$STRATEGY" "$SUITES"
+if [ -n "$REASON" ]; then
+  printf '  motivo: %s\n' "$REASON"
+fi
 printf '  paths: %s\n' "${PATHS:-<empty>}"
 
 if [ "$DRY_RUN" = "true" ]; then
@@ -164,9 +168,38 @@ if [ "$MODE" = "full" ]; then
   exec bash "${REPO_ROOT}/scripts/test-full.sh" --reason "test-fast --full"
 fi
 
-# Strategy noop: nada que correr
+# ---------- veredicto del noop ----------
+# MEDIDO 2026-10-19. Este mensaje decia "(solo metadata)" y para
+# `sandbox/**` eso es FALSO: un manifiesto de escenario es un artefacto
+# ejecutable con su propio lane (`certification.pipeline.kts` ->
+# `sandbox-ci-smoke`), no documentacion. El selector ya emitia el motivo
+# correcto y este runner lo descartaba, sustituyendolo por una
+# generalizacion.
+#
+# Un noop que no nombra a quien cubre la superficie se lee como "aqui no
+# hay nada que probar", y de ahi sale el falso verde. La regla 11 del
+# selector ademas justificaba el noop con "vive en ci.yml local", y ese
+# fichero no existe (tampoco `.github/workflows/`): una regla que cita
+# a un dueno inexistente protege a nadie.
+#
+# Es FUNCION, no bloque suelto, por la misma razon que `filter_verdict`:
+# como bloque, comprobarlo obligaria a lanzarlo por el script entero, y
+# `--paths` se mezcla con el diff del arbol de quien lo corre — con el
+# arbol sucio la rama noop ni se alcanza y la comprobacion mide el
+# entorno, no el codigo. Una funcion se ejecuta sola.
+noop_verdict() {
+  printf 'noop: ningun camino de test tiene suite para esto; lo cubre otro lane.\n'
+  case "$REASON" in
+    *certification.pipeline.kts*)
+      printf '  lane del sandbox: pipelinek run certification.pipeline.kts\n'
+      ;;
+  esac
+  return 0
+}
+
+# Strategy noop: ninguna suite de cargo cubre esta superficie
 if [ "$STRATEGY" = "noop" ]; then
-  echo "noop: cambios no impactan suites (solo metadata)."
+  noop_verdict
   exit 0
 fi
 
