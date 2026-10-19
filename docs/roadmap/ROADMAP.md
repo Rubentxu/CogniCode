@@ -457,17 +457,23 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   Medido al cerrar: un bloque HCL entra en `graph.full` como
 >   `aws_s3_bucket.app_bucket`, no como `resource`/`bucket`.
 >
->   **Lo que H17 NO cierra.** Las referencias Terraform siguen en 0, y el
->   motivo es concreto: `extract_terraform_refs` lee la etiqueta del
+>   **Lo que H17 NO cerraba, y H18 ya cerró.** Las referencias Terraform
+>   seguían en 0 porque `extract_terraform_refs` leía la etiqueta del
 >   bloque, y la etiqueta es la cabecera —sin cuerpo, no puede ver lo que el
->   cuerpo referencia—. La relación que hace falta existe en
+>   cuerpo referencia—. La relación que hacía falta existe en
 >   `sandbox/fixtures/terraform-iac/main.tf` y es un **atravesamiento de
 >   atributos** (`bucket = aws_s3_bucket.app_bucket.id`), no una referencia
->   plana, así que exigirla obliga a leer expresiones del AST. Ese es el
->   siguiente bloque. Y el handler de **Ansible está muerto**: el extractor
->   YAML genérico no emite ningún nodo para ninguna forma de documento
->   (medido: 1 nodo, el del fichero), luego `is_ansible_playbook` nunca ve
->   `hosts:`. Es otra ley —«la capa semántica tiene algo que interpretar»—
->   y no se mezcló con H17.
+>   plana: exige leer expresiones del AST. Cerrado en H18 —el handler recibe
+>   ahora el texto del fichero y parsea el HCL él mismo—. MEDIDO sobre el
+>   fixture real: de **0** aristas de referencia a **54**, de las cuales
+>   **17** resuelven contra lo declarado en ese fichero y **37** quedan sin
+>   resolver porque la variable se declara en otro fichero. La cobertura de
+>   referencias es **por fichero**, y el recibo lo dice en voz alta.
+>
+>   **Lo que sigue abierto: el handler de Ansible está muerto.** El
+>   extractor YAML genérico no emite ningún nodo para ninguna forma de
+>   documento (medido: 1 nodo, el del fichero), luego `is_ansible_playbook`
+>   nunca ve `hosts:`. Es otra ley —«la capa semántica tiene algo que
+>   interpretar»— y no se mezcló con H18.
 
 <!-- consumer-contracts:end -->
