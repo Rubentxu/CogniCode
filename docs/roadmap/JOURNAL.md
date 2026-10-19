@@ -18681,23 +18681,30 @@ recogía **cuatro** casos, y **dos** de ellos ya no existían: el de
 clasificación del cuarto —«texto ruso íntegro»— era errónea: no era un
 pasaje en ruso, eran cuatro frases españolas con un adjetivo sustituido.
 
-Lo que el barrido encontró y el inventario no recogía:
+Lo que el barrido encontró y el inventario no recogía. Cada intrusión se
+describe por su parte legible y por el punto de código del carácter intruder:
+un inventario que cita la contaminación la reintroduce.
 
-| fichero | qué era |
+| fichero | qué había |
 |---|---|
-| `docs/roadmap/JOURNAL.md` | un adjetivo en rus donde iba `detectado`, en cuatro sitios; `obligó` en cirílico; tres letras árabes dentro de una palabra, en el propio journal |
-| `docs/roadmap/MAINTENANCE.md` | `olvidó` con la primera letra en hangul |
-| `docs/roadmap/certifications/C8-POST-PRF-GA.md` | una palabra entera en cirílico donde iba `será` |
-| `docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md` | `poly形式` —dos veces— |
-| `crates/cognicode-ladybug/src/lib.rs` | `poly形式` en un comentario |
-| `crates/cognicode/tests/file_ops_integration_tests.rs` | `Runtime验证` en un comentario |
-| `crates/cognicode-core/tests/h16_walk_classification_coherence.rs` | `lo报告中` en el mensaje de una aserción |
-| `crates/cognicode-explorer/assets/moldql-scaffolds.yaml` | `immediate邻居` |
-| `scripts/ci/test_release_truth_convergence.py` | `el绿灯` |
-| `scripts/ci/test_skill_cli_invocations.py` | `ense馃a` —la `ñ`— |
-| `uat-plan.yaml`, `uat-guided.html`, `uat-matrix.html` | `kinds区分` —la palabra «distingue»— |
-| `openspec/changes/archive/**` (3 ficheros) | `原始`, `并行`, `必须在`, `穿插`, `浅浅` |
-| `openspec/specs/ownership-map/spec.md` | `(抽像)` |
+| `docs/roadmap/JOURNAL.md` | cinco sustantivos y un verbo íntegros en cirílico (U+0430..U+044F) donde iban palabras en español, y tres letras árabes (U+0631 U+064A U+0645) dentro de una palabra |
+| `docs/roadmap/MAINTENANCE.md` | la `ó` de `olvidó` era un ideograma hangul (U+AC00) |
+| `docs/roadmap/certifications/C8-POST-PRF-GA.md` | `será` estaba escrito con ocho letras cirílicas (U+0431 U+0434 U+0435 U+0442 U+0443 U+0431 U+0430 U+0434) |
+| `docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md` | `poly` seguido de dos ideogramas (U+5F62 U+5F0F), dos veces |
+| `crates/cognicode-ladybug/src/lib.rs` | `poly` seguido de dos ideogramas (U+5F62 U+5F0F), en un comentario |
+| `crates/cognicode/tests/file_ops_integration_tests.rs` | `Runtime` seguido de dos ideogramas (U+9A8C U+8BC1), en un comentario |
+| `crates/cognicode-core/tests/h16_walk_classification_coherence.rs` | `lo` seguido de tres ideogramas (U+62A5 U+544A U+4E2D), en el mensaje de una aserción |
+| `crates/cognicode-explorer/assets/moldql-scaffolds.yaml` | `immediate` seguido de dos ideogramas (U+90BB U+5C45) |
+| `scripts/ci/test_release_truth_convergence.py` | `el` seguido de dos ideogramas (U+7EFF U+706F) |
+| `scripts/ci/test_skill_cli_invocations.py` | `ense` + un ideograma (U+9983) + `a` —la `ñ`— |
+| `uat-plan.yaml`, `uat-guided.html`, `uat-matrix.html` | `kinds` seguido de dos ideogramas (U+533A U+5206) —la palabra «distingue»— |
+| `openspec/changes/archive/**` (3 ficheros) | diez ideogramas sueltos: U+539F U+59CB, U+5E76 U+884C, U+5FC5 U+987B U+5728, U+7A7F U+63D2, U+6D45 |
+| `openspec/specs/ownership-map/spec.md` | `abstract` sustituido por dos ideogramas (U+62BD U+50CF) |
+
+Y el guardián se pilló a sí mismo: la primera versión de esta tabla citaba
+literalmente las palabras contaminadas, y el propio guardián la rechazó. El
+recibo quedó escrito describiendo cada intrusión por su punto de código, que
+es más exacto que la palabra contaminada y no la reintroduce.
 
 ### La lección 171 estaba escrita, pero no había guardián
 

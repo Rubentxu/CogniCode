@@ -222,6 +222,29 @@ def tracked_text_files() -> list[str]:
     )
 
 
+def summarize(found: list[tuple[int, str, int]]) -> str:
+    """The findings of one file, one entry per source line.
+
+    The count comes first because a truncated report reads like a small
+    problem: the reader needs the scale before the details.
+    """
+    by_line: dict[int, list[str]] = {}
+    for line, _script, code in found:
+        by_line.setdefault(line, []).append("U+%04X" % code)
+    entries = [
+        "line %d: %s" % (line, ", ".join(codes))
+        for line, codes in sorted(by_line.items())
+    ]
+    head = "; ".join(entries[:6])
+    if len(entries) > 6:
+        head += "; and %d more line(s)" % (len(entries) - 6)
+    return "%d character(s) on %d line(s): %s" % (
+        len(found),
+        len(by_line),
+        head,
+    )
+
+
 def is_exempt(relative_path: str) -> bool:
     """Whether the file may contain what it contains, and why not."""
     return any(
@@ -257,9 +280,7 @@ def test_versioned_text_declares_no_foreign_script() -> None:
             if relative_path.startswith("docs/prf/"):
                 frozen.extend(found)
             continue
-        summary = ", ".join(
-            f"line {line}: {script} U+{code:04X}" for line, script, code in found[:4]
-        )
+        summary = summarize(found)
         offenders.append(f"{relative_path}: {summary}")
 
     check(
