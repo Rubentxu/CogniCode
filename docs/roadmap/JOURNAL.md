@@ -18181,3 +18181,77 @@ hand-edit no estaba formateado; `cargo fmt` y re-run).
 
 **H4.1 y H4.2 cerradas.** Abiertas: H3, H4.4, H5, más H0.1. H5.2 sigue
 `BLOCKED_EXTERNAL` (no hay checkout de Guard en esta máquina).
+
+## 2026-10-19 — El noop decía "solo metadata" y era mentira (CU-3 / cobertura honesta)
+
+### El defecto, medido
+
+Cambiar un manifiesto de `sandbox/**` y correr `test-fast.sh` imprimía:
+
+```
+noop: cambios no impactan suites (solo metadata).
+```
+
+La segunda mitad es **falsa**. Un manifiesto de escenario no es
+documentación: es un artefacto ejecutable, con su propio lane
+(`certification.pipeline.kts`, etapa `sandbox-ci-smoke`, que exige podman
+rootless). Peor: la regla 11 del selector justificaba ese noop con *«sandbox
+vive en ci.yml local-only»*, y **`ci.yml` no existe** — tampoco
+`.github/workflows/` verificado con `git ls-files`. Una regla que cita a un
+dueño inexistente no protege a nadie: invita a confiar en un noop que nadie
+va a correr.
+
+Mi hipótesis inicial fue más grave —«una superficie sin gate que reporte»—
+y era **incorrecta**. Medir antes de reportar evitó escribir una avería
+inexistente en el journal.
+
+### El arreglo: usar lo que el selector ya sabía
+
+El selector **ya emitía** el motivo correcto en su campo `reason`
+(`"no_cargo_suite(...); sandbox vive en certification.pipeline.kts"`) y
+`test-fast.sh` **lo descartaba**, sustituyéndolo por una generalización.
+El arreglo no añade maquinaria: lee un campo que existía y lo enseña.
+
+`noop_verdict()` es **función**, no bloque suelto, por la misma razón que
+`filter_verdict`: `--paths` se mezcla con el diff del árbol de quien lo
+corre, así que con el árbol sucio la rama noop ni se alcanza y una prueba
+de script entero mediría el entorno en vez del código. Una función se
+ejecuta sola. El contrato M15 la extrae y la corre de verdad.
+
+### El que NO cambió: `merge-gate.pipeline.kts`
+
+`merge-gate` corre etapas fijas y nunca consume el selector's `suites`.
+Medido, no supuesto. La exposición del sandbox es del **bucle del
+desarrollador**, no del gate de merge. Corregir el mensaje sin corregir ese
+hecho habría sido media verdad; se dice aquí entero.
+
+### Tres contratos RED, tres controles verdes
+
+M15 no se acepta por estar escrito: se acepta por **encenderse**. Y al
+reestructurarlo para la convención de la casa (`test_*` + `main()` sobre
+`failures`, que es lo que exige `run_contract_tests.py`, que **importa**
+los contratos en vez de ejecutarlos) volvió a probarse:
+
+- `noop_verdict` con motivo de sandbox → nombra `certification.pipeline.kts`, no dice "solo metadata" → **PASS**
+- mismo motivo con docs → **no** menciona sandbox → **PASS**
+- `sandbox/manifests/**` real → `fast rc=0`
+
+### Y el cuarto defecto, de otra familia
+
+Las tres autoridades normativas que §11 citaba estaban **mal por el mismo
+motivo**: un clon limpio no resolvía ninguna. K1 y K2 compartían un único
+ADR cuya línea 3 declara `Aplica a: K2`, y H4.4/H5 remitían a un HITOS bajo
+`docs/*` en `.gitignore`, con **0 ficheros versionados**.
+
+`test_roadmap_authority_attribution.py` no decide cuál es la mejor
+autoridad —eso es juicio humano—; comprueba lo mecánico: que la ruta citada
+esté versionada y que el ADR no desmienta la unidad a la que se le
+atribuye. Complementario de `test_roadmap_open_units_coherence.py`, que
+vigila el CIERRE; este vigila la AUTORIDAD.
+
+**Tres contratos anti-vacuedad nacieron hoy, y los tres
+fallaron primero.** Eso es el que los hace credibles: una regla que nunca
+se ha visto arder no se sabe si mira o si solo se sienta.
+
+Gates: `fast rc=0`, `full rc=0` (contracts `OK: contracts`,
+known_failures `0 entries`). Snapshot regenerado a `ff9132c6` con Entrada 79.
