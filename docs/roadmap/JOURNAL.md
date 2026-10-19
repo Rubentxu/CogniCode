@@ -18258,7 +18258,7 @@ known_failures `0 entries`). Snapshot regenerado a `ff9132c6` con Entrada 79.
 
 ## 2026-10-19 — Terraform tenía 144 nodos y UN nombre (K-SYM-05)
 
-Una auditoría externa HrJeIIt reapareció con cinco propuestas sobre Bash y
+Una auditoría externa reapareció con cinco propuestas sobre Bash y
 Terraform. No vine con la respuesta: vine con mediciones, y **cuatro de sus
 cinco afirmaciones se confirmaron**, una de ellas siendo más grave de lo que
 decía.
@@ -18285,7 +18285,7 @@ desaparecían antes de que nadie pudiera verlos.
 tree-sitter-hcl NO tiene campo `name` (verificado en `node-types.json`), así
 que caía al fallback —"el primer hijo identifier"— que es exactamente la
 palabra clave. El arreglo es la regla general, no una excepción de HCL: *un
-nodo sin campo `name` se nombra por su cabecera*,cknowled los hijos directos
+nodo sin campo `name` se nombra por su cabecera*, tomando los hijos directos
 `identifier`/`string_lit` hasta que empieza el cuerpo.
 
 **2. El DFS deduplicaba por rango de bytes, y el rango no es identidad.**
@@ -18320,7 +18320,7 @@ Los 105 nodos que desaparecen eran `attribute` de HCL etiquetados como
 variable sin relación con nada. No eran cobertura: eran ruido que la
 auditoría cuenta como "258 símbolos".
 
-### Lo que SIGUE roto, y no voy a disguise
+### Lo que SIGUE roto, y no voy a disfrazarlo
 
 `references = 0`. `extract_terraform_refs` todavía lee la ETIQUETA, y la
 etiqueta no contiene el cuerpo del bloque: la referencia
