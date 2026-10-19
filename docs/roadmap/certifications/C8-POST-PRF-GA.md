@@ -542,7 +542,7 @@ El operador argumenta (resumido del hilo de decisión 2026-09-26):
 > de que CR-01 la cree. CR-01 está pensado para ejecutarse DESPUÉS
 > de cerrar el C8 viejo, no en paralelo. La opción contractual
 > (opción 1) requeriría crear tag anotado y release formal, lo cual
-> sería ceremonial sin valor añadido: el verdadero C8-R будет
+> sería ceremonial sin valor añadido: el verdadero C8-R será
 > CR-01 sobre clean clone.
 
 ### Cadena de evidencia firmada

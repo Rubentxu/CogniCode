@@ -199,7 +199,7 @@ features:
           - action: "Ejecuta build_graph sobre clap"
             copy_hint: true
             expected: "JSON con nodes + edges"
-          - action: "Verifica: nodes > 10, edges > 5, kinds区分 Function/Struct/Impl/Enum"
+          - action: "Verifica: nodes > 10, edges > 5, kinds distinguish Function/Struct/Impl/Enum"
             expected: "nodes > 10, edges > 5, DAG"
         evidence_prompt: "Pega el JSON (o primeras 50 líneas)"
       - id: TC-2.2
@@ -234,7 +234,7 @@ features:
           - action: "Ejecuta build_graph sobre cobra"
             copy_hint: true
             expected: "JSON con nodes + edges"
-          - action: "Verifica nodes > 0, edges > 0, kinds区分 func/type"
+          - action: "Verifica nodes > 0, edges > 0, kinds distinguish func/type"
             expected: "nodes > 0, cobra commands visibles"
         evidence_prompt: "JSON + observación"
       - id: TC-2.4
@@ -597,7 +597,7 @@ features:
         plain_steps:
           - action: "Paso 1: build_graph petclinic"
             copy_hint: true
-            expected: "nodes > 0, kinds区分 Class/Method"
+            expected: "nodes > 0, kinds distinguish Class/Method"
           - action: "Paso 2: Spring MVC pattern visible"
             expected: "Controllers/Services/Entities diferenciados"
         evidence_prompt: "2 screenshots"

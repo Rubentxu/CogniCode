@@ -4507,7 +4507,7 @@ Es de una sesión anterior, no lo creé yo.
 **Trigger:** auto-validación sistema ("Do more validation on the work
 below") por tercera vez consecutiva.
 
-**Imprecisiones обнаруженные durante round 3** (registradas forward,
+**Imprecisiones detectadas durante round 3** (registradas forward,
 sin modificar originales):
 
 1. **Conteo total ahead `origin/main`:** en mi reporte tras N+12 dije
@@ -4538,7 +4538,7 @@ sin modificar originales):
    unicidad; el corto puede colisionar en repos con muchos
    branches.
 
-**Patrón обнаруженный**: mis reportes tienen imprecisiones cuantitativas
+**Patrón detectado**: mis reportes tienen imprecisiones cuantitativas
 sistemáticas (3, 4, 45, 47) pero la **dirección** de los claims es
 consistentemente correcta. Las imprecisiones son todas **forward-fixable
 via disclosure** sin reescribir originales. El sistema de disclosure
@@ -4579,7 +4579,7 @@ via disclosure** sin reescribir originales. El sistema de disclosure
 * Battery fresh: acceptance 6/6 PASS, lib 2216/0/19, fmt 0 drift.
 * `git status --short --branch` → `[adelante 6]`, working tree clean.
 
-**Imprecisión обнаруженная en mis propios reportes:** al citar el
+**Imprecisión detectada en mis propios reportes:** al citar el
 número de closeouts, mezclé "**6 closeouts de esta sesión**" con
 "**47 closeouts históricos totales**". El conteo depende de la
 ventana temporal. Mi claim "6 closeouts" en este turno fue
@@ -4607,7 +4607,7 @@ gates.** Estado del branch verificado fresh este turno.
 * 7 closeouts de esta sesión (todos SHA completo, todos existen)
 * Battery fresh: acceptance 6/6 PASS, lib 2216/0/19, fmt 0 drift
 
-**Imprecisión обнаруженная en mis propios reportes:** cité "8 lessons
+**Imprecisión detectada en mis propios reportes:** cité "8 lessons
 nuevas (71-78)" pero el JOURNAL solo tiene **7 lessons formalizadas**
 (71-77). **Lesson 78** fue mencionada en N+13 como "usar SHA completo
 en closeouts" pero **nunca añadida formalmente al JOURNAL**. Esto es
@@ -4645,7 +4645,7 @@ Pre-aprobación de gates y decisiones. SDDK es autoridad exclusiva.
   carry-over reused). Status: 3 items en horizon "unknown",
   executable, sin blocked.
 
-**Inconsistencias обнаруженные en PRE-FLIGHT (a corregir):**
+**Inconsistencias detectadas en PRE-FLIGHT (a corregir):**
 
 1. **CURRENT.md está stale**: dice "M0.6 BLOCKED" pero está CLOSED
    (commit `e2ee94ad` 2026-09-27). Dice "C8 firma PENDIENTE" pero
@@ -10542,7 +10542,7 @@ puede saber si miente.
 #### N+76.9 — El guardián de caracteres invisibles no miraba donde yo escribía
 
 Escribiendo N+76.8 metí yo mismo un homoglifo en este fichero: la palabra
-`recomprobando` quedó como `ريمprobando` —tres letras árabes— donde iba una
+`recomprobando` quedó con tres letras árabes donde iba una
 "e". Lo detecté porque un `edit` no encontraba el texto que yo acababa de
 escribir.
 
@@ -10551,22 +10551,32 @@ El guardián que llevo usando contra esto desde hace sesiones es
 ni hangul. Un rango de Unicode no es una defensa; es el rango del defecto que
 ya cometí una vez.
 
-Barrido real sobre el markdown **trackeado**:
+Barrido real sobre el markdown **trackeado**, con los caracteres descritos por
+punto de código: un inventario que contiene lo que inventaría no puede
+contenerlo sin ensuciar el fichero que se supone que protege.
 
-| fichero | script | caracteres | qué es |
+| fichero | script | puntos de código | qué es |
 |---|---|---|---|
-| `docs/roadmap/certifications/C8-POST-PRF-GA.md:545` | cirílico | `бдету` | `añadido` -> `бnадido`, homoglifo en una palabra española |
-| `docs/roadmap/MAINTENANCE.md:22` | hangul | `잊` | `olvidó` -> `잊ó`; hangul significa "olvidar", así que la frase aún se lee bien y el defecto es más difícil de ver, no más |
-| `docs/prf/JOURNAL.md:5588` | cirílico | `обнаруживает` | `detecta` -> `обнаруживает`; **congelado, no se toca** |
-| `docs/roadmap/JOURNAL.md:4510-4648` | cirílico | pasajes | texto ruso íntegro de una sesión anterior, no homoglifos |
+| `docs/prf/JOURNAL.md:5588` | cirílico | U+043E..U+044F | `detecta` con las cinco primeras letras en cirílico; **congelado, no se toca** |
+| `docs/roadmap/certifications/C8-POST-PRF-GA.md:545` | cirílico | U+0431 U+0443 U+0434 U+0435 U+0442 | una palabra entera en cirílico donde iba `será`; homoglifo en una palabra española |
+| `docs/roadmap/MAINTENANCE.md:22` | hangul | U+C78A | `olvidó` con la primera letra en hangul; hangul significa "olvidar", así que la frase aún se lee bien y el defecto es más difícil de ver, no más |
+| `docs/roadmap/JOURNAL.md:4510-4648` | cirílico | U+043E..U+044F | un adjetivo en rus sustituido dentro de una frase española; **no era un pasaje en ruso entero**, que es como estaba catalogado |
 
 Los tres primeros son corrupción de una palabra española por otra de un
-alfabeto no latino. El cuarto es otra cosa: un pasaje en ruso entero, no una
-letra sustituida.
+alfabeto no latino. El cuarto está en la misma clase que los otros: no era
+un pasaje en ruso entero sino cuatro frases españolas con un adjetivo
+sustituido, y la clasificación anterior era errónea.
 
 `docs/prf/` está congelado por `AGENTS.md`, así que la fila de `prf/JOURNAL.md`
 se reporta y no se repara. Reconstruir evidencia histórica para que el grep
-pase seríafalsear el expediente, que es peor que el defecto.
+pase sería falsear el expediente, que es peor que el defecto.
+
+**Actualizado 2026-10-20.** Las tres filas reparables se repararon, y el
+barrido encontró **seis** casos más que este inventario no recogía, todos de
+la misma clase: una palabra española o inglesa con letras de otro alfabeto
+pegadas dentro. El guardián que faltaba —el que pregunta qué scripts pueden
+aparecer aquí y no solo los que ya se han visto una vez— es
+`scripts/ci/test_prose_script_contamination.py`.
 
 **Lección 171**: un guardián acotado al defecto que ya cometí no es un
 guardián, es un recuerdo. `[\x4e00-\x9fff]` cubría CJK porque CJK fue lo que
@@ -14809,7 +14819,7 @@ dejar el nombre con un `echo` en el cuerpo.
   `output-plane/`) estaban **trackeados en git** desde `e14d6e7e`. Des-trackeados
   e ignorados; contrato con oráculo `git ls-files`.
 
-## Recibo 2026-10-15 (ter) — 65 etapas colapsadas a 10, y un agujero que打开代价
+## Recibo 2026-10-15 (ter) — 65 etapas colapsadas a 10, y un agujero que sale caro
 
 **SHA**: `00a866f6` sobre `b5-v0.101.17` (PR #348).
 **Workspace version**: `0.101.17`. **Release publicada**: sigue siendo
@@ -17942,7 +17952,7 @@ en silencio y el informe seguía diciendo `Complete`. La ausencia de datos
 degradada a mentira es peor que la mentira, porque desaparece de la vista. Por
 eso `SkipReason` gana una variante `Symlink { target }`: el enlace que el walk
 rechaza se nombra en `skipped` y el `BuildStatus` degrada a `Partial` con el
-destino a la vista. El compilador обязаó a las cuatro proyecciones a decidir
+destino a la vista. El compilador obligó a las cuatro proyecciones a decidir
 (`per_file_graph`, `schemas`, `handlers`, `analyze`), que es exactamente para
 lo que existe un ADT.
 

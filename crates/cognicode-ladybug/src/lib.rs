@@ -2444,7 +2444,7 @@ fn issue_from_row(row: &[lbug::Value]) -> QualityIssue {
 // Per ADR-027 (`docs/adr/ADR-027-ladybugdb-hybrid-schema-strategy.md`):
 // 22 NODE TABLEs + ~20 REL TABLEs backing the Generic Graph Layer.
 // Hybrid strategy — typed columns for stable properties, MAP for
-// emergent ones. Multi-label nodes for poly形式 membership.
+// emergent ones. Multi-label nodes for poly-form membership.
 //
 // **v1 scope (this commit)**: 22 NODE TABLEs as DDL constants + an
 // `init_generic_graph_schema()` function that applies them

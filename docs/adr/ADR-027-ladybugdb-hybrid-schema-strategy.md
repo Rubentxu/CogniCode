@@ -109,7 +109,7 @@ Labels used across the schema:
 - Entity labels: `Investigation`, `Artifact`, `ExplorationSession`, `NamedView`, `ViewSpec`
 - State labels: `GraphReport`, `AnalyticsRun`, `FileRecord`, `Revision`, `Workspace`, `Space`
 
-Multi-label enables poly形式 queries:
+Multi-label enables poly-form queries:
 ```cypher
 -- Find all Decision nodes (regardless of whether they are also Symbol nodes)
 MATCH (n:Decision) RETURN n;
@@ -163,7 +163,7 @@ Rejected — loses type safety for stable fields, makes queries verbose (no SQL-
 
 ### Separate extension tables
 
-Rejected — multi-label nodes in v0.18+ achieve the same poly形式 benefit without the join complexity.
+Rejected — multi-label nodes in v0.18+ achieve the same poly-form benefit without the join complexity.
 
 ## Consequences
 

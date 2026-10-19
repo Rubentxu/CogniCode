@@ -259,7 +259,7 @@ def extract_invocations(text: str) -> list[tuple[int, list[str]]]:
     """`cognicode ...` que aparece en un bloque de shell, con su numero de linea.
 
     Solo dentro de cercas ```bash: una mencion en prosa no es un comando que
-    nadie ejecuta, y hacerlas fallar seria un falso positivo que ense馃a a la
+    nadie ejecuta, y hacerlas fallar seria un falso positivo que enseña a la
     gente a no correr el contrato.
     """
     found: list[tuple[int, list[str]]] = []

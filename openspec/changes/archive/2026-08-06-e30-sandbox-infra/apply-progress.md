@@ -149,7 +149,7 @@
 - `Exit 1` = unexpected product failure (infra still green)
 - `Exit 2` = infrastructure failure (containers missing, images not pulled)
 
-**Nota**: La documentación del exit contract ya existía en el justfile original (líneas 73-89 en el justfile原始). Esta task confirma su presencia y relevancia.
+**Nota**: La documentación del exit contract ya existía en el justfile original (líneas 73-89 en el justfile original). Esta task confirma su presencia y relevancia.
 
 ---
 

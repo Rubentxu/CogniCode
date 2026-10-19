@@ -26,7 +26,7 @@ podman inspect docker.io/library/<image>:<tag> --format '{{.ImageDigest}}'
 # Editar el .container: Image=docker.io/library/<image>:<tag>@sha256:<64-hex>
 ```
 
-Digests reales a obtener (orden recomendado para并行 pull):
+Digests reales a obtener (orden recomendado para el pull en paralelo):
 
 | Imagen | Tag | Justfile `sandbox-pull` line |
 |--------|-----|------------------------------|
@@ -113,7 +113,7 @@ sandbox-setup: sandbox-pull
 
 **Choice**: Estrategia híbrida — `./mvnw` en el manifest (zero installation), pero el container java requiere **network para la fase de build inicial**. Se resuelve con dos variantes de container java.
 
-**Rationale**: La decisión必须在 spec (`Network=none` para aislamiento) y la realidad de Maven wrapper (necesita descargar deps la primera vez) reconciliar. Las opciones son:
+**Rationale**: La decisión debe estar en el spec (`Network=none` para aislamiento) y la realidad de Maven wrapper (necesita descargar deps la primera vez) reconciliar. Las opciones son:
 
 | Opción | Ventaja | Desventaja |
 |--------|---------|------------|
