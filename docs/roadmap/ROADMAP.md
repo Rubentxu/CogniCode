@@ -412,11 +412,26 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   (fixtures UAT para homónimos Kotlin↔Java) y **H5**
 >   (incremental/distribución). **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
->   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, con la
->   autoridad normativa en `.../kotlin-evolution/adr/ADR-K003.md`; H5 vive
->   en el HITOS del programa delivery-first. Este párrafo decía lo
->   contrario —"ninguna tiene fichero de spec propio"— y mandaba a
->   abrir un ciclo a diseñar desde cero unas unidades ya especificadas.
+>   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y cada
+>   uno tiene **su propio ADR de autoridad normativa** —
+>   `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md` (K1)
+>   y `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
+>   (K2). H5 tiene la suya en
+>   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md`
+>   y
+>   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
+>   Este párrafo decía lo contrario —"ninguna tiene fichero de spec
+>   propio"— y mandaba a abrir un ciclo a diseñar desde cero unas unidades
+>   ya especificadas.
+>
+>   **Las tres citas anteriores estaban mal, y por el mismo motivo**: el
+>   párrafo reunía K1 y K2 bajo un único ADR que su propia línea 3 declara
+>   aplicable sólo a K2, y remitía H4.4 y H5 a un HITOS del programa
+>   delivery-first que vive bajo `docs/*` en `.gitignore` y **no tiene ni un
+>   solo fichero versionado**. Un clon limpio no resolvía ninguna de las
+>   tres. `scripts/ci/test_roadmap_authority_attribution.py` falla cerrado
+>   si una autoridad citada no está versionada, o si el ADR citado no
+>   declara la unidad a la que se le atribuye.
 >   H4.1 se cierra con **tres** variantes (`Resolved | Ambiguous |
 >   Unresolved`), no las cuatro que propone ADR-K003: `External` exige una
 >   tabla de símbolos externos que hoy no existe, y una variante que nada
