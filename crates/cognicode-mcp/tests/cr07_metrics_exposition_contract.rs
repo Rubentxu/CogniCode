@@ -50,20 +50,36 @@ use std::time::{Duration, Instant};
 /// `[dev-dependencies]`, and a one-shot GET against a local socket is not
 /// worth one. Reading the status line and headers off the socket is what lets
 /// this assert the *wire* content-type rather than a re-derivation of it.
-fn scrape(addr: std::net::SocketAddr) -> (String, Vec<(String, String)>, String) {
-    let mut stream = std::net::TcpStream::connect(addr).expect("connect to /metrics");
+///
+/// Fallible on purpose (MEDIDO 2026-10-19): la espera de arranque reintenta
+/// el scrape entero. Antes el sondeo de disponibilidad abria una conexion y
+/// la soltaba sin enviar nada, y el scrape abria una segunda; con el
+/// servidor lo bastante cargado, esa conexion abandonada a media lectura se
+/// cruzaba con la segunda y el read de la linea de estado caia en
+/// `ConnectionReset`. El sintoma era un fallo intermitente que solo
+/// aparecia bajo `test-full`, jamas en aislamiento: la forma clasica de un
+/// defectoOwned por el propio test.
+fn scrape(addr: std::net::SocketAddr) -> Result<Scrape, String> {
+    let mut stream =
+        std::net::TcpStream::connect(addr).map_err(|e| format!("connect to /metrics: {e}"))?;
     stream
         .set_read_timeout(Some(Duration::from_secs(15)))
-        .expect("read timeout");
+        .map_err(|e| format!("read timeout: {e}"))?;
     stream
         .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-        .expect("send GET");
+        .map_err(|e| format!("send GET: {e}"))?;
 
     let mut reader = BufReader::new(stream);
     let mut status_line = String::new();
     reader
         .read_line(&mut status_line)
-        .expect("read status line");
+        .map_err(|e| format!("read status line: {e}"))?;
+    if status_line.trim().is_empty() {
+        // Conexion aceptada y cerrada sin una sola linea: el servidor
+        // acepto y luego solto. Es un fallo de transporte, no una
+        // respuesta, asi que el reintento es el tratamiento correcto.
+        return Err("server accepted the connection and closed it without a status line".into());
+    }
 
     let mut headers = Vec::new();
     loop {
@@ -81,9 +97,15 @@ fn scrape(addr: std::net::SocketAddr) -> (String, Vec<(String, String)>, String)
     }
 
     let mut body = String::new();
-    reader.read_to_string(&mut body).expect("read body");
+    reader
+        .read_to_string(&mut body)
+        .map_err(|e| format!("read body: {e}"))?;
 
-    (status_line, headers, body)
+    Ok(Scrape {
+        status_line,
+        headers,
+        body,
+    })
 }
 
 fn header<'a>(headers: &'a [(String, String)], name: &str) -> Option<&'a str> {
@@ -115,10 +137,11 @@ fn fixture_ws() -> PathBuf {
 
 /// Wait until `/metrics` answers, or fail with the server's stderr — which is
 /// where a panicking `server_main` puts the reason.
-fn wait_for_scrape(
-    addr: std::net::SocketAddr,
-    child: &mut Child,
-) -> (String, Vec<(String, String)>, String) {
+///
+/// El sondeo ES el scrape: un intento por conexion, nunca una conexion de
+/// prueba mas un scrape aparte. Ver la nota de `scrape` sobre por que eso
+/// importa (MEDIDO 2026-10-19: `ConnectionReset` bajo `test-full`).
+fn wait_for_scrape(addr: std::net::SocketAddr, child: &mut Child) -> Scrape {
     let deadline = Instant::now() + Duration::from_secs(60);
     let mut last_err = String::new();
     while Instant::now() < deadline {
@@ -129,9 +152,12 @@ fn wait_for_scrape(
             }
             panic!("cognicode-mcp-server exited early with {status}\nstderr:\n{err}");
         }
-        match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
-            Ok(_) => return scrape(addr),
-            Err(e) => last_err = e.to_string(),
+        match scrape(addr) {
+            Ok(scrape) => return scrape,
+            // Fallos de transporte mientras el servidor arranca son el caso
+            // normal. Una vez llega una linea de estado, `scrape` devuelve y
+            // las aserciones mandan: aqui no se reintenta nada.
+            Err(e) => last_err = e,
         }
         std::thread::sleep(Duration::from_millis(250));
     }
@@ -164,15 +190,7 @@ impl Scrape {
             .spawn()
             .expect("spawn cognicode-mcp-server");
 
-        let (status_line, headers, body) = wait_for_scrape(addr, &mut child);
-        (
-            Scrape {
-                status_line,
-                headers,
-                body,
-            },
-            child,
-        )
+        (wait_for_scrape(addr, &mut child), child)
     }
 }
 
