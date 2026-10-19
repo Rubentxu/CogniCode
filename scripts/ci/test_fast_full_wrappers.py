@@ -347,6 +347,108 @@ def test_baseline_dependencies_exist() -> None:
     assert BASELINE_CHECK.is_file(), f"FAIL: {BASELINE_CHECK} no existe"
 
 
+def run_filter_verdict(filter_value: str, selected: int) -> subprocess.CompletedProcess[str]:
+    """Ejecuta `filter_verdict()` de verdad con un FILTER y un SELECTED dados.
+
+    Misma razon que `run_suite_case`: las ramas que hay que demostrar son de
+    EJECUCION —el rc es lo que `fast` convierte en veredicto— y no una cadena
+    que este contrato podria satisfacerse con un comentario. Se ejecuta sin
+    cargo para que el contrato siga siendo barato.
+    """
+    text = _read(FAST)
+    start = text.find("filter_verdict() {")
+    assert start != -1, f"FAIL: {FAST.name} ya no define filter_verdict()"
+    end = text.find("\n}\n", start)
+    assert end != -1, f"FAIL: no se pudo delimitar filter_verdict() en {FAST.name}"
+    body = text[start : end + 3]
+
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "verdict_only.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\nset -uo pipefail\n"
+            + body
+            + f'\nFILTER="{filter_value}"\nSELECTED={selected}\nfilter_verdict\n',
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, check=False
+        )
+
+
+def test_a_filter_that_matches_nothing_is_not_a_green_light() -> None:
+    """M13: `--filter` acota, y un filtro mal escrito NO sale verde.
+
+    MEDIDO 2026-10-19: `libtest` sale con rc=0 cuando el filtro no casa con
+    ninguna prueba. Sin un guard, `--filter h42_typo` y `--filter h42_`
+    devolvian el mismo rc: uno habia ejecutado pruebas y el otro ninguna, y
+    esa diferencia —que es todo el riesgo de un filtro escrito a mano— era
+    invisible. El filtro existe para acotar el trabajo, no para fabricar
+    verde.
+
+    El caso D (suites, no fallback) y el caso B (fallback, que sale antes de
+    llegar al final del script) ejecutan la MISMA funcion; por eso se
+    comprueba la funcion y no un bloque al final.
+    """
+    miss = run_filter_verdict("h42_typo_inexistente", 0)
+    assert miss.returncode != 0, (
+        "FAIL: un filtro que no selecciona ninguna prueba devolvio rc=0. "
+        f"Eso es un verde sin haber ejecutado un solo test. stderr:\n{miss.stderr}"
+    )
+    assert "h42_typo_inexistente" in miss.stderr, (
+        "FAIL: el rechazo tiene que NOMBRAR el filtro que fallo; un refusal "
+        f"anonimo no es accionable. stderr:\n{miss.stderr}"
+    )
+
+    hit = run_filter_verdict("h42_filtered", 1)
+    assert hit.returncode == 0, (
+        f"FAIL: un filtro que SI selecciono pruebas devolvio rc!=0. "
+        f"El guard no puede confundir 'acotado' con 'fallido'. stderr:\n{hit.stderr}"
+    )
+
+
+def test_a_filtered_run_announces_that_it_is_not_the_gate() -> None:
+    """M14: un run acotado se declara, para que nadie lo lea como veredicto.
+
+    `--dry-run` sale antes de cualquier cargo, asi que esto cuesta un
+    arranque de bash y demuestra lo que importa: la linea aparece cuando se
+    pasa `--filter` y el baseline se apaga con ella. Un baseline comparado
+    contra un subconjunto de fallos no es una medicion, es ruido con
+    apariencia de control.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "dry.sh"
+        # `--dry-run` imprime el plan y sale; `--paths` ahi vacio para que el
+        # selector no dependa de que haya cambios en el arbol de quien corre.
+        script.write_text(
+            f'bash "{FAST}" --filter h42_ --dry-run --paths crates/cognicode-core/src/lib.rs\n',
+            encoding="utf-8",
+        )
+        announced = subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, check=False
+        )
+        script.write_text(
+            f'bash "{FAST}" --dry-run --paths crates/cognicode-core/src/lib.rs\n',
+            encoding="utf-8",
+        )
+        plain = subprocess.run(
+            ["bash", str(script)], capture_output=True, text=True, check=False
+        )
+
+    assert announced.returncode == 0, (
+        f"FAIL: `test-fast.sh --filter ... --dry-run` devolvio "
+        f"rc={announced.returncode}. stderr:\n{announced.stderr}"
+    )
+    assert "NO es evidencia de gate" in announced.stdout, (
+        "FAIL: un run filtrado tiene que decir en voz alta que no es el gate. "
+        f"Solo asi un verde acotado se lee distinto de un verde de release. "
+        f"stdout:\n{announced.stdout}"
+    )
+    assert "NO es evidencia de gate" not in plain.stdout, (
+        "FAIL: el aviso aparece SIN filtro. O es ruido de mas, o el aviso "
+        "no esta cableado al flag y sale siempre."
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for fn in (
@@ -362,6 +464,8 @@ def main() -> int:
         test_an_unknown_suite_is_a_hard_error_not_a_warning,
         test_the_merge_suite_is_not_silently_substituted,
         test_the_selector_doc_and_the_runner_agree,
+        test_a_filter_that_matches_nothing_is_not_a_green_light,
+        test_a_filtered_run_announces_that_it_is_not_the_gate,
     ):
         try:
             fn()
