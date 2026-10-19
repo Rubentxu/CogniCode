@@ -18024,3 +18024,89 @@ observación tipado `Resolved | Ambiguous | Unresolved`), H4.2 (heurístico
 distribución), H0.1 (integridad de `PerFileGraphCache::merge_with_report`, RED ya
 presentado como `h01_per_file_cache_invalidate_contract`), y el bloque de
 alineación de `sandbox/manifests/` descrito arriba.
+
+## 2026-10-19 — Entry 79: la ley nueva no cubría la ruta que MCP usa
+
+**WU**: continuación de Entry 78. **Commit**: `51ca2be5`.
+
+### El hueco
+
+`walk_policy` (Entry 78) se escribió sobre `walkdir`. El grafo que
+construye MCP de verdad no pasa por `strategy.rs`: sale de
+`AnalysisService`, que corre su propio `ignore::WalkBuilder` y filtraba
+con `e.path().is_file()` — la llamada a `fs::metadata`, que **sigue**
+el enlace. El fallo anterior lo dejó medio cerrado: con
+`follow_links(false)` los directorios enlazados ya no se bajan, pero un
+*archivo* enlazado se seguía leyendo y se seguía reportando `Complete`.
+
+RED medido sobre la ruta real:
+
+    the symlink indexed a symbol defined outside the root:
+    ["leaked_fn", "inside_fn", "main"]
+
+Es decir: la Entry 78 dejó dos estrategias negándose a seguir enlaces
+mientras la ruta cableada seguía seguirlos. Dos caminos sobre el mismo
+directorio discrepando sobre cobertura, y el que discrepaba era el que
+los callers alcanzan.
+
+### Lo corregido
+
+- La ley cubre ahora los dos walkers: `contained_ignore_walk` +
+  `ignore_is_real_file`, junto a los de `walkdir`.
+- Once sitios delegan en ella en vez de re-derivar el par a mano:
+  `build_project_graph`, `build_project_graph_filtered`,
+  `build_project_graph_async`, `build_graph_per_file_with_report`,
+  `WorkspaceSession::save_to_store` y su vecina incremental (que
+  hashean el contenido para el manifiesto), `lsp/providers/fallback.rs`,
+  `semantic_search`, dos walks de handlers MCP, y el lector de
+  resultados del sandbox.
+- Dos de ellos deben un estado honesto, así que la negativa se registra
+  como `SkipReason::Symlink` y degrada el informe a `Partial`. Sin eso,
+  "sin datos y `Complete` convincente" sustituye a "datos erróneos y
+  ruta errónea" como la mentira — la misma clase, más callada.
+
+### Dos que el agente no vio
+
+`build_project_graph_async` (cableada en `aix_handlers.rs:1979`) y los
+dos walks de `workspace_session.rs` no aparecieron en el informe del
+agente. Los encontré grepando `\.path()\.is_file()` yo mismo. **Un
+grep dirigido por el síntoma es más fiable que un agente que ya sabía
+dónde mirar.**
+
+### El límite de la ley, escrito
+
+`walk_policy` declara ahora lo que **no** gobierna: los walks que solo
+enumeran *nombres* para una búsqueda iniciada por el caller —completion,
+`resources/list`, `find file`— quedan fuera. No leen nada a través del
+enlace y no hacen una afirmación de cobertura que un symlink pueda
+falsar. La línea es **leer o indexar a través del enlace**, no *caminar
+ cerca de uno*. Escrito, no dejado al juicio del siguiente lector: eso es
+justo lo que evita que el módulo crezca a los catorce `WalkBuilder` del
+árbol.
+
+### Deuda declarada
+
+Tres sitios pierden cobertura sin canal que la reporte, y no lo oculto:
+
+| Sitio | Canal |
+|---|---|
+| `analysis_service.rs:1747` `find_symbol_usages` | devuelve `Vec<UsageResult>` |
+| `refactor_service.rs:645` `build_minimal_graph` | privado, `AppResult<()>` |
+| `lightweight_index.rs:145` `build_index` | `io::Result<()>` |
+
+Ninguno afirma cobertura, así que el silencio no miente. Abrir los tres
+canales es trabajo por unidad, no un efecto secundario de este arreglo.
+
+### Gates
+
+`test-full rc=0` (4384 tests, clippy `-D warnings` limpio, contratos
+verdes). Los cuatro `redundant_closure` que clippy sacaron son la
+función sola en vez de `|e| f(e)` — clippy tenía razón y el código quedó
+más legible.
+
+### Estado
+
+PR #381 sigue abierta; este commit se añade. Unidades abiertas sin
+cambio: H3, H4.1, H4.2, H4.4, H5, H0.1. La deriva de 99 escenarios en
+`sandbox/manifests/` sigue siendo deuda honesta del operador, sin gate
+que la cubra.
