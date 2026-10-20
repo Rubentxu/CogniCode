@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `f8d53a4e601d4162dadab78297cbaabf63faa160`
+> **Snapshot**: 2026-10-20, sobre `a43ef5a5adad8c2d1ffbd5ecd2d7aa0c8f6b407a`
 > (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **28** commits por delante
+> `v0.101.23` (2026-10-18, 8 assets). `main` está **29** commits por delante
 > de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
@@ -28,7 +28,7 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **13** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **15** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
@@ -42,8 +42,14 @@ extensiones que el grafo lee, así que `build_graph` podía responder
 al mismo servicio que usa el MCP. Antes la CLI nombraba los atributos de
 un bloque Terraform y el MCP los recursos; ahora dicen lo mismo.
 
-El siguiente trabajo es **C4**: `iac_query` publica el nombre interno de
-Rust (`Function`) donde debería publicar el nombre del dominio.
+**C4 está resuelto**: `iac_query` publica el nombre del dominio. El lector
+declaraba el tipo y el kind de cada bloque, la proyección al símbolo lo
+tiraba, y el manejador publicaba el nombre interno de la variante de Rust:
+un bucket respondía `Function`. Ahora responde `aws_s3_bucket`, y una
+declaración sin tipo responde con su kind (`variable`, `module`, `play`).
+
+El siguiente trabajo es **C14**: publicar una release con las estabilizaciones
+mergeadas después de `v0.101.23` —`main` va 29 commits por delante—.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
@@ -72,7 +78,7 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **Release pendiente**: `main` lleva 26 commits sin publicar. Publicar exige
+- **Release pendiente**: `main` lleva 29 commits sin publicar. Publicar exige
   gates sobre un candidato concreto, binarios instalados verificados y tag
   anotado.
 

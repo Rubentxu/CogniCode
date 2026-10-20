@@ -18,9 +18,10 @@ use std::path::Path;
 
 use crate::application::ingest::extractor::extract_file;
 use crate::application::ingest::types::{FileFacts, FileRelation, TargetRef};
+use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, Location, NodeKind};
+use crate::domain::value_objects::{Declaration, DependencyType, Location, NodeKind};
 use crate::infrastructure::graph::per_file_graph::content_hash_64;
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::parser::language_config::LanguageConfig;
@@ -81,6 +82,13 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         // name its reader had given, and the graph answer that it had
         // never heard of it.
         symbol.set_fqn_override(&reader_id);
+        // What the reader declared travels with the symbol. The reader is
+        // the one that knows whether this block is a resource, a variable
+        // or a play, and the graph is the only place from where the tools
+        // that ask about the declaration can learn it.
+        if let Some(declaration) = declaration_of(node) {
+            symbol = symbol.with_declaration(declaration);
+        }
         by_reader_id.insert(reader_id.clone(), SymbolId::new(&reader_id));
         symbols.push(symbol);
     }
@@ -124,6 +132,26 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         identified,
         calls: Vec::new(),
     })
+}
+
+/// The declaration a reader made, when it made one.
+///
+/// The reader names the kind of its declaration — and the type it carries,
+/// when it carries one — in the properties of the node. A node that names
+/// no declaration declares nothing in particular, and no declaration is
+/// invented for it.
+fn declaration_of(node: &GraphNode) -> Option<Declaration> {
+    let properties = node.properties.as_object()?;
+    let kind = properties
+        .get(Declaration::KIND_PROPERTY)
+        .and_then(|value| value.as_str())?;
+    match properties
+        .get(Declaration::TYPE_PROPERTY)
+        .and_then(|value| value.as_str())
+    {
+        Some(resource_type) => Some(Declaration::with_type(kind, resource_type)),
+        None => Some(Declaration::new(kind)),
+    }
 }
 
 /// The facts of one file, shaped as a graph.

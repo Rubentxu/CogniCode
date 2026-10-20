@@ -19829,3 +19829,116 @@ propio (C16 en la backlog de la misión) en vez de tocarse de paso.
 C4: `iac_query` publica el nombre interno de Rust (`Function`) en vez del
 nombre del dominio. El candidato C3 queda resuelto; la cadena de la
 misión encadena el siguiente.
+
+## 2026-10-20 — La herramienta de infraestructura responde en el vocabulario del dominio (H24, C4)
+
+### Lo que se pidió
+
+El candidato C4 de la misión `cognicode`: que `iac_query` deje de publicar el
+nombre interno de la variante de Rust y publique el nombre del dominio. La
+violación literal era de `SPEC-CU-002.3`: el contrato público no puede
+filtrar cómo está construido el grafo por dentro.
+
+### Lo que había
+
+El grafo **sabía** qué era cada bloque de Terraform, y el dato se perdía dos
+veces en el camino:
+
+- `infrastructure/parser/terraform_handler.rs` declaraba el tipo y el tipo de
+  bloque (`iac_kind`, `iac_type`) como propiedades del nodo: `resource`,
+  `data`, `variable`, `module`, `output`; `aws_s3_bucket`.
+- `infrastructure/graph/semantic_layer.rs` convertía ese nodo en `Symbol` y
+  **no se llevaba las propiedades**. El `Symbol` del dominio no tiene
+  propiedades: nombre, kind, posición, firma, fqn.
+- `domain/aggregates/call_graph.rs` guarda `Symbol`s, no `GraphNode`s: donde
+  el dato se perdía.
+
+Y el manejador publicaba lo que le quedaba, que era el nombre del tipo de
+Rust que contenía la declaración:
+
+```rust
+let resource_type = format!("{:?}", symbol.kind());   // → "Function"
+kind: format!("{:?}", s.kind()),                       // → "Variable"
+edge_type: format!("{:?}", dep_type),                   // → "References"
+```
+
+MEDIDO sobre `sandbox/fixtures/terraform-iac`: un bucket respondía
+`"Function"`, una variable `"Variable"`, un play de Ansible `"Module"`, y
+una relación `"References"`. Todo en el nombre de un tipo que no existe
+fuera del crate.
+
+Había además **dos vocabularios para el mismo campo**: el otro camino de la
+misma herramienta —el repositorio de PostgreSQL— publicaba el tipo de IaC
+(`resource_type`), y ése no tiene implementación en ninguna parte del
+repositorio, así que nunca se vio la contradicción.
+
+### Lo que se hizo
+
+**El dominio dice qué es una declaración.** Un value object nuevo,
+`domain/value_objects/declaration.rs`, guarda el kind que le dio el lector
+(`resource`, `data`, `variable`, `module`, `output`, `play`, `task`,
+`handler`) y el tipo que la declaración lleva (`aws_s3_bucket`), cuando lo
+lleva. El dominio no enumera esos nombres: los nombra el lector que entiende
+el lenguaje, y el grafo carga ese nombre.
+
+**La declaración viaja con el símbolo.** `Symbol` gana la declaración que su
+lector declaró, y la proyección del nodo al símbolo la conserva. El dato
+deja de calcularse y tirarse.
+
+**Los lectores declaran.** El de Terraform ya lo hacía; el de Ansible ahora
+declara también el suyo, y construye el id y el nodo en el mismo sitio: la
+identidad y el nodo no pueden discrepar sobre qué clase de cosa es.
+
+**La herramienta publica el vocabulario del dominio.** `iac_query` publica
+el tipo de la declaración y, cuando no lleva ninguno, el kind que le dio su
+lector; las relaciones contestan en el mismo idioma, y el tipo de la
+relación es el del dominio (`references`, `contains`) y no el nombre de una
+variante de Rust.
+
+El otro camino de la herramienta —el que no tiene implementación— queda
+documentado con el mismo vocabulario, para que la respuesta no dependa del
+backend que conteste.
+
+### Corrección hacia delante del criterio
+
+El candidato C4 se redactó pidiendo `resource_type: "resource"`, y sólo se
+sabía entonces que sobrevivía el kind. Al medir se vio que **el tipo
+sobrevivía también**, y que el otro camino de la misma herramienta ya
+publicaba el tipo. El criterio se corrige hacia delante: el campo se llama
+`resource_type`, Terraform llama *resource type* a `aws_s3_bucket`, y
+publicar el kind perdería el tipo. La regla que queda es una sola: **el
+tipo cuando la declaración lo lleva, el kind cuando no**.
+
+### Evidencia
+
+- Test RED primero: `crates/cognicode-core/tests/iac_query_speaks_the_domain_vocabulary.rs`
+  — 5/5 en rojo antes del arreglo, con la lectura exacta del defecto
+  (`"Function"` por `"aws_s3_bucket"`, `"Variable"` por `"variable"`,
+  `"Module"` por `"play"`), y en verde después. El caso final es el
+  discriminante: ninguna respuesta publicada puede llevar un nombre que sólo
+  existe dentro de la implementación.
+- UAT efímero con los dos binarios reales, por el cable del MCP:
+  `python3 /tmp/cognicode-cycle/c4_uat_mcp.py <binario>`. El binario
+  anterior **falla** con cinco hallazgos — `"Function"`, `"Variable"`,
+  `"Module"`, `"References"`— y el nuevo **pasa**. El UAT es efímero y no
+  se promueve: la prueba permanente ya cubre el comportamiento.
+- 2.374 tests de lib en verde; la suite que ya usaba `iac_query` para
+  comprobar la identidad de una declaración, en verde.
+- `bash scripts/test-fast.sh` → rc=0.
+- `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
+- `merge-gate` verde sobre el commit del PR.
+
+### Lo que queda al lado
+
+Medido al cerrar: el camino PostgreSQL de `iac_query` es **código muerto** —
+el trait `IacRepository` no tiene implementación en el repositorio, y sólo
+`with_iac_repo` lo usa, con el `Option` que le da el llamante. La rama no se
+toca en esta unidad porque el trait es API pública: decidir si se implementa
+o se retira es otra unidad. Queda anotada como candidato propio.
+
+**H24 no queda cerrada.** Esta unidad resolvió una de las tres cosas que
+§11 le atribuye, y la backlog de la misión todavía le asigna otros cuatro
+candidatos: el puerto de dominio que construye su propio adaptador, la
+propiedad de identidad que sustituye a los tests de paridad, el vigilante que
+dice una verdad distinta de la del registro, y la segunda puerta al grafo
+que dejó la estrategia de grafo completo.

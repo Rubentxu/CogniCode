@@ -4,6 +4,7 @@
 
 pub mod checkpoint_id;
 pub mod client_identity;
+pub mod declaration;
 pub mod dependency_type;
 pub mod edge_kind;
 pub mod edge_metadata;
@@ -33,6 +34,7 @@ pub mod space_id;
 
 pub use checkpoint_id::CheckpointId;
 pub use client_identity::ClientIdentity;
+pub use declaration::Declaration;
 pub use dependency_type::DependencyType;
 pub use edge_kind::EdgeKind;
 pub use edge_metadata::EdgeMetadata;

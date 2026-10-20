@@ -16,7 +16,7 @@
 
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::domain::aggregates::{GraphNode, NodeId};
-use crate::domain::value_objects::{DependencyType, NodeKind, Provenance, SymbolKind};
+use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance, SymbolKind};
 use tree_sitter::Node;
 
 /// A recognised HCL block, with everything needed to emit it and to resolve
@@ -74,9 +74,12 @@ pub fn interpret_terraform(
         let mut builder = GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(block.kind))
             .label(&block.identity)
             .source_path(std::path::PathBuf::from(source_path))
-            .property("iac_kind".to_string(), block.iac_kind.to_string());
+            .property(
+                Declaration::KIND_PROPERTY.to_string(),
+                block.iac_kind.to_string(),
+            );
         if let Some(t) = &block.iac_type {
-            builder = builder.property("iac_type".to_string(), t.clone());
+            builder = builder.property(Declaration::TYPE_PROPERTY.to_string(), t.clone());
         }
         nodes.push(builder.build());
 
