@@ -22,11 +22,21 @@ use std::process::Command;
 use std::sync::Arc;
 
 /// The project both surfaces are compared on.
+///
+/// Its own directory, named uniquely: a directory named after the process
+/// alone is shared by every test of this file, and the tests run in
+/// parallel —so one test's copy would land on top of another's, and both
+/// would measure whichever write happened last.
 fn terraform_project() -> PathBuf {
     let source = common::repo_root().join("sandbox/fixtures/terraform-iac");
-    let target =
-        std::env::temp_dir().join(format!("cognicode-cli-graph-parity-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&target);
+    let target = std::env::temp_dir().join(format!(
+        "cognicode-cli-graph-parity-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
     copy_tree(&source, &target);
     target
 }
