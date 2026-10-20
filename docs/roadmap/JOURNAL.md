@@ -20235,3 +20235,70 @@ grafo que dejó la estrategia de grafo completo.
 - `bash scripts/test-fast.sh` → rc=0.
 - `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
 - `merge-gate` verde sobre el commit del PR.
+
+## 2026-10-21 — La auditoría reordena el trabajo que queda (H23, H24, H5)
+
+### Lo que se pidió
+
+Reordenar el roadmap sobre un informe de auditoría del 2026-10-21 que
+contrasta el árbol en `4dbcb994`. El informe no propone unidades nuevas: dice
+que el trabajo cabe en las especificaciones que ya existen y en la backlog de
+la misión, y que lo que cambia es el orden.
+
+### Lo que se comprobó antes de escribir nada
+
+Un informe que no se contrasta con el código es una opinión, así que sus
+hallazgos se leyeron en el árbol antes de mover una sola línea:
+
+| Lo que el informe afirmaba | Comprobado en el árbol |
+|---|---|
+| Un fichero recuperado de la caché no cuenta como analizado | Sí: `parsed_files` sube sólo cuando el fichero se vuelve a interpretar (`analysis_service.rs:439`) |
+| Los errores del recorrido desaparecen del inventario | Sí: el recorrido sigue filtrando las entradas que fallan (`source_files.rs:98`) |
+| La consulta de infraestructura elige el primer homónimo | Sí: sigue así (`consolidated_handlers.rs:745`) |
+| Los dos tests de paridad comparten un directorio temporal | Sí: los dos usaban el mismo nombre |
+
+Lo que el informe daba por ya arreglado y que la rama de este ciclo también
+cambió no se reabrió: son candidatos de la backlog, no trabajo perdido.
+
+### Lo que se hizo
+
+- **§11 del ROADMAP** dice ahora el orden de los cinco hitos, y por qué en
+  ese orden: primero la veracidad del grafo —que ninguna cobertura engañe y
+  que la consulta de infraestructura no responda cosas falsas—, después la
+  economía del testing, después la simplificación técnica, y por último la
+  certificación y el corte de release. El bloque sigue dentro de su techo de
+  líneas.
+- **La backlog de la misión** quedó reordenada: 26 candidatos, tres nacidos
+  del informe —la cobertura en caché, el fallo silencioso del lector
+  especializado y la prueba metamórfica del grafo— y dos que ya existían
+  recibieron la evidencia nueva, el de la ontología con el caso de Bash y el
+  de la identidad con un ejemplo que el parser no entiende.
+- **CURRENT.md** cuenta los cinco hitos, los candidatos de cada uno y cuál
+  es el siguiente trabajo: la cobertura en caché.
+- **Un arreglo de código que el informe señaló y que era pequeño y cierto**:
+  los dos tests de paridad compartían un directorio temporal identificado
+  sólo por el PID y se pisaban entre sí. Cada uno tiene ahora nombre único.
+
+### Lo que no se hizo, y por qué
+
+- **La repriorización no abre unidades nuevas.** El informe encaja en H23,
+  H24 y H5 y en los contratos que ya existen; abrir otra saga sería lo
+  contrario de lo que pide.
+- **Los tres candidatos nuevos no se implementan aquí.** La cobertura en
+  caché es el siguiente trabajo y merece su propio ciclo con su propio
+  oráculo: un build en caliente que informa 0 % sobre un grafo completo es un
+  defecto de cobertura, no un arreglo de una línea.
+- **H24 no queda cerrada.** La repriorización cambia el orden dentro de la
+  unidad, no la da por terminada.
+
+### Evidencia
+
+- Los cuatro ratchets del roadmap en verde tras la repriorización:
+  atribución de autoridad, coherencia de unidades abiertas, ratchet de
+  versión y estándar de comentarios.
+- `python3 scripts/ci/test_roadmap_authority_attribution.py` → OK.
+- `python3 scripts/ci/test_roadmap_open_units_coherence.py` → OK.
+- `python3 scripts/ci/test_roadmap_version_ratchet.py` → OK.
+- `python3 scripts/ci/test_comment_standard.py` → OK.
+- La suite de paridad de la CLI en verde, con los dos tests sobre su propio
+  árbol.
