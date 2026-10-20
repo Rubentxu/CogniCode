@@ -18848,3 +18848,121 @@ resultado dice la verdad sobre lo que se ejecutó.
   la deja en un sitio donde puede cerrarse de verdad.
 
 Gates: `fast rc=0`; `full rc=0`.
+
+
+---
+
+## 2026-10-20 — Un comentario que explica el código, y el escáner que no veía (PR #393)
+
+### La regla, por fin, comprobable
+
+Un comentario dentro del código explica lo que el código hace. No carga el
+identificador de una tarea, ni el de una decisión, ni una fecha, ni el número
+de un pull request, ni la ruta de una especificación. Todo eso es cierto y
+todo eso caduca: un comentario que dice «véase H12» manda al lector a buscar
+H12, y un comentario que dice lo que hace el código lo deja quedarse.
+
+La deuda, MEDIDA sobre el árbol versionado con los patrones finales:
+
+```text
+base (origin/main): 2565 líneas de comentario ofensoras en 518 ficheros
+```
+
+### El ratchet, no el lint
+
+La deuda es grande y está mal repartida: un puñado de ficheros la carga casi
+entera. Un lint que fallara en los 518 sería una pared que nadie trepa. Un
+lint que mirara sólo el diff sería una pared que aparece y desaparece con el
+diff.
+
+Así que esto compara la rama con la commit de la que viene:
+
+    las líneas ofensoras que toca esta rama
+        no pueden superar las que heredó.
+
+No hay ninguna constante en el fichero que se pueda subir. La deuda sólo
+puede bajar, y baja sola a medida que se toca el código: un cambio que quita
+comentarios ofensoros baja el número para todos los cambios posteriores, y un
+cambio que añade uno lo sube para todos los cambios posteriores. Ése es todo
+el punto.
+
+Sólo se miden los ficheros que la rama toca: uno que nadie tocó tiene la
+misma deuda en los dos lados, se cancela, y medirlo otra vez sería pagar una
+pasada completa por nada.
+
+La comparación **falla en cerrado**: si la base no se puede resolver, esto no
+pasa en vacío.
+
+### El escáner no veía la mitad del repositorio
+
+Para contar los comentarios hace falta saber dónde empiezan. El escáner que
+ya usaba el ratchet arquitectónico tenía un fallo: confundía un **lifetime**
+de Rust (`&'static str`) con un literal de carácter, y como su literal sólo
+se cerraba con comillas dobles, **nunca salía de ese estado**. A partir del
+primer lifetime, el resto del fichero desaparecía del escáner.
+
+MEDIDO, sobre los 2084 ficheros versionados del árbol:
+
+```text
+ficheros donde el escáner viejo dejó comentarios sin ver:  497
+cr06_allowlist.rs:  386 comentarios reales, 162 vistos  (ciego desde la línea 418)
+ladybug/src/lib.rs: 637 comentarios reales,  66 vistos  (ciego desde la línea 130)
+```
+
+El fichero del inventario arquitectónico estaba ciego a la mitad. No había
+explotado porque las entradas del inventario están antes del punto ciego, pero
+el agujero estaba ahí: un `ex(` en un comentario después de esa línea se
+habría contado como deuda, y un comentario que no se ve es un comentario que
+nadie puede citar.
+
+El escáner ahora distingue el lifetime del literal de carácter, y **el
+literal se cierra con su propia comilla**. Vive en
+`scripts/ci/comment_scan.py`, que es un módulo compartido: el ratchet
+arquitectónico y el nuevo lo importan, así que los dos no pueden discrepar
+sobre lo que es un comentario. El self-test del ratchet arquitectónico sigue
+en pie y el contrato sigue verde (24 → 24, ni una entrada más ni una menos).
+
+### La primera zona, barrida
+
+La primera zona es la frontera MCP: el fichero de handlers. De **147** líneas
+ofensoras a **0**.
+
+El barrido fue en dos tiempos: primero uno mecánico que quita el prefijo
+(`/// PRF-STATE-07: el snapshot durable ...` → `/// El snapshot durable ...`),
+y después una pasada curada para las referencias que están *dentro* de la
+frase, donde la frase entera hay que reescribirla para que siga diciendo lo
+que decía. De 147, el mecánico quitó 100 y la pasada curada las 47
+restantes.
+
+Una lección del propio barrido: una línea que empezaba por `W3 was always a
+direct core API call` no tenía un prefijo sino una continuación, y el
+barrido mecánico se comió el `W3`. La pasada curada lo devolvió. Un barrido
+mecánico que no se revisa no es un barrido: es una máquina de perder
+información con buena intención.
+
+### Anti-vacuidad
+
+Un contrato que no puede fallar no es un contrato. Con una violación
+deliberada (`// H12: ...` y `// PR #390 ...` y `// 2026-10-20`) el ratchet
+falla, nombrando el fichero y el crecimiento:
+
+```text
+FAIL the offending comment lines grew by 2. ...
+  crates/cognicode-ladybug/src/lib.rs: 26 -> 28
+```
+
+Retirada la violación, vuelve a verde. Y el propio contrato se comprueba a sí
+mismo: que el escáner ve una referencia dentro de un comentario, que **no**
+ve un `// H12` que es una cadena, y que el escáner compartido y el ratchet
+miden lo mismo.
+
+### Lo que esto NO toca
+
+- **El contenido del código**: solo comentarios. Ni una línea de lógica
+  cambia, ni una firma, ni un test.
+- **El expediente congelado** de `docs/prf/`, que no se toca.
+- **El resto de la deuda**: 2418 líneas en 517 ficheros. Es trabajo mecánico
+  por zonas, y el ratchet es lo que lo hace seguro: la zona que se barra baja
+  el número, y la siguiente zona empieza con el número más bajo.
+
+Gates: `fast rc=0`; `full rc=0`.

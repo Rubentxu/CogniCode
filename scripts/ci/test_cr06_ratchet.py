@@ -126,111 +126,11 @@ def read_at(ref: str, rel_path: str) -> str | None:
     return git("show", f"{ref}:{rel_path}")
 
 
-def strip_rust_comments(text: str) -> str:
-    """Remove `//` line comments and `/* */` blocks, keeping line numbering.
-
-    The allowlist's module doc explains the format in prose and quotes tuples
-    inside backticks. Scanning the raw text would count documentation as
-    inventory, and this file's own header is longer than its inventory.
-
-    String- and char-literal aware, because the previous version had a real
-    failure mode rather than a theoretical one. A `/*` sequence inside a
-    string literal -- for example `"application/*.rs"` -- used to open a
-    block comment that swallowed the rest of the file. `GUARDED` then
-    vanished from this parser's view and the cross-check failed with
-    "cannot find the GUARDED constant": the ratchet's ability to check
-    itself was destroyed by an unrelated string. Writing that assertion
-    message inside `cr06_allowlist.rs` was enough to trigger it.
-
-    That particular failure was at least loud. A `//` inside a literal
-    would have been quieter: it truncates a single line, so a count can
-    come out wrong with nothing visibly broken. The old code documented
-    that as an acceptable trade on the grounds that the cost was "a
-    miscounted entry, not a wrong verdict" -- which the `/*` case above
-    disproves. Both are handled here rather than written down as fine.
-    """
-    out: list[str] = []
-    i = 0
-    n = len(text)
-    # 0 = code, 1 = line comment, 2 = block comment
-    state = 0
-    quote: str | None = None
-    # Number of `#` in a raw-string opener, so `r#"..."#` closes correctly.
-    raw_close = ""
-    while i < n:
-        ch = text[i]
-
-        if state == 1:  # line comment
-            if ch == "\n":
-                out.append(ch)
-                state = 0
-            else:
-                out.append(" ")
-            i += 1
-            continue
-
-        if state == 2:  # block comment
-            if ch == "*" and i + 1 < n and text[i + 1] == "/":
-                state = 0
-                out.append("  ")
-                i += 2
-                continue
-            out.append("\n" if ch == "\n" else " ")
-            i += 1
-            continue
-
-        if quote is not None:
-            if ch == "\\" and not raw_close:  # escape, skipped in raw strings
-                out.append(ch)
-                i += 1
-                if i < n:
-                    out.append(text[i])
-                    i += 1
-                continue
-            if ch == '"' and text.startswith(quote, i):
-                out.append(quote)
-                i += len(quote)
-                quote = None
-                raw_close = ""
-                continue
-            out.append(ch)
-            i += 1
-            continue
-
-        if ch == "r" and i + 1 < n and text[i + 1] in ('"', "#"):
-            j = i + 1
-            while j < n and text[j] == "#":
-                j += 1
-            if j < n and text[j] == '"':
-                closer = '"' + "#" * (j - i - 1)
-                out.append(text[i : j + 1])
-                i = j + 1
-                quote = closer
-                raw_close = closer
-                continue
-
-        if ch in ('"', "'"):
-            quote = ch
-            raw_close = ""
-            out.append(ch)
-            i += 1
-            continue
-
-        if ch == "/" and i + 1 < n:
-            if text[i + 1] == "/":
-                state = 1
-                out.append("  ")
-                i += 2
-                continue
-            if text[i + 1] == "*":
-                state = 2
-                out.append("  ")
-                i += 2
-                continue
-
-        out.append(ch)
-        i += 1
-    return "".join(out)
+# The comment scanner is shared. This ratchet has to blank the comments out
+# before it counts anything else, and the comment-standard ratchet has to
+# count the comments themselves. One scanner, so the two cannot disagree
+# about what a comment is.
+import comment_scan
 
 
 def parse_entries(text: str) -> list[dict[str, str]]:
@@ -241,7 +141,7 @@ def parse_entries(text: str) -> list[dict[str, str]]:
     pass by making itself blind. It is reported as a failure rather than being
     counted as debt so that fixing the format is the only way to clear it.
     """
-    source = strip_rust_comments(text)
+    source = comment_scan.strip_rust_comments(text)
     lines = source.splitlines()
     entries: list[dict[str, str]] = []
     for match in EX_OPEN.finditer(source):
@@ -435,7 +335,7 @@ def rust_guarded_pairs() -> list[tuple[str, str]]:
     text = working_tree_source(ALLOWLIST_REL)
     if text is None:
         return []
-    match = GUARDED_CONST.search(strip_rust_comments(text))
+    match = GUARDED_CONST.search(comment_scan.strip_rust_comments(text))
     if not match:
         failures.append(
             "cannot find the GUARDED constant in cr06_allowlist.rs, so this "
@@ -855,14 +755,14 @@ def _selftest() -> int:
     ]
     bad = 0
     for name, src in cases:
-        out = strip_rust_comments(src)
+        out = comment_scan.strip_rust_comments(src)
         if "const G" not in out:
             print(f"FAIL {name}")
             bad += 1
         else:
             print(f"ok   {name}")
     for name, src in cases:
-        if strip_rust_comments(src).count("\n") != src.count("\n"):
+        if comment_scan.strip_rust_comments(src).count("\n") != src.count("\n"):
             print(f"FAIL line numbering: {name}")
             bad += 1
     return 1 if bad else 0

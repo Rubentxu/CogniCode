@@ -228,26 +228,26 @@ use tracing::info;
 #[derive(Clone)]
 pub struct HandlerContext {
     /// The workspace root every path in this context is resolved against.
-    /// ST-04: read through `working_dir()`; the canonicalized value cannot
+    /// Read through `working_dir()`; the canonicalized value cannot
     /// be swapped after construction, because a context whose root moved
     /// underneath it would resolve two identical paths differently.
     working_dir: PathBuf,
-    /// ST-04: read through `validator()`. Handlers validate; they do not
+    /// Read through `validator()`. Handlers validate; they do not
     /// decide what counts as valid, so this is handed out by reference and
     /// never replaced.
     validator: Arc<InputValidator>,
-    /// ST-04: read through `analysis_service()`.
+    /// Read through `analysis_service()`.
     analysis_service: Arc<AnalysisService>,
-    /// ST-04: read only from modules inside `handlers`, which see this
+    /// Read only from modules inside `handlers`, which see this
     /// private field directly. No accessor exists because no caller outside
     /// the module needs one.
     refactor_service: Arc<RefactorService>,
     compressor: Arc<ContextCompressorService>,
-    /// ST-04: read only from modules inside `handlers`; see
+    /// Read only from modules inside `handlers`; see
     /// `refactor_service` above.
     semantic_search: Arc<SemanticSearchService>,
     symbol_code: Arc<SymbolCodeService>,
-    /// ST-04: who is on the other end, if anyone announced themselves.
+    /// Who is on the other end, if anyone announced themselves.
     /// One value, not three independently-optional fields — see
     /// [`ClientIdentity`] for why the distinction is load-bearing.
     client: ClientIdentity,
@@ -256,7 +256,7 @@ pub struct HandlerContext {
     /// Tracks symbol access hotness for AI relevance learning
     symbol_hotness: Arc<Mutex<HashMap<String, usize>>>,
     /// Optional persistent GraphStore (SQLite). Falls back to InMemoryGraphStore if None.
-    /// ST-04: read through `get_graph_store()`, which is the only reader
+    /// Read through `get_graph_store()`, which is the only reader
     /// outside this module and which applies the memoized fallback. Direct
     /// access to the configured value stays inside `handlers` — modules
     /// nested here see the private field, and the tests that need to tell
@@ -268,7 +268,7 @@ pub struct HandlerContext {
     /// Optional CodeIntelligenceProvider for LSP operations. Falls back to creating CompositeProvider if None.
     code_intelligence_provider: Option<Arc<dyn CodeIntelligenceProvider>>,
     /// Optional FileOperationsService for shared file operation handlers. If None, handlers create their own.
-    /// ST-04: read through `file_ops_service()`. The accessor returns a
+    /// Read through `file_ops_service()`. The accessor returns a
     /// borrow, not the `Option` itself, so the service this context was
     /// built with cannot be replaced from outside the module.
     file_ops_service:
@@ -279,28 +279,27 @@ pub struct HandlerContext {
     /// `get_graph_store()` call when no explicit `graph_store` is configured.
     /// Wrapped in `Arc` so it can live in a `#[derive(Clone)]` struct;
     /// `OnceLock` ensures thread-safe single initialization.
-    /// See ADR-030.
     fallback_store: Arc<OnceLock<Arc<dyn GraphStore>>>,
-    /// M3.1: Flag flipped to `true` after the first successful `build_graph`
+    /// Flag flipped to `true` after the first successful `build_graph`
     /// call completes through `call_tool_handler`. Used by the `/ready`
     /// HTTP endpoint to report graph-readiness distinct from process
     /// liveness (`/health`). Atomic + `Arc` so the flag can be observed
     /// by the HTTP readiness handler without going through the dispatch
     /// boundary.
     graph_loaded: Arc<AtomicBool>,
-    /// PRF-SEC-02: read-only mode. When `true`, mutating tools
+    /// Read-only mode. When `true`, mutating tools
     /// (write_file, edit_file, reparse_on_edit) are rejected at dispatch
     /// and filtered out of `tools/list`. Default `false` preserves the
     /// existing behavior for the HTTP server; the stdio binary exposes
     /// `--read-only`.
     read_only: Arc<AtomicBool>,
-    /// PRF-F5.W4: per-sub-handler timeout for composite tools (e.g.
+    /// Per-sub-handler timeout for composite tools (e.g.
     /// `handle_smart_search`). Default `Duration::from_secs(60)`
     /// preserves the production behavior; tests can override it
     /// via `HandlerContextBuilder::with_sub_handler_timeout` to force
     /// timeout paths in seconds rather than minutes. Read through
     /// `sub_handler_timeout()`. The field stopped being part of the public
-    /// `HandlerContext` API in ST-04: a context's request budget is fixed at
+    /// `HandlerContext` API: a context's request budget is fixed at
     /// build time, so a caller cannot lengthen or shorten it once dispatch has
     /// started.
     sub_handler_timeout: std::time::Duration,
@@ -317,7 +316,7 @@ impl std::fmt::Debug for HandlerContext {
 }
 
 impl HandlerContext {
-    /// ST-04: the connected client's identity, or [`ClientIdentity::unknown`].
+    /// The connected client's identity, or [`ClientIdentity::unknown`].
     ///
     /// Read-only by construction. `ClientIdentity` owns the three attributes
     /// and hands back `Option<&str>`, so no caller can install a name without
@@ -326,22 +325,22 @@ impl HandlerContext {
         &self.client
     }
 
-    /// ST-04: whether this context refuses workspace mutation.
+    /// Whether this context refuses workspace mutation.
     ///
     /// Read-only is fixed when the context is built and there is no setter.
-    /// That is deliberate: PRF-SEC-02 treats it as part of the posture a
+    /// That is deliberate: the read-only posture treats it as part of the
     /// client is admitted under, and a `pub` field would have allowed a live
     /// handler to be flipped into or out of read-only after connecting.
     pub fn is_read_only(&self) -> bool {
         self.read_only.load(Ordering::SeqCst)
     }
 
-    /// ST-04: the per-context sub-handler timeout for composite tools.
+    /// The per-context sub-handler timeout for composite tools.
     pub fn sub_handler_timeout(&self) -> std::time::Duration {
         self.sub_handler_timeout
     }
 
-    /// ST-04: the symbol-code service, by reference.
+    /// The symbol-code service, by reference.
     ///
     /// The only accessor this slice needed. `compressor`, `iac_repo` and
     /// `code_intelligence_provider` are read exclusively from modules *inside*
@@ -353,7 +352,7 @@ impl HandlerContext {
         &self.symbol_code
     }
 
-    /// ST-04: the analysis service, by reference.
+    /// The analysis service, by reference.
     ///
     /// Slice 7 needed this one. `analysis_service` is read from
     /// `consolidated_handlers` and `aix_handlers` — both children of
@@ -366,7 +365,7 @@ impl HandlerContext {
         &self.analysis_service
     }
 
-    /// ST-04: the shared file-operations service, if one was configured.
+    /// The shared file-operations service, if one was configured.
     ///
     /// Returned as `&Option<..>` rather than `Option<&..>` so the call sites
     /// keep the shape they had against a public field
@@ -380,18 +379,18 @@ impl HandlerContext {
         &self.file_ops_service
     }
 
-    /// ST-04: the workspace root, as `&Path` so callers cannot re-point the
+    /// The workspace root, as `&Path` so callers cannot re-point the
     /// context at another tree by mutating what they were handed.
     pub fn working_dir(&self) -> &Path {
         &self.working_dir
     }
 
-    /// ST-04: the validator this context enforces with, by reference.
+    /// The validator this context enforces with, by reference.
     pub fn validator(&self) -> &Arc<InputValidator> {
         &self.validator
     }
 
-    /// ST-04: the configured log level for this context.
+    /// The configured log level for this context.
     ///
     /// This used to be reachable only through the now-removed `Telemetry`
     /// trait, which had no other caller. A field that `handlers/*` reads
@@ -409,20 +408,20 @@ impl HandlerContext {
         self.cancellation_token.load(Ordering::SeqCst)
     }
 
-    /// M3.1: Mark the graph as loaded. Called by `call_tool_handler` after
+    /// Mark the graph as loaded. Called by `call_tool_handler` after
     /// a successful `build_graph` dispatch so the `/ready` HTTP endpoint
     /// can report readiness.
     pub fn mark_graph_loaded(&self) {
         self.graph_loaded.store(true, Ordering::SeqCst);
     }
 
-    /// M3.1: Read the current graph-loaded state. Used by the `/ready`
+    /// Read the current graph-loaded state. Used by the `/ready`
     /// HTTP endpoint to distinguish liveness from readiness.
     pub fn is_graph_loaded(&self) -> bool {
         self.graph_loaded.load(Ordering::SeqCst)
     }
 
-    /// M3.3: Access the per-context [`RateLimiter`] for tool-dispatch
+    /// Access the per-context [`RateLimiter`] for tool-dispatch
     /// rate limiting. The dispatch boundary in `call_tool_handler`
     /// calls `check_with_key` with a per-tool key before invoking
     /// each handler. The underlying `RateLimiter` is shared with
@@ -439,7 +438,7 @@ impl HandlerContext {
     ///
     /// The fallback is created lazily on first access and reused across
     /// calls so that `build_graph` writes to `graph_cache` are visible
-    /// to subsequent tool calls. See ADR-030 + ADR-032.
+    /// to subsequent tool calls.
     pub fn get_graph_store(&self) -> Arc<dyn GraphStore> {
         if let Some(ref store) = self.graph_store {
             store.clone()
@@ -519,7 +518,7 @@ pub struct HandlerContextBuilder {
         Option<Arc<crate::application::services::file_operations::FileOperationsService>>,
     iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     read_only: Option<Arc<AtomicBool>>,
-    /// PRF-F5.W4: per-sub-handler timeout override. `None` means use
+    /// Per-sub-handler timeout override. `None` means use
     /// the production default (60s); tests can set a sub-second value
     /// to force the timeout branch without sleeping 60s in CI.
     sub_handler_timeout: Option<std::time::Duration>,
@@ -531,7 +530,7 @@ impl HandlerContextBuilder {
         Self::default()
     }
 
-    /// PRF-SEC-02: enables read-only mode (mutating tools rejected/hidden).
+    /// Enables read-only mode (mutating tools rejected/hidden).
     pub fn with_read_only(mut self, read_only: bool) -> Self {
         self.read_only = Some(Arc::new(AtomicBool::new(read_only)));
         self
@@ -583,7 +582,7 @@ impl HandlerContextBuilder {
 
     /// Sets the client protocol version.
     ///
-    /// ST-04: composes the existing [`ClientIdentity`] rather than assigning
+    /// Composes the existing [`ClientIdentity`] rather than assigning
     /// a field of its own, so the builder keeps the API callers already use
     /// while the context stops exposing the pieces.
     pub fn with_client_protocol_version(mut self, version: impl Into<String>) -> Self {
@@ -612,7 +611,7 @@ impl HandlerContextBuilder {
         self
     }
 
-    /// PRF-F5.W4: override the per-sub-handler timeout used by
+    /// Override the per-sub-handler timeout used by
     /// composite tools (`handle_smart_search` and similar). Tests can
     /// pass a small Duration (e.g. `Duration::from_millis(100)`) to
     /// force the timeout branch quickly; production callers should
@@ -873,11 +872,11 @@ fn graph_db_path(directory: &Path) -> PathBuf {
     canonical_dir.join(".cognicode").join("graph.cache")
 }
 
-/// PRF-STATE-03/04: atomically persist the graph + manifest snapshot to
+/// Atomically persist the graph + manifest snapshot to
 /// `db_path` (temp file + rename, so an interrupted write never leaves a
 /// half-written snapshot that could be mistaken for valid evidence).
 ///
-/// PRF-STATE-11/13: the temp file uses a per-process unique name
+/// The temp file uses a per-process unique name
 /// (`cache.tmp.<pid>.<seq>`), not a fixed slot. Two writers on the same
 /// workspace never share a temp path; an interrupted writer leaves a
 /// file whose name identifies the dying process for post-mortem.
@@ -901,7 +900,7 @@ fn save_durable_snapshot(
     std::fs::rename(&tmp, db_path)
 }
 
-/// PRF-STATE-11/13: returns a unique tmp path for `db_path`.
+/// Returns a unique tmp path for `db_path`.
 ///
 /// Each call appends `<pid>.<seq>` so concurrent writers on the same
 /// workspace never collide on the temp slot. The sequence counter is
@@ -925,7 +924,7 @@ fn tmp_path_for(db_path: &Path) -> PathBuf {
     db_path.with_file_name(file_name)
 }
 
-/// PRF-STATE-03/04: load a durable snapshot. Returns `None` on any
+/// Load a durable snapshot. Returns `None` on any
 /// parse failure — a corrupt snapshot is treated as absent (rebuild),
 /// never as valid evidence.
 fn load_durable_snapshot(
@@ -984,15 +983,14 @@ fn resolve_file_path(input_path: &str, working_dir: &Path) -> PathBuf {
 ///    insufficient: a tool that overwrites the bytes while preserving
 ///    the timestamp (a restore from backup, `touch -r`, a wrong writer)
 ///    would otherwise be silently served as the cached graph while
-///    reporting `status: complete`. PRF-STATE-07.
+///    reporting `status: complete`.
 ///
 /// A source file that cannot be read at all (permissions revoked,
 /// deleted mid-scan) is treated as a change: serving the cached graph
 /// would hide the loss of coverage behind a stale "complete" result.
-/// PRF-STATE-08.
 ///
 /// New files not in the manifest and files in the manifest but absent
-/// from disk also invalidate the snapshot. PRF-STATE-09 / PRF-STATE-10.
+/// from disk also invalidate the snapshot.
 fn is_manifest_stale(
     manifest: &crate::domain::value_objects::file_manifest::FileManifest,
     project_dir: &Path,
@@ -1023,13 +1021,13 @@ fn is_manifest_stale(
             .unwrap_or(0);
         match manifest.entries.get(rel) {
             Some(entry) if entry.mtime == mtime_ms => {
-                // PRF-STATE-07: mtime alone is not sufficient. A tool
+                // Mtime alone is not sufficient. A tool
                 // can rewrite the file bytes while keeping the original
                 // timestamp (e.g. restoring a backup, partial restore,
                 // `touch -r`). Compare the on-disk content_hash against
                 // the stored one to detect that case.
                 //
-                // PRF-STATE-08: a file whose content can no longer be
+                // A file whose content can no longer be
                 // read (e.g. permissions revoked after the snapshot)
                 // invalidates the snapshot — serving it would hide the
                 // loss of coverage behind a stale "complete" result.
@@ -1102,7 +1100,7 @@ fn build_manifest(
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_millis() as u64)
             .unwrap_or(0);
-        // PRF-STATE-02: content_hash must hash CONTENT, not metadata.
+        // Content_hash must hash CONTENT, not metadata.
         // The previous mtime proxy produced identical digests for
         // different files written in the same millisecond.
         let content_hash = std::fs::read(path)
@@ -1122,7 +1120,7 @@ fn build_manifest(
 
 /// Input for build_graph
 ///
-/// PRF-MCP-04: unknown arguments are a typed error, never silently
+/// Unknown arguments are a typed error, never silently
 /// ignored (a misspelled `directory` must not silently rebuild the
 /// default workspace).
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -1142,7 +1140,7 @@ pub struct EdgeInfo {
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct BuildGraphOutput {
     pub success: bool,
-    /// PRF-ANA-04: explicit build outcome surfaced to the caller so
+    /// Explicit build outcome surfaced to the caller so
     /// consumers (LLM, CI, alert) can branch on it without parsing
     /// `skipped_files`. Values:
     ///   - `"complete"`: walk happened, no skipped files.
@@ -1155,14 +1153,14 @@ pub struct BuildGraphOutput {
     pub relationships_found: usize,
     pub edges: Vec<EdgeInfo>,
     pub message: String,
-    /// F2.W8: files that could not be processed during the walk.
+    /// Files that could not be processed during the walk.
     /// `None` when the graph was served from cache (no walk happened
     /// on this call); `Some([])` when the walk finished with no
     /// omissions; `Some([..])` when one or more files were dropped
     /// because of I/O / parsing failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_files: Option<Vec<SkippedFileDto>>,
-    /// PRF-ANA-06: identity of what the graph was built from.
+    /// Identity of what the graph was built from.
     /// `None` only when identity cannot be established at all;
     /// otherwise present with `complete: false` when any component
     /// (workspace canonicalization, manifest digest) is unavailable.
@@ -1170,7 +1168,7 @@ pub struct BuildGraphOutput {
     pub basis: Option<BasisDto>,
 }
 
-/// PRF-ANA-06: provenance basis for a build_graph result.
+/// Provenance basis for a build_graph result.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct BasisDto {
     /// Canonicalized workspace path the graph was built from.
@@ -1186,7 +1184,7 @@ pub struct BasisDto {
     pub complete: bool,
 }
 
-/// F2.W8: per-file skipped-file record surfaced through `build_graph`.
+/// Per-file skipped-file record surfaced through `build_graph`.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct SkippedFileDto {
     pub path: String,
@@ -1207,7 +1205,7 @@ pub async fn handle_build_graph(
 
     let directory = resolve_directory(input.directory, &ctx.working_dir);
 
-    // PRF-SEC-01: the build directory is a path surface. Enforce the
+    // The build directory is a path surface. Enforce the
     // workspace allowlist (traversal, absolute escapes, symlinked
     // components, canonical boundary) through the same InputValidator
     // every other path-bearing handler uses.
@@ -1239,7 +1237,7 @@ pub async fn handle_build_graph(
         g.symbol_count() == 0 && g.edge_count() == 0
     };
     if db_path.exists() && cache_is_empty {
-        // PRF-STATE-03/04: the durable snapshot is the source for both
+        // The durable snapshot is the source for both
         // graph and manifest. A corrupt snapshot is treated as absent.
         let snapshot = load_durable_snapshot(&db_path);
         let is_stale = match snapshot.as_ref().map(|(_, manifest)| manifest) {
@@ -1258,7 +1256,7 @@ pub async fn handle_build_graph(
         }
     }
 
-    // STATE-07 debt resolution (JOURNAL §40): a same-session repeat call
+    // A same-session repeat call
     // with a fresh manifest (unchanged sources, content-vs-content) serves
     // the in-memory cached graph without a rebuild. Same staleness gate as
     // the durable snapshot path: a stale manifest falls through to the
@@ -1282,12 +1280,12 @@ pub async fn handle_build_graph(
             return Err(HandlerError::App(e));
         }
         // build_project_graph() already updates analysis_service.graph_cache()
-        // (which CachedGraphStore reads from — see ADR-032). The dual-write
+        // (which CachedGraphStore reads from). The dual-write
         // to the inner InMemoryGraphStore is no longer needed.
         //
         // Build and save manifest (stored in inner InMemoryGraphStore via
         // CachedGraphStore — used for staleness check on next build_graph).
-        // PRF-STATE-04: only persist a snapshot when the build is
+        // Only persist a snapshot when the build is
         // Complete. A Partial build (unreadable/failed files) must not
         // leave behind a snapshot that a later session could mistake
         // for full coverage — rebuild-every-time is the safe default.
@@ -1302,7 +1300,7 @@ pub async fn handle_build_graph(
             if let Ok(manifest) = build_manifest(&directory) {
                 let store = ctx.get_graph_store();
                 let _ = store.save_manifest(&manifest);
-                // PRF-STATE-03/04: persist the snapshot atomically so a
+                // Persist the snapshot atomically so a
                 // restart can reuse it; best-effort, never blocks the build.
                 let graph = ctx.analysis_service.get_project_graph();
                 if let Err(e) = save_durable_snapshot(&db_path, &graph, &manifest) {
@@ -1324,16 +1322,16 @@ pub async fn handle_build_graph(
     let edges_count = graph.edge_count();
     let elapsed = start.elapsed().as_millis() as u64;
 
-    // F2.W8: surface the BuildReport through build_graph so that
+    // Surface the BuildReport through build_graph so that
     // silent file drops are visible to clients. Cache hits report
     // `None` (no walk happened in this call) — re-running build_graph
     // after a source change will reflect the new walk's outcome.
     //
-    // PRF-ANA-04: the `status` field on BuildGraphOutput is derived
+    // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
     let (skipped_files, status) = if loaded_from_cache {
-        // PRF-STATE-03/04: the snapshot was hydrated only after passing
+        // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
         // unreadable-file detection). Coverage of the restored graph is
         // therefore verified against the current tree: report it as
@@ -1407,7 +1405,7 @@ pub async fn handle_build_graph(
             EdgeInfo { from, to }
         })
         .collect();
-    // PRF-ANA-05: canonical edge ordering. The underlying graph iteration
+    // Canonical edge ordering. The underlying graph iteration
     // order is not stable across builds, but the published payload must be
     // reproducible run-over-run for identical inputs.
     let mut edges = edges;
@@ -1418,7 +1416,7 @@ pub async fn handle_build_graph(
     } else {
         "built"
     };
-    // PRF-ANA-06: identity basis for this result.
+    // Identity basis for this result.
     let basis = compute_basis(ctx, &directory);
     Ok(BuildGraphOutput {
         success: true,
@@ -1435,7 +1433,7 @@ pub async fn handle_build_graph(
     })
 }
 
-/// PRF-ANA-06: compute the identity basis for a build_graph result.
+/// Compute the identity basis for a build_graph result.
 /// - `workspace`: canonicalized project directory.
 /// - `config_digest`: SHA-256 over the effective build-relevant config
 ///   (currently the log level; the config surface grows as handlers do).
@@ -1779,7 +1777,7 @@ pub async fn handle_find_usages(
         symbol: input.symbol_name,
         usages: usage_entries,
         total,
-        // B3.W1 parity with the MCP wire shape; `find_usages` is
+        // Parity with the MCP wire shape; `find_usages` is
         // navigation, so its floor is `ast-heuristic` and its default
         // provider is the symbol index. The values match what
         // precision_floor_for_tool / default_provider_for_tool return
@@ -1819,9 +1817,9 @@ pub async fn handle_structural_search(
 
 /// Handler for composite_impact_query tool.
 ///
-/// Mirrors `cognicode graph impact-composite` (B4.W5). The result is
+/// Mirrors `cognicode graph impact-composite`. The result is
 /// **investigative, not authoritative**: it carries `verdict_refused:
-/// true` by construction (R-B4-W5), so a consumer cannot mistake it
+/// true` by construction, so a consumer cannot mistake it
 /// for a shipped verdict. This handler only translates the MCP input
 /// into the core query and serialises the core result — the semantics
 /// live in exactly one place, `impact::composite`.
@@ -1842,16 +1840,16 @@ pub async fn handle_composite_impact_query(
 
 /// Handler for analyze_impact tool
 ///
-/// **Risk level divergence (D65, D71)**: this handler derives
+/// **Risk level divergence**: this handler derives
 /// `risk_level` from `symbols_count` with thresholds `>2 / >5 / >10`
 /// (yielding `Low | Medium | High | Critical`). This is intentionally
 /// different from the core `ImpactAnalyzer::determine_impact_level`
 /// (which uses 5 buckets `Minimal | Low | Medium | High | Critical`
 /// with a 2x multiplier for type definitions). The MCP wrapper
 /// prioritizes a simple blast-radius heuristic over the core's
-/// type-aware semantics; see JOURNAL §125.V27 + V28.1 for the full
+/// type-aware semantics. The full
 /// rationale and the five distinct `RiskLevel`/`ImpactLevel`
-/// implementations documented as D71.
+/// implementations are documented in the architecture record.
 ///
 /// This is **not** a bug. It is a documented contract: the MCP
 /// output is a simplified view tailored for tool consumers (AI
@@ -4239,7 +4237,7 @@ pub mod program_analysis_handlers;
 mod tests {
     use super::*;
 
-    /// PRF-STATE-05: un snapshot con versión de esquema desconocida
+    /// Un snapshot con versión de esquema desconocida
     /// (escrito por una versión futura) se trata como ausente — nunca
     /// se carga como evidencia válida; el build reconstruye.
     #[test]
@@ -4274,7 +4272,7 @@ mod tests {
         assert!(loaded.is_some(), "snapshot v1 legítimo debe cargarse");
     }
 
-    /// PRF-STATE-11: `tmp_path_for` returns a unique tmp path for each
+    /// `tmp_path_for` returns a unique tmp path for each
     /// call so concurrent writers on the same workspace never share a
     /// temp slot. The previous implementation used a fixed name
     /// (`cache.tmp`); this test pins the uniqueness invariant at the
@@ -4324,7 +4322,7 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-12: two concurrent writers on the same workspace must
+    /// Two concurrent writers on the same workspace must
     /// not lose or interleave their tmp files. We don't try to read the
     /// filesystem during the race (timing-sensitive) — instead we
     /// assert the post-condition: a single coherent snapshot exists,
@@ -4387,7 +4385,7 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-13: a corrupt/truncated snapshot is replaced by a
+    /// A corrupt/truncated snapshot is replaced by a
     /// complete one on the next save. This pins the recovery
     /// invariant from the PRF-STATE spec — an interrupted writer must
     /// not leave a half-written snapshot that a later session could
@@ -4424,7 +4422,7 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-12 stress: an interrupted writer (dropped JoinHandle)
+    /// Stress: an interrupted writer (dropped JoinHandle)
     /// must not poison the cache or leave a tmp slot that blocks
     /// subsequent writers. We spawn several writers, deliberately drop
     /// the JoinHandle for some to simulate a writer that crashed before
@@ -4504,7 +4502,7 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-12 (operator-validation 6): a read-only parent dir must
+    /// (operator-validation 6): a read-only parent dir must
     /// not turn a save into a torn cache, must propagate the IO error,
     /// and must not leave a leftover tmp file under any name. We chmod
     /// the parent to 0o555 and verify a single save fails predictably
@@ -4594,10 +4592,10 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-12 (operator-validation 6): concurrent writers to a
+    /// (operator-validation 6): concurrent writers to a
     /// read-only parent dir must all fail predictably, must NOT corrupt
     /// a pre-existing valid cache, and must NOT leave orphan tmp files
-    /// after the dust settles. This pins the invariant that the §124
+    /// after the dust settles. This pins the invariant that the
     /// fix (unique per-call tmp names) is safe under the most
     /// adversarial filesystem state.
     #[test]
@@ -4701,11 +4699,11 @@ mod tests {
         );
     }
 
-    /// PRF-STATE-14 (operator-validation 9): a large `FileManifest`
+    /// (operator-validation 9): a large `FileManifest`
     /// (10k entries, ~2.5 MB serialized) must round-trip correctly
     /// through `save_durable_snapshot`/`load_durable_snapshot` with no
     /// torn writes, no orphan tmp files, and a bounded wall-clock
-    /// budget. This pins the invariant that the §124 fix scales to
+    /// budget. This pins the invariant that the fix scales to
     /// realistic large-codebase workloads (Linux kernel ≈ 80k files;
     /// typical project ≈ 1k; 10k is already very large).
     #[test]
@@ -4918,12 +4916,12 @@ mod tests {
     // ------------------------------------------------------------------
     // merge_graphs: the merge must be the one that was asked for
     //
-    // MEDIDO 2026-10-18. El handler fusionaba `file_paths[0].parent()`
-    // con `build_full_graph`, que traga los errores del walk. Tres
-    // consecuencias, todas corregidas aquí: la lista pedida se
-    // ignoraba, un directorio ilegible se volvía un grafo vacío
-    // reportado como éxito, y `file_count` contaba lo pedido en lugar
-    // de lo leído.
+    // The handler used to merge `file_paths[0].parent()` with
+    // `build_full_graph`, which swallows the walk's errors. Three
+    // consequences, all fixed here: the requested list was ignored,
+    // an unreadable directory became an empty graph reported as a
+    // success, and `file_count` counted what was asked for instead of
+    // what was read.
     // ------------------------------------------------------------------
 
     /// The decisive one: asking for one file must not answer with the
@@ -5075,7 +5073,7 @@ mod tests {
         assert!(result2.is_ok());
         let output2 = result2.unwrap();
         assert!(output2.success);
-        // PRF-STATE-03/04: the durable snapshot is loaded, symbol
+        // The durable snapshot is loaded, symbol
         // counts identical without re-parsing.
         assert!(output2.message.contains("durable snapshot"));
         assert_eq!(output2.symbols_found, symbols_first);
@@ -5094,7 +5092,7 @@ mod tests {
         let rust_file2 = tempdir2_path.join("file2.rs");
         std::fs::write(&rust_file2, "fn function_two() {}\n").unwrap();
 
-        // PRF-SEC-01: both workspaces are explicitly allowlisted.
+        // Both workspaces are explicitly allowlisted.
         let ctx = HandlerContext::builder()
             .with_working_dir(tempdir1_path.to_path_buf())
             .with_validator(
@@ -5159,7 +5157,7 @@ mod tests {
             output2.message
         );
     }
-    // Regression test for UAT 2026-08-10 DEFECT-2.
+    // Regression test for the workspace resolution defect.
     //
     // Background: A `build_graph(directory=".")` invocation was flagged as
     // "crashing the MCP server" because the test runner (an `echo | pipe`
@@ -5219,7 +5217,7 @@ mod tests {
         std::fs::write(tempdir_b.path().join("lib.rs"), "pub fn from_b() {}\n").unwrap();
 
         // Working dir points to A, but the explicit absolute path targets B.
-        // PRF-SEC-01: the second workspace must be explicitly allowlisted
+        // The second workspace must be explicitly allowlisted
         // (raw absolute escapes are rejected by the InputValidator).
         let ctx = HandlerContext::builder()
             .with_working_dir(tempdir_a.path().to_path_buf())
@@ -6021,7 +6019,7 @@ mod tests {
         assert_eq!(ctx.client().protocol_version(), Some("2024-01"));
     }
 
-    // ST-04: the client identity used to be three independent public fields
+    // The client identity used to be three independent public fields
     // on `HandlerContext`. Three `Option<String>`s that are always set
     // together and always mean one thing is not three optional values, it is
     // one optional value with three attributes — and modelling it that way
@@ -6058,12 +6056,12 @@ mod tests {
         assert_eq!(*anonymous.client(), ClientIdentity::unknown());
     }
 
-    // ST-04 slice 4. This module used to declare six capability traits —
+    // This module used to declare six capability traits —
     // `AnalysisAccess`, `Cancellation`, `Validation`, `RefactorAccess`,
     // `SemanticSearch`, `Telemetry` — under a header promising "allow
     // handlers to request only the services they need", which is this
     // action's own exit criterion. They were introduced by 7323bb37
-    // ("resolve workspace compilation errors", 2026-06-14) and had no
+    // ("resolve workspace compilation errors") and had no
     // caller for the 81 days that followed.
     //
     // They were not merely unused. `AnalysisAccess::graph_store` returned a
@@ -6105,7 +6103,7 @@ mod tests {
 
         // And no trait in this module may be implemented without also being
         // consumed somewhere: that asymmetry is what let six of them sit
-        // here from 2026-06-14 until now.
+        // here until this slice removed them.
         for name in &declared {
             let impls = source.matches(&format!("impl {name} for")).count();
             let paths = source.matches(&format!("{name}::")).count();
@@ -6118,7 +6116,7 @@ mod tests {
         }
     }
 
-    // ST-04 slice 6. Four fields lost `pub`: `compressor`, `iac_repo`,
+    // Slice 6. Four fields lost `pub`: `compressor`, `iac_repo`,
     // `symbol_code` and `code_intelligence_provider`. Only `symbol_code`
     // needed an accessor, because it is the only one of the four read from
     // outside the `handlers` module tree. This asserts the one that can be
@@ -6147,7 +6145,7 @@ mod tests {
         );
     }
 
-    // ST-04 slice 5. `working_dir` and `validator` lost `pub`. Their readers
+    // Slice 5. `working_dir` and `validator` lost `pub`. Their readers
     // were all reads — `clone`, `display`, `to_string_lossy` — including
     // `cognicode-mcp/src/server.rs`, a different crate, so accessors were
     // enough and no setter was needed. This asserts the values a handler
@@ -6177,7 +6175,7 @@ mod tests {
         assert!(Arc::ptr_eq(ctx.validator(), ctx.validator()));
     }
 
-    // ST-04 slice 3: `read_only` and `cancellation_token` lost `pub`, which
+    // Slice 3: `read_only` and `cancellation_token` lost `pub`, which
     // required `rmcp_adapter.rs` to stop reassigning the finished context.
     // It configured both by hand — `ctx.read_only = Arc::new(...)` after
     // `build_ctx` — and `with_read_only` / `with_cancellation_token` already
@@ -6237,7 +6235,7 @@ mod tests {
         );
     }
 
-    // ST-04 slice 2: four fields went from `pub` to private because no
+    // Slice 2: four fields went from `pub` to private because no
     // reader existed outside this module. Privatizing is only safe if the
     // behaviour each one carried is still reachable, so this asserts the
     // accessors, not the visibility — the point is that nothing was lost,
@@ -6337,10 +6335,10 @@ mod tests {
         );
     }
 
-    // ST-04 KPI ratchet: `METRICS-AND-ACCEPTANCE.md` scores ST-04 as
-    // "campos públicos HandlerContext → tendencia a 0". A prose target that
-    // nothing measures is the same thing ST-02's ratchet found drift for, so
-    // the count is asserted here instead.
+    // KPI ratchet: the acceptance document scores the public
+    // `HandlerContext` fields as "trend towards zero". A prose target that
+    // nothing measures is what another ratchet in this repository found
+    // drift for, so the count is asserted here instead.
     //
     // This is a ratchet, not a proof of completion. It fails if the count
     // goes UP (regression — the service-locator surface growing again) and
@@ -6388,7 +6386,7 @@ mod tests {
     // nothing. `symbol_code` is also read by `rmcp_adapter`, a sibling of
     // `handlers` rather than a child, and cannot see private fields.
     //
-    // Slice 7 is 5 -> 0, and it closes ST-04's field exposure: the last five
+    // Slice 7 is 5 -> 0, and it closes the field exposure: the last five
     // are private, and two accessors were the whole cost. `refactor_service`
     // and `semantic_search` are read only from `handlers` children, so Rust's
     // child-reads-parent rule covers them with no accessor at all. `graph_store`
@@ -6498,9 +6496,9 @@ mod tests {
         assert!(Arc::strong_count(&ctx.refactor_service) >= 1);
     }
 
-    // --- PRF-ANA-04 RED/GREEN pin ---
+    // --- the RED/GREEN pin for the build outcome ---
     //
-    // The matrix says PRF-ANA-04 is PARTIAL because
+    // The matrix says the build outcome is PARTIAL because
     // `handle_build_graph` returns `success: true` even when files
     // were silently dropped during the walk. We expose a single
     // `status` field with values:
@@ -6621,10 +6619,10 @@ mod tests {
             );
         }
 
-        // PRF-ANA-05 (RED→GREEN): two consecutive `build_graph`
+        // (RED→GREEN): two consecutive `build_graph`
         // calls on the SAME working directory must produce the same
         // `symbols_found`, `relationships_found`, and the same
-        // `edges` (as a set). Mirrors the F2.W10 library-level
+        // `edges` (as a set). Mirrors the library-level
         // assertion (`w10_repeated_builds_are_reproducible`) but at
         // the MCP handler boundary — covers the contract that a UAT
         // caller would observe. Order of edges may differ between
@@ -6677,7 +6675,7 @@ mod tests {
             );
         }
 
-        /// PRF-ANA-06: basis identity on build_graph output. The output MUST
+        /// Basis identity on build_graph output. The output MUST
         /// identify what the graph was built from: canonical workspace path,
         /// digest of effective configuration, and digest of the source
         /// manifest. When identity cannot be established the basis is declared
@@ -6791,7 +6789,7 @@ mod tests {
         }
     }
 
-    /// PRF-CLI-04 / H-03: CLI and MCP must execute the **same use
+    /// CLI and MCP must execute the **same use
     /// case** for `full` graph building over the canonical
     /// equivalence corpus. The MCP path goes through
     /// `AnalysisService::build_project_graph` (via
@@ -6878,7 +6876,7 @@ mod tests {
         }
     }
 
-    /// PRF-F3-W1.a: CLI `cognicode graph per-file <file>` and MCP
+    /// CLI `cognicode graph per-file <file>` and MCP
     /// `get_per_file_graph(file_path)` must execute the **same use
     /// case** against the canonical per-file corpus. Both paths go
     /// through `PerFileStrategy::new().build_local_graph(&path)`; this
@@ -6886,7 +6884,7 @@ mod tests {
     /// file produces the same observable symbol inventory and the
     /// same dependency inventory.
     ///
-    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// **Naming convention**: the "CLI path"
     /// in this test is BOTH the `PerFileStrategy` core API invoked
     /// directly AND the `cognicode` binary subcommand
     /// `cognicode graph per-file <file>`. The `cognicode` binary
@@ -6895,9 +6893,8 @@ mod tests {
     /// `cogh` binary (`crates/cognicode-cli/src/bin/cogh.rs`) is
     /// the plugin manager and does NOT. The "MCP path" is
     /// `handle_get_per_file_graph` invoked through a real
-    /// `HandlerContext`. The D66 note added in commit 5dbb3bcd
-    /// was based on incomplete investigation (D75); this commit
-    /// corrects it.
+    /// `HandlerContext`. An earlier note about this was based on
+    /// incomplete investigation; this one corrects it.
     ///
     /// Comparison surface: the MCP handler `handle_get_per_file_graph`
     /// exposes only `(file, line, column, symbol_kind)` per symbol —
@@ -6909,7 +6906,7 @@ mod tests {
     /// pairs** over the canonical corpus.
     ///
     /// The corpus (`docs/prf/fixtures/per_file_correctness/src/lib.rs`)
-    /// is the F2.W1 determinism corpus: 3 symbols (`top_level`,
+    /// is the determinism corpus: 3 symbols (`top_level`,
     /// `mid_level`, `leaf`) in 3 nested files.
     ///
     /// Non-vacuity guard: the per-file strategy must produce >0 symbols
@@ -7016,7 +7013,7 @@ mod tests {
         }
     }
 
-    /// PRF-F3-W2: CLI `cognicode index query <symbol>` and MCP
+    /// CLI `cognicode index query <symbol>` and MCP
     /// `query_symbol_index(symbol_name, directory)` must execute the
     /// same use case against the same corpus. Both paths terminate
     /// in `LightweightIndex::find_symbol`; this test pins the
@@ -7025,7 +7022,7 @@ mod tests {
     /// `SymbolIndex::find_symbol` after `set_symbol_index`) produce
     /// the same set of `(file_basename, line, column)` tuples.
     ///
-    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// **Naming convention**: the "CLI path"
     /// in this test is BOTH the `LightweightStrategy` core API
     /// invoked directly AND the `cognicode` binary subcommand
     /// `cognicode index query <symbol>`. The `cognicode` binary
@@ -7164,7 +7161,7 @@ mod tests {
         }
     }
 
-    /// PRF-F3-W3: CLI `cognicode index outline <file>` and MCP
+    /// CLI `cognicode index outline <file>` and MCP
     /// `get_outline(file_path)` must execute the same use case against
     /// the same file. Both paths terminate in `build_outline` from
     /// `crate::infrastructure::semantic::outline`; this test pins the
@@ -7172,7 +7169,7 @@ mod tests {
     /// MCP: returns `OutlineOutput.nodes[]` JSON) produce the same
     /// `(name, kind)` set when the same flags are used.
     ///
-    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// **Naming convention**: the "CLI path"
     /// in this test is BOTH the `build_outline` core API invoked
     /// directly AND the `cognicode` binary subcommand
     /// `cognicode index outline <file>`. The `cognicode` binary
@@ -7286,9 +7283,9 @@ mod tests {
         }
     }
 
-    /// PRF-F3-W4: `analyze_impact` MCP wrapper contract.
+    /// `analyze_impact` MCP wrapper contract.
     ///
-    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// **Naming convention**: the "CLI path"
     /// in this test is BOTH the `analysis_service.build_project_graph`
     /// core API invoked directly AND the `cognicode` binary
     /// subcommand `cognicode graph impact <symbol>`. The
@@ -7297,12 +7294,13 @@ mod tests {
     /// through a real `HandlerContext`.
     ///
     /// Pinned characterization for the public MCP tool
-    /// `handle_analyze_impact`. Unlike W1.a/W2/W3, there is no
-    /// external CLI binary that exposes `analyze_impact` — the
+    /// `handle_analyze_impact`. Unlike the per-file and query
+    /// wrappers, there is no external CLI binary that exposes
+    /// `analyze_impact` — the
     /// `cognicode` binary in this repo is a plugin manager
     /// (Install/Uninstall/List/Current/Latest/Update) and has no
-    /// `IndexCommand::Impact` variant. The "CLI" path used in W1-
-    /// W3 was always a direct core API call (e.g.,
+    /// `IndexCommand::Impact` variant. The "CLI" path used by the
+    /// per-file and query wrappers was always a direct core API call (e.g.,
     /// `LightweightStrategy`); the same convention is used here:
     /// `analysis_service.build_project_graph` + `ImpactAnalyzer::calculate_impact`.
     ///
@@ -7344,10 +7342,10 @@ mod tests {
     /// the `impact_*` prefix to avoid collisions with other
     /// corpora.
     ///
-    /// D64: surface limited to `(impacted_files, impacted_symbols)`,
+    /// Surface limited to `(impacted_files, impacted_symbols)`,
     /// both sets compared as basenames / exact names. The
-    /// `risk_level` divergence is documented as finding D65
-    /// (see JOURNAL §125.V27) rather than pinned as a contract
+    /// `risk_level` divergence is documented in the architecture record
+    /// rather than pinned as a contract
     /// — it requires an architectural decision the operator must
     /// make.
     mod prf_f3_w4_analyze_impact_equivalence_tests {
@@ -7394,7 +7392,7 @@ mod tests {
                 .expect("analyze_impact must succeed on staged corpus")
         }
 
-        /// PRF-F3-W4.a: non-vacuity guard. If the corpus produces
+        /// Non-vacuity guard. If the corpus produces
         /// zero dependents, the wrapper has nothing to characterize
         /// and the test would pass trivially. Assert at least one
         /// dependent symbol and at least two impacted files (the
@@ -7418,7 +7416,7 @@ mod tests {
             );
         }
 
-        /// PRF-F3-W4.b: file surface — the impacted files set must
+        /// File surface — the impacted files set must
         /// contain both caller files (basename comparison because
         /// the absolute path inside the tempdir differs from the
         /// fixture source path).
@@ -7450,7 +7448,7 @@ mod tests {
             );
         }
 
-        /// PRF-F3-W4.c: symbol surface — the impacted symbols set
+        /// Symbol surface — the impacted symbols set
         /// must contain both direct and transitive callers (exact
         /// name match, no normalization needed).
         #[tokio::test]
@@ -7474,9 +7472,9 @@ mod tests {
         }
     }
 
-    /// PRF-F3-W5: `get_call_hierarchy` MCP wrapper contract.
+    /// `get_call_hierarchy` MCP wrapper contract.
     ///
-    /// **Naming convention (D66, D75 — corrected)**: the "CLI path"
+    /// **Naming convention**: the "CLI path"
     /// in this test is BOTH the `analysis_service.build_project_graph`
     /// core API invoked directly AND the `cognicode` binary
     /// subcommand `cognicode graph hierarchy <symbol>`. The
@@ -7486,11 +7484,13 @@ mod tests {
     ///
     /// Pinned characterization for the public MCP tool
     /// `handle_get_call_hierarchy` (direction=outgoing). Reuses the
-    /// F3.W4 corpus (`analyze_impact_equivalence/src/`) because the
+    /// Corpus (`analyze_impact_equivalence/src/`) because the
     /// dependency shape overlaps:
     ///
-    /// - F3.W4 analyzes dependents of `impact_target` (callers).
-    /// - F3.W5 analyzes callees of `impact_target` (what it calls).
+    /// - The incoming direction analyzes dependents of `impact_target`
+    ///   (callers).
+    /// - The outgoing direction analyzes callees of `impact_target`
+    ///   (what it calls).
     ///
     /// `lib.rs` defines `impact_target` which delegates to two
     /// helpers `impact_callee_a` and `impact_callee_b`. Outgoing
@@ -7503,12 +7503,12 @@ mod tests {
     /// if a future change accidentally inverts the direction,
     /// this test flags it.
     ///
-    /// D70 (correcting the W5 draft I committed earlier): I
+    /// (correcting an earlier draft of this test): I
     /// initially wrote the test expecting `impact_direct_caller`
     /// in `calls`. That was wrong — `impact_direct_caller` is a
     /// caller of `impact_target`, not a callee. The correct
     /// expectation for outgoing is `impact_callee_a` and
-    /// `impact_callee_b`. W5.b was a concept error caught by
+    /// `impact_callee_b`. That was a concept error caught by
     /// running the test against the corpus (the test failed with
     /// `got symbols: {impact_callee_a, impact_callee_b}`).
     ///
@@ -7524,20 +7524,22 @@ mod tests {
     ///   when direction=outgoing (it is a caller of target,
     ///   not a callee). Pins the direction semantic.
     ///
-    /// D67: surface limited to `calls` set compared by
+    /// Surface limited to `calls` set compared by
     /// `(symbol, file_basename)`. Line/column excluded — they
     /// depend on parser positioning and are not part of the
-    /// shared contract surface (D58/D62 precedent). The
+    /// shared contract surface (the same precedent as the earlier
+    /// wrappers). The
     /// `confidence: 1.0` field is hardcoded by the handler and
     /// therefore not interesting to pin.
     ///
-    /// D68: D66 (refinamiento de naming) applies identically — the
+    /// The naming refinement applies identically — the
     /// 'CLI' label is misleading because `cognicode` binary does
     /// not expose this tool. This module follows the same
-    /// 'MCP wrapper ↔ core API' convention as W1-W4.
+    /// 'MCP wrapper ↔ core API' convention.
     ///
-    /// D69: F3.W5 is the last planned wrapper characterization
-    /// before D65/D66 require operator decision. Adding more
+    /// This is the last planned wrapper characterization
+    /// before the risk-level divergence requires an operator decision.
+    /// Adding more
     /// wrappers (`find_usages`, `get_complexity`, etc.) would
     /// repeat the same pattern without surfacing new contract
     /// surface; F3 closes here pending operator direction on the
@@ -7557,7 +7559,7 @@ mod tests {
                 .join("docs/prf/fixtures/analyze_impact_equivalence/src")
         }
 
-        /// Copy the W4 corpus into a tempdir; reused because the
+        /// Copy the corpus into a tempdir; reused because the
         /// dependency shape matches what `get_call_hierarchy` needs.
         fn stage_corpus() -> tempfile::TempDir {
             let temp = tempfile::tempdir().expect("tempdir");
@@ -7585,7 +7587,7 @@ mod tests {
                 .expect("get_call_hierarchy must succeed on staged corpus")
         }
 
-        /// PRF-F3-W5.a: non-vacuity guard. With `impact_target`
+        /// Non-vacuity guard. With `impact_target`
         /// defined and a direct caller (`impact_direct_caller`),
         /// outgoing direction at depth=1 must produce ≥1 call.
         #[tokio::test]
@@ -7600,7 +7602,7 @@ mod tests {
             );
         }
 
-        /// PRF-F3-W5.b: contract — `impact_callee_a` is one of the
+        /// Contract — `impact_callee_a` is one of the
         /// direct callees of `impact_target`, so it must appear
         /// in `calls` (symbol exact match, file basename match
         /// because absolute path is a tempdir).
@@ -7633,7 +7635,7 @@ mod tests {
             );
         }
 
-        /// PRF-F3-W5.c: contract — with direction=outgoing, the
+        /// Contract — with direction=outgoing, the
         /// incoming caller (`impact_direct_caller`) must NOT
         /// appear, because outgoing returns callees of target,
         /// not callers. This pins the direction semantic: if a
@@ -7654,7 +7656,7 @@ mod tests {
         }
     }
 
-    /// PRF-STATE-07: derived data is rebuilt when incompatible, and
+    /// Derived data is rebuilt when incompatible, and
     /// the user is **notified** of the rebuild — a stale graph must
     /// never be presented as current. The `build_graph` handler
     /// detects staleness via `FileManifest` (mtime-based) and
@@ -7663,10 +7665,10 @@ mod tests {
     /// These tests pin the rebuild-and-notify contract for the two
     /// normal mutation scenarios (content change, file deletion).
     ///
-    /// Known gap (H-01, tracked separately): a byte change that
+    /// Known gap (tracked separately): a byte change that
     /// preserves BOTH mtime and size defeats the mtime-based
     /// staleness check; the hash-based fix awaits the operator's
-    /// algorithm decision (JOURNAL §31, U13 RED pin).
+    /// algorithm decision.
     mod prf_state_07_rebuild_notification_tests {
         use super::*;
 
@@ -7735,7 +7737,7 @@ mod tests {
 
         #[tokio::test]
         async fn unchanged_sources_same_session_serve_cached_graph() {
-            // STATE-07 debt resolution (JOURNAL §40): a same-session
+            // A same-session
             // repeated build_graph with UNCHANGED sources must serve the
             // in-memory cached graph (manifest freshness gate, not the
             // empty-cache gate). The message must say so honestly, and
@@ -7786,7 +7788,7 @@ mod tests {
             );
         }
 
-        // PRF-STATE-07: when bytes change but mtime is preserved, the
+        // When bytes change but mtime is preserved, the
         // snapshot MUST be considered stale — content_hash comparison is
         // the only thing that distinguishes "unchanged" from "preserved
         // mtime but different content".
@@ -7868,7 +7870,7 @@ mod tests {
             );
         }
 
-        // PRF-STATE-08: a manifest entry whose on-disk file can no
+        // A manifest entry whose on-disk file can no
         // longer be read (permissions revoked, file removed during
         // scan, IO error) must invalidate the snapshot — serving it
         // would hide the loss of coverage behind a stale "complete"
@@ -7931,7 +7933,7 @@ mod tests {
             }
         }
 
-        // PRF-STATE-09: a file ADDED to the project after the snapshot
+        // A file ADDED to the project after the snapshot
         // was taken must invalidate it (otherwise the new file is
         // silently absent from analysis).
         #[tokio::test]
@@ -7972,7 +7974,7 @@ mod tests {
             );
         }
 
-        // PRF-STATE-10: a file RENAMED in the project must invalidate
+        // A file RENAMED in the project must invalidate
         // the snapshot (old path no longer exists; new path is not in
         // the manifest).
         #[tokio::test]
@@ -8016,7 +8018,7 @@ mod tests {
         }
     }
 
-    /// PRF-F4-W1: workspace isolation characterization.
+    /// Workspace isolation characterization.
     ///
     /// Pinned characterization for the F4 criterion: "two workspaces
     /// independientes y demuestran que no comparten estado". The
@@ -8036,7 +8038,7 @@ mod tests {
     ///   successfully, while B's snapshot remains independent
     ///   (byte-equal to its post-first-build state).
     ///
-    /// D74: the persistence layer is filesystem-isolated by
+    /// The persistence layer is filesystem-isolated by
     /// construction (`graph_db_path` joins `.cognicode` to the
     /// canonicalized working directory). This module does not need
     /// to test the filesystem itself; it only pins that the public
@@ -8076,7 +8078,7 @@ mod tests {
             (db_path, bytes.len())
         }
 
-        /// PRF-F4-W1.a: two independent workspaces produce snapshots
+        /// Two independent workspaces produce snapshots
         /// at distinct filesystem paths. This pins the per-workspace
         /// contract at the path level.
         #[tokio::test]
@@ -8114,7 +8116,7 @@ mod tests {
             );
         }
 
-        /// PRF-F4-W1.b: a fresh build in workspace B does not
+        /// A fresh build in workspace B does not
         /// modify workspace A's snapshot bytes. This pins that the
         /// persistence layer is per-workspace, not a global cache.
         #[tokio::test]
@@ -8142,7 +8144,7 @@ mod tests {
             );
         }
 
-        /// PRF-F4-W1.c: a simulated restart in workspace A (new
+        /// A simulated restart in workspace A (new
         /// `HandlerContext`) reloads A's snapshot successfully,
         /// while workspace B's snapshot remains independent. This
         /// pins that each workspace can be restarted in isolation.
