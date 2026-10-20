@@ -20040,3 +20040,198 @@ aquí habría sido reescribir un cierre.
 - El bloque §11 en 67 líneas, por debajo de su techo de 80.
 - `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
 - `merge-gate` verde sobre el commit del PR.
+
+## 2026-10-20 — Las referencias sin resolver son hechos, no silencio (H24, C17)
+
+### Lo que se pidió
+
+El punto P0 de la auditoría del 2026-10-20: una referencia que el grafo no
+puede atar a una declaración se descartaba sin contarse, y el estado del
+grafo decía `complete` sin saber si faltaba alguna. La especificación que
+lo fija es `SPEC-CU-007-HONEST-COVERAGE.md`.
+
+### Lo que se comprobó antes de escribir nada
+
+| Lo que se suponía | Medido |
+|---|---|
+| El lector descarta la referencia sin resolver | Sí: `semantic_facts` conserva sólo las aristas con destino resuelto, y los hechos del fichero no tenían dónde declararlas |
+| El servicio cuenta lo que no pudo resolver | Las cuenta y lo loguea, pero el recuento no llega al estado del grafo |
+| El estado dice `complete` con referencias sin resolver | Sí: `Complete` o `Partial { skipped }` — la dimensión de ficheros, no de relaciones |
+| La arista ya traía lo necesario | Sí: la arista de extracción ya traía origen, línea, tipo de relación y procedencia; el destino ya distinguía resuelto de sin resolver |
+| Se podía resolver entre ficheros después | Sí: el índice global ya existía y el resolver ya distinguía resuelto, ambiguo y sin resolver |
+| El lector de Terraform leía la lectura más larga | No: el rango que probaba las lecturas nunca probaba el nombre entero, así que una variable declarada en el mismo fichero tampoco resolvía |
+
+### Lo que se hizo
+
+**Un valor en el dominio para la referencia pendiente.** `PendingReference`
+lleva el fichero que la escribe, la línea, la declaración que la contiene,
+el nombre que nombra, el tipo de relación y la clase: sin resolver cuando
+nada la nombra, ambigua con su número de candidatos cuando la nombran
+varias y el grafo no puede probar cuál. Los hechos del fichero ganan un
+tercer tipo de relación —la identificada, la llamada por nombre y la
+pendiente— y el lector semántico deja de tirar la referencia: la
+conserva.
+
+**Una sola regla para leer un nombre.** La lista de lecturas vive en el
+dominio y devuelve las lecturas de un nombre, de la más larga a la más
+corta: un nombre que nombra un camino se lee por el prefijo más largo que
+nombra una declaración. La usan el lector de Terraform y la resolución del
+proyecto, así que el fichero que escribe la referencia y el proyecto que la
+lee coinciden en qué puede nombrar un nombre. Al unificarla se corrigió
+un defecto de la regla: la lectura entera nunca se probaba, y por eso una
+variable declarada en el mismo fichero no resolvía.
+
+**La resolución entre ficheros, con el ámbito del módulo.** La referencia
+pendiente se busca en el índice del proyecto: la lectura más larga que
+nombra algo gana, y sólo se miran las declaraciones del módulo que
+escribe la referencia —su propio directorio—. Un módulo es un directorio con
+espacio de nombres propio: un módulo padre pasa sus valores al hijo
+llenando las variables del hijo, nunca exponiendo las suyas, y un módulo
+hermano no es visible en absoluto. Lo que se puede probar se convierte en
+relación; lo que no, se publica con su clase. No se fabrica ninguna arista.
+
+**El estado dice las dos cosas.** El estado del grafo lleva los ficheros
+omitidos y las referencias pendientes, y `complete` significa que las dos
+coberturas están completas. El MCP publica las pendientes junto a lo que sí
+resolvió —en `build_graph` y dentro de la cobertura de `merge_graphs`— y la
+CLI lo dice con las mismas palabras: siete copias del aviso se sustituyeron
+por un único helper.
+
+**Una sola forma de publicar el hecho.** La proyección de la referencia
+pendiente vive en un sitio —la capa de interfaz— y la usan el MCP y la CLI.
+La respuesta de la CLI lleva su propia lista de referencias pendientes
+junto a los ficheros omitidos, porque son las dos mitades de la misma
+pregunta: un grafo que leyó todos los ficheros y ató todas las referencias
+está completo, y quien pregunta tiene que poder saber cuál de las dos falta.
+
+**Lo que el lenguaje ata él mismo no es una referencia.** El índice de una
+instancia, el nombre que ata una expresión `for` y un módulo de Ansible no
+nombran ninguna declaración del proyecto: no se publican como huecos. Una
+llamada tampoco lo es —puede nombrar algo de fuera—, y el camino genérico
+sigue sin publicarlas.
+
+### Las dos revisiones independientes, y lo que encontraron
+
+El cambio se revisó contra el diff dos veces, antes de publicarlo. Las dos
+revisiones encontraron fallos que el arreglo inicial no cubría, y cada uno se
+midió en rojo contra el código anterior antes de arreglarlo —no se corrigió
+de oído—.
+
+La primera revisión encontró tres:
+
+| Fallo | Qué pasaba | Cómo se midió |
+|---|---|---|
+| La CLI decía `complete` | El camino de la CLI traducía el estado del build contando sólo los ficheros omitidos, así que una referencia pendiente no le llegaba: la respuesta decía `complete` mientras el MCP decía `partial` sobre el mismo proyecto | El test de la CLI falló con `Complete` frente a `Partial` esperado |
+| Se fabricaba una arista entre módulos | La resolución caía a un índice global cuando el módulo no declaraba el nombre, así que una declaración de un módulo hermano satisfacía la referencia: una arista que nada prueba, y el hueco real debajo, escondido | El test del módulo hermano falló: la referencia había quedado atada |
+| El snapshot viejo se servía como bueno | El snapshot durable llevaba la versión `v1`, escrita cuando `complete` sólo significaba "no se saltó ningún fichero". Se servía como si fuera un grafo completo | El test de la versión falló: el snapshot `v1` se cargaba |
+
+La segunda revisión encontró dos más, y eran del mismo género:
+
+| Fallo | Qué pasaba | Cómo se midió |
+|---|---|---|
+| El ámbito subía a los ancestros | La primera arreglo buscaba el nombre en el directorio del módulo **y en los de sus ancestros**, con la idea de que un módulo padre pasa sus valores al hijo. En Terraform no es así: el padre llena las variables declaradas por el hijo, no expone las suyas. Una referencia en un hijo a un nombre que sólo declara el padre se ataba a una arista que nada prueba | El test del módulo padre falló: la referencia había quedado atada |
+| `complete` prometía más de lo que mide | La documentación del tipo decía que `complete` significa que "every reference the files state points at a declaration the project holds", pero las llamadas que el camino genérico no puede atar se descartan sin contarse. La promesa era más grande que la medición | La promesa del tipo se acotó a lo que se mide, y el comentario que afirmaba que el camino genérico las cuenta se corrigió: no las cuenta |
+
+La segunda revisión señaló además cuatro obligaciones de contrato y cuatro
+cosas más, que también están resueltas:
+
+- **El catálogo de producto publicado quedó obsoleto.** `build_graph` gana
+  `pending_references` y su descripción del estado cambia de sentido, y el
+  catálogo seguía publicando la forma vieja —con la frase "walk happened,
+  no skipped files"—. El catálogo se regeneró con el esquema del runtime.
+- **El CHANGELOG no mencionaba el cambio.** Las formas públicas cambian
+  (`GraphResult::Full`, `GraphValue::Full`, `MergeCoverage::Partial`, y la
+  firma de `MergeCoverage::from`), y hay una sección de cambios sin
+  publicar.
+- **La ruta asíncrona del build descartaba ficheros sin registrarlos**, y
+  su comentario afirmaba lo contrario. Con el mismo árbol, la ruta síncrona
+  decía `partial` y la asíncrona `complete`. Ahora las dos registran lo que
+  tiran, y la regla que clasifica un fichero descartado es una sola —estaba
+  duplicada, y la copia de la ruta asíncrona era peor.
+- **Sin reporte, la respuesta decía `complete`.** No medir y medir nada no
+  son lo mismo, y la ley del propio repo lo dice desde hace tiempo: la
+  respuesta ahora dice `unknown`.
+- **Una expresión `for` que ata dos nombres publicaba un hueco falso**, la
+  aserción de paridad de la CLI se había debilitado hasta poder pasar con
+  una lista vacía, y la caché por fichero guardaba el grafo y tiraba las
+  referencias.
+
+Y una pieza que faltaba: un test que pregunta a las dos superficies sobre
+el **mismo** árbol y compara los veredictos. Los tests anteriores cubrían
+la CLI y el MCP por separado, con proyectos equivalentes pero no
+idénticos, así que un fork que degradara una de las dos pasaba verde. Ahora
+las dos dicen `partial` y cuentan las mismas referencias.
+
+### Lo que se midió
+
+| Proyecto | Antes | Ahora |
+|---|---|---|
+| Fixture de Terraform | 91 relaciones; 15 referencias a variables declaradas en otro fichero, descartadas sin contarse | 106 relaciones; `complete`; ninguna referencia pendiente |
+| El mismo fixture con una referencia a un recurso inexistente | `complete`, sin decir nada | `partial`, con el fichero, la línea y el motivo |
+| Fixture de Ansible | 28 llamadas a módulos de Ansible, descartadas sin contarse | 3 referencias a roles, que el grafo no sabe nombrar todavía |
+
+El fixture de Terraform es la prueba de que la señal sirve: un proyecto sano
+dice `complete`, y uno con una referencia colgante dice `partial` y dice
+cuál. Las cifras no cambiaron al corregir el ámbito: el fixture no usaba
+ninguna referencia que sólo declarase un módulo padre, que es justo el caso
+que la corrección destapa.
+
+### Lo que no se hizo, y por qué
+
+**Las llamadas que el camino genérico no puede atar no se publican.** Una
+llamada puede nombrar una función de otra caja, y el grafo no dice nada
+del mundo de fuera. No se publican como huecos y hoy tampoco se cuentan;
+separarlas es otra unidad, y la promesa de `complete` se acotó a lo que se
+mide para que no vuelva a prometer más.
+
+**Un rol de Ansible sigue sin nombre.** El grafo no modela los roles como
+declaraciones, así que la referencia a un rol se publica como pendiente.
+Es verdad, y señala el trabajo que queda, no un defecto del arreglo.
+
+**No se cambió el modelo de dominio de la infraestructura.** Los roles, las
+salidas y los módulos con nombre cualificado siguen siendo lecturas del
+lector, no declaraciones del grafo.
+
+**Las superficies por fichero siguen sin decir nada de los pendientes.** El
+grafo por fichero ya sabe cuáles referencias no ató —la caché las guarda y
+la fusión las publica—, pero el manejador `get_per_file_graph` del MCP y la
+orden `graph per-file` de la CLI responden con símbolos y dependencias sin
+decir nada de ellas. Queda anotado como candidato `C24` en la backlog de la
+misión.
+
+**La estrategia de grafo completo sigue siendo una segunda puerta.** Dice
+`complete` sin medir la cobertura de relaciones, y el valor por defecto del
+puerto mantiene la doctrina de "no medimos, así que completo". Es el
+candidato `C16`, y por su tamaño no cabe en esta unidad.
+
+**H24 no queda cerrada.** Esta unidad resolvió una de las cuatro cosas que
+§11 le atribuye, y la backlog de la misión todavía le asigna otros
+candidatos: el puerto de dominio que construye su propio adaptador, la
+propiedad de identidad que sustituye a los tests de paridad, el vigilante
+que dice una verdad distinta de la del registro, y la segunda puerta al
+grafo que dejó la estrategia de grafo completo.
+
+### Evidencia
+
+- Test RED primero: `crates/cognicode-core/tests/unresolved_references_are_facts.rs`
+  — falla antes del arreglo porque la respuesta no dice qué referencias
+  quedaron sin atar, y pasa después. Nueve casos: la referencia que no
+  nombra nada, la que otro fichero declara, el proyecto sano, el módulo del
+  lenguaje, la CLI que no dice `complete`, el módulo hermano que no
+  satisface una referencia, el módulo padre que tampoco, el nombre que dos
+  declaraciones llevan, y el nombre que una expresión `for` ata.
+- Un test en `crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`
+  pregunta a la CLI y al MCP sobre el mismo árbol y compara los veredictos.
+- Los cinco fallos de las dos revisiones se midieron en rojo contra el
+  código anterior, con la prueba que los detecta, y se volvieron a medir
+  en verde después del arreglo.
+- UAT efímero con los dos binarios reales, por el cable del MCP:
+  `python3 /tmp/cognicode-cycle/c17_uat_mcp.py <binario>`. El binario
+  anterior **falla** —dice `complete` con una referencia colgante y no
+  publica ninguna— y el nuevo **pasa**. El UAT es efímero y no se
+  promueve: la prueba permanente ya cubre el comportamiento.
+- 2.376 tests de lib en verde; las suites de Terraform, de Ansible, de la
+  paridad entre la CLI y el MCP, y las del estado del grafo, en verde.
+- `bash scripts/test-fast.sh` → rc=0.
+- `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
+- `merge-gate` verde sobre el commit del PR.

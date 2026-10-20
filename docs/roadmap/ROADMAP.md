@@ -438,10 +438,11 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >
 >   - **La cobertura y la resolución son dos hechos** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md`.
->     Una referencia sin resolver es un hecho con origen y motivo, no un
->     silencio; `complete` no se dice si queda alguna pendiente. El grafo,
->     el manifiesto y el vigilante nombran el mismo conjunto de ficheros, y
->     el error del recorrido se cuenta aparte de la exclusión legítima.
+>     Una referencia sin resolver se publica con su fichero, su línea, su
+>     motivo y su clase, y `complete` no se dice si queda alguna pendiente.
+>     Queda el error del recorrido, que se cuenta aparte de la exclusión
+>     legítima, y el vigilante, que todavía nombra un conjunto de ficheros
+>     propio.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -468,9 +469,10 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >
 >   **La auditoría del 2026-10-20** abrió H23 y H24, con informe y plan en
 >   el Journal de esa fecha. De lo que H24 tenía anotado ya están
->   resueltas tres cosas —el manifiesto deriva del registro de lenguajes,
->   la CLI y el MCP responden sobre el mismo grafo, y la consulta de
->   infraestructura publica el nombre del dominio—, y las que quedan son
+>   resueltas cuatro cosas —el manifiesto deriva del registro de lenguajes,
+>   la CLI y el MCP responden sobre el mismo grafo, la consulta de
+>   infraestructura publica el nombre del dominio, y la referencia sin
+>   resolver se publica con su origen y su motivo—, y las que quedan son
 >   las de arriba.
 >
 >   El **corte de release** cuelga de H5 y de

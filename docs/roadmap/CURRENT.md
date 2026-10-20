@@ -5,10 +5,11 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `c459772d61dc1ac1ece59b2ed95ccd4b47c1b11b`
-> (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **30** commits por delante
-> de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
+> **Snapshot**: 2026-10-20, sobre `4dbcb9944f88bb6e2e5a7a075c05a899cd0ee352`
+> (la base de este ciclo). Versión del workspace: `0.101.23`. Última release
+> publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **32** commits por
+> delante de ese tag en cuanto este ciclo se funda: hay estabilizaciones
+> mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
 > un snapshot con la historia de ocho ciclos: narrativas de programas cerrados,
@@ -28,7 +29,7 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **23** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
@@ -48,6 +49,35 @@ tiraba, y el manejador publicaba el nombre interno de la variante de Rust:
 un bucket respondía `Function`. Ahora responde `aws_s3_bucket`, y una
 declaración sin tipo responde con su kind (`variable`, `module`, `play`).
 
+**C17 está resuelto**: una referencia que el grafo no puede atar a una
+declaración se publica con su fichero, su línea, su motivo y su clase, en
+vez de descartarse en silencio. El estado del grafo distingue las dos
+coberturas —la de ficheros y la de relaciones— y `complete` sólo se dice
+cuando las dos están completas. La referencia pendiente se intenta atar
+entre ficheros con la misma regla con que el lector lee un nombre: la
+lectura más larga que nombra una declaración gana, y sólo se miran las
+declaraciones del propio módulo que escribe la referencia.
+
+El cambio se revisó dos veces contra el diff, y las dos revisiones
+encontraron fallos que el arreglo inicial no cubría. Los cinco se midieron
+en rojo antes de arreglarlos: la CLI decía `complete` con una referencia
+pendiente —el MCP y la CLI respondían cosas distintas sobre el mismo
+proyecto—; la resolución ataba una referencia con una declaración de otro
+módulo —una arista que nada prueba—; el snapshot durable seguía con la
+versión anterior, que decía `complete` sobre grafos que tenían huecos; el
+ámbito subía a los ancestros, y en un módulo hijo eso cablea contra una
+declaración que el hijo no puede ver; y la promesa de `complete` era más
+grande que lo que el producto mide.
+
+Los cinco están arreglados: las dos superficies dicen `partial` y publican
+las referencias pendientes, la resolución sólo cablea lo que el ámbito del
+módulo prueba, el snapshot lleva su versión, y la promesa se acotó a lo que
+se mide. Con ellos quedaron resueltas cuatro obligaciones de contrato —el
+catálogo de producto publicado, el CHANGELOG, la ruta asíncrona del build y
+el veredicto cuando no se midió nada— y un test que pregunta a la CLI y al
+MCP sobre el mismo árbol. Queda un residual anotado como `C24`: las
+superficies por fichero no dicen todavía qué referencias no ataron.
+
 ## Los contratos que fija la auditoría del 2026-10-20
 
 Tres specs nuevas, en `docs/roadmap/consumer-contracts/specs/`, escriben lo
@@ -66,11 +96,13 @@ que el producto tenía que decir y no decía:
 
 Los nueve hallazgos de la auditoría se verificaron uno por uno contra el
 código antes de escribirlos: siete son candidatos nuevos de la backlog
-(C17–C23) y dos ya estaban (el vigilante y la puerta del dominio).
+(C17–C23) y dos ya estaban (el vigilante y la puerta del dominio). La
+revisión del ciclo C17 añadió uno más: `C24`, las superficies por fichero
+que no dicen qué referencias no ataron.
 
-El siguiente trabajo es **C17**: las referencias sin resolver son hechos, no
-silencio. Después, **C18** (los metadatos reales de la arista) y el corte de
-release, que es lo que convierte el trabajo en instalable.
+El siguiente trabajo es **C18**: los metadatos reales de la arista y la
+profundidad que le corresponde a la consulta. Después, el corte de release,
+que es lo que convierte el trabajo en instalable.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
@@ -99,9 +131,9 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **Release pendiente**: `main` lleva 30 commits sin publicar. Publicar exige
-  gates sobre un candidato concreto, binarios instalados verificados y tag
-  anotado.
+- **Release pendiente**: `main` lleva 32 commits sin publicar (con este
+  ciclo). Publicar exige gates sobre un candidato concreto, binarios
+  instalados verificados y tag anotado.
 
 ## Dónde está cada cosa
 
