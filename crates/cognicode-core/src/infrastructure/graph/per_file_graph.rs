@@ -5,8 +5,8 @@
 //! to analyze individual files and then combine them into larger graphs.
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
-use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{DependencyType, Location, WalkDecision};
+use crate::domain::value_objects::{DependencyType, WalkDecision};
+use crate::infrastructure::graph::semantic_layer::{call_graph_from, semantic_facts};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -296,108 +296,6 @@ pub struct PerFileGraphCache {
     cache: RwLock<HashMap<String, FileGraphCacheEntry>>,
     /// Project directory for relative paths
     project_dir: Option<String>,
-}
-
-/// The semantic layer's view of one file, when the language has one.
-///
-/// MEDIDO 2026-10-19. `LanguageConfig::semantic_handler` — la autoridad
-/// que dice si un lenguaje necesita extracción con dominio (HCL →
-/// bloques Terraform, YAML → tareas Ansible) — se consultaba en un solo
-/// sitio: `ingest::extractor::extract_file`. Este módulo, que es lo que
-/// responde a `graph.full`, al índice global y al snapshot persistido,
-/// iba directo a `TreeSitterParser` y se saltaba la capa. Un repo de
-/// Terraform producía símbolos llamados `resource` y `bucket`: cuatro
-/// símbolos para dos bloques, ninguno con la identidad del bloque.
-///
-/// Dos autoridades para la misma pregunta, y la que se pregunta es la que
-/// gana. La ley no es «el handler debe correr»: es que quien consulta el
-/// grafo vea lo que el handler produjo.
-fn semantic_graph(language: Language, source: &str, file_path: &str) -> Option<CallGraph> {
-    let config =
-        crate::infrastructure::parser::language_config::LanguageConfig::for_language(language);
-    config.semantic_handler?;
-    let extracted = crate::application::ingest::extractor::extract_file(
-        config,
-        Path::new(file_path),
-        source,
-        &format!("{:016x}", content_hash_64(source.as_bytes())),
-    );
-    if extracted.error.is_some() {
-        return None;
-    }
-
-    let mut graph = CallGraph::new();
-    // El id del handler y el FQN del símbolo son gramáticas distintas, así
-    // que las aristas se resuelven por este mapa y no por comparación de
-    // strings. `add_symbol` deduplica por FQN, de modo que el nodo
-    // duplicado que emite la extracción genérica (misma línea, misma
-    // columna) no infla el conteo.
-    let mut by_handler_id: HashMap<String, SymbolId> = HashMap::new();
-    for node in &extracted.nodes {
-        // `CallGraph` modela símbolos. Un `NodeKind` que no sea símbolo no
-        // tiene a dónde ir, y no se inventa un sitio donde meterlo.
-        let crate::domain::value_objects::NodeKind::Symbol(kind) = &node.kind else {
-            continue;
-        };
-        // El nodo del fichero no es una declaración. Los dos handlers lo
-        // identifican por `NodeId::new(source_path)` — la misma regla que
-        // usan ellos — y el camino genérico no lo emits como símbolo:
-        // dejarlo entrar haría que un repo de IaC tuviera un símbolo más
-        // que cualquier otro, y que un fichero llamado igual que un símbolo
-        // colisionara en el índice de nombres.
-        if node.id.as_str() == file_path {
-            continue;
-        }
-        let mut symbol = Symbol::new(&node.label, *kind, Location::new(file_path, 0, 0));
-        // La identidad de una declaración es la que le dio su handler:
-        // `tf:{fichero}:{bloque}`, `ansible:{fichero}:play:{nombre}`. El
-        // grafo identifica un símbolo por su nombre completo, y el que
-        // construye `Symbol::new` es el del camino genérico —el del
-        // fichero y el del símbolo—. Renombrar aquí la declaración
-        // haciéndola pasar por una del camino genérico hacía que el
-        // producto pidiera por el nombre que le dio el handler y el
-        // grafo respondiera que nunca lo había oído.
-        symbol.set_fqn_override(node.id.as_str());
-        by_handler_id.insert(node.id.as_str().to_string(), graph.add_symbol(symbol));
-    }
-
-    for edge in &extracted.edges {
-        // Una arista cuyo extremo no se resolvió no se inventa: se cuenta
-        // su ausencia, que es lo que ya hacía el camino genérico.
-        let crate::application::ingest::types::TargetRef::Resolved(target) = &edge.target_ref
-        else {
-            continue;
-        };
-        let (Some(from), Some(to)) = (
-            by_handler_id.get(edge.source.as_str()),
-            by_handler_id.get(target.as_str()),
-        ) else {
-            continue;
-        };
-        let Some(kind) = edge
-            .kind
-            .strip_prefix("dependency.")
-            .and_then(|k| k.parse::<DependencyType>().ok())
-        else {
-            continue;
-        };
-        let _ = graph.add_dependency(from, to, kind);
-    }
-
-    // Que exista un handler no significa que interpretara este fichero.
-    // Un YAML que no declara ni un play ni una tarea no es un playbook, y
-    // el handler de Ansible no tiene nada que decir sobre el: devuelve el
-    // resultado intacto y no declara ningun simbolo. Devolver `Some` ahi
-    // seria una autoridad vacia — el seam se atribuiria un fichero que no
-    // interpreto y, si el extractor generico mejorara manana, estos
-    // ficheros seguirian sin sus simbolos por un camino que ya no se
-    // consulta. Sin simbolos, el seam se aparta y responde el camino
-    // generico: la capa semantique manda solo cuando tiene algo que decir.
-    if by_handler_id.is_empty() {
-        return None;
-    }
-
-    Some(graph)
 }
 
 impl PerFileGraphCache {
@@ -731,11 +629,11 @@ impl PerFileGraphCache {
                 )
             })?;
 
-        // La capa semántica manda cuando el lenguaje declara una. Sus
-        // aristas son intra-fichero, así que `cross_file_edges` queda
-        // vacío por construcción y el índice global no interviene.
-        if let Some(graph) = semantic_graph(language, &source, file_path) {
-            return Ok((graph, Vec::new()));
+        // The semantic layer leads when the language declares one. Its
+        // edges stay inside the file, so `cross_file_edges` is empty by
+        // construction and the global index stays out of it.
+        if let Some(facts) = semantic_facts(language, &source, file_path) {
+            return Ok((call_graph_from(&facts), Vec::new()));
         }
 
         let parser =
@@ -941,7 +839,7 @@ fn file_fingerprint(path: &Path) -> Option<FileFingerprint> {
 /// 64-bit FNV-1a over the input bytes. Pure stdlib, no allocations,
 /// constant memory; sufficient for an in-process cache key where
 /// collisions only ever cost a cache miss.
-fn content_hash_64(bytes: &[u8]) -> u64 {
+pub(crate) fn content_hash_64(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325; // FNV offset basis
     for &byte in bytes {
         hash ^= byte as u64;
@@ -1662,7 +1560,7 @@ mod semantic_seam_tests {
         // camino genérico sigue teniendo la última palabra.
         let plain = "version: 3\nservices:\n  web:\n    image: nginx\n";
         assert!(
-            semantic_graph(Language::Yaml, plain, "/tmp/plain.yml").is_none(),
+            semantic_facts(Language::Yaml, plain, "/tmp/plain.yml").is_none(),
             "un handler que no interpretaba nada no puede reclamar el fichero; \
              devolver un grafo vacío haría que la capa semántica se atribuyera \
              un fichero que no miró"
@@ -1675,10 +1573,10 @@ mod semantic_seam_tests {
     fn a_playbook_is_claimed_by_the_semantic_layer() {
         let playbook =
             "- hosts: all\n  tasks:\n    - name: install\n      apt:\n        name: nginx\n";
-        let graph = semantic_graph(Language::Yaml, playbook, "/tmp/playbook.yml")
+        let facts = semantic_facts(Language::Yaml, playbook, "/tmp/playbook.yml")
             .expect("un playbook declara un play, y el seam tiene algo que decir");
         assert!(
-            graph.symbol_count() > 0,
+            !facts.symbols.is_empty(),
             "el playbook se atribuye al seam, y con él van sus símbolos"
         );
     }
@@ -1686,7 +1584,7 @@ mod semantic_seam_tests {
     #[test]
     fn a_language_without_a_handler_is_never_routed_here() {
         assert!(
-            semantic_graph(Language::Rust, "pub fn a() {}\n", "/tmp/lib.rs").is_none(),
+            semantic_facts(Language::Rust, "pub fn a() {}\n", "/tmp/lib.rs").is_none(),
             "sin handler no hay seam: la función debe retirarse antes de \
              construir nada"
         );

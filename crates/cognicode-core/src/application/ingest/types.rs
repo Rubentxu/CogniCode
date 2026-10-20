@@ -10,7 +10,8 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use crate::domain::aggregates::GraphNode;
-use crate::domain::value_objects::Provenance;
+use crate::domain::aggregates::{Symbol, SymbolId};
+use crate::domain::value_objects::{DependencyType, Provenance};
 use cognicode_graph_algos::algorithms::Statement;
 use serde::{Deserialize, Serialize};
 
@@ -166,6 +167,40 @@ impl ExtractionResult {
     pub fn is_ok(&self) -> bool {
         self.error.is_none()
     }
+}
+
+// ============================================================================
+// File facts — what one file declares
+// ============================================================================
+
+/// What one file declares, in the shape the graph consumes.
+///
+/// Two kinds of relation live here and they are not the same thing. An
+/// identified relation names both of its ends already, because the reader
+/// that produced it knew them. A call names only the callee, because the
+/// reader heard a name and the project still has to match it. Keeping them
+/// apart is what lets a file that was read by a language's own reader
+/// enter the graph without a second reader going over it.
+#[derive(Debug, Clone, Default)]
+pub struct FileFacts {
+    /// Symbols the file declares. Their identity is the one the reader
+    /// gave them, not one the graph invented.
+    pub symbols: Vec<Symbol>,
+    /// Relations whose two ends are already identified.
+    pub identified: Vec<FileRelation>,
+    /// Calls that still need a project-wide lookup by name.
+    pub calls: Vec<(Symbol, String)>,
+}
+
+/// A relation between two declarations, both of them already identified.
+#[derive(Debug, Clone)]
+pub struct FileRelation {
+    /// The declaration that holds the relation.
+    pub caller: SymbolId,
+    /// The declaration the relation points at.
+    pub callee: SymbolId,
+    /// What the relation is.
+    pub kind: DependencyType,
 }
 
 // ============================================================================

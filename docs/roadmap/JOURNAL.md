@@ -19210,3 +19210,133 @@ para quien usa la herramienta.
   relaciones sin resolver, no nodos.
 
 Gates: `fast rc=0`; `full rc=0`.
+
+## 2026-10-20 — El grafo del producto no consultaba la capa semántica (PR #396)
+
+### Lo que pasaba
+
+El grafo que construye **el producto** —el de `build_graph`, la herramienta
+que usa la gente— no consultaba la capa semántica. Iba al parser genérico
+de tree-sitter y nombraba las cosas como el parser las nombra: la palabra
+clave de la cabecera.
+
+MEDIDO sobre los fixtures reales, con el binario real:
+
+```text
+terraform-iac      373 símbolos, 4 relaciones
+  resource → data
+  resource → data
+  resource → password
+  resource → username
+
+ansible-playbook     0 símbolos, 0 relaciones
+```
+
+`resource` en lugar de `aws_s3_bucket.app_bucket`, y del playbook entero,
+**nada**. La consulta de IaC busca la identidad canónica —`tf:…`,
+`ansible:…`— y en ese grafo no había nada que encontrar.
+
+### Por qué: dos autoridades, y cada camino preguntaba a la suya
+
+La capa semántica —los dos únicos lenguajes con `semantic_handler`: HCL y
+YAML— se consultaba en **un** sitio del camino del producto, y ese camino
+**no lo usa el producto**: `build_graph_per_file`, que llaman sólo los
+tests.
+
+Los tres constructores de grafo del servicio —`build_project_graph`,
+`build_project_graph_filtered` y `build_project_graph_async`—aban al
+parser genérico. El camino por fichero iba a la capa semántica. Dos
+autoridades para la misma pregunta, y cada camino preguntaba a la suya:
+por eso los tests de uno podían estar verdes mientras el otro camino
+público seguía fallando.
+
+### El arreglo: una pregunta, un sitio, dos respuestas iguales
+
+La capa semántica sale del camino por fichero y se convierte en **un
+módulo** —`infrastructure/graph/semantic_layer.rs`— que responde «qué
+declara este fichero». Los dos caminos lo preguntan.
+
+Lo que cuesta es que la caché de ficheros del servicio guardaba
+`(símbolos, relaciones)`, y las relaciones de la capa semántica no son
+del mismo tipo: vienen **ya resueltas** —sus dos extremos son
+identidades que el handler conoce— y con su tipo. Así que la caché
+habla ahora de **hechos de fichero**, que distinguen las dos cosas:
+
+- una relación **identificada**, con sus dos extremos ya conocidos, que
+  entra en el grafo tal cual;
+- una **llamada por nombre**, que el resolutor del proyecto todavía tiene
+  que emparejar.
+
+Y una regla que ya era ley y ahora es del código: la capa semántica
+manda **sólo cuando tiene algo que decir**. Un YAML que no declara ni un
+play ni una tarea no es un playbook, el handler no lo interpreta, y el
+camino genérico sigue teniendo la última palabra.
+
+### MEDIDO después del cambio, sobre el mismo corpus y el mismo binario
+
+```text
+terraform-iac       74 símbolos, 30 relaciones
+  aws_cloudwatch_metric_alarm.app_cpu_high → aws_sns_topic.alerts
+  aws_db_instance.postgres → aws_db_subnet_group.main
+  module.compute → module.vpc
+
+ansible-playbook    31 símbolos, 10 relaciones
+  Deploy web tier → Clone application repository
+```
+
+Menos símbolos y más relaciones, y esa es la medida buena: el grafo
+dejó de contar **nodos de sintaxis** —`resource`, `data`, `password`— y
+pasó a contar **declaraciones** —los bloques que hay— con las relaciones
+que hay entre ellas. Los 373 del antes no eran 373 cosas: eran la misma
+palabra clave repetida.
+
+### El oráculo es el consumidor, no la estructura
+
+El test que fija esta unidad no comprueba que el grafo «tenga símbolos
+con prefijo `tf:`»: pregunta. Levanta el servidor MCP real, construye el
+grafo con la herramienta real y le pregunta por un recurso con la
+herramienta real.
+
+RED, sobre la base, con el mismo test:
+
+```text
+the_consumer_finds_a_terraform_resource_the_way_it_is_named
+  → NotFound("IaC resource 'aws_s3_bucket.app_bucket' not found")
+the_consumer_finds_an_ansible_play_the_way_it_is_named
+  → Internal("No graph available. Run build_graph first.")
+both_paths_name_the_same_declaration_the_same_way
+  → el grafo del producto no nombraba el recurso
+```
+
+VERDE, después. Y por encima del test, la **UAT efímera** con el binario
+release, por JSON-RPC sobre stdio, lo mismo que haría un cliente:
+
+```text
+[PASS] a Terraform resource is found under its declared identity
+  tf:…/main.tf:aws_s3_bucket.app_bucket
+[PASS] an Ansible play is found under its declared identity
+  ansible:…/site.yml:play:Configure_infrastructure
+        → Contains → ansible:…/site.yml:task:install
+```
+
+### Lo que esto NO toca
+
+El camino genérico no se toca: sus símbolos siguen llevando
+`{fichero}:{nombre}:{línea}`, porque ése es su nombre y no hay otro. Una
+lengua sin capa de dominio sigue entrando por el camino genérico, con sus
+símbolos y sus aristas.
+
+El `kind` de un bloque de Terraform sigue siendo `Function`, porque ése
+es el vocabulario que tiene el grafo y no hay una variante para
+«recurso». Eso es un MODELADO, no un defecto de identidad, y queda
+anotado como trabajo futuro.
+
+### Lo que queda abierto (medido, no supuesto)
+
+- **La poda de `docs/` y `openspec/`.** El árbol carga **655** ficheros
+  de `docs/` y **1.071** de `openspec/`, y la auditoría los marca como
+  la deuda que queda. No es lo que cierra esta unidad.
+- **El inventario de Ansible** no se extrae, y **los roles** son
+  relaciones sin resolver, no nodos.
+- **El `kind` de un recurso** no tiene voz propia en el vocabulario del
+  grafo.

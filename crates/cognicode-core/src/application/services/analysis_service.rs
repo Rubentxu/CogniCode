@@ -42,7 +42,7 @@ pub struct AnalysisService {
     graph_cache: Arc<dyn SharedGraph>,
     symbol_index: Mutex<Option<LightweightIndex>>,
     /// File cache: maps file path to (mtime, size, content_hash,
-    /// symbols, relationships) — F2.W9 + PRF audit H-01. The
+    /// facts) — F2.W9 + PRF audit H-01. The
     /// content_hash field is SHA-256 of the file bytes at parse time,
     /// added in `5ed7f865` (H-01 RED pin) GREEN. This invalidates the
     /// cache when bytes change while mtime AND size stay the same.
@@ -55,8 +55,7 @@ pub struct AnalysisService {
                     u64,
                     u64,
                     [u8; 32],
-                    Vec<crate::domain::aggregates::Symbol>,
-                    Vec<(crate::domain::aggregates::Symbol, String)>,
+                    crate::application::ingest::types::FileFacts,
                 ),
             >,
         >,
@@ -387,13 +386,8 @@ impl AnalysisService {
                     let content_hash = compute_content_hash(&source);
 
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((
-                        cached_mtime,
-                        cached_size,
-                        cached_hash,
-                        cached_symbols,
-                        cached_relationships,
-                    )) = cache.get(&file_path).cloned()
+                    if let Some((cached_mtime, cached_size, cached_hash, cached_facts)) =
+                        cache.get(&file_path).cloned()
                         && cached_mtime == mtime
                         && cached_size == size
                         && cached_hash == content_hash
@@ -404,43 +398,17 @@ impl AnalysisService {
                             mtime,
                             size,
                             content_hash,
-                            cached_symbols,
-                            cached_relationships,
+                            cached_facts,
                             false, // from_cache = true
                         ));
                     }
                     drop(cache);
 
-                    // Cache miss path: parse the source we already
-                    // read.
-                    let parser = match TreeSitterParser::with_cache(language) {
-                        Ok(p) => p,
-                        Err(e) => {
-                            skipped.lock().unwrap().push(
-                                crate::infrastructure::graph::per_file_graph::SkippedFile {
-                                    path: path_for_skip.clone(),
-                                    reason: classify_parse(&e),
-                                },
-                            );
-                            return None;
-                        }
-                    };
-                    // PRF-ANA-02: extraction errors are classified as
-                    // skipped, never silently defaulted to empty results.
-                    let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            skipped.lock().unwrap().push(
-                                crate::infrastructure::graph::per_file_graph::SkippedFile {
-                                    path: file_path.clone(),
-                                    reason: classify_parse(&e),
-                                },
-                            );
-                            return None;
-                        }
-                    };
-                    let relationships = match parser.find_call_relationships(&source, &file_path) {
-                        Ok(r) => r,
+                    // Cache miss path: read the source we already read.
+                    // A file whose reader fails is classified as skipped,
+                    // never silently defaulted to empty results.
+                    let facts = match read_file_facts(language, &source, &file_path) {
+                        Ok(facts) => facts,
                         Err(e) => {
                             skipped.lock().unwrap().push(
                                 crate::infrastructure::graph::per_file_graph::SkippedFile {
@@ -457,8 +425,7 @@ impl AnalysisService {
                         mtime,
                         size,
                         content_hash,
-                        symbols,
-                        relationships,
+                        facts,
                         true, // from_cache = false (parsed)
                     ))
                 }
@@ -468,16 +435,16 @@ impl AnalysisService {
         // Stage: parse — count what we got from the parallel extraction
         let files_cached = results
             .iter()
-            .filter(|(_, _, _, _, _, _, was_parsed)| !was_parsed)
+            .filter(|(_, _, _, _, _, was_parsed)| !was_parsed)
             .count();
         let files_parsed = results.len() - files_cached;
         let total_symbols_extracted: usize = results
             .iter()
-            .map(|(_, _, _, _, symbols, _, _)| symbols.len())
+            .map(|(_, _, _, _, facts, _)| facts.symbols.len())
             .sum();
         let total_relationships_found: usize = results
             .iter()
-            .map(|(_, _, _, _, _, rels, _)| rels.len())
+            .map(|(_, _, _, _, facts, _)| facts.identified.len() + facts.calls.len())
             .sum();
 
         info!(
@@ -503,6 +470,8 @@ impl AnalysisService {
         // Before F2.W7 this was just `(caller_symbol, callee_name)` and
         // the resolution lost the file path of the caller.
         let mut all_relationships: Vec<(String, String, String)> = Vec::new();
+        let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
+            Vec::new();
 
         // ENGINE-DET (e38.2): rayon's parallel collection order is
         // nondeterministic, so the results are folded in deterministic
@@ -511,7 +480,7 @@ impl AnalysisService {
         let mut results = results;
         results.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
@@ -521,16 +490,10 @@ impl AnalysisService {
             // editor rewrite without re-save metadata change).
             cache.insert(
                 file_path.clone(),
-                (
-                    mtime,
-                    size,
-                    content_hash,
-                    symbols.clone(),
-                    relationships.clone(),
-                ),
+                (mtime, size, content_hash, facts.clone()),
             );
 
-            for symbol in symbols {
+            for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&symbol_id, symbol.clone());
                 // F2.W7: feed every symbol into the GlobalSymbolIndex
@@ -543,7 +506,12 @@ impl AnalysisService {
                 );
             }
 
-            for (caller, callee_name) in relationships {
+            // A relation whose two ends are already identified is not
+            // looked up by name: the reader that produced it already
+            // knew both ends.
+            identified_relations.extend(facts.identified.iter().cloned());
+
+            for (caller, callee_name) in facts.calls {
                 // Preserve the caller's file AND FQN so the resolver can
                 // apply the "same file" / "same crate root"
                 // disambiguation AND recover the caller SymbolId.
@@ -553,7 +521,17 @@ impl AnalysisService {
             }
         }
 
-        let total_relationships = all_relationships.len();
+        // The relations whose ends are already identified go in now
+        // that every symbol of every file is in the store. They needed no
+        // lookup, so they are resolved relations and count as such.
+        let identified_count = identified_relations.len();
+        for relation in identified_relations {
+            store
+                .add_dependency(&relation.caller, &relation.callee, relation.kind)
+                .ok();
+        }
+
+        let total_relationships = all_relationships.len() + identified_count;
         for (caller_fqn, caller_file, callee_name) in all_relationships {
             let caller_id = SymbolId::new(&caller_fqn);
             let name_lower = callee_name.to_lowercase();
@@ -909,13 +887,8 @@ impl AnalysisService {
                     let content_hash = compute_content_hash(&source);
 
                     let cache = self.file_cache.lock().unwrap();
-                    if let Some((
-                        cached_mtime,
-                        cached_size,
-                        cached_hash,
-                        cached_symbols,
-                        cached_relationships,
-                    )) = cache.get(&file_path).cloned()
+                    if let Some((cached_mtime, cached_size, cached_hash, cached_facts)) =
+                        cache.get(&file_path).cloned()
                         && cached_mtime == mtime
                         && cached_size == size
                         && cached_hash == content_hash
@@ -926,39 +899,19 @@ impl AnalysisService {
                             mtime,
                             size,
                             content_hash,
-                            cached_symbols,
-                            cached_relationships,
+                            cached_facts,
                             false, // from_cache = true
                         ));
                     }
                     drop(cache);
 
-                    // PRF-ANA-02: a file whose parser cannot be built or
-                    // whose extraction fails is excluded from parsed
+                    // A file whose reader fails is excluded from parsed
                     // coverage and reported via warn!, never silently
                     // counted as parsed with empty results.
-                    let parser = match TreeSitterParser::with_cache(language) {
-                        Ok(p) => p,
+                    let facts = match read_file_facts(language, &source, &file_path) {
+                        Ok(facts) => facts,
                         Err(e) => {
-                            tracing::warn!("parse setup failed for {}: {}", file_path, e);
-                            return None;
-                        }
-                    };
-                    let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
-                        Ok(s) => s,
-                        Err(e) => {
-                            tracing::warn!("symbol extraction failed for {}: {}", file_path, e);
-                            return None;
-                        }
-                    };
-                    let relationships = match parser.find_call_relationships(&source, &file_path) {
-                        Ok(r) => r,
-                        Err(e) => {
-                            tracing::warn!(
-                                "relationship extraction failed for {}: {}",
-                                file_path,
-                                e
-                            );
+                            tracing::warn!("reading {} failed: {}", file_path, e);
                             return None;
                         }
                     };
@@ -968,8 +921,7 @@ impl AnalysisService {
                         mtime,
                         size,
                         content_hash,
-                        symbols,
-                        relationships,
+                        facts,
                         true, // from_cache = false (parsed)
                     ))
                 }
@@ -978,8 +930,10 @@ impl AnalysisService {
 
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
+        let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
+            Vec::new();
 
-        for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in results {
+        for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
             }
@@ -987,16 +941,10 @@ impl AnalysisService {
             // content_hash).
             cache.insert(
                 file_path.clone(),
-                (
-                    mtime,
-                    size,
-                    content_hash,
-                    symbols.clone(),
-                    relationships.clone(),
-                ),
+                (mtime, size, content_hash, facts.clone()),
             );
 
-            for symbol in symbols {
+            for symbol in facts.symbols {
                 let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                 store.add_symbol_with_location(&symbol_id, symbol.clone());
                 global_index.insert(
@@ -1006,7 +954,12 @@ impl AnalysisService {
                 );
             }
 
-            for (caller, callee_name) in relationships {
+            // A relation whose two ends are already identified is not
+            // looked up by name: the reader that produced it already
+            // knew both ends.
+            identified_relations.extend(facts.identified.iter().cloned());
+
+            for (caller, callee_name) in facts.calls {
                 // El fichero del llamante es lo que permite las reglas
                 // "mismo fichero" y "misma raíz de crate".
                 all_relationships.push((
@@ -1015,6 +968,14 @@ impl AnalysisService {
                     callee_name,
                 ));
             }
+        }
+
+        // The relations whose ends are already identified go in now
+        // that every symbol of every file is in the store.
+        for relation in identified_relations {
+            store
+                .add_dependency(&relation.caller, &relation.callee, relation.kind)
+                .ok();
         }
 
         for (caller_fqn, caller_file, callee_name) in all_relationships {
@@ -1181,13 +1142,8 @@ impl AnalysisService {
                             let content_hash = compute_content_hash(&source);
 
                             let cache = file_cache.lock().unwrap();
-                            if let Some((
-                                cached_mtime,
-                                cached_size,
-                                cached_hash,
-                                cached_symbols,
-                                cached_relationships,
-                            )) = cache.get(&file_path).cloned()
+                            if let Some((cached_mtime, cached_size, cached_hash, cached_facts)) =
+                                cache.get(&file_path).cloned()
                                 && cached_mtime == mtime
                                 && cached_size == size
                                 && cached_hash == content_hash
@@ -1198,56 +1154,30 @@ impl AnalysisService {
                                     mtime,
                                     size,
                                     content_hash,
-                                    cached_symbols,
-                                    cached_relationships,
+                                    cached_facts,
                                     false, // from_cache = true
                                 ));
                             }
                             drop(cache);
 
-                            // PRF-ANA-02: same contract as the sync
-                            // builder — extraction failures are excluded
-                            // from parsed coverage and reported, never
-                            // silently defaulted to empty results.
-                            let parser = match TreeSitterParser::with_cache(language) {
-                                Ok(p) => p,
+                            // Same contract as the sync builder: a file
+                            // whose reader fails is excluded from parsed
+                            // coverage and reported, never silently
+                            // defaulted to empty results.
+                            let facts = match read_file_facts(language, &source, &file_path) {
+                                Ok(facts) => facts,
                                 Err(e) => {
-                                    tracing::warn!("parse setup failed for {}: {}", file_path, e);
+                                    tracing::warn!("reading {} failed: {}", file_path, e);
                                     return None;
                                 }
                             };
-                            let symbols =
-                                match parser.find_all_symbols_with_path(&source, &file_path) {
-                                    Ok(s) => s,
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "symbol extraction failed for {}: {}",
-                                            file_path,
-                                            e
-                                        );
-                                        return None;
-                                    }
-                                };
-                            let relationships =
-                                match parser.find_call_relationships(&source, &file_path) {
-                                    Ok(r) => r,
-                                    Err(e) => {
-                                        tracing::warn!(
-                                            "relationship extraction failed for {}: {}",
-                                            file_path,
-                                            e
-                                        );
-                                        return None;
-                                    }
-                                };
 
                             Some((
                                 file_path,
                                 mtime,
                                 size,
                                 content_hash,
-                                symbols,
-                                relationships,
+                                facts,
                                 true, // from_cache = false (parsed)
                             ))
                         }
@@ -1256,27 +1186,18 @@ impl AnalysisService {
 
                 let mut cache = file_cache.lock().unwrap();
                 let mut all_relationships = Vec::new();
+                let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
+                    Vec::new();
 
-                for (file_path, mtime, size, content_hash, symbols, relationships, was_parsed) in
-                    results
-                {
+                for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
                     if was_parsed {
                         parsed_files += 1;
                     }
                     // PRF audit H-01: cache entries keyed by
                     // (mtime, size, content_hash).
-                    cache.insert(
-                        file_path.clone(),
-                        (
-                            mtime,
-                            size,
-                            content_hash,
-                            symbols.clone(),
-                            relationships.clone(),
-                        ),
-                    );
+                    cache.insert(file_path.clone(), (mtime, size, content_hash, facts.clone()));
 
-                    for symbol in symbols {
+                    for symbol in facts.symbols {
                         let symbol_id = SymbolId::new(symbol.fully_qualified_name());
                         store
                             .lock()
@@ -1289,7 +1210,12 @@ impl AnalysisService {
                         );
                     }
 
-                    for (caller, callee_name) in relationships {
+                    // A relation whose two ends are already identified is
+                    // not looked up by name: the reader that produced it
+                    // already knew both ends.
+                    identified_relations.extend(facts.identified.iter().cloned());
+
+                    for (caller, callee_name) in facts.calls {
                         // El fichero del llamante es lo que permite las reglas
                         // "mismo fichero" y "misma raíz de crate".
                         all_relationships.push((
@@ -1297,6 +1223,17 @@ impl AnalysisService {
                             caller.location().file().to_string(),
                             callee_name,
                         ));
+                    }
+                }
+
+                // The relations whose ends are already identified go in now
+                // that every symbol of every file is in the store.
+                {
+                    let mut guard = store.lock().unwrap();
+                    for relation in identified_relations {
+                        guard
+                            .add_dependency(&relation.caller, &relation.callee, relation.kind)
+                            .ok();
                     }
                 }
 
@@ -1864,6 +1801,33 @@ fn compute_content_hash(source: &str) -> [u8; 32] {
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&out);
     hash
+}
+
+/// What one file declares, read the way the product reads it.
+///
+/// A language that has a reader of its own is read by that reader, so the
+/// graph names a Terraform block or an Ansible task the way the tools that
+/// ask about them do. Every other language is read the generic way, and a
+/// file the generic reader cannot parse is an error the caller turns into a
+/// skipped file.
+fn read_file_facts(
+    language: Language,
+    source: &str,
+    file_path: &str,
+) -> Result<crate::application::ingest::types::FileFacts, crate::domain::traits::ParseError> {
+    if let Some(facts) =
+        crate::infrastructure::graph::semantic_layer::semantic_facts(language, source, file_path)
+    {
+        return Ok(facts);
+    }
+    let parser = TreeSitterParser::with_cache(language)?;
+    let symbols = parser.find_all_symbols_with_path(source, file_path)?;
+    let calls = parser.find_call_relationships(source, file_path)?;
+    Ok(crate::application::ingest::types::FileFacts {
+        symbols,
+        identified: Vec::new(),
+        calls,
+    })
 }
 
 impl AnalysisService {

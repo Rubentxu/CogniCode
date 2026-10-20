@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `f5c76d7de0095d85785c010ebc623c2eca788952` (`main`, squash-merge del
-> PR #394: el handler de Ansible leía etiquetas donde no había nada).
+> **Snapshot**: 2026-10-20, sobre `2130721e4aeed9d1b1b253d205f2cc04cb835619` (`main`, squash-merge del
+> PR #395: el grafo renombraba lo que el handler había declarado).
 > Sustituye al de
-> `ae409ae38a95de41b760ba631bd130d35a70248d` (PR #393). **v0.101.23
+> `f5c76d7de0095d85785c010ebc623c2eca788952` (PR #394). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -20,6 +20,31 @@
 > `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
+>
+> **Séptima unidad del ciclo 2026-10-20 (PR #396, en este mismo PR): el grafo
+> del producto ya habla la lengua del dominio.** El grafo que construye
+> `build_graph` —la herramienta que usa la gente— no consultaba la capa
+> semántica: iba al parser genérico y nombraba las cosas como el parser
+> las nombra. MEDIDO sobre los fixtures reales, con el binario real:
+> `terraform-iac` daba **373 símbolos y 4 relaciones**, y sus aristas se
+> llamaban `resource → data`; `ansible-playbook` daba **0 símbolos**.
+>
+> Ahora los tres constructores de grafo del servicio preguntan al mismo
+> sitio —un módulo nuevo, `infrastructure/graph/semantic_layer.rs`—, que
+> es el que responde «qué declara este fichero». MEDIDO, sobre el mismo
+> corpus y el mismo binario: `terraform-iac` pasa a **74 símbolos y 30
+> relaciones**, con aristas que se llaman
+> `aws_db_instance.postgres → aws_db_subnet_group.main`, y
+> `ansible-playbook` pasa de **0** a **31 símbolos y 10 relaciones**.
+>
+> Menos símbolos y más relaciones, y ésa es la medida buena: el grafo
+> dejó de contar nodos de sintaxis —`resource`, `data`, `password`— y
+> pasó a contar declaraciones. El oráculo no es la estructura del
+> grafo: es el consumidor. El test levanta el servidor MCP real y le
+> pregunta por un recurso con la herramienta real; en la base respondía
+> `NotFound`, y ahora responde `tf:…:aws_s3_bucket.app_bucket` y
+> `ansible:…:play:Configure_infrastructure`. Detalle en `JOURNAL.md`,
+> entrada de la séptima unidad.
 >
 > **Sexta unidad del ciclo 2026-10-20 (PR #395, en este mismo PR): el grafo
 > ya no renombra lo que el handler declaró.** Un handler que lee un fichero
