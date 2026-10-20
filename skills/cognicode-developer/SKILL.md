@@ -4,7 +4,7 @@ description: >
   Onboarding for CogniCode contributors. Trigger: When an agent or
   developer is working on the CogniCode project itself (graph store,
   MCP server, CLI, Explorer UI, distribution lifecycle) and needs
-  the SDDK/OpenSpec workflow, internal `just` recipes, architecture
+  the work-unit workflow, internal `just` recipes, architecture
   rules, and release gates. NOT for users of CogniCode — load
   `cognicode` or `cognicode-mcp` instead.
 license: MIT
@@ -30,30 +30,32 @@ itself**. If you are a user of CogniCode (you installed it via
 
 ## Required reading
 
-1. `docs/adr/README.md` — table of contents for the 50+ ADRs. The
+1. `AGENTS.md` at the repository root — project conventions
+   (recovery sequence, test discipline, commit messages, gates).
+2. `docs/roadmap/ROADMAP.md` — the one agenda authority. What is
+   open, and what each closed unit established.
+3. `docs/roadmap/JOURNAL.md` — the append-only receipt of every
+   closed unit: its SHA, its gates, its measurement.
+4. `docs/adr/README.md` — table of contents for the 50+ ADRs. The
    ADRs are the source of design truth.
-2. `openspec/CHANGES.md` (if present) or `openspec/changes/`
-   directory — active and archived cycles.
-3. `AGENTS.md` at the repository root — project conventions
-   (architecture, ephemeral vs permanent docs, commit messages,
-   testing).
 
 ## Required process for any non-trivial change
 
-The project uses **SDDK + OpenSpec**. A change of meaningful scope
-goes through a cycle:
+A change of meaningful scope is a **work unit**: one contract, one
+test that fails before and passes after, one receipt.
 
 ```text
-explore → propose → spec → design → tasks → apply → verify → release → archive
+read the agenda → write the failing test → fix it → run the gates → write the receipt
 ```
 
-The exact path (B-direct / A-min / A-lite / A-full) is decided by
-the orchestrator agent based on complexity.
+The unit's contract is stated before the code, and the receipt lands in
+`docs/roadmap/JOURNAL.md` with the SHA, the gates that ran and the
+measurement that closed it.
 
 For tiny fixes (typos, single-line bug fixes, dependency bumps), a
 direct commit is acceptable. Anything that touches public API,
 distribution lifecycle, or product-surface contracts MUST go
-through a cycle.
+through a work unit.
 
 ## Key development commands
 
@@ -82,9 +84,10 @@ just build-release                  # release-mode binaries
 
 - **Architecture:** hexagonal (ports & adapters) + SOLID, unless an
   ADR or task explicitly states otherwise.
-- **Ephemeral docs** (working only, never pushed to remote):
-  `docs/adr/**`, `docs/ROADMAP.md`, `CONTEXT.md`. Spanish.
-- **Permanent docs** (pushed to remote): everything else.
+- **Governance docs** (pushed to remote): `docs/roadmap/**` and
+  `docs/adr/**`. Spanish.
+- **Ephemeral notes** (working only, never pushed to remote):
+  `AGENTS.local.md`, `CONTEXT.md`. Spanish.
 - **Commit messages:** Conventional Commits format. **Never** add
   `Co-Authored-By: AI`.
 - **Domain code** (`crates/cognicode-core/src/domain/`) MUST NOT
@@ -117,5 +120,6 @@ in user skills.
 ## See also
 
 - `AGENTS.md` at the repo root — full conventions list.
-- `openspec/changes/` — current and past cycles.
+- `docs/roadmap/ROADMAP.md` — the agenda authority.
+- `docs/roadmap/JOURNAL.md` — the receipt of every closed unit.
 - `docs/adr/README.md` — ADR index.

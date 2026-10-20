@@ -1145,7 +1145,7 @@ mod w3_equivalence_tests {
     //!
     //! These tests **characterize** the divergence between
     //! [`FullGraphStrategy`] and [`PerFileStrategy`] over the corpus
-    //! `docs/prf/fixtures/equivalence_full_vs_perfile/`. They do NOT
+    //! `crates/cognicode-core/testdata/equivalence_full_vs_perfile/`. They do NOT
     //! force equivalence — the two strategies serve different
     //! purposes — but they pin down the contract so that any future
     //! regression is detected immediately.
@@ -1174,7 +1174,7 @@ mod w3_equivalence_tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("docs/prf/fixtures/equivalence_full_vs_perfile")
+            .join("crates/cognicode-core/testdata/equivalence_full_vs_perfile")
     }
 
     fn symbol_set(graph: &crate::domain::aggregates::call_graph::CallGraph) -> HashSet<String> {
@@ -1527,7 +1527,7 @@ mod w10_equivalence_tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("docs/prf/fixtures/equivalence_full_vs_perfile")
+            .join("crates/cognicode-core/testdata/equivalence_full_vs_perfile")
     }
 
     fn symbol_fqns(graph: &CallGraph) -> HashSet<String> {

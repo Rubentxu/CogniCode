@@ -1341,7 +1341,7 @@ mod tests {
 
     // --- PRF F2.W1: nested-traversal integration test on a real corpus ---
     //
-    // The fixture lives at docs/prf/fixtures/per_file_correctness/ and is
+    // The fixture lives at crates/cognicode-core/testdata/per_file_correctness/ and is
     // described in CORPUS.md. The oracle (3 functions: top_level,
     // mid_level, leaf) was written by reading the .rs files directly.
     //
@@ -1360,7 +1360,7 @@ mod tests {
             .unwrap()
             .parent() // repo root
             .unwrap()
-            .join("docs/prf/fixtures/per_file_correctness");
+            .join("crates/cognicode-core/testdata/per_file_correctness");
 
         assert!(
             corpus_dir.is_dir(),
@@ -1391,7 +1391,7 @@ mod tests {
     // --- PRF F2.W2: silent read/parse error reporting (R3) ---
 
     /// Test fixture for F2.W2: the corpus is at
-    /// docs/prf/fixtures/per_file_partial_corpus/. It contains a clean
+    /// crates/cognicode-core/testdata/per_file_partial_corpus/. It contains a clean
     /// file (`good.rs`) and two files that must be reported as skipped
     /// (broken_syntax.rs and, on Unix, unreadable.rs after chmod 000).
     fn w2_corpus() -> std::path::PathBuf {
@@ -1401,7 +1401,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("docs/prf/fixtures/per_file_partial_corpus")
+            .join("crates/cognicode-core/testdata/per_file_partial_corpus")
     }
 
     /// `merge_with_report` must surface a parse failure as a skipped

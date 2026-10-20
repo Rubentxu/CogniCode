@@ -14,11 +14,11 @@
 //! docs/debts/probe.md                                IGNORED
 //! ```
 //!
-//! `docs/ROADMAP.md` is the sharpest case: `.gitignore:171-172` declare it a
-//! tracked PRF entrypoint, write the path and then immediately negate it, and
-//! both lines are inert. The file asserted something and no mechanism applied —
-//! the same shape as the N+66 ghost filter, the N+70 allowlist rationale and the
-//! gate that no pipeline executed.
+//! The entrypoint was the sharpest case: `.gitignore` declared it a tracked
+//! entrypoint, wrote the path and then immediately negated it, and both lines
+//! were inert. The file asserted something and no mechanism applied — the same
+//! shape as the N+66 ghost filter, the N+70 allowlist rationale and the gate
+//! that no pipeline executed.
 //!
 //! ## The one-line fix is not enough
 //!
@@ -89,10 +89,7 @@ fn is_ignored(relative: &str) -> bool {
 
 /// Every directory `.gitignore` declares a negation for, with a probe path that
 /// does not exist. These are the claims the file makes in prose.
-const DECLARED_EXEMPT: &[&str] = &[
-    "docs/ROADMAP.md",
-    "docs/roadmap/production-ready/ROADMAP-ADDENDUM.md",
-];
+const DECLARED_EXEMPT: &[&str] = &["docs/roadmap/production-ready/ROADMAP-ADDENDUM.md"];
 
 /// Directories under `docs/` with no negation. They must stay ignored: the local
 /// -only decision of 2026-06-24 is the default, and the negations above are the

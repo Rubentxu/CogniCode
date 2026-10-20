@@ -3226,7 +3226,7 @@ mod w2_uat_tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("docs/prf/fixtures/per_file_partial_corpus")
+            .join("crates/cognicode-core/testdata/per_file_partial_corpus")
     }
 
     /// `cognicode graph per-file <clean.rs>` — UAT for the happy path.

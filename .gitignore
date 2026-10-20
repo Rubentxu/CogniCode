@@ -104,7 +104,6 @@ adder.go
  # SDD / OpenSpec artifacts (agent planning data)
  .tmp-cognicode-verify-extra/
  openspec/*
- !openspec/specs/
  plans/
  sdd/
 
@@ -139,9 +138,8 @@ autoresearch/
 #
 # CORRECTED 2026-10-01: this rule read `docs/`, excluding the DIRECTORY.
 # Git does not descend into an excluded directory, so every `!/docs/...`
-# negation below it was inert — `docs/ROADMAP.md` was ignored despite the
-# two lines that declare it a tracked entrypoint. `docs/*` excludes the
-# same paths but leaves `docs/` itself traversable, so negations work.
+# negation below it was inert. `docs/*` excludes the same paths but leaves
+# `docs/` itself traversable, so negations work.
 # Verified not to widen the policy: see
 # crates/cognicode-cli/tests/gitignore_negation_contract.rs.
 #
@@ -181,10 +179,8 @@ apps/explorer-ui/playwright-report/
 **/test-results/*.png
 **/playwright-report/**/*.png
 
-# Root AGENTS.md and docs/ROADMAP.md are tracked PRF entrypoints.
-# Per-developer notes remain untracked in AGENTS.local.md / CONTEXT.md.
-docs/ROADMAP.md
-!/docs/ROADMAP.md
+# Root AGENTS.md is the tracked entrypoint. Per-developer notes remain
+# untracked in AGENTS.local.md / CONTEXT.md.
 docs/adr/
 CONTEXT.md
 
@@ -219,11 +215,6 @@ docs/roadmap/*
 # register contradicting itself; it has been untracked to match its siblings.
 # `gitignore_negation_contract.rs` holds both directions of this rule.
 
-# C8 recertification openspec change (Post-PRF stabilization).
-!/openspec/changes/2026-09-26-c8-recertification/
-!/openspec/changes/2026-09-26-c8-recertification/**/
-!/openspec/changes/2026-09-26-architecture-boundary-hardening/
-!/openspec/changes/2026-09-26-architecture-boundary-hardening/**/
 
 # LadybugDB runtime artifacts
 cognicode.lbug

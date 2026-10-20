@@ -2,7 +2,7 @@
 
 Fecha: 2026-09-22 · binario: target/release/cognicode-mcp (rebuild fresco
 post-fix, SHA verificado por tamaño/timestamp) · corpus:
-docs/prf/fixtures/massive_collision_corpus (51 homónimos)
+crates/cognicode-core/testdata/massive_collision_corpus (51 homónimos)
 
 ## RED inicial (defecto REAL encontrado)
 

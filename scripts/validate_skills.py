@@ -9,7 +9,7 @@ Implements the rules from WU17 of e84.1-cognicode-skill-productization:
       - target/debug/
       - target/release/
       - any absolute path under /home/, /Users/, /var/, /opt/
-      - references to internal-only docs (docs/ROADMAP.md, openspec/, docs/adr/)
+      - references to internal-only docs (docs/roadmap/, docs/adr/)
       - just recipes (post-e31-audit, ci-t6, scorecard-nightly, scorecard-streak)
       - hard-coded version "0.92.0"
 
@@ -42,9 +42,9 @@ SKILLS_DIR = REPO_ROOT / "skills"
 
 # The published tool catalog, and the only one this gate resolves against.
 #
-# It used to be the newest `runtime-tools-list.json` under
-# `openspec/changes/archive/`, which is a frozen historical record of one
-# cycle's runtime capture. That made the gate's authority a function of
+# It used to be the newest runtime capture kept in the repository's
+# specification tree, a frozen historical record of one cycle. That made
+# the gate's authority a function of
 # which cycles happen to be archived: append a new archive with a
 # different catalog and the skill gate silently starts validating against
 # different tool names. It also left two sources of truth — the
@@ -72,9 +72,7 @@ USER_SKILL_FORBIDDEN_PATTERNS = [
     (r"target/debug/", "Cargo target/debug path"),
     (r"target/release/", "Cargo target/release path"),
     # Internal-only docs
-    (r"docs/ROADMAP\.md", "internal-only docs/ROADMAP.md"),
-    (r"openspec/changes/", "internal-only openspec/changes/"),
-    (r"openspec/CHANGES\.md", "internal-only openspec/CHANGES.md"),
+    (r"docs/roadmap/", "internal-only docs/roadmap/"),
     (r"docs/adr/", "internal-only docs/adr/"),
     # just recipes from the CogniCode repo
     (r"\bpost-e31-audit\b", "internal just recipe post-e31-audit"),
@@ -92,9 +90,8 @@ USER_SKILL_FORBIDDEN_PATTERNS = [
 
 # Developer skills are allowed to contain internal references.
 DEVELOPER_SKILL_ALLOWED_PATTERNS = [
-    r"docs/ROADMAP\.md",
+    r"docs/roadmap/",
     r"docs/adr/",
-    r"openspec/",
     r"post-e31-audit",
     r"just ",
     r"cd .*CogniCode",

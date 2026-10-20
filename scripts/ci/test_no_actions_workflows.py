@@ -128,7 +128,7 @@ LANES = (
 # Files whose contents are a record of what was, not a statement of what is.
 # Listed rather than pattern-matched on a directory prefix so adding a new
 # archive has to be a deliberate edit here.
-ARCHIVE_PREFIXES = ("docs/", "evidence/", "openspec/changes/archive/")
+ARCHIVE_PREFIXES = ("docs/", "evidence/")
 
 
 def tracked_paths(root: Path) -> list[Path] | None:

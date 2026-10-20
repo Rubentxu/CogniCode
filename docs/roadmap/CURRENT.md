@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `2130721e4aeed9d1b1b253d205f2cc04cb835619` (`main`, squash-merge del
-> PR #395: el grafo renombraba lo que el handler había declarado).
+> **Snapshot**: 2026-10-20, sobre `996178bb58844f8bc79d8e8fc32cb3ff64ab0212` (`main`, squash-merge del
+> PR #396: el grafo del producto no consultaba la capa semántica).
 > Sustituye al de
-> `f5c76d7de0095d85785c010ebc623c2eca788952` (PR #394). **v0.101.23
+> `2130721e4aeed9d1b1b253d205f2cc04cb835619` (PR #395). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -20,6 +20,31 @@
 > `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
+>
+> **Octava unidad del ciclo 2026-10-20 (PR #397, en este mismo PR): el árbol
+> de documentación, podado.** `docs/` pasó de **655** ficheros a **125**, y
+> `openspec/` de **1.071** a **0**. MEDIDO: **1.606** ficheros y **252.046**
+> líneas fuera. Sobreviven **125**, y no por sentimentalismo: la autoridad de
+> agenda (**80**), el registro de decisiones (**41**), el registro de acciones
+> (**2**), el respaldo del gate de suministro (**1**) y la guía de
+> distribución (**1**) — los cinco son machinery, y contratos los vigilan.
+>
+> Los **89** ficheros de `docs/prf/fixtures/` no eran documentación: eran
+> corpus de pruebas que seis puntos del código leían para medir. Se movieron
+> a `crates/cognicode-core/testdata/`, que es lo que eran.
+>
+> Lo que se tuvo que arreglar al hacerlo: `AGENTS.md`, `.gitignore`, el hook
+> de pre-commit que ya no podía dispararse, el contrato de procedencia (que
+> ahora declara las raíces que se fueron, una fila y una razón cada una) y
+> la skill del desarrollador, que describía un flujo que ya no existe.
+>
+> Y una cosa que no salió en el plan: **la poda se llevó un fichero que un
+> stage del merge-gate leía**. El lint de drift de capacidades comparaba la
+> lista de lenguajes del código con la de una matriz que está entre los
+> borrados. Volvió —a `docs/roadmap/consumer-contracts/specs/`— y el lint
+> pasó a ser un contrato que el gate local ejecuta también, porque el
+> veredicto local no puede ser verde con un fichero que el gate remoto
+> exige. Detalle en `JOURNAL.md`, entrada de la octava unidad.
 >
 > **Séptima unidad del ciclo 2026-10-20 (PR #396, en este mismo PR): el grafo
 > del producto ya habla la lengua del dominio.** El grafo que construye

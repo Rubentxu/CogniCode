@@ -7,7 +7,7 @@ They were **retired in e85**. Every one of them carried placeholder digests
 (`0000…0001/2/3`), and under schema v1 the validator accepted those because it
 only checked length and hexadecimal-ness. That is what allowed a fundamentally
 broken release contract to look finished (see
-`openspec/changes/e84-cognicode-distribution-artifact-contract/wu1-*`).
+the distribution artifact contract).
 
 ## What replaced them
 

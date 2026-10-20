@@ -6797,7 +6797,7 @@ mod tests {
     /// `FullGraphStrategy::build_full_graph`. This test pins the
     /// contract that both transport paths produce the same symbol
     /// and edge inventory over
-    /// `docs/prf/fixtures/equivalence_full_vs_perfile/`.
+    /// `crates/cognicode-core/testdata/equivalence_full_vs_perfile/`.
     ///
     /// Edge comparison is by (caller name, callee name) pairs — the
     /// same surface `EdgeInfo` exposes to MCP clients — sorted as a
@@ -6816,7 +6816,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/equivalence_full_vs_perfile")
+                .join("crates/cognicode-core/testdata/equivalence_full_vs_perfile")
         }
 
         fn cli_full_graph(p: &PathBuf) -> CallGraph {
@@ -6905,7 +6905,7 @@ mod tests {
     /// symbols** and the **count of (caller, callee) dependency
     /// pairs** over the canonical corpus.
     ///
-    /// The corpus (`docs/prf/fixtures/per_file_correctness/src/lib.rs`)
+    /// The corpus (`crates/cognicode-core/testdata/per_file_correctness/src/lib.rs`)
     /// is the determinism corpus: 3 symbols (`top_level`,
     /// `mid_level`, `leaf`) in 3 nested files.
     ///
@@ -6925,7 +6925,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/per_file_equivalence/src/lib.rs")
+                .join("crates/cognicode-core/testdata/per_file_equivalence/src/lib.rs")
         }
 
         fn cli_per_file_graph(p: &PathBuf) -> (usize, Vec<(String, String)>) {
@@ -7037,7 +7037,7 @@ mod tests {
     /// comparing basenames avoids false negatives from
     /// absolute-vs-relative path divergences in the wrappers.
     ///
-    /// The corpus (`docs/prf/fixtures/query_index_equivalence/src/lib.rs`)
+    /// The corpus (`crates/cognicode-core/testdata/query_index_equivalence/src/lib.rs`)
     /// has 3 symbols (`unique_alpha`, `unique_beta`,
     /// `nested::unique_gamma`); the test queries each and asserts
     /// equivalence.
@@ -7056,7 +7056,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/query_index_equivalence/src")
+                .join("crates/cognicode-core/testdata/query_index_equivalence/src")
         }
 
         /// CLI path: `LightweightStrategy::new().build_index(&dir).query_symbols(name)`
@@ -7209,7 +7209,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/outline_equivalence/src/lib.rs")
+                .join("crates/cognicode-core/testdata/outline_equivalence/src/lib.rs")
         }
 
         /// CLI path: read source, build outline with same flags as
@@ -7335,7 +7335,7 @@ mod tests {
     ///   works).
     ///
     /// The corpus lives at
-    /// `docs/prf/fixtures/analyze_impact_equivalence/` with 3 files
+    /// `crates/cognicode-core/testdata/analyze_impact_equivalence/` with 3 files
     /// (`lib.rs`, `direct.rs`, `transitive.rs`) that establish a
     /// dependency chain: `transitive.rs` calls `direct.rs` which
     /// calls `impact_target` (in `lib.rs`). All symbol names carry
@@ -7359,7 +7359,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/analyze_impact_equivalence/src")
+                .join("crates/cognicode-core/testdata/analyze_impact_equivalence/src")
         }
 
         /// Copy the corpus into a tempdir so the graph builder sees
@@ -7556,7 +7556,7 @@ mod tests {
                 .unwrap()
                 .parent()
                 .unwrap()
-                .join("docs/prf/fixtures/analyze_impact_equivalence/src")
+                .join("crates/cognicode-core/testdata/analyze_impact_equivalence/src")
         }
 
         /// Copy the corpus into a tempdir; reused because the

@@ -27,11 +27,11 @@ replaced by a word from another alphabet — the same shape, always.
 
 What it does not do
 -------------------
-It does not repair anything, and it does not touch the frozen certification
-expediente under `docs/prf/`: that tree is frozen by `AGENTS.md`, so its
-findings are reported and never repaired. Reconstructing historical evidence
-so that the guard passes would be falsifying the expediente, which is worse
-than the defect it hides.
+It does not repair anything. A file that carries contamination it cannot be
+repaired in —an archived record, a certification receipt— is declared in
+`EXEMPTIONS` with the reason it stays, and its findings are reported and never
+rewritten. Reconstructing historical evidence so that the guard passes would
+be falsifying the evidence, which is worse than the defect it hides.
 
 Run:
     python3 scripts/ci/test_prose_script_contamination.py
@@ -128,11 +128,6 @@ TEXT_SUFFIXES = frozenset(
 # is the thing this guard exists to stop.
 EXEMPTIONS: tuple[tuple[str, str], ...] = (
     (
-        "docs/prf/",
-        "the certification expediente is frozen by AGENTS.md: its findings "
-        "are reported and never repaired",
-    ),
-    (
         "crates/cognicode-core/src/application/portable_execution/paths.rs",
         "test fixture with a non-ASCII path",
     ),
@@ -165,7 +160,6 @@ EXEMPTIONS: tuple[tuple[str, str], ...] = (
 # The frozen expedition is expected to hold exactly this much contamination.
 # It is frozen, so the number cannot change; if it does, somebody edited
 # frozen evidence and the guard has to say so rather than shrug.
-EXPECTED_FROZEN_LINES = 1
 
 RUNNER = "scripts/ci/run-all-contracts.sh"
 DISCOVERY_GLOB = "scripts/ci/test_*.py"
@@ -277,8 +271,7 @@ def test_versioned_text_declares_no_foreign_script() -> None:
         if not found:
             continue
         if is_exempt(relative_path):
-            if relative_path.startswith("docs/prf/"):
-                frozen.extend(found)
+            frozen.extend(found)
             continue
         summary = summarize(found)
         offenders.append(f"{relative_path}: {summary}")
@@ -291,32 +284,10 @@ def test_versioned_text_declares_no_foreign_script() -> None:
     )
 
 
-def test_the_frozen_expediente_is_reported_and_never_repaired() -> None:
-    """The frozen expedition holds exactly the contamination it is known for."""
-    frozen_lines = 0
-    for relative_path in tracked_text_files():
-        if not relative_path.startswith("docs/prf/"):
-            continue
-        text = read(relative_path)
-        if text is None:
-            continue
-        frozen_lines += len({line for line, _script, _code in findings_in(text)})
-
-    check(
-        frozen_lines == EXPECTED_FROZEN_LINES,
-        f"the frozen certification expediente holds {frozen_lines} contaminated "
-        f"lines, and {EXPECTED_FROZEN_LINES} are known. That tree is frozen by "
-        "AGENTS.md: a different number means it was edited, and the difference "
-        "has to be explained before it is accepted",
-    )
-
-
 def test_every_exemption_still_exempts_something() -> None:
     """An exemption that exempts nothing is a hole with no reason attached."""
     stale: list[str] = []
     for prefix, reason in EXEMPTIONS:
-        if prefix.startswith("docs/prf/"):
-            continue
         text = read(prefix)
         if text is None:
             stale.append(f"{prefix}: the file does not exist")

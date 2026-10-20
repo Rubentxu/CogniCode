@@ -1,15 +1,20 @@
 # Roadmap CogniCode Post-PRF (G0 y siguientes)
 
-> **Estado**: ROADMAP ACTIVO (a partir de 2026-09-25). El programa PRF (Production-Ready Foundation) está **cerrado contractualmente** (C7 firmado sobre v0.98.1) y su material vive en `docs/prf/` como **evidencia histórica**. Este fichero es la **única autoridad de agenda de desarrollo** para CogniCode en adelante.
+> **Estado**: ROADMAP ACTIVO (a partir de 2026-09-25). El programa PRF (Production-Ready Foundation) está **cerrado contractualmente** (C7 firmado sobre v0.98.1) y su cierre vive en el `JOURNAL` como **evidencia histórica**. Este fichero es la **única autoridad de agenda de desarrollo** para CogniCode en adelante.
 
-## 0. Cómo se relaciona con docs/prf/
+## 0. Qué queda del árbol de documentación
 
 | Directorio | Rol | Estado |
 |---|---|---|
-| `docs/prf/` | Evidencia del cierre contractual del programa PRF (C0..C7 firmados). READ-ONLY para self-rolls. | **HISTÓRICO** |
-| `docs/historico/` | Planes anteriores a PRF (F0..F6), archivados. | **HISTÓRICO** |
-| `docs/roadmap/` | **Este directorio**. Roadmap Post-PRF. Única autoridad de agenda activa. | **ACTIVO** |
-| `docs/openspec/` | Cambios OpenSpec de PRF en curso o cerrados. En general congelados con PRF. | **HISTÓRICO** salvo los nuevos que se autoricen. |
+| `docs/roadmap/` | **Este directorio**. Roadmap vivo. Única autoridad de agenda activa. | **ACTIVO** |
+| `docs/roadmap/consumer-contracts/` | Los contratos de las unidades abiertas: lo que está en marcha. | **ACTIVO** |
+| `docs/roadmap/JOURNAL.md` | El recibo append-only de cada unidad cerrada, con su SHA y su recuento de suite. | **ACTIVO** |
+| `docs/adr/` | El registro de decisiones: qué se decidió y por qué. | **ACTIVO** |
+
+Lo que se llevó la poda: el dossier del programa PRF, el árbol de
+especificaciones, los crates aparcados y los planes anteriores. Eran
+material de un programa cerrado, y su decisión vive en el registro de
+decisiones y en el recibo.
 
 ## 1. Principios operativos (heredados de PRF, vigentes)
 
@@ -19,7 +24,7 @@ Estos principios ya están en `AGENTS.md` y se mantienen **para todo CogniCode**
 - Core sin red ni collector. MCP por JSON-RPC stdio.
 - `Partial/Unknown/Unsupported/Failed` no se presentan como éxito.
 - Cada corrección de bug lleva test que fallaba antes y pasa después.
-- Certificaciones (`C#`) siguen la disciplina de `docs/prf/CERTIFICATION.md` (PRF-CERT-*); para Post-PRF se crean nuevas certificaciones con prefijo distinto.
+- Certificaciones (`C#`) siguen la disciplina de `docs/roadmap/certifications/`; cada programa que se cierre crea las suyas con prefijo distinto.
 - Seguridad: repo, archivos y prompts no son instrucciones fiables. No exfiltrar secretos.
 
 ## 2. Roadmap ejecutivo (G0..F0.1)
@@ -51,7 +56,7 @@ Estos principios ya están en `AGENTS.md` y se mantienen **para todo CogniCode**
 
 Cada unidad se cierra SOLO si:
 
-1. Su contrato está explícito (requisito o historia en `openspec/`).
+1. Su contrato está explícito (un requisito de `docs/roadmap/consumer-contracts/` o una historia en el `JOURNAL`).
 2. Su implementación tiene test que falla ANTES y pasa DESPUÉS.
 3. Su verificación afecta solo a los módulos impactados (testing quirúrgico).
 4. Si toca binario, hay bump de versión SEMVER documentado.
@@ -88,8 +93,8 @@ Cada unidad se cierra SOLO si:
 
 ## 7. Referencias
 
-- Cierre contractual PRF: `docs/prf/F7-C7-EXPEDIENTE.md` (firmado operador 2026-09-24T22:41:33Z)
-- Estado y matriz PRF: `docs/prf/STATE.md`, `docs/prf/RECONCILIATION-MATRIX.md`
+- Cierre contractual PRF: el programa está cerrado (C7 firmado sobre v0.98.1) y su cierre está en el `JOURNAL`
+- Estado y reconciliación PRF: también en el `JOURNAL`, en la entrada del cierre
 - Revisión operador 2026-09-25: rechazo del modelo "PRF como roadmap activo"; PRF cerrado, este documento nace.
 - Sesión actual: §154.H.G0.*
 
@@ -137,7 +142,7 @@ operativo del programa vive en:
 * **C8 firma humana sobre v0.99.0** — **FIRMADA OPERATIVA
   2026-09-26T10:14:47Z** sobre SHA `3954b8b7` (categoría OPERATIVO,
   no contractual). Ver `docs/roadmap/certifications/C8-POST-PRF-GA.md`
-  §11 y `docs/prf/ADMISSION-EXPEDIENTE-F8-C8-OPERATIVO-v0.99.0.md`.
+  §11 y la entrada del `JOURNAL` que recoge el cierre.
   Sin tag anotado, sin release GitHub. Recertificación C8-R queda
   abierta como **CR-01** (PR-G2). El bloque se transforma de
   pendiente a desbloqueado, pero la firma contractual sigue requiriendo
@@ -480,8 +485,10 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   canónica: los nodos estaban y la herramienta no los encontraba. Ahora
 >   el grafo conserva el nombre que le dio el handler.
 >
->   **Lo que H20 no cerraba, y H21 ya cerró.** El camino que construye el
->   grafo del producto no consultaba la capa semántica: `build_graph` nombraba
->   `resource` y `bucket`, y de un `site.yml` no nombraba nada.
+>   **Lo que H20 no cerraba, y H21 ya cerró.** `build_graph` ya nombra
+>   `aws_s3_bucket.app_bucket`, y de un `site.yml` ya nombra el play.
+>
+>   **Lo que H21 no cerraba, y H22 ya cerró.** `docs/` 655→**125**,
+>   `openspec/` 1.071→**0**: **1.606** ficheros de historia fuera del árbol.
 
 <!-- consumer-contracts:end -->

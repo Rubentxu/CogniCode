@@ -276,7 +276,7 @@ for p in $PATHS; do
       reason="test_root_changed($p)"
       ;;
     # Regla 10: docs => ['ladybug']
-    docs/architecture/*|docs/architecture|docs/roadmap/*|docs/roadmap|docs/prf/*|docs/prf|docs/*|docs)
+    docs/*|docs)
       case " $suites " in
         *" ladybug "*) ;;
         *) suites="$suites ladybug" ;;

@@ -1,7 +1,7 @@
 # PRF-ANA-07 — UAT binario real (stdio JSON-RPC, corpus 51 homónimos)
 
 Fecha: 2026-09-22 · binario fresco (post-§58) · corpus
-docs/prf/fixtures/massive_collision_corpus
+crates/cognicode-core/testdata/massive_collision_corpus
 
 ## Resultado GREEN a la primera (comportamiento ya correcto)
 

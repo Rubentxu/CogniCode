@@ -33,7 +33,7 @@ module. The function inside each is `pub fn init()` (or
 """
 from pathlib import Path
 
-CORPUS_ROOT = Path("docs/prf/fixtures/massive_collision_corpus")
+CORPUS_ROOT = Path("crates/cognicode-core/testdata/massive_collision_corpus")
 SRC_DIR = CORPUS_ROOT / "src"
 
 

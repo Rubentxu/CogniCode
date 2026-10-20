@@ -5,7 +5,7 @@ adequate **optional host shell** for the CogniCode outer-loop Control Plane,
 while CogniCode stays headless/authoritative and the Explorer stays the
 specialized inner-loop product?*
 
-See `openspec/changes/cp0-backstage-fit-spike/` for the full record.
+The full record lives in the decision record, under `docs/adr/`.
 
 ## Shape
 
