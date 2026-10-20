@@ -20373,3 +20373,35 @@ bien escrito. Nada parecia estar mal. El campo simplemente no lo leía nadie.
   candidato que `CURRENT.md` declara como el siguiente trabajo.
 - El host reanuda la sesión viva y encuentra el Goal en curso, así que la
   cadena puede encadenar en esta sesión y no en otra.
+
+### Los otros dos fallos, encontrados al verificar la cadena
+
+Verificar la declaración no bastaba: la cadena tiene tres fuentes de
+candidatos y un estado durable, y los dos últimos desmontaron.
+
+**El puerto que lee la declaración la lee sin el espacio de trabajo.** Al
+cargarla sin ese dato, el cargador falla —el campo `workspace` es
+obligatorio— y el puerto cae al backlog guardado en el estado durable. Como
+ese estado guardaba la cola vieja, la cadena encadenaba el trabajo ya
+publicado. La declaración no tenía el campo y el plugin se lo pasa al
+localizarla, pero no al leerla de nuevo.
+
+**La cola de propuestas guardaba trabajo ya publicado.** Las tres propuestas
+que quedaban eran C2, C3 y C4: el manifiesto derivado del registro de
+lenguajes (PR #400), la CLI viendo el mismo grafo que el MCP (PR #401) y el
+nombre del dominio en la consulta de infraestructura (PR #402). Ese canal no
+tiene un "cerrado": es una cola, y lo que está en ella son candidatos que la
+cadena puede encadenar. Con las tres dentro, la cadena habría rehecho código
+publicado. Se retiraron.
+
+Los dos se corrigieron con las herramientas del propio plugin —su clase de
+estado durable y su escritura atómica—, no editando su formato a mano.
+
+### Evidencia de la cadena entera
+
+Con el código real del supervisor —el mismo que decide en el cierre de turno—,
+sobre la declaración y el estado ya sincronizados: **47 candidatos compuestos,
+0 descartados**, y el primero que encadenaría es C25, con su evidencia y sus
+tres condiciones de cierre. Los 47 son los 22 declarados en el roadmap y 25
+descubiertos en el propio repositorio; los declarados mandan, y el
+descubierto no adelanta a ninguno.
