@@ -2,6 +2,8 @@
 
 pub mod commands;
 pub mod doctor;
+/// The project's graph, from the same authority the MCP uses.
+pub mod project_graph;
 // CU-1.3 — presentadores puros AnalysisOutcome → GraphResult N−1.
 pub mod presenter_bridge;
 pub mod result;

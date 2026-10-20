@@ -19754,3 +19754,78 @@ con su evidencia.
 C3 (la CLI ve un grafo distinto del que ve el MCP) y C4 (`iac_query`
 publica el nombre interno de Rust). El candidato C2 queda resuelto; la
 cadena de la misión encadena el siguiente.
+
+## 2026-10-20 — La CLI y el MCP responden sobre el mismo grafo (H24, C3)
+
+### Lo que se pidió
+
+El candidato C3 de la misión `cognicode`: que el camino de la CLI
+consulte la capa semántica, como hace el MCP, de modo que `hot-paths`,
+`entry-points`, `leaf-functions`, `trace-path`, `mermaid`, `complexity` e
+`impact` vean los símbolos de Terraform y Ansible que ya ve el MCP. La
+violación literal era de `SPEC-CU-002.1`: el servicio es la autoridad
+única de la ejecución, y la CLI y el MCP son adaptadores.
+
+### Lo que había
+
+Siete órdenes de la CLI construían su propio grafo con
+`FullGraphStrategy`, y ese grafo lo leía el lector genérico. El MCP
+construía el suyo con el servicio, y ese grafo lo leía el lector del
+dominio. Dos grafos para el mismo árbol.
+
+MEDIDO sobre `sandbox/fixtures/terraform-iac`: la CLI nombraba los
+**atributos** de un bloque Terraform (`bucket`, `cidr_block`,
+`alarm_actions`, `aws`), mientras el MCP nombraba los **recursos** que el
+fichero declara (`aws_s3_bucket.app_bucket`, `module.vpc`,
+`var.environment`). La misma pregunta, dos respuestas.
+
+`graph full` ya pasaba por la fachada del consumidor, que llama al
+mismo servicio: por eso el fallo era silencioso y sólo se veía al
+comparar las dos superficies.
+
+### Lo que se hizo
+
+Un módulo nuevo, `interface/cli/project_graph.rs`, es ahora la única
+puerta de la CLI al grafo del proyecto: pregunta al servicio —el mismo
+que usa el manejador `build_graph` del MCP— y devuelve el grafo junto
+con los ficheros que el paseo no pudo leer, para que el aviso de
+cobertura parcial siga siendo el mismo.
+
+Las siete órdenes que construían su propio grafo pasan a usar esa
+puerta. `graph full` no cambia: ya llegaba al mismo servicio por la
+fachada. A partir de aquí el producto tiene un solo constructor de
+grafo, y la CLI y el MCP no pueden discrepar sobre qué contiene.
+
+### Evidencia
+
+- Test RED primero: `crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`
+  — 2/2 en rojo antes del arreglo, con la lectura exacta del defecto
+  (la CLI nombraba atributos, el MCP nombraba recursos), y en verde
+  después. El lado de la CLI es el binario real, como subproceso: el
+  contrato es sobre lo que recibe el usuario, no sobre una función
+  interna.
+- UAT efímero con los dos binarios reales: el binario anterior **falla**
+  (la CLI no nombra el recurso que el fichero declara) y el nuevo
+  **pasa** (todo lo que la CLI nombra, el MCP lo conoce). El UAT es
+  efímero y no se promueve: la prueba permanente ya cubre la paridad.
+- 2.371 tests de lib en verde; todas las suites de integración del
+  crate de la CLI en verde.
+- `bash scripts/test-fast.sh` → rc=0.
+- `bash scripts/test-full.sh` → rc=0.
+- `merge-gate` verde sobre el commit del PR.
+
+### Lo que queda al lado
+
+Medido al cerrar: `build_full_graph_report` —el de `FullGraphStrategy` y
+el de `PerFileStrategy`— se queda **sin llamadores de producción**; sólo
+lo sostienen sus propios tests, incluido el que fija que el paseo no
+se sale de la raíz. Es una segunda puerta al grafo que ya no está en el
+camino del producto. Dejarla así exige decidir qué pasa con ese
+contrato de paseo confinado, así que queda anotada como candidato
+propio (C16 en la backlog de la misión) en vez de tocarse de paso.
+
+### Lo que sigue abierto dentro de la misma unidad
+
+C4: `iac_query` publica el nombre interno de Rust (`Function`) en vez del
+nombre del dominio. El candidato C3 queda resuelto; la cadena de la
+misión encadena el siguiente.

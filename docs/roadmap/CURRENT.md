@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `9725913331b690c648e60aed638af59f71d63791`
+> **Snapshot**: 2026-10-20, sobre `f8d53a4e601d4162dadab78297cbaabf63faa160`
 > (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **27** commits por delante
+> `v0.101.23` (2026-10-18, 8 assets). `main` está **28** commits por delante
 > de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
@@ -38,9 +38,12 @@ pueda describir un árbol que el grafo no vio. Antes cubría 9 de las 51
 extensiones que el grafo lee, así que `build_graph` podía responder
 `status="complete"` con un grafo viejo.
 
-El siguiente trabajo es **C3**: que el camino de la CLI consulte la capa
-semántica, como hace el MCP. Hoy la CLI da 0 símbolos de Terraform donde el
-MCP da 74.
+**C3 está resuelto**: las siete órdenes de grafo de la CLI piden el grafo
+al mismo servicio que usa el MCP. Antes la CLI nombraba los atributos de
+un bloque Terraform y el MCP los recursos; ahora dicen lo mismo.
+
+El siguiente trabajo es **C4**: `iac_query` publica el nombre interno de
+Rust (`Function`) donde debería publicar el nombre del dominio.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.

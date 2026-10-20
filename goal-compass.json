@@ -215,6 +215,21 @@
         "un test que compare lo que `/watch` publica con lo que el vigilante acepta"
       ],
       "scope": "H24"
+    },
+    {
+      "candidateId": "C16",
+      "title": "La estrategia de grafo completo deja de ser una segunda puerta al grafo",
+      "unit": "H24",
+      "priority": 15,
+      "objective": "Que el grafo del proyecto se construya en un solo sitio: el método `build_full_graph_report` de las estrategias ya no tiene llamadores de producción, y su contrato de paseo confinado debe quedar protegido en el camino que queda vivo.",
+      "evidence": "crates/cognicode-core/src/infrastructure/graph/strategy.rs",
+      "whyNow": "MEDIDO al cerrar el candidato de la paridad: las siete órdenes de grafo de la CLI y el manejador `build_graph` del MCP construyen el grafo con el servicio, así que `build_full_graph_report` (el de `FullGraphStrategy` y el de `PerFileStrategy`) se quedó sin llamadores de producción. Lo sostienen sólo sus propios tests, entre ellos el que fija que el paseo no se sale de la raíz y el que exige que las estrategias propaguen su informe de construcción. Es una segunda puerta al grafo que ya no está en el camino del producto: quien la use obtendría un grafo distinto del que da el producto.",
+      "doneWhen": [
+        "el grafo del proyecto se construye en un solo sitio, y no queda ningún constructor alternativo en el árbol de producción",
+        "el contrato de paseo confinado (no leer a través de un symlink, no descender en un directorio enlazado) queda cubierto por pruebas sobre el camino vivo",
+        "el contrato de propagación del informe de construcción sigue teniendo una prueba o una deprecación explícita"
+      ],
+      "scope": "H24"
     }
   ]
 }

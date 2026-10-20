@@ -1,0 +1,152 @@
+//! The CLI and the MCP are adapters over one service, so a command that
+//! answers with a graph has to answer with the graph the MCP hands out.
+//!
+//! The Terraform fixture is the sharp case. The domain reader names a
+//! resource the way the file declares it; the generic reader does not
+//! know what a Terraform resource is. A command that builds its own
+//! graph answers with the generic one, and the two surfaces disagree
+//! about the same project — which is what this test measures.
+//!
+//! The CLI side is the real binary, run as a sub-process: the contract
+//! is about what a user gets, not about an internal function.
+
+mod common;
+
+use cognicode_core::domain::aggregates::call_graph::CallGraph;
+use cognicode_core::interface::mcp::handlers::{
+    BuildGraphInput, HandlerContext, handle_build_graph,
+};
+use serde_json::Value;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Arc;
+
+/// The project both surfaces are compared on.
+fn terraform_project() -> PathBuf {
+    let source = common::repo_root().join("sandbox/fixtures/terraform-iac");
+    let target =
+        std::env::temp_dir().join(format!("cognicode-cli-graph-parity-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&target);
+    copy_tree(&source, &target);
+    target
+}
+
+fn copy_tree(source: &Path, target: &Path) {
+    std::fs::create_dir_all(target).expect("create the target directory");
+    for entry in std::fs::read_dir(source).expect("read the fixture") {
+        let entry = entry.expect("a fixture entry");
+        let path = entry.path();
+        let destination = target.join(entry.file_name());
+        if path.is_dir() {
+            copy_tree(&path, &destination);
+        } else {
+            std::fs::copy(&path, &destination).expect("copy a fixture file");
+        }
+    }
+}
+
+/// Runs the CLI as a sub-process and returns its JSON answer.
+fn run_cli(args: &[&str]) -> Value {
+    let binary = common::binary_path("cognicode");
+    let output = Command::new(&binary)
+        .arg("--format")
+        .arg("json")
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| panic!("failed to spawn {}: {e}", binary.display()));
+    assert!(
+        output.status.success(),
+        "the CLI exited with {}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap_or_else(|e| {
+        panic!(
+            "the CLI did not answer with JSON: {e}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        )
+    })
+}
+
+/// The graph the MCP hands out for the same project.
+async fn mcp_graph(dir: &Path) -> Arc<CallGraph> {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    handle_build_graph(
+        &ctx,
+        BuildGraphInput {
+            directory: Some(dir.to_string_lossy().into_owned()),
+        },
+    )
+    .await
+    .expect("the MCP builds the graph");
+    ctx.analysis_service().get_project_graph()
+}
+
+/// The leaves of a graph, as the CLI reports them: name, file, line.
+fn leaves(graph: &CallGraph) -> Vec<(String, String, u64)> {
+    graph
+        .leaves()
+        .iter()
+        .take(20)
+        .filter_map(|id| {
+            let symbol = graph.get_symbol(id)?;
+            Some((
+                symbol.name().to_string(),
+                symbol.location().file().to_string(),
+                symbol.location().line() as u64,
+            ))
+        })
+        .collect()
+}
+
+/// The leaves the CLI reported, as the same triples.
+fn cli_leaves(answer: &Value) -> Vec<(String, String, u64)> {
+    answer["symbols"]
+        .as_array()
+        .expect("the CLI answers with a list of symbols")
+        .iter()
+        .map(|symbol| {
+            (
+                symbol["name"].as_str().unwrap_or_default().to_string(),
+                symbol["file"].as_str().unwrap_or_default().to_string(),
+                symbol["line"].as_u64().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_answer_with_the_same_leaves() {
+    let project = terraform_project();
+    let answer = run_cli(&["graph", "leaf-functions", &project.to_string_lossy()]);
+    let from_cli = cli_leaves(&answer);
+
+    let graph = mcp_graph(&project).await;
+    let from_mcp = leaves(&graph);
+
+    assert!(
+        !from_mcp.is_empty(),
+        "the graph has leaves: the fixture declares symbols"
+    );
+    assert_eq!(
+        from_cli, from_mcp,
+        "the CLI and the MCP answered with different leaves for the same project"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_names_the_terraform_resource_the_way_the_file_declares_it() {
+    let project = terraform_project();
+    let answer = run_cli(&["graph", "leaf-functions", &project.to_string_lossy()]);
+    let names: Vec<String> = answer["symbols"]
+        .as_array()
+        .expect("the CLI answers with a list of symbols")
+        .iter()
+        .map(|symbol| symbol["name"].as_str().unwrap_or_default().to_string())
+        .collect();
+
+    assert!(
+        names.iter().any(|name| name.contains("app_bucket")),
+        "the CLI names the resource the file declares, as the MCP does. got: {names:?}"
+    );
+}
