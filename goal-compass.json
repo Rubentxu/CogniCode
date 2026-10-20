@@ -42,11 +42,11 @@
       "title": "iac_query publica el nombre del dominio",
       "unit": "H24",
       "priority": 3,
-      "objective": "Que `iac_query` publique el nombre del dominio (`resource`, `data`) en vez del nombre interno de la variante de Rust (`Function`).",
+      "objective": "Que `iac_query` publique el nombre del dominio: el tipo que la declaracion lleva (`aws_s3_bucket`) y, cuando no lleva ninguno, el tipo de declaracion que el lector le dio (`resource`, `data`, `variable`, `module`, `output`, `play`, `task`, `handler`), en vez del nombre interno de la variante de Rust (`Function`).",
       "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
-      "whyNow": "La capa semantica ya calcula `iac_kind` y lo descarta al cruzar la frontera: el consumidor ve `\"Function\"` para `aws_s3_bucket.app_bucket`. Es la clase de fuga que SPEC-CU-002.3 prohibe (publicar una forma aproximada en vez del tipo honesto).",
+      "whyNow": "La capa semantica ya calcula `iac_kind` e `iac_type` y los descarta al cruzar la frontera: el consumidor ve `\"Function\"` para `aws_s3_bucket.app_bucket`. Es la clase de fuga que SPEC-CU-002.3 prohibe (publicar una forma aproximada en vez del tipo honesto). CORRECCION HACIA DELANTE: la primera redaccion de este candidato pedia `resource_type: \"resource\"`, y solo se sabia entonces que sobrevivia el kind. Al medir se vio que el tipo tambien sobrevivia y que el otro camino del mismo tool ya publica el tipo, asi que el criterio pasa a ser el tipo y el kind solo cuando la declaracion no lleva ninguno.",
       "doneWhen": [
-        "`iac_query` devuelve `resource_type: \"resource\"` para un recurso de Terraform",
+        "`iac_query` devuelve `resource_type: \"aws_s3_bucket\"` para un recurso de Terraform, y el kind cuando la declaracion no lleva tipo",
         "ningun consumidor publico ve el nombre de una variante de `SymbolKind`",
         "el dato semantico llega al grafo en vez de calcularse y tirarse"
       ],

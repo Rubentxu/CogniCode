@@ -8,6 +8,13 @@ use async_trait::async_trait;
 pub struct IacResource {
     pub id: String,
     pub name: String,
+    /// What the declaration is, in the vocabulary the readers declare: the
+    /// type the declaration carries — `aws_s3_bucket` — and the kind it was
+    /// declared as — `resource`, `data`, `variable`, `module`, `play` —
+    /// when it carries no type.
+    ///
+    /// It is the same answer the in-memory graph gives, so the tool does
+    /// not change its shape depending on which backend answered it.
     pub resource_type: String,
 }
 

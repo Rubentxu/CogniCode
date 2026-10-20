@@ -5,7 +5,9 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::unnecessary_sort_by, unused_imports)]
 
+use crate::domain::aggregates::Symbol;
 use crate::domain::services::CycleDetector;
+use crate::domain::value_objects::DependencyType;
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
@@ -628,6 +630,22 @@ pub struct IacRelation {
     pub confidence: f64,
 }
 
+/// What a symbol declares, in the vocabulary the consumer reads.
+///
+/// A declaration that names a type answers with that type — a bucket is an
+/// `aws_s3_bucket` — and one that names no type answers with the kind its
+/// reader gave it. A symbol that declares nothing in particular answers
+/// with its kind, which the domain names in lowercase.
+///
+/// The answer never carries the name of a Rust type: this tool is read by
+/// programs that do not know how the graph is built inside.
+fn published_type(symbol: &Symbol) -> String {
+    symbol
+        .declaration()
+        .map(|declaration| declaration.type_or_kind().to_string())
+        .unwrap_or_else(|| symbol.kind().name().to_string())
+}
+
 pub async fn handle_iac_query(
     ctx: &HandlerContext,
     input: IacQueryInput,
@@ -741,7 +759,7 @@ pub async fn handle_iac_query(
         HandlerError::NotFound(format!("Resource '{}' not found in graph", resolved_id))
     })?;
 
-    let resource_type = format!("{:?}", symbol.kind());
+    let resource_type = published_type(symbol);
 
     // Get dependencies (outgoing edges)
     let deps: Vec<_> = graph.dependencies_with_metadata(&symbol_id).collect();
@@ -753,10 +771,8 @@ pub async fn handle_iac_query(
             IacRelation {
                 id: target_id.to_string(),
                 name: target_sym.map(|s| s.name().to_string()).unwrap_or_default(),
-                kind: target_sym
-                    .map(|s| format!("{:?}", s.kind()))
-                    .unwrap_or_default(),
-                edge_type: format!("{:?}", dep_type),
+                kind: target_sym.map(published_type).unwrap_or_default(),
+                edge_type: dep_type.to_string(),
                 confidence: *confidence,
             }
         })
@@ -772,8 +788,8 @@ pub async fn handle_iac_query(
             Some(IacRelation {
                 id: dep_id.to_string(),
                 name: dep_sym.name().to_string(),
-                kind: format!("{:?}", dep_sym.kind()),
-                edge_type: "References".to_string(),
+                kind: published_type(dep_sym),
+                edge_type: DependencyType::References.to_string(),
                 confidence: 1.0,
             })
         })

@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-use super::super::value_objects::{Location, SymbolKind};
+use super::super::value_objects::{Declaration, Location, SymbolKind};
 // Un-gated: the identity grammar is shared by the legacy path and the fact
 // path (E38.1 CP-1), so `SymbolFqn` compiles unconditionally.
 use crate::domain::evidence_kernel::SymbolFqn;
@@ -18,6 +18,15 @@ pub struct Symbol {
     location: Location,
     signature: Option<FunctionSignature>,
     fqn: String,
+    /// What this symbol declares, when the reader that read it said so.
+    ///
+    /// Absent for the symbols that declare nothing in particular — a
+    /// function, a class — and present for the ones a reader named: a
+    /// Terraform block, an Ansible play. It is here because the reader is
+    /// the only one that knows, and the graph is the only place from where
+    /// the tools that ask about the declaration can learn it.
+    #[serde(default)]
+    declaration: Option<Declaration>,
 }
 
 impl Symbol {
@@ -38,7 +47,19 @@ impl Symbol {
             location,
             signature: None,
             fqn,
+            declaration: None,
         }
+    }
+
+    /// Creates a new Symbol that declares something the reader named
+    pub fn with_declaration(mut self, declaration: Declaration) -> Self {
+        self.declaration = Some(declaration);
+        self
+    }
+
+    /// Returns what this symbol declares, when its reader said so
+    pub fn declaration(&self) -> Option<&Declaration> {
+        self.declaration.as_ref()
     }
 
     /// Creates a new Symbol with a signature (for callable symbols)
