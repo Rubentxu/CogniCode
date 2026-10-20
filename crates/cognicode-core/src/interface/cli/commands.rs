@@ -5,8 +5,8 @@
 use crate::domain::services::CallGraphAnalyzer;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::infrastructure::graph::{
-    FullGraphStrategy, GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy,
-    PerFileStrategy, TraversalDirection,
+    GraphStrategy, GraphStrategyFactory, LightweightStrategy, OnDemandStrategy, PerFileStrategy,
+    TraversalDirection,
 };
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::semantic::SymbolCodeService;
@@ -1123,27 +1123,28 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let hot_paths = analyzer.find_hot_paths(&graph, *limit);
@@ -1177,27 +1178,28 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let entry_ids = graph.roots();
                 let mut entry_refs: Vec<SymbolRef> = Vec::new();
@@ -1225,27 +1227,28 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let leaf_ids = graph.leaves();
                 let mut leaf_refs: Vec<SymbolRef> = Vec::new();
@@ -1279,27 +1282,28 @@ impl CommandExecutor {
                 println!("Tracing path from '{}' to '{}' in: {}", from, to, path);
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let source_id = crate::domain::aggregates::call_graph::SymbolId::new(from.clone());
                 let target_id = crate::domain::aggregates::call_graph::SymbolId::new(to.clone());
@@ -1361,39 +1365,36 @@ impl CommandExecutor {
                 println!("Exporting to Mermaid format from: {}", path);
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
-                // `build_full_graph_report` returns a report, not a
-                // `Result`, and it records an unreadable root as one more
-                // *skipped file*. Reporting that as `PARTIAL` and exiting 0
-                // describes a walk that partially failed; here the walk
-                // never started. The root is checked before the walk so the
-                // failure is not disguised as partial coverage — the same
-                // answer `graph full` and the MCP `build_graph` handler
-                // already give.
+                // The root is checked before the walk so the failure is
+                // not disguised as partial coverage — the same answer
+                // `graph full` and the MCP `build_graph` handler already
+                // give.
                 if !dir.is_dir() {
                     return Err(format!("Directory does not exist: {}", dir.display()).into());
                 }
 
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let mermaid = graph.to_mermaid("Call Graph");
                 let elapsed = start.elapsed().as_millis();
@@ -1510,27 +1511,28 @@ impl CommandExecutor {
                 let start = Instant::now();
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
                 let complexity = analyzer.calculate_complexity(&graph);
@@ -1564,27 +1566,28 @@ impl CommandExecutor {
                 println!("Analyzing impact of changing '{}' in: {}", symbol, path);
 
                 let dir = PathBuf::from(path);
-                let strategy = FullGraphStrategy::new();
-
+                // The graph comes from the same authority the MCP uses: a
+                // command that builds its own graph answers with different
+                // facts than the MCP would hand out for the same tree.
+                //
                 // EXT-02: honor the same Partial/Failed semantics as the
                 // MCP path — surface skipped files, never present a
                 // partial graph as clean.
-                let report = strategy.build_full_graph_report(&dir);
-                if let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    skipped,
-                } = &report.status
-                {
+                let built = crate::interface::cli::project_graph::project_graph(&dir)
+                    .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+                if !built.skipped.is_empty() {
                     eprintln!(
                         "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        skipped.len(),
-                        skipped
+                        built.skipped.len(),
+                        built
+                            .skipped
                             .iter()
                             .map(|f| f.path.clone())
                             .collect::<Vec<_>>()
                             .join(", ")
                     );
                 }
-                let graph = report.graph;
+                let graph = built.graph;
 
                 // Find all symbols that match the name
                 let search_name = symbol.to_lowercase();
