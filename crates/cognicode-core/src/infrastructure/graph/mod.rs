@@ -36,6 +36,9 @@ mod pet_graph_store;
 pub mod semantic_layer;
 pub mod snapshot_graph_executor;
 pub mod snapshot_provider;
+/// The files a graph is built from, decided once: the builder and the
+/// manifest that says whether the graph is still fresh both ask this.
+pub mod source_files;
 mod strategy;
 mod symbol_index;
 

@@ -229,53 +229,21 @@ impl AnalysisService {
                 crate::infrastructure::graph::per_file_graph::SkipReason::Parse(e.to_string())
             };
 
-        let walk_filter = crate::domain::value_objects::WalkFilter::default();
+        // The files the graph is built from are decided in one place, so
+        // the manifest that says whether the graph is still fresh covers
+        // exactly the same set. Two rules would drift, and a drifted
+        // manifest serves a graph that no longer describes the tree.
+        let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
+        skipped_files.lock().unwrap().extend(inventory.declined);
 
-        let files: Vec<_> = crate::infrastructure::walk_policy::contained_ignore_walk(project_dir)
-            .hidden(true)
-            .git_ignore(true)
-            .git_exclude(true)
-            .build()
-            .filter_map(|e| e.ok())
-            .filter(|e| !walk_filter.matches_any_component(e.path()))
-            .filter_map(|e| {
-                if crate::infrastructure::walk_policy::ignore_is_real_file(&e) {
-                    return Some(e);
-                }
-                // A symlink is declined, not forgotten. This path is
-                // the one MCP's `handle_build_graph` reaches, and its
-                // `BuildStatus` gates `save_durable_snapshot` — so a
-                // silent decline would leave the snapshot claiming
-                // `complete` over a graph that is missing whatever the
-                // link pointed at.
-                if let Some(reason) =
-                    crate::infrastructure::graph::per_file_graph::classify_declined_ignore_entry(&e)
-                {
-                    skipped_files.lock().unwrap().push(
-                        crate::infrastructure::graph::per_file_graph::SkippedFile {
-                            path: e.path().to_string_lossy().to_string(),
-                            reason,
-                        },
-                    );
-                }
-                None
-            })
-            .map(|e| {
-                let path = e.path().to_path_buf();
-                let language = Language::from_extension(path.extension());
-                let file_path = path.to_string_lossy().into_owned();
-                let meta = std::fs::metadata(&path).ok();
-                let mtime = meta
-                    .as_ref()
-                    .and_then(|m| m.modified().ok())
-                    .map(|t| {
-                        t.duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_secs()
-                    })
-                    .unwrap_or(0);
-                let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-                (path, language, file_path, mtime, size)
+        let files: Vec<_> = inventory
+            .files
+            .into_iter()
+            .map(|file| {
+                let file_path = file.path.to_string_lossy().into_owned();
+                let mtime = file.mtime_secs();
+                let size = file.size;
+                (file.path, file.language, file_path, mtime, size)
             })
             .collect();
 

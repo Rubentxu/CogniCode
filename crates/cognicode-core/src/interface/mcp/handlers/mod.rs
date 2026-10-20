@@ -996,31 +996,21 @@ fn is_manifest_stale(
     project_dir: &Path,
 ) -> bool {
     use sha2::{Digest, Sha256};
-    let walk_filter = crate::domain::value_objects::WalkFilter::default();
+
+    // The files that can change the graph are decided by the same rule
+    // the graph builder uses. A manifest that covered a different set
+    // would miss the files it does not know about, and a change in one
+    // of those would leave the cached graph in place while the product
+    // reported a complete build over sources that no longer exist.
+    let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
 
     let mut checked = 0usize;
-    for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-        .into_iter()
-        .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
-        .filter_map(|e| e.ok())
-        .filter(crate::infrastructure::walk_policy::is_real_file)
-    {
-        let path = entry.path();
-        // Only check supported source extensions
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"].contains(&ext) {
-            continue;
-        }
-        checked += 1;
+    for file in inventory.source_files() {
+        let path = &file.path;
         let rel = path.strip_prefix(project_dir).unwrap_or(path);
-        let mtime_ms = std::fs::metadata(path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+        checked += 1;
         match manifest.entries.get(rel) {
-            Some(entry) if entry.mtime == mtime_ms => {
+            Some(entry) if entry.mtime == file.mtime_millis => {
                 // Mtime alone is not sufficient. A tool
                 // can rewrite the file bytes while keeping the original
                 // timestamp (e.g. restoring a backup, partial restore,
@@ -1055,62 +1045,30 @@ fn build_manifest(
 ) -> std::io::Result<crate::domain::value_objects::file_manifest::FileManifest> {
     use crate::domain::value_objects::file_manifest::{FileEntry, FileManifest};
     use sha2::{Digest, Sha256};
-    const SKIP_DIRS: &[&str] = &[
-        "target",
-        "node_modules",
-        ".git",
-        "dist",
-        "build",
-        "vendor",
-        "__pycache__",
-        ".cache",
-        ".next",
-        ".nuxt",
-        "coverage",
-        ".tox",
-        "venv",
-        ".venv",
-        ".env",
-        "env",
-        ".cognicode",
-    ];
 
     let mut manifest = FileManifest::new(project_dir.to_path_buf());
 
-    for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-        .into_iter()
-        .filter_entry(|e| {
-            !e.file_name()
-                .to_str()
-                .map(|s| SKIP_DIRS.contains(&s))
-                .unwrap_or(false)
-        })
-        .filter_map(|e| e.ok())
-        .filter(crate::infrastructure::walk_policy::is_real_file)
-    {
-        let path = entry.path();
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        if !["rs", "py", "js", "ts", "go", "java", "c", "cpp", "h"].contains(&ext) {
-            continue;
-        }
-        let rel = path.strip_prefix(project_dir).unwrap_or(path).to_path_buf();
-        let mtime = std::fs::metadata(path)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+    // The same rule the graph builder walks with, so the manifest
+    // describes the graph it is the freshness key of.
+    let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
+
+    for file in inventory.source_files() {
+        let rel = file
+            .path
+            .strip_prefix(project_dir)
+            .unwrap_or(&file.path)
+            .to_path_buf();
         // Content_hash must hash CONTENT, not metadata.
         // The previous mtime proxy produced identical digests for
         // different files written in the same millisecond.
-        let content_hash = std::fs::read(path)
+        let content_hash = std::fs::read(&file.path)
             .map(|bytes| hex_digest(&Sha256::digest(&bytes)))
-            .unwrap_or_else(|_| mtime.to_string());
+            .unwrap_or_else(|_| file.mtime_millis.to_string());
         let _ = manifest.entries.insert(
             rel,
             FileEntry {
                 content_hash,
-                mtime,
+                mtime: file.mtime_millis,
                 symbol_count: 0,
             },
         );
@@ -1276,6 +1234,15 @@ pub async fn handle_build_graph(
 
     // Build from source if cache miss
     if !loaded_from_cache {
+        // The manifest is taken BEFORE the build. A manifest written
+        // after the graph could describe a tree the graph never saw: a
+        // file that appeared between the two would be in the manifest
+        // and missing from the graph, and the next call would find the
+        // manifest fresh and serve a graph that does not cover the
+        // tree. Taken first, the manifest is always at or before the
+        // graph, so anything that changes in between invalidates it.
+        let manifest = build_manifest(&directory).ok();
+
         if let Err(e) = ctx.analysis_service.build_project_graph(&directory) {
             return Err(HandlerError::App(e));
         }
@@ -1297,7 +1264,7 @@ pub async fn handle_build_graph(
             })
         );
         if build_complete {
-            if let Ok(manifest) = build_manifest(&directory) {
+            if let Some(manifest) = manifest {
                 let store = ctx.get_graph_store();
                 let _ = store.save_manifest(&manifest);
                 // Persist the snapshot atomically so a

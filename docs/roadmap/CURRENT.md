@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `d8d60d48757e9d57b10457612a6044b8a232be11`
+> **Snapshot**: 2026-10-20, sobre `9725913331b690c648e60aed638af59f71d63791`
 > (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **26** commits por delante
+> `v0.101.23` (2026-10-18, 8 assets). `main` está **27** commits por delante
 > de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
@@ -32,10 +32,15 @@ Misión `cognicode` declarada (`goal-compass.json`), con **13** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
-El siguiente trabajo es **C2**: que el manifiesto de invalidación del grafo se
-derive del registro de lenguajes, en vez de una lista literal de nueve
-extensiones. Hoy `build_graph` puede responder `status="complete"` con un
-grafo viejo, porque el manifiesto no ve `.tf`, `.yml`, `.cs` ni `.rb`.
+**C2 está resuelto**: el manifiesto de invalidación del grafo se deriva del
+registro de lenguajes, y el manifiesto se toma antes del grafo para que no
+pueda describir un árbol que el grafo no vio. Antes cubría 9 de las 51
+extensiones que el grafo lee, así que `build_graph` podía responder
+`status="complete"` con un grafo viejo.
+
+El siguiente trabajo es **C3**: que el camino de la CLI consulte la capa
+semántica, como hace el MCP. Hoy la CLI da 0 símbolos de Terraform donde el
+MCP da 74.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
