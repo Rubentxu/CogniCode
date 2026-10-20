@@ -238,6 +238,10 @@ const ALLOWED_MISSING: &[(&str, &str)] = &[
         "the closed programme's dossier was removed with the documentation tree. The decision record cites the artefacts that programme produced; the programme is closed and its dossier is gone, so the citation states what was decided rather than a path a reader can follow today",
     ),
     (
+        "docs/roadmap/MAINTENANCE.md",
+        "the maintenance backlog closed its 13 units and was retired with the documentation tree. The decision record cites where the correction was recorded; the receipt of that correction remains in the Journal, and a backlog whose every row is closed is history, not a working document",
+    ),
+    (
         "docs/parked-crates/",
         "the parked crates were removed with the documentation tree. The decision that parked them cites where it parked them; the crates are gone and the decision that made them is not",
     ),
