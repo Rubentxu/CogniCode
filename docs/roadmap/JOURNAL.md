@@ -18760,3 +18760,91 @@ contenerlo sin ensuciar el fichero que se supone que protege.
 
 Gates: `fast rc=0`; `full rc=0` (fmt, clippy `-D warnings`, workspace,
 doc, `OK: contracts` —con el guardián nuevo dentro—, baseline 0 entradas).
+
+
+---
+
+## 2026-10-20 — La cadena de continuación decía «passed» sin comprobar nada (PR #392)
+
+### MEDIDO, en los dos lados
+
+El mismo fichero de test, con y sin el flag de bootstrap:
+
+```text
+sin flag:  9 passed; 0 failed; 0 ignored   finished in 0.00s
+            (ninguna traza de paginación)
+con flag:  9 passed; 0 failed; 0 ignored   finished in 0.97s
+            [h44] anyhow: 2 pages, 21209 bytes, sha=1c774243...
+            [h44] tokio:  2 pages, 25075 bytes, sha=c21a190c...
+```
+
+Cero segundos y ninguna traza. Cinco tests que conducen un **servidor real**
+sobre stdio JSON-RPC, siguiendo la cadena de `read_file` página a página y
+comparando el SHA-256 acumulado con el fichero en disco, no habían comprobado
+nada: el guardián pedía el binario y los fixtures, y si no estaban **se
+volvía atrás en silencio**.
+
+Lo que el guardián imprimía («[skip] …») salía por stderr de un test que
+**pasaba**, y libtest se traga la salida de los tests que pasan. El aviso
+existía; nadie lo iba a leer.
+
+El discriminante no es el tiempo: es la **traza**. Cero segundos con arranque
+en frío y segundos con la máquina caliente miden lo mismo; lo que separa un
+verde de un no-op es que aparezcan las páginas y sus SHA. Por eso el recibo
+mide las dos cosas.
+
+### Lo que el guardián decía de sí mismo
+
+El guardián de los fixtures decía, textual: «Aborting: this should not happen
+with RUST_SANDBOX_BOOTSTRAP=1» — y luego **no abortaba**: devolvía `None` y
+el test pasaba. Un guardián cuyo propio mensaje dice «aborta» y no aborta es
+la forma más difícil de detectar en retrospectiva, porque el mensaje dice la
+verdad sobre lo que debería hacer y la conducta dice lo contrario.
+
+### El arreglo: que la ausencia se diga
+
+- Los cinco tests son `#[ignore]` **con motivo**. La suite ordinaria dice
+  «no se ha ejecutado aquí», que es verdad; antes decía «passed», que no lo
+  era.
+- Los guardianes **fallan en cerrado**: si el binario no está, o si un
+  fixture no está, el test **falla**. Un guardián que falla abierto convierte
+  una certificación rota en un verde.
+- La **lane de certificación** los ejecuta explícitamente
+  (`--include-ignored`), contra el conjunto de fixtures que ella misma
+  prepara, y **falla el preflight** si no encajan byte a byte. Su salida va
+  al mismo fichero que el resto, así que el recuento de la línea base no se
+  mueve: los cinco tests cuentan como pasados, y el recibo dice que los
+  ignorados suben en cinco.
+- La **lane de integración** pierde su stage de la cadena de continuación: un
+  stage que no puede demostrar nada no es un stage. La capacidad queda donde
+  se puede demostrar.
+
+### MEDIDO, después
+
+Los tres comportamientos, medidos sobre el árbol cambiado:
+
+```text
+1. suite ordinaria        4 passed; 0 failed; 5 ignored
+2. explícito sin contrato FAILED. 4 passed; 5 failed
+   → "the bootstrap contract is not in force: RUST_SANDBOX_BOOTSTRAP is not \"1\""
+3. explícito con contrato  9 passed; 0 failed
+   → [h44] anyhow: 2 pages, 21209 bytes, sha=1c774243700f38ccaced1609c9e37a25c01f5e8aa900b876aef206207d6e4846
+   → [h44] tokio:  2 pages, 25075 bytes, sha=c21a190c5430aeac9421da7ccdd8d41537ee4f14d012bd6281c2862190d745cc
+```
+
+Las mismas páginas y los mismos SHA que antes del cambio: las afirmaciones
+son las mismas, contra el mismo servidor real. Lo que cambia es que ahora el
+resultado dice la verdad sobre lo que se ejecutó.
+
+### Lo que esto NO toca
+
+- El contenido de los tests: las mismas cinco afirmaciones, contra el mismo
+  servidor real, con los mismos SHA.
+- La línea base de la certificación: el recuento de pasados no se mueve.
+- El expediente congelado de `docs/prf/`, que no se toca.
+- **H4.4 sigue abierta.** Sus criterios de GREEN se certifican en la lane de
+  certificación, que es ahora quien ejecuta estas afirmaciones; hasta que esa
+  lane corra y firme, la unidad no está cerrada. Este cambio no la cierra:
+  la deja en un sitio donde puede cerrarse de verdad.
+
+Gates: `fast rc=0`; `full rc=0`.
