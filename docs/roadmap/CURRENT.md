@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `98609de56f474bd177507e09d83c9218cf5ec283` (`main`, squash-merge del
-> PR #391: una palabra de otro alfabeto pegada dentro de otra, y el guardián
-> que faltaba). Sustituye al de
-> `3b75b0a89b3dde0bf68e2472f90e9be366804f27` (PR #390). **v0.101.23
+> **Snapshot**: 2026-10-20, sobre `8ee145715575a3751c4c4a8cfa151c640f3864cb` (`main`, squash-merge del
+> PR #392: la cadena de continuación decía «passed» sin comprobar nada).
+> Sustituye al de
+> `98609de56f474bd177507e09d83c9218cf5ec283` (PR #391). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -21,7 +21,33 @@
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
 >
-> **Tercera unidad del ciclo 2026-10-20 (PR #392, en este mismo PR).** La
+> **Cuarta unidad del ciclo 2026-10-20 (PR #393, en este mismo PR).** La regla
+> del estándar de comentarios —un comentario explica lo que el código hace y
+> no carga el identificador de una tarea, el de una decisión, una fecha, un
+> pull request ni una ruta de especificación— deja de ser una instrucción y
+> pasa a ser un contrato. MEDIDO: **2565** líneas de comentario ofensoras en
+> 518 ficheros. El ratchet compara la rama con la commit de la que viene, así
+> que la deuda sólo puede bajar y **no hay ninguna constante que se pueda
+> subir**; falla en cerrado si la base no se resuelve.
+>
+> Y salió un agujero de verdad por el camino: el escáner que usaba el ratchet
+> arquitectónico confundía un **lifetime** de Rust (`&'static str`) con un
+> literal de carácter y, como su literal sólo se cerraba con comillas
+> dobles, **nunca salía de ese estado**. A partir del primer lifetime, el
+> resto del fichero desaparecía del escáner: **497 ficheros** de los 2084
+> versionados, incluido el propio inventario arquitectónico (386 comentarios
+> reales, 162 vistos). El escáner ahora distingue las dos cosas y vive en
+> un módulo compartido, así que los dos ratchets no pueden discrepar sobre
+> lo que es un comentario.
+>
+> La primera zona barrida es la frontera MCP: de **147** líneas ofensoras a
+> **0**, en dos tiempos —un barrido mecánico para los prefijos y una pasada
+> curada para las referencias que están dentro de la frase—. El resto de la
+> deuda (2418 líneas en 517 ficheros) es trabajo mecánico por zonas, y el
+> ratchet es lo que lo hace seguro. Detalle en `JOURNAL.md`, entrada de la
+> cuarta unidad.
+>
+> **Tercera unidad del ciclo 2026-10-20 (PR #392, mergeado).** La
 > cadena de continuación del servidor MCP decía «passed» sin comprobar nada:
 > sus cinco tests lanzan un servidor real sobre stdio, siguen la cadena de
 > `read_file` página a página y comparan el SHA-256 acumulado con el fichero
