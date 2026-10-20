@@ -20302,3 +20302,74 @@ cambió no se reabrió: son candidatos de la backlog, no trabajo perdido.
 - `python3 scripts/ci/test_comment_standard.py` → OK.
 - La suite de paridad de la CLI en verde, con los dos tests sobre su propio
   árbol.
+
+## 2026-10-21 — La misión que iba a encadenar el roadmap no encadenaba nada (H23, H24)
+
+### Lo que se pidió
+
+Encadenar el trabajo pendiente con la misión del plugin, que hasta entonces
+no había encadenado un solo objetivo.
+
+### Lo que se comprobó antes de escribir nada
+
+La misión se declaraba, el plugin la encontraba, el host admitía su extensión
+de Goal y el hook `Stop` estaba instalado. Todo eso era cierto y, aun así, la
+cadena no tenía nada que encadenar. La auditoría del propio plugin lo dijo con
+su cuenta: **26 candidatos, 0 usables, 26 descartados**.
+
+Se leyeron las tres piezas que deciden:
+
+| Pieza | Qué hace | Qué encontró |
+|---|---|---|
+| El cargador de candidatos | Convierte cada entrada del backlog en un candidato | Descarta los 26: la evidencia se llama `evidenceRefs` y es una lista, y la declaración la escribía en `evidence`, que es una cadena |
+| El selector | Ordena la cola y elige el primero | Ordena de mayor a menor prioridad; la cola estaba escrita al revés, así que habría empezado por el último |
+| La auditoría de la declaración | Comprueba rutas y anclas | Una referencia apuntaba a un crate que no existe |
+
+El detalle que hace el fallo peligroso: **el valor descartado era correcto**.
+`evidence` apuntaba a un fichero real de cada candidato, y `doneWhen` estaba
+bien escrito. Nada parecia estar mal. El campo simplemente no lo leía nadie.
+
+### Lo que se hizo
+
+- **La declaración habla el idioma del cargador**: la evidencia pasa a
+  `evidenceRefs` y es una lista; la cola se escribe de mayor a menor prioridad,
+  con hueco de diez entre candidatos para insertar uno sin renumerar; la
+  referencia rota apunta a donde existe.
+- **La cola se deja como trabajo pendiente de verdad**: C2, C3 y C4 ya salieron
+  en las PR #400, #401 y #402, y C17 sale en esta misma rama. El plugin sólo
+  sabe que un candidato se cumplió si lo encadenó su propia cadena, y esta
+  cadena nunca arrancó, así que el registro estaba vacío: sin quitarlos, la
+  cadena habría rehecho trabajo ya publicado.
+- **Un contrato que lo vigila**: `scripts/ci/test_mission_declaration.py`
+  comprueba los cinco puntos —campo que el cargador no lee, evidencia ausente,
+  criterio de cierre ausente, cola al revés y referencia rota— sin
+  reimplementar al cargador: usa las mismas reglas que el plugin declara.
+- **La propiedad se midió con el selector del plugin**, no con una
+  imitación: sobre la declaración nueva, los 22 candidatos salen elegibles y
+  el primero que encadenaría es el que el roadmap dice que va primero.
+
+### Lo que no se hizo, y por qué
+
+- **No se tocó el estado durable de la misión.** Vive fuera del repositorio y
+  es del plugin; el contrato vigila la declaración, que es lo que el
+  repositorio controla.
+- **No se reescribieron los objetivos ya publicados.** C2, C3 y C4 salen de
+  la cola, no se reabren: su recibo está en el Journal.
+- **El trabajo de C17 no se mezcló con esto.** El arreglo de la declaración y
+  su contrato son una cosa; la referencia sin resolver es otra. Ambas salen,
+  con sus recibos.
+
+### Evidencia
+
+- El contrato **falla contra la declaración anterior**, con los tres defectos
+  nombrados: los 26 candidatos sin evidencia utilizable, la cola escrita al
+  revés y el campo que el cargador no lee.
+- El contrato **pasa contra la nueva**: 22 candidatos, prioridad 220 a 10.
+- Dos mutaciones propias fallan como deben: una referencia a un fichero
+  inexistente y un ancla que no está en el fichero.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .` →
+  22 candidatos, 22 usables, 0 descartados, lista en orden.
+- El selector del propio plugin, sobre la declaración real, elige C25: el
+  candidato que `CURRENT.md` declara como el siguiente trabajo.
+- El host reanuda la sesión viva y encuentra el Goal en curso, así que la
+  cadena puede encadenar en esta sesión y no en otra.
