@@ -9,6 +9,8 @@
 //! - `SymbolIndex`: Symbol index with cache management
 //! - `OnDemandGraphBuilder`: Lazy graph construction
 //! - `PerFileGraphCache`: Per-file graph caching
+//! - `semantic_layer`: The one place that asks a language's own reader
+//!   what a file declares, shared by every path that builds a graph.
 //! - `GraphStrategy`: Unified interface for different strategies
 //! - `FileManifest` / `IncrementalScanner` (gated behind `persistence`):
 //!   mtime + blake3 content-hash tracking for incremental graph rescans.
@@ -31,6 +33,7 @@ mod on_demand_graph;
 // crate-internal.
 pub mod per_file_graph;
 mod pet_graph_store;
+pub mod semantic_layer;
 pub mod snapshot_graph_executor;
 pub mod snapshot_provider;
 mod strategy;

@@ -452,10 +452,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   sitio, `extractor.rs`, y el camino que construye el grafo
 >   (`per_file_graph.rs`, vía `TreeSitterParser`) nunca la consultaba. H15
 >   había arreglado el seam y dado por hecho que llegar al grafo era
->   consecuencia. Eran dos autoridades para la misma pregunta y ganaba la
->   que se preguntar. Cerrada enrutando los nodos del handler a `CallGraph`.
->   Medido al cerrar: un bloque HCL entra en `graph.full` como
->   `aws_s3_bucket.app_bucket`, no como `resource`/`bucket`.
+>   consecuencia: dos autoridades para la misma pregunta, y ganaba la que se
+>   preguntar. Cerrada enrutando los nodos del handler a `CallGraph`: un
+>   bloque HCL entra en `graph.full` como `aws_s3_bucket.app_bucket`.
 >
 >   **Lo que H17 NO cerraba, y H18 ya cerró.** Las referencias Terraform
 >   seguían en 0 porque `extract_terraform_refs` leía la etiqueta del
@@ -481,7 +480,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   canónica: los nodos estaban y la herramienta no los encontraba. Ahora
 >   el grafo conserva el nombre que le dio el handler.
 >
->   **Lo que sigue abierto: la capa semántica tiene que llegar al grafo del
->   producto.** MEDIDO: `build_graph` da `resource` y `bucket` para un `main.tf`.
+>   **Lo que H20 no cerraba, y H21 ya cerró.** El camino que construye el
+>   grafo del producto no consultaba la capa semántica: `build_graph` nombraba
+>   `resource` y `bucket`, y de un `site.yml` no nombraba nada.
 
 <!-- consumer-contracts:end -->
