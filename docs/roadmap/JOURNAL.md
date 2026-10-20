@@ -19449,3 +19449,135 @@ Y dos contratos que se apoyaban en lo que se iba:
   es **5 de 5** ignoradas y su dueño declarado —el carril de
   certificación— no tiene ningún stage de `cargo test`; y las islas de
   `pytest` bajo `sandbox/scripts/tests/` no las corre ningún gate.
+
+## 2026-10-20 — La auditoría del estado de la aplicación
+
+### Lo que se pidió
+
+Revisar el estado de la aplicación y la calidad de la implementación del
+código del roadmap y de las especificaciones de `docs/`, con la deuda
+técnica, los errores arquitectónicos, los seams incorrectos, la ontología
+equivocada, el código duplicado y el drift de UAT/E2E a la vista. No
+documentos de estado: **código**. Un informe breve y denso para un
+novato developer, y un plan con propuestas útiles que entreguen valor y
+**reduzcan el coste de tiempos de la fase de tests**, incluidas
+propuestas de pensamiento lateral.
+
+### Método
+
+Tres barridos de lectura con áreas disjuntas —el harness y el drift
+UAT/E2E; los seams, la duplicación y la ontología; la conformidad entre
+roadmap, especificaciones y código— y una síntesis propia. Cada hallazgo
+se comprobó contra el código antes de escribirlo, y las cifras que no se
+reproducen se corrigen hacia adelante: un recibo que no se puede
+reproducir no es evidencia.
+
+### Lo que se encontró
+
+**Lo que está bien.** La dirección hexagonal del núcleo está limpia: el
+dominio no importa infraestructura, aplicación ni interfaz. La capa
+semántica unificó la construcción del grafo del producto en los tres
+constructores del servicio. El anillo de contratos falla cerrado, y una
+poda de 1.606 ficheros quitó la historia del contexto de trabajo.
+
+**El fallo más caro: la CLI y el MCP no ven el mismo grafo.**
+`infrastructure/graph/strategy.rs:635` —el camino que usa la CLI— llama
+al parser genérico y nunca a la capa semántica. MEDIDO sobre el mismo
+fixture: por MCP, `terraform-iac` da **74 símbolos y 30 relaciones**; por
+la CLI, **0 de ambos**. Es CU-002.1 incumplido, y es la misma divergencia
+que H21 cerró en un camino y dejó abierta en el otro. Hay **siete** caminos
+que pueden construir "el grafo".
+
+**El grafo puede estar obsoleto y el producto dice "completo".**
+`interface/mcp/handlers/mod.rs:1011` y `:1093` calculan la obsolescencia
+con una lista literal de **9** extensiones, mientras que el registro de
+lenguajes tiene **30**. `.tf`, `.yml`, `.cs`, `.rb` y `.tsx` quedan fuera:
+cambiar un fichero de ésos no invalida la caché, y `build_graph` responde
+`status="complete"`. Es CU-005.3 incumplido: "nunca `Complete` usando
+datos stale".
+
+**El producto filtra el nombre interno de Rust al consumidor.**
+`consolidated_handlers.rs:744` publica `format!("{:?}", symbol.kind())`
+como `resource_type`: un recurso de Terraform sale como `"Function"`. El
+dato correcto —`iac_kind = "resource"`— se calcula en
+`terraform_handler.rs:344` y se tira en `semantic_layer.rs:52`.
+
+**El dominio construye un adaptador.**
+`domain/ports/call_graph_projection.rs:108` instancia
+`crate::infrastructure::graph::CallGraphProjection`, contra su propia
+regla `architecture.domain_no_infrastructure`
+(`application/architecture/canonical_constraints.rs:69`). El comentario
+que justifica la función dice que existe "para que nadie importe
+`crate::infrastructure::*`", y la línea de al lado la importa.
+
+**La suite es más cara que su garantía.** MEDIDO: el modo fast ejecuta
+**0 de los 1.316** tests de integración (`test-fast.sh:247-251` mapea a
+`--lib` y nada más); el gate completo reejecuta **3.192** tests del lib
+con la línea base **vacía** (`known_failures.yaml` no tiene entradas) y
+sólo puede repetir el veredicto del paso anterior; `cargo test
+--workspace --doc` paga una pasada completa de rustdoc por **un** doctest;
+**41** specs de Playwright y 4 specs E2E legacy **no los ejecuta ningún
+pipeline**; `continuation_e2e.rs` son 609 líneas con 5 tests ignorados
+cuyo carril declarado no tiene ningún stage de `cargo test`; y las islas
+de `pytest` de `sandbox/scripts/tests/` no las corre nadie.
+
+**Las specs abiertas no están implementadas.** H3 (K1) y H4.4 (K2)
+—Kotlin— no existen: no hay `Language::Kotlin`, ni `tree-sitter-kotlin`,
+ni configuración; el código hace lo contrario a propósito
+(`per_file_graph.rs:916` declara `kt`/`kts` como no soportados) y los ADR
+que las especifican siguen en `Estado: PROPOSED`. H5: `SnapshotKey`
+(CU-005.1) tiene **0** apariciones en `crates/`; la caché es un
+`HashMap<String, FileGraphCacheEntry>` con la ruta como clave.
+
+**Dos recibos que no se reproducen.** El de PR #394 afirma "592 ficheros
+YAML versionados": en su propio commit (`f5c76d7d`) hay **181**. Y el de
+esta poda decía 1.603 ficheros donde eran 1.606: corregido hacia adelante.
+
+**Deuda medida.** **52** líneas de comentario en **38** ficheros nombran
+una raíz que se fue. **20** de las **39** citas a `docs/` del contrato del
+consumidor no resuelven (**14** ficheros, **6** directorios), ocho de ellas
+con el prefijo equivocado. El contrato de procedencia sólo gobierna
+`docs/adr/**`, así que nadie lo vio: el fallo es del guard, no sólo de
+las citas.
+
+### El plan
+
+Tres bloques, ordenados por valor por unidad de esfuerzo.
+
+**Bloque A — corregir (H24).** A1 el manifiesto se deriva del registro de
+lenguajes, no de una lista literal; A2 la estrategia de la CLI consulta
+la capa semántica, con test discriminante; A3 `iac_query` publica el
+nombre del dominio; A4 el puerto de dominio deja de construir el
+adaptador.
+
+**Bloque B — el coste de la fase de tests (H23).** B1 el paso de línea
+base se salta si la línea base está vacía (ahorra 3.192 ejecuciones de
+test); B2 los doctests dejan de pagar una pasada completa de rustdoc por
+uno; B3 los contratos que no necesitan binario se ejecutan antes de
+construir binarios, para que el fallo barato se vea antes; B4 el selector
+mapea un fichero de test tocado a su target concreto, de modo que el lazo
+iterativo cubra los tests de integración.
+
+**Bloque C — pensamiento lateral.** C1 una propiedad en vez de N tests de
+paridad: "toda identidad que el producto produce la entiende
+`SymbolFqn::parse`" —habría encontrado, de una vez, la divergencia
+CLI/MCP, la fuga de `iac_query` y las cinco gramáticas que no parsean—;
+C2 `product/languages.json` como única fuente publicada, con la matriz
+generada; C3 un solo dueño del grafo en memoria; C4 extraer
+`GraphQueryService` del god-object; C5 un vocabulario de infraestructura
+en la ontología; C6 conectar o retirar la superficie E2E; C7 dar dueño o
+enterrar lo que no lo tiene.
+
+**Lo que no se propone.** Ningún framework de tests nuevo, ningún pipeline
+nuevo, ningún inventario de estado nuevo: los mecanismos existen y
+funcionan, y el problema es que se usan a medias. No se reescribe
+`AnalysisService` ni `WorkspaceSession` —se extrae—. No se reabre ningún
+programa cerrado ni se reescribe un recibo histórico.
+
+### La misión
+
+La auditoría no se queda en un informe: es la backlog de la misión
+`cognicode` (fichero `goal-compass.json`, **13** candidatos con evidencia
+y criterio de cierre observable, ordenados por lo que desbloquea lo
+demás). El candidato siguiente es **C2**: el manifiesto derivado del
+registro de lenguajes.

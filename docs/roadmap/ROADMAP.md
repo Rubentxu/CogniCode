@@ -452,33 +452,25 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   una unidad ya cerrada.
 >
 >   **H17 (2026-10-19) también era un título, no una descripción**: «la capa
->   semántica tiene que llegar al grafo». La capa semántica —HCL y Ansible,
->   los únicos dos lenguajes con `semantic_handler`— se invocaba en **un**
->   sitio, `extractor.rs`, y el camino que construye el grafo
->   (`per_file_graph.rs`, vía `TreeSitterParser`) nunca la consultaba. H15
->   había arreglado el seam y dado por hecho que llegar al grafo era
->   consecuencia: dos autoridades para la misma pregunta, y ganaba la que se
->   preguntar. Cerrada enrutando los nodos del handler a `CallGraph`: un
->   bloque HCL entra en `graph.full` como `aws_s3_bucket.app_bucket`.
+>   semántica tiene que llegar al grafo». Se invocaba en **un** sitio y el
+>   camino que construye el grafo nunca la consultaba: dos autoridades para
+>   la misma pregunta, y ganaba la que se preguntó. Cerrada enrutando los
+>   nodos del handler a `CallGraph`.
 >
 >   **Lo que H17 NO cerraba, y H18 ya cerró.** Las referencias Terraform
->   seguían en 0 porque `extract_terraform_refs` leía la etiqueta del
->   bloque, y la etiqueta es la cabecera —sin cuerpo, no puede ver lo que el
->   cuerpo referencia—. La relación que hacía falta existe en
->   `sandbox/fixtures/terraform-iac/main.tf` y es un **atravesamiento de
->   atributos** (`bucket = aws_s3_bucket.app_bucket.id`), no una referencia
->   plana: exige leer expresiones del AST. Cerrado en H18 —el handler recibe
->   ahora el texto del fichero y parsea el HCL él mismo—. MEDIDO sobre el
->   fixture real: de **0** aristas de referencia a **54**, de las cuales
->   **17** resuelven contra lo declarado en ese fichero y **37** quedan sin
->   resolver porque la variable se declara en otro fichero. La cobertura de
->   referencias es **por fichero**, y el recibo lo dice en voz alta.
+>   seguían en 0 porque `extract_terraform_refs` leía la etiqueta del bloque
+>   —sin cuerpo, no puede ver lo que el cuerpo referencia—. La relación que
+>   hacía falta es un **atravesamiento de atributos** (`bucket =
+>   aws_s3_bucket.app_bucket.id`): exige leer expresiones del AST. MEDIDO:
+>   de **0** aristas a **54**, de las que **17** resuelven en ese fichero.
+>   La cobertura de referencias es **por fichero**.
 >
 >   **Lo que H18 NO cerraba, y H19 ya cerró.** El handler de Ansible leía
 >   las etiquetas de la extracción genérica, así que nunca se ejecutaba;
 >   ahora parsea el fichero él mismo. MEDIDO: de **1 nodo y 0 aristas** a
->   **5 nodos y 11 aristas**, y **cero** falsos positivos sobre los **592**
->   YAML del árbol.
+>   **5 nodos y 11 aristas**, y **cero** falsos positivos sobre los **181**
+>   YAML versionados del árbol. (El recibo de aquel PR decía **592**; en su
+>   propio commit hay **181**. Cifra corregida hacia adelante.)
 >
 >   **Lo que H19 no cerraba, y H20 ya cerró.** La capa semántica llegaba al
 >   grafo con el nombre del camino genérico y la consulta de IaC busca la
@@ -490,5 +482,13 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >
 >   **Lo que H21 no cerraba, y H22 ya cerró.** `docs/` 655→**125**,
 >   `openspec/` 1.071→**0**: **1.606** ficheros de historia fuera del árbol.
+>
+>   **La auditoría del 2026-10-20 abrió dos unidades más**, con informe y
+>   plan en el Journal de esa fecha. **H23** — la poda por obligaciones y el
+>   coste de la fase de tests: superficies que ningún gate ejecuta y
+>   tiempo de gate que no compra garantía. **H24** — el producto tiene que
+>   decir la verdad: el camino de la CLI ve un grafo distinto al del MCP,
+>   el manifiesto de invalidación cubre 9 de 30 lenguajes, y `iac_query`
+>   publica el nombre interno de Rust en vez del del dominio.
 
 <!-- consumer-contracts:end -->

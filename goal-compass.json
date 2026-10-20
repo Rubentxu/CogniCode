@@ -1,0 +1,190 @@
+{
+  "missionId": "cognicode",
+  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas: primero las correcciones de correccion que la auditoria del 2026-10-20 encontro (el camino de la CLI ve un grafo distinto al del MCP, el manifiesto de invalidacion cubre 9 de 30 lenguajes, iac_query filtra el nombre interno de Rust), despues la reduccion del coste de la fase de tests sin perder garantias, y finalmente las unidades Kotlin (H3/H4.4) y el SnapshotKey de H5, con todo en remoto al concluir cada ciclo.",
+  "defaultTokenBudget": 120000,
+  "totalTokenBudget": null,
+  "explorationEnabled": true,
+  "allowRemoteWrite": true,
+  "driver": "plugin",
+  "backlog": [
+    {
+      "candidateId": "C2",
+      "title": "El manifiesto se deriva del registro de lenguajes",
+      "unit": "H24",
+      "priority": 2,
+      "objective": "Que el manifiesto de invalidacion se derive del registro de lenguajes, en vez de una lista literal de 9 extensiones, para que editar un `.tf` o un `.yml` invalide el grafo cacheado.",
+      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
+      "whyNow": "Es una violacion literal de SPEC-CU-005.3 (`nunca Complete usando datos stale`) y del criterio de la auditoria: el manifiesto cubre 9 de las 30 linguagens registradas. Es el arreglo mas barato de los que corrigen comportamiento, y elimina de paso una segunda fuente de verdad.",
+      "doneWhen": [
+        "no queda ninguna lista literal de extensiones en el calculo de obsolescencia",
+        "un test que modifica un `.tf` y un `.yml` fuerza la invalidacion y `build_graph` no responde `status=complete` con el grafo viejo",
+        "`bash scripts/test-fast.sh` en rc=0"
+      ],
+      "scope": "H24"
+    },
+    {
+      "candidateId": "C3",
+      "title": "La CLI ve el mismo grafo que el MCP",
+      "unit": "H24",
+      "priority": 3,
+      "objective": "Que el camino de la CLI consulte la capa semantica, de modo que `graph entry-points`, `hot-paths`, `impact` y `mermaid` vean los simbolos de Terraform y Ansible que ya ve el MCP.",
+      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md",
+      "whyNow": "Es la misma divergencia que H21 cerro en un camino y dejo abierta en el otro: CU-002.1 pide que CLI y MCP sean adaptadores de una autoridad unica. Sobre el fixture real, la CLI da 0 simbolos de Terraform donde el MCP da 74.",
+      "doneWhen": [
+        "sobre `sandbox/fixtures/terraform-iac`, la via de la CLI y la del MCP devuelven el mismo conjunto de simbolos y las mismas relaciones",
+        "un test discriminante que falle si las dos vias divergen",
+        "CU-002.1 deja de estar incumplido en la via de la CLI"
+      ],
+      "scope": "H24"
+    },
+    {
+      "candidateId": "C4",
+      "title": "iac_query publica el nombre del dominio",
+      "unit": "H24",
+      "priority": 4,
+      "objective": "Que `iac_query` publique el nombre del dominio (`resource`, `data`) en vez del nombre interno de la variante de Rust (`Function`).",
+      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
+      "whyNow": "La capa semantica ya calcula `iac_kind` y lo descarta al cruzar la frontera: el consumidor ve `\"Function\"` para `aws_s3_bucket.app_bucket`. Es la clase de fuga que SPEC-CU-002.3 prohibe (publicar una forma aproximada en vez del tipo honesto).",
+      "doneWhen": [
+        "`iac_query` devuelve `resource_type: \"resource\"` para un recurso de Terraform",
+        "ningun consumidor publico ve el nombre de una variante de `SymbolKind`",
+        "el dato semantico llega al grafo en vez de calcularse y tirarse"
+      ],
+      "scope": "H24"
+    },
+    {
+      "candidateId": "C5",
+      "title": "La línea base vacía no se reejecuta",
+      "unit": "H23",
+      "priority": 5,
+      "objective": "Que la fase de tests deje de reejecutar 3.192 tests cuando la linea base de fallos conocidos esta vacia.",
+      "evidence": "scripts/known_failures.yaml",
+      "whyNow": "MEDIDO: el paso `known_failures (core/lib)` de `scripts/test-full.sh` reejecuta los 3.192 tests del lib con `entries:` vacio, asi que solo puede repetir el veredicto del paso anterior. Con la linea base vacia, ese paso no compra garantia: paga tiempo.",
+      "doneWhen": [
+        "con la linea base vacia, el paso se salta y lo dice en pantalla, en vez de reejecutar la suite",
+        "un contrato comprueba que el mecanismo de linea base puede fallar de verdad",
+        "el tiempo del gate completo baja y queda medido en el recibo"
+      ],
+      "scope": "H23"
+    },
+    {
+      "candidateId": "C6",
+      "title": "El modo fast ejecuta el target del test tocado",
+      "unit": "H23",
+      "priority": 6,
+      "objective": "Que el modo fast ejecute el target concreto del fichero de test que se toco, en vez de limitarse a `--lib`.",
+      "evidence": "scripts/ci/select-suites.sh",
+      "whyNow": "MEDIDO: el modo fast ejecuta 0 de los 1.316 tests de integracion, porque `run_suite` mapea a `--lib` y nada mas. El lazo iterativo no cubre la superficie donde viven los bugs de contrato, y por eso todo acaba en el gate lento.",
+      "doneWhen": [
+        "un cambio en un fichero de test de integracion selecciona ese target concreto y lo ejecuta en el modo fast",
+        "el selector sigue siendo la autoridad: el modo fast no recalcula el plan",
+        "un filtro que no selecciona ninguna prueba sigue fallando"
+      ],
+      "scope": "H23"
+    },
+    {
+      "candidateId": "C7",
+      "title": "Cada superficie E2E tiene carril o se retira",
+      "unit": "H23",
+      "priority": 7,
+      "objective": "Que cada superficie E2E que sobreviva tenga un carril que la ejecute, o que se retire: 41 specs de Playwright sin carril, 5 tests ignorados en `continuation_e2e.rs` cuyo carril declarado no tiene ningun stage de `cargo test`, y las islas de `pytest` que ningun gate corre.",
+      "evidence": "crates/cognicode-mcp/tests/continuation_e2e.rs",
+      "whyNow": "MEDIDO: 41 specs de Playwright y 4 specs E2E legacy no los ejecuta ningun pipeline; `continuation_e2e.rs` son 609 lineas con 5 tests ignorados y su_dueno declarado no corre ninguno; las islas de `pytest` de `sandbox/scripts/tests/` no las corre nadie, y una de ellas pedia 22 lenguajes cuando ya hay 21. Es superficie que cuesta y no garantiza.",
+      "doneWhen": [
+        "el recuento de superficies de test sin carril es 0, y cada una que sobrevive tiene un carril declarado",
+        "lo retirado tiene un motivo escrito en el recibo, no un borrado silencioso",
+        "el numero de specs de Playwright se declara en el producto y en su carril"
+      ],
+      "scope": "H23"
+    },
+    {
+      "candidateId": "C8",
+      "title": "El contrato de procedencia gobierna consumer-contracts",
+      "unit": "H23",
+      "priority": 8,
+      "objective": "Que el contrato de procedencia gobierne tambien `docs/roadmap/consumer-contracts/**`, para que las 20 citas rotas que quedan se vean en rojo.",
+      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/INTEGRATION.md",
+      "whyNow": "MEDIDO: de 39 citas a rutas de `docs/` en el contrato del consumidor, 20 no resuelven (14 ficheros, 6 directorios), ocho de ellas con el prefijo equivocado. El contrato solo gobierna `docs/adr/**`, asi que nadie se dio cuenta: el fallo es del guard, no solo de las citas.",
+      "doneWhen": [
+        "el contrato escanea `docs/roadmap/consumer-contracts/**` y falla con las citas rotas a la vista",
+        "las citas rotas estan corregidas o declaradas con su razon, una fila cada una",
+        "el guard tiene control negativo: falla ante una cita rota sintetica"
+      ],
+      "scope": "H23"
+    },
+    {
+      "candidateId": "C9",
+      "title": "El puerto de dominio deja de construir el adaptador",
+      "unit": "H24",
+      "priority": 9,
+      "objective": "Que el puerto de dominio deje de construir un adaptador de infraestructura.",
+      "evidence": "crates/cognicode-core/src/application/architecture/canonical_constraints.rs",
+      "whyNow": "`domain/ports/call_graph_projection.rs:108` instancia `crate::infrastructure::graph::CallGraphProjection` dentro del dominio, contra la propia regla `architecture.domain_no_infrastructure`. El comentario del fichero justifica la funcion diciendo que evita importar infraestructura, y la linea de al lado la importa.",
+      "doneWhen": [
+        "el contrato de arquitectura no lista ninguna violacion de `domain_no_infrastructure`",
+        "el puerto declara la fabrica que el adaptador implementa, en vez de llamar al adaptador",
+        "el arbol hexagonal sigue compilando sin que el dominio dependa de infraestructura"
+      ],
+      "scope": "H24"
+    },
+    {
+      "candidateId": "C10",
+      "title": "Una propiedad de identidad en vez de N tests de paridad",
+      "unit": "H24",
+      "priority": 10,
+      "objective": "Sustituir los tests de paridad por parejas por una propiedad: toda identidad que el producto produce la entiende `SymbolFqn::parse`.",
+      "evidence": "crates/cognicode-core/src/domain/evidence_kernel/symbol_fqn.rs",
+      "whyNow": "MEDIDO: hay siete gramáticas de identidad y un solo parser, que exige que el ultimo segmento sea un `u32`: las gramaticas `tf:` y `ansible:` no parsean nunca, y los cuatro sitios que parsean degradan en silencio. Una propiedad sobre el conjunto habria encontrado, de una vez, esta divergencia, la del camino de la CLI y la fuga de `iac_query`.",
+      "doneWhen": [
+        "una property comprueba que toda identidad que el producto produce la entiende el parser de identidad",
+        "las gramaticas `tf:` y `ansible:` parsean, o el parser se declara tolerante con su forma",
+        "los cuatro sitios que degradan en silencio dejan de hacerlo"
+      ],
+      "scope": "H24"
+    },
+    {
+      "candidateId": "C11",
+      "title": "Construir el SnapshotKey de H5",
+      "unit": "H5",
+      "priority": 11,
+      "objective": "Construir el `SnapshotKey` de CU-005.1: identidad del workspace, paths normalizados con su hash, manifiesto de contenido completo, revision de origen, digest de arbol sucio, build real del analizador, esquema, features, perfil de configuracion y ambito.",
+      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md",
+      "whyNow": "MEDIDO: `SnapshotKey` tiene 0 apariciones en `crates/`; la cache es un `HashMap<String, FileGraphCacheEntry>` con la ruta como clave. Sin el, C2 solo arregla una parte del problema de stale. Es la unidad grande, y depende de que C2 haya sentado la base.",
+      "doneWhen": [
+        "existe el tipo con los componentes que enumera CU-005.1, y una funcion pura que lo construye",
+        "cold y warm equivalen semanticamente; un cambio semantico invalida; la corrupcion falla cerrado",
+        "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados"
+      ],
+      "scope": "H5"
+    },
+    {
+      "candidateId": "C12",
+      "title": "El lenguaje Kotlin: gramática y navegación",
+      "unit": "H3",
+      "priority": 12,
+      "objective": "Anadir el lenguaje Kotlin: `Language::Kotlin`, extension `.kt`/`.kts`, una unica gramatica tree-sitter, y navegabilidad desde los binarios distribuidos sin JVM.",
+      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md",
+      "whyNow": "MEDIDO: no existe `Language::Kotlin` ni `tree-sitter-kotlin`; el codigo hace lo contrario a proposito (`per_file_graph.rs:916` declara `kt`/`kts` como no soportados, con honestidad). El ADR que lo exige esta en `Estado: PROPOSED`. Es la unidad mas grande del roadmap vivo.",
+      "doneWhen": [
+        "`Language::Kotlin` existe y `.kt`/`.kts` se parsean",
+        "los simbolos Kotlin son navegables desde el binario distribuido, sin JVM",
+        "el gap tipado de `kt`/`kts` desaparece de `KNOWN_UNSUPPORTED_EXTENSIONS` y hay test de aceptacion con fixtures"
+      ],
+      "scope": "H3"
+    },
+    {
+      "candidateId": "C13",
+      "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
+      "unit": "H4.4",
+      "priority": 13,
+      "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
+      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md",
+      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. Depende de C12.",
+      "doneWhen": [
+        "existe un corpus `.kt`/`.java` con homonimos y un test que demuestra que no sale ninguna arista cuando el objetivo no se puede probar",
+        "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
+      ],
+      "scope": "H4.4"
+    }
+  ]
+}

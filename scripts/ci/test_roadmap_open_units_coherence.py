@@ -37,6 +37,16 @@ cambio de formato dejaria la regla mirando sin comprobar nada — el mismo
 modo de fallo que `test_every_released_block_has_a_goal_doc` busca en el
 contrato hermano de §10.
 
+## Los ids de dos digitos
+
+La lista de abiertas se extraia con `[A-Z]\\d(?:\\.\\d)?`, que casa con
+`H5` y `H4.4` y **no** con `H23`: un digito y punto opcional. Una unidad
+con dos digitos no era visible para la regla, de modo que el trailer
+podia declararla abierta y el Journal cerrarla sin que nadie se enterara
+-- que es exactamente el fallo que este contrato existe para cazar, en
+una version mas pequena. La regexp ahora acepta el grupo de digitos
+entero, y la regla vigila tambien las unidades nuevas.
+
 ## Lo que NO se comprueba, y por que
 
   - **Si una unidad sin cierre en el Journal esta de verdad abierta.** El
@@ -101,7 +111,7 @@ def section11_open_units() -> list[str]:
     )
     if not m:
         return []
-    return re.findall(r"\*\*([A-Z]\d(?:\.\d)?)\*\*", m.group(0))
+    return re.findall(r"\*\*([A-Z]\d+(?:\.\d)?)\*\*", m.group(0))
 
 
 def closed_units_in_journal() -> set[str]:
@@ -115,7 +125,7 @@ def closed_units_in_journal() -> set[str]:
     for line in JOURNAL.read_text(encoding="utf-8").splitlines():
         if not CLOSURE.search(line):
             continue
-        for m in re.finditer(r"\b([A-Z]\d(?:\.\d)?)\b", line):
+        for m in re.finditer(r"\b([A-Z]\d+(?:\.\d)?)\b", line):
             found.add(m.group(1))
     return found
 
