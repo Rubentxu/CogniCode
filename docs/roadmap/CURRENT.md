@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `8ee145715575a3751c4c4a8cfa151c640f3864cb` (`main`, squash-merge del
-> PR #392: la cadena de continuación decía «passed» sin comprobar nada).
+> **Snapshot**: 2026-10-20, sobre `ae409ae38a95de41b760ba631bd130d35a70248d` (`main`, squash-merge del
+> PR #393: el escáner de comentarios no veía la mitad del repositorio).
 > Sustituye al de
-> `98609de56f474bd177507e09d83c9218cf5ec283` (PR #391). **v0.101.23
+> `8ee145715575a3751c4c4a8cfa151c640f3864cb` (PR #392). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -20,6 +20,32 @@
 > `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
+>
+> **Quinta unidad del ciclo 2026-10-20 (PR #394, en este mismo PR): el
+> handler de Ansible lee el árbol.** El handler llevaba años anunciado y
+> muerto: leía las etiquetas de la extracción genérica —que para un YAML
+> son una por fichero— y buscaba `hosts:` ahí, así que la palabra nunca
+> aparecía y el handler nunca se ejecutaba. Ahora parsea el fichero él
+> mismo, como hace el de Terraform con el HCL. MEDIDO sobre el fixture real
+> (`site.yml`): de **1 nodo y 0 aristas** a **5 nodos y 11 aristas** —dos
+> plays, sus tres tareas, el módulo que cada tarea llama y los tres roles
+> que el play se trae—. Y el módulo es **la clave que la tarea declara**,
+> no una lista de módulos recordados: `postgresql_query` no estaba en
+> aquella lista y era invisible en una tarea que el handler ya había
+> encontrado.
+>
+> Las identidades llevan el **nombre**
+> (`ansible:site.yml:play:Configure_infrastructure`), que es lo que el
+> manifiesto del repo pedía y lo que permite hablar de un recurso sin
+> ejecutar el parser. MEDIDO sobre los **592** ficheros YAML versionados
+> del árbol: **5** producen estructura de Ansible —los cinco fixtures— y
+> **587** se quedan intactos. Cero falsos positivos, y el recuento es sobre
+> un corpus que incluye los repos vendorizados.
+>
+> Lo que vive en otro fichero —un rol, un módulo, un playbook importado—
+> sale **sin resolver** y sin inventar ningún nodo: la cobertura de un
+> playbook es *por fichero*, y el recibo lo dice en voz alta. Detalle en
+> `JOURNAL.md`, entrada de la quinta unidad.
 >
 > **Cuarta unidad del ciclo 2026-10-20 (PR #393, en este mismo PR).** La regla
 > del estándar de comentarios —un comentario explica lo que el código hace y
