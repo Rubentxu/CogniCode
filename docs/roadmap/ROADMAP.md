@@ -414,8 +414,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   las que el Journal había seguido por nombre de H-unit, sin el
 >   nombre de spec con el que se escribieron:
 >   **H3** (gramática tree-sitter de Kotlin), **H4.4**
->   (fixtures UAT para homónimos Kotlin↔Java) y **H5**
->   (incremental/distribución). **Sí tienen spec propio**, aunque no con
+>   (relaciones Kotlin↔Java, sólo cuando se pueden probar) y **H5**
+>   (incremental/distribución: `SnapshotKey`, identidades de caché por
+>   ruta y corte de release). **Sí tienen spec propio**, aunque no con
 >   esos nombres: H3 y H4 son **K1** y **K2** en
 >   `docs/roadmap/consumer-contracts/kotlin/KOTLIN-LINE-K0-K3.md`, y cada
 >   uno tiene **su propio ADR de autoridad normativa** —
@@ -425,70 +426,56 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md`
 >   y
 >   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
->   Este párrafo decía lo contrario —"ninguna tiene fichero de spec
->   propio"— y mandaba a abrir un ciclo a diseñar desde cero unas unidades
->   ya especificadas.
 >
->   **Las tres citas anteriores estaban mal, y por el mismo motivo**: el
->   párrafo reunía K1 y K2 bajo un único ADR que su propia línea 3 declara
->   aplicable sólo a K2, y remitía H4.4 y H5 a un HITOS del programa
->   delivery-first que vive bajo `docs/*` en `.gitignore` y **no tiene ni un
->   solo fichero versionado**. Un clon limpio no resolvía ninguna de las
->   tres. `scripts/ci/test_roadmap_authority_attribution.py` falla cerrado
->   si una autoridad citada no está versionada, o si el ADR citado no
->   declara la unidad a la que se le atribuye.
->   H4.1 se cierra con **tres** variantes (`Resolved | Ambiguous |
->   Unresolved`), no las cuatro que propone ADR-K003: `External` exige una
->   tabla de símbolos externos que hoy no existe, y una variante que nada
->   puede construir no es una garantía. **H4.2 tampoco era lo que decía
->   su título**: no era refinar el heurístico `shared_crate_root` sino
->   dejar de cablear llamadas contra un homónimo arbitrario — dos de los
->   tres constructores de grafo resolvían con un `HashMap<String, SymbolId>`
->   cuyo último `insert` pisaba al anterior, así que toda llamada se
->   atribuía al símbolo que sobrevivió por orden de recorrido. Cerrada
->   con los tres constructores sobre `GlobalSymbolIndex`. La lista deriva
->   del Journal y
->   `scripts/ci/test_roadmap_open_units_coherence.py` no deja que nombre
->   una unidad ya cerrada.
+>   **H23** — la poda por obligaciones y el coste de la fase de tests: las
+>   superficies que ningún gate ejecuta y el tiempo de gate que no compra
+>   garantía. Con la línea base vacía, la fase completa repite la batería
+>   del core; el modo rápido no corre el target de integración que se
+>   tocó; y las superficies E2E sin carril se acumulan en silencio.
 >
->   **H17 (2026-10-19) también era un título, no una descripción**: «la capa
->   semántica tiene que llegar al grafo». Se invocaba en **un** sitio y el
->   camino que construye el grafo nunca la consultaba: dos autoridades para
->   la misma pregunta, y ganaba la que se preguntó. Cerrada enrutando los
->   nodos del handler a `CallGraph`.
+>   **H24** — el producto tiene que decir la verdad. Lo que le queda abierto
+>   son tres contratos y una frontera:
 >
->   **Lo que H17 NO cerraba, y H18 ya cerró.** Las referencias Terraform
->   seguían en 0 porque `extract_terraform_refs` leía la etiqueta del bloque
->   —sin cuerpo, no puede ver lo que el cuerpo referencia—. La relación que
->   hacía falta es un **atravesamiento de atributos** (`bucket =
->   aws_s3_bucket.app_bucket.id`): exige leer expresiones del AST. MEDIDO:
->   de **0** aristas a **54**, de las que **17** resuelven en ese fichero.
->   La cobertura de referencias es **por fichero**.
+>   - **La cobertura y la resolución son dos hechos** —
+>     `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md`.
+>     Una referencia sin resolver es un hecho con origen y motivo, no un
+>     silencio; `complete` no se dice si queda alguna pendiente. El grafo,
+>     el manifiesto y el vigilante nombran el mismo conjunto de ficheros, y
+>     el error del recorrido se cuenta aparte de la exclusión legítima.
+>   - **La consulta de infraestructura contesta con el tipo, la arista y la
+>     profundidad que le corresponden** —
+>     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
+>     tipo y el kind que el lector declaró; los metadatos reales de la
+>     arista, no una constante; `depth` como profundidad y no como tope de
+>     resultados; y la ambigüedad declarada en vez de resuelta por
+>     casualidad.
+>   - **Un recurso de infraestructura no es un símbolo de programación** —
+>     `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md`. La
+>     categoría del extractor genérico no puede contradecir la semántica
+>     del lenguaje, y un lenguaje sin lector semántico declara su
+>     precisión.
+>   - **El dominio no construye su adaptador**: el puerto de proyección
+>     instancia la implementación de infraestructura. La frontera está
+>     invertida, y el arreglo no necesita un framework nuevo.
 >
->   **Lo que H18 NO cerraba, y H19 ya cerró.** El handler de Ansible leía
->   las etiquetas de la extracción genérica, así que nunca se ejecutaba;
->   ahora parsea el fichero él mismo. MEDIDO: de **1 nodo y 0 aristas** a
->   **5 nodos y 11 aristas**, y **cero** falsos positivos sobre los **181**
->   YAML versionados del árbol. (El recibo de aquel PR decía **592**; en su
->   propio commit hay **181**. Cifra corregida hacia adelante.)
+>   Los candidatos de las dos unidades —con su evidencia y su criterio de
+>   cierre— viven en la backlog de la misión (`goal-compass.json`); aquí
+>   sólo vive el estado.
 >
->   **Lo que H19 no cerraba, y H20 ya cerró.** La capa semántica llegaba al
->   grafo con el nombre del camino genérico y la consulta de IaC busca la
->   canónica: los nodos estaban y la herramienta no los encontraba. Ahora
->   el grafo conserva el nombre que le dio el handler.
+>   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
+>   poda documental están en el Journal con su SHA y su recuento de suite.
+>   Este bloque es estado, no historia: por eso cabe en ochenta líneas.
 >
->   **Lo que H20 no cerraba, y H21 ya cerró.** `build_graph` ya nombra
->   `aws_s3_bucket.app_bucket`, y de un `site.yml` ya nombra el play.
+>   **La auditoría del 2026-10-20** abrió H23 y H24, con informe y plan en
+>   el Journal de esa fecha. De lo que H24 tenía anotado ya están
+>   resueltas tres cosas —el manifiesto deriva del registro de lenguajes,
+>   la CLI y el MCP responden sobre el mismo grafo, y la consulta de
+>   infraestructura publica el nombre del dominio—, y las que quedan son
+>   las de arriba.
 >
->   **Lo que H21 no cerraba, y H22 ya cerró.** `docs/` 655→**125**,
->   `openspec/` 1.071→**0**: **1.606** ficheros de historia fuera del árbol.
->
->   **La auditoría del 2026-10-20 abrió dos unidades más**, con informe y
->   plan en el Journal de esa fecha. **H23** — la poda por obligaciones y el
->   coste de la fase de tests: superficies que ningún gate ejecuta y
->   tiempo de gate que no compra garantía. **H24** — el producto tiene que
->   decir la verdad: el camino de la CLI ve un grafo distinto al del MCP,
->   el manifiesto de invalidación cubre 9 de 30 lenguajes, y `iac_query`
->   publica el nombre interno de Rust en vez del del dominio.
+>   El **corte de release** cuelga de H5 y de
+>   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
+>   publicar exige gates sobre un candidato concreto, binarios instalados
+>   verificados y tag anotado. Una PR fusionada no es una release.
 
 <!-- consumer-contracts:end -->
