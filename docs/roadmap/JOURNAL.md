@@ -19676,3 +19676,81 @@ en el Journal. Se declara aquí en vez de dejar un puntero roto en silencio.
 - `docs/` en disco: 17M → **2,3M**; ficheros locales sin versionar: 443 → **7**.
 - Contratos: `backtick_provenance_contract` 7/7 verde con la fila nueva;
   `gitignore_negation_contract` 5/5; ratchets de roadmap verdes.
+
+## 2026-10-20 — El manifiesto ve los mismos ficheros que el grafo (H24, C2)
+
+### Lo que se pidió
+
+El candidato C2 de la misión `cognicode`: que el manifiesto que decide si
+el grafo cacheado sigue siendo fresco se derive del registro de lenguajes,
+en vez de una lista literal de nueve extensiones. La violación literal era
+de `SPEC-CU-005.3`: el producto no puede responder `complete` con datos
+viejos.
+
+### Lo que había
+
+El grafo se construye sobre todo fichero cuya extensión reconoce el
+registro de lenguajes: **51 extensiones**, de `.tf` a `.sv`. El manifiesto
+que decide si ese grafo puede reutilizarse enumeraba **9** a mano, en dos
+sitios distintos, y con dos listas de directorios distintos. Todo lo demás
+era invisible para él: editar un `.tf` no invalidaba nada, y `build_graph`
+respondía con el grafo anterior declarando `status="complete"`.
+
+MEDIDO: el manifiesto cubría el **18%** de las extensiones que el grafo
+lee. En un proyecto compuesto sólo por Terraform, el manifiesto quedaba
+vacío, el recuento de ficheros coincidía con cero, y el grafo cacheado se
+servía para siempre.
+
+### Lo que se hizo
+
+**Una sola regla, escrita una vez.** El módulo nuevo
+`infrastructure/graph/source_files.rs` decide qué ficheros son parte del
+grafo, y tanto el constructor del grafo como el manifiesto lo consultan.
+Ya no queda ninguna lista literal de extensiones en el cálculo de
+obsolescencia, ni dos listas de directorios que puedan divergir: el
+conjunto que el manifiesto describe es, por construcción, el mismo que el
+grafo leyó.
+
+**El manifiesto se toma antes del grafo.** Un manifiesto escrito después
+del build podía describir un árbol que el grafo nunca vio: un fichero que
+apareciese entre los dos quedaba en el manifiesto y faltaba en el grafo, y
+la llamada siguiente encontraba el manifiesto fresco y servía un grafo que
+no cubría el árbol. Tomado antes, el manifiesto es siempre anterior o igual
+al grafo, así que cualquier cambio intermedio lo invalida.
+
+**Un efecto secundario medido**: el handler de AIX usa el mismo manifiesto
+para detectar ficheros borrados. Con la regla nueva, una `.tf` borrada
+también se ve.
+
+### Evidencia
+
+- Test RED primero: `crates/cognicode-core/tests/h24_manifest_covers_the_languages_the_graph_reads.rs`
+  — **2/2 en rojo** antes del arreglo (el grafo que el producto contesta
+  era el de antes del cambio) y **2/2 en verde** después. Es prueba de
+  superficie pública: llama al handler real y mira el grafo que el
+  producto contesta, no una función interna.
+- UAT efímero por JSON-RPC contra el binario real: el binario anterior
+  **falla** ("la herramienta no tiene identidad declarada para el recurso
+  nuevo") y el nuevo **pasa** en Terraform y en Ansible. El UAT es
+  efímero y no se promueve: la prueba permanente ya cubre los dos
+  lenguajes.
+- `bash scripts/test-fast.sh` → rc=0.
+- `bash scripts/test-full.sh` → rc=0.
+- `merge-gate` verde sobre el commit del PR.
+
+### Un hallazgo que queda al lado, y su destino
+
+Al medir la regla del manifiesto aparecieron otras dos listas literales de
+extensiones: la del vigilante (`is_watchable`, 30 extensiones) y la que
+publica el endpoint `/watch` (21), que no es la misma que aplica el
+servidor. No se tocan aquí: con el manifiesto arreglado, esa lista ya no
+puede hacer que el producto miente — decide cuándo avisar, no qué es
+verdad. Pero son una tercera y una cuarta fuente de verdad, así que
+quedan anotadas como candidato propio (C15 en la backlog de la misión)
+con su evidencia.
+
+### Lo que sigue abierto dentro de la misma unidad
+
+C3 (la CLI ve un grafo distinto del que ve el MCP) y C4 (`iac_query`
+publica el nombre interno de Rust). El candidato C2 queda resuelto; la
+cadena de la misión encadena el siguiente.
