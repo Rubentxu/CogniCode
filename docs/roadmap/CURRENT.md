@@ -29,7 +29,7 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **23** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **26** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
@@ -100,9 +100,37 @@ código antes de escribirlos: siete son candidatos nuevos de la backlog
 revisión del ciclo C17 añadió uno más: `C24`, las superficies por fichero
 que no dicen qué referencias no ataron.
 
-El siguiente trabajo es **C18**: los metadatos reales de la arista y la
-profundidad que le corresponde a la consulta. Después, el corte de release,
-que es lo que convierte el trabajo en instalable.
+## La auditoría del 2026-10-21 reordena el trabajo
+
+No abre unidades nuevas: usa las mismas tres especificaciones y la misma
+backlog. Lo que cambia es el orden, y sale de lo que el informe midió en el
+código, no de una opinión.
+
+| Hito | Qué entrega | Candidato |
+|---|---|---|
+| 1 | Que ninguna cobertura engañe: la de ficheros, la de relaciones y la de la caché | `C25`, `C20`, `C24` |
+| 2 | Que la consulta de infraestructura no responda cosas falsas | `C18`, `C19` |
+| 3 | Que verificar un cambio deje de consumir el tiempo que no compra garantía | `C6`, `C5`, `C7`, `C21`, `C8` |
+| 4 | Una sola autoridad de construcción | `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
+| 5 | Certificación y corte de release | `C11`, `C14` |
+
+La línea de Kotlin (`C12`, `C13`) queda detrás del corte: es la unidad más
+grande del roadmap y ningún hito la necesita.
+
+Tres candidatos nacen de este informe: **C25**, la cobertura en caché —un
+fichero recuperado de la caché no cuenta como analizado, y una construcción
+en caliente puede informar de un 0 % sobre un grafo completo—; **C26**, el
+fallo silencioso del lector especializado, que se degrada a resultado
+genérico en vez de conservar el diagnóstico; y **C27**, la prueba
+metamórfica, que comprueba identidad, caché, cobertura y relaciones en un
+solo escenario. Dos candidatos que ya existían recibieron la evidencia
+nueva: **C19** con el caso de Bash, y **C10** con el ejemplo de una
+identidad semántica que `SymbolFqn::parse` no entiende.
+
+El siguiente trabajo es **C25**: la cobertura en caché. Después, **C18**,
+los metadatos reales de la arista y la profundidad que le corresponde a la
+consulta. El corte de release —**C14**— cuelga de **C11**, y es lo que
+convierte el trabajo en instalable.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.

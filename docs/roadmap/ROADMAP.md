@@ -441,8 +441,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     Una referencia sin resolver se publica con su fichero, su línea, su
 >     motivo y su clase, y `complete` no se dice si queda alguna pendiente.
 >     Queda el error del recorrido, que se cuenta aparte de la exclusión
->     legítima, y el vigilante, que todavía nombra un conjunto de ficheros
->     propio.
+>     legítima; el vigilante, que todavía nombra un conjunto de ficheros
+>     propio; y la cobertura en caché, que no es la cobertura: un fichero
+>     recuperado de la caché no cuenta como analizado.
 >   - **La consulta de infraestructura contesta con el tipo, la arista y la
 >     profundidad que le corresponden** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
@@ -472,8 +473,18 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   resueltas cuatro cosas —el manifiesto deriva del registro de lenguajes,
 >   la CLI y el MCP responden sobre el mismo grafo, la consulta de
 >   infraestructura publica el nombre del dominio, y la referencia sin
->   resolver se publica con su origen y su motivo—, y las que quedan son
->   las de arriba.
+>   resolver se publica con su origen y su motivo—; su revisión corrigió
+>   además el ámbito de la resolución y la promesa de `complete`.
+>
+>   **La auditoría del 2026-10-21** confirma el orden y no abre unidades
+>   nuevas: primero la veracidad del grafo —que ninguna cobertura engañe y
+>   que la consulta de infraestructura no responda cosas falsas—, después la
+>   economía del testing, después la simplificación técnica —una sola
+>   autoridad de construcción—, y por último la certificación y el corte de
+>   release. Sus hallazgos nuevos —la cobertura en caché, el fallo silencioso
+>   del lector especializado, la gramática de Bash y las identidades
+>   semánticas— son candidatos de la backlog: `SPEC-CU-007`, `008` y `009` ya
+>   los cubren.
 >
 >   El **corte de release** cuelga de H5 y de
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
