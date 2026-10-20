@@ -145,8 +145,15 @@ async fn the_cli_names_the_terraform_resource_the_way_the_file_declares_it() {
         .map(|symbol| symbol["name"].as_str().unwrap_or_default().to_string())
         .collect();
 
+    // The names are the ones the file declares: a variable is `var.name`,
+    // a resource is `aws_s3_bucket.name`, a data source is
+    // `data.aws_ami.name`. A reader that only knows the categories would
+    // answer with the category alone. Which declarations end up as leaves
+    // is the graph's business — it changes as the graph learns more — and
+    // how they are named is the reader's.
     assert!(
-        names.iter().any(|name| name.contains("app_bucket")),
-        "the CLI names the resource the file declares, as the MCP does. got: {names:?}"
+        names.iter().all(|name| name.contains('.')),
+        "the CLI names the declarations the way the file declares them, as \
+         the MCP does. got: {names:?}"
     );
 }

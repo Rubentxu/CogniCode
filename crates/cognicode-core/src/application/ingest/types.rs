@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::{Symbol, SymbolId};
-use crate::domain::value_objects::{DependencyType, Provenance};
+use crate::domain::value_objects::{DependencyType, PendingReference, Provenance};
 use cognicode_graph_algos::algorithms::Statement;
 use serde::{Deserialize, Serialize};
 
@@ -175,12 +175,15 @@ impl ExtractionResult {
 
 /// What one file declares, in the shape the graph consumes.
 ///
-/// Two kinds of relation live here and they are not the same thing. An
+/// Three kinds of relation live here and they are not the same thing. An
 /// identified relation names both of its ends already, because the reader
 /// that produced it knew them. A call names only the callee, because the
-/// reader heard a name and the project still has to match it. Keeping them
-/// apart is what lets a file that was read by a language's own reader
-/// enter the graph without a second reader going over it.
+/// reader heard a name and the project still has to match it. A pending
+/// reference names a callee that nobody declared: the reference is a fact
+/// about what the file says, and dropping it would hide from the consumer
+/// the very thing it asked about. Keeping them apart is what lets a file
+/// that was read by a language's own reader enter the graph without a
+/// second reader going over it.
 #[derive(Debug, Clone, Default)]
 pub struct FileFacts {
     /// Symbols the file declares. Their identity is the one the reader
@@ -190,6 +193,10 @@ pub struct FileFacts {
     pub identified: Vec<FileRelation>,
     /// Calls that still need a project-wide lookup by name.
     pub calls: Vec<(Symbol, String)>,
+    /// References the file states and nobody declared: the far end is not
+    /// identified yet, and the project may still be able to tie it to a
+    /// declaration in another file.
+    pub pending: Vec<PendingReference>,
 }
 
 /// A relation between two declarations, both of them already identified.

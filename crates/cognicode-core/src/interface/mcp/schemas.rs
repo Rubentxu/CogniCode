@@ -924,29 +924,69 @@ pub struct SkippedFileInfo {
     pub detail: String,
 }
 
+/// A reference the graph could not tie to a declaration.
+///
+/// A file can be read and still state a relation the project cannot prove:
+/// the reference names something nobody declares, or names several things
+/// and the graph cannot tell which one it means. Those are facts about the
+/// code, and a consumer that asks "what do you know?" has to hear them.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+pub struct PendingReferenceInfo {
+    /// The file that writes the reference.
+    pub file: String,
+    /// The line the reference is written on, counting from one.
+    pub line: Option<u32>,
+    /// The name the reference names.
+    pub target: String,
+    /// What the reference is.
+    pub kind: String,
+    /// Why the far end could not be identified: `unresolved` when no
+    /// declaration carries the name, `ambiguous` when several do.
+    pub reason: PendingReason,
+    /// How many declarations carry the name, when there are several.
+    pub candidates: Option<usize>,
+}
+
+/// Why the far end of a reference could not be identified.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PendingReason {
+    /// No declaration carries the name.
+    Unresolved,
+    /// More than one does, and the graph cannot prove which one.
+    Ambiguous,
+}
+
 /// How much of what was asked for is actually in the answer.
 ///
 /// This is an ADT on purpose: `Complete` carries no list, so "complete but
 /// here are four gaps" is unrepresentable, and `Partial` is only ever
 /// constructed through [`MergeCoverage::from`], which yields `Complete`
-/// when the skip list is empty. `file_count`-style counts cannot express
+/// when both lists are empty. `file_count`-style counts cannot express
 /// that, which is how a partial merge used to read as a clean one.
+///
+/// The two lists are the two coverages: the files that could not be read,
+/// and the references that could not be tied to a declaration.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum MergeCoverage {
     Complete,
-    Partial { skipped_files: Vec<SkippedFileInfo> },
+    Partial {
+        skipped_files: Vec<SkippedFileInfo>,
+        pending_references: Vec<PendingReferenceInfo>,
+    },
 }
 
 impl MergeCoverage {
     /// The only constructor, and the only place the empty-vs-non-empty
     /// decision is made.
-    pub fn from(skipped: Vec<SkippedFileInfo>) -> Self {
-        if skipped.is_empty() {
+    pub fn from(skipped: Vec<SkippedFileInfo>, pending: Vec<PendingReferenceInfo>) -> Self {
+        if skipped.is_empty() && pending.is_empty() {
             MergeCoverage::Complete
         } else {
             MergeCoverage::Partial {
                 skipped_files: skipped,
+                pending_references: pending,
             }
         }
     }

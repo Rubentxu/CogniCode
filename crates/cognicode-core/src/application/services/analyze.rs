@@ -207,7 +207,7 @@ impl ServiceAnalyzer {
     /// disciplina.
     fn partial_gaps_from_last_build(&self) -> Option<Vec<AnalysisError>> {
         let report = self.service.get_last_build_report()?;
-        let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } =
+        let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, .. } =
             report.status
         else {
             return None;

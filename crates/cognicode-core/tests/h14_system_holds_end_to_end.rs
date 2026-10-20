@@ -169,11 +169,11 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
 
     // The status must agree: both are Partial with the K0 gap.
     let strategy_skipped = match &strategy_report.status {
-        BuildStatus::Partial { skipped } => skipped.clone(),
+        BuildStatus::Partial { skipped, .. } => skipped.clone(),
         BuildStatus::Complete => panic!("strategy side: expected Partial, got Complete"),
     };
     let service_skipped = match &service_report.status {
-        BuildStatus::Partial { skipped } => skipped.clone(),
+        BuildStatus::Partial { skipped, .. } => skipped.clone(),
         BuildStatus::Complete => panic!("service side: expected Partial, got Complete"),
     };
 
@@ -232,7 +232,7 @@ fn full_graph_strategy_and_analysis_service_agree_on_k0_gap() {
         .get_last_build_report()
         .expect("get_last_build_report after build_graph_per_file_with_report");
     match &accessor_report.status {
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             assert!(skipped.iter().any(|s| s.path.ends_with("Other.kt")));
         }
         BuildStatus::Complete => panic!("accessor: expected Partial, got Complete"),

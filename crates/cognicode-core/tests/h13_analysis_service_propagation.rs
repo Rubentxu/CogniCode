@@ -87,7 +87,7 @@ fn build_graph_per_file_with_report_returns_typed_partial_on_kt_corpus() {
         .build_graph_per_file_with_report(&tmp)
         .expect("build_graph_per_file_with_report succeeds");
     match &report.status {
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             assert!(
                 skipped.iter().any(|s| s.path.ends_with("Other.kt")),
                 "the .kt file must surface as a Partial skip via the H1.1 envelope, got {skipped:?}"
@@ -115,7 +115,7 @@ fn build_graph_per_file_now_sets_last_build_report() {
         .get_last_build_report()
         .expect("build_graph_per_file must now set last_build_report");
     match &report.status {
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             assert!(
                 skipped.iter().any(|s| s.path.ends_with("Other.kt")),
                 "the K0 gap must survive the legacy entry point, got {skipped:?}"
@@ -139,7 +139,7 @@ fn build_graph_per_file_kt_skip_projects_to_unsupported_relevant() {
     svc.build_graph_per_file(&tmp).expect("ok");
     let report = svc.get_last_build_report().expect("ok");
     let kt_skip = match &report.status {
-        BuildStatus::Partial { skipped } => skipped
+        BuildStatus::Partial { skipped, .. } => skipped
             .iter()
             .find(|s| s.path.ends_with("Other.kt"))
             .expect("the .kt must be in skipped"),

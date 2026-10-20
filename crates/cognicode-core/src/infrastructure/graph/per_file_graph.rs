@@ -5,7 +5,7 @@
 //! to analyze individual files and then combine them into larger graphs.
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
-use crate::domain::value_objects::{DependencyType, WalkDecision};
+use crate::domain::value_objects::{DependencyType, PendingReference, WalkDecision};
 use crate::infrastructure::graph::semantic_layer::{call_graph_from, semantic_facts};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
@@ -51,7 +51,13 @@ pub type CrossFileEdge = (
     crate::domain::aggregates::call_graph::SymbolId,
 );
 
-pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>);
+/// Result of building a single file's call graph.
+///
+/// The cross-file buffer holds the relations whose far end lives in another
+/// file; the pending buffer holds the references the file states and nobody
+/// declared, whose far end is not identified yet. Both are settled once
+/// every file of the merge is in place.
+pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>, Vec<PendingReference>);
 
 /// Project-wide symbol index for cross-file call resolution (H-R4-2).
 ///
@@ -144,6 +150,29 @@ impl GlobalSymbolIndex {
         let key = name.to_lowercase();
         self.by_name.entry(key).or_default().push(symbol_id.clone());
         self.by_id.insert(symbol_id, (file, name.to_string()));
+    }
+
+    /// The candidates of a name that live in the same directory as the
+    /// file that asks for them.
+    ///
+    /// Infrastructure code is scoped by directory: the declarations a file
+    /// can see are the ones of its own module, and a module is a directory.
+    /// A name that several modules declare is told apart by the module that
+    /// writes the reference.
+    pub fn candidates_in_directory(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
+        let Some(candidates) = self.by_name.get(name_lower) else {
+            return Vec::new();
+        };
+        candidates
+            .iter()
+            .filter(|id| {
+                self.by_id
+                    .get(*id)
+                    .and_then(|(file, _)| file.parent())
+                    .is_some_and(|parent| parent == directory)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Resolves a callee name to a target, preferring the caller-file
@@ -352,7 +381,7 @@ impl PerFileGraphCache {
         }
 
         // Build the graph for this file (no global index: per-file resolution only)
-        let (graph, _cross_file) = self.build_file_graph(&path_str, None)?;
+        let (graph, _cross_file, _pending) = self.build_file_graph(&path_str, None)?;
 
         // Cache it
         {
@@ -450,6 +479,10 @@ impl PerFileGraphCache {
         // Cross-file edges collected per file, to be reconciled into the
         // merged graph once every file's symbols are in place.
         let mut pending_cross_file_edges: Vec<CrossFileEdge> = Vec::new();
+        // The references the files state and nobody declared. They are not
+        // edges yet: the merge may still be able to tie them to a declaration
+        // in another of the merged files.
+        let mut pending_references: Vec<PendingReference> = Vec::new();
 
         for path in file_paths {
             let path_str = path.to_string_lossy().to_string();
@@ -457,11 +490,11 @@ impl PerFileGraphCache {
             // Get from cache or build. Cache hit does not produce skipped
             // entries; only actual build failures do.
             let built: Result<BuildFileResult, std::io::Error> = match self.get_cached(path) {
-                Some(g) => Ok(((*g).clone(), Vec::new())),
+                Some(g) => Ok(((*g).clone(), Vec::new(), Vec::new())),
                 None => self.build_file_graph(&path_str, Some(&global_index)),
             };
-            let (graph, cross_file) = match built {
-                Ok(pair) => pair,
+            let (graph, cross_file, pending) = match built {
+                Ok(triple) => triple,
                 Err(e) => {
                     skipped.push(SkippedFile {
                         path: path_str,
@@ -502,6 +535,7 @@ impl PerFileGraphCache {
             // `add_dependency` can accept them, and that only becomes
             // true after this whole loop has run.
             pending_cross_file_edges.extend(cross_file);
+            pending_references.extend(pending);
         }
 
         // Reconcile cross-file edges now that every file's symbols have
@@ -519,10 +553,26 @@ impl PerFileGraphCache {
         }
         let _ = reconciled_cross_file; // accounted for in edge_count(); kept for future diagnostics
 
-        let status = if skipped.is_empty() {
+        // The references that could not be tied to a declaration are looked
+        // up once every file of the merge is known: the declaration they
+        // name may live in another of the merged files. What the lookup
+        // proves becomes a relation; what it cannot prove stays pending and
+        // says why.
+        let resolution = crate::infrastructure::graph::pending::resolve_pending_references(
+            pending_references,
+            &global_index,
+        );
+        for (source_id, target_id, kind) in &resolution.proven {
+            merged.add_dependency(source_id, target_id, *kind).ok();
+        }
+
+        let status = if skipped.is_empty() && resolution.pending.is_empty() {
             BuildStatus::Complete
         } else {
-            BuildStatus::Partial { skipped }
+            BuildStatus::Partial {
+                skipped,
+                pending: resolution.pending,
+            }
         };
 
         BuildReport {
@@ -552,17 +602,24 @@ impl PerFileGraphCache {
                 Some(l) => l,
                 None => continue,
             };
-            // Un lenguaje con capa semántica no aporta call targets al
-            // índice: sus aristas (`contains`, `references`) son
-            // intra-fichero y las resuelve el handler. Indexar aquí sus
-            // símbolos genéricos (`resource`, `bucket`) solo volvería a
-            // introducir la segunda autoridad que este módulo evita.
+            // A language with a semantic layer names its declarations the
+            // way its reader named them, and those declarations are the ones
+            // a reference written in another file can point at. The index
+            // takes them from the same reader the graph takes them from:
+            // indexing the generic symbols of the same file would be a
+            // second authority saying something else.
             if crate::infrastructure::parser::language_config::LanguageConfig::for_language(
                 language,
             )
             .semantic_handler
             .is_some()
             {
+                if let Some(facts) = semantic_facts(language, &source, &path_str) {
+                    for symbol in facts.symbols {
+                        let sid = SymbolId::new(symbol.fully_qualified_name());
+                        idx.insert(sid, path.to_path_buf(), symbol.name());
+                    }
+                }
                 continue;
             }
             let parser = match TreeSitterParser::new(language) {
@@ -631,9 +688,11 @@ impl PerFileGraphCache {
 
         // The semantic layer leads when the language declares one. Its
         // edges stay inside the file, so `cross_file_edges` is empty by
-        // construction and the global index stays out of it.
+        // construction and the global index stays out of it. The references
+        // it could not tie travel with the file: the merge may still be able
+        // to tie them to a declaration in another of the merged files.
         if let Some(facts) = semantic_facts(language, &source, file_path) {
-            return Ok((call_graph_from(&facts), Vec::new()));
+            return Ok((call_graph_from(&facts), Vec::new(), facts.pending));
         }
 
         let parser =
@@ -761,7 +820,7 @@ impl PerFileGraphCache {
             //    edges; counting and surfacing the drops is H4.2.
         }
 
-        Ok((graph, cross_file_edges))
+        Ok((graph, cross_file_edges, Vec::new()))
     }
 
     /// Returns the number of cached files
@@ -1147,17 +1206,29 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 
 /// Overall status of a `merge_with_report` operation.
 ///
-/// Three states are distinguished on purpose. A "Complete" result means
-/// every input file was processed. A "Partial" result carries a list of
-/// skipped files the caller must surface. There is intentionally no
-/// "Failed" state at this layer: if the strategy cannot start (e.g.
-/// the project directory does not exist), the surrounding method
-/// returns `Err` and never reaches `merge_with_report`. A "no findings"
-/// outcome is only legitimate when coverage was `Complete`.
+/// Two coverages live here and they are not the same thing: the files the
+/// walk could not process, and the references it could not tie to a
+/// declaration. A "Complete" result means both of them are whole — every
+/// input file was processed and every reference the files state points at a
+/// declaration the project holds. A "Partial" result carries the list of
+/// what is missing, so the caller can say it instead of concluding "no
+/// findings". There is intentionally no "Failed" state at this layer: if the
+/// strategy cannot start (e.g. the project directory does not exist), the
+/// surrounding method returns `Err` and never reaches `merge_with_report`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildStatus {
+    /// Every file was processed and every reference was tied to a
+    /// declaration.
     Complete,
-    Partial { skipped: Vec<SkippedFile> },
+    /// Something is missing: a file the walk could not process, or a
+    /// reference that could not be tied to a declaration.
+    Partial {
+        /// The files the walk could not process, with the reason.
+        skipped: Vec<SkippedFile>,
+        /// The references that could not be tied to a declaration, with
+        /// their origin and the class that says why.
+        pending: Vec<PendingReference>,
+    },
 }
 
 /// The result of `PerFileGraphCache::merge_with_report`.
@@ -1432,7 +1503,7 @@ mod tests {
         // The broken file must have been reported as skipped with
         // a Parse reason.
         match &report.status {
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 let broken_skipped = skipped
                     .iter()
                     .find(|s| s.path.ends_with("broken_syntax.rs"))
@@ -1513,7 +1584,7 @@ mod tests {
                 "an unreadable file should contribute 0 symbols"
             );
             match &report.status {
-                BuildStatus::Partial { skipped } => {
+                BuildStatus::Partial { skipped, .. } => {
                     let s = skipped
                         .iter()
                         .find(|s| s.path.ends_with("unreadable.rs"))

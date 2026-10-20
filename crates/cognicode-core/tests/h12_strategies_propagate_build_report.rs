@@ -96,7 +96,7 @@ fn full_graph_strategy_via_trait_dyn_returns_typed_build_report() {
     // it on the way out. (If it does, the propagation regressed
     // and the H1.1 invariant is broken at the seam.)
     match &report.status {
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             let kt_skips: Vec<&str> = skipped
                 .iter()
                 .filter(|s| s.path.ends_with("Other.kt"))
@@ -128,7 +128,7 @@ fn per_file_strategy_via_trait_dyn_returns_typed_build_report() {
         .build_full_graph_report(&tmp)
         .expect("build_full_graph_report succeeds");
     match &report.status {
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             assert!(
                 skipped.iter().any(|s| s.path.ends_with("Other.kt")),
                 "PerFileStrategy via &dyn must surface .kt as a Partial skip, got {skipped:?}"
@@ -155,7 +155,7 @@ fn full_graph_strategy_classifier_routes_kt_to_unsupported_relevant() {
         .build_full_graph_report(&tmp)
         .expect("build_full_graph_report succeeds");
     let kt_skip = match &report.status {
-        BuildStatus::Partial { skipped } => skipped
+        BuildStatus::Partial { skipped, .. } => skipped
             .iter()
             .find(|s| s.path.ends_with("Other.kt"))
             .expect("the .kt file must be in skipped"),

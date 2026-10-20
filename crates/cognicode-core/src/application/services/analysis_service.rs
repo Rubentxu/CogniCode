@@ -440,6 +440,11 @@ impl AnalysisService {
         let mut all_relationships: Vec<(String, String, String)> = Vec::new();
         let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
             Vec::new();
+        // The references the files state and nobody declared. They are not
+        // relations yet: the project may still be able to tie them to a
+        // declaration in another file.
+        let mut pending_references: Vec<crate::domain::value_objects::PendingReference> =
+            Vec::new();
 
         // ENGINE-DET (e38.2): rayon's parallel collection order is
         // nondeterministic, so the results are folded in deterministic
@@ -479,6 +484,12 @@ impl AnalysisService {
             // knew both ends.
             identified_relations.extend(facts.identified.iter().cloned());
 
+            // A reference whose far end is not identified is kept, with its
+            // origin: the project may still be able to tie it to a
+            // declaration in another file, and if it cannot, the consumer
+            // has to hear about it.
+            pending_references.extend(facts.pending.iter().cloned());
+
             for (caller, callee_name) in facts.calls {
                 // Preserve the caller's file AND FQN so the resolver can
                 // apply the "same file" / "same crate root"
@@ -497,6 +508,19 @@ impl AnalysisService {
             store
                 .add_dependency(&relation.caller, &relation.callee, relation.kind)
                 .ok();
+        }
+
+        // The references the files could not tie to a declaration are looked
+        // up now that every symbol of every file is in the index: the
+        // declaration they name may live in another file of the project.
+        // What the lookup proves becomes a relation; what it cannot prove
+        // stays pending and travels with the report.
+        let pending_resolution = crate::infrastructure::graph::pending::resolve_pending_references(
+            pending_references,
+            &global_index,
+        );
+        for (source_id, target_id, kind) in &pending_resolution.proven {
+            store.add_dependency(source_id, target_id, *kind).ok();
         }
 
         let total_relationships = all_relationships.len() + identified_count;
@@ -524,8 +548,9 @@ impl AnalysisService {
         // Stage: resolve — log edge resolution outcome
         info!(
             "build_project_graph: stage=resolve — {} relationships, {} resolved, {} unresolved",
-            total_relationships,
-            total_relationships.saturating_sub(unresolved_edges),
+            total_relationships + pending_resolution.proven.len(),
+            (total_relationships + pending_resolution.proven.len())
+                .saturating_sub(unresolved_edges),
             unresolved_edges
         );
 
@@ -535,13 +560,15 @@ impl AnalysisService {
             guard.clone()
         };
         let call_graph = store.to_call_graph();
-        // F2.W8: attach the call graph to the BuildReport and store
-        // it. Empty skipped list → Complete; otherwise Partial.
-        let status = if skipped_vec.is_empty() {
+        // The status carries the two coverages: the files the walk could not
+        // process, and the references it could not tie to a declaration.
+        // "Complete" is only said when both of them are whole.
+        let status = if skipped_vec.is_empty() && pending_resolution.pending.is_empty() {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: skipped_vec,
+                pending: pending_resolution.pending,
             }
         };
         let report = crate::infrastructure::graph::per_file_graph::BuildReport {
@@ -743,17 +770,18 @@ impl AnalysisService {
         // Merge the per-file cache's own report (.rs parse/read
         // failures) with our K0 honest-gap skips. The envelope
         // collapses to Complete only when BOTH lists are empty.
-        let (graph, mut all_skipped) = match cache_report.status {
-            PfgBuildStatus::Complete => (cache_report.graph, Vec::new()),
-            PfgBuildStatus::Partial { skipped } => (cache_report.graph, skipped),
+        let (graph, mut all_skipped, all_pending) = match cache_report.status {
+            PfgBuildStatus::Complete => (cache_report.graph, Vec::new(), Vec::new()),
+            PfgBuildStatus::Partial { skipped, pending } => (cache_report.graph, skipped, pending),
         };
         all_skipped.extend(k0_skipped);
         all_skipped.extend(walk_skipped);
-        let final_status = if all_skipped.is_empty() {
+        let final_status = if all_skipped.is_empty() && all_pending.is_empty() {
             PfgBuildStatus::Complete
         } else {
             PfgBuildStatus::Partial {
                 skipped: all_skipped,
+                pending: all_pending,
             }
         };
         let final_report = PfgBuildReport {
@@ -1260,6 +1288,7 @@ impl AnalysisService {
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: k0_skipped,
+                pending: Vec::new(),
             }
         };
         *self.last_build_report.lock().unwrap() =
@@ -1795,6 +1824,7 @@ fn read_file_facts(
         symbols,
         identified: Vec::new(),
         calls,
+        pending: Vec::new(),
     })
 }
 
@@ -3630,7 +3660,7 @@ def b():
                     // ok.rs is the only source file — every build
                     // should land on Complete.
                 }
-                BuildStatus::Partial { skipped } => {
+                BuildStatus::Partial { skipped, .. } => {
                     panic!(
                         "expected Complete status with 1 valid source file, got Partial with {} skipped",
                         skipped.len()
@@ -3923,7 +3953,7 @@ def b():
                  lenguaje conocido-sin-soporte y debe aparecer en skipped. \
                  BuildReport: {report:?}"
             ),
-            BuildStatus::Partial { skipped } => skipped
+            BuildStatus::Partial { skipped, .. } => skipped
                 .iter()
                 .map(|s| {
                     std::path::Path::new(&s.path)

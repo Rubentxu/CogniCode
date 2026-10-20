@@ -58,6 +58,7 @@ pub fn present_build_graph(
         edges: Vec::new(),
         message: String::new(),
         skipped_files: skipped,
+        pending_references: None,
         basis: None,
     }
 }

@@ -497,13 +497,18 @@ impl PerFileStrategy {
                 crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
                     crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                         skipped: walk_skipped,
+                        pending: Vec::new(),
                     }
                 }
                 crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                     mut skipped,
+                    pending,
                 } => {
                     skipped.extend(walk_skipped);
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped }
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                        skipped,
+                        pending,
+                    }
                 }
             };
         }
@@ -710,7 +715,10 @@ impl FullGraphStrategy {
         } else {
             let mut skipped = walk_skipped;
             skipped.extend(parse_skipped);
-            BuildStatus::Partial { skipped }
+            BuildStatus::Partial {
+                skipped,
+                pending: Vec::new(),
+            }
         };
 
         crate::infrastructure::graph::per_file_graph::BuildReport { graph, status }
@@ -1085,7 +1093,9 @@ mod k0_honest_coverage_tests {
 
         let go_analyzed = simple_names(&report.graph).iter().any(|n| n == "Util");
         let go_listed = match &report.status {
-            BuildStatus::Partial { skipped } => skipped.iter().any(|s| s.path.ends_with("util.go")),
+            BuildStatus::Partial { skipped, .. } => {
+                skipped.iter().any(|s| s.path.ends_with("util.go"))
+            }
             BuildStatus::Complete => false,
         };
         assert!(
@@ -1096,7 +1106,7 @@ mod k0_honest_coverage_tests {
             simple_names(&report.graph)
         );
 
-        if let BuildStatus::Partial { skipped } = &report.status {
+        if let BuildStatus::Partial { skipped, .. } = &report.status {
             assert!(
                 !skipped.iter().any(|s| s.path.ends_with("README.md")),
                 "README.md es exclusion legitima (lenguaje no registrado), no un gap: {:?}",
@@ -1120,7 +1130,7 @@ mod k0_honest_coverage_tests {
                     "Complete con Util.kt sin analizar: kotlin es un gap conocido, no una exclusion legitima"
                 );
             }
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 let kt = skipped
                     .iter()
                     .find(|s| s.path.ends_with("Util.kt"))
@@ -1288,7 +1298,9 @@ mod w3_equivalence_tests {
         let report = per;
 
         match &report.status {
-            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped, ..
+            } => {
                 let broken = skipped.iter().find(|s| s.path.ends_with("broken.rs"));
                 assert!(
                     broken.is_some(),
@@ -1686,7 +1698,7 @@ mod h02_silent_errors_full_strategy_tests {
             BuildStatus::Complete => {
                 panic!("expected Partial because one directory is unreadable, got Complete")
             }
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 assert!(
                     !skipped.is_empty(),
                     "expected at least one skipped entry, got 0"

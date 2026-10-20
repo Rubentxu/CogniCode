@@ -162,6 +162,8 @@ use crate::interface::mcp::schemas::{
     OverviewDetail,
     OverviewMeta as SchemaOverviewMeta,
     PathEntry,
+    PendingReason,
+    PendingReferenceInfo,
     QuerySymbolInput,
     QuerySymbolOutput,
     RankedSymbolsInput,
@@ -1101,9 +1103,11 @@ pub struct BuildGraphOutput {
     /// Explicit build outcome surfaced to the caller so
     /// consumers (LLM, CI, alert) can branch on it without parsing
     /// `skipped_files`. Values:
-    ///   - `"complete"`: walk happened, no skipped files.
-    ///   - `"partial"`: walk happened, at least one file was
-    ///     dropped (I/O or parsing failure).
+    ///   - `"complete"`: walk happened, no file was dropped and no
+    ///     reference was left without a declaration.
+    ///   - `"partial"`: walk happened, and something is missing: a file
+    ///     was dropped (I/O or parsing failure), or a reference could not
+    ///     be tied to a declaration.
     ///   - `"unknown"`: served from the in-memory graph cache, no
     ///     walk happened on this call.
     pub status: String,
@@ -1118,6 +1122,18 @@ pub struct BuildGraphOutput {
     /// because of I/O / parsing failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_files: Option<Vec<SkippedFileDto>>,
+    /// The references the graph could not tie to a declaration.
+    ///
+    /// A file can be read and still state a relation the project cannot
+    /// prove: the reference names something nobody declares, or names
+    /// several things and the graph cannot tell which one it means.
+    /// Those are facts about the code, and they travel with the answer
+    /// next to the relations that were resolved.
+    ///
+    /// `None` when the graph was served from cache (no walk happened on
+    /// this call); `Some([])` when every reference was tied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_references: Option<Vec<PendingReferenceInfo>>,
     /// Identity of what the graph was built from.
     /// `None` only when identity cannot be established at all;
     /// otherwise present with `complete: false` when any component
@@ -1148,6 +1164,25 @@ pub struct SkippedFileDto {
     pub path: String,
     pub reason_kind: &'static str,
     pub reason: String,
+}
+
+/// Maps a pending reference to the record the consumer reads.
+fn pending_reference_info(
+    reference: &crate::domain::value_objects::PendingReference,
+) -> PendingReferenceInfo {
+    use crate::domain::value_objects::PendingClass;
+    let (reason, candidates) = match &reference.class {
+        PendingClass::Unresolved => (PendingReason::Unresolved, None),
+        PendingClass::Ambiguous { candidates } => (PendingReason::Ambiguous, Some(*candidates)),
+    };
+    PendingReferenceInfo {
+        file: reference.origin_file.clone(),
+        line: reference.origin_line,
+        target: reference.target.clone(),
+        kind: reference.kind.to_string(),
+        reason,
+        candidates,
+    }
 }
 
 /// Handler for build_graph tool
@@ -1297,7 +1332,7 @@ pub async fn handle_build_graph(
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
-    let (skipped_files, status) = if loaded_from_cache {
+    let (skipped_files, pending_references, status) = if loaded_from_cache {
         // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
         // unreadable-file detection). Coverage of the restored graph is
@@ -1305,15 +1340,16 @@ pub async fn handle_build_graph(
         // `complete` with an empty skip list, exactly like a fresh
         // walk with no omissions. The old `unknown` verdict was correct
         // only when no validation existed (pre-persistence).
-        (Some(Vec::new()), "complete".to_string())
+        (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
     } else {
         let report = ctx.analysis_service.get_last_build_report();
         match report.as_ref().map(|r| &r.status) {
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => {
-                (Some(Vec::new()), "complete".to_string())
+                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
             }
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
+                pending,
             }) => {
                 let mapped: Vec<SkippedFileDto> = skipped
                     .iter()
@@ -1337,14 +1373,16 @@ pub async fn handle_build_graph(
                         },
                     })
                     .collect();
-                (Some(mapped), "partial".to_string())
+                let pending: Vec<PendingReferenceInfo> =
+                    pending.iter().map(pending_reference_info).collect();
+                (Some(mapped), Some(pending), "partial".to_string())
             }
             None => {
                 // No report available — defensive: treat as complete
                 // (the build did not produce a BuildReport, which
                 // means the legacy path was used and no skip
                 // occurred in any case).
-                (Some(Vec::new()), "complete".to_string())
+                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
             }
         }
     };
@@ -1396,6 +1434,7 @@ pub async fn handle_build_graph(
             source, symbols, edges_count, elapsed
         ),
         skipped_files,
+        pending_references,
         basis: Some(basis),
     })
 }
@@ -3595,7 +3634,7 @@ pub async fn handle_merge_graphs(
         crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
             (MergeCoverage::Complete, 0)
         }
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, pending } => {
             let skipped: Vec<SkippedFileInfo> = skipped
                 .into_iter()
                 .map(|s| {
@@ -3617,8 +3656,10 @@ pub async fn handle_merge_graphs(
                     }
                 })
                 .collect();
+            let pending: Vec<PendingReferenceInfo> =
+                pending.iter().map(pending_reference_info).collect();
             let n = skipped.len();
-            (MergeCoverage::from(skipped), n)
+            (MergeCoverage::from(skipped, pending), n)
         }
     };
 
@@ -4947,7 +4988,7 @@ mod tests {
         assert_eq!(output.requested_file_count, 2);
         assert_eq!(output.merged_file_count, 1, "one file was actually read");
         match &output.coverage {
-            MergeCoverage::Partial { skipped_files } => {
+            MergeCoverage::Partial { skipped_files, .. } => {
                 assert_eq!(skipped_files.len(), 1);
                 assert!(
                     skipped_files[0].path.ends_with("vanished.rs"),

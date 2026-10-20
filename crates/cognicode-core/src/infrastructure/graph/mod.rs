@@ -31,6 +31,7 @@ mod on_demand_graph;
 // `GlobalSymbolIndex` for scope-aware resolution. The public surface
 // is the `GlobalSymbolIndex` type only; the rest of the module stays
 // crate-internal.
+pub(crate) mod pending;
 pub mod per_file_graph;
 mod pet_graph_store;
 pub mod semantic_layer;
