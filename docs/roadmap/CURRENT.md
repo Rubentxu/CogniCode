@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `3b75b0a89b3dde0bf68e2472f90e9be366804f27` (`main`, squash-merge del
-> PR #390: la relación de Terraform sale del AST, no de la cabecera del
-> bloque). Sustituye al de
-> `f8195f24c6b8eda39172fe93feb7431b8a80ed3b` (PR #389). **v0.101.23
+> **Snapshot**: 2026-10-20, sobre `98609de56f474bd177507e09d83c9218cf5ec283` (`main`, squash-merge del
+> PR #391: una palabra de otro alfabeto pegada dentro de otra, y el guardián
+> que faltaba). Sustituye al de
+> `3b75b0a89b3dde0bf68e2472f90e9be366804f27` (PR #390). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -21,7 +21,22 @@
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
 >
-> **Segunda unidad del ciclo 2026-10-20 (PR #391, en este mismo PR).** Una
+> **Tercera unidad del ciclo 2026-10-20 (PR #392, en este mismo PR).** La
+> cadena de continuación del servidor MCP decía «passed» sin comprobar nada:
+> sus cinco tests lanzan un servidor real sobre stdio, siguen la cadena de
+> `read_file` página a página y comparan el SHA-256 acumulado con el fichero
+> en disco — pero el guardián pedía el binario y los fixtures, y si no
+> estaban **se volvía atrás en silencio**. MEDIDO: sin el contrato de
+> bootstrap, el fichero entero terminaba en **0.00 s** y sin una sola traza
+> de paginación. Ahora los cinco tests son `#[ignore]` con motivo (la suite
+> ordinaria dice «no se ha ejecutado aquí», que es verdad), los guardianes
+> **fallan en cerrado**, y la lane de certificación los ejecuta
+> explícitamente contra los fixtures que ella misma prepara. La lane de
+> integración pierde su stage de la cadena: un stage que no puede demostrar
+> nada no es un stage. Las mismas afirmaciones, contra el mismo servidor,
+> con los mismos SHA. Detalle en `JOURNAL.md`, entrada de la tercera unidad.
+>
+> **Segunda unidad del ciclo 2026-10-20 (PR #391, mergeado).** Una
 > palabra española o inglesa con letras de otro alfabeto pegadas dentro: 33
 > líneas en 18 ficheros versionados, y el texto se entendía —solo que una
 > palabra no era la que decía—. El inventario que el repo se había hecho

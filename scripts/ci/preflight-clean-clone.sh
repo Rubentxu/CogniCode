@@ -379,12 +379,12 @@ fi
 log "  → cargo build --release --bins OK"
 
 # --- Stage 5b: bootstrap Tier-1 Rust fixture repos --------------------------
-# Tests h44_* (continuation_e2e.rs, 5 tests) require sandbox/repos/
+# The continuation chain tests (continuation_e2e.rs) require sandbox/repos/
 # with serde, ripgrep, anyhow, tokio, clap - .gitignore'd artifacts.
 # Network is permitted ONLY in this stage to clone specific pins.
-# After bootstrap, RUST_SANDBOX_BOOTSTRAP=1 is exported so the guard
-# require_sandbox_tier1() allows the 5 tests. Any SHA mismatch or
-# network failure aborts the preflight with FAIL (never skip).
+# After bootstrap, RUST_SANDBOX_BOOTSTRAP=1 is exported so the lane can
+# state that the bootstrap ran. Any SHA mismatch or network failure aborts
+# the preflight with FAIL (never skip).
 #
 # Out-of-bounds: the full 28-repo corpus is NOT cloned here (that's the
 # responsibility of `just sandbox-setup` in sandbox/justfile). This
@@ -401,10 +401,9 @@ if ! bash "$WORK_DIR/clone/scripts/sandbox/bootstrap-tier1-rust.sh" \
   fail "tier-1 rust bootstrap failed (network/mismatch/SHA)"
 fi
 
-# Export flag so the 5 tests h44_* can pass their guard.
-# The guard require_sandbox_tier1() in continuation_e2e.rs verifies
-# the presence of the fixtures (defense in depth), not this flag,
-# but the flag is exported as an explicit preflight contract.
+# Export flag so the lane can state that the bootstrap ran.
+# The guard in continuation_e2e.rs verifies the presence of the fixtures
+# itself, and fails closed when one is missing.
 export RUST_SANDBOX_BOOTSTRAP=1
 log "  → RUST_SANDBOX_BOOTSTRAP=1 exported; tier-1 fixtures verified"
 
@@ -418,6 +417,22 @@ if ! cargo test --workspace --locked -- \
   log "  → tail del test output:"
   tail -30 "$TEST_OUTPUT_FILE" | tee -a "$LOG_FILE"
   fail "cargo test falló"
+fi
+
+# The continuation chain proves itself against the real server, and the real
+# server needs the fixture set that Stage 5b staged. The workspace run above
+# skips the ignored tests, so this one runs them explicitly — and it fails
+# closed, because a chain that was never verified is not a verified chain.
+#
+# The output goes to the same file, so the baseline comparison below counts
+# these five tests as passed rather than as missing. The count of ignored
+# tests rises by five, and the receipt says so.
+log "Stage 5.1/7: la cadena de continuación MCP, contra el servidor real"
+if ! cargo test -p cognicode-mcp --test continuation_e2e --locked -- \
+     --include-ignored >>"$TEST_OUTPUT_FILE" 2>&1; then
+  log "  → tail del test output:"
+  tail -30 "$TEST_OUTPUT_FILE" | tee -a "$LOG_FILE"
+  fail "la cadena de continuación MCP no se verificó byte a byte"
 fi
 
 # Parsear resultados.

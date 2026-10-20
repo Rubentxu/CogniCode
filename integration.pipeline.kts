@@ -189,9 +189,12 @@ pipeline {
                 sh("$cd && cargo test -p cognicode-core --features evidence-kernel --test workspace_isolation || echo 'ADVISORY: workspace isolation reported failures'")
             }
 
-            stage("mcp-continuation-e2e") {
-                sh("$cd && cargo test -p cognicode-mcp --test continuation_e2e || echo 'ADVISORY: mcp continuation e2e reported failures'")
-            }
+            // The continuation chain used to have a stage here. It could not
+            // assert anything: its tests need the real server and the
+            // bootstrapped fixture set, and this lane has neither, so they
+            // reported "passed" while doing nothing. A stage that cannot
+            // assert is not a stage. The capability now lives in the
+            // certification lane, which stages the fixtures and fails closed.
         }
 
         // ----------------------------------------------------- portable binaries

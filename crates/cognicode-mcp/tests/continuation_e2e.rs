@@ -1,16 +1,25 @@
-//! H4.4 — MCP Continuation Chain Real Server Verification.
+//! The MCP continuation chain, against the real server.
 //!
-//! End-to-end integration test that drives the **real** `cognicode-mcp`
-//! binary over its stdio JSON-RPC transport, follows the `read_file`
-//! continuation chain to its natural end, and asserts that the accumulated
-//! SHA-256 matches the file on disk byte-exact.
+//! This drives the **real** `cognicode-mcp` binary over its stdio JSON-RPC
+//! transport, follows the `read_file` continuation chain to its natural end,
+//! and asserts that the accumulated SHA-256 matches the file on disk
+//! byte-exact.
 //!
-//! This harness deliberately does NOT use the sandbox orchestrator, HTTP,
-//! or the reconstructor's disk-mode fallback. The whole point is to test
-//! the server's chain behaviour directly, page by page.
+//! It does not use the sandbox orchestrator, HTTP, or the reconstructor's
+//! disk-mode fallback: the point is to test the server's chain behaviour
+//! directly, page by page.
 //!
-//! Spec: `openspec/specs/mcp-continuation-chain-real-server/spec.md`
-//! Tasks: `openspec/changes/h44-mcp-continuation-chain-real-server/tasks.md`
+//! ## Why these tests are ignored by default
+//!
+//! They need two things an ordinary checkout does not have: the server
+//! binary, and real repositories big enough to make the chain paginate.
+//! Without them the tests used to report **passed** while asserting nothing
+//! at all — a green that measured the absence of a precondition, and the
+//! whole file finished in zero seconds.
+//!
+//! So they are marked `#[ignore]`: the ordinary suite says "not run here",
+//! which is true, and the certification lane runs them explicitly against a
+//! bootstrapped fixture set, where a failure stops the certification.
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -444,71 +453,66 @@ async fn run_scenario(name: &str) -> Result<ChainResult, Box<dyn std::error::Err
 // Tests
 // =============================================================================
 //
-// The five h44_* tests are gated on TWO conditions:
-//   1. `require_binary()`   — the cognicode-mcp binary must be built (release).
-//   2. `require_sandbox_tier1()` — Tier-1 Rust fixture repos must be present
-//      at `<workspace>/sandbox/repos/{serde,ripgrep,anyhow,tokio,clap}`.
-//      These are .gitignore'd bootstrap artifacts, not source. The C8-R
-//      clean-clone preflight runs `scripts/sandbox/bootstrap-tier1-rust.sh`
-//      and exports `RUST_SANDBOX_BOOTSTRAP=1` before `cargo test` so the
-//      fixtures are present. Outside the preflight (developer runs
-//      `cargo test` directly without bootstrap), the tests early-return
-//      without panicking.
+// The five chain tests are gated on TWO conditions:
+//   1. `require_binary()` — the cognicode-mcp binary must exist.
+//   2. `require_tier1_fixtures()` — the Tier-1 Rust fixture repos must be
+//      present at `<workspace>/sandbox/repos/{serde,ripgrep,anyhow,tokio,clap}`.
+//      These are .gitignore'd bootstrap artifacts, not source. The clean-clone
+//      certification preflight stages them with
+//      `scripts/sandbox/bootstrap-tier1-rust.sh` and exports
+//      `RUST_SANDBOX_BOOTSTRAP=1` before running the tests.
+//
+// Both gates fail closed. They used to return early, which meant the tests
+// reported success without asserting anything at all.
 // =============================================================================
 
-fn require_binary() -> Option<&'static str> {
-    let bin = binary_path();
-    if !bin.exists() {
-        eprintln!(
-            "[skip] MCP binary not found at {}. Build with `cargo build --release -p cognicode-mcp`.",
-            bin.display()
-        );
-        None
-    } else {
-        Some("ok")
-    }
+/// The server binary under test.
+///
+/// Fails closed. It used to return early, which meant that a missing binary
+/// turned a certification into a green light.
+fn require_binary() -> &'static str {
+    let binary = binary_path();
+    assert!(
+        binary.exists(),
+        "the cognicode-mcp binary is not at {}. Running the test through cargo \
+         builds it: `cargo test -p cognicode-mcp --test continuation_e2e`",
+        binary.display()
+    );
+    "ok"
 }
 
-/// Tier-1 bootstrap gate: returns Some("ok") iff
-///   - RUST_SANDBOX_BOOTSTRAP=1 is set (explicit preflight contract), AND
-///   - sandbox/repos contains each of the 5 Tier-1 Rust crates expected
-///     by the h44_* tests (serde, ripgrep, anyhow, tokio, clap).
-///     If any condition fails, logs a clear skip message and returns None —
-///     caller should early-return. NOT `#[ignore]`: the test is still
-///     executed (passes silently) so battery count is preserved.
-fn require_sandbox_tier1() -> Option<&'static str> {
-    if std::env::var("RUST_SANDBOX_BOOTSTRAP").ok().as_deref() != Some("1") {
-        eprintln!(
-            "[skip] RUST_SANDBOX_BOOTSTRAP!=1. The C8-R preflight sets it after \
-             running scripts/sandbox/bootstrap-tier1-rust.sh."
-        );
-        return None;
-    }
+/// The bootstrap contract and the real repositories it stages.
+///
+/// Fails closed too. The old gate printed "Aborting: this should not happen"
+/// and then carried on as if the test had passed — a guard whose own message
+/// says "abort" and does not abort.
+fn require_tier1_fixtures() -> &'static str {
+    assert_eq!(
+        std::env::var("RUST_SANDBOX_BOOTSTRAP").ok().as_deref(),
+        Some("1"),
+        "the bootstrap contract is not in force: RUST_SANDBOX_BOOTSTRAP is not \"1\". \
+         The lane that stages the fixture set exports it before running this test"
+    );
     let root = workspace_root();
-    let tier1 = ["serde", "ripgrep", "anyhow", "tokio", "clap"];
-    for name in &tier1 {
-        let p = root.join("sandbox/repos").join(name);
-        if !p.exists() {
-            eprintln!(
-                "[skip] Tier-1 fixture missing: {}. Pre-flight Stage 5b must have \
-                 cloned it. Aborting: this should not happen with RUST_SANDBOX_BOOTSTRAP=1.",
-                p.display()
-            );
-            return None;
-        }
+    for name in ["serde", "ripgrep", "anyhow", "tokio", "clap"] {
+        let path = root.join("sandbox/repos").join(name);
+        assert!(
+            path.exists(),
+            "the Tier-1 fixture `{name}` is missing at {}. The bootstrap that \
+             stages these repositories has to run before this test, and this \
+             test is not a skip: it is the proof that the chain is byte-exact",
+            path.display()
+        );
     }
-    Some("ok")
+    "ok"
 }
 
 /// anyhow: 730-line file, MUST paginate.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the real server and the bootstrapped fixture set; the certification lane runs it explicitly"]
 async fn h44_anyhow_read_source_chain_is_byte_exact() {
-    if require_binary().is_none() {
-        return;
-    }
-    if require_sandbox_tier1().is_none() {
-        return;
-    }
+    require_binary();
+    require_tier1_fixtures();
     let r = run_scenario("tier1_anyhow_read_source")
         .await
         .expect("anyhow chain failed");
@@ -535,13 +539,10 @@ async fn h44_anyhow_read_source_chain_is_byte_exact() {
 
 /// tokio: 709-line file, MUST paginate.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the real server and the bootstrapped fixture set; the certification lane runs it explicitly"]
 async fn h44_tokio_read_source_chain_is_byte_exact() {
-    if require_binary().is_none() {
-        return;
-    }
-    if require_sandbox_tier1().is_none() {
-        return;
-    }
+    require_binary();
+    require_tier1_fixtures();
     let r = run_scenario("tier1_tokio_read_source")
         .await
         .expect("tokio chain failed");
@@ -568,13 +569,10 @@ async fn h44_tokio_read_source_chain_is_byte_exact() {
 
 /// serde: 334 lines, MUST be single-page.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the real server and the bootstrapped fixture set; the certification lane runs it explicitly"]
 async fn h44_serde_read_source_is_single_page() {
-    if require_binary().is_none() {
-        return;
-    }
-    if require_sandbox_tier1().is_none() {
-        return;
-    }
+    require_binary();
+    require_tier1_fixtures();
     let r = run_scenario("tier1_serde_read_source")
         .await
         .expect("serde chain failed");
@@ -586,13 +584,10 @@ async fn h44_serde_read_source_is_single_page() {
 
 /// ripgrep cli: 295 lines, MUST be single-page.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the real server and the bootstrapped fixture set; the certification lane runs it explicitly"]
 async fn h44_ripgrep_read_source_is_single_page() {
-    if require_binary().is_none() {
-        return;
-    }
-    if require_sandbox_tier1().is_none() {
-        return;
-    }
+    require_binary();
+    require_tier1_fixtures();
     let r = run_scenario("tier1_ripgrep_read_source")
         .await
         .expect("ripgrep chain failed");
@@ -602,13 +597,10 @@ async fn h44_ripgrep_read_source_is_single_page() {
 
 /// clap_builder: 53 lines, MUST be single-page.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs the real server and the bootstrapped fixture set; the certification lane runs it explicitly"]
 async fn h44_clap_read_source_is_single_page() {
-    if require_binary().is_none() {
-        return;
-    }
-    if require_sandbox_tier1().is_none() {
-        return;
-    }
+    require_binary();
+    require_tier1_fixtures();
     let r = run_scenario("tier1_clap_read_source")
         .await
         .expect("clap chain failed");
