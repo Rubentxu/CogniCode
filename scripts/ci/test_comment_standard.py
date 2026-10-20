@@ -17,6 +17,11 @@ does makes the reader stay. The first kind of comment is also the kind that
 rots: the paperwork moves on and the comment keeps pointing at a room nobody
 opens any more.
 
+The rule covers the product's code: Rust, TypeScript, JavaScript and Kotlin.
+The contract layer is a measurement layer rather than the product, and it
+keeps its own convention — a contract records when it measured something, and
+that record is the point of the measurement.
+
 Why this is a ratchet and not a lint
 ------------------------------------
 The debt is large and it is unevenly distributed: a handful of files carry
