@@ -11,7 +11,7 @@
       "candidateId": "C2",
       "title": "El manifiesto se deriva del registro de lenguajes",
       "unit": "H24",
-      "priority": 2,
+      "priority": 1,
       "objective": "Que el manifiesto de invalidacion se derive del registro de lenguajes, en vez de una lista literal de 9 extensiones, para que editar un `.tf` o un `.yml` invalide el grafo cacheado.",
       "evidence": "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
       "whyNow": "Es una violacion literal de SPEC-CU-005.3 (`nunca Complete usando datos stale`) y del criterio de la auditoria: el manifiesto cubre 9 de las 30 linguagens registradas. Es el arreglo mas barato de los que corrigen comportamiento, y elimina de paso una segunda fuente de verdad.",
@@ -26,7 +26,7 @@
       "candidateId": "C3",
       "title": "La CLI ve el mismo grafo que el MCP",
       "unit": "H24",
-      "priority": 3,
+      "priority": 2,
       "objective": "Que el camino de la CLI consulte la capa semantica, de modo que `graph entry-points`, `hot-paths`, `impact` y `mermaid` vean los simbolos de Terraform y Ansible que ya ve el MCP.",
       "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md",
       "whyNow": "Es la misma divergencia que H21 cerro en un camino y dejo abierta en el otro: CU-002.1 pide que CLI y MCP sean adaptadores de una autoridad unica. Sobre el fixture real, la CLI da 0 simbolos de Terraform donde el MCP da 74.",
@@ -41,7 +41,7 @@
       "candidateId": "C4",
       "title": "iac_query publica el nombre del dominio",
       "unit": "H24",
-      "priority": 4,
+      "priority": 3,
       "objective": "Que `iac_query` publique el nombre del dominio (`resource`, `data`) en vez del nombre interno de la variante de Rust (`Function`).",
       "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
       "whyNow": "La capa semantica ya calcula `iac_kind` y lo descarta al cruzar la frontera: el consumidor ve `\"Function\"` para `aws_s3_bucket.app_bucket`. Es la clase de fuga que SPEC-CU-002.3 prohibe (publicar una forma aproximada en vez del tipo honesto).",
@@ -51,6 +51,21 @@
         "el dato semantico llega al grafo en vez de calcularse y tirarse"
       ],
       "scope": "H24"
+    },
+    {
+      "candidateId": "C14",
+      "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
+      "unit": "release",
+      "priority": 4,
+      "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
+      "evidence": "release-candidate.pipeline.kts",
+      "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
+      "doneWhen": [
+        "el candidato pasa el gate de release con los contratos y los assets verificados",
+        "los binarios instalados responden desde fuera del repositorio, sin `CARGO_MANIFEST_DIR` en el entorno",
+        "el tag anotado y la release existen, y `tools/list` anuncia la superficie real"
+      ],
+      "scope": "release"
     },
     {
       "candidateId": "C5",

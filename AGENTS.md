@@ -1,11 +1,11 @@
 # AGENTS.md — CogniCode
 
-**Este archivo está versionado y es la puerta de entrada obligatoria para cada agente, sesión humana y flujo SDDK.** Gobernanza activa del proyecto: [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md). Backlog de mantenimiento: [`docs/roadmap/MAINTENANCE.md`](docs/roadmap/MAINTENANCE.md). Recibo append-only de cada unidad cerrada: [`docs/roadmap/JOURNAL.md`](docs/roadmap/JOURNAL.md). Este fichero define recuperación y disciplina; **no otorga permisos adicionales a un agente**.
+**Este archivo está versionado y es la puerta de entrada obligatoria para cada agente, sesión humana y flujo SDDK.** Gobernanza activa del proyecto: [`docs/roadmap/ROADMAP.md`](docs/roadmap/ROADMAP.md). Recibo append-only de cada unidad cerrada: [`docs/roadmap/JOURNAL.md`](docs/roadmap/JOURNAL.md). No hay backlog de mantenimiento abierto: el último (v0.98.x) cerró sus 13 unidades y se retiró. Este fichero define recuperación y disciplina; **no otorga permisos adicionales a un agente**.
 
 ## Secuencia de recuperación OBLIGATORIA (inicio de cada sesión)
 
 1. `git status --short --branch`; `git rev-parse HEAD`; `git log -5 --oneline`. No asumir que una conversación previa refleja el checkout actual. Si hay cambios sin commit, no descartarlos ni mezclarlos automáticamente.
-2. Si la unidad activa es del **roadmap vivo**: leer `docs/roadmap/ROADMAP.md`, las dos últimas entradas del `JOURNAL` de la unidad correspondiente (si existe) y, si aplica, `docs/roadmap/MAINTENANCE.md` para saber si es mantenimiento o feature.
+2. Si la unidad activa es del **roadmap vivo**: leer `docs/roadmap/ROADMAP.md` y las dos últimas entradas del `JOURNAL` de la unidad correspondiente (si existe).
 3. Si se cita un programa ya cerrado —PRF o cualquier otro—: tratarlo como **evidencia histórica**: no se reabre, no se modifica su roadmap, no se justifica trabajo nuevo contra él. Su cierre está en el `JOURNAL`, con su SHA y su recuento de suite.
 4. Comparar el SHA del puntero de la unidad activa con HEAD/commits recientes y con el último recibo, y reconciliar cualquier diferencia **antes de editar**. Ante checkpoint contradictorio o duplicado: STOP, documentar divergencia, consultar al maintainer; no seleccionar silenciosamente un estado.
 5. Identificar **una sola unidad de trabajo** no bloqueada, su contrato, tests RED de caracterización, oráculo UAT y dependencias. Registrar SHA inicial y datos de entorno. Un plan NO significa una ejecución.
@@ -118,6 +118,6 @@ Antes `AGENTS.md` estaba ignorado en `.gitignore`; ahora **solo el AGENTS.md ra�
 | Pregunta | Respuesta |
 |---|---|
 | ¿Cuál es la agenda activa? | `docs/roadmap/ROADMAP.md` |
-| ¿Hay mantenimiento v0.98.x pendiente? | `docs/roadmap/MAINTENANCE.md` |
+| ¿Hay mantenimiento pendiente? | No: el backlog de mantenimiento v0.98.x cerró sus 13 unidades y se retiró con el árbol documental. |
 | ¿Es esto un programa ya cerrado? | Si la unidad no está en `docs/roadmap/`, no es roadmap activo. Si la pregunta es sobre evidencia ya certificada, ver `docs/roadmap/certifications/` y el `JOURNAL`. |
 | ¿Está el gate PR-CI exigido? | Sí (`main` con `strict:true, contexts:[merge-gate]` desde G0.1, commit `07f989c9`). Todo cambio a `main` debe pasar por PR + merge-gate verde. |

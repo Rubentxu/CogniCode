@@ -19581,3 +19581,98 @@ La auditoría no se queda en un informe: es la backlog de la misión
 y criterio de cierre observable, ordenados por lo que desbloquea lo
 demás). El candidato siguiente es **C2**: el manifiesto derivado del
 registro de lenguajes.
+
+## 2026-10-20 — El árbol documental, en disco y en git (H25)
+
+### Lo que se pidió
+
+Que `docs/` y `openspec/` desaparecieran sin miramiento. Una auditoría
+externa de la saga de limpieza, escrita sobre el commit `2130721`, repetía
+que la limpieza documental seguía pendiente: 655 ficheros en `docs/`, 1.071 en
+`openspec/`, un `CURRENT.md` de 470 líneas y un `.agent/TESTING-STATE.md` de
+3.140.
+
+### Lo que había de verdad
+
+La poda del ciclo anterior había quitado el árbol **versionado** —`docs/`
+655→125, `openspec/` 1.071→0, `.agent/TESTING-STATE.md` eliminado—, pero
+medir el árbol de **trabajo** dio otra cosa:
+
+```text
+                     antes        después
+ficheros locales sin versionar   443             7
+peso de docs/ en disco          17M            2,3M
+ficheros versionados en docs/    125           119
+```
+
+**436 ficheros de historia seguían en el disco**: el dossier del programa
+PRF, los entregables visuales, el paquete *Living Software Intelligence*, el
+overlay de `delivery-first-2026` —el dossier de la propia saga—, el paquete
+`delivery-first-radical`, el plano de control, un árbol Kotlin duplicado, el
+paquete efímero de aceptación VDH, y **22 ADR que sólo existían en la
+máquina del operador**. Nada de eso está en git, y por eso un clon limpio no
+lo ve: pero cualquier agente que trabaja sobre este disco lo leía.
+
+### Lo que se hizo
+
+**En disco** (436 ficheros, 14,7 MB, a la papelera y recuperables):
+
+- Los dossier de programas cerrados y sus duplicados: `prf/`,
+  `visual-deliverables/`, `CogniCode_Living_Software_Intelligence/`,
+  `CogniCode-delivery-first-overlay/`,
+  `cognicode-delivery-first-radical-2026-10-17/`,
+  `cognicode-post-roadmap-control-plane/`, el árbol Kotlin duplicado, el
+  paquete efímero VDH, `analysis/`, `inventory/`, `specs/`, y el dossier
+  local de `cognicode-community-productization/` menos sus dos ficheros
+  versionados.
+- **22 ADR** que nunca estuvieron versionados, más un archivo de sesiones.
+  Cuatro de ellos —`ADR-VDH-001` (resultados honestos como ADT exhaustivo),
+  `ADR-VDH-002` (núcleo funcional puro), `ADR-VDH-003` (prueba de consumo
+  con backend real) y `ADR-VDH-004` (UAT/E2E/AAT efímeros)— son **las
+  mismas decisiones** que propuso la auditoría del día, llegadas por otro
+  camino. Un ADR que ningún clon ha revisado es un borrador, y las
+  decisiones que estuvieron en vigor tienen su recibo en el Journal. Su
+  contenido no se pierde: son C1, A4, C6 y C7 de la backlog.
+
+**En git** (6 ficheros):
+
+- `MAINTENANCE.md`: un backlog que se declaraba «activo» con sus **13**
+  unidades cerradas y una versión (v0.98.x) que quedó tres minors atrás.
+  Era un segundo documento de estado que además mentía. Se retiró, con su
+  fila en la tabla de `AGENTS.md`, su regla en el roadmap y la fila del
+  contrato de procedencia que lo excusaba.
+- Dos fases no ejecutadas y una propuesta nunca aceptada del programa
+  `production-ready`, y el handoff y la línea base del programa del
+  consumidor ya cerrado.
+
+**Y un documento que mentía sobre sí mismo**: `CURRENT.md` tenía **519**
+líneas mezclando un snapshot con la historia de ocho ciclos —un estado de
+release que describía `v0.101.16`, una lista de «próximo trabajo» ya
+hecho—. Ahora tiene **83** líneas y es un snapshot: unidades abiertas,
+gates, bloqueos y dónde está cada cosa. La historia vive en el Journal.
+
+### Lo que se conservó, y por qué
+
+| Qué | Por qué se queda |
+|---|---|
+| `docs/adr/` (**41**) | El registro de decisiones: qué se decidió y por qué. Un ADR que se borra deja la decisión sin explicación. |
+| `docs/roadmap/consumer-contracts/specs/` y `adr/` | Contratos **publicados** del consumidor. Cambiar uno exige deprecación explícita, no borrado. |
+| `docs/roadmap/production-ready/` (**24**) | Un test lee `certifications/c6/cp2-cp4-cp5.json` y el roadmap enlaza los **11** verdicts de release. |
+| `docs/roadmap/certifications/` (**2**) | La certificación vigente. |
+| `docs/debts/DEBT-SDDK-002..006` (sólo en disco) | Registros locales que declara el contrato de ignorados; no se borran por ser locales. |
+| `docs/SolicitudHPS.xlsx` (sólo en disco) | No es documentación: es un insumo. |
+
+### Consecuencia declarada
+
+La certificación C8-R (CR-01) cita el dossier del programa cerrado
+(`docs/prf/…`), que ya no está en el árbol. La propia certificación dice que
+`docs/prf/` es histórico por contrato y que no se reescribe: la cita se
+queda, y la re-verificación tiene que apoyarse en la certificación vigente y
+en el Journal. Se declara aquí en vez de dejar un puntero roto en silencio.
+
+### MEDIDO
+
+- `docs/` versionado: 655 → **119**; `openspec/`: 1.071 → **0**.
+- `docs/` en disco: 17M → **2,3M**; ficheros locales sin versionar: 443 → **7**.
+- Contratos: `backtick_provenance_contract` 7/7 verde con la fila nueva;
+  `gitignore_negation_contract` 5/5; ratchets de roadmap verdes.
