@@ -470,10 +470,17 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   resolver porque la variable se declara en otro fichero. La cobertura de
 >   referencias es **por fichero**, y el recibo lo dice en voz alta.
 >
->   **Lo que sigue abierto: el handler de Ansible está muerto.** El
->   extractor YAML genérico no emite ningún nodo para ninguna forma de
->   documento (medido: 1 nodo, el del fichero), luego `is_ansible_playbook`
->   nunca ve `hosts:`. Es otra ley —«la capa semántica tiene algo que
->   interpretar»— y no se mezcló con H18.
+>   **Lo que H18 NO cerraba, y H19 ya cerró.** El handler de Ansible leía
+>   las etiquetas de la extracción genérica y buscaba `hosts:` ahí, así que
+>   nunca se ejecutaba; ahora parsea el fichero él mismo. MEDIDO: de **1
+>   nodo y 0 aristas** a **5 nodos y 11 aristas**, con el módulo leído de
+>   la clave que la tarea declara y las identidades con el **nombre**.
+>   MEDIDO sobre los **592** YAML del árbol: **5** con estructura, **587**
+>   intactos, **cero** falsos positivos.
+>
+>   **Lo que sigue abierto: la identidad de la capa semántica.** El grafo
+>   identifica por `{fichero}:{nombre}:{0}` y la consulta de IaC busca la
+>   canónica: los nodos están y la herramienta no los encuentra. Afecta
+>   igual a Terraform.
 
 <!-- consumer-contracts:end -->

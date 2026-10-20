@@ -376,15 +376,14 @@ fn semantic_graph(language: Language, source: &str, file_path: &str) -> Option<C
     }
 
     // Que exista un handler no significa que interpretara este fichero.
-    // MEDIDO 2026-10-19: el extractor YAML generico no emite ningun nodo
-    // para ninguna forma de documento, asi que `is_ansible_playbook` nunca
-    // ve `hosts:` y el handler de Ansible devuelve el resultado intacto.
-    // Devolver `Some` ahi seria una autoridad vacia — el seam se
-    // atribuiria un fichero que no interpreto y, si el extractor generico
-    // mejorara manana, estos ficheros seguirian sin sus simbolos por un
-    // camino que ya no se consulta. Sin simbolos, el seam se aparta y
-    // responde el camino generico: la capa semantique manda solo cuando
-    // tiene algo que decir.
+    // Un YAML que no declara ni un play ni una tarea no es un playbook, y
+    // el handler de Ansible no tiene nada que decir sobre el: devuelve el
+    // resultado intacto y no declara ningun simbolo. Devolver `Some` ahi
+    // seria una autoridad vacia — el seam se atribuiria un fichero que no
+    // interpreto y, si el extractor generico mejorara manana, estos
+    // ficheros seguirian sin sus simbolos por un camino que ya no se
+    // consulta. Sin simbolos, el seam se aparta y responde el camino
+    // generico: la capa semantique manda solo cuando tiene algo que decir.
     if by_handler_id.is_empty() {
         return None;
     }
@@ -1636,30 +1635,44 @@ mod tests {
 
 #[cfg(test)]
 mod semantic_seam_tests {
-    //! H17 — el seam se atribuye un fichero SOLO si produjo un símbolo.
+    //! El seam se atribuye un fichero SOLO si produjo un símbolo.
     //!
-    //! Es la contraparte interna de la ley que `h17_semantic_layer_
-    //! reaches_the_graph.rs` prueba por fuera. Allí se ve que un bloque
-    //! HCL llega al grafo; aquí se ve la regla que hace que un handler
-    //! mudo NO se lleve el mérito, porque esa regla es privada y no hay
-    //! forma de observarla desde el API público mientras el extractor
-    //! genérico de YAML siga sin emitir nodos.
+    //! Es la contraparte interna de la ley que el test del API público
+    //! prueba por fuera. Allí se ve que un bloque HCL llega al grafo; aquí
+    //! se ve la regla que hace que un handler mudo NO se lleve el mérito,
+    //! porque esa regla es privada y no hay forma de observarla desde el
+    //! API público.
+    //!
+    //! La regla se prueba con un fichero que no es un playbook, y no con un
+    //! playbook mudo: un playbook que el handler interpreta tiene que
+    //! reclamar su fichero, y esa es la otra mitad de la misma ley.
     use super::*;
 
     #[test]
     fn a_handler_that_produced_nothing_does_not_claim_the_file() {
-        // MEDIDO 2026-10-19: el extractor YAML genérico no emite ningún
-        // nodo para ninguna forma de documento, así que el handler de
-        // Ansible devuelve el resultado intacto. `None` es la respuesta
-        // honesta: el camino genérico sigue teniendo la última palabra
-        // sobre este fichero.
-        let playbook =
-            "- hosts: all\n  tasks:\n    - name: install\n      apt:\n        name: nginx\n";
+        // Un fichero YAML que no declara ni un play ni una tarea no es un
+        // playbook, el handler no tiene nada que decir sobre él y el
+        // camino genérico sigue teniendo la última palabra.
+        let plain = "version: 3\nservices:\n  web:\n    image: nginx\n";
         assert!(
-            semantic_graph(Language::Yaml, playbook, "/tmp/playbook.yml").is_none(),
+            semantic_graph(Language::Yaml, plain, "/tmp/plain.yml").is_none(),
             "un handler que no interpretaba nada no puede reclamar el fichero; \
              devolver un grafo vacío haría que la capa semántica se atribuyera \
              un fichero que no miró"
+        );
+    }
+
+    /// La otra mitad de la misma ley: un playbook declara un play, y el
+    /// fichero donde vive queda atribuido a la capa semántica.
+    #[test]
+    fn a_playbook_is_claimed_by_the_semantic_layer() {
+        let playbook =
+            "- hosts: all\n  tasks:\n    - name: install\n      apt:\n        name: nginx\n";
+        let graph = semantic_graph(Language::Yaml, playbook, "/tmp/playbook.yml")
+            .expect("un playbook declara un play, y el seam tiene algo que decir");
+        assert!(
+            graph.symbol_count() > 0,
+            "el playbook se atribuye al seam, y con él van sus símbolos"
         );
     }
 

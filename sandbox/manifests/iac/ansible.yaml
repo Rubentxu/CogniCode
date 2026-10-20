@@ -1,8 +1,8 @@
-# IaC Manifest - Ansible playbook extraction (ADR-036)
+# IaC Manifest - Ansible playbook extraction
 version: "2.0"
 language: ansible
 tier: A
-description: "Test interpret_ansible handler - extract plays, tasks, roles, modules as graph nodes with Calls edges"
+description: "Test interpret_ansible handler - extract plays, tasks and handlers as graph nodes, and the modules and roles they use as relations"
 
 timeout_seconds: 120
 
@@ -17,10 +17,13 @@ scenarios:
   # ─── Ansible IaC Scenarios ───────────────────────────────────────────────────
   # NOTE: All ansible scenarios are marked expected_failure because:
   # 1. iac_query is a lookup tool (not discovery) — same issue as terraform
-  # 2. Ansible IDs use parser-assigned indices (ansible:site.yml:play:0, play:1, etc.)
-  #    which are not predictable from the manifest without running the parser first
-  # 3. The interpret_ansible handler needs to be enhanced to produce stable named IDs
-  #    (e.g., ansible:site.yml:play:Configure_infrastructure) instead of index-based IDs
+  # 2. The graph identifies an Ansible resource by the name of the symbol and
+  #    the file that declares it, and the query tool asks for the canonical
+  #    identity of the declaration: the two do not meet yet.
+  #
+  # The ids are named, so they can be told from the file alone, without
+  # running the parser first:
+  #     ansible:site.yml:play:Configure_infrastructure
   #
   # The terraform manifest (terraform.yaml) shows the working pattern with stable IDs.
 
@@ -32,41 +35,41 @@ scenarios:
     scenario_class: read_only
     expected_outcome: expected_fail
     arguments:
-      resource_id: "ansible:site.yml:play:0"
-    notes: "iac_query does not support discovery. Ansible IDs use parser indices (not stable names). Gap: need stable Ansible IDs + IaC search tool."
+      resource_id: "ansible:site.yml:play:Configure_infrastructure"
+    notes: "iac_query does not support discovery. The ids are named, so the scenario can name the resource it wants; what is missing is the discovery."
 
   - name: ansible_iac_query_plays
-    description: "DISCOVERY: Query plays — expected_failure (no discovery support + index-based IDs)"
+    description: "DISCOVERY: Query plays — expected_failure (no discovery support)"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/ansible-playbook
     scenario_class: read_only
     expected_outcome: expected_fail
     arguments:
-      resource_id: "ansible:site.yml:play:0"
-    notes: "Same gaps as ansible_iac_query_all."
+      resource_id: "ansible:site.yml:play:Configure_infrastructure"
+    notes: "Same gap as ansible_iac_query_all."
 
   - name: ansible_iac_query_tasks
-    description: "DISCOVERY: Query tasks — expected_failure (no discovery support + index-based IDs)"
+    description: "DISCOVERY: Query tasks — expected_failure (no discovery support)"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/ansible-playbook
     scenario_class: read_only
     expected_outcome: expected_fail
     arguments:
-      resource_id: "ansible:site.yml:task:0"
-    notes: "Same gaps as ansible_iac_query_all."
+      resource_id: "ansible:site.yml:task:Check_app_is_responding"
+    notes: "Same gap as ansible_iac_query_all."
 
   - name: ansible_iac_query_roles
-    description: "DISCOVERY: Query roles — expected_failure (roles not extracted as named nodes)"
+    description: "DISCOVERY: Query roles — expected_failure (roles are relations, not nodes)"
     tool: iac_query
     action: query
     workspace: sandbox/fixtures/ansible-playbook
     scenario_class: read_only
     expected_outcome: expected_fail
     arguments:
-      resource_id: "ansible:builtin:nginx"
-    notes: "interpret_ansible does not extract roles as named nodes. Roles appear as 'dependency.imports' edges."
+      resource_id: "ansible:role:nginx"
+    notes: "A role is not declared in the playbook: it lives in another file. The play pulls it in with a 'dependency.imports' relation whose destination is unresolved, and no node is invented for it. There is nothing to query."
 
   - name: ansible_iac_query_inventory
     description: "DISCOVERY: Query inventory — expected_failure (inventory not extracted as nodes)"
@@ -87,7 +90,7 @@ scenarios:
     scenario_class: read_only
     expected_outcome: expected_fail
     arguments:
-      resource_id: "ansible:site.yml:task:0"
+      resource_id: "ansible:site.yml:task:Check_postgres_is_accepting_connections"
     metrics:
       correctness:
         type: structure_match

@@ -18966,3 +18966,157 @@ miden lo mismo.
   el número, y la siguiente zona empieza con el número más bajo.
 
 Gates: `fast rc=0`; `full rc=0`.
+
+## 2026-10-20 — El handler de Ansible leía etiquetas donde no había nada (PR #394)
+
+### MEDIDO antes del cambio, sobre el fixture real
+
+```text
+sandbox/fixtures/ansible-playbook/site.yml  ->  1 nodo ("site.yml"), 0 aristas
+```
+
+Un solo nodo: el del fichero. Ningún play, ninguna tarea, ningún módulo,
+ningún rol. El handler estaba anunciado en el roadmap como una de las dos
+lenguas con capa semántica, y llevaba años sin declarar una sola cosa.
+
+### Por qué no declaraba nada
+
+El handler no leía el fichero: leía el resultado de la extracción genérica y
+buscaba en sus **etiquetas**. Para un YAML, la extracción genérica emite una
+etiqueta por fichero —el nombre del fichero—, así que `is_ansible_playbook`
+buscaba `hosts:` en una lista que contenía una sola vez el nombre del
+fichero. Nunca la encontraba, y el handler devolvía el resultado intacto.
+
+Debajo de eso había un segundo fallo, que se habría visto en cuanto el
+primero se arreglara: el módulo de una tarea se buscaba comparando la
+etiqueta contra una lista de módulos —`apt`, `yum`, `uri`…— que alguien
+recordó en su día. `postgresql_query` no estaba en la lista, y una tarea
+encontrada por el handler la habría dado por sin módulo.
+
+Es la misma causa raíz que la del handler de Terraform: **una capa semántica
+que lee lo que el paso genérico dejó en vez de leer el fichero.** La
+solución es la misma de allí: el handler parsea su propio lenguaje.
+
+### El arreglo: el handler parsea su propio lenguaje
+
+`tree-sitter-yaml` ya estaba en el crate; no ha hecho falta ninguna
+dependencia nueva. El handler recorre el árbol y decide:
+
+- un **play** se prueba con `hosts:` —la palabra que dice sobre quién se
+  ejecuta—;
+- una **tarea** se prueba con que se nombre, que es lo que `ansible-lint`
+  pide a una tarea que no lo hace;
+- un fichero que no prueba ninguna de las dos cosas no es un playbook, y
+  se queda **exactamente** como la extracción genérica lo dejó.
+
+El **módulo** de una tarea es *la clave que la tarea declara*. Para
+encontrarlo no se busca en una lista de módulos, sino que se eliminan las
+palabras clave de Ansible: la lista de módulos está abierta —cada colección
+publica la suya— y la de palabras clave está cerrada, porque la define
+Ansible. Por eso el módulo que nadie recuerda también se encuentra, y por
+eso `postgresql_query` aparece.
+
+### MEDIDO después del cambio, sobre el mismo fixture
+
+```text
+site.yml      1 nodo,  0 aristas  ->  5 nodos, 11 aristas
+webserver.yml 1 nodo,  0 aristas  ->  8 nodos, 15 aristas
+roles/*/tasks/main.yml (3 ficheros)  ->  18 tareas
+```
+
+En `site.yml`: dos plays, sus tres tareas, el módulo que cada tarea llama y
+los tres roles que el play se trae. En `webserver.yml`: un play, seis tareas
+y un handler.
+
+### Cero falsos positivos, medidos sobre el árbol entero
+
+El riesgo real de un handler que interpreta YAML es que se Despierte en
+YAML que no es de Ansible: un manifiesto de Kubernetes, un fichero de
+configuración, un flujo de trabajo de integración continua. Así que se
+midió sobre **todos** los ficheros YAML versionados del árbol:
+
+```text
+ficheros YAML versionados:                 592
+con estructura de Ansible:                   5   (los cinco fixtures)
+sin tocar, exactamente como entraron:      587
+falsos positivos:                            0
+```
+
+El corpus incluye los repos vendorizados bajo `sandbox/repos/`, así que el
+recuento no es una muestra de casa.
+
+### Las identidades llevan el nombre
+
+```text
+ansible:site.yml:play:Configure_infrastructure
+ansible:site.yml:task:Check_app_is_responding
+ansible:site.yml:handler:Reload_nginx
+```
+
+El manifiesto del repo pedía exactamente esto y por escrito: los ids por
+posición (`ansible:site.yml:play:0`) no se pueden nombrar sin ejecutar el
+parser, y un identificador que sólo existe después de correr algo no es un
+identificador. Con el nombre dentro, un lector que conoce el playbook
+conoce el id.
+
+El manifiesto, que describía el hueco ya cerrado, se ha actualizado: sus
+`resource_id` apuntaban a ids que ya no existen y sus notas prometían ids
+por índice que ya no hay.
+
+### Lo que vive en otro fichero no se inventa
+
+Un rol vive en otro fichero. Un módulo vive en Ansible. Un playbook
+importado vive en otro fichero. Las tres relaciones son **reales** y las
+tres destinos están **fuera**:
+
+```text
+Configure infrastructure  --dependency.imports-->  ansible:role:postgres      (sin resolver)
+Check app is responding  --dependency.calls-->     ansible:builtin:uri        (sin resolver)
+```
+
+Ninguna inventa un nodo. Un rol es una relación que sale del fichero, no
+una declaración que entra, y la cobertura de un playbook es **por
+fichero**. El `dependency.imports` es el vocabulario de Ansible: `import_role`,
+`import_tasks` e `import_playbook` se llaman así en Ansible.
+
+### Un test que fijaba el defecto, y la ley que sí era la ley
+
+El gate `fast` encontró una regresión, y la regresión era **un test**:
+
+```text
+infrastructure::graph::per_file_graph::semantic_seam_tests::
+  a_handler_that_produced_nothing_does_not_claim_the_file
+```
+
+Ese test afirmaba que un playbook YAML **no** llegaba al grafo. Su propio
+comentario decía por qué: estaba escrito «mientras el extractor genérico de
+YAML siga sin emitir nodos». Es decir, fijaba el **síntoma** —el defecto—
+y no la ley. La ley es otra, y vive en el mismo sitio:
+
+> el seam se atribuye un fichero **sólo si produjo un símbolo**.
+
+Esa ley no ha cambiado, y ahora se cumple por las dos mitades. El test
+sigue probando que un fichero que el handler no interpretó no queda
+reclamado, pero con un YAML que no es un playbook —donde la respuesta
+correcta es `None`—, y un test nuevo prueba la otra mitad: un playbook
+**sí** se interpreta y **sí** reclama su fichero.
+
+La lección es la de siempre y no por una vez: un test que fija un defecto
+es un test que hay que cambiar cuando el defecto se arregla, y hay que
+decirlo en voz alta. Un test que se cambia sin explicar parece un test que
+se ha apagado para que pase.
+
+### Lo que queda abierto (medido, no supuesto)
+
+- **La capa semántica entra en el grafo con el FQN equivocado.** El grafo
+  identifica un símbolo por `{fichero}:{nombre}:{0}`, y la herramienta de
+  consulta de IaC busca la identidad canónica (`ansible:…`, `tf:…`). Los
+  nodos del handler están en el grafo, pero la herramienta no los encuentra
+  por id ni por nombre. Es la misma familia de ley —*la capa semántica tiene
+  que llegar al grafo*— y es la siguiente: afecta igual a Terraform.
+- **Un rol no es un nodo**, es una relación sin resolver. Consultar un rol
+  no tiene objeto, y el manifiesto lo dice así.
+- **El inventario de Ansible no se extrae.** Los grupos y los hosts de un
+  `inventory/` siguen sin aparecer.
+
+Gates: `fast rc=0`; `full rc=0`.
