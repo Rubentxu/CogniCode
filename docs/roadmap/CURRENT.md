@@ -9,10 +9,10 @@
 > que el ROADMAP y el árbol desmentían desde hacía días — exactamente el
 > drift que QW-02 define como contradictorio.
 
-> **Snapshot**: 2026-10-20, sobre `ae409ae38a95de41b760ba631bd130d35a70248d` (`main`, squash-merge del
-> PR #393: el escáner de comentarios no veía la mitad del repositorio).
+> **Snapshot**: 2026-10-20, sobre `f5c76d7de0095d85785c010ebc623c2eca788952` (`main`, squash-merge del
+> PR #394: el handler de Ansible leía etiquetas donde no había nada).
 > Sustituye al de
-> `8ee145715575a3751c4c4a8cfa151c640f3864cb` (PR #392). **v0.101.23
+> `ae409ae38a95de41b760ba631bd130d35a70248d` (PR #393). **v0.101.23
 > publicada** 2026-10-18T15:26:15Z, 8 assets, `sha256sum -c` verde sobre los
 > bytes redescargados, asset-set PASS, `/releases/latest` resolviendo al tag
 > nuevo, y `tools/list` anunciando 20 herramientas desde el binario
@@ -20,6 +20,30 @@
 > `CARGO_MANIFEST_DIR` en el entorno. Esa publicación **no** se ha
 > reverificado en este refresco: se arrastra del snapshot anterior, que sí
 > la verificó. Refrescar el puntero no revalida la release.
+>
+> **Sexta unidad del ciclo 2026-10-20 (PR #395, en este mismo PR): el grafo
+> ya no renombra lo que el handler declaró.** Un handler que lee un fichero
+> le **pone nombre** a lo que declara —`tf:main.tf:aws_s3_bucket.app_bucket`,
+> `ansible:site.yml:play:Configure_infrastructure`—, y ese nombre es la
+> identidad que pide el producto. El grafo se la quitaba: los símbolos
+> llegaban con el nombre del camino genérico —`{fichero}:{nombre}:{0}`—, y
+> la herramienta de consulta de IaC, que busca la identidad canónica,
+> respondía que nunca había oído falar del recurso.
+>
+> La pérdida tenía dos sitios: al crear el símbolo, y **al fusionar** los
+> grafos por fichero, que reconstruía cada símbolo y le recalculaba el
+> nombre. Por eso el primer arreglo no se veía: la identidad se perdía un
+> paso después. Fusionar ya no renombra: el grafo grande guarda el mismo
+> símbolo que salió del pequeño.
+>
+> Y midiendo esta unidad sale el hueco de verdad, que es más grande que la
+> ley que cierra: el grafo que construye **el producto** —el de
+> `build_graph`— no consulta la capa semántica. MEDIDO: da `resource` y
+> `bucket` para un `main.tf` —el defecto exacto que la ley anterior cerró
+> en otro camino— y nada para un `site.yml`. El camino que sí la consulta
+> lo llaman sólo los tests. Ésa es la ley siguiente, y es la que da valor a
+> las dos unidades anteriores. Detalle en `JOURNAL.md`, entrada de la sexta
+> unidad.
 >
 > **Quinta unidad del ciclo 2026-10-20 (PR #394, en este mismo PR): el
 > handler de Ansible lee el árbol.** El handler llevaba años anunciado y

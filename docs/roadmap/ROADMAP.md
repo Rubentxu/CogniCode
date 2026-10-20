@@ -471,16 +471,17 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   referencias es **por fichero**, y el recibo lo dice en voz alta.
 >
 >   **Lo que H18 NO cerraba, y H19 ya cerró.** El handler de Ansible leía
->   las etiquetas de la extracción genérica y buscaba `hosts:` ahí, así que
->   nunca se ejecutaba; ahora parsea el fichero él mismo. MEDIDO: de **1
->   nodo y 0 aristas** a **5 nodos y 11 aristas**, con el módulo leído de
->   la clave que la tarea declara y las identidades con el **nombre**.
->   MEDIDO sobre los **592** YAML del árbol: **5** con estructura, **587**
->   intactos, **cero** falsos positivos.
+>   las etiquetas de la extracción genérica, así que nunca se ejecutaba;
+>   ahora parsea el fichero él mismo. MEDIDO: de **1 nodo y 0 aristas** a
+>   **5 nodos y 11 aristas**, y **cero** falsos positivos sobre los **592**
+>   YAML del árbol.
 >
->   **Lo que sigue abierto: la identidad de la capa semántica.** El grafo
->   identifica por `{fichero}:{nombre}:{0}` y la consulta de IaC busca la
->   canónica: los nodos están y la herramienta no los encuentra. Afecta
->   igual a Terraform.
+>   **Lo que H19 no cerraba, y H20 ya cerró.** La capa semántica llegaba al
+>   grafo con el nombre del camino genérico y la consulta de IaC busca la
+>   canónica: los nodos estaban y la herramienta no los encontraba. Ahora
+>   el grafo conserva el nombre que le dio el handler.
+>
+>   **Lo que sigue abierto: la capa semántica tiene que llegar al grafo del
+>   producto.** MEDIDO: `build_graph` da `resource` y `bucket` para un `main.tf`.
 
 <!-- consumer-contracts:end -->

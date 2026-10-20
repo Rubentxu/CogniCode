@@ -19120,3 +19120,93 @@ se ha apagado para que pase.
   `inventory/` siguen sin aparecer.
 
 Gates: `fast rc=0`; `full rc=0`.
+
+## 2026-10-20 — El grafo renombraba lo que el handler había declarado (PR #395)
+
+### Lo que pasaba
+
+Un handler que lee un fichero dice lo que ese fichero declara, y le **pone
+nombre** a cada cosa que declara:
+
+```text
+tf:main.tf:aws_s3_bucket.app_bucket
+ansible:site.yml:play:Configure_infrastructure
+```
+
+Ese nombre es la identidad que pide el producto, y el grafo es donde el
+producto mira. Pero el grafo identifica un símbolo por su nombre completo, y
+el nombre completo lo construye el camino genérico —el del fichero y el del
+símbolo—. Una declaración que venía de un handler no es de esa forma: la
+declaró un handler, y el handler le dio un nombre.
+
+MEDIDO, sobre el grafo que construye el camino por fichero:
+
+```text
+antes:  /tmp/.tmpEcUVsX/site.yml:Configure infrastructure:0
+ahora:  ansible:/tmp/.tmpEcUVsX/site.yml:play:Configure_infrastructure
+```
+
+### Dónde se perdía
+
+En dos sitios, y los dos hacía falta el mismo arreglo:
+
+1. **`semantic_graph`**: el símbolo se creaba con `Symbol::new`, que
+   calcula el nombre completo del camino genérico. Ahora el símbolo
+   conserva la identidad que le dio su handler.
+2. **La fusión de los grafos por fichero**: cada símbolo se **reconstruía**
+   antes de entrar en el grafo grande, y la reconstrucción volvía a
+   calcular el nombre completo. Por eso el arreglo del primer sitio no se
+   veía: la identidad se perdía un paso después.
+
+La fusión ya no reconstruye: el grafo grande guarda **el mismo símbolo**
+que salió del pequeño. Fusionar no renombra.
+
+### Lo que NO cambia
+
+El camino genérico no se toca: sus símbolos siguen llevando
+`{fichero}:{nombre}:{línea}`, porque ése es su nombre y no hay otro. Y el
+seam sigue siendo opcional: una lengua sin capa de dominio sigue entrando
+por el camino genérico, con sus símbolos y sus aristas.
+
+### El hallazgo que esta unidad destapa: la capa semántica no llega al producto
+
+Midiendo el grafo que construye **el producto** —el camino de `build_graph`,
+no el de los tests— sobre un directorio con un `main.tf` y un `site.yml`:
+
+```text
+símbolos del grafo del producto: 2
+  bucket    [/tmp/.tmpyaVOak/main.tf:bucket:1]
+  resource [/tmp/.tmpyaVOak/main.tf:resource:0]
+```
+
+Eso es **exactamente** el defecto que la ley anterior cerró y su contrato
+describe: la palabra clave de la cabecera en vez de la identidad del
+bloque. Y el `site.yml` no aporta **nada**: ni un play, ni una tarea.
+
+La causa: la capa semántica se consulta en un solo sitio del repositorio —
+`per_file_graph::semantic_graph`—, y el camino que construye el grafo del
+producto (`AnalysisService::build_project_graph`, que es el que usa
+`build_graph`) no lo consulta: va al parser genérico. El camino que sí la
+consulta —`build_graph_per_file`— lo llaman **sólo los tests**.
+
+Es decir: la ley «la capa semántica tiene que llegar al grafo» se cerró en
+un camino que el producto no usa, y el trabajo de las dos unidades
+anteriores —los bloques de Terraform y los plays de Ansible— es invisible
+para quien usa la herramienta.
+
+**Lo que sigue abierto (medido, no supuesto):**
+
+- **La capa semántica tiene que llegar al grafo que construye el producto.**
+  Es la ley siguiente, y es la que da valor a las dos anteriores. No es
+  un cambio de una línea: la caché de ficheros del camino del producto
+  guarda `(símbolos, relaciones)` y las relaciones de la capa semántica
+  vienen ya resueltas y con su tipo, así que la caché necesita hablar los
+  dos idiomas.
+- **La herramienta de consulta de IaC** (`iac_query`) busca la identidad
+  canónica (`ansible:…`, `tf:…`) y con este arreglo la encuentra en el
+  grafo que sí tiene la capa semántica. En el grafo del producto todavía
+  no, porque allí no hay nada que encontrar.
+- **El inventario de Ansible** no se extrae, y **los roles** son
+  relaciones sin resolver, no nodos.
+
+Gates: `fast rc=0`; `full rc=0`.

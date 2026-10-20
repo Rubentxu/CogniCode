@@ -348,7 +348,16 @@ fn semantic_graph(language: Language, source: &str, file_path: &str) -> Option<C
         if node.id.as_str() == file_path {
             continue;
         }
-        let symbol = Symbol::new(&node.label, *kind, Location::new(file_path, 0, 0));
+        let mut symbol = Symbol::new(&node.label, *kind, Location::new(file_path, 0, 0));
+        // La identidad de una declaración es la que le dio su handler:
+        // `tf:{fichero}:{bloque}`, `ansible:{fichero}:play:{nombre}`. El
+        // grafo identifica un símbolo por su nombre completo, y el que
+        // construye `Symbol::new` es el del camino genérico —el del
+        // fichero y el del símbolo—. Renombrar aquí la declaración
+        // haciéndola pasar por una del camino genérico hacía que el
+        // producto pidiera por el nombre que le dio el handler y el
+        // grafo respondiera que nunca lo había oído.
+        symbol.set_fqn_override(node.id.as_str());
         by_handler_id.insert(node.id.as_str().to_string(), graph.add_symbol(symbol));
     }
 
@@ -564,16 +573,14 @@ impl PerFileGraphCache {
                 }
             };
             for symbol in graph.symbols() {
-                let new_symbol = Symbol::new(
-                    symbol.name(),
-                    *symbol.kind(),
-                    Location::new(
-                        symbol.location().file(),
-                        symbol.location().line(),
-                        symbol.location().column(),
-                    ),
-                );
-                merged.add_symbol(new_symbol);
+                // Fusionar no renombra. La identidad de un símbolo es su
+                // nombre completo, y una declaración que vino de un handler
+                // —`tf:{fichero}:{bloque}`, `ansible:{fichero}:play:{nombre}`—
+                // tiene un nombre que no se deduce del fichero y del
+                // símbolo. Reconstruirlo aquí lo convertía en uno del
+                // camino genérico, y el producto lo pedía por el nombre que
+                // su handler le había dado.
+                merged.add_symbol(symbol.clone());
             }
 
             // Merge edges
