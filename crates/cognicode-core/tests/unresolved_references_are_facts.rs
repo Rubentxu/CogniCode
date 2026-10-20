@@ -445,3 +445,51 @@ async fn a_name_that_a_for_expression_binds_is_not_a_gap() {
         "a project that binds its own names is a complete answer"
     );
 }
+
+#[tokio::test]
+async fn a_declaration_of_the_parent_module_does_not_satisfy_a_reference() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(project.join("app")).expect("mkdir app");
+    std::fs::create_dir_all(&project).expect("mkdir project");
+
+    // The variable belongs to the parent module...
+    std::fs::write(
+        project.join("variables.tf"),
+        "variable \"only_here\" {\n  default = \"10.0.0.0/16\"\n}\n",
+    )
+    .expect("write parent");
+    // ...and the child module names it without declaring it. A module has
+    // its own namespace: a parent hands its values down by filling the
+    // child's own variables, never by exposing its own.
+    std::fs::write(
+        project.join("app/main.tf"),
+        "resource \"aws_s3_bucket\" \"b\" {\n  bucket = var.only_here\n}\n",
+    )
+    .expect("write child");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir.path())
+        .build();
+
+    let answer = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+        .await
+        .expect("the graph builds");
+
+    let pending = answer
+        .pending_references
+        .expect("the pending references travel with the answer");
+
+    assert!(
+        pending
+            .iter()
+            .any(|reference| reference.target == "var.only_here"),
+        "the declaration of the parent module does not satisfy the \\
+         reference: the child names something it does not declare: {pending:?}"
+    );
+    assert_ne!(
+        answer.status, "complete",
+        "a reference that names a declaration of another module is a hole, \\
+         and the answer says so"
+    );
+}

@@ -316,7 +316,7 @@
       "output_schema": {
         "$defs": {
           "BasisDto": {
-            "description": "PRF-ANA-06: provenance basis for a build_graph result.",
+            "description": "Provenance basis for a build_graph result.",
             "properties": {
               "complete": {
                 "description": "`true` only when every identity component was established.",
@@ -359,8 +359,69 @@
             ],
             "type": "object"
           },
+          "PendingReason": {
+            "description": "Why the far end of a reference could not be identified.",
+            "oneOf": [
+              {
+                "const": "unresolved",
+                "description": "No declaration carries the name.",
+                "type": "string"
+              },
+              {
+                "const": "ambiguous",
+                "description": "More than one does, and the graph cannot prove which one.",
+                "type": "string"
+              }
+            ]
+          },
+          "PendingReferenceInfo": {
+            "description": "A reference the graph could not tie to a declaration.",
+            "properties": {
+              "candidates": {
+                "description": "How many declarations carry the name, when there are several.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "file": {
+                "description": "The file that writes the reference.",
+                "type": "string"
+              },
+              "kind": {
+                "description": "What the reference is.",
+                "type": "string"
+              },
+              "line": {
+                "description": "The line the reference is written on, counting from one.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "reason": {
+                "$ref": "#/$defs/PendingReason",
+                "description": "Why the far end could not be identified: `unresolved` when no\ndeclaration carries the name, `ambiguous` when several do."
+              },
+              "target": {
+                "description": "The name the reference names.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "target",
+              "kind",
+              "reason"
+            ],
+            "type": "object"
+          },
           "SkippedFileDto": {
-            "description": "F2.W8: per-file skipped-file record surfaced through `build_graph`.",
+            "description": "Per-file skipped-file record surfaced through `build_graph`.",
             "properties": {
               "path": {
                 "type": "string"
@@ -391,7 +452,7 @@
                 "type": "null"
               }
             ],
-            "description": "PRF-ANA-06: identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable."
+            "description": "Identity of what the graph was built from.\n`None` only when identity cannot be established at all;\notherwise present with `complete: false` when any component\n(workspace canonicalization, manifest digest) is unavailable."
           },
           "edges": {
             "items": {
@@ -402,13 +463,23 @@
           "message": {
             "type": "string"
           },
+          "pending_references": {
+            "description": "The references the graph could not tie to a declaration.\n\nA file can be read and still state a relation the project cannot\nprove: the reference names something nobody declares, or names\nseveral things and the graph cannot tell which one it means.\nThose are facts about the code, and they travel with the answer\nnext to the relations that were resolved.\n\n`None` when the graph was served from cache (no walk happened on\nthis call); `Some([])` when every reference was tied.",
+            "items": {
+              "$ref": "#/$defs/PendingReferenceInfo"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
+          },
           "relationships_found": {
             "format": "uint",
             "minimum": 0,
             "type": "integer"
           },
           "skipped_files": {
-            "description": "F2.W8: files that could not be processed during the walk.\n`None` when the graph was served from cache (no walk happened\non this call); `Some([])` when the walk finished with no\nomissions; `Some([..])` when one or more files were dropped\nbecause of I/O / parsing failures.",
+            "description": "Files that could not be processed during the walk.\n`None` when the graph was served from cache (no walk happened\non this call); `Some([])` when the walk finished with no\nomissions; `Some([..])` when one or more files were dropped\nbecause of I/O / parsing failures.",
             "items": {
               "$ref": "#/$defs/SkippedFileDto"
             },
@@ -418,7 +489,7 @@
             ]
           },
           "status": {
-            "description": "PRF-ANA-04: explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no skipped files.\n  - `\"partial\"`: walk happened, at least one file was\n    dropped (I/O or parsing failure).\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.",
+            "description": "Explicit build outcome surfaced to the caller so\nconsumers (LLM, CI, alert) can branch on it without parsing\n`skipped_files`. Values:\n  - `\"complete\"`: walk happened, no file was dropped and no\n    reference was left without a declaration.\n  - `\"partial\"`: walk happened, and something is missing: a file\n    was dropped (I/O or parsing failure), or a reference could not\n    be tied to a declaration.\n  - `\"unknown\"`: served from the in-memory graph cache, no\n    walk happened on this call.",
             "type": "string"
           },
           "success": {

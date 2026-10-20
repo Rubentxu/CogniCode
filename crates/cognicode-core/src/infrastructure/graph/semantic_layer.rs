@@ -131,9 +131,10 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
                 // hole when it cannot be tied to one. A call is not: what
                 // the code calls may live outside the project — a function
                 // of another crate, a module of Ansible — and the graph
-                // says nothing about the world outside it. The generic path
-                // counts the calls it cannot tie; it does not publish them
-                // as gaps, and neither does this one.
+                // says nothing about the world outside it. Neither this
+                // path nor the generic one publishes those calls as gaps,
+                // and neither counts them yet: separating the calls from
+                // the relations is its own work.
                 if kind == DependencyType::Calls {
                     continue;
                 }

@@ -212,23 +212,6 @@ impl AnalysisService {
         let skipped_files: std::sync::Arc<
             std::sync::Mutex<Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>>,
         > = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-        let classify_io = |e: &std::io::Error| {
-            use std::io::ErrorKind;
-            match e.kind() {
-                ErrorKind::PermissionDenied | ErrorKind::NotFound => {
-                    crate::infrastructure::graph::per_file_graph::SkipReason::Read(e.to_string())
-                }
-                ErrorKind::InvalidData | ErrorKind::InvalidInput => {
-                    crate::infrastructure::graph::per_file_graph::SkipReason::Parse(e.to_string())
-                }
-                _ => crate::infrastructure::graph::per_file_graph::SkipReason::Other(e.to_string()),
-            }
-        };
-        let classify_parse =
-            |e: &crate::domain::traits::ParseError| -> crate::infrastructure::graph::per_file_graph::SkipReason {
-                crate::infrastructure::graph::per_file_graph::SkipReason::Parse(e.to_string())
-            };
-
         // The files the graph is built from are decided in one place, so
         // the manifest that says whether the graph is still fresh covers
         // exactly the same set. Two rules would drift, and a drifted
@@ -345,7 +328,7 @@ impl AnalysisService {
                             skipped.lock().unwrap().push(
                                 crate::infrastructure::graph::per_file_graph::SkippedFile {
                                     path: path_for_skip.clone(),
-                                    reason: classify_io(&e),
+                                    reason: crate::infrastructure::graph::per_file_graph::classify_io_error(&e),
                                 },
                             );
                             return None;
@@ -381,7 +364,7 @@ impl AnalysisService {
                             skipped.lock().unwrap().push(
                                 crate::infrastructure::graph::per_file_graph::SkippedFile {
                                     path: file_path.clone(),
-                                    reason: classify_parse(&e),
+                                    reason: crate::infrastructure::graph::per_file_graph::classify_parse_error(&e),
                                 },
                             );
                             return None;
@@ -1127,15 +1110,37 @@ impl AnalysisService {
 
                 let total_files = files.len();
 
+                // A file the walk could not read or parse is a hole in the
+                // file coverage, and it is recorded as one —the mismo
+                // contrato que cumple la ruta sincrona—. Dejarlo caer en
+                // silencio haria que las dos rutas dieran veredictos
+                // distintos sobre el mismo arbol.
+                let dropped: std::sync::Mutex<
+                    Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+                > = std::sync::Mutex::new(Vec::new());
+
                 let results: Vec<_> = files
                     .into_par_iter()
                     .filter_map(|(path, language, file_path, mtime, size)| {
                         let language = language.unwrap();
+                        let path_for_skip = file_path.clone();
+                        let dropped = &dropped;
 
                         {
                             // PRF audit H-01: invalidate on mtime
                             // OR size OR content_hash mismatch.
-                            let source = std::fs::read_to_string(&path).ok()?;
+                            let source = match std::fs::read_to_string(&path) {
+                                Ok(source) => source,
+                                Err(e) => {
+                                    dropped.lock().unwrap().push(
+                                        crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                            path: path_for_skip.clone(),
+                                            reason: crate::infrastructure::graph::per_file_graph::classify_io_error(&e),
+                                        },
+                                    );
+                                    return None;
+                                }
+                            };
                             let content_hash = compute_content_hash(&source);
 
                             let cache = file_cache.lock().unwrap();
@@ -1165,6 +1170,12 @@ impl AnalysisService {
                                 Ok(facts) => facts,
                                 Err(e) => {
                                     tracing::warn!("reading {} failed: {}", file_path, e);
+                                    dropped.lock().unwrap().push(
+                                        crate::infrastructure::graph::per_file_graph::SkippedFile {
+                                            path: path_for_skip.clone(),
+                                            reason: crate::infrastructure::graph::per_file_graph::classify_parse_error(&e),
+                                        },
+                                    );
                                     return None;
                                 }
                             };
@@ -1294,6 +1305,11 @@ impl AnalysisService {
                     unresolved_edges,
                     coverage_percent,
                 };
+
+                // The files the walk could not read or parse are part of
+                // the file coverage, and they travel with the report: a
+                // build that dropped a file cannot say it read them all.
+                k0_skipped.extend(dropped.lock().unwrap().iter().cloned());
 
                 Ok((coverage, call_graph, k0_skipped, pending_resolution.pending))
             })

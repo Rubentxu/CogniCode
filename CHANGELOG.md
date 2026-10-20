@@ -10,6 +10,38 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [Unreleased]
+
+**La cobertura de relaciones deja de ser un silencio.** Una referencia que
+el grafo no puede atar a una declaración —un bloque de Terraform que nombra
+un recurso que nadie declara— se descartaba en silencio, y el estado del
+grafo contestaba `complete` sin saber que faltaba algo. Ahora la referencia
+se publica con su fichero, su línea, su motivo y su clase, y `complete`
+sólo se dice cuando las dos coberturas —la de ficheros y la de
+relaciones— están completas.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `build_graph` publica `pending_references`, y la cobertura de
+  `merge_graphs` los lleva dentro. El esquema publicado del catálogo
+  (`product/tools.json`) se regeneró con el del runtime.
+- El CLI `graph full` publica `pending_references` y dice `partial` cuando
+  queda alguna. Antes decía `complete` sobre el mismo proyecto que el MCP
+  decía `partial`.
+- Para los consumidores Rust de `cognicode-core`: `GraphResult::Full` y
+  `GraphValue::Full` ganan el campo `pending_references`, `MergeCoverage::Partial`
+  lo gana también, y `MergeCoverage::from` recibe las referencias
+  pendientes. La firma del constructor cambia.
+- El snapshot durable del grafo cambia de versión: uno escrito por una
+  versión anterior ya no se sirve, porque su `complete` significaba otra
+  cosa. El grafo se reconstruye.
+
+La resolución entre ficheros respeta el ámbito del módulo: un módulo ve
+las declaraciones de su propio directorio y de ninguno más. Una
+declaración de un módulo hermano —o de un módulo padre— no satisface una
+referencia, porque eso sería cablear una arista que nada prueba y
+escondería el hueco real.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP

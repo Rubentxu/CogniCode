@@ -70,7 +70,12 @@ pub fn present_graph_full(
                 })
                 .collect(),
         ),
-        _ => ("complete".to_string(), Vec::new()),
+        OutcomeState::Complete => ("complete".to_string(), Vec::new()),
+        // Un veredicto que no es un veredicto no es "complete". El
+        // consumidor tiene que poder distinguir "lo sé todo" de "no he
+        // podido responder", y el MCP usa la misma palabra para las dos
+        // cosas que no son un veredicto.
+        _ => ("unknown".to_string(), Vec::new()),
     };
 
     GraphResult::Full {

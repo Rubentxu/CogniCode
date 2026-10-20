@@ -119,7 +119,19 @@ impl ServiceAnalyzer {
         // respuestas distintas a "lo sabes todo?". La referencia viaja con
         // el valor —donde el consumidor lee lo que sí se resolvió— y el
         // gap dice que la cobertura de relaciones no está completa.
-        let (skipped, pending) = self.partial_coverage();
+        let Some((skipped, pending)) = self.partial_coverage() else {
+            // No hay reporte: no se midio nada. Eso no es lo mismo que
+            // medir y no encontrar nada, asi que la respuesta no dice
+            // "complete": dice "unknown", y el consumidor lo sabe.
+            let stats = self.service.get_graph_stats();
+            return AnalysisOutcome::unknown_with(AnalysisValue::Graph(GraphValue::Full {
+                path: path.to_path_buf(),
+                symbols: stats.symbol_count,
+                dependencies: stats.edge_count,
+                elapsed_ms: 0,
+                pending_references: Vec::new(),
+            }));
+        };
         let stats = self.service.get_graph_stats();
         let value = AnalysisValue::Graph(GraphValue::Full {
             path: path.to_path_buf(),
@@ -182,7 +194,7 @@ impl ServiceAnalyzer {
         // `coverage_gaps` (H0.2): añadir otra copia en una tercera op
         // reintroduciría la divergencia CLI/SDK/MCP que UAT-CU-1 detectó
         // el 2026-10-16.
-        let (skipped, pending) = self.partial_coverage();
+        let (skipped, pending) = self.partial_coverage().unwrap_or_default();
         let gaps = coverage_gaps(&skipped, &pending);
         if !gaps.is_empty() {
             return AnalysisOutcome::partial(
@@ -208,20 +220,18 @@ impl ServiceAnalyzer {
     /// los dos huecos está completo.
     fn partial_coverage(
         &self,
-    ) -> (
+    ) -> Option<(
         Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
         Vec<crate::domain::value_objects::PendingReference>,
-    ) {
-        let Some(report) = self.service.get_last_build_report() else {
-            return (Vec::new(), Vec::new());
-        };
+    )> {
+        let report = self.service.get_last_build_report()?;
         match report.status {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
                 pending,
-            } => (skipped, pending),
+            } => Some((skipped, pending)),
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-                (Vec::new(), Vec::new())
+                Some((Vec::new(), Vec::new()))
             }
         }
     }

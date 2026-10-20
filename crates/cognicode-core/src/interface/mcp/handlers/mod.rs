@@ -4384,7 +4384,7 @@ mod tests {
         let loaded = load_durable_snapshot(&db);
         assert!(
             loaded.is_some(),
-            "final snapshot must be a valid v1 cache (not a partial interleave)"
+            "final snapshot must be a valid cache (not a partial interleave)"
         );
 
         // No tmp leftovers: with the old fixed-name `cache.tmp` slot
@@ -4427,7 +4427,7 @@ mod tests {
         );
 
         // A subsequent save must overwrite the corrupt cache with a
-        // valid v1 snapshot.
+        // valid snapshot.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
@@ -4441,7 +4441,7 @@ mod tests {
         );
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "rebuilt snapshot must decode as a valid v1 snapshot"
+            "rebuilt snapshot must decode as a valid snapshot"
         );
     }
 
@@ -4508,7 +4508,7 @@ mod tests {
         let loaded = load_durable_snapshot(&db);
         assert!(
             loaded.is_some(),
-            "final cache must be a valid v1 snapshot — no torn writes"
+            "final cache must be a valid snapshot — no torn writes"
         );
 
         // A subsequent save must succeed and overwrite cleanly.
@@ -4631,7 +4631,7 @@ mod tests {
         let db = dir.path().join("graph.cache");
         let parent = db.parent().unwrap();
 
-        // Plant a valid v1 snapshot under a writable dir.
+        // Plant a valid snapshot under a writable dir.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
@@ -4640,7 +4640,7 @@ mod tests {
         let original_bytes = std::fs::read(&db).unwrap();
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "pre-condition: valid v1 snapshot must exist before making dir read-only"
+            "pre-condition: a valid snapshot must exist before making dir read-only"
         );
 
         // Flip parent to read-only and probe.
@@ -4703,7 +4703,7 @@ mod tests {
         );
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "existing snapshot must still decode as a valid v1 cache"
+            "existing snapshot must still decode as a valid cache"
         );
 
         // No orphan tmp files left by the failed concurrent writers.

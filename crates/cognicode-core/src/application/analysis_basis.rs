@@ -253,6 +253,23 @@ impl<T> AnalysisOutcome<T> {
         }
     }
 
+    /// An outcome that carries an answer but not a verdict.
+    ///
+    /// The value is there —the graph was built, and the consumer can read
+    /// it— but the question "do you know everything?" has no answer, and
+    /// answering "complete" would invent one. Not measuring and measuring
+    /// nothing are two different things.
+    pub fn unknown_with(value: T) -> Self {
+        Self {
+            state: OutcomeState::Unknown,
+            value: Some(value),
+            gaps: Vec::new(),
+            reason: None,
+            error: None,
+            provenance: AnalysisProvenance::default(),
+        }
+    }
+
     pub fn unsupported(reason: &str) -> Self {
         assert!(
             !reason.trim().is_empty(),

@@ -154,37 +154,31 @@ impl GlobalSymbolIndex {
 
     /// The candidates of a name that the module of `directory` can see.
     ///
-    /// Infrastructure code is scoped by directory: the declarations a file
-    /// can see are the ones of its own module and the ones its ancestors
-    /// expose, because a parent module hands its values down. The nearest
-    /// scope that declares the name wins, so a module that declares a name
-    /// itself is never overruled by an ancestor that declares it too.
+    /// Infrastructure code is scoped by directory, and a module sees only
+    /// its own declarations: every directory with declarations in it is a
+    /// module with its own namespace, and a parent module hands its values
+    /// to a child by filling the child's own variables —never by exposing
+    /// its own. A reference in a child that names something the child does
+    /// not declare names nothing, and the graph has to say so.
     ///
-    /// A declaration of a sibling module is not visible. Two modules that
-    /// happen to declare the same name are two different things, and a
-    /// reference that names one of them does not name the other.
-    pub fn candidates_in_scope(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
+    /// A declaration of a sibling module is not visible either. Two
+    /// modules that happen to declare the same name are two different
+    /// things, and a reference that names one of them does not name the
+    /// other.
+    pub fn candidates_in_module(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
         let Some(candidates) = self.by_name.get(name_lower) else {
             return Vec::new();
         };
-        let mut scope = Some(directory);
-        while let Some(current) = scope {
-            let in_scope: Vec<SymbolId> = candidates
-                .iter()
-                .filter(|id| {
-                    self.by_id
-                        .get(*id)
-                        .and_then(|(file, _)| file.parent())
-                        .is_some_and(|parent| parent == current)
-                })
-                .cloned()
-                .collect();
-            if !in_scope.is_empty() {
-                return in_scope;
-            }
-            scope = current.parent();
-        }
-        Vec::new()
+        candidates
+            .iter()
+            .filter(|id| {
+                self.by_id
+                    .get(*id)
+                    .and_then(|(file, _)| file.parent())
+                    .is_some_and(|parent| parent == directory)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Resolves a callee name to a target, preferring the caller-file
@@ -1227,20 +1221,27 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 ///
 /// Two coverages live here and they are not the same thing: the files the
 /// walk could not process, and the references it could not tie to a
-/// declaration. A "Complete" result means both of them are whole — every
-/// input file was processed and every reference the files state points at a
-/// declaration the project holds. A "Partial" result carries the list of
-/// what is missing, so the caller can say it instead of concluding "no
-/// findings". There is intentionally no "Failed" state at this layer: if the
-/// strategy cannot start (e.g. the project directory does not exist), the
-/// surrounding method returns `Err` and never reaches `merge_with_report`.
+/// declaration. A "Complete" result means both of them are whole: every
+/// input file was processed, and every reference that names something
+/// inside the project points at a declaration the project holds.
+///
+/// A reference that names something outside the project — a call to a
+/// function of another crate, a module of Ansible — is not a hole in what
+/// the project knows: the project has no way to see it, so it cannot be
+/// tied, and its absence is not measured here. A "Partial" result carries
+/// the list of what is missing, so the caller can say it instead of
+/// concluding "no findings". There is intentionally no "Failed" state at
+/// this layer: if the strategy cannot start (e.g. the project directory
+/// does not exist), the surrounding method returns `Err` and never reaches
+/// `merge_with_report`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildStatus {
-    /// Every file was processed and every reference was tied to a
-    /// declaration.
+    /// Every file was processed, and every reference that names something
+    /// inside the project was tied to a declaration.
     Complete,
     /// Something is missing: a file the walk could not process, or a
-    /// reference that could not be tied to a declaration.
+    /// reference that names something inside the project and could not be
+    /// tied to a declaration.
     Partial {
         /// The files the walk could not process, with the reason.
         skipped: Vec<SkippedFile>,
@@ -1262,12 +1263,21 @@ pub struct BuildReport {
 
 /// Maps a `std::io::Error` to a [`SkipReason`].
 ///
+/// A file whose reader failed is a parse hole, and it says so.
+///
+/// The rule lives next to the io one so that every path that drops a file
+/// classifies it the same way: two rules for the same thing drift, and the
+/// drift shows up as a graph that says it read files it never read.
+pub fn classify_parse_error(e: &crate::domain::traits::ParseError) -> SkipReason {
+    SkipReason::Parse(e.to_string())
+}
+
 /// - `PermissionDenied` and `NotFound` (file vanished mid-walk) are
 ///   classified as `Read`.
 /// - `InvalidData` and `InvalidInput` (with a "Syntax errors" or
 ///   "Unsupported file type" message) are classified as `Parse`.
 /// - Any other error keeps the OS-provided message under `Other`.
-fn classify_io_error(e: &std::io::Error) -> SkipReason {
+pub fn classify_io_error(e: &std::io::Error) -> SkipReason {
     use std::io::ErrorKind;
     match e.kind() {
         ErrorKind::PermissionDenied | ErrorKind::NotFound => SkipReason::Read(e.to_string()),

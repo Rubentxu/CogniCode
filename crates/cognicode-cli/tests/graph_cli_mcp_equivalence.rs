@@ -151,12 +151,6 @@ async fn the_cli_names_the_terraform_resource_the_way_the_file_declares_it() {
     // answer with the category alone. Which declarations end up as leaves
     // is the graph's business — it changes as the graph learns more — and
     // how they are named is the reader's.
-    // The names are the ones the file declares: a variable is `var.name`,
-    // a resource is `aws_s3_bucket.name`, a data source is
-    // `data.aws_ami.name`. A reader that only knows the categories would
-    // answer with the category alone. Which declarations end up as leaves
-    // is the graph's business — it changes as the graph learns more — and
-    // how they are named is the reader's.
     assert!(
         !names.is_empty(),
         "the project declares symbols, so the CLI has leaves to publish: \
@@ -179,5 +173,83 @@ async fn the_cli_names_the_terraform_resource_the_way_the_file_declares_it() {
         declarations.contains(&"aws_s3_bucket.app_bucket".to_string()),
         "the graph declares the resource the way the file declares it. \
          got: {declarations:?}"
+    );
+}
+
+/// A project with a reference that nobody satisfies, so the two surfaces
+/// have something to disagree about.
+///
+/// Its own directory: the fixture copy that the other tests use is wiped
+/// and rebuilt by whoever calls it, and two tests sharing one tree would
+/// measure each other's writes.
+fn project_with_a_dangling_reference() -> PathBuf {
+    let source = common::repo_root().join("sandbox/fixtures/terraform-iac");
+    let project = std::env::temp_dir().join(format!(
+        "cognicode-cli-graph-coverage-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default()
+    ));
+    copy_tree(&source, &project);
+    let main = project.join("main.tf");
+    let mut source = std::fs::read_to_string(&main).expect("read the fixture");
+    source.push_str(
+        "\nresource \"aws_s3_bucket_policy\" \"ghost_policy\" {\n  bucket = aws_s3_bucket.no_existe.id\n  policy = \"{}\"\n}\n",
+    );
+    std::fs::write(&main, &source).expect("write the fixture");
+    project
+}
+
+/// The verdict of the MCP for the same project, as the two words both
+/// surfaces use.
+async fn mcp_verdict(dir: &Path) -> (String, usize) {
+    let ctx = HandlerContext::builder().with_working_dir(dir).build();
+    let answer = handle_build_graph(
+        &ctx,
+        BuildGraphInput {
+            directory: Some(dir.to_string_lossy().into_owned()),
+        },
+    )
+    .await
+    .expect("the MCP builds the graph");
+    let pending = answer.pending_references.unwrap_or_default();
+    (answer.status, pending.len())
+}
+
+#[tokio::test]
+async fn the_cli_and_the_mcp_say_the_same_thing_about_the_coverage() {
+    let project = project_with_a_dangling_reference();
+
+    // The same tree, the same question, two surfaces.
+    let from_cli = run_cli(&["graph", "full", &project.to_string_lossy()]);
+    let cli_status = from_cli["status"]
+        .as_str()
+        .expect("the CLI answers with a status")
+        .to_string();
+    let cli_pending = from_cli["pending_references"]
+        .as_array()
+        .map(|references| references.len())
+        .unwrap_or(0);
+
+    let (mcp_status, mcp_pending) = mcp_verdict(&project).await;
+
+    assert_eq!(
+        cli_status, mcp_status,
+        "the CLI and the MCP answer with different verdicts about the same \\
+         project: the CLI says {cli_status}, the MCP says {mcp_status}"
+    );
+    assert_eq!(
+        cli_pending, mcp_pending,
+        "the CLI and the MCP count the pending references differently"
+    );
+    assert_eq!(
+        cli_status, "partial",
+        "a reference that nobody satisfies is a hole, and both surfaces say so"
+    );
+    assert!(
+        mcp_pending > 0,
+        "and both surfaces publish the reference that is pending"
     );
 }

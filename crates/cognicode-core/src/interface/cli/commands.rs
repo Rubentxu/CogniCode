@@ -1112,12 +1112,17 @@ impl CommandExecutor {
                                 eprintln!("  Skipped: {}: {}", s.path, s.reason);
                             }
                             for reference in pending_references {
+                                // A reference without a line is not on line
+                                // zero: it is on a line the reader did not
+                                // know, and saying "0" would name a place
+                                // that does not exist.
+                                let origin = match reference.line {
+                                    Some(line) => format!("{}:{}", reference.file, line),
+                                    None => reference.file.clone(),
+                                };
                                 eprintln!(
-                                    "  Pending: {}:{} {} ({:?})",
-                                    reference.file,
-                                    reference.line.unwrap_or_default(),
-                                    reference.target,
-                                    reference.reason
+                                    "  Pending: {} -> {} ({:?})",
+                                    origin, reference.target, reference.reason
                                 );
                             }
                         }
