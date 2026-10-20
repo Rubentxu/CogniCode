@@ -1,6 +1,6 @@
 {
   "missionId": "cognicode",
-  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas: primero las correcciones de correccion que la auditoria del 2026-10-20 encontro (el camino de la CLI ve un grafo distinto al del MCP, el manifiesto de invalidacion cubre 9 de 30 lenguajes, iac_query filtra el nombre interno de Rust), despues la reduccion del coste de la fase de tests sin perder garantias, y finalmente las unidades Kotlin (H3/H4.4) y el SnapshotKey de H5, con todo en remoto al concluir cada ciclo.",
+  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas: primero las correcciones de correccion que quedaban de la auditoria del 2026-10-20 (las referencias sin resolver son hechos y no silencio, y la consulta de infraestructura contesta con el tipo, la arista y la profundidad que le corresponden), despues el corte de release que las publica, despues la reduccion del coste de la fase de tests sin perder garantias, y finalmente las unidades Kotlin (H3/H4.4) y el SnapshotKey de H5, con todo en remoto al concluir cada ciclo.",
   "defaultTokenBudget": 120000,
   "totalTokenBudget": null,
   "explorationEnabled": true,
@@ -53,10 +53,41 @@
       "scope": "H24"
     },
     {
+      "candidateId": "C17",
+      "title": "Las referencias sin resolver son hechos, no silencio",
+      "unit": "H24",
+      "objective": "Que una referencia que no se puede resolver se conserve como hecho con su origen y su motivo, y que `build_graph` distinga la cobertura de archivos de la resolucion de relaciones: `complete` solo se dice cuando las dos estan completas.",
+      "evidence": "crates/cognicode-core/src/infrastructure/graph/semantic_layer.rs",
+      "whyNow": "MEDIDO: `semantic_facts` conserva solo las aristas con destino resuelto (`TargetRef::Resolved`) y pasa por alto el resto sin contarlo; `FileFacts` no tiene donde declararlos. Un grafo puede haber leido todos los ficheros y no saber que depende de que, y aun asi responder `status=\"complete\"`. Es el punto P0 de la auditoria del 2026-10-20 y el contrato CU-007.1 a CU-007.4.",
+      "doneWhen": [
+        "una referencia sin resolver se conserva con fichero, linea, motivo y clase (`Unresolved` o `Ambiguous`)",
+        "`build_graph` dice `complete` solo cuando no queda ninguna referencia pendiente, y en caso contrario dice cuantas quedan y por que",
+        "un test sobre `sandbox/fixtures/terraform-iac` con una referencia a un simbolo inexistente ve la referencia pendiente"
+      ],
+      "scope": "H24",
+      "priority": 4
+    },
+    {
+      "candidateId": "C18",
+      "title": "La consulta de infraestructura contesta con la arista y la profundidad que le corresponden",
+      "unit": "H24",
+      "objective": "Que `iac_query` conteste con los metadatos reales de cada arista, que `depth` sea una profundidad de recorrido y no un tope de resultados, y que un nombre ambiguo se declare ambiguo en vez de resolverse por casualidad.",
+      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
+      "whyNow": "MEDIDO: los dependientes se publican siempre como `references` con confianza `1.0` sin mirar la arista; el grafo guarda las aristas inversas en un `HashSet`, asi que el tipo y la confianza de verdad no estan ahi; `depth` se implementa como `take(depth * 10)`; y dos declaraciones con el mismo nombre se resuelven con `first()`. El tipo y el kind ya se publican bien desde el candidato anterior; esto es lo que queda. Contrato CU-008.2 a CU-008.4.",
+      "doneWhen": [
+        "la confianza y el tipo de la arista salen del grafo, y una arista sin confianza se declara desconocida en vez de `1.0`",
+        "`depth` es una profundidad: con `depth: 2` llegan las aristas a dos saltos, y con `depth: 3` llegan mas aristas, no las mismas con otro corte",
+        "un nombre que responde por mas de una declaracion se declara ambiguo en vez de elegir una en silencio",
+        "el grafo conserva los metadatos de las aristas inversas"
+      ],
+      "scope": "H24",
+      "priority": 5
+    },
+    {
       "candidateId": "C14",
       "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
       "unit": "release",
-      "priority": 4,
+      "priority": 6,
       "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
       "evidence": "release-candidate.pipeline.kts",
       "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
@@ -71,7 +102,7 @@
       "candidateId": "C5",
       "title": "La línea base vacía no se reejecuta",
       "unit": "H23",
-      "priority": 5,
+      "priority": 7,
       "objective": "Que la fase de tests deje de reejecutar 3.192 tests cuando la linea base de fallos conocidos esta vacia.",
       "evidence": "scripts/known_failures.yaml",
       "whyNow": "MEDIDO: el paso `known_failures (core/lib)` de `scripts/test-full.sh` reejecuta los 3.192 tests del lib con `entries:` vacio, asi que solo puede repetir el veredicto del paso anterior. Con la linea base vacia, ese paso no compra garantia: paga tiempo.",
@@ -86,7 +117,7 @@
       "candidateId": "C6",
       "title": "El modo fast ejecuta el target del test tocado",
       "unit": "H23",
-      "priority": 6,
+      "priority": 8,
       "objective": "Que el modo fast ejecute el target concreto del fichero de test que se toco, en vez de limitarse a `--lib`.",
       "evidence": "scripts/ci/select-suites.sh",
       "whyNow": "MEDIDO: el modo fast ejecuta 0 de los 1.316 tests de integracion, porque `run_suite` mapea a `--lib` y nada mas. El lazo iterativo no cubre la superficie donde viven los bugs de contrato, y por eso todo acaba en el gate lento.",
@@ -101,7 +132,7 @@
       "candidateId": "C7",
       "title": "Cada superficie E2E tiene carril o se retira",
       "unit": "H23",
-      "priority": 7,
+      "priority": 9,
       "objective": "Que cada superficie E2E que sobreviva tenga un carril que la ejecute, o que se retire: 41 specs de Playwright sin carril, 5 tests ignorados en `continuation_e2e.rs` cuyo carril declarado no tiene ningun stage de `cargo test`, y las islas de `pytest` que ningun gate corre.",
       "evidence": "crates/cognicode-mcp/tests/continuation_e2e.rs",
       "whyNow": "MEDIDO: 41 specs de Playwright y 4 specs E2E legacy no los ejecuta ningun pipeline; `continuation_e2e.rs` son 609 lineas con 5 tests ignorados y su_dueno declarado no corre ninguno; las islas de `pytest` de `sandbox/scripts/tests/` no las corre nadie, y una de ellas pedia 22 lenguajes cuando ya hay 21. Es superficie que cuesta y no garantiza.",
@@ -116,7 +147,7 @@
       "candidateId": "C8",
       "title": "El contrato de procedencia gobierna consumer-contracts",
       "unit": "H23",
-      "priority": 8,
+      "priority": 10,
       "objective": "Que el contrato de procedencia gobierne tambien `docs/roadmap/consumer-contracts/**`, para que las 20 citas rotas que quedan se vean en rojo.",
       "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/INTEGRATION.md",
       "whyNow": "MEDIDO: de 39 citas a rutas de `docs/` en el contrato del consumidor, 20 no resuelven (14 ficheros, 6 directorios), ocho de ellas con el prefijo equivocado. El contrato solo gobierna `docs/adr/**`, asi que nadie se dio cuenta: el fallo es del guard, no solo de las citas.",
@@ -128,10 +159,55 @@
       "scope": "H23"
     },
     {
+      "candidateId": "C19",
+      "title": "Un recurso de infraestructura no es un simbolo de programacion",
+      "unit": "H24",
+      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
+      "evidence": "crates/cognicode-core/src/infrastructure/parser/language_config.rs",
+      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3.",
+      "doneWhen": [
+        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
+        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
+        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar"
+      ],
+      "scope": "H24",
+      "priority": 11
+    },
+    {
+      "candidateId": "C20",
+      "title": "Los errores del recorrido no desaparecen del inventario",
+      "unit": "H24",
+      "objective": "Que un error del recorrido se cuente como error y una exclusion legitima como exclusion, y que el inventario diga cual de las dos es cada cosa.",
+      "evidence": "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
+      "whyNow": "MEDIDO: el paseo usa `filter_map(|e| e.ok())`, asi que una entrada que falla se pierde sin quedar clasificada; el inventario solo distingue `fichero con lenguaje` de `fichero sin lenguaje`, y los symlinks declinados si se cuentan. El contrato CU-007.5 distingue la exclusion legitima del fichero que no se pudo inspeccionar, y hoy el segundo caso no existe en el inventario.",
+      "doneWhen": [
+        "un error del recorrido aparece en el informe de construccion, clasificado como error",
+        "una exclusion legitima sigue apareciendo como exclusion, y las dos no se confunden",
+        "un test que provoca un error de recorrido lo ve en el inventario"
+      ],
+      "scope": "H24",
+      "priority": 12
+    },
+    {
+      "candidateId": "C21",
+      "title": "La configuracion ejecutable no cita documentos que ya no existen",
+      "unit": "H23",
+      "objective": "Que ninguna configuracion ejecutable apunte a un documento que la poda se llevo, y que el inventario de cobertura que el explorador genera se escriba donde de verdad esta.",
+      "evidence": "apps/explorer-ui/playwright.config.ts",
+      "whyNow": "MEDIDO: `playwright.config.ts` declara `coverageMatrix: \"docs/inventory/e17-coverage-matrix.md\"` y `scripts/coverage-matrix.ts` dice producir ese mismo fichero; `docs/inventory/` ya no existe desde la poda documental, y dos specs de `e2e/` citan `docs/inventory/e17-deferred-bugs.md`. Una configuracion que apunta a un documento inexistente no describe lo que ejecuta.",
+      "doneWhen": [
+        "ninguna ruta de `docs/` citada por configuracion ejecutable esta ausente del arbol",
+        "el inventario de cobertura que genera el explorador se escribe en una ruta versionada, o su generador deja de existir",
+        "un contrato lo vigila"
+      ],
+      "scope": "H23",
+      "priority": 13
+    },
+    {
       "candidateId": "C9",
       "title": "El puerto de dominio deja de construir el adaptador",
       "unit": "H24",
-      "priority": 9,
+      "priority": 14,
       "objective": "Que el puerto de dominio deje de construir un adaptador de infraestructura.",
       "evidence": "crates/cognicode-core/src/application/architecture/canonical_constraints.rs",
       "whyNow": "`domain/ports/call_graph_projection.rs:108` instancia `crate::infrastructure::graph::CallGraphProjection` dentro del dominio, contra la propia regla `architecture.domain_no_infrastructure`. El comentario del fichero justifica la funcion diciendo que evita importar infraestructura, y la linea de al lado la importa.",
@@ -146,7 +222,7 @@
       "candidateId": "C10",
       "title": "Una propiedad de identidad en vez de N tests de paridad",
       "unit": "H24",
-      "priority": 10,
+      "priority": 15,
       "objective": "Sustituir los tests de paridad por parejas por una propiedad: toda identidad que el producto produce la entiende `SymbolFqn::parse`.",
       "evidence": "crates/cognicode-core/src/domain/evidence_kernel/symbol_fqn.rs",
       "whyNow": "MEDIDO: hay siete gramáticas de identidad y un solo parser, que exige que el ultimo segmento sea un `u32`: las gramaticas `tf:` y `ansible:` no parsean nunca, y los cuatro sitios que parsean degradan en silencio. Una propiedad sobre el conjunto habria encontrado, de una vez, esta divergencia, la del camino de la CLI y la fuga de `iac_query`.",
@@ -158,54 +234,10 @@
       "scope": "H24"
     },
     {
-      "candidateId": "C11",
-      "title": "Construir el SnapshotKey de H5",
-      "unit": "H5",
-      "priority": 11,
-      "objective": "Construir el `SnapshotKey` de CU-005.1: identidad del workspace, paths normalizados con su hash, manifiesto de contenido completo, revision de origen, digest de arbol sucio, build real del analizador, esquema, features, perfil de configuracion y ambito.",
-      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md",
-      "whyNow": "MEDIDO: `SnapshotKey` tiene 0 apariciones en `crates/`; la cache es un `HashMap<String, FileGraphCacheEntry>` con la ruta como clave. Sin el, C2 solo arregla una parte del problema de stale. Es la unidad grande, y depende de que C2 haya sentado la base.",
-      "doneWhen": [
-        "existe el tipo con los componentes que enumera CU-005.1, y una funcion pura que lo construye",
-        "cold y warm equivalen semanticamente; un cambio semantico invalida; la corrupcion falla cerrado",
-        "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados"
-      ],
-      "scope": "H5"
-    },
-    {
-      "candidateId": "C12",
-      "title": "El lenguaje Kotlin: gramática y navegación",
-      "unit": "H3",
-      "priority": 12,
-      "objective": "Anadir el lenguaje Kotlin: `Language::Kotlin`, extension `.kt`/`.kts`, una unica gramatica tree-sitter, y navegabilidad desde los binarios distribuidos sin JVM.",
-      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md",
-      "whyNow": "MEDIDO: no existe `Language::Kotlin` ni `tree-sitter-kotlin`; el codigo hace lo contrario a proposito (`per_file_graph.rs:916` declara `kt`/`kts` como no soportados, con honestidad). El ADR que lo exige esta en `Estado: PROPOSED`. Es la unidad mas grande del roadmap vivo.",
-      "doneWhen": [
-        "`Language::Kotlin` existe y `.kt`/`.kts` se parsean",
-        "los simbolos Kotlin son navegables desde el binario distribuido, sin JVM",
-        "el gap tipado de `kt`/`kts` desaparece de `KNOWN_UNSUPPORTED_EXTENSIONS` y hay test de aceptacion con fixtures"
-      ],
-      "scope": "H3"
-    },
-    {
-      "candidateId": "C13",
-      "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
-      "unit": "H4.4",
-      "priority": 13,
-      "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
-      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md",
-      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. Depende de C12.",
-      "doneWhen": [
-        "existe un corpus `.kt`/`.java` con homonimos y un test que demuestra que no sale ninguna arista cuando el objetivo no se puede probar",
-        "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
-      ],
-      "scope": "H4.4"
-    },
-    {
       "candidateId": "C15",
       "title": "El vigilante y su estado dicen la misma verdad que el registro",
       "unit": "H24",
-      "priority": 14,
+      "priority": 16,
       "objective": "Que el conjunto de extensiones que el vigilante observa y el que el endpoint `/watch` publica se deriven de una sola regla, en vez de dos listas literales que ya no coinciden entre sí ni con el registro de lenguajes.",
       "evidence": "crates/cognicode-core/src/application/ingest/watcher.rs",
       "whyNow": "MEDIDO al cerrar el candidato del manifiesto: el vigilante decide con una lista literal de 30 extensiones (`is_watchable`), y el endpoint `/watch` publica otra de 21 que no es la misma. Las dos se han separado del registro de lenguajes, y una de ellas no es la que el servidor aplica. Con el manifiesto arreglado, esta lista ya no puede hacer que el producto mienta: sólo decide cuándo avisar, no qué es verdad. Sigue siendo una tercera fuente de verdad y una superficie que publica algo que no ocurre.",
@@ -220,7 +252,7 @@
       "candidateId": "C16",
       "title": "La estrategia de grafo completo deja de ser una segunda puerta al grafo",
       "unit": "H24",
-      "priority": 15,
+      "priority": 17,
       "objective": "Que el grafo del proyecto se construya en un solo sitio: el método `build_full_graph_report` de las estrategias ya no tiene llamadores de producción, y su contrato de paseo confinado debe quedar protegido en el camino que queda vivo.",
       "evidence": "crates/cognicode-core/src/infrastructure/graph/strategy.rs",
       "whyNow": "MEDIDO al cerrar el candidato de la paridad: las siete órdenes de grafo de la CLI y el manejador `build_graph` del MCP construyen el grafo con el servicio, así que `build_full_graph_report` (el de `FullGraphStrategy` y el de `PerFileStrategy`) se quedó sin llamadores de producción. Lo sostienen sólo sus propios tests, entre ellos el que fija que el paseo no se sale de la raíz y el que exige que las estrategias propaguen su informe de construcción. Es una segunda puerta al grafo que ya no está en el camino del producto: quien la use obtendría un grafo distinto del que da el producto.",
@@ -230,6 +262,80 @@
         "el contrato de propagación del informe de construcción sigue teniendo una prueba o una deprecación explícita"
       ],
       "scope": "H24"
+    },
+    {
+      "candidateId": "C22",
+      "title": "El arbol sintactico se parsea una vez",
+      "unit": "H24",
+      "objective": "Que el fichero se parsee una sola vez por camino, y que la capa semantica y el lector del dominio compartan el mismo arbol.",
+      "evidence": "crates/cognicode-core/src/infrastructure/parser/terraform_handler.rs",
+      "whyNow": "MEDIDO: la capa semantica llama al extractor generico, que parsea el fichero, y el lector de Terraform lo vuelve a parsear con `parse(source)`. Es trabajo repetido y una oportunidad de divergencia: dos lectores del mismo texto pueden discrepar. La auditoria del 2026-10-20 lo senala como mejora lateral, con la condicion de medir antes.",
+      "doneWhen": [
+        "MEDIDO: el coste de parsear dos veces por fichero, con el numero",
+        "un solo arbol por fichero en el camino de la capa semantica, si el coste lo justifica",
+        "ningun cambio en los modelos de dominio"
+      ],
+      "scope": "H24",
+      "priority": 18
+    },
+    {
+      "candidateId": "C23",
+      "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
+      "unit": "H24",
+      "objective": "Que la construccion del grafo, la cache, la resolucion y las metricas dejen de vivir en un mismo archivo, sin cambiar los contratos publicos.",
+      "evidence": "crates/cognicode-core/src/application/services/analysis_service.rs",
+      "whyNow": "MEDIDO: el archivo tiene 4.100 lineas y cuatro responsabilidades. La auditoria del 2026-10-20 lo senala como senal de duplicacion, junto con la segunda puerta al grafo.",
+      "doneWhen": [
+        "el archivo se parte por responsabilidad, y cada parte tiene su nombre",
+        "los contratos publicos del servicio no cambian",
+        "la suite sigue verde"
+      ],
+      "scope": "H24",
+      "priority": 19
+    },
+    {
+      "candidateId": "C11",
+      "title": "Construir el SnapshotKey de H5",
+      "unit": "H5",
+      "priority": 20,
+      "objective": "Construir el `SnapshotKey` de CU-005.1: identidad del workspace, paths normalizados con su hash, manifiesto de contenido completo, revision de origen, digest de arbol sucio, build real del analizador, esquema, features, perfil de configuracion y ambito.",
+      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md",
+      "whyNow": "MEDIDO: `SnapshotKey` tiene 0 apariciones en `crates/`; la cache es un `HashMap<String, FileGraphCacheEntry>` con la ruta como clave. Sin el, C2 solo arregla una parte del problema de stale. Es la unidad grande, y depende de que C2 haya sentado la base.",
+      "doneWhen": [
+        "existe el tipo con los componentes que enumera CU-005.1, y una funcion pura que lo construye",
+        "cold y warm equivalen semanticamente; un cambio semantico invalida; la corrupcion falla cerrado",
+        "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados"
+      ],
+      "scope": "H5"
+    },
+    {
+      "candidateId": "C12",
+      "title": "El lenguaje Kotlin: gramática y navegación",
+      "unit": "H3",
+      "priority": 21,
+      "objective": "Anadir el lenguaje Kotlin: `Language::Kotlin`, extension `.kt`/`.kts`, una unica gramatica tree-sitter, y navegabilidad desde los binarios distribuidos sin JVM.",
+      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md",
+      "whyNow": "MEDIDO: no existe `Language::Kotlin` ni `tree-sitter-kotlin`; el codigo hace lo contrario a proposito (`per_file_graph.rs:916` declara `kt`/`kts` como no soportados, con honestidad). El ADR que lo exige esta en `Estado: PROPOSED`. Es la unidad mas grande del roadmap vivo.",
+      "doneWhen": [
+        "`Language::Kotlin` existe y `.kt`/`.kts` se parsean",
+        "los simbolos Kotlin son navegables desde el binario distribuido, sin JVM",
+        "el gap tipado de `kt`/`kts` desaparece de `KNOWN_UNSUPPORTED_EXTENSIONS` y hay test de aceptacion con fixtures"
+      ],
+      "scope": "H3"
+    },
+    {
+      "candidateId": "C13",
+      "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
+      "unit": "H4.4",
+      "priority": 22,
+      "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
+      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md",
+      "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. Depende de C12.",
+      "doneWhen": [
+        "existe un corpus `.kt`/`.java` con homonimos y un test que demuestra que no sale ninguna arista cuando el objetivo no se puede probar",
+        "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
+      ],
+      "scope": "H4.4"
     }
   ]
 }

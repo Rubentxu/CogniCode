@@ -19942,3 +19942,101 @@ candidatos: el puerto de dominio que construye su propio adaptador, la
 propiedad de identidad que sustituye a los tests de paridad, el vigilante que
 dice una verdad distinta de la del registro, y la segunda puerta al grafo
 que dejó la estrategia de grafo completo.
+
+## 2026-10-20 — La auditoría se convierte en contratos y en roadmap (H23, H24)
+
+### Lo que se pidió
+
+Que la auditoría técnica del 2026-10-20 —la que revisó `f8d53a4`— se
+convierta en **especificaciones** y en un **roadmap actualizado**, sin abrir
+otro programa documental: sus propuestas se integran en las unidades que ya
+existen.
+
+### Lo que se comprobó antes de escribir nada
+
+La auditoría está escrita contra `f8d53a4`, dos commits por detrás de
+`main`. Sus hallazgos se verificaron uno por uno contra el código antes de
+convertirlos en contrato, porque una especificación que describe un defecto
+que ya no existe es una especificación falsa:
+
+| Hallazgo de la auditoría | Verificado |
+|---|---|
+| Las referencias sin resolver se descartan al construir los hechos del fichero | Sí: `semantic_facts` conserva sólo las aristas con destino resuelto |
+| El dominio instancia su adaptador de infraestructura | Sí: el puerto de proyección construye la implementación de `infrastructure` |
+| La estrategia de grafo completo conserva su propia construcción | Sí: `AnalysisService` tiene 4.100 líneas y la estrategia ya no tiene llamadores de producción |
+| Varias declaraciones con el mismo nombre: se elige la primera | Sí: `iac_candidates.first()` |
+| El tipo sale del tipo interno de Rust | **Resuelto** en la unidad anterior |
+| Los dependientes se publican como `references` con confianza `1.0` | Sí, y además el grafo guarda las aristas inversas en un `HashSet`: el tipo y la confianza de verdad no están |
+| `depth` es un tope de resultados, no una profundidad | Sí: `take(depth * 10)` |
+| La ontología del extractor genérico contradice al lenguaje | Sí: en Bash, `function_definition` está como función **y** como clase, y `command` como llamada **y** como importación |
+| Los errores del recorrido desaparecen del inventario | Sí: el paseo usa `filter_map(|e| e.ok())` |
+| El vigilante tiene su propia lista de extensiones | Sí (ya era candidato) |
+| La fase completa repite la batería del core | Sí (ya era candidato) |
+| El modo rápido sólo corre `--lib` | Sí (ya era candidato) |
+| 41 superficies E2E sin carril | Sí (ya era candidato) |
+| La configuración ejecutable cita documentos que ya no existen | Sí, y más widespread de lo que decía: `playwright.config.ts` y el generador del explorador apuntan a `docs/inventory/`, que la poda se llevó, y dos specs más citan un documento del mismo sitio |
+
+### Lo que se hizo
+
+**Tres especificaciones nuevas**, en el sitio donde ya viven los contratos
+del consumidor:
+
+- `SPEC-CU-007-HONEST-COVERAGE.md` — la cobertura de archivos y la
+  resolución de relaciones son dos hechos. Una referencia sin resolver es un
+  hecho con origen, motivo y clase; `complete` sólo se dice cuando las dos
+  están completas; el error del recorrido y la exclusión legítima se
+  cuentan aparte; y el grafo, el manifiesto y el vigilante nombran el mismo
+  conjunto de ficheros.
+- `SPEC-CU-008-IAC-QUERY.md` — la consulta de infraestructura contesta con
+  el tipo, la arista y la profundidad que le corresponden: el tipo cuando la
+  declaración lo lleva y el kind cuando no, los metadatos reales de la
+  arista, `depth` como profundidad, y la ambigüedad declarada en vez de
+  resuelta por casualidad.
+- `SPEC-CU-009-ONTOLOGY.md` — un recurso de infraestructura no es un símbolo
+  de programación: la categoría del extractor genérico no puede contradecir
+  la semántica del lenguaje, y un lenguaje sin lector semántico declara su
+  precisión.
+
+**El roadmap vuelve a ser estado, no historia.** El bloque §11 ocupaba las
+ochenta líneas de su techo con la cadena de cierres —H17, H18, H19, H20,
+H21, H22— y con las tres correcciones que H24 tenía anotadas, dos de las
+cuales ya están resueltas. Los recibos de cada cierre están en el Journal
+con su SHA y su recuento de suite, que es donde la historia vive. El bloque
+ahora nombra **qué está abierto, dónde está su autoridad y qué le queda**,
+y ocupa 67 líneas.
+
+**La backlog de la misión crece de 15 a 22 candidatos**, siete de ellos
+nuevos y con evidencia verificada: C17 (las referencias sin resolver), C18
+(la arista y la profundidad), C19 (la ontología), C20 (los errores del
+recorrido), C21 (la configuración ejecutable que cita documentos que ya no
+existen), C22 (el árbol sintáctico se parsea dos veces) y C23 (el servicio de
+análisis tiene 4.100 líneas). El orden es el del plan de la auditoría, con
+el corte de release detrás de las correcciones: publicar es lo que convierte
+el trabajo en instalable, y las correcciones son lo que debe publicar.
+
+### Lo que no se hizo, y por qué
+
+**No se abrió otro programa documental.** Los tres contratos nuevos cuelgan
+de las unidades que ya existen: CU-007 y CU-009 de H24, CU-008 de H24
+también, y el corte de release de H5. No hay unidad nueva, así que §11 no
+crece.
+
+**No se corrigió el código de los hallazgos.** Esta unidad escribe lo que el
+producto tiene que decir; arreglarlo es trabajo con su propio ciclo, su
+propio test RED y su propio gate. Los siete candidatos nuevos son el trabajo
+que sigue, y ninguno se ha dado por hecho.
+
+**No se corrigió la cifra de §11** («el manifiesto cubre 9 de 30
+lenguajes»): era la redacción de una unidad que sigue abierta, y la cifra
+medida —9 de 51 extensiones— está en el recibo de su cierre. Corregirla
+aquí habría sido reescribir un cierre.
+
+### Evidencia
+
+- Los nueve hallazgos de la auditoría verificados contra el código, con la
+  ruta y la línea de cada uno.
+- Los contratos de coherencia del roadmap en verde: unidades abiertas,
+  atribución de autoridad, deriva de capacidades y ratchet de versión.
+- El bloque §11 en 67 líneas, por debajo de su techo de 80.
+- `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
+- `merge-gate` verde sobre el commit del PR.

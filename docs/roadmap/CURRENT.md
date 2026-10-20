@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `a43ef5a5adad8c2d1ffbd5ecd2d7aa0c8f6b407a`
+> **Snapshot**: 2026-10-20, sobre `c459772d61dc1ac1ece59b2ed95ccd4b47c1b11b`
 > (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **29** commits por delante
+> `v0.101.23` (2026-10-18, 8 assets). `main` está **30** commits por delante
 > de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
@@ -28,7 +28,7 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **15** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
@@ -48,8 +48,29 @@ tiraba, y el manejador publicaba el nombre interno de la variante de Rust:
 un bucket respondía `Function`. Ahora responde `aws_s3_bucket`, y una
 declaración sin tipo responde con su kind (`variable`, `module`, `play`).
 
-El siguiente trabajo es **C14**: publicar una release con las estabilizaciones
-mergeadas después de `v0.101.23` —`main` va 29 commits por delante—.
+## Los contratos que fija la auditoría del 2026-10-20
+
+Tres specs nuevas, en `docs/roadmap/consumer-contracts/specs/`, escriben lo
+que el producto tenía que decir y no decía:
+
+- **SPEC-CU-007** — la cobertura de archivos y la resolución de relaciones
+  son dos hechos. Una referencia sin resolver es un hecho con origen y
+  motivo, no un silencio; `complete` no se dice si queda alguna pendiente.
+- **SPEC-CU-008** — la consulta de infraestructura contesta con el tipo, la
+  arista y la profundidad que le corresponden: los metadatos reales de la
+  arista, `depth` como profundidad y no como tope, y la ambigüedad
+  declarada.
+- **SPEC-CU-009** — un recurso de infraestructura no es un símbolo de
+  programación. La categoría del extractor genérico no puede contradecir la
+  semántica del lenguaje.
+
+Los nueve hallazgos de la auditoría se verificaron uno por uno contra el
+código antes de escribirlos: siete son candidatos nuevos de la backlog
+(C17–C23) y dos ya estaban (el vigilante y la puerta del dominio).
+
+El siguiente trabajo es **C17**: las referencias sin resolver son hechos, no
+silencio. Después, **C18** (los metadatos reales de la arista) y el corte de
+release, que es lo que convierte el trabajo en instalable.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
@@ -78,7 +99,7 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **Release pendiente**: `main` lleva 29 commits sin publicar. Publicar exige
+- **Release pendiente**: `main` lleva 30 commits sin publicar. Publicar exige
   gates sobre un candidato concreto, binarios instalados verificados y tag
   anotado.
 
