@@ -213,6 +213,7 @@ fn json_graph_full_shape() {
         dependencies: 40,
         status: "complete".to_string(),
         skipped_files: vec![],
+        pending_references: vec![],
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "full");

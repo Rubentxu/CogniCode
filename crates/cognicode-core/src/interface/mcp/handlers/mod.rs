@@ -162,7 +162,6 @@ use crate::interface::mcp::schemas::{
     OverviewDetail,
     OverviewMeta as SchemaOverviewMeta,
     PathEntry,
-    PendingReason,
     PendingReferenceInfo,
     QuerySymbolInput,
     QuerySymbolOutput,
@@ -890,7 +889,12 @@ fn save_durable_snapshot(
     use bincode::config::standard;
     use bincode::serde::encode_to_vec;
 
-    let snapshot = ("cognicode.graph.cache/v1", graph, manifest);
+    // The version says what the snapshot means, and the meaning of a
+    // snapshot changed: a graph is now only "complete" when its references
+    // are tied too, and a snapshot written before that says complete about
+    // a graph that had holes in it. A snapshot of the old version is
+    // therefore not evidence of anything: it is rebuilt.
+    let snapshot = ("cognicode.graph.cache/v2", graph, manifest);
     let bytes = encode_to_vec(snapshot, standard())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -940,7 +944,7 @@ fn load_durable_snapshot(
 
     let bytes = std::fs::read(db_path).ok()?;
     let (snapshot, _): ((String, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != "cognicode.graph.cache/v1" {
+    if snapshot.0 != "cognicode.graph.cache/v2" {
         return None;
     }
     Some((snapshot.1, snapshot.2))
@@ -1166,25 +1170,6 @@ pub struct SkippedFileDto {
     pub reason: String,
 }
 
-/// Maps a pending reference to the record the consumer reads.
-fn pending_reference_info(
-    reference: &crate::domain::value_objects::PendingReference,
-) -> PendingReferenceInfo {
-    use crate::domain::value_objects::PendingClass;
-    let (reason, candidates) = match &reference.class {
-        PendingClass::Unresolved => (PendingReason::Unresolved, None),
-        PendingClass::Ambiguous { candidates } => (PendingReason::Ambiguous, Some(*candidates)),
-    };
-    PendingReferenceInfo {
-        file: reference.origin_file.clone(),
-        line: reference.origin_line,
-        target: reference.target.clone(),
-        kind: reference.kind.to_string(),
-        reason,
-        candidates,
-    }
-}
-
 /// Handler for build_graph tool
 pub async fn handle_build_graph(
     ctx: &HandlerContext,
@@ -1373,8 +1358,10 @@ pub async fn handle_build_graph(
                         },
                     })
                     .collect();
-                let pending: Vec<PendingReferenceInfo> =
-                    pending.iter().map(pending_reference_info).collect();
+                let pending: Vec<PendingReferenceInfo> = pending
+                    .iter()
+                    .map(PendingReferenceInfo::from_reference)
+                    .collect();
                 (Some(mapped), Some(pending), "partial".to_string())
             }
             None => {
@@ -3656,8 +3643,10 @@ pub async fn handle_merge_graphs(
                     }
                 })
                 .collect();
-            let pending: Vec<PendingReferenceInfo> =
-                pending.iter().map(pending_reference_info).collect();
+            let pending: Vec<PendingReferenceInfo> = pending
+                .iter()
+                .map(PendingReferenceInfo::from_reference)
+                .collect();
             let n = skipped.len();
             (MergeCoverage::from(skipped, pending), n)
         }
@@ -4270,14 +4259,40 @@ mod tests {
         std::fs::write(&db, b"not-a-snapshot-at-all").unwrap();
         assert!(load_durable_snapshot(&db).is_none());
 
-        // Y un snapshot v1 legítimo sí se carga.
+        // Snapshot v1: lo escribió la versión anterior, cuando "complete"
+        // sólo significaba "no se saltó ningún fichero". Su sentido cambió:
+        // un grafo con referencias sin atar era completo para él y no lo es
+        // ahora. Servirlo sería contestar "complete" sobre un grafo con
+        // huecos, así que se rechaza y el grafo se reconstruye.
+        //
+        // El snapshot es uno de verdad —el mismo grafo y el mismo
+        // manifiesto que se guardan hoy—, para que la prueba mida la
+        // versión y no un payload que el lector rechaza por corrupto.
+        let previous = (
+            "cognicode.graph.cache/v1",
+            crate::domain::aggregates::call_graph::CallGraph::new(),
+            crate::domain::value_objects::file_manifest::FileManifest::new(
+                dir.path().to_path_buf(),
+            ),
+        );
+        let bytes = encode_to_vec(previous, standard()).unwrap();
+        std::fs::write(&db, &bytes).unwrap();
+        assert!(
+            load_durable_snapshot(&db).is_none(),
+            "un snapshot de la versión anterior no se sirve: su sentido cambió"
+        );
+
+        // Y un snapshot de la versión vigente sí se carga.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
         save_durable_snapshot(&db, &graph, &manifest).unwrap();
         let loaded = load_durable_snapshot(&db);
-        assert!(loaded.is_some(), "snapshot v1 legítimo debe cargarse");
+        assert!(
+            loaded.is_some(),
+            "un snapshot de la versión vigente debe cargarse"
+        );
     }
 
     /// `tmp_path_for` returns a unique tmp path for each

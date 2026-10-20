@@ -930,32 +930,11 @@ pub struct SkippedFileInfo {
 /// the reference names something nobody declares, or names several things
 /// and the graph cannot tell which one it means. Those are facts about the
 /// code, and a consumer that asks "what do you know?" has to hear them.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
-pub struct PendingReferenceInfo {
-    /// The file that writes the reference.
-    pub file: String,
-    /// The line the reference is written on, counting from one.
-    pub line: Option<u32>,
-    /// The name the reference names.
-    pub target: String,
-    /// What the reference is.
-    pub kind: String,
-    /// Why the far end could not be identified: `unresolved` when no
-    /// declaration carries the name, `ambiguous` when several do.
-    pub reason: PendingReason,
-    /// How many declarations carry the name, when there are several.
-    pub candidates: Option<usize>,
-}
-
-/// Why the far end of a reference could not be identified.
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum PendingReason {
-    /// No declaration carries the name.
-    Unresolved,
-    /// More than one does, and the graph cannot prove which one.
-    Ambiguous,
-}
+///
+/// The shape and the projection live in
+/// [`interface::coverage`](crate::interface::coverage): the fact is one
+/// fact, and every consumer reads it the same way.
+pub use crate::interface::coverage::{PendingReason, PendingReferenceInfo};
 
 /// How much of what was asked for is actually in the answer.
 ///

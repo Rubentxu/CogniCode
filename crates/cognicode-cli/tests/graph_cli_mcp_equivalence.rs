@@ -151,9 +151,33 @@ async fn the_cli_names_the_terraform_resource_the_way_the_file_declares_it() {
     // answer with the category alone. Which declarations end up as leaves
     // is the graph's business — it changes as the graph learns more — and
     // how they are named is the reader's.
+    // The names are the ones the file declares: a variable is `var.name`,
+    // a resource is `aws_s3_bucket.name`, a data source is
+    // `data.aws_ami.name`. A reader that only knows the categories would
+    // answer with the category alone. Which declarations end up as leaves
+    // is the graph's business — it changes as the graph learns more — and
+    // how they are named is the reader's.
+    assert!(
+        !names.is_empty(),
+        "the project declares symbols, so the CLI has leaves to publish: \
+         got: {names:?}"
+    );
     assert!(
         names.iter().all(|name| name.contains('.')),
         "the CLI names the declarations the way the file declares them, as \
          the MCP does. got: {names:?}"
+    );
+
+    // The exact name the file declares, on the declarations themselves:
+    // which of them end up as leaves is the graph's business, but that the
+    // resource is called `aws_s3_bucket.app_bucket` and not `app_bucket`
+    // is the reader's.
+    let project = terraform_project();
+    let graph = mcp_graph(&project).await;
+    let declarations: Vec<String> = graph.symbols().map(|s| s.name().to_string()).collect();
+    assert!(
+        declarations.contains(&"aws_s3_bucket.app_bucket".to_string()),
+        "the graph declares the resource the way the file declares it. \
+         got: {declarations:?}"
     );
 }

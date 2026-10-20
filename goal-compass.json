@@ -336,6 +336,21 @@
         "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
       ],
       "scope": "H4.4"
+    },
+    {
+      "candidateId": "C24",
+      "title": "Las superficies por fichero dicen lo que no ataron",
+      "unit": "H24",
+      "priority": 23,
+      "objective": "Que las superficies por fichero publiquen las referencias que el fichero enuncia y no se pudieron atar a una declaracion, en vez de responder como si el fichero no tuviera ninguna.",
+      "evidence": "crates/cognicode-core/src/infrastructure/graph/per_file_graph.rs",
+      "whyNow": "MEDIDO al revisar C17: el grafo por fichero ya sabe cuales referencias no ato —la cache las guarda y `merge_with_report` las publica—, pero `build_local_graph` devuelve solo el grafo, y de ahi el manejador `get_per_file_graph` del MCP y la orden `graph per-file` de la CLI responden con simbolos y dependencias sin decir nada de ellas. La cobertura de relaciones se mide en el grafo del proyecto y no en el del fichero, asi que las dos superficies pueden contestar cosas distintas sobre el mismo fichero.",
+      "doneWhen": [
+        "`get_per_file_graph` y `graph per-file` publican las referencias pendientes del fichero, con su origen y su motivo",
+        "un fichero con una referencia sin atar no se presenta como un fichero sin referencias",
+        "las dos superficies dicen lo mismo sobre el mismo fichero"
+      ],
+      "scope": "H24"
     }
   ]
 }

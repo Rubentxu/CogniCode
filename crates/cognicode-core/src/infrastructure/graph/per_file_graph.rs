@@ -152,27 +152,39 @@ impl GlobalSymbolIndex {
         self.by_id.insert(symbol_id, (file, name.to_string()));
     }
 
-    /// The candidates of a name that live in the same directory as the
-    /// file that asks for them.
+    /// The candidates of a name that the module of `directory` can see.
     ///
     /// Infrastructure code is scoped by directory: the declarations a file
-    /// can see are the ones of its own module, and a module is a directory.
-    /// A name that several modules declare is told apart by the module that
-    /// writes the reference.
-    pub fn candidates_in_directory(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
+    /// can see are the ones of its own module and the ones its ancestors
+    /// expose, because a parent module hands its values down. The nearest
+    /// scope that declares the name wins, so a module that declares a name
+    /// itself is never overruled by an ancestor that declares it too.
+    ///
+    /// A declaration of a sibling module is not visible. Two modules that
+    /// happen to declare the same name are two different things, and a
+    /// reference that names one of them does not name the other.
+    pub fn candidates_in_scope(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
         let Some(candidates) = self.by_name.get(name_lower) else {
             return Vec::new();
         };
-        candidates
-            .iter()
-            .filter(|id| {
-                self.by_id
-                    .get(*id)
-                    .and_then(|(file, _)| file.parent())
-                    .is_some_and(|parent| parent == directory)
-            })
-            .cloned()
-            .collect()
+        let mut scope = Some(directory);
+        while let Some(current) = scope {
+            let in_scope: Vec<SymbolId> = candidates
+                .iter()
+                .filter(|id| {
+                    self.by_id
+                        .get(*id)
+                        .and_then(|(file, _)| file.parent())
+                        .is_some_and(|parent| parent == current)
+                })
+                .cloned()
+                .collect();
+            if !in_scope.is_empty() {
+                return in_scope;
+            }
+            scope = current.parent();
+        }
+        Vec::new()
     }
 
     /// Resolves a callee name to a target, preferring the caller-file
@@ -289,6 +301,12 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
 struct FileGraphCacheEntry {
     /// The call graph for this file
     graph: CallGraph,
+    /// The references this file states and nobody declared.
+    ///
+    /// They travel with the graph: a cache hit that served the graph and
+    /// dropped these would answer "complete" about a file whose
+    /// references are not tied.
+    pending: Vec<PendingReference>,
     /// Whether this entry is valid
     valid: bool,
     /// Last-modified time of the source file at cache time (seconds since
@@ -381,7 +399,7 @@ impl PerFileGraphCache {
         }
 
         // Build the graph for this file (no global index: per-file resolution only)
-        let (graph, _cross_file, _pending) = self.build_file_graph(&path_str, None)?;
+        let (graph, _cross_file, pending) = self.build_file_graph(&path_str, None)?;
 
         // Cache it
         {
@@ -390,6 +408,7 @@ impl PerFileGraphCache {
                 path_str,
                 FileGraphCacheEntry {
                     graph: graph.clone(),
+                    pending: pending.clone(),
                     valid: true,
                     mtime_secs: fingerprint.as_ref().map(|f| f.mtime_secs),
                     size: fingerprint.as_ref().map(|f| f.size),
@@ -406,13 +425,13 @@ impl PerFileGraphCache {
     /// Returns `None` when the entry is absent OR has been invalidated
     /// (`entry.valid == false`). Callers that need a guaranteed-fresh
     /// graph should use [`PerFileGraphCache::get_or_build`].
-    pub fn get_cached(&self, file_path: &Path) -> Option<Arc<CallGraph>> {
+    pub fn get_cached(&self, file_path: &Path) -> Option<(Arc<CallGraph>, Vec<PendingReference>)> {
         let path_str = file_path.to_string_lossy().to_string();
         let cache = self.cache.read().unwrap();
         cache
             .get(&path_str)
             .filter(|entry| entry.valid)
-            .map(|entry| Arc::new(entry.graph.clone()))
+            .map(|entry| (Arc::new(entry.graph.clone()), entry.pending.clone()))
     }
 
     /// Invalidates the cache entry for a specific file
@@ -490,7 +509,7 @@ impl PerFileGraphCache {
             // Get from cache or build. Cache hit does not produce skipped
             // entries; only actual build failures do.
             let built: Result<BuildFileResult, std::io::Error> = match self.get_cached(path) {
-                Some(g) => Ok(((*g).clone(), Vec::new(), Vec::new())),
+                Some((graph, pending)) => Ok(((*graph).clone(), Vec::new(), pending)),
                 None => self.build_file_graph(&path_str, Some(&global_index)),
             };
             let (graph, cross_file, pending) = match built {

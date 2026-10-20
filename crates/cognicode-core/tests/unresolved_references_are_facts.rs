@@ -10,6 +10,12 @@
 //! tied to a declaration. Both travel with the answer, and "complete" is
 //! only said when both are whole.
 
+use cognicode_core::application::analysis_basis::{
+    AnalysisBasis, AnalysisOp, Analyze, OutcomeState,
+};
+use cognicode_core::application::services::analyze::ServiceAnalyzer;
+use cognicode_core::interface::cli::presenter_bridge::present_graph_full;
+use cognicode_core::interface::cli::result::GraphResult;
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };
@@ -220,5 +226,222 @@ async fn a_module_of_the_language_is_not_a_gap() {
             .filter(|reference| reference.target.starts_with("ansible:role:"))
             .all(|reference| reference.file.ends_with("site.yml") && reference.line.is_some()),
         "a pending reference says which file writes it and on which line"
+    );
+}
+
+#[tokio::test]
+async fn the_cli_does_not_say_complete_when_a_reference_is_pending() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let fixtures = copy_fixture(dir.path(), "terraform-iac");
+    let main = fixtures.join("main.tf");
+
+    let mut source = std::fs::read_to_string(&main).expect("the fixture is readable");
+    source.push_str(
+        "\nresource \"aws_s3_bucket_policy\" \"ghost_policy\" {\n  bucket = aws_s3_bucket.no_existe.id\n  policy = \"{}\"\n}\n",
+    );
+    std::fs::write(&main, &source).expect("the fixture is writable");
+
+    // The path the CLI takes: the same facade, the same op and the same
+    // presenter that `cogh graph full` runs.
+    let analyzer = ServiceAnalyzer::new();
+    let basis = AnalysisBasis::for_workspace(dir.path().to_path_buf());
+    let outcome = Analyze::execute(
+        &analyzer,
+        &basis,
+        AnalysisOp::GraphFull {
+            path: dir.path().to_path_buf(),
+            rebuild: true,
+        },
+    );
+
+    assert_eq!(
+        outcome.state(),
+        OutcomeState::Partial,
+        "a reference that was not tied to a declaration is not a complete answer"
+    );
+
+    let result = present_graph_full(&outcome, &dir.path().to_string_lossy(), true);
+    let GraphResult::Full {
+        status,
+        pending_references,
+        ..
+    } = &result
+    else {
+        panic!("esperaba GraphResult::Full, obtuvo {result:?}")
+    };
+
+    assert_eq!(
+        status, "partial",
+        "the CLI says partial when a reference is pending"
+    );
+    assert!(
+        pending_references
+            .iter()
+            .any(|reference| reference.target == GHOST),
+        "the CLI publishes which reference is pending and why: {pending_references:?}"
+    );
+}
+
+#[tokio::test]
+async fn a_declaration_of_another_module_does_not_satisfy_a_reference() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(project.join("app")).expect("mkdir app");
+    std::fs::create_dir_all(project.join("net")).expect("mkdir net");
+
+    // The variable is declared in one module...
+    std::fs::write(
+        project.join("net/main.tf"),
+        "variable \"only_here\" {\n  default = \"10.0.0.0/16\"\n}\n",
+    )
+    .expect("write net");
+    // ...and named by the other one. A module does not see the internals of
+    // its sibling: the name is not declared where it is used.
+    std::fs::write(
+        project.join("app/main.tf"),
+        "resource \"aws_s3_bucket\" \"b\" {\n  bucket = var.only_here\n}\n",
+    )
+    .expect("write app");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir.path())
+        .build();
+
+    let answer = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+        .await
+        .expect("the graph builds");
+
+    let pending = answer
+        .pending_references
+        .expect("the pending references travel with the answer");
+
+    assert!(
+        pending
+            .iter()
+            .any(|reference| reference.target == "var.only_here"),
+        "the declaration of the sibling module does not satisfy the \
+         reference: it stays pending: {pending:?}"
+    );
+    assert_ne!(
+        answer.status, "complete",
+        "a reference that names a declaration of another module is a hole, \
+         and the answer says so"
+    );
+
+    // And no edge was invented for it.
+    let graph = ctx.analysis_service().get_project_graph();
+    assert!(
+        !graph
+            .all_dependencies()
+            .any(|(_, target, _)| target.as_str().contains("only_here")),
+        "a relation without a demonstrated far end is not invented"
+    );
+}
+
+#[tokio::test]
+async fn a_name_that_two_declarations_carry_is_ambiguous() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&project).expect("mkdir project");
+
+    // Two declarations of the same name in the same scope: the graph cannot
+    // prove which one the reference means.
+    std::fs::write(
+        project.join("first.tf"),
+        "variable \"dup\" {\n  default = \"one\"\n}\n",
+    )
+    .expect("write first");
+    std::fs::write(
+        project.join("second.tf"),
+        "variable \"dup\" {\n  default = \"two\"\n}\n",
+    )
+    .expect("write second");
+    std::fs::write(
+        project.join("uses.tf"),
+        "resource \"aws_s3_bucket\" \"b\" {\n  bucket = var.dup\n}\n",
+    )
+    .expect("write uses");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir.path())
+        .build();
+
+    let answer = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+        .await
+        .expect("the graph builds");
+
+    let pending = answer
+        .pending_references
+        .expect("the pending references travel with the answer");
+
+    let ambiguous = pending
+        .iter()
+        .find(|reference| reference.target == "var.dup")
+        .expect("the reference that two declarations carry is published");
+
+    assert_eq!(
+        ambiguous.reason,
+        PendingReason::Ambiguous,
+        "two declarations carry the name and the graph cannot tell them apart"
+    );
+    assert_eq!(
+        ambiguous.candidates,
+        Some(2),
+        "the answer says how many declarations carry the name"
+    );
+    assert_ne!(
+        answer.status, "complete",
+        "an ambiguous reference is a hole, and the answer says so"
+    );
+
+    // And it was not wired to one of the homonyms.
+    let graph = ctx.analysis_service().get_project_graph();
+    assert!(
+        !graph
+            .all_dependencies()
+            .any(|(_, target, _)| target.as_str().contains("dup")),
+        "an ambiguous reference is never wired to a homonym"
+    );
+}
+
+#[tokio::test]
+async fn a_name_that_a_for_expression_binds_is_not_a_gap() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&project).expect("mkdir project");
+
+    std::fs::write(
+        project.join("variables.tf"),
+        "variable \"pairs\" {\n  type = map(object({ name = string }))\n  default = {}\n}\n",
+    )
+    .expect("write variables");
+    // The expression binds two names, `k` and `v`. Both name no
+    // declaration of the project, so neither of them is a hole.
+    std::fs::write(
+        project.join("main.tf"),
+        "resource \"aws_s3_bucket\" \"b\" {\n  bucket = [for k, v in var.pairs : v.name]\n}\n",
+    )
+    .expect("write main");
+
+    let ctx = HandlerContext::builder()
+        .with_working_dir(dir.path())
+        .build();
+
+    let answer = handle_build_graph(&ctx, BuildGraphInput { directory: None })
+        .await
+        .expect("the graph builds");
+
+    let pending = answer
+        .pending_references
+        .expect("the pending references travel with the answer");
+
+    assert!(
+        pending.is_empty(),
+        "the names a `for` expression binds are not references to a \
+         declaration: {pending:?}"
+    );
+    assert_eq!(
+        answer.status, "complete",
+        "a project that binds its own names is a complete answer"
     );
 }

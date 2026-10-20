@@ -12,13 +12,14 @@
 
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::value_objects::DependencyType;
+use serde::{Deserialize, Serialize};
 
 /// Why the far end of a reference could not be identified.
 ///
 /// The class answers for the scope of the build that reports it: a build
 /// that merged three files speaks of those three files, and a build that
 /// read the whole project speaks of the project.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PendingClass {
     /// No declaration in the scope of the build carries that name.
     Unresolved,
@@ -31,7 +32,7 @@ pub enum PendingClass {
 }
 
 /// A reference whose far end is not identified.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingReference {
     /// The file that writes the reference.
     pub origin_file: String,

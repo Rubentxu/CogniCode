@@ -1037,6 +1037,7 @@ impl AnalysisService {
                     GraphCoverageMetrics,
                     CallGraph,
                     Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+                    Vec<crate::domain::value_objects::PendingReference>,
                 ),
                 AppError,
             >,
@@ -1184,6 +1185,8 @@ impl AnalysisService {
                 let mut all_relationships = Vec::new();
                 let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
                     Vec::new();
+                let mut pending_references: Vec<crate::domain::value_objects::PendingReference> =
+                    Vec::new();
 
                 for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
                     if was_parsed {
@@ -1211,6 +1214,11 @@ impl AnalysisService {
                     // already knew both ends.
                     identified_relations.extend(facts.identified.iter().cloned());
 
+                    // A reference whose far end is not identified is kept,
+                    // with its origin: the project may still be able to tie
+                    // it to a declaration in another file.
+                    pending_references.extend(facts.pending.iter().cloned());
+
                     for (caller, callee_name) in facts.calls {
                         // El fichero del llamante es lo que permite las reglas
                         // "mismo fichero" y "misma raíz de crate".
@@ -1231,6 +1239,27 @@ impl AnalysisService {
                             .add_dependency(&relation.caller, &relation.callee, relation.kind)
                             .ok();
                     }
+                }
+
+                // The references the files could not tie to a declaration are
+                // looked up now that every symbol of every file is in the
+                // index: the declaration they name may live in another file
+                // of the project. What the lookup proves becomes a relation;
+                // what it cannot prove stays pending and travels with the
+                // report. This is the same rule the synchronous path
+                // applies, and both must apply it: two paths that answer
+                // differently about the same project are two graphs.
+                let pending_resolution =
+                    crate::infrastructure::graph::pending::resolve_pending_references(
+                        pending_references,
+                        &global_index,
+                    );
+                for (source_id, target_id, kind) in &pending_resolution.proven {
+                    store
+                        .lock()
+                        .unwrap()
+                        .add_dependency(source_id, target_id, *kind)
+                        .ok();
                 }
 
                 for (caller_fqn, caller_file, callee_name) in all_relationships {
@@ -1266,11 +1295,11 @@ impl AnalysisService {
                     coverage_percent,
                 };
 
-                Ok((coverage, call_graph, k0_skipped))
+                Ok((coverage, call_graph, k0_skipped, pending_resolution.pending))
             })
             .await;
 
-        let (coverage, call_graph, k0_skipped) = result
+        let (coverage, call_graph, k0_skipped, k0_pending) = result
             .map_err(|e| AppError::AnalysisError(format!("Task join error: {}", e)))?
             .map_err(|e| AppError::AnalysisError(format!("Build error: {}", e)))?;
 
@@ -1283,12 +1312,17 @@ impl AnalysisService {
         // usa esta ruta, asi que tras editar un consumidor leia cobertura
         // pre-edicion. Se publica aqui, fuera del `spawn_blocking`, porque
         // el reporte pertenece al servicio y no a la tarea bloqueante.
-        let status = if k0_skipped.is_empty() {
+        // El estado lleva las dos coberturas: los ficheros que el recorrido
+        // no pudo procesar, y las referencias que no se pudieron atar a una
+        // declaración. "Complete" sólo se dice cuando las dos están
+        // completas; esta ruta no puede decir "complete" sobre una
+        // cobertura de relaciones que no midió.
+        let status = if k0_skipped.is_empty() && k0_pending.is_empty() {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Complete
         } else {
             crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped: k0_skipped,
-                pending: Vec::new(),
+                pending: k0_pending,
             }
         };
         *self.last_build_report.lock().unwrap() =

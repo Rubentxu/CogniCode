@@ -39,6 +39,11 @@ pub struct PendingResolution {
 /// becomes an edge; when it names several, the reference stays pending and
 /// says how many candidates there were; when it names none, it stays
 /// pending as unresolved.
+///
+/// Only the declarations the writing module can see are candidates. A
+/// declaration of a sibling module does not satisfy a reference: the edge
+/// would name something the code does not name, and the hole it hides
+/// would be a real one.
 pub fn resolve_pending_references(
     pending: Vec<PendingReference>,
     index: &GlobalSymbolIndex,
@@ -50,31 +55,26 @@ pub fn resolve_pending_references(
         let mut resolution = None;
         for reading in readings(&reference.target) {
             let key = reading.to_lowercase();
-            // The declarations of the module that writes the reference come
-            // first: infrastructure code is scoped by directory, and a name
-            // that several modules declare is told apart by the module that
-            // writes it.
-            let in_module = index.candidates_in_directory(&key, module);
-            if in_module.len() == 1 {
-                resolution = Some(TargetResolution::Resolved(in_module[0].clone()));
+            // The declarations the module that writes the reference can
+            // see come first: infrastructure code is scoped by directory,
+            // and a name that several modules declare is told apart by the
+            // module that writes it. A declaration of a module that the
+            // writer cannot see does not satisfy the reference: it would be
+            // an edge that nothing proves, and it would hide the hole.
+            let in_scope = index.candidates_in_scope(&key, module);
+            if in_scope.len() == 1 {
+                resolution = Some(TargetResolution::Resolved(in_scope[0].clone()));
                 break;
             }
-            if in_module.len() > 1 {
+            if in_scope.len() > 1 {
                 resolution = Some(TargetResolution::Ambiguous {
                     name: key,
-                    candidates: in_module,
+                    candidates: in_scope,
                 });
                 break;
             }
-            match index.resolve(&key, Some(origin)) {
-                // Nothing carries that reading: a shorter one may still name
-                // a declaration.
-                TargetResolution::Unresolved(_) => continue,
-                other => {
-                    resolution = Some(other);
-                    break;
-                }
-            }
+            // Nothing the writer can see carries that reading: a shorter
+            // one may still name a declaration.
         }
         match resolution {
             Some(TargetResolution::Resolved(target)) => {

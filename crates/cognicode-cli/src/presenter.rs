@@ -867,6 +867,7 @@ pub fn present_graph_full(
         dependencies,
         status: _,
         skipped_files: _,
+        pending_references: _,
     } = result
     {
         // Progress line (stdout in text mode; in json

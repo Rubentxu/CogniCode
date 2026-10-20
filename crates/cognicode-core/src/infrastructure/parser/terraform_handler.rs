@@ -282,7 +282,9 @@ fn is_language_built_in(name: &str) -> bool {
 /// Whether the name is bound by a `for` expression that encloses the node.
 ///
 /// `[for s in aws_subnet.public : s.id]` binds `s` for that expression, and
-/// `s` names no declaration of the project.
+/// `s` names no declaration of the project. A `for` can bind two names —
+/// `[for k, v in var.map : v.key]` binds `k` and `v` — so every name the
+/// expression binds is looked at.
 fn is_bound_by_an_enclosing_for(node: Node, name: &str, source: &[u8]) -> bool {
     let mut current = node.parent();
     while let Some(ancestor) = current {
@@ -295,9 +297,10 @@ fn is_bound_by_an_enclosing_for(node: Node, name: &str, source: &[u8]) -> bool {
                 let mut inner = intro.walk();
                 let bound = intro
                     .named_children(&mut inner)
-                    .find(|child| child.kind() == "identifier");
-                if let Some(bound) = bound {
-                    return node_text(bound, source) == name;
+                    .filter(|child| child.kind() == "identifier")
+                    .any(|bound| node_text(bound, source) == name);
+                if bound {
+                    return true;
                 }
             }
         }

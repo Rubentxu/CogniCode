@@ -326,6 +326,17 @@ impl<T> AnalysisOutcome<T> {
 /// parciales), `unsupported` (la operacion no aplica), `io`
 /// (fallo recuperable), `cancelled` (el budget detuvo), `generic`
 /// (cualquier otro). El `message` se emite al consumer tal cual.
+/// The capability of the gap that says a file could not be read.
+pub const SKIPPED_FILE_CAPABILITY: &str = "graph";
+
+/// The capability of the gap that says a reference could not be tied to a
+/// declaration.
+///
+/// The two coverages are two gaps with two capabilities, because they are
+/// two facts: a presenter that reads one of them as the other tells the
+/// consumer half the truth.
+pub const PENDING_REFERENCE_CAPABILITY: &str = "graph.pending";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnalysisError {
     pub kind: AnalysisErrorKind,
@@ -601,6 +612,13 @@ pub enum GraphValue {
         symbols: usize,
         dependencies: usize,
         elapsed_ms: u128,
+        /// The references the build could not tie to a declaration.
+        ///
+        /// They travel with the value because the consumer asks one question
+        /// — "do you know everything?" — and the answer has to say which
+        /// references it does not know, in the same place where it says what
+        /// it does know.
+        pending_references: Vec<crate::domain::value_objects::PendingReference>,
     },
     OnDemand {
         symbol: String,

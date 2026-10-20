@@ -1102,6 +1102,7 @@ impl CommandExecutor {
                         );
                         if let crate::interface::cli::result::GraphResult::Full {
                             skipped_files,
+                            pending_references,
                             status,
                             ..
                         } = &result
@@ -1109,6 +1110,15 @@ impl CommandExecutor {
                         {
                             for s in skipped_files {
                                 eprintln!("  Skipped: {}: {}", s.path, s.reason);
+                            }
+                            for reference in pending_references {
+                                eprintln!(
+                                    "  Pending: {}:{} {} ({:?})",
+                                    reference.file,
+                                    reference.line.unwrap_or_default(),
+                                    reference.target,
+                                    reference.reason
+                                );
                             }
                         }
                         Ok(result)

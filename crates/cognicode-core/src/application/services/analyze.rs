@@ -113,26 +113,26 @@ impl ServiceAnalyzer {
         // esto, CLI/SDK decían "complete" mientras MCP decía "partial"
         // sobre el MISMO workspace (divergencia real detectada por el
         // UAT-CU-1 del 2026-10-16).
-        if let Some(gaps) = self.partial_gaps_from_last_build() {
-            let stats = self.service.get_graph_stats();
-            return AnalysisOutcome::partial(
-                AnalysisValue::Graph(GraphValue::Full {
-                    path: path.to_path_buf(),
-                    symbols: stats.symbol_count,
-                    dependencies: stats.edge_count,
-                    elapsed_ms: 0,
-                }),
-                gaps,
-            );
-        }
-
+        //
+        // Las dos coberturas son dos hechos y los dos cuentan: un fichero
+        // que no se pudo leer y una referencia que no se pudo atar son
+        // respuestas distintas a "lo sabes todo?". La referencia viaja con
+        // el valor —donde el consumidor lee lo que sí se resolvió— y el
+        // gap dice que la cobertura de relaciones no está completa.
+        let (skipped, pending) = self.partial_coverage();
         let stats = self.service.get_graph_stats();
-        AnalysisOutcome::complete(AnalysisValue::Graph(GraphValue::Full {
+        let value = AnalysisValue::Graph(GraphValue::Full {
             path: path.to_path_buf(),
             symbols: stats.symbol_count,
             dependencies: stats.edge_count,
             elapsed_ms: 0, // el elapsed real va en la provenance
-        }))
+            pending_references: pending.clone(),
+        });
+        let gaps = coverage_gaps(&skipped, &pending);
+        if gaps.is_empty() {
+            return AnalysisOutcome::complete(value);
+        }
+        AnalysisOutcome::partial(value, gaps)
     }
 
     fn graph_complexity(&self, path: &std::path::Path) -> AnalysisOutcome<AnalysisValue> {
@@ -178,10 +178,13 @@ impl ServiceAnalyzer {
         // Partial, devolvemos Partial con los mismos gaps que
         // graph_full sobre el mismo workspace, llevando la métrica
         // calculada sobre el grafo parcial como valor. La traducción
-        // BuildStatus→gaps vive SOLO en `partial_gaps_from_last_build`
-        // (H0.2): añadir otra copia en una tercera op reintroduciría la
-        // divergencia CLI/SDK/MCP que UAT-CU-1 detectó el 2026-10-16.
-        if let Some(gaps) = self.partial_gaps_from_last_build() {
+        // BuildStatus→gaps vive SOLO en `partial_coverage` y
+        // `coverage_gaps` (H0.2): añadir otra copia en una tercera op
+        // reintroduciría la divergencia CLI/SDK/MCP que UAT-CU-1 detectó
+        // el 2026-10-16.
+        let (skipped, pending) = self.partial_coverage();
+        let gaps = coverage_gaps(&skipped, &pending);
+        if !gaps.is_empty() {
             return AnalysisOutcome::partial(
                 AnalysisValue::Graph(GraphValue::Complexity {
                     path: path.to_path_buf(),
@@ -197,36 +200,58 @@ impl ServiceAnalyzer {
         }))
     }
 
-    /// Traducción ÚNICA de `BuildReport` → `Vec<AnalysisError>` (gaps) en
-    /// este adaptador. Devuelve `Some(gaps)` si y solo si el último
-    /// build del service fue `BuildStatus::Partial` con al menos un
-    /// skip. Cualquier op del adaptador que necesite reportar Partial
-    /// CONSULTA este helper — no copia la traducción. Si el helper
-    /// cambiara, todas las ops cambian a la vez, y la paridad
-    /// CLI/SDK/MCP queda garantizada por construcción, no por
-    /// disciplina.
-    fn partial_gaps_from_last_build(&self) -> Option<Vec<AnalysisError>> {
-        let report = self.service.get_last_build_report()?;
-        let crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, .. } =
-            report.status
-        else {
-            return None;
+    /// Las dos coberturas que el último build no alcanzó.
+    ///
+    /// El servicio contesta con dos hechos que no se deducen uno del otro:
+    /// los ficheros que el recorrido no pudo leer, y las referencias que no
+    /// se pudieron atar a una declaración. Un build que no dejó ninguno de
+    /// los dos huecos está completo.
+    fn partial_coverage(
+        &self,
+    ) -> (
+        Vec<crate::infrastructure::graph::per_file_graph::SkippedFile>,
+        Vec<crate::domain::value_objects::PendingReference>,
+    ) {
+        let Some(report) = self.service.get_last_build_report() else {
+            return (Vec::new(), Vec::new());
         };
-        if skipped.is_empty() {
-            return None;
+        match report.status {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped,
+                pending,
+            } => (skipped, pending),
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
+                (Vec::new(), Vec::new())
+            }
         }
-        Some(
-            skipped
-                .iter()
-                .map(|s| {
-                    AnalysisError::gap(
-                        "graph",
-                        &format!("{}: {}", s.path, skip_reason_text(&s.reason)),
-                    )
-                })
-                .collect(),
-        )
     }
+}
+
+/// Los gaps que dicen qué cobertura no está completa.
+///
+/// Cada cobertura dice la suya: un gap por fichero que no se pudo leer, y
+/// un gap por la cobertura de relaciones. Un consumidor que lee los gaps
+/// sabe así cuál de las dos falta, y no sólo que falta algo.
+fn coverage_gaps(
+    skipped: &[crate::infrastructure::graph::per_file_graph::SkippedFile],
+    pending: &[crate::domain::value_objects::PendingReference],
+) -> Vec<AnalysisError> {
+    let mut gaps: Vec<AnalysisError> = skipped
+        .iter()
+        .map(|s| {
+            AnalysisError::gap(
+                crate::application::analysis_basis::SKIPPED_FILE_CAPABILITY,
+                &format!("{}: {}", s.path, skip_reason_text(&s.reason)),
+            )
+        })
+        .collect();
+    if !pending.is_empty() {
+        gaps.push(AnalysisError::gap(
+            crate::application::analysis_basis::PENDING_REFERENCE_CAPABILITY,
+            &format!("{} reference(s) without a declaration", pending.len()),
+        ));
+    }
+    gaps
 }
 
 /// Texto estable para el motivo de skip, paralelo al `reason_kind` del

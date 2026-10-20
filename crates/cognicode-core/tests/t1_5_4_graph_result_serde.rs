@@ -92,6 +92,7 @@ fn graph_result_full_serializes_with_status_and_skipped() {
             path: "/work/repo/bad.rs".to_string(),
             reason: "ParseError".to_string(),
         }],
+        pending_references: vec![],
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(json["kind"], "full");
