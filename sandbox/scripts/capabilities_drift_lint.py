@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""PRF-ANA-01 code↔doc lint: detecta drift entre `ALL_TREE_SITTER_LANGS`
+"""code↔doc lint: detecta drift entre `ALL_TREE_SITTER_LANGS`
 (constantes del crate cognicode-core) y la lista en
-`docs/prf/specs/CAPABILITIES-MATRIX.md`.
+`docs/roadmap/consumer-contracts/specs/CAPABILITIES-MATRIX.md`.
 
 Uso: python3 sandbox/scripts/capabilities_drift_lint.py [--strict]
   --strict: exit 1 si drift detectado (default: solo warn).
@@ -11,10 +11,8 @@ Exit codes:
   1  = drift detectado (solo con --strict)
   2  = error de parsing / archivos no encontrados
 
-Este lint cierra el riesgo de drift código↔doc detectado durante la
-auditoría E0.W1 (sesión 2026-09-25, JOURNAL §4) y propuesto como
-E0.W2: una CI job que ejecuta este script contra todo PR que toque
-`crates/.../capabilities.rs` o `CAPABILITIES-MATRIX.md`.
+Es un stage de merge-gate: si el documento falta, o si la lista no
+coincide con el código, el stage falla y el PR no entra.
 """
 from __future__ import annotations
 
@@ -25,7 +23,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 CODE_FILE = REPO_ROOT / "crates/cognicode-core/src/interface/mcp/capabilities.rs"
-DOC_FILE = REPO_ROOT / "docs/prf/specs/CAPABILITIES-MATRIX.md"
+DOC_FILE = REPO_ROOT / "docs/roadmap/consumer-contracts/specs/CAPABILITIES-MATRIX.md"
 
 
 def parse_code_langs() -> list[str]:
@@ -153,9 +151,10 @@ def main() -> int:
             file=sys.stderr,
         )
     print(
-        "\nFix: actualiza docs/prf/specs/CAPABILITIES-MATRIX.md para "
-        "que la lista de lenguajes (y el header 'N lenguajes') coincida "
-        "con ALL_TREE_SITTER_LANGS en crates/cognicode-core/src/"
+        "\nFix: actualiza "
+        "docs/roadmap/consumer-contracts/specs/CAPABILITIES-MATRIX.md "
+        "para que la lista de lenguajes (y el header 'N lenguajes') "
+        "coincida con ALL_TREE_SITTER_LANGS en crates/cognicode-core/src/"
         "interface/mcp/capabilities.rs.",
         file=sys.stderr,
     )

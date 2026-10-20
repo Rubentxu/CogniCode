@@ -13,10 +13,10 @@
 //! case. `87/87` was a floor, not a count: a number of verifications, not a
 //! number of references.
 //!
-//! ## Why it is scoped to `docs/` and `openspec/`
+//! ## Why it is scoped to the decision record
 //!
-//! The naive sweep is not a gate, it is noise. Measured over
-//! `docs/adr/`, `openspec/specs/` and `docs/ROADMAP.md`:
+//! The naive sweep is not a gate, it is noise. Measured over the decision
+//! record and the entrypoint that pointed at it:
 //!
 //! | set | broken |
 //! |---|---|
@@ -42,17 +42,20 @@
 //!
 //! | path | where | why it stays missing |
 //! |---|---|---|
-//! | `openspec/specs/quality-store/` | `openspec-conformance/spec.md` | the GIVEN reads *"contains entry `quality-store` but **no** `openspec/specs/quality-store/` directory"*. The fixture asserts absence. |
-//! | `docs/guide.md` | `docs-source-adapter/spec.md` | GIVEN describing a document to ingest: `# Guide\nSee [render](src/render.rs#L10)`. |
-//! | `docs/adr/0001.md` | `docs-source-adapter/spec.md` | GIVEN: *"was ingested previously (1 Decision + 1 Doc + 3 edges)"*. A generic input document, not an ADR citation. |
-//! | `docs/adr/0007.md` | `docs-source-adapter/spec.md` | same fixture, the other input document. |
+//! | `openspec/` | the decision record | the specification tree was removed with the documentation tree. The decision cites the specification it implemented; rewriting a decision to hide that provenance would falsify it. |
+//! | `docs/prf/` | the decision record | the closed programme's dossier was removed with the documentation tree. The decision cites the artefacts that programme produced; the programme is closed and its dossier is gone. |
+//! | `docs/parked-crates/` | `ADR-001-parked-crates.md` | the parked crates were removed with the documentation tree. The decision that parked them cites where it parked them. |
+//! | `docs/RELEASE-1.0.0-PLAN.md` | `ADR-031`, `ADR-032` | the release plan was removed with the documentation tree. The decisions that define the release cite the plan they were based on. |
 //! | `docs/analysis/release-1.0.0-scorecard.md` | `ADR-031-release-1.0.0-definition.md` | prospective: *"se archiva en … al publicar"*. The file is created at release time. |
-//! | `docs/adr/E32-cognicode-distribution.md` | `ADR-034`, `cognicode-cli/spec.md` | E32 is a ROADMAP *program* with sub-units E32-A..I, not an ADR, so this path never named a decision record. Choosing `ADR-034` or the ROADMAP E32 section would be invention. |
-//! | `docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md` | `generic-graph-equivalence-harness/spec.md` | a local-only workspace document under the gitignored `docs/` tree, so it is not in the published repository. The citation records where GAP S2 was tracked, for whoever holds that workspace. |
+//! | `docs/adr/E32-cognicode-distribution.md` | `ADR-034` | E32 is a ROADMAP *program* with sub-units E32-A..I, not an ADR, so this path never named a decision record. Choosing `ADR-034` or the ROADMAP E32 section would be invention. |
+//!
+//! A row whose path ends in `/` is a root: any citation under it is allowed
+//! too. That is how a removed tree is declared — once, with the reason it
+//! went — instead of one row per file that used to live in it.
 //!
 //! Adding a row here is a claim that the path should not exist. The claim is in
 //! the diff, and `every_allowed_missing_states_a_reason` fails if the reason is
-//! blank.
+//! blank or if nothing cites the row any more.
 //!
 //! ## What `merge-gate` caught in this contract's first CI run
 //!
@@ -101,7 +104,7 @@ fn backtick_run(bytes: &[u8], i: usize) -> usize {
 /// The obvious implementation is `text.split('`').skip(1).step_by(2)`, and it
 /// fails silently. A markdown code fence is **three** backticks, so a document
 /// that embeds one has an odd total and every position after it is off by one.
-/// Measured on `openspec/specs/docs-source-adapter/spec.md`: 373 backticks, and
+/// Measured on a specification document before the tree was pruned: 373 backticks, and
 /// the pairing extractor returned **zero** paths for the whole file — including
 /// the three broken ones this contract exists to catch. A scanner that returns
 /// an empty set passes the gate below without checking anything, which is the
@@ -180,9 +183,8 @@ const MAX_EXPANSIONS: usize = 16;
 
 /// Expand `{a,b}` into its alternatives.
 ///
-/// `docs/ROADMAP.md` cites `` `openspec/specs/{cognicode-cli, cognicode-ide-adapter}/spec.md` ``,
-/// which is one reference to two files, not one reference to a file whose name
-/// contains braces. Treating it as a literal path would put a permanent,
+/// A citation like `` `specs/{alpha, beta}/spec.md` `` is one reference to two
+/// files, not one reference to a file whose name contains braces. Treating it as a literal path would put a permanent,
 /// unexplainable failure in the gate; skipping braces entirely would let a real
 /// broken citation hide behind the notation.
 fn expand_braces(candidate: &str) -> Vec<String> {
@@ -221,23 +223,27 @@ fn expand_braces(candidate: &str) -> Vec<String> {
 
 /// Paths that are allowed not to exist, with the reason each one stays that way.
 ///
+/// A row whose path ends in `/` is a root: any citation under it is allowed
+/// too. That is how a removed tree is declared — once, with the reason it
+/// went — instead of one row per file that used to live in it.
+///
 /// See the table in the module docs. A blank reason fails the contract.
 const ALLOWED_MISSING: &[(&str, &str)] = &[
     (
-        "openspec/specs/quality-store/",
-        "GIVEN clause in openspec-conformance/spec.md asserts that this directory does NOT exist; creating it would invert the test",
+        "openspec/",
+        "the specification tree was removed with the documentation tree. The decision record cites the specification each decision implemented; rewriting a decision to hide that provenance would falsify it, and the citation states what was implemented rather than a path a reader can follow today",
     ),
     (
-        "docs/guide.md",
-        "GIVEN clause in docs-source-adapter/spec.md: a sample document to ingest, not a citation",
+        "docs/prf/",
+        "the closed programme's dossier was removed with the documentation tree. The decision record cites the artefacts that programme produced; the programme is closed and its dossier is gone, so the citation states what was decided rather than a path a reader can follow today",
     ),
     (
-        "docs/adr/0001.md",
-        "GIVEN clause in docs-source-adapter/spec.md: a generic ingested input document, not a citation of ADR-001",
+        "docs/parked-crates/",
+        "the parked crates were removed with the documentation tree. The decision that parked them cites where it parked them; the crates are gone and the decision that made them is not",
     ),
     (
-        "docs/adr/0007.md",
-        "GIVEN clause in docs-source-adapter/spec.md: a generic ingested input document, not a citation of ADR-007",
+        "docs/RELEASE-1.0.0-PLAN.md",
+        "the release plan was removed with the documentation tree. The decisions that define the release cite the plan they were based on; the plan is gone and the decisions are not",
     ),
     (
         "docs/analysis/release-1.0.0-scorecard.md",
@@ -246,10 +252,6 @@ const ALLOWED_MISSING: &[(&str, &str)] = &[
     (
         "docs/adr/E32-cognicode-distribution.md",
         "E32 is a ROADMAP program with sub-units E32-A..I, not an ADR; this path never named a decision record and picking a substitute would be invention",
-    ),
-    (
-        "docs/CogniCode_Living_Software_Intelligence/RETIREMENT-LEDGER.md",
-        "cited by the archived e40 spec as where GAP S2 was tracked. The ledger is a local-only workspace document under the gitignored docs/ tree (only its nested docs/adr/proposed/ path is force-added), so it is not part of the published repository. The citation records provenance for whoever holds that workspace, not a path a reader can follow from a checkout",
     ),
 ];
 
@@ -262,22 +264,18 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The tracked files this contract governs: the ADR tree, the openspec specs and
-/// the ROADMAP entrypoint. Read through `git ls-files` so an untracked scratch
-/// file cannot fail the build.
+/// The tracked files this contract governs: the decision record and the
+/// operating contract. Read through `git ls-files` so an untracked scratch file
+/// cannot fail the build.
 fn governed_files(root: &Path) -> Vec<PathBuf> {
     let tracked = tracked_paths(root);
 
     let mut files: Vec<PathBuf> = tracked
         .iter()
-        .filter(|p| p.starts_with("docs/adr/") || p.starts_with("openspec/specs/"))
+        .filter(|p| p.starts_with("docs/adr/"))
         .map(PathBuf::from)
         .collect();
 
-    // docs/ROADMAP.md is tracked but not under docs/adr/, and it cites specs.
-    if tracked.contains("docs/ROADMAP.md") {
-        files.push(PathBuf::from("docs/ROADMAP.md"));
-    }
     files.sort();
     files
 }
@@ -350,7 +348,9 @@ fn broken_provenance_paths(root: &Path) -> Vec<(String, String)> {
 }
 
 fn is_allowed(path: &str) -> bool {
-    ALLOWED_MISSING.iter().any(|(p, _)| *p == path)
+    ALLOWED_MISSING.iter().any(|(declared, _)| {
+        *declared == path || (declared.ends_with('/') && path.starts_with(declared))
+    })
 }
 
 #[test]
@@ -627,8 +627,14 @@ fn every_allowed_missing_states_a_reason() {
         })
         .collect();
     for (path, _) in ALLOWED_MISSING {
+        // A root row is alive while something under it is still cited.
+        let still_cited = if path.ends_with('/') {
+            cited.iter().any(|c| c.starts_with(path))
+        } else {
+            cited.contains(*path)
+        };
         assert!(
-            cited.contains(*path),
+            still_cited,
             "ALLOWED_MISSING row `{path}` is stale: nothing in the governed tree cites it. \
              Remove the row rather than leaving an allowlist entry that no longer applies."
         );
@@ -639,8 +645,8 @@ fn every_allowed_missing_states_a_reason() {
         // fine, and nothing else would ever notice -- the row is still cited,
         // so the staleness check above passes.
         //
-        // Proven by adding a row pointing at `openspec/specs/cognicode-cli/spec.md`,
-        // which exists and is cited: all seven tests still passed.
+        // Proven by adding a row pointing at a path that exists and is cited:
+        // all seven tests still passed.
         assert!(
             !resolves_in_a_checkout(&tracked, path),
             "ALLOWED_MISSING row `{path}` is obsolete: that path now resolves in a checkout, \

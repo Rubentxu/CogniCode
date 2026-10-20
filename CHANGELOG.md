@@ -8,7 +8,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > de alto nivel; el historial commit-por-commit está disponible vía
 > `git log v0.50.0..v0.86.0`. Las versiones anteriores a v0.50.0 no
 > tienen entradas aquí; el historial completo puede reconstruirse
-> desde `docs/ROADMAP.md` (working doc local, no versionado).
+> desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
 ## [v0.101.23] — 2026-10-18
 

@@ -19340,3 +19340,112 @@ anotado como trabajo futuro.
   relaciones sin resolver, no nodos.
 - **El `kind` de un recurso** no tiene voz propia en el vocabulario del
   grafo.
+
+## 2026-10-20 — La poda del árbol de documentación (PR #397)
+
+### Lo que se pidió
+
+Que los directorios `docs/` y `openspec/` desaparecieran sin miramiento.
+No es una petición de orden: es una petición de **contexto**. Un agente
+que recorre el árbol se encuentra con **1.726** ficheros de historia
+—anotaciones de ciclos que ya se cerraron, especificaciones de programas
+muertos, crates aparcados— y el ruido compite con lo que importa.
+
+### MEDIDO, antes y después
+
+```text
+                      antes    después
+docs/ versionado        655        125
+openspec/ versionado   1071          0
+                         ───────────────
+ficheros borrados                 1.606
+líneas borradas              252.046
+```
+
+Y lo que se movió de sitio, porque no era documentación sino **corpus de
+pruebas**: `docs/prf/fixtures/` (**89** ficheros) ahora es
+`crates/cognicode-core/testdata/`, que es lo que era.
+
+### Lo que sobrevive, y por qué
+
+| Qué | Por qué no se va |
+|---|---|
+| `docs/roadmap/` (**80**) | La autoridad de agenda, el puntero, el recibo, los contratos de las unidades abiertas y la matriz de capacidades que un stage del gate lee. `AGENTS.md` empieza por aquí. |
+| `docs/adr/` (**41**) | El registro de decisiones: qué se decidió y por qué. Es el registro de la decisión, no su impresión. |
+| `docs/cognicode-community-productization/` (**2**) | El registro de acciones: una identidad por acción, y un contrato lo vigila. |
+| `docs/debts/` (**1**) | El respaldo de las ignorancias del gate de cadena de suministro: `deny.toml` lo nombra y un contrato lo comprueba. |
+| `docs/distribution/` (**1**) | La guía de instalación que el contrato de la fundación OSS cita. |
+
+Todo lo demás —el dossier del programa PRF, el árbol de especificaciones, los
+crates aparcados, los planes anteriores, el inventario de estado de las
+pruebas— se fue con sus **252.046** líneas.
+
+### Lo que NO se fue, y por qué no era documentación
+
+`docs/prf/fixtures/` no era un documento: eran **corpus de pruebas**, y
+seis puntos del código los leían para medir. Borrarlos habría roto
+veinte y siete pruebas para no ganar nada. Movidos, no borrados.
+
+Y dos contratos que se apoyaban en lo que se iba:
+
+- el de **procedencia** (una ruta citada en acentos graves tiene que
+  existir) ahora declara las **raíces** que se fueron, una fila y una
+  razón cada una, en vez de una fila por fichero. Lo que sigue existiendo
+  se sigue comprobando;
+- el de **aislamiento de ignorados** ya no declara un fichero que no
+  existe.
+
+### Lo que se rompió al hacerlo, y se arregló
+
+- `AGENTS.md` apuntaba a un dossier que ya no está: reescrito, sin
+  cambiar ninguna regla.
+- `.gitignore` declaraba exenciones para árboles que ya no están: las
+  excepciones que apuntaban a la nada se fueron; las que vigilan lo que
+  queda, se quedan.
+- El hook de pre-commit que impedía mezclar el dossier congelado con
+  cambios de código: **eliminado**. Su razón —el dossier congelado— ya
+  no existe, y un hook que no puede dispararse no es un hook.
+- El contrato que nombraba las raíces del árbol eliminado: re-apuntado a
+  las que sobreviven, con la anti-vacuidad intacta.
+- La skill del desarrollador describía un flujo —`SDDK + OpenSpec`— que
+  ya no existe: reescrita en el vocabulario que queda, que es el de
+  unidad de trabajo.
+- **Un stage del merge-gate leía un fichero que la poda se llevó**:
+  `capabilities_drift_lint.py` comparaba la lista de lenguajes del
+  código con la de `docs/prf/specs/CAPABILITIES-MATRIX.md`, y el fichero
+  estaba entre los borrados. El lint sale con código 2 cuando no puede
+  leer la matriz, así que el stage habría parado el PR — pero el gate
+  local no lo ejecutaba: el veredicto que el operador ve antes de abrir
+  el PR podía ser verde con la matriz inexistente. La matriz volvió a
+  `docs/roadmap/consumer-contracts/specs/`, el lint se re-apuntó, y el
+  lint pasó a ser un **contrato** (`scripts/ci/test_capabilities_drift.py`)
+  que el gate local y el merge-gate ejecutan los dos. El contrato no
+  reimplementa la comparación: carga el lint y lo ejercita, con control
+  negativo incluido (sin matriz, código 2; header en desacuerdo, código
+  1). El test de `pytest` que cubría esto era una isla que ningún gate
+  ejecutaba y que además pedía 22 lenguajes cuando ya hay 21: retirado,
+  porque su garantía ahora vive en un contrato que sí corre.
+
+### Lo que queda abierto (medido, no supuesto)
+
+- **Las referencias al árbol eliminado en comentarios de código**: **52**
+  líneas en **38** ficheros, contadas como líneas de comentario que nombran
+  una raíz que se fue. Son de la deuda que el ratchet ya mide, y quitarlas
+  es trabajo de una unidad propia.
+- **Las citas rotas en los contratos del consumidor**: **39** citas a
+  rutas de `docs/` en `docs/roadmap/consumer-contracts/**`, de las que
+  **20** no resuelven —**14** a ficheros y **6** a directorios. Ocho de
+  las catorce llevan el prefijo equivocado
+  (`docs/roadmap/kotlin-evolution/` en vez de
+  `docs/roadmap/consumer-contracts/kotlin-evolution/`), cuatro apuntan al
+  dossier podado y una a `docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md`, que
+  nunca estuvo versionado. El contrato de procedencia no los vigila —sólo
+  gobierna `docs/adr/**`—, y por eso nadie se dio cuenta.
+- **La segunda poda, por obligaciones**: inventariar las suites E2E, los
+  contratos duplicados y los harnesses persistentes, y retirar sólo lo
+  que no aporta una garantía distinta. Ya hay un inventario: las
+  **41** specs de Playwright y las **185** pruebas de `tests/e2e/` no las
+  ejecuta ningún pipeline; `crates/cognicode-mcp/tests/continuation_e2e.rs`
+  es **5 de 5** ignoradas y su dueño declarado —el carril de
+  certificación— no tiene ningún stage de `cargo test`; y las islas de
+  `pytest` bajo `sandbox/scripts/tests/` no las corre ningún gate.

@@ -386,6 +386,6 @@ just spike-ladybug-s6-clean   # remove /tmp s6_*.lbdb
 - `sddk/e29-s4-crash-recovery/proposal.md` — S4 proposal
 - `sddk/e29-s4-crash-recovery/spec.md` — S4 delta spec
 - `sddk/e29-s4-crash-recovery/design.md` — S4 technical design
-- `openspec/specs/ladybug-spike-validation/spec.md` — full 6-stage spike spec
+- The full 6-stage spike spec — see the decision record under `docs/adr/`
 - `docs/adr/ADR-026-ladybugdb-canonical-migration.md` — migration decision
 

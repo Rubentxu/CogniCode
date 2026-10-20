@@ -3200,7 +3200,7 @@ def b():
     /// through `analysis_service::build_project_graph` and so the
     /// bug was still live for the end user.
     ///
-    /// The corpus `docs/prf/fixtures/cross_file_scope_aware/`
+    /// The corpus `crates/cognicode-core/testdata/cross_file_scope_aware/`
     /// exercises five resolution rules on a small Rust crate; see
     /// `cross_file_scope_aware/CORPUS.md` for the per-call expected
     /// destination.
@@ -3223,7 +3223,7 @@ def b():
                 .nth(2)
                 .expect("workspace root has at least 2 ancestors")
                 .to_path_buf();
-            workspace_root.join("docs/prf/fixtures/cross_file_scope_aware")
+            workspace_root.join("crates/cognicode-core/testdata/cross_file_scope_aware")
         }
 
         /// Build the project graph and return the FQN of the unique
@@ -3388,7 +3388,7 @@ def b():
                 .nth(2)
                 .expect("workspace root has at least 2 ancestors")
                 .to_path_buf();
-            workspace_root.join("docs/prf/fixtures/massive_collision_corpus")
+            workspace_root.join("crates/cognicode-core/testdata/massive_collision_corpus")
         }
 
         /// Build the project graph and return the FQN of every outgoing
@@ -3538,7 +3538,7 @@ def b():
     /// F2.W2 introduced `BuildReport` / `SkippedFile` / `SkipReason`
     /// for `PerFileStrategy::merge_with_report` — but that API lives
     /// in `infrastructure/graph/` and is NOT used by `analysis_service`.
-    /// The corpus `docs/prf/fixtures/silent_errors_corpus/` is created
+    /// The corpus `crates/cognicode-core/testdata/silent_errors_corpus/` is created
     /// alongside this test so the failure modes are reproducible.
     mod w8_silent_errors_tests {
         use super::*;
@@ -3553,7 +3553,7 @@ def b():
                 .nth(2)
                 .expect("workspace root has at least 2 ancestors")
                 .to_path_buf();
-            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+            workspace_root.join("crates/cognicode-core/testdata/silent_errors_corpus")
         }
 
         fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -3686,7 +3686,7 @@ def b():
                 .nth(2)
                 .expect("workspace root has at least 2 ancestors")
                 .to_path_buf();
-            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+            workspace_root.join("crates/cognicode-core/testdata/silent_errors_corpus")
         }
 
         fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
@@ -3793,7 +3793,7 @@ def b():
                 .nth(2)
                 .expect("workspace root has at least 2 ancestors")
                 .to_path_buf();
-            workspace_root.join("docs/prf/fixtures/silent_errors_corpus")
+            workspace_root.join("crates/cognicode-core/testdata/silent_errors_corpus")
         }
 
         fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {

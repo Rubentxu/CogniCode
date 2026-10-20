@@ -81,7 +81,7 @@ instead of a stable architecture capability.
 - [ADR-002](./ADR-002-moldable-exploration-parity-program.md)
 - [ADR-005](./ADR-005-investigation-mode.md)
 - [ADR-006](./ADR-006-functional-gtoolkit-parity.md)
-- `docs/ROADMAP.md` — `e13-wave2-universal-spotter`
+- `docs/roadmap/ROADMAP.md` — `e13-wave2-universal-spotter`
 
 ## Implementation Log
 

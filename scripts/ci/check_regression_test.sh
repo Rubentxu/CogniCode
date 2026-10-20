@@ -6,7 +6,7 @@
 # NOT executed on GitHub-hosted runners — the workflow has no
 # `pull_request` / `push` / `schedule` triggers.
 #
-# Rule (per docs/TEST-PLAN.md §5):
+# Rule (per the roadmap's test discipline):
 #   Every pull request that contains `fix(*)` commits MUST also add,
 #   modify, or re-enable at least one test in the same PR.
 #
@@ -110,11 +110,11 @@ if [ -z "$DIFF_FILES" ]; then
   echo "==> T6 FAIL: fix(*) commits found but the diff is empty."
   echo "    An empty commit cannot supply a regression test — every fix(*)"
   echo "    must add, modify, or re-enable at least one test in the same PR"
-  echo "    (per docs/TEST-PLAN.md §5)."
+  echo "    (per the roadmap's test discipline)."
   exit 1
 fi
 
-# Test file patterns (L1 unit, L2 integration, L3 sandbox, L4 browser-e2e, openspec)
+# Test file patterns (L1 unit, L2 integration, L3 sandbox, L4 browser-e2e)
 TEST_PATTERNS=(
   # L1 Rust unit tests
   '^crates/[^/]+/tests/.+'
@@ -129,8 +129,6 @@ TEST_PATTERNS=(
   '^sandbox/manifests/.+\.yml$'
   # L4 browser E2E
   '^apps/explorer-ui/e2e/.+\.spec\.ts$'
-  # Specs (also count as test artifacts when REQ-driven)
-  '^openspec/.+\.md$'
   # Acceptance / harness
   '^crates/cognicode-rule-test-harness/.+'
   '^crates/cognicode-core/tests/.+'
@@ -184,7 +182,7 @@ if [ "${#TEST_FILES_CHANGED[@]}" -eq 0 ]; then
     echo "  - $f"
   done <<< "$DIFF_FILES"
   echo
-  echo "Per docs/TEST-PLAN.md §5, every fix(*) commit must add, modify, or"
+  echo "Per the roadmap's test discipline, every fix(*) commit must add, modify, or"
   echo "re-enable at least one test in the same PR."
   exit 1
 fi

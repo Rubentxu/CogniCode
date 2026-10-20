@@ -325,8 +325,9 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
 }
 
 /// Devuelve un par (tool_name, capabilities) para todos los tools
-/// estables. Usado por `sandbox/scripts/generate_capabilities_matrix.sh`
-/// para regenerar `docs/prf/specs/CAPABILITIES-MATRIX.md` desde código.
+/// estables. Es la fuente de la tabla de capacidades publicada en
+/// `docs/roadmap/consumer-contracts/specs/CAPABILITIES-MATRIX.md`, cuya
+/// lista de lenguajes la compara `sandbox/scripts/capabilities_drift_lint.py`.
 pub fn all_stable_capabilities() -> Vec<(&'static str, ToolCapabilities)> {
     stable_tool_names_with_capabilities()
         .iter()
