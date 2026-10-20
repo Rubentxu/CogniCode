@@ -29,9 +29,22 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **26** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
+
+La cola está escrita en el orden que fija la auditoría del 2026-10-21, de
+mayor a menor prioridad, que es como la ordena el selector: el primero que
+encadenaría es **C25**, la cobertura en caché. C2, C3 y C4 no están en la
+cola porque su trabajo salió en las PR #400, #401 y #402.
+
+**La declaración estaba inservible y ya no lo está.** Escribía la evidencia
+en un campo que el cargador no lee, tenía la cola escrita al revés y una
+referencia rota; el resultado eran 26 candidatos descartados y una cadena sin
+nada que encadenar. Lo vigila `scripts/ci/test_mission_declaration.py`, que
+usa las mismas reglas que el plugin declara. Con el código real del
+supervisor, la cadena compone 47 candidatos, no descarta ninguno y elige
+C25.
 
 **C2 está resuelto**: el manifiesto de invalidación del grafo se deriva del
 registro de lenguajes, y el manifiesto se toma antes del grafo para que no
