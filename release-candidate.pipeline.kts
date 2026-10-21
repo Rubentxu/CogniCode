@@ -357,30 +357,27 @@ pipeline {
                     set -eo pipefail
             # ── build-binary
             # ─────────────────────────────────────────────
-
-                    $cd || exit 1
-                    set -euo pipefail
-                    # The binaries were written wherever cargo says they go, which is
-                    # not necessarily the repository's `target/`. This stage asked a
-                    # hardcoded path for them and failed on 2026-10-02 with
-                    # "target/release/cognicode was not built" immediately after the
-                    # stage that builds it had succeeded. A verifier that hardcodes
-                    # where the artifact lands is not verifying the artifact.
-                    TARGET_DIR=$(scripts/ci/target-dir.sh) || exit 1
-                    for bin in cognicode cognicode-mcp cognicode-control-plane; do
-                        if [ ! -f "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin was not built"
-                            echo "  cargo target dir: ${'$'}TARGET_DIR"
-                            exit 1
-                        fi
-                        if [ ! -x "${'$'}TARGET_DIR/release/${'$'}bin" ]; then
-                            echo "FAIL: ${'$'}TARGET_DIR/release/${'$'}bin is not executable"
-                            exit 1
-                        fi
-                    done
-                    "${'$'}TARGET_DIR/release/cognicode" --version
-                    "${'$'}TARGET_DIR/release/cognicode-control-plane" --help | head -5
-                    "${'$'}TARGET_DIR/release/cognicode-mcp" --version
+            #
+            # MEDIDO 2026-10-21. Este bloque verificaba los tres binarios release
+            # ANTES de construirlos: la comprobacion estaba al principio del
+            # cuerpo del shell y los `cargo build --release` estaban despues. La
+            # lane solo pasaba en una maquina cuyo target dir ya tuviera los
+            # binarios de antes; en una maquina limpia moria con
+            #
+            #     FAIL: .../release/cognicode was not built
+            #
+            # sin haber construido nada. El gate de candidato de v0.101.25 murio
+            # asi, con el arbol correcto y el corte anterior con el mismo gate
+            # en verde.
+            #
+            # La verificacion que importa es la del final del bloque, y es
+            # identica: misma comprobacion, mismos binarios, mismo mensaje. La
+            # de aqui no anade garantia: solo anade la condicion de que la
+            # maquina ya tenga el trabajo hecho.
+            #
+            # La regla que queda escrita en el codigo: una lane construye lo que
+            # necesita y despues lo verifica. `scripts/ci/
+            # test_gate_works_on_a_clean_machine.py` la vigila.
 
             # ── build-cognicode-mcp-release
             # ─────────────────────────────────────────────

@@ -112,6 +112,55 @@ if [ "${1:-}" = "--print-clone-ref" ]; then
   exit 0
 fi
 
+# --- Donde trabaja el clon, y si cabe -----------------------------------------
+#
+# MEDIDO 2026-10-21, en el corte de v0.101.25. El clon se creaba con
+# `mktemp -d -t cognicode-preflight-XXXXXX`, que en esta maquina cae en el tmpfs
+# de `/tmp` —48G— y despues el script fuerza
+#
+#     CARGO_TARGET_DIR="$WORK_DIR/clone/target"
+#
+# porque los tests asumen el `target/` del clon (ver el comentario de esa
+# linea). El build debug del workspace —con treinta y pico gramaticas de
+# tree-sitter— tiene que caber ahi dentro. En esta maquina no cabe: el
+# enlazador muere con `ld: Bus error` y el mensaje que queda es
+#
+#     rustc-LLVM ERROR: IO failure on output stream: Disk quota exceeded
+#
+# a mitad del build, sin decir que el problema era el disco. La misma causa
+# habia matado una corrida del `merge-gate` con `Disk quota exceeded` en la
+# etapa `cognicode-ladybug`, 32 de 56 etapas.
+#
+# El sitio del clon es una decision, no un accident: por eso se puede mover.
+# `PREFLIGHT_WORK_DIR` manda sobre `TMPDIR`, que a su vez manda sobre `/tmp`.
+#
+# Y antes de empezar se comprueba que el volumen tiene sitio. Un fallo de
+# espacio a mitad del enlazado cuesta veinte minutos y dice el sintoma; el
+# mismo fallo aqui cuesta un segundo y dice la causa y la manera de salir.
+#
+# El sitio del clon es una decision, no un accident: por eso se puede mover, y
+# por eso se comprueba antes de empezar. La regla vive en
+# `scripts/ci/build-volume.sh`, que la comparten el preflight y el publicador
+# del merge-gate: dos copias de una regla es una de ellas equivocada dentro de
+# un mes.
+#
+# shellcheck source=scripts/ci/build-volume.sh
+. "$SCRIPT_DIR/build-volume.sh"
+
+# Los seams de este bloque responden antes de `require_tool`: su trabajo es
+# decir donde se trabaja y si cabe, y no necesitan ni cargo ni red para
+# decirlo. `scripts/ci/test_gate_works_on_a_clean_machine.py` los usa para no
+# pagar los veinte minutos del preflight.
+if [ "${1:-}" = "--print-work-dir" ]; then
+  build_volume_root
+  exit 0
+fi
+
+if [ "${1:-}" = "--check-work-dir" ]; then
+  require_build_volume "$(build_volume_root)"
+  exit $?
+fi
+
 # ¿Ha perdido el workspace tests que antes pasaban?
 #
 # MEDIDO 2026-10-03, al certificar el tag v0.101.0. La condición original era
@@ -215,7 +264,17 @@ log "Baseline: passed=$BASELINE_PASSED failed=$BASELINE_FAILED ignored=$BASELINE
 
 # --- Stage 1: clone ----------------------------------------------------------
 
-WORK_DIR="$(mktemp -d -t cognicode-preflight-XXXXXX)"
+# El volumen se comprueba antes de clonar. MEDIDO 2026-10-21: el build debug
+# del workspace no cabe en el tmpfs de 48G de esta maquina, y el fallo
+# llegaba a mitad del enlazado como "Disk quota exceeded". Aqui el mismo
+# fallo llega antes, y con la causa y la salida.
+WORK_ROOT="$(build_volume_root)"
+mkdir -p "$WORK_ROOT"
+if ! require_build_volume "$WORK_ROOT"; then
+  fail "el volumen de trabajo no tiene sitio para el build (ver el mensaje arriba)"
+fi
+
+WORK_DIR="$(TMPDIR="$WORK_ROOT" mktemp -d -t cognicode-preflight-XXXXXX)"
 
 # --- La limpieza no puede cambiar el veredicto -------------------------------
 #
