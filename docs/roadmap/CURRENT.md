@@ -5,13 +5,15 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `933a3e431cb6cb33d436380f1d6970407a47b0ae`
-> (la unidad C29 con su recibo, **fusionada en `main`** por la PR #405), rama
-> `release/v0.101.24`, `origin/main` = `933a3e43`. Versión del workspace:
-> `0.101.24`. Última release publicada: `v0.101.23` (2026-10-18, 8 assets).
-> `main` va **33** commits por delante de ese tag: hay estabilizaciones
-> mergeadas que todavía no están publicadas, y el corte `v0.101.24` está en
-> curso sobre esta rama.
+> **Snapshot**: 2026-10-21, sobre `0fca088a712f4c7cf9ebcc96680c1c68fe5def83`
+> (el corte `v0.101.24`, **fusionado en `main`** por la PR #406), rama
+> `release/v0.101.25`, `origin/main` = `0fca088a`. Versión del workspace:
+> `0.101.25`. Última release publicada: `v0.101.23` (2026-10-18, 8 assets).
+> `main` va **34** commits por delante de ese tag: hay estabilizaciones
+> mergeadas que todavía no están publicadas, y el corte `v0.101.25` está en
+> curso sobre esta rama. El tag `v0.101.24` existe en el remoto pero **no se
+> publicó**: su gate de candidato falló con un defecto real del índice de
+> símbolos, y un tag que no llegó a publicarse no se mueve.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
 > un snapshot con la historia de ocho ciclos: narrativas de programas cerrados,
@@ -258,10 +260,13 @@ correspondería a otro árbol.
   subida y la PR #404 fusionada, ese bloqueo desaparece. La PR #404 quedó
   mergeada por squash en `e6820982` y la PR #405 —el recibo de C29— en
   `933a3e43`.
-- **Release en curso**: `main` lleva **33** commits sin publicar y el corte
-  `v0.101.24` está abierto sobre la rama `release/v0.101.24`. Publicar
+- **Release en curso**: `main` lleva **34** commits sin publicar y el corte
+  `v0.101.25` está abierto sobre la rama `release/v0.101.25`. Publicar
   exige gates sobre un candidato concreto, binarios instalados verificados y
-  tag anotado.
+  tag anotado. El tag `v0.101.24` queda como tag sin release: su gate de
+  candidato encontró que el índice de símbolos contestaba según el orden en
+  que el sistema de ficheros devolvía un directorio, y el arreglo ya está
+  dentro de `v0.101.25`.
 
 ## Dónde está cada cosa
 

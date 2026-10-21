@@ -21993,3 +21993,53 @@ declaración de cuál es. El grafo, el MCP, la CLI y el arnés son los mismos
 que las PR #400 a #404 dejaron mergeados, y esta unidad no toca una línea de
 código de producto.
 
+### Lo que encontró el gate de candidato
+
+**El corte de `v0.101.24` no llegó a publicarse.** Pasó el `fast`, el `full`
+y el `merge-gate` —56 de 56 etapas— y se cortó con su tag anotado en
+`0fca088a`. El gate de candidato, el que construye el candidato en un clon
+limpio y lo verifica antes de que nada salga a la red, lo dejó en rojo: un
+único test de 3159.
+
+```
+OnDemandGraph should yield callees or callers entries for 'new';
+got callees=0, callers=0
+```
+
+El árbol era el mismo, byte a byte. Los dos lados tenían los mismos 690
+ficheros `.rs` con los mismos bytes dentro, y la respuesta no era la misma:
+la máquina que había corrido la batería respondía con cinco aristas y el
+clon limpio con ninguna.
+
+**La causa, medida.** El índice de símbolos guardaba el orden en que le
+llegaban las fuentes —el orden que el walk devolvía las entradas de un
+directorio— y un nombre ambiguo se resuelve a su primera definición. `new`
+está definido 299 veces en `cognicode-core`, así que cuál de ellas gana
+decide la respuesta. En la máquina ganaba `src/findings/mod.rs:123`, que
+tiene aristas; en el clon, que vive en otro sistema de ficheros, ganaba
+`testdata/u10_compat_corpus/src/lib.rs:4`, un fixture de corpus que no llama
+a nada.
+
+No era un detalle de un disco. Medido en esta misma máquina: un directorio
+de 64 ficheros vuelve en orden de creación desde el volumen ext4 y en otro
+orden desde tmpfs. La respuesta no era reproducible ni entre dos máquinas
+de la misma versión.
+
+**El arreglo.** El índice se ordena por ruta al final de la construcción, de
+modo que es una función de las fuentes y sólo de ellas. No decide cuál de
+dos definiciones con el mismo nombre es la buena —eso es otra pregunta—:
+decide que la pregunta tiene la misma respuesta en todas partes.
+
+El RED se midió antes del arreglo: un test de caracterización nuevo
+(`graph_index_answers_the_same_way_on_every_disk`) falló con 1 de 3, y
+después del arreglo pasó los tres. La comprobación de que el `new` que gana
+ya tiene aristas se hizo con un programa temporal fuera del repositorio, y
+dio lo mismo en los dos sistemas de ficheros: `critic.rs:83`, cero callees y
+doce callers.
+
+**Por qué hay un `v0.101.25`.** Un tag publicado no se mueve. `v0.101.24`
+tiene su tag en el remoto, pero no llegó a tener release: no hay assets, no
+hay nada instalado desde él. El corte bueno es el siguiente, y lleva el
+arreglo dentro. `v0.101.24` queda documentado como tag sin release, con su
+entrada en el CHANGELOG, que es donde el repo cuenta esas historias.
+
