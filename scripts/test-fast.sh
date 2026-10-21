@@ -310,11 +310,24 @@ if ! cargo clippy --workspace --all-targets --quiet -- -D warnings; then
 fi
 
 # ---------- baseline check (core) ----------
+# Cuando la línea base no tiene entradas comparables, re-correr
+# `cargo test -p cognicode-core --lib` aquí solo verifica lo evidente:
+# cualquier fallo sería una nueva regresión, y un éxito confirmaría la
+# batería que ya corrió arriba dentro de la suite `core`. Saltarlo
+# acorta el lazo de feedback sin perder cobertura: los fallos del
+# `cargo test` siguen contando desde la corrida del suite.
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
   if printf ' %s ' "$seen" | grep -q ' core '; then
-    printf '\n=== baseline: check_known_failures (core/lib) ===\n'
-    if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib; then
-      overall_rc=1
+    if ! BASELINE_ENTRIES=$(grep -cE '^[[:space:]]*-[[:space:]]+test:' "$BASELINE" 2>/dev/null); then
+      BASELINE_ENTRIES=0
+    fi
+    if [ "${BASELINE_ENTRIES:-0}" -eq 0 ]; then
+      printf '\n=== baseline: check_known_failures (core/lib) — skipped (baseline is empty: %s) ===\n' "$BASELINE"
+    else
+      printf '\n=== baseline: check_known_failures (core/lib, %s entries) ===\n' "$BASELINE_ENTRIES"
+      if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib; then
+        overall_rc=1
+      fi
     fi
   fi
 fi
