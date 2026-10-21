@@ -21649,3 +21649,11 @@ reachable desde HEAD y a menos de cinco commits de la base con `main`. El
 mira el gate. El arreglo es una linea de cabecera, con el SHA medido
 (`9f64aed447bb1e6f3543d8f43c5ac97f79ec9b16`) y la distancia a `origin/main`
 medida tambien —29 commits, no los 14 que habia puesto de memoria—.
+
+**El `merge-gate` sale verde.** Corrida `9edee675-e228-4333-ab28-99a6e94542fb`
+sobre `354271ae`: **56 de 56 etapas** `success`, con `contracts`,
+`skills-validate`, `skills-bundles`, `supply-chain`, los binarios en release,
+las suites de MCP y las de la CLI dentro. La publicacion del veredicto en
+GitHub no sale: `gh: No commit found for SHA: 354271ae... (HTTP 422)`, porque
+ese SHA todavia no esta en el remoto. Eso no es un fallo del gate —el gate
+corrio y passo— sino de la publicacion, y la rama la sube el operador.
