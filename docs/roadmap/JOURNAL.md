@@ -20999,3 +20999,101 @@ está declarado en el propio contrato como condición, no como estilo: sin
 - **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
   legítima —la primera unidad de B1 en la cola—, ya propuesto con
   `mission_propose`.
+
+## 2026-10-21 — La cadena se arma, y su comando de árbol estaba roto (H24)
+
+### Lo que pasó
+
+Se ejecutó el primer paso de la skill goal-compass: `mission_declare` con la
+identidad `cognicode` y el objetivo de los seis bloques. La respuesta fue la
+que corresponde: **"Ya había una misión declarada: cognicode (no se ha
+tocado)"**, con el objetivo leído del fichero, el directorio de trabajo
+`.goal-compass` y la cadena de objetivos intacta.
+
+Pero el comando que valida el árbol de decisión de la cadena —`goal-compass
+tree --workspace .`— **fallaba**:
+
+    ERROR ENOENT: no such file or directory, scandir
+    '/var/home/rubentxu/.minimax/plugins/goal-compass/skill/goal-compass/graph'
+
+La cadena podía encadenar —lee la declaración y la cola—, pero su propio
+árbol no se cargaba.
+
+### Lo que se comprobó antes de tocar nada
+
+- Que la declaración no se había tocado: `sha256sum` del fichero y del
+  respaldo, idénticos; `mission_declare` lo dice y se comprueba.
+- Por qué fallaba el árbol. `resolveSkillSource()` (`dist/cli.js:410-418`)
+  prueba tres rutas: `dist/../skill/goal-compass`,
+  `dist/../../skill/goal-compass` y `cwd/skill/goal-compass`. **Ninguna
+  existe**: la copia empaquetada del plugin (`plugins/goal-compass/skill/`)
+  falta, y la tercera es una ruta del proyecto que nunca se creó.
+- Que la skill sí está instalada donde el catálogo la lee:
+  `~/.minimax/skills/goal-compass/` con `SKILL.md` y `graph/`. O sea: el
+  árbol es legible por el agente, y lo que faltaba era la copia de origen
+  que el CLI busca.
+- Que `.goal-compass/` en el proyecto es el **directorio de trabajo** del
+  plugin —ignorado por git en `.gitignore:287`—, no un árbol del proyecto:
+  `treeDirFor` (`dist/adapters/workdir.js:75-81`) sólo lo usa si tiene
+  ficheros `.md`, y no tiene ninguno. Por eso el árbol que vale es el de la
+  skill, y por eso la reparación no es escribir un árbol nuevo.
+
+### Lo que se hizo
+
+Se restauró la copia de origen que el plugin sondea, copiando la skill
+instalada a `~/.minimax/plugins/goal-compass/skill/goal-compass`. Es la
+operación inversa de `goal-compass install-skill`, que copia de origen a
+destino; y es **aditiva**: crea un directorio que no existía, con contenido
+que ya estaba en la máquina.
+
+Con eso, la cadena valida su propio árbol de decisión:
+
+    arbol: .../plugins/goal-compass/skill/goal-compass/graph (de la skill)
+    entrada: index
+    nodos: 13 (11 de agente, 2 de control)
+    enlaces: 66
+    el arbol no tiene problemas
+
+Y `goal-compass probe --workspace .` confirma que la extensión de Goal del
+host está verificada.
+
+### Lo que no se hizo, y por qué
+
+- **No se ensambló el plugin desde el marketplace.** `goal-compass
+  install-plugin` reconstruye el plugin y pide volver a registrarlo con
+  `mcode plugin add`, que puede tumbar una instalación que funciona. La
+  reparación mínima era la copia de un directorio que faltaba.
+- **No se escribió un árbol de proyecto** en `.goal-compass/`. El árbol de
+  la skill cubre las fases, y escribir otro sería una segunda fuente de
+  verdad sobre cómo se navega.
+- **No se volvió a tocar el roadmap.** La integración de los seis bloques ya
+  está en `58729896`: §11.1 con la tabla de bloques, la autoridad de cada
+  uno por ruta completa, el paralelismo y las dos notas medidas; §11.2 con
+  el glosario; `CURRENT.md` con la tabla de bloques; y el objetivo de la
+  misión reescrito con los seis.
+
+### Evidencia
+
+- `mission_declare` → "Ya había una misión declarada: cognicode (no se ha
+  tocado)". `sha256sum` del fichero y del respaldo: `48836b29…`, el mismo.
+- `goal-compass status --mission cognicode` → `running`, `conduce: plugin`,
+  1 objetivo creado.
+- `goal-compass doctor --workspace .` → `candidatos: 24 | usables: 24 |
+  descartados: 0 | lista`.
+- `goal-compass tree --workspace .` → entrada `index`, 13 nodos, 66
+  enlaces, sin problemas.
+- `goal-compass probe --workspace .` → "extension de Goal verificada en el
+  host".
+- Antes de la reparación, el mismo comando devolvía `ERROR ENOENT` sobre
+  `/var/home/rubentxu/.minimax/plugins/goal-compass/skill/goal-compass/graph`.
+
+### Estado y siguiente WU
+
+- Misión `cognicode`: **declarada, corriendo, con su cadena armada y su
+  árbol validado**. El objetivo nombra los seis bloques; la cola tiene 24
+  candidatos en el orden B1–B6; el primero es **C20**.
+- Cambios fuera del repositorio: la copia de la skill en
+  `~/.minimax/plugins/goal-compass/skill/goal-compass/`. Una actualización
+  del plugin puede volver a borrarla.
+- **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
+  legítima, ya propuesto con `mission_propose`.
