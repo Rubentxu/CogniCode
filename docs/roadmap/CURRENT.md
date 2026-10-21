@@ -5,14 +5,13 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `8941871e0607fe512f2fa4981b2556712c788be0`
-> (la unidad C28, con el `fast`, el `full` y el `merge-gate` en verde), rama
-> `fix/pending-references-are-facts`, 34 commits por delante de
-> `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
-> release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
-> commits por delante de ese tag en cuanto este
-> ciclo se funda: hay estabilizaciones mergeadas que todavía no están
-> publicadas.
+> **Snapshot**: 2026-10-21, sobre `e682098207d3d0daef079b3835b0f7647964855e`
+> (la unidad C29, con el `fast`, el `full` y el `merge-gate` en verde, y
+> **fusionada en `main`** por la PR #404), rama `docs/roadmap/c29-receipt`,
+> `origin/main` = `e6820982`. Versión del workspace: `0.101.23`. Última
+> release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **32**
+> commits por delante de ese tag: hay estabilizaciones mergeadas que
+> todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
 > un snapshot con la historia de ocho ciclos: narrativas de programas cerrados,
@@ -32,17 +31,16 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **20** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **19** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
 La cola está escrita en el orden que fija el informe de la auditoría del
 2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
-ordena el selector. **C25, C20, C24, C18 y C28 están cerrados**; el primero
-que encadenaría ahora es **C29**, la cancelación MCP, que pertenece a su
-petición y se limpia al terminar. C2, C3 y C4 no están en la cola porque su
-trabajo salió en las
-PR #400, #401 y #402.
+ordena el selector. **C25, C20, C24, C18, C28 y C29 están cerrados**; el
+primero que encadenaría ahora es **C14**, la release con las estabilizaciones
+mergeadas, que es el último punto del bloque B1. C2, C3 y C4 no están en la
+cola porque su trabajo salió en las PR #400, #401 y #402.
 
 **La declaración estaba inservible y ya no lo está.** Escribía la evidencia
 en un campo que el cargador no lee, tenía la cola escrita al revés y una
@@ -209,6 +207,22 @@ fallo de handler nunca llega como un resultado con `isError: false`. El
 siguiente trabajo es **C29**, la cancelación MCP: que pertenezca a su
 petición y se limpia al terminar.
 
+**C29 está cerrado**: una cancelación pertenece a su petición. El servidor
+guardaba una sola bandera de cancelación para toda la sesión y la ponía a
+`true` para siempre, así que una petición cancelada envenenaba la sesión:
+la siguiente se anunciaba como `Cancelled` aunque nadie la hubiera cancelado.
+Medido contra el binario real, una sola notificación bastaba. Ahora cada
+petición lleva su propia bandera, en un registro indexado por el
+identificador de la petición que se borra cuando la petición termina: la
+notificación marca a la que la pidió y a nadie más, y una notificación
+tardía no marca a nadie. El protocolo ya traía la solución —rmcp indexa la
+cancelación por `request_id`— y el adaptador la pisaba. El siguiente
+trabajo es **C14**, la release con las estabilizaciones mergeadas.
+
+Con C29 queda cerrado el bloque B1 de la auditoría del 2026-10-21 salvo la
+publicación: C18, C28, C29 y C14 son sus cuatro candidatos, y los tres
+primeros ya están.
+
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
 
@@ -236,24 +250,16 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **`merge-gate` verde en la PR #404** (`f0550db8`): la etapa 32
-  (`cognicode-ladybug`) que caía por la cuota de tmpfs **ha pasado**. La
-  corrida completa del `merge-gate.pipeline.kts` da **56 etapas, 56 en
-  `success`**, 0 fallos, con el journal del pipeline como fuente. El rojo
-  anterior no era un defecto de producto —la etapa moría con `Disk quota
-  exceeded` (os error 122) al compilar en el tmpfs de `/tmp`, y el test
-  nunca llegaba a correr— sino la cuota de usuario de ese tmpfs, que en
-  esta sesión estaba libre. **No se cambió ni una línea del gate**: el
-  aislamiento por checkout del `CARGO_TARGET_DIR` se conserva a propósito,
-  y la cuota dejó de ser un problema sin tocarla. Recibo en el `JOURNAL`,
-  entrada del 2026-10-21. El gate también pasa sobre el árbol de C28
-  (`8941871e`, corrida `df075b89-b70a-400d-a6c3-ea0d68f3f97e`, 56 de 56
-  etapas `success`). Lo que queda es publicar el veredicto: la
-  publicación a GitHub dio `HTTP 422` porque el SHA todavía no está en el
-  remoto, y subir la rama es decisión del operador.
-- **Release pendiente**: `main` lleva 65 commits sin publicar (con este
-  ciclo; 31 sin él). Publicar exige gates sobre un candidato concreto,
-  binarios instalados verificados y tag anotado.
+- **`merge-gate` verde y publicado**: la corrida del árbol de C29
+  (`62c2da66`, `85a7fb7c-0bd9-4345-8e44-9cf50773aef3`) da **56 de 56
+  etapas** `success`, y el veredicto **sí se publicó** en GitHub: `merge-gate=success
+  published; the gate's own exit code was 0`. Las corridas anteriores no
+  publicaban porque el SHA no estaba en el remoto (`HTTP 422`); con la rama
+  subida y la PR #404 fusionada, ese bloqueo desaparece. La PR quedó
+  mergeada por squash en `e6820982`.
+- **Release pendiente**: `main` lleva **32** commits sin publicar. Publicar
+  exige gates sobre un candidato concreto, binarios instalados verificados y
+  tag anotado.
 
 ## Dónde está cada cosa
 

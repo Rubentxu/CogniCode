@@ -88,6 +88,13 @@ dos modos contractuales:
   con `rc=0`.
 - Antes de tag: `bash scripts/test-full.sh` con `git status` limpio
   y `merge-gate` verde en el PR que introduce el cambio.
+- **Cada ciclo termina integrado en el remoto.** El operador autoriza
+  el `push` de la rama de trabajo y la fusión de su PR al cierre de cada
+  ciclo, una vez que `fast` y `full` están verdes, el `merge-gate` ha
+  pasado y el recibo de la unidad está escrito. El `merge-gate` sigue
+  siendo la autoridad: subir la rama no sustituye al gate, publica el
+  veredicto que GitHub exige para dejar fusionar. Un tag o una release
+  siguen exigiendo su propio gate de candidato y su propia autorización.
 
 **Fallo de suite por binario release ausente**: si `fast` o `full`
 muestra `missing release binary cogh at /var/home/rubentxu/cargo-targets/release/cogh`,
