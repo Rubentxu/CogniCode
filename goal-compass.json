@@ -8,26 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C28",
-      "title": "Un fallo de MCP llega como fallo, no como un exito con un error dentro",
-      "unit": "H24",
-      "objective": "Que el adaptador MCP deje de comunicar un fallo como si fuera un exito: un handler que no puede responder devuelve un error tipado y el transporte lo lleva como error, no como un resultado con un campo `error` dentro.",
-      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `handle_graph_pagerank` y sus hermanos devuelven `Ok({\"error\": ...})` cuando no hay grafo, y el adaptador MCP interpreta cualquier `Ok` como una llamada correcta (rmcp_adapter.rs:756-769). Hay al menos nueve sitios asi en graph_handlers.rs (lineas 57, 60, 128, 131, 136, 139, 175, 178, 212, 215). Para un agente, el transporte comunica exito aunque la operacion haya fallado, y las metricas contabilizan mal esos resultados. Es el bloque B1 del informe: \"los fallos llegan como fallos al cliente\". No hay candidato en la backlog que lo cubra: el candidato mas cercano (el fallo silencioso del lector especializado) es otro defecto.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/handlers/graph_handlers.rs",
-        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs"
-      ],
-      "doneWhen": [
-        "ningun handler publico devuelve `Ok` con una clave `error` dentro: un fallo es un error del protocolo",
-        "el adaptador MCP traduce un error de handler en un error de JSON-RPC, no en un resultado con `isError: false`",
-        "un test que llama a un handler sin grafo observa un error, no un resultado de exito"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "source": "roadmap",
-      "priority": 210
-    },
-    {
       "candidateId": "C29",
       "title": "La cancelacion MCP pertenece a su peticion y se limpia al terminar",
       "unit": "H24",

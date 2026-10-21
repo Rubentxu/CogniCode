@@ -21657,3 +21657,124 @@ las suites de MCP y las de la CLI dentro. La publicacion del veredicto en
 GitHub no sale: `gh: No commit found for SHA: 354271ae... (HTTP 422)`, porque
 ese SHA todavia no esta en el remoto. Eso no es un fallo del gate —el gate
 corrio y passo— sino de la publicacion, y la rama la sube el operador.
+
+## 2026-10-21 — Un fallo de MCP llega como fallo (H24)
+
+### Lo que pasó
+
+Los handlers de analitica del grafo respondian `{"error": "No call graph
+available. Run build_graph first."}` como **resultado de exito**. El
+transporte no puede distinguir ese resultado de uno que lleva datos: lo
+pasa con `isError: false`, el agente lee "funciono" donde la herramienta
+habia fallado, y las metricas lo cuentan como un exito —`classify_status`
+mira el `Result` del despacho, y un `Ok` es un `Ok`—.
+
+Medido en el arbol:
+
+- **Doce** handlers de analitica del grafo tienen la misma rama de fallo:
+  `graph_handlers.rs` repetia el `match` del store **dos veces por
+  handler** —"no hay grafo" y "el store no se pudo leer"—, 24 ramas en
+  total, cada una con su `Ok(json!({"error": ...}))`.
+- Tres fallos puntuales mas: el simbolo que no existe
+  (`graph_all_paths`), la comunidad que no existe
+  (`graph_community_detail`) y el modo que no existe (`graph_analyze`).
+- El `IacRepository` no tiene implementacion en el arbol, asi que la rama
+  PostgreSQL no se midio: no es alcanzable.
+
+El arreglo:
+
+- Los doce handlers de analitica salen de `analytics_graph(ctx)?`, una
+  funcion que decide una sola vez que significa "no hay grafo" y que
+  significa "el store fallo". El mensaje y la clase del error viven en
+  un sitio, no en doce.
+- El simbolo que no existe y la comunidad que no existen son
+  `HandlerError::NotFound`; el modo que no existe es
+  `HandlerError::InvalidInput`. Cada fallo dice lo que paso y por que
+  clase.
+- El adaptador **no** cambia: `call_tool_handler` ya devuelve
+  `Err(InterfaceError)`, y el adaptador ya lo lleva como
+  `CallToolResult::error`, que es `isError: true`. Lo que faltaba era que
+  los handlers produjeran ese `Err`.
+
+Sobre la forma del error: el criterio del candidato pide "un error de
+JSON-RPC". Leido al pie de la letra, un objeto de error de JSON-RPC en
+vez de un resultado con `isError: true`. Eso contradice el contrato que
+el repo ya tiene fijado —`a009` y `a010` exigen `isError: true` para una
+herramienta que se niega, y el propio MCP llama a eso "error de
+ejecucion de herramienta" y reserva el error de JSON-RPC para llamadas
+mal formadas—, asi que lo que se entrega es la parte que discrimina: un
+fallo de handler **nunca** llega como un resultado con `isError: false`.
+Queda escrito en un test.
+
+### Lo que no se pudo hacer aquí
+
+- **El smoke HTTP no se puede correr aqui.** `scripts/mcp/mcp_smoke_all.py`
+  habla HTTP contra `127.0.0.1:9847` y su `ROOT` apunta a una ruta que ya
+  no existe (`/var/home/rubentxu/Proyectos/rust/CogniCode`). El binario
+  speaks stdio. Se verifico el clasificador **llamandolo** con los
+  textos nuevos, no con una corrida entera.
+- **La forma de la clase de error para "no hay grafo" no se unifico con
+  los otros handlers.** Diez handlers de grafo dicen `internal: No graph
+  available` y trece dicen `not found: No call graph available. Run
+  build_graph first.` (los doce de aqui y `solid_audit`). Es la misma
+  condicion con dos vocabularios. Unificarla es otro arreglo: la tarea
+  era que el fallo llegue como fallo, no que todos digan lo mismo.
+
+### Lo que descubrio el cambio
+
+**Dos tests de degradacion estaban fijando una mentira.** El test
+`prf_f5_w4_bis_*` afirmaba que una llamada limpia reporta
+`partial: false` y `degraded_sources` vacio, en un contexto **sin
+grafo**. La fuente `idf` de `smart_search` lee el grafo, asi que sin
+grafo esa fuente fallaba — y el fallo disfrazado de exito hacia que la
+degradacion no se viera. El test pasaba por la razon equivocada. Ahora el
+contexto del caso "limpio" lleva un grafo, el caso es limpio de verdad, y
+la garantia que el test queria fijar (la degradacion es lo unico que
+vuelve `partial: true`) sigue fijada — y ahora por la razon correcta.
+
+**El smoke contaba como exito un fallo.** Su clasificador reconocia
+`internal:`, `invalid input:` y `application error:`, y no `not found:`
+ni `security:`. Con este cambio, un fallo de estos handlers habria
+llegado al smoke como texto y el harness lo habria contado como OK.
+El clasificador reconoce ahora todas las clases que la interfaz publica.
+
+### Evidencia
+
+- Test nuevo en rojo: `mcp_failures_arrive_as_failures.rs` → **4 failed;
+  0 passed**. Por asercion, con el defecto a la vista:
+  `graph_pagerank answers a failure with a successful result: Object
+  {"error": String("No call graph available. Run build_graph first.")}`.
+- El mismo fichero en verde: **4 passed; 0 failed**.
+- Test de transporte nuevo: `mcp_failure_arrives_as_failure.rs`. En rojo
+  contra el codigo viejo: `isError: false` con el error dentro del
+  payload. En verde: `isError: true` y el texto dice que paso. El caso
+  de exito (herramienta con grafo) tambien esta, para que el arreglo no
+  pueda ocultar un exito detras de un fallo.
+- Dos tests de degradacion (`prf_f5_w4_bis_*`) pasaron a verde cuando su
+  contexto de caso "limpio" dejo de mentir.
+- El clasificador del smoke, llamado con los textos nuevos:
+  `not found: No call graph available...` → ERROR, `not found: Source
+  symbol not found: foo` → ERROR, `invalid input: Unknown mode 'x'...` →
+  ERROR, `internal: No graph available` → ERROR, y una respuesta buena →
+  OK.
+- `cargo build --workspace --all-targets` → sin errores.
+- `bash scripts/test-fast.sh` → **rc=0**.
+- `bash scripts/test-full.sh c28` → **rc=0**.
+- `bash scripts/ci/run-all-contracts.sh` → **rc=0**.
+- `bash scripts/ci/publish-merge-gate.sh` → **56 de 56 etapas**
+  `success`.
+
+### Estado y siguiente WU
+
+- Unidad: **C28**, cerrada. SHA de la unidad: `deb28121` (codigo, tests y
+  smoke), mas este commit con el CHANGELOG y los punteros, sobre la base de
+  medicion `c76dd3b5`.
+- Los tres criterios de cierre del candidato quedan publicados y con
+  test: ningun handler publico devuelve `Ok` con una clave `error`
+  dentro, un fallo de handler nunca llega como un resultado con
+  `isError: false`, y un test que llama a un handler sin grafo observa un
+  error y no un resultado de exito.
+- Gates: `fast` rc=0, `full` rc=0 y `merge-gate` verde sobre el arbol de
+  esta unidad.
+- Siguiente WU: **C29**, la cancelacion MCP pertenece a su peticion y se
+  limpia al terminar.

@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `354271aea0b9b3d5374e933e310d53baefe1431c`
-> (la unidad C18, con el `merge-gate` verde), rama
-> `fix/pending-references-are-facts`, 30 commits por delante de
+> **Snapshot**: 2026-10-21, sobre `deb28121ba8178d02aea68d1eefc07acf785e65f`
+> (la unidad C28, con el `fast` y el `full` en verde), rama
+> `fix/pending-references-are-facts`, 33 commits por delante de
 > `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
 > release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
 > commits por delante de ese tag en cuanto este
@@ -32,15 +32,16 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **21** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **20** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
 La cola está escrita en el orden que fija el informe de la auditoría del
 2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
-ordena el selector. **C25, C20, C24 y C18 están cerrados**; el primero que
-encadenaría ahora es **C28**, un fallo de MCP que llega como un exito con un
-error dentro. C2, C3 y C4 no están en la cola porque su trabajo salió en las
+ordena el selector. **C25, C20, C24, C18 y C28 están cerrados**; el primero
+que encadenaría ahora es **C29**, la cancelación MCP, que pertenece a su
+petición y se limpia al terminar. C2, C3 y C4 no están en la cola porque su
+trabajo salió en las
 PR #400, #401 y #402.
 
 **La declaración estaba inservible y ya no lo está.** Escribía la evidencia
@@ -194,8 +195,19 @@ arista —una arista sin confianza se dice desconocida, no se invierte en `1.0`�
 `depth` es el número de saltos que se caminan, y un nombre que responde por
 más de una declaración se declara ambiguo y pide la identidad canónica. El
 grafo gana la contracara de las aristas inversas con sus metadatos, y no
-cambia de forma en disco. El siguiente trabajo es **C28**, un fallo de MCP
-que tiene que llegar como fallo y no como un éxito con un error dentro.
+cambia de forma en disco.
+
+**C28 está cerrado**: un fallo de MCP llega como fallo. Las herramientas de
+analítica del grafo respondían `{"error": "No call graph available. Run
+build_graph first."}` como resultado de éxito: el transporte lo pasaba con
+`isError: false`, el agente leía que funcionaba donde la herramienta había
+fallado y las métricas lo contaban como un éxito. Los doce handlers de
+analítica salían de `analytics_graph(ctx)?` —una sola fuente de verdad para
+«no hay grafo» y «el store no se pudo leer»—, el símbolo y la comunidad que
+no existen son `not found` y el modo que no existe es `invalid input`, y un
+fallo de handler nunca llega como un resultado con `isError: false`. El
+siguiente trabajo es **C29**, la cancelación MCP: que pertenezca a su
+petición y se limpia al terminar.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.

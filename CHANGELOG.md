@@ -86,6 +86,40 @@ Lo que cambia en las formas públicas:
   `name()`. El grafo no cambia de forma en disco: el blob y su shim siguen
   igual, porque el arreglo es aditivo.
 
+**Un fallo de MCP llega como fallo.** Las herramientas de analítica del grafo
+respondían `{"error": "No call graph available. Run build_graph first."}` como
+**resultado de éxito**. El transporte lo llevaba con `isError: false`, el agente
+leía «funcionó» donde la herramienta había fallado, y las métricas lo
+contabilizaban como un éxito. Medido en el árbol: doce handlers repetían el
+`match` del store dos veces cada uno —«no hay grafo» y «el store no se pudo
+leer»—, con 24 ramas que devolvían `Ok(json!({"error": ...}))`, más tres
+fallos puntuales (el símbolo que no existe, la comunidad que no existe y el
+modo que no existe).
+
+Ahora esos handlers devuelven un error tipado —`not found:` cuando no hay
+grafo o no existe lo que se pide, `invalid input:` cuando el modo no
+existe— y el transporte lo lleva con `isError: true`. El mensaje y la clase
+del error viven en un sitio (`analytics_graph`), no en doce.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `graph_pagerank`, `graph_all_paths`, `graph_condensed`,
+  `graph_god_nodes`, `graph_reduced`, `graph_feedback_arcs`,
+  `graph_communities`, `graph_community_detail`, `graph_surprising_connections`,
+  `graph_search_idf`, `graph_insights` y `graph_suggest_questions` ya no
+  devuelven un resultado de éxito con una clave `error` dentro: un fallo es un
+  error del protocolo. `graph_analyze` con un modo que no existe también.
+- Un fallo de handler nunca llega como un resultado con `isError: false`. La
+  forma del error (`isError: true` dentro de una llamada bien formada) es la
+  que el MCP llama «error de ejecución de herramienta» y la que el servidor ya
+  usaba para negarse; lo que faltaba era que los handlers produjeran el error.
+- `smart_search` ahora dice la verdad sobre su fuente `idf`: sin grafo esa
+  fuente falla, y el resultado lo declara con `partial: true` y
+  `degraded_sources: ["idf"]` en vez de callarlo.
+- El clasificador del smoke (`scripts/mcp/mcp_smoke_all.py`) reconoce las
+  clases de error que la interfaz publica (`not found:`, `security:`), que
+  hasta ahora se contaban como éxito.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP
