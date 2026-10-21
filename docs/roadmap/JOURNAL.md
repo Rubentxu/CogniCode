@@ -20405,3 +20405,70 @@ sobre la declaración y el estado ya sincronizados: **47 candidatos compuestos,
 tres condiciones de cierre. Los 47 son los 22 declarados en el roadmap y 25
 descubiertos en el propio repositorio; los declarados mandan, y el
 descubierto no adelanta a ninguno.
+
+### Un detalle del canal de propuestas que conviene saber
+
+La deduplicación del núcleo no compara el objetivo: compara **objetivo +
+ámbito + criterio de cierre**. Una propuesta que describe el mismo trabajo con
+otro ámbito no se reconoce como la misma, así que puede encadenarse dos
+veces. Por eso el backlog declarado manda y el canal de propuestas se deja
+vacío: lo que está en el backlog ya se encadenará, y lo que se proponga debe
+ser trabajo que el backlog no contiene.
+
+Por lo mismo, cuando una propuesta describía trabajo ya publicado —C2, C3 y
+C4, salidos en las PR #400, #401 y #402— se retiró en vez de cerrarse: ese
+canal es una cola, no un registro de decisiones.
+
+## 2026-10-21 — Dos tests que se pisaban el trabajo (H23)
+
+### Lo que pasó
+
+El gate completo falló en una suite de release que no había cambiado:
+`prf_f6_w1_tampered_payload_fails_verify` encontró un payload vacío. La suite
+había pasado en los tres gates anteriores, así que no era una regresión de
+este ciclo: era una carrera que hasta ahora no había tocado.
+
+### Lo que se comprobó antes de tocar nada
+
+La suite compara el staging con el resultado. El mensaje de fallo —"payload
+vacío"— significa que el archivo empaquetado no tenía contenido, no que
+faltara un binario. Los dos tests del fichero usan el mismo staging, y su
+nombre sólo llevaba el identificador del proceso: los tests de un binario de
+test corren en paralelo y comparten ese número. Uno borraba el staging del
+otro mientras lo empaquetaba.
+
+Se comprobó en las dos direcciones:
+
+- El binario de la suite, ejecutado aislado, pasa: **8 de 8 ejecuciones en
+  verde**. La carrera necesita que los dos tests coincidan en el tiempo, y
+  aislado el test tarda lo suficiente como para no coincidir.
+- Con el staging compartido reintroducido, **los tres tests fallan a la vez**:
+  los dos originales y el nuevo. No era un test con mala suerte; era un
+  defecto que golpeaba a todo el fichero.
+
+### Lo que se hizo
+
+Cada test empaqueta sus payloads en un directorio propio. El nombre del
+staging lleva ahora quién lo pidió, además del proceso.
+
+Un test nuevo lo vigila: dos staging del mismo proceso tienen que ser
+directorios distintos, y los payloads del primero tienen que sobrevivir a que
+el segundo empaquete. Ese test **falla contra el código anterior** con el
+mensaje de que los dos staging colisionan, y pasa después.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió la lógica de la suite.** Lo que se midió es un defecto del
+  entorno de prueba, no del release: el empaquetado y la verificación
+  dicen lo que dicen.
+- **No se tocó la suite hermana de paridad.** Ya tenía su propio arreglo en
+  este ciclo, por el mismo motivo y con el mismo mensaje.
+
+### Evidencia
+
+- Con el staging compartido: `9 passed; 3 failed`. Los tres fallos son los
+  dos tests originales y el nuevo.
+- Con el staging propio: `12 passed; 0 failed`.
+- El binario de la suite, **10 ejecuciones seguidas sin un solo fallo**.
+- `cargo fmt --all --check` limpio.
+- Las otras dos suites de release en verde: 14 y 21 casos.
