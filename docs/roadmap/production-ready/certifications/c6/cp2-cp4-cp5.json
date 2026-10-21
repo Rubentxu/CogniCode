@@ -5,7 +5,7 @@
   "generated_at_utc": "2026-10-17",
   "head_sha": "e1636fb2e95a53c721a75e60788f2165046ca3f2",
   "head_short_sha": "e1636fb2",
-  "cp5_workspace_version": "0.101.23",
+  "cp5_workspace_version": "0.101.24",
   "platform_checked": "linux-x86-64 (Fedora 44, this clone)",
   "scope_note": "BLOQUE 5 — quinta certificación contra el árbol de v0.101.22. Cada entrada se volvió a ejecutar sobre este SHA y lo que sigue es lo observado, no lo esperado. El delta respecto a la certificación anterior (2026-10-17, b494bc83 / 0.101.21) es el corte K0 de la línea Kotlin: nueva clasificación de walk KnownUnsupportedGap, kotlin fuera de ALL_TREE_SITTER_LANGS, kt/kts puente a gap tipado en lugar de Unsupported silencioso. Las cuatro superficies (Cargo.toml, SECURITY.md, README.md, CHANGELOG.md) re-bumpeadas, binarios release rebuild (cognicode, cognicode-mcp, cogh) a 0.101.22, producer envelope sincronizado. TIER1_PLATFORMS sigue restringido a LinuxX86_64. Per PRF-DIST-05 ninguna plataforma se declara certificada sin build nativo, UAT real y artefacto publicado. CP6 sigue fuera de alcance.",
   "operator_signature": "Regenerada por el agente a petición explícita del operador (2026-10-17), durante el corte de v0.101.20. La decisión de certificar y la firma siguen siendo del operador: el agente ejecutó los comandos y transcribió sus exit codes observados; no juzgó ninguno. ANTERIOR: 2026-10-17, head 762acb3a, workspace 0.101.19.",
