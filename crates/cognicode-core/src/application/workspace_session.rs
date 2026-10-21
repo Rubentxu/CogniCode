@@ -2644,12 +2644,7 @@ pub fn func5() {}
     #[test]
     fn test_graph_coverage_metrics_calculation() {
         // Test with 100 files, 80 parsed, 10 unresolved edges
-        let metrics = GraphCoverageMetrics {
-            total_source_files: 100,
-            parsed_files: 80,
-            unresolved_edges: 10,
-            coverage_percent: 80.0,
-        };
+        let metrics = GraphCoverageMetrics::new(100, 80, 0, 10);
 
         assert_eq!(metrics.total_source_files, 100);
         assert_eq!(metrics.parsed_files, 80);
@@ -2659,12 +2654,7 @@ pub fn func5() {}
 
     #[test]
     fn test_graph_coverage_metrics_full_parse() {
-        let metrics = GraphCoverageMetrics {
-            total_source_files: 50,
-            parsed_files: 50,
-            unresolved_edges: 0,
-            coverage_percent: 100.0,
-        };
+        let metrics = GraphCoverageMetrics::new(50, 50, 0, 0);
 
         assert_eq!(metrics.coverage_percent, 100.0);
         assert_eq!(metrics.unresolved_edges, 0);
@@ -2672,12 +2662,7 @@ pub fn func5() {}
 
     #[test]
     fn test_graph_coverage_metrics_zero_files() {
-        let metrics = GraphCoverageMetrics {
-            total_source_files: 0,
-            parsed_files: 0,
-            unresolved_edges: 0,
-            coverage_percent: 0.0,
-        };
+        let metrics = GraphCoverageMetrics::new(0, 0, 0, 0);
 
         assert_eq!(metrics.total_source_files, 0);
         assert_eq!(metrics.parsed_files, 0);

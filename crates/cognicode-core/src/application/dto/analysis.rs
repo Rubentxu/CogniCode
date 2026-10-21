@@ -144,14 +144,56 @@ pub struct AnalyzeImpactResult {
 /// Coverage metrics for the project graph build process
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphCoverageMetrics {
-    /// Total number of source files discovered during walk
+    /// Source files the graph was built from: the denominator of the
+    /// coverage. A file with no recognized language was never a candidate,
+    /// so it does not count here.
     pub total_source_files: usize,
-    /// Number of files successfully parsed
+    /// Number of files whose content was interpreted again in this build
     pub parsed_files: usize,
+    /// Number of files whose facts were reused from the per-file cache
+    pub cached_files: usize,
+    /// Number of files the graph actually covers: the ones interpreted
+    /// again plus the ones reused from the cache. A file that could not be
+    /// read or parsed is not covered.
+    pub covered_files: usize,
     /// Number of call relationships where callee could not be resolved
     pub unresolved_edges: usize,
-    /// Percentage of files successfully parsed (parsed_files / total_source_files * 100)
+    /// Percentage of source files the graph covers
+    /// (covered_files / total_source_files * 100)
     pub coverage_percent: f64,
+}
+
+impl GraphCoverageMetrics {
+    /// The coverage of one build.
+    ///
+    /// The coverage is a fact about the tree, not about the work this run
+    /// happened to do: a build that reuses the cache covers the same files
+    /// as a cold one, and must say so. So the denominator is the source
+    /// files the graph was built from, and the numerator is every one of
+    /// them the graph has facts for — the ones interpreted again plus the
+    /// ones reused from the cache. A file that could not be read or parsed
+    /// was a candidate and failed, so it is not covered.
+    pub fn new(
+        total_source_files: usize,
+        parsed_files: usize,
+        cached_files: usize,
+        unresolved_edges: usize,
+    ) -> Self {
+        let covered_files = parsed_files + cached_files;
+        let coverage_percent = if total_source_files > 0 {
+            (covered_files as f64 / total_source_files as f64) * 100.0
+        } else {
+            0.0
+        };
+        Self {
+            total_source_files,
+            parsed_files,
+            cached_files,
+            covered_files,
+            unresolved_edges,
+            coverage_percent,
+        }
+    }
 }
 
 /// Statistics about the call graph

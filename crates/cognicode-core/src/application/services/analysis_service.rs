@@ -201,6 +201,7 @@ impl AnalysisService {
 
         // Coverage tracking
         let mut parsed_files: usize = 0;
+        let mut cached_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
         // F2.W8: collect skipped files instead of dropping them
@@ -439,6 +440,8 @@ impl AnalysisService {
         for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
+            } else {
+                cached_files += 1;
             }
             // PRF audit H-01: cache entries keyed by (mtime, size,
             // content_hash). The hash covers the case where bytes
@@ -588,18 +591,16 @@ impl AnalysisService {
 
         self.graph_cache.replace(call_graph);
 
-        // Update coverage metrics
-        let coverage_percent = if total_files > 0 {
-            (parsed_files as f64 / total_files as f64) * 100.0
-        } else {
-            0.0
-        };
-        let coverage = GraphCoverageMetrics {
-            total_source_files: total_files,
+        // Update coverage metrics. The denominator is the source files the
+        // graph was built from — a file with no recognized language was
+        // never a candidate — and the numerator is every one of them the
+        // graph has facts for, parsed again or reused from the cache.
+        let coverage = GraphCoverageMetrics::new(
+            files_with_lang,
             parsed_files,
+            cached_files,
             unresolved_edges,
-            coverage_percent,
-        };
+        );
         *self.coverage_metrics.lock().unwrap() = Some(coverage);
 
         Ok(())
@@ -810,6 +811,7 @@ impl AnalysisService {
 
         // Coverage tracking
         let mut parsed_files: usize = 0;
+        let mut cached_files: usize = 0;
         let mut unresolved_edges: usize = 0;
 
         // Use include_dirs as an allowlist - only include files under these directories
@@ -915,6 +917,8 @@ impl AnalysisService {
         for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
             if was_parsed {
                 parsed_files += 1;
+            } else {
+                cached_files += 1;
             }
             // PRF audit H-01: cache entries keyed by (mtime, size,
             // content_hash).
@@ -979,17 +983,8 @@ impl AnalysisService {
         let call_graph = store.to_call_graph();
 
         // Update coverage metrics for this subgraph (separate from cached graph)
-        let coverage_percent = if total_files > 0 {
-            (parsed_files as f64 / total_files as f64) * 100.0
-        } else {
-            0.0
-        };
-        let coverage = GraphCoverageMetrics {
-            total_source_files: total_files,
-            parsed_files,
-            unresolved_edges,
-            coverage_percent,
-        };
+        let coverage =
+            GraphCoverageMetrics::new(total_files, parsed_files, cached_files, unresolved_edges);
         *self.coverage_metrics.lock().unwrap() = Some(coverage);
 
         Ok(call_graph)
@@ -1038,6 +1033,7 @@ impl AnalysisService {
 
                 // Coverage tracking
                 let mut parsed_files: usize = 0;
+                let mut cached_files: usize = 0;
                 let mut unresolved_edges: usize = 0;
 
                 use rayon::prelude::*;
@@ -1202,6 +1198,8 @@ impl AnalysisService {
                 for (file_path, mtime, size, content_hash, facts, was_parsed) in results {
                     if was_parsed {
                         parsed_files += 1;
+                    } else {
+                        cached_files += 1;
                     }
                     // PRF audit H-01: cache entries keyed by
                     // (mtime, size, content_hash).
@@ -1294,17 +1292,12 @@ impl AnalysisService {
                 graph_cache.replace(call_graph.clone());
 
                 // Compute coverage
-                let coverage_percent = if total_files > 0 {
-                    (parsed_files as f64 / total_files as f64) * 100.0
-                } else {
-                    0.0
-                };
-                let coverage = GraphCoverageMetrics {
-                    total_source_files: total_files,
+                let coverage = GraphCoverageMetrics::new(
+                    total_files,
                     parsed_files,
+                    cached_files,
                     unresolved_edges,
-                    coverage_percent,
-                };
+                );
 
                 // The files the walk could not read or parse are part of
                 // the file coverage, and they travel with the report: a

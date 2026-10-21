@@ -20670,3 +20670,211 @@ cuota y los dos recibos anteriores que ya midieron la acumulación.
   misión sigue con **C25**, la cobertura en caché.
 - Bloqueo abierto heredado: la firma *contractual* del operador sobre un clon
   limpio (**C8-R / CR-01**) sigue pendiente; no es de este ciclo.
+
+## 2026-10-21 — El informe reencuadra el roadmap: B1 a B5, y tres hallazgos que faltaban (H23, H24)
+
+### Lo que pasó
+
+El informe de la auditoría del 2026-10-21 sobre `4dbcb99` propone cinco
+bloques: B1 veracidad del producto, B2 release verificable, B3 economía del
+testing, B4 consolidación de arquitectura y ontología, B5 incrementalidad.
+La pregunta era si el roadmap del repositorio ya lo recogía o si había que
+reenfocarlo.
+
+Ya lo recogía. El commit `07e076ef` ("la auditoría del 2026-10-21 reordena
+el trabajo") había convertido la auditoría anterior en 22 candidatos con su
+evidencia y su criterio de cierre, y los bloques B1 a B5 del informe se
+corresponden uno a uno con ellos: C25 y C20 y C24 y C18 y C19 son B1 y B4,
+los cinco de H23 son B3, C9 y C16 y C22 y C23 son B4, C11 y la línea Kotlin
+son B5, y C14 es B2.
+
+### Lo que se comprobó antes de tocar nada
+
+Que el backlog **ya** fuera el informe, y no al revés, se comprobó contra el
+fichero, no de memoria: los 22 candidatos de `goal-compass.json` tienen
+`whyNow` que citan la auditoría del 2026-10-21, y sus `doneWhen` son
+literalmente los criterios del informe.
+
+El delta, entonces, era lo que el informe dice y el backlog no:
+
+1. **Un handler MCP que devuelve `Ok` con un `error` dentro.** Medido en
+   `graph_handlers.rs`: las líneas 57, 60, 128, 131, 136, 139, 175, 178,
+   212 y 215. El adaptador MCP (`rmcp_adapter.rs:756-769`) interpreta
+   cualquier `Ok` como una llamada correcta, así que un fallo viaja como
+   éxito. Ningún candidato de la backlog lo cubría: el más cercano —el
+   fallo silencioso del lector especializado— es otro defecto.
+2. **La cancelación MCP.** `rmcp_adapter.rs:36` mantiene un único
+   `Arc<AtomicBool>` compartido (creado en 57, 138 y 160), y `on_cancelled`
+   (línea 773) hace `store(true)` sin restablecerlo ni asociarlo a la
+   petición concreta. Cancelar una operación puede dejar en cancelado el
+   estado de las siguientes de la misma sesión.
+3. **El catálogo de capacidades.** `ALL_TREE_SITTER_LANGS`
+   (`capabilities.rs:38`) declara 21 entradas y se repite en al menos ocho
+   sitios del mismo fichero, mientras `language_config.rs` tiene
+   configuraciones para Bash, Groovy, Elixir, Haskell, PowerShell, Fortran y
+   JSON. El catálogo y el registro no describen el mismo conjunto.
+
+Y un cuarto hallazgo, que no es un candidato nuevo sino un **desorden**: el
+informe da el corte de release como **P0** y lo pone inmediatamente después
+de la veracidad ("cerrar PR #404 y los defectos de respuesta MCP/IaC,
+publicar el resultado y abordar inmediatamente H23"), mientras la backlog lo
+tenía en el puesto 21 de 22, después de la reescritura del testing y de la
+de la arquitectura. Publicar después de B3 y B4 es publicar un release más
+grande y más difícil de certificar que el que el informe pide.
+
+### Lo que se hizo
+
+- Se registró el delta como tres candidatos nuevos con su evidencia y su
+  criterio de cierre: **C28** (el éxito falso de MCP), **C29** (el ciclo de
+  vida de la cancelación) y **C30** (las capacidades derivadas del
+  registro).
+- Se reencuadró la backlog al orden que fija el informe: B1 veracidad → B2
+  release → B3 economía del testing → B4 arquitectura y ontología → B5
+  incrementalidad. El release (C14) sube de la posición 21 a la 7, detrás
+  de la veracidad; la ontología (C19) baja al bloque B4, donde el informe
+  la sitúa; y `goal-compass.json` reescribe su objetivo para que el orden
+  quede escrito donde la cadena lo lee.
+- Se escribió en el `ROADMAP.md` §11 el reencuadre y los tres hallazgos, sin
+  tocar nada de lo ya cerrado: ese bloque es estado, no historia.
+
+### Lo que no se hizo, y por qué
+
+- **No se reescribieron los bloques cerrados.** El informe propone un
+  roadmap nuevo; el `ROADMAP.md` tiene programas cerrados con su SHA y su
+  recuento de suite, y reabrirlos para que el informe quede escrito sería
+  fabricar progreso. Lo que se reconcilió es el estado hacia adelante.
+- **No se propuso un bloque B2 nuevo.** El release ya existe como C14, con
+  su criterio de cierre (gates sobre un candidato concreto, binarios
+  instalados verificados y tag anotado) y su dependencia de
+  `SPEC-CU-006`. Lo que cambió es su sitio en la cola, no su contrato.
+- **No se publicó nada.** La misión autoriza publicar, pero hace falta
+  autorización explícita del usuario, y el corte de release es además la
+  operación más cara de la lista.
+
+### Evidencia
+
+- `goal-compass.json`: 22 → 25 candidatos; el orden nuevo queda en las
+  prioridades 250 → 10, y `C14` (release) pasa de 30 a 190.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .`
+  → `candidatos: 25 | usables: 25 | descartados: 0 | lista`: la declaración
+  es la que la cadena lee, y la cola no está escrita al revés.
+- Contrato de la declaración: `scripts/ci/test_mission_declaration.py` → 6
+  passed, 0 failed (campos que el cargador lee, evidencia y criterio,
+  orden de la cola, referencias a ficheros reales).
+- Contrato de coherencia del roadmap:
+  `scripts/ci/test_roadmap_open_units_coherence.py` → 4 passed, 0 failed.
+- Contrato del ratchet: `scripts/ci/test_roadmap_version_ratchet.py` → 6
+  passed, 0 failed.
+- Los tres hallazgos, medidos en el árbol:
+  `graph_handlers.rs` líneas 57, 60, 128, 131, 136, 139, 175, 178, 212,
+  215; `rmcp_adapter.rs` líneas 36, 57, 138, 160, 773;
+  `capabilities.rs` líneas 38, 104, 112, 126, 149, 164, 178, 186.
+
+## 2026-10-21 — La cobertura dice lo mismo en caliente que en frío (H24, C25)
+
+### Lo que pasó
+
+`GraphCoverageMetrics` contaba `parsed_files`: los ficheros que el recorrido
+volvió a interpretar. Un fichero recuperado de la caché de ficheros no
+contaba. Dos consecuencias, las dos medidas:
+
+- Un build en caliente —donde todo sale de la caché— informaba de **0 % de
+  cobertura sobre un grafo completo**, mientras el log de la misma etapa
+  decía "N ficheros (0 parseados, N de caché)".
+- El denominador era `files.len()`, el número de ficheros que el recorrido
+  vio, no el de ficheros fuente. Un `README.md` o un `Cargo.toml` nunca
+  iba a estar cubiertos y aun así contaban en el denominador: la cobertura
+  era estructuralmente menor que 100 % en cualquier proyecto con ficheros
+  que no son código.
+
+El campo `total_source_files` se documentaba como "source files", y el
+código contaba todos los ficheros: la implementación contradecía su propio
+contrato publicado.
+
+### Lo que se comprobó antes de tocar nada
+
+- Los tres sitios que construyen la métrica: `analysis_service.rs` en
+  `build_project_graph` (línea 591), en `build_project_graph_filtered`
+  (línea 983) y en `build_project_graph_async` (línea 1296). Los tres
+  repetían la misma expresión del porcentaje a mano: la semántica de la
+  cobertura estaba triplicada.
+- El denominador de cada uno: en la ruta síncrona `files_with_lang` ya se
+  calculaba (línea 234) y no se usaba para la métrica; en las otras dos
+  `files` ya venía filtrada por lenguaje antes de contar.
+- Los consumidores: el diagnóstico de baja cobertura del MCP
+  (`handlers/mod.rs:2073-2088`) publicaba "only {parsed}/{total} files
+  parsed", y `GraphStatsDto.coverage` serializa la métrica entera, así que
+  el DTO es lo que llega al consumidor.
+- Que ningún golden ni contrato fijara el JSON de la cobertura, y que ningún
+  test afirmara sobre la cadena "LOW COVERAGE": se comprobó con grep sobre
+  el árbol y los `.json` del repositorio.
+
+### Lo que se hizo
+
+- **La métrica tiene una sola construcción.** `GraphCoverageMetrics::new()`
+  calcula `covered_files = parsed_files + cached_files` y
+  `coverage_percent = covered_files / total_source_files`. Los tres sitios
+  la llaman; la expresión duplicada desaparece.
+- **El informe separa los tres hechos.** `GraphCoverageMetrics` publica
+  `parsed_files` (interpretados de nuevo), `cached_files` (reutilizados de
+  la caché) y `covered_files` (los que el grafo cubre). Los tres viajan al
+  consumidor, porque la métrica se serializa entera.
+- **El denominador es el de los ficheros fuente.** En la ruta síncrona pasa
+  a ser `files_with_lang`; en las otras dos ya era el número correcto. Un
+  fichero que no se pudo leer o interpretar era candidato y falló: sigue
+  en el denominador y no cuenta como cubierto.
+- **El diagnóstico de MCP dice la verdad.** "only {covered}/{total} files
+  covered" en lugar de "files parsed", porque el porcentaje ya no es el de
+  los interpretados.
+- **El test va primero.** `crates/cognicode-core/tests/cached_coverage_is_honest.rs`
+  sobre el corpus real (`testdata/silent_errors_corpus`), copiado a un
+  temporal para poder dejar un fichero ilegible sin tocar el repositorio.
+  Primero en rojo: no compilaba, porque los campos no existían.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió el nombre de `parsed_files`.** Es un campo publicado; su
+  significado se mantiene ("interpretados de nuevo") y lo nuevo es la
+  separación, no una redenominación que obligaría a migrar consumidores.
+- **No se tocó `unresolved_edges` ni la semántica de las referencias
+  pendientes.** Eso es SPEC-CU-007 y C24, otra unidad.
+- **No se cambió la caché ni su invalidación.** Es C11 (SnapshotKey), y
+  tocar la caché aquí habría mezclado dos contratos.
+- **No se ejecutó `test-full.sh`.** Un `fast` verde no es evidencia de gate.
+  El gate de verdad es `merge-gate`, y sigue pendiente por la cuota de
+  tmpfs que ya tiene su propio recibo.
+
+### Evidencia
+
+- Test nuevo, en rojo antes y verde después:
+  `cargo test -p cognicode-core --test cached_coverage_is_honest` → **3
+  passed; 0 failed** (`a_file_that_could_not_be_read_is_not_covered`,
+  `the_report_separates_reparsed_from_reused`,
+  `a_warm_build_reports_the_same_coverage_as_a_cold_one`).
+  En rojo, el fallo era de compilación: `no field 'covered_files' on type
+  'GraphCoverageMetrics'`.
+- El test discrimina: con el código anterior, el build en frío daba 100 % y
+  el caliente 0 %, así que la aserción de igualdad entre ambos falla.
+- `cargo check --workspace --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `bash scripts/test-fast.sh` → rc=0, 11 binarios, **4410 passed; 0
+  failed**. El selector cayó en `fallback` (`goal-compass.json` es una ruta
+  que no conoce) y corrió el subconjunto conservador —workspace `--lib` más
+  clippy—, que es lo que corresponde. El propio script advierte que ese
+  subconjunto **no** incluye los tests contractuales de integración
+  (`b5_*`, `b6_*`, `prf_*`): esos son los del gate de release. El test nuevo
+  es de integración, así que su evidencia es la corrida directa de arriba.
+- El test que ya existía y fijaba el criterio del fichero ilegible
+  (`analysis_service.rs`, `w8_unreadable_file_is_silently_dropped`) sigue
+  verde: sigue habiendo 1 fichero parseado tras corromper 2 de 3.
+
+### Estado y siguiente WU
+
+- Unidad: **C25**, cerrada. Los tres criterios de cierre del candidato
+  quedan publicados y con test: la separación de los tres hechos, la
+  cobertura igual en frío y en caliente, y el fichero ilegible que no
+  cuenta como cubierto.
+- Siguiente WU: **C20**, el error del recorrido frente a la exclusión
+  legítima, que es la siguiente unidad de B1 en la cola reenfocada.
+- Bloqueo abierto heredado: el `merge-gate` de la PR #404 sigue en rojo por
+  la cuota de tmpfs, con su propio recibo del 2026-10-21.

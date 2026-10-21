@@ -486,6 +486,24 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   semánticas— son candidatos de la backlog: `SPEC-CU-007`, `008` y `009` ya
 >   los cubren.
 >
+>   **El informe de la auditoría del 2026-10-21 sobre `4dbcb994`** —con sus
+>   bloques B1 a B5— reencuadra ese orden y añade tres hallazgos que la
+>   backlog no cubría. El reencuadre: el corte de release **sube** a
+>   Immediately después de la veracidad, porque publicar las correcciones
+>   mergeadas y las de B1 no tiene por qué esperar a la reescritura del
+>   testing ni a la de la arquitectura —un release con esos cambios dentro
+>   es un release más grande y más difícil de certificar—. El orden queda
+>   B1 veracidad → B2 release → B3 economía del testing → B4 arquitectura y
+>   ontología → B5 incrementalidad. Los tres hallazgos que sí son nuevos:
+>   un handler MCP que **devuelve `Ok` con un `error` dentro** —el transporte
+>   comunica un éxito donde hubo un fallo—, la **cancelación MCP** —un
+>   `AtomicBool` compartido que nunca se restablece y no pertenece a su
+>   petición— y el **catálogo de capacidades**, que declara 21 lenguajes
+>   mientras el registro de parsers tiene más. Los tres son candidatos
+>   nuevos —`C28`, `C29` y `C30`— con su evidencia y su criterio de cierre en
+>   la backlog de la misión; el orden y las prioridades los fija esa misma
+>   backlog.
+>
 >   El **corte de release** cuelga de H5 y de
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   publicar exige gates sobre un candidato concreto, binarios instalados

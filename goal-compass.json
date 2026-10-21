@@ -1,6 +1,6 @@
 {
   "missionId": "cognicode",
-  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas. El orden lo fija la auditoria del 2026-10-21: primero la veracidad del grafo (que ninguna cobertura engane y que la consulta de infraestructura no responda cosas falsas), despues la economia del testing sin perder garantias, despues la simplificacion tecnica (una sola autoridad de construccion), y por ultimo la certificacion y el corte de release. Todo en remoto al concluir cada ciclo.",
+  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas. El orden lo fija la auditoria del 2026-10-21 en sus bloques B1 a B5: primero la veracidad del producto (B1: que ninguna cobertura engane, que la consulta de infraestructura no responda cosas falsas, y que un fallo de MCP llegue como fallo al cliente), despues el corte de release verificable (B2: publicar las correcciones mergeadas y las de B1 antes de seguir tocando el arbol), despues la economia del testing sin perder garantias (B3), despues la consolidacion de arquitectura y ontologia (B4), y por ultimo la incrementalidad y los consumidores (B5). Todo en remoto al concluir cada ciclo.",
   "defaultTokenBudget": 120000,
   "totalTokenBudget": null,
   "explorationEnabled": true,
@@ -23,7 +23,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 220,
+      "priority": 250,
       "source": "roadmap"
     },
     {
@@ -42,7 +42,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 210,
+      "priority": 240,
       "source": "roadmap"
     },
     {
@@ -61,7 +61,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 200,
+      "priority": 230,
       "source": "roadmap"
     },
     {
@@ -81,26 +81,65 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 190,
+      "priority": 220,
       "source": "roadmap"
     },
     {
-      "candidateId": "C19",
-      "title": "Un recurso de infraestructura no es un simbolo de programacion",
+      "candidateId": "C28",
+      "title": "Un fallo de MCP llega como fallo, no como un exito con un error dentro",
       "unit": "H24",
-      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
-      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3. La auditoria del 2026-10-21 anade el caso de Bash: `function_definition` figura tambien como clase y cualquier `command` como importacion, y no hay lector semantico que compense.",
+      "objective": "Que el adaptador MCP deje de comunicar un fallo como si fuera un exito: un handler que no puede responder devuelve un error tipado y el transporte lo lleva como error, no como un resultado con un campo `error` dentro.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `handle_graph_pagerank` y sus hermanos devuelven `Ok({\"error\": ...})` cuando no hay grafo, y el adaptador MCP interpreta cualquier `Ok` como una llamada correcta (rmcp_adapter.rs:756-769). Hay al menos nueve sitios asi en graph_handlers.rs (lineas 57, 60, 128, 131, 136, 139, 175, 178, 212, 215). Para un agente, el transporte comunica exito aunque la operacion haya fallado, y las metricas contabilizan mal esos resultados. Es el bloque B1 del informe: \"los fallos llegan como fallos al cliente\". No hay candidato en la backlog que lo cubra: el candidato mas cercano (el fallo silencioso del lector especializado) es otro defecto.",
       "evidenceRefs": [
-        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
+        "crates/cognicode-core/src/interface/mcp/handlers/graph_handlers.rs",
+        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs"
       ],
       "doneWhen": [
-        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
-        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
-        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar"
+        "ningun handler publico devuelve `Ok` con una clave `error` dentro: un fallo es un error del protocolo",
+        "el adaptador MCP traduce un error de handler en un error de JSON-RPC, no en un resultado con `isError: false`",
+        "un test que llama a un handler sin grafo observa un error, no un resultado de exito"
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 180,
+      "source": "roadmap",
+      "priority": 210
+    },
+    {
+      "candidateId": "C29",
+      "title": "La cancelacion MCP pertenece a su peticion y se limpia al terminar",
+      "unit": "H24",
+      "objective": "Que la cancelacion MCP pertenezca a su peticion y no arrastre a las siguientes: la cancelacion se asocia al identificador de la peticion que se cancela y su registro desaparece cuando la peticion termina.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `CogniCodeHandler` mantiene un unico `Arc<AtomicBool>` compartido (rmcp_adapter.rs:36, creado en 57, 138, 160), y `on_cancelled` (linea 773) hace `store(true)` sin ningun restablecimiento equivalente ni asociacion con la peticion concreta. Cancelar una operacion puede dejar en cancelado el estado que comparten las siguientes de la misma sesion. Es el bloque B1 del informe y no hay candidato en la backlog que lo cubra.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs"
+      ],
+      "doneWhen": [
+        "la cancelacion se registra con el identificador de la peticion a la que pertenece",
+        "al terminar la peticion, su registro de cancelacion desaparece",
+        "cancelar una operacion y lanzar otra despues deja la segunda sin cancelar"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "source": "roadmap",
+      "priority": 200
+    },
+    {
+      "candidateId": "C14",
+      "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
+      "unit": "release",
+      "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
+      "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
+      "evidenceRefs": [
+        "release-candidate.pipeline.kts"
+      ],
+      "doneWhen": [
+        "el candidato pasa el gate de release con los contratos y los assets verificados",
+        "los binarios instalados responden desde fuera del repositorio, sin `CARGO_MANIFEST_DIR` en el entorno",
+        "el tag anotado y la release existen, y `tools/list` anuncia la superficie real"
+      ],
+      "scope": "release",
+      "risk": "high",
+      "priority": 190,
       "source": "roadmap"
     },
     {
@@ -119,7 +158,7 @@
       ],
       "scope": "H23",
       "risk": "low",
-      "priority": 170,
+      "priority": 180,
       "source": "roadmap"
     },
     {
@@ -138,7 +177,7 @@
       ],
       "scope": "H23",
       "risk": "low",
-      "priority": 160,
+      "priority": 170,
       "source": "roadmap"
     },
     {
@@ -157,7 +196,7 @@
       ],
       "scope": "H23",
       "risk": "medium",
-      "priority": 150,
+      "priority": 160,
       "source": "roadmap"
     },
     {
@@ -176,7 +215,7 @@
       ],
       "scope": "H23",
       "risk": "low",
-      "priority": 140,
+      "priority": 150,
       "source": "roadmap"
     },
     {
@@ -195,8 +234,47 @@
       ],
       "scope": "H23",
       "risk": "low",
+      "priority": 140,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C19",
+      "title": "Un recurso de infraestructura no es un simbolo de programacion",
+      "unit": "H24",
+      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
+      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3. La auditoria del 2026-10-21 anade el caso de Bash: `function_definition` figura tambien como clase y cualquier `command` como importacion, y no hay lector semantico que compense.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
+      ],
+      "doneWhen": [
+        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
+        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
+        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar"
+      ],
+      "scope": "H24",
+      "risk": "medium",
       "priority": 130,
       "source": "roadmap"
+    },
+    {
+      "candidateId": "C30",
+      "title": "Las capacidades se derivan del registro de lenguajes, no de una lista propia",
+      "unit": "H24",
+      "objective": "Que el contrato de capacidades no declare un conjunto de lenguajes propio: que se derive del registro de parsers, con la precision que cada lenguaje demuestra, y que Kotlin siga declarado no soportado hasta que su parser este conectado.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `ALL_TREE_SITTER_LANGS` (capabilities.rs:38) declara 21 entradas y se repite en al menos ocho sitios del mismo fichero, mientras `language_config.rs` tiene configuraciones para Bash, Groovy, Elixir, Haskell, PowerShell, Fortran y JSON. El catalogo declarado y el registro de parsers no describen el mismo conjunto, asi que las declaraciones no derivan de una sola autoridad. Es el bloque B4 del informe. El candidato mas cercano (C19, la ontologia de Bash/R/JSON) toca el extractor generico, no el catalogo de capacidades.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/capabilities.rs",
+        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
+      ],
+      "doneWhen": [
+        "el catalogo de capacidades no tiene lista propia de lenguajes: se deriva del registro de `LanguageConfig`",
+        "el conjunto declarado coincide con el registro en los dos sentidos, y un test lo compara",
+        "Kotlin sigue declarado no soportado hasta que su parser este conectado y demostrado"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "source": "roadmap",
+      "priority": 120
     },
     {
       "candidateId": "C9",
@@ -214,7 +292,7 @@
       ],
       "scope": "H24",
       "risk": "high",
-      "priority": 120,
+      "priority": 110,
       "source": "roadmap"
     },
     {
@@ -233,7 +311,7 @@
       ],
       "scope": "H24",
       "risk": "high",
-      "priority": 110,
+      "priority": 100,
       "source": "roadmap"
     },
     {
@@ -252,7 +330,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 100,
+      "priority": 90,
       "source": "roadmap"
     },
     {
@@ -271,7 +349,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 90,
+      "priority": 80,
       "source": "roadmap"
     },
     {
@@ -290,7 +368,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 80,
+      "priority": 70,
       "source": "roadmap"
     },
     {
@@ -309,7 +387,7 @@
       ],
       "scope": "H24",
       "risk": "medium",
-      "priority": 70,
+      "priority": 60,
       "source": "roadmap"
     },
     {
@@ -328,7 +406,7 @@
       ],
       "scope": "H24",
       "risk": "high",
-      "priority": 60,
+      "priority": 50,
       "source": "roadmap"
     },
     {
@@ -347,7 +425,7 @@
       ],
       "scope": "H24",
       "risk": "high",
-      "priority": 50,
+      "priority": 40,
       "source": "roadmap"
     },
     {
@@ -365,25 +443,6 @@
         "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados"
       ],
       "scope": "H5",
-      "risk": "high",
-      "priority": 40,
-      "source": "roadmap"
-    },
-    {
-      "candidateId": "C14",
-      "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
-      "unit": "release",
-      "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
-      "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
-      "evidenceRefs": [
-        "release-candidate.pipeline.kts"
-      ],
-      "doneWhen": [
-        "el candidato pasa el gate de release con los contratos y los assets verificados",
-        "los binarios instalados responden desde fuera del repositorio, sin `CARGO_MANIFEST_DIR` en el entorno",
-        "el tag anotado y la release existen, y `tools/list` anuncia la superficie real"
-      ],
-      "scope": "release",
       "risk": "high",
       "priority": 30,
       "source": "roadmap"

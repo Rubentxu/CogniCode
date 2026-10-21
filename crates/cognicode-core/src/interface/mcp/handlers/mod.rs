@@ -2072,16 +2072,16 @@ pub async fn handle_check_architecture(
 
     // Get coverage diagnostics
     let coverage = ctx.analysis_service.get_coverage_metrics();
-    let (coverage_percent, total_files, parsed_files) = coverage
-        .map(|c| (c.coverage_percent, c.total_source_files, c.parsed_files))
+    let (coverage_percent, total_files, covered_files) = coverage
+        .map(|c| (c.coverage_percent, c.total_source_files, c.covered_files))
         .unwrap_or((0.0, 0, 0));
 
     // Build diagnostic message based on coverage
     let mut diagnostics = Vec::new();
     if coverage_percent < 20.0 && coverage_percent > 0.0 {
         diagnostics.push(format!(
-            "LOW COVERAGE: only {}/{} files parsed ({:.0}%)",
-            parsed_files, total_files, coverage_percent
+            "LOW COVERAGE: only {}/{} files covered ({:.0}%)",
+            covered_files, total_files, coverage_percent
         ));
     } else if coverage_percent == 0.0 && total_files == 0 {
         diagnostics.push("No source files found in project directory".to_string());

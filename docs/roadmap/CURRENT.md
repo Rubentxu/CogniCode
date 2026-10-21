@@ -34,10 +34,11 @@ Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
-La cola está escrita en el orden que fija la auditoría del 2026-10-21, de
-mayor a menor prioridad, que es como la ordena el selector: el primero que
-encadenaría es **C25**, la cobertura en caché. C2, C3 y C4 no están en la
-cola porque su trabajo salió en las PR #400, #401 y #402.
+La cola está escrita en el orden que fija el informe de la auditoría del
+2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
+ordena el selector. **C25 está cerrado**; el primero que encadenaría ahora es
+**C20**, el error del recorrido frente a la exclusión legítima. C2, C3 y C4 no
+están en la cola porque su trabajo salió en las PR #400, #401 y #402.
 
 **La declaración estaba inservible y ya no lo está.** Escribía la evidencia
 en un campo que el cargador no lee, tenía la cola escrita al revés y una
@@ -131,29 +132,40 @@ código, no de una opinión.
 
 | Hito | Qué entrega | Candidato |
 |---|---|---|
-| 1 | Que ninguna cobertura engañe: la de ficheros, la de relaciones y la de la caché | `C25`, `C20`, `C24` |
-| 2 | Que la consulta de infraestructura no responda cosas falsas | `C18`, `C19` |
+| 1 | Que ninguna cobertura engañe: la de ficheros, la de relaciones y la de la caché | `C25` ✅, `C20`, `C24`, `C18`, `C28`, `C29` |
+| 2 | Certificación y corte de release | `C14` |
 | 3 | Que verificar un cambio deje de consumir el tiempo que no compra garantía | `C6`, `C5`, `C7`, `C21`, `C8` |
-| 4 | Una sola autoridad de construcción | `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
-| 5 | Certificación y corte de release | `C11`, `C14` |
+| 4 | Una sola autoridad de construcción y una ontología que no se contradiga | `C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
+| 5 | Incrementalidad y consumidores | `C11`, `C12`, `C13` |
 
-La línea de Kotlin (`C12`, `C13`) queda detrás del corte: es la unidad más
-grande del roadmap y ningún hito la necesita.
+La línea de Kotlin (`C12`, `C13`) queda al final: es la unidad más grande del
+roadmap y ningún hito la necesita. El corte de release (`C14`) **subió** del
+último sitio al segundo: el informe lo da como P0 y lo pone inmediatamente
+después de la veracidad —publicar las correcciones mergeadas y las de B1 no
+tiene por qué esperar a la reescritura del testing ni a la de la
+arquitectura—.
 
-Tres candidatos nacen de este informe: **C25**, la cobertura en caché —un
-fichero recuperado de la caché no cuenta como analizado, y una construcción
-en caliente puede informar de un 0 % sobre un grafo completo—; **C26**, el
-fallo silencioso del lector especializado, que se degrada a resultado
-genérico en vez de conservar el diagnóstico; y **C27**, la prueba
+Tres candidatos nacen de la auditoría del 2026-10-20: **C25**, la cobertura
+en caché —un fichero recuperado de la caché no cuenta como analizado, y una
+construcción en caliente puede informar de un 0 % sobre un grafo completo—;
+**C26**, el fallo silencioso del lector especializado, que se degrada a
+resultado genérico en vez de conservar el diagnóstico; y **C27**, la prueba
 metamórfica, que comprueba identidad, caché, cobertura y relaciones en un
 solo escenario. Dos candidatos que ya existían recibieron la evidencia
 nueva: **C19** con el caso de Bash, y **C10** con el ejemplo de una
 identidad semántica que `SymbolFqn::parse` no entiende.
 
-El siguiente trabajo es **C25**: la cobertura en caché. Después, **C18**,
-los metadatos reales de la arista y la profundidad que le corresponde a la
-consulta. El corte de release —**C14**— cuelga de **C11**, y es lo que
-convierte el trabajo en instalable.
+El informe del 2026-10-21 sobre `4dbcb99` añade **tres candidatos más**:
+**C28**, un handler MCP que devuelve `Ok` con un `error` dentro —el
+transporte comunica un éxito donde hubo un fallo—; **C29**, la cancelación
+MCP, un `AtomicBool` compartido que nunca se restablece y no pertenece a su
+petición; y **C30**, el catálogo de capacidades, que declara 21 lenguajes
+mientras el registro de parsers tiene más.
+
+**C25 está cerrado**: la cobertura publica los ficheros cubiertos, los
+interpretados de nuevo y los reutilizados de la caché, y un build en
+caliente informa lo mismo que uno en frío sobre el mismo árbol. El siguiente
+trabajo es **C20**, el error del recorrido frente a la exclusión legítima.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
