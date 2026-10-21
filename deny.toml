@@ -107,9 +107,9 @@ ignore = [
 #   - All third-party dependencies PASS the allow-list.
 #   - Two workspace crates are flagged as unlicensed and need
 #     operator decision: cognicode-runtime and cognicode-sandbox.
-#     The 8 other workspace crates (cognicode, cognicode-core,
+#     The 7 other workspace crates (cognicode, cognicode-core,
 #     cognicode-cli, cognicode-mcp, cognicode-explorer,
-#     cognicode-ladybug, cognicode-core-mock, cognicode-macros)
+#     cognicode-ladybug, cognicode-macros)
 #     also lack a license field but cargo-deny does not flag them
 #     because they are not encountered in the runtime dependency
 #     graph (they are workspace-internal and consumed via path

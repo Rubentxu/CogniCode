@@ -16,7 +16,6 @@ members = [
     # cognicode-rule-test-harness → docs/parked-crates/cognicode-rule-test-harness/
     "crates/cognicode-explorer",
     "crates/cognicode-ladybug",
-    "crates/cognicode-core-mock",
     "crates/cognicode-runtime",
 ]
 exclude = ["crates/spike-ladybug"]
