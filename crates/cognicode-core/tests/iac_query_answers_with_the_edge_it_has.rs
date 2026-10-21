@@ -18,8 +18,8 @@
 //! the difference between a measured value and a constant is exactly what
 //! this file is about.
 
-use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::aggregates::CallGraph;
+use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::services::ExtractionContext;
 use cognicode_core::domain::traits::GraphStore;
 use cognicode_core::domain::value_objects::declaration::Declaration;
@@ -250,7 +250,9 @@ async fn a_name_that_answers_for_more_than_one_declaration_is_ambiguous() {
     .await;
 
     let error = match answer {
-        Ok(_) => panic!("a name that answers for more than one declaration is ambiguous, not resolved in silence"),
+        Ok(_) => panic!(
+            "a name that answers for more than one declaration is ambiguous, not resolved in silence"
+        ),
         Err(error) => error.to_string(),
     };
 
@@ -272,11 +274,7 @@ async fn the_canonical_identity_answers_even_when_the_name_is_ambiguous() {
     let answer = handle_iac_query(
         &ctx,
         IacQueryInput {
-            resource_id: canonical(
-                dir.path(),
-                "terraform-iac/variables.tf",
-                "var.environment",
-            ),
+            resource_id: canonical(dir.path(), "terraform-iac/variables.tf", "var.environment"),
             depth: 1,
         },
     )

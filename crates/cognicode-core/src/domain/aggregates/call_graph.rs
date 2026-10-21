@@ -276,15 +276,15 @@ impl CallGraph {
         self.edges
             .iter()
             .flat_map(|(source, targets)| {
-                targets.iter().filter_map(
-                    move |((target, dep_type), (provenance, confidence))| {
+                targets
+                    .iter()
+                    .filter_map(move |((target, dep_type), (provenance, confidence))| {
                         if target == id {
                             Some((source, dep_type, *provenance, *confidence))
                         } else {
                             None
                         }
-                    },
-                )
+                    })
             })
             .collect()
     }
