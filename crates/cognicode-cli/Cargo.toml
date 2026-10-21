@@ -48,7 +48,6 @@ tar.workspace = true
 flate2.workspace = true
 dirs = "5"
 rayon.workspace = true
-ureq = "2.9"
 
 [features]
 # E1.W3 — Surface `cognicode evidence list|search` over the LadybugDB

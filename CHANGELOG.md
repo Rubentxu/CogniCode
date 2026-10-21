@@ -42,6 +42,19 @@ declaración de un módulo hermano —o de un módulo padre— no satisface una
 referencia, porque eso sería cablear una arista que nada prueba y
 escondería el hueco real.
 
+**Dos certificados retirados por el gate de cadena de suministro.** El aviso
+`RUSTSEC-2026-0382` y su gemelo `RUSTSEC-2026-0381` trataban del mismo
+certificado —`emSign ECC Root CA - G3`, cuya clave privada ya es pública— y
+pararon el gate antes de publicar este ciclo. Uno tenía arreglo directo
+(`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10). El otro no: la línea `0.26`
+de `webpki-roots` no tiene versión corregida, y a ella sólo se llegaba por una
+dependencia que la CLI declaraba y no usaba.
+
+En vez de silenciar el aviso, salió la dependencia: `ureq` desaparece del
+árbol, el paquete vulnerable deja de estar en el grafo resuelto y el aviso sin
+arreglo desaparece con él. El árbol resultante es más pequeño, no más grande:
+dos paquetes actualizados y uno menos.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP
