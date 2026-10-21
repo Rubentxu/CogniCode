@@ -461,35 +461,35 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     invertida, y el arreglo no necesita un framework nuevo.
 >
 >   Los candidatos de las dos unidades —con su evidencia y su criterio de
->   cierre— viven en la backlog de la misión (`goal-compass.json`); aquí
->   sólo vive el estado.
+>   cierre— viven en la backlog de la misión (`goal-compass.json`).
 >
 >   **Lo ya cerrado no se reescribe aquí.** H0, H1, H2, H4, H17-H22 y la
->   poda documental están en el Journal con su SHA y su recuento de suite.
->   Este bloque es estado, no historia: por eso cabe en ochenta líneas.
+>   poda documental están en el Journal con su SHA y su recuento de suite:
+>   este bloque es estado, no historia.
 >
 >   **La auditoría del 2026-10-20** abrió H23 y H24, con informe y plan en
->   el Journal de esa fecha. De lo que H24 tenía anotado ya están
->   resueltas cuatro cosas —el manifiesto deriva del registro de lenguajes,
->   la CLI y el MCP responden sobre el mismo grafo, la consulta de
->   infraestructura publica el nombre del dominio, y la referencia sin
->   resolver se publica con su origen y su motivo—; su revisión corrigió
->   además el ámbito de la resolución y la promesa de `complete`.
+>   el Journal de esa fecha. De lo que H24 anotaba ya están resueltas cuatro
+>   cosas —el manifiesto deriva del registro de lenguajes, la CLI y el MCP
+>   responden sobre el mismo grafo, la consulta de infraestructura publica
+>   el nombre del dominio, y la referencia sin resolver se publica con su
+>   origen y su motivo—.
 >
->   **La auditoría del 2026-10-21** confirma el orden y no abre unidades
->   nuevas: primero la veracidad del grafo —que ninguna cobertura engañe y
->   que la consulta de infraestructura no responda cosas falsas—, después la
->   economía del testing, después la simplificación técnica —una sola
->   autoridad de construcción—, y por último la certificación y el corte de
->   release. Sus hallazgos nuevos —la cobertura en caché, el fallo silencioso
->   del lector especializado, la gramática de Bash y las identidades
->   semánticas— son candidatos de la backlog: `SPEC-CU-007`, `008` y `009` ya
->   los cubren.
+>   **La auditoría del 2026-10-21** —dos lecturas el mismo día, la segunda
+>   sobre el remoto `0fca088a`— confirma el orden de los bloques y no lo
+>   reordena. Casi todo lo que encontró ya tiene dueño: el inventario
+>   incremental que se come los errores y reconstruye el grafo entero es
+>   `C11`; los constructores que no comparten motor, `C16` y `C23`; el
+>   vocabulario por lenguaje, `C19`; y el coste de validación, `C6`, `C5` y
+>   `C7`. Abre dos candidatos nuevos, y los dos con medida detrás: **C31**,
+>   la autoridad de una herramienta MCP no puede derivarse de un
+>   `product/tools.json` que controle el proyecto analizado; y **C32**, el
+>   gate no puede aislar su compilación en un volumen temporal sin haber
+>   comprobado antes su tamaño.
 >
 >   El **corte de release** se rige por
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag
->   anotado. Una PR fusionada no es una release, y no cuelga de H5.
+>   anotado. Una PR fusionada no es una release.
 
 <!-- consumer-contracts:end -->
 
@@ -505,8 +505,8 @@ prefiere callarse a mentir—. El estado sigue en el párrafo; aquí vive el
 
 | Bloque | Qué entrega | Candidatos | Autoridad |
 |---|---|---|---|
-| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C18` `C28` `C29` `C14` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
-| B2 | Testing rápido y sin duplicidades | `C6` `C5` `C7` `C21` `C8` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · retirada de UAT (nota 2) |
+| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C18` `C28` `C29` `C14` `C31` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
+| B2 | Testing rápido y sin duplicidades | `C32` `C6` `C5` `C7` `C21` `C8` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · retirada de UAT (nota 2) |
 | B3 | Ontología y arquitectura simplificadas | `C19` `C30` `C9` `C16` `C10` `C26` `C15` `C27` `C22` `C23` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/adr/ADR-029-callgraph-projection-port-seam.md` |
 | B4 | Caché incremental fiable | `C11` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md` |
 | B5 | Navegación Kotlin sin JVM | `C12` | `docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-SYMBOLS.md` · `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md` (K1) |
@@ -551,6 +551,18 @@ el recibo del `JOURNAL` del 2026-10-15, "Retirada de la clase UAT
 (ADR-TH-006)", y el nombre que sí se cita ahí es **ADR-TH-006**, que
 tampoco es un fichero: es la entrada del recibo. Quien ejecute B2 lee el
 recibo, no una ruta que ya no existe.
+
+**Nota 3 — hay dos caminos al permiso MCP, y la Nota 1 midió uno.** La
+Nota 1 cerró el bypass por el esquema de entrada: un `SafeRefactorInput` con
+`deny_unknown_fields` rechaza el token de autorización, y el modelo de
+postura falla cerrado ante una herramienta no declarada. Eso sigue siendo
+cierto, y sigue siendo lo que la Nota 1 midió. La auditoría del 2026-10-21
+señaló otro camino, y este sí es real: la autoridad de ejecución de una
+herramienta sale de `product/tools.json`, y ese fichero se resuelve desde el
+`--cwd` del servidor antes que desde la copia compilada en el binario. Un
+proyecto analizado puede declarar `write_file` como herramienta de lectura y
+que el modo de sólo lectura lo acepte. La cadena está medida sobre el árbol;
+lo que falta es reproducirla en un MCP real, y ese es el RED de `C31`.
 
 **El ciclo de cada bloque** es el mismo en los seis, y es el de
 `AGENTS.md`: impacto real y prueba RED (`change-impact`), desarrollo TDD con
