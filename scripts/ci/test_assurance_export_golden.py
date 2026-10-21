@@ -98,6 +98,7 @@ def workspace_version() -> str:
 # SHA-256 pinned del golden. Cambia con cada regeneracion intencionada
 # (refactor del encoding del producer o bump de producer version).
 # Anteriores:
+#   - 37762119a2c937551eb9445984405c2882e99659af54bd94d0299487f446e52f (v0.101.24, regenerate 2026-10-21 al bump 0.101.23 → 0.101.24; corte de release de C14. No se publico: su gate de candidato fallo con el defecto del indice, y el corte bueno es v0.101.25)
 #   - 0cba0302703536653378b7108c092e780ac1c90044f31438390ec3379f81f3ca (v0.101.21, regenerate 2026-10-17 al bump 0.101.20 → 0.101.21; corte de release de CU-2)
 #   - 868b4a6583c10c9277be69e3f41d278ee7fe27e47c919c2c8ce4e49f88caabb0 (v0.101.20, regenerate 2026-10-17 al bump 0.101.19 → 0.101.20; corte de release de CU-1)
 #   - 84008ccd810a1ea516ed968092b8401a7c01262ca6242e8aa3ec0c32a95251b1 (v0.101.19, corte no publicado; el RC falló en payloads por TIER1 aarch64)
@@ -113,15 +114,14 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
-# Pin vigente: 37762119a2c937551eb9445984405c2882e99659af54bd94d0299487f446e52f
-# (v0.101.24, regenerate 2026-10-21 al bump 0.101.23 → 0.101.24; corte de release
-# de C14. Lo que cambia respecto al pin anterior es producer.version, el
-# workspace rev y el tamano del export —952804 bytes frente a 956973 del
-# corte de CU-2—, porque la poda del arbol documental y las correcciones de
-# grafo del bloque B1 cambiaron lo que el export describe. El consumer
+# Pin vigente: edd14796642ea56c5ec71b9578c2d26cf65572132e917366715e509bdd9bfce1
+# (v0.101.25, regenerate 2026-10-21 al bump 0.101.24 → 0.101.25; corte de release
+# de C14. Cambian producer.version, el workspace rev y el tamano del export
+# —952972 bytes frente a 952804 del corte anterior—, porque el arreglo del
+# indice de simbolos anadio una definicion al crate. El consumer
 # (pipelinek-assurance) debe actualizar su pin tras esta regeneracion.)
 GOLDEN_SHA256 = (
-    "37762119a2c937551eb9445984405c2882e99659af54bd94d0299487f446e52f"
+    "edd14796642ea56c5ec71b9578c2d26cf65572132e917366715e509bdd9bfce1"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
