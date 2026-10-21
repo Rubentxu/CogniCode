@@ -6,7 +6,7 @@
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
 > **Snapshot**: 2026-10-21, sobre `354271aea0b9b3d5374e933e310d53baefe1431c`
-> (la unidad C18, con el `merge-gate` verde), HEAD de la rama
+> (la unidad C18, con el `merge-gate` verde), rama
 > `fix/pending-references-are-facts`, 30 commits por delante de
 > `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
 > release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
