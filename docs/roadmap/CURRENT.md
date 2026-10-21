@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `deb28121ba8178d02aea68d1eefc07acf785e65f`
-> (la unidad C28, con el `fast` y el `full` en verde), rama
-> `fix/pending-references-are-facts`, 33 commits por delante de
+> **Snapshot**: 2026-10-21, sobre `8941871e0607fe512f2fa4981b2556712c788be0`
+> (la unidad C28, con el `fast`, el `full` y el `merge-gate` en verde), rama
+> `fix/pending-references-are-facts`, 34 commits por delante de
 > `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
 > release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
 > commits por delante de ese tag en cuanto este
@@ -246,10 +246,12 @@ correspondería a otro árbol.
   esta sesión estaba libre. **No se cambió ni una línea del gate**: el
   aislamiento por checkout del `CARGO_TARGET_DIR` se conserva a propósito,
   y la cuota dejó de ser un problema sin tocarla. Recibo en el `JOURNAL`,
-  entrada del 2026-10-21. Lo que queda es publicar el veredicto: la
+  entrada del 2026-10-21. El gate también pasa sobre el árbol de C28
+  (`8941871e`, corrida `df075b89-b70a-400d-a6c3-ea0d68f3f97e`, 56 de 56
+  etapas `success`). Lo que queda es publicar el veredicto: la
   publicación a GitHub dio `HTTP 422` porque el SHA todavía no está en el
   remoto, y subir la rama es decisión del operador.
-- **Release pendiente**: `main` lleva 45 commits sin publicar (con este
+- **Release pendiente**: `main` lleva 65 commits sin publicar (con este
   ciclo; 31 sin él). Publicar exige gates sobre un candidato concreto,
   binarios instalados verificados y tag anotado.
 

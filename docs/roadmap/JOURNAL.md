@@ -21778,3 +21778,15 @@ El clasificador reconoce ahora todas las clases que la interfaz publica.
   esta unidad.
 - Siguiente WU: **C29**, la cancelacion MCP pertenece a su peticion y se
   limpia al terminar.
+
+**El `merge-gate` sale verde.** Corrida `df075b89-b70a-400d-a6c3-ea0d68f3f97e`
+sobre `8941871e`: **56 de 56 etapas** `success`, sin diagnosticos, con la
+ultima etapa —`merge-gate`— en `success`. El recuento sale del journal del
+propio pipeline (`.pipelinek/merge-gate.db`, tabla `events`), no de la salida
+del terminal: la corrida se puede volver a leer despues sin volver a
+ejecutar el gate.
+
+La publicacion del veredicto en GitHub no sale: `gh: No commit found for
+SHA: 8941871e0607fe512f2fa4981b2556712c788be0 (HTTP 422)`, porque ese SHA
+todavia no esta en el remoto. No es un fallo del gate —el gate corrio y
+paso— sino de la publicacion, y la rama la sube el operador.
