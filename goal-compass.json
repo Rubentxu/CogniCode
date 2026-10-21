@@ -8,26 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C18",
-      "title": "La consulta de infraestructura contesta con la arista y la profundidad que le corresponden",
-      "unit": "H24",
-      "objective": "Que `iac_query` conteste con los metadatos reales de cada arista, que `depth` sea una profundidad de recorrido y no un tope de resultados, y que un nombre ambiguo se declare ambiguo en vez de resolverse por casualidad.",
-      "whyNow": "MEDIDO: los dependientes se publican siempre como `references` con confianza `1.0` sin mirar la arista; el grafo guarda las aristas inversas en un `HashSet`, asi que el tipo y la confianza de verdad no estan ahi; `depth` se implementa como `take(depth * 10)`; y dos declaraciones con el mismo nombre se resuelven con `first()`. El tipo y el kind ya se publican bien desde el candidato anterior; esto es lo que queda. Contrato CU-008.2 a CU-008.4.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs"
-      ],
-      "doneWhen": [
-        "la confianza y el tipo de la arista salen del grafo, y una arista sin confianza se declara desconocida en vez de `1.0`",
-        "`depth` es una profundidad: con `depth: 2` llegan las aristas a dos saltos, y con `depth: 3` llegan mas aristas, no las mismas con otro corte",
-        "un nombre que responde por mas de una declaracion se declara ambiguo en vez de elegir una en silencio",
-        "el grafo conserva los metadatos de las aristas inversas"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 220,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C28",
       "title": "Un fallo de MCP llega como fallo, no como un exito con un error dentro",
       "unit": "H24",

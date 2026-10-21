@@ -5,9 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `b2634ed68c0a40dd2c0477d18e221554ea51cbc5` (la unidad C20; base de
-> medición `15c04fea`), HEAD de la rama `fix/pending-references-are-facts`,
-> 20 commits por delante de `origin/main` = `4dbcb994`. Versión del
+> **Snapshot**: 2026-10-21, sobre `9f64aed4` (la unidad C18; base de
+> medición `ce7e1329`), HEAD de la rama `fix/pending-references-are-facts`,
+> 14 commits por delante de `origin/main` = `4dbcb994`. Versión del
 > workspace: `0.101.23`. Última release publicada: `v0.101.23` (2026-10-18,
 > 8 assets). `main` va **31** commits por delante de ese tag en cuanto este
 > ciclo se funda: hay estabilizaciones mergeadas que todavía no están
@@ -31,16 +31,16 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **21** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
 La cola está escrita en el orden que fija el informe de la auditoría del
 2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
-ordena el selector. **C25, C20 y C24 están cerrados**; el primero que
-encadenaría ahora es **C18**, la consulta de infraestructura que no
-contesta con la arista y la profundidad que le corresponden. C2, C3 y C4 no
-están en la cola porque su trabajo salió en las PR #400, #401 y #402.
+ordena el selector. **C25, C20, C24 y C18 están cerrados**; el primero que
+encadenaría ahora es **C28**, un fallo de MCP que llega como un exito con un
+error dentro. C2, C3 y C4 no están en la cola porque su trabajo salió en las
+PR #400, #401 y #402.
 
 **La declaración estaba inservible y ya no lo está.** Escribía la evidencia
 en un campo que el cargador no lee, tenía la cola escrita al revés y una
@@ -182,9 +182,19 @@ grafo por fichero sabe qué referencias no puede atar —la caché las guarda y
 el grafo del proyecto las publica—, pero el manejador del MCP y la orden de
 la CLI respondían como si el fichero no enunciara ninguna. Ahora las dos
 publican las referencias pendientes con su origen y su motivo, y dicen lo
-mismo sobre el mismo fichero. El siguiente trabajo es **C18**, la consulta
-de infraestructura: que conteste con la arista y la profundidad que le
-corresponden.
+mismo sobre el mismo fichero.
+
+**C18 está cerrado**: la consulta de infraestructura contesta con la arista
+que tiene. Los dependientes se publicaban siempre como `references` con una
+confianza de `1.0` sin mirar la arista que los une, y la profundidad era un
+tope de resultados: con `depth: 1` y con `depth: 2` salía lo mismo. Ahora
+cada relación lleva el tipo, la procedencia y la confianza de su propia
+arista —una arista sin confianza se dice desconocida, no se invierte en `1.0`—,
+`depth` es el número de saltos que se caminan, y un nombre que responde por
+más de una declaración se declara ambiguo y pide la identidad canónica. El
+grafo gana la contracara de las aristas inversas con sus metadatos, y no
+cambia de forma en disco. El siguiente trabajo es **C28**, un fallo de MCP
+que tiene que llegar como fallo y no como un éxito con un error dentro.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.

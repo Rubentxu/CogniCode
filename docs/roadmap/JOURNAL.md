@@ -21525,3 +21525,118 @@ etapas del `merge-gate.pipeline.kts` salen en `success`, incluidas la de
 - Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
   la arista y la profundidad que le corresponden. Ya está en la cabeza de la
   cola del repo y en la del journal, con su propuesta registrada.
+
+## 2026-10-21 — La consulta de infraestructura contesta con la arista que tiene (H24)
+
+### Lo que pasó
+
+La herramienta que responde sobre infraestructura publicaba a los dependientes
+siempre como `references` con una confianza de `1.0`, sin mirar la arista que
+los une. Medido sobre el fixture de Terraform: el grafo guarda **106 aristas**
+con su tipo y su confianza, y las inversas en un conjunto de identificadores
+que no los conserva — el tipo y la confianza de verdad no estaban ahi. La
+profundidad era un tope de resultados (`take(depth * 10)`), asi que con
+`depth: 1` y con `depth: 2` salia exactamente lo mismo. Y un nombre que
+respondia por mas de una declaracion se resolvia con `first()`.
+
+Cuatro defectos, cuatro mediciones:
+
+- Los dependientes se publicaban con `edge_type` y `confidence` constantes
+  (`consolidated_handlers.rs`, el bloque que leia `graph.dependents()`).
+- `depth` multiplicaba por diez y se queda con los primeros: no era una
+  distancia sino una cuota.
+- El grafo perdia los metadatos de las aristas inversas al guardarlas en un
+  `HashSet` de identificadores; las salientes si los tienen.
+- Un nombre ambiguo se resolvia por el primero que aparecia.
+
+El dominio gana la contracara de las aristas que entran con sus metadatos
+(`incoming_dependencies_with_metadata`) y el recorrido por distancia que las
+dos direcciones comparten (`dependencies_within_depth` y
+`dependents_within_depth`). La profundidad es ahora el numero de saltos que
+se caminan: sobre `module.compute`, un salto da **9** relaciones y dos saltos
+dan **16**.
+
+Las relaciones cargan el tipo, la procedencia y la confianza que su arista
+tiene. La forma publicada cambia: `confidence` pasa de `f64` a `Option<f64>`
+—una arista sin confianza se dice desconocida, no se invierte en `1.0`— y la
+relacion gana `provenance: Option<String>`. El grafo **no cambia de forma en
+disco**: el blob bincode y su shim `CallGraphV1` siguen igual, porque el
+arreglo es aditivo.
+
+Un nombre que responde por mas de una declaracion se declara ambiguo y pide
+la identidad canonica. Medido en el fixture: `var.environment` lo declaran
+**tres** ficheros, `var.instance_type` **dos**, y cuatro salidas lo declaran
+dos veces.
+
+**El gate completo se puso rojo en su primera etapa.** El codigo nuevo no
+estaba en la forma que rustfmt produce, y el gate de la bateria rapida no
+mira esa etapa: el `fast` estaba verde y el `full` no. El arreglo fue un
+commit aparte (`9f64aed4`) que solo mueve el codigo a esa forma —nueve lineas
+menos y once mas— y no cambia lo que hace nada de lo que hay ahi. La leccion
+es la de siempre: un gate que no mira una etapa no puede decir que el arbol
+esta en forma; lo dice el gate que si la mira.
+
+### Lo que no se hizo, y por qué
+
+- **No se regeneró el catálogo entero.** El generador reconstruye el documento
+  desde la captura y borra los campos de autoria manual que el operador
+  escribe a mano —`limitations`, `prerequisites`, `follow_ups`,
+  `required_args`—. Ademas cambiaria los titulos de cinco herramientas y los
+  perfiles publicos de dos, y eso es otro hallazgo. Se actualizo solo el
+  `iac_query`, con el `outputSchema` que publica el runtime real.
+- **No se unifico el camino PostgreSQL.** `IacRepository` no tiene ninguna
+  implementacion en el arbol, asi que la rama es inalcanzable. Se le dio la
+  forma nueva —la confianza que el repositorio no tiene se dice
+  desconocida, no `0.0`— y su semantica de profundidad es la unidad de
+  CU-008.5, que es otra.
+- **No se toco la profundidad del camino PostgreSQL.** Mismo motivo.
+- **No se arreglo el desfase de `tool_version` de la captura.** La captura
+  commiteada dice `0.101.17` y el runtime dice `0.101.23`. Es cierto, y
+  arreglarlo toca las 78 entradas del catalogo: es un hallazgo propio, no de
+  esta unidad.
+
+### Evidencia
+
+- Test nuevo en rojo: `iac_query_answers_with_the_edge_it_has.rs` →
+  **4 failed; 1 passed**. Los cuatro por asercion: la confianza constante
+  `1.0` donde la arista tenia `0.7` (`left: Number(1.0)`, `right: 0.7`), la
+  procedencia que no venia (`left: Null`), la profundidad que no crecia
+  (`9 vs 9`) y el nombre ambiguo que se resolvia en silencio.
+- En verde: el mismo fichero, **5 passed; 0 failed**.
+- El test que pregunta por un kind con un nombre ambiguo
+  (`iac_query_speaks_the_domain_vocabulary.rs`) usaba `var.environment`, que
+  ahora se declara ambiguo; usa `var.project_name`, que responde por una sola
+  declaracion, y su garantia —una declaracion sin tipo responde con su kind—
+  sigue igual.
+- Transporte real, una sesion MCP por stdio sobre el fixture:
+  `build_graph` → 74 simbolos, 106 relaciones; `iac_query` con
+  `depth: 1` sobre `aws_s3_bucket.app_bucket` → 2 dependencias y 3
+  dependientes, cada una con `edge_type: references`, `provenance: extracted`
+  y `confidence: 1.0` de su propia arista; con `depth: 2` sobre
+  `module.compute` → 6 dependencias y 10 dependientes.
+- El mismo transporte con `var.environment` → `isError: true` y el mensaje
+  `ambiguous: 3 declarations answer to that name` con las tres identidades
+  canonicas; con la identidad canonica de una de ellas → `isError: false` y
+  `resource_type: variable`.
+- `product/tools.json` y `product/tool-catalog-runtime.json` actualizados con
+  el esquema real del runtime (26 lineas de diff), y el CHANGELOG dice que
+  cambia.
+- `cargo build --workspace --all-targets` → sin errores.
+- `bash scripts/test-fast.sh` → **rc=0**: 2378 passed; 0 failed; 2 ignored,
+  clippy `-D warnings` limpio y la linea base con 0 entradas.
+- `bash scripts/test-full.sh c18` → **rc=0**.
+- `bash scripts/ci/run-all-contracts.sh` → **rc=0**: 46 ficheros de contrato,
+  0 fallos.
+
+### Estado y siguiente WU
+
+- Unidad: **C18**, cerrada. SHA de la unidad: `862390ae` (código y tests),
+  `4816d818` (catálogo y CHANGELOG) y `9f64aed4` (el formato que el gate
+  pedia), sobre la base de medicion `ce7e1329`. Los cuatro criterios de
+  cierre del candidato quedan publicados y con test: la confianza y el tipo
+  salen del grafo y una arista sin confianza se declara desconocida, `depth`
+  es una profundidad, un nombre ambiguo se declara ambiguo, y el grafo
+  conserva los metadatos de las aristas inversas.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el arbol de esta unidad.
+- Siguiente WU: **C28**, un fallo de MCP tiene que llegar como fallo y no
+  como un exito con un error dentro.
