@@ -91,6 +91,15 @@ el veredicto cuando no se midió nada— y un test que pregunta a la CLI y al
 MCP sobre el mismo árbol. Queda un residual anotado como `C24`: las
 superficies por fichero no dicen todavía qué referencias no ataron.
 
+**El gate de cadena de suministro encontró dos avisos de seguridad.** No
+venían de este ciclo: `Cargo.lock` estaba intacto respecto a la base, y lo
+que los sacó es que el aviso se publicó después de la última vez que `main`
+pasó su propio gate —`main` llevaba su check en rojo sin que nadie lo
+mirase—. Uno tenía arreglo directo y se aplicó. El otro no lo tenía, y en
+vez de silenciarlo salió la dependencia que lo arrastraba: una que la CLI
+declaraba y no usaba. El árbol quedó más pequeño y el gate volvió a estar en
+verde.
+
 ## Los contratos que fija la auditoría del 2026-10-20
 
 Tres specs nuevas, en `docs/roadmap/consumer-contracts/specs/`, escriben lo

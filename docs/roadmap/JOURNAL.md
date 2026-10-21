@@ -20472,3 +20472,78 @@ mensaje de que los dos staging colisionan, y pasa después.
 - El binario de la suite, **10 ejecuciones seguidas sin un solo fallo**.
 - `cargo fmt --all --check` limpio.
 - Las otras dos suites de release en verde: 14 y 21 casos.
+
+## 2026-10-21 — Dos avisos de seguridad y una dependencia que nadie usaba (H23)
+
+### Lo que pasó
+
+El gate de cadena de suministro paró en la etapa `advisories`, con dos avisos
+de la misma familia: `RUSTSEC-2026-0382` para `rustls-webpki` y
+`RUSTSEC-2026-0381` para `webpki-roots`. Los dos tratan del mismo
+certificado —`emSign ECC Root CA - G3`, retirado porque su clave privada ya
+es pública— y los dos entraban por el mismo camino: el cliente HTTP.
+
+No era una regresión de este ciclo. `Cargo.lock` estaba intacto respecto a la
+base, así que los avisos venían de dependencias que `main` ya arrastraba. Lo
+que los sacó es que el aviso se publicó después de la última vez que `main`
+pasó su propio gate: `main` llevaba su check en rojo sin que nadie lo
+mirase, y sin ese check en verde no entra ni esta unidad ni ninguna otra.
+
+### Lo que se comprobó antes de tocar nada
+
+El aviso de `webpki-roots` traía dos versiones. `1.0.9` tenía arreglo —el
+propio aviso declara `patched = [">= 1.0.10"]`—. `0.26.11` **no lo tenía**:
+la línea `0.26` no tiene versión corregida publicada. Para esa segunda
+versión sólo cabían dos caminos: sacar el paquete del grafo, o silenciar el
+aviso.
+
+Se comprobó de dónde venía cada uno:
+
+- `webpki-roots 1.0.9` venía por `reqwest` → `hyper-rustls`.
+- `webpki-roots 0.26.11` venía por `ureq` → `rustls 0.23`.
+- `rustls-webpki 0.103.15` venía por `reqwest` → `hyper-rustls` → `rustls`.
+
+Y se comprobó algo mejor: **`ureq` no se usaba**. La CLI lo declaraba como
+dependencia directa y ningún fichero del repositorio lo mencionaba, salvo
+una frase de un test del MCP que lo nombraba para decir que el crate no lo
+usa. Era peso muerto que, además, arrastraba la versión sin arreglo.
+
+### Lo que se hizo
+
+En vez de silenciar el aviso, salió la dependencia muerta:
+
+- `ureq` desaparece de `crates/cognicode-cli/Cargo.toml`. Con ella, el
+  paquete `webpki-roots 0.26.11` deja de estar en el grafo resuelto, y el
+  aviso sin arreglo desaparece con él.
+- `webpki-roots` 1.0.9 → 1.0.10, que es el arreglo que el propio aviso
+  declara.
+- `rustls-webpki` 0.103.15 → 0.103.16, que es el arreglo del gemelo.
+
+El `Cargo.lock` resultante es más pequeño: **8 líneas añadidas y 27 quitadas**.
+No se añadió ninguna excepción a `deny.toml`, y no hizo falta ninguna fila en
+`docs/debts/DEBT-SEC-001-advisory-ignores.md`: el aviso no se silenció, se
+resolvió.
+
+### Lo que no se hizo, y por qué
+
+- **No se añadió el aviso a la lista de excepciones.** La política de
+  `deny.toml` es que un aviso nuevo es un error, y una excepción sólo se
+  justifica cuando no hay arreglo. Aquí había dos caminos y se eligió el que
+  deja el árbol más pequeño.
+- **No se tocó `rig-core`.** La otra ruta a `webpki-roots 0.26.11` es
+  `tokio-tungstenite`, que `rig-core` declara como dependencia opcional
+  activada por su feature `websocket`. Esa feature no está activada, así que
+  el paquete no llega al grafo resuelto. Cambiar la resolución de `rig-core`
+  habría costado mucho más que sacar una dependencia que nadie usaba.
+
+### Evidencia
+
+- En rojo: `cargo deny check advisories` → `advisories FAILED`, con
+  `RUSTSEC-2026-0381` y `RUSTSEC-2026-0382`.
+- En verde: `cargo deny check` → `advisories ok, bans ok, licenses ok,
+  sources ok`.
+- `cargo fmt --all --check` limpio y `cargo check --workspace --all-targets`
+  con rc=0.
+- El grafo resuelto ya no conoce `webpki-roots 0.26.11`:
+  `cargo tree -i webpki-roots@0.26.11` responde que no coincide con ningún
+  paquete.
