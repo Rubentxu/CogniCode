@@ -51,15 +51,24 @@ build_volume_free_bytes() {
 
 # El volumen donde el build va a pasar.
 #
-# `PREFLIGHT_WORK_DIR` manda sobre `TMPDIR`, que a su vez manda sobre `/tmp`.
-# El orden importa: `TMPDIR` es la convencion del sistema y `mktemp -d` la
-# respeta sola; `PREFLIGHT_WORK_DIR` es el nombre explicito de esta regla y
-# tiene que ganar cuando esta puesto.
+# `PREFLIGHT_WORK_DIR` manda sobre `TMPDIR`, que a su vez manda sobre el
+# default. El orden importa: `TMPDIR` es la convencion del sistema y `mktemp
+# -d` la respeta sola; `PREFLIGHT_WORK_DIR` es el nombre explicito de esta
+# regla y tiene que ganar cuando esta puesto.
+#
+# El default NO es `/tmp`. MEDIDO: el build debug del workspace ocupa 25G, y
+# `/tmp` es un tmpfs de 48G en esta maquina —donde ademas ya viven los
+# artefactos de otras corridas—. Un tmpfs es memoria: un build de 25G en un
+# tmpfs es un `Disk quota exceeded` esperando su momento. El default va al
+# cache del usuario, que es disco de verdad, y el operador lo mueve con
+# `PREFLIGHT_WORK_DIR` o `TMPDIR` cuando quiere otra cosa.
 build_volume_root() {
   if [ -n "${PREFLIGHT_WORK_DIR:-}" ]; then
     printf '%s' "$PREFLIGHT_WORK_DIR"
+  elif [ -n "${TMPDIR:-}" ]; then
+    printf '%s' "$TMPDIR"
   else
-    printf '%s' "${TMPDIR:-/tmp}"
+    printf '%s' "${XDG_CACHE_HOME:-${HOME:-/tmp}/.cache}/cognicode/gate"
   fi
 }
 
