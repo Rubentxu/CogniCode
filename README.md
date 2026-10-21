@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.24`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.25`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.24`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.25`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -437,10 +437,10 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.24` — cut from this tree as `v0.101.24`.
+- **Current release:** `v0.101.25` — cut from this tree as `v0.101.25`.
   The last release with published assets is
-  [`v0.101.24`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.24),
-  which is what an unpinned `install.sh` serves today. v0.101.24 ships the
+  [`v0.101.25`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.25),
+  which is what an unpinned `install.sh` serves today. v0.101.25 ships the
   honest graph block (pending references published instead of discarded,
   infrastructure queries answered with the edge that actually joins their
   ends, MCP failures delivered as failures, and a cancellation that belongs
@@ -450,11 +450,14 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
   selector, a `full` that already contains the `merge-gate`, a publication
   lane that is idempotent and verifies the bytes it publishes— and the
   x86_64-only TIER1 scoping that unblocks the release lane, restoring the
-  full asset set.
-- **Binaries report:** `0.101.24` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.24`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.24).
+  full asset set. It also carries the fix the previous cut's candidate gate
+  found: the symbol index no longer answers by the order the filesystem
+  returned a directory in, so an ambiguous name resolves to the same
+  definition on every disk.
+- **Binaries report:** `0.101.25` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.25`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.25).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
-  `v0.101.8`, `v0.101.18` and `v0.101.19` exist and were never published. Each
+  `v0.101.8`, `v0.101.18`, `v0.101.19` and `v0.101.24` exist and were never published. Each
   has a changelog entry
   explaining why. `v0.101.6` was cut before the staging-root fix and the Release
   Truth gate repair landed; `v0.101.7` was cut before the candidate pipeline

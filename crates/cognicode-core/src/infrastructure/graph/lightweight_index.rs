@@ -183,6 +183,8 @@ impl LightweightIndex {
             }
         }
 
+        self.sort_locations();
+
         Ok(())
     }
 
@@ -224,6 +226,32 @@ impl LightweightIndex {
                     self.index.entry(name_lower).or_default().push(location);
                 }
             }
+        }
+
+        self.sort_locations();
+    }
+
+    /// Puts the index in path order, so it does not answer by arrival order.
+    ///
+    /// The index used to keep the order the sources arrived in: the order
+    /// the walk handed the directory entries back, or the order the caller
+    /// listed the sources. An ambiguous name resolves to its first
+    /// definition, so the answer depended on the filesystem the tree was
+    /// built on. Measured: the same directory of 64 files comes back in
+    /// creation order from one volume and in a different order from
+    /// another, and the on-demand graph answered the same query with
+    /// edges on one machine and without them on the other.
+    ///
+    /// Sorting by path makes the index a function of the sources alone.
+    /// It does not decide which of two same-named definitions is the
+    /// right one — it decides that the question has the same answer
+    /// everywhere.
+    fn sort_locations(&mut self) {
+        for locations in self.index.values_mut() {
+            locations.sort_by(|a, b| a.file.cmp(&b.file).then(a.line.cmp(&b.line)));
+        }
+        for names in self.file_index.values_mut() {
+            names.sort();
         }
     }
 

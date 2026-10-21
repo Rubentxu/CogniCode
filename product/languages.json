@@ -1,7 +1,7 @@
 {
   "schema_version": "cognicode.languages/v1",
   "product": "cognicode",
-  "version": "0.101.24",
+  "version": "0.101.25",
   "source_commit": "4e1821f534b443328f1f4e4299731af09174b1a1",
   "languages": [
     {

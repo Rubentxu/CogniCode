@@ -10,7 +10,39 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.25] — 2026-10-21
+
+**Un corte que no llega a publicarse también es un corte, y este lo
+encontró el gate.** `v0.101.24` pasó el `fast`, el `full` y el `merge-gate`
+—56 de 56 etapas— y se cortó con su tag anotado. Su gate de candidato, el
+que construye el candidato en un clon limpio y lo verifica antes de que
+nada se publique, lo dejó en rojo con un único test de 3159: el grafo
+on-demand respondía con cero aristas para el símbolo `new` donde la máquina
+que había corrido la batería respondía con cinco.
+
+El árbol era el mismo, byte a byte. Lo que cambiaba era el disco. El índice
+de símbolos guardaba el orden en que le llegaban las fuentes, y un nombre
+ambiguo se resuelve a su primera definición: `new` está definido 299 veces
+en `cognicode-core`, así que cuál de ellas gana decide la respuesta. Y el
+mismo directorio de 64 ficheros vuelve en orden de creación desde un volumen
+y en otro orden desde otro, de modo que la respuesta no era reproducible ni
+siquiera entre dos máquinas de la misma versión.
+
+El índice se ordena ahora por ruta al final de la construcción. La pregunta
+no cambia de significado: cambia que tiene la misma respuesta en todas las
+partidas, que es lo que un gate que construye en un clon limpio necesita
+para poder decir algo.
+
+Este corte es el mismo bloque B1 con esa corrección más dentro.
+
 ## [v0.101.24] — 2026-10-21
+
+**Este tag no se publicó.** Su gate de candidato falló con un defecto real
+—el índice de símbolos contestaba según el orden en que el sistema de
+ficheros devolvía un directorio— y un tag que no llegó a publicarse no se
+mueve: el corte bueno es `v0.101.25`, que lleva el arreglo dentro. Lo que
+sigue describe lo que este corte pretendía publicar, y lo publica
+`v0.101.25`.
 
 **Corte de release del bloque B1 de la auditoría del 2026-10-21: la
 superficie pública deja de contestar cosas que no son verdad.** El corte
