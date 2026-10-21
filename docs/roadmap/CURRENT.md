@@ -5,11 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `4dbcb9944f88bb6e2e5a7a075c05a899cd0ee352`
-> (la base de este ciclo). Versión del workspace: `0.101.23`. Última release
-> publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **32** commits por
-> delante de ese tag en cuanto este ciclo se funda: hay estabilizaciones
-> mergeadas que todavía no están publicadas.
+> **Snapshot**: 2026-10-21, sobre `685e858212ac5cff327643f485cb64f01f61df32`
+> (HEAD de la rama `fix/pending-references-are-facts`, 14 commits por delante
+> de `origin/main` = `4dbcb994`). Versión del workspace: `0.101.23`. Última
+> release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **45**
+> commits por delante de ese tag en cuanto este ciclo se funda: hay
+> estabilizaciones mergeadas que todavía no están publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
 > un snapshot con la historia de ocho ciclos: narrativas de programas cerrados,
@@ -181,9 +182,21 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **Release pendiente**: `main` lleva 32 commits sin publicar (con este
-  ciclo). Publicar exige gates sobre un candidato concreto, binarios
-  instalados verificados y tag anotado.
+- **`merge-gate` rojo en la PR #404** (`685e8582`): **no es un defecto de
+  producto**. La etapa 32 (`cognicode-ladybug`) paró porque el `rustc` se
+  quedó sin espacio en el tmpfs de `/tmp` —`Disk quota exceeded`, os error
+  122— al compilar `cognicode-core`. El test nunca llegó a correr; aislado
+  da 62 passed, 0 failed. El gate construye en un target dir aislado dentro
+  de `/tmp` —a propósito, para que un binario de otro checkout no se
+  ejecute como si fuera de este árbol—, y ese directorio acumula cada
+  corrida sin que nada lo pode. Es la tercera vez que la cuota de tmpfs
+  tumba una lane. Recibo en el `JOURNAL`, entrada del 2026-10-21. Siguiente
+  paso: podar ese directorio (o apuntar la construcción al volumen grande,
+  conservando el aislamiento por checkout) y re-ejecutar el gate sobre el
+  SHA final.
+- **Release pendiente**: `main` lleva 45 commits sin publicar (con este
+  ciclo; 31 sin él). Publicar exige gates sobre un candidato concreto,
+  binarios instalados verificados y tag anotado.
 
 ## Dónde está cada cosa
 

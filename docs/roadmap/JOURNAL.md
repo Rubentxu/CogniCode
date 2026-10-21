@@ -20547,3 +20547,126 @@ resolvió.
 - El grafo resuelto ya no conoce `webpki-roots 0.26.11`:
   `cargo tree -i webpki-roots@0.26.11` responde que no coincide con ningún
   paquete.
+
+## 2026-10-21 — El gate rojo no era un defecto: era el espacio (H24, C17)
+
+### Lo que pasó
+
+La PR #404 tiene el `merge-gate` en rojo sobre `685e8582`, que es su HEAD.
+El veredicto no lo publica un job de GitHub Actions: lo publica
+`scripts/ci/publish-merge-gate.sh` como estado de commit, y su descripción
+dice `merge-gate.pipeline.kts failed with exit 1`. Por eso no hay un log de
+la Actions que leer: hay una lane de PipelineK que corre en esta máquina.
+
+### Lo que se comprobó antes de tocar nada
+
+Las etapas de la lane se leen de la base de datos del propio runtime,
+`.pipelinek/merge-gate.db`, y su salida capturada queda en
+`.pipelinek/durable-shell/output-plane/`. La corrida `c63b6af4` sobre
+`685e8582` pasó **32 etapas** —las 0 a 31: fmt, clippy, contratos,
+`advisories`, `licenses`, `supply-chain`, las cuatro construcciones de
+binarios y las siete suites del core— y paró en la 32, la que compila
+`cognicode-ladybug`. **Las 24 etapas siguientes no corrieron**: el pipeline
+tiene 56.
+
+El stderr de esa etapa no es un fallo de test. Es un fallo de compilación:
+
+    rustc-LLVM ERROR: IO failure on output stream: Disk quota exceeded
+    error: could not compile `cognicode-core` (lib)
+    Caused by: Disk quota exceeded (os error 122)
+
+El test de ladybug **no llegó a correr**. La suite en aislamiento da
+**62 passed, 0 failed**. El árbol de esta rama ni siquiera toca el crate
+`cognicode-ladybug`: el diff contra `origin/main` no lo menciona.
+
+### Por qué se llenó el disco
+
+`/tmp` es un tmpfs con **cuota por usuario de 38 570 M** (`quota -s`). Y el
+gate construye dentro de él: `publish-merge-gate.sh` fija
+`CARGO_TARGET_DIR=/tmp/cognicode-merge-gate-<check_id>/target`, con `check_id`
+derivado del checkout. El aislamiento es deliberado y está documentado en
+ese mismo script: sin él, un binario de uno de los otros cinco checkouts
+puede ejecutarse como si fuera de este árbol, y eso ya pasó dos veces en un
+día.
+
+El precio de ese aislamiento es que el gate **no reutiliza** el caché
+compartido de `/var/home/rubentxu/cargo-targets/` (136 G de `debug` en disco
+real, con 629 G libres) y construye en el tmpfs, que tiene un techo. Y la
+clave del directorio es del checkout, **no de la corrida**: el mismo
+`/tmp/cognicode-merge-gate-<id>/target` acumula debug, release y todas las
+combinaciones de features de cada corrida, y **nada lo poda**.
+
+Esto ya se había medido dos veces en este repo. El 2026-10-17, en la salida
+de la RC de v0.101.21: "4 intentos (quota tmpfs INFRASTRUCTURE → …)". Y en
+el cierre de CU-1, que lo recibió como "17G del merge-gate stale del run
+anterior + preflight 21G" y lo resolvió **a mano**. No hay ningún script que
+haga esa limpieza, y por eso el mismo fallo vuelve: la izquierda que se
+midió dos veces no se cerró ninguna.
+
+Lo que **no** se puede reconstruir es la composición exacta del directorio en
+el momento del fallo: ya no existe —`/tmp` tiene hoy 620 M usados de los
+38 570 M de cuota, y no queda ningún `cognicode-merge-gate-*`—, así que se
+perdió con él la evidencia de qué lo llenaba. Lo que sí queda es el error, la
+cuota y los dos recibos anteriores que ya midieron la acumulación.
+
+### Lo que se hizo
+
+- Se aisló el primer error causal: la etapa 32 y su stderr, no el veredicto
+  agregado.
+- Se reprodujo la suite en aislamiento para separar defecto de producto de
+  fallo de entorno: **62 passed, 0 failed**.
+- Se comprobó que el diff de la rama no toca `cognicode-ladybug`.
+- Se comprobó que la corrida del gate empezó a las `01:38:47Z`, después del
+  último commit (`01:20:04Z`), así que el veredicto sí corresponde al árbol
+  que nombra: no fue un árbol editado mientras el gate corría.
+- Se registró el estado del disco: la cuota, lo que queda de ella, y el
+  hecho de que el directorio de la corrida ya no está.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió el producto.** El fallo no está en el código: el test nunca
+  corrió. Tocar el crate `cognicode-ladybug` para tapar un fallo de disco
+  sería cambiar el producto para satisfacer una evidencia que no existe.
+- **No se rebajó el gate ni se añadió una excepción.** La etapa que paró
+  estaba ahí por un motivo, y `merge-gate` es el gate que `main` exige.
+- **No se re-ejecutó el gate a ciegas.** Con `/tmp` limpio la corrida
+  arrancaría desde cero, pero el veredicto tiene que corresponder al SHA
+  final —y el SHA cambia con este recibo—, así que la reejecución es el
+  siguiente paso, no un préalable para escribir esto.
+- **No se limpió `/tmp` a ciegas ni se cambió la cuota.** Las dos cosas
+  tocan la política de aislamiento del gate, y una de ellas necesita
+  decisión del operador.
+
+### Evidencia
+
+- Estado de commit sobre `685e8582`: `merge-gate` → `failure`, descripción
+  `merge-gate.pipeline.kts failed with exit 1 (pipelinek, db:
+  .pipelinek/merge-gate.db)`.
+- `.pipelinek/merge-gate.db`, eventos de la corrida `c63b6af4`: etapas 0–31
+  `success`, etapa 32 `StepFailed … "shell exited with code 101"`.
+- Script de la etapa: `cargo test -p cognicode-ladybug --lib --quiet`.
+- stderr capturado en
+  `.pipelinek/durable-shell/output-plane/streams/c63b6af4-…-s32-0_stderr/cur.seg`:
+  `Disk quota exceeded (os error 122)`.
+- Reproducción en aislamiento: `cargo test -p cognicode-ladybug --lib` →
+  **62 passed; 0 failed** (16,02 s).
+- `git diff --stat origin/main..HEAD`: el crate `cognicode-ladybug` no
+  aparece.
+- Disco: `quota -s` → cuota de usuario de 38 570 M; `df -h /tmp` → 620 M
+  usados de 48 G; `du -sh /tmp` → 433 M; sin directorios
+  `/tmp/cognicode-merge-gate-*`.
+- Caché compartido que el gate no usa: `/var/home/rubentxu/cargo-targets/`
+  → 136 G de `debug` en `/var/home`, que tiene 629 G libres.
+
+### Estado y siguiente WU
+
+- Unidad: **H24 / C17**, en la PR #404, rama `fix/pending-references-are-facts`.
+- SHA del veredicto: `685e8582` (14 commits por delante de `origin/main`).
+- Gates: `merge-gate` → **FAIL**, clasificado **INFRASTRUCTURE** (cuota de
+  tmpfs), no defecto de producto ni regresión.
+- **Siguiente WU**: limpiar el target dir aislado de `/tmp` (o apuntar la
+  construcción del gate al volumen grande, conservando el aislamiento por
+  checkout) y re-ejecutar `merge-gate` sobre el SHA final. Después, la
+  misión sigue con **C25**, la cobertura en caché.
+- Bloqueo abierto heredado: la firma *contractual* del operador sobre un clon
+  limpio (**C8-R / CR-01**) sigue pendiente; no es de este ciclo.
