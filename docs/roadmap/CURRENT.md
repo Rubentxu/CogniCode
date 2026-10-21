@@ -213,18 +213,19 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **`merge-gate` rojo en la PR #404** (`685e8582`): **no es un defecto de
-  producto**. La etapa 32 (`cognicode-ladybug`) paró porque el `rustc` se
-  quedó sin espacio en el tmpfs de `/tmp` —`Disk quota exceeded`, os error
-  122— al compilar `cognicode-core`. El test nunca llegó a correr; aislado
-  da 62 passed, 0 failed. El gate construye en un target dir aislado dentro
-  de `/tmp` —a propósito, para que un binario de otro checkout no se
-  ejecute como si fuera de este árbol—, y ese directorio acumula cada
-  corrida sin que nada lo pode. Es la tercera vez que la cuota de tmpfs
-  tumba una lane. Recibo en el `JOURNAL`, entrada del 2026-10-21. Siguiente
-  paso: podar ese directorio (o apuntar la construcción al volumen grande,
-  conservando el aislamiento por checkout) y re-ejecutar el gate sobre el
-  SHA final.
+- **`merge-gate` verde en la PR #404** (`f0550db8`): la etapa 32
+  (`cognicode-ladybug`) que caía por la cuota de tmpfs **ha pasado**. La
+  corrida completa del `merge-gate.pipeline.kts` da **56 etapas, 56 en
+  `success`**, 0 fallos, con el journal del pipeline como fuente. El rojo
+  anterior no era un defecto de producto —la etapa moría con `Disk quota
+  exceeded` (os error 122) al compilar en el tmpfs de `/tmp`, y el test
+  nunca llegaba a correr— sino la cuota de usuario de ese tmpfs, que en
+  esta sesión estaba libre. **No se cambió ni una línea del gate**: el
+  aislamiento por checkout del `CARGO_TARGET_DIR` se conserva a propósito,
+  y la cuota dejó de ser un problema sin tocarla. Recibo en el `JOURNAL`,
+  entrada del 2026-10-21. Lo que queda es publicar el veredicto: la
+  publicación a GitHub dio `HTTP 422` porque el SHA todavía no está en el
+  remoto, y subir la rama es decisión del operador.
 - **Release pendiente**: `main` lleva 45 commits sin publicar (con este
   ciclo; 31 sin él). Publicar exige gates sobre un candidato concreto,
   binarios instalados verificados y tag anotado.

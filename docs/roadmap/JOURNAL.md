@@ -21467,3 +21467,61 @@ pendientes, que es lo mismo que decir que el fichero no enuncia ninguna.
   `merge-gate` sigue pendiente por la cuota de tmpfs.
 - Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
   la arista y la profundidad que le corresponden.
+
+## 2026-10-21 — El gate que estaba rojo por el disco sale verde (H24)
+
+### Lo que pasó
+
+El `merge-gate` llevaba varias sesiones en rojo, y el recibo lo había
+clasificado como **INFRASTRUCTURE**: la etapa 32 (`cognicode-ladybug`)
+moría con `Disk quota exceeded (os error 122)` porque el gate construye en
+un `CARGO_TARGET_DIR` bajo `/tmp`, que es un tmpfs con una cuota de usuario
+de 38 570 M. El fallo no era del producto, pero tampoco dejaba pasar nada:
+sin gate verde, el trabajo no entra en `main`.
+
+En esta sesión la cuota estaba libre: `quota -s` → 2 868 M usados de
+38 570 M, y `df -h /tmp` → 48 G de tamaño. Se re-ejecutó el gate entero, sin
+cambiar una sola línea de su configuración.
+
+MEDIDO, con el journal del propio pipeline como fuente:
+
+```text
+corrida a8aeb3b4-fb8c-4a6c-a6d3-607859de13cb
+etapas: 56 | success: 56 | fallos: 0
+etapa 32 (cognicode-ladybug) -> success
+[stage: merge-gate] -> success
+Pipeline finished with SUCCESS
+```
+
+La etapa 32 es exactamente la que moría por la cuota, y ahora pasa. Las 56
+etapas del `merge-gate.pipeline.kts` salen en `success`, incluidas la de
+`core-unrestricted-evidence-kernel` y la de `e91-w7-regression-budget`.
+
+### Lo que no se hizo, y por qué
+
+- **No se movió el `CARGO_TARGET_DIR` a `/var/home`.** El aislamiento por
+  checkout que da ese directorio es deliberado —dos checkouts del repo
+  comparten la caché de cargo y una build de uno puede parecer la de otro—,
+  y la cuota dejó de ser un problema sin tocarlo. Cambiar la ruta para
+  arreglar un síntoma que ya no existe habría roto una garantía.
+- **No se podó `/tmp` a ciegas.** Ahora no hacía falta: el gate constructs
+  en su propio directorio y la cuota estaba libre.
+
+### Lo que sigue pendiente
+
+- El gate **pasó**, pero su publicación a GitHub dio `HTTP 422`: el SHA
+  `f0550db8` todavía no existe en el remoto, porque la rama
+  `fix/pending-references-are-facts` no se ha subido. El veredicto es
+  local y real; su publicación necesita el commit en el remoto, y eso es
+  una decisión del operador.
+- La PR #404 sigue abierta y sin integrar.
+
+### Estado y siguiente WU
+
+- Gates de la unidad **C24**: `fast` rc=0, `full` rc=0 y `merge-gate`
+  **PASS** (56/56 etapas) sobre el árbol de `f0550db8`.
+- Bloqueo de infraestructura de la cuota de tmpfs: **cerrado por medición**,
+  no por cambio de configuración.
+- Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
+  la arista y la profundidad que le corresponden. Ya está en la cabeza de la
+  cola del repo y en la del journal, con su propuesta registrada.
