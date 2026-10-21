@@ -21790,3 +21790,148 @@ La publicacion del veredicto en GitHub no sale: `gh: No commit found for
 SHA: 8941871e0607fe512f2fa4981b2556712c788be0 (HTTP 422)`, porque ese SHA
 todavia no esta en el remoto. No es un fallo del gate —el gate corrio y
 paso— sino de la publicacion, y la rama la sube el operador.
+## 2026-10-21 — Una cancelación MCP pertenece a su petición (H24)
+
+### Lo que pasó
+
+El servidor MCP guardaba una sola bandera de cancelación para toda la
+sesión, y la ponía a `true` para siempre. Medido en el árbol:
+
+- `CogniCodeHandler` tenía un único `Arc<AtomicBool>`, el mismo que el
+  contexto de la sesión. Los tres constructores lo creaban y lo pasaban
+  al contexto.
+- `on_cancelled` hacía `store(true)` y nada más: no registraba a qué
+  petición pertenecía la cancelación, y no existía ningún camino que
+  devolviera la bandera a su sitio.
+- Los handlers leen `ctx.is_cancelled()` en sus puntos de control, y ese
+  `ctx` era el de la sesión, compartido por todas las peticiones.
+
+El efecto, medido contra el binario real: una sola notificación de
+cancelación dejaba la sesión inservible. La siguiente petición respondía
+`internal: Cancelled` aunque nadie la hubiera cancelado.
+
+El protocolo dice lo contrario: `notifications/cancelled` lleva el
+identificador de la petición que se cancela, y el propio MCP admite que la
+notificación puede llegar cuando la petición ya terminó. rmcp 1.8 ya
+indexa la cancelación por `request_id` y borra la entrada cuando la
+petición termina; el adaptador ignoraba ese mecanismo y se inventaba el
+suyo.
+
+El arreglo:
+
+- Cada petición despachada recibe su propio contexto
+  (`HandlerContext::scoped_for_request`), con su propia bandera. El
+  contexto de la sesión se sigue compartiendo —con todo lo caro: servicios,
+  grafo y validador—, así que una petición no reconstruye el grafo.
+- La cancelación se registra en un registro que asocia el identificador de
+  la petición con su bandera (`CancellationRegistry`). La entrada se borra
+  cuando la petición termina, así que una notificación tardía no marca a
+  nadie.
+- `on_cancelled` marca la petición que nombra la notificación, y el
+  contador de cancelaciones de las diagnósticas pasa a contar de verdad:
+  `note_cancellation` existía y no lo llamaba nadie, así que valía cero.
+
+### La carrera que había
+
+El manejador corre en una tarea aparte de la que procesa las
+notificaciones, así que la notificación puede procesarse **antes** de que
+la petición llegue a registrarse: entonces no hay a quién marcar y el
+aviso se pierde. rmcp cancela el token de la petición antes de entregar la
+notificación al manejador, así que el registro pregunta al token en vez de
+fiarse de la notificación: la bandera nace cancelada en vez de perder el
+aviso.
+
+Medido: con la notificación saliendo junto a la petición, la respuesta
+llegó en 0,02 s diciendo `internal: Cancelled` — la bandera ya estaba puesta
+cuando el manejador empezó a trabajar.
+
+### Lo que no se pudo hacer aquí
+
+- **Un handler que corre dentro de un solo poll sigue sin poder
+  interrumpirse a mitad.** El límite de `tokio::time::timeout` no lo
+  alcanza, y esa laguna ya estaba medida y documentada en
+  `b6_w1_mcp_robustness.rs`. Este arreglo no la tapa ni la empeora: la
+  bandera de la petición se ve antes, en el primer punto de control.
+- **El contador de cancelaciones no se puede leer desde fuera.** Ya
+  cuenta, pero las diagnósticas no están expuestas por el transporte MCP,
+  así que un cliente no puede consultarlo.
+
+### Lo que descubrio el cambio
+
+**El protocolo ya traía la solución y el adaptador la pisaba.** rmcp
+mantiene un token de cancelación por petición, indexado por su
+identificador, y lo borra cuando la petición termina. La bandera global
+no hacía falta para nada: hacía el trabajo al revés de como lo describe el
+protocolo, y por eso una cancelación envenenaba la sesión en vez de
+cancelar una petición.
+
+### Evidencia
+
+- Test de transporte nuevo: `mcp_cancel_belongs_to_its_request.rs`. En
+  rojo contra el código viejo: **2 failed** —«la cancelacion de la peticion
+  2 enveneno la sesion: la siguiente peticion respondio: internal:
+  Cancelled»—. En verde: **2 passed**; el fichero entero, 6 tests.
+- Test del núcleo nuevo: `mcp_cancellation_belongs_to_its_request.rs` →
+  **5 passed; 0 failed**. Fija las tres propiedades del registro: la
+  cancelación se archiva bajo el identificador de su petición, la entrada
+  desaparece cuando la petición termina, y una petición que nadie canceló
+  empieza sin cancelar.
+- El caso en vuelo era verde antes del cambio y sigue verde: es el guardia
+  de lo que el arreglo no puede romper —el servidor sigue sabiendo parar
+  una petición que está corriendo—.
+- `cargo test -p cognicode-core --lib interface::mcp` → **392 passed; 0
+  failed**.
+- `cargo test -p cognicode-mcp` → todas las suites en verde.
+- `cargo clippy -p cognicode-core -p cognicode-mcp --all-targets -- -D
+  warnings` → limpio.
+- `python3 scripts/ci/test_comment_standard.py` → **OK**: 341 líneas
+  heredadas, ninguna añadida.
+- `bash scripts/test-fast.sh` → **rc=0**. El selector cayó al subset
+  conservador porque el CHANGELOG no tiene mapeo, y avisó de que ese
+  subset no incluye los tests contractuales: para eso está el `full`.
+- `bash scripts/test-full.sh c29` → **rc=0**.
+
+**Un gate se puso rojo y era mío.** La primera corrida del `full` falló en
+`fmt --check`: las firmas nuevas no cabían en una línea y el módulo nuevo no
+estaba en el orden que rustfmt espera. Todo lo demás de esa corrida estaba
+verde —clippy, las 191 suites, los doc-tests, los contratos y la línea
+base—, así que el arreglo fue un commit de formato y una segunda corrida
+completa.
+
+### Estado y siguiente WU
+
+- Unidad: **C29**, cerrada. SHA de la unidad: `054716a3` (código, tests y
+  harness), `fe7d29d8` (el CHANGELOG) y `62c2da66` (el formato que el gate
+  pide), sobre la base de medición `371dfa71`.
+- Los tres criterios de cierre del candidato quedan publicados y con
+  test: la cancelación se registra con el identificador de la petición a la
+  que pertenece, su registro desaparece cuando la petición termina, y
+  cancelar una operación y lanzar otra deja la segunda sin cancelar.
+- Gates: `fast` rc=0, `full` rc=0 y `merge-gate` verde sobre el árbol de
+  esta unidad.
+
+**El `merge-gate` sale verde y su veredicto se publica.** Corrida
+`85a7fb7c-0bd9-4345-8e44-9cf50773aef3` sobre `62c2da66`: **56 de 56
+etapas** `success`, sin diagnósticos, con la última etapa —`merge-gate`—
+en `success`. El recuento sale del journal del pipeline
+(`.pipelinek/merge-gate.db`), no de la salida del terminal.
+
+Esta vez la publicación sí sale: `merge-gate=success published; the gate's
+own exit code was 0`. La diferencia con las corridas anteriores es que el
+operador autorizó subir la rama al remoto, y sin el SHA en el remoto
+GitHub no tenía contra qué asentar el estado.
+
+**El ciclo termina integrado en el remoto.** La rama se sube
+(`685e8582..62c2da66`) y la PR #404 se fusiona por squash en `main`:
+`e6820982`. El squash lleva el resumen del ciclo —C17, C20, C24, C18, C28
+y C29— y el detalle medido de cada unidad sigue en el Journal.
+
+La regla nueva que deja el operador queda escrita en `AGENTS.md`: cada
+ciclo termina con la rama subida y su PR fusionada, una vez que `fast` y
+`full` están verdes y el `merge-gate` ha pasado. El gate sigue siendo la
+autoridad; un tag o una release siguen exigiendo su propio gate de
+candidato.
+
+- Siguiente WU: **C14**, publicar una release con las estabilizaciones
+  mergeadas después de `v0.101.23`. Es el último punto del bloque B1, y
+  ahora tiene lo que necesita: `main` lleva las correcciones dentro.

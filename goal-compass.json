@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C29",
-      "title": "La cancelacion MCP pertenece a su peticion y se limpia al terminar",
-      "unit": "H24",
-      "objective": "Que la cancelacion MCP pertenezca a su peticion y no arrastre a las siguientes: la cancelacion se asocia al identificador de la peticion que se cancela y su registro desaparece cuando la peticion termina.",
-      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `CogniCodeHandler` mantiene un unico `Arc<AtomicBool>` compartido (rmcp_adapter.rs:36, creado en 57, 138, 160), y `on_cancelled` (linea 773) hace `store(true)` sin ningun restablecimiento equivalente ni asociacion con la peticion concreta. Cancelar una operacion puede dejar en cancelado el estado que comparten las siguientes de la misma sesion. Es el bloque B1 del informe y no hay candidato en la backlog que lo cubra.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs"
-      ],
-      "doneWhen": [
-        "la cancelacion se registra con el identificador de la peticion a la que pertenece",
-        "al terminar la peticion, su registro de cancelacion desaparece",
-        "cancelar una operacion y lanzar otra despues deja la segunda sin cancelar"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "source": "roadmap",
-      "priority": 200
-    },
-    {
       "candidateId": "C14",
       "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
       "unit": "release",
