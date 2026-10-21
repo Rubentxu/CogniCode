@@ -1,7 +1,7 @@
 //! MCP Interface - Model Context Protocol implementation
 
-pub mod capabilities;
 pub mod cancellation;
+pub mod capabilities;
 pub mod completion;
 pub mod cursor;
 pub mod dto_mapping;

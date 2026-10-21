@@ -80,7 +80,10 @@ async fn cancelar_una_peticion_no_deja_cancelada_la_siguiente() {
 
     // 1. Una peticion que termina bien.
     let (id, first) = session
-        .request_with_id("tools/call", json!({"name": "build_graph", "arguments": arguments}))
+        .request_with_id(
+            "tools/call",
+            json!({"name": "build_graph", "arguments": arguments}),
+        )
         .await
         .expect("primera llamada");
     let first_text = tool_text(&first);
@@ -98,7 +101,10 @@ async fn cancelar_una_peticion_no_deja_cancelada_la_siguiente() {
 
     // 3. La peticion siguiente, que el cliente no cancelo.
     let (_id, second) = session
-        .request_with_id("tools/call", json!({"name": "build_graph", "arguments": arguments}))
+        .request_with_id(
+            "tools/call",
+            json!({"name": "build_graph", "arguments": arguments}),
+        )
         .await
         .expect("segunda llamada");
     let second_text = tool_text(&second);
@@ -132,7 +138,10 @@ async fn la_cancelacion_en_vuelo_llega_a_su_peticion() {
 
     // The request goes out, and the cancellation names it right away.
     let id = session
-        .send_request("tools/call", json!({"name": "build_call_subgraph", "arguments": arguments.clone()}))
+        .send_request(
+            "tools/call",
+            json!({"name": "build_call_subgraph", "arguments": arguments.clone()}),
+        )
         .await
         .expect("la peticion sale");
     session
@@ -153,7 +162,10 @@ async fn la_cancelacion_en_vuelo_llega_a_su_peticion() {
 
     // The request that comes after is not cancelled.
     let (_id, after) = session
-        .request_with_id("tools/call", json!({"name": "build_call_subgraph", "arguments": arguments}))
+        .request_with_id(
+            "tools/call",
+            json!({"name": "build_call_subgraph", "arguments": arguments}),
+        )
         .await
         .expect("la peticion siguiente");
     let after_text = tool_text(&after);

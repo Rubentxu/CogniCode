@@ -59,11 +59,7 @@ impl CogniCodeHandler {
     /// setter would have preserved the hole and dressed it up as an API.
     pub fn with_options(project_root: PathBuf, read_only: bool) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let ctx = Self::build_ctx(
-            project_root,
-            Some(read_only),
-            Some(cancellation_token),
-        );
+        let ctx = Self::build_ctx(project_root, Some(read_only), Some(cancellation_token));
         Self {
             ctx: Arc::new(ctx),
             cancellations: CancellationRegistry::new(),

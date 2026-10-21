@@ -44,11 +44,7 @@ impl CancellationRegistry {
     /// La bandera la crea quien pide el registro: es la misma que lleva el
     /// contexto de la peticion, y por eso quien la marca y quien la lee
     /// estan mirando la misma variable y no dos que se parecen.
-    pub fn register(
-        &self,
-        request_id: RequestId,
-        flag: CancellationFlag,
-    ) -> Registration {
+    pub fn register(&self, request_id: RequestId, flag: CancellationFlag) -> Registration {
         self.entries().insert(request_id.clone(), flag);
         Registration {
             entries: self.entries.clone(),

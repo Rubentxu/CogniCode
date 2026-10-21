@@ -420,7 +420,9 @@ impl HandlerContext {
     /// The flag is handed back separately because whoever registers the
     /// request has to be able to mark it without knowing what is inside
     /// the context.
-    pub fn scoped_for_request(&self) -> (Self, crate::interface::mcp::cancellation::CancellationFlag) {
+    pub fn scoped_for_request(
+        &self,
+    ) -> (Self, crate::interface::mcp::cancellation::CancellationFlag) {
         let flag = Arc::new(AtomicBool::new(false));
         let mut scoped = self.clone();
         scoped.cancellation_token = flag.clone();

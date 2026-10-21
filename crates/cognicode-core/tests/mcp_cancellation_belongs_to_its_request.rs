@@ -16,12 +16,12 @@
 //! change that keeps the behaviour but moves the structure would have to
 //! come back and say so.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use cognicode_core::interface::mcp::cancellation::CancellationRegistry;
 use cognicode_core::interface::mcp::handlers::{
-    handle_build_graph, BuildGraphInput, HandlerContext,
+    BuildGraphInput, HandlerContext, handle_build_graph,
 };
 use rmcp::model::RequestId;
 
