@@ -1,5 +1,6 @@
 //! MCP Interface - Model Context Protocol implementation
 
+pub mod cancellation;
 pub mod capabilities;
 pub mod completion;
 pub mod cursor;

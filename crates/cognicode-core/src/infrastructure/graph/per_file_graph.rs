@@ -5,7 +5,7 @@
 //! to analyze individual files and then combine them into larger graphs.
 
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
-use crate::domain::value_objects::{DependencyType, WalkDecision};
+use crate::domain::value_objects::{DependencyType, PendingReference, WalkDecision};
 use crate::infrastructure::graph::semantic_layer::{call_graph_from, semantic_facts};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::HashMap;
@@ -51,7 +51,13 @@ pub type CrossFileEdge = (
     crate::domain::aggregates::call_graph::SymbolId,
 );
 
-pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>);
+/// Result of building a single file's call graph.
+///
+/// The cross-file buffer holds the relations whose far end lives in another
+/// file; the pending buffer holds the references the file states and nobody
+/// declared, whose far end is not identified yet. Both are settled once
+/// every file of the merge is in place.
+pub type BuildFileResult = (CallGraph, Vec<CrossFileEdge>, Vec<PendingReference>);
 
 /// Project-wide symbol index for cross-file call resolution (H-R4-2).
 ///
@@ -144,6 +150,35 @@ impl GlobalSymbolIndex {
         let key = name.to_lowercase();
         self.by_name.entry(key).or_default().push(symbol_id.clone());
         self.by_id.insert(symbol_id, (file, name.to_string()));
+    }
+
+    /// The candidates of a name that the module of `directory` can see.
+    ///
+    /// Infrastructure code is scoped by directory, and a module sees only
+    /// its own declarations: every directory with declarations in it is a
+    /// module with its own namespace, and a parent module hands its values
+    /// to a child by filling the child's own variables —never by exposing
+    /// its own. A reference in a child that names something the child does
+    /// not declare names nothing, and the graph has to say so.
+    ///
+    /// A declaration of a sibling module is not visible either. Two
+    /// modules that happen to declare the same name are two different
+    /// things, and a reference that names one of them does not name the
+    /// other.
+    pub fn candidates_in_module(&self, name_lower: &str, directory: &Path) -> Vec<SymbolId> {
+        let Some(candidates) = self.by_name.get(name_lower) else {
+            return Vec::new();
+        };
+        candidates
+            .iter()
+            .filter(|id| {
+                self.by_id
+                    .get(*id)
+                    .and_then(|(file, _)| file.parent())
+                    .is_some_and(|parent| parent == directory)
+            })
+            .cloned()
+            .collect()
     }
 
     /// Resolves a callee name to a target, preferring the caller-file
@@ -260,6 +295,12 @@ fn shared_crate_root(a: &Path, b: &Path) -> Option<PathBuf> {
 struct FileGraphCacheEntry {
     /// The call graph for this file
     graph: CallGraph,
+    /// The references this file states and nobody declared.
+    ///
+    /// They travel with the graph: a cache hit that served the graph and
+    /// dropped these would answer "complete" about a file whose
+    /// references are not tied.
+    pending: Vec<PendingReference>,
     /// Whether this entry is valid
     valid: bool,
     /// Last-modified time of the source file at cache time (seconds since
@@ -315,7 +356,8 @@ impl PerFileGraphCache {
         }
     }
 
-    /// Gets the graph for a file, building it if needed
+    /// Gets the graph for a file, building it if needed, **with the
+    /// references the file states and nobody declared**.
     ///
     /// If the file has already been parsed and cached AND its filesystem
     /// fingerprint (mtime + size + content hash) matches what was
@@ -329,7 +371,16 @@ impl PerFileGraphCache {
     /// an unchanged-size blob, an editor that rewrites in place, or
     /// `cp -p` of an identical-length file). H0.1 / H0.5 require that
     /// case to invalidate the cache, not serve a stale graph.
-    pub fn get_or_build(&self, file_path: &Path) -> std::io::Result<Arc<CallGraph>> {
+    ///
+    /// The references travel with the graph because the graph alone does
+    /// not say them: a file that states a relation nobody declares is a
+    /// fact about what the file says, and a consumer that gets the graph
+    /// without them answers "this file states nothing" about a file that
+    /// states plenty.
+    pub fn get_or_build(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(Arc<CallGraph>, Vec<PendingReference>)> {
         let path_str = file_path.to_string_lossy().to_string();
 
         // Snapshot the file fingerprint (mtime + size + content hash)
@@ -347,12 +398,12 @@ impl PerFileGraphCache {
                 && entry.size == fingerprint.as_ref().map(|f| f.size)
                 && entry.content_hash == fingerprint.as_ref().map(|f| f.content_hash)
             {
-                return Ok(Arc::new(entry.graph.clone()));
+                return Ok((Arc::new(entry.graph.clone()), entry.pending.clone()));
             }
         }
 
         // Build the graph for this file (no global index: per-file resolution only)
-        let (graph, _cross_file) = self.build_file_graph(&path_str, None)?;
+        let (graph, _cross_file, pending) = self.build_file_graph(&path_str, None)?;
 
         // Cache it
         {
@@ -361,6 +412,7 @@ impl PerFileGraphCache {
                 path_str,
                 FileGraphCacheEntry {
                     graph: graph.clone(),
+                    pending: pending.clone(),
                     valid: true,
                     mtime_secs: fingerprint.as_ref().map(|f| f.mtime_secs),
                     size: fingerprint.as_ref().map(|f| f.size),
@@ -369,7 +421,7 @@ impl PerFileGraphCache {
             );
         }
 
-        Ok(Arc::new(graph))
+        Ok((Arc::new(graph), pending))
     }
 
     /// Gets a cached graph without building if missing
@@ -377,13 +429,13 @@ impl PerFileGraphCache {
     /// Returns `None` when the entry is absent OR has been invalidated
     /// (`entry.valid == false`). Callers that need a guaranteed-fresh
     /// graph should use [`PerFileGraphCache::get_or_build`].
-    pub fn get_cached(&self, file_path: &Path) -> Option<Arc<CallGraph>> {
+    pub fn get_cached(&self, file_path: &Path) -> Option<(Arc<CallGraph>, Vec<PendingReference>)> {
         let path_str = file_path.to_string_lossy().to_string();
         let cache = self.cache.read().unwrap();
         cache
             .get(&path_str)
             .filter(|entry| entry.valid)
-            .map(|entry| Arc::new(entry.graph.clone()))
+            .map(|entry| (Arc::new(entry.graph.clone()), entry.pending.clone()))
     }
 
     /// Invalidates the cache entry for a specific file
@@ -450,6 +502,10 @@ impl PerFileGraphCache {
         // Cross-file edges collected per file, to be reconciled into the
         // merged graph once every file's symbols are in place.
         let mut pending_cross_file_edges: Vec<CrossFileEdge> = Vec::new();
+        // The references the files state and nobody declared. They are not
+        // edges yet: the merge may still be able to tie them to a declaration
+        // in another of the merged files.
+        let mut pending_references: Vec<PendingReference> = Vec::new();
 
         for path in file_paths {
             let path_str = path.to_string_lossy().to_string();
@@ -457,11 +513,11 @@ impl PerFileGraphCache {
             // Get from cache or build. Cache hit does not produce skipped
             // entries; only actual build failures do.
             let built: Result<BuildFileResult, std::io::Error> = match self.get_cached(path) {
-                Some(g) => Ok(((*g).clone(), Vec::new())),
+                Some((graph, pending)) => Ok(((*graph).clone(), Vec::new(), pending)),
                 None => self.build_file_graph(&path_str, Some(&global_index)),
             };
-            let (graph, cross_file) = match built {
-                Ok(pair) => pair,
+            let (graph, cross_file, pending) = match built {
+                Ok(triple) => triple,
                 Err(e) => {
                     skipped.push(SkippedFile {
                         path: path_str,
@@ -502,6 +558,7 @@ impl PerFileGraphCache {
             // `add_dependency` can accept them, and that only becomes
             // true after this whole loop has run.
             pending_cross_file_edges.extend(cross_file);
+            pending_references.extend(pending);
         }
 
         // Reconcile cross-file edges now that every file's symbols have
@@ -519,10 +576,26 @@ impl PerFileGraphCache {
         }
         let _ = reconciled_cross_file; // accounted for in edge_count(); kept for future diagnostics
 
-        let status = if skipped.is_empty() {
+        // The references that could not be tied to a declaration are looked
+        // up once every file of the merge is known: the declaration they
+        // name may live in another of the merged files. What the lookup
+        // proves becomes a relation; what it cannot prove stays pending and
+        // says why.
+        let resolution = crate::infrastructure::graph::pending::resolve_pending_references(
+            pending_references,
+            &global_index,
+        );
+        for (source_id, target_id, kind) in &resolution.proven {
+            merged.add_dependency(source_id, target_id, *kind).ok();
+        }
+
+        let status = if skipped.is_empty() && resolution.pending.is_empty() {
             BuildStatus::Complete
         } else {
-            BuildStatus::Partial { skipped }
+            BuildStatus::Partial {
+                skipped,
+                pending: resolution.pending,
+            }
         };
 
         BuildReport {
@@ -552,17 +625,24 @@ impl PerFileGraphCache {
                 Some(l) => l,
                 None => continue,
             };
-            // Un lenguaje con capa semántica no aporta call targets al
-            // índice: sus aristas (`contains`, `references`) son
-            // intra-fichero y las resuelve el handler. Indexar aquí sus
-            // símbolos genéricos (`resource`, `bucket`) solo volvería a
-            // introducir la segunda autoridad que este módulo evita.
+            // A language with a semantic layer names its declarations the
+            // way its reader named them, and those declarations are the ones
+            // a reference written in another file can point at. The index
+            // takes them from the same reader the graph takes them from:
+            // indexing the generic symbols of the same file would be a
+            // second authority saying something else.
             if crate::infrastructure::parser::language_config::LanguageConfig::for_language(
                 language,
             )
             .semantic_handler
             .is_some()
             {
+                if let Some(facts) = semantic_facts(language, &source, &path_str) {
+                    for symbol in facts.symbols {
+                        let sid = SymbolId::new(symbol.fully_qualified_name());
+                        idx.insert(sid, path.to_path_buf(), symbol.name());
+                    }
+                }
                 continue;
             }
             let parser = match TreeSitterParser::new(language) {
@@ -631,9 +711,11 @@ impl PerFileGraphCache {
 
         // The semantic layer leads when the language declares one. Its
         // edges stay inside the file, so `cross_file_edges` is empty by
-        // construction and the global index stays out of it.
+        // construction and the global index stays out of it. The references
+        // it could not tie travel with the file: the merge may still be able
+        // to tie them to a declaration in another of the merged files.
         if let Some(facts) = semantic_facts(language, &source, file_path) {
-            return Ok((call_graph_from(&facts), Vec::new()));
+            return Ok((call_graph_from(&facts), Vec::new(), facts.pending));
         }
 
         let parser =
@@ -761,7 +843,7 @@ impl PerFileGraphCache {
             //    edges; counting and surfacing the drops is H4.2.
         }
 
-        Ok((graph, cross_file_edges))
+        Ok((graph, cross_file_edges, Vec::new()))
     }
 
     /// Returns the number of cached files
@@ -889,6 +971,15 @@ pub enum SkipReason {
     /// here would be the same class of lie as indexing the target and
     /// recording the link's path as if it were the target's.
     Symlink { target: String },
+    /// The traversal failed on this path: a directory the walk could
+    /// not read, an entry it could not measure.
+    ///
+    /// This is not a file that was left out on purpose. It is an error
+    /// of the walk, and it leaves a hole in the coverage: whatever was
+    /// behind that path is not in the graph, and the caller has to be
+    /// able to say so. A walk that fails silently reports `Complete`
+    /// over a tree it never saw.
+    Walk(String),
     /// Any other I/O error not covered above.
     Other(String),
 }
@@ -1085,6 +1176,15 @@ impl FileDisposition {
             SkipReason::Symlink { target } => FileDisposition::ExcludedByPolicy {
                 reason: format!("symlink to {target}, not followed"),
             },
+            // A traversal error is a read failure of the path, and it
+            // is a NAMED one: we know what failed and where. That is
+            // what separates it from `Other`, whose honest default is
+            // "we don't claim a gap we can't name". A walk that could
+            // not read a directory did not describe what was inside
+            // it, so this one affects BuildStatus.
+            SkipReason::Walk(reason) => FileDisposition::ReadFailed {
+                reason: reason.clone(),
+            },
             SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
@@ -1131,6 +1231,42 @@ pub fn classify_declined_ignore_entry(entry: &ignore::DirEntry) -> Option<SkipRe
     Some(SkipReason::Symlink { target })
 }
 
+/// The record of an error the traversal produced.
+///
+/// The walk can fail on a path: a directory it cannot read, an entry it
+/// cannot measure. That is not a file it left out on purpose — it is
+/// an error of the traversal, and it leaves a hole in the coverage that
+/// the caller has to be able to name.
+///
+/// `path` is the path the walk failed on, when it named one. The error
+/// text is the walker's own: the two together are enough for a
+/// consumer to say what happened without having to guess.
+pub fn walk_error(path: Option<&Path>, error: &dyn std::fmt::Display) -> SkippedFile {
+    SkippedFile {
+        path: path
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<walk>".to_string()),
+        reason: SkipReason::Walk(error.to_string()),
+    }
+}
+
+/// The record of an error the `ignore` traversal produced.
+///
+/// The `ignore` walker does not expose the path of a failure the way
+/// `walkdir` does, so the path is read off the error itself. Two
+/// functions rather than a trait, for the same reason the declined
+/// entries have two: the caller should not have to remember to write
+/// the pairing.
+pub fn ignore_walk_error(err: &ignore::Error) -> SkippedFile {
+    walk_error(
+        match err {
+            ignore::Error::WithPath { path, .. } => Some(path.as_path()),
+            _ => None,
+        },
+        err,
+    )
+}
+
 /// Clasifica la extensión de un archivo de walk según el contrato K0.
 pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
     use crate::infrastructure::parser::Language;
@@ -1147,17 +1283,36 @@ pub fn classify_walk_extension(ext: Option<&str>) -> WalkClassification {
 
 /// Overall status of a `merge_with_report` operation.
 ///
-/// Three states are distinguished on purpose. A "Complete" result means
-/// every input file was processed. A "Partial" result carries a list of
-/// skipped files the caller must surface. There is intentionally no
-/// "Failed" state at this layer: if the strategy cannot start (e.g.
-/// the project directory does not exist), the surrounding method
-/// returns `Err` and never reaches `merge_with_report`. A "no findings"
-/// outcome is only legitimate when coverage was `Complete`.
+/// Two coverages live here and they are not the same thing: the files the
+/// walk could not process, and the references it could not tie to a
+/// declaration. A "Complete" result means both of them are whole: every
+/// input file was processed, and every reference that names something
+/// inside the project points at a declaration the project holds.
+///
+/// A reference that names something outside the project — a call to a
+/// function of another crate, a module of Ansible — is not a hole in what
+/// the project knows: the project has no way to see it, so it cannot be
+/// tied, and its absence is not measured here. A "Partial" result carries
+/// the list of what is missing, so the caller can say it instead of
+/// concluding "no findings". There is intentionally no "Failed" state at
+/// this layer: if the strategy cannot start (e.g. the project directory
+/// does not exist), the surrounding method returns `Err` and never reaches
+/// `merge_with_report`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum BuildStatus {
+    /// Every file was processed, and every reference that names something
+    /// inside the project was tied to a declaration.
     Complete,
-    Partial { skipped: Vec<SkippedFile> },
+    /// Something is missing: a file the walk could not process, or a
+    /// reference that names something inside the project and could not be
+    /// tied to a declaration.
+    Partial {
+        /// The files the walk could not process, with the reason.
+        skipped: Vec<SkippedFile>,
+        /// The references that could not be tied to a declaration, with
+        /// their origin and the class that says why.
+        pending: Vec<PendingReference>,
+    },
 }
 
 /// The result of `PerFileGraphCache::merge_with_report`.
@@ -1172,12 +1327,21 @@ pub struct BuildReport {
 
 /// Maps a `std::io::Error` to a [`SkipReason`].
 ///
+/// A file whose reader failed is a parse hole, and it says so.
+///
+/// The rule lives next to the io one so that every path that drops a file
+/// classifies it the same way: two rules for the same thing drift, and the
+/// drift shows up as a graph that says it read files it never read.
+pub fn classify_parse_error(e: &crate::domain::traits::ParseError) -> SkipReason {
+    SkipReason::Parse(e.to_string())
+}
+
 /// - `PermissionDenied` and `NotFound` (file vanished mid-walk) are
 ///   classified as `Read`.
 /// - `InvalidData` and `InvalidInput` (with a "Syntax errors" or
 ///   "Unsupported file type" message) are classified as `Parse`.
 /// - Any other error keeps the OS-provided message under `Other`.
-fn classify_io_error(e: &std::io::Error) -> SkipReason {
+pub fn classify_io_error(e: &std::io::Error) -> SkipReason {
     use std::io::ErrorKind;
     match e.kind() {
         ErrorKind::PermissionDenied | ErrorKind::NotFound => SkipReason::Read(e.to_string()),
@@ -1220,7 +1384,7 @@ mod tests {
         writeln!(file, "        pass").unwrap();
 
         let cache = PerFileGraphCache::new();
-        let graph = cache.get_or_build(file.path()).unwrap();
+        let (graph, _pending) = cache.get_or_build(file.path()).unwrap();
 
         assert!(graph.symbol_count() >= 2);
     }
@@ -1234,10 +1398,10 @@ mod tests {
         let cache = PerFileGraphCache::new();
 
         // First call builds
-        let graph1 = cache.get_or_build(file.path()).unwrap();
+        let (graph1, _pending) = cache.get_or_build(file.path()).unwrap();
 
         // Second call should return cached
-        let graph2 = cache.get_or_build(file.path()).unwrap();
+        let (graph2, _pending) = cache.get_or_build(file.path()).unwrap();
 
         assert_eq!(graph1.symbol_count(), graph2.symbol_count());
         assert_eq!(cache.cached_file_count(), 1);
@@ -1298,7 +1462,7 @@ mod tests {
         file.flush().unwrap();
 
         let cache = PerFileGraphCache::new();
-        let graph1 = cache.get_or_build(file.path()).unwrap();
+        let (graph1, _pending) = cache.get_or_build(file.path()).unwrap();
         let original_symbol_count = graph1.symbol_count();
         assert!(
             original_symbol_count >= 1,
@@ -1324,7 +1488,7 @@ mod tests {
         }
 
         // Re-build via cache.
-        let graph2 = cache.get_or_build(file.path()).unwrap();
+        let (graph2, _pending) = cache.get_or_build(file.path()).unwrap();
         let new_symbol_count = graph2.symbol_count();
 
         // Oracle: new content has 2 functions (alpha, beta), original had 1.
@@ -1432,7 +1596,7 @@ mod tests {
         // The broken file must have been reported as skipped with
         // a Parse reason.
         match &report.status {
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 let broken_skipped = skipped
                     .iter()
                     .find(|s| s.path.ends_with("broken_syntax.rs"))
@@ -1513,7 +1677,7 @@ mod tests {
                 "an unreadable file should contribute 0 symbols"
             );
             match &report.status {
-                BuildStatus::Partial { skipped } => {
+                BuildStatus::Partial { skipped, .. } => {
                     let s = skipped
                         .iter()
                         .find(|s| s.path.ends_with("unreadable.rs"))

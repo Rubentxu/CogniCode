@@ -48,8 +48,28 @@ pub trait GraphStrategy: Send + Sync {
         symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::lightweight_index::SymbolLocation>;
 
-    /// Builds a local graph for a single file
-    fn build_local_graph(&self, file_path: &Path) -> std::io::Result<CallGraph>;
+    /// Builds a local graph for a single file, **with the references the
+    /// file states and nobody declared**.
+    ///
+    /// The graph alone does not say them. A file can be read and still
+    /// state a relation nobody ties to a declaration — the reference
+    /// names something the file does not declare, or names several
+    /// things and the build cannot tell which one it means. Those are
+    /// facts about what the file says, and a consumer that gets the
+    /// graph without them answers "this file states nothing" about a file
+    /// that states plenty.
+    ///
+    /// A strategy that does not measure the references returns an empty
+    /// list. That is not the same claim: the truth there is "we did not
+    /// look", not "there is nothing to look at". The strategies that do
+    /// measure it —the per-file one— return what they found.
+    fn build_local_graph(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )>;
 
     /// Builds a subgraph centered on a symbol with given depth
     fn build_subgraph(
@@ -137,9 +157,15 @@ impl GraphStrategy for LightweightStrategy {
         self.index.find_symbol(symbol_name).to_vec()
     }
 
-    fn build_local_graph(&self, _file_path: &Path) -> std::io::Result<CallGraph> {
+    fn build_local_graph(
+        &self,
+        _file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )> {
         // Lightweight strategy doesn't build graphs
-        Ok(CallGraph::new())
+        Ok((CallGraph::new(), Vec::new()))
     }
 
     fn build_subgraph(
@@ -220,7 +246,13 @@ impl GraphStrategy for OnDemandStrategy {
         self.index.read().unwrap().find_symbol(symbol_name).to_vec()
     }
 
-    fn build_local_graph(&self, file_path: &Path) -> std::io::Result<CallGraph> {
+    fn build_local_graph(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )> {
         let source = std::fs::read_to_string(file_path)?;
         let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -262,7 +294,10 @@ impl GraphStrategy for OnDemandStrategy {
             }
         }
 
-        Ok(graph)
+        // As in the on-demand strategy: this one does not measure the
+        // references the file states and nobody declared, so the list is
+        // empty because nothing was looked at.
+        Ok((graph, Vec::new()))
     }
 
     fn build_subgraph(
@@ -344,8 +379,19 @@ impl GraphStrategy for PerFileStrategy {
         Vec::new()
     }
 
-    fn build_local_graph(&self, file_path: &Path) -> std::io::Result<CallGraph> {
-        Ok(self.cache.get_or_build(file_path)?.as_ref().clone())
+    fn build_local_graph(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )> {
+        // The cache keeps the references the file states and nobody
+        // declared, and it keeps them on a cache hit too: serving the
+        // graph without them would answer "this file states nothing"
+        // about a file that states plenty.
+        let (graph, pending) = self.cache.get_or_build(file_path)?;
+        Ok((graph.as_ref().clone(), pending))
     }
 
     fn build_subgraph(
@@ -497,13 +543,18 @@ impl PerFileStrategy {
                 crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
                     crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                         skipped: walk_skipped,
+                        pending: Vec::new(),
                     }
                 }
                 crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                     mut skipped,
+                    pending,
                 } => {
                     skipped.extend(walk_skipped);
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped }
+                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                        skipped,
+                        pending,
+                    }
                 }
             };
         }
@@ -710,7 +761,10 @@ impl FullGraphStrategy {
         } else {
             let mut skipped = walk_skipped;
             skipped.extend(parse_skipped);
-            BuildStatus::Partial { skipped }
+            BuildStatus::Partial {
+                skipped,
+                pending: Vec::new(),
+            }
         };
 
         crate::infrastructure::graph::per_file_graph::BuildReport { graph, status }
@@ -741,7 +795,13 @@ impl GraphStrategy for FullGraphStrategy {
             .unwrap_or_default()
     }
 
-    fn build_local_graph(&self, file_path: &Path) -> std::io::Result<CallGraph> {
+    fn build_local_graph(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )> {
         let source = std::fs::read_to_string(file_path)?;
         let file_path_str = file_path.to_string_lossy().to_string();
 
@@ -783,7 +843,12 @@ impl GraphStrategy for FullGraphStrategy {
             }
         }
 
-        Ok(graph)
+        // This strategy builds the graph from the parser's own relations,
+        // which are calls inside the file. It does not measure the
+        // references the file states and nobody declared, so the list is
+        // empty because nothing was looked at, not because there is
+        // nothing to find.
+        Ok((graph, Vec::new()))
     }
 
     fn build_subgraph(
@@ -1085,7 +1150,9 @@ mod k0_honest_coverage_tests {
 
         let go_analyzed = simple_names(&report.graph).iter().any(|n| n == "Util");
         let go_listed = match &report.status {
-            BuildStatus::Partial { skipped } => skipped.iter().any(|s| s.path.ends_with("util.go")),
+            BuildStatus::Partial { skipped, .. } => {
+                skipped.iter().any(|s| s.path.ends_with("util.go"))
+            }
             BuildStatus::Complete => false,
         };
         assert!(
@@ -1096,7 +1163,7 @@ mod k0_honest_coverage_tests {
             simple_names(&report.graph)
         );
 
-        if let BuildStatus::Partial { skipped } = &report.status {
+        if let BuildStatus::Partial { skipped, .. } = &report.status {
             assert!(
                 !skipped.iter().any(|s| s.path.ends_with("README.md")),
                 "README.md es exclusion legitima (lenguaje no registrado), no un gap: {:?}",
@@ -1120,7 +1187,7 @@ mod k0_honest_coverage_tests {
                     "Complete con Util.kt sin analizar: kotlin es un gap conocido, no una exclusion legitima"
                 );
             }
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 let kt = skipped
                     .iter()
                     .find(|s| s.path.ends_with("Util.kt"))
@@ -1288,7 +1355,9 @@ mod w3_equivalence_tests {
         let report = per;
 
         match &report.status {
-            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
+                skipped, ..
+            } => {
                 let broken = skipped.iter().find(|s| s.path.ends_with("broken.rs"));
                 assert!(
                     broken.is_some(),
@@ -1686,7 +1755,7 @@ mod h02_silent_errors_full_strategy_tests {
             BuildStatus::Complete => {
                 panic!("expected Partial because one directory is unreadable, got Complete")
             }
-            BuildStatus::Partial { skipped } => {
+            BuildStatus::Partial { skipped, .. } => {
                 assert!(
                     !skipped.is_empty(),
                     "expected at least one skipped entry, got 0"

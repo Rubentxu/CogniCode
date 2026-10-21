@@ -162,7 +162,7 @@ fn a_declined_symlink_degrades_the_report_from_complete_to_partial() {
         report.status
     );
 
-    let BuildStatus::Partial { skipped } = &report.status else {
+    let BuildStatus::Partial { skipped, .. } = &report.status else {
         unreachable!("just asserted Partial")
     };
     assert!(
@@ -257,7 +257,7 @@ fn assert_declined_the_symlink(report: &BuildReport) {
         report.status
     );
 
-    let BuildStatus::Partial { skipped } = &report.status else {
+    let BuildStatus::Partial { skipped, .. } = &report.status else {
         unreachable!("just asserted Partial")
     };
     assert!(

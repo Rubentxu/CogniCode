@@ -162,6 +162,7 @@ use crate::interface::mcp::schemas::{
     OverviewDetail,
     OverviewMeta as SchemaOverviewMeta,
     PathEntry,
+    PendingReferenceInfo,
     QuerySymbolInput,
     QuerySymbolOutput,
     RankedSymbolsInput,
@@ -406,6 +407,26 @@ impl HandlerContext {
 
     pub fn is_cancelled(&self) -> bool {
         self.cancellation_token.load(Ordering::SeqCst)
+    }
+
+    /// A context for one request.
+    ///
+    /// It shares everything expensive with the session context —services,
+    /// graph, validator— and carries a cancellation flag of its own. The
+    /// session shares the process; a cancellation cannot be shared: a
+    /// request that was cancelled cannot cancel the ones behind it, because
+    /// the client that sent those never cancelled them.
+    ///
+    /// The flag is handed back separately because whoever registers the
+    /// request has to be able to mark it without knowing what is inside
+    /// the context.
+    pub fn scoped_for_request(
+        &self,
+    ) -> (Self, crate::interface::mcp::cancellation::CancellationFlag) {
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut scoped = self.clone();
+        scoped.cancellation_token = flag.clone();
+        (scoped, flag)
     }
 
     /// Mark the graph as loaded. Called by `call_tool_handler` after
@@ -888,7 +909,12 @@ fn save_durable_snapshot(
     use bincode::config::standard;
     use bincode::serde::encode_to_vec;
 
-    let snapshot = ("cognicode.graph.cache/v1", graph, manifest);
+    // The version says what the snapshot means, and the meaning of a
+    // snapshot changed: a graph is now only "complete" when its references
+    // are tied too, and a snapshot written before that says complete about
+    // a graph that had holes in it. A snapshot of the old version is
+    // therefore not evidence of anything: it is rebuilt.
+    let snapshot = ("cognicode.graph.cache/v2", graph, manifest);
     let bytes = encode_to_vec(snapshot, standard())
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
 
@@ -938,7 +964,7 @@ fn load_durable_snapshot(
 
     let bytes = std::fs::read(db_path).ok()?;
     let (snapshot, _): ((String, _, _), usize) = decode_from_slice(&bytes, standard()).ok()?;
-    if snapshot.0 != "cognicode.graph.cache/v1" {
+    if snapshot.0 != "cognicode.graph.cache/v2" {
         return None;
     }
     Some((snapshot.1, snapshot.2))
@@ -1101,9 +1127,11 @@ pub struct BuildGraphOutput {
     /// Explicit build outcome surfaced to the caller so
     /// consumers (LLM, CI, alert) can branch on it without parsing
     /// `skipped_files`. Values:
-    ///   - `"complete"`: walk happened, no skipped files.
-    ///   - `"partial"`: walk happened, at least one file was
-    ///     dropped (I/O or parsing failure).
+    ///   - `"complete"`: walk happened, no file was dropped and no
+    ///     reference was left without a declaration.
+    ///   - `"partial"`: walk happened, and something is missing: a file
+    ///     was dropped (I/O or parsing failure), or a reference could not
+    ///     be tied to a declaration.
     ///   - `"unknown"`: served from the in-memory graph cache, no
     ///     walk happened on this call.
     pub status: String,
@@ -1118,6 +1146,18 @@ pub struct BuildGraphOutput {
     /// because of I/O / parsing failures.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub skipped_files: Option<Vec<SkippedFileDto>>,
+    /// The references the graph could not tie to a declaration.
+    ///
+    /// A file can be read and still state a relation the project cannot
+    /// prove: the reference names something nobody declares, or names
+    /// several things and the graph cannot tell which one it means.
+    /// Those are facts about the code, and they travel with the answer
+    /// next to the relations that were resolved.
+    ///
+    /// `None` when the graph was served from cache (no walk happened on
+    /// this call); `Some([])` when every reference was tied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pending_references: Option<Vec<PendingReferenceInfo>>,
     /// Identity of what the graph was built from.
     /// `None` only when identity cannot be established at all;
     /// otherwise present with `complete: false` when any component
@@ -1297,7 +1337,7 @@ pub async fn handle_build_graph(
     // The `status` field on BuildGraphOutput is derived
     // here so callers do not have to inspect `skipped_files` to know
     // whether the build is complete.
-    let (skipped_files, status) = if loaded_from_cache {
+    let (skipped_files, pending_references, status) = if loaded_from_cache {
         // The snapshot was hydrated only after passing
         // the manifest staleness check (content-vs-content, including
         // unreadable-file detection). Coverage of the restored graph is
@@ -1305,15 +1345,16 @@ pub async fn handle_build_graph(
         // `complete` with an empty skip list, exactly like a fresh
         // walk with no omissions. The old `unknown` verdict was correct
         // only when no validation existed (pre-persistence).
-        (Some(Vec::new()), "complete".to_string())
+        (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
     } else {
         let report = ctx.analysis_service.get_last_build_report();
         match report.as_ref().map(|r| &r.status) {
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Complete) => {
-                (Some(Vec::new()), "complete".to_string())
+                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
             }
             Some(crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
                 skipped,
+                pending,
             }) => {
                 let mapped: Vec<SkippedFileDto> = skipped
                     .iter()
@@ -1324,12 +1365,14 @@ pub async fn handle_build_graph(
                             crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
                             crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
                         },
                         reason: match &sf.reason {
                             crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
+                            | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
                             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
                                 format!("symlink to {target}, not followed")
@@ -1337,14 +1380,18 @@ pub async fn handle_build_graph(
                         },
                     })
                     .collect();
-                (Some(mapped), "partial".to_string())
+                let pending: Vec<PendingReferenceInfo> = pending
+                    .iter()
+                    .map(PendingReferenceInfo::from_reference)
+                    .collect();
+                (Some(mapped), Some(pending), "partial".to_string())
             }
             None => {
                 // No report available — defensive: treat as complete
                 // (the build did not produce a BuildReport, which
                 // means the legacy path was used and no skip
                 // occurred in any case).
-                (Some(Vec::new()), "complete".to_string())
+                (Some(Vec::new()), Some(Vec::new()), "complete".to_string())
             }
         }
     };
@@ -1396,6 +1443,7 @@ pub async fn handle_build_graph(
             source, symbols, edges_count, elapsed
         ),
         skipped_files,
+        pending_references,
         basis: Some(basis),
     })
 }
@@ -2046,16 +2094,16 @@ pub async fn handle_check_architecture(
 
     // Get coverage diagnostics
     let coverage = ctx.analysis_service.get_coverage_metrics();
-    let (coverage_percent, total_files, parsed_files) = coverage
-        .map(|c| (c.coverage_percent, c.total_source_files, c.parsed_files))
+    let (coverage_percent, total_files, covered_files) = coverage
+        .map(|c| (c.coverage_percent, c.total_source_files, c.covered_files))
         .unwrap_or((0.0, 0, 0));
 
     // Build diagnostic message based on coverage
     let mut diagnostics = Vec::new();
     if coverage_percent < 20.0 && coverage_percent > 0.0 {
         diagnostics.push(format!(
-            "LOW COVERAGE: only {}/{} files parsed ({:.0}%)",
-            parsed_files, total_files, coverage_percent
+            "LOW COVERAGE: only {}/{} files covered ({:.0}%)",
+            covered_files, total_files, coverage_percent
         ));
     } else if coverage_percent == 0.0 && total_files == 0 {
         diagnostics.push("No source files found in project directory".to_string());
@@ -3494,7 +3542,7 @@ pub async fn handle_get_per_file_graph(
     // Use per-file strategy
     let strategy = PerFileStrategy::new();
     match strategy.build_local_graph(&file_path) {
-        Ok(graph) => {
+        Ok((graph, pending)) => {
             let symbols: Vec<SymbolLocationEntry> = graph
                 .symbols()
                 .map(|s| SymbolLocationEntry {
@@ -3519,12 +3567,22 @@ pub async fn handle_get_per_file_graph(
                 })
                 .collect();
 
+            // The references the file states and nobody declared travel with
+            // the answer. The graph does not carry them, and a consumer that
+            // gets the graph alone reads a file with no references in it.
+            let pending_references: Vec<PendingReferenceInfo> = pending
+                .iter()
+                .map(PendingReferenceInfo::from_reference)
+                .collect();
+
             Ok(GetPerFileGraphOutput {
                 file_path: input.file_path,
                 symbols: symbols.clone(),
                 symbol_count: symbols.len(),
                 dependencies: dependencies.clone(),
                 dependency_count: dependencies.len(),
+                pending_reference_count: pending_references.len(),
+                pending_references,
             })
         }
         Err(e) => Err(HandlerError::App(AppError::AnalysisError(e.to_string()))),
@@ -3595,7 +3653,7 @@ pub async fn handle_merge_graphs(
         crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
             (MergeCoverage::Complete, 0)
         }
-        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped } => {
+        crate::infrastructure::graph::per_file_graph::BuildStatus::Partial { skipped, pending } => {
             let skipped: Vec<SkippedFileInfo> = skipped
                 .into_iter()
                 .map(|s| {
@@ -3608,6 +3666,7 @@ pub async fn handle_merge_graphs(
                             SkippedReasonKind::Symlink,
                             format!("symlink to {target}, not followed"),
                         ),
+                        R::Walk(d) => (SkippedReasonKind::Walk, d),
                         R::Other(d) => (SkippedReasonKind::Other, d),
                     };
                     SkippedFileInfo {
@@ -3617,8 +3676,12 @@ pub async fn handle_merge_graphs(
                     }
                 })
                 .collect();
+            let pending: Vec<PendingReferenceInfo> = pending
+                .iter()
+                .map(PendingReferenceInfo::from_reference)
+                .collect();
             let n = skipped.len();
-            (MergeCoverage::from(skipped), n)
+            (MergeCoverage::from(skipped, pending), n)
         }
     };
 
@@ -4229,14 +4292,40 @@ mod tests {
         std::fs::write(&db, b"not-a-snapshot-at-all").unwrap();
         assert!(load_durable_snapshot(&db).is_none());
 
-        // Y un snapshot v1 legítimo sí se carga.
+        // Snapshot v1: lo escribió la versión anterior, cuando "complete"
+        // sólo significaba "no se saltó ningún fichero". Su sentido cambió:
+        // un grafo con referencias sin atar era completo para él y no lo es
+        // ahora. Servirlo sería contestar "complete" sobre un grafo con
+        // huecos, así que se rechaza y el grafo se reconstruye.
+        //
+        // El snapshot es uno de verdad —el mismo grafo y el mismo
+        // manifiesto que se guardan hoy—, para que la prueba mida la
+        // versión y no un payload que el lector rechaza por corrupto.
+        let previous = (
+            "cognicode.graph.cache/v1",
+            crate::domain::aggregates::call_graph::CallGraph::new(),
+            crate::domain::value_objects::file_manifest::FileManifest::new(
+                dir.path().to_path_buf(),
+            ),
+        );
+        let bytes = encode_to_vec(previous, standard()).unwrap();
+        std::fs::write(&db, &bytes).unwrap();
+        assert!(
+            load_durable_snapshot(&db).is_none(),
+            "un snapshot de la versión anterior no se sirve: su sentido cambió"
+        );
+
+        // Y un snapshot de la versión vigente sí se carga.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
         );
         save_durable_snapshot(&db, &graph, &manifest).unwrap();
         let loaded = load_durable_snapshot(&db);
-        assert!(loaded.is_some(), "snapshot v1 legítimo debe cargarse");
+        assert!(
+            loaded.is_some(),
+            "un snapshot de la versión vigente debe cargarse"
+        );
     }
 
     /// `tmp_path_for` returns a unique tmp path for each
@@ -4328,7 +4417,7 @@ mod tests {
         let loaded = load_durable_snapshot(&db);
         assert!(
             loaded.is_some(),
-            "final snapshot must be a valid v1 cache (not a partial interleave)"
+            "final snapshot must be a valid cache (not a partial interleave)"
         );
 
         // No tmp leftovers: with the old fixed-name `cache.tmp` slot
@@ -4371,7 +4460,7 @@ mod tests {
         );
 
         // A subsequent save must overwrite the corrupt cache with a
-        // valid v1 snapshot.
+        // valid snapshot.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
@@ -4385,7 +4474,7 @@ mod tests {
         );
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "rebuilt snapshot must decode as a valid v1 snapshot"
+            "rebuilt snapshot must decode as a valid snapshot"
         );
     }
 
@@ -4452,7 +4541,7 @@ mod tests {
         let loaded = load_durable_snapshot(&db);
         assert!(
             loaded.is_some(),
-            "final cache must be a valid v1 snapshot — no torn writes"
+            "final cache must be a valid snapshot — no torn writes"
         );
 
         // A subsequent save must succeed and overwrite cleanly.
@@ -4575,7 +4664,7 @@ mod tests {
         let db = dir.path().join("graph.cache");
         let parent = db.parent().unwrap();
 
-        // Plant a valid v1 snapshot under a writable dir.
+        // Plant a valid snapshot under a writable dir.
         let graph = crate::domain::aggregates::call_graph::CallGraph::new();
         let manifest = crate::domain::value_objects::file_manifest::FileManifest::new(
             dir.path().to_path_buf(),
@@ -4584,7 +4673,7 @@ mod tests {
         let original_bytes = std::fs::read(&db).unwrap();
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "pre-condition: valid v1 snapshot must exist before making dir read-only"
+            "pre-condition: a valid snapshot must exist before making dir read-only"
         );
 
         // Flip parent to read-only and probe.
@@ -4647,7 +4736,7 @@ mod tests {
         );
         assert!(
             load_durable_snapshot(&db).is_some(),
-            "existing snapshot must still decode as a valid v1 cache"
+            "existing snapshot must still decode as a valid cache"
         );
 
         // No orphan tmp files left by the failed concurrent writers.
@@ -4947,7 +5036,7 @@ mod tests {
         assert_eq!(output.requested_file_count, 2);
         assert_eq!(output.merged_file_count, 1, "one file was actually read");
         match &output.coverage {
-            MergeCoverage::Partial { skipped_files } => {
+            MergeCoverage::Partial { skipped_files, .. } => {
                 assert_eq!(skipped_files.len(), 1);
                 assert!(
                     skipped_files[0].path.ends_with("vanished.rs"),
@@ -6897,7 +6986,7 @@ mod tests {
 
         fn cli_per_file_graph(p: &PathBuf) -> (usize, Vec<(String, String)>) {
             let strategy = PerFileStrategy::new();
-            let graph = strategy
+            let (graph, _pending) = strategy
                 .build_local_graph(p)
                 .expect("build_local_graph must succeed");
             let symbol_count = graph.symbols().count();

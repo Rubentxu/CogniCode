@@ -20040,3 +20040,1753 @@ aquí habría sido reescribir un cierre.
 - El bloque §11 en 67 líneas, por debajo de su techo de 80.
 - `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
 - `merge-gate` verde sobre el commit del PR.
+
+## 2026-10-20 — Las referencias sin resolver son hechos, no silencio (H24, C17)
+
+### Lo que se pidió
+
+El punto P0 de la auditoría del 2026-10-20: una referencia que el grafo no
+puede atar a una declaración se descartaba sin contarse, y el estado del
+grafo decía `complete` sin saber si faltaba alguna. La especificación que
+lo fija es `SPEC-CU-007-HONEST-COVERAGE.md`.
+
+### Lo que se comprobó antes de escribir nada
+
+| Lo que se suponía | Medido |
+|---|---|
+| El lector descarta la referencia sin resolver | Sí: `semantic_facts` conserva sólo las aristas con destino resuelto, y los hechos del fichero no tenían dónde declararlas |
+| El servicio cuenta lo que no pudo resolver | Las cuenta y lo loguea, pero el recuento no llega al estado del grafo |
+| El estado dice `complete` con referencias sin resolver | Sí: `Complete` o `Partial { skipped }` — la dimensión de ficheros, no de relaciones |
+| La arista ya traía lo necesario | Sí: la arista de extracción ya traía origen, línea, tipo de relación y procedencia; el destino ya distinguía resuelto de sin resolver |
+| Se podía resolver entre ficheros después | Sí: el índice global ya existía y el resolver ya distinguía resuelto, ambiguo y sin resolver |
+| El lector de Terraform leía la lectura más larga | No: el rango que probaba las lecturas nunca probaba el nombre entero, así que una variable declarada en el mismo fichero tampoco resolvía |
+
+### Lo que se hizo
+
+**Un valor en el dominio para la referencia pendiente.** `PendingReference`
+lleva el fichero que la escribe, la línea, la declaración que la contiene,
+el nombre que nombra, el tipo de relación y la clase: sin resolver cuando
+nada la nombra, ambigua con su número de candidatos cuando la nombran
+varias y el grafo no puede probar cuál. Los hechos del fichero ganan un
+tercer tipo de relación —la identificada, la llamada por nombre y la
+pendiente— y el lector semántico deja de tirar la referencia: la
+conserva.
+
+**Una sola regla para leer un nombre.** La lista de lecturas vive en el
+dominio y devuelve las lecturas de un nombre, de la más larga a la más
+corta: un nombre que nombra un camino se lee por el prefijo más largo que
+nombra una declaración. La usan el lector de Terraform y la resolución del
+proyecto, así que el fichero que escribe la referencia y el proyecto que la
+lee coinciden en qué puede nombrar un nombre. Al unificarla se corrigió
+un defecto de la regla: la lectura entera nunca se probaba, y por eso una
+variable declarada en el mismo fichero no resolvía.
+
+**La resolución entre ficheros, con el ámbito del módulo.** La referencia
+pendiente se busca en el índice del proyecto: la lectura más larga que
+nombra algo gana, y sólo se miran las declaraciones del módulo que
+escribe la referencia —su propio directorio—. Un módulo es un directorio con
+espacio de nombres propio: un módulo padre pasa sus valores al hijo
+llenando las variables del hijo, nunca exponiendo las suyas, y un módulo
+hermano no es visible en absoluto. Lo que se puede probar se convierte en
+relación; lo que no, se publica con su clase. No se fabrica ninguna arista.
+
+**El estado dice las dos cosas.** El estado del grafo lleva los ficheros
+omitidos y las referencias pendientes, y `complete` significa que las dos
+coberturas están completas. El MCP publica las pendientes junto a lo que sí
+resolvió —en `build_graph` y dentro de la cobertura de `merge_graphs`— y la
+CLI lo dice con las mismas palabras: siete copias del aviso se sustituyeron
+por un único helper.
+
+**Una sola forma de publicar el hecho.** La proyección de la referencia
+pendiente vive en un sitio —la capa de interfaz— y la usan el MCP y la CLI.
+La respuesta de la CLI lleva su propia lista de referencias pendientes
+junto a los ficheros omitidos, porque son las dos mitades de la misma
+pregunta: un grafo que leyó todos los ficheros y ató todas las referencias
+está completo, y quien pregunta tiene que poder saber cuál de las dos falta.
+
+**Lo que el lenguaje ata él mismo no es una referencia.** El índice de una
+instancia, el nombre que ata una expresión `for` y un módulo de Ansible no
+nombran ninguna declaración del proyecto: no se publican como huecos. Una
+llamada tampoco lo es —puede nombrar algo de fuera—, y el camino genérico
+sigue sin publicarlas.
+
+### Las dos revisiones independientes, y lo que encontraron
+
+El cambio se revisó contra el diff dos veces, antes de publicarlo. Las dos
+revisiones encontraron fallos que el arreglo inicial no cubría, y cada uno se
+midió en rojo contra el código anterior antes de arreglarlo —no se corrigió
+de oído—.
+
+La primera revisión encontró tres:
+
+| Fallo | Qué pasaba | Cómo se midió |
+|---|---|---|
+| La CLI decía `complete` | El camino de la CLI traducía el estado del build contando sólo los ficheros omitidos, así que una referencia pendiente no le llegaba: la respuesta decía `complete` mientras el MCP decía `partial` sobre el mismo proyecto | El test de la CLI falló con `Complete` frente a `Partial` esperado |
+| Se fabricaba una arista entre módulos | La resolución caía a un índice global cuando el módulo no declaraba el nombre, así que una declaración de un módulo hermano satisfacía la referencia: una arista que nada prueba, y el hueco real debajo, escondido | El test del módulo hermano falló: la referencia había quedado atada |
+| El snapshot viejo se servía como bueno | El snapshot durable llevaba la versión `v1`, escrita cuando `complete` sólo significaba "no se saltó ningún fichero". Se servía como si fuera un grafo completo | El test de la versión falló: el snapshot `v1` se cargaba |
+
+La segunda revisión encontró dos más, y eran del mismo género:
+
+| Fallo | Qué pasaba | Cómo se midió |
+|---|---|---|
+| El ámbito subía a los ancestros | La primera arreglo buscaba el nombre en el directorio del módulo **y en los de sus ancestros**, con la idea de que un módulo padre pasa sus valores al hijo. En Terraform no es así: el padre llena las variables declaradas por el hijo, no expone las suyas. Una referencia en un hijo a un nombre que sólo declara el padre se ataba a una arista que nada prueba | El test del módulo padre falló: la referencia había quedado atada |
+| `complete` prometía más de lo que mide | La documentación del tipo decía que `complete` significa que "every reference the files state points at a declaration the project holds", pero las llamadas que el camino genérico no puede atar se descartan sin contarse. La promesa era más grande que la medición | La promesa del tipo se acotó a lo que se mide, y el comentario que afirmaba que el camino genérico las cuenta se corrigió: no las cuenta |
+
+La segunda revisión señaló además cuatro obligaciones de contrato y cuatro
+cosas más, que también están resueltas:
+
+- **El catálogo de producto publicado quedó obsoleto.** `build_graph` gana
+  `pending_references` y su descripción del estado cambia de sentido, y el
+  catálogo seguía publicando la forma vieja —con la frase "walk happened,
+  no skipped files"—. El catálogo se regeneró con el esquema del runtime.
+- **El CHANGELOG no mencionaba el cambio.** Las formas públicas cambian
+  (`GraphResult::Full`, `GraphValue::Full`, `MergeCoverage::Partial`, y la
+  firma de `MergeCoverage::from`), y hay una sección de cambios sin
+  publicar.
+- **La ruta asíncrona del build descartaba ficheros sin registrarlos**, y
+  su comentario afirmaba lo contrario. Con el mismo árbol, la ruta síncrona
+  decía `partial` y la asíncrona `complete`. Ahora las dos registran lo que
+  tiran, y la regla que clasifica un fichero descartado es una sola —estaba
+  duplicada, y la copia de la ruta asíncrona era peor.
+- **Sin reporte, la respuesta decía `complete`.** No medir y medir nada no
+  son lo mismo, y la ley del propio repo lo dice desde hace tiempo: la
+  respuesta ahora dice `unknown`.
+- **Una expresión `for` que ata dos nombres publicaba un hueco falso**, la
+  aserción de paridad de la CLI se había debilitado hasta poder pasar con
+  una lista vacía, y la caché por fichero guardaba el grafo y tiraba las
+  referencias.
+
+Y una pieza que faltaba: un test que pregunta a las dos superficies sobre
+el **mismo** árbol y compara los veredictos. Los tests anteriores cubrían
+la CLI y el MCP por separado, con proyectos equivalentes pero no
+idénticos, así que un fork que degradara una de las dos pasaba verde. Ahora
+las dos dicen `partial` y cuentan las mismas referencias.
+
+### Lo que se midió
+
+| Proyecto | Antes | Ahora |
+|---|---|---|
+| Fixture de Terraform | 91 relaciones; 15 referencias a variables declaradas en otro fichero, descartadas sin contarse | 106 relaciones; `complete`; ninguna referencia pendiente |
+| El mismo fixture con una referencia a un recurso inexistente | `complete`, sin decir nada | `partial`, con el fichero, la línea y el motivo |
+| Fixture de Ansible | 28 llamadas a módulos de Ansible, descartadas sin contarse | 3 referencias a roles, que el grafo no sabe nombrar todavía |
+
+El fixture de Terraform es la prueba de que la señal sirve: un proyecto sano
+dice `complete`, y uno con una referencia colgante dice `partial` y dice
+cuál. Las cifras no cambiaron al corregir el ámbito: el fixture no usaba
+ninguna referencia que sólo declarase un módulo padre, que es justo el caso
+que la corrección destapa.
+
+### Lo que no se hizo, y por qué
+
+**Las llamadas que el camino genérico no puede atar no se publican.** Una
+llamada puede nombrar una función de otra caja, y el grafo no dice nada
+del mundo de fuera. No se publican como huecos y hoy tampoco se cuentan;
+separarlas es otra unidad, y la promesa de `complete` se acotó a lo que se
+mide para que no vuelva a prometer más.
+
+**Un rol de Ansible sigue sin nombre.** El grafo no modela los roles como
+declaraciones, así que la referencia a un rol se publica como pendiente.
+Es verdad, y señala el trabajo que queda, no un defecto del arreglo.
+
+**No se cambió el modelo de dominio de la infraestructura.** Los roles, las
+salidas y los módulos con nombre cualificado siguen siendo lecturas del
+lector, no declaraciones del grafo.
+
+**Las superficies por fichero siguen sin decir nada de los pendientes.** El
+grafo por fichero ya sabe cuáles referencias no ató —la caché las guarda y
+la fusión las publica—, pero el manejador `get_per_file_graph` del MCP y la
+orden `graph per-file` de la CLI responden con símbolos y dependencias sin
+decir nada de ellas. Queda anotado como candidato `C24` en la backlog de la
+misión.
+
+**La estrategia de grafo completo sigue siendo una segunda puerta.** Dice
+`complete` sin medir la cobertura de relaciones, y el valor por defecto del
+puerto mantiene la doctrina de "no medimos, así que completo". Es el
+candidato `C16`, y por su tamaño no cabe en esta unidad.
+
+**H24 no queda cerrada.** Esta unidad resolvió una de las cuatro cosas que
+§11 le atribuye, y la backlog de la misión todavía le asigna otros
+candidatos: el puerto de dominio que construye su propio adaptador, la
+propiedad de identidad que sustituye a los tests de paridad, el vigilante
+que dice una verdad distinta de la del registro, y la segunda puerta al
+grafo que dejó la estrategia de grafo completo.
+
+### Evidencia
+
+- Test RED primero: `crates/cognicode-core/tests/unresolved_references_are_facts.rs`
+  — falla antes del arreglo porque la respuesta no dice qué referencias
+  quedaron sin atar, y pasa después. Nueve casos: la referencia que no
+  nombra nada, la que otro fichero declara, el proyecto sano, el módulo del
+  lenguaje, la CLI que no dice `complete`, el módulo hermano que no
+  satisface una referencia, el módulo padre que tampoco, el nombre que dos
+  declaraciones llevan, y el nombre que una expresión `for` ata.
+- Un test en `crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs`
+  pregunta a la CLI y al MCP sobre el mismo árbol y compara los veredictos.
+- Los cinco fallos de las dos revisiones se midieron en rojo contra el
+  código anterior, con la prueba que los detecta, y se volvieron a medir
+  en verde después del arreglo.
+- UAT efímero con los dos binarios reales, por el cable del MCP:
+  `python3 /tmp/cognicode-cycle/c17_uat_mcp.py <binario>`. El binario
+  anterior **falla** —dice `complete` con una referencia colgante y no
+  publica ninguna— y el nuevo **pasa**. El UAT es efímero y no se
+  promueve: la prueba permanente ya cubre el comportamiento.
+- 2.376 tests de lib en verde; las suites de Terraform, de Ansible, de la
+  paridad entre la CLI y el MCP, y las del estado del grafo, en verde.
+- `bash scripts/test-fast.sh` → rc=0.
+- `bash scripts/test-full.sh` → rc=0 sobre el commit del PR.
+- `merge-gate` verde sobre el commit del PR.
+
+## 2026-10-21 — La auditoría reordena el trabajo que queda (H23, H24, H5)
+
+### Lo que se pidió
+
+Reordenar el roadmap sobre un informe de auditoría del 2026-10-21 que
+contrasta el árbol en `4dbcb994`. El informe no propone unidades nuevas: dice
+que el trabajo cabe en las especificaciones que ya existen y en la backlog de
+la misión, y que lo que cambia es el orden.
+
+### Lo que se comprobó antes de escribir nada
+
+Un informe que no se contrasta con el código es una opinión, así que sus
+hallazgos se leyeron en el árbol antes de mover una sola línea:
+
+| Lo que el informe afirmaba | Comprobado en el árbol |
+|---|---|
+| Un fichero recuperado de la caché no cuenta como analizado | Sí: `parsed_files` sube sólo cuando el fichero se vuelve a interpretar (`analysis_service.rs:439`) |
+| Los errores del recorrido desaparecen del inventario | Sí: el recorrido sigue filtrando las entradas que fallan (`source_files.rs:98`) |
+| La consulta de infraestructura elige el primer homónimo | Sí: sigue así (`consolidated_handlers.rs:745`) |
+| Los dos tests de paridad comparten un directorio temporal | Sí: los dos usaban el mismo nombre |
+
+Lo que el informe daba por ya arreglado y que la rama de este ciclo también
+cambió no se reabrió: son candidatos de la backlog, no trabajo perdido.
+
+### Lo que se hizo
+
+- **§11 del ROADMAP** dice ahora el orden de los cinco hitos, y por qué en
+  ese orden: primero la veracidad del grafo —que ninguna cobertura engañe y
+  que la consulta de infraestructura no responda cosas falsas—, después la
+  economía del testing, después la simplificación técnica, y por último la
+  certificación y el corte de release. El bloque sigue dentro de su techo de
+  líneas.
+- **La backlog de la misión** quedó reordenada: 26 candidatos, tres nacidos
+  del informe —la cobertura en caché, el fallo silencioso del lector
+  especializado y la prueba metamórfica del grafo— y dos que ya existían
+  recibieron la evidencia nueva, el de la ontología con el caso de Bash y el
+  de la identidad con un ejemplo que el parser no entiende.
+- **CURRENT.md** cuenta los cinco hitos, los candidatos de cada uno y cuál
+  es el siguiente trabajo: la cobertura en caché.
+- **Un arreglo de código que el informe señaló y que era pequeño y cierto**:
+  los dos tests de paridad compartían un directorio temporal identificado
+  sólo por el PID y se pisaban entre sí. Cada uno tiene ahora nombre único.
+
+### Lo que no se hizo, y por qué
+
+- **La repriorización no abre unidades nuevas.** El informe encaja en H23,
+  H24 y H5 y en los contratos que ya existen; abrir otra saga sería lo
+  contrario de lo que pide.
+- **Los tres candidatos nuevos no se implementan aquí.** La cobertura en
+  caché es el siguiente trabajo y merece su propio ciclo con su propio
+  oráculo: un build en caliente que informa 0 % sobre un grafo completo es un
+  defecto de cobertura, no un arreglo de una línea.
+- **H24 no queda cerrada.** La repriorización cambia el orden dentro de la
+  unidad, no la da por terminada.
+
+### Evidencia
+
+- Los cuatro ratchets del roadmap en verde tras la repriorización:
+  atribución de autoridad, coherencia de unidades abiertas, ratchet de
+  versión y estándar de comentarios.
+- `python3 scripts/ci/test_roadmap_authority_attribution.py` → OK.
+- `python3 scripts/ci/test_roadmap_open_units_coherence.py` → OK.
+- `python3 scripts/ci/test_roadmap_version_ratchet.py` → OK.
+- `python3 scripts/ci/test_comment_standard.py` → OK.
+- La suite de paridad de la CLI en verde, con los dos tests sobre su propio
+  árbol.
+
+## 2026-10-21 — La misión que iba a encadenar el roadmap no encadenaba nada (H23, H24)
+
+### Lo que se pidió
+
+Encadenar el trabajo pendiente con la misión del plugin, que hasta entonces
+no había encadenado un solo objetivo.
+
+### Lo que se comprobó antes de escribir nada
+
+La misión se declaraba, el plugin la encontraba, el host admitía su extensión
+de Goal y el hook `Stop` estaba instalado. Todo eso era cierto y, aun así, la
+cadena no tenía nada que encadenar. La auditoría del propio plugin lo dijo con
+su cuenta: **26 candidatos, 0 usables, 26 descartados**.
+
+Se leyeron las tres piezas que deciden:
+
+| Pieza | Qué hace | Qué encontró |
+|---|---|---|
+| El cargador de candidatos | Convierte cada entrada del backlog en un candidato | Descarta los 26: la evidencia se llama `evidenceRefs` y es una lista, y la declaración la escribía en `evidence`, que es una cadena |
+| El selector | Ordena la cola y elige el primero | Ordena de mayor a menor prioridad; la cola estaba escrita al revés, así que habría empezado por el último |
+| La auditoría de la declaración | Comprueba rutas y anclas | Una referencia apuntaba a un crate que no existe |
+
+El detalle que hace el fallo peligroso: **el valor descartado era correcto**.
+`evidence` apuntaba a un fichero real de cada candidato, y `doneWhen` estaba
+bien escrito. Nada parecia estar mal. El campo simplemente no lo leía nadie.
+
+### Lo que se hizo
+
+- **La declaración habla el idioma del cargador**: la evidencia pasa a
+  `evidenceRefs` y es una lista; la cola se escribe de mayor a menor prioridad,
+  con hueco de diez entre candidatos para insertar uno sin renumerar; la
+  referencia rota apunta a donde existe.
+- **La cola se deja como trabajo pendiente de verdad**: C2, C3 y C4 ya salieron
+  en las PR #400, #401 y #402, y C17 sale en esta misma rama. El plugin sólo
+  sabe que un candidato se cumplió si lo encadenó su propia cadena, y esta
+  cadena nunca arrancó, así que el registro estaba vacío: sin quitarlos, la
+  cadena habría rehecho trabajo ya publicado.
+- **Un contrato que lo vigila**: `scripts/ci/test_mission_declaration.py`
+  comprueba los cinco puntos —campo que el cargador no lee, evidencia ausente,
+  criterio de cierre ausente, cola al revés y referencia rota— sin
+  reimplementar al cargador: usa las mismas reglas que el plugin declara.
+- **La propiedad se midió con el selector del plugin**, no con una
+  imitación: sobre la declaración nueva, los 22 candidatos salen elegibles y
+  el primero que encadenaría es el que el roadmap dice que va primero.
+
+### Lo que no se hizo, y por qué
+
+- **No se tocó el estado durable de la misión.** Vive fuera del repositorio y
+  es del plugin; el contrato vigila la declaración, que es lo que el
+  repositorio controla.
+- **No se reescribieron los objetivos ya publicados.** C2, C3 y C4 salen de
+  la cola, no se reabren: su recibo está en el Journal.
+- **El trabajo de C17 no se mezcló con esto.** El arreglo de la declaración y
+  su contrato son una cosa; la referencia sin resolver es otra. Ambas salen,
+  con sus recibos.
+
+### Evidencia
+
+- El contrato **falla contra la declaración anterior**, con los tres defectos
+  nombrados: los 26 candidatos sin evidencia utilizable, la cola escrita al
+  revés y el campo que el cargador no lee.
+- El contrato **pasa contra la nueva**: 22 candidatos, prioridad 220 a 10.
+- Dos mutaciones propias fallan como deben: una referencia a un fichero
+  inexistente y un ancla que no está en el fichero.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .` →
+  22 candidatos, 22 usables, 0 descartados, lista en orden.
+- El selector del propio plugin, sobre la declaración real, elige C25: el
+  candidato que `CURRENT.md` declara como el siguiente trabajo.
+- El host reanuda la sesión viva y encuentra el Goal en curso, así que la
+  cadena puede encadenar en esta sesión y no en otra.
+
+### Los otros dos fallos, encontrados al verificar la cadena
+
+Verificar la declaración no bastaba: la cadena tiene tres fuentes de
+candidatos y un estado durable, y los dos últimos desmontaron.
+
+**El puerto que lee la declaración la lee sin el espacio de trabajo.** Al
+cargarla sin ese dato, el cargador falla —el campo `workspace` es
+obligatorio— y el puerto cae al backlog guardado en el estado durable. Como
+ese estado guardaba la cola vieja, la cadena encadenaba el trabajo ya
+publicado. La declaración no tenía el campo y el plugin se lo pasa al
+localizarla, pero no al leerla de nuevo.
+
+**La cola de propuestas guardaba trabajo ya publicado.** Las tres propuestas
+que quedaban eran C2, C3 y C4: el manifiesto derivado del registro de
+lenguajes (PR #400), la CLI viendo el mismo grafo que el MCP (PR #401) y el
+nombre del dominio en la consulta de infraestructura (PR #402). Ese canal no
+tiene un "cerrado": es una cola, y lo que está en ella son candidatos que la
+cadena puede encadenar. Con las tres dentro, la cadena habría rehecho código
+publicado. Se retiraron.
+
+Los dos se corrigieron con las herramientas del propio plugin —su clase de
+estado durable y su escritura atómica—, no editando su formato a mano.
+
+### Evidencia de la cadena entera
+
+Con el código real del supervisor —el mismo que decide en el cierre de turno—,
+sobre la declaración y el estado ya sincronizados: **47 candidatos compuestos,
+0 descartados**, y el primero que encadenaría es C25, con su evidencia y sus
+tres condiciones de cierre. Los 47 son los 22 declarados en el roadmap y 25
+descubiertos en el propio repositorio; los declarados mandan, y el
+descubierto no adelanta a ninguno.
+
+### Un detalle del canal de propuestas que conviene saber
+
+La deduplicación del núcleo no compara el objetivo: compara **objetivo +
+ámbito + criterio de cierre**. Una propuesta que describe el mismo trabajo con
+otro ámbito no se reconoce como la misma, así que puede encadenarse dos
+veces. Por eso el backlog declarado manda y el canal de propuestas se deja
+vacío: lo que está en el backlog ya se encadenará, y lo que se proponga debe
+ser trabajo que el backlog no contiene.
+
+Por lo mismo, cuando una propuesta describía trabajo ya publicado —C2, C3 y
+C4, salidos en las PR #400, #401 y #402— se retiró en vez de cerrarse: ese
+canal es una cola, no un registro de decisiones.
+
+## 2026-10-21 — Dos tests que se pisaban el trabajo (H23)
+
+### Lo que pasó
+
+El gate completo falló en una suite de release que no había cambiado:
+`prf_f6_w1_tampered_payload_fails_verify` encontró un payload vacío. La suite
+había pasado en los tres gates anteriores, así que no era una regresión de
+este ciclo: era una carrera que hasta ahora no había tocado.
+
+### Lo que se comprobó antes de tocar nada
+
+La suite compara el staging con el resultado. El mensaje de fallo —"payload
+vacío"— significa que el archivo empaquetado no tenía contenido, no que
+faltara un binario. Los dos tests del fichero usan el mismo staging, y su
+nombre sólo llevaba el identificador del proceso: los tests de un binario de
+test corren en paralelo y comparten ese número. Uno borraba el staging del
+otro mientras lo empaquetaba.
+
+Se comprobó en las dos direcciones:
+
+- El binario de la suite, ejecutado aislado, pasa: **8 de 8 ejecuciones en
+  verde**. La carrera necesita que los dos tests coincidan en el tiempo, y
+  aislado el test tarda lo suficiente como para no coincidir.
+- Con el staging compartido reintroducido, **los tres tests fallan a la vez**:
+  los dos originales y el nuevo. No era un test con mala suerte; era un
+  defecto que golpeaba a todo el fichero.
+
+### Lo que se hizo
+
+Cada test empaqueta sus payloads en un directorio propio. El nombre del
+staging lleva ahora quién lo pidió, además del proceso.
+
+Un test nuevo lo vigila: dos staging del mismo proceso tienen que ser
+directorios distintos, y los payloads del primero tienen que sobrevivir a que
+el segundo empaquete. Ese test **falla contra el código anterior** con el
+mensaje de que los dos staging colisionan, y pasa después.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió la lógica de la suite.** Lo que se midió es un defecto del
+  entorno de prueba, no del release: el empaquetado y la verificación
+  dicen lo que dicen.
+- **No se tocó la suite hermana de paridad.** Ya tenía su propio arreglo en
+  este ciclo, por el mismo motivo y con el mismo mensaje.
+
+### Evidencia
+
+- Con el staging compartido: `9 passed; 3 failed`. Los tres fallos son los
+  dos tests originales y el nuevo.
+- Con el staging propio: `12 passed; 0 failed`.
+- El binario de la suite, **10 ejecuciones seguidas sin un solo fallo**.
+- `cargo fmt --all --check` limpio.
+- Las otras dos suites de release en verde: 14 y 21 casos.
+
+## 2026-10-21 — Dos avisos de seguridad y una dependencia que nadie usaba (H23)
+
+### Lo que pasó
+
+El gate de cadena de suministro paró en la etapa `advisories`, con dos avisos
+de la misma familia: `RUSTSEC-2026-0382` para `rustls-webpki` y
+`RUSTSEC-2026-0381` para `webpki-roots`. Los dos tratan del mismo
+certificado —`emSign ECC Root CA - G3`, retirado porque su clave privada ya
+es pública— y los dos entraban por el mismo camino: el cliente HTTP.
+
+No era una regresión de este ciclo. `Cargo.lock` estaba intacto respecto a la
+base, así que los avisos venían de dependencias que `main` ya arrastraba. Lo
+que los sacó es que el aviso se publicó después de la última vez que `main`
+pasó su propio gate: `main` llevaba su check en rojo sin que nadie lo
+mirase, y sin ese check en verde no entra ni esta unidad ni ninguna otra.
+
+### Lo que se comprobó antes de tocar nada
+
+El aviso de `webpki-roots` traía dos versiones. `1.0.9` tenía arreglo —el
+propio aviso declara `patched = [">= 1.0.10"]`—. `0.26.11` **no lo tenía**:
+la línea `0.26` no tiene versión corregida publicada. Para esa segunda
+versión sólo cabían dos caminos: sacar el paquete del grafo, o silenciar el
+aviso.
+
+Se comprobó de dónde venía cada uno:
+
+- `webpki-roots 1.0.9` venía por `reqwest` → `hyper-rustls`.
+- `webpki-roots 0.26.11` venía por `ureq` → `rustls 0.23`.
+- `rustls-webpki 0.103.15` venía por `reqwest` → `hyper-rustls` → `rustls`.
+
+Y se comprobó algo mejor: **`ureq` no se usaba**. La CLI lo declaraba como
+dependencia directa y ningún fichero del repositorio lo mencionaba, salvo
+una frase de un test del MCP que lo nombraba para decir que el crate no lo
+usa. Era peso muerto que, además, arrastraba la versión sin arreglo.
+
+### Lo que se hizo
+
+En vez de silenciar el aviso, salió la dependencia muerta:
+
+- `ureq` desaparece de `crates/cognicode-cli/Cargo.toml`. Con ella, el
+  paquete `webpki-roots 0.26.11` deja de estar en el grafo resuelto, y el
+  aviso sin arreglo desaparece con él.
+- `webpki-roots` 1.0.9 → 1.0.10, que es el arreglo que el propio aviso
+  declara.
+- `rustls-webpki` 0.103.15 → 0.103.16, que es el arreglo del gemelo.
+
+El `Cargo.lock` resultante es más pequeño: **8 líneas añadidas y 27 quitadas**.
+No se añadió ninguna excepción a `deny.toml`, y no hizo falta ninguna fila en
+`docs/debts/DEBT-SEC-001-advisory-ignores.md`: el aviso no se silenció, se
+resolvió.
+
+### Lo que no se hizo, y por qué
+
+- **No se añadió el aviso a la lista de excepciones.** La política de
+  `deny.toml` es que un aviso nuevo es un error, y una excepción sólo se
+  justifica cuando no hay arreglo. Aquí había dos caminos y se eligió el que
+  deja el árbol más pequeño.
+- **No se tocó `rig-core`.** La otra ruta a `webpki-roots 0.26.11` es
+  `tokio-tungstenite`, que `rig-core` declara como dependencia opcional
+  activada por su feature `websocket`. Esa feature no está activada, así que
+  el paquete no llega al grafo resuelto. Cambiar la resolución de `rig-core`
+  habría costado mucho más que sacar una dependencia que nadie usaba.
+
+### Evidencia
+
+- En rojo: `cargo deny check advisories` → `advisories FAILED`, con
+  `RUSTSEC-2026-0381` y `RUSTSEC-2026-0382`.
+- En verde: `cargo deny check` → `advisories ok, bans ok, licenses ok,
+  sources ok`.
+- `cargo fmt --all --check` limpio y `cargo check --workspace --all-targets`
+  con rc=0.
+- El grafo resuelto ya no conoce `webpki-roots 0.26.11`:
+  `cargo tree -i webpki-roots@0.26.11` responde que no coincide con ningún
+  paquete.
+
+## 2026-10-21 — El gate rojo no era un defecto: era el espacio (H24, C17)
+
+### Lo que pasó
+
+La PR #404 tiene el `merge-gate` en rojo sobre `685e8582`, que es su HEAD.
+El veredicto no lo publica un job de GitHub Actions: lo publica
+`scripts/ci/publish-merge-gate.sh` como estado de commit, y su descripción
+dice `merge-gate.pipeline.kts failed with exit 1`. Por eso no hay un log de
+la Actions que leer: hay una lane de PipelineK que corre en esta máquina.
+
+### Lo que se comprobó antes de tocar nada
+
+Las etapas de la lane se leen de la base de datos del propio runtime,
+`.pipelinek/merge-gate.db`, y su salida capturada queda en
+`.pipelinek/durable-shell/output-plane/`. La corrida `c63b6af4` sobre
+`685e8582` pasó **32 etapas** —las 0 a 31: fmt, clippy, contratos,
+`advisories`, `licenses`, `supply-chain`, las cuatro construcciones de
+binarios y las siete suites del core— y paró en la 32, la que compila
+`cognicode-ladybug`. **Las 24 etapas siguientes no corrieron**: el pipeline
+tiene 56.
+
+El stderr de esa etapa no es un fallo de test. Es un fallo de compilación:
+
+    rustc-LLVM ERROR: IO failure on output stream: Disk quota exceeded
+    error: could not compile `cognicode-core` (lib)
+    Caused by: Disk quota exceeded (os error 122)
+
+El test de ladybug **no llegó a correr**. La suite en aislamiento da
+**62 passed, 0 failed**. El árbol de esta rama ni siquiera toca el crate
+`cognicode-ladybug`: el diff contra `origin/main` no lo menciona.
+
+### Por qué se llenó el disco
+
+`/tmp` es un tmpfs con **cuota por usuario de 38 570 M** (`quota -s`). Y el
+gate construye dentro de él: `publish-merge-gate.sh` fija
+`CARGO_TARGET_DIR=/tmp/cognicode-merge-gate-<check_id>/target`, con `check_id`
+derivado del checkout. El aislamiento es deliberado y está documentado en
+ese mismo script: sin él, un binario de uno de los otros cinco checkouts
+puede ejecutarse como si fuera de este árbol, y eso ya pasó dos veces en un
+día.
+
+El precio de ese aislamiento es que el gate **no reutiliza** el caché
+compartido de `/var/home/rubentxu/cargo-targets/` (136 G de `debug` en disco
+real, con 629 G libres) y construye en el tmpfs, que tiene un techo. Y la
+clave del directorio es del checkout, **no de la corrida**: el mismo
+`/tmp/cognicode-merge-gate-<id>/target` acumula debug, release y todas las
+combinaciones de features de cada corrida, y **nada lo poda**.
+
+Esto ya se había medido dos veces en este repo. El 2026-10-17, en la salida
+de la RC de v0.101.21: "4 intentos (quota tmpfs INFRASTRUCTURE → …)". Y en
+el cierre de CU-1, que lo recibió como "17G del merge-gate stale del run
+anterior + preflight 21G" y lo resolvió **a mano**. No hay ningún script que
+haga esa limpieza, y por eso el mismo fallo vuelve: la izquierda que se
+midió dos veces no se cerró ninguna.
+
+Lo que **no** se puede reconstruir es la composición exacta del directorio en
+el momento del fallo: ya no existe —`/tmp` tiene hoy 620 M usados de los
+38 570 M de cuota, y no queda ningún `cognicode-merge-gate-*`—, así que se
+perdió con él la evidencia de qué lo llenaba. Lo que sí queda es el error, la
+cuota y los dos recibos anteriores que ya midieron la acumulación.
+
+### Lo que se hizo
+
+- Se aisló el primer error causal: la etapa 32 y su stderr, no el veredicto
+  agregado.
+- Se reprodujo la suite en aislamiento para separar defecto de producto de
+  fallo de entorno: **62 passed, 0 failed**.
+- Se comprobó que el diff de la rama no toca `cognicode-ladybug`.
+- Se comprobó que la corrida del gate empezó a las `01:38:47Z`, después del
+  último commit (`01:20:04Z`), así que el veredicto sí corresponde al árbol
+  que nombra: no fue un árbol editado mientras el gate corría.
+- Se registró el estado del disco: la cuota, lo que queda de ella, y el
+  hecho de que el directorio de la corrida ya no está.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió el producto.** El fallo no está en el código: el test nunca
+  corrió. Tocar el crate `cognicode-ladybug` para tapar un fallo de disco
+  sería cambiar el producto para satisfacer una evidencia que no existe.
+- **No se rebajó el gate ni se añadió una excepción.** La etapa que paró
+  estaba ahí por un motivo, y `merge-gate` es el gate que `main` exige.
+- **No se re-ejecutó el gate a ciegas.** Con `/tmp` limpio la corrida
+  arrancaría desde cero, pero el veredicto tiene que corresponder al SHA
+  final —y el SHA cambia con este recibo—, así que la reejecución es el
+  siguiente paso, no un préalable para escribir esto.
+- **No se limpió `/tmp` a ciegas ni se cambió la cuota.** Las dos cosas
+  tocan la política de aislamiento del gate, y una de ellas necesita
+  decisión del operador.
+
+### Evidencia
+
+- Estado de commit sobre `685e8582`: `merge-gate` → `failure`, descripción
+  `merge-gate.pipeline.kts failed with exit 1 (pipelinek, db:
+  .pipelinek/merge-gate.db)`.
+- `.pipelinek/merge-gate.db`, eventos de la corrida `c63b6af4`: etapas 0–31
+  `success`, etapa 32 `StepFailed … "shell exited with code 101"`.
+- Script de la etapa: `cargo test -p cognicode-ladybug --lib --quiet`.
+- stderr capturado en
+  `.pipelinek/durable-shell/output-plane/streams/c63b6af4-…-s32-0_stderr/cur.seg`:
+  `Disk quota exceeded (os error 122)`.
+- Reproducción en aislamiento: `cargo test -p cognicode-ladybug --lib` →
+  **62 passed; 0 failed** (16,02 s).
+- `git diff --stat origin/main..HEAD`: el crate `cognicode-ladybug` no
+  aparece.
+- Disco: `quota -s` → cuota de usuario de 38 570 M; `df -h /tmp` → 620 M
+  usados de 48 G; `du -sh /tmp` → 433 M; sin directorios
+  `/tmp/cognicode-merge-gate-*`.
+- Caché compartido que el gate no usa: `/var/home/rubentxu/cargo-targets/`
+  → 136 G de `debug` en `/var/home`, que tiene 629 G libres.
+
+### Estado y siguiente WU
+
+- Unidad: **H24 / C17**, en la PR #404, rama `fix/pending-references-are-facts`.
+- SHA del veredicto: `685e8582` (14 commits por delante de `origin/main`).
+- Gates: `merge-gate` → **FAIL**, clasificado **INFRASTRUCTURE** (cuota de
+  tmpfs), no defecto de producto ni regresión.
+- **Siguiente WU**: limpiar el target dir aislado de `/tmp` (o apuntar la
+  construcción del gate al volumen grande, conservando el aislamiento por
+  checkout) y re-ejecutar `merge-gate` sobre el SHA final. Después, la
+  misión sigue con **C25**, la cobertura en caché.
+- Bloqueo abierto heredado: la firma *contractual* del operador sobre un clon
+  limpio (**C8-R / CR-01**) sigue pendiente; no es de este ciclo.
+
+## 2026-10-21 — El informe reencuadra el roadmap: B1 a B5, y tres hallazgos que faltaban (H23, H24)
+
+### Lo que pasó
+
+El informe de la auditoría del 2026-10-21 sobre `4dbcb99` propone cinco
+bloques: B1 veracidad del producto, B2 release verificable, B3 economía del
+testing, B4 consolidación de arquitectura y ontología, B5 incrementalidad.
+La pregunta era si el roadmap del repositorio ya lo recogía o si había que
+reenfocarlo.
+
+Ya lo recogía. El commit `07e076ef` ("la auditoría del 2026-10-21 reordena
+el trabajo") había convertido la auditoría anterior en 22 candidatos con su
+evidencia y su criterio de cierre, y los bloques B1 a B5 del informe se
+corresponden uno a uno con ellos: C25 y C20 y C24 y C18 y C19 son B1 y B4,
+los cinco de H23 son B3, C9 y C16 y C22 y C23 son B4, C11 y la línea Kotlin
+son B5, y C14 es B2.
+
+### Lo que se comprobó antes de tocar nada
+
+Que el backlog **ya** fuera el informe, y no al revés, se comprobó contra el
+fichero, no de memoria: los 22 candidatos de `goal-compass.json` tienen
+`whyNow` que citan la auditoría del 2026-10-21, y sus `doneWhen` son
+literalmente los criterios del informe.
+
+El delta, entonces, era lo que el informe dice y el backlog no:
+
+1. **Un handler MCP que devuelve `Ok` con un `error` dentro.** Medido en
+   `graph_handlers.rs`: las líneas 57, 60, 128, 131, 136, 139, 175, 178,
+   212 y 215. El adaptador MCP (`rmcp_adapter.rs:756-769`) interpreta
+   cualquier `Ok` como una llamada correcta, así que un fallo viaja como
+   éxito. Ningún candidato de la backlog lo cubría: el más cercano —el
+   fallo silencioso del lector especializado— es otro defecto.
+2. **La cancelación MCP.** `rmcp_adapter.rs:36` mantiene un único
+   `Arc<AtomicBool>` compartido (creado en 57, 138 y 160), y `on_cancelled`
+   (línea 773) hace `store(true)` sin restablecerlo ni asociarlo a la
+   petición concreta. Cancelar una operación puede dejar en cancelado el
+   estado de las siguientes de la misma sesión.
+3. **El catálogo de capacidades.** `ALL_TREE_SITTER_LANGS`
+   (`capabilities.rs:38`) declara 21 entradas y se repite en al menos ocho
+   sitios del mismo fichero, mientras `language_config.rs` tiene
+   configuraciones para Bash, Groovy, Elixir, Haskell, PowerShell, Fortran y
+   JSON. El catálogo y el registro no describen el mismo conjunto.
+
+Y un cuarto hallazgo, que no es un candidato nuevo sino un **desorden**: el
+informe da el corte de release como **P0** y lo pone inmediatamente después
+de la veracidad ("cerrar PR #404 y los defectos de respuesta MCP/IaC,
+publicar el resultado y abordar inmediatamente H23"), mientras la backlog lo
+tenía en el puesto 21 de 22, después de la reescritura del testing y de la
+de la arquitectura. Publicar después de B3 y B4 es publicar un release más
+grande y más difícil de certificar que el que el informe pide.
+
+### Lo que se hizo
+
+- Se registró el delta como tres candidatos nuevos con su evidencia y su
+  criterio de cierre: **C28** (el éxito falso de MCP), **C29** (el ciclo de
+  vida de la cancelación) y **C30** (las capacidades derivadas del
+  registro).
+- Se reencuadró la backlog al orden que fija el informe: B1 veracidad → B2
+  release → B3 economía del testing → B4 arquitectura y ontología → B5
+  incrementalidad. El release (C14) sube de la posición 21 a la 7, detrás
+  de la veracidad; la ontología (C19) baja al bloque B4, donde el informe
+  la sitúa; y `goal-compass.json` reescribe su objetivo para que el orden
+  quede escrito donde la cadena lo lee.
+- Se escribió en el `ROADMAP.md` §11 el reencuadre y los tres hallazgos, sin
+  tocar nada de lo ya cerrado: ese bloque es estado, no historia.
+
+### Lo que no se hizo, y por qué
+
+- **No se reescribieron los bloques cerrados.** El informe propone un
+  roadmap nuevo; el `ROADMAP.md` tiene programas cerrados con su SHA y su
+  recuento de suite, y reabrirlos para que el informe quede escrito sería
+  fabricar progreso. Lo que se reconcilió es el estado hacia adelante.
+- **No se propuso un bloque B2 nuevo.** El release ya existe como C14, con
+  su criterio de cierre (gates sobre un candidato concreto, binarios
+  instalados verificados y tag anotado) y su dependencia de
+  `SPEC-CU-006`. Lo que cambió es su sitio en la cola, no su contrato.
+- **No se publicó nada.** La misión autoriza publicar, pero hace falta
+  autorización explícita del usuario, y el corte de release es además la
+  operación más cara de la lista.
+
+### Evidencia
+
+- `goal-compass.json`: 22 → 25 candidatos; el orden nuevo queda en las
+  prioridades 250 → 10, y `C14` (release) pasa de 30 a 190.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .`
+  → `candidatos: 25 | usables: 25 | descartados: 0 | lista`: la declaración
+  es la que la cadena lee, y la cola no está escrita al revés.
+- Contrato de la declaración: `scripts/ci/test_mission_declaration.py` → 6
+  passed, 0 failed (campos que el cargador lee, evidencia y criterio,
+  orden de la cola, referencias a ficheros reales).
+- Contrato de coherencia del roadmap:
+  `scripts/ci/test_roadmap_open_units_coherence.py` → 4 passed, 0 failed.
+- Contrato del ratchet: `scripts/ci/test_roadmap_version_ratchet.py` → 6
+  passed, 0 failed.
+- Los tres hallazgos, medidos en el árbol:
+  `graph_handlers.rs` líneas 57, 60, 128, 131, 136, 139, 175, 178, 212,
+  215; `rmcp_adapter.rs` líneas 36, 57, 138, 160, 773;
+  `capabilities.rs` líneas 38, 104, 112, 126, 149, 164, 178, 186.
+
+## 2026-10-21 — La cobertura dice lo mismo en caliente que en frío (H24, C25)
+
+### Lo que pasó
+
+`GraphCoverageMetrics` contaba `parsed_files`: los ficheros que el recorrido
+volvió a interpretar. Un fichero recuperado de la caché de ficheros no
+contaba. Dos consecuencias, las dos medidas:
+
+- Un build en caliente —donde todo sale de la caché— informaba de **0 % de
+  cobertura sobre un grafo completo**, mientras el log de la misma etapa
+  decía "N ficheros (0 parseados, N de caché)".
+- El denominador era `files.len()`, el número de ficheros que el recorrido
+  vio, no el de ficheros fuente. Un `README.md` o un `Cargo.toml` nunca
+  iba a estar cubiertos y aun así contaban en el denominador: la cobertura
+  era estructuralmente menor que 100 % en cualquier proyecto con ficheros
+  que no son código.
+
+El campo `total_source_files` se documentaba como "source files", y el
+código contaba todos los ficheros: la implementación contradecía su propio
+contrato publicado.
+
+### Lo que se comprobó antes de tocar nada
+
+- Los tres sitios que construyen la métrica: `analysis_service.rs` en
+  `build_project_graph` (línea 591), en `build_project_graph_filtered`
+  (línea 983) y en `build_project_graph_async` (línea 1296). Los tres
+  repetían la misma expresión del porcentaje a mano: la semántica de la
+  cobertura estaba triplicada.
+- El denominador de cada uno: en la ruta síncrona `files_with_lang` ya se
+  calculaba (línea 234) y no se usaba para la métrica; en las otras dos
+  `files` ya venía filtrada por lenguaje antes de contar.
+- Los consumidores: el diagnóstico de baja cobertura del MCP
+  (`handlers/mod.rs:2073-2088`) publicaba "only {parsed}/{total} files
+  parsed", y `GraphStatsDto.coverage` serializa la métrica entera, así que
+  el DTO es lo que llega al consumidor.
+- Que ningún golden ni contrato fijara el JSON de la cobertura, y que ningún
+  test afirmara sobre la cadena "LOW COVERAGE": se comprobó con grep sobre
+  el árbol y los `.json` del repositorio.
+
+### Lo que se hizo
+
+- **La métrica tiene una sola construcción.** `GraphCoverageMetrics::new()`
+  calcula `covered_files = parsed_files + cached_files` y
+  `coverage_percent = covered_files / total_source_files`. Los tres sitios
+  la llaman; la expresión duplicada desaparece.
+- **El informe separa los tres hechos.** `GraphCoverageMetrics` publica
+  `parsed_files` (interpretados de nuevo), `cached_files` (reutilizados de
+  la caché) y `covered_files` (los que el grafo cubre). Los tres viajan al
+  consumidor, porque la métrica se serializa entera.
+- **El denominador es el de los ficheros fuente.** En la ruta síncrona pasa
+  a ser `files_with_lang`; en las otras dos ya era el número correcto. Un
+  fichero que no se pudo leer o interpretar era candidato y falló: sigue
+  en el denominador y no cuenta como cubierto.
+- **El diagnóstico de MCP dice la verdad.** "only {covered}/{total} files
+  covered" en lugar de "files parsed", porque el porcentaje ya no es el de
+  los interpretados.
+- **El test va primero.** `crates/cognicode-core/tests/cached_coverage_is_honest.rs`
+  sobre el corpus real (`testdata/silent_errors_corpus`), copiado a un
+  temporal para poder dejar un fichero ilegible sin tocar el repositorio.
+  Primero en rojo: no compilaba, porque los campos no existían.
+
+### Lo que no se hizo, y por qué
+
+- **No se cambió el nombre de `parsed_files`.** Es un campo publicado; su
+  significado se mantiene ("interpretados de nuevo") y lo nuevo es la
+  separación, no una redenominación que obligaría a migrar consumidores.
+- **No se tocó `unresolved_edges` ni la semántica de las referencias
+  pendientes.** Eso es SPEC-CU-007 y C24, otra unidad.
+- **No se cambió la caché ni su invalidación.** Es C11 (SnapshotKey), y
+  tocar la caché aquí habría mezclado dos contratos.
+- **No se ejecutó `test-full.sh`.** Un `fast` verde no es evidencia de gate.
+  El gate de verdad es `merge-gate`, y sigue pendiente por la cuota de
+  tmpfs que ya tiene su propio recibo.
+
+### Evidencia
+
+- Test nuevo, en rojo antes y verde después:
+  `cargo test -p cognicode-core --test cached_coverage_is_honest` → **3
+  passed; 0 failed** (`a_file_that_could_not_be_read_is_not_covered`,
+  `the_report_separates_reparsed_from_reused`,
+  `a_warm_build_reports_the_same_coverage_as_a_cold_one`).
+  En rojo, el fallo era de compilación: `no field 'covered_files' on type
+  'GraphCoverageMetrics'`.
+- El test discrimina: con el código anterior, el build en frío daba 100 % y
+  el caliente 0 %, así que la aserción de igualdad entre ambos falla.
+- `cargo check --workspace --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `bash scripts/test-fast.sh` → rc=0, 11 binarios, **4410 passed; 0
+  failed**. El selector cayó en `fallback` (`goal-compass.json` es una ruta
+  que no conoce) y corrió el subconjunto conservador —workspace `--lib` más
+  clippy—, que es lo que corresponde. El propio script advierte que ese
+  subconjunto **no** incluye los tests contractuales de integración
+  (`b5_*`, `b6_*`, `prf_*`): esos son los del gate de release. El test nuevo
+  es de integración, así que su evidencia es la corrida directa de arriba.
+- El test que ya existía y fijaba el criterio del fichero ilegible
+  (`analysis_service.rs`, `w8_unreadable_file_is_silently_dropped`) sigue
+  verde: sigue habiendo 1 fichero parseado tras corromper 2 de 3.
+
+### Estado y siguiente WU
+
+- Unidad: **C25**, cerrada. Los tres criterios de cierre del candidato
+  quedan publicados y con test: la separación de los tres hechos, la
+  cobertura igual en frío y en caliente, y el fichero ilegible que no
+  cuenta como cubierto.
+- Siguiente WU: **C20**, el error del recorrido frente a la exclusión
+  legítima, que es la siguiente unidad de B1 en la cola reenfocada.
+- Bloqueo abierto heredado: el `merge-gate` de la PR #404 sigue en rojo por
+  la cuota de tmpfs, con su propio recibo del 2026-10-21.
+
+## 2026-10-21 — El roadmap de ejecución entra en el roadmap, y una regresión mía que el contrato cazó (H23, H24)
+
+### Lo que pasó
+
+Se recibió el **roadmap de ejecución** del 2026-10-21: seis bloques (B1 grafo
+fiable y MCP seguro, B2 testing rápido y sin duplicidades, B3 ontología y
+arquitectura simplificadas, B4 caché incremental fiable, B5 navegación Kotlin
+sin JVM, B6 relaciones Kotlin↔Java), con candidatos, contratos, paralelismo
+por bloque, ciclo de pruebas y glosario. La petición era ejecutarlo con la
+cadena de goal-compass.
+
+La misión **`cognicode` ya existía**: `mission_status` la devuelve `running`,
+con `driver: plugin`, 24 candidatos utilizables y su backlog en
+`goal-compass.json`. Declararla otra vez habría creado una segunda fuente de
+verdad para la misma agenda —justo lo que este repo prohíbe y lo que la
+propia guía dice: "sin crear otra fuente de planificación"—. La misión no se
+declaró: se **reconcilió** con la guía.
+
+### Lo que se comprobó antes de tocar nada
+
+- **La guía no introduce unidades nuevas.** Sus candidatos (C17, C18, C20,
+  C14, C5, C6, C7, C8, C21, C19, C9, C10, C15, C16, C22, C23, C11, C12, C13)
+  ya estaban en la cola. Lo que cambia es el **recorte por bloques**: el
+  corte de release (`C14`) va **dentro** de B1 y **al final**, no como un
+  bloque aparte.
+- **El orden ya coincide bloque a bloque.** La cola reenfocada es C20, C24,
+  C18, C28, C29, C14 │ C6, C5, C7, C21, C8 │ C19, C30, C9, C16, C10, C26,
+  C15, C27, C22, C23 │ C11 │ C12, C13. Es B1 │ B2 │ B3 │ B4 │ B5 │ B6.
+  Ningún candidato cambia de posición.
+- **Las autoridades que cita la guía existen**, menos una: se comprobó cada
+  ruta. `SPEC-CU-002`, `005`, `006`, `007`, `008`, `009`,
+  `SPEC-KOTLIN-SYMBOLS`, `SPEC-KOTLIN-RELATIONS`, `ADR-K002` (Aplica a: K1),
+  `ADR-K003` (Aplica a: K2), `ADR-CU-004` y `ADR-029` están versionadas.
+  `ADR-D1-006` **no está** en ninguna parte del árbol (nota 2).
+- **El bypass de permisos MCP no está abierto** (nota 1).
+- **El corte de release no cuelga de H5.** `SPEC-CU-006` no lo menciona como
+  prerrequisito: sus ocho puntos hablan del manifiesto, del canal del SDK, de
+  la compatibilidad N−1, del RC sobre SHA limpio, de la cadena de pipelines,
+  de las capas de test, de la retirada de pruebas efímeras y del changelog.
+  La frase de §11 que lo colgaba de H5 era incorrecta y se corrigió.
+
+### Lo que se hizo
+
+- El **objetivo de la misión** se reescribió con los seis bloques y con lo
+  que cada uno entrega. La backlog no cambió de orden ni de candidatos.
+- `ROADMAP.md` §11.1 recoge la tabla de bloques con sus candidatos y la
+  **autoridad de cada uno por ruta completa** —la ruta y no el nombre, porque
+  bajo `docs/` hay dos `ADR-K002.md` y sólo uno está versionado—, el
+  paralelismo por bloque, el ciclo común de pruebas, y las dos notas.
+  §11.2 recoge el glosario.
+- `CURRENT.md` pasa de su tabla de hitos a la tabla de bloques, para que el
+  snapshot y el roadmap hablen el mismo idioma.
+- Se corrigió la frase que colgaba el release de H5.
+
+### Una regresión que este turno había dejado suelta
+
+El turno anterior añadió 18 líneas al párrafo de estado de §11 y **rompió**
+`scripts/ci/test_roadmap_authority_attribution.py`: ese párrafo tenía 80
+líneas —su techo, exacto— y pasó a 98. No se vio porque se corrieron tres
+de los cuatro contratos de roadmap y no el cuarto, y porque el modo `fast`
+cae en `fallback` cuando el diff toca `goal-compass.json`, con lo que corre
+`workspace --lib` más clippy y **no** corre los contratos de `scripts/ci/`.
+Esos contratos sólo corren en `scripts/test-full.sh` y en el `merge-gate`, y
+el `merge-gate` sigue pendiente por la cuota de tmpfs. Es decir: el cambio
+del turno anterior **nunca llegó a un gate**.
+
+La corrección no fue comprimir el párrafo para que quepan dieciocho líneas
+más. El material nuevo vive en §11.1, **fuera** de la ventana que el
+contrato escanea, y el párrafo de estado vuelve a sus 80 líneas. El techo
+está declarado en el propio contrato como condición, no como estilo: sin
+él, el contrato deja de poder afirmar nada y "prefiere callarse a mentir".
+
+### Lo que no se hizo, y por qué
+
+- **No se declaró una segunda misión.** La misión existe y corre; el trabajo
+  era reconciliarla con la guía, no duplicarla.
+- **No se reescribieron bloques cerrados.** H0, H1, H2, H4, H17–H22 y la poda
+  documental siguen en el Journal con su SHA y su recuento.
+- **No se ejecutó B1 entero.** Este turno integra la guía y deja la cola
+  alineada; el primer candidato sigue siendo **C20**, y su trabajo es el
+  siguiente.
+- **No se volvió a tocar el producto.** Este turno es de roadmap.
+
+### Evidencia
+
+- `mission_status` → misión `cognicode`, `running`, `driver: plugin`, 24
+  candidatos utilizables. No se llamó a `mission_declare`.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .` →
+  `candidatos: 24 | usables: 24 | descartados: 0 | lista`.
+- Contratos de roadmap, **los cuatro**:
+  `test_roadmap_authority_attribution.py` → 2 passed;
+  `test_roadmap_open_units_coherence.py` → 4 passed;
+  `test_roadmap_version_ratchet.py` → 6 passed;
+  `test_mission_declaration.py` → 6 passed.
+- Bloque de cita de §11: 80 líneas antes de este turno, 98 después del
+  anterior, **80** ahora. El contrato que mide ese techo es
+  `scripts/ci/test_roadmap_authority_attribution.py` (techo declarado en
+  `MAX_BLOCK_LINES = 80`).
+- Nota 1 — la garantía y su test:
+  `crates/cognicode-core/tests/b5_w3_apply_with_authority.rs:348`;
+  `crates/cognicode-core/src/interface/mcp/schemas.rs:334-337`;
+  `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:420-425` y
+  `117-124`; etapa `core-unrestricted-evidence-kernel` en
+  `merge-gate.pipeline.kts:482`, que pasó en la corrida `c63b6af4` del
+  2026-10-21.
+- Nota 2 — la cita que no abre:
+  `docs/adr/ADR-D1-006-uat-retirement.md` existió en `08c9bd59` y `73e6c67c`
+  y lo retiró la poda documental (PR #399); la decisión vive en el recibo
+  del Journal del 2026-10-15, "Retirada de la clase UAT (ADR-TH-006)".
+
+### Estado y siguiente WU
+
+- Unidad: **integración del roadmap de ejecución** en la misión y en los
+  libros del repo. La cola queda en 24 candidatos con el orden B1–B6.
+- SHA: este commit.
+- Gates: los cuatro contratos de roadmap en verde. El `merge-gate` sigue
+  pendiente por la cuota de tmpfs, con su propio recibo.
+- **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
+  legítima —la primera unidad de B1 en la cola—, ya propuesto con
+  `mission_propose`.
+
+## 2026-10-21 — La cadena se arma, y su comando de árbol estaba roto (H24)
+
+### Lo que pasó
+
+Se ejecutó el primer paso de la skill goal-compass: `mission_declare` con la
+identidad `cognicode` y el objetivo de los seis bloques. La respuesta fue la
+que corresponde: **"Ya había una misión declarada: cognicode (no se ha
+tocado)"**, con el objetivo leído del fichero, el directorio de trabajo
+`.goal-compass` y la cadena de objetivos intacta.
+
+Pero el comando que valida el árbol de decisión de la cadena —`goal-compass
+tree --workspace .`— **fallaba**:
+
+    ERROR ENOENT: no such file or directory, scandir
+    '/var/home/rubentxu/.minimax/plugins/goal-compass/skill/goal-compass/graph'
+
+La cadena podía encadenar —lee la declaración y la cola—, pero su propio
+árbol no se cargaba.
+
+### Lo que se comprobó antes de tocar nada
+
+- Que la declaración no se había tocado: `sha256sum` del fichero y del
+  respaldo, idénticos; `mission_declare` lo dice y se comprueba.
+- Por qué fallaba el árbol. `resolveSkillSource()` (`dist/cli.js:410-418`)
+  prueba tres rutas: `dist/../skill/goal-compass`,
+  `dist/../../skill/goal-compass` y `cwd/skill/goal-compass`. **Ninguna
+  existe**: la copia empaquetada del plugin (`plugins/goal-compass/skill/`)
+  falta, y la tercera es una ruta del proyecto que nunca se creó.
+- Que la skill sí está instalada donde el catálogo la lee:
+  `~/.minimax/skills/goal-compass/` con `SKILL.md` y `graph/`. O sea: el
+  árbol es legible por el agente, y lo que faltaba era la copia de origen
+  que el CLI busca.
+- Que `.goal-compass/` en el proyecto es el **directorio de trabajo** del
+  plugin —ignorado por git en `.gitignore:287`—, no un árbol del proyecto:
+  `treeDirFor` (`dist/adapters/workdir.js:75-81`) sólo lo usa si tiene
+  ficheros `.md`, y no tiene ninguno. Por eso el árbol que vale es el de la
+  skill, y por eso la reparación no es escribir un árbol nuevo.
+
+### Lo que se hizo
+
+Se restauró la copia de origen que el plugin sondea, copiando la skill
+instalada a `~/.minimax/plugins/goal-compass/skill/goal-compass`. Es la
+operación inversa de `goal-compass install-skill`, que copia de origen a
+destino; y es **aditiva**: crea un directorio que no existía, con contenido
+que ya estaba en la máquina.
+
+Con eso, la cadena valida su propio árbol de decisión:
+
+    arbol: .../plugins/goal-compass/skill/goal-compass/graph (de la skill)
+    entrada: index
+    nodos: 13 (11 de agente, 2 de control)
+    enlaces: 66
+    el arbol no tiene problemas
+
+Y `goal-compass probe --workspace .` confirma que la extensión de Goal del
+host está verificada.
+
+### Lo que no se hizo, y por qué
+
+- **No se ensambló el plugin desde el marketplace.** `goal-compass
+  install-plugin` reconstruye el plugin y pide volver a registrarlo con
+  `mcode plugin add`, que puede tumbar una instalación que funciona. La
+  reparación mínima era la copia de un directorio que faltaba.
+- **No se escribió un árbol de proyecto** en `.goal-compass/`. El árbol de
+  la skill cubre las fases, y escribir otro sería una segunda fuente de
+  verdad sobre cómo se navega.
+- **No se volvió a tocar el roadmap.** La integración de los seis bloques ya
+  está en `58729896`: §11.1 con la tabla de bloques, la autoridad de cada
+  uno por ruta completa, el paralelismo y las dos notas medidas; §11.2 con
+  el glosario; `CURRENT.md` con la tabla de bloques; y el objetivo de la
+  misión reescrito con los seis.
+
+### Evidencia
+
+- `mission_declare` → "Ya había una misión declarada: cognicode (no se ha
+  tocado)". `sha256sum` del fichero y del respaldo: `48836b29…`, el mismo.
+- `goal-compass status --mission cognicode` → `running`, `conduce: plugin`,
+  1 objetivo creado.
+- `goal-compass doctor --workspace .` → `candidatos: 24 | usables: 24 |
+  descartados: 0 | lista`.
+- `goal-compass tree --workspace .` → entrada `index`, 13 nodos, 66
+  enlaces, sin problemas.
+- `goal-compass probe --workspace .` → "extension de Goal verificada en el
+  host".
+- Antes de la reparación, el mismo comando devolvía `ERROR ENOENT` sobre
+  `/var/home/rubentxu/.minimax/plugins/goal-compass/skill/goal-compass/graph`.
+
+### Estado y siguiente WU
+
+- Misión `cognicode`: **declarada, corriendo, con su cadena armada y su
+  árbol validado**. El objetivo nombra los seis bloques; la cola tiene 24
+  candidatos en el orden B1–B6; el primero es **C20**.
+- Cambios fuera del repositorio: la copia de la skill en
+  `~/.minimax/plugins/goal-compass/skill/goal-compass/`. Una actualización
+  del plugin puede volver a borrarla.
+- **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
+  legítima, ya propuesto con `mission_propose`.
+
+## 2026-10-21 — El error del recorrido y la exclusión legítima son dos cosas (H24, C20)
+
+### Lo que pasó
+
+El inventario que decide de qué ficheros se construye el grafo recorría el
+árbol así:
+
+```rust
+for entry in contained_ignore_walk(project_dir)...build()
+    .filter_map(|e| e.ok())     // el error del recorrido, descartado
+```
+
+y medía cada fichero con `std::fs::metadata(path).ok()`, que convierte un
+fichero que no se puede medir en `mtime 0, size 0` — y lo publica como si
+estuviera medido.
+
+Medido sobre un repo con un `main.rs` y un directorio ilegible
+(`chmod 0o000`), con las tres rutas que caminan el repo:
+
+```text
+sync=Complete | per_file=Complete | async=Complete
+```
+
+Las tres publicaban `Complete`. El grafo no describía lo que había detrás
+del directorio ilegible, y el reporte no decía nada. Es la misma clase de
+mentira que un `Complete` sobre un repo con un hueco real: una afirmación
+de completitud que nada respalda.
+
+La otra mitad del defecto era de vocabulario. El inventario sólo distinguía
+«fichero con lenguaje» de «fichero sin lenguaje», y con la clasificación
+que ya existe (`WalkClassification`: `Analyze | KnownUnsupportedGap |
+LegitExclusion`) un README y un `.kt` eran exactamente la misma cosa. El
+clasificador tenía un dueño —`classify_walk_extension`—, pero el inventario
+no lo aplicaba: lo aplicaban las rutas de construcción, cada una con su
+copia. En el inventario, una exclusión legítima y un hueco real no se
+podían distinguir, y el contrato CU-007.5 dice justo lo contrario: «Un
+fichero que no se pudo inspeccionar no es un fichero excluido: se cuenta
+aparte, con su motivo, y no desaparece del inventario».
+
+### Lo que se comprobó antes de tocar nada
+
+- El recorrido del inventario (`source_files.rs`): `filter_map(|e| e.ok())`
+  sobre el `WalkBuilder` de `ignore`, y `std::fs::metadata(path).ok()` como
+  medida.
+- Los tres recorridos del repo y quién los usa. La síncrona
+  (`build_project_graph`) es la del producto: la llaman `handle_build_graph`,
+  `consolidated_handlers` y la orden de la CLI. La asíncrona
+  (`build_project_graph_async`) la llama el handler de AIX. La per-file
+  (`build_graph_per_file_with_report`) sólo la usan tests. Las tres
+  descartaban el error del recorrido.
+- Que la clasificación tiene un solo dueño y que no puede discrepar del
+  registro: `classify_walk_extension` decide con `Language::from_extension`,
+  e `infrastructure::parser::Language` es un re-export de
+  `domain::value_objects::Language` — el mismo registro que lee
+  `SourceFile::language`.
+- Que el hueco de K0 (`.kt`, `.kts`) está fuera del registro a propósito, y
+  que `FileDisposition` tiene cinco variantes fijadas por AC-01 y un test
+  que las cuenta: un error de recorrido tiene que proyectarse sobre una
+  de las cinco, no sobre una sexta.
+- Que el DTO de MCP publica el motivo como `reason_kind` y como
+  `SkippedReasonKind`, y que ninguno de los dos tiene un vocabulario
+  cerrado fuera del código.
+
+### Lo que se hizo
+
+- **El error del recorrido es un error, y el inventario lo cuenta.**
+  `SourceInventory` gana `errors: Vec<SkippedFile>`. El recorrido ya no
+  descarta sus errores, y un fichero que entrega pero no se puede medir
+  pasa a `errors` en vez de publicarse con `mtime 0, size 0`.
+- **La taxonomía nombra el caso.** `SkipReason::Walk(String)`, con su
+  proyección en `FileDisposition` sobre `ReadFailed`: un fallo *nombrado*
+  afecta al `BuildStatus`, al revés que `Other`, que es el «no sé qué es»
+  honesto. El esquema MCP publica `SkippedReasonKind::Walk` con el mismo
+  criterio aditivo que ya tenía `Symlink`: su propia etiqueta, porque se
+  puede nombrar con precisión.
+- **El inventario dice cuál de las dos es cada cosa.** `known_gaps()` (el
+  hueco real, con su razón) y `legit_exclusions()` (la decisión) son dos
+  vistas de los mismos ficheros, clasificadas por el clasificador que es su
+  dueño. El hueco ya no lo decide una copia del clasificador dentro de la
+  ruta de construcción: esa copia se borró.
+- **Las tres rutas cuentan el error.** La síncrona publica
+  `inventory.errors`; la per-file y la asíncrona capturan los errores de su
+  propio recorrido y los publican en su `BuildReport`.
+- **Los tests van primero, y en dos ficheros porque son dos cosas.** El
+  primero (`tests/walk_errors_are_errors.rs`) usa sólo API que ya existía,
+  así que su rojo fue de aserción y no de compilación: las tres rutas
+  decían `Complete`. El segundo (`tests/inventory_says_which_is_which.rs`)
+  fija la clasificación, y su rojo fue de compilación: el inventario no
+  tenía forma de decirlo. Los tres `doneWhen` del candidato quedan
+  cubiertos: el error llega al informe de construcción, la exclusión
+  legítima sigue siendo exclusión, y un test que provoca un error de
+  recorrido lo ve en el inventario.
+
+### Lo que no se hizo, y por qué
+
+- **No se unificó el recorrido de las tres rutas en uno solo.** Eso es B3
+  («una sola autoridad de construcción») y cambiaría el comportamiento de
+  las tres rutas de golpe. Aquí cada ruta cuenta su propio error.
+- **No se cambió `FileDisposition`.** Sigue con las cinco variantes que
+  fija AC-01; un error de recorrido se proyecta sobre `ReadFailed`, que ya
+  existía.
+- **No se hizo un test de integración para el fichero que no se puede
+  medir.** El sistema de ficheros sólo falla al medir un fichero si
+  desaparece entre la lectura y el `stat`, y eso no es reproducible sin una
+  carrera. Lo que sí se fija es la *decisión*, con un test unitario en
+  `source_files.rs`. Afirmar que esa rama está cubierta por un test de
+  integración sería inventar cobertura.
+- **No se ejecutó el `merge-gate`.** Sigue bloqueado por la cuota de tmpfs,
+  con su propio recibo en este Journal.
+
+### Lo que salió del paso: el contrato de comentarios ya estaba rojo
+
+`scripts/ci/test_comment_standard.py` es un ratchet: el código no puede
+citar tarea, decisión, PR ni fecha — eso vive en el Journal. Al medirlo
+sobre el árbol de este cambio, el ratchet pedía +7 líneas ofensivas. La
+atribución se hizo con un worktree sobre el commit anterior:
+
+- **+1 ya estaba antes de este cambio**, y no es de esta unidad: la
+  cabecera de `crates/cognicode-core/tests/cached_coverage_is_honest.rs` y
+  una fecha en `crates/cognicode-cli/tests/prf_f6_w1_release_coherence.rs`,
+  ambas de commits anteriores de esta misma rama.
+- **+6 eran de este cambio**: cinco comentarios míos que citaban la unidad
+  y la fecha, y una copia del clasificador que además era una segunda
+  fuente de verdad.
+
+Los seis se reescribieron para que expliquen el código sin citar el papel,
+y los dos heredados también: sin eso el contrato de la rama seguiría en
+rojo, y un gate rojo no informa de nada.
+
+### Evidencia
+
+- Test nuevo en rojo, por aserción:
+  `cargo test -p cognicode-core --test walk_errors_are_errors` → **3 failed;
+  0 passed**, con la medición `sync=Complete | per_file=Complete |
+  async=Complete`.
+- Test nuevo en rojo, por compilación:
+  `cargo test -p cognicode-core --test inventory_says_which_is_which` → no
+  compila: `no field 'errors' on type 'SourceInventory'` (×3), `no method
+  named 'known_gaps'` (×2), `no method named 'legit_exclusions'` (×2), `no
+  variant ... named 'Walk'`.
+- En verde: los dos ficheros, **6 passed; 0 failed**, más los dos tests
+  unitarios de `source_files.rs`.
+- Los contratos que tocan esta taxonomía y estas rutas, en verde:
+  `h11_unified_classification_contract` (10), `h16_walk_classification_coherence`
+  (4), `h13_analysis_service_propagation` (5),
+  `graph_walk_stays_inside_the_root` (9), `cached_coverage_is_honest` (3),
+  `h21_one_semantics_for_the_product_graph` (3),
+  `h14_system_holds_end_to_end` (4).
+- `cargo check -p cognicode-core --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `scripts/ci/test_comment_standard.py` → **6 passed; 0 failed**. Antes:
+  5 passed, 1 failed, con `+1` de deuda heredada; con los comentarios de
+  este cambio, `+7`.
+- `bash scripts/test-fast.sh` → rc=0. El selector eligió la suite `core`
+  (`core_changed`): 2376 passed; 0 failed; 2 ignored, clippy `-D warnings`
+  limpio y la línea base de fallos conocidos con 0 entradas.
+- `bash scripts/test-full.sh c20` → **rc=0**: fmt, clippy `-D warnings`,
+  `cargo test --workspace`, doc-tests, los contratos y la línea base. La
+  primera corrida de este gate salía en **rc=1** por la etapa de
+  contratos: el ratchet de comentarios pedía `+7`. Con los comentarios
+  reescritos, los contratos dan `OK: contracts`.
+
+### Estado y siguiente WU
+
+- Unidad: **C20**, cerrada. SHA de la unidad: `b2634ed6`, sobre la base de
+  medición `15c04fea`. Los tres criterios de cierre del candidato quedan
+  publicados y con test.
+- Resultado: un error del recorrido se cuenta como error en las tres rutas,
+  una exclusión legítima sigue siendo una exclusión, y el inventario
+  publica las tres cosas por separado.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el árbol de este cambio. El
+  `merge-gate` sigue pendiente por la cuota de tmpfs, con su propio recibo.
+- Siguiente WU: **C24**, las superficies por fichero que no dicen qué
+  referencias no ataron.
+
+## 2026-10-21 — La cola del journal y la del repo divergían (H24, C24)
+
+### Lo que pasó
+
+Al cerrar C20, la cola del repo (`goal-compass.json`) quedó en 23 candidatos
+con C24 al frente. Pero la cadena no encadena desde el fichero: encadena
+desde el **journal durable**, que vive en el hogar del usuario
+(`~/.local/state/goal-compass/cognicode/journal.json`).
+
+MEDIDO, simulando exactamente lo que hace el supervisor (`supervisor.js:156`
+con el re-siembra de `runtime.js:141`):
+
+```text
+fichero -> candidatos: 23 | cabeza: C24
+tras el re-siembra, candidatos que ve la cadena: 53
+  230 C24 | Que las superficies por fichero publiquen las referencias...
+  220 C18 | Que `iac_query` conteste con los metadatos reales...
+  210 C28 | Que el adaptador MCP deje de comunicar un fallo...
+```
+
+Sin ese re-siembra, la lista que ve la cadena empezaba por **C20**, que ya
+está cerrada: la cadena habría reencadenado trabajo hecho. Es el mismo
+fallo que se corrigió para C25, y por el mismo motivo — una unidad cerrada
+no puede seguir en la cabeza de la cola.
+
+La causa está medida y es del **port de candidatos**, no del repo:
+`MissionConfigCandidatePort.discover` (`adapters/candidates.js:18`) llama a
+`loadMissionConfig(this.configPath)` **sin** el `workspace` que el cargador
+exige, y el fichero del repo no lo declara; la llamada falla y el port cae
+al `mission.backlog` del journal. El fichero se lee bien por el camino del
+localizador (`mission-locator.js:53`), que sí pasa el workspace.
+
+### Lo que se hizo
+
+Se resincronizó el `mission.backlog` del journal con la cola del repo, que
+es lo mismo que hace `openMission` al arrancar: se copia el backlog del
+fichero y **no se toca nada más** —ni los goals, ni las intenciones, ni el
+progress, ni el estado de la misión—. La escritura es atómica (fichero
+temporal y `rename`), la misma técnica que usa el propio plugin, y el
+supervisor relee el journal del disco en cada ciclo, que es justo para esto:
+*"el journal se relee del disco en cada ciclo: el supervisor es su único
+escritor, pero el usuario puede editarlo y el estado debe reflectirse"*.
+
+Verificado después: `mission_status` muestra C24 al frente y C20 ya no
+aparece en el trabajo disponible.
+
+### Lo que no se hizo, y por qué
+
+- **No se tocó el plugin.** El arreglo de raíz es pasar el workspace al port
+  de candidatos, que es una línea en `dist/` compilado: se pierde en la
+  próxima actualización del plugin y no se puede probar con un contrato del
+  repo. Queda anotado para el operador.
+- **No se puso una ruta absoluta en `goal-compass.json`.** Declarar el
+  workspace ahí arreglaría el port, pero metería una ruta de esta máquina
+  en un fichero que se comparte.
+
+### Evidencia
+
+- Journal antes: `mission.backlog` con 24 candidatos, cabeza `C20`.
+  Journal después: 23 candidatos, cabeza `C24`. `intents` (1), `goals` (0) y
+  `progress.goalId` (`tg_w5m97eimqcmvhr8oz7`) conservados.
+- `mission_status` tras el cambio → el trabajo disponible empieza por C24 y
+  C20 no aparece.
+- `goal-compass doctor --workspace .` → 23 candidatos, 23 usables, 0
+  descartados.
+
+### Estado y siguiente WU
+
+- Siguiente WU: **C24**, las superficies por fichero que no dicen qué
+  referencias no ataron. Ya está en la cola del repo, en la cabeza, y en el
+  registro de propuestas de la misión.
+
+## 2026-10-21 — Las superficies por fichero dicen lo que no ataron (H24, C24)
+
+### Lo que pasó
+
+El grafo por fichero sabe qué referencias no ató: la caché las guarda en la
+entrada (`FileGraphCacheEntry.pending`) y `merge_with_report` las publica en
+el `BuildStatus`. Pero `build_local_graph` devolvía **solo el grafo**, y de
+ahí el manejador `get_per_file_graph` del MCP y la orden `graph per-file` de
+la CLI respondían con símbolos y dependencias sin decir nada de ellas.
+
+MEDIDO sobre el fixture real de Terraform (`sandbox/fixtures/terraform-iac`),
+con el grafo por fichero de `main.tf`:
+
+```text
+pending: 37
+  origin=.../main.tf line=Some(24) target=var.environment kind=References class=Unresolved
+  origin=.../main.tf line=Some(23) target=var.vpc_cidr   kind=References class=Unresolved
+  ...
+```
+
+El fichero enuncia 37 referencias que la caché conoce y que el grafo del
+fichero no puede atar: su declaración vive en `variables.tf`. Las dos
+superficies por fichero las respondían como **cero** referencias
+pendientes, que es lo mismo que decir que el fichero no enuncia ninguna.
+
+### Lo que se comprobó antes de tocar nada
+
+- Que la caché guardaba las referencias pendientes y que `merge_with_report`
+  las publicaba: el dato existía y se perdía en el camino corto.
+- Que el acierto de caché también las perdía: `get_or_build` servía el grafo
+  cacheado y tiraba las pendientes, justo lo que el propio comentario de la
+  entrada de caché advertía ("una entrada servida sin ellas respondería
+  «completo» sobre un fichero cuyas referencias no están atadas").
+- Que una **llamada** sin declarar no es un hueco (lo que el código llama
+  puede vivir fuera del proyecto), y que por eso el fixture tiene que ser de
+  una clase que sí cuenta: una *referencia* (`dependency.references`), como
+  la que el lector de Terraform extrae de `var.ami_id`.
+- Que el puerto `GraphStrategy` no está publicado: ningún crate del
+  workspace declara `publish = true`, y sus dos únicos consumidores en
+  producción eran justamente las dos superficies de esta unidad. El
+  explorador no lo usa.
+- Que ya existe un vocabulario para esto: `PendingReferenceInfo` y el nombre
+  `pending_references` los usan el grafo completo y `MergeCoverage`. El
+  nombre nuevo es ese, no otro.
+
+### Lo que se hizo
+
+- **La caché deja de tirar lo pendiente.** `get_or_build` devuelve ahora el
+  grafo y las referencias, con la misma forma que su hermana `get_cached`, y
+  el acierto de caché las conserva.
+- **El puerto las devuelve.** `GraphStrategy::build_local_graph` entrega el
+  grafo y las referencias que el fichero enuncia y nadie declaró. Las
+  estrategias que no miden las referencias devuelven una lista vacía, y su
+  documentación lo dice: la verdad ahí es "no lo miró", no "no hay ninguna".
+- **La superficie del MCP las publica.** `GetPerFileGraphOutput` gana
+  `pending_references` y `pending_reference_count`, con el origen (fichero y
+  línea), el nombre, el tipo y el motivo de cada una.
+- **La superficie de la CLI las publica.** `GraphResult::PerFile` las lleva,
+  el JSON las trae, y el modo texto las escribe por stderr con el mismo
+  formato que usa el grafo completo (`Pending: fichero:línea -> destino
+  (motivo)`). La salida por stdout sigue siendo el bloque de tres líneas de
+  siempre: no se movió un byte.
+
+### Lo que no se hizo, y por qué
+
+- **No se unificó la cobertura del grafo del fichero con la del proyecto.**
+  La del proyecto mide lo que el proyecto entero ata; la del fichero mide
+  lo que ese fichero ata. Son preguntas distintas y las dos se responden
+  con su propio alcance. Lo que se corrigió es que la segunda existe y se
+  publica.
+- **No se cambió el grafo completo ni `MergeCoverage`.** Ya publicaban las
+  referencias pendientes; el hueco estaba sólo en las superficies por
+  fichero.
+- **No se tocó la salida de texto por stdout.** El bloque de tres líneas
+  tiene su byte stream fijado; las referencias van por stderr, como las del
+  grafo completo.
+- **No se ejecutó el `merge-gate`.** Sigue bloqueado por la cuota de tmpfs,
+  con su propio recibo en este Journal.
+
+### Evidencia
+
+- Test nuevo en rojo: `per_file_surfaces_publish_pending_references.rs` →
+  **3 failed; 0 passed**. Los tres por aserción y no por compilación: las
+  dos superficies publicaban una lista vacía, y la tercera no tenía nada
+  que comparar.
+- En verde: el mismo fichero, **3 passed; 0 failed**.
+- Ejecución real de la CLI sobre el fixture real:
+  `cognicode graph per-file sandbox/fixtures/terraform-iac/main.tf` →
+  stdout con las tres líneas de siempre (`Symbols: 19`,
+  `Dependencies: 17`) y **37** líneas `Pending: … -> … (Unresolved)` por
+  stderr. Con `--format json`: `"pending_references": 37`, y la primera con
+  `file`, `line`, `target`, `kind` y `reason`.
+- Contratos que rozan el puerto, la caché y el wire, en verde:
+  `h01_content_identity_contract` (9),
+  `h01_per_file_cache_invalidate_contract` (1),
+  `h12_strategies_propagate_build_report` (1),
+  `h14_system_holds_end_to_end` (5),
+  `h16_walk_classification_coherence` (4),
+  `h21_one_semantics_for_the_product_graph` (4),
+  `graph_walk_stays_inside_the_root` (3), `t1_5_4_graph_result_serde` (12),
+  `b2_w2_catalog_parity` (5), `b2_w3_output_schema_contract` (12),
+  `mcp_newly_dispatched_tools` (6).
+- `cargo check --workspace --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `scripts/ci/test_comment_standard.py` → 6 passed; 0 failed.
+- `bash scripts/test-fast.sh` → **rc=0**: 2378 passed; 0 failed; 2 ignored,
+  clippy `-D warnings` limpio y la línea base con 0 entradas.
+- `bash scripts/test-full.sh c24` → **rc=0**: fmt, clippy, workspace,
+  doc-tests, contratos y línea base.
+
+### Estado y siguiente WU
+
+- Unidad: **C24**, cerrada. SHA de la unidad: `d059779e`, sobre la base de
+  medición `9ce9df59`. Los tres criterios de cierre del candidato quedan
+  publicados y con test: las dos superficies publican las referencias
+  pendientes con su origen y su motivo, un fichero con una referencia sin
+  atar no se presenta como un fichero sin referencias, y las dos superficies
+  dicen lo mismo sobre el mismo fichero.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el árbol de esta unidad. El
+  `merge-gate` sigue pendiente por la cuota de tmpfs.
+- Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
+  la arista y la profundidad que le corresponden.
+
+## 2026-10-21 — El gate que estaba rojo por el disco sale verde (H24)
+
+### Lo que pasó
+
+El `merge-gate` llevaba varias sesiones en rojo, y el recibo lo había
+clasificado como **INFRASTRUCTURE**: la etapa 32 (`cognicode-ladybug`)
+moría con `Disk quota exceeded (os error 122)` porque el gate construye en
+un `CARGO_TARGET_DIR` bajo `/tmp`, que es un tmpfs con una cuota de usuario
+de 38 570 M. El fallo no era del producto, pero tampoco dejaba pasar nada:
+sin gate verde, el trabajo no entra en `main`.
+
+En esta sesión la cuota estaba libre: `quota -s` → 2 868 M usados de
+38 570 M, y `df -h /tmp` → 48 G de tamaño. Se re-ejecutó el gate entero, sin
+cambiar una sola línea de su configuración.
+
+MEDIDO, con el journal del propio pipeline como fuente:
+
+```text
+corrida a8aeb3b4-fb8c-4a6c-a6d3-607859de13cb
+etapas: 56 | success: 56 | fallos: 0
+etapa 32 (cognicode-ladybug) -> success
+[stage: merge-gate] -> success
+Pipeline finished with SUCCESS
+```
+
+La etapa 32 es exactamente la que moría por la cuota, y ahora pasa. Las 56
+etapas del `merge-gate.pipeline.kts` salen en `success`, incluidas la de
+`core-unrestricted-evidence-kernel` y la de `e91-w7-regression-budget`.
+
+### Lo que no se hizo, y por qué
+
+- **No se movió el `CARGO_TARGET_DIR` a `/var/home`.** El aislamiento por
+  checkout que da ese directorio es deliberado —dos checkouts del repo
+  comparten la caché de cargo y una build de uno puede parecer la de otro—,
+  y la cuota dejó de ser un problema sin tocarlo. Cambiar la ruta para
+  arreglar un síntoma que ya no existe habría roto una garantía.
+- **No se podó `/tmp` a ciegas.** Ahora no hacía falta: el gate constructs
+  en su propio directorio y la cuota estaba libre.
+
+### Lo que sigue pendiente
+
+- El gate **pasó**, pero su publicación a GitHub dio `HTTP 422`: el SHA
+  `f0550db8` todavía no existe en el remoto, porque la rama
+  `fix/pending-references-are-facts` no se ha subido. El veredicto es
+  local y real; su publicación necesita el commit en el remoto, y eso es
+  una decisión del operador.
+- La PR #404 sigue abierta y sin integrar.
+
+### Estado y siguiente WU
+
+- Gates de la unidad **C24**: `fast` rc=0, `full` rc=0 y `merge-gate`
+  **PASS** (56/56 etapas) sobre el árbol de `f0550db8`.
+- Bloqueo de infraestructura de la cuota de tmpfs: **cerrado por medición**,
+  no por cambio de configuración.
+- Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
+  la arista y la profundidad que le corresponden. Ya está en la cabeza de la
+  cola del repo y en la del journal, con su propuesta registrada.
+
+## 2026-10-21 — La consulta de infraestructura contesta con la arista que tiene (H24)
+
+### Lo que pasó
+
+La herramienta que responde sobre infraestructura publicaba a los dependientes
+siempre como `references` con una confianza de `1.0`, sin mirar la arista que
+los une. Medido sobre el fixture de Terraform: el grafo guarda **106 aristas**
+con su tipo y su confianza, y las inversas en un conjunto de identificadores
+que no los conserva — el tipo y la confianza de verdad no estaban ahi. La
+profundidad era un tope de resultados (`take(depth * 10)`), asi que con
+`depth: 1` y con `depth: 2` salia exactamente lo mismo. Y un nombre que
+respondia por mas de una declaracion se resolvia con `first()`.
+
+Cuatro defectos, cuatro mediciones:
+
+- Los dependientes se publicaban con `edge_type` y `confidence` constantes
+  (`consolidated_handlers.rs`, el bloque que leia `graph.dependents()`).
+- `depth` multiplicaba por diez y se queda con los primeros: no era una
+  distancia sino una cuota.
+- El grafo perdia los metadatos de las aristas inversas al guardarlas en un
+  `HashSet` de identificadores; las salientes si los tienen.
+- Un nombre ambiguo se resolvia por el primero que aparecia.
+
+El dominio gana la contracara de las aristas que entran con sus metadatos
+(`incoming_dependencies_with_metadata`) y el recorrido por distancia que las
+dos direcciones comparten (`dependencies_within_depth` y
+`dependents_within_depth`). La profundidad es ahora el numero de saltos que
+se caminan: sobre `module.compute`, un salto da **9** relaciones y dos saltos
+dan **16**.
+
+Las relaciones cargan el tipo, la procedencia y la confianza que su arista
+tiene. La forma publicada cambia: `confidence` pasa de `f64` a `Option<f64>`
+—una arista sin confianza se dice desconocida, no se invierte en `1.0`— y la
+relacion gana `provenance: Option<String>`. El grafo **no cambia de forma en
+disco**: el blob bincode y su shim `CallGraphV1` siguen igual, porque el
+arreglo es aditivo.
+
+Un nombre que responde por mas de una declaracion se declara ambiguo y pide
+la identidad canonica. Medido en el fixture: `var.environment` lo declaran
+**tres** ficheros, `var.instance_type` **dos**, y cuatro salidas lo declaran
+dos veces.
+
+**El gate completo se puso rojo en su primera etapa.** El codigo nuevo no
+estaba en la forma que rustfmt produce, y el gate de la bateria rapida no
+mira esa etapa: el `fast` estaba verde y el `full` no. El arreglo fue un
+commit aparte (`9f64aed4`) que solo mueve el codigo a esa forma —nueve lineas
+menos y once mas— y no cambia lo que hace nada de lo que hay ahi. La leccion
+es la de siempre: un gate que no mira una etapa no puede decir que el arbol
+esta en forma; lo dice el gate que si la mira.
+
+### Lo que no se hizo, y por qué
+
+- **No se regeneró el catálogo entero.** El generador reconstruye el documento
+  desde la captura y borra los campos de autoria manual que el operador
+  escribe a mano —`limitations`, `prerequisites`, `follow_ups`,
+  `required_args`—. Ademas cambiaria los titulos de cinco herramientas y los
+  perfiles publicos de dos, y eso es otro hallazgo. Se actualizo solo el
+  `iac_query`, con el `outputSchema` que publica el runtime real.
+- **No se unifico el camino PostgreSQL.** `IacRepository` no tiene ninguna
+  implementacion en el arbol, asi que la rama es inalcanzable. Se le dio la
+  forma nueva —la confianza que el repositorio no tiene se dice
+  desconocida, no `0.0`— y su semantica de profundidad es la unidad de
+  CU-008.5, que es otra.
+- **No se toco la profundidad del camino PostgreSQL.** Mismo motivo.
+- **No se arreglo el desfase de `tool_version` de la captura.** La captura
+  commiteada dice `0.101.17` y el runtime dice `0.101.23`. Es cierto, y
+  arreglarlo toca las 78 entradas del catalogo: es un hallazgo propio, no de
+  esta unidad.
+
+### Evidencia
+
+- Test nuevo en rojo: `iac_query_answers_with_the_edge_it_has.rs` →
+  **4 failed; 1 passed**. Los cuatro por asercion: la confianza constante
+  `1.0` donde la arista tenia `0.7` (`left: Number(1.0)`, `right: 0.7`), la
+  procedencia que no venia (`left: Null`), la profundidad que no crecia
+  (`9 vs 9`) y el nombre ambiguo que se resolvia en silencio.
+- En verde: el mismo fichero, **5 passed; 0 failed**.
+- El test que pregunta por un kind con un nombre ambiguo
+  (`iac_query_speaks_the_domain_vocabulary.rs`) usaba `var.environment`, que
+  ahora se declara ambiguo; usa `var.project_name`, que responde por una sola
+  declaracion, y su garantia —una declaracion sin tipo responde con su kind—
+  sigue igual.
+- Transporte real, una sesion MCP por stdio sobre el fixture:
+  `build_graph` → 74 simbolos, 106 relaciones; `iac_query` con
+  `depth: 1` sobre `aws_s3_bucket.app_bucket` → 2 dependencias y 3
+  dependientes, cada una con `edge_type: references`, `provenance: extracted`
+  y `confidence: 1.0` de su propia arista; con `depth: 2` sobre
+  `module.compute` → 6 dependencias y 10 dependientes.
+- El mismo transporte con `var.environment` → `isError: true` y el mensaje
+  `ambiguous: 3 declarations answer to that name` con las tres identidades
+  canonicas; con la identidad canonica de una de ellas → `isError: false` y
+  `resource_type: variable`.
+- `product/tools.json` y `product/tool-catalog-runtime.json` actualizados con
+  el esquema real del runtime (26 lineas de diff), y el CHANGELOG dice que
+  cambia.
+- `cargo build --workspace --all-targets` → sin errores.
+- `bash scripts/test-fast.sh` → **rc=0**: 2378 passed; 0 failed; 2 ignored,
+  clippy `-D warnings` limpio y la linea base con 0 entradas.
+- `bash scripts/test-full.sh c18` → **rc=0**.
+- `bash scripts/ci/run-all-contracts.sh` → **rc=0**: 46 ficheros de contrato,
+  0 fallos.
+
+### Estado y siguiente WU
+
+- Unidad: **C18**, cerrada. SHA de la unidad: `862390ae` (código y tests),
+  `4816d818` (catálogo y CHANGELOG) y `9f64aed4` (el formato que el gate
+  pedia), sobre la base de medicion `ce7e1329`. Los cuatro criterios de
+  cierre del candidato quedan publicados y con test: la confianza y el tipo
+  salen del grafo y una arista sin confianza se declara desconocida, `depth`
+  es una profundidad, un nombre ambiguo se declara ambiguo, y el grafo
+  conserva los metadatos de las aristas inversas.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el arbol de esta unidad.
+- Siguiente WU: **C28**, un fallo de MCP tiene que llegar como fallo y no
+  como un exito con un error dentro.
+
+**El `merge-gate` se puso rojo en la etapa `contracts`.** El motivo fue mio:
+al reescribir la cabecera del `CURRENT.md` puse el SHA de la unidad en forma
+corta (`9f64aed4`) y ese contrato pide el SHA completo de 40 caracteres,
+reachable desde HEAD y a menos de cinco commits de la base con `main`. El
+`fast` no lo ve porque no mira esa etapa, y el `full` tampoco la mira: la
+mira el gate. El arreglo es una linea de cabecera, con el SHA medido
+(`9f64aed447bb1e6f3543d8f43c5ac97f79ec9b16`) y la distancia a `origin/main`
+medida tambien —29 commits, no los 14 que habia puesto de memoria—.
+
+**El `merge-gate` sale verde.** Corrida `9edee675-e228-4333-ab28-99a6e94542fb`
+sobre `354271ae`: **56 de 56 etapas** `success`, con `contracts`,
+`skills-validate`, `skills-bundles`, `supply-chain`, los binarios en release,
+las suites de MCP y las de la CLI dentro. La publicacion del veredicto en
+GitHub no sale: `gh: No commit found for SHA: 354271ae... (HTTP 422)`, porque
+ese SHA todavia no esta en el remoto. Eso no es un fallo del gate —el gate
+corrio y passo— sino de la publicacion, y la rama la sube el operador.
+
+## 2026-10-21 — Un fallo de MCP llega como fallo (H24)
+
+### Lo que pasó
+
+Los handlers de analitica del grafo respondian `{"error": "No call graph
+available. Run build_graph first."}` como **resultado de exito**. El
+transporte no puede distinguir ese resultado de uno que lleva datos: lo
+pasa con `isError: false`, el agente lee "funciono" donde la herramienta
+habia fallado, y las metricas lo cuentan como un exito —`classify_status`
+mira el `Result` del despacho, y un `Ok` es un `Ok`—.
+
+Medido en el arbol:
+
+- **Doce** handlers de analitica del grafo tienen la misma rama de fallo:
+  `graph_handlers.rs` repetia el `match` del store **dos veces por
+  handler** —"no hay grafo" y "el store no se pudo leer"—, 24 ramas en
+  total, cada una con su `Ok(json!({"error": ...}))`.
+- Tres fallos puntuales mas: el simbolo que no existe
+  (`graph_all_paths`), la comunidad que no existe
+  (`graph_community_detail`) y el modo que no existe (`graph_analyze`).
+- El `IacRepository` no tiene implementacion en el arbol, asi que la rama
+  PostgreSQL no se midio: no es alcanzable.
+
+El arreglo:
+
+- Los doce handlers de analitica salen de `analytics_graph(ctx)?`, una
+  funcion que decide una sola vez que significa "no hay grafo" y que
+  significa "el store fallo". El mensaje y la clase del error viven en
+  un sitio, no en doce.
+- El simbolo que no existe y la comunidad que no existen son
+  `HandlerError::NotFound`; el modo que no existe es
+  `HandlerError::InvalidInput`. Cada fallo dice lo que paso y por que
+  clase.
+- El adaptador **no** cambia: `call_tool_handler` ya devuelve
+  `Err(InterfaceError)`, y el adaptador ya lo lleva como
+  `CallToolResult::error`, que es `isError: true`. Lo que faltaba era que
+  los handlers produjeran ese `Err`.
+
+Sobre la forma del error: el criterio del candidato pide "un error de
+JSON-RPC". Leido al pie de la letra, un objeto de error de JSON-RPC en
+vez de un resultado con `isError: true`. Eso contradice el contrato que
+el repo ya tiene fijado —`a009` y `a010` exigen `isError: true` para una
+herramienta que se niega, y el propio MCP llama a eso "error de
+ejecucion de herramienta" y reserva el error de JSON-RPC para llamadas
+mal formadas—, asi que lo que se entrega es la parte que discrimina: un
+fallo de handler **nunca** llega como un resultado con `isError: false`.
+Queda escrito en un test.
+
+### Lo que no se pudo hacer aquí
+
+- **El smoke HTTP no se puede correr aqui.** `scripts/mcp/mcp_smoke_all.py`
+  habla HTTP contra `127.0.0.1:9847` y su `ROOT` apunta a una ruta que ya
+  no existe (`/var/home/rubentxu/Proyectos/rust/CogniCode`). El binario
+  speaks stdio. Se verifico el clasificador **llamandolo** con los
+  textos nuevos, no con una corrida entera.
+- **La forma de la clase de error para "no hay grafo" no se unifico con
+  los otros handlers.** Diez handlers de grafo dicen `internal: No graph
+  available` y trece dicen `not found: No call graph available. Run
+  build_graph first.` (los doce de aqui y `solid_audit`). Es la misma
+  condicion con dos vocabularios. Unificarla es otro arreglo: la tarea
+  era que el fallo llegue como fallo, no que todos digan lo mismo.
+
+### Lo que descubrio el cambio
+
+**Dos tests de degradacion estaban fijando una mentira.** El test
+`prf_f5_w4_bis_*` afirmaba que una llamada limpia reporta
+`partial: false` y `degraded_sources` vacio, en un contexto **sin
+grafo**. La fuente `idf` de `smart_search` lee el grafo, asi que sin
+grafo esa fuente fallaba — y el fallo disfrazado de exito hacia que la
+degradacion no se viera. El test pasaba por la razon equivocada. Ahora el
+contexto del caso "limpio" lleva un grafo, el caso es limpio de verdad, y
+la garantia que el test queria fijar (la degradacion es lo unico que
+vuelve `partial: true`) sigue fijada — y ahora por la razon correcta.
+
+**El smoke contaba como exito un fallo.** Su clasificador reconocia
+`internal:`, `invalid input:` y `application error:`, y no `not found:`
+ni `security:`. Con este cambio, un fallo de estos handlers habria
+llegado al smoke como texto y el harness lo habria contado como OK.
+El clasificador reconoce ahora todas las clases que la interfaz publica.
+
+### Evidencia
+
+- Test nuevo en rojo: `mcp_failures_arrive_as_failures.rs` → **4 failed;
+  0 passed**. Por asercion, con el defecto a la vista:
+  `graph_pagerank answers a failure with a successful result: Object
+  {"error": String("No call graph available. Run build_graph first.")}`.
+- El mismo fichero en verde: **4 passed; 0 failed**.
+- Test de transporte nuevo: `mcp_failure_arrives_as_failure.rs`. En rojo
+  contra el codigo viejo: `isError: false` con el error dentro del
+  payload. En verde: `isError: true` y el texto dice que paso. El caso
+  de exito (herramienta con grafo) tambien esta, para que el arreglo no
+  pueda ocultar un exito detras de un fallo.
+- Dos tests de degradacion (`prf_f5_w4_bis_*`) pasaron a verde cuando su
+  contexto de caso "limpio" dejo de mentir.
+- El clasificador del smoke, llamado con los textos nuevos:
+  `not found: No call graph available...` → ERROR, `not found: Source
+  symbol not found: foo` → ERROR, `invalid input: Unknown mode 'x'...` →
+  ERROR, `internal: No graph available` → ERROR, y una respuesta buena →
+  OK.
+- `cargo build --workspace --all-targets` → sin errores.
+- `bash scripts/test-fast.sh` → **rc=0**.
+- `bash scripts/test-full.sh c28` → **rc=0**.
+- `bash scripts/ci/run-all-contracts.sh` → **rc=0**.
+- `bash scripts/ci/publish-merge-gate.sh` → **56 de 56 etapas**
+  `success`.
+
+### Estado y siguiente WU
+
+- Unidad: **C28**, cerrada. SHA de la unidad: `deb28121` (codigo, tests y
+  smoke), mas este commit con el CHANGELOG y los punteros, sobre la base de
+  medicion `c76dd3b5`.
+- Los tres criterios de cierre del candidato quedan publicados y con
+  test: ningun handler publico devuelve `Ok` con una clave `error`
+  dentro, un fallo de handler nunca llega como un resultado con
+  `isError: false`, y un test que llama a un handler sin grafo observa un
+  error y no un resultado de exito.
+- Gates: `fast` rc=0, `full` rc=0 y `merge-gate` verde sobre el arbol de
+  esta unidad.
+- Siguiente WU: **C29**, la cancelacion MCP pertenece a su peticion y se
+  limpia al terminar.
+
+**El `merge-gate` sale verde.** Corrida `df075b89-b70a-400d-a6c3-ea0d68f3f97e`
+sobre `8941871e`: **56 de 56 etapas** `success`, sin diagnosticos, con la
+ultima etapa —`merge-gate`— en `success`. El recuento sale del journal del
+propio pipeline (`.pipelinek/merge-gate.db`, tabla `events`), no de la salida
+del terminal: la corrida se puede volver a leer despues sin volver a
+ejecutar el gate.
+
+La publicacion del veredicto en GitHub no sale: `gh: No commit found for
+SHA: 8941871e0607fe512f2fa4981b2556712c788be0 (HTTP 422)`, porque ese SHA
+todavia no esta en el remoto. No es un fallo del gate —el gate corrio y
+paso— sino de la publicacion, y la rama la sube el operador.

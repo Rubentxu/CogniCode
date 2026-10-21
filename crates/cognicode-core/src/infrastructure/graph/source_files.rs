@@ -28,12 +28,31 @@
 //! not in the graph, so it is not in the manifest either — and the
 //! decline is reported, because a project that symlinks its sources in
 //! from elsewhere is not fully described by the graph it gets back.
+//!
+//! ## What the walk could not do
+//!
+//! A walk is not infallible: a directory the process cannot read, an
+//! entry that vanishes between the read and the stat. Those are not
+//! files it left out on purpose — they are failures, and they leave a
+//! hole in the coverage. The inventory keeps them apart from the
+//! decisions, because the two are not the same thing: one of them says
+//! "there is nothing there to see" and the other says "there might
+//! have been something there and we did not see it".
+//!
+//! A walk that failed silently used to produce a `Complete` build over
+//! a tree it had never seen. That is the same lie as reporting a
+//! complete build over sources that no longer exist, and it is closed
+//! the same way: the failure is counted, and whoever reads the report
+//! can see it.
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use crate::domain::value_objects::{Language, WalkFilter};
-use crate::infrastructure::graph::per_file_graph::{SkippedFile, classify_declined_ignore_entry};
+use crate::infrastructure::graph::per_file_graph::{
+    SkipReason, SkippedFile, WalkClassification, classify_declined_ignore_entry,
+    classify_walk_extension, ignore_walk_error, walk_error,
+};
 use crate::infrastructure::walk_policy::{contained_ignore_walk, ignore_is_real_file};
 
 /// One file the walk found.
@@ -66,12 +85,32 @@ impl SourceFile {
     }
 }
 
-/// The files of a project, and the entries the walk declined.
+/// The files of a project, and everything the walk said about the rest.
+///
+/// Three buckets, so a caller can tell a failure from a decision:
+///
+/// - `files`: the files the walk yielded. Each one's `language` says
+///   whether the graph can read it.
+/// - `declined`: the entries the walk refused to follow — symlinks. A
+///   decision, but one that leaves a hole: the project is not fully
+///   described by the graph it gets back.
+/// - `errors`: what the traversal could not do — a directory it could
+///   not read, an entry it could not measure. Not a decision: a
+///   failure, and it has to be counted.
+///
+/// Whether a file is a source, an honest gap (`.kt`, `.kts`) or a
+/// legitimate exclusion (a README, a lockfile) is *not* a fourth
+/// bucket: it is a property of the file, and it is decided by the one
+/// classifier that owns it. [`SourceInventory::known_gaps`] and
+/// [`SourceInventory::legit_exclusions`] are two views of the same
+/// files, not two copies of them.
 pub struct SourceInventory {
-    /// Every file the walk yielded.
+    /// Every file the walk yielded and could measure.
     pub files: Vec<SourceFile>,
     /// The entries the walk declined — symlinks — with the reason.
     pub declined: Vec<SkippedFile>,
+    /// The errors the traversal produced, with the reason.
+    pub errors: Vec<SkippedFile>,
 }
 
 impl SourceInventory {
@@ -82,6 +121,50 @@ impl SourceInventory {
     pub fn source_files(&self) -> impl Iterator<Item = &SourceFile> {
         self.files.iter().filter(|f| f.language.is_some())
     }
+
+    /// The sources in a language we know about but do not support yet
+    /// (`.kt`, `.kts`): an honest gap, with the reason that names it.
+    ///
+    /// A gap travels with its reason so that whoever publishes it does
+    /// not have to rebuild it — and so that a gap cannot be read as a
+    /// decision.
+    pub fn known_gaps(&self) -> Vec<SkippedFile> {
+        self.files
+            .iter()
+            .filter(|f| matches!(classify(f), WalkClassification::KnownUnsupportedGap))
+            .map(|f| SkippedFile {
+                path: f.path.to_string_lossy().into_owned(),
+                reason: SkipReason::UnsupportedExtension(extension_of(&f.path)),
+            })
+            .collect()
+    }
+
+    /// The files the analysis leaves out on purpose: a README, a
+    /// lockfile, an image. A decision, not a gap — the coverage is
+    /// complete without them, and nothing has to be reported about
+    /// them.
+    pub fn legit_exclusions(&self) -> Vec<&SourceFile> {
+        self.files
+            .iter()
+            .filter(|f| matches!(classify(f), WalkClassification::LegitExclusion))
+            .collect()
+    }
+}
+
+/// The classification of a file, decided by the classifier that owns it.
+///
+/// The registry is the same one `SourceFile::language` is read from, so
+/// "is this a source?" and "is this a gap?" cannot disagree.
+fn classify(file: &SourceFile) -> WalkClassification {
+    classify_walk_extension(file.path.extension().and_then(|e| e.to_str()))
+}
+
+/// The extension of a path, spelled the way the registry spells it.
+fn extension_of(path: &Path) -> String {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 /// Walks `project_dir` and decides which files the graph is built from.
@@ -89,16 +172,29 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
     let walk_filter = WalkFilter::default();
     let mut files = Vec::new();
     let mut declined = Vec::new();
+    let mut errors = Vec::new();
 
     for entry in contained_ignore_walk(project_dir)
         .hidden(true)
         .git_ignore(true)
         .git_exclude(true)
         .build()
-        .filter_map(|e| e.ok())
-        .filter(|e| !walk_filter.matches_any_component(e.path()))
     {
+        // An error of the walk is not a file it left out: it is a
+        // failure of the traversal, and it leaves a hole. It is kept
+        // apart from the decisions so that the caller can count it.
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                errors.push(ignore_walk_error(&err));
+                continue;
+            }
+        };
+
         let path = entry.path();
+        if walk_filter.matches_any_component(path) {
+            continue;
+        }
         if !ignore_is_real_file(&entry) {
             // A symlink is declined, not forgotten: the caller has to
             // know that the graph does not describe what is behind it.
@@ -111,21 +207,90 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
             continue;
         }
 
-        let meta = std::fs::metadata(path).ok();
-        let mtime_millis = meta
-            .as_ref()
-            .and_then(|m| m.modified().ok())
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64)
-            .unwrap_or(0);
-        let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
-
-        files.push(SourceFile {
-            path: path.to_path_buf(),
-            language: Language::from_extension(path.extension()),
-            mtime_millis,
-            size,
-        });
+        // A file the walk yields but cannot measure is not a measured
+        // file. Publishing it with `mtime 0, size 0` would say "this
+        // file was last written at the epoch", which is a fact we do
+        // not know; the failure stays a failure.
+        match measure(path, std::fs::metadata(path)) {
+            Ok(file) => files.push(file),
+            Err(err) => {
+                errors.push(walk_error(Some(path), &err));
+                continue;
+            }
+        }
     }
 
-    SourceInventory { files, declined }
+    SourceInventory {
+        files,
+        declined,
+        errors,
+    }
+}
+
+/// The measurement of a file the walk yielded.
+///
+/// A file the walk delivers and that cannot be measured is not a
+/// measured file. Publishing it with `mtime 0, size 0` would say "this
+/// file was last written at the epoch", which is a fact we do not
+/// know; so the failure is returned as a failure, with its cause, and
+/// whoever walks decides what to do with it.
+fn measure(
+    path: &Path,
+    meta: std::io::Result<std::fs::Metadata>,
+) -> Result<SourceFile, std::io::Error> {
+    let meta = meta?;
+    let mtime_millis = meta
+        .modified()
+        .ok()
+        .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64)
+        .unwrap_or(0);
+    Ok(SourceFile {
+        path: path.to_path_buf(),
+        language: Language::from_extension(path.extension()),
+        mtime_millis,
+        size: meta.len(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The decision, not the race.
+    ///
+    /// The filesystem can only fail to measure a file by removing it
+    /// between the read and the stat, and that is not reproducible
+    /// without a race. What IS reproducible — and what the contract
+    /// asks for — is the decision: a file that could not be measured
+    /// does not come out as a measured file with a zeroed timestamp.
+    #[test]
+    fn a_file_that_cannot_be_measured_is_not_a_measured_file() {
+        let denied = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "EACCES");
+        let out = measure(Path::new("src/main.rs"), Err(denied));
+        assert!(
+            out.is_err(),
+            "un fichero que no se puede medir no se publica como medido: {:?}",
+            out.map(|f| f.mtime_millis)
+        );
+    }
+
+    /// The other side of the same decision: a file that CAN be measured
+    /// is published with the facts of its measurement, and not with
+    /// zeroes.
+    #[test]
+    fn a_measured_file_publishes_its_measurement() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("main.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("main.rs");
+        let expected_size = std::fs::metadata(&path).expect("metadata").len();
+
+        let file = measure(&path, std::fs::metadata(&path)).expect("the file is measurable");
+
+        assert_eq!(file.size, expected_size);
+        assert!(file.mtime_millis > 0, "una medida real no es cero");
+        assert!(
+            file.language.is_some(),
+            "una fuente que el registro reconoce se publica con su lenguaje"
+        );
+    }
 }

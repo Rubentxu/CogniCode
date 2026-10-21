@@ -16,6 +16,7 @@
 
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::domain::aggregates::{GraphNode, NodeId};
+use crate::domain::value_objects::pending_reference::readings;
 use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance, SymbolKind};
 use tree_sitter::Node;
 
@@ -255,12 +256,57 @@ fn reference_in(
         return None;
     }
     let segments = traversal_segments(node, source)?;
+    // A name the language binds itself names no declaration of the project:
+    // `count.index` is the index of the instance, `each.value` the key of
+    // the map, and the name of a `for` expression is bound by that
+    // expression. The graph answers about declarations, so these are not
+    // references at all.
+    let root = segments.first().map(String::as_str)?;
+    if is_language_built_in(root) || is_bound_by_an_enclosing_for(node, root, source) {
+        return None;
+    }
     Some(resolve_traversal(
         &segments,
         declared,
         source_path,
         line_of(node),
     ))
+}
+
+/// The names Terraform binds itself: they are values of the language, not
+/// declarations of the project.
+fn is_language_built_in(name: &str) -> bool {
+    matches!(name, "count" | "each" | "self" | "path")
+}
+
+/// Whether the name is bound by a `for` expression that encloses the node.
+///
+/// `[for s in aws_subnet.public : s.id]` binds `s` for that expression, and
+/// `s` names no declaration of the project. A `for` can bind two names —
+/// `[for k, v in var.map : v.key]` binds `k` and `v` — so every name the
+/// expression binds is looked at.
+fn is_bound_by_an_enclosing_for(node: Node, name: &str, source: &[u8]) -> bool {
+    let mut current = node.parent();
+    while let Some(ancestor) = current {
+        if matches!(ancestor.kind(), "for_tuple_expr" | "for_object_expr") {
+            let mut cursor = ancestor.walk();
+            let intro = ancestor
+                .named_children(&mut cursor)
+                .find(|child| child.kind() == "for_intro");
+            if let Some(intro) = intro {
+                let mut inner = intro.walk();
+                let bound = intro
+                    .named_children(&mut inner)
+                    .filter(|child| child.kind() == "identifier")
+                    .any(|bound| node_text(bound, source) == name);
+                if bound {
+                    return true;
+                }
+            }
+        }
+        current = ancestor.parent();
+    }
+    false
 }
 
 fn same_target(a: &TargetRef, b: &TargetRef) -> bool {
@@ -278,9 +324,10 @@ fn resolve_traversal(
     line: u32,
 ) -> (TargetRef, u32) {
     let full = segments.join(".");
-    // Longest reading first: `a.b.c.d`, `a.b.c`, `a.b`, `a`.
-    for take in (1..segments.len()).rev() {
-        let candidate = segments[..take].join(".");
+    // Longest reading first: `a.b.c.d`, `a.b.c`, `a.b`, `a`. The rule is
+    // the one the project reads names with, so the file that writes a
+    // reference and the project that reads it agree on what a name denotes.
+    for candidate in readings(&full) {
         if declared.contains(&candidate.as_str()) {
             // Resolved means "this node of this file": the id the graph
             // matches on, not the bare identity. Without the prefix the edge

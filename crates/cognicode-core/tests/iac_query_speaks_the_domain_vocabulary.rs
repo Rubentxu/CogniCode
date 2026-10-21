@@ -92,7 +92,10 @@ async fn a_declaration_without_a_type_answers_with_its_kind() {
     let ctx = graph_of(dir.path(), "terraform-iac").await;
 
     for (resource_id, expected) in [
-        ("var.environment", "variable"),
+        // `var.project_name` and not `var.environment`: the environment
+        // is declared once per module, so that name answers for three
+        // declarations and the tool asks which one was meant.
+        ("var.project_name", "variable"),
         ("module.vpc", "module"),
         ("output.s3_bucket_name", "output"),
     ] {

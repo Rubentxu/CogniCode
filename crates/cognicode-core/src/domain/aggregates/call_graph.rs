@@ -262,6 +262,109 @@ impl CallGraph {
             })
     }
 
+    /// Returns the incoming edges of a symbol along with their metadata.
+    ///
+    /// The reverse index answers *who* points at a symbol; this answers
+    /// *how*: the type of the dependency and the confidence the edge
+    /// really carries. The metadata lives in the forward edges — the
+    /// reverse index is a set of identifiers and carries nothing else —
+    /// so it is looked up there.
+    pub fn incoming_dependencies_with_metadata(
+        &self,
+        id: &SymbolId,
+    ) -> Vec<(&SymbolId, &DependencyType, Provenance, f64)> {
+        self.edges
+            .iter()
+            .flat_map(|(source, targets)| {
+                targets
+                    .iter()
+                    .filter_map(move |((target, dep_type), (provenance, confidence))| {
+                        if target == id {
+                            Some((source, dep_type, *provenance, *confidence))
+                        } else {
+                            None
+                        }
+                    })
+            })
+            .collect()
+    }
+
+    /// The edges that leave a symbol, and the edges of everything it
+    /// reaches, up to `depth` hops away.
+    ///
+    /// The depth is a distance and not a quota: a depth of one is the
+    /// edges that touch the symbol, and a depth of two also brings the
+    /// edges that touch what the first ones touch. Each edge is
+    /// published once, with the metadata the edge really carries.
+    pub fn dependencies_within_depth(
+        &self,
+        id: &SymbolId,
+        depth: usize,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        self.within_depth(id, depth, |graph, node| {
+            graph
+                .dependencies_with_metadata(node)
+                .map(|(target, dep_type, provenance, confidence)| {
+                    (target.clone(), *dep_type, provenance, confidence)
+                })
+                .collect()
+        })
+    }
+
+    /// The edges that arrive at a symbol, and the edges of everything
+    /// that reaches it, up to `depth` hops away.
+    ///
+    /// The counterpart of [`Self::dependencies_within_depth`]: the walk
+    /// goes the other way and the metadata comes from the same edges.
+    pub fn dependents_within_depth(
+        &self,
+        id: &SymbolId,
+        depth: usize,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        self.within_depth(id, depth, |graph, node| {
+            graph
+                .incoming_dependencies_with_metadata(node)
+                .into_iter()
+                .map(|(source, dep_type, provenance, confidence)| {
+                    (source.clone(), *dep_type, provenance, confidence)
+                })
+                .collect()
+        })
+    }
+
+    /// The walk both directions share: one hop at a time, until the
+    /// depth runs out or the frontier runs dry.
+    ///
+    /// A symbol that the walk comes back to is not published twice: the
+    /// first time it is reached is the edge that counts.
+    fn within_depth(
+        &self,
+        root: &SymbolId,
+        depth: usize,
+        step: impl Fn(&Self, &SymbolId) -> Vec<(SymbolId, DependencyType, Provenance, f64)>,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        let mut seen: HashSet<SymbolId> = HashSet::new();
+        seen.insert(root.clone());
+        let mut frontier = vec![root.clone()];
+        let mut collected = Vec::new();
+        for _ in 0..depth {
+            let mut next = Vec::new();
+            for node in &frontier {
+                for (target, dep_type, provenance, confidence) in step(self, node) {
+                    if seen.insert(target.clone()) {
+                        collected.push((target.clone(), dep_type, provenance, confidence));
+                        next.push(target);
+                    }
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            frontier = next;
+        }
+        collected
+    }
+
     /// Returns an iterator over every edge in the graph with full metadata.
     ///
     /// Used by the persistence layer (PostgreSQL via

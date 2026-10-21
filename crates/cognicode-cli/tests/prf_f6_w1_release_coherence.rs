@@ -61,7 +61,13 @@ fn repo_root_local() -> PathBuf {
 /// Stage the three real payload archives (cogh, cognicode,
 /// cognicode-mcp) into a private temp staging dir. Returns the
 /// staging path.
-fn stage_payloads(tag: &str) -> PathBuf {
+///
+/// The staging dir is named after the caller, not just the process: the
+/// tests of this file run in parallel and share one process id, so a
+/// staging named after the process alone is one staging for all of them.
+/// One test would delete the other's payloads while it was being packed,
+/// and the survivor would measure an archive that was never finished.
+fn stage_payloads(tag: &str, owner: &str) -> PathBuf {
     let root = repo_root_local();
     let stem = tag.replace('v', "");
     // VERSION is encoded in the payload filenames (e.g.
@@ -71,7 +77,10 @@ fn stage_payloads(tag: &str) -> PathBuf {
     // (Lesson 84 — hard-coded target/release/ paths break on systems
     // with a global `.cargo/config.toml` target-dir override).
     let release_dir_path = common::release_dir();
-    let stage = std::env::temp_dir().join(format!("prf-f6-w1-stage-{tag}-{}", std::process::id()));
+    let stage = std::env::temp_dir().join(format!(
+        "prf-f6-w1-stage-{tag}-{owner}-{}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&stage);
     std::fs::create_dir_all(&stage).unwrap();
 
@@ -143,10 +152,15 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
     // CR-00c: derive tag/stem from the workspace version.
     let tag = tag();
     let stem = version();
+    let owner = "clean";
     let platform = "x86_64-unknown-linux-gnu";
-    let stage = stage_payloads(&tag);
-    let generated =
-        std::env::temp_dir().join(format!("prf-f6-w1-gen-{}-{}", tag, std::process::id()));
+    let stage = stage_payloads(&tag, owner);
+    let generated = std::env::temp_dir().join(format!(
+        "prf-f6-w1-gen-{}-{}-{}",
+        tag,
+        owner,
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&generated);
 
     // Generate
@@ -216,15 +230,56 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
 /// candidate from test 1's pipeline, flip a byte in one of the
 /// payload archives, and confirm `verify` exits non-zero. This
 /// pins the integrity gate: verify MUST NOT be a no-op.
+/// Two tests of this file must not share a staging directory.
+///
+/// They run in parallel and share one process id, so a staging named after
+/// the process alone is one staging for both: one test deletes the other's
+/// payloads while it is packing them, and the survivor measures an archive
+/// that was never finished. That is not a hypothesis — it is what happened in
+/// the gate, where the tampering test found an empty payload.
+#[test]
+fn each_test_stages_its_payloads_in_its_own_directory() {
+    let tag = tag();
+    let first = stage_payloads(&tag, "owner-a");
+    let second = stage_payloads(&tag, "owner-b");
+    assert_ne!(
+        first, second,
+        "two staging directories must not collide: they would delete each \
+         other's payloads"
+    );
+    // The payload the first one packed must survive the second one staging.
+    let packed: Vec<_> = std::fs::read_dir(&first)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .collect();
+    assert!(
+        !packed.is_empty(),
+        "staging produced no payloads: the measurement would be vacuous"
+    );
+    for name in &packed {
+        assert!(
+            first.join(name).exists(),
+            "the second staging deleted a payload of the first: {name:?}"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&first);
+    let _ = std::fs::remove_dir_all(&second);
+}
+
 #[test]
 fn prf_f6_w1_tampered_payload_fails_verify() {
     // CR-00c: derive tag/stem from the workspace version.
     let tag = tag();
     let stem = version();
+    let owner = "tampered";
     let platform = "x86_64-unknown-linux-gnu";
-    let stage = stage_payloads(&tag);
-    let generated =
-        std::env::temp_dir().join(format!("prf-f6-w1-gen-tam-{}-{}", tag, std::process::id()));
+    let stage = stage_payloads(&tag, owner);
+    let generated = std::env::temp_dir().join(format!(
+        "prf-f6-w1-gen-{}-{}-{}",
+        tag,
+        owner,
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&generated);
 
     // Generate clean candidate.
@@ -252,8 +307,12 @@ fn prf_f6_w1_tampered_payload_fails_verify() {
     // payload archive (every one — bit-flip one is enough but
     // we flip all to maximize the chance of catching a future
     // regression in any single payload's digest computation).
-    let tampered =
-        std::env::temp_dir().join(format!("prf-f6-w1-tam-{}-{}", tag, std::process::id()));
+    let tampered = std::env::temp_dir().join(format!(
+        "prf-f6-w1-tam-{}-{}-{}",
+        tag,
+        owner,
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&tampered);
     std::fs::create_dir_all(&tampered).unwrap();
 

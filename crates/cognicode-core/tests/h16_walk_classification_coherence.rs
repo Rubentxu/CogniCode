@@ -93,7 +93,7 @@ fn cargo_repo(suffix: &str, with_kotlin_gap: bool) -> std::path::PathBuf {
 fn skipped_names(status: &BuildStatus) -> Vec<String> {
     match status {
         BuildStatus::Complete => Vec::new(),
-        BuildStatus::Partial { skipped } => {
+        BuildStatus::Partial { skipped, .. } => {
             let mut names: Vec<String> = skipped
                 .iter()
                 .map(|s| {

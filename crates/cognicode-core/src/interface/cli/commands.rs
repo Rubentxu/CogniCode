@@ -1025,14 +1025,42 @@ impl CommandExecutor {
                 let file_path = PathBuf::from(file);
 
                 match strategy.build_local_graph(&file_path) {
-                    Ok(graph) => {
+                    Ok((graph, pending)) => {
                         let symbols = graph.symbol_count();
                         let edges = graph.edge_count();
+                        // The references the file states and nobody declared
+                        // are part of the answer, not a footnote: the counts
+                        // say how much the graph holds, and these say what the
+                        // file states that the graph does not hold.
+                        let pending_references: Vec<
+                            crate::interface::coverage::PendingReferenceInfo,
+                        > = pending
+                            .iter()
+                            .map(crate::interface::coverage::PendingReferenceInfo::from_reference)
+                            .collect();
                         let result = GR::PerFile {
                             file: file.clone(),
                             symbols,
                             dependencies: edges,
+                            pending_references: pending_references.clone(),
                         };
+                        // They go to stderr, like the pending references of
+                        // the full graph do: stdout is the machine-readable
+                        // stream and its byte shape is pinned.
+                        for reference in &pending_references {
+                            // A reference without a line is not on line
+                            // zero: it is on a line the reader did not
+                            // know, and saying "0" would name a place
+                            // that does not exist.
+                            let origin = match reference.line {
+                                Some(line) => format!("{}:{}", reference.file, line),
+                                None => reference.file.clone(),
+                            };
+                            eprintln!(
+                                "  Pending: {} -> {} ({:?})",
+                                origin, reference.target, reference.reason
+                            );
+                        }
                         // T1-5.4c: text formatting is in the
                         // presenter. The function still emits
                         // the text (T1-5.5 will move it to the
@@ -1102,6 +1130,7 @@ impl CommandExecutor {
                         );
                         if let crate::interface::cli::result::GraphResult::Full {
                             skipped_files,
+                            pending_references,
                             status,
                             ..
                         } = &result
@@ -1109,6 +1138,20 @@ impl CommandExecutor {
                         {
                             for s in skipped_files {
                                 eprintln!("  Skipped: {}: {}", s.path, s.reason);
+                            }
+                            for reference in pending_references {
+                                // A reference without a line is not on line
+                                // zero: it is on a line the reader did not
+                                // know, and saying "0" would name a place
+                                // that does not exist.
+                                let origin = match reference.line {
+                                    Some(line) => format!("{}:{}", reference.file, line),
+                                    None => reference.file.clone(),
+                                };
+                                eprintln!(
+                                    "  Pending: {} -> {} ({:?})",
+                                    origin, reference.target, reference.reason
+                                );
                             }
                         }
                         Ok(result)
@@ -1132,18 +1175,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
@@ -1187,18 +1222,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let entry_ids = graph.roots();
@@ -1236,18 +1263,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let leaf_ids = graph.leaves();
@@ -1291,18 +1310,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let source_id = crate::domain::aggregates::call_graph::SymbolId::new(from.clone());
@@ -1382,18 +1393,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let mermaid = graph.to_mermaid("Call Graph");
@@ -1520,18 +1523,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 let analyzer = CallGraphAnalyzer::new();
@@ -1575,18 +1570,10 @@ impl CommandExecutor {
                 // partial graph as clean.
                 let built = crate::interface::cli::project_graph::project_graph(&dir)
                     .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-                if !built.skipped.is_empty() {
-                    eprintln!(
-                        "Warning: graph is PARTIAL: {} file(s) skipped ({})",
-                        built.skipped.len(),
-                        built
-                            .skipped
-                            .iter()
-                            .map(|f| f.path.clone())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    );
-                }
+                // The same coverage semantics as the MCP path: say what the
+                // build could not cover, never present a partial graph as
+                // clean.
+                crate::interface::cli::project_graph::warn_incomplete(&built);
                 let graph = built.graph;
 
                 // Find all symbols that match the name
@@ -1723,6 +1710,7 @@ impl CommandExecutor {
                     file: "composite_impact".to_string(),
                     symbols: 0,
                     dependencies: 0,
+                    pending_references: Vec::new(),
                 })
             }
         }

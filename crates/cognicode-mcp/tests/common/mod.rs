@@ -231,10 +231,47 @@ impl McpSession {
     /// methods outside the tool-call envelope (`tools/list`,
     /// `ping`, future ones) without paying for a second harness.
     pub async fn request(&mut self, method: &str, params: Value) -> Result<Value, String> {
+        let (_id, resp) = self.request_with_id(method, params).await?;
+        Ok(resp)
+    }
+
+    /// Send a JSON-RPC request and return its id together with the raw
+    /// response.
+    ///
+    /// [`Self::request`] hides the id it used, and a client that wants to
+    /// cancel a request has to name it: `notifications/cancelled` carries
+    /// the id of the request being cancelled, so a test that cannot see
+    /// the id cannot send a cancellation that refers to anything.
+    pub async fn request_with_id(
+        &mut self,
+        method: &str,
+        params: Value,
+    ) -> Result<(u64, Value), String> {
+        let id = self.send_request(method, params).await?;
+        let response = self.await_response(id).await?;
+        Ok((id, response))
+    }
+
+    /// Send a JSON-RPC request without waiting for its answer, and return
+    /// the id it went out with.
+    ///
+    /// A cancellation that names a request has to be sent while that
+    /// request is still running, and that is only possible if the answer
+    /// is not being waited for. The answer is collected afterwards with
+    /// [`Self::await_response`].
+    pub async fn send_request(&mut self, method: &str, params: Value) -> Result<u64, String> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc":"2.0","id":id,"method":method,"params":params}))
             .await?;
+        Ok(id)
+    }
+
+    /// Wait for the answer to the request with the given id.
+    ///
+    /// Answers to other requests are read and discarded: the caller asked
+    /// for one id and gets that one.
+    pub async fn await_response(&mut self, id: u64) -> Result<Value, String> {
         let mut resp = String::new();
         loop {
             resp.clear();
@@ -251,6 +288,20 @@ impl McpSession {
                 return Ok(m);
             }
         }
+    }
+
+    /// Send `notifications/cancelled` for the given request id.
+    ///
+    /// The protocol allows this notification to arrive after the request
+    /// has already finished, so a caller can legitimately cancel a request
+    /// whose answer is already on its way.
+    pub async fn notify_cancelled(&mut self, request_id: u64) -> Result<(), String> {
+        self.send(&json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/cancelled",
+            "params": {"requestId": request_id, "reason": "cancelled by the test"}
+        }))
+        .await
     }
 
     /// Fetch every advertised tool name, following `next_cursor` to the

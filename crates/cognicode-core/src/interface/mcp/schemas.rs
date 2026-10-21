@@ -870,6 +870,15 @@ pub struct GetPerFileGraphOutput {
     pub symbol_count: usize,
     pub dependencies: Vec<DependencyInfo>,
     pub dependency_count: usize,
+    /// The references this file states and nobody declared.
+    ///
+    /// They are part of the answer, not a footnote: a file that states a
+    /// relation the graph cannot tie to a declaration is a fact about the
+    /// file, and a surface that publishes symbols and dependencies and
+    /// stays silent about these answers "this file states nothing" about
+    /// a file that states plenty.
+    pub pending_references: Vec<PendingReferenceInfo>,
+    pub pending_reference_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -912,6 +921,16 @@ pub enum SkippedReasonKind {
     /// no value a consumer already handles disappears, and the module
     /// doc records that there is no hard-coded `v1` client to break.
     Symlink,
+    /// The traversal failed on a path: a directory the walk could not
+    /// read, an entry it could not measure.
+    ///
+    /// Its own tag rather than `Other` for the same reason `Symlink` has
+    /// one: `Other` is the catch-all for conditions we cannot name
+    /// precisely, and a traversal failure is precisely named — it is a
+    /// hole in the coverage, not a file we chose to leave out. The
+    /// addition is additive: no value a consumer already handles
+    /// disappears.
+    Walk,
     Other,
 }
 
@@ -924,29 +943,48 @@ pub struct SkippedFileInfo {
     pub detail: String,
 }
 
+/// A reference the graph could not tie to a declaration.
+///
+/// A file can be read and still state a relation the project cannot prove:
+/// the reference names something nobody declares, or names several things
+/// and the graph cannot tell which one it means. Those are facts about the
+/// code, and a consumer that asks "what do you know?" has to hear them.
+///
+/// The shape and the projection live in
+/// [`interface::coverage`](crate::interface::coverage): the fact is one
+/// fact, and every consumer reads it the same way.
+pub use crate::interface::coverage::{PendingReason, PendingReferenceInfo};
+
 /// How much of what was asked for is actually in the answer.
 ///
 /// This is an ADT on purpose: `Complete` carries no list, so "complete but
 /// here are four gaps" is unrepresentable, and `Partial` is only ever
 /// constructed through [`MergeCoverage::from`], which yields `Complete`
-/// when the skip list is empty. `file_count`-style counts cannot express
+/// when both lists are empty. `file_count`-style counts cannot express
 /// that, which is how a partial merge used to read as a clean one.
+///
+/// The two lists are the two coverages: the files that could not be read,
+/// and the references that could not be tied to a declaration.
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum MergeCoverage {
     Complete,
-    Partial { skipped_files: Vec<SkippedFileInfo> },
+    Partial {
+        skipped_files: Vec<SkippedFileInfo>,
+        pending_references: Vec<PendingReferenceInfo>,
+    },
 }
 
 impl MergeCoverage {
     /// The only constructor, and the only place the empty-vs-non-empty
     /// decision is made.
-    pub fn from(skipped: Vec<SkippedFileInfo>) -> Self {
-        if skipped.is_empty() {
+    pub fn from(skipped: Vec<SkippedFileInfo>, pending: Vec<PendingReferenceInfo>) -> Self {
+        if skipped.is_empty() && pending.is_empty() {
             MergeCoverage::Complete
         } else {
             MergeCoverage::Partial {
                 skipped_files: skipped,
+                pending_references: pending,
             }
         }
     }

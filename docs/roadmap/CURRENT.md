@@ -5,10 +5,14 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-20, sobre `c459772d61dc1ac1ece59b2ed95ccd4b47c1b11b`
-> (`main`). Versión del workspace: `0.101.23`. Última release publicada:
-> `v0.101.23` (2026-10-18, 8 assets). `main` está **30** commits por delante
-> de ese tag: hay estabilizaciones mergeadas que todavía no están publicadas.
+> **Snapshot**: 2026-10-21, sobre `8941871e0607fe512f2fa4981b2556712c788be0`
+> (la unidad C28, con el `fast`, el `full` y el `merge-gate` en verde), rama
+> `fix/pending-references-are-facts`, 34 commits por delante de
+> `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
+> release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
+> commits por delante de ese tag en cuanto este
+> ciclo se funda: hay estabilizaciones mergeadas que todavía no están
+> publicadas.
 >
 > Este fichero se regeneró desde 519 líneas a esta. La versión anterior mezclaba
 > un snapshot con la historia de ocho ciclos: narrativas de programas cerrados,
@@ -28,9 +32,25 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **20** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
+
+La cola está escrita en el orden que fija el informe de la auditoría del
+2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
+ordena el selector. **C25, C20, C24, C18 y C28 están cerrados**; el primero
+que encadenaría ahora es **C29**, la cancelación MCP, que pertenece a su
+petición y se limpia al terminar. C2, C3 y C4 no están en la cola porque su
+trabajo salió en las
+PR #400, #401 y #402.
+
+**La declaración estaba inservible y ya no lo está.** Escribía la evidencia
+en un campo que el cargador no lee, tenía la cola escrita al revés y una
+referencia rota; el resultado eran 26 candidatos descartados y una cadena sin
+nada que encadenar. Lo vigila `scripts/ci/test_mission_declaration.py`, que
+usa las mismas reglas que el plugin declara. Con el código real del
+supervisor, la cadena compone 47 candidatos, no descarta ninguno y elige
+C25.
 
 **C2 está resuelto**: el manifiesto de invalidación del grafo se deriva del
 registro de lenguajes, y el manifiesto se toma antes del grafo para que no
@@ -47,6 +67,44 @@ declaraba el tipo y el kind de cada bloque, la proyección al símbolo lo
 tiraba, y el manejador publicaba el nombre interno de la variante de Rust:
 un bucket respondía `Function`. Ahora responde `aws_s3_bucket`, y una
 declaración sin tipo responde con su kind (`variable`, `module`, `play`).
+
+**C17 está resuelto**: una referencia que el grafo no puede atar a una
+declaración se publica con su fichero, su línea, su motivo y su clase, en
+vez de descartarse en silencio. El estado del grafo distingue las dos
+coberturas —la de ficheros y la de relaciones— y `complete` sólo se dice
+cuando las dos están completas. La referencia pendiente se intenta atar
+entre ficheros con la misma regla con que el lector lee un nombre: la
+lectura más larga que nombra una declaración gana, y sólo se miran las
+declaraciones del propio módulo que escribe la referencia.
+
+El cambio se revisó dos veces contra el diff, y las dos revisiones
+encontraron fallos que el arreglo inicial no cubría. Los cinco se midieron
+en rojo antes de arreglarlos: la CLI decía `complete` con una referencia
+pendiente —el MCP y la CLI respondían cosas distintas sobre el mismo
+proyecto—; la resolución ataba una referencia con una declaración de otro
+módulo —una arista que nada prueba—; el snapshot durable seguía con la
+versión anterior, que decía `complete` sobre grafos que tenían huecos; el
+ámbito subía a los ancestros, y en un módulo hijo eso cablea contra una
+declaración que el hijo no puede ver; y la promesa de `complete` era más
+grande que lo que el producto mide.
+
+Los cinco están arreglados: las dos superficies dicen `partial` y publican
+las referencias pendientes, la resolución sólo cablea lo que el ámbito del
+módulo prueba, el snapshot lleva su versión, y la promesa se acotó a lo que
+se mide. Con ellos quedaron resueltas cuatro obligaciones de contrato —el
+catálogo de producto publicado, el CHANGELOG, la ruta asíncrona del build y
+el veredicto cuando no se midió nada— y un test que pregunta a la CLI y al
+MCP sobre el mismo árbol. Queda un residual anotado como `C24`: las
+superficies por fichero no dicen todavía qué referencias no ataron.
+
+**El gate de cadena de suministro encontró dos avisos de seguridad.** No
+venían de este ciclo: `Cargo.lock` estaba intacto respecto a la base, y lo
+que los sacó es que el aviso se publicó después de la última vez que `main`
+pasó su propio gate —`main` llevaba su check en rojo sin que nadie lo
+mirase—. Uno tenía arreglo directo y se aplicó. El otro no lo tenía, y en
+vez de silenciarlo salió la dependencia que lo arrastraba: una que la CLI
+declaraba y no usaba. El árbol quedó más pequeño y el gate volvió a estar en
+verde.
 
 ## Los contratos que fija la auditoría del 2026-10-20
 
@@ -66,11 +124,90 @@ que el producto tenía que decir y no decía:
 
 Los nueve hallazgos de la auditoría se verificaron uno por uno contra el
 código antes de escribirlos: siete son candidatos nuevos de la backlog
-(C17–C23) y dos ya estaban (el vigilante y la puerta del dominio).
+(C17–C23) y dos ya estaban (el vigilante y la puerta del dominio). La
+revisión del ciclo C17 añadió uno más: `C24`, las superficies por fichero
+que no dicen qué referencias no ataron.
 
-El siguiente trabajo es **C17**: las referencias sin resolver son hechos, no
-silencio. Después, **C18** (los metadatos reales de la arista) y el corte de
-release, que es lo que convierte el trabajo en instalable.
+## La auditoría del 2026-10-21 reordena el trabajo
+
+No abre unidades nuevas: usa las mismas tres especificaciones y la misma
+backlog. Lo que cambia es el orden, y sale de lo que el informe midió en el
+código, no de una opinión.
+
+| Bloque | Qué entrega | Candidatos |
+|---|---|---|
+| B1 | Grafo fiable y MCP seguro; termina publicando las estabilizaciones pendientes | `C18`, `C28`, `C29`, `C14` |
+| B2 | Testing rápido y sin duplicidades | `C6`, `C5`, `C7`, `C21`, `C8` |
+| B3 | Ontología y arquitectura simplificadas | `C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
+| B4 | Caché incremental fiable | `C11` |
+| B5 | Navegación Kotlin sin JVM | `C12` |
+| B6 | Relaciones Kotlin ↔ Java | `C13` |
+
+Es el orden del **roadmap de ejecución del 2026-10-21**, que vive en
+`ROADMAP.md` §11.1 con la autoridad de cada bloque. La línea de Kotlin
+(`C12`, `C13`) queda al final: es la unidad más grande del roadmap y ningún
+bloque la necesita. El corte de release (`C14`) va **dentro** de B1 y **al
+final**: publicar las correcciones mergeadas y las de B1 no tiene por qué
+esperar a la reescritura del testing ni a la de la arquitectura.
+
+Tres candidatos nacen de la auditoría del 2026-10-20: **C25**, la cobertura
+en caché —un fichero recuperado de la caché no cuenta como analizado, y una
+construcción en caliente puede informar de un 0 % sobre un grafo completo—;
+**C26**, el fallo silencioso del lector especializado, que se degrada a
+resultado genérico en vez de conservar el diagnóstico; y **C27**, la prueba
+metamórfica, que comprueba identidad, caché, cobertura y relaciones en un
+solo escenario. Dos candidatos que ya existían recibieron la evidencia
+nueva: **C19** con el caso de Bash, y **C10** con el ejemplo de una
+identidad semántica que `SymbolFqn::parse` no entiende.
+
+El informe del 2026-10-21 sobre `4dbcb99` añade **tres candidatos más**:
+**C28**, un handler MCP que devuelve `Ok` con un `error` dentro —el
+transporte comunica un éxito donde hubo un fallo—; **C29**, la cancelación
+MCP, un `AtomicBool` compartido que nunca se restablece y no pertenece a su
+petición; y **C30**, el catálogo de capacidades, que declara 21 lenguajes
+mientras el registro de parsers tiene más.
+
+**C25 está cerrado**: la cobertura publica los ficheros cubiertos, los
+interpretados de nuevo y los reutilizados de la caché, y un build en
+caliente informa lo mismo que uno en frío sobre el mismo árbol.
+
+**C20 está cerrado**: un error del recorrido se cuenta como error y una
+exclusión legítima como exclusión. El recorrido que decide de qué ficheros
+se construye el grafo descartaba sus propios errores, y las tres rutas que
+caminan el repo publicaban `Complete` sobre un árbol al que no habían
+recorrido entero. El inventario publica ahora las tres cosas por separado
+—el hueco real, la exclusión legítima y el error— y ninguna de las tres se
+confunde con otra.
+
+**C24 está cerrado**: las superficies por fichero dicen lo que no ataron. El
+grafo por fichero sabe qué referencias no puede atar —la caché las guarda y
+el grafo del proyecto las publica—, pero el manejador del MCP y la orden de
+la CLI respondían como si el fichero no enunciara ninguna. Ahora las dos
+publican las referencias pendientes con su origen y su motivo, y dicen lo
+mismo sobre el mismo fichero.
+
+**C18 está cerrado**: la consulta de infraestructura contesta con la arista
+que tiene. Los dependientes se publicaban siempre como `references` con una
+confianza de `1.0` sin mirar la arista que los une, y la profundidad era un
+tope de resultados: con `depth: 1` y con `depth: 2` salía lo mismo. Ahora
+cada relación lleva el tipo, la procedencia y la confianza de su propia
+arista —una arista sin confianza se dice desconocida, no se invierte en `1.0`—,
+`depth` es el número de saltos que se caminan, y un nombre que responde por
+más de una declaración se declara ambiguo y pide la identidad canónica. El
+grafo gana la contracara de las aristas inversas con sus metadatos, y no
+cambia de forma en disco.
+
+**C28 está cerrado**: un fallo de MCP llega como fallo. Las herramientas de
+analítica del grafo respondían `{"error": "No call graph available. Run
+build_graph first."}` como resultado de éxito: el transporte lo pasaba con
+`isError: false`, el agente leía que funcionaba donde la herramienta había
+fallado y las métricas lo contaban como un éxito. Los doce handlers de
+analítica salían de `analytics_graph(ctx)?` —una sola fuente de verdad para
+«no hay grafo» y «el store no se pudo leer»—, el símbolo y la comunidad que
+no existen son `not found` y el modo que no existe es `invalid input`, y un
+fallo de handler nunca llega como un resultado con `isError: false`. El
+siguiente trabajo es **C29**, la cancelación MCP: que pertenezca a su
+petición y se limpia al terminar.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
@@ -99,9 +236,24 @@ correspondería a otro árbol.
 - **Binarios release**: algunas suites de CLI requieren
   `$CARGO_TARGET_DIR/release`. Si el binario falta, el fallo es de
   infraestructura local, no una regresión: `cargo build --release --bin cogh`.
-- **Release pendiente**: `main` lleva 30 commits sin publicar. Publicar exige
-  gates sobre un candidato concreto, binarios instalados verificados y tag
-  anotado.
+- **`merge-gate` verde en la PR #404** (`f0550db8`): la etapa 32
+  (`cognicode-ladybug`) que caía por la cuota de tmpfs **ha pasado**. La
+  corrida completa del `merge-gate.pipeline.kts` da **56 etapas, 56 en
+  `success`**, 0 fallos, con el journal del pipeline como fuente. El rojo
+  anterior no era un defecto de producto —la etapa moría con `Disk quota
+  exceeded` (os error 122) al compilar en el tmpfs de `/tmp`, y el test
+  nunca llegaba a correr— sino la cuota de usuario de ese tmpfs, que en
+  esta sesión estaba libre. **No se cambió ni una línea del gate**: el
+  aislamiento por checkout del `CARGO_TARGET_DIR` se conserva a propósito,
+  y la cuota dejó de ser un problema sin tocarla. Recibo en el `JOURNAL`,
+  entrada del 2026-10-21. El gate también pasa sobre el árbol de C28
+  (`8941871e`, corrida `df075b89-b70a-400d-a6c3-ea0d68f3f97e`, 56 de 56
+  etapas `success`). Lo que queda es publicar el veredicto: la
+  publicación a GitHub dio `HTTP 422` porque el SHA todavía no está en el
+  remoto, y subir la rama es decisión del operador.
+- **Release pendiente**: `main` lleva 65 commits sin publicar (con este
+  ciclo; 31 sin él). Publicar exige gates sobre un candidato concreto,
+  binarios instalados verificados y tag anotado.
 
 ## Dónde está cada cosa
 

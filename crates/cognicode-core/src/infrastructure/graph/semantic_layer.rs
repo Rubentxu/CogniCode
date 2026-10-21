@@ -21,7 +21,9 @@ use crate::application::ingest::types::{FileFacts, FileRelation, TargetRef};
 use crate::domain::aggregates::GraphNode;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::aggregates::symbol::Symbol;
-use crate::domain::value_objects::{Declaration, DependencyType, Location, NodeKind};
+use crate::domain::value_objects::{
+    Declaration, DependencyType, Location, NodeKind, PendingClass, PendingReference,
+};
 use crate::infrastructure::graph::per_file_graph::content_hash_64;
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::parser::language_config::LanguageConfig;
@@ -101,18 +103,8 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
     }
 
     let mut identified: Vec<FileRelation> = Vec::new();
+    let mut pending: Vec<PendingReference> = Vec::new();
     for edge in &extracted.edges {
-        // An edge whose far end was not resolved is not invented: its
-        // absence is counted, which is what the generic path already did.
-        let TargetRef::Resolved(target) = &edge.target_ref else {
-            continue;
-        };
-        let (Some(from), Some(to)) = (
-            by_reader_id.get(edge.source.as_str()),
-            by_reader_id.get(target.as_str()),
-        ) else {
-            continue;
-        };
         let Some(kind) = edge
             .kind
             .strip_prefix("dependency.")
@@ -120,17 +112,58 @@ pub fn semantic_facts(language: Language, source: &str, file_path: &str) -> Opti
         else {
             continue;
         };
-        identified.push(FileRelation {
-            caller: from.clone(),
-            callee: to.clone(),
-            kind,
-        });
+        match &edge.target_ref {
+            TargetRef::Resolved(target) => {
+                let (Some(from), Some(to)) = (
+                    by_reader_id.get(edge.source.as_str()),
+                    by_reader_id.get(target.as_str()),
+                ) else {
+                    continue;
+                };
+                identified.push(FileRelation {
+                    caller: from.clone(),
+                    callee: to.clone(),
+                    kind,
+                });
+            }
+            TargetRef::Unresolved(target) => {
+                // A reference that names a declaration of the project is a
+                // hole when it cannot be tied to one. A call is not: what
+                // the code calls may live outside the project — a function
+                // of another crate, a module of Ansible — and the graph
+                // says nothing about the world outside it. Neither this
+                // path nor the generic one publishes those calls as gaps,
+                // and neither counts them yet: separating the calls from
+                // the relations is its own work.
+                if kind == DependencyType::Calls {
+                    continue;
+                }
+                // The reference names something this file does not declare.
+                // No edge is invented for it — nothing proves its far end —
+                // but the reference is a fact about what the file says, and
+                // the project may still be able to tie it to a declaration in
+                // another file. Dropping it here would leave the consumer
+                // with a graph that claims to know everything.
+                let Some(source) = by_reader_id.get(edge.source.as_str()) else {
+                    continue;
+                };
+                pending.push(PendingReference {
+                    origin_file: file_path.to_string(),
+                    origin_line: edge.line,
+                    source: source.clone(),
+                    target: target.clone(),
+                    kind,
+                    class: PendingClass::Unresolved,
+                });
+            }
+        }
     }
 
     Some(FileFacts {
         symbols,
         identified,
         calls: Vec::new(),
+        pending,
     })
 }
 

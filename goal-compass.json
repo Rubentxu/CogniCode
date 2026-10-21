@@ -1,6 +1,6 @@
 {
   "missionId": "cognicode",
-  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas: primero las correcciones de correccion que quedaban de la auditoria del 2026-10-20 (las referencias sin resolver son hechos y no silencio, y la consulta de infraestructura contesta con el tipo, la arista y la profundidad que le corresponden), despues el corte de release que las publica, despues la reduccion del coste de la fase de tests sin perder garantias, y finalmente las unidades Kotlin (H3/H4.4) y el SnapshotKey de H5, con todo en remoto al concluir cada ciclo.",
+  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas. El orden lo fija el roadmap de ejecucion del 2026-10-21 en sus seis bloques: B1 grafo fiable y MCP seguro --que ninguna cobertura engane, que la consulta de infraestructura no responda cosas falsas y que un fallo de MCP llegue como fallo al cliente--, que termina publicando las estabilizaciones pendientes; B2 testing rapido y sin duplicidades; B3 ontologia y arquitectura simplificadas; B4 cache incremental fiable; B5 navegacion Kotlin sin JVM; y B6 relaciones Kotlin-Java. Todo en remoto al concluir cada ciclo.",
   "defaultTokenBudget": 120000,
   "totalTokenBudget": null,
   "explorationEnabled": true,
@@ -8,334 +8,384 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C2",
-      "title": "El manifiesto se deriva del registro de lenguajes",
+      "candidateId": "C29",
+      "title": "La cancelacion MCP pertenece a su peticion y se limpia al terminar",
       "unit": "H24",
-      "priority": 1,
-      "objective": "Que el manifiesto de invalidacion se derive del registro de lenguajes, en vez de una lista literal de 9 extensiones, para que editar un `.tf` o un `.yml` invalide el grafo cacheado.",
-      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/mod.rs",
-      "whyNow": "Es una violacion literal de SPEC-CU-005.3 (`nunca Complete usando datos stale`) y del criterio de la auditoria: el manifiesto cubre 9 de las 30 linguagens registradas. Es el arreglo mas barato de los que corrigen comportamiento, y elimina de paso una segunda fuente de verdad.",
-      "doneWhen": [
-        "no queda ninguna lista literal de extensiones en el calculo de obsolescencia",
-        "un test que modifica un `.tf` y un `.yml` fuerza la invalidacion y `build_graph` no responde `status=complete` con el grafo viejo",
-        "`bash scripts/test-fast.sh` en rc=0"
+      "objective": "Que la cancelacion MCP pertenezca a su peticion y no arrastre a las siguientes: la cancelacion se asocia al identificador de la peticion que se cancela y su registro desaparece cuando la peticion termina.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `CogniCodeHandler` mantiene un unico `Arc<AtomicBool>` compartido (rmcp_adapter.rs:36, creado en 57, 138, 160), y `on_cancelled` (linea 773) hace `store(true)` sin ningun restablecimiento equivalente ni asociacion con la peticion concreta. Cancelar una operacion puede dejar en cancelado el estado que comparten las siguientes de la misma sesion. Es el bloque B1 del informe y no hay candidato en la backlog que lo cubra.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs"
       ],
-      "scope": "H24"
-    },
-    {
-      "candidateId": "C3",
-      "title": "La CLI ve el mismo grafo que el MCP",
-      "unit": "H24",
-      "priority": 2,
-      "objective": "Que el camino de la CLI consulte la capa semantica, de modo que `graph entry-points`, `hot-paths`, `impact` y `mermaid` vean los simbolos de Terraform y Ansible que ya ve el MCP.",
-      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md",
-      "whyNow": "Es la misma divergencia que H21 cerro en un camino y dejo abierta en el otro: CU-002.1 pide que CLI y MCP sean adaptadores de una autoridad unica. Sobre el fixture real, la CLI da 0 simbolos de Terraform donde el MCP da 74.",
       "doneWhen": [
-        "sobre `sandbox/fixtures/terraform-iac`, la via de la CLI y la del MCP devuelven el mismo conjunto de simbolos y las mismas relaciones",
-        "un test discriminante que falle si las dos vias divergen",
-        "CU-002.1 deja de estar incumplido en la via de la CLI"
-      ],
-      "scope": "H24"
-    },
-    {
-      "candidateId": "C4",
-      "title": "iac_query publica el nombre del dominio",
-      "unit": "H24",
-      "priority": 3,
-      "objective": "Que `iac_query` publique el nombre del dominio: el tipo que la declaracion lleva (`aws_s3_bucket`) y, cuando no lleva ninguno, el tipo de declaracion que el lector le dio (`resource`, `data`, `variable`, `module`, `output`, `play`, `task`, `handler`), en vez del nombre interno de la variante de Rust (`Function`).",
-      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
-      "whyNow": "La capa semantica ya calcula `iac_kind` e `iac_type` y los descarta al cruzar la frontera: el consumidor ve `\"Function\"` para `aws_s3_bucket.app_bucket`. Es la clase de fuga que SPEC-CU-002.3 prohibe (publicar una forma aproximada en vez del tipo honesto). CORRECCION HACIA DELANTE: la primera redaccion de este candidato pedia `resource_type: \"resource\"`, y solo se sabia entonces que sobrevivia el kind. Al medir se vio que el tipo tambien sobrevivia y que el otro camino del mismo tool ya publica el tipo, asi que el criterio pasa a ser el tipo y el kind solo cuando la declaracion no lleva ninguno.",
-      "doneWhen": [
-        "`iac_query` devuelve `resource_type: \"aws_s3_bucket\"` para un recurso de Terraform, y el kind cuando la declaracion no lleva tipo",
-        "ningun consumidor publico ve el nombre de una variante de `SymbolKind`",
-        "el dato semantico llega al grafo en vez de calcularse y tirarse"
-      ],
-      "scope": "H24"
-    },
-    {
-      "candidateId": "C17",
-      "title": "Las referencias sin resolver son hechos, no silencio",
-      "unit": "H24",
-      "objective": "Que una referencia que no se puede resolver se conserve como hecho con su origen y su motivo, y que `build_graph` distinga la cobertura de archivos de la resolucion de relaciones: `complete` solo se dice cuando las dos estan completas.",
-      "evidence": "crates/cognicode-core/src/infrastructure/graph/semantic_layer.rs",
-      "whyNow": "MEDIDO: `semantic_facts` conserva solo las aristas con destino resuelto (`TargetRef::Resolved`) y pasa por alto el resto sin contarlo; `FileFacts` no tiene donde declararlos. Un grafo puede haber leido todos los ficheros y no saber que depende de que, y aun asi responder `status=\"complete\"`. Es el punto P0 de la auditoria del 2026-10-20 y el contrato CU-007.1 a CU-007.4.",
-      "doneWhen": [
-        "una referencia sin resolver se conserva con fichero, linea, motivo y clase (`Unresolved` o `Ambiguous`)",
-        "`build_graph` dice `complete` solo cuando no queda ninguna referencia pendiente, y en caso contrario dice cuantas quedan y por que",
-        "un test sobre `sandbox/fixtures/terraform-iac` con una referencia a un simbolo inexistente ve la referencia pendiente"
+        "la cancelacion se registra con el identificador de la peticion a la que pertenece",
+        "al terminar la peticion, su registro de cancelacion desaparece",
+        "cancelar una operacion y lanzar otra despues deja la segunda sin cancelar"
       ],
       "scope": "H24",
-      "priority": 4
-    },
-    {
-      "candidateId": "C18",
-      "title": "La consulta de infraestructura contesta con la arista y la profundidad que le corresponden",
-      "unit": "H24",
-      "objective": "Que `iac_query` conteste con los metadatos reales de cada arista, que `depth` sea una profundidad de recorrido y no un tope de resultados, y que un nombre ambiguo se declare ambiguo en vez de resolverse por casualidad.",
-      "evidence": "crates/cognicode-core/src/interface/mcp/handlers/consolidated_handlers.rs",
-      "whyNow": "MEDIDO: los dependientes se publican siempre como `references` con confianza `1.0` sin mirar la arista; el grafo guarda las aristas inversas en un `HashSet`, asi que el tipo y la confianza de verdad no estan ahi; `depth` se implementa como `take(depth * 10)`; y dos declaraciones con el mismo nombre se resuelven con `first()`. El tipo y el kind ya se publican bien desde el candidato anterior; esto es lo que queda. Contrato CU-008.2 a CU-008.4.",
-      "doneWhen": [
-        "la confianza y el tipo de la arista salen del grafo, y una arista sin confianza se declara desconocida en vez de `1.0`",
-        "`depth` es una profundidad: con `depth: 2` llegan las aristas a dos saltos, y con `depth: 3` llegan mas aristas, no las mismas con otro corte",
-        "un nombre que responde por mas de una declaracion se declara ambiguo en vez de elegir una en silencio",
-        "el grafo conserva los metadatos de las aristas inversas"
-      ],
-      "scope": "H24",
-      "priority": 5
+      "risk": "medium",
+      "source": "roadmap",
+      "priority": 200
     },
     {
       "candidateId": "C14",
       "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
       "unit": "release",
-      "priority": 6,
       "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
-      "evidence": "release-candidate.pipeline.kts",
       "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
+      "evidenceRefs": [
+        "release-candidate.pipeline.kts"
+      ],
       "doneWhen": [
         "el candidato pasa el gate de release con los contratos y los assets verificados",
         "los binarios instalados responden desde fuera del repositorio, sin `CARGO_MANIFEST_DIR` en el entorno",
         "el tag anotado y la release existen, y `tools/list` anuncia la superficie real"
       ],
-      "scope": "release"
-    },
-    {
-      "candidateId": "C5",
-      "title": "La línea base vacía no se reejecuta",
-      "unit": "H23",
-      "priority": 7,
-      "objective": "Que la fase de tests deje de reejecutar 3.192 tests cuando la linea base de fallos conocidos esta vacia.",
-      "evidence": "scripts/known_failures.yaml",
-      "whyNow": "MEDIDO: el paso `known_failures (core/lib)` de `scripts/test-full.sh` reejecuta los 3.192 tests del lib con `entries:` vacio, asi que solo puede repetir el veredicto del paso anterior. Con la linea base vacia, ese paso no compra garantia: paga tiempo.",
-      "doneWhen": [
-        "con la linea base vacia, el paso se salta y lo dice en pantalla, en vez de reejecutar la suite",
-        "un contrato comprueba que el mecanismo de linea base puede fallar de verdad",
-        "el tiempo del gate completo baja y queda medido en el recibo"
-      ],
-      "scope": "H23"
+      "scope": "release",
+      "risk": "high",
+      "priority": 190,
+      "source": "roadmap"
     },
     {
       "candidateId": "C6",
       "title": "El modo fast ejecuta el target del test tocado",
       "unit": "H23",
-      "priority": 8,
       "objective": "Que el modo fast ejecute el target concreto del fichero de test que se toco, en vez de limitarse a `--lib`.",
-      "evidence": "scripts/ci/select-suites.sh",
       "whyNow": "MEDIDO: el modo fast ejecuta 0 de los 1.316 tests de integracion, porque `run_suite` mapea a `--lib` y nada mas. El lazo iterativo no cubre la superficie donde viven los bugs de contrato, y por eso todo acaba en el gate lento.",
+      "evidenceRefs": [
+        "scripts/ci/select-suites.sh"
+      ],
       "doneWhen": [
         "un cambio en un fichero de test de integracion selecciona ese target concreto y lo ejecuta en el modo fast",
         "el selector sigue siendo la autoridad: el modo fast no recalcula el plan",
         "un filtro que no selecciona ninguna prueba sigue fallando"
       ],
-      "scope": "H23"
+      "scope": "H23",
+      "risk": "low",
+      "priority": 180,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C5",
+      "title": "La línea base vacía no se reejecuta",
+      "unit": "H23",
+      "objective": "Que la fase de tests deje de reejecutar 3.192 tests cuando la linea base de fallos conocidos esta vacia.",
+      "whyNow": "MEDIDO: el paso `known_failures (core/lib)` de `scripts/test-full.sh` reejecuta los 3.192 tests del lib con `entries:` vacio, asi que solo puede repetir el veredicto del paso anterior. Con la linea base vacia, ese paso no compra garantia: paga tiempo.",
+      "evidenceRefs": [
+        "scripts/known_failures.yaml"
+      ],
+      "doneWhen": [
+        "con la linea base vacia, el paso se salta y lo dice en pantalla, en vez de reejecutar la suite",
+        "un contrato comprueba que el mecanismo de linea base puede fallar de verdad",
+        "el tiempo del gate completo baja y queda medido en el recibo"
+      ],
+      "scope": "H23",
+      "risk": "low",
+      "priority": 170,
+      "source": "roadmap"
     },
     {
       "candidateId": "C7",
       "title": "Cada superficie E2E tiene carril o se retira",
       "unit": "H23",
-      "priority": 9,
       "objective": "Que cada superficie E2E que sobreviva tenga un carril que la ejecute, o que se retire: 41 specs de Playwright sin carril, 5 tests ignorados en `continuation_e2e.rs` cuyo carril declarado no tiene ningun stage de `cargo test`, y las islas de `pytest` que ningun gate corre.",
-      "evidence": "crates/cognicode-mcp/tests/continuation_e2e.rs",
       "whyNow": "MEDIDO: 41 specs de Playwright y 4 specs E2E legacy no los ejecuta ningun pipeline; `continuation_e2e.rs` son 609 lineas con 5 tests ignorados y su_dueno declarado no corre ninguno; las islas de `pytest` de `sandbox/scripts/tests/` no las corre nadie, y una de ellas pedia 22 lenguajes cuando ya hay 21. Es superficie que cuesta y no garantiza.",
+      "evidenceRefs": [
+        "crates/cognicode-mcp/tests/continuation_e2e.rs"
+      ],
       "doneWhen": [
         "el recuento de superficies de test sin carril es 0, y cada una que sobrevive tiene un carril declarado",
         "lo retirado tiene un motivo escrito en el recibo, no un borrado silencioso",
         "el numero de specs de Playwright se declara en el producto y en su carril"
       ],
-      "scope": "H23"
-    },
-    {
-      "candidateId": "C8",
-      "title": "El contrato de procedencia gobierna consumer-contracts",
-      "unit": "H23",
-      "priority": 10,
-      "objective": "Que el contrato de procedencia gobierne tambien `docs/roadmap/consumer-contracts/**`, para que las 20 citas rotas que quedan se vean en rojo.",
-      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/INTEGRATION.md",
-      "whyNow": "MEDIDO: de 39 citas a rutas de `docs/` en el contrato del consumidor, 20 no resuelven (14 ficheros, 6 directorios), ocho de ellas con el prefijo equivocado. El contrato solo gobierna `docs/adr/**`, asi que nadie se dio cuenta: el fallo es del guard, no solo de las citas.",
-      "doneWhen": [
-        "el contrato escanea `docs/roadmap/consumer-contracts/**` y falla con las citas rotas a la vista",
-        "las citas rotas estan corregidas o declaradas con su razon, una fila cada una",
-        "el guard tiene control negativo: falla ante una cita rota sintetica"
-      ],
-      "scope": "H23"
-    },
-    {
-      "candidateId": "C19",
-      "title": "Un recurso de infraestructura no es un simbolo de programacion",
-      "unit": "H24",
-      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
-      "evidence": "crates/cognicode-core/src/infrastructure/parser/language_config.rs",
-      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3.",
-      "doneWhen": [
-        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
-        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
-        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar"
-      ],
-      "scope": "H24",
-      "priority": 11
-    },
-    {
-      "candidateId": "C20",
-      "title": "Los errores del recorrido no desaparecen del inventario",
-      "unit": "H24",
-      "objective": "Que un error del recorrido se cuente como error y una exclusion legitima como exclusion, y que el inventario diga cual de las dos es cada cosa.",
-      "evidence": "crates/cognicode-core/src/infrastructure/graph/source_files.rs",
-      "whyNow": "MEDIDO: el paseo usa `filter_map(|e| e.ok())`, asi que una entrada que falla se pierde sin quedar clasificada; el inventario solo distingue `fichero con lenguaje` de `fichero sin lenguaje`, y los symlinks declinados si se cuentan. El contrato CU-007.5 distingue la exclusion legitima del fichero que no se pudo inspeccionar, y hoy el segundo caso no existe en el inventario.",
-      "doneWhen": [
-        "un error del recorrido aparece en el informe de construccion, clasificado como error",
-        "una exclusion legitima sigue apareciendo como exclusion, y las dos no se confunden",
-        "un test que provoca un error de recorrido lo ve en el inventario"
-      ],
-      "scope": "H24",
-      "priority": 12
+      "scope": "H23",
+      "risk": "medium",
+      "priority": 160,
+      "source": "roadmap"
     },
     {
       "candidateId": "C21",
       "title": "La configuracion ejecutable no cita documentos que ya no existen",
       "unit": "H23",
       "objective": "Que ninguna configuracion ejecutable apunte a un documento que la poda se llevo, y que el inventario de cobertura que el explorador genera se escriba donde de verdad esta.",
-      "evidence": "apps/explorer-ui/playwright.config.ts",
       "whyNow": "MEDIDO: `playwright.config.ts` declara `coverageMatrix: \"docs/inventory/e17-coverage-matrix.md\"` y `scripts/coverage-matrix.ts` dice producir ese mismo fichero; `docs/inventory/` ya no existe desde la poda documental, y dos specs de `e2e/` citan `docs/inventory/e17-deferred-bugs.md`. Una configuracion que apunta a un documento inexistente no describe lo que ejecuta.",
+      "evidenceRefs": [
+        "apps/explorer-ui/playwright.config.ts"
+      ],
       "doneWhen": [
         "ninguna ruta de `docs/` citada por configuracion ejecutable esta ausente del arbol",
         "el inventario de cobertura que genera el explorador se escribe en una ruta versionada, o su generador deja de existir",
         "un contrato lo vigila"
       ],
       "scope": "H23",
-      "priority": 13
+      "risk": "low",
+      "priority": 150,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C8",
+      "title": "El contrato de procedencia gobierna consumer-contracts",
+      "unit": "H23",
+      "objective": "Que el contrato de procedencia gobierne tambien `docs/roadmap/consumer-contracts/**`, para que las 20 citas rotas que quedan se vean en rojo.",
+      "whyNow": "MEDIDO: de 39 citas a rutas de `docs/` en el contrato del consumidor, 20 no resuelven (14 ficheros, 6 directorios), ocho de ellas con el prefijo equivocado. El contrato solo gobierna `docs/adr/**`, asi que nadie se dio cuenta: el fallo es del guard, no solo de las citas.",
+      "evidenceRefs": [
+        "docs/roadmap/consumer-contracts/kotlin-evolution/INTEGRATION.md"
+      ],
+      "doneWhen": [
+        "el contrato escanea `docs/roadmap/consumer-contracts/**` y falla con las citas rotas a la vista",
+        "las citas rotas estan corregidas o declaradas con su razon, una fila cada una",
+        "el guard tiene control negativo: falla ante una cita rota sintetica"
+      ],
+      "scope": "H23",
+      "risk": "low",
+      "priority": 140,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C19",
+      "title": "Un recurso de infraestructura no es un simbolo de programacion",
+      "unit": "H24",
+      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
+      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3. La auditoria del 2026-10-21 anade el caso de Bash: `function_definition` figura tambien como clase y cualquier `command` como importacion, y no hay lector semantico que compense.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
+      ],
+      "doneWhen": [
+        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
+        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
+        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "priority": 130,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C30",
+      "title": "Las capacidades se derivan del registro de lenguajes, no de una lista propia",
+      "unit": "H24",
+      "objective": "Que el contrato de capacidades no declare un conjunto de lenguajes propio: que se derive del registro de parsers, con la precision que cada lenguaje demuestra, y que Kotlin siga declarado no soportado hasta que su parser este conectado.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21 sobre 4dbcb994: `ALL_TREE_SITTER_LANGS` (capabilities.rs:38) declara 21 entradas y se repite en al menos ocho sitios del mismo fichero, mientras `language_config.rs` tiene configuraciones para Bash, Groovy, Elixir, Haskell, PowerShell, Fortran y JSON. El catalogo declarado y el registro de parsers no describen el mismo conjunto, asi que las declaraciones no derivan de una sola autoridad. Es el bloque B4 del informe. El candidato mas cercano (C19, la ontologia de Bash/R/JSON) toca el extractor generico, no el catalogo de capacidades.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/interface/mcp/capabilities.rs",
+        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
+      ],
+      "doneWhen": [
+        "el catalogo de capacidades no tiene lista propia de lenguajes: se deriva del registro de `LanguageConfig`",
+        "el conjunto declarado coincide con el registro en los dos sentidos, y un test lo compara",
+        "Kotlin sigue declarado no soportado hasta que su parser este conectado y demostrado"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "source": "roadmap",
+      "priority": 120
     },
     {
       "candidateId": "C9",
       "title": "El puerto de dominio deja de construir el adaptador",
       "unit": "H24",
-      "priority": 14,
       "objective": "Que el puerto de dominio deje de construir un adaptador de infraestructura.",
-      "evidence": "crates/cognicode-core/src/application/architecture/canonical_constraints.rs",
       "whyNow": "`domain/ports/call_graph_projection.rs:108` instancia `crate::infrastructure::graph::CallGraphProjection` dentro del dominio, contra la propia regla `architecture.domain_no_infrastructure`. El comentario del fichero justifica la funcion diciendo que evita importar infraestructura, y la linea de al lado la importa.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/architecture/canonical_constraints.rs"
+      ],
       "doneWhen": [
         "el contrato de arquitectura no lista ninguna violacion de `domain_no_infrastructure`",
         "el puerto declara la fabrica que el adaptador implementa, en vez de llamar al adaptador",
         "el arbol hexagonal sigue compilando sin que el dominio dependa de infraestructura"
       ],
-      "scope": "H24"
-    },
-    {
-      "candidateId": "C10",
-      "title": "Una propiedad de identidad en vez de N tests de paridad",
-      "unit": "H24",
-      "priority": 15,
-      "objective": "Sustituir los tests de paridad por parejas por una propiedad: toda identidad que el producto produce la entiende `SymbolFqn::parse`.",
-      "evidence": "crates/cognicode-core/src/domain/evidence_kernel/symbol_fqn.rs",
-      "whyNow": "MEDIDO: hay siete gramáticas de identidad y un solo parser, que exige que el ultimo segmento sea un `u32`: las gramaticas `tf:` y `ansible:` no parsean nunca, y los cuatro sitios que parsean degradan en silencio. Una propiedad sobre el conjunto habria encontrado, de una vez, esta divergencia, la del camino de la CLI y la fuga de `iac_query`.",
-      "doneWhen": [
-        "una property comprueba que toda identidad que el producto produce la entiende el parser de identidad",
-        "las gramaticas `tf:` y `ansible:` parsean, o el parser se declara tolerante con su forma",
-        "los cuatro sitios que degradan en silencio dejan de hacerlo"
-      ],
-      "scope": "H24"
-    },
-    {
-      "candidateId": "C15",
-      "title": "El vigilante y su estado dicen la misma verdad que el registro",
-      "unit": "H24",
-      "priority": 16,
-      "objective": "Que el conjunto de extensiones que el vigilante observa y el que el endpoint `/watch` publica se deriven de una sola regla, en vez de dos listas literales que ya no coinciden entre sí ni con el registro de lenguajes.",
-      "evidence": "crates/cognicode-core/src/application/ingest/watcher.rs",
-      "whyNow": "MEDIDO al cerrar el candidato del manifiesto: el vigilante decide con una lista literal de 30 extensiones (`is_watchable`), y el endpoint `/watch` publica otra de 21 que no es la misma. Las dos se han separado del registro de lenguajes, y una de ellas no es la que el servidor aplica. Con el manifiesto arreglado, esta lista ya no puede hacer que el producto mienta: sólo decide cuándo avisar, no qué es verdad. Sigue siendo una tercera fuente de verdad y una superficie que publica algo que no ocurre.",
-      "doneWhen": [
-        "el endpoint `/watch` publica el conjunto de extensiones que el vigilante aplica de verdad",
-        "el vigilante decide con el registro de lenguajes, más las extensiones de documentación que decide seguir vigilando, y esa decisión está escrita en un solo sitio",
-        "un test que compare lo que `/watch` publica con lo que el vigilante acepta"
-      ],
-      "scope": "H24"
+      "scope": "H24",
+      "risk": "high",
+      "priority": 110,
+      "source": "roadmap"
     },
     {
       "candidateId": "C16",
       "title": "La estrategia de grafo completo deja de ser una segunda puerta al grafo",
       "unit": "H24",
-      "priority": 17,
       "objective": "Que el grafo del proyecto se construya en un solo sitio: el método `build_full_graph_report` de las estrategias ya no tiene llamadores de producción, y su contrato de paseo confinado debe quedar protegido en el camino que queda vivo.",
-      "evidence": "crates/cognicode-core/src/infrastructure/graph/strategy.rs",
       "whyNow": "MEDIDO al cerrar el candidato de la paridad: las siete órdenes de grafo de la CLI y el manejador `build_graph` del MCP construyen el grafo con el servicio, así que `build_full_graph_report` (el de `FullGraphStrategy` y el de `PerFileStrategy`) se quedó sin llamadores de producción. Lo sostienen sólo sus propios tests, entre ellos el que fija que el paseo no se sale de la raíz y el que exige que las estrategias propaguen su informe de construcción. Es una segunda puerta al grafo que ya no está en el camino del producto: quien la use obtendría un grafo distinto del que da el producto.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/graph/strategy.rs"
+      ],
       "doneWhen": [
         "el grafo del proyecto se construye en un solo sitio, y no queda ningún constructor alternativo en el árbol de producción",
         "el contrato de paseo confinado (no leer a través de un symlink, no descender en un directorio enlazado) queda cubierto por pruebas sobre el camino vivo",
         "el contrato de propagación del informe de construcción sigue teniendo una prueba o una deprecación explícita"
       ],
-      "scope": "H24"
+      "scope": "H24",
+      "risk": "high",
+      "priority": 100,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C10",
+      "title": "Una propiedad de identidad en vez de N tests de paridad",
+      "unit": "H24",
+      "objective": "Sustituir los tests de paridad por parejas por una propiedad: toda identidad que el producto produce la entiende `SymbolFqn::parse`.",
+      "whyNow": "MEDIDO: hay siete gramáticas de identidad y un solo parser, que exige que el ultimo segmento sea un `u32`: las gramaticas `tf:` y `ansible:` no parsean nunca, y los cuatro sitios que parsean degradan en silencio. Una propiedad sobre el conjunto habria encontrado, de una vez, esta divergencia, la del camino de la CLI y la fuga de `iac_query`. La auditoria del 2026-10-21 lo hace concreto: identidades semanticas como `tf:main.tf:aws_s3_bucket.app_bucket` no cumplen la gramatica, que exige una linea numerica al final.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/domain/evidence_kernel/symbol_fqn.rs"
+      ],
+      "doneWhen": [
+        "una property comprueba que toda identidad que el producto produce la entiende el parser de identidad",
+        "las gramaticas `tf:` y `ansible:` parsean, o el parser se declara tolerante con su forma",
+        "los cuatro sitios que degradan en silencio dejan de hacerlo"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "priority": 90,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C26",
+      "title": "El fallo del lector especializado no se degrada a resultado generico",
+      "unit": "H24",
+      "objective": "Que un lector especializado que entre en panico no se degrade en silencio a un resultado generico aparentemente valido, sino que el fallo se conserve como diagnostico tipado.",
+      "whyNow": "MEDIDO en la auditoria del 2026-10-21: `catch_unwind` devuelve el resultado generico cuando el handler especializado falla. El proceso sigue vivo, pero un fallo del analisis de Terraform o de Ansible se convierte en una respuesta aparentemente valida, que es la forma que toma la mentira cuando el motor calla.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/ingest/extractor.rs"
+      ],
+      "doneWhen": [
+        "un handler especializado que falla produce un diagnostico tipado y no un resultado generico",
+        "el consumidor puede distinguir 'no lo se' de 'no hay nada'",
+        "el fallo queda registrado con su causa"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "priority": 80,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C15",
+      "title": "El vigilante y su estado dicen la misma verdad que el registro",
+      "unit": "H24",
+      "objective": "Que el conjunto de extensiones que el vigilante observa y el que el endpoint `/watch` publica se deriven de una sola regla, en vez de dos listas literales que ya no coinciden entre sí ni con el registro de lenguajes.",
+      "whyNow": "MEDIDO al cerrar el candidato del manifiesto: el vigilante decide con una lista literal de 30 extensiones (`is_watchable`), y el endpoint `/watch` publica otra de 21 que no es la misma. Las dos se han separado del registro de lenguajes, y una de ellas no es la que el servidor aplica. Con el manifiesto arreglado, esta lista ya no puede hacer que el producto mienta: sólo decide cuándo avisar, no qué es verdad. Sigue siendo una tercera fuente de verdad y una superficie que publica algo que no ocurre.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/ingest/watcher.rs"
+      ],
+      "doneWhen": [
+        "el endpoint `/watch` publica el conjunto de extensiones que el vigilante aplica de verdad",
+        "el vigilante decide con el registro de lenguajes, más las extensiones de documentación que decide seguir vigilando, y esa decisión está escrita en un solo sitio",
+        "un test que compare lo que `/watch` publica con lo que el vigilante acepta"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "priority": 70,
+      "source": "roadmap"
+    },
+    {
+      "candidateId": "C27",
+      "title": "Una prueba metamorfica del grafo en vez de cuatro instantaneas",
+      "unit": "H24",
+      "objective": "Que un unico escenario compruebe a la vez la identidad, la cache, la cobertura y las relaciones: renombrar un recurso y cambiar una dependencia, y comparar que cambio y que permanecio igual.",
+      "whyNow": "HUECO MEDIDO: hoy cada obligacion tiene su propia instantanea estatica, y ninguna comprueba que el grafo cambie solo donde debe. La propuesta de la auditoria del 2026-10-21 lo cubre con un solo escenario, que detecta el caso que las instantaneas no ven: un grafo que responde lo mismo de todo.",
+      "evidenceRefs": [
+        "crates/cognicode-cli/tests/graph_cli_mcp_equivalence.rs"
+      ],
+      "doneWhen": [
+        "el escenario renombra un recurso y modifica una dependencia, y dice que cambio y que permanecio igual",
+        "el cambio de identidad invalida la cache del fichero y solo del fichero",
+        "el test falla si el grafo responde igual ante un cambio real"
+      ],
+      "scope": "H24",
+      "risk": "medium",
+      "priority": 60,
+      "source": "roadmap"
     },
     {
       "candidateId": "C22",
       "title": "El arbol sintactico se parsea una vez",
       "unit": "H24",
       "objective": "Que el fichero se parsee una sola vez por camino, y que la capa semantica y el lector del dominio compartan el mismo arbol.",
-      "evidence": "crates/cognicode-core/src/infrastructure/parser/terraform_handler.rs",
       "whyNow": "MEDIDO: la capa semantica llama al extractor generico, que parsea el fichero, y el lector de Terraform lo vuelve a parsear con `parse(source)`. Es trabajo repetido y una oportunidad de divergencia: dos lectores del mismo texto pueden discrepar. La auditoria del 2026-10-20 lo senala como mejora lateral, con la condicion de medir antes.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/infrastructure/parser/terraform_handler.rs"
+      ],
       "doneWhen": [
         "MEDIDO: el coste de parsear dos veces por fichero, con el numero",
         "un solo arbol por fichero en el camino de la capa semantica, si el coste lo justifica",
         "ningun cambio en los modelos de dominio"
       ],
       "scope": "H24",
-      "priority": 18
+      "risk": "high",
+      "priority": 50,
+      "source": "roadmap"
     },
     {
       "candidateId": "C23",
       "title": "El servicio de analisis deja de ser un modulo de 4.100 lineas",
       "unit": "H24",
       "objective": "Que la construccion del grafo, la cache, la resolucion y las metricas dejen de vivir en un mismo archivo, sin cambiar los contratos publicos.",
-      "evidence": "crates/cognicode-core/src/application/services/analysis_service.rs",
       "whyNow": "MEDIDO: el archivo tiene 4.100 lineas y cuatro responsabilidades. La auditoria del 2026-10-20 lo senala como senal de duplicacion, junto con la segunda puerta al grafo.",
+      "evidenceRefs": [
+        "crates/cognicode-core/src/application/services/analysis_service.rs"
+      ],
       "doneWhen": [
         "el archivo se parte por responsabilidad, y cada parte tiene su nombre",
         "los contratos publicos del servicio no cambian",
         "la suite sigue verde"
       ],
       "scope": "H24",
-      "priority": 19
+      "risk": "high",
+      "priority": 40,
+      "source": "roadmap"
     },
     {
       "candidateId": "C11",
       "title": "Construir el SnapshotKey de H5",
       "unit": "H5",
-      "priority": 20,
       "objective": "Construir el `SnapshotKey` de CU-005.1: identidad del workspace, paths normalizados con su hash, manifiesto de contenido completo, revision de origen, digest de arbol sucio, build real del analizador, esquema, features, perfil de configuracion y ambito.",
-      "evidence": "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md",
       "whyNow": "MEDIDO: `SnapshotKey` tiene 0 apariciones en `crates/`; la cache es un `HashMap<String, FileGraphCacheEntry>` con la ruta como clave. Sin el, C2 solo arregla una parte del problema de stale. Es la unidad grande, y depende de que C2 haya sentado la base.",
+      "evidenceRefs": [
+        "docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md"
+      ],
       "doneWhen": [
         "existe el tipo con los componentes que enumera CU-005.1, y una funcion pura que lo construye",
         "cold y warm equivalen semanticamente; un cambio semantico invalida; la corrupcion falla cerrado",
         "una diferencia de build o de features evita el stale, y hay medicion de cold/warm/edit sin tiempos inventados"
       ],
-      "scope": "H5"
+      "scope": "H5",
+      "risk": "high",
+      "priority": 30,
+      "source": "roadmap"
     },
     {
       "candidateId": "C12",
       "title": "El lenguaje Kotlin: gramática y navegación",
       "unit": "H3",
-      "priority": 21,
       "objective": "Anadir el lenguaje Kotlin: `Language::Kotlin`, extension `.kt`/`.kts`, una unica gramatica tree-sitter, y navegabilidad desde los binarios distribuidos sin JVM.",
-      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md",
       "whyNow": "MEDIDO: no existe `Language::Kotlin` ni `tree-sitter-kotlin`; el codigo hace lo contrario a proposito (`per_file_graph.rs:916` declara `kt`/`kts` como no soportados, con honestidad). El ADR que lo exige esta en `Estado: PROPOSED`. Es la unidad mas grande del roadmap vivo.",
+      "evidenceRefs": [
+        "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md"
+      ],
       "doneWhen": [
         "`Language::Kotlin` existe y `.kt`/`.kts` se parsean",
         "los simbolos Kotlin son navegables desde el binario distribuido, sin JVM",
         "el gap tipado de `kt`/`kts` desaparece de `KNOWN_UNSUPPORTED_EXTENSIONS` y hay test de aceptacion con fixtures"
       ],
-      "scope": "H3"
+      "scope": "H3",
+      "risk": "high",
+      "priority": 20,
+      "source": "roadmap"
     },
     {
       "candidateId": "C13",
       "title": "Las relaciones Kotlin-Java sólo cuando se pueden probar",
       "unit": "H4.4",
-      "priority": 22,
       "objective": "Cerrar las relaciones Kotlin<->Java solo cuando se pueden probar, con un corpus de homonimos y sin ninguna arista bornada por coincidencia de nombre.",
-      "evidence": "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md",
       "whyNow": "MEDIDO: no hay corpus `.kt`/`.java` ni test de Kotlin. `TargetResolution` tiene tres variantes y el ADR pide cuatro; la cuarta (`External`) exige una tabla de simbolos externos que no existe, y la divergencia esta documentada pero sin test que fije ninguna de las dos formas. Depende de C12.",
+      "evidenceRefs": [
+        "docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md"
+      ],
       "doneWhen": [
         "existe un corpus `.kt`/`.java` con homonimos y un test que demuestra que no sale ninguna arista cuando el objetivo no se puede probar",
         "la forma de `TargetResolution` queda fijada por un test, con la razon de por que son tres y no cuatro"
       ],
-      "scope": "H4.4"
+      "scope": "H4.4",
+      "risk": "high",
+      "priority": 10,
+      "source": "roadmap"
     }
   ]
 }

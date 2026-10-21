@@ -166,7 +166,7 @@ fn benchmark_call_graph_construction_10k(c: &mut Criterion) {
     c.bench_function("call_graph_10k_lines_python", |b| {
         b.iter(|| {
             cache.clear();
-            let graph = cache.get_or_build(black_box(&temp_path)).unwrap();
+            let (graph, _pending) = cache.get_or_build(black_box(&temp_path)).unwrap();
             assert!(graph.symbol_count() > 0, "Should have symbols");
         });
     });
@@ -186,7 +186,7 @@ fn benchmark_call_graph_construction_rust_10k(c: &mut Criterion) {
     c.bench_function("call_graph_10k_lines_rust", |b| {
         b.iter(|| {
             cache.clear();
-            let graph = cache.get_or_build(black_box(&temp_path)).unwrap();
+            let (graph, _pending) = cache.get_or_build(black_box(&temp_path)).unwrap();
             assert!(graph.symbol_count() > 0, "Should have symbols");
         });
     });

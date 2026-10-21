@@ -247,6 +247,12 @@ pub fn present_graph_perfile(
         file,
         symbols,
         dependencies,
+        // The references the file states and nobody declared do not go
+        // here: stdout is the pinned three-line block, and the command
+        // writes them to stderr the way the full graph does. The JSON
+        // presenter carries them, because there the whole result is the
+        // answer.
+        pending_references: _,
     } = result
     {
         // Progress line — same text as the pre-migration
@@ -867,6 +873,7 @@ pub fn present_graph_full(
         dependencies,
         status: _,
         skipped_files: _,
+        pending_references: _,
     } = result
     {
         // Progress line (stdout in text mode; in json

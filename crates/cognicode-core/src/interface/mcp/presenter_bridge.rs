@@ -19,13 +19,21 @@ pub fn present_build_graph(
     outcome: &AnalysisOutcome<AnalysisValue>,
     loaded_from_cache: bool,
 ) -> BuildGraphOutput {
-    let (symbols, relationships) = match outcome.value() {
+    let (symbols, relationships, pending) = match outcome.value() {
         Some(AnalysisValue::Graph(crate::application::analysis_basis::GraphValue::Full {
             symbols,
             dependencies,
+            pending_references,
             ..
-        })) => (*symbols, *dependencies),
-        _ => (0, 0),
+        })) => (
+            *symbols,
+            *dependencies,
+            pending_references
+                .iter()
+                .map(crate::interface::coverage::PendingReferenceInfo::from_reference)
+                .collect(),
+        ),
+        _ => (0, 0, Vec::new()),
     };
 
     let (status, skipped) = match outcome.state() {
@@ -35,6 +43,14 @@ pub fn present_build_graph(
                 outcome
                     .gaps()
                     .iter()
+                    // Only the gaps about files describe a file. The gap
+                    // about pending references describes the other
+                    // coverage, and reading it as a skipped file would
+                    // invent a gap that is not there.
+                    .filter(|gap| {
+                        gap.capability.as_deref()
+                            == Some(crate::application::analysis_basis::SKIPPED_FILE_CAPABILITY)
+                    })
                     .filter_map(|gap| {
                         gap.message.split_once(": ").map(|(p, r)| SkippedFileDto {
                             path: p.to_string(),
@@ -58,6 +74,7 @@ pub fn present_build_graph(
         edges: Vec::new(),
         message: String::new(),
         skipped_files: skipped,
+        pending_references: Some(pending),
         basis: None,
     }
 }

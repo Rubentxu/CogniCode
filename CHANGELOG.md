@@ -10,6 +10,148 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [Unreleased]
+
+**La cobertura de relaciones deja de ser un silencio.** Una referencia que
+el grafo no puede atar a una declaración —un bloque de Terraform que nombra
+un recurso que nadie declara— se descartaba en silencio, y el estado del
+grafo contestaba `complete` sin saber que faltaba algo. Ahora la referencia
+se publica con su fichero, su línea, su motivo y su clase, y `complete`
+sólo se dice cuando las dos coberturas —la de ficheros y la de
+relaciones— están completas.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `build_graph` publica `pending_references`, y la cobertura de
+  `merge_graphs` los lleva dentro. El esquema publicado del catálogo
+  (`product/tools.json`) se regeneró con el del runtime.
+- El CLI `graph full` publica `pending_references` y dice `partial` cuando
+  queda alguna. Antes decía `complete` sobre el mismo proyecto que el MCP
+  decía `partial`.
+- Para los consumidores Rust de `cognicode-core`: `GraphResult::Full` y
+  `GraphValue::Full` ganan el campo `pending_references`, `MergeCoverage::Partial`
+  lo gana también, y `MergeCoverage::from` recibe las referencias
+  pendientes. La firma del constructor cambia.
+- El snapshot durable del grafo cambia de versión: uno escrito por una
+  versión anterior ya no se sirve, porque su `complete` significaba otra
+  cosa. El grafo se reconstruye.
+
+La resolución entre ficheros respeta el ámbito del módulo: un módulo ve
+las declaraciones de su propio directorio y de ninguno más. Una
+declaración de un módulo hermano —o de un módulo padre— no satisface una
+referencia, porque eso sería cablear una arista que nada prueba y
+escondería el hueco real.
+
+**Dos certificados retirados por el gate de cadena de suministro.** El aviso
+`RUSTSEC-2026-0382` y su gemelo `RUSTSEC-2026-0381` trataban del mismo
+certificado —`emSign ECC Root CA - G3`, cuya clave privada ya es pública— y
+pararon el gate antes de publicar este ciclo. Uno tenía arreglo directo
+(`rustls-webpki` 0.103.16, `webpki-roots` 1.0.10). El otro no: la línea `0.26`
+de `webpki-roots` no tiene versión corregida, y a ella sólo se llegaba por una
+dependencia que la CLI declaraba y no usaba.
+
+En vez de silenciar el aviso, salió la dependencia: `ureq` desaparece del
+árbol, el paquete vulnerable deja de estar en el grafo resuelto y el aviso sin
+arreglo desaparece con él. El árbol resultante es más pequeño, no más grande:
+dos paquetes actualizados y uno menos.
+
+**La consulta de infraestructura contesta con la arista que tiene.** Los
+dependientes se publicaban siempre como `references` con una confianza de
+`1.0`, sin mirar la arista que los une, y la profundidad era un tope de
+resultados: con `depth: 1` y con `depth: 2` salía exactamente lo mismo.
+Medido sobre el fixture de Terraform: el grafo guarda 106 aristas con su
+tipo y su confianza, y las inversas en un conjunto de identificadores que no
+los conserva.
+
+Ahora cada relación lleva el tipo, la procedencia y la confianza que su
+arista tiene, `depth` es el número de saltos que se caminan, y un nombre que
+responde por más de una declaración se declara ambiguo y pide la identidad
+canónica en vez de resolverse por el primero que aparece. En ese fixture
+`var.environment` lo declaran tres ficheros, `var.instance_type` dos, y
+cuatro salidas lo declaran dos veces.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `iac_query` publica `provenance` en cada relación, y su `confidence`
+  puede faltar: una arista que no lleva confianza se dice desconocida, no se
+  invierte en `1.0`. El esquema publicado del catálogo (`product/tools.json`)
+  se regeneró con el del runtime.
+- Un nombre de recurso que responde por más de una declaración devuelve un
+  error que dice cuántas contestan y cuáles son sus identidades canónicas.
+  La identidad canónica sigue siendo la forma inequívoca de preguntar.
+- Para los consumidores Rust de `cognicode-core`: `IacRelation.confidence`
+  pasa de `f64` a `Option<f64>` y la relación gana `provenance: Option<String>`.
+  `CallGraph` gana `incoming_dependencies_with_metadata`,
+  `dependencies_within_depth` y `dependents_within_depth`, y `Provenance` gana
+  `name()`. El grafo no cambia de forma en disco: el blob y su shim siguen
+  igual, porque el arreglo es aditivo.
+
+**Un fallo de MCP llega como fallo.** Las herramientas de analítica del grafo
+respondían `{"error": "No call graph available. Run build_graph first."}` como
+**resultado de éxito**. El transporte lo llevaba con `isError: false`, el agente
+leía «funcionó» donde la herramienta había fallado, y las métricas lo
+contabilizaban como un éxito. Medido en el árbol: doce handlers repetían el
+`match` del store dos veces cada uno —«no hay grafo» y «el store no se pudo
+leer»—, con 24 ramas que devolvían `Ok(json!({"error": ...}))`, más tres
+fallos puntuales (el símbolo que no existe, la comunidad que no existe y el
+modo que no existe).
+
+Ahora esos handlers devuelven un error tipado —`not found:` cuando no hay
+grafo o no existe lo que se pide, `invalid input:` cuando el modo no
+existe— y el transporte lo lleva con `isError: true`. El mensaje y la clase
+del error viven en un sitio (`analytics_graph`), no en doce.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `graph_pagerank`, `graph_all_paths`, `graph_condensed`,
+  `graph_god_nodes`, `graph_reduced`, `graph_feedback_arcs`,
+  `graph_communities`, `graph_community_detail`, `graph_surprising_connections`,
+  `graph_search_idf`, `graph_insights` y `graph_suggest_questions` ya no
+  devuelven un resultado de éxito con una clave `error` dentro: un fallo es un
+  error del protocolo. `graph_analyze` con un modo que no existe también.
+- Un fallo de handler nunca llega como un resultado con `isError: false`. La
+  forma del error (`isError: true` dentro de una llamada bien formada) es la
+  que el MCP llama «error de ejecución de herramienta» y la que el servidor ya
+  usaba para negarse; lo que faltaba era que los handlers produjeran el error.
+- `smart_search` ahora dice la verdad sobre su fuente `idf`: sin grafo esa
+  fuente falla, y el resultado lo declara con `partial: true` y
+  `degraded_sources: ["idf"]` en vez de callarlo.
+- El clasificador del smoke (`scripts/mcp/mcp_smoke_all.py`) reconoce las
+  clases de error que la interfaz publica (`not found:`, `security:`), que
+  hasta ahora se contaban como éxito.
+
+**Una cancelación pertenece a su petición.** El servidor MCP guardaba una
+sola bandera de cancelación para toda la sesión, y la ponía a `true` para
+siempre: una petición cancelada dejaba a las siguientes anunciando
+«Cancelled» sin que nadie las hubiera cancelado. Medido en el árbol:
+`CogniCodeHandler` tenía un único `Arc<AtomicBool>` compartido por el
+contexto de la sesión, y `on_cancelled` hacía `store(true)` sin registrar a
+qué petición pertenecía la cancelación ni devolver la bandera a su sitio.
+El protocolo dice lo contrario: el identificador de la petición es el de la
+cancelación, y una notificación puede llegar cuando la petición ya terminó.
+
+Ahora cada petición lleva su propia bandera, en un registro que se borra
+cuando la petición termina. La notificación marca a la petición que la
+nombró y a nadie más.
+
+Lo que cambia en las formas públicas:
+
+- Una petición despachada por el MCP recibe un contexto propio
+  (`HandlerContext::scoped_for_request`), con su propia bandera de
+  cancelación. El contexto de la sesión se sigue compartiendo —con todo lo
+  caro: servicios, grafo y validador—, así que una petición no reconstruye
+  el grafo.
+- `notifications/cancelled` marca la petición que nombra. Si esa petición ya
+  terminó, su registro ya no existe y la notificación tardía no marca a
+  nadie: la petición siguiente empieza limpia.
+- El contador de cancelaciones de las diagnósticas (`total_cancellations`)
+  cuenta ahora las notificaciones recibidas. Valía cero porque nadie lo
+  llamaba.
+
+Lo que no cambia: un handler que corre dentro de un solo poll sigue sin
+poder interrumpirse a mitad —el límite de `tokio::time::timeout` no lo
+alcanza—, y esa laguna ya estaba medida y documentada aparte.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP
