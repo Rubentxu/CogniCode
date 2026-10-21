@@ -68,6 +68,7 @@ fn graph_result_perfile_serializes_with_kind_perfile() {
         file: "/lib/foo.rs".to_string(),
         symbols: 7,
         dependencies: 3,
+        pending_references: vec![],
     };
     let json: Value = serde_json::to_value(&result).expect("GraphResult must serialize to JSON");
     assert_eq!(

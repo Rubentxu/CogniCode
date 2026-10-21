@@ -196,6 +196,7 @@ fn json_graph_per_file_shape() {
         file: "/src/foo.rs".to_string(),
         symbols: 12,
         dependencies: 5,
+        pending_references: vec![],
     };
     let out = render_json(|w| present_graph_result_json(&r, w));
     assert_kind(&out, "per_file");
@@ -409,6 +410,7 @@ fn present_output_json_graph_uses_json_presenter() {
         file: "/src/foo.rs".to_string(),
         symbols: 12,
         dependencies: 5,
+        pending_references: vec![],
     };
     let mut buf: Vec<u8> = Vec::new();
     present_output(&CommandOutput::Graph(r), Format::Json, &mut buf)

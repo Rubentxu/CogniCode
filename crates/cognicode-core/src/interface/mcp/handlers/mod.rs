@@ -3522,7 +3522,7 @@ pub async fn handle_get_per_file_graph(
     // Use per-file strategy
     let strategy = PerFileStrategy::new();
     match strategy.build_local_graph(&file_path) {
-        Ok(graph) => {
+        Ok((graph, pending)) => {
             let symbols: Vec<SymbolLocationEntry> = graph
                 .symbols()
                 .map(|s| SymbolLocationEntry {
@@ -3547,12 +3547,22 @@ pub async fn handle_get_per_file_graph(
                 })
                 .collect();
 
+            // The references the file states and nobody declared travel with
+            // the answer. The graph does not carry them, and a consumer that
+            // gets the graph alone reads a file with no references in it.
+            let pending_references: Vec<PendingReferenceInfo> = pending
+                .iter()
+                .map(PendingReferenceInfo::from_reference)
+                .collect();
+
             Ok(GetPerFileGraphOutput {
                 file_path: input.file_path,
                 symbols: symbols.clone(),
                 symbol_count: symbols.len(),
                 dependencies: dependencies.clone(),
                 dependency_count: dependencies.len(),
+                pending_reference_count: pending_references.len(),
+                pending_references,
             })
         }
         Err(e) => Err(HandlerError::App(AppError::AnalysisError(e.to_string()))),
@@ -6956,7 +6966,7 @@ mod tests {
 
         fn cli_per_file_graph(p: &PathBuf) -> (usize, Vec<(String, String)>) {
             let strategy = PerFileStrategy::new();
-            let graph = strategy
+            let (graph, _pending) = strategy
                 .build_local_graph(p)
                 .expect("build_local_graph must succeed");
             let symbol_count = graph.symbols().count();

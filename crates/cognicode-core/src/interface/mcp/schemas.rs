@@ -870,6 +870,15 @@ pub struct GetPerFileGraphOutput {
     pub symbol_count: usize,
     pub dependencies: Vec<DependencyInfo>,
     pub dependency_count: usize,
+    /// The references this file states and nobody declared.
+    ///
+    /// They are part of the answer, not a footnote: a file that states a
+    /// relation the graph cannot tie to a declaration is a fact about the
+    /// file, and a surface that publishes symbols and dependencies and
+    /// stays silent about these answers "this file states nothing" about
+    /// a file that states plenty.
+    pub pending_references: Vec<PendingReferenceInfo>,
+    pub pending_reference_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1025,14 +1025,42 @@ impl CommandExecutor {
                 let file_path = PathBuf::from(file);
 
                 match strategy.build_local_graph(&file_path) {
-                    Ok(graph) => {
+                    Ok((graph, pending)) => {
                         let symbols = graph.symbol_count();
                         let edges = graph.edge_count();
+                        // The references the file states and nobody declared
+                        // are part of the answer, not a footnote: the counts
+                        // say how much the graph holds, and these say what the
+                        // file states that the graph does not hold.
+                        let pending_references: Vec<
+                            crate::interface::coverage::PendingReferenceInfo,
+                        > = pending
+                            .iter()
+                            .map(crate::interface::coverage::PendingReferenceInfo::from_reference)
+                            .collect();
                         let result = GR::PerFile {
                             file: file.clone(),
                             symbols,
                             dependencies: edges,
+                            pending_references: pending_references.clone(),
                         };
+                        // They go to stderr, like the pending references of
+                        // the full graph do: stdout is the machine-readable
+                        // stream and its byte shape is pinned.
+                        for reference in &pending_references {
+                            // A reference without a line is not on line
+                            // zero: it is on a line the reader did not
+                            // know, and saying "0" would name a place
+                            // that does not exist.
+                            let origin = match reference.line {
+                                Some(line) => format!("{}:{}", reference.file, line),
+                                None => reference.file.clone(),
+                            };
+                            eprintln!(
+                                "  Pending: {} -> {} ({:?})",
+                                origin, reference.target, reference.reason
+                            );
+                        }
                         // T1-5.4c: text formatting is in the
                         // presenter. The function still emits
                         // the text (T1-5.5 will move it to the
@@ -1682,6 +1710,7 @@ impl CommandExecutor {
                     file: "composite_impact".to_string(),
                     symbols: 0,
                     dependencies: 0,
+                    pending_references: Vec::new(),
                 })
             }
         }

@@ -356,7 +356,8 @@ impl PerFileGraphCache {
         }
     }
 
-    /// Gets the graph for a file, building it if needed
+    /// Gets the graph for a file, building it if needed, **with the
+    /// references the file states and nobody declared**.
     ///
     /// If the file has already been parsed and cached AND its filesystem
     /// fingerprint (mtime + size + content hash) matches what was
@@ -370,7 +371,16 @@ impl PerFileGraphCache {
     /// an unchanged-size blob, an editor that rewrites in place, or
     /// `cp -p` of an identical-length file). H0.1 / H0.5 require that
     /// case to invalidate the cache, not serve a stale graph.
-    pub fn get_or_build(&self, file_path: &Path) -> std::io::Result<Arc<CallGraph>> {
+    ///
+    /// The references travel with the graph because the graph alone does
+    /// not say them: a file that states a relation nobody declares is a
+    /// fact about what the file says, and a consumer that gets the graph
+    /// without them answers "this file states nothing" about a file that
+    /// states plenty.
+    pub fn get_or_build(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(Arc<CallGraph>, Vec<PendingReference>)> {
         let path_str = file_path.to_string_lossy().to_string();
 
         // Snapshot the file fingerprint (mtime + size + content hash)
@@ -388,7 +398,7 @@ impl PerFileGraphCache {
                 && entry.size == fingerprint.as_ref().map(|f| f.size)
                 && entry.content_hash == fingerprint.as_ref().map(|f| f.content_hash)
             {
-                return Ok(Arc::new(entry.graph.clone()));
+                return Ok((Arc::new(entry.graph.clone()), entry.pending.clone()));
             }
         }
 
@@ -411,7 +421,7 @@ impl PerFileGraphCache {
             );
         }
 
-        Ok(Arc::new(graph))
+        Ok((Arc::new(graph), pending))
     }
 
     /// Gets a cached graph without building if missing
@@ -1374,7 +1384,7 @@ mod tests {
         writeln!(file, "        pass").unwrap();
 
         let cache = PerFileGraphCache::new();
-        let graph = cache.get_or_build(file.path()).unwrap();
+        let (graph, _pending) = cache.get_or_build(file.path()).unwrap();
 
         assert!(graph.symbol_count() >= 2);
     }
@@ -1388,10 +1398,10 @@ mod tests {
         let cache = PerFileGraphCache::new();
 
         // First call builds
-        let graph1 = cache.get_or_build(file.path()).unwrap();
+        let (graph1, _pending) = cache.get_or_build(file.path()).unwrap();
 
         // Second call should return cached
-        let graph2 = cache.get_or_build(file.path()).unwrap();
+        let (graph2, _pending) = cache.get_or_build(file.path()).unwrap();
 
         assert_eq!(graph1.symbol_count(), graph2.symbol_count());
         assert_eq!(cache.cached_file_count(), 1);
@@ -1452,7 +1462,7 @@ mod tests {
         file.flush().unwrap();
 
         let cache = PerFileGraphCache::new();
-        let graph1 = cache.get_or_build(file.path()).unwrap();
+        let (graph1, _pending) = cache.get_or_build(file.path()).unwrap();
         let original_symbol_count = graph1.symbol_count();
         assert!(
             original_symbol_count >= 1,
@@ -1478,7 +1488,7 @@ mod tests {
         }
 
         // Re-build via cache.
-        let graph2 = cache.get_or_build(file.path()).unwrap();
+        let (graph2, _pending) = cache.get_or_build(file.path()).unwrap();
         let new_symbol_count = graph2.symbol_count();
 
         // Oracle: new content has 2 functions (alpha, beta), original had 1.

@@ -58,7 +58,7 @@ fn cache_misses_when_content_changes_with_identical_metadata() {
 
     let project_dir = tmp.path().to_string_lossy().into_owned();
     let cache = PerFileGraphCache::with_project_dir(project_dir);
-    let v1_graph = cache.get_or_build(&file_path).expect("build V1 graph");
+    let (v1_graph, _pending) = cache.get_or_build(&file_path).expect("build V1 graph");
 
     // Rewrite the file in place with V2. Force V2's mtime to
     // V1's mtime so the mtime+size fingerprint is identical.
@@ -66,7 +66,7 @@ fn cache_misses_when_content_changes_with_identical_metadata() {
     let v1_mtime_filetime = filetime::FileTime::from_unix_time(v1_mtime_secs as i64, 0);
     filetime::set_file_mtime(&file_path, v1_mtime_filetime).expect("force V2 mtime to V1's mtime");
 
-    let v2_graph = cache.get_or_build(&file_path).expect("build V2 graph");
+    let (v2_graph, _pending) = cache.get_or_build(&file_path).expect("build V2 graph");
 
     // Belt-and-braces: confirm the fingerprint is what we
     // intended. mtime+size identical; only the bytes differ.

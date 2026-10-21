@@ -350,6 +350,14 @@ pub enum GraphResult {
         file: String,
         symbols: usize,
         dependencies: usize,
+        /// The references the file states and nobody declared.
+        ///
+        /// They travel beside the counts because they are part of the same
+        /// answer: the counts say how much the graph holds, and these say
+        /// what the file states that the graph does not hold. A surface
+        /// that publishes the counts and stays silent about these says
+        /// "this file states nothing" about a file that states plenty.
+        pending_references: Vec<crate::interface::coverage::PendingReferenceInfo>,
     },
     /// `cognicode graph full [--rebuild] [--format text|json] <path>`
     /// El pre-migration code ya tenía un `FullGraphJson` ad-hoc; este
