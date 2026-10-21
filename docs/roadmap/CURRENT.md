@@ -5,11 +5,12 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-21, sobre `9f64aed4` (la unidad C18; base de
-> medición `ce7e1329`), HEAD de la rama `fix/pending-references-are-facts`,
-> 14 commits por delante de `origin/main` = `4dbcb994`. Versión del
-> workspace: `0.101.23`. Última release publicada: `v0.101.23` (2026-10-18,
-> 8 assets). `main` va **31** commits por delante de ese tag en cuanto este
+> **Snapshot**: 2026-10-21, sobre `9f64aed447bb1e6f3543d8f43c5ac97f79ec9b16`
+> (la unidad C18; base de medición `ce7e1329`), HEAD de la rama
+> `fix/pending-references-are-facts`, 29 commits por delante de
+> `origin/main` = `4dbcb994`. Versión del workspace: `0.101.23`. Última
+> release publicada: `v0.101.23` (2026-10-18, 8 assets). `main` va **31**
+> commits por delante de ese tag en cuanto este
 > ciclo se funda: hay estabilizaciones mergeadas que todavía no están
 > publicadas.
 >

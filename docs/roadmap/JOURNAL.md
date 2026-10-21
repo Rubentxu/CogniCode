@@ -21640,3 +21640,12 @@ esta en forma; lo dice el gate que si la mira.
 - Gates: `fast` rc=0 y `full` rc=0 sobre el arbol de esta unidad.
 - Siguiente WU: **C28**, un fallo de MCP tiene que llegar como fallo y no
   como un exito con un error dentro.
+
+**El `merge-gate` se puso rojo en la etapa `contracts`.** El motivo fue mio:
+al reescribir la cabecera del `CURRENT.md` puse el SHA de la unidad en forma
+corta (`9f64aed4`) y ese contrato pide el SHA completo de 40 caracteres,
+reachable desde HEAD y a menos de cinco commits de la base con `main`. El
+`fast` no lo ve porque no mira esa etapa, y el `full` tampoco la mira: la
+mira el gate. El arreglo es una linea de cabecera, con el SHA medido
+(`9f64aed447bb1e6f3543d8f43c5ac97f79ec9b16`) y la distancia a `origin/main`
+medida tambien —29 commits, no los 14 que habia puesto de memoria—.
