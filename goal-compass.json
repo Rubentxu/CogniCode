@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C20",
-      "title": "Los errores del recorrido no desaparecen del inventario",
-      "unit": "H24",
-      "objective": "Que un error del recorrido se cuente como error y una exclusion legitima como exclusion, y que el inventario diga cual de las dos es cada cosa.",
-      "whyNow": "MEDIDO: el paseo usa `filter_map(|e| e.ok())`, asi que una entrada que falla se pierde sin quedar clasificada; el inventario solo distingue `fichero con lenguaje` de `fichero sin lenguaje`, y los symlinks declinados si se cuentan. El contrato CU-007.5 distingue la exclusion legitima del fichero que no se pudo inspeccionar, y hoy el segundo caso no existe en el inventario.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/infrastructure/graph/source_files.rs"
-      ],
-      "doneWhen": [
-        "un error del recorrido aparece en el informe de construccion, clasificado como error",
-        "una exclusion legitima sigue apareciendo como exclusion, y las dos no se confunden",
-        "un test que provoca un error de recorrido lo ve en el inventario"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 240,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C24",
       "title": "Las superficies por fichero dicen lo que no ataron",
       "unit": "H24",

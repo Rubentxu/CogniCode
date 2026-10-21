@@ -21097,3 +21097,178 @@ host está verificada.
   del plugin puede volver a borrarla.
 - **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
   legítima, ya propuesto con `mission_propose`.
+
+## 2026-10-21 — El error del recorrido y la exclusión legítima son dos cosas (H24, C20)
+
+### Lo que pasó
+
+El inventario que decide de qué ficheros se construye el grafo recorría el
+árbol así:
+
+```rust
+for entry in contained_ignore_walk(project_dir)...build()
+    .filter_map(|e| e.ok())     // el error del recorrido, descartado
+```
+
+y medía cada fichero con `std::fs::metadata(path).ok()`, que convierte un
+fichero que no se puede medir en `mtime 0, size 0` — y lo publica como si
+estuviera medido.
+
+Medido sobre un repo con un `main.rs` y un directorio ilegible
+(`chmod 0o000`), con las tres rutas que caminan el repo:
+
+```text
+sync=Complete | per_file=Complete | async=Complete
+```
+
+Las tres publicaban `Complete`. El grafo no describía lo que había detrás
+del directorio ilegible, y el reporte no decía nada. Es la misma clase de
+mentira que un `Complete` sobre un repo con un hueco real: una afirmación
+de completitud que nada respalda.
+
+La otra mitad del defecto era de vocabulario. El inventario sólo distinguía
+«fichero con lenguaje» de «fichero sin lenguaje», y con la clasificación
+que ya existe (`WalkClassification`: `Analyze | KnownUnsupportedGap |
+LegitExclusion`) un README y un `.kt` eran exactamente la misma cosa. El
+clasificador tenía un dueño —`classify_walk_extension`—, pero el inventario
+no lo aplicaba: lo aplicaban las rutas de construcción, cada una con su
+copia. En el inventario, una exclusión legítima y un hueco real no se
+podían distinguir, y el contrato CU-007.5 dice justo lo contrario: «Un
+fichero que no se pudo inspeccionar no es un fichero excluido: se cuenta
+aparte, con su motivo, y no desaparece del inventario».
+
+### Lo que se comprobó antes de tocar nada
+
+- El recorrido del inventario (`source_files.rs`): `filter_map(|e| e.ok())`
+  sobre el `WalkBuilder` de `ignore`, y `std::fs::metadata(path).ok()` como
+  medida.
+- Los tres recorridos del repo y quién los usa. La síncrona
+  (`build_project_graph`) es la del producto: la llaman `handle_build_graph`,
+  `consolidated_handlers` y la orden de la CLI. La asíncrona
+  (`build_project_graph_async`) la llama el handler de AIX. La per-file
+  (`build_graph_per_file_with_report`) sólo la usan tests. Las tres
+  descartaban el error del recorrido.
+- Que la clasificación tiene un solo dueño y que no puede discrepar del
+  registro: `classify_walk_extension` decide con `Language::from_extension`,
+  e `infrastructure::parser::Language` es un re-export de
+  `domain::value_objects::Language` — el mismo registro que lee
+  `SourceFile::language`.
+- Que el hueco de K0 (`.kt`, `.kts`) está fuera del registro a propósito, y
+  que `FileDisposition` tiene cinco variantes fijadas por AC-01 y un test
+  que las cuenta: un error de recorrido tiene que proyectarse sobre una
+  de las cinco, no sobre una sexta.
+- Que el DTO de MCP publica el motivo como `reason_kind` y como
+  `SkippedReasonKind`, y que ninguno de los dos tiene un vocabulario
+  cerrado fuera del código.
+
+### Lo que se hizo
+
+- **El error del recorrido es un error, y el inventario lo cuenta.**
+  `SourceInventory` gana `errors: Vec<SkippedFile>`. El recorrido ya no
+  descarta sus errores, y un fichero que entrega pero no se puede medir
+  pasa a `errors` en vez de publicarse con `mtime 0, size 0`.
+- **La taxonomía nombra el caso.** `SkipReason::Walk(String)`, con su
+  proyección en `FileDisposition` sobre `ReadFailed`: un fallo *nombrado*
+  afecta al `BuildStatus`, al revés que `Other`, que es el «no sé qué es»
+  honesto. El esquema MCP publica `SkippedReasonKind::Walk` con el mismo
+  criterio aditivo que ya tenía `Symlink`: su propia etiqueta, porque se
+  puede nombrar con precisión.
+- **El inventario dice cuál de las dos es cada cosa.** `known_gaps()` (el
+  hueco real, con su razón) y `legit_exclusions()` (la decisión) son dos
+  vistas de los mismos ficheros, clasificadas por el clasificador que es su
+  dueño. El hueco ya no lo decide una copia del clasificador dentro de la
+  ruta de construcción: esa copia se borró.
+- **Las tres rutas cuentan el error.** La síncrona publica
+  `inventory.errors`; la per-file y la asíncrona capturan los errores de su
+  propio recorrido y los publican en su `BuildReport`.
+- **Los tests van primero, y en dos ficheros porque son dos cosas.** El
+  primero (`tests/walk_errors_are_errors.rs`) usa sólo API que ya existía,
+  así que su rojo fue de aserción y no de compilación: las tres rutas
+  decían `Complete`. El segundo (`tests/inventory_says_which_is_which.rs`)
+  fija la clasificación, y su rojo fue de compilación: el inventario no
+  tenía forma de decirlo. Los tres `doneWhen` del candidato quedan
+  cubiertos: el error llega al informe de construcción, la exclusión
+  legítima sigue siendo exclusión, y un test que provoca un error de
+  recorrido lo ve en el inventario.
+
+### Lo que no se hizo, y por qué
+
+- **No se unificó el recorrido de las tres rutas en uno solo.** Eso es B3
+  («una sola autoridad de construcción») y cambiaría el comportamiento de
+  las tres rutas de golpe. Aquí cada ruta cuenta su propio error.
+- **No se cambió `FileDisposition`.** Sigue con las cinco variantes que
+  fija AC-01; un error de recorrido se proyecta sobre `ReadFailed`, que ya
+  existía.
+- **No se hizo un test de integración para el fichero que no se puede
+  medir.** El sistema de ficheros sólo falla al medir un fichero si
+  desaparece entre la lectura y el `stat`, y eso no es reproducible sin una
+  carrera. Lo que sí se fija es la *decisión*, con un test unitario en
+  `source_files.rs`. Afirmar que esa rama está cubierta por un test de
+  integración sería inventar cobertura.
+- **No se ejecutó el `merge-gate`.** Sigue bloqueado por la cuota de tmpfs,
+  con su propio recibo en este Journal.
+
+### Lo que salió del paso: el contrato de comentarios ya estaba rojo
+
+`scripts/ci/test_comment_standard.py` es un ratchet: el código no puede
+citar tarea, decisión, PR ni fecha — eso vive en el Journal. Al medirlo
+sobre el árbol de este cambio, el ratchet pedía +7 líneas ofensivas. La
+atribución se hizo con un worktree sobre el commit anterior:
+
+- **+1 ya estaba antes de este cambio**, y no es de esta unidad: la
+  cabecera de `crates/cognicode-core/tests/cached_coverage_is_honest.rs` y
+  una fecha en `crates/cognicode-cli/tests/prf_f6_w1_release_coherence.rs`,
+  ambas de commits anteriores de esta misma rama.
+- **+6 eran de este cambio**: cinco comentarios míos que citaban la unidad
+  y la fecha, y una copia del clasificador que además era una segunda
+  fuente de verdad.
+
+Los seis se reescribieron para que expliquen el código sin citar el papel,
+y los dos heredados también: sin eso el contrato de la rama seguiría en
+rojo, y un gate rojo no informa de nada.
+
+### Evidencia
+
+- Test nuevo en rojo, por aserción:
+  `cargo test -p cognicode-core --test walk_errors_are_errors` → **3 failed;
+  0 passed**, con la medición `sync=Complete | per_file=Complete |
+  async=Complete`.
+- Test nuevo en rojo, por compilación:
+  `cargo test -p cognicode-core --test inventory_says_which_is_which` → no
+  compila: `no field 'errors' on type 'SourceInventory'` (×3), `no method
+  named 'known_gaps'` (×2), `no method named 'legit_exclusions'` (×2), `no
+  variant ... named 'Walk'`.
+- En verde: los dos ficheros, **6 passed; 0 failed**, más los dos tests
+  unitarios de `source_files.rs`.
+- Los contratos que tocan esta taxonomía y estas rutas, en verde:
+  `h11_unified_classification_contract` (10), `h16_walk_classification_coherence`
+  (4), `h13_analysis_service_propagation` (5),
+  `graph_walk_stays_inside_the_root` (9), `cached_coverage_is_honest` (3),
+  `h21_one_semantics_for_the_product_graph` (3),
+  `h14_system_holds_end_to_end` (4).
+- `cargo check -p cognicode-core --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `scripts/ci/test_comment_standard.py` → **6 passed; 0 failed**. Antes:
+  5 passed, 1 failed, con `+1` de deuda heredada; con los comentarios de
+  este cambio, `+7`.
+- `bash scripts/test-fast.sh` → rc=0. El selector eligió la suite `core`
+  (`core_changed`): 2376 passed; 0 failed; 2 ignored, clippy `-D warnings`
+  limpio y la línea base de fallos conocidos con 0 entradas.
+- `bash scripts/test-full.sh c20` → **rc=0**: fmt, clippy `-D warnings`,
+  `cargo test --workspace`, doc-tests, los contratos y la línea base. La
+  primera corrida de este gate salía en **rc=1** por la etapa de
+  contratos: el ratchet de comentarios pedía `+7`. Con los comentarios
+  reescritos, los contratos dan `OK: contracts`.
+
+### Estado y siguiente WU
+
+- Unidad: **C20**, cerrada. SHA de la unidad: `b2634ed6`, sobre la base de
+  medición `15c04fea`. Los tres criterios de cierre del candidato quedan
+  publicados y con test.
+- Resultado: un error del recorrido se cuenta como error en las tres rutas,
+  una exclusión legítima sigue siendo una exclusión, y el inventario
+  publica las tres cosas por separado.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el árbol de este cambio. El
+  `merge-gate` sigue pendiente por la cuota de tmpfs, con su propio recibo.
+- Siguiente WU: **C24**, las superficies por fichero que no dicen qué
+  referencias no ataron.

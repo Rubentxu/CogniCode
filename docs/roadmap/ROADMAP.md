@@ -505,7 +505,7 @@ prefiere callarse a mentir—. El estado sigue en el párrafo; aquí vive el
 
 | Bloque | Qué entrega | Candidatos | Autoridad |
 |---|---|---|---|
-| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C20` `C24` `C18` `C28` `C29` `C14` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
+| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C24` `C18` `C28` `C29` `C14` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
 | B2 | Testing rápido y sin duplicidades | `C6` `C5` `C7` `C21` `C8` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · retirada de UAT (nota 2) |
 | B3 | Ontología y arquitectura simplificadas | `C19` `C30` `C9` `C16` `C10` `C26` `C15` `C27` `C22` `C23` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/adr/ADR-029-callgraph-projection-port-seam.md` |
 | B4 | Caché incremental fiable | `C11` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md` |
