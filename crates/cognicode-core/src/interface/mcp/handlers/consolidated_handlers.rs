@@ -5,9 +5,9 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::unnecessary_sort_by, unused_imports)]
 
-use crate::domain::aggregates::Symbol;
+use crate::domain::aggregates::{CallGraph, Symbol, SymbolId};
 use crate::domain::services::CycleDetector;
-use crate::domain::value_objects::DependencyType;
+use crate::domain::value_objects::{DependencyType, Provenance};
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::mcp::schemas::{
     CompareGraphInput, CompareGraphOutput, MetricDeltas, SmartSearchInput, SmartSearchOutput,
@@ -627,7 +627,16 @@ pub struct IacRelation {
     pub name: String,
     pub kind: String,
     pub edge_type: String,
-    pub confidence: f64,
+    /// Where the edge came from, in the vocabulary of the domain.
+    ///
+    /// Absent when the backend that answered does not say: an unknown
+    /// provenance is not an observed one.
+    pub provenance: Option<String>,
+    /// How sure the edge is.
+    ///
+    /// Absent when the edge carries no confidence: an unknown confidence
+    /// is not a zero and it is not a certainty either.
+    pub confidence: Option<f64>,
 }
 
 /// What a symbol declares, in the vocabulary the consumer reads.
@@ -644,6 +653,30 @@ fn published_type(symbol: &Symbol) -> String {
         .declaration()
         .map(|declaration| declaration.type_or_kind().to_string())
         .unwrap_or_else(|| symbol.kind().name().to_string())
+}
+
+/// The relation the tool publishes for an edge that exists.
+///
+/// The edge carries a type, a provenance and a confidence; the relation
+/// carries the three of them. Nothing here is a constant: what the edge
+/// does not say is published as unknown and not as a number that was
+/// invented on its behalf.
+fn published_relation(
+    graph: &CallGraph,
+    id: &SymbolId,
+    edge_type: &DependencyType,
+    provenance: Provenance,
+    confidence: f64,
+) -> IacRelation {
+    let symbol = graph.get_symbol(id);
+    IacRelation {
+        id: id.to_string(),
+        name: symbol.map(|s| s.name().to_string()).unwrap_or_default(),
+        kind: symbol.map(published_type).unwrap_or_default(),
+        edge_type: edge_type.to_string(),
+        provenance: Some(provenance.name().to_string()),
+        confidence: Some(confidence),
+    }
 }
 
 pub async fn handle_iac_query(
@@ -682,7 +715,10 @@ pub async fn handle_iac_query(
                     .map(|t| t.resource_type.clone())
                     .unwrap_or_default(),
                 edge_type: edge.edge_type,
-                confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
+                // The repository does not carry a provenance, and a
+                // confidence it does not have is not a zero.
+                provenance: None,
+                confidence: edge.confidence.map(|c| c as f64),
             })
             .collect();
 
@@ -704,7 +740,8 @@ pub async fn handle_iac_query(
                     .map(|t| t.resource_type.clone())
                     .unwrap_or_default(),
                 edge_type: edge.edge_type,
-                confidence: edge.confidence.map(|c| c as f64).unwrap_or(0.0),
+                provenance: None,
+                confidence: edge.confidence.map(|c| c as f64),
             })
             .collect();
 
@@ -742,56 +779,59 @@ pub async fn handle_iac_query(
                     || s.fully_qualified_name().starts_with("ansible:")
             })
             .collect();
-        match iac_candidates.first() {
-            Some(sym) => sym.fully_qualified_name().to_string(),
-            None => {
+        match iac_candidates.as_slice() {
+            [] => {
                 return Err(HandlerError::NotFound(format!(
                     "IaC resource '{}' not found. Use canonical ID (tf:file:type.name) or ensure IaC files are scanned.",
                     input.resource_id
+                )));
+            }
+            [only] => only.fully_qualified_name().to_string(),
+            // A name that answers for more than one declaration has no
+            // single answer: choosing one of them would publish the
+            // edges of a declaration nobody asked about. The canonical
+            // identity is what removes the doubt.
+            several => {
+                let identities: Vec<&str> = several
+                    .iter()
+                    .map(|symbol| symbol.fully_qualified_name())
+                    .collect();
+                return Err(HandlerError::InvalidInput(format!(
+                    "IaC resource '{}' is ambiguous: {} declarations answer to that name. Ask for the canonical identity of the one you mean: {}",
+                    input.resource_id,
+                    several.len(),
+                    identities.join(", ")
                 )));
             }
         }
     };
 
     // Get the symbol from the graph
-    let symbol_id = crate::domain::aggregates::SymbolId::new(&resolved_id);
+    let symbol_id = SymbolId::new(&resolved_id);
     let symbol = graph.get_symbol(&symbol_id).ok_or_else(|| {
         HandlerError::NotFound(format!("Resource '{}' not found in graph", resolved_id))
     })?;
 
     let resource_type = published_type(symbol);
 
-    // Get dependencies (outgoing edges)
-    let deps: Vec<_> = graph.dependencies_with_metadata(&symbol_id).collect();
-    let dependencies: Vec<IacRelation> = deps
-        .iter()
-        .take(input.depth * 10)
-        .map(|(target_id, dep_type, _prov, confidence)| {
-            let target_sym = graph.get_symbol(target_id);
-            IacRelation {
-                id: target_id.to_string(),
-                name: target_sym.map(|s| s.name().to_string()).unwrap_or_default(),
-                kind: target_sym.map(published_type).unwrap_or_default(),
-                edge_type: dep_type.to_string(),
-                confidence: *confidence,
-            }
+    // The depth is how far the walk goes, not how many relations come
+    // back: one hop is the edges that touch the resource, two hops also
+    // bring the edges that touch what the first ones touch.
+    let dependencies: Vec<IacRelation> = graph
+        .dependencies_within_depth(&symbol_id, input.depth)
+        .into_iter()
+        .map(|(target_id, edge_type, provenance, confidence)| {
+            published_relation(&graph, &target_id, &edge_type, provenance, confidence)
         })
         .collect();
 
-    // Get dependents (incoming edges)
-    let dependent_ids: Vec<_> = graph.dependents(&symbol_id).collect();
-    let dependents: Vec<IacRelation> = dependent_ids
-        .iter()
-        .take(input.depth * 10)
-        .filter_map(|dep_id| {
-            let dep_sym = graph.get_symbol(dep_id)?;
-            Some(IacRelation {
-                id: dep_id.to_string(),
-                name: dep_sym.name().to_string(),
-                kind: published_type(dep_sym),
-                edge_type: DependencyType::References.to_string(),
-                confidence: 1.0,
-            })
+    // The dependents come from the same edges, read the other way round:
+    // each one carries the type and the confidence its own edge has.
+    let dependents: Vec<IacRelation> = graph
+        .dependents_within_depth(&symbol_id, input.depth)
+        .into_iter()
+        .map(|(source_id, edge_type, provenance, confidence)| {
+            published_relation(&graph, &source_id, &edge_type, provenance, confidence)
         })
         .collect();
 

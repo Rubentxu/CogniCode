@@ -62,6 +62,24 @@ impl fmt::Display for Provenance {
     }
 }
 
+impl Provenance {
+    /// The name of the provenance in the vocabulary a consumer reads.
+    ///
+    /// The same words the domain uses, in lowercase: a reader that gets
+    /// a relation does not have to know how the variant was spelled
+    /// inside the implementation, and the domain does not need a second
+    /// table to say it.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Provenance::Extracted => "extracted",
+            Provenance::Inferred => "inferred",
+            Provenance::Ambiguous => "ambiguous",
+            Provenance::Manual => "manual",
+            Provenance::Tested => "tested",
+        }
+    }
+}
+
 /// Parses the canonical `Display` strings (`"Extracted"`, `"Inferred"`,
 /// `"Ambiguous"`). Returns `Err(())` on any other input — callers
 /// that want a default fallback (e.g. the PostgreSQL row mapper)
