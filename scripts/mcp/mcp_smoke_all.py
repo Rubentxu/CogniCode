@@ -150,8 +150,20 @@ def classify(name, result, err, stability=None, fail_on_stable_stub=True):
     text = json.dumps(result, ensure_ascii=False) if not isinstance(result, str) else result
     low = text.lower()
 
-    # Internal/application errors — check if this is a known gated tool
-    if low.startswith("internal:") or low.startswith("invalid input:") or low.startswith("application error:"):
+    # A tool that could not do its job answers with `isError` and a text
+    # that carries the kind the interface published: "not found:",
+    # "internal:", "invalid input:", "security:". Every kind it
+    # publishes has to be recognised here, or a failure is counted as a
+    # success -- which is the same hole this harness exists to close.
+    if low.startswith(
+        (
+            "internal:",
+            "invalid input:",
+            "application error:",
+            "not found:",
+            "security:",
+        )
+    ):
         # Annotation-based gated classification takes priority over fallback GATED set
         if stability == STABILITY_GATED or name in GATED:
             reason = GATED.get(name, "gated capability unavailable")

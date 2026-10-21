@@ -260,7 +260,10 @@ pub async fn handle_graph_analyze(
             serde_json::json!({"type": "Feedback arc set", "nodes": graph.symbol_count()})
         }
         _ => {
-            serde_json::json!({"error": "Unknown mode", "valid": ["scc", "reduced", "feedback_arcs"]})
+            return Err(HandlerError::InvalidInput(format!(
+                "Unknown mode '{}'. Valid modes: scc, reduced, feedback_arcs",
+                mode
+            )));
         }
     };
     Ok(GraphAnalyzeOutput {
@@ -1032,6 +1035,9 @@ pub async fn handle_read_view_spec(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::domain::traits::GraphStore;
+    use crate::domain::value_objects::SymbolKind;
+    use crate::infrastructure::persistence::InMemoryGraphStore;
     use serial_test::serial;
     use std::sync::Arc;
 
@@ -1050,6 +1056,30 @@ mod tests {
         let temp_dir = tempfile::TempDir::new().unwrap();
         let ctx = HandlerContext::builder()
             .with_working_dir(temp_dir.path().to_path_buf())
+            .build();
+        (ctx, temp_dir)
+    }
+
+    /// A context whose store holds a graph.
+    ///
+    /// The degradation contract has a "clean" case: every sub-handler
+    /// answers, so the composite reports no degradation. That case needs
+    /// a graph, because the `idf` source reads one. A context without a
+    /// graph is not a clean call: it is a call where one source failed,
+    /// and the composite has to say so.
+    fn test_ctx_with_graph() -> (HandlerContext, tempfile::TempDir) {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let mut graph = CallGraph::new();
+        graph.add_symbol(Symbol::new(
+            "alpha".to_string(),
+            SymbolKind::Function,
+            crate::domain::value_objects::Location::new("lib.rs", 1, 0),
+        ));
+        let store = InMemoryGraphStore::new();
+        store.save_graph(&graph).expect("the graph is stored");
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp_dir.path().to_path_buf())
+            .with_graph_store(store)
             .build();
         (ctx, temp_dir)
     }
@@ -1455,8 +1485,11 @@ mod tests {
             // 5. Contract for backward compatibility: when sub-handlers
             // answer cleanly, partial MUST be false and degraded_sources
             // empty. This pins the inverse: degradation is the only
-            // thing that flips partial=true.
-            let (ctx_default, _default_dir) = test_ctx();
+            // thing that flips partial=true. The context carries a graph
+            // because the `idf` source reads one: without it that source
+            // fails, and the call would be degraded for a reason that has
+            // nothing to do with the timeout.
+            let (ctx_default, _default_dir) = test_ctx_with_graph();
             let input_default = SmartSearchInput {
                 query: "no_match_under_default_timeout".into(),
                 limit: Some(5),
@@ -1504,11 +1537,26 @@ mod tests {
             .build()
             .unwrap();
         runtime.block_on(async {
-            // Generous: stable empty tempdir + 60s budget. The call
-            // returns Ok with partial=false and empty degraded_sources.
+            // Generous: stable tempdir + 60s budget + a graph, so every
+            // sub-handler answers. The call returns Ok with partial=false
+            // and empty degraded_sources. The graph matters: the `idf`
+            // source reads one, and without it that source fails, which
+            // would make this a degraded call for a reason that has
+            // nothing to do with the budget.
             let generous_dir = tempfile::tempdir().unwrap();
+            let mut generous_graph = CallGraph::new();
+            generous_graph.add_symbol(Symbol::new(
+                "alpha".to_string(),
+                SymbolKind::Function,
+                crate::domain::value_objects::Location::new("lib.rs", 1, 0),
+            ));
+            let generous_store = InMemoryGraphStore::new();
+            generous_store
+                .save_graph(&generous_graph)
+                .expect("the graph is stored");
             let ctx_generous = HandlerContext::builder()
                 .with_working_dir(generous_dir.path().to_path_buf())
+                .with_graph_store(generous_store)
                 .with_sub_handler_timeout(std::time::Duration::from_secs(60))
                 .build();
 
