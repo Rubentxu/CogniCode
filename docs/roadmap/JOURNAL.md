@@ -21344,3 +21344,126 @@ aparece en el trabajo disponible.
 - Siguiente WU: **C24**, las superficies por fichero que no dicen qué
   referencias no ataron. Ya está en la cola del repo, en la cabeza, y en el
   registro de propuestas de la misión.
+
+## 2026-10-21 — Las superficies por fichero dicen lo que no ataron (H24, C24)
+
+### Lo que pasó
+
+El grafo por fichero sabe qué referencias no ató: la caché las guarda en la
+entrada (`FileGraphCacheEntry.pending`) y `merge_with_report` las publica en
+el `BuildStatus`. Pero `build_local_graph` devolvía **solo el grafo**, y de
+ahí el manejador `get_per_file_graph` del MCP y la orden `graph per-file` de
+la CLI respondían con símbolos y dependencias sin decir nada de ellas.
+
+MEDIDO sobre el fixture real de Terraform (`sandbox/fixtures/terraform-iac`),
+con el grafo por fichero de `main.tf`:
+
+```text
+pending: 37
+  origin=.../main.tf line=Some(24) target=var.environment kind=References class=Unresolved
+  origin=.../main.tf line=Some(23) target=var.vpc_cidr   kind=References class=Unresolved
+  ...
+```
+
+El fichero enuncia 37 referencias que la caché conoce y que el grafo del
+fichero no puede atar: su declaración vive en `variables.tf`. Las dos
+superficies por fichero las respondían como **cero** referencias
+pendientes, que es lo mismo que decir que el fichero no enuncia ninguna.
+
+### Lo que se comprobó antes de tocar nada
+
+- Que la caché guardaba las referencias pendientes y que `merge_with_report`
+  las publicaba: el dato existía y se perdía en el camino corto.
+- Que el acierto de caché también las perdía: `get_or_build` servía el grafo
+  cacheado y tiraba las pendientes, justo lo que el propio comentario de la
+  entrada de caché advertía ("una entrada servida sin ellas respondería
+  «completo» sobre un fichero cuyas referencias no están atadas").
+- Que una **llamada** sin declarar no es un hueco (lo que el código llama
+  puede vivir fuera del proyecto), y que por eso el fixture tiene que ser de
+  una clase que sí cuenta: una *referencia* (`dependency.references`), como
+  la que el lector de Terraform extrae de `var.ami_id`.
+- Que el puerto `GraphStrategy` no está publicado: ningún crate del
+  workspace declara `publish = true`, y sus dos únicos consumidores en
+  producción eran justamente las dos superficies de esta unidad. El
+  explorador no lo usa.
+- Que ya existe un vocabulario para esto: `PendingReferenceInfo` y el nombre
+  `pending_references` los usan el grafo completo y `MergeCoverage`. El
+  nombre nuevo es ese, no otro.
+
+### Lo que se hizo
+
+- **La caché deja de tirar lo pendiente.** `get_or_build` devuelve ahora el
+  grafo y las referencias, con la misma forma que su hermana `get_cached`, y
+  el acierto de caché las conserva.
+- **El puerto las devuelve.** `GraphStrategy::build_local_graph` entrega el
+  grafo y las referencias que el fichero enuncia y nadie declaró. Las
+  estrategias que no miden las referencias devuelven una lista vacía, y su
+  documentación lo dice: la verdad ahí es "no lo miró", no "no hay ninguna".
+- **La superficie del MCP las publica.** `GetPerFileGraphOutput` gana
+  `pending_references` y `pending_reference_count`, con el origen (fichero y
+  línea), el nombre, el tipo y el motivo de cada una.
+- **La superficie de la CLI las publica.** `GraphResult::PerFile` las lleva,
+  el JSON las trae, y el modo texto las escribe por stderr con el mismo
+  formato que usa el grafo completo (`Pending: fichero:línea -> destino
+  (motivo)`). La salida por stdout sigue siendo el bloque de tres líneas de
+  siempre: no se movió un byte.
+
+### Lo que no se hizo, y por qué
+
+- **No se unificó la cobertura del grafo del fichero con la del proyecto.**
+  La del proyecto mide lo que el proyecto entero ata; la del fichero mide
+  lo que ese fichero ata. Son preguntas distintas y las dos se responden
+  con su propio alcance. Lo que se corrigió es que la segunda existe y se
+  publica.
+- **No se cambió el grafo completo ni `MergeCoverage`.** Ya publicaban las
+  referencias pendientes; el hueco estaba sólo en las superficies por
+  fichero.
+- **No se tocó la salida de texto por stdout.** El bloque de tres líneas
+  tiene su byte stream fijado; las referencias van por stderr, como las del
+  grafo completo.
+- **No se ejecutó el `merge-gate`.** Sigue bloqueado por la cuota de tmpfs,
+  con su propio recibo en este Journal.
+
+### Evidencia
+
+- Test nuevo en rojo: `per_file_surfaces_publish_pending_references.rs` →
+  **3 failed; 0 passed**. Los tres por aserción y no por compilación: las
+  dos superficies publicaban una lista vacía, y la tercera no tenía nada
+  que comparar.
+- En verde: el mismo fichero, **3 passed; 0 failed**.
+- Ejecución real de la CLI sobre el fixture real:
+  `cognicode graph per-file sandbox/fixtures/terraform-iac/main.tf` →
+  stdout con las tres líneas de siempre (`Symbols: 19`,
+  `Dependencies: 17`) y **37** líneas `Pending: … -> … (Unresolved)` por
+  stderr. Con `--format json`: `"pending_references": 37`, y la primera con
+  `file`, `line`, `target`, `kind` y `reason`.
+- Contratos que rozan el puerto, la caché y el wire, en verde:
+  `h01_content_identity_contract` (9),
+  `h01_per_file_cache_invalidate_contract` (1),
+  `h12_strategies_propagate_build_report` (1),
+  `h14_system_holds_end_to_end` (5),
+  `h16_walk_classification_coherence` (4),
+  `h21_one_semantics_for_the_product_graph` (4),
+  `graph_walk_stays_inside_the_root` (3), `t1_5_4_graph_result_serde` (12),
+  `b2_w2_catalog_parity` (5), `b2_w3_output_schema_contract` (12),
+  `mcp_newly_dispatched_tools` (6).
+- `cargo check --workspace --all-targets` → sin errores.
+- `cargo fmt --all --check` → limpio.
+- `scripts/ci/test_comment_standard.py` → 6 passed; 0 failed.
+- `bash scripts/test-fast.sh` → **rc=0**: 2378 passed; 0 failed; 2 ignored,
+  clippy `-D warnings` limpio y la línea base con 0 entradas.
+- `bash scripts/test-full.sh c24` → **rc=0**: fmt, clippy, workspace,
+  doc-tests, contratos y línea base.
+
+### Estado y siguiente WU
+
+- Unidad: **C24**, cerrada. SHA de la unidad: `d059779e`, sobre la base de
+  medición `9ce9df59`. Los tres criterios de cierre del candidato quedan
+  publicados y con test: las dos superficies publican las referencias
+  pendientes con su origen y su motivo, un fichero con una referencia sin
+  atar no se presenta como un fichero sin referencias, y las dos superficies
+  dicen lo mismo sobre el mismo fichero.
+- Gates: `fast` rc=0 y `full` rc=0 sobre el árbol de esta unidad. El
+  `merge-gate` sigue pendiente por la cuota de tmpfs.
+- Siguiente WU: **C18**, la consulta de infraestructura: que conteste con
+  la arista y la profundidad que le corresponden.

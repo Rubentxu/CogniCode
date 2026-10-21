@@ -31,16 +31,16 @@
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con **23** candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con **22** candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable.
 La cadena encadena sola el siguiente objetivo en cada cierre de turno.
 
 La cola está escrita en el orden que fija el informe de la auditoría del
 2026-10-21 (sus bloques B1 a B5), de mayor a menor prioridad, que es como la
-ordena el selector. **C25 y C20 están cerrados**; el primero que encadenaría
-ahora es **C24**, las superficies por fichero que no dicen qué referencias
-no ataron. C2, C3 y C4 no están en la cola porque su trabajo salió en las
-PR #400, #401 y #402.
+ordena el selector. **C25, C20 y C24 están cerrados**; el primero que
+encadenaría ahora es **C18**, la consulta de infraestructura que no
+contesta con la arista y la profundidad que le corresponden. C2, C3 y C4 no
+están en la cola porque su trabajo salió en las PR #400, #401 y #402.
 
 **La declaración estaba inservible y ya no lo está.** Escribía la evidencia
 en un campo que el cargador no lee, tenía la cola escrita al revés y una
@@ -134,7 +134,7 @@ código, no de una opinión.
 
 | Bloque | Qué entrega | Candidatos |
 |---|---|---|
-| B1 | Grafo fiable y MCP seguro; termina publicando las estabilizaciones pendientes | `C24`, `C18`, `C28`, `C29`, `C14` |
+| B1 | Grafo fiable y MCP seguro; termina publicando las estabilizaciones pendientes | `C18`, `C28`, `C29`, `C14` |
 | B2 | Testing rápido y sin duplicidades | `C6`, `C5`, `C7`, `C21`, `C8` |
 | B3 | Ontología y arquitectura simplificadas | `C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
 | B4 | Caché incremental fiable | `C11` |
@@ -175,8 +175,16 @@ se construye el grafo descartaba sus propios errores, y las tres rutas que
 caminan el repo publicaban `Complete` sobre un árbol al que no habían
 recorrido entero. El inventario publica ahora las tres cosas por separado
 —el hueco real, la exclusión legítima y el error— y ninguna de las tres se
-confunde con otra. El siguiente trabajo es **C24**, las superficies por
-fichero que no dicen qué referencias no ataron.
+confunde con otra.
+
+**C24 está cerrado**: las superficies por fichero dicen lo que no ataron. El
+grafo por fichero sabe qué referencias no puede atar —la caché las guarda y
+el grafo del proyecto las publica—, pero el manejador del MCP y la orden de
+la CLI respondían como si el fichero no enunciara ninguna. Ahora las dos
+publican las referencias pendientes con su origen y su motivo, y dicen lo
+mismo sobre el mismo fichero. El siguiente trabajo es **C18**, la consulta
+de infraestructura: que conteste con la arista y la profundidad que le
+corresponden.
 
 Detalle de la auditoría que abrió la backlog: `docs/roadmap/auditoria-2026-10-20.md`
 (copia local) y la entrada del Journal del 2026-10-20.
