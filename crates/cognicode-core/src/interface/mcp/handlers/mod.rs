@@ -409,6 +409,24 @@ impl HandlerContext {
         self.cancellation_token.load(Ordering::SeqCst)
     }
 
+    /// A context for one request.
+    ///
+    /// It shares everything expensive with the session context —services,
+    /// graph, validator— and carries a cancellation flag of its own. The
+    /// session shares the process; a cancellation cannot be shared: a
+    /// request that was cancelled cannot cancel the ones behind it, because
+    /// the client that sent those never cancelled them.
+    ///
+    /// The flag is handed back separately because whoever registers the
+    /// request has to be able to mark it without knowing what is inside
+    /// the context.
+    pub fn scoped_for_request(&self) -> (Self, crate::interface::mcp::cancellation::CancellationFlag) {
+        let flag = Arc::new(AtomicBool::new(false));
+        let mut scoped = self.clone();
+        scoped.cancellation_token = flag.clone();
+        (scoped, flag)
+    }
+
     /// Mark the graph as loaded. Called by `call_tool_handler` after
     /// a successful `build_graph` dispatch so the `/ready` HTTP endpoint
     /// can report readiness.

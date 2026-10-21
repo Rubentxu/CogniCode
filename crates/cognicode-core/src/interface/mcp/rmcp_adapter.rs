@@ -8,6 +8,7 @@
 use crate::application::services::file_operations::FileOperationsService;
 use crate::infrastructure::telemetry::get_global_metrics;
 use crate::infrastructure::verification::RustVerifier;
+use crate::interface::mcp::cancellation::CancellationRegistry;
 use crate::interface::mcp::error::{InterfaceError, InterfaceResult};
 use crate::interface::mcp::handlers::HandlerContext;
 use opentelemetry::KeyValue;
@@ -27,13 +28,16 @@ use std::time::{Duration, Instant};
 ///
 /// This handler bridges the rmcp SDK with the existing CogniCode handler functions.
 /// It maintains a persistent HandlerContext that survives across requests to avoid
-/// rebuilding the analysis graph, plus a cancellation flag.
+/// rebuilding the analysis graph, plus a registry of the requests that are still
+/// in flight and can therefore be cancelled.
 #[derive(Debug)]
 pub struct CogniCodeHandler {
     /// Persistent handler context - created once and shared across all requests
     ctx: Arc<HandlerContext>,
-    /// Cancellation token for handling cancelled requests
-    cancellation_token: Arc<AtomicBool>,
+    /// The requests that are still in flight, each with its own cancellation
+    /// flag. A cancellation belongs to the request that asked for it, so
+    /// this is a table and not a single flag.
+    cancellations: CancellationRegistry,
 }
 
 impl CogniCodeHandler {
@@ -58,11 +62,11 @@ impl CogniCodeHandler {
         let ctx = Self::build_ctx(
             project_root,
             Some(read_only),
-            Some(cancellation_token.clone()),
+            Some(cancellation_token),
         );
         Self {
             ctx: Arc::new(ctx),
-            cancellation_token,
+            cancellations: CancellationRegistry::new(),
         }
     }
 
@@ -71,10 +75,9 @@ impl CogniCodeHandler {
     /// to share the same `graph_loaded` flag between the MCP dispatch
     /// and the `/ready` HTTP handler.
     pub fn from_ctx(ctx: Arc<HandlerContext>) -> Self {
-        let cancellation_token = ctx.cancellation_token().clone();
         Self {
             ctx,
-            cancellation_token,
+            cancellations: CancellationRegistry::new(),
         }
     }
 
@@ -140,11 +143,11 @@ impl CogniCodeHandler {
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
-            .with_cancellation_token(cancellation_token.clone())
+            .with_cancellation_token(cancellation_token)
             .build();
         Self {
             ctx: Arc::new(ctx),
-            cancellation_token,
+            cancellations: CancellationRegistry::new(),
         }
     }
 
@@ -162,7 +165,7 @@ impl CogniCodeHandler {
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
-            .with_cancellation_token(cancellation_token.clone());
+            .with_cancellation_token(cancellation_token);
         let ctx = match iac_repo {
             Some(repo) => ctx.with_iac_repo(repo),
             None => ctx,
@@ -170,7 +173,7 @@ impl CogniCodeHandler {
         let ctx = ctx.build();
         Self {
             ctx: Arc::new(ctx),
-            cancellation_token,
+            cancellations: CancellationRegistry::new(),
         }
     }
 
@@ -756,12 +759,35 @@ impl ServerHandler for CogniCodeHandler {
     fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: rmcp::service::RequestContext<RoleServer>,
+        context: rmcp::service::RequestContext<RoleServer>,
     ) -> impl std::future::Future<Output = Result<CallToolResult, rmcp::ErrorData>> + Send + '_
     {
         let ctx = self.ctx.clone();
+        let cancellations = self.cancellations.clone();
+        let request_id = context.id.clone();
+        let request_ct = context.ct.clone();
         async move {
-            let result = call_tool_handler(&ctx, request).await;
+            // The request gets a context of its own, with a cancellation
+            // flag of its own. The session context is shared by every
+            // request, and a shared flag is what made one cancellation
+            // reach the requests that came after it.
+            let (request_ctx, flag) = ctx.scoped_for_request();
+
+            // The transport already knows whether this request was
+            // cancelled, and it knows it before the notification reaches
+            // the handler: a cancellation can arrive while this task is
+            // still waiting to start. Asking here means the flag is born
+            // cancelled instead of the notice being lost.
+            if request_ct.is_cancelled() {
+                flag.store(true, Ordering::SeqCst);
+            }
+
+            // The registration lives as long as the request does. When the
+            // request ends, its entry leaves the registry and a late
+            // notification finds nobody to mark.
+            let _registration = cancellations.register(request_id, flag);
+
+            let result = call_tool_handler(&request_ctx, request).await;
 
             match result {
                 Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
@@ -772,10 +798,14 @@ impl ServerHandler for CogniCodeHandler {
 
     fn on_cancelled(
         &self,
-        _notification: rmcp::model::CancelledNotificationParam,
+        notification: rmcp::model::CancelledNotificationParam,
         _context: rmcp::service::NotificationContext<RoleServer>,
     ) -> impl std::future::Future<Output = ()> + Send + '_ {
-        self.cancellation_token.store(true, Ordering::SeqCst);
+        crate::interface::mcp::robustness::note_cancellation();
+        // The cancellation belongs to the request that asked for it. If
+        // that request has already ended, its entry is gone and there is
+        // nobody to mark: the next request starts clean.
+        self.cancellations.cancel(&notification.request_id);
         std::future::ready(())
     }
 }
