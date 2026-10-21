@@ -5,10 +5,8 @@
 //! CLI publish it in different transports, but they publish the same thing,
 //! so the projection lives here — once — instead of twice.
 //!
-//! The fact itself lives in the domain
-//! ([`PendingReference`](crate::domain::value_objects::PendingReference)):
-//! this module is only the way of writing it down.
-
+//! The fact itself lives in the domain ([`PendingReference`]): this module is
+//! only the way of writing it down.
 use crate::domain::value_objects::{PendingClass, PendingReference};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
