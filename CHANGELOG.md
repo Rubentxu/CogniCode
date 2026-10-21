@@ -120,6 +120,38 @@ Lo que cambia en las formas públicas:
   clases de error que la interfaz publica (`not found:`, `security:`), que
   hasta ahora se contaban como éxito.
 
+**Una cancelación pertenece a su petición.** El servidor MCP guardaba una
+sola bandera de cancelación para toda la sesión, y la ponía a `true` para
+siempre: una petición cancelada dejaba a las siguientes anunciando
+«Cancelled» sin que nadie las hubiera cancelado. Medido en el árbol:
+`CogniCodeHandler` tenía un único `Arc<AtomicBool>` compartido por el
+contexto de la sesión, y `on_cancelled` hacía `store(true)` sin registrar a
+qué petición pertenecía la cancelación ni devolver la bandera a su sitio.
+El protocolo dice lo contrario: el identificador de la petición es el de la
+cancelación, y una notificación puede llegar cuando la petición ya terminó.
+
+Ahora cada petición lleva su propia bandera, en un registro que se borra
+cuando la petición termina. La notificación marca a la petición que la
+nombró y a nadie más.
+
+Lo que cambia en las formas públicas:
+
+- Una petición despachada por el MCP recibe un contexto propio
+  (`HandlerContext::scoped_for_request`), con su propia bandera de
+  cancelación. El contexto de la sesión se sigue compartiendo —con todo lo
+  caro: servicios, grafo y validador—, así que una petición no reconstruye
+  el grafo.
+- `notifications/cancelled` marca la petición que nombra. Si esa petición ya
+  terminó, su registro ya no existe y la notificación tardía no marca a
+  nadie: la petición siguiente empieza limpia.
+- El contador de cancelaciones de las diagnósticas (`total_cancellations`)
+  cuenta ahora las notificaciones recibidas. Valía cero porque nadie lo
+  llamaba.
+
+Lo que no cambia: un handler que corre dentro de un solo poll sigue sin
+poder interrumpirse a mitad —el límite de `tokio::time::timeout` no lo
+alcanza—, y esa laguna ya estaba medida y documentada aparte.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP
