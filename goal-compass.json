@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C25",
-      "title": "La cobertura en cache dice lo mismo que la cobertura en frio",
-      "unit": "H24",
-      "objective": "Que la cobertura diga que ficheros se leyeron, cuales se interpretaron de nuevo y cuales se reutilizaron de la cache, y que un build en caliente informe lo mismo que uno en frio sobre el mismo arbol.",
-      "whyNow": "MEDIDO en la auditoria del 2026-10-21: `parsed_files` solo cuenta los ficheros que se vuelven a interpretar, asi que una segunda construccion con todas las fuentes validas recuperadas de la cache puede informar de un 0 % de cobertura sobre un grafo completo; y `total_files` incluye entradas que se excluyen legitimamente. El criterio de cierre del primer hito de esa auditoria es justamente que el build en frio y en caliente informen la misma cobertura.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/services/analysis_service.rs"
-      ],
-      "doneWhen": [
-        "el informe separa los ficheros cubiertos, los interpretados de nuevo y los reutilizados de la cache",
-        "un build en caliente sobre el mismo arbol informa la misma cobertura que uno en frio",
-        "un fichero que no se pudo leer no cuenta como cubierto"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 250,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C20",
       "title": "Los errores del recorrido no desaparecen del inventario",
       "unit": "H24",
