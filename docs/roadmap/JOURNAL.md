@@ -21272,3 +21272,75 @@ rojo, y un gate rojo no informa de nada.
   `merge-gate` sigue pendiente por la cuota de tmpfs, con su propio recibo.
 - Siguiente WU: **C24**, las superficies por fichero que no dicen qué
   referencias no ataron.
+
+## 2026-10-21 — La cola del journal y la del repo divergían (H24, C24)
+
+### Lo que pasó
+
+Al cerrar C20, la cola del repo (`goal-compass.json`) quedó en 23 candidatos
+con C24 al frente. Pero la cadena no encadena desde el fichero: encadena
+desde el **journal durable**, que vive en el hogar del usuario
+(`~/.local/state/goal-compass/cognicode/journal.json`).
+
+MEDIDO, simulando exactamente lo que hace el supervisor (`supervisor.js:156`
+con el re-siembra de `runtime.js:141`):
+
+```text
+fichero -> candidatos: 23 | cabeza: C24
+tras el re-siembra, candidatos que ve la cadena: 53
+  230 C24 | Que las superficies por fichero publiquen las referencias...
+  220 C18 | Que `iac_query` conteste con los metadatos reales...
+  210 C28 | Que el adaptador MCP deje de comunicar un fallo...
+```
+
+Sin ese re-siembra, la lista que ve la cadena empezaba por **C20**, que ya
+está cerrada: la cadena habría reencadenado trabajo hecho. Es el mismo
+fallo que se corrigió para C25, y por el mismo motivo — una unidad cerrada
+no puede seguir en la cabeza de la cola.
+
+La causa está medida y es del **port de candidatos**, no del repo:
+`MissionConfigCandidatePort.discover` (`adapters/candidates.js:18`) llama a
+`loadMissionConfig(this.configPath)` **sin** el `workspace` que el cargador
+exige, y el fichero del repo no lo declara; la llamada falla y el port cae
+al `mission.backlog` del journal. El fichero se lee bien por el camino del
+localizador (`mission-locator.js:53`), que sí pasa el workspace.
+
+### Lo que se hizo
+
+Se resincronizó el `mission.backlog` del journal con la cola del repo, que
+es lo mismo que hace `openMission` al arrancar: se copia el backlog del
+fichero y **no se toca nada más** —ni los goals, ni las intenciones, ni el
+progress, ni el estado de la misión—. La escritura es atómica (fichero
+temporal y `rename`), la misma técnica que usa el propio plugin, y el
+supervisor relee el journal del disco en cada ciclo, que es justo para esto:
+*"el journal se relee del disco en cada ciclo: el supervisor es su único
+escritor, pero el usuario puede editarlo y el estado debe reflectirse"*.
+
+Verificado después: `mission_status` muestra C24 al frente y C20 ya no
+aparece en el trabajo disponible.
+
+### Lo que no se hizo, y por qué
+
+- **No se tocó el plugin.** El arreglo de raíz es pasar el workspace al port
+  de candidatos, que es una línea en `dist/` compilado: se pierde en la
+  próxima actualización del plugin y no se puede probar con un contrato del
+  repo. Queda anotado para el operador.
+- **No se puso una ruta absoluta en `goal-compass.json`.** Declarar el
+  workspace ahí arreglaría el port, pero metería una ruta de esta máquina
+  en un fichero que se comparte.
+
+### Evidencia
+
+- Journal antes: `mission.backlog` con 24 candidatos, cabeza `C20`.
+  Journal después: 23 candidatos, cabeza `C24`. `intents` (1), `goals` (0) y
+  `progress.goalId` (`tg_w5m97eimqcmvhr8oz7`) conservados.
+- `mission_status` tras el cambio → el trabajo disponible empieza por C24 y
+  C20 no aparece.
+- `goal-compass doctor --workspace .` → 23 candidatos, 23 usables, 0
+  descartados.
+
+### Estado y siguiente WU
+
+- Siguiente WU: **C24**, las superficies por fichero que no dicen qué
+  referencias no ataron. Ya está en la cola del repo, en la cabeza, y en el
+  registro de propuestas de la misión.
