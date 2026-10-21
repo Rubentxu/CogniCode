@@ -27,7 +27,9 @@
 //! same set of sources produces the same index, whatever order they
 //! arrive in.
 
-use cognicode_core::infrastructure::graph::{LightweightIndex, OnDemandGraphBuilder, TraversalDirection};
+use cognicode_core::infrastructure::graph::{
+    LightweightIndex, OnDemandGraphBuilder, TraversalDirection,
+};
 
 /// Big enough that a filesystem's own order cannot coincide with the
 /// lexicographic one by luck.
