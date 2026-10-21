@@ -1345,12 +1345,14 @@ pub async fn handle_build_graph(
                             crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_) => "parse",
                             crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(_) => "unsupported_extension",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { .. } => "symlink",
+                            crate::infrastructure::graph::per_file_graph::SkipReason::Walk(_) => "walk",
                             crate::infrastructure::graph::per_file_graph::SkipReason::Other(_) => "other",
                         },
                         reason: match &sf.reason {
                             crate::infrastructure::graph::per_file_graph::SkipReason::Read(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Parse(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(s)
+                            | crate::infrastructure::graph::per_file_graph::SkipReason::Walk(s)
                             | crate::infrastructure::graph::per_file_graph::SkipReason::Other(s) => s.clone(),
                             crate::infrastructure::graph::per_file_graph::SkipReason::Symlink { target } => {
                                 format!("symlink to {target}, not followed")
@@ -3634,6 +3636,7 @@ pub async fn handle_merge_graphs(
                             SkippedReasonKind::Symlink,
                             format!("symlink to {target}, not followed"),
                         ),
+                        R::Walk(d) => (SkippedReasonKind::Walk, d),
                         R::Other(d) => (SkippedReasonKind::Other, d),
                     };
                     SkippedFileInfo {

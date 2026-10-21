@@ -236,7 +236,7 @@ fn prf_f6_w1_clean_round_trip_generates_and_verifies() {
 /// the process alone is one staging for both: one test deletes the other's
 /// payloads while it is packing them, and the survivor measures an archive
 /// that was never finished. That is not a hypothesis — it is what happened in
-/// the gate of 2026-10-21, where the tampering test found an empty payload.
+/// the gate, where the tampering test found an empty payload.
 #[test]
 fn each_test_stages_its_payloads_in_its_own_directory() {
     let tag = tag();

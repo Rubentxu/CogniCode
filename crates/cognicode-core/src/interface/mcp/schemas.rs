@@ -912,6 +912,16 @@ pub enum SkippedReasonKind {
     /// no value a consumer already handles disappears, and the module
     /// doc records that there is no hard-coded `v1` client to break.
     Symlink,
+    /// The traversal failed on a path: a directory the walk could not
+    /// read, an entry it could not measure.
+    ///
+    /// Its own tag rather than `Other` for the same reason `Symlink` has
+    /// one: `Other` is the catch-all for conditions we cannot name
+    /// precisely, and a traversal failure is precisely named — it is a
+    /// hole in the coverage, not a file we chose to leave out. The
+    /// addition is additive: no value a consumer already handles
+    /// disappears.
+    Walk,
     Other,
 }
 

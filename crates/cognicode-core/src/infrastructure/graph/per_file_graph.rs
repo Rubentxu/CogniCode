@@ -961,6 +961,15 @@ pub enum SkipReason {
     /// here would be the same class of lie as indexing the target and
     /// recording the link's path as if it were the target's.
     Symlink { target: String },
+    /// The traversal failed on this path: a directory the walk could
+    /// not read, an entry it could not measure.
+    ///
+    /// This is not a file that was left out on purpose. It is an error
+    /// of the walk, and it leaves a hole in the coverage: whatever was
+    /// behind that path is not in the graph, and the caller has to be
+    /// able to say so. A walk that fails silently reports `Complete`
+    /// over a tree it never saw.
+    Walk(String),
     /// Any other I/O error not covered above.
     Other(String),
 }
@@ -1157,6 +1166,15 @@ impl FileDisposition {
             SkipReason::Symlink { target } => FileDisposition::ExcludedByPolicy {
                 reason: format!("symlink to {target}, not followed"),
             },
+            // A traversal error is a read failure of the path, and it
+            // is a NAMED one: we know what failed and where. That is
+            // what separates it from `Other`, whose honest default is
+            // "we don't claim a gap we can't name". A walk that could
+            // not read a directory did not describe what was inside
+            // it, so this one affects BuildStatus.
+            SkipReason::Walk(reason) => FileDisposition::ReadFailed {
+                reason: reason.clone(),
+            },
             SkipReason::Other(reason) => FileDisposition::ExcludedByPolicy {
                 reason: reason.clone(),
             },
@@ -1201,6 +1219,42 @@ pub fn classify_declined_ignore_entry(entry: &ignore::DirEntry) -> Option<SkipRe
         Err(_) => "<unreadable>".to_string(),
     };
     Some(SkipReason::Symlink { target })
+}
+
+/// The record of an error the traversal produced.
+///
+/// The walk can fail on a path: a directory it cannot read, an entry it
+/// cannot measure. That is not a file it left out on purpose — it is
+/// an error of the traversal, and it leaves a hole in the coverage that
+/// the caller has to be able to name.
+///
+/// `path` is the path the walk failed on, when it named one. The error
+/// text is the walker's own: the two together are enough for a
+/// consumer to say what happened without having to guess.
+pub fn walk_error(path: Option<&Path>, error: &dyn std::fmt::Display) -> SkippedFile {
+    SkippedFile {
+        path: path
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "<walk>".to_string()),
+        reason: SkipReason::Walk(error.to_string()),
+    }
+}
+
+/// The record of an error the `ignore` traversal produced.
+///
+/// The `ignore` walker does not expose the path of a failure the way
+/// `walkdir` does, so the path is read off the error itself. Two
+/// functions rather than a trait, for the same reason the declined
+/// entries have two: the caller should not have to remember to write
+/// the pairing.
+pub fn ignore_walk_error(err: &ignore::Error) -> SkippedFile {
+    walk_error(
+        match err {
+            ignore::Error::WithPath { path, .. } => Some(path.as_path()),
+            _ => None,
+        },
+        err,
+    )
 }
 
 /// Clasifica la extensión de un archivo de walk según el contrato K0.

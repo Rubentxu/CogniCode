@@ -1,4 +1,4 @@
-//! C25 · La cobertura dice lo mismo en caliente que en frío.
+//! La cobertura dice lo mismo en caliente que en frío.
 //!
 //! La métrica de cobertura cuenta `parsed_files`: los ficheros que el
 //! recorrido volvió a interpretar. Un fichero recuperado de la caché de

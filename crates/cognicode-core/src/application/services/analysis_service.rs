@@ -218,7 +218,19 @@ impl AnalysisService {
         // exactly the same set. Two rules would drift, and a drifted
         // manifest serves a graph that no longer describes the tree.
         let inventory = crate::infrastructure::graph::source_files::inventory(project_dir);
-        skipped_files.lock().unwrap().extend(inventory.declined);
+        {
+            // What the walk DECLINED (a symlink it refused to follow)
+            // and what the walk could not DO (a directory it could not
+            // read, an entry it could not measure) are both holes in
+            // the coverage, so both travel with the report. The K0 gap
+            // is decided by the classifier that owns it, and the
+            // inventory already applied it: a second copy of that
+            // rule here is a second source of truth waiting to drift.
+            let mut guard = skipped_files.lock().unwrap();
+            guard.extend(inventory.declined.iter().cloned());
+            guard.extend(inventory.errors.iter().cloned());
+            guard.extend(inventory.known_gaps());
+        }
 
         let files: Vec<_> = inventory
             .files
@@ -275,33 +287,17 @@ impl AnalysisService {
         // nunca persistía nada. MEDIDO: 2 "huecos" falsos frente a los 0
         // reales de la ruta per-file sobre el mismo árbol.
         //
-        // El clasificador de K0 ya separa las tres ramas. Se lee en vez de
-        // reimplementarse a medias: `Analyze` se procesa más abajo,
-        // `KnownUnsupportedGap` es un hueco honesto, y `LegitExclusion` no
-        // es un hueco sino una decisión.
-        {
-            let mut guard = skipped_files.lock().unwrap();
-            for (path, language, file_path, _mtime, _size) in &files {
-                if language.is_some() {
-                    continue;
-                }
-                let ext = path.extension().and_then(|e| e.to_str());
-                if !matches!(
-                    classify_walk_extension(ext),
-                    WalkClassification::KnownUnsupportedGap
-                ) {
-                    continue;
-                }
-                guard.push(
-                    crate::infrastructure::graph::per_file_graph::SkippedFile {
-                        path: file_path.clone(),
-                        reason: crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(
-                            ext.unwrap_or_default().to_string(),
-                        ),
-                    },
-                );
-            }
-        }
+        // Ese arreglo cayó en un segundo clasificador COPIADO aquí: el
+        // bloque que se quitó de este sitio reimplementaba
+        // `classify_walk_extension` a medias y decidía otra vez qué es
+        // hueco. Hoy el inventario decide —con el clasificador que es su
+        // dueño— y esta ruta sólo lo publica: `inventory.known_gaps()`
+        // son los huecos honestos, y lo que es una exclusión legítima
+        // no se registra porque no es un hueco. Un segundo clasificador
+        // es una segunda fuente de verdad, y las dos se separan solas.
+        //
+        // Lo que queda aquí es el filtro de lo que el grafo analiza: lo
+        // que el registro reconoce. El hueco ya está publicado arriba.
 
         let files: Vec<_> = files
             .into_iter()
@@ -708,8 +704,20 @@ impl AnalysisService {
         for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
             .filter_entry(|e| !walk.matches_any_component(e.path()))
-            .filter_map(|e| e.ok())
         {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => {
+                    // An error of the walk is not a file it left out on
+                    // purpose: it is a hole in the coverage, and it
+                    // travels with the report like any other.
+                    walk_skipped.push(crate::infrastructure::graph::per_file_graph::walk_error(
+                        err.path(),
+                        &err,
+                    ));
+                    continue;
+                }
+            };
             let path = entry.path();
             if !crate::infrastructure::walk_policy::is_real_file(&entry) {
                 // This method exists so a caller can see what it did
@@ -1040,13 +1048,33 @@ impl AnalysisService {
 
                 let walk_filter = crate::domain::value_objects::WalkFilter::default();
 
+                // MEDIDO 2026-10-21 (C20): el recorrido de esta ruta
+                // descartaba sus errores con `filter_map(|e| e.ok())`.
+                // Un directorio que el proceso no puede leer
+                // desaparecía del árbol sin dejar rastro, y la ruta
+                // publicaba `Complete` sobre un árbol que no había
+                // recorrido entero. El error del recorrido no es un
+                // fichero que dejamos fuera: es un hueco, y viaja con
+                // el reporte como cualquier otro.
+                let mut walk_errors: Vec<crate::infrastructure::graph::per_file_graph::SkippedFile> =
+                    Vec::new();
                 let walked: Vec<_> =
                     crate::infrastructure::walk_policy::contained_ignore_walk(&dir_path)
                         .hidden(true)
                         .git_ignore(true)
                         .git_exclude(true)
                         .build()
-                        .filter_map(|e| e.ok())
+                        .filter_map(|entry| match entry {
+                            Ok(entry) => Some(entry),
+                            Err(err) => {
+                                walk_errors.push(
+                                    crate::infrastructure::graph::per_file_graph::ignore_walk_error(
+                                        &err,
+                                    ),
+                                );
+                                None
+                            }
+                        })
                         .filter(|e| !walk_filter.matches_any_component(e.path()))
                         .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
                         .map(|e| {
@@ -1303,6 +1331,12 @@ impl AnalysisService {
                 // the file coverage, and they travel with the report: a
                 // build that dropped a file cannot say it read them all.
                 k0_skipped.extend(dropped.lock().unwrap().iter().cloned());
+
+                // And so does what the walk could not do at all: a
+                // directory it could not read is a hole in the coverage,
+                // and a hole that nobody counts is not a hole — it is a
+                // claim of completeness that nothing backs.
+                k0_skipped.extend(walk_errors);
 
                 Ok((coverage, call_graph, k0_skipped, pending_resolution.pending))
             })
