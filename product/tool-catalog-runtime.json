@@ -2374,8 +2374,12 @@
         "IacRelation": {
           "properties": {
             "confidence": {
+              "description": "How sure the edge is.\n\nAbsent when the edge carries no confidence: an unknown confidence\nis not a zero and it is not a certainty either.",
               "format": "double",
-              "type": "number"
+              "type": [
+                "number",
+                "null"
+              ]
             },
             "edge_type": {
               "type": "string"
@@ -2388,14 +2392,20 @@
             },
             "name": {
               "type": "string"
+            },
+            "provenance": {
+              "description": "Where the edge came from, in the vocabulary of the domain.\n\nAbsent when the backend that answered does not say: an unknown\nprovenance is not an observed one.",
+              "type": [
+                "string",
+                "null"
+              ]
             }
           },
           "required": [
             "id",
             "name",
             "kind",
-            "edge_type",
-            "confidence"
+            "edge_type"
           ],
           "type": "object"
         }

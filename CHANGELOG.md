@@ -55,6 +55,37 @@ En vez de silenciar el aviso, salió la dependencia: `ureq` desaparece del
 arreglo desaparece con él. El árbol resultante es más pequeño, no más grande:
 dos paquetes actualizados y uno menos.
 
+**La consulta de infraestructura contesta con la arista que tiene.** Los
+dependientes se publicaban siempre como `references` con una confianza de
+`1.0`, sin mirar la arista que los une, y la profundidad era un tope de
+resultados: con `depth: 1` y con `depth: 2` salía exactamente lo mismo.
+Medido sobre el fixture de Terraform: el grafo guarda 106 aristas con su
+tipo y su confianza, y las inversas en un conjunto de identificadores que no
+los conserva.
+
+Ahora cada relación lleva el tipo, la procedencia y la confianza que su
+arista tiene, `depth` es el número de saltos que se caminan, y un nombre que
+responde por más de una declaración se declara ambiguo y pide la identidad
+canónica en vez de resolverse por el primero que aparece. En ese fixture
+`var.environment` lo declaran tres ficheros, `var.instance_type` dos, y
+cuatro salidas lo declaran dos veces.
+
+Lo que cambia en las formas públicas:
+
+- El MCP `iac_query` publica `provenance` en cada relación, y su `confidence`
+  puede faltar: una arista que no lleva confianza se dice desconocida, no se
+  invierte en `1.0`. El esquema publicado del catálogo (`product/tools.json`)
+  se regeneró con el del runtime.
+- Un nombre de recurso que responde por más de una declaración devuelve un
+  error que dice cuántas contestan y cuáles son sus identidades canónicas.
+  La identidad canónica sigue siendo la forma inequívoca de preguntar.
+- Para los consumidores Rust de `cognicode-core`: `IacRelation.confidence`
+  pasa de `f64` a `Option<f64>` y la relación gana `provenance: Option<String>`.
+  `CallGraph` gana `incoming_dependencies_with_metadata`,
+  `dependencies_within_depth` y `dependents_within_depth`, y `Provenance` gana
+  `name()`. El grafo no cambia de forma en disco: el blob y su shim siguen
+  igual, porque el arreglo es aditivo.
+
 ## [v0.101.23] — 2026-10-18
 
 **Corte de release que arregla la superficie MCP.** Un servidor MCP
