@@ -21935,3 +21935,61 @@ candidato.
 - Siguiente WU: **C14**, publicar una release con las estabilizaciones
   mergeadas después de `v0.101.23`. Es el último punto del bloque B1, y
   ahora tiene lo que necesita: `main` lleva las correcciones dentro.
+
+## 2026-10-21 — El corte de v0.101.24 (C14)
+
+**Qué es esta unidad.** C14 es el último punto del bloque B1 de la auditoría
+del 2026-10-21: publicar una release con las estabilizaciones mergeadas
+después de `v0.101.23`. No es un ciclo que añada comportamiento al producto
+—ese comportamiento ya está mergeado y gateado— sino el acto de convertir
+en instalable lo que ya está en `main`. Por eso su contrato no es «el árbol
+está verde» sino «el candidato concreto que se publica está verificado».
+
+**El hueco.** `main` llevaba **33** commits por delante del último tag
+publicado, `v0.101.23` (2026-10-18, 8 assets). esos commits llevan la
+cobertura de relaciones, la consulta de infraestructura con los metadatos de
+su arista, el fallo de MCP que llega como fallo, la cancelación que pertenece
+a su petición, la paridad entre la CLI y el MCP, y el trabajo de arnés que
+sostiene a los gates. Nada de eso era instalable: el `install.sh` sin pin
+seguía sirviendo `v0.101.23`, y `v0.101.23` no tiene nada de esto.
+
+**La receta del corte no se inventa: se lee del corte anterior.** `v0.101.23`
+fue cuatro commits —el bump del manifiesto, el lockfile, el re-stamp de los
+manifiestos de producto y de la certificación CP5, y las superficies
+públicas— más el tag anotado y la publicación. Este corte la repite con
+`0.101.24` y con el bloque B1 entero detrás.
+
+**Lo que cambia en las formas públicas.** El espacio de versión del producto
+pasa de `0.101.23` a `0.101.24`, y las cuatro superficies que declaran la
+versión vigente se mueven con él, porque el contrato de Release Truth mide
+que las cuatro digan lo mismo que el manifiesto:
+
+- `Cargo.toml` (`[workspace.package].version`) y `Cargo.lock` suben a
+  `0.101.24`. El lockfile cambia en las doce líneas de los doce crates del
+  workspace y en ninguna más: `cargo update --workspace` no movió ninguna
+  dependencia externa.
+- Los tres manifiestos de producto (`product/languages.json`,
+  `product/platforms.json`, `product/product-manifest.json`) y la
+  certificación CP5 (`cp5_workspace_version`) se re-marcan a `0.101.24`. La
+  certificación afirma la versión del workspace contra la que se registró, y
+  dejarla en la anterior es evidencia que describe un árbol que ya no existe.
+- El CHANGELOG pasa de `## [Unreleased]` a `## [v0.101.24] — 2026-10-21`. La
+  sección que estaba en curso era la bitácora del bloque B1 entera —la
+  cobertura de relaciones, los certificados retirados por el gate de cadena
+  de suministro, la arista real de la consulta de infraestructura, el fallo
+  de MCP y la cancelación— y es lo que esta release publica.
+- El README mueve su bloque `Versioning` —release vigente, versión que
+  reportan los binarios y tag— y sus dos instrucciones de pin
+  (`COGNICODE_VERSION=` y `@v...`) a `v0.101.24`. Un README que siguiera
+  enseñando `v0.101.23` mandaría a un usuario a fijar una versión que este
+  tag no publica.
+- La tabla de versiones soportadas de `SECURITY.md` gana la fila de
+  `0.101.24` y `0.101.23` pasa a ser la release publicada anterior. La fila
+  declara en qué línea vive la versión vigente, y el corte no puede
+  publicarse sin decir si esa línea recibe soporte.
+
+**Lo que no cambia.** La versión del producto no cambia; cambia la
+declaración de cuál es. El grafo, el MCP, la CLI y el arnés son los mismos
+que las PR #400 a #404 dejaron mergeados, y esta unidad no toca una línea de
+código de producto.
+

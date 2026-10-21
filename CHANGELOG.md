@@ -10,7 +10,22 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
-## [Unreleased]
+## [v0.101.24] — 2026-10-21
+
+**Corte de release del bloque B1 de la auditoría del 2026-10-21: la
+superficie pública deja de contestar cosas que no son verdad.** El corte
+recoge las estabilizaciones mergeadas después de `v0.101.23` —la cobertura
+de relaciones, la consulta de infraestructura con los metadatos de su
+arista, el fallo de MCP que llega como fallo y la cancelación que pertenece
+a su petición— más las correcciones de grafo que las sostienen: la CLI y el
+MCP responden sobre el mismo grafo, y la herramienta de infraestructura
+habla el vocabulario del dominio en vez del nombre interno de la variante de
+Rust.
+
+También entra el arnés que hace publicable lo anterior: el selector de
+suites con `--filter`, un `full` que ya es superconjunto del `merge-gate`,
+una lane de publicación idempotente que verifica los bytes que publica, y
+cuatro verificadores que no veían lo que debían ver.
 
 **La cobertura de relaciones deja de ser un silencio.** Una referencia que
 el grafo no puede atar a una declaración —un bloque de Terraform que nombra
