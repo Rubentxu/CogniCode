@@ -130,20 +130,21 @@ No abre unidades nuevas: usa las mismas tres especificaciones y la misma
 backlog. Lo que cambia es el orden, y sale de lo que el informe midió en el
 código, no de una opinión.
 
-| Hito | Qué entrega | Candidato |
+| Bloque | Qué entrega | Candidatos |
 |---|---|---|
-| 1 | Que ninguna cobertura engañe: la de ficheros, la de relaciones y la de la caché | `C25` ✅, `C20`, `C24`, `C18`, `C28`, `C29` |
-| 2 | Certificación y corte de release | `C14` |
-| 3 | Que verificar un cambio deje de consumir el tiempo que no compra garantía | `C6`, `C5`, `C7`, `C21`, `C8` |
-| 4 | Una sola autoridad de construcción y una ontología que no se contradiga | `C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
-| 5 | Incrementalidad y consumidores | `C11`, `C12`, `C13` |
+| B1 | Grafo fiable y MCP seguro; termina publicando las estabilizaciones pendientes | `C20`, `C24`, `C18`, `C28`, `C29`, `C14` |
+| B2 | Testing rápido y sin duplicidades | `C6`, `C5`, `C7`, `C21`, `C8` |
+| B3 | Ontología y arquitectura simplificadas | `C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23` |
+| B4 | Caché incremental fiable | `C11` |
+| B5 | Navegación Kotlin sin JVM | `C12` |
+| B6 | Relaciones Kotlin ↔ Java | `C13` |
 
-La línea de Kotlin (`C12`, `C13`) queda al final: es la unidad más grande del
-roadmap y ningún hito la necesita. El corte de release (`C14`) **subió** del
-último sitio al segundo: el informe lo da como P0 y lo pone inmediatamente
-después de la veracidad —publicar las correcciones mergeadas y las de B1 no
-tiene por qué esperar a la reescritura del testing ni a la de la
-arquitectura—.
+Es el orden del **roadmap de ejecución del 2026-10-21**, que vive en
+`ROADMAP.md` §11.1 con la autoridad de cada bloque. La línea de Kotlin
+(`C12`, `C13`) queda al final: es la unidad más grande del roadmap y ningún
+bloque la necesita. El corte de release (`C14`) va **dentro** de B1 y **al
+final**: publicar las correcciones mergeadas y las de B1 no tiene por qué
+esperar a la reescritura del testing ni a la de la arquitectura.
 
 Tres candidatos nacen de la auditoría del 2026-10-20: **C25**, la cobertura
 en caché —un fichero recuperado de la caché no cuenta como analizado, y una

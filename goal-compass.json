@@ -1,6 +1,6 @@
 {
   "missionId": "cognicode",
-  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas. El orden lo fija la auditoria del 2026-10-21 en sus bloques B1 a B5: primero la veracidad del producto (B1: que ninguna cobertura engane, que la consulta de infraestructura no responda cosas falsas, y que un fallo de MCP llegue como fallo al cliente), despues el corte de release verificable (B2: publicar las correcciones mergeadas y las de B1 antes de seguir tocando el arbol), despues la economia del testing sin perder garantias (B3), despues la consolidacion de arquitectura y ontologia (B4), y por ultimo la incrementalidad y los consumidores (B5). Todo en remoto al concluir cada ciclo.",
+  "objective": "Continuar el roadmap de CogniCode elevando la calidad de implementacion de sus unidades abiertas. El orden lo fija el roadmap de ejecucion del 2026-10-21 en sus seis bloques: B1 grafo fiable y MCP seguro --que ninguna cobertura engane, que la consulta de infraestructura no responda cosas falsas y que un fallo de MCP llegue como fallo al cliente--, que termina publicando las estabilizaciones pendientes; B2 testing rapido y sin duplicidades; B3 ontologia y arquitectura simplificadas; B4 cache incremental fiable; B5 navegacion Kotlin sin JVM; y B6 relaciones Kotlin-Java. Todo en remoto al concluir cada ciclo.",
   "defaultTokenBudget": 120000,
   "totalTokenBudget": null,
   "explorationEnabled": true,

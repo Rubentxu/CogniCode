@@ -20878,3 +20878,124 @@ contrato publicado.
   legítima, que es la siguiente unidad de B1 en la cola reenfocada.
 - Bloqueo abierto heredado: el `merge-gate` de la PR #404 sigue en rojo por
   la cuota de tmpfs, con su propio recibo del 2026-10-21.
+
+## 2026-10-21 — El roadmap de ejecución entra en el roadmap, y una regresión mía que el contrato cazó (H23, H24)
+
+### Lo que pasó
+
+Se recibió el **roadmap de ejecución** del 2026-10-21: seis bloques (B1 grafo
+fiable y MCP seguro, B2 testing rápido y sin duplicidades, B3 ontología y
+arquitectura simplificadas, B4 caché incremental fiable, B5 navegación Kotlin
+sin JVM, B6 relaciones Kotlin↔Java), con candidatos, contratos, paralelismo
+por bloque, ciclo de pruebas y glosario. La petición era ejecutarlo con la
+cadena de goal-compass.
+
+La misión **`cognicode` ya existía**: `mission_status` la devuelve `running`,
+con `driver: plugin`, 24 candidatos utilizables y su backlog en
+`goal-compass.json`. Declararla otra vez habría creado una segunda fuente de
+verdad para la misma agenda —justo lo que este repo prohíbe y lo que la
+propia guía dice: "sin crear otra fuente de planificación"—. La misión no se
+declaró: se **reconcilió** con la guía.
+
+### Lo que se comprobó antes de tocar nada
+
+- **La guía no introduce unidades nuevas.** Sus candidatos (C17, C18, C20,
+  C14, C5, C6, C7, C8, C21, C19, C9, C10, C15, C16, C22, C23, C11, C12, C13)
+  ya estaban en la cola. Lo que cambia es el **recorte por bloques**: el
+  corte de release (`C14`) va **dentro** de B1 y **al final**, no como un
+  bloque aparte.
+- **El orden ya coincide bloque a bloque.** La cola reenfocada es C20, C24,
+  C18, C28, C29, C14 │ C6, C5, C7, C21, C8 │ C19, C30, C9, C16, C10, C26,
+  C15, C27, C22, C23 │ C11 │ C12, C13. Es B1 │ B2 │ B3 │ B4 │ B5 │ B6.
+  Ningún candidato cambia de posición.
+- **Las autoridades que cita la guía existen**, menos una: se comprobó cada
+  ruta. `SPEC-CU-002`, `005`, `006`, `007`, `008`, `009`,
+  `SPEC-KOTLIN-SYMBOLS`, `SPEC-KOTLIN-RELATIONS`, `ADR-K002` (Aplica a: K1),
+  `ADR-K003` (Aplica a: K2), `ADR-CU-004` y `ADR-029` están versionadas.
+  `ADR-D1-006` **no está** en ninguna parte del árbol (nota 2).
+- **El bypass de permisos MCP no está abierto** (nota 1).
+- **El corte de release no cuelga de H5.** `SPEC-CU-006` no lo menciona como
+  prerrequisito: sus ocho puntos hablan del manifiesto, del canal del SDK, de
+  la compatibilidad N−1, del RC sobre SHA limpio, de la cadena de pipelines,
+  de las capas de test, de la retirada de pruebas efímeras y del changelog.
+  La frase de §11 que lo colgaba de H5 era incorrecta y se corrigió.
+
+### Lo que se hizo
+
+- El **objetivo de la misión** se reescribió con los seis bloques y con lo
+  que cada uno entrega. La backlog no cambió de orden ni de candidatos.
+- `ROADMAP.md` §11.1 recoge la tabla de bloques con sus candidatos y la
+  **autoridad de cada uno por ruta completa** —la ruta y no el nombre, porque
+  bajo `docs/` hay dos `ADR-K002.md` y sólo uno está versionado—, el
+  paralelismo por bloque, el ciclo común de pruebas, y las dos notas.
+  §11.2 recoge el glosario.
+- `CURRENT.md` pasa de su tabla de hitos a la tabla de bloques, para que el
+  snapshot y el roadmap hablen el mismo idioma.
+- Se corrigió la frase que colgaba el release de H5.
+
+### Una regresión que este turno había dejado suelta
+
+El turno anterior añadió 18 líneas al párrafo de estado de §11 y **rompió**
+`scripts/ci/test_roadmap_authority_attribution.py`: ese párrafo tenía 80
+líneas —su techo, exacto— y pasó a 98. No se vio porque se corrieron tres
+de los cuatro contratos de roadmap y no el cuarto, y porque el modo `fast`
+cae en `fallback` cuando el diff toca `goal-compass.json`, con lo que corre
+`workspace --lib` más clippy y **no** corre los contratos de `scripts/ci/`.
+Esos contratos sólo corren en `scripts/test-full.sh` y en el `merge-gate`, y
+el `merge-gate` sigue pendiente por la cuota de tmpfs. Es decir: el cambio
+del turno anterior **nunca llegó a un gate**.
+
+La corrección no fue comprimir el párrafo para que quepan dieciocho líneas
+más. El material nuevo vive en §11.1, **fuera** de la ventana que el
+contrato escanea, y el párrafo de estado vuelve a sus 80 líneas. El techo
+está declarado en el propio contrato como condición, no como estilo: sin
+él, el contrato deja de poder afirmar nada y "prefiere callarse a mentir".
+
+### Lo que no se hizo, y por qué
+
+- **No se declaró una segunda misión.** La misión existe y corre; el trabajo
+  era reconciliarla con la guía, no duplicarla.
+- **No se reescribieron bloques cerrados.** H0, H1, H2, H4, H17–H22 y la poda
+  documental siguen en el Journal con su SHA y su recuento.
+- **No se ejecutó B1 entero.** Este turno integra la guía y deja la cola
+  alineada; el primer candidato sigue siendo **C20**, y su trabajo es el
+  siguiente.
+- **No se volvió a tocar el producto.** Este turno es de roadmap.
+
+### Evidencia
+
+- `mission_status` → misión `cognicode`, `running`, `driver: plugin`, 24
+  candidatos utilizables. No se llamó a `mission_declare`.
+- `node ~/.minimax/plugins/goal-compass/dist/cli.js doctor --workspace .` →
+  `candidatos: 24 | usables: 24 | descartados: 0 | lista`.
+- Contratos de roadmap, **los cuatro**:
+  `test_roadmap_authority_attribution.py` → 2 passed;
+  `test_roadmap_open_units_coherence.py` → 4 passed;
+  `test_roadmap_version_ratchet.py` → 6 passed;
+  `test_mission_declaration.py` → 6 passed.
+- Bloque de cita de §11: 80 líneas antes de este turno, 98 después del
+  anterior, **80** ahora. El contrato que mide ese techo es
+  `scripts/ci/test_roadmap_authority_attribution.py` (techo declarado en
+  `MAX_BLOCK_LINES = 80`).
+- Nota 1 — la garantía y su test:
+  `crates/cognicode-core/tests/b5_w3_apply_with_authority.rs:348`;
+  `crates/cognicode-core/src/interface/mcp/schemas.rs:334-337`;
+  `crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:420-425` y
+  `117-124`; etapa `core-unrestricted-evidence-kernel` en
+  `merge-gate.pipeline.kts:482`, que pasó en la corrida `c63b6af4` del
+  2026-10-21.
+- Nota 2 — la cita que no abre:
+  `docs/adr/ADR-D1-006-uat-retirement.md` existió en `08c9bd59` y `73e6c67c`
+  y lo retiró la poda documental (PR #399); la decisión vive en el recibo
+  del Journal del 2026-10-15, "Retirada de la clase UAT (ADR-TH-006)".
+
+### Estado y siguiente WU
+
+- Unidad: **integración del roadmap de ejecución** en la misión y en los
+  libros del repo. La cola queda en 24 candidatos con el orden B1–B6.
+- SHA: este commit.
+- Gates: los cuatro contratos de roadmap en verde. El `merge-gate` sigue
+  pendiente por la cuota de tmpfs, con su propio recibo.
+- **Siguiente WU**: **C20**, el error del recorrido frente a la exclusión
+  legítima —la primera unidad de B1 en la cola—, ya propuesto con
+  `mission_propose`.

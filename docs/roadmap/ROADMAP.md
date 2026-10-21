@@ -486,27 +486,93 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   semánticas— son candidatos de la backlog: `SPEC-CU-007`, `008` y `009` ya
 >   los cubren.
 >
->   **El informe de la auditoría del 2026-10-21 sobre `4dbcb994`** —con sus
->   bloques B1 a B5— reencuadra ese orden y añade tres hallazgos que la
->   backlog no cubría. El reencuadre: el corte de release **sube** a
->   Immediately después de la veracidad, porque publicar las correcciones
->   mergeadas y las de B1 no tiene por qué esperar a la reescritura del
->   testing ni a la de la arquitectura —un release con esos cambios dentro
->   es un release más grande y más difícil de certificar—. El orden queda
->   B1 veracidad → B2 release → B3 economía del testing → B4 arquitectura y
->   ontología → B5 incrementalidad. Los tres hallazgos que sí son nuevos:
->   un handler MCP que **devuelve `Ok` con un `error` dentro** —el transporte
->   comunica un éxito donde hubo un fallo—, la **cancelación MCP** —un
->   `AtomicBool` compartido que nunca se restablece y no pertenece a su
->   petición— y el **catálogo de capacidades**, que declara 21 lenguajes
->   mientras el registro de parsers tiene más. Los tres son candidatos
->   nuevos —`C28`, `C29` y `C30`— con su evidencia y su criterio de cierre en
->   la backlog de la misión; el orden y las prioridades los fija esa misma
->   backlog.
->
->   El **corte de release** cuelga de H5 y de
+>   El **corte de release** se rige por
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
->   publicar exige gates sobre un candidato concreto, binarios instalados
->   verificados y tag anotado. Una PR fusionada no es una release.
+>   gates sobre un candidato concreto, binarios instalados verificados y tag
+>   anotado. Una PR fusionada no es una release, y no cuelga de H5.
 
 <!-- consumer-contracts:end -->
+
+### 11.1 Roadmap de ejecución — los seis bloques
+
+Esta subsección vive **fuera** del párrafo de estado que vigila
+`scripts/ci/test_roadmap_authority_attribution.py`. Ese párrafo tiene un
+techo de ochenta líneas de cita y el techo no es un estilo: es una
+condición —el contrato deja de poder afirmar nada si el formato cambia, y
+prefiere callarse a mentir—. El estado sigue en el párrafo; aquí vive el
+**orden de entrega**, que es el que fija la backlog de la misión
+(`goal-compass.json`) y el que encadena la cadena.
+
+| Bloque | Qué entrega | Candidatos | Autoridad |
+|---|---|---|---|
+| B1 | Grafo fiable y MCP seguro. Termina publicando las estabilizaciones pendientes | `C20` `C24` `C18` `C28` `C29` `C14` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-007-HONEST-COVERAGE.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` |
+| B2 | Testing rápido y sin duplicidades | `C6` `C5` `C7` `C21` `C8` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · retirada de UAT (nota 2) |
+| B3 | Ontología y arquitectura simplificadas | `C19` `C30` `C9` `C16` `C10` `C26` `C15` `C27` `C22` `C23` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md` · `docs/adr/ADR-029-callgraph-projection-port-seam.md` |
+| B4 | Caché incremental fiable | `C11` | `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` · `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md` · `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md` |
+| B5 | Navegación Kotlin sin JVM | `C12` | `docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-SYMBOLS.md` · `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K002.md` (K1) |
+| B6 | Relaciones Kotlin ↔ Java | `C13` | `docs/roadmap/consumer-contracts/kotlin-evolution/specs/SPEC-KOTLIN-RELATIONS.md` · `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md` (K2) |
+
+`C17` —las referencias sin resolver, que es lo que lleva la PR #404— está
+en vuelo y no está en la cola: su trabajo está hecho y su PR, abierta.
+
+**Paralelismo por bloque.** B1 separa grafo, seguridad MCP y
+caracterización, e integra secuencialmente los cambios del modelo del grafo.
+B2 separa selector/baseline, auditoría E2E y contratos de procedencia
+documental. B3 separa ontología, identidad/puertos y vigilancia, y el
+refactor del servicio va al final, cuando los contratos ya están estables.
+B4 separa identidad pura, pruebas de invalidación y medición. B5 y B6
+separan parser, corpus y validación del consumidor, con los tipos
+compartidos fijados antes de integrar.
+
+**Nota 1 — el bypass de permisos MCP no está abierto.** El roadmap de
+ejecución lo menciona como posible defecto de B1. Medido contra el árbol: no
+lo es. La garantía de que una herramienta MCP de sólo lectura no puede
+adquirir autoridad de escritura la fija
+`b5_w3_apply_with_authority::read_only_mcp_tool_cannot_acquire_write_authority`
+(`crates/cognicode-core/tests/b5_w3_apply_with_authority.rs:348`), que
+comprueba que `SafeRefactorInput` rechaza con `deny_unknown_fields` un input
+que traiga `authorization_token`. El comentario de
+`crates/cognicode-core/src/interface/mcp/schemas.rs:334-337` que decía que
+ese test "nunca reportó el hueco porque vive en
+`core-unrestricted-evidence-kernel`, que nunca había completado una
+corrida" describe un pasado: la etapa `core-unrestricted-evidence-kernel` del
+`merge-gate` (`merge-gate.pipeline.kts:482`) completa corridas desde el
+2026-10-15 y pasó en la del 2026-10-21. El modelo de postura además falla
+cerrado: `resolve_tool_authority` resuelve a `mutating` una herramienta sin
+declarar (`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:420-425`),
+y un perfil desconocido hace que el handler se niegue a arrancar
+(`crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs:117-124`).
+
+**Nota 2 — la cita de la retirada de UAT no abre.** El roadmap de ejecución
+remite a `ADR-D1-006` para B2. Ese fichero existió
+(`docs/adr/ADR-D1-006-uat-retirement.md`, commits `08c9bd59` y `73e6c67c`) y
+lo retiró la poda documental —PR #399—. La decisión que llevaba vive hoy en
+el recibo del `JOURNAL` del 2026-10-15, "Retirada de la clase UAT
+(ADR-TH-006)", y el nombre que sí se cita ahí es **ADR-TH-006**, que
+tampoco es un fichero: es la entrada del recibo. Quien ejecute B2 lee el
+recibo, no una ruta que ya no existe.
+
+**El ciclo de cada bloque** es el mismo en los seis, y es el de
+`AGENTS.md`: impacto real y prueba RED (`change-impact`), desarrollo TDD con
+`scripts/test-fast.sh` selectivo, UAT positiva y AAT negativa —E2E sólo si
+aporta transporte real—, `scripts/test-full.sh` más `merge-gate` e
+integración PipelineK, release con SHA256 e instalación y smoke del binario
+publicado, y por último registrar resultados, promover la regresión mínima
+necesaria y retirar las pruebas efímeras. El objetivo operativo es bajar la
+batería completa a quince minutos o menos sin quitar garantías de
+seguridad, persistencia o integridad; si un gate sigue tardando más, se
+documenta el tiempo medido en el recibo, y no se declara cumplido sin
+evidencia.
+
+### 11.2 Lenguaje ubicuo
+
+| Concepto | Qué significa aquí |
+|---|---|
+| Seam | La frontera por la que un módulo habla con otro sin depender de sus detalles |
+| Ontología | Cómo se clasifican correctamente símbolos, recursos y relaciones |
+| ADT | Un tipo que obliga a distinguir estados como `Resolved`, `Ambiguous` y `Unresolved` |
+| Drift | Cuando el código, las pruebas y los contratos ya no cuentan la misma historia |
+| UAT / AAT / E2E | Aceptación funcional / prueba adversarial / recorrido real de extremo a extremo |
+| Regresión permanente | Una prueba pequeña que impide repetir un fallo importante |
+| SnapshotKey | La identidad que decide si los datos cacheados siguen siendo válidos |
+| Release | Versión publicada, con binarios descargables, íntegros y comprobados |
