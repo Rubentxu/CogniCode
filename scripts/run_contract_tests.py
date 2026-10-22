@@ -31,11 +31,36 @@ Usage:
 from __future__ import annotations
 
 import importlib.util
+import os
 import subprocess
 import sys
 import traceback
 from pathlib import Path
 from types import ModuleType
+
+
+def neutralise_git_configuration() -> None:
+    """Give the contracts a git that does not carry the operator's rules.
+
+    A contract has to answer a question about the repository, not about the
+    machine that runs it. Several contracts build throwaway repositories and
+    commit inside them; on a machine whose git configuration judges who is
+    allowed to sign a commit, those commits are refused, the repository
+    ends up with no history at all, and the contract reads "no commits"
+    where there were two. The gate then fails on a tree that is fine, and
+    the failure looks like a defect in the product.
+
+    The preflight of the clean clone already does this for itself, with the
+    same reason. Here the whole suite gets it, because a contract is not an
+    entry point: it is a test, and a test has to give the same verdict
+    everywhere.
+
+    Both the global and the system configuration are neutralised: the
+    global one is where the operator's rules live, and the system one is
+    where a machine-wide policy would live.
+    """
+    os.environ["GIT_CONFIG_GLOBAL"] = "/dev/null"
+    os.environ["GIT_CONFIG_SYSTEM"] = "/dev/null"
 
 
 def load_module(path: Path) -> ModuleType:
@@ -208,6 +233,12 @@ def main(argv: list[str]) -> int:
     if not argv:
         print("usage: run_contract_tests.py [--jobs N] <script.py> [...]", file=sys.stderr)
         return 2
+
+    # Before anything else: the contracts must not inherit the git rules of
+    # the machine that runs them. The parallel path spawns one process per
+    # contract and those inherit this environment, so both paths are covered
+    # by setting it here.
+    neutralise_git_configuration()
 
     if jobs > 1 and len(argv) > 1:
         return run_files_parallel(jobs, argv)

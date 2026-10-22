@@ -22817,3 +22817,41 @@ exposición en la biblioteca.
 
 El rojo se midió antes del arreglo: nueve pruebas en tres sitios, todas por la
 configuración global de git de la máquina.
+
+## 2026-10-22 — El contrato que construye repositorios tampoco hereda la máquina (C32)
+
+**Qué es esta unidad.** La continuación de la anterior, y la mitad que faltaba:
+el mismo defecto, en la otra mitad del harness. La entrada anterior lo midió en
+las pruebas de Rust; aquí está en los contratos.
+
+**El hueco, medido.** `main` no estaba verde, y la etapa de contratos del gate
+de merge era la que caía. Cuatro contratos construyen repositorios de
+laboratorio y commitean dentro:
+
+- el que comprueba que el aislador de compilación puede negarse;
+- el que envuelve los modos rápido y completo;
+- el que comprueba la referencia del clon del preflight;
+- el de la puerta de regresión, que construye un clon de profundidad uno y
+  comprueba que la puerta dice ERROR cuando no puede leer el diff.
+
+En esta máquina, esos commits se deniegan: la política de identidad que exige
+un mensaje Conventional Commit y un firmante de la lista juzga también los
+repositorios de laboratorio. Los repositorios se quedaban sin historial y los
+contratos leían «0 commits» donde había dos. El primero moría con una
+excepción al commitear; el último leía un clon que no existía.
+
+**Lo que cambió.** El motor de la suite deja de heredar la configuración de git
+de la máquina: la global y la del sistema apuntan a nada, que git lee como «no
+hay configuración». Es la misma razón por la que el preflight del clon ya lo
+hacía para sí mismo, y la misma que se aplicó a los laboratorios de las
+pruebas de Rust.
+
+**La guarda.** Un contrato comprueba que la neutralización está puesta —si
+alguien la quita, el contrato falla en cualquier máquina, también en una sin
+configuración global, donde el fallo sería invisible— y que funciona: un
+repositorio construido ahí mismo puede commitear. Se probó quitando la
+neutralización: el contrato se pone rojo y dice qué variable queda suelta.
+
+**Lo que este cierre no cambia.** El producto no toca la configuración de git
+del usuario. Solo los repositorios de laboratorio que una prueba crea.
+
