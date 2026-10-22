@@ -10,6 +10,101 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.27] — 2026-10-22
+
+**Tres cortes, tres defectos, y el mismo patrón: el gate que encuentra el
+problema no puede ser el que lo caused.** `v0.101.26` pasó el `fast`, el
+`full` y el `merge-gate` —56 de 56 etapas— y su gate de candidato lo dejó en
+rojo en la etapa de clon limpio, con dieciséis pruebas en rojo. El defecto
+era real: el filtro de recorrido del grafo excluía cualquier ruta que
+tuviera un directorio llamado `.cache` en alguno de sus componentes, así que
+un proyecto analizado desde dentro de uno de esos directorios salía vacío.
+Y el gate que lo encontró clonaba precisamente en
+`~/.cache/cognicode/gate/`: el gate se cegaba a sí mismo.
+
+**El recorrido.** El filtro que decide qué ficheros se saltan al construir
+el grafo comparaba los componentes de la ruta **absoluta**, así que un
+proyecto que estuviera bajo un directorio llamado `build/`, `dist/`,
+`target/`, `vendor/`, `env/` o `.cache/` se podaba entero: el inventario
+salía vacío y el análisis respondía «este proyecto no tiene ficheros» para un
+proyecto que tiene miles. La aserción que lo decía era una línea —
+`symbol count differs: cli=10 mcp=0`— y el veredicto dependía de dónde
+estuviera el checkout. El filtro existe para saltarse lo que está **dentro**
+del árbol, no para decidir que donde alguien guarda el proyecto cambia lo que
+el proyecto contiene. Ahora juzga la ruta **relativa a la raíz analizada**:
+`src/main.rs` entra sea cual sea el nombre de la raíz, y `node_modules/x.js`
+se salta por el componente que tiene dentro del árbol.
+
+**El gate que se explica.** Este corte también arregla el gate para que diga
+por qué falla: la salida del test sobrevivía al directorio de trabajo que la
+guardaba y se perdía con él, así que de dieciséis fallos sólo se veía una
+aserción, y no era la que explicaba el resto. Un gate que falla sin decir por
+qué es un gate que hay que volver a ejecutar para entender.
+
+**El lazo de feedback.** Este defecto no era de un corte, sino del día a
+día: tocar un test de integración seleccionaba la suite correcta y ejecutaba
+la biblioteca del crate, que no contiene ese fichero. El
+desarrollador escribía su test contractual, el lazo daba verde, y el test no
+se había ejecutado ni una vez. El modo rápido ahora pide el binario de
+integración del fichero que se ha tocado —sólo ese— sin convertirse en la
+batería completa.
+
+**La autoridad de las herramientas.** Este es el que de verdad importa. El
+catálogo que dice qué herramientas ofrece el producto y cuáles de ellas
+cambian algo se localizaba subiendo desde el directorio al que el servidor
+apunta, que es el espacio de trabajo: el proyecto que el usuario abrió. Un
+proyecto que traía su propio `product/tools.json` podía declarar `write_file`
+como herramienta de solo lectura, y el modo de solo lectura la aceptaba. El
+árbol bajo análisis decidía la postura de seguridad del producto. El catálogo
+es ahora del producto —la copia compilada en el binario, o la que viaja junto
+a él en su instalación— y ningún árbol puede bajar una postura. De paso se
+va el anclaje por llamada, la raíz global de producto y las variantes con
+prefijo `from` de los cargadores: no existían para nada más.
+
+**Y una dependencia que se retiró.** `tokio 1.54.0` fue retirada de
+crates.io después de la última vez que `main` pasó su propio gate, así que
+`main` llevaba su comprobación en rojo sin que nadie lo mirase. `1.54.1` es
+el parche siguiente y el lockfile puede tomarlo sin tocar la versión que
+pide el workspace.
+
+**Lo que entró después de este corte.** Antes de publicarlo entraron cinco
+unidades más, todas del mismo tipo: cosas que el repositorio hacía mal y que
+nadie miraba.
+
+- **La línea base vacía.** El repositorio guarda la lista de pruebas que
+  fallan por el entorno y no por el código, para que un fallo nuevo no se
+  esconda dentro del ruido conocido. Esa lista estaba vacía, y el gate
+  completo la comprobaba reejecutando la batería entera —3.192 pruebas— para
+  comparar un conjunto vacío con otro conjunto vacío. La regla «si la lista
+  está vacía, no hay nada que reejecutar» vive ahora en el propio
+  verificador, que es donde está la verdad sobre el formato, y no duplicada
+  en cada lanzador.
+
+- **La configuración que apuntaba a documentos que ya no existían.** Once
+  citas a documentos que la poda documental se llevó. La más incómoda: el
+  generador de la matriz de cobertura escribía en un directorio que no
+  existía, así que ni siquiera podía tener éxito. Ahora escribe junto a los
+  ficheros que describe, y sus objetivos salen de las mismas constantes que
+  ya tenía declaradas, de modo que el número no puede desincronizarse.
+
+- **El guard que no gobernaba lo que decía gobernar.** El contrato que
+  comprueba que las rutas citadas entre acentos graves existen tenía su
+  conjunto gobernado escrito como un único prefijo. El contrato del
+  consumidor —la puerta de entrada de quien llega y pregunta qué hace el
+  producto— quedaba fuera, con quince citas rotas que nadie veía. El fallo
+  estaba en la guarda, no solo en las citas.
+
+- **Las superficies de prueba sin carril.** El repositorio tiene 387
+  superficies de prueba; 248 las ejecuta un gate de verdad y 139 no las
+  ejecuta ninguno. No había ni una palabra en el árbol que lo dijera. Ahora
+  cada superficie tiene un carril declarado o la razón escrita de por qué se
+  queda sin él, con su número, y los números se comprueban: añadir un
+  fichero a un árbol declarado pone el contrato en rojo.
+
+- **Los contenedores del sandbox.** Arrancaban al iniciar sesión, y cada
+  arranque pagaba el coste de levantarlos aunque nadie los usara. Ahora
+  arrancan bajo demanda, la primera vez que algo los necesita.
+
 ## [v0.101.26] — 2026-10-21
 
 **Un gate que da el mismo resultado en una máquina limpia vale más que un gate

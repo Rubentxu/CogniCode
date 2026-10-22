@@ -8,28 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C31",
-      "title": "La autoridad de una herramienta MCP no se deriva de un catalogo que controle el proyecto analizado",
-      "unit": "B1",
-      "objective": "Que la autoridad de ejecucion de cada herramienta MCP se derive de una definicion del producto y no de un fichero de datos que el proyecto analizado puede escribir: un `product/tools.json` en el workspace no puede declararse una herramienta mutante como de lectura y conseguir que el modo de solo lectura la acepte.",
-      "whyNow": "MEDIDO contra el arbol: la cadena es real y es de abajo arriba. `resolve_product_assets_root_from` resuelve el directorio de producto desde el `--cwd` del servidor antes que desde la copia compilada en el binario, y `load_tool_catalog_report` da prioridad al `product/tools.json` de disco sobre `EMBEDDED_TOOLS`. `tool_authority_map` se construye desde ese catalogo, y `resolve_tool_authority` —que es lo que decide en `list_tools` (rmcp_adapter.rs:692-695) y en el rechazo previo a cualquier handler (rmcp_adapter.rs:825)— lo consulta. Un proyecto que declare `write_file` con autoridad `read` pasa el filtro de solo lectura. La auditoria externa del 2026-10-21 lo señala como P0 y dice con honestidad que la cadena es verificable de forma estatica pero que falta reproducirla en un MCP real: ese es el RED que hay que escribir antes de tocar el codigo.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/interface/catalog.rs",
-        "crates/cognicode-core/src/interface/mcp/rmcp_adapter.rs",
-        "docs/roadmap/consumer-contracts/specs/SPEC-CU-002-CLI-MCP-PARITY.md"
-      ],
-      "doneWhen": [
-        "el RED esta medido: un servidor MCP arrancado con `--cwd` sobre un proyecto con un `product/tools.json` propio acepta en modo de solo lectura una herramienta que ese fichero declara de lectura, y la regresion falla al terminar",
-        "la autoridad de ejecucion se resuelve solo desde definiciones del producto: el catalogo del workspace sigue mandando en lo descriptivo —lo que se anuncia— y no en lo que se permite",
-        "un valor de autoridad no reconocido falla cerrado, y la postura read-only se comprueba en el handler, no solo en el filtro que anuncia la lista",
-        "el paquete y los binarios publicados responden igual que el arbol de desarrollo, medido sobre los bytes publicados"
-      ],
-      "scope": "B1",
-      "risk": "high",
-      "priority": 200,
-      "source": "audit-2026-10-21"
-    },
-    {
       "candidateId": "C14",
       "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
       "unit": "release",
@@ -46,49 +24,6 @@
       "scope": "release",
       "risk": "high",
       "priority": 190,
-      "source": "roadmap"
-    },
-    {
-      "candidateId": "C32",
-      "title": "El gate tiene que dar el mismo resultado en una maquina limpia",
-      "unit": "H23",
-      "objective": "Que la corrida del gate no dependa de lo que la maquina tenia antes: el volumen donde se compila tiene que tener el sitio comprobado antes de empezar, y la lane no puede exigir artefactos que ella misma deberia construir.",
-      "whyNow": "MEDIDO tres veces, y con la causa localizada linea a linea. Primera: la primera corrida del `merge-gate` de la rama `release/v0.101.24` murio en la etapa `cognicode-ladybug` con `Disk quota exceeded` — 32 de 56 etapas, con el tmpfs de `/tmp` a 48G. Segunda: la primera corrida del gate de candidato de `v0.101.25` murio en `host-build-and-verify` con `FAIL: .../release/cognicode was not built`, porque esa etapa verifica los tres binarios release ANTES de construirlos y el directorio de destino estaba vacio. Tercera: la segunda corrida del mismo gate murio en el enlazador, con `ld: Bus error` y `rustc-LLVM ERROR: IO failure on output stream: Disk quota exceeded`. Las dos ultimas tenian la misma raiz y esta vez se leyo: `scripts/ci/preflight-clean-clone.sh` fuerza `CARGO_TARGET_DIR=\"$WORK_DIR/clone/target\"` —porque los tests asumen el `target/` del clon— y el clon nace de `mktemp -d`, que cae en el tmpfs de `/tmp`. El build debug del workspace, medido en el clon limpio, ocupa 25G. En un tmpfs de 48G, con lo que ya habia, no cabe. La auditoria externa del 2026-10-21 senala esta cuota como senal de coste operativo y pide resolver la causa antes de aumentar el numero de pruebas o de agentes simultaneos, que es exactamente lo que hace el bloque H23.",
-      "evidenceRefs": [
-        "scripts/ci/preflight-clean-clone.sh",
-        "scripts/ci/publish-merge-gate.sh",
-        "release-candidate.pipeline.kts",
-        "docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md"
-      ],
-      "doneWhen": [
-        "una corrida real del gate termina sin agotar el volumen temporal, y el tiempo y el disco consumido quedan medidos en el recibo",
-        "el gate falla antes de empezar —no a mitad— cuando el volumen no tiene sitio, y el error nombra el volumen y lo que se necesita",
-        "la lane construye lo que necesita antes de verificarlo: una corrida sobre un directorio de destino vacio llega al mismo resultado que una sobre uno con artefactos de antes",
-        "el mecanismo para mover el directorio de aislamiento esta en el runbook del gate y no en el conocimiento de un operador, y el script lo dice cuando lo detecta",
-        "la comprobacion de aislamiento sigue pasando con el directorio por defecto y con uno elegido a mano"
-      ],
-      "scope": "H23",
-      "risk": "medium",
-      "priority": 185,
-      "source": "audit-2026-10-21"
-    },
-    {
-      "candidateId": "C6",
-      "title": "El modo fast ejecuta el target del test tocado",
-      "unit": "H23",
-      "objective": "Que el modo fast ejecute el target concreto del fichero de test que se toco, en vez de limitarse a `--lib`.",
-      "whyNow": "MEDIDO: el modo fast ejecuta 0 de los 1.316 tests de integracion, porque `run_suite` mapea a `--lib` y nada mas. El lazo iterativo no cubre la superficie donde viven los bugs de contrato, y por eso todo acaba en el gate lento.",
-      "evidenceRefs": [
-        "scripts/ci/select-suites.sh"
-      ],
-      "doneWhen": [
-        "un cambio en un fichero de test de integracion selecciona ese target concreto y lo ejecuta en el modo fast",
-        "el selector sigue siendo la autoridad: el modo fast no recalcula el plan",
-        "un filtro que no selecciona ninguna prueba sigue fallando"
-      ],
-      "scope": "H23",
-      "risk": "low",
-      "priority": 180,
       "source": "roadmap"
     },
     {
