@@ -10,6 +10,52 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.28] — 2026-10-22
+
+**Dos reparaciones, y las dos eran del mismo tipo: una decisión que se tomaba
+en el sitio equivocado.** El grafo del proyecto decidía el orden de sus
+símbolos en un sitio, y la lane de publicación decidía el destino de sus
+artefactos en tres. En los cinco casos la comprobación era correcta y lo que
+fallaba era la pregunta que se le hacía al disco.
+
+**El grafo se plegaba en el orden del disco.** El grafo entero del proyecto
+ordenaba sus resultados antes de plegarlos, y el motivo estaba escrito en el
+código: *el índice no debe depender nunca del orden del recorrido*. El grafo
+filtrado no lo hacía. El filtro de recorrido salta directorios, y el
+componente que lo salta no ordena por defecto, así que la vista filtrada
+heredaba el orden en que el sistema de ficheros devolvía las entradas. La
+pregunta «¿dónde está este símbolo?» tenía dos respuestas según quién la
+hizo: la del grafo entero y la de la vista filtrada. Eso no se quedaba en el
+índice: el MCP devolvía los candidatos en ese orden, y con él la lista de
+candidatos de infraestructura.
+
+Se medió en rojo con un árbol que obliga a discrepar: ocho pares de
+`dN/` y `dN.rs`, donde el punto ordena antes que la barra. El grafo entero
+contestaba `d0.rs, d0/x.rs, d1.rs, d1/x.rs…`; la vista filtrada contestaba
+`d7.rs, d7/x.rs, d6.rs, d6/x.rs…`. El mismo árbol, dos órdenes. La medición
+tiene un matiz que conviene saber: el primer intento de construir esa
+discrepancia con doce ficheros en un directorio no podía fallar, porque el
+sistema de ficheros de esta máquina lista sus entradas ordenadas. Un fixture
+que depende del humor del disco no es un fixture. El árbol tiene que llevar la
+discrepancia dentro.
+
+**La lane que publica exigía un directorio que nadie escribe.** El candidato
+de release dejó de escribir en `dist/` cuando movió sus cargas útiles bajo
+`staging/`, y la etapa que comprueba que el candidato está presente siguió
+pidiendo `dist/`. La lane fallaba con *No dist/ directory* sobre un árbol que
+tenía el candidato entero, ocho assets y sus sumas. La segunda cara: la
+confirmación del conjunto publicado se ejecutaba *antes* de subir los
+manifiestos, y comparaba contra un conjunto que incluía tres ficheros que
+todavía no existían en el remoto. La tercera: la verificación del consumidor
+fallaba con un 404 porque pedía a GitHub los identificadores de unos assets
+que su propia subida, con `--clobber`, acababa de sustituir —GitHub asigna un
+identificador nuevo y borra el viejo—.
+
+Ninguna de las tres se arregló debilitando la comprobación: la lane sigue
+exigiendo el conjunto completo de assets, sigue comparando contra el conjunto
+completo y sigue verificando cada suma. Lo que cambió es cuándo se pregunta y
+a quién se pregunta.
+
 ## [v0.101.27] — 2026-10-22
 
 **Tres cortes, tres defectos, y el mismo patrón: el gate que encuentra el
