@@ -2,7 +2,6 @@
 // The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::assertions_on_constants, clippy::needless_range_loop)]
 
-use crate::infrastructure::parser::callee;
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::aggregates::symbol::FunctionSignature;
 use crate::domain::traits::refactor_strategy::{
@@ -10,6 +9,7 @@ use crate::domain::traits::refactor_strategy::{
     ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
+use crate::infrastructure::parser::naming;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
@@ -111,32 +111,11 @@ impl ChangeSignatureStrategy {
         call_node: tree_sitter::Node,
         source_bytes: &[u8],
     ) -> Option<String> {
-        callee::callee_name(&call_node, source_bytes, self.parser.language().callee_fields())
-    }
-
-    /// Finds an identifier in a node (possibly recursively)
-    fn find_identifier_in_node(
-        &self,
-        node: tree_sitter::Node,
-        source_bytes: &[u8],
-    ) -> Option<String> {
-        if node.kind() == "identifier" {
-            return Some(
-                node.utf8_text(source_bytes)
-                    .unwrap_or("unknown")
-                    .to_string(),
-            );
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source_bytes)
-            {
-                return Some(name);
-            }
-        }
-
-        None
+        naming::callee_name(
+            &call_node,
+            source_bytes,
+            self.parser.language().callee_fields(),
+        )
     }
 
     /// Extracts the arguments from a call expression
@@ -227,7 +206,7 @@ impl ChangeSignatureStrategy {
         function_type: &str,
     ) -> Result<Option<ParsedFunctionInfo>, RefactorError> {
         if node.kind() == function_type
-            && let Some(name) = self.find_identifier_in_node(node, source_bytes)
+            && let Some(name) = naming::identifier_text(&node, source_bytes)
             && name == function_name
         {
             let start = node.start_position();

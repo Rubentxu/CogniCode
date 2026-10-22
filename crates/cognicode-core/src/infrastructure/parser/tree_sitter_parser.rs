@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
 use crate::domain::value_objects::Language;
-use crate::infrastructure::parser::callee;
+use crate::infrastructure::parser::naming;
 
 // Thread-local cache of TreeSitterParser instances per language.
 //
@@ -436,21 +436,8 @@ impl TreeSitterParser {
     /// node in the same way. A qualified path names the thing it calls, not
     /// the path that reaches it.
     fn extract_callee_name(&self, call_node: tree_sitter::Node, source: &str) -> Option<String> {
-        callee::callee_name(&call_node, source.as_bytes(), self.language.callee_fields())
+        naming::callee_name(&call_node, source.as_bytes(), self.language.callee_fields())
     }
-
-
-    /// Finds the LAST identifier-like node in a subtree (iterative DFS).
-    ///
-    /// For `scoped_identifier` (e.g. `a::b::callee`) and
-    /// `field_expression` (e.g. `obj.method`) AST nodes, the callee
-    /// name is the last identifier segment of the path. The
-    /// identifier kinds accepted here are:
-    ///  - `identifier`         — ordinary variable/function name.
-    ///  - `field_identifier`   — Rust tree-sitter distinguishes this
-    ///    for `obj.method` field access (the `method` part).
-    ///
-    /// Used by `extract_callee_name` to fix H-R4-1 (qualified call
 
     /// Extracts context (line of code) from pre-split lines
     fn extract_context(lines: &[&str], line_number: u32) -> Option<String> {

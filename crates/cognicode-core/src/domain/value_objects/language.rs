@@ -99,7 +99,6 @@ pub struct LanguageSymbols {
     pub import_callees: &'static [&'static str],
 }
 
-
 impl Language {
     /// What this language declares, and how a call names what it calls.
     ///
@@ -135,7 +134,11 @@ impl Language {
                 import_callees: &[],
             },
             Language::JavaScript => LanguageSymbols {
-                function_types: &["function_declaration", "method_definition", "arrow_function"],
+                function_types: &[
+                    "function_declaration",
+                    "method_definition",
+                    "arrow_function",
+                ],
                 class_types: &["class_declaration"],
                 variable_types: &["variable_declaration", "lexical_declaration"],
                 call_types: &["call_expression", "new_expression"],
@@ -144,7 +147,11 @@ impl Language {
                 import_callees: &[],
             },
             Language::TypeScript => LanguageSymbols {
-                function_types: &["function_declaration", "method_definition", "arrow_function"],
+                function_types: &[
+                    "function_declaration",
+                    "method_definition",
+                    "arrow_function",
+                ],
                 class_types: &["class_declaration", "interface_declaration"],
                 variable_types: &["variable_declaration", "lexical_declaration"],
                 call_types: &["call_expression", "new_expression"],
@@ -331,7 +338,11 @@ impl Language {
                     "static_final_declaration",
                     "local_variable_declaration",
                 ],
-                call_types: &["call_expression", "constructor_invocation", "new_expression"],
+                call_types: &[
+                    "call_expression",
+                    "constructor_invocation",
+                    "new_expression",
+                ],
                 import_types: &["import_specification"],
                 callee_fields: &["function", "constructor"],
                 import_callees: &[],

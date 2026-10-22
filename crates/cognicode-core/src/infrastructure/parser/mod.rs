@@ -1,8 +1,8 @@
 //! Parser module - Tree-sitter based parsing
 
 mod ast_scanner;
-pub mod callee;
 pub mod language_config;
+pub mod naming;
 pub mod syntax_analysis;
 mod tree_sitter_parser;
 pub mod type_ref_walkers;

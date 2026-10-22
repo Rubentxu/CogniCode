@@ -48,9 +48,7 @@ fn generic_reader_limits(language: Language) -> Vec<&'static str> {
             "class" => !symbols.class_types.is_empty(),
             "variable" => !symbols.variable_types.is_empty(),
             "call" => !symbols.call_types.is_empty(),
-            "import" => {
-                !symbols.import_types.is_empty() || !symbols.import_callees.is_empty()
-            }
+            "import" => !symbols.import_types.is_empty() || !symbols.import_callees.is_empty(),
             _ => unreachable!("the categories are the ones above"),
         };
         if !declared {
@@ -62,8 +60,8 @@ fn generic_reader_limits(language: Language) -> Vec<&'static str> {
 
 /// The published support matrix.
 fn published_matrix() -> serde_json::Value {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../product/languages.json");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../product/languages.json");
     let text = std::fs::read_to_string(&path).unwrap_or_else(|e| {
         panic!(
             "the support matrix must exist: it is published with the product and \
@@ -91,7 +89,7 @@ fn every_declared_node_kind_is_produced_by_its_grammar() {
             ("import", symbols.import_types),
         ] {
             for kind in declared {
-                if !kinds.contains(&kind) {
+                if !kinds.contains(kind) {
                     offenders.push(format!(
                         "{:?} declares `{kind}` as {category}, and its grammar produces no such node",
                         config.language
@@ -143,9 +141,7 @@ fn the_published_matrix_declares_what_the_registry_allows() {
         let entry = languages
             .iter()
             .find(|entry| entry["id"] == language.id())
-            .unwrap_or_else(|| {
-                panic!("the support matrix does not mention {:?}", language)
-            });
+            .unwrap_or_else(|| panic!("the support matrix does not mention {:?}", language));
 
         let published: Vec<String> = entry["not_asserted_by_generic_reader"]
             .as_array()

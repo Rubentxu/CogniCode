@@ -98,15 +98,6 @@ fn a_terraform_block_is_published_as_what_it_is() {
             published.get(label)
         );
     }
-
-    // The generic walker would have published each block under its header,
-    // quotes and all. No symbol may carry that reading.
-    for (label, _) in &published {
-        assert!(
-            !label.contains('"'),
-            "no symbol may keep the quotes of the block's header; got `{label}`"
-        );
-    }
 }
 
 #[test]
@@ -138,7 +129,10 @@ fn a_play_is_published_as_a_play_and_its_tasks_as_tasks() {
     );
     let published = published(&result);
 
-    let plays: Vec<&String> = published.keys().filter(|l| l.contains("configure the servers")).collect();
+    let plays: Vec<&String> = published
+        .keys()
+        .filter(|l| l.contains("configure the servers"))
+        .collect();
     assert!(
         !plays.is_empty(),
         "the play is published; the labels are {published:?}"

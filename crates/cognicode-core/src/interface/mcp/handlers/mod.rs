@@ -217,6 +217,7 @@ pub use crate::interface::mcp::file_ops_handlers::*;
 
 use crate::domain::traits::GraphStore;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
+use crate::infrastructure::parser::naming;
 use crate::infrastructure::persistence::{CachedGraphStore, InMemoryGraphStore};
 
 use std::collections::{HashMap, HashSet};
@@ -2364,7 +2365,7 @@ fn find_function_metrics(
     // Check if this is a function definition
     if node.kind() == function_type {
         // Get function name
-        if let Some(name) = find_identifier_in_node(node, source) {
+        if let Some(name) = naming::identifier_text(&node, source.as_bytes()) {
             // If we have a target name, only process that function
             // Otherwise, process the first/only function
             let should_process = match target_name {
@@ -2408,21 +2409,6 @@ fn find_function_metrics(
             );
         }
     }
-}
-
-/// Finds an identifier in a node
-fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<String> {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
-            }
-            if let Some(id) = find_identifier_in_node(child, source) {
-                return Some(id);
-            }
-        }
-    }
-    None
 }
 
 /// Counts parameters in a function definition

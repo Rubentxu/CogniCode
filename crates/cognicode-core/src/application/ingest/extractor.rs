@@ -12,8 +12,8 @@ use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, Target
 use crate::domain::aggregates::{GraphNode, NodeId};
 use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{DependencyType, NodeKind, Provenance, SymbolKind};
-use crate::infrastructure::parser::callee;
 use crate::infrastructure::parser::LanguageConfig;
+use crate::infrastructure::parser::naming;
 use cognicode_graph_algos::algorithms::Statement;
 
 use tree_sitter::{Node, Parser};
@@ -177,20 +177,28 @@ pub fn extract_file(
         if symbols.import_types.contains(&node_type)
             && let Some(module_name) = extract_import_target(&node, source_bytes)
         {
-            edges.push(import_edge(&file_node_id, module_name, node.start_position().row));
+            edges.push(import_edge(
+                &file_node_id,
+                module_name,
+                node.start_position().row,
+            ));
         }
 
         // A call that loads a dependency declares it. Publishing it as a
         // call would say that the file calls a function named "require",
         // and the dependency it really declares would go missing.
         if symbols.call_types.contains(&node_type)
-            && let Some(callee_node) = callee::callee_node(&node, symbols.callee_fields)
+            && let Some(callee_node) = naming::callee_node(&node, symbols.callee_fields)
         {
-            let callee = callee::clean_callee_name(&node_text(&callee_node, source_bytes));
+            let callee = naming::clean_callee_name(&node_text(&callee_node, source_bytes));
             if symbols.import_callees.contains(&callee.as_str())
                 && let Some(dependency) = import_target_of_call(&node, source_bytes, &callee_node)
             {
-                edges.push(import_edge(&file_node_id, dependency, node.start_position().row));
+                edges.push(import_edge(
+                    &file_node_id,
+                    dependency,
+                    node.start_position().row,
+                ));
             }
         }
 
@@ -427,7 +435,7 @@ fn extract_calls_from_node(
     while let Some(node) = stack.pop() {
         let nt = node.kind();
         if symbols.call_types.contains(&nt) {
-            let callee = callee::callee_name(&node, source, symbols.callee_fields);
+            let callee = naming::callee_name(&node, source, symbols.callee_fields);
 
             if let Some(callee_clean) = callee {
                 // A call that loads a dependency declares it. It is not a

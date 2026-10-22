@@ -260,7 +260,13 @@ mod tests {
     fn test_from_extension_rust() {
         let config = LanguageConfig::from_extension("rs").unwrap();
         assert_eq!(config.language, Language::Rust);
-        assert!(config.language.symbols().function_types.contains(&"function_item"));
+        assert!(
+            config
+                .language
+                .symbols()
+                .function_types
+                .contains(&"function_item")
+        );
     }
 
     #[test]

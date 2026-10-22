@@ -4,7 +4,6 @@
 // The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::len_zero, clippy::needless_range_loop)]
 
-use crate::infrastructure::parser::callee;
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::traits::refactor_strategy::{
     PreparedEdits, RefactorError, RefactorResult, RefactorStrategy, RefactorValidation,
@@ -12,6 +11,7 @@ use crate::domain::traits::refactor_strategy::{
 };
 use crate::domain::value_objects::{Location, SourceRange};
 use crate::infrastructure::parser::TreeSitterParser;
+use crate::infrastructure::parser::naming;
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -109,9 +109,12 @@ impl InlineStrategy {
         call_node: tree_sitter::Node,
         source_bytes: &[u8],
     ) -> Option<String> {
-        callee::callee_name(&call_node, source_bytes, self.parser.language().callee_fields())
+        naming::callee_name(
+            &call_node,
+            source_bytes,
+            self.parser.language().callee_fields(),
+        )
     }
-
 
     /// Extracts arguments from a call expression
     fn extract_arguments(&self, call_node: tree_sitter::Node, source_bytes: &[u8]) -> Vec<String> {
