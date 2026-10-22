@@ -52,6 +52,14 @@ El sistema de validación para el gate 1.0.0 (ADR-031) se construye sobre la inf
 
 `sandbox/containers/*.container` pasa a ser la **fuente de verdad** versionada. Deploy a `~/.config/containers/systemd/` vía `just sandbox-setup`.
 
+Las unidades de usuario **no se arrancan solas al iniciar sesión**: se
+arrancan bajo demanda, con `systemctl --user start cognicode-<lenguaje>.service`,
+que es el procedimiento que este ADR ya describe. El arranque automático
+levantaba seis imágenes de contenedor en cada login —con su disco y sus
+procesos— para un sandbox que casi siempre está parado, y en una máquina
+compartida ese coste se paga en el sitio donde no hace falta: el disco que
+usan los gates.
+
 | Servicio | Imagen (digest pinneado) | Propósito |
 |----------|--------------------------|-----------|
 | `cognicode-postgres` | postgres:16 (ya corriendo) | Store canónico (hasta migración lbug completa) |
