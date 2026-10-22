@@ -22569,3 +22569,70 @@ queda verde, la lista vacía no relanza la suite, los dos lanzadores lo dicen
 en pantalla, el salto no desarma el mecanismo y el fichero versionado se
 puede leer—; y el contrato de los lanzadores de prueba
 (`test_fast_full_wrappers.py`), que sigue verde.
+
+## 2026-10-22 — Cada superficie de prueba tiene un carril, o dice por qué no lo tiene (C7)
+
+**Qué es esta unidad.** C7 es un candidato de la cola: «las superficies de
+prueba que ningún gate ejecuta tienen que estar declaradas». La primera
+lectura del enunciado era que esas superficies no se ejecutaban. Medido en
+el árbol de hoy, esa lectura no era cierta: los 196 tests de integración de
+Rust sí los ejecuta `cargo test --workspace`, en la lane de integración y en
+el gate completo. Lo que no existía era la declaración de qué lane pertenece
+a cada superficie, y sin ella nadie podía afirmar que una superficie está
+vigilada.
+
+**El hueco, medido.** Un recorrido de 387 superficies de prueba da 248 con
+una lane que las ejecuta de verdad y 139 que no la tienen. De esas 139, ni
+una sola estaba escrita en ningún sitio:
+
+  - 83 pruebas de vitest del explorador;
+  - 41 pruebas de navegador del explorador;
+  - 4 pruebas de navegador de la raíz del repositorio;
+  - 8 pruebas de python del sandbox;
+  - 3 pruebas de vitest del plugin de backstage.
+
+El número importa más que el desglose: es la primera vez que este
+repositorio puede responder «cuántas pruebas hay que no ejecuta ningún
+gate» con una cifra, y no con una impresión.
+
+**Lo que cambió.** Un contrato recorre el árbol, reconoce las superficies de
+prueba por su nombre —y, para Rust, por dónde viven— y exige que cada una
+pertenezca a uno de dos mundos: una lane que un pipeline ejecute de verdad,
+o una declaración escrita con el motivo por el que se queda sin ejecutar y
+cuántas hay. Los recuentos se comprueban, no se creerán: añadir un fichero a
+un árbol declarado pone el contrato en rojo, para que la superficie no crezca
+en silencio. Y quitar una lane de los pipelines lo pone en rojo también, que
+es el caso que nadie vigila.
+
+**Lo que este cierre no cambia.** Ninguna prueba se borra. Las 139 siguen
+en el árbol, con su código. Lo que cambia es que su estado deja de ser una
+suposición: están declaradas, con su motivo y su número.
+
+**El control que lo acompaña.** Cinco controles, todos medidos: que el
+inventario encuentre superficies —si no, el contrato miraría un conjunto
+vacío y pasaría siempre—; que una superficie en un árbol no declarado salga a
+la luz; que el recuento se mueva cuando se añade un fichero; que una lane
+que ningún pipeline ejecuta sea nombrada; y que un comentario no pueda
+mantener viva una lane.
+
+**Lo que encontró la medición.** Al medir el cuarto control, la lane del
+workspace seguía dando verde con la lane fuera del pipeline. La razón: el
+texto de la lane aparecía en un **comentario** del gate de merge, y la
+búsqueda contaba los comentarios. Un control que una frase puede volver
+verde no controla nada, así que ahora el contrato lee los pipelines sin sus
+comentarios antes de buscar una lane.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo de las superficies de prueba
+(`scripts/ci/test_every_test_surface_has_a_lane.py`), con sus nueve casos; el
+contrato de los contratos, que exige que un contrato que acumula hallazgos
+convierta su lista en un código de salida distinto de cero; el contrato del
+estándar de comentarios; y los tres contratos del roadmap, que vigilan que
+el bloque de unidades abiertas siga siendo legible y con su techo.
+
+El rojo se midió antes del arreglo: **139 superficies** sin lane y sin
+declaración, con su fichero de origen al lado. Las dos mutaciones que
+demuestran que los controles pueden fallar también se midieron: quitar la
+lane del pipeline pone el contrato en rojo, y añadir un fichero a un árbol
+declarado lo pone en rojo con el recuento —41 declarados, 42 encontrados—.
