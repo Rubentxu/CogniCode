@@ -452,9 +452,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     resultados; y la ambigüedad declarada en vez de resuelta por casualidad.
 >   - **Un recurso de infraestructura no es un símbolo de programación** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md`. La
->     categoría del extractor genérico no puede contradecir la semántica
->     del lenguaje, y un lenguaje sin lector semántico declara su
->     precisión.
+>     categoría del extractor genérico no contradice la semántica del
+>     lenguaje, y un lenguaje sin lector semántico declara su precisión.
+>     Cerrado: la ontología vive en el dominio y el registro no inventa.
 >   - **El dominio no construye su adaptador**: el puerto de proyección
 >     instancia la implementación de infraestructura. La frontera está
 >     invertida, y el arreglo no necesita un framework nuevo.

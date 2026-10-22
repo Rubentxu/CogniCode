@@ -23498,3 +23498,137 @@ varias sesiones: cada uno tiene su propio gate y su propio recibo, y ninguno
 puede heredarse de este.
 
 
+## 2026-10-23 — El extractor genérico deja de inventar clases
+
+**Qué es esta unidad.** La clase que el grafo publica no puede contradecir lo
+que el lenguaje dice. Un extractor que lee la forma de un nodo y la convierte en
+clase sin mirar el lenguaje publica cosas que el fichero no dice: una función
+de Bash que además es una clase, una orden que además es una importación, un
+objeto JSON que además es una función, una cadena JSON que además es una
+llamada. El grafo acaba afirmando del proyecto que tiene clases que no tiene.
+
+**El defecto, medido sobre las treinta configuraciones.** Antes de tocar nada
+se leyó el registro entero y se buscó, para cada lenguaje, un tipo de nodo
+declarado en dos categorías a la vez. Diez de los treintalanguages lo tienen:
+
+| Lenguaje | Lo que la configuración declaraba dos veces |
+|---|---|
+| `Bash` | `function_definition` como función y como clase; `command` como llamada y como importación |
+| `R` | `function_definition` como función y como clase; `call` como llamada y como importación |
+| `PowerShell` | `function_definition` como función y como clase; `command` como llamada y como importación |
+| `JSON` | `object` como función, como clase y como importación; `string` como llamada |
+| `Ruby` | `call` como llamada y como importación |
+| `Elixir` | `call` como llamada y como importación |
+| `Erlang` | `function_call` como llamada y como importación |
+| `Lua` | `function_declaration` como función y como clase; `function_call` como llamada y como importación |
+| `Verilog` | `module_declaration` como función y como clase |
+| `SystemVerilog` | `module_declaration` como función y como clase |
+
+La lista de la agenda nombraba cuatro. El probe los encontró todos, y el
+arreglo es el mismo en los diez: **una categoría que el lector no puede
+defender no se publica**. Un lector genérico que publica una función de Bash
+como clase no está siendo conservador, está inventando.
+
+**La ontología se muda al dominio.** La configuración de un lenguaje decía
+qué tipos de nodo son funciones, clases, variables, llamadas e importaciones.
+Eso no es del adaptador: es el vocabulario del problema. Ahora vive en el
+dominio, en un solo sitio —`LanguageSymbols`, con las extensiones que
+seleccionan el lenguaje y los campos con los que la gramática nombra a un
+llamado—, y la configuración del adaptador conserva solo lo que sí es del
+adaptador: qué gramática responde por cada lenguaje, qué lector propio tiene
+y qué recorrido de referencias de tipo necesita.
+
+Dos consecuencias que no son un detalle. La primera: `Language::from_extension`
+deja de leer una lista de extensiones que el dominio también declara, y una
+extensión ya no puede seleccionar un lenguaje distinto en un sitio y en otro.
+La segunda: `call_has_function_field` —el booleano que preguntaba si un
+lenguaje nombra a su llamado con un campo `function`— desaparece, porque la
+pregunta era mala. Un lenguaje no tiene o no tiene un campo: tiene los campos
+que nombra, y cada gramática los coloca donde quiere.
+
+**Un lenguaje sin lector propio no dice nada.** `HCL` y `YAML` son
+configuración, no programas: un bloque de HCL puede ser un recurso, un módulo,
+una variable o una salida, y un mapping de YAML es un mapping. El lector
+genérico no distingue esas cosas, así que ya no dice nada sobre ellas: sus
+listas están vacías y las publica el lector que sí sabe —el de Terraform, que
+distingue recurso, dato, variable, módulo y salida; el de Ansible, que
+distingue play, task y handler—. La lista vacía no es un hueco: es la
+respuesta "este lenguaje no tiene eso".
+
+**La categoría que no se puede defender no se publica.** Cada lenguaje declara
+lo que su gramática nombra de verdad, y el registro se corrige donde mentía:
+`Bash` declara funciones, variables y llamadas, y nada más; `R` lo mismo; y
+`JSON` no declara nada, porque un objeto no es una clase ni una función y una
+cadena no es una llamada..PowerShell conserva su clase —su gramática tiene
+`class_statement`— y `Verilog` conserva su función —su gramática tiene
+`function_declaration` y `task_declaration`—: el arreglo no es borrar, es
+dejar de afirmar lo que no es.
+
+**Una llamada que carga una dependencia es una importación, y solo eso.** Algunos
+lenguajes no tienen sentencia de importación: tienen una llamada a un
+cargador. En Ruby, `require` no es una llamada a una función llamada
+`require`: es una dependencia. El registro dice qué llamadas de cada lenguaje
+son cargadores —`require`, `require_relative`, `load` y `autoload` en Ruby;
+`require` en Lua; `@import` y `@cImport` en Zig; `library`, `require` y
+`source` en R— y el extractor publica esas como importación y no como
+llamada. Con eso, las solapadas que quedaban en la tabla no son un parche por
+lenguaje: son la misma regla, aplicada donde la gramática la tiene.
+
+**Un solo lugar nombra lo que un nodo nombra.** El extractor genérico, el
+parser que lo precedió, las tres estrategias de refactor, el calculador de
+complejidad y los handlers de las herramientas respondían a la misma
+pregunta de cinco maneras distintas: cuatro copias del mismo recorrido
+recursivo buscando un identificador, y un algoritmo aparte para decidir cuál
+es el llamado. La pregunta tiene ahora un solo sitio —un módulo que lee el
+nombre que un nodo lleva—: se prueban los campos que el lenguaje declara y,
+si la gramática no declara ninguno, se cae al primer hijo que no sean los
+argumentos; el identificador se busca una vez. Un camino cualificado nombra
+lo que llama, no el camino que llega a ello: `crate::nested::callee()` llama
+a `callee`.
+
+**La matriz declara lo que el lector genérico no puede afirmar.** La matriz de
+capacidades dice, por lenguaje, qué lector lo responde y qué no puede
+afirmar el lector genérico. El dato no se escribe a mano: el generador lo lee
+de la declaración del dominio, y un contrato comprueba que la matriz
+publicada y el registro digan lo mismo. El esquema declara los dos campos
+obligatorios, así que una matriz sin ellos no es una matriz válida.
+
+**Los contratos.** Dos ficheros, seis pruebas. Uno comprueba que todo tipo de
+nodo declarado existe de verdad en la gramática del lenguaje y que todo
+campo con el que se nombra un llamado existe también: un registro que nombra
+un nodo que la gramática nunca emite es un registro que promete símbolos que
+nadie va a encontrar, y el fallo es invisible porque el grafo sale vacío. El
+otro comprueba que la clase que se publica es la que publica el lector del
+lenguaje, y que el lector genérico no dice nada de un lenguaje que tiene
+lector propio.
+
+Los dos tests que había que tirar no se tiraron por gusto: eran
+`test_all_configs_have_imports` y `test_all_configs_have_calls`, y exigían
+que **toda** configuración declarara al menos una importación y una llamada.
+Ese invariante era el defecto escrito como regla: obligaba a que un lenguaje
+sin importaciones declarara una. En su lugar queda un invariante que sí
+distingue: **un tipo de nodo significa una sola cosa**, y ninguna
+configuración puede declararlo en dos categorías a la vez.
+
+**Lo que este cierre no dice.** Un recurso de Terraform sigue llevando
+`SymbolKind::Function` en el campo grueso del nodo, y la verdad fina va en
+las propiedades: el lector nombra `iac_kind=resource` e
+`iac_type=aws_s3_bucket`, y el dominio los lee como una declaración. Cambiar
+el `SymbolKind` de un recurso toca el formato publicado del grafo y es otra
+unidad; aquí lo que se arregla es que el lector genérico deje de competir con
+el lector que sí sabe.
+
+Tampoco se arregla que `Elixir` no declare funciones: la gramática de Elixir
+no distingue una función de una llamada —todo es una `call`—, y el extractor
+genérico no puede inventar esa diferencia. El lenguaje declara que no sabe.
+
+**Medición.** Treinta lenguajes, diez con el defecto corregido, seis pruebas
+nuevas, dos invariantes falsos sustituidos por uno verdadero. Suite del core
+en verde —3.072 pruebas—, contratos del producto en verde —52 ficheros de
+contrato—, y el gate de fusión con su veredicto publicado sobre la cabeza
+exacta de la rama.
+
+**Cierre.** La candidate `C19` queda **CLOSED** en esta unidad: la ontología
+vive en el dominio, el extractor genérico no publica categorías que no puede
+sostener, la matriz declara por lenguaje lo que el lector genérico no puede
+afirmar, y un contrato comprueba que lo declarado existe en la gramática.
