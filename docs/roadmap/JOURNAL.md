@@ -22636,3 +22636,49 @@ declaración, con su fichero de origen al lado. Las dos mutaciones que
 demuestran que los controles pueden fallar también se midieron: quitar la
 lane del pipeline pone el contrato en rojo, y añadir un fichero a un árbol
 declarado lo pone en rojo con el recuento —41 declarados, 42 encontrados—.
+
+## 2026-10-22 — El corte de v0.101.27 (C14)
+
+**Qué es esta unidad.** C14 es el último punto del bloque B1 de la auditoría
+del 2026-10-21: publicar una release con las estabilizaciones mergeadas. Es
+`v0.101.27` y no `v0.101.26` porque ese tag existe en el remoto y nunca llegó
+a publicarse, igual que `v0.101.24` y `v0.101.25`. Un tag que no se publica
+no se mueve.
+
+**Lo que este corte lleva dentro son tres defectos que encontró la
+máquina.** No del código, sino de los gates: el `merge-gate` de la rama del
+filtro de recorrido murió con 379 pruebas en rojo y un error que no hablaba de
+la cuota de disco que lo mataba; el `merge-gate` de la rama del catálogo
+murió con una versión de `tokio` que `crates.io` había retirado después de la
+última vez que `main` pasó su propio gate; y el gate de candidato de
+`v0.101.26` murió en `clean-clone` porque el filtro de recorrido del grafo
+excluía cualquier ruta con un directorio llamado `.cache`, y el gate clonaba
+precisamente en `~/.cache/cognicode/gate/`. El gate se cegaba a sí mismo.
+
+**C6 está cerrado**: el lazo de feedback ejecutaba la biblioteca del crate y
+nunca el test de integración que se acababa de escribir. Ahora pide el binario
+que produce ese fichero, y sólo ese.
+
+**C31 está cerrado**: la autoridad con la que se ejecuta una herramienta MCP la
+decía el catálogo que había en el disco del proyecto analizado. Un proyecto
+que declarase `write_file` como herramienta de solo lectura conseguía que el
+modo de solo lectura la aceptase. El catálogo es ahora del producto —la copia
+compilada en el binario o la que viaja junto a él en su instalación— y ningún
+árbol bajo análisis puede bajar una postura.
+
+**C32 está cerrado**: el volumen donde el gate compila es una decisión, se
+comprueba antes de empezar, y la regla vive en un solo sitio que comparten el
+preflight y el publicador del `merge-gate`.
+
+**Lo que este corte todavía no dice.** El veredicto del `merge-gate` de esta
+rama, el del gate de candidato, los bytes publicados y su verificación, y el
+cierre de C14 no están en esta entrada: son los resultados de lo que este corte
+publica, y se escriben en la entrada que sigue, cuando existen.
+
+### Gates
+
+Verde sobre este árbol: el contrato de convergencia de la release
+(`test_release_truth_convergence.py`), el del golden del export
+(`test_assurance_export_golden.py`), regenerado sobre el árbol versionado con
+la versión nueva, y el ratchet del roadmap
+(`test_roadmap_version_ratchet.py`).

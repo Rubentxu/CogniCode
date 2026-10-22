@@ -479,11 +479,11 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   incremental que se come los errores y reconstruye el grafo entero es
 >   `C11`; los constructores que no comparten motor, `C16` y `C23`; el
 >   vocabulario por lenguaje, `C19`; y el coste de validación, `C6`, `C5` y
->   `C7`. De esos, `C6`, `C5`, `C21`, `C8` y `C7` ya están cerrados. Abre dos
->   candidatos nuevos, y los dos con medida detrás: **C31**, la autoridad de
->   una herramienta MCP no puede derivarse de un `product/tools.json` que
->   controle el proyecto analizado; y **C32**, el gate no puede aislar su
->   compilación en un volumen temporal sin comprobar antes su tamaño.
+>   `C7`. De esos, `C6`, `C5`, `C21`, `C8` y `C7` ya están cerrados. La
+>   auditoría del 2026-10-21 abrió **C31** y **C32**, y los dos están
+>   cerrados con su recibo en el Journal: la autoridad de una herramienta ya
+>   no se deriva del catálogo del proyecto analizado, y el gate comprueba el
+>   volumen antes de compilar.
 >
 >   El **corte de release** se rige por
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
