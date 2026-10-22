@@ -22421,7 +22421,7 @@ catálogo (`mcp_catalog_anchor`); y el documento de capacidades de la CLI
 ## 2026-10-22 — La línea base vacía no vuelve a correr la suite entera (C5)
 
 **Qué es esta unidad.** C5 es un candidato de la cola: «la línea base vacía no
-se reejecuta». Suena a una frase de省内 Pureza, y no lo es: era dinero y
+se reejecuta». Suena a una frase de pureza, y no lo es: era dinero y
 tiempo gastados en una comprobación que no comprobaba nada.
 
 **El hueco, medido.** El repositorio guarda una lista de las pruebas que fallan
