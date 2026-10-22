@@ -22107,3 +22107,97 @@ entrada: `test_mission_declaration.py` (20 candidatos, prioridad 200..10),
 `test_roadmap_authority_attribution.py` (el bloque `>` de §11 sigue en 80
 líneas), `test_roadmap_open_units_coherence.py` (9 abiertas) y
 `test_roadmap_version_ratchet.py`. Los cuatro en verde.
+## 2026-10-22 — El corte de v0.101.26 (C14, C32)
+
+**Qué es esta unidad.** C14 es el último punto del bloque B1 de la auditoría del
+2026-10-21: publicar una release con las estabilizaciones mergeadas después de
+`v0.101.23`. Este corte es `v0.101.26`, y no `v0.101.25`, por una razón que ya
+tiene su sitio en este Journal: los dos tags anteriores existen en el remoto y
+ninguno llegó a publicarse.
+
+**Por qué hay un `v0.101.26`.** `v0.101.24` pasó el `fast`, el `full` y el
+`merge-gate` —56 de 56 etapas— y su gate de candidato lo dejó en rojo con un
+defecto real: el índice de símbolos contestaba según el orden en que el sistema
+de ficheros devolvía un directorio. Ese defecto está arreglado y mergeado. El
+gate de candidato de `v0.101.25` pasó el preflight y falló en la última etapa:
+el filtro del smoke de release se ejecutaba como comando y el shell respondió
+`--: orden no encontrada` con código 127. Un tag que no llegó a publicarse no
+se mueve, y el corte bueno es el siguiente.
+
+**Lo que lleva dentro.** El bloque B1 entero —la cobertura de relaciones, la
+consulta de infraestructura con los metadatos de su arista, el fallo de MCP que
+llega como fallo, la cancelación que pertenece a su petición, la paridad entre
+la CLI y el MCP— más dos arreglos que los cortes anteriores no pudieron
+llevar. El primero es el índice de símbolos, que ya viaja en `v0.101.25`. El
+segundo es el gate, y es lo que esta unidad mide.
+
+**El gate, y la clase que erraba.** Tres fallos, una causa raíz, y una causa que
+esta vez se leyó línea a línea. La etapa `host-build-and-verify` verificaba los
+tres binarios release **antes** de construirlos: la comprobación estaba al
+principio del cuerpo del shell y los `cargo build --release` estaban después.
+La lane sólo pasaba en una máquina cuyo directorio de destino ya tuviera los
+binarios de antes; el árbol estaba bien y el directorio estaba vacío. En el
+enlazador, `ld: Bus error` y `rustc-LLVM ERROR: IO failure on output stream:
+Disk quota exceeded`. La causa: `preflight-clean-clone.sh` fuerza
+`CARGO_TARGET_DIR="$WORK_DIR/clone/target"` —porque los tests asumen el
+`target/` de ese clon— y el clon nace de `mktemp -d`, que en esta máquina cae
+en el tmpfs de `/tmp`, de 48G, mientras el build debug del workspace medido en
+el clon limpio ocupa 25G.
+
+**Qué cambió.** La verificación prematura desapareció —la que queda al final del
+bloque es idéntica: misma comprobación, mismos binarios, mismo mensaje— y el
+volumen de trabajo pasó a ser una decisión y no un accidente:
+`PREFLIGHT_WORK_DIR` manda sobre `TMPDIR`, que a su vez manda sobre el
+default, y la regla vive en un solo sitio, `scripts/ci/build-volume.sh`, que
+comparten el preflight y el publicador del `merge-gate`. El default ya no es
+`/tmp`: un tmpfs es memoria, y un build de 25G en memoria es un
+`Disk quota exceeded` esperando su momento. Antes de empezar se comprueba que
+el volumen tiene sitio, y el fallo llega en un segundo y nombra el volumen, el
+sitio que falta y la manera de moverlo, en vez de a mitad del enlazado con el
+síntoma. Y el mecanismo para moverlo está escrito en `CONTRIBUTING.md`, que es
+donde lo busca quien llega al repositorio, no en el recuerdo de un operador.
+
+**El RED y el GREEN.** Dos contratos nuevos, que fijan propiedades y no
+implementaciones. `scripts/ci/test_gate_works_on_a_clean_machine.py`: la lane
+construye antes de verificar, el preflight dice dónde trabaja y se puede mover,
+y se niega a empezar cuando el volumen no cabe. RED medido antes del arreglo:
+cuatro problemas, incluido el que decía que el seam todavía no existía. GREEN:
+cuatro de cuatro. `scripts/ci/test_pipeline_stage_commands_are_runnable.py`:
+el filtro del smoke se ejecutaba como comando; el RED se reprodujo a
+propósito, reintroduciendo el defecto, y el fallo nombra la etapa y la línea.
+GREEN: cuatro de cuatro.
+
+**El golden, y por qué mide otra cosa.** El pin anterior del export
+`assurance-evidence/v1` se generó sobre un workspace que además llevaba el
+corpus de fixtures del sandbox —artefactos que git ignora, unos tres mil
+ficheros `.rs` que el bootstrap de la lane deja en `sandbox/repos/`—, y por eso
+su envelope contaba 4385 entidades. Este se generó sobre el árbol versionado,
+que cuenta 1357. Medido con el mismo binario: el árbol de `v0.101.25` exporta
+855270 bytes contra los 952972 de su pin, y la estructura del envelope es la
+misma en los dos casos —mismas claves, mismas colecciones de 1024, mismos
+gaps—. Lo que cambió es la composición del workspace de entrada, no el
+encoding del producer. Un pin que depende de lo que el disco de quien lo
+regenera tiene encima no es un pin, y este se genera sobre el árbol que un
+clon produce.
+
+**Lo que este corte todavía no dice.** El veredicto del `merge-gate`, el del
+gate de candidato, los bytes publicados y su verificación, y el cierre de C14
+y de C32 no están en esta entrada: son los resultados de lo que este corte
+publica, y se escriben en la entrada que sigue, cuando existen.
+
+### Gates
+
+Los contratos de la agenda, del golden y de la release, verdes sobre este
+árbol: `test_release_truth_convergence.py`, `test_assurance_export_golden.py`,
+`test_gate_works_on_a_clean_machine.py`, `test_pipeline_stage_commands_are_runnable.py`,
+`test_preflight_clone_ref.py`, `test_ci_contracts.py`,
+`test_pipeline_stage_bodies.py`, `test_release_candidate_layout.py` y
+`test_roadmap_version_ratchet.py`.
+
+El `full` completo (`bash scripts/test-full.sh release-v0.101.26`) necesita
+antes los binarios release: la suite `prf_f6_w1_release_coherence` los lee del
+directorio de release y falla en voz alta —con el mensaje que dice qué
+construir— cuando no están. Es la clase que `AGENTS.md` ya describe: un
+binario release ausente es un problema de infraestructura local, no una
+regresión, y se resuelve construyendo el release antes de relanzar el gate.
+
