@@ -9,8 +9,16 @@
 # Release-pipeline staging and output directories (release-candidate.pipeline.kts
 # writes to staging/, release.pipeline.kts uploads from release/; neither is
 # ever tracked — the published artifacts live on GitHub Releases, not in git).
+#
+# `dist/` joins them for the same reason: the candidate lane writes its
+# archives there at the repository root. MEDIDO 2026-10-22, on this machine
+# `dist/` was only ignored by the operator's global gitignore, so the
+# property lived in ~/.config/git/ignore and not in the repository: on any
+# other machine the candidate's tarballs showed up as untracked, one
+# `git add -A` away from being committed.
 /staging/
 /release/
+/dist/
 
 # IDE
 /.idea/
