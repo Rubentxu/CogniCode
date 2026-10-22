@@ -1134,6 +1134,9 @@ pub struct BuildGraphOutput {
     ///     be tied to a declaration.
     ///   - `"unknown"`: served from the in-memory graph cache, no
     ///     walk happened on this call.
+    ///   - `"unsupported"`: the walk happened and the tree holds no
+    ///     source this product can read. Nothing was dropped, but there
+    ///     is nothing to be complete about.
     pub status: String,
     pub symbols_found: usize,
     pub relationships_found: usize,
@@ -1161,7 +1164,8 @@ pub struct BuildGraphOutput {
     /// Identity of what the graph was built from.
     /// `None` only when identity cannot be established at all;
     /// otherwise present with `complete: false` when any component
-    /// (workspace canonicalization, manifest digest) is unavailable.
+    /// (workspace canonicalization, manifest digest) is unavailable, or
+    /// when the workspace had nothing to analyze.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub basis: Option<BasisDto>,
 }
@@ -1178,7 +1182,10 @@ pub struct BasisDto {
     /// hashes). Same sources ⇒ same digest; any source change ⇒ different
     /// digest. Empty when the manifest could not be computed.
     pub source_manifest_digest: String,
-    /// `true` only when every identity component was established.
+    /// `true` only when every identity component was established and
+    /// there was material to identify. A workspace with nothing to
+    /// analyze has an established identity of an empty tree, which
+    /// describes no analysis: the basis is not complete.
     pub complete: bool,
 }
 
@@ -1327,6 +1334,21 @@ pub async fn handle_build_graph(
     let graph = ctx.analysis_service.get_project_graph();
     let symbols = graph.symbol_count();
     let edges_count = graph.edge_count();
+
+    // A build that produced no symbols is the absence of material, not a
+    // complete graph. The SDK and the CLI already refuse to call an empty
+    // graph a success, and the same directory cannot get two different
+    // answers depending on who asked: a consumer that hears "complete"
+    // over an empty graph will believe it knows a project it has never
+    // seen.
+    //
+    // The answer is a state and not an error: the walk ran, the tree is
+    // there, there is simply nothing in it that this product can read.
+    // An error would also hide the reason from a caller that only reads
+    // successful payloads, and it would break the rebuild of a project
+    // whose last source file was deleted.
+    let no_material = symbols == 0;
+
     let elapsed = start.elapsed().as_millis() as u64;
 
     // Surface the BuildReport through build_graph so that
@@ -1396,6 +1418,15 @@ pub async fn handle_build_graph(
         }
     };
 
+    // The walk covered the tree, but the tree holds nothing this product
+    // can read. "Unsupported" says that without pretending the graph is
+    // complete.
+    let status = if no_material {
+        "unsupported".to_string()
+    } else {
+        status
+    };
+
     info!(
         "handle_build_graph: {} symbols, {} edges in {}ms (source: {})",
         symbols,
@@ -1430,18 +1461,34 @@ pub async fn handle_build_graph(
     } else {
         "built"
     };
-    // Identity basis for this result.
-    let basis = compute_basis(ctx, &directory);
+    // Identity basis for this result. With nothing to analyze, the basis
+    // identifies an empty tree: it does not describe an analysis.
+    let mut basis = compute_basis(ctx, &directory);
+    if no_material {
+        basis.complete = false;
+    }
+    let message = if no_material {
+        format!(
+            "Graph loaded from {}: {} symbols, {} relationships in {}ms — {}",
+            source,
+            symbols,
+            edges_count,
+            elapsed,
+            crate::application::services::analyze::no_material_reason(&directory)
+        )
+    } else {
+        format!(
+            "Graph loaded from {}: {} symbols, {} relationships in {}ms",
+            source, symbols, edges_count, elapsed
+        )
+    };
     Ok(BuildGraphOutput {
         success: true,
         status,
         symbols_found: symbols,
         relationships_found: edges_count,
         edges,
-        message: format!(
-            "Graph loaded from {}: {} symbols, {} relationships in {}ms",
-            source, symbols, edges_count, elapsed
-        ),
+        message,
         skipped_files,
         pending_references,
         basis: Some(basis),
@@ -6601,6 +6648,53 @@ mod tests {
                     .as_ref()
                     .map(|v| v.is_empty())
                     .unwrap_or(true)
+            );
+        }
+
+        /// A workspace with nothing to analyze is not a complete graph.
+        ///
+        /// The SDK and the CLI already refuse to call an empty graph a
+        /// success. The MCP server used to answer `complete` over the same
+        /// directory, with zero symbols and zero relationships: two
+        /// surfaces, two answers, and the one an agent reads was the wrong
+        /// one. An agent that hears "complete" over an empty graph
+        /// believes it knows a project it has never seen.
+        ///
+        /// The refusal is a state and not an error: the walk ran and found
+        /// nothing this product can read. An error would break the
+        /// rebuild of a project whose last source file was deleted.
+        #[tokio::test]
+        async fn a_workspace_without_material_is_not_reported_as_complete() {
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(tempdir.path().join("notes.txt"), "sin codigo\n").unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let input = BuildGraphInput { directory: None };
+
+            let outcome = handle_build_graph(&ctx, input).await;
+            let outcome = outcome.expect("the walk ran: it found nothing to read");
+            assert_eq!(
+                outcome.status, "unsupported",
+                "un workspace sin material analizable no puede responder \
+                 `complete`: no produjo símbolos"
+            );
+            assert_eq!(outcome.symbols_found, 0);
+            assert!(
+                outcome.message.contains("no produjo símbolos"),
+                "la respuesta tiene que decir por que: {}",
+                outcome.message
+            );
+            assert!(
+                outcome.message.contains("built"),
+                "la respuesta tiene que decir que se construyo: {}",
+                outcome.message
+            );
+            let basis = outcome.basis.expect("the identity of the walk is known");
+            assert!(
+                !basis.complete,
+                "la identidad de un arbol vacio no describe un analisis"
             );
         }
 

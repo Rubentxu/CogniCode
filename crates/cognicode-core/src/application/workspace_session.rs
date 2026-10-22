@@ -1021,6 +1021,16 @@ impl WorkspaceSession {
             .as_ref()
             .ok_or_else(|| WorkspaceError::GraphNotBuilt("Graph not built".to_string()))?;
 
+        // A score over a graph with no symbols is a perfect score over
+        // nothing. The workspace has no analyzable material, and saying so
+        // is the answer; a "100/100" about an empty graph is a claim about
+        // a project nobody looked at.
+        if graph.symbol_count() == 0 {
+            return Err(WorkspaceError::AnalysisFailed(
+                crate::application::services::analyze::no_material_reason(&self.workspace_root),
+            ));
+        }
+
         let cycle_detector = CycleDetector::new();
         let cycle_result = cycle_detector.detect_cycles(graph);
 
@@ -2050,6 +2060,29 @@ mod tests {
     async fn test_workspace_session_invalid_path() {
         let session = WorkspaceSession::new("/nonexistent/path").await;
         assert!(session.is_err());
+    }
+
+    /// A score over a graph with no symbols is a score over nothing.
+    ///
+    /// The workspace exists and the walk ran; there is simply nothing
+    /// there to analyze. Publishing "100/100" about it is a claim about a
+    /// project nobody looked at, so the check says what it found instead
+    /// of inventing a perfect result. The MCP server already answered
+    /// this way — an empty graph gets no architecture — and two surfaces
+    /// cannot answer the same question differently.
+    #[tokio::test(flavor = "current_thread")]
+    async fn an_empty_workspace_has_no_architecture_score() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("notes.txt"), "sin codigo\n").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+        let outcome = session.check_architecture(None).await;
+
+        let error = outcome.expect_err("un workspace sin material no puede puntuarse");
+        assert!(
+            error.to_string().contains("no produjo símbolos"),
+            "el motivo tiene que nombrar la ausencia de material: {error}"
+        );
     }
 
     // =========================================================================

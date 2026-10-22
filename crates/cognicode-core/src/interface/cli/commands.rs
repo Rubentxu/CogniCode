@@ -2396,6 +2396,11 @@ impl CommandExecutor {
 
         // Architecture check
         println!("\n=== Architecture Check ===");
+        // A valid directory with nothing to analyze is an operation that
+        // ran, not a failure of the command: the exit code stays 0. But
+        // the command must not publish a score about nothing — a perfect
+        // score over a workspace whose material was never read is a claim
+        // about a project nobody looked at. The reason is said instead.
         match session.check_architecture(None).await {
             Ok(result) => {
                 println!("  Score: {:.1}/100", result.score);
@@ -2404,7 +2409,7 @@ impl CommandExecutor {
                 println!("  Violations: {}", result.violations.len());
             }
             Err(e) => {
-                eprintln!("  Architecture check failed: {}", e);
+                eprintln!("  Architecture check: {}", e);
             }
         }
 

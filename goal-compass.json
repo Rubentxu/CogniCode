@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C14",
-      "title": "Publicar una release con las estabilizaciones posteriores a v0.101.23",
-      "unit": "release",
-      "objective": "Publicar una release que incluya las estabilizaciones mergeadas despues de v0.101.23: gates sobre un candidato concreto, binarios instalados verificados y tag anotado.",
-      "whyNow": "MEDIDO: `main` esta 26 commits por delante del tag publicado `v0.101.23`, e incluye la unificacion semantica del grafo, la poda documental y la auditoria. La auditoria externa lo senala como pendiente: la ultima release verificable sigue siendo v0.101.23 del 18 de octubre. Publicar es lo que convierte el trabajo en instalable.",
-      "evidenceRefs": [
-        "release-candidate.pipeline.kts"
-      ],
-      "doneWhen": [
-        "el candidato pasa el gate de release con los contratos y los assets verificados",
-        "los binarios instalados responden desde fuera del repositorio, sin `CARGO_MANIFEST_DIR` en el entorno",
-        "el tag anotado y la release existen, y `tools/list` anuncia la superficie real"
-      ],
-      "scope": "release",
-      "risk": "high",
-      "priority": 190,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C19",
       "title": "Un recurso de infraestructura no es un simbolo de programacion",
       "unit": "H24",
