@@ -1,7 +1,7 @@
 //! Inline Strategy - Strategy pattern implementation for inline refactoring
 //!
 //! Replaces function/method calls with the function body and optionally removes the original.
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::len_zero, clippy::needless_range_loop)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
@@ -11,6 +11,7 @@ use crate::domain::traits::refactor_strategy::{
 };
 use crate::domain::value_objects::{Location, SourceRange};
 use crate::infrastructure::parser::TreeSitterParser;
+use crate::infrastructure::parser::naming;
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -99,56 +100,20 @@ impl InlineStrategy {
         }
     }
 
-    /// Extracts the callee name from a call expression
+    /// Extracts the callee name from a call expression node.
+    ///
+    /// The name is read from the field the grammar declares for it, so the
+    /// refactor strategies and the graph agree about who calls whom.
     fn extract_callee_name(
         &self,
         call_node: tree_sitter::Node,
         source_bytes: &[u8],
     ) -> Option<String> {
-        let language = self.parser.language();
-
-        // For languages where call has function field
-        if language.call_has_function_field() {
-            for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i)
-                    && child.kind() == "function"
-                {
-                    return self.find_identifier_in_node(child, source_bytes);
-                }
-            }
-        }
-
-        // For Rust and other languages
-        for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                if child.kind() == "arguments" || child.kind() == "type_arguments" {
-                    continue;
-                }
-                if let Some(name) = self.find_identifier_in_node(child, source_bytes) {
-                    return Some(name);
-                }
-            }
-        }
-        None
-    }
-
-    /// Finds an identifier in a node
-    fn find_identifier_in_node(
-        &self,
-        node: tree_sitter::Node,
-        source_bytes: &[u8],
-    ) -> Option<String> {
-        if node.kind() == "identifier" {
-            return node.utf8_text(source_bytes).ok().map(|s| s.to_string());
-        }
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source_bytes)
-            {
-                return Some(name);
-            }
-        }
-        None
+        naming::callee_name(
+            &call_node,
+            source_bytes,
+            self.parser.language().callee_fields(),
+        )
     }
 
     /// Extracts arguments from a call expression

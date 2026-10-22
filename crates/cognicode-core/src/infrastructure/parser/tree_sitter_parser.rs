@@ -1,5 +1,5 @@
 //! Tree-sitter based parser implementation
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(invalid_from_utf8)]
 
 use crate::domain::aggregates::symbol::Symbol;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
 use crate::domain::value_objects::Language;
+use crate::infrastructure::parser::naming;
 
 // Thread-local cache of TreeSitterParser instances per language.
 //
@@ -186,10 +187,10 @@ impl TreeSitterParser {
         while let Some(current) = stack.pop() {
             let kind = current.kind();
 
-            // UAT 2026-08-10 DEFECT-5: Rust now treats `let`/`const`/`static`
-            // as variable-shaped symbols. The single-value API on Language
-            // returns only `let_declaration`, so we broaden the check
-            // only for Rust and keep other languages on their declared kind.
+            // Rust treats `let`/`const`/`static` as variable-shaped
+            // symbols. The single-value API on Language returns only
+            // `let_declaration`, so we broaden the check only for Rust and
+            // keep other languages on their declared kind.
             let is_variable = match self.language {
                 Language::Rust => matches!(kind, "let_declaration" | "const_item" | "static_item"),
                 _ => kind == self.language.variable_node_type(),
@@ -255,10 +256,10 @@ impl TreeSitterParser {
     ) -> Option<Symbol> {
         let name = self.find_identifier_name(node, source)?;
 
-        // UAT 2026-08-10 DEFECT-5: Rust distinguishes module-level
-        // constants (const_item, static_item) from let-bindings (let_declaration).
-        // Both shapes are variable-shaped in `find_all_symbols_with_path`; here
-        // we pick the appropriate `SymbolKind` for each.
+        // Rust distinguishes module-level constants (const_item, static_item)
+        // from let-bindings (let_declaration). Both shapes are variable-shaped
+        // in `find_all_symbols_with_path`; here we pick the appropriate
+        // `SymbolKind` for each.
         let kind = match node.kind() {
             "const_item" | "static_item" => SymbolKind::Constant,
             f if f == self.language.function_node_type() => SymbolKind::Function,
@@ -428,121 +429,14 @@ impl TreeSitterParser {
         }
     }
 
-    /// Extracts the callee name from a call expression node
+    /// Extracts the callee name from a call expression node.
+    ///
+    /// The name is read from the field the grammar declares for it, so this
+    /// parser and the generic walker answer the same question about the same
+    /// node in the same way. A qualified path names the thing it calls, not
+    /// the path that reaches it.
     fn extract_callee_name(&self, call_node: tree_sitter::Node, source: &str) -> Option<String> {
-        // For languages where the function is a direct child (Python, JS/TS)
-        if self.language.call_has_function_field() {
-            for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i)
-                    && child.kind() == "function"
-                {
-                    // The function child should have an identifier
-                    return self.find_identifier_in_node(child, source);
-                }
-            }
-        }
-
-        // For Rust and other languages where we look for identifier in call_expression
-        // Try to find an identifier that's the function being called.
-        //
-        // PRF F2.W4 — H-R4-1: for qualified paths (scoped_identifier like
-        // `crate::nested::callee`) and field expressions (`obj.method`),
-        // the callee is the LAST segment of the path, not the first.
-        // `find_identifier_in_node` is DFS-first, which used to return
-        // the first identifier encountered (e.g. `nested` for
-        // `crate::nested::callee()`). We now detect these node kinds and
-        // pick the last identifier instead.
-        for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                // Skip certain child types that aren't the function
-                if child.kind() == "arguments" || child.kind() == "type_arguments" {
-                    continue;
-                }
-                let name = match child.kind() {
-                    "scoped_identifier" | "field_expression" => {
-                        self.find_last_identifier_in_node(child, source)
-                    }
-                    _ => self.find_identifier_in_node(child, source),
-                };
-                if let Some(n) = name {
-                    return Some(n);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Finds an identifier in a node (iterative DFS)
-    fn find_identifier_in_node(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        let mut stack = Vec::new();
-        stack.push(node);
-
-        while let Some(current) = stack.pop() {
-            if current.kind() == "identifier" {
-                return Some(
-                    current
-                        .utf8_text(source.as_bytes())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                );
-            }
-
-            let cc = current.child_count();
-            for i in (0..cc).rev() {
-                if let Some(child) = current.child(i) {
-                    stack.push(child);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Finds the LAST identifier-like node in a subtree (iterative DFS).
-    ///
-    /// For `scoped_identifier` (e.g. `a::b::callee`) and
-    /// `field_expression` (e.g. `obj.method`) AST nodes, the callee
-    /// name is the last identifier segment of the path. The
-    /// identifier kinds accepted here are:
-    ///  - `identifier`         — ordinary variable/function name.
-    ///  - `field_identifier`   — Rust tree-sitter distinguishes this
-    ///    for `obj.method` field access (the `method` part).
-    ///
-    /// Used by `extract_callee_name` to fix H-R4-1 (qualified call
-    /// resolution).
-    fn find_last_identifier_in_node(
-        &self,
-        node: tree_sitter::Node,
-        source: &str,
-    ) -> Option<String> {
-        let mut stack = Vec::new();
-        stack.push(node);
-        let mut last_identifier: Option<String> = None;
-
-        while let Some(current) = stack.pop() {
-            if current.kind() == "identifier" || current.kind() == "field_identifier" {
-                last_identifier = Some(
-                    current
-                        .utf8_text(source.as_bytes())
-                        .unwrap_or("unknown")
-                        .to_string(),
-                );
-                // Do NOT short-circuit: we want the *last* identifier
-                // in DFS order. Continue scanning children of remaining
-                // nodes.
-                continue;
-            }
-
-            let cc = current.child_count();
-            for i in (0..cc).rev() {
-                if let Some(child) = current.child(i) {
-                    stack.push(child);
-                }
-            }
-        }
-
-        last_identifier
+        naming::callee_name(&call_node, source.as_bytes(), self.language.callee_fields())
     }
 
     /// Extracts context (line of code) from pre-split lines
@@ -1377,12 +1271,11 @@ function hello() {
 
 #[cfg(test)]
 mod w4_h_r4_1_tests {
-    //! PRF F2.W4 — H-R4-1: `find_call_relationships` debe resolver
-    //! correctamente llamadas a funciones qualified (vía `::`).
+    //! `find_call_relationships` debe resolver correctamente llamadas a
+    //! funciones qualified (vía `::`).
     //!
-    //! Bug diagnosticado durante F2.W3: para una llamada
-    //! `crate::nested::callee()`, el parser devuelve el nombre
-    //! `"nested"` (primer identifier en DFS) en lugar de `"callee"`
+    //! Para una llamada `crate::nested::callee()`, el parser devolvía el
+    //! nombre `"nested"` (primer identifier en DFS) en lugar de `"callee"`
     //! (último identifier, el nombre real del callee).
     //!
     //! Estos tests pinerán el contrato correcto:

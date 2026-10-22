@@ -8,7 +8,7 @@ use crate::domain::traits::refactor_strategy::{
     ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
-use crate::infrastructure::parser::{Language, TreeSitterParser};
+use crate::infrastructure::parser::{Language, TreeSitterParser, naming};
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -233,42 +233,15 @@ impl ExtractStrategy {
     }
 
     /// Extracts callee name from a call expression
+    ///
+    /// The name is read from the field the grammar declares for it, so this
+    /// strategy and the graph agree about who calls whom.
     fn extract_callee_name(&self, call_node: tree_sitter::Node, source: &str) -> Option<String> {
-        for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                if child.kind() == "function" || child.kind() == "function_name" {
-                    return self.find_identifier_in_node(child, source);
-                }
-                // For Rust: call_expression has identifier as first child
-                if child.kind() == "identifier" {
-                    return child
-                        .utf8_text(source.as_bytes())
-                        .ok()
-                        .map(|s| s.to_string());
-                }
-            }
-        }
-        None
-    }
-
-    /// Finds an identifier in a node recursively
-    fn find_identifier_in_node(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
-        if node.kind() == "identifier" {
-            return node
-                .utf8_text(source.as_bytes())
-                .ok()
-                .map(|s| s.to_string());
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source)
-            {
-                return Some(name);
-            }
-        }
-
-        None
+        naming::callee_name(
+            &call_node,
+            source.as_bytes(),
+            self.parser.language().callee_fields(),
+        )
     }
 
     /// Collects identifiers from patterns like (a, b) or {x, y}

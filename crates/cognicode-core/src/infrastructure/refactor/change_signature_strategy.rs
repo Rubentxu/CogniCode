@@ -1,5 +1,5 @@
 //! Change Signature Strategy - Strategy pattern implementation for change signature refactoring
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::assertions_on_constants, clippy::needless_range_loop)]
 
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
@@ -9,6 +9,7 @@ use crate::domain::traits::refactor_strategy::{
     ValidationErrorCode,
 };
 use crate::domain::value_objects::{Location, SourceRange};
+use crate::infrastructure::parser::naming;
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use crate::infrastructure::safety::{OperationType, SafetyGate, SafetyOperation};
 use std::collections::HashMap;
@@ -101,63 +102,20 @@ impl ChangeSignatureStrategy {
         }
     }
 
-    /// Extracts the callee name from a call expression node
+    /// Extracts the callee name from a call expression node.
+    ///
+    /// The name is read from the field the grammar declares for it, so the
+    /// refactor strategies and the graph agree about who calls whom.
     fn extract_callee_name(
         &self,
         call_node: tree_sitter::Node,
         source_bytes: &[u8],
     ) -> Option<String> {
-        let language = self.parser.language();
-
-        // For languages where the function is a direct child (Python, JS/TS)
-        if language.call_has_function_field() {
-            for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i)
-                    && child.kind() == "function"
-                {
-                    return self.find_identifier_in_node(child, source_bytes);
-                }
-            }
-        }
-
-        // For Rust and other languages
-        for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                if child.kind() == "arguments" || child.kind() == "type_arguments" {
-                    continue;
-                }
-                if let Some(name) = self.find_identifier_in_node(child, source_bytes) {
-                    return Some(name);
-                }
-            }
-        }
-
-        None
-    }
-
-    /// Finds an identifier in a node (possibly recursively)
-    fn find_identifier_in_node(
-        &self,
-        node: tree_sitter::Node,
-        source_bytes: &[u8],
-    ) -> Option<String> {
-        if node.kind() == "identifier" {
-            return Some(
-                node.utf8_text(source_bytes)
-                    .unwrap_or("unknown")
-                    .to_string(),
-            );
-        }
-
-        for i in 0..node.child_count() {
-            if let Some(child) = node.child(i)
-                && let Some(name) = self.find_identifier_in_node(child, source_bytes)
-            {
-                return Some(name);
-            }
-        }
-
-        None
+        naming::callee_name(
+            &call_node,
+            source_bytes,
+            self.parser.language().callee_fields(),
+        )
     }
 
     /// Extracts the arguments from a call expression
@@ -248,7 +206,7 @@ impl ChangeSignatureStrategy {
         function_type: &str,
     ) -> Result<Option<ParsedFunctionInfo>, RefactorError> {
         if node.kind() == function_type
-            && let Some(name) = self.find_identifier_in_node(node, source_bytes)
+            && let Some(name) = naming::identifier_text(&node, source_bytes)
             && name == function_name
         {
             let start = node.start_position();

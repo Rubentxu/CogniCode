@@ -25,40 +25,6 @@ LANGUAGE_SCHEMA_VERSION = "cognicode.languages/v1"
 PLATFORM_SCHEMA_VERSION = "cognicode.platforms/v1"
 SUPPORT_LEVELS = {"certified", "supported", "experimental", "unsupported"}
 
-# These names are the explicit public spelling used by the runtime Language enum.
-LANGUAGE_INFO = {
-    "Python": ("python", "Python"),
-    "Rust": ("rust", "Rust"),
-    "JavaScript": ("javascript", "JavaScript"),
-    "TypeScript": ("typescript", "TypeScript"),
-    "Go": ("go", "Go"),
-    "Java": ("java", "Java"),
-    "C": ("c", "C"),
-    "Cpp": ("cpp", "C++"),
-    "CSharp": ("csharp", "C#"),
-    "Hcl": ("hcl", "HCL"),
-    "Yaml": ("yaml", "YAML"),
-    "Ruby": ("ruby", "Ruby"),
-    "Php": ("php", "PHP"),
-    "Swift": ("swift", "Swift"),
-    "Scala": ("scala", "Scala"),
-    "Lua": ("lua", "Lua"),
-    "Zig": ("zig", "Zig"),
-    "Dart": ("dart", "Dart"),
-    "Groovy": ("groovy", "Groovy"),
-    "Elixir": ("elixir", "Elixir"),
-    "Erlang": ("erlang", "Erlang"),
-    "Haskell": ("haskell", "Haskell"),
-    "Julia": ("julia", "Julia"),
-    "Bash": ("bash", "Bash"),
-    "R": ("r", "R"),
-    "PowerShell": ("powershell", "PowerShell"),
-    "Json": ("json", "JSON"),
-    "Fortran": ("fortran", "Fortran"),
-    "Verilog": ("verilog", "Verilog"),
-    "SystemVerilog": ("systemverilog", "SystemVerilog"),
-}
-
 # Platforms the product does not claim. The reason each is unsupported is that
 # the release lane does not build it, and that is now checked rather than
 # asserted in prose: `deferred_evidence` verifies the target is absent from
@@ -159,9 +125,6 @@ def parser_variants(root: Path) -> list[str]:
     `language_source.py` for why that is not a layering decision to preserve.
     """
     variants = language_source.language_variants(root)
-    unknown = sorted(set(variants) - set(LANGUAGE_INFO))
-    if unknown:
-        raise ValueError(f"unmapped Language variants: {unknown}")
     missing_mappings = language_source.unmapped_variants(root, variants)
     if missing_mappings:
         raise ValueError(f"Language variants without tree-sitter mappings: {missing_mappings}")
@@ -174,17 +137,42 @@ def configured_variants(root: Path) -> set[str]:
 
 
 def language_extensions(root: Path) -> dict[str, list[str]]:
-    source = read_required(root, "crates/cognicode-core/src/infrastructure/parser/language_config.rs")
-    matches = re.finditer(
-        r"language:\s*Language::(?P<variant>[A-Z][A-Za-z0-9_]*)\s*,\s*"
-        r"extensions:\s*&\[(?P<extensions>.*?)\]",
-        source,
-        re.DOTALL,
-    )
-    result: dict[str, list[str]] = {}
-    for match in matches:
-        result[match.group("variant")] = re.findall(r'["\']([^"\']+)["\']', match.group("extensions"))
-    return result
+    """The extensions that select each language.
+
+    Read from the declaration in the domain, where the lists live, so this
+    reads the truth rather than a copy of it.
+    """
+    return language_source.language_extensions(root)
+
+
+# The categories a reader can publish for a language. The order is the order
+# they are read in, and it is also the order they are published in, so the
+# matrix reads the same way twice.
+CATEGORIES = ("function", "class", "variable", "call", "import")
+
+
+def generic_reader_limits(declaration: dict[str, list[str]]) -> list[str]:
+    """What the generic reader cannot assert for a language.
+
+    A category the language declares nothing for is a category the generic
+    reader cannot assert: it has no node kind to look for. An import is the
+    one category with two ways to be declared, because a language may have
+    an import statement or a call that loads a dependency, and either one is
+    enough to declare a dependency.
+    """
+    limits = [
+        category
+        for category in CATEGORIES
+        if category != "import" and not declaration.get(_field(category))
+    ]
+    if not declaration.get("import_types") and not declaration.get("import_callees"):
+        limits.append("import")
+    return [category for category in CATEGORIES if category in limits]
+
+
+def _field(category: str) -> str:
+    """The declared field that backs a category."""
+    return f"{category}_types"
 
 
 def acceptance_variants(root: Path) -> set[str]:
@@ -282,10 +270,14 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
     extensions = language_extensions(root)
     if set(extensions) != set(variants):
         raise ValueError("language configuration extensions do not cover the Language enum")
+    declarations = language_source.language_symbols(root)
+    readers = language_source.semantic_reader_languages(root)
 
+    ids = language_source.language_ids(root)
+    names = language_source.language_names(root)
     languages = []
     for variant in variants:
-        language_id, name = LANGUAGE_INFO[variant]
+        language_id, name = ids[variant], names[variant]
         evidence = [
             # Both paths, because the declaration and the grammar mapping are
             # in different layers on purpose. Citing only the parser file
@@ -293,7 +285,8 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
             # `Language` at all.
             "Language enum in domain/value_objects/language.rs; tree-sitter "
             "grammar mapping in infrastructure/parser/tree_sitter_parser.rs",
-            "LanguageConfig extension and symbol mapping in language_config.rs",
+            "LanguageConfig extension mapping in language_config.rs",
+            "Node kinds the language declares, in domain/value_objects/language.rs",
         ]
         if variant in accepted:
             support_level = "supported"
@@ -307,6 +300,10 @@ def build_documents(root: Path, source_commit: str) -> tuple[dict[str, Any], dic
                 "name": name,
                 "support_level": support_level,
                 "extensions": sorted(extensions[variant]),
+                "reader": "semantic" if variant in readers else "generic",
+                "not_asserted_by_generic_reader": generic_reader_limits(
+                    declarations[variant]
+                ),
                 "evidence": evidence,
             }
         )

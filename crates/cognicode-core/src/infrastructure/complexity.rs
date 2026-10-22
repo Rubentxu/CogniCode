@@ -21,6 +21,7 @@ use crate::application::{AppError, AppResult};
 use crate::domain::services::ComplexityCalculator;
 use crate::domain::value_objects::Language;
 use crate::infrastructure::parser::TreeSitterParser;
+use crate::infrastructure::parser::naming;
 
 /// Measures cyclomatic, cognitive and structural complexity of source text.
 #[derive(Debug, Default, Clone, Copy)]
@@ -100,7 +101,7 @@ fn find_function_metrics(
     current_nesting: u32,
 ) {
     if node.kind() == function_type
-        && let Some(name) = find_identifier_in_node(node, source)
+        && let Some(name) = naming::identifier_text(&node, source.as_bytes())
     {
         let should_process = match target_name {
             Some(target) => name == target,
@@ -131,20 +132,6 @@ fn find_function_metrics(
             );
         }
     }
-}
-
-fn find_identifier_in_node(node: tree_sitter::Node, source: &str) -> Option<String> {
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            if child.kind() == "identifier" || child.kind() == "type_identifier" {
-                return Some(child.utf8_text(source.as_bytes()).unwrap_or("").to_string());
-            }
-            if let Some(id) = find_identifier_in_node(child, source) {
-                return Some(id);
-            }
-        }
-    }
-    None
 }
 
 fn count_parameters(node: tree_sitter::Node) -> u32 {

@@ -8,26 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C19",
-      "title": "Un recurso de infraestructura no es un simbolo de programacion",
-      "unit": "H24",
-      "objective": "Que la clase que publica el grafo no contradiga la semantica del lenguaje: un recurso de Terraform y un play de Ansible se nombran como declaraciones, y el extractor generico deja de publicar categorias que no puede defender.",
-      "whyNow": "MEDIDO en la configuracion de extractores: en Bash, `function_definition` esta en `function_types` y tambien en `class_types`, y `command` esta en `call_types` y tambien en `import_types`; un `block` de HCL puede salir como funcion, como clase o como importacion. Los lectores semanticos de Terraform y Ansible si saben lo que es cada cosa, pero no todas las rutas los consultan. Contrato CU-009.1 a CU-009.3. La auditoria del 2026-10-21 anade el caso de Bash: `function_definition` figura tambien como clase y cualquier `command` como importacion, y no hay lector semantico que compense.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/infrastructure/parser/language_config.rs"
-      ],
-      "doneWhen": [
-        "la configuracion de Bash no declara `function_definition` como clase ni `command` como importacion",
-        "un test por lenguaje con lector semantico comprueba que la clase publicada no es la del extractor generico",
-        "la matriz de capacidades declara, por lenguaje, lo que un lector generico no puede afirmar",
-        "la configuracion de Bash, R, PowerShell y JSON no declara clases, importaciones ni llamadas que el extractor generico no puede sostener: un comando no es una importacion, un objeto JSON no es una clase y una cadena JSON no es una llamada"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 130,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C30",
       "title": "Las capacidades se derivan del registro de lenguajes, no de una lista propia",
       "unit": "H24",
