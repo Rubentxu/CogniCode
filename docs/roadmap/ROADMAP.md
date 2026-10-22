@@ -485,10 +485,11 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   no se deriva del catálogo del proyecto analizado, y el gate comprueba el
 >   volumen antes de compilar.
 >
->   El **corte de release** se rige por
->   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
->   gates sobre un candidato concreto, binarios instalados verificados y tag
->   anotado. Una PR fusionada no es una release.
+>   `C14` se cerró el 2026-10-22 publicando `v0.101.27`: su gate de candidato
+>   pasó sobre el clon limpio y la lane de publicación llegó hasta el final.
+>
+>   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
+>   gates sobre un candidato concreto, binarios instalados verificados y tag anotado. Una PR fusionada no es una release.
 
 <!-- consumer-contracts:end -->
 

@@ -22935,3 +22935,171 @@ distinguir una sonda de otra sin ejecutarla.
 - El módulo de podman pasa de 60–120 s a 0,42 s (13/13).
 - Mutación: sin el límite, el test nuevo falla —tarda los 30 s del comando que no
   responde— y con el límite pasa.
+
+## Entry 79 — v0.101.27 published; the lane that published it had three checks that could not pass
+
+**What**: `v0.101.27` is published and verified from its own bytes, and the lane
+that published it turned out to carry three defects that only a real
+publication could reveal.
+
+The candidate was certified first, and cleanly. The clean clone of the tag
+`86cce536` built the workspace in release profile, ran the whole suite and
+compared it against the baseline: **6507 passed, 0 failed, 22 ignored**, against
+a baseline of 5512 / 0 / 36 — a difference of +995 passed and −14 ignored,
+inside the tolerance of 2. The receipt is at
+`/tmp/preflight-receipt-86cce536f6d5.json` and the full log at
+`/tmp/preflight-clean-clone.20261022T161743Z.log`. The candidate lane then
+produced the eight artifacts: five tarballs, the per-platform bundle manifest,
+the release inventory and `SHA256SUMS`.
+
+Then the publication lane refused to publish. Three times, for three reasons
+that had nothing to do with the bytes.
+
+**Defect 1 — the lane demanded a directory the candidate does not write.** The
+first stage asked for a `dist/` directory beside `release/`. The candidate lane
+stopped writing one on 2026-10-04, when it moved its payloads under
+`staging/payloads-<platform>/dist/` so that the flatten step could find them;
+the check outlived that change. It kept passing on the worktrees that had been
+building candidates since before it, because their stale directory was still
+sitting there, and it refused every clean tree that had a complete candidate
+in it. Measured: the lane stopped with `No dist/ directory`, on a tree whose
+`release/` held all eight artifacts with their checksums.
+
+The check now names the candidate that actually exists. Every stage of the
+lane — the uploads, the re-verification, the consumer proof — reads `release/`
+and nothing else, so `release/` is the whole contract.
+
+**Defect 2 — the confirmation ran before the manifests were uploaded.** The
+stage that compares the published asset set with the produced one ran *before*
+the stage that uploads the three manifests, while comparing against a set that
+included them. On a draft holding the five tarballs, the comparison was always
+short of three files, and the lane stopped there — with a candidate complete on
+disk and a release that was never published. Measured: the diff named exactly
+`bundle-…yaml`, `release-inventory-…json` and `SHA256SUMS`.
+
+The confirmation now runs once everything the lane publishes has been
+uploaded, which is the only moment at which the two sets can be compared in
+full. The comparison itself is unchanged: what is published is what the lane
+produced, manifests included.
+
+**Defect 3 — the download resolved assets that had just been replaced.** The
+consumer proof re-downloads every asset and checks the sums of the published
+bytes. It ran seconds after the upload stages had re-submitted those assets
+with `--clobber`, and GitHub gives a new id to every re-uploaded asset and
+deletes the old one. The list `gh` resolved could point at an asset that no
+longer existed, and the download died with a 404 that said nothing about the
+bytes. Measured: `HTTP 404: Not Found (.../releases/assets/666527552)`, an id
+belonging to the previous set.
+
+The download is now retried. The check is not softened: `sha256sum -c
+SHA256SUMS` still runs on the re-downloaded bytes and still fails on wrong
+ones.
+
+**The publication, and what it was verified with.** `gh release view
+v0.101.27` reports `draft: false`, published at 2026-10-22T17:14:39Z, with
+the eight expected assets; `/releases/latest` resolves to `v0.101.27`; the
+asset-set contract passes. Re-downloading every asset into an empty directory
+and running `sha256sum -c SHA256SUMS` matches all seven checksums.
+
+The consumer proof was then run by hand against the published bytes, outside
+any repository and with no `product/` directory anywhere above it: the MCP
+binary answers `cognicode-mcp 0.101.27` and `tools/list` returns **20 tools**;
+the CLI answers `cognicode 0.101.27` and `cogh 0.101.27`.
+
+**The lane was executed twice.** The second execution is the one that finished
+green, over a tag that was already published: the draft stage reused the
+existing release, the uploads replaced the assets, the confirmation found the
+eight, and the consumer proof downloaded them and checked their sums. That
+idempotence had never been measured before, and it is where the third defect
+hid — the first two stopped the lane on the way in.
+
+**Where**:
+- `release.pipeline.kts` — the candidate check names `release/`; the confirmation runs after the manifests are uploaded; the consumer proof retries the download.
+
+**Gates**: the candidate gate over the tag `86cce536` — clean clone, release
+build, the whole workspace suite, baseline comparison — **PREFLIGHT PASS**,
+6507 / 0 / 22. The publication lane — **Pipeline finished with SUCCESS**,
+including its two negative tests, the provenance stage, the re-verification
+after upload, the resolution of `/releases/latest`, the consumer proof and the
+asset set.
+
+**Learned**:
+- A gate that only ever runs on a dirty worktree measures the worktree. The
+  `dist/` check passed for a month on three worktrees because of a directory
+  nobody had deleted, and failed on every clean tree in the same hour.
+- The moment at which a comparison can be made is part of the contract. A stage
+  that checks the whole set before the whole set exists is not a stricter
+  check; it is a check of a different thing that always fails.
+- A 404 right after writing is often your own write, not a missing thing. The
+  id in the error named an asset that had existed eleven seconds earlier.
+- The lane that publishes has to be runnable twice. A gate that cannot be run
+  again over the same tag measures a first run, and a first run is the state
+  where the most assumptions are still true.
+
+## Entry 80 — the filtered graph folded its files in the order the machine listed them
+
+**What**: the graph the workspace session answers with reported its symbols in
+the order the machine happened to list the directories in, so the same project
+answered the same question could come back in two different orders.
+
+A graph is built by folding the project's files one after another. The order of
+the fold is the order in which the symbol index receives the symbols, and the
+index reports the candidates of a repeated name in the order it received them.
+The whole-project graph folds its files in path order — it says so in a comment
+right above the sort, and the reason it gives is the one that matters: the
+index must never depend on directory-walk order. The filtered graph — the one
+`WorkspaceSession` builds, and the one the MCP answers a symbol lookup with —
+folded its files in the order the walk listed them and sorted nothing.
+
+The consequence is not visible in a single file. It is visible when a name is
+declared twice: the lookup returns both declarations, and in which order
+depends on the filesystem. The same project, copied to a machine whose
+filesystem lists directories differently, answers the same question in a
+different order — and the two answers cannot be compared with anything.
+
+**RED measured.** The fixture is a project of eight repetitions of one shape:
+a directory `dN` holding one file, next to a file `dN.rs`. Comparing the paths
+as whole strings, `dN.rs` comes before `dN/x.rs`, because `.` sorts before `/`;
+a walk that descends into `dN` when it meets it visits `dN/x.rs` first. The two
+orders disagree for a reason that has nothing to do with the graph.
+
+Against the code as it was, the two routes answered the same question in two
+different orders:
+
+    whole project   d0.rs, d0/x.rs, d1.rs, d1/x.rs, … d7.rs, d7/x.rs
+    filtered view   d7.rs, d7/x.rs, d6.rs, d6/x.rs, … d0.rs, d0/x.rs
+
+**The fix is one line, and it is the line the other route already had.** The
+filtered route now folds its files in path order, before the index sees them.
+
+**The contract** is a new file,
+`crates/cognicode-core/tests/the_graph_does_not_depend_on_the_directory_order.rs`,
+with three cases: the whole graph reports the repeated names in path order, the
+filtered graph reports them in path order, and the two routes answer the same
+question the same way. The first is the control — it passes before and after,
+and it is what says the fixture is well formed. The second and third are red
+before and green after.
+
+**Where**:
+- `crates/cognicode-core/src/application/services/analysis_service.rs` — the filtered graph folds its files in path order.
+- `crates/cognicode-core/tests/the_graph_does_not_depend_on_the_directory_order.rs` — the contract.
+
+**Gates**: `cargo test -p cognicode-core --test
+the_graph_does_not_depend_on_the_directory_order` — **RED** with the old code
+(2 of 3 failed, and the failure printed both orders), **GREEN** with the fix
+(3 of 3). `cargo fmt --all --check` clean. `cargo clippy --workspace
+--all-targets -- -D warnings` clean.
+
+**Learned**:
+- The first fixture for this defect could not fail, and that was worth finding
+  out before writing the contract. Twelve files in one directory, written in
+  reverse order, come back from a filesystem that lists its entries sorted —
+  so the wrong code answered in the right order and the test passed. A fixture
+  that cannot fail is not evidence, it is a coincidence with extra steps.
+- The disagreement between two orders has to be built into the tree, not into
+  the filesystem's mood. A directory and a file that share a prefix are
+  ordered one way by a path comparison and the other way by a walk, on every
+  filesystem, because `.` and `/` disagree about who comes first.
+- The comment above the sort in the other route was a specification nobody was
+  holding to. It said the index must never depend on directory-walk order, and
+  one of the two routes that build that index did exactly that.
