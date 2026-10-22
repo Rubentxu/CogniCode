@@ -1,7 +1,8 @@
 /**
  * E2E tests for Phase 1 executors G2–G5 (e12b–e12e).
  *
- * Coverage: ADR-002 e12b–e12e, gaps in e17-coverage-matrix.md.
+ * These cover the gap that the first group of view executors had no
+ * user-visible coverage.
  *
  * Each view is reached by: open Spotter → select object →
  * switch to the view tab → verify content renders.

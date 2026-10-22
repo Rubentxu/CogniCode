@@ -111,25 +111,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C21",
-      "title": "La configuracion ejecutable no cita documentos que ya no existen",
-      "unit": "H23",
-      "objective": "Que ninguna configuracion ejecutable apunte a un documento que la poda se llevo, y que el inventario de cobertura que el explorador genera se escriba donde de verdad esta.",
-      "whyNow": "MEDIDO: `playwright.config.ts` declara `coverageMatrix: \"docs/inventory/e17-coverage-matrix.md\"` y `scripts/coverage-matrix.ts` dice producir ese mismo fichero; `docs/inventory/` ya no existe desde la poda documental, y dos specs de `e2e/` citan `docs/inventory/e17-deferred-bugs.md`. Una configuracion que apunta a un documento inexistente no describe lo que ejecuta.",
-      "evidenceRefs": [
-        "apps/explorer-ui/playwright.config.ts"
-      ],
-      "doneWhen": [
-        "ninguna ruta de `docs/` citada por configuracion ejecutable esta ausente del arbol",
-        "el inventario de cobertura que genera el explorador se escribe en una ruta versionada, o su generador deja de existir",
-        "un contrato lo vigila"
-      ],
-      "scope": "H23",
-      "risk": "low",
-      "priority": 150,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C8",
       "title": "El contrato de procedencia gobierna consumer-contracts",
       "unit": "H23",

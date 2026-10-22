@@ -55,11 +55,10 @@ export default defineConfig({
       ...(process.env["PW_VISUAL"] ? { PW_VISUAL: "true" } : {}),
     },
   },
-  // Metadata for coverage matrix generation (cycle e17).
+  // Metadata for coverage matrix generation.
   // Read by scripts/coverage-matrix.ts.
   metadata: {
     testDir: "./e2e",
-    coverageMatrix: "docs/inventory/e17-coverage-matrix.md",
-    cycle: "e17-e2e-coverage-audit",
+    coverageMatrix: "apps/explorer-ui/e2e/coverage-matrix.md",
   },
 });

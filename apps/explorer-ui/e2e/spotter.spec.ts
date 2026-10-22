@@ -1,5 +1,5 @@
 /**
- * E2E spotter tests — Phase 4 of the explorer-e2e-test-plan.
+ * E2E spotter tests.
  *
  * Verifies the Spotter (cmd-K palette) end-to-end behavior: open, search,
  * result groups, escape-to-close, empty state.
@@ -7,7 +7,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true).
  * The Spotter component lives at apps/explorer-ui/src/components/Spotter.tsx.
  *
- * Phase 4 scenarios (5 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 4 scenarios (5 tests):
  *   P4.1 Open via Cmd+K
  *   P4.2 Open via search button
  *   P4.3 Results grouped by kind

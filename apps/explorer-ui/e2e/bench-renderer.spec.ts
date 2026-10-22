@@ -26,10 +26,11 @@
  *     same builder the vitest suite uses and writes the report
  *     artifacts.
  *
- * Sigma.js is the gated third branch (ADR-041 §8 outcome 3). It is
+ * Sigma.js is the gated third branch of the renderer comparison. It is
  * intentionally NOT exercised here; the harness in
- * `apps/explorer-ui/src/bench/` covers Sigma under vitest and the
- * docs in `docs/adr/ADR-042-renderer-decision.md` track the gate.
+ * `apps/explorer-ui/src/bench/` covers Sigma under vitest, and the gate
+ * that decides whether it enters the real-browser benchmark is still
+ * open.
  */
 
 import { test, expect } from "@playwright/test";

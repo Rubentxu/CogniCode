@@ -1,7 +1,8 @@
 /**
  * E2E tests for G1: usage_examples ViewExecutor (e12a).
  *
- * Coverage: ADR-002 e12a, G1 gap in e17-coverage-matrix.md.
+ * This covers the gap that the usage-examples view had no user-visible
+ * coverage.
  *
  * Flow: open Spotter → select symbol → switch to Usage Examples tab →
  * verify callers + callees blocks render with correct items.

@@ -1,7 +1,8 @@
 /**
  * E2E tests for G6: McpToolsModal component (e15.5 MCP tool invocation UI).
  *
- * Coverage: ADR-002 e15.5, G6 gap in e17-coverage-matrix.md.
+ * This covers the gap that the tool-invocation interface had no
+ * user-visible coverage.
  *
  * Flow: open app → click "MCP Tools" button → modal opens →
  * select tool → fill params → run → verify result.
