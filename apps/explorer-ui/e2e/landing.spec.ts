@@ -1,5 +1,5 @@
 /**
- * E2E landing page tests — Phase 1 of the explorer-e2e-test-plan.
+ * E2E landing page tests.
  *
  * Verifies the GraphLanding component renders as the first screen when
  * the user opens the Explorer without an explicit workspace selection
@@ -9,7 +9,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true; see
  * playwright.config.ts). No real axum backend is needed.
  *
- * Phase 1 scenarios (8 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 1 scenarios (8 tests):
  *   P1.1 Graph landing renders after workspace bootstrap
  *   P1.2 Landing shows root nodes in cytoscape canvas
  *   P1.3 Landing shows suggested questions strip

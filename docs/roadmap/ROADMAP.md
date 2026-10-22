@@ -424,14 +424,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   y `docs/roadmap/consumer-contracts/kotlin-evolution/adr/ADR-K003.md`
 >   (K2). H5 tiene la suya en
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md`
->   y
->   `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
+>   y `docs/roadmap/consumer-contracts/adr/ADR-CU-004-SNAPSHOT-RELEASE-TRUST.md`.
 >
 >   **H23** — la poda por obligaciones y el coste de la fase de tests: las
 >   superficies que ningún gate ejecuta y el tiempo de gate que no compra
->   garantía. El modo rápido ya corre el target de integración que se
->   tocó, y la fase completa ya no repite la batería del core con la línea
->   base vacía; queda que las superficies E2E sin carril se acumulan.
+>   garantía. La fase completa ya no repite la batería del core con la
+>   línea base vacía, el modo rápido ya corre el target de integración que
+>   se tocó, y la configuración ejecutable ya no apunta a documentos
+>   ausentes; queda que las superficies E2E sin carril se acumulan.
 >
 >   **H24** — el producto tiene que decir la verdad. Lo que le queda abierto
 >   son tres contratos y una frontera:
@@ -480,7 +480,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   incremental que se come los errores y reconstruye el grafo entero es
 >   `C11`; los constructores que no comparten motor, `C16` y `C23`; el
 >   vocabulario por lenguaje, `C19`; y el coste de validación, `C6`, `C5` y
->   `C7` —de los cuales `C6` y `C5` ya están cerrados—. Abre dos candidatos
+>   `C7`. De esos, `C6`, `C5` y `C21` ya están cerrados. Abre dos candidatos
 >   nuevos, y los dos con medida detrás: **C31**, la autoridad de una
 >   herramienta MCP no puede derivarse de un `product/tools.json` que
 >   controle el proyecto analizado; y **C32**, el gate no puede aislar su

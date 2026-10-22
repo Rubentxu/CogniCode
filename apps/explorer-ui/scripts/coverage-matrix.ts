@@ -1,14 +1,14 @@
 #!/usr/bin/env tsx
-// Coverage matrix generator — produces docs/inventory/e17-coverage-matrix.md
+// Coverage matrix generator — writes apps/explorer-ui/e2e/coverage-matrix.md
 //
 // Cross-references:
-// - 65-feature inventory (docs/inventory/explorer-ui-feature-inventory.md)
+// - the feature catalog declared in this file
 // - Playwright specs in apps/explorer-ui/e2e (any .spec.ts)
 // - Snapshot files in apps/explorer-ui/e2e (any *.spec.ts-snapshots/*.png)
 //
 // Output: a markdown table mapping each feature to its spec, test name,
 // screenshot path, and GToolkit equivalent. The matrix is the source of
-// truth for "did we cover everything" in cycle e17.
+// truth for "did we cover everything".
 //
 // Run via: npm run coverage:matrix
 
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 const __dirname_esm = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname_esm, "..", "..", "..");
 const E2E_DIR = join(REPO_ROOT, "apps", "explorer-ui", "e2e");
-const OUTPUT_PATH = join(REPO_ROOT, "docs", "inventory", "e17-coverage-matrix.md");
+const OUTPUT_PATH = join(REPO_ROOT, "apps", "explorer-ui", "e2e", "coverage-matrix.md");
 
 interface Feature {
   name: string;
@@ -38,11 +38,48 @@ interface Coverage {
 }
 
 /**
- * Feature catalog — mirrors docs/inventory/explorer-ui-feature-inventory.md
- * (the canonical 65-feature inventory produced during e17 explore phase).
+ * View executors that are wired and therefore need a spec.
+ *
+ * The list is named, not counted: the coverage targets below are printed
+ * from it, so a view added here cannot leave the target behind saying a
+ * different number.
+ */
+const WIRED_EXECUTORS = [
+  "overview", "call-graph", "source", "quality", "evidence",
+  "symbols", "dependencies", "hotspots", "architecture-drift",
+  "usage-examples", "api-surface", "test-slice", "debug-slice",
+  "change-impact-story", "ownership-map",
+];
+
+/**
+ * Views that are catalog-only: declared, not implemented.
+ *
+ * The E2E suite keeps its own list of what is still debt
+ * (`e2e/utils/feature-flags.ts`); this one says which views exist on paper.
+ */
+const CATALOG_ONLY_VIEWS = [
+  "composed_narrative", "project_diary", "example_object",
+  "concept_map", "evidence_pack", "risk_map", "decision_trace",
+  "doc_code_alignment", "ownership_map_v2_codeowners", "boundary_map",
+  "dependency_pressure", "change_impact_story_v2", "refactor_plan",
+  "callers_and_implementors", "usage_examples_v2", "api_surface_v2",
+  "dead_code_candidates", "semantic_search_results", "doc_code_alignment_v2",
+  "example_object_v2", "composed_narrative_v2", "project_diary_v2",
+  "concept_map_v2",
+];
+
+/**
+ * The families the universal search has to cover.
+ */
+const SPOTTER_FAMILIES = [
+  "symbol", "file", "viewspec", "saved-exploration", "quality-issue", "rule",
+];
+
+/**
+ * Feature catalog — the features this UI is expected to expose.
  *
  * Each entry: { name, category, gtoolkitEquivalent }.
- * 65 features total, grouped by category.
+ * Features are grouped by category.
  */
 const FEATURES: Feature[] = [
   // ─── Navigation (8) ─────────────────────────────────────────────
@@ -55,29 +92,15 @@ const FEATURES: Feature[] = [
   { name: "EntryPointResolver", category: "Navigation", gtoolkitEquivalent: "GT contextual launchers" },
   { name: "ShareExplorationButton", category: "Navigation", gtoolkitEquivalent: "Lepiter page links" },
 
-  // ─── Views — 15 wired executors (15) ─────────────────────────────
-  ...[
-    "overview", "call-graph", "source", "quality", "evidence",
-    "symbols", "dependencies", "hotspots", "architecture-drift",
-    "usage-examples", "api-surface", "test-slice", "debug-slice",
-    "change-impact-story", "ownership-map",
-  ].map((id): Feature => ({
+  // ─── Views — wired executors ──────────────────────────────────────
+  ...WIRED_EXECUTORS.map((id): Feature => ({
     name: `${id} view executor`,
     category: "View executor (wired)",
     gtoolkitEquivalent: "Phlow view per object type",
   })),
 
-  // ─── Views — catalog-only debt (23) ──────────────────────────────
-  ...[
-    "composed_narrative", "project_diary", "example_object",
-    "concept_map", "evidence_pack", "risk_map", "decision_trace",
-    "doc_code_alignment", "ownership_map_v2_codeowners", "boundary_map",
-    "dependency_pressure", "change_impact_story_v2", "refactor_plan",
-    "callers_and_implementors", "usage_examples_v2", "api_surface_v2",
-    "dead_code_candidates", "semantic_search_results", "doc_code_alignment_v2",
-    "example_object_v2", "composed_narrative_v2", "project_diary_v2",
-    "concept_map_v2",
-  ].map((id): Feature => ({
+  // ─── Views — catalog-only debt ────────────────────────────────────
+  ...CATALOG_ONLY_VIEWS.map((id): Feature => ({
     name: `${id} view (catalog-only)`,
     category: "View executor (debt)",
     gtoolkitEquivalent: "Phlow view (planned)",
@@ -247,11 +270,11 @@ function main(): void {
 
   // ─── Markdown output ─────────────────────────────────────────────
   const lines: string[] = [];
-  lines.push("# E2E Coverage Matrix — Cycle e17");
+  lines.push("# E2E Coverage Matrix");
   lines.push("");
   lines.push(`Last generated: ${new Date().toISOString()}`);
   lines.push("");
-  lines.push("Cross-reference of the 65-feature inventory against the Playwright E2E suite.");
+  lines.push("Cross-reference of the feature catalog against the Playwright E2E suite.");
   lines.push("This matrix is the source of truth for \"did we cover everything\".");
   lines.push("");
   lines.push("## Summary");
@@ -263,11 +286,17 @@ function main(): void {
   }
   lines.push(`| **TOTAL** | **${coverage.length}** | **${totalCovered}** | **${totalSkipped}** | **${totalMissing}** |`);
   lines.push("");
-  lines.push("## Coverage targets (cycle e17 spec)");
+  lines.push("## Coverage targets");
   lines.push("");
-  lines.push("- ≥60 of 65 features covered (≥92%)");
-  lines.push("- Each of 15 wired executors covered");
-  lines.push("- Each of 6 Spotter families covered");
+  lines.push(
+    `- Every feature that is implemented has at least one spec (the "missing" count is 0)`,
+  );
+  lines.push(
+    `- Every wired view executor has a spec (${WIRED_EXECUTORS.length} of them)`,
+  );
+  lines.push(
+    `- Every Spotter family has a spec (${SPOTTER_FAMILIES.length} of them)`,
+  );
   lines.push("- Every MSW handler hit");
   lines.push("");
   lines.push("## Detailed matrix");

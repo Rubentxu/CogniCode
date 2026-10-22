@@ -1,5 +1,5 @@
 /**
- * E2E error states tests — Phase 5 of the explorer-e2e-test-plan.
+ * E2E error states tests.
  *
  * Verifies the Explorer handles failures gracefully: connection loss,
  * error boundaries, empty workspace, large graphs, missing objects, FIFO panes.
@@ -7,7 +7,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true) but override
  * specific endpoints to simulate failures.
  *
- * Phase 5 scenarios (6 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 5 scenarios (6 tests):
  *   P5.1 Connection gate: backend unreachable
  *   P5.2 Error boundary catches crashes
  *   P5.3 Empty workspace: "open workspace" prompt

@@ -1,5 +1,5 @@
 /**
- * E2E pane-stack tests — Phase 3 of the explorer-e2e-test-plan.
+ * E2E pane-stack tests.
  *
  * Verifies the GtPager-style horizontal pane-stack that allows inspecting
  * multiple objects in parallel.
@@ -7,7 +7,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true). Objects are
  * selected via the Spotter to open panes.
  *
- * Phase 3 scenarios (8 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 3 scenarios (8 tests):
  *   P3.1 First pane renders object inspector
  *   P3.2 Second pane creates new tab (max 8)
  *   P3.3 Click tab switches active pane

@@ -3,11 +3,9 @@
  *
  * The LensPanel surfaces analytics lenses (hotspots, dead code, etc.).
  * The treemap and sunburst visualizations currently use mock fixtures
- * (HOTSPOT_TREEMAP_FIXTURE, DEAD_CODE_SUNBURST_FIXTURE) per the
- * inventory's surprise #4. This is documented as debt and asserted
- * explicitly here so any change away from mock fixtures is visible.
- *
- * See docs/inventory/e17-deferred-bugs.md — bug #5 (anticipated).
+ * (HOTSPOT_TREEMAP_FIXTURE, DEAD_CODE_SUNBURST_FIXTURE). This is documented
+ * as debt and asserted explicitly here so any change away from mock
+ * fixtures is visible.
  */
 import { test, expect } from "@playwright/test";
 import { snapshot } from "./utils/screenshot";

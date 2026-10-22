@@ -1,16 +1,14 @@
 /**
  * E2E: Spotter multi-family coverage.
  *
- * GToolkit parity: Spotter is a universal search/launcher. After e13-wave-1
- * (PR #69), CogniCode's backend supports 6 families: Symbol, File, ViewSpec,
- * SavedExploration, QualityIssue, Rule. Each family should be selectable
- * from the UI.
+ * GToolkit parity: Spotter is a universal search/launcher. CogniCode's
+ * backend supports 6 families: Symbol, File, ViewSpec, SavedExploration,
+ * QualityIssue, Rule. Each family should be selectable from the UI.
  *
  * This spec asserts user-visible behavior for the 6 families. Two are
  * already wired in the frontend Zod schema (Symbol, ViewSpec); the
- * remaining 4 (File, SavedExploration, QualityIssue, Rule) are documented
- * as e13-wave-1.1 debt and skipped here — see docs/inventory/e17-deferred-bugs.md
- * bug #1.
+ * remaining 4 (File, SavedExploration, QualityIssue, Rule) are declared
+ * debt and skipped here.
  *
  * Screenshot evidence: one PNG per family at
  * apps/explorer-ui/e2e/spotter-multifamily.spec.ts-snapshots/<family>.png
@@ -61,8 +59,8 @@ test.describe("Spotter multi-family (e13 parity)", () => {
   });
 
   // ────────────────────────────────────────────────────────────────
-  // e13-wave-1.1 debt (bug #1 in e17-deferred-bugs.md) — RESOLVED.
-  // The frontend Zod schema now accepts all families (see
+  // The four families that were deferred are now covered below: the
+  // frontend Zod schema accepts all families (see
   // schemas.ts spotterSearchResultSchema) and the MSW fixture serves
   // the knowledge-layer + quality families (handlers.ts).
   // ────────────────────────────────────────────────────────────────

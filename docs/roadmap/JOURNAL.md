@@ -22418,6 +22418,53 @@ autoridad del MCP (`a010_tool_authority_audit`); el contrato del ancla del
 catálogo (`mcp_catalog_anchor`); y el documento de capacidades de la CLI
 (`a014_capabilities_json`), con sus diecisiete casos.
 
+## 2026-10-22 — La configuración ejecutable no apunta a documentos que ya no existen (C21)
+
+**Qué es esta unidad.** C21 es un candidato de la cola: «la configuración
+ejecutable no cita documentos que ya no existen». Suena menor, y no lo es:
+una configuración que apunta a un documento ausente describe mal lo que
+ejecuta, y el fallo que produce no habla del documento que faltaba.
+
+**El hueco, medido.** La poda documental se llevó `docs/inventory/`. Lo que
+quedó detrás fueron once citas a documentos que ya no están en el árbol:
+
+  - la configuración de las pruebas de navegador declaraba que su matriz de
+    cobertura estaba en un fichero de ese directorio, y el generador que
+    produce esa matriz escribía allí sin crear el directorio: ni siquiera
+    podía tener éxito;
+  - dos specs de navegador citaban un documento de deudas que ya no existe;
+  - seis specs citaban un plan de pruebas que la poda se llevó, y las
+    nueve restantes citaban, por nombre de fichero, documentos que
+    tampoco existen.
+
+**Lo que cambió.** Cada cita rota se reescribió para decir lo que el
+código hace, en vez de apuntar a un documento que nadie va a abrir. El
+generador de la matriz de cobertura ahora escribe junto a los specs que
+describe, crea su directorio, y sus objetivos de cobertura se derivan de
+las listas que ya tiene declaradas: el número de objetivos no puede
+desincronizarse del número real porque sale de la misma constante.
+
+**Lo que este cierre no cambia.** Las pruebas de navegador siguen siendo
+las mismas, con los mismos escenarios. Lo único que se mueve es la
+referencia: un plan de pruebas que ya no está en el árbol no es una razón
+para no escribir el plan, y el spec ya listaba sus escenarios.
+
+**El control que lo acompaña.** Un contrato comprueba que ninguna
+configuración ejecutable cita un documento que falte, y lo comprueba de dos
+formas a la vez: sobre el árbol real, y sobre una cita rota inventada en
+un árbol de mentira. Si la comprobación no encontrara citas, o si no
+detectara una cita rota que se le pone delante, el contrato avisaría. Un
+control que no puede fallar es indistinguible de uno que nunca falla.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo de las citas de la configuración
+(`scripts/ci/test_executable_config_cites_no_absent_document.py`), con sus
+cuatro casos; el contrato de los contratos, que exige que un contrato que
+acumula hallazgos convierta su lista en un código de salida distinto de
+cero; y el contrato del estándar de comentarios, que este cierre mejora en
+cuatro ficheros y no empeora en ninguno.
+
 ## 2026-10-22 — La línea base vacía no vuelve a correr la suite entera (C5)
 
 **Qué es esta unidad.** C5 es un candidato de la cola: «la línea base vacía no

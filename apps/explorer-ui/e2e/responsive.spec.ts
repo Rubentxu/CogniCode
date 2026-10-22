@@ -1,5 +1,5 @@
 /**
- * E2E responsive & accessibility tests — Phase 6 of the explorer-e2e-test-plan.
+ * E2E responsive & accessibility tests.
  *
  * Verifies the Explorer adapts to different viewport sizes and is
  * keyboard-navigable.
@@ -7,7 +7,7 @@
  * All tests rely on MSW handlers (VITE_USE_MOCKS=true).
  * Viewport changes use `page.setViewportSize()` to trigger CSS breakpoints.
  *
- * Phase 6 scenarios (5 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 6 scenarios (5 tests):
  *   P6.1 Desktop: graph + pane-stack side-by-side
  *   P6.2 Tablet: lens overlay toggle
  *   P6.3 Small: bottom-sheet visible

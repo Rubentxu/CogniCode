@@ -1,5 +1,5 @@
 /**
- * E2E perspective toggle tests — Phase 2 of the explorer-e2e-test-plan.
+ * E2E perspective toggle tests.
  *
  * Verifies the Graph ↔ C4 perspective toggle behavior end-to-end.
  *
@@ -7,7 +7,7 @@
  * The toggle component lives at apps/explorer-ui/src/components/PerspectiveToggle.tsx
  * and dispatches SET_PERSPECTIVE which is handled by the perspective slice.
  *
- * Phase 2 scenarios (6 tests) from docs/explorer-e2e-test-plan.md:
+ * Phase 2 scenarios (6 tests):
  *   P2.1 Toggle Graph → C4 perspective
  *   P2.2 C4 shows component architecture nodes
  *   P2.3 C4 shows correct node styles (component/container/system)
