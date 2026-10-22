@@ -22201,3 +22201,90 @@ construir— cuando no están. Es la clase que `AGENTS.md` ya describe: un
 binario release ausente es un problema de infraestructura local, no una
 regresión, y se resuelve construyendo el release antes de relanzar el gate.
 
+
+## 2026-10-22 — El lazo de feedback ejecuta el test que se toca (C6)
+
+**Qué es esta unidad.** C6 es el siguiente candidato de B2 después del corte
+de release: «el modo fast ejecuta el target del test tocado». Lo que describe
+es corto y lo que escondía era un falso verde.
+
+**El hueco, medido.** `run_suite()` mapeaba las cinco suites a
+`cargo test -p <crate> --lib`. La consecuencia no era que faltara cobertura:
+era que la cobertura se declaraba y no se ejercía. Tocar
+`crates/<crate>/tests/<fichero>.rs` seleccionaba la suite correcta —el
+selector es preciso— y el runner ejecutaba la biblioteca del crate, que no
+contiene ese fichero. El developer acababa de escribir un test contractual, el
+lazo de feedback daba verde, y el test no se había ejecutado ni una vez.
+
+La cifra que la auditoría del 2026-10-20 dejó escrita era la de siempre: *el
+modo fast ejecuta 0 de 1.316 tests de integración*. Esa línea no se
+reescribe —un informe archivado cuenta lo que midió el día que lo midió—,
+pero lo que sí dice es que el hueco era real y estaba medido.
+
+**Por qué no se corren los 99 binarios de integración.** El propio selector
+dejaba la decisión escrita: *cerrar esa brecha es una decisión propia —correr
+65 binarios de test convierte `fast` en minutos—*. Y es cierto: `fast` existe
+para acortar el lazo de feedback, y convertirlo en la batería completa sería
+convertirlo en otra cosa.
+
+La vía que no cuesta minutos es más estrecha y más honesta. Un target de
+integración es un binario, y el nombre de ese binario es el del fichero que lo
+produce. Lo que se toca es un fichero, y por lo tanto un target. Se corre ese
+y solo ese: el que puede hablar del cambio, que es justamente el que el
+developer acaba de escribir. La biblioteca del crate se sigue corriendo
+entera; el target tocado se **añade**, no sustituye.
+
+**El RED, medido antes de tocar nada.** El contrato ejecuta el wrapper de
+verdad en un árbol de laboratorio —un repositorio git con lo mínimo y un
+`cargo` falso que anota los argumentos que recibe— y mira la lista. Con el
+código de antes, esa lista era:
+
+```
+test -p cognicode-core --lib
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+El target tocado no aparecía. Con el arreglo:
+
+```
+test -p cognicode-core --lib
+test -p cognicode-core --test prf_demo
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+**Dos límites que el contrato fija porque son fáciles de no ver.**
+
+Un módulo compartido bajo `tests/` no es un target. `tests/common/mod.rs` no
+produce binario, porque cargo crea un target por cada fichero `.rs`
+*directamente* bajo `tests/`. Pedirle un binario llamado `common` hace que
+cargo falle, y ese fallo no habla del cambio: parece un fallo del repositorio
+y es una regla de nombres.
+
+Y un fichero borrado no es un target tampoco. Un test borrado sigue en el
+diff —`git diff --name-only` lo nombra aunque ya no esté en disco— y pedirlo
+haría que cargo fallara con *no test target named ...*. Se pide el binario
+sólo de lo que está en disco.
+
+**La derivación se contrasta con la verdad de cargo.** Derivar el nombre del
+target a mano es el tipo de regla que se desincroniza sin que nadie lo note:
+si un crate declarase un `[[test]]` con otro nombre, el lazo de feedback
+pediría un binario que no existe. El contrato contrasta la derivación
+entera —los 99 targets de `cognicode-core`, uno a uno— contra lo que
+`cargo metadata` declara, que es el mismo manifiesto que cargo usa para saber
+que un target existe. Hoy coinciden exactamente: ni uno falta, ni uno sobra.
+
+**Lo que este cierre no toca.** El gate completo —`bash scripts/test-full.sh`—
+sigue siendo el gate, y sigue corriendo los 1.316 tests de integración. `fast`
+es el lazo de feedback, no la evidencia: con un `--filter` encima, el propio
+script lo dice y desactiva la línea base, porque un subconjunto filtrado
+nunca reproduce el conjunto completo de fallos.
+
+### Gates
+
+Verde sobre este árbol: el contrato del wrapper de tests
+(`scripts/ci/test_fast_full_wrappers.py`), con sus cuatro casos —el target
+tocado se ejecuta, un módulo compartido no se pide, un fichero borrado no se
+pide, y la derivación entera coincide con la de cargo—; el contrato del
+selector (`scripts/ci/test_select_suites.py`); `bash -n` limpio sobre los dos
+scripts tocados; y shellcheck con menos avisos que antes, porque las cinco
+ramas de suite se funden en una sola.
