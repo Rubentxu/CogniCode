@@ -84,6 +84,11 @@ use std::process::Command;
 /// Directories whose backticked paths are provenance references.
 const ROOTS: &[&str] = &["docs/", "openspec/"];
 
+/// The trees this contract governs. A citation inside one of them has to
+/// resolve: these are the documents a reader follows to find out what the
+/// product does and how it is put together.
+const GOVERNED_TREES: &[&str] = &["docs/adr/", "docs/roadmap/consumer-contracts/"];
+
 /// Length in bytes of the backtick run starting at `i`.
 fn backtick_run(bytes: &[u8], i: usize) -> usize {
     let mut n = 0;
@@ -257,6 +262,18 @@ const ALLOWED_MISSING: &[(&str, &str)] = &[
         "docs/adr/E32-cognicode-distribution.md",
         "E32 is a ROADMAP program with sub-units E32-A..I, not an ADR; this path never named a decision record and picking a substitute would be invention",
     ),
+    (
+        "docs/cognicode-kotlin-roadmap/",
+        "the upstream Kotlin package lives outside version control by operator decision, so the consumer contract cites where the package came from rather than a path a reader can follow today; the integrated copies are under docs/roadmap/consumer-contracts/kotlin-evolution/ and those resolve",
+    ),
+    (
+        "docs/roadmap/kotlin-evolution/",
+        "the upstream package deposits its documents at this gitignored path; the consumer contract's integration table names this path to record where each file came from, and the integrated copies live under docs/roadmap/consumer-contracts/kotlin-evolution/ where they resolve",
+    ),
+    (
+        "docs/roadmap/2026-Q4-CLI-MCP-ROADMAP.md",
+        "the consumer contract records that this path was cited by the roadmap while it did not exist, and states that the integration deliberately does not create the file to turn a broken reference green; the citation names a known absence rather than a document a reader can follow today",
+    ),
 ];
 
 fn repo_root() -> PathBuf {
@@ -268,15 +285,24 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// The tracked files this contract governs: the decision record and the
-/// operating contract. Read through `git ls-files` so an untracked scratch file
-/// cannot fail the build.
+/// The trees whose tracked files this contract governs: the decision record,
+/// the operating contract, and the consumer contract that tells a consumer
+/// what the product does.
+///
+/// Read through `git ls-files` so an untracked scratch file cannot fail the
+/// build.
+///
+/// The consumer contract is governed for the same reason the decision record
+/// is: it is the entrance door for whoever arrives, so its citations are the
+/// first thing they will follow. It was left out of this set, and the
+/// consequence was nineteen citations that resolve to nothing — nobody
+/// noticed because the guard was never looking there.
 fn governed_files(root: &Path) -> Vec<PathBuf> {
     let tracked = tracked_paths(root);
 
     let mut files: Vec<PathBuf> = tracked
         .iter()
-        .filter(|p| p.starts_with("docs/adr/"))
+        .filter(|p| GOVERNED_TREES.iter().any(|prefix| p.starts_with(prefix)))
         .map(PathBuf::from)
         .collect();
 
@@ -378,6 +404,46 @@ fn every_backticked_provenance_path_resolves() {
             .map(|(p, f)| format!("  {p}  <-  {f}"))
             .collect::<Vec<_>>()
             .join("\n")
+    );
+}
+
+#[test]
+fn a_broken_citation_in_the_governed_tree_is_reported() {
+    // The negative control: a citation that does not resolve has to be
+    // reported, from inside the tree the contract governs.
+    //
+    // The gate above proves the real tree is clean. This proves the opposite
+    // direction: that "clean" is a fact about the tree and not about a
+    // scanner that stopped looking. Without it, a guard whose filter
+    // matched nothing would pass forever, and the failure would look
+    // exactly like a healthy repository.
+    let root = repo_root();
+    let tracked = tracked_paths(&root);
+    let governed = governed_files(&root);
+
+    assert!(
+        !governed.is_empty(),
+        "the governed tree is empty, so there is nothing to scan"
+    );
+
+    // A citation to a document that does not exist, seen by the same code
+    // that reads the real tree.
+    let synthetic = "Source: `docs/roadmap/consumer-contracts/no-existe.md`.\n";
+    let found = provenance_paths(synthetic);
+    assert!(
+        found.contains("docs/roadmap/consumer-contracts/no-existe.md"),
+        "the scanner missed a broken citation inside the governed tree; it found {found:?}"
+    );
+
+    // And the same citation, judged by the same resolution, does not resolve.
+    let broken: Vec<_> = found
+        .iter()
+        .filter(|p| !resolves_in_a_checkout(&tracked, p))
+        .collect();
+    assert!(
+        !broken.is_empty(),
+        "a citation to a document that does not exist was reported as resolving; \
+         the resolution is not asking what is actually there"
     );
 }
 
@@ -602,6 +668,18 @@ fn the_scan_covers_exactly_what_ci_can_see() {
          at the wrong tree",
         tracked_here
     );
+
+    // Every tree this contract claims to govern has to be governed. Without
+    // this, dropping a tree from the filter is indistinguishable from a tree
+    // with nothing to say: the gate stays green and the tree stops being
+    // checked.
+    for tree in GOVERNED_TREES {
+        let count = governed.iter().filter(|p| p.starts_with(tree)).count();
+        assert!(
+            count > 0,
+            "no tracked file is governed under {tree}, so that tree is not being scanned"
+        );
+    }
 }
 
 #[test]

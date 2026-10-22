@@ -111,25 +111,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C8",
-      "title": "El contrato de procedencia gobierna consumer-contracts",
-      "unit": "H23",
-      "objective": "Que el contrato de procedencia gobierne tambien `docs/roadmap/consumer-contracts/**`, para que las 20 citas rotas que quedan se vean en rojo.",
-      "whyNow": "MEDIDO: de 39 citas a rutas de `docs/` en el contrato del consumidor, 20 no resuelven (14 ficheros, 6 directorios), ocho de ellas con el prefijo equivocado. El contrato solo gobierna `docs/adr/**`, asi que nadie se dio cuenta: el fallo es del guard, no solo de las citas.",
-      "evidenceRefs": [
-        "docs/roadmap/consumer-contracts/kotlin-evolution/INTEGRATION.md"
-      ],
-      "doneWhen": [
-        "el contrato escanea `docs/roadmap/consumer-contracts/**` y falla con las citas rotas a la vista",
-        "las citas rotas estan corregidas o declaradas con su razon, una fila cada una",
-        "el guard tiene control negativo: falla ante una cita rota sintetica"
-      ],
-      "scope": "H23",
-      "risk": "low",
-      "priority": 140,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C19",
       "title": "Un recurso de infraestructura no es un simbolo de programacion",
       "unit": "H24",

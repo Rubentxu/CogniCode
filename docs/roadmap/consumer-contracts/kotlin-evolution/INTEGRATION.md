@@ -18,7 +18,7 @@ Su `apply.py` deposita los documentos en
 `docs/roadmap/kotlin-evolution/`, ruta **gitignored** (línea 200 de
 `.gitignore`, decisión operador 2026-06-24). Aplicarlo produciría
 diecisiete archivos huérfanos visibles solo en working tree y un único
-puntero "KOTLIN-EVOLUTION [PROPOSED]" en `docs/ROADMAP.md` apuntando a
+puntero "KOTLIN-EVOLUTION [PROPOSED]" en `docs/roadmap/ROADMAP.md` apuntando a
 contenido que no viaja con el repo (404 en clone limpio).
 
 En su lugar, este directorio `kotlin-evolution/` bajo
