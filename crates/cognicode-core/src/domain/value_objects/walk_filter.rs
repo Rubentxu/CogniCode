@@ -144,15 +144,24 @@ impl WalkFilter {
         WalkDecision::Include
     }
 
-    /// Check if any component of the path matches the blocklist or skips.
+    /// Check if any component of the path **inside the project** matches
+    /// the blocklist or skips.
     ///
     /// Use this for `walkdir::WalkDir::filter_entry` to prune entire subtrees
     /// as soon as we encounter a matching component, instead of yielding
     /// and then filtering out.
     ///
+    /// `root` is the directory the walk starts from. Only the components
+    /// below it are the project's own names, and only those say what the
+    /// project does not contain. A directory above the root belongs to
+    /// whoever put the project there: a project that lives under a
+    /// directory called `build` is still a project, and reading it as an
+    /// empty one is a silent loss of evidence, not a decision.
+    ///
     /// Returns `true` if the path should be skipped (filtered out).
-    pub fn matches_any_component(&self, path: &Path) -> bool {
-        path.components().any(|c| {
+    pub fn matches_any_component(&self, path: &Path, root: &Path) -> bool {
+        let inside = path.strip_prefix(root).unwrap_or(path);
+        inside.components().any(|c| {
             c.as_os_str()
                 .to_str()
                 .map(|s| {
@@ -420,6 +429,50 @@ mod tests {
         // Root path has no file name
         let path = Path::new("/");
         assert_eq!(filter.should_walk(path), WalkDecision::Include);
+    }
+
+    // =====================================================================
+    // WalkFilter::matches_any_component Tests — the root bounds the reach
+    // =====================================================================
+
+    #[test]
+    fn a_skipped_name_above_the_root_does_not_reach_the_project() {
+        let filter = WalkFilter::default();
+        let root = Path::new("/home/user/.cache/project");
+        let source = Path::new("/home/user/.cache/project/src/lib.rs");
+
+        assert!(
+            !filter.matches_any_component(source, root),
+            "a file inside the project was skipped because of a name above the root"
+        );
+    }
+
+    #[test]
+    fn a_skipped_name_inside_the_project_still_prunes() {
+        let filter = WalkFilter::default();
+        let root = Path::new("/home/user/project");
+        let artifact = Path::new("/home/user/project/target/debug/lib.rs");
+
+        assert!(
+            filter.matches_any_component(artifact, root),
+            "an artifact inside the project was walked"
+        );
+    }
+
+    #[test]
+    fn the_root_itself_is_not_pruned_by_its_own_name() {
+        let filter = WalkFilter::default();
+        let root = Path::new("/home/user/build");
+        let source = Path::new("/home/user/build/src/lib.rs");
+
+        assert!(
+            !filter.matches_any_component(root, root),
+            "the root was pruned by its own name"
+        );
+        assert!(
+            !filter.matches_any_component(source, root),
+            "a file inside the project was skipped because of the root's name"
+        );
     }
 
     // =====================================================================

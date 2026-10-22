@@ -22288,3 +22288,67 @@ pide, y la derivación entera coincide con la de cargo—; el contrato del
 selector (`scripts/ci/test_select_suites.py`); `bash -n` limpio sobre los dos
 scripts tocados; y shellcheck con menos avisos que antes, porque las cinco
 ramas de suite se funden en una sola.
+## 2026-10-22 — El filtro de recorrido que cegaba al proyecto (bloqueador de la publicación)
+
+**Qué es esta unidad.** El gate de candidato del corte `v0.101.26` murió en su
+etapa `clean-clone` con dieciséis pruebas rojas en `cognicode-core --lib`, y
+todas decían lo mismo: el proyecto no tenía símbolos. La causa no era el
+índice, ni el orden de lectura, ni la caché: era una regla del filtro de
+recorrido. Esta entrada cuenta cómo se aisló, cómo se midió en rojo y qué
+cambió.
+
+**La regla que fallaba.** `WalkFilter::matches_any_component` comparaba cada
+componente de la ruta **absoluta** con la lista de nombres bloqueados y con
+la de exclusiones de rendimiento —`build`, `target`, `.cache`, `vendor`,
+`coverage`, `env`, `venv`— y decidía que un elemento estaba excluido si
+cualquiera de sus componentes coincidía. Un directorio **por encima** del
+proyecto no dice nada de lo que el proyecto contiene, pero con esa regla un
+proyecto que vive bajo un directorio llamado `build` quedaba ciego: el
+recorrido no entregaba ningún fichero, el grafo salía vacío y la respuesta lo
+declaraba completo. El defecto no es de los tests: es la misma regla que se
+aplica al proyecto de un usuario que trabaja en `~/build/mi-proyecto`.
+
+**Cómo se aisló.** Los cuatro preflights que pasaron clonaban en `/tmp`; los
+dos que fallaron clonaban en `~/.cache/cognicode/gate/`, y el nombre de ese
+volumen está en la lista de exclusiones. Eso redujo el campo a una sola
+hipótesis: el camino por encima del proyecto decide. La hipótesis se
+comprobó con dos sondas sobre el mismo proyecto y con el mismo binario: en
+`/tmp/probe/normal/miproyecto` el índice ve un símbolo, y en
+`/tmp/probe/.cache/miproyecto` no ve ninguno. El contenido era el mismo; sólo
+cambiaba el nombre de un directorio por encima.
+
+**El RED.** El preflight entero se reprodujo sobre `50ba51d0` con su
+directorio de trabajo bajo el volumen de caché y volvió a dar dieciséis rojos:
+3143 pasaron y 16 fallaron. Los fallos eran siete aserciones de grafo vacío,
+el índice que se construía en cero milisegundos con cero símbolos, la
+consulta por CLI que devolvía vacío, y la comparación de símbolos y aristas
+entre la CLI y el MCP. Todo lo mismo en cada uno: no había nada que leer.
+
+**El GREEN.** El filtro ahora exige la raíz del recorrido y sólo mira los
+componentes que están por debajo de ella. Los nombres de dentro del proyecto
+siguen podando igual: un `target/` dentro del proyecto es un artefacto y se
+sigue saltando. Se actualizaron los diez puntos de llamada: ocho en el
+código de producto —el servicio de análisis, la sesión de workspace, el
+índice ligero, el inventario y la búsqueda semántica— y dos en los
+*harnesses* de equivalencia.
+
+El contrato nuevo,
+`crates/cognicode-core/tests/a_project_under_a_skipped_name_is_still_read.rs`,
+cubre las tres rutas que leen un proyecto: el inventario del servicio, el
+handler de MCP y el índice que consulta el grafo bajo demanda. Con el filtro
+viejo fallan las tres; con el arreglo pasan. En la lib, tres tests unitarios
+fijan la ley del filtro.
+
+**La verificación decisiva** no es la suite nueva: es la suite que el gate dio
+por roja, corrida en el mismo clon y la misma ruta donde el gate falló. Con
+el arreglo aplicado allí, `cognicode-core --lib` con las features que unifica
+el workspace da 3162 pruebas pasadas, 0 rojas, 2 omitidas y 1 filtrada. Los
+dos índices que el gate había visto construirse en cero milisegundos ahora
+responden.
+
+**Lo que este arreglo no cierra.** La publicación. El corte publicable
+siguiente es `v0.101.27`, porque `v0.101.26` ya tiene su tag en el remoto y
+un tag que existe no se mueve. La frontera de autoridad de las herramientas
+MCP —que un `product/tools.json` del proyecto analizado no pueda declarar una
+herramienta mutante como de lectura— sigue abierta y es la cabeza de la cola
+de la misión.

@@ -338,7 +338,7 @@ impl SemanticSearchService {
 
         for entry in crate::infrastructure::walk_policy::contained_walk(dir)
             .into_iter()
-            .filter_entry(|e| !walk_filter.matches_any_component(e.path()))
+            .filter_entry(|e| !walk_filter.matches_any_component(e.path(), dir))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();

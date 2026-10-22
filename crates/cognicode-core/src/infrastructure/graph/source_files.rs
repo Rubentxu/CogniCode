@@ -192,7 +192,7 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
         };
 
         let path = entry.path();
-        if walk_filter.matches_any_component(path) {
+        if walk_filter.matches_any_component(path, project_dir) {
             continue;
         }
         if !ignore_is_real_file(&entry) {

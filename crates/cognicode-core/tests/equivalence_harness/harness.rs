@@ -363,7 +363,7 @@ fn fixture_sources(root: &Path) -> Vec<(PathBuf, &'static LanguageConfig)> {
         .filter(|entry| entry.path().is_file())
         .filter_map(|entry| {
             let path = entry.path().to_path_buf();
-            if walk_filter.matches_any_component(&path) {
+            if walk_filter.matches_any_component(&path, root) {
                 return None;
             }
             let ext = path.extension()?.to_str()?;
