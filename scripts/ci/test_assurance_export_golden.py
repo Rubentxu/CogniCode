@@ -114,14 +114,19 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
-# Pin vigente: edd14796642ea56c5ec71b9578c2d26cf65572132e917366715e509bdd9bfce1
-# (v0.101.25, regenerate 2026-10-21 al bump 0.101.24 → 0.101.25; corte de release
-# de C14. Cambian producer.version, el workspace rev y el tamano del export
-# —952972 bytes frente a 952804 del corte anterior—, porque el arreglo del
-# indice de simbolos anadio una definicion al crate. El consumer
-# (pipelinek-assurance) debe actualizar su pin tras esta regeneracion.)
+# Pin vigente: 671b6928432f95b3217188a55d5431d24c436152ee070f42c4d68eb4d55b37c7
+# (v0.101.26, regenerate 2026-10-22 al bump 0.101.25 → 0.101.26; corte de release
+# de C14. 861549 bytes frente a 952972 del pin anterior. MEDIDO: el pin anterior
+# se genero sobre un workspace que ademas llevaba el corpus de fixtures del
+# sandbox —artefactos ignorados por git, ~3000 ficheros .rs que el bootstrap de
+# la lane de release deja en sandbox/repos/—, y por eso su envelope contaba
+# 4385 entidades; este se genero sobre el arbol versionado, que cuenta 1357.
+# La estructura del envelope es la misma —mismas claves, mismas colecciones de
+# 1024, mismos gaps—: lo que cambio es la composicion del workspace de entrada,
+# no el encoding del producer. El consumer (pipelinek-assurance) debe actualizar
+# su pin tras esta regeneracion.)
 GOLDEN_SHA256 = (
-    "edd14796642ea56c5ec71b9578c2d26cf65572132e917366715e509bdd9bfce1"
+    "671b6928432f95b3217188a55d5431d24c436152ee070f42c4d68eb4d55b37c7"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
