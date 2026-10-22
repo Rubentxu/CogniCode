@@ -61,23 +61,22 @@ where
 {
     fs::create_dir_all(tmp).expect("mkdir tmp");
 
-    // The global git wrapper (`~/.local/bin/git`) refuses to sign
-    // commits in repos whose host is not in the identity map (the
-    // /tmp paths the test uses fall under "sin clasificar").
-    // RANDOM_GIT_COMMITTER_DISABLED=1 is the documented escape
-    // hatch: it delegates everything to /usr/bin/git and bypasses
-    // the wrapper. We also set an explicit throwaway identity so
-    // the commits carry a non-empty Author line.
-    let env_overrides: [(&str, &str); 3] = [
-        ("RANDOM_GIT_COMMITTER_DISABLED", "1"),
-        ("GIT_AUTHOR_NAME", "qw03-test"),
-        ("GIT_AUTHOR_EMAIL", "qw03-test@cognicode.local"),
-    ];
-
+    // The repository is a laboratory: it has to behave the same on every
+    // machine, so it does not read the git configuration of whoever is
+    // running the tests. Their hooks and their identity rules would
+    // otherwise decide whether these commits happen at all, and the guard
+    // would fail for reasons that have nothing to do with its contract.
+    // The configuration paths point at something that does not exist, which
+    // git reads as "there is no configuration". The author is set explicitly
+    // so the commits carry a non-empty Author line.
+    let no_configuration = tmp.join("no-git-configuration");
     let init = Command::new("git")
         .args(["init", "-q", "--initial-branch=main"])
         .current_dir(tmp)
-        .envs(env_overrides)
+        .env("GIT_CONFIG_GLOBAL", &no_configuration)
+        .env("GIT_CONFIG_SYSTEM", &no_configuration)
+        .env("GIT_AUTHOR_NAME", "qw03-test")
+        .env("GIT_AUTHOR_EMAIL", "qw03-test@cognicode.local")
         .status()
         .expect("git init");
     assert!(init.success(), "git init failed in {}", tmp.display());
@@ -89,7 +88,8 @@ where
         Command::new("git")
             .args(["config", k, v])
             .current_dir(tmp)
-            .env("RANDOM_GIT_COMMITTER_DISABLED", "1")
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
             .status()
             .expect("git config");
     }
@@ -124,26 +124,31 @@ where
     // the order of operations.
     additional_drift(tmp);
 
-    // We use `git add -f` because the user's GLOBAL gitignore
-    // (`~/.config/git/ignore`) excludes `bin/` — exactly the
-    // surface we are exercising. Without `-f` the bin sources
-    // would silently stay untracked and the guard would fail for
-    // reasons unrelated to its contract. The global ignore is a
-    // CI/workspace hygiene preference, not a project rule, so
-    // forcing it inside the tmp repo is correct.
+    // The repository is a laboratory: it has to behave the same on every
+    // machine, so it does not read the git configuration of whoever is
+    // running the tests —their hooks, their identity rules and their global
+    // ignores would otherwise decide whether these commits happen at all.
+    // The configuration paths point at something that does not exist, which
+    // git reads as "there is no configuration".
+    //
+    // `git add -f` is kept because the surface being exercised is exactly the
+    // one a global ignore tends to exclude, and forcing it is correct inside
+    // a repository whose rules are its own.
     let add = Command::new("git")
         .args(["add", "-A", "-f"])
         .current_dir(tmp)
-        .env("RANDOM_GIT_COMMITTER_DISABLED", "1")
+        .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))
+        .env("GIT_CONFIG_SYSTEM", tmp.join("no-git-configuration"))
         .status()
         .expect("git add");
     assert!(add.success(), "git add failed in {}", tmp.display());
 
     let commit = Command::new("git")
-        .args(["commit", "-q", "-m", "qw03 baseline"])
+        .args(["commit", "-q", "-m", "chore: qw03 baseline"])
         .current_dir(tmp)
+        .env("GIT_CONFIG_GLOBAL", tmp.join("no-git-configuration"))
+        .env("GIT_CONFIG_SYSTEM", tmp.join("no-git-configuration"))
         .envs([
-            ("RANDOM_GIT_COMMITTER_DISABLED", "1"),
             ("GIT_AUTHOR_NAME", "qw03-test"),
             ("GIT_AUTHOR_EMAIL", "qw03-test@cognicode.local"),
         ])

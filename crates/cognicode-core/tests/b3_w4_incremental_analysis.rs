@@ -41,10 +41,20 @@ fn write_with_mtime(path: &Path, body: &[u8], mtime: SystemTime) {
     f.set_modified(mtime).expect("set_modified");
 }
 
+/// Run a git command inside the laboratory repository the test built.
+///
+/// The repository is a laboratory: it has to behave the same on every
+/// machine, so it does not read the git configuration of whoever is running
+/// the tests —their hooks, their identity rules and their global ignores
+/// would otherwise decide whether these commits happen at all. The
+/// configuration paths point at something that does not exist, which git
+/// reads as "there is no configuration".
 fn git_in(cwd: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
         .current_dir(cwd)
+        .env("GIT_CONFIG_GLOBAL", cwd.join("no-git-configuration"))
+        .env("GIT_CONFIG_SYSTEM", cwd.join("no-git-configuration"))
         .status()
         .unwrap_or_else(|e| panic!("failed to spawn git {args:?}: {e}"));
     assert!(

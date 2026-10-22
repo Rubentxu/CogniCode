@@ -22682,3 +22682,78 @@ Verde sobre este árbol: el contrato de convergencia de la release
 (`test_assurance_export_golden.py`), regenerado sobre el árbol versionado con
 la versión nueva, y el ratchet del roadmap
 (`test_roadmap_version_ratchet.py`).
+## 2026-10-22 — El servidor HTTP deja de servirse expuesto (B1.1)
+
+**Qué es esta unidad.** El primer punto del bloque de producto fiable: cerrar la
+exposición del servidor HTTP. El servidor MCP habla JSON-RPC por stdio, que es
+su forma normal, y por HTTP cuando arranca como `cognicode-mcp-server`. El
+transporte HTTP es el único al que pueden llegar otras máquinas, y expone las
+herramientas que escriben.
+
+**El hueco, medido.** Con el código de antes, el servidor arrancaba en
+`0.0.0.0:9847` —todas las interfaces— **sin credencial**, porque la
+autenticación era opcional: si la variable de entorno no estaba, el servidor
+servía en claro. Medido sobre el binario de antes:
+
+- el proceso arrancaba y **seguía vivo** escuchando en una dirección
+  alcanzable desde la red;
+- `/health` respondía `200` —eso es por diseño, los orquestadores lo consultan;
+- `/watch` respondía `200` **sin credencial**, y su cuerpo nombraba el
+  directorio de trabajo del servidor.
+
+Lo segundo importa más de lo que parece: `/watch` estaba montado fuera del
+router protegido por el middleware de autenticación. El middleware se aplicaba
+a `/mcp` y a nada más, y `/watch` se añadió al router después, sin que nadie
+notara que se había quedado fuera.
+
+**Lo que cambió.** Tres decisiones, en un solo sitio:
+
+1. **La dirección por defecto es loopback.** `127.0.0.1:9847`. Un servidor que
+   espera a que le digan que sea alcanzable no sorprende a nadie; uno que
+   espera a que le digan que no lo sea ya se ha expuesto.
+2. **Una dirección alcanzable sin credencial no arranca.** Si se pide una
+   dirección más amplia que el loopback y no hay token, el proceso termina
+   antes de enlazar nada, diciendo qué variable hay que poner. Falla cerrado:
+   la configuración insegura es un error de arranque, no un aviso.
+3. **`/watch` exige la credencial** cuando el servidor está protegido. Sigue
+   siendo público en loopback, donde nadie más llega.
+
+El token se lee **una vez, al arrancar**, y no en cada petición. Antes se
+leía en cada petición para poder rotarlo sin reiniciar; pero rotarlo exige
+reiniciar el contenedor de todas formas —cambiar una variable de entorno
+pide un reinicio—, así que leerlo en cada petición no daba ninguna
+flexibilidad y sí dejaba abierta la ventana en la que el servidor ya estaba
+expuesto y todavía no tenía credencial.
+
+**Lo que este cierre no cambia.** El transporte stdio, que es el normal, no se
+toca. La lista de herramientas, tampoco. Lo único que cambia es a qué
+dirección se escucha y qué se pide para escuchar a algo más que el loopback.
+
+**El control que lo acompaña.** Las reglas viven en la biblioteca, donde se
+leen y se prueban baratas: la dirección por defecto es loopback, el refuslo
+nombra la variable que lo arregla, y un token vacío es un token ausente. Y un
+contrato de integración levanta el **binario real** con una configuración que
+no puede arrancar y comprueba que se niega, y con una que puede arrancar y
+comprueba que no se niega por la exposición. Ese segundo contrato es el que
+importa: una regla escrita y nunca consultada se parece a una garantía, y
+solo el proceso real dice la verdad.
+
+**Lo que la medición encontró por el camino.** El modo HTTP del servidor MCP no
+está documentado en ninguna parte del repositorio: ni el puerto, ni la
+variable del token, ni la consecuencia de elegir una dirección amplia. Una
+superficie sin documentación que se puede configurar es una superficie que se
+configura por descuido.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo de la exposición
+(`crates/cognicode-mcp/tests/mcp_http_exposure_is_safe.rs`), con sus dos casos;
+los cinco casos de las reglas en la biblioteca
+(`crates/cognicode-mcp/src/exposure.rs`); el contrato de los contratos; y el
+estándar de comentarios, que este cierre mejora.
+
+El rojo se midió antes del arreglo, sobre el binario de antes: el proceso
+arrancaba y seguía vivo en una dirección alcanzable desde la red sin
+credencial, y `/watch` respondía `200` sin credencial nombrando el
+directorio de trabajo.
+
