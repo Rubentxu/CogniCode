@@ -5,28 +5,31 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `635feabc5c949711284a4eccf00cedb1f6ebec5d` (`origin/main` al
-> abrir este ciclo), rama `fix/mcp-http-binds-loopback`.
-> Versión del workspace: `0.101.27`. Última release publicada: `v0.101.23`
-> (2026-10-18, 8 assets). `main` va **49** commits por delante de ese tag.
+> **Snapshot**: 2026-10-22, sobre `86cce536f6d500169eb4f1e35cc66d3eed5ff735` (`origin/main` al
+> abrir este ciclo), rama `fix/the-filtered-graph-index-does-not-depend-on-the-walk`.
+> Versión del workspace: `0.101.27`. Última release publicada: `v0.101.27`
+> (2026-10-22, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: este corte es el v0.101.27
+## Release: la última publicada es la v0.101.27
 
 | Tag | Estado | Por qué |
 |---|---|---|
-| `v0.101.23` | **publicada** (2026-10-18) | la última que un usuario puede instalar |
+| `v0.101.23` | publicada (2026-10-18) | la anterior |
 | `v0.101.24` | tag, sin release | su gate de candidato encontró un defecto real del índice de símbolos |
 | `v0.101.25` | tag, sin release | su gate de candidato murió en la última etapa por un comando de shell mal escrito |
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
-| `v0.101.27` | **este corte** | lleva los tres defectos que los gates anteriores encontraron |
+| `v0.101.27` | **publicada** (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
 
-Un tag que no llegó a publicarse no se mueve. El siguiente corte publicable
-es **`v0.101.27`**, y ya tiene resuelta la primera de las dos condiciones: el
-filtro de recorrido que mataba el clon está arreglado y fusionado. Lo que
-queda es su gate de candidato, que tiene que correr sobre un `main` que lo
-incluya.
+Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
+pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
+y la lane de publicación, que tuvo que arreglar tres checks que no podían
+pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
+corte que lleva el filtro de recorrido arreglado.
+
+El siguiente corte, cuando se abra, será **`v0.101.28`**, y no moverá
+`v0.101.27`: un tag publicado no se mueve.
 
 ## La regla que este ciclo destapó
 
@@ -58,6 +61,21 @@ probar, y confundirse cuesta un ciclo entero:
    pasó su propio gate, así que `main` llevaba su comprobación en rojo sin que
    nadie lo mirase.
 
+Y tres que encontró la propia lane de publicación, al publicar de verdad:
+
+6. **Un gate que exige un directorio que nadie escribe.** La lane pedía un
+   `dist/` que el candidato dejó de escribir en octubre. Pasaba en los
+   worktrees viejos, porque el directorio viejo seguía ahí, y rechazaba
+   cualquier árbol limpio con un candidato completo. Medía el worktree.
+7. **El momento de la comparación es parte del contrato.** La comprobación del
+   conjunto publicado corría *antes* de que se subieran los manifiestos, y
+   comparaba contra un conjunto que los incluía. No era una comprobación más
+   estricta: era otra comprobación, y siempre fallaba.
+8. **Un 404 justo después de escribir suele ser tu propia escritura.** La
+   prueba de consumidor descargaba los assets segundos después de sustituirlos;
+   GitHub da id nuevo a cada asset re-subido, y el id que pedía la descarga
+   ya no existía.
+
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
 
@@ -65,12 +83,11 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **C14** | publicar una release con las estabilizaciones posteriores a `v0.101.23` | `ROADMAP.md` §11 |
 | **B3** (`C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
-**C6, C31, C5, C21, C8, C7 y C32 están cerrados.** El lazo de feedback ejecutaba la
+**C6, C31, C5, C21, C8, C7, C32 y C14 están cerrados.** El lazo de feedback ejecutaba la
 biblioteca del crate y nunca el test de integración que se acababa de
 escribir: ahora pide el binario que produce ese fichero —y sólo ese— sin
 convertir el modo rápido en la batería completa. La autoridad de una
@@ -81,6 +98,10 @@ procedencia pasó a gobernar el contrato del consumidor, y cada superficie de
 prueba tiene ahora un carril declarado o la razón escrita de por qué se
 queda sin él. Y el gate da el mismo resultado en cualquier máquina: los
 laboratorios de git ya no heredan las reglas de quien los ejecuta.
+
+**C14 se cerró con `v0.101.27`**: una PR fusionada no es una release, y esta
+sí se publicó, verificada desde sus propios bytes y con los binarios
+instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
@@ -115,9 +136,13 @@ temporales van a `/tmp`, la cuota puede matar la batería entera.
 
 ## Bloqueos abiertos
 
-- **Publicación**: `main` lleva 49 commits sin publicar y las tres releases
-  con tag siguen sin existir para quien las quiera instalar. El corte
-  `v0.101.27` está preparado y esperando su gate de candidato.
+- **La lane de publicación ya no es un bloqueo, pero casi lo fue**: le pedía
+  al árbol un directorio que el candidato no escribe, comparaba el conjunto
+  publicado contra los manifiestos que la etapa siguiente sube, y descargaba
+  los assets justo después de sustituirlos. Los tres están arreglados y
+  medidos; la lane llegó a publicar y se ejecutó dos veces sobre el mismo
+  tag. Lo que queda es que la próxima publicación no vuelva a tropezar con
+  ellos.
 - **La etapa de contratos de `main` estaba en rojo**: cuatro contratos
   construyen repositorios de laboratorio y fallaban por la configuración de
   git de la máquina, no por el código. El arreglo —la suite deja de heredar

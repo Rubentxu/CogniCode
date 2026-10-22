@@ -3,9 +3,9 @@ import java.io.File
 // release — publish a candidate that has already been built and proved.
 //
 // The second half of the release factory. `release-candidate.pipeline.kts`
-// writes `dist/` and `release/`; this lane publishes those files and nothing
-// else. It cannot rebuild them, and that is the property the whole chain
-// exists for:
+// writes the candidate into `release/`; this lane publishes those files and
+// nothing else. It cannot rebuild them, and that is the property the whole
+// chain exists for:
 //
 //     build candidate -> immutable candidate -> validate -> publish
 //
@@ -48,7 +48,7 @@ import java.io.File
 // runs without generated provenance and the lane says so out loud rather than
 // implying otherwise.
 //
-// MEDIDO 2026-10-03. This used to be two stages. `attestations` checked the
+// This used to be two stages. `attestations` checked the
 // artifacts unconditionally and `provenance-required` implemented the switch
 // above, so the header described the second and the code did the first. With
 // nothing in this repository able to generate an attestation, the check
@@ -111,14 +111,27 @@ pipeline {
                     set -eo pipefail
                     set -eo pipefail
                     $cd || exit 1
-                    for d in dist release; do
-                        test -d "${'$'}d" || {
-                            echo "this lane publishes a candidate; it does not build one."
-                            echo "No ${'$'}d/ directory. Run release-candidate.pipeline.kts first,"
-                            echo "or point this lane at the tree it wrote."
-                            exit 1
-                        }
-                    done
+                    # The candidate is `release/`. The lane that builds it writes
+                    # its payloads under `staging/` and flattens them into
+                    # `release/`, and every stage of this lane — the uploads,
+                    # the re-verification, the consumer proof — reads `release/`
+                    # and nothing else.
+                    #
+                    # This check used to ask for a `dist/` directory as well.
+                    # The candidate lane stopped writing one when it moved its
+                    # payloads under `staging/`, and the check outlived that
+                    # change: it kept passing on the worktrees that had been
+                    # building candidates since before it, because their stale
+                    # directory was still sitting there, and it refused every
+                    # clean tree with a candidate in it. A gate that passes on a
+                    # leftover and fails on a clean tree is measuring the
+                    # worktree, not the candidate.
+                    test -d release || {
+                        echo "this lane publishes a candidate; it does not build one."
+                        echo "No release/ directory. Run release-candidate.pipeline.kts first,"
+                        echo "or point this lane at the tree it wrote."
+                        exit 1
+                    }
                     archives=$(ls -1 release/*.tar.gz 2>/dev/null | wc -l)
                     test "${'$'}archives" -ge 1 || {
                         echo "release/ holds no archives. An empty candidate is not a candidate."
@@ -224,22 +237,37 @@ pipeline {
                 """.trimIndent())
             }
 
+            stage("upload-manifests") {
+                sh("""
+                    set -eo pipefail
+                    set -eo pipefail
+                    $cd || exit 1
+                    gh release upload "${'$'}RELEASE_TAG" \
+                        release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
+                """.trimIndent())
+            }
+
+            // The confirmation runs once everything this lane publishes has
+            // been uploaded, because that is the only moment at which the
+            // published set can be compared with the produced set in full.
+            //
+            // It used to run before `upload-manifests`,
+            // while it compared against a set that includes the three
+            // manifests that stage uploads. On a draft with the tarballs in
+            // it, the comparison was always short of three files and the
+            // lane stopped there, with a candidate that was complete on disk
+            // and a release that was never published.
+            //
+            // The invariant is "what is published is what this lane
+            // produced", and it covers the manifests too. Checking it before
+            // the manifests are uploaded does not check it: it checks a
+            // smaller thing and fails for a reason that has nothing to do
+            // with the bytes.
             stage("confirm-uploaded-set") {
                 sh("""
                     set -eo pipefail
                     set -eo pipefail
                     $cd || exit 1
-                    # MEDIDO 2026-10-18. Este stage comparaba `release/*.tar.gz`
-                    # contra el conjunto publicado COMPLETO. Los tres manifiestos
-                    # (bundle por plataforma, release-inventory, SHA256SUMS) los
-                    # sube `upload-manifests`, la etapa siguiente — asi que en una
-                    # primera publicacion la diferencia era 0 y el stage pasaba.
-                    # Al re-ejecutar el lane sobre un tag ya publicado, esos tres ya
-                    # estaban ahi y el stage caia: no se podia volver a pasar por
-                    # el lane sin republicar. La invariante real es "el conjunto
-                    # publicado es el que este lane produce", y eso incluye los
-                    # manifiestos. Un gate que solo se puede ejecutar una vez no es
-                    # un gate: es un rito.
                     expected=$(cd release && ls *.tar.gz bundle-*.yaml release-inventory-*.json SHA256SUMS | sort)
                     actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
                     if [ "${'$'}expected" != "${'$'}actual" ]; then
@@ -248,16 +276,6 @@ pipeline {
                         exit 1
                     fi
                     echo "uploaded payload set confirmed ($(echo "${'$'}expected" | wc -l) artifacts)"
-                """.trimIndent())
-            }
-
-            stage("upload-manifests") {
-                sh("""
-                    set -eo pipefail
-                    set -eo pipefail
-                    $cd || exit 1
-                    gh release upload "${'$'}RELEASE_TAG" \
-                        release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
                 """.trimIndent())
             }
         }
@@ -285,7 +303,7 @@ pipeline {
             // upload, so a payload that changed in transit fails here rather
             // than at a consumer's install.
             stage("re-verify-after-upload") {
-                // MEDIDO 2026-10-03. Esta stage usaba `$TARGET_DIR` sin el
+                // Esta stage usaba `$TARGET_DIR` sin el
                 // preambulo `releasePaths` que lo define, y como cada `sh` corre
                 // en su propio proceso (sonda de dos stages, pipelinek 0.46.0:
                 // la variable del stage 1 llega vacia al stage 2, el env del
@@ -312,7 +330,7 @@ pipeline {
                 """.trimIndent())
             }
 
-            // MEDIDO 2026-10-03. Ningun stage de esta lane miraba `latest`, y
+            // Ningun stage de esta lane miraba `latest`, y
             // ese puntero es lo que resuelve `install.sh`:
             //
             //     curl -fsSL "$api/releases/latest" | sed -n 's/.*"tag_name"...'
@@ -368,7 +386,7 @@ pipeline {
                     # this proves the candidate a consumer would actually get.
                     work=$(mktemp -d)
                     cd "${'$'}work"
-                    # MEDIDO 2026-10-18. Este stage es el UNICO que sale del
+                    # Este stage es el UNICO que sale del
                     # repo — y por eso era el UNICO que podia fallar aqui. Sin
                     # `--repo`, `gh` deduce el repositorio del directorio actual
                     # con git; dentro de un `mktemp -d` no hay repo, y gh aborta
@@ -377,13 +395,36 @@ pipeline {
                     # publicada y correcta, y este gate la marcaba FAILURE. Un
                     # gate que no puede distinguir "los bytes publicados estan
                     # mal" de "mi contexto esta mal" no es un gate.
-                    gh release download "${'$'}RELEASE_TAG" --repo "$repo"
+                    #
+                    # La descarga se reintenta, y el motivo
+                    # no es la red: las stages de arriba acaban de re-subir los
+                    # assets con `--clobber`, y GitHub da un id nuevo a cada
+                    # asset re-subido y borra el viejo. La lista que `gh`
+                    # resuelve podia apuntar a un asset que ya no existia, y
+                    # la descarga moria con un 404 que no decia nada de los
+                    # bytes publicados. Reintentar la descarga es lo que se
+                    # reintenta; la comprobacion de las sumas no se ablanda ni
+                    # un byte, y si los bytes estuvieran mal seguirian
+                    # fallando igual.
+                    attempt=1
+                    while [ "${'$'}attempt" -le 5 ]; do
+                        if gh release download "${'$'}RELEASE_TAG" --repo "$repo" --clobber; then
+                            break
+                        fi
+                        if [ "${'$'}attempt" -eq 5 ]; then
+                            echo "the published assets could not be downloaded after ${'$'}attempt attempts"
+                            exit 1
+                        fi
+                        echo "  → the published assets did not resolve yet; trying again (${'$'}attempt/5)"
+                        attempt=$(( ${'$'}attempt + 1 ))
+                        sleep 3
+                    done
                     sha256sum -c SHA256SUMS
                     echo "published release verified from re-downloaded bytes"
                 """.trimIndent())
             }
 
-            // MEDIDO 2026-10-15. `verify-as-consumer` re-descarga cada asset y
+            // `verify-as-consumer` re-descarga cada asset y
             // corre `sha256sum -c SHA256SUMS`. Eso prueba que los assets que
             // estan son los correctos — y no que esten todos. Si SHA256SUMS
             // solo lista 3, la comprobacion pasa con 3.
