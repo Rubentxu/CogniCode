@@ -22,7 +22,7 @@ un proyecto analizado desde dentro de uno de esos directorios salía vacío.
 Y el gate que lo encontró clonaba precisamente en
 `~/.cache/cognicode/gate/`: el gate se cegaba a sí mismo.
 
-**El recorrido.** Ahora el filtro respects el raíz del proyecto: lo que está
+**El recorrido.** Ahora el filtro respeta la raíz del proyecto: lo que está
 por debajo del proyecto se recorre, lo que está por encima no. Un proyecto
 en un directorio con nombre bloqueado vuelve a tener símbolos.
 
@@ -51,6 +51,44 @@ crates.io después de la última vez que `main` pasó su propio gate, así que
 `main` llevaba su comprobación en rojo sin que nadie lo mirase. `1.54.1` es
 el parche siguiente y el lockfile puede tomarlo sin tocar la versión que
 pide el workspace.
+
+**Lo que entró después de este corte.** Antes de publicarlo entraron cinco
+unidades más, todas del mismo tipo: cosas que el repositorio hacía mal y que
+nadie miraba.
+
+- **La línea base vacía.** El repositorio guarda la lista de pruebas que
+  fallan por el entorno y no por el código, para que un fallo nuevo no se
+  esconda dentro del ruido conocido. Esa lista estaba vacía, y el gate
+  completo la comprobaba reejecutando la batería entera —3.192 pruebas— para
+  comparar un conjunto vacío con otro conjunto vacío. La regla «si la lista
+  está vacía, no hay nada que reejecutar» vive ahora en el propio
+  verificador, que es donde está la verdad sobre el formato, y no duplicada
+  en cada lanzador.
+
+- **La configuración que apuntaba a documentos que ya no existían.** Once
+  citas a documentos que la poda documental se llevó. La más incómoda: el
+  generador de la matriz de cobertura escribía en un directorio que no
+  existía, así que ni siquiera podía tener éxito. Ahora escribe junto a los
+  ficheros que describe, y sus objetivos salen de las mismas constantes que
+  ya tenía declaradas, de modo que el número no puede desincronizarse.
+
+- **El guard que no gobernaba lo que decía gobernar.** El contrato que
+  comprueba que las rutas citadas entre acentos graves existen tenía su
+  conjunto gobernado escrito como un único prefijo. El contrato del
+  consumidor —la puerta de entrada de quien llega y pregunta qué hace el
+  producto— quedaba fuera, con quince citas rotas que nadie veía. El fallo
+  estaba en la guarda, no solo en las citas.
+
+- **Las superficies de prueba sin carril.** El repositorio tiene 387
+  superficies de prueba; 248 las ejecuta un gate de verdad y 139 no las
+  ejecuta ninguno. No había ni una palabra en el árbol que lo dijera. Ahora
+  cada superficie tiene un carril declarado o la razón escrita de por qué se
+  queda sin él, con su número, y los números se comprueban: añadir un
+  fichero a un árbol declarado pone el contrato en rojo.
+
+- **Los contenedores del sandbox.** Arrancaban al iniciar sesión, y cada
+  arranque pagaba el coste de levantarlos aunque nadie los usara. Ahora
+  arrancan bajo demanda, la primera vez que algo los necesita.
 
 ## [v0.101.26] — 2026-10-21
 

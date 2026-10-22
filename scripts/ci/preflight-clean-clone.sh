@@ -475,9 +475,9 @@ if ! cargo test --workspace --locked -- \
      --skip ignored >>"$TEST_OUTPUT_FILE" 2>&1; then
   # La evidencia tiene que sobrevivir al directorio de trabajo: el trap lo
   # borra al salir, y un gate que falla sin decir por que es un gate que
-  # hay que volver a ejecutar para entender. MEDIDO 2026-10-22: con 16
-  # fallos, las ultimas 30 lineas mostraban una sola asercion de las
-  # dieciseis, y la que se veia no era la que explicaba el resto.
+  # hay que volver a ejecutar para entender. Con muchas aserciones en rojo,
+  # las ultimas lineas suelen mostrar una sola, y no es la que explica el
+  # resto: se copian todas las que fallaron antes de recortar.
   KEEP_OUTPUT="/tmp/preflight-test-output.${TIMESTAMP}.txt"
   cp "$TEST_OUTPUT_FILE" "$KEEP_OUTPUT" 2>/dev/null || true
   log "  → salida completa del test: $KEEP_OUTPUT"
