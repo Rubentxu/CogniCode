@@ -163,6 +163,31 @@ impl WalkFilter {
         })
     }
 
+    /// Whether the path is skipped, judged **relative to the analysed root**.
+    ///
+    /// MEDIDO 2026-10-22. This filter compares path components, and the
+    /// path it used to be given was absolute — so a project that happened
+    /// to live under `~/.cache/`, `~/build/`, `~/dist/` or `~/target/` was
+    /// pruned whole, and the analysis answered "this project has no
+    /// files" for a project that has thousands. The gate that certified
+    /// the release ran its clean clone under `~/.cache/`, and 16 tests
+    /// failed there while passing on the same commit anywhere else: the
+    /// answer depended on where the checkout happened to live.
+    ///
+    /// The filter exists to skip what is *inside* the tree — `node_modules/`,
+    /// `target/`, `dist/`, `.git/` — and not to decide that where somebody
+    /// keeps the project changes what the project contains. Judging the
+    /// path relative to the root says exactly that: `src/main.rs` is
+    /// included whatever the root is called, and `node_modules/x.js` is
+    /// skipped because of the component inside the tree.
+    ///
+    /// A path that is not under the root is judged as it comes: there is
+    /// no relative path to judge, and the safe answer is the strict one.
+    pub fn skips_below(&self, root: &Path, path: &Path) -> bool {
+        let relative = path.strip_prefix(root).unwrap_or(path);
+        self.matches_any_component(relative)
+    }
+
     /// Returns the security blocklist patterns
     pub fn security_blocklist(&self) -> &[String] {
         &self.security_blocklist

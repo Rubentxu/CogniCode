@@ -103,7 +103,7 @@ impl LightweightIndex {
             if path == project_dir {
                 return false;
             }
-            if walk_filter.matches_any_component(path) {
+            if walk_filter.skips_below(project_dir, path) {
                 return true;
             }
             // Skip hidden directories (except .git which is already handled)

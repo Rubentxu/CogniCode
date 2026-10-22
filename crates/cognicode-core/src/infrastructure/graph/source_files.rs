@@ -192,7 +192,7 @@ pub fn inventory(project_dir: &Path) -> SourceInventory {
         };
 
         let path = entry.path();
-        if walk_filter.matches_any_component(path) {
+        if walk_filter.skips_below(project_dir, path) {
             continue;
         }
         if !ignore_is_real_file(&entry) {
@@ -291,6 +291,62 @@ mod tests {
         assert!(
             file.language.is_some(),
             "una fuente que el registro reconoce se publica con su lenguaje"
+        );
+    }
+
+    /// The project is what the analysis is about, not where it happens
+    /// to live on the disk.
+    ///
+    /// MEDIDO 2026-10-22. The filter that decides which files are
+    /// skipped compared the components of the *absolute* path, so a
+    /// project under a directory named `build/`, `dist/`, `target/` or
+    /// `.cache/` was pruned whole and the inventory came out empty. The
+    /// release gate ran its clean clone under `~/.cache/` and 16 tests
+    /// failed there while passing on the same commit anywhere else.
+    #[test]
+    fn a_project_under_a_skipped_directory_name_is_still_inventoried() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // `build` is one of the names the filter skips inside a tree.
+        let root = dir.path().join("build").join("project");
+        std::fs::create_dir_all(root.join("src")).expect("src");
+        std::fs::write(root.join("src").join("lib.rs"), "pub fn f() {}\n").expect("lib.rs");
+
+        let inventory = inventory(&root);
+
+        assert_eq!(
+            inventory.files.len(),
+            1,
+            "the project has one source file wherever it lives: {}",
+            inventory.files.len()
+        );
+        assert!(
+            inventory.errors.is_empty(),
+            "an empty inventory is not an error, it is a silent gap: {:?}",
+            inventory.errors
+        );
+    }
+
+    /// The counterpart: what is *inside* the tree is still skipped.
+    #[test]
+    fn what_is_inside_the_tree_is_still_skipped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("project");
+        std::fs::create_dir_all(root.join("src")).expect("src");
+        std::fs::create_dir_all(root.join("node_modules")).expect("node_modules");
+        std::fs::write(root.join("src").join("lib.rs"), "pub fn f() {}\n").expect("lib.rs");
+        std::fs::write(
+            root.join("node_modules").join("dep.js"),
+            "module.exports = {};\n",
+        )
+        .expect("dep.js");
+
+        let inventory = inventory(&root);
+
+        assert_eq!(
+            inventory.files.len(),
+            1,
+            "only the project's own source is inventoried: {}",
+            inventory.files.len()
         );
     }
 }

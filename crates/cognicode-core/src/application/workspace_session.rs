@@ -385,7 +385,7 @@ impl WorkspaceSession {
                 .git_exclude(true)
                 .build()
                 .filter_map(|e| e.ok())
-                .filter(|e| !walk_filter.matches_any_component(e.path()))
+                .filter(|e| !walk_filter.skips_below(&self.workspace_root, e.path()))
                 .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
                 .filter_map(|e| {
                     let path = e.path();
@@ -460,7 +460,7 @@ impl WorkspaceSession {
                 .git_exclude(true)
                 .build()
                 .filter_map(|e| e.ok())
-                .filter(|e| !walk_filter.matches_any_component(e.path()))
+                .filter(|e| !walk_filter.skips_below(&self.workspace_root, e.path()))
                 .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
                 .filter_map(|e| {
                     let path = e.path();
