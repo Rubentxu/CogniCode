@@ -22465,6 +22465,57 @@ acumula hallazgos convierta su lista en un código de salida distinto de
 cero; y el contrato del estándar de comentarios, que este cierre mejora en
 cuatro ficheros y no empeora en ninguno.
 
+## 2026-10-22 — El contrato de procedencia gobierna también el contrato del consumidor (C8)
+
+**Qué es esta unidad.** C8 es un candidato de la cola: «el contrato de
+procedencia gobierna también `docs/roadmap/consumer-contracts/**`». El
+enunciado medía cuarenta citas en el contrato del consumidor de las que
+veinte no resolvían. Al medirlo en el árbol de hoy, con el algoritmo del
+propio guard, la cifra es otra: **quince citas rotas**, todas en cinco
+ficheros, y ninguna de ellas la veía nadie.
+
+**El hueco.** El guard que comprueba que una ruta citada entre acentos
+graves existe de verdad tenía su conjunto gobernado escrito como un único
+prefijo literal: `docs/adr/`. El contrato del consumidor —la puerta de
+entrada de quien llega y pregunta qué hace el producto— no estaba en ese
+conjunto, así que sus citas rotas no eran un problema del guard: eran un
+problema del alcance del guard. El fallo estaba en la guarda, no solo en
+las citas.
+
+**Lo que cambió.** El conjunto gobernado pasa de un prefijo a una lista, y
+el contrato del consumidor entra en ella. Con eso, quince citas que no
+resolvían salen a la luz con el fichero que las cita al lado, que es como
+un fallo de contrato tiene que sonar.
+
+**Las quince, una por una.** Una apuntaba a la agenda principal con un
+prefijo equivocado, y se corrige al sitio real. Las demás son citas
+deliberadas: la tabla de integración documenta, fichero a fichero, de dónde
+vino cada documento del paquete de Kotlin, y ese paquete vive fuera del
+control de versiones por decisión del mantenedor. Reescribirlas para que
+resolvan sería inventar un destino que no existe, así que se declaran con
+su razón: la tabla de excepciones ya existía para exactamente esto, y cada
+fila dice por qué esa ruta no debería estar.
+
+**Lo que este cierre no cambia.** El contrato del consumidor sigue siendo el
+mismo documento con el mismo contenido. Lo que cambia es que sus citas se
+resuelven o se declaran, y que a partir de mañana una cita rota ahí sale
+en rojo sola.
+
+**El control que lo acompaña.** Dos controles nuevos. El primero: una cita
+rota dentro del árbol gobernado tiene que ser reportada, juzgada por el
+mismo código que lee el árbol real —sin él, un guard cuyo filtro dejara de
+casar con algo pasaría siempre, y su fallo se parecería a un repositorio
+sano—. El segundo: cada árbol que el guard dice gobernar tiene que estar
+gobernado de verdad, para que quitar un árbol del filtro sea un cambio
+visible y no un silencio.
+
+### Gates
+
+Verde sobre este árbol: el contrato de procedencia
+(`crates/cognicode-cli/tests/backtick_provenance_contract.rs`), con sus
+ocho casos. El rojo se midió antes del arreglo: quince citas rotas, con su
+fichero de origen al lado.
+
 ## 2026-10-22 — La línea base vacía no vuelve a correr la suite entera (C5)
 
 **Qué es esta unidad.** C5 es un candidato de la cola: «la línea base vacía no
