@@ -917,6 +917,15 @@ impl AnalysisService {
             })
             .collect();
 
+        // The order in which the files are folded is the order in which the
+        // index receives their symbols, and the index reports the candidates
+        // of a repeated name in the order it received them. A directory
+        // listing is the machine's order, not the project's, so the files are
+        // folded in path order: what the graph reports must not depend on
+        // where the tree happens to live.
+        let mut results = results;
+        results.sort_by(|a, b| a.0.cmp(&b.0));
+
         let mut cache = self.file_cache.lock().unwrap();
         let mut all_relationships = Vec::new();
         let mut identified_relations: Vec<crate::application::ingest::types::FileRelation> =
