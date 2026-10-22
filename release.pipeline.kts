@@ -48,7 +48,7 @@ import java.io.File
 // runs without generated provenance and the lane says so out loud rather than
 // implying otherwise.
 //
-// MEDIDO 2026-10-03. This used to be two stages. `attestations` checked the
+// This used to be two stages. `attestations` checked the
 // artifacts unconditionally and `provenance-required` implemented the switch
 // above, so the header described the second and the code did the first. With
 // nothing in this repository able to generate an attestation, the check
@@ -119,13 +119,13 @@ pipeline {
                     #
                     # This check used to ask for a `dist/` directory as well.
                     # The candidate lane stopped writing one when it moved its
-                    # payloads under `staging/` (2026-10-04), and the check
-                    # outlived that change: it kept passing on the worktrees
-                    # that had been building candidates since before it,
-                    # because their stale directory was still sitting there,
-                    # and it refused every clean tree with a candidate in it.
-                    # A gate that passes on a leftover and fails on a clean
-                    # tree is measuring the worktree, not the candidate.
+                    # payloads under `staging/`, and the check outlived that
+                    # change: it kept passing on the worktrees that had been
+                    # building candidates since before it, because their stale
+                    # directory was still sitting there, and it refused every
+                    # clean tree with a candidate in it. A gate that passes on a
+                    # leftover and fails on a clean tree is measuring the
+                    # worktree, not the candidate.
                     test -d release || {
                         echo "this lane publishes a candidate; it does not build one."
                         echo "No release/ directory. Run release-candidate.pipeline.kts first,"
@@ -251,7 +251,7 @@ pipeline {
             // been uploaded, because that is the only moment at which the
             // published set can be compared with the produced set in full.
             //
-            // MEDIDO 2026-10-22. It used to run before `upload-manifests`,
+            // It used to run before `upload-manifests`,
             // while it compared against a set that includes the three
             // manifests that stage uploads. On a draft with the tarballs in
             // it, the comparison was always short of three files and the
@@ -303,7 +303,7 @@ pipeline {
             // upload, so a payload that changed in transit fails here rather
             // than at a consumer's install.
             stage("re-verify-after-upload") {
-                // MEDIDO 2026-10-03. Esta stage usaba `$TARGET_DIR` sin el
+                // Esta stage usaba `$TARGET_DIR` sin el
                 // preambulo `releasePaths` que lo define, y como cada `sh` corre
                 // en su propio proceso (sonda de dos stages, pipelinek 0.46.0:
                 // la variable del stage 1 llega vacia al stage 2, el env del
@@ -330,7 +330,7 @@ pipeline {
                 """.trimIndent())
             }
 
-            // MEDIDO 2026-10-03. Ningun stage de esta lane miraba `latest`, y
+            // Ningun stage de esta lane miraba `latest`, y
             // ese puntero es lo que resuelve `install.sh`:
             //
             //     curl -fsSL "$api/releases/latest" | sed -n 's/.*"tag_name"...'
@@ -386,7 +386,7 @@ pipeline {
                     # this proves the candidate a consumer would actually get.
                     work=$(mktemp -d)
                     cd "${'$'}work"
-                    # MEDIDO 2026-10-18. Este stage es el UNICO que sale del
+                    # Este stage es el UNICO que sale del
                     # repo — y por eso era el UNICO que podia fallar aqui. Sin
                     # `--repo`, `gh` deduce el repositorio del directorio actual
                     # con git; dentro de un `mktemp -d` no hay repo, y gh aborta
@@ -396,7 +396,7 @@ pipeline {
                     # gate que no puede distinguir "los bytes publicados estan
                     # mal" de "mi contexto esta mal" no es un gate.
                     #
-                    # MEDIDO 2026-10-22. La descarga se reintenta, y el motivo
+                    # La descarga se reintenta, y el motivo
                     # no es la red: las stages de arriba acaban de re-subir los
                     # assets con `--clobber`, y GitHub da un id nuevo a cada
                     # asset re-subido y borra el viejo. La lista que `gh`
@@ -424,7 +424,7 @@ pipeline {
                 """.trimIndent())
             }
 
-            // MEDIDO 2026-10-15. `verify-as-consumer` re-descarga cada asset y
+            // `verify-as-consumer` re-descarga cada asset y
             // corre `sha256sum -c SHA256SUMS`. Eso prueba que los assets que
             // estan son los correctos — y no que esten todos. Si SHA256SUMS
             // solo lista 3, la comprobacion pasa con 3.
