@@ -462,11 +462,20 @@ fn advance_stage(
                         format!("HTTP {}", response.status()),
                     ));
                 }
+                // The body is read before the disk is touched: a download
+                // that breaks halfway must not leave a half-written file
+                // behind, and the failure has to name what happened instead
+                // of ending the process.
+                let body = response
+                    .bytes()
+                    .map_err(|e| InstallerError::Network(comp.url.clone(), e.to_string()))?;
                 let mut file = std::fs::File::create(&dest)
                     .map_err(|e| InstallerError::Io(dest.clone(), e))?;
-                std::io::copy(&mut response.bytes().unwrap().as_ref(), &mut file)
+                // Registered before the bytes land: a file that exists and
+                // was never registered is a file nobody removes.
+                journal.record(SideEffect::Downloaded(dest.clone()));
+                std::io::copy(&mut body.as_ref(), &mut file)
                     .map_err(|e| InstallerError::Io(dest.clone(), e))?;
-                journal.record(SideEffect::Downloaded(dest));
             }
             download_skill_bundles(home, manifest, profile, journal)?;
             Ok(())
@@ -2660,5 +2669,101 @@ components:
         // exige idempotencia del ciclo).
         cmd_uninstall(&home, "cognicode", "0.96.0", &["opencode".to_string()])
             .expect("uninstall repetido debe ser idempotente (no-op)");
+    }
+
+    /// A loopback server that announces more bytes than it sends, so the
+    /// client sees the connection close in the middle of the body.
+    fn bind_body_that_breaks_midway() -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::thread;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let port = listener.local_addr().expect("local address").port();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut request = [0u8; 4096];
+                let _ = stream.read(&mut request);
+                let head = "HTTP/1.1 200 OK\r\nContent-Length: 64\r\nConnection: close\r\n\r\n";
+                let _ = stream.write_all(head.as_bytes());
+                let _ = stream.write_all(b"half");
+                let _ = stream.flush();
+                // The connection closes with four of the sixty-four
+                // announced bytes.
+            }
+        });
+        port
+    }
+
+    /// A download that breaks halfway fails the transaction; it does not end
+    /// the process, and it does not leave the half-written file behind.
+    #[test]
+    #[serial_test::serial]
+    fn a_download_that_breaks_midway_fails_without_ending_the_process() {
+        use crate::bundle_manifest::{BUNDLE_API_VERSION, BundleComponent, ProfileDef};
+        use crate::release_contract::{ArtifactDigest, ArtifactKind};
+
+        let _home_guard = TempCognicodeHome::new();
+        let home = CognicodeHome::resolve(None).expect("resolve the temporary home");
+
+        // The cache directory exists before the transaction starts, so the
+        // file can only be removed by its own recorded effect and not by the
+        // removal of the whole directory.
+        std::fs::create_dir_all(home.cache()).expect("create the cache directory");
+
+        let port = bind_body_that_breaks_midway();
+        let url = format!("http://127.0.0.1:{port}/component.tar.gz");
+
+        let manifest = BundleManifest {
+            api_version: BUNDLE_API_VERSION.to_string(),
+            kind: "Bundle".to_string(),
+            version: "0.0.1".to_string(),
+            platform: Platform::LinuxX86_64,
+            released_at: None,
+            profiles: vec![ProfileDef {
+                name: "core".to_string(),
+                description: "core".to_string(),
+            }],
+            skill_bundles: vec![],
+            components: vec![BundleComponent {
+                name: "cognicode".to_string(),
+                kind: ArtifactKind::Cognicode,
+                version: "0.0.1".to_string(),
+                artifact: "cognicode".to_string(),
+                sha256: ArtifactDigest::parse(
+                    "9f2c1d4b7e0a3f5c8d1b2e4f6a8c0d2e4f6a8c0d2e4f6a8c0d2e4f6a8c0d2b4e",
+                )
+                .expect("a digest"),
+                url,
+                profiles: vec!["core".to_string()],
+            }],
+        };
+
+        let journal = RollbackJournal::new();
+        let transaction = InstallerTransaction::Running {
+            stage: InstallStage::Downloading,
+            journal,
+            manifest,
+        };
+
+        let result = transaction.advance(&home, "core");
+
+        match result {
+            Ok(InstallerTransaction::Failed { error }) => {
+                assert!(
+                    matches!(error, InstallerError::Network(_, _)),
+                    "a download that breaks halfway has to fail with the network error that caused it, got: {error:?}"
+                );
+            }
+            Ok(other) => panic!("a download that breaks halfway must not succeed, got: {other:?}"),
+            Err(error) => panic!("a download that breaks halfway must fail the transaction, not escape it: {error:?}"),
+        }
+
+        let dest = home.cache().join("cognicode.tar.gz");
+        assert!(
+            !dest.exists(),
+            "the half-written file must be rolled back, it is still at {}",
+            dest.display()
+        );
     }
 }
