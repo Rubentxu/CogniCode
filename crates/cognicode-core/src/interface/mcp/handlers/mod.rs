@@ -1327,6 +1327,18 @@ pub async fn handle_build_graph(
     let graph = ctx.analysis_service.get_project_graph();
     let symbols = graph.symbol_count();
     let edges_count = graph.edge_count();
+
+    // A build that produced no symbols is the absence of material, not a
+    // complete graph. The SDK and the CLI already answer that way, and the
+    // same directory cannot get two different answers depending on who
+    // asked: a consumer that hears "complete" over an empty graph will
+    // believe it knows a project it has never seen.
+    if symbols == 0 {
+        return Err(HandlerError::InvalidInput(
+            crate::application::services::analyze::no_material_reason(&directory),
+        ));
+    }
+
     let elapsed = start.elapsed().as_millis() as u64;
 
     // Surface the BuildReport through build_graph so that
@@ -6601,6 +6613,40 @@ mod tests {
                     .as_ref()
                     .map(|v| v.is_empty())
                     .unwrap_or(true)
+            );
+        }
+
+        /// A workspace with nothing to analyze is not a complete graph.
+        ///
+        /// The SDK and the CLI already refuse to call an empty graph a
+        /// success. The MCP server used to answer `complete` over the same
+        /// directory, with zero symbols and zero relationships: two
+        /// surfaces, two answers, and the one an agent reads was the wrong
+        /// one. An agent that hears "complete" over an empty graph
+        /// believes it knows a project it has never seen.
+        #[tokio::test]
+        async fn a_workspace_without_material_is_not_reported_as_complete() {
+            let tempdir = tempfile::tempdir().unwrap();
+            std::fs::write(tempdir.path().join("notes.txt"), "sin codigo\n").unwrap();
+
+            let ctx = HandlerContext::builder()
+                .with_working_dir(tempdir.path())
+                .build();
+            let input = BuildGraphInput { directory: None };
+
+            let outcome = handle_build_graph(&ctx, input).await;
+            assert!(
+                outcome.is_err(),
+                "un workspace sin material analizable no puede responder \
+                 `complete`: no produjo símbolos"
+            );
+            let message = outcome
+                .err()
+                .expect("the refusal explains itself")
+                .to_string();
+            assert!(
+                message.contains("no produjo símbolos"),
+                "la respuesta tiene que decir por que: {message}"
             );
         }
 

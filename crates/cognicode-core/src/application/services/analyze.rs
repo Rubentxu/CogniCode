@@ -20,6 +20,21 @@ use crate::application::analysis_basis::{
 };
 use crate::application::services::analysis_service::AnalysisService;
 
+/// The reason a workspace has nothing to analyze.
+///
+/// A build that walked the tree and came back with no symbols is not a
+/// complete analysis: it is the absence of material. The sentence lives
+/// here, written once, because three surfaces answer this question about
+/// the same project —the SDK and the CLI on one side, the MCP server on the
+/// other— and a consumer that gets two different answers for the same
+/// directory cannot tell whether the product or the caller is wrong.
+pub fn no_material_reason(path: &std::path::Path) -> String {
+    format!(
+        "workspace {} no produjo símbolos (sin material Rust analizable)",
+        path.display()
+    )
+}
+
 /// Adaptador de producción: `Analyze` sobre el `AnalysisService` real.
 ///
 /// El servicio interno no es `Clone` (posee caches `Arc`), así que el
@@ -100,10 +115,7 @@ impl ServiceAnalyzer {
         if graph.symbol_count() == 0 {
             // El build "exitoso" con cero símbolos es ausencia de
             // material, no éxito: SPEC-CU-001.5 prohíbe Complete vacío.
-            return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
-                "workspace {} no produjo símbolos (sin material Rust analizable)",
-                path.display()
-            )));
+            return AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path)));
         }
 
         // CU-1.4 (paridad con MCP): el estado del build lo decide el
@@ -163,10 +175,7 @@ impl ServiceAnalyzer {
         }
         let graph = self.service.get_project_graph();
         if graph.symbol_count() == 0 {
-            return AnalysisOutcome::failed(AnalysisError::io_failure(&format!(
-                "workspace {} no produjo símbolos (sin material Rust analizable)",
-                path.display()
-            )));
+            return AnalysisOutcome::failed(AnalysisError::io_failure(&no_material_reason(path)));
         }
 
         // Complejidad por símbolo sobre el grafo real: el analyzer puro
