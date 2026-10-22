@@ -1,5 +1,5 @@
 //! Change Signature Strategy - Strategy pattern implementation for change signature refactoring
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::assertions_on_constants, clippy::needless_range_loop)]
 
 use crate::infrastructure::parser::callee;

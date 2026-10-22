@@ -12,7 +12,7 @@
 //! problem, not to the adapter. This file says which grammar answers for a
 //! language and which extra reading it needs; it does not restate what the
 //! language declares, because a second copy is a copy that drifts.
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(clippy::empty_line_after_doc_comments, clippy::items_after_test_module)]
 
 use crate::domain::value_objects::Language;

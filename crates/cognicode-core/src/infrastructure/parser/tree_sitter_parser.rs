@@ -1,5 +1,5 @@
 //! Tree-sitter based parser implementation
-// e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
+// The allows below scope the lints that this file's own shape provokes.
 #![allow(invalid_from_utf8)]
 
 use crate::domain::aggregates::symbol::Symbol;

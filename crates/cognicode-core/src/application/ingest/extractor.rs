@@ -884,9 +884,8 @@ mod tests {
     /// `impl` blocks, items inside `mod` modules, and module-level
     /// `const`/`static` declarations. We feed a small but structurally
     /// representative source to the extractor and assert that every kind
-    /// declared in `LanguageConfig` is picked up — if `variable_types`
-    /// ever regresses the count drops below 11 and the test fails.
-    /// same gap the UAT flagged.
+    /// declared for the language is picked up — if the declared variable
+    /// kinds ever regress, the count drops below 11 and the test fails.
     #[test]
     fn test_extractor_covers_all_declared_kinds_rust() {
         let source = r#"

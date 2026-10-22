@@ -3,8 +3,7 @@
 //!
 //! `Language` lived in `infrastructure/parser` and was imported from there by
 //! `application`, `interface` and about twenty infrastructure modules alike.
-//! That is the CR-06 drift `infrastructure::parser::` in the allowlist named,
-//! and it was the wrong layer for the type: a closed enumeration of the
+//! It was in the wrong layer for the type: a closed enumeration of the
 //! languages the product supports, the file extensions that select them, the
 //! AST node kinds each one uses for functions and classes, and the language
 //! server that speaks to it. None of that is tree-sitter. It is the vocabulary

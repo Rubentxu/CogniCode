@@ -1,33 +1,20 @@
 #!/usr/bin/env python3
 """Where `Language` is declared, and where its tree-sitter mappings are.
 
-Both product generators read this enumeration, and both used to read it out of
-`crates/cognicode-core/src/infrastructure/parser/tree_sitter_parser.rs` with
-the same six lines of regex. That stopped matching on 2026-10-03, and the
-failure was silent in the worst way available: the generators raise
-`Language enum is missing`, four manifest checks and four support-matrix checks
-went red, and nobody had run them since the move.
-
-The move is the correct one and is not what this module is about. `Language`
-was lifted out of `infrastructure/parser` into
-`domain/value_objects/language.rs` because a closed enumeration of the
-languages the product supports, the extensions that select them and the AST
-node kinds each uses is the vocabulary of the problem, not tree-sitter. Its
-own doc comment says so. The two generators were left pointing at the old
-file.
-
-So there are two facts here, and they are in two places on purpose:
+Two facts live in two places on purpose:
 
 - the *declaration* is `domain/value_objects/language.rs`, and that file
-  deliberately contains no reference to tree-sitter;
+  deliberately contains no reference to tree-sitter: a closed enumeration of
+  the languages the product supports, the extensions that select them and the
+  AST node kinds each uses is the vocabulary of the problem;
 - the *mapping* from a variant to a compiled `tree_sitter_*` grammar stayed in
   `infrastructure/parser/tree_sitter_parser.rs`, because those are Rust crates
   only the infrastructure layer links.
 
-A generator that needs both has to read both. Reading the enum from the parser
-file was never a layering decision, it was a stale path, and pretending
-otherwise by searching both files for whichever has the enum would let the
-declaration drift back into the adapter without anything failing.
+A generator that needs both has to read both. Reading the enumeration from the
+parser file would be reading a stale path, and pretending otherwise by
+searching both files for whichever has the enum would let the declaration
+drift back into the adapter without anything failing.
 
 Deliberately not a Rust parser. One `enum` with a known shape is read by
 shape, for the same reason `release_lane.py` reads two Kotlin declarations by
