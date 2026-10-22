@@ -236,6 +236,61 @@ def test_the_published_asset_set_is_verified_not_just_the_published_bytes() -> N
     )
 
 
+def test_the_published_set_is_confirmed_after_every_asset_is_uploaded() -> None:
+    """MEDIDO 2026-10-22, en la publicacion de la v0.101.27.
+
+    La lane de publicacion subia los payloads, COMPARABA el conjunto publicado
+    con el producido, y subia los manifiestos despues. El gate comparaba los
+    ocho ficheros que produce el candidato —cinco payloads y tres manifiestos—
+    contra los cinco que habian subido las stages anteriores, y caia:
+
+        the uploaded asset set does not match the produced payload set
+        1d0
+        < bundle-0.101.27-x86_64-unknown-linux-gnu.yaml
+        7,8d5
+        < release-inventory-0.101.27.json
+        < SHA256SUMS
+
+    El fallo es de ORDEN, no de contenido: la stage que sube los manifiestos
+    es la siguiente a la que compara. Y no es un fallo que se puede rodear
+    reejecutando: la comparacion ocurre antes de la subida, asi que en una
+    primera publicacion siempre falta, y el lane deja un draft con cinco de
+    los ocho assets a medio publicar.
+
+    MEDIDO el mismo dia: la correccion de 2026-10-18 que anadio los tres
+    manifiestos a la lista esperada —para que el gate fuera completo en una
+    reejecucion— fue la que hace que la PRIMERA publicacion falle. Las dos
+    correcciones son correctas por separado y juntas son un callejon sin
+    salida: la lista esperada tiene que ser completa, y la comparacion tiene
+    que ocurrir cuando el conjunto publicado ya esta completo.
+
+    El invariante es el orden: la stage que confirma el conjunto publicado va
+    DESPUES de la stage que sube los manifiestos. Con el orden correcto, la
+    lista completa y la primera publicacion y la reejecucion pasan las tres.
+
+    Las hojas se leen con el parser de este fichero, no con `text.index`: un
+    nombre de stage puede aparecer en un comentario —este mismo lo explica—
+    y un comentario no es una stage.
+    """
+    text = RELEASE.read_text(encoding="utf-8")
+    leaves = [name for name, body in stage_blocks(text) if not STAGE_OPEN.search(body)]
+
+    missing = [name for name in ("upload-manifests", "confirm-uploaded-set") if name not in leaves]
+    assert not missing, (
+        f"{RELEASE.name} no tiene las stages {missing}. Si el parser dejo de "
+        f"verlas, este contrato no esta midiendo nada. Hojas vistas: {leaves}"
+    )
+
+    uploaded = leaves.index("upload-manifests")
+    confirmed = leaves.index("confirm-uploaded-set")
+    assert confirmed > uploaded, (
+        "`confirm-uploaded-set` compara el conjunto publicado con el producido, "
+        "asi que tiene que ir despues de `upload-manifests`: antes compararia "
+        "un conjunto al que le faltan los tres manifiestos y caeria en la "
+        "primera publicacion de cada release"
+    )
+
+
 def main() -> int:
     module = sys.modules[__name__]
     tests = sorted(

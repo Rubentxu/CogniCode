@@ -23222,3 +23222,182 @@ bytes sees 20 MCP tools and binaries that report their own version.
   whose ancestry carries an old trailer cannot be moved across it, but a new
   branch that points at the same commit can be created and checked out,
   because nothing new enters the repository that way.
+
+## 2026-10-22 — El instalador que terminaba el proceso, y la señal que miraba donde no mira el grafo (B1.3, B1.4)
+
+**Qué es esta unidad.** Las dos unidades que quedaban del bloque B1 sin
+arrancar, y las dos son de la misma familia: una respuesta que llega a medias
+y una señal que mira un sitio distinto del que mira el consumidor.
+
+**B1.3 — una descarga que se rompe a mitad de camino.** El descargador leía el
+cuerpo de la respuesta con `unwrap()`. Un cuerpo que llega a medias —la
+conexión se cierra antes de lo que anuncia el `Content-Length`— era un panic:
+el proceso terminaba y no había transacción que deshacer. El error de red se
+tragaba y se convertía en la muerte del proceso, que es la forma más cara de
+no tener un error tipado.
+
+Ahora el cuerpo se lee **antes** de tocar el disco, y un fallo de red es un
+`InstallerError::Network` que la transacción sabe deshacer. El efecto que
+registra el archivo se anota antes de que los bytes landen: un archivo que
+existe y nunca fue anotado es un archivo que nadie borra.
+
+MEDIDO, con un servidor de loopback que anuncia 64 bytes y envía 4:
+
+- RED: el test cae en el `unwrap()` de la línea 471 — el proceso muere.
+- GREEN: la transacción falla con el error de red que la causó, el proceso
+  sigue vivo y el archivo a medio escribir no queda en disco.
+
+**El detalle que costó una medición.** El módulo del instalador vive en el
+binario `cogh`, no en la lib del crate: `src/lib.rs` publica `presenter`,
+`identity`, `lifecycle` y `skills`, y `src/cmd/` solo lo usa
+`src/bin/cogh.rs`. La primera medición corrió `cargo test --lib` con el
+nombre del test y devolvió `0 passed; 0 failed; 15 filtered out` —cero
+pruebas, verde y sin medir nada—. El filtro correcto es `--bin cogh`, y ahí
+el RED es el de arriba. Un filtro que no selecciona ninguna prueba no es un
+verde: es la ausencia de evidencia, y se lee como si fuera lo contrario.
+
+**B1.4 — la señal de material Rust.** La señal decidía si el workspace podía
+ofrecer el backend de grafo mirando solo el primer nivel: un `Cargo.toml` en
+la raíz, o un `.rs` al lado. El grafo, en cambio, recorre el árbol entero, así
+que los dos decían cosas distintas sobre el mismo proyecto.
+
+Las dos consecuencias medidas:
+
+- Un proyecto Rust con las fuentes en un subdirectorio se anunciaba como «sin
+  fuentes Rust», y se negaba una capacidad que el grafo sí iba a leer.
+- Un manifiesto sin fuentes se anunciaba como completo, y el grafo salía
+  vacío. Un grafo vacío no es un grafo.
+
+Ahora la señal usa el mismo recorrido que el grafo —los ficheros ocultos y los
+ignorados quedan fuera, los enlaces simbólicos no se siguen— y se detiene en la
+primera fuente que encuentra. MEDIDO: sin el arreglo, dos de los cuatro tests
+de caracterización caen —el proyecto anidado y el manifiesto sin fuentes—; con
+él, 7/7.
+
+**Lo que esta unidad no arregla, y por qué.** El cuarto caso que pedía la
+caracterización —un workspace sin parser— es inalcanzable hoy: `tree-sitter-rust`
+es una dependencia dura del crate, así que no existe un workspace Rust sin
+parser que se pueda construir. Se deja como hallazgo medido y no como arreglo:
+su sitio natural es la línea de la ontología por lenguaje, donde el registro
+de lenguajes es la autoridad, y no esta señal de disponibilidad.
+
+**Lo que el cambio cuesta.** La señal ya no es O(primer nivel): es un recorrido
+del árbol. Se detiene en la primera fuente que encuentra, así que en el caso
+normal —un proyecto con material Rust— paga poco; el caso caro es un
+workspace enorme sin material Rust, donde recorre todo antes de decir que no
+hay material. Es el mismo coste que paga el grafo, y es el precio de que los
+dos digan lo mismo.
+
+## 2026-10-22 — Un grafo vacío no es un análisis completo (B1.2)
+
+**Qué es esta unidad.** Corregir los fallos reales de resultado: que un
+análisis incompleto no se presente como un éxito, y que las superficies
+respondan lo mismo sobre el mismo proyecto.
+
+**Los dos candidatos que traía la lista, medidos.** La lista apuntaba a dos
+sitios concretos:
+
+1. `call_graph_projection.rs` fija `unresolved_edges: 0` en `from_call_graph`.
+   Medido: es un invariante documentado, y es honesto. `from_call_graph`
+   proyecta un grafo que ya viene resuelto —el camino legacy cuenta las
+   referencias no resueltas en su propio contador y las viaja en el
+   informe—, y el camino nuevo, `from_facts`, cuenta y descarta cada callee
+   no resuelta. No hay defecto ahí: hay dos caminos, cada uno con su
+   contador, y el que proyecta ya no tiene nada que contar.
+2. `store.add_dependency(...).ok()` traga el error de inserción de aristas.
+   Medido: `PetGraphStore::add_dependency` **no puede fallar** —devuelve
+   `Ok(())` siempre—, así que el `.ok()` es un riesgo latente, no un
+   defecto alcanzable. Y el tragar no es un accident del servicio: el
+   servicio **construye el adaptador** (`let mut store = PetGraphStore::new()`),
+   que es exactamente lo que la candidate `C9` ya tiene como sujeto. Son el
+   mismo defecto visto desde dos ángulos, y el ángulo que lo resuelve es el
+   que invierte la dependencia.
+
+**El defecto real, medido con el binario publicado.** La `v0.101.27` instalada
+en un HOME limpio responde de tres maneras distintas sobre el mismo
+directorio vacío:
+
+```
+$ cognicode analyze <dir vacío>
+  Score: 100.0/100            # y sale con 0
+
+$ cognicode graph full <dir vacío>
+Error: workspace ... no produjo símbolos (sin material Rust analizable)
+
+$ cognicode-mcp  →  tools/call build_graph
+{"success":true,"status":"complete","symbols_found":0,"relationships_found":0, ...}
+```
+
+Tres superficies, tres respuestas, y la del servidor MCP —la que lee un
+agente— es la que se equivoca: un grafo vacío umasí se anuncia como
+análisis completo. La regla que lo evita ya estaba escrita en el contrato
+(`SPEC-CU-001.5`: *nunca `Complete(empty_graph)`*) y la aplicaban el SDK y el
+CLI; el servidor MCP no la consultaba. Y al revés: el MCP **sí** era
+honesto en `check_architecture` —un grafo vacío no recibe arquitectura—,
+mientras que la sesión de la CLI puntuaba ese mismo grafo vacío con un 100.
+
+**El arreglo.** Una sola frase, escrita una vez, en la capa de aplicación
+(`application::services::analyze::no_material_reason`), y las tres
+superficies la usan:
+
+- El servidor MCP deja de responder `complete` sobre un grafo vacío, y
+  responde con el motivo.
+- La sesión deja de publicar una puntuación sobre nada: `check_architecture`
+  falla con el mismo motivo cuando no hay material.
+- La CLI `analyze` dice el motivo y **no** publica puntuación. Su código de
+  salida no cambia: un directorio válido sin material es una operación
+  realizada, y el contrato de propagación de códigos de salida —que ya
+  existe y ya tiene su propio test— lo fija en 0. Lo que cambia es la
+  afirmación: antes había un 100/100 sobre un proyecto que nadie miró.
+
+**Lo que este arreglo no toca.** La arista que se inserta con `.ok()` sigue
+tragándose, porque el adaptador no puede fallar y porque arreglarlo de verdad
+—que el servicio no construya su adaptador— es la candidate `C9`, no esta
+unidad. `unresolved_edges: 0` se queda donde está, con su invariante
+documentada y su contador honesto en el camino que sí lo tiene.
+
+## 2026-10-22 — El orden de la lane, con contrato, y la cola que coincide con la agenda
+
+**Qué es esta unidad.** La publicación de la `v0.101.27` destapó que la lane
+de publicación comparaba el conjunto publicado **antes** de que la stage
+siguiente subiera los tres manifiestos. El arreglo ya está en `main`, y esta
+unidad le pone lo que le faltaba: el contrato que lo fija, y la coherencia
+entre las dos agendas.
+
+**El invariante, con su contrato.** La stage que confirma el conjunto
+publicado va **después** de la que sube los manifiestos. Sin ese orden, la
+primera publicación de cada release falla —le faltan siempre los mismos tres
+ficheros— y deja un draft a medio publicar; con la lista de esperados
+incompleta, la reejecución sobre un tag ya publicado falla. Las dos mitades
+hacen falta juntas.
+
+El contrato vive en `scripts/ci/test_release_lane_wiring.py`, junto a los
+otros tres que ya vigilaban esta lane. RED medido contra el árbol con el
+orden viejo: `5 pruebas, 1 FAIL`. GREEN contra el árbol de hoy: `5 pruebas,
+0 FAIL`. Las hojas se leen con el parser del propio fichero y no con
+`text.index`: un nombre de stage puede aparecer en un comentario, y un
+comentario no es una stage.
+
+**Dos agendas que no decían lo mismo.** El roadmap declaraba `C14` cerrado
+—la `v0.101.27` está publicada— y la cola de la misión lo seguía
+listando como candidato abierto. Dos fuentes de verdad sobre el mismo
+estado, y una de las dos equivocada. La cola de la misión se queda con los
+trece candidatos que siguen abiertos.
+
+**Lo que este cierre no dice.** La `v0.101.27` se publicó con una maniobra
+manual —subir los tres manifiestos con el comando de la propia stage y
+reejecutar el lane entero— porque el orden estaba roto. La maniobra dejó el
+gate de la publicación decidiendo de verdad: el lane confirmó el conjunto
+publicado de ocho assets, lo publicó, volvió a bajar los bytes ya
+publicados, comprobó sus sumas y los instaló como lo haría un consumidor.
+Con el orden arreglado y con contrato, la siguiente publicación no depende
+de esa maniobra.
+
+**Una unidad, tres hallazgos.** Los tres arreglos anteriores llegaron a
+`main` en tres PRs distintos, y cada uno con su propio gate. Al cerrarlos
+juntos en una sola PR, el gate se corre una vez en vez de tres: la máquina
+compartía la CPU con el gate de candidato de la `v0.101.28`, y tres gates
+seguidos son tres veces la espera para el mismo veredicto. La disciplina que
+se conserva es la que importa —un RED medido por arreglo, un recibo por
+unidad y un gate verde antes de fusionar—; lo que se agrupa es el gasto, no
+el criterio.
