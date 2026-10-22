@@ -114,7 +114,21 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
-# Pin vigente: 9eaf10d1dec3d4f29005e98d130da97e844faf08d28c4abfadde64b133bf3e23
+# Pin vigente: be333a6de774b27ebf1d48f7a3b5b0e6b9543738d13f23feeff6c5e69c5557e0
+# (v0.101.29, regenerate 2026-10-22 al bump 0.101.28 → 0.101.29; corte de release
+# de las tres unidades de B1. 990842 bytes frente a 941691 del pin anterior.
+# MEDIDO sobre los dos envelopes decodificados: la forma es la misma —1024
+# entidades, 1024 hechos, 1024 anclas, 4 gaps— y las colecciones siguen truncadas
+# en la cota de 1024 del consumidor. Lo que cambia es la version del producer y
+# el contenido del arbol versionado, que crece con las tres unidades. Y hay un
+# segundo efecto que conviene no confundir con ninguno de los dos: el envelope
+# lleva rutas ABSOLUTAS por diseño —el contrato del producer exige que
+# `--workspace .` y `--workspace /abs/path` produzcan los mismos bytes—, de modo
+# que el mismo árbol en otro directorio da otros bytes. Este pin describe este
+# árbol en este directorio. El consumer (pipelinek-assurance) debe actualizar su
+# pin tras esta regeneracion.)
+#
+# Pin anterior: 9eaf10d1dec3d4f29005e98d130da97e844faf08d28c4abfadde64b133bf3e23
 # (v0.101.28, regenerate 2026-10-22 al bump 0.101.27 → 0.101.28; corte de release
 # de C14. 941691 bytes frente a 861786 del pin anterior. MEDIDO sobre los dos
 # envelopes decodificados: la forma es la misma —1024 entidades, 1024 hechos,
@@ -148,7 +162,7 @@ def workspace_version() -> str:
 # no el encoding del producer. El consumer (pipelinek-assurance) debe actualizar
 # su pin tras esta regeneracion.)
 GOLDEN_SHA256 = (
-    "9eaf10d1dec3d4f29005e98d130da97e844faf08d28c4abfadde64b133bf3e23"
+    "be333a6de774b27ebf1d48f7a3b5b0e6b9543738d13f23feeff6c5e69c5557e0"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"

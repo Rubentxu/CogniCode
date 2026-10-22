@@ -10,6 +10,55 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.29] — 2026-10-22
+
+**Tres correcciones que tienen la misma forma: el producto decía una cosa y
+hacía otra.** El instalador terminaba el proceso donde debía devolver un
+error; la señal de disponibilidad del SDK miraba un sitio distinto del que
+mira el grafo; y el servidor MCP anunciaba un análisis completo sobre un
+directorio vacío. Las tres se midieron en rojo antes de arreglarlas.
+
+**El instalador que terminaba el proceso.** La descarga de la respuesta HTTP
+se leía con un `unwrap()`: una descarga que se rompe a mitad de camino —el
+servidor anuncia 64 bytes y envía 4— mataba el proceso entero en vez de
+fallar con un error tipado. Ahora la respuesta se lee antes de tocar disco,
+el fallo se traduce a `InstallerError::Network` y el efecto de disco queda
+registrado antes de escribirse, así que una descarga que se rompe no deja
+una instalación a medias. La comprobación que lo fija es un servidor de
+loopback que corta la respuesta por la mitad.
+
+**La señal que miraba donde no mira el grafo.** El SDK decidía si un
+workspace tenía material Rust mirando el primer nivel del directorio y un
+`Cargo.toml` en la raíz. El grafo, en cambio, recorre el árbol entero. Las
+dos señales decían cosas distintas sobre el mismo proyecto: un proyecto Rust
+con las fuentes en un subdirectorio se anunciaba como «sin fuentes Rust», y
+se negaba una capacidad que el grafo sí iba a leer; un manifiesto sin fuentes
+se anunciaba como completo, y el grafo salía vacío. Ahora la señal usa el
+mismo recorrido que el grafo —los ficheros ocultos y los ignorados quedan
+fuera, los enlaces simbólicos no se siguen— y se detiene en la primera
+fuente que encuentra.
+
+**Un grafo vacío no es un análisis completo.** Con el binario publicado, el
+mismo directorio vacío recibía tres respuestas distintas: la CLI publicaba
+`Score: 100.0/100` y salía con 0; `graph full` fallaba con el motivo; y el
+servidor MCP respondía `{"success":true,"status":"complete","symbols_found":0}`.
+Tres superficies, tres respuestas, y la del servidor MCP —la que lee un
+agente— era la que se equivocaba: un grafo vacío nunca se anuncia como
+análisis completo. Ahora las tres usan la misma frase, escrita una vez en la
+capa de aplicación, y el MCP responde `status: "unsupported"` con el motivo
+en el mensaje en vez de fingir que el análisis se completó.
+
+El motivo por el que la respuesta es un estado y no un error también está
+medido: un error rompía la reconstrucción de un proyecto al que se le borra
+su último fichero fuente, que es un contrato que ya existía.
+
+**El orden de la lane, con contrato.** La lane de publicación confirmaba el
+conjunto publicado *antes* de que la stage siguiente subiera los tres
+manifiestos, así que la primera publicación de cada release fallaba siempre
+con el mismo error y dejaba un draft a medio publicar. El orden ya está
+arreglado en `main`; este corte le añade el contrato que lo fija, junto con
+la coherencia entre el backlog de la misión y la agenda.
+
 ## [v0.101.28] — 2026-10-22
 
 **Dos reparaciones, y las dos eran del mismo tipo: una decisión que se tomaba
