@@ -87,10 +87,7 @@ const ROOTS: &[&str] = &["docs/", "openspec/"];
 /// The trees this contract governs. A citation inside one of them has to
 /// resolve: these are the documents a reader follows to find out what the
 /// product does and how it is put together.
-const GOVERNED_TREES: &[&str] = &[
-    "docs/adr/",
-    "docs/roadmap/consumer-contracts/",
-];
+const GOVERNED_TREES: &[&str] = &["docs/adr/", "docs/roadmap/consumer-contracts/"];
 
 /// Length in bytes of the backtick run starting at `i`.
 fn backtick_run(bytes: &[u8], i: usize) -> usize {
