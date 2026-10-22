@@ -368,18 +368,16 @@ fi
 # batería que ya corrió arriba dentro de la suite `core`. Saltarlo
 # acorta el lazo de feedback sin perder cobertura: los fallos del
 # `cargo test` siguen contando desde la corrida del suite.
+#
+# La decisión de si la línea base está vacía la toma el propio checker:
+# el formato del fichero es suyo, y contar entradas con un `grep` en shell
+# sería una segunda fuente de verdad para la misma regla. Aquí solo se
+# decide si el paso se aplica, no lo que dice.
 if [ "$USE_BASELINE" = "true" ] && [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
   if printf ' %s ' "$seen" | grep -q ' core '; then
-    if ! BASELINE_ENTRIES=$(grep -cE '^[[:space:]]*-[[:space:]]+test:' "$BASELINE" 2>/dev/null); then
-      BASELINE_ENTRIES=0
-    fi
-    if [ "${BASELINE_ENTRIES:-0}" -eq 0 ]; then
-      printf '\n=== baseline: check_known_failures (core/lib) — skipped (baseline is empty: %s) ===\n' "$BASELINE"
-    else
-      printf '\n=== baseline: check_known_failures (core/lib, %s entries) ===\n' "$BASELINE_ENTRIES"
-      if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib; then
-        overall_rc=1
-      fi
+    printf '\n=== baseline: check_known_failures (core/lib) ===\n'
+    if ! python3 "$BASELINE_CHECK" --package cognicode-core --target lib --skip-if-empty; then
+      overall_rc=1
     fi
   fi
 fi
