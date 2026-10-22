@@ -10,6 +10,48 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.27] — 2026-10-22
+
+**Tres cortes, tres defectos, y el mismo patrón: el gate que encuentra el
+problema no puede ser el que lo caused.** `v0.101.26` pasó el `fast`, el
+`full` y el `merge-gate` —56 de 56 etapas— y su gate de candidato lo dejó en
+rojo en la etapa de clon limpio, con dieciséis pruebas en rojo. El defecto
+era real: el filtro de recorrido del grafo excluía cualquier ruta que
+tuviera un directorio llamado `.cache` en alguno de sus componentes, así que
+un proyecto analizado desde dentro de uno de esos directorios salía vacío.
+Y el gate que lo encontró clonaba precisamente en
+`~/.cache/cognicode/gate/`: el gate se cegaba a sí mismo.
+
+**El recorrido.** Ahora el filtro respects el raíz del proyecto: lo que está
+por debajo del proyecto se recorre, lo que está por encima no. Un proyecto
+en un directorio con nombre bloqueado vuelve a tener símbolos.
+
+**El lazo de feedback.** Este defecto no era de un corte, sino del día a
+día: tocar un test de integración seleccionaba la suite correcta y ejecutaba
+la biblioteca del crate, que no contiene ese fichero. El
+desarrollador escribía su test contractual, el lazo daba verde, y el test no
+se había ejecutado ni una vez. El modo rápido ahora pide el binario de
+integración del fichero que se ha tocado —sólo ese— sin convertirse en la
+batería completa.
+
+**La autoridad de las herramientas.** Este es el que de verdad importa. El
+catálogo que dice qué herramientas ofrece el producto y cuáles de ellas
+cambian algo se localizaba subiendo desde el directorio al que el servidor
+apunta, que es el espacio de trabajo: el proyecto que el usuario abrió. Un
+proyecto que traía su propio `product/tools.json` podía declarar `write_file`
+como herramienta de solo lectura, y el modo de solo lectura la aceptaba. El
+árbol bajo análisis decidía la postura de seguridad del producto. El catálogo
+es ahora del producto —la copia compilada en el binario, o la que viaja junto
+a él en su instalación— y ningún árbol puede bajar una postura. De paso se
+va el anclaje por llamada, la raíz global de producto y las variantes con
+prefijo `from` de los cargadores: no existían para nada más.
+
+**Y una dependencia que se retiró.** `tokio 1.54.0` fue retirada de
+crates.io después de la última vez que `main` pasó su propio gate, así que
+`main` llevaba su comprobación en rojo sin que nadie lo mirase. `1.54.1` es
+el parche siguiente y el lockfile puede tomarlo sin tocar la versión que
+pide el workspace.
+
 ## [v0.101.26] — 2026-10-21
 
 **Un gate que da el mismo resultado en una máquina limpia vale más que un gate
