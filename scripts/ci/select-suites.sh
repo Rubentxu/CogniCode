@@ -15,9 +15,12 @@
 #   Exit 0 siempre.
 #
 # Estrategia:
-#   - "core"     : cargo test -p cognicode-core --lib
-#   - "explorer" : cargo test -p cognicode-explorer --lib
-#   - "mcp"      : cargo test -p cognicode-mcp --lib
+#   - "core"     : cargo test -p cognicode-core --lib, mas el target de
+#                  integracion que se haya tocado (crates/cognicode-core/tests/)
+#   - "explorer" : cargo test -p cognicode-explorer --lib, mas el target de
+#                  integracion que se haya tocado
+#   - "mcp"      : cargo test -p cognicode-mcp --lib, mas el target de
+#                  integracion que se haya tocado
 #   - "cli"      : cargo test -p cognicode-cli --lib (no integration tests separados)
 #   - "ladybug"  : cargo test -p cognicode-ladybug --lib
 #   - "merge"    : merge-gate completo (e2e + pineados)
@@ -33,13 +36,18 @@
 # impide que vuelva: el conjunto de suites documentadas tiene que ser
 # exactamente el que `run_suite()` sabe ejecutar.
 #
-# Lo que SI es real y esta MEDIDO, y que esta nota deja explicito para que
-# ningun lector lo descubra por sorpresa: crates/cognicode-core/tests/ tiene
-# 65 tests de integracion (b5_*, b6_*, prf_* entre ellos) y `core` se ejecuta
-# con `--lib`, asi que `fast` NO corre ninguno de ellos. Cerrar esa brecha es
-# una decision propia —correr 65 binarios de test convierte `fast` en
-# minutos— y no se toma aqui renombrando un suite que no existia. La
-# contradiccion anterior era la de linea 18, que decia `cargo test -p
+# Lo que SI es real, MEDIDO, y que esta nota deja explicito para que ningun
+# lector lo descubra por sorpresa: crates/cognicode-core/tests/ tiene 99
+# tests de integracion (b5_*, b6_*, prf_* entre ellos) y `fast` no corre el
+# conjunto. Correrlos todos convertiria `fast` en minutos, que es lo que
+# `fast` no es. Lo que `fast` corre es el target que el cambio toca: un
+# fichero bajo `crates/<crate>/tests/` produce un binario de test con su
+# nombre, y ese binario es el que puede hablar del cambio que se ha
+# escrito. MEDIDO 2026-10-22: antes de esto, tocar un test de integracion
+# seleccionaba la suite y no ejecutaba el fichero tocado, y el lazo de
+# feedback daba verde sin haber corrido el test recien escrito.
+#
+# La contradiccion anterior era la de linea 18, que decia `cargo test -p
 # cognicode-core` sin `--lib` mientras el runner ponia `--lib`: la cabecera
 # prompia mas de lo que se corre. Ahora dice lo que se corre.
 #

@@ -241,14 +241,54 @@ fi
 # acota el feedback loop esta corriendo la suite entera. Las cinco suites
 # pasan por `run_counting` para que el acotado y el recuento sean el mismo
 # hecho, no dos que puedan divergir.
+# Los targets de integracion que implican los paths tocados de un crate.
+#
+# MEDIDO 2026-10-22. `run_suite` mapeaba las cinco suites a
+# `cargo test -p <crate> --lib`, de modo que tocar
+# `crates/<crate>/tests/<fichero>.rs` seleccionaba la suite correcta y no
+# ejecutaba el fichero tocado: el lazo de feedback daba verde sin haber
+# corrido el test que se acababa de escribir. Correr los 99 binarios de
+# integracion de `core` convertia `fast` en minutos, asi que no se corren
+# todos: se corre el que el path toca, que es el unico que puede hablar del
+# cambio.
+#
+# Un fichero directamente bajo `tests/` es un target; uno dentro de un
+# subdirectorio es un modulo compartido, y un modulo no produce binario. Un
+# fichero que ya no esta en disco no produce binario tampoco, y puede
+# seguir en el diff: un test borrado no se puede correr, y pedirlo hace que
+# cargo falle con un nombre de target que no existe.
+touched_targets() {
+  local crate="$1"
+  local base="crates/${crate}/tests"
+  local names="" path rel name
+  for path in ${PATHS:-}; do
+    case "$path" in
+      "${base}"/*) ;;
+      *) continue ;;
+    esac
+    rel="${path#"${base}"/}"
+    case "$rel" in
+      */*) continue ;;
+      *.rs) ;;
+      *) continue ;;
+    esac
+    [ -f "$path" ] || continue
+    name="${rel%.rs}"
+    case " ${names} " in *" ${name} "*) continue ;; esac
+    names="${names}${name} "
+  done
+  printf '%s' "${names% }"
+}
+
 run_suite() {
   local suite="$1"
+  local crate
   case "$suite" in
-    core)     run_counting cargo test -p cognicode-core --lib $(cargo_filter) ;;
-    explorer) run_counting cargo test -p cognicode-explorer --lib $(cargo_filter) ;;
-    mcp)      run_counting cargo test -p cognicode-mcp --lib $(cargo_filter) ;;
-    cli)      run_counting cargo test -p cognicode-cli --lib $(cargo_filter) ;;
-    ladybug)  run_counting cargo test -p cognicode-ladybug --lib $(cargo_filter) ;;
+    core)     crate=cognicode-core ;;
+    explorer) crate=cognicode-explorer ;;
+    mcp)      crate=cognicode-mcp ;;
+    cli)      crate=cognicode-cli ;;
+    ladybug)  crate=cognicode-ladybug ;;
     merge)
       # `merge` es, segun el propio selector, "merge-gate completo (e2e +
       # pineados)" (scripts/ci/select-suites.sh). Su comando correcto es
@@ -278,6 +318,18 @@ run_suite() {
       return 1
       ;;
   esac
+
+  # La suite dice QUE crate; los paths tocados dicen QUE target. Se corren
+  # los dos: la biblioteca, que es el contrato de la unidad, y el binario
+  # de integracion del fichero que se ha tocado, que es lo que puede
+  # hablar del cambio.
+  local rc=0 target
+  run_counting cargo test -p "$crate" --lib $(cargo_filter) || rc=1
+  for target in $(touched_targets "$crate"); do
+    printf -- '--- %s: target de integracion tocado ---\n' "$target"
+    run_counting cargo test -p "$crate" --test "$target" $(cargo_filter) || rc=1
+  done
+  return $rc
 }
 
 overall_rc=0

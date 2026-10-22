@@ -36,8 +36,10 @@ repositorio se prohibe hacer.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -530,6 +532,303 @@ def test_a_noop_names_the_lane_that_owns_the_surface() -> None:
     )
 
 
+# ---------- el target que se toca es el target que se corre ----------
+
+MEDIDO_2026_10_22 = """
+MEDIDO 2026-10-22. `run_suite()` mapeaba las cinco suites a
+`cargo test -p <crate> --lib`. Tocar `crates/<crate>/tests/<fichero>.rs`
+seleccionaba la suite correcta y no ejecutaba el fichero tocado: el lazo de
+feedback daba verde sin haber corrido el test que se acababa de escribir.
+
+El selector ya lo decia en su cabecera y lo dejaba como decision pendiente:
+"cerrar esa brecha es una decision propia -correr 65 binarios de test
+convierte `fast` en minutos-". La via que no convierte `fast` en minutos es
+correr el target que el path toca, que es el unico que puede hablar del
+cambio.
+"""
+
+
+def fast_run_in_a_lab(tmp: Path, paths: str) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Ejecuta el wrapper de verdad en un arbol git de laboratorio.
+
+    El wrapper necesita un arbol git —usa `git rev-parse --show-toplevel`— y
+    el selector a su lado. El laboratorio es un repositorio con lo minimo,
+    de modo que lo que se mide es lo que el wrapper hace y no el estado del
+    arbol de quien lo corre. Un `cargo` falso anota los argumentos que
+    recibe: es la unica forma de saber que binario se ejecuto de verdad, en
+    vez de leer un texto que podria mentir.
+    """
+    lab = tmp / "lab"
+    (lab / "scripts" / "ci").mkdir(parents=True)
+    shutil.copy2(FAST, lab / "scripts" / "test-fast.sh")
+    shutil.copy2(SELECTOR, lab / "scripts" / "ci" / "select-suites.sh")
+    # Los ficheros que se tocan existen en el laboratorio: un target se
+    # pide por un fichero que esta en disco, y el laboratorio tiene que
+    # decir la verdad sobre eso.
+    for touched in paths.split():
+        target = lab / touched
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("// laboratorio\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=lab, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=lab, check=True)
+    git_env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "contract",
+        "GIT_AUTHOR_EMAIL": "contract@localhost",
+        "GIT_COMMITTER_NAME": "contract",
+        "GIT_COMMITTER_EMAIL": "contract@localhost",
+        # El laboratorio no tiene remoto, y el envoltorio de git de esta
+        # maquina no firma commits en un repositorio sin clasificar. Aqui
+        # el commit es una escena, no un hecho que nadie vaya a firmar.
+        "RANDOM_GIT_COMMITTER_DISABLED": "1",
+    }
+    subprocess.run(["git", "commit", "-q", "-m", "lab"], cwd=lab, check=True, env=git_env)
+
+    fake_bin = tmp / "bin"
+    fake_bin.mkdir()
+    calls = tmp / "calls.txt"
+    cargo = fake_bin / "cargo"
+    cargo.write_text(
+        '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CARGO_CALLS"\nexit 0\n',
+        encoding="utf-8",
+    )
+    cargo.chmod(0o755)
+
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "CARGO_CALLS": str(calls),
+    }
+    done = subprocess.run(
+        ["bash", "scripts/test-fast.sh", "--paths", paths, "--no-baseline"],
+        cwd=lab,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
+    return done, recorded
+
+
+def test_a_touched_integration_test_is_the_target_that_runs() -> None:
+    """M13: el target de integracion tocado es el target que se ejecuta.
+
+    MEDIDO 2026-10-22. `run_suite()` corria `cargo test -p <crate> --lib` para
+    las cinco suites, asi que tocar `crates/<crate>/tests/<fichero>.rs`
+    seleccionaba la suite y no ejecutaba el fichero tocado: el lazo de
+    feedback daba verde sin haber corrido el test recien escrito, y el falso
+    verde es peor que un rojo porque se lee como una cobertura.
+
+    Correr los 99 binarios de integracion de `core` convertia `fast` en
+    minutos. Correr el target que el path toca no: es el unico que puede
+    hablar del cambio, y es el que el developer acaba de escribir.
+
+    Este contrato no lee el codigo: ejecuta el wrapper en un arbol de
+    laboratorio, con un `cargo` que anota lo que recibe, y mira la lista.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        done, recorded = fast_run_in_a_lab(
+            Path(directory), "crates/cognicode-core/tests/prf_demo.rs"
+        )
+
+    assert done.returncode == 0, (
+        f"FAIL: el wrapper salio con rc={done.returncode} sobre un arbol de "
+        f"laboratorio. stderr:\n{done.stderr}"
+    )
+    assert "--test prf_demo" in recorded, (
+        "FAIL: el wrapper no ejecuto el target de integracion que se toco. "
+        f"Tiene que ejecutar el binario del fichero tocado. Lo que ejecuto:\n{recorded}"
+    )
+    assert "--lib" in recorded, (
+        "FAIL: el wrapper dejo de ejecutar la biblioteca del crate. El target "
+        f"tocado se anade; la biblioteca no se sustituye. Lo que ejecuto:\n{recorded}"
+    )
+
+
+def test_a_shared_module_under_tests_is_not_a_target() -> None:
+    """M14: un modulo compartido bajo `tests/` no es un target.
+
+    `tests/common/mod.rs` no produce un binario de test: cargo crea un target
+    por cada fichero `.rs` que esta directamente bajo `tests/`. Pedirle un
+    binario llamado `common` hace que cargo falle, y ese fallo no habla del
+    cambio que el developer estaba haciendo: ensucia el lazo de feedback con
+    un error de nombres.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        done, recorded = fast_run_in_a_lab(
+            Path(directory), "crates/cognicode-core/tests/common/mod.rs"
+        )
+
+    assert done.returncode == 0, (
+        f"FAIL: el wrapper salio con rc={done.returncode} sobre un arbol de "
+        f"laboratorio. stderr:\n{done.stderr}"
+    )
+    assert "--test common" not in recorded, (
+        "FAIL: el wrapper pidio un binario para un modulo compartido. Un "
+        f"fichero dentro de un subdirectorio de `tests/` no es un target. "
+        f"Lo que ejecuto:\n{recorded}"
+    )
+
+
+def cargo_test_targets(package: str) -> tuple[set[str], list[str]]:
+    """Los targets de test que cargo declara, y los paths que los producen.
+
+    `cargo metadata` es la autoridad: es el mismo manifiesto que cargo usa
+    para saber que un target existe. No compila nada, y no reimplementa la
+    resolucion de nombres de cargo, que es justamente lo que se quiere
+    comprobar aqui.
+    """
+    proc = subprocess.run(
+        ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, (
+        f"FAIL: `cargo metadata` no respondio (rc={proc.returncode}). "
+        f"stderr:\n{proc.stderr}"
+    )
+    metadata = json.loads(proc.stdout)
+    names: set[str] = set()
+    paths: list[str] = []
+    for pkg in metadata["packages"]:
+        if pkg["name"] != package:
+            continue
+        for target in pkg["targets"]:
+            if "test" not in target["kind"]:
+                continue
+            source = target["src_path"]
+            if "/tests/" not in source:
+                continue
+            names.add(target["name"])
+            paths.append(str(Path(source).relative_to(REPO_ROOT)))
+    return names, paths
+
+
+def test_the_derived_target_names_are_the_ones_cargo_declares() -> None:
+    """M15: el nombre del target se deriva como cargo lo nombra.
+
+    Cargo crea un target de test por cada fichero `.rs` directamente bajo
+    `tests/`, y el nombre del target es el del fichero. Si un crate declarase
+    un `[[test]]` con otro nombre, derivar el nombre del fichero pediria a
+    cargo un binario que no existe, y el lazo de feedback se romperia con un
+    error que no habla del cambio.
+
+    Este contrato contrasta la derivacion entera, no un caso: todos los
+    targets de un crate, contra todos los que cargo declara.
+    """
+    package = "cognicode-core"
+    expected, paths = cargo_test_targets(package)
+    assert expected, (
+        f"FAIL: cargo no declara ningun target de test en {package}. El "
+        f"contrato no puede compararse con nada, y un contrato que no "
+        f"compara nada esta verde por construccion."
+    )
+
+    text = _read(FAST)
+    start = text.find("touched_targets() {")
+    assert start != -1, f"FAIL: {FAST.name} ya no define touched_targets()"
+    end = text.find("\n}\n", start)
+    assert end != -1, f"FAIL: no se pudo delimitar touched_targets() en {FAST.name}"
+    body = text[start : end + 3]
+
+    with tempfile.TemporaryDirectory() as directory:
+        script = Path(directory) / "targets_only.sh"
+        script.write_text(
+            "#!/usr/bin/env bash\nset -uo pipefail\n" + body + '\nPATHS="$*"\ntouched_targets '
+            + package
+            + "\n",
+            encoding="utf-8",
+        )
+        derived = set(
+            subprocess.run(
+                ["bash", str(script), *paths],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.split()
+        )
+
+    missing = sorted(expected - derived)
+    extra = sorted(derived - expected)
+    assert not missing and not extra, (
+        f"FAIL: la derivacion de targets no coincide con los que cargo "
+        f"declara en {package}. Faltan {missing[:5]}, sobran {extra[:5]}. "
+        f"Un target que cargo no declara no existe, y uno que se deja de "
+        f"derivar es un test que el lazo de feedback deja de correr."
+    )
+
+
+def test_a_deleted_test_is_not_asked_for_as_a_binary() -> None:
+    """M16: un test borrado no se pide como binario.
+
+    Un fichero borrado sigue en el diff: `git diff --name-only` lo nombra
+    aunque ya no este en disco. Pedirle a cargo el binario de ese nombre
+    hace que falle con "no test target named ...", un error que no habla
+    del cambio que el developer esta haciendo: parece un fallo del repo
+    y es una regla de nombres.
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        lab = Path(directory) / "lab"
+        (lab / "scripts" / "ci").mkdir(parents=True)
+        shutil.copy2(FAST, lab / "scripts" / "test-fast.sh")
+        shutil.copy2(SELECTOR, lab / "scripts" / "ci" / "select-suites.sh")
+        subprocess.run(["git", "init", "-q"], cwd=lab, check=True)
+        git_env = {
+            **os.environ,
+            "GIT_AUTHOR_NAME": "contract",
+            "GIT_AUTHOR_EMAIL": "contract@localhost",
+            "GIT_COMMITTER_NAME": "contract",
+            "GIT_COMMITTER_EMAIL": "contract@localhost",
+            "RANDOM_GIT_COMMITTER_DISABLED": "1",
+        }
+        subprocess.run(["git", "add", "-A"], cwd=lab, check=True)
+        subprocess.run(
+            ["git", "commit", "-q", "-m", "lab"], cwd=lab, check=True, env=git_env
+        )
+
+        fake_bin = Path(directory) / "bin"
+        fake_bin.mkdir()
+        calls = Path(directory) / "calls.txt"
+        cargo = fake_bin / "cargo"
+        cargo.write_text(
+            '#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "$CARGO_CALLS"\nexit 0\n',
+            encoding="utf-8",
+        )
+        cargo.chmod(0o755)
+        env = {
+            **os.environ,
+            "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+            "CARGO_CALLS": str(calls),
+        }
+        done = subprocess.run(
+            [
+                "bash",
+                "scripts/test-fast.sh",
+                "--paths",
+                "crates/cognicode-core/tests/prf_borrado.rs",
+                "--no-baseline",
+            ],
+            cwd=lab,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        recorded = calls.read_text(encoding="utf-8") if calls.exists() else ""
+
+    assert done.returncode == 0, (
+        f"FAIL: el wrapper salio con rc={done.returncode} sobre un arbol de "
+        f"laboratorio. stderr:\n{done.stderr}"
+    )
+    assert "prf_borrado" not in recorded, (
+        "FAIL: el wrapper pidio un binario para un fichero que no esta en "
+        f"disco. Lo que ejecuto:\n{recorded}"
+    )
+
+
 def main() -> int:
     failures: list[str] = []
     for fn in (
@@ -548,6 +847,10 @@ def main() -> int:
         test_a_filter_that_matches_nothing_is_not_a_green_light,
         test_a_filtered_run_announces_that_it_is_not_the_gate,
         test_a_noop_names_the_lane_that_owns_the_surface,
+        test_a_touched_integration_test_is_the_target_that_runs,
+        test_a_shared_module_under_tests_is_not_a_target,
+        test_the_derived_target_names_are_the_ones_cargo_declares,
+        test_a_deleted_test_is_not_asked_for_as_a_binary,
     ):
         try:
             fn()
