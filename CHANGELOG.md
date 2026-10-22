@@ -22,9 +22,24 @@ un proyecto analizado desde dentro de uno de esos directorios salía vacío.
 Y el gate que lo encontró clonaba precisamente en
 `~/.cache/cognicode/gate/`: el gate se cegaba a sí mismo.
 
-**El recorrido.** Ahora el filtro respeta la raíz del proyecto: lo que está
-por debajo del proyecto se recorre, lo que está por encima no. Un proyecto
-en un directorio con nombre bloqueado vuelve a tener símbolos.
+**El recorrido.** El filtro que decide qué ficheros se saltan al construir
+el grafo comparaba los componentes de la ruta **absoluta**, así que un
+proyecto que estuviera bajo un directorio llamado `build/`, `dist/`,
+`target/`, `vendor/`, `env/` o `.cache/` se podaba entero: el inventario
+salía vacío y el análisis respondía «este proyecto no tiene ficheros» para un
+proyecto que tiene miles. La aserción que lo decía era una línea —
+`symbol count differs: cli=10 mcp=0`— y el veredicto dependía de dónde
+estuviera el checkout. El filtro existe para saltarse lo que está **dentro**
+del árbol, no para decidir que donde alguien guarda el proyecto cambia lo que
+el proyecto contiene. Ahora juzga la ruta **relativa a la raíz analizada**:
+`src/main.rs` entra sea cual sea el nombre de la raíz, y `node_modules/x.js`
+se salta por el componente que tiene dentro del árbol.
+
+**El gate que se explica.** Este corte también arregla el gate para que diga
+por qué falla: la salida del test sobrevivía al directorio de trabajo que la
+guardaba y se perdía con él, así que de dieciséis fallos sólo se veía una
+aserción, y no era la que explicaba el resto. Un gate que falla sin decir por
+qué es un gate que hay que volver a ejecutar para entender.
 
 **El lazo de feedback.** Este defecto no era de un corte, sino del día a
 día: tocar un test de integración seleccionaba la suite correcta y ejecutaba
