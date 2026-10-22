@@ -68,7 +68,7 @@ run_step "contracts"             bash -c "bash scripts/ci/run-all-contracts.sh"
 
 if [ -f "$BASELINE_CHECK" ] && [ -f "$BASELINE" ]; then
   run_step "known_failures (core/lib)" \
-    python3 "$BASELINE_CHECK" --package cognicode-core --target lib
+    python3 "$BASELINE_CHECK" --package cognicode-core --target lib --skip-if-empty
 fi
 
 printf '\n=== test-full rc=%d ===\n' "$overall_rc"

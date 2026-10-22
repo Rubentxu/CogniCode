@@ -225,12 +225,41 @@ def main() -> int:
         help="Do not remove the scratch TMPDIR after the run (debugging).",
     )
     parser.add_argument("--update", action="store_true")
+    parser.add_argument(
+        "--skip-if-empty",
+        action="store_true",
+        help=(
+            "Do not run the suite when the baseline declares no known "
+            "failures. Comparing an empty observed set against an empty "
+            "baseline can only repeat the verdict of the run that already "
+            "happened, so the suite is pure cost. The step is announced on "
+            "screen instead of being skipped in silence."
+        ),
+    )
     args = parser.parse_args()
 
     baseline_path = Path(args.baseline)
     baseline = load_baseline(baseline_path)
     package = args.package or baseline.get("package") or "cognicode-core"
     target = args.target or baseline.get("target") or "lib"
+
+    # MEDIDO 2026-10-22. La línea base versionada declaraba `entries:` vacío y
+    # el paso reejecutaba la suite entera (3.192 pruebas) para comparar un
+    # conjunto vacío contra otro conjunto vacío: solo podía repetir el
+    # veredicto de la etapa anterior, y lo pagaba con una suite completa.
+    #
+    # La decisión se toma AQUÍ, y no en cada wrapper, porque el formato del
+    # fichero es de este módulo: un `grep` en shell que cuenta entradas
+    # sería una segunda fuente de verdad para la misma regla, y las dos
+    # pueden discrepar sin que nada lo note. `--update` no se salta nunca:
+    # regenerar la línea base es justamente lo que necesita correr la suite.
+    if args.skip_if_empty and not args.update and not baseline["entries"]:
+        print(
+            f"[known-failures] skipped: the baseline declares no known "
+            f"failures ({baseline_path}), so there is nothing to compare "
+            f"against and the suite is not run again."
+        )
+        return 0
 
     root_used, scratch = prepare_tmpdir(args.tmpdir_root)
     if scratch is None:

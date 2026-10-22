@@ -22417,3 +22417,57 @@ catálogo y runtime (`a016_tools_runtime_consistency`); la auditoría de
 autoridad del MCP (`a010_tool_authority_audit`); el contrato del ancla del
 catálogo (`mcp_catalog_anchor`); y el documento de capacidades de la CLI
 (`a014_capabilities_json`), con sus diecisiete casos.
+
+## 2026-10-22 — La línea base vacía no vuelve a correr la suite entera (C5)
+
+**Qué es esta unidad.** C5 es un candidato de la cola: «la línea base vacía no
+se reejecuta». Suena a una frase de pureza, y no lo es: era dinero y
+tiempo gastados en una comprobación que no comprobaba nada.
+
+**El hueco, medido.** El repositorio guarda una lista de las pruebas que fallan
+por razones del entorno y no del código, para que un fallo nuevo no se pierda
+dentro del ruido conocido. Esa lista estaba **vacía**: no había ni una sola
+prueba con fallo conocido. Y aun así, el paso que compara la lista con lo que
+pasó en la sesión lanzaba la biblioteca entera del crate principal —3.192
+pruebas— para comparar un conjunto vacío contra otro conjunto vacío.
+
+Un paso que compara dos conjuntos vacíos solo puede repetir el veredicto que
+la etapa anterior ya dio. Lo que se compraba era tiempo, y se compraba entero.
+
+**Lo que había que arreglar.** La regla de «si la lista está vacía, no
+reejecutes» estaba escrita **dos veces**, y en dos sitios distintos: el
+lanzador rápido la aplicaba; el lanzador completo, no. La misma pregunta con
+dos respuestas según el script que se cogiera, y nadie lo notaba porque
+funcionaba en un caso y en el otro no.
+
+**Lo que cambió.** La decisión se ha movido al programa que sabe leer el
+fichero. Ahora es el propio verificador de la línea base quien dice si hay algo
+que comparar, y los dos lanzadores le preguntan. Se acaba la segunda copia de
+la regla: un sitio que decide, dos sitios que preguntan. Y cuando no hay nada
+que comparar, el verificador lo dice en pantalla en vez de callarse, para que
+quien lea el resultado vea el salto y no lo confunda con un paso que no
+existe.
+
+**Lo que este cierre no cambia.** Una regresión nueva sigue siendo una
+regresión nueva: si la lista tiene entradas, el verificador corre la suite,
+compara y falla si aparece un fallo que no estaba en la lista. El mecanismo no
+se ha desconectado, se ha dejado de pedirle comparaciones imposibles. Y
+regenerar la lista sigue ejecutando la suite, porque eso es justamente lo que
+regenerar significa.
+
+**El control que lo acompaña.** Un contrato comprueba que el mecanismo puede
+fallar de verdad: con una lista que sí tiene entradas, un fallo que no está
+en ella se reporta y el veredicto es rojo. Ese control importa más que el
+propio salto, porque un mecanismo que no puede fallar es indistinguible de un
+mecanismo que nunca falla: si el verificador estuviera roto, «la lista está
+vacía» y «el verificador no detecta nada» darían el mismo verde.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo del mecanismo de línea base
+(`scripts/ci/test_known_failures_baseline.py`), con sus seis casos —el
+mecanismo detecta una regresión fuera de la lista, un conjunto que coincide
+queda verde, la lista vacía no relanza la suite, los dos lanzadores lo dicen
+en pantalla, el salto no desarma el mecanismo y el fichero versionado se
+puede leer—; y el contrato de los lanzadores de prueba
+(`test_fast_full_wrappers.py`), que sigue verde.

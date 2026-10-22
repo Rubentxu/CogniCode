@@ -92,25 +92,6 @@
       "source": "roadmap"
     },
     {
-      "candidateId": "C5",
-      "title": "La línea base vacía no se reejecuta",
-      "unit": "H23",
-      "objective": "Que la fase de tests deje de reejecutar 3.192 tests cuando la linea base de fallos conocidos esta vacia.",
-      "whyNow": "MEDIDO: el paso `known_failures (core/lib)` de `scripts/test-full.sh` reejecuta los 3.192 tests del lib con `entries:` vacio, asi que solo puede repetir el veredicto del paso anterior. Con la linea base vacia, ese paso no compra garantia: paga tiempo.",
-      "evidenceRefs": [
-        "scripts/known_failures.yaml"
-      ],
-      "doneWhen": [
-        "con la linea base vacia, el paso se salta y lo dice en pantalla, en vez de reejecutar la suite",
-        "un contrato comprueba que el mecanismo de linea base puede fallar de verdad",
-        "el tiempo del gate completo baja y queda medido en el recibo"
-      ],
-      "scope": "H23",
-      "risk": "low",
-      "priority": 170,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C7",
       "title": "Cada superficie E2E tiene carril o se retira",
       "unit": "H23",
