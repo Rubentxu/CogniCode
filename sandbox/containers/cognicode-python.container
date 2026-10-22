@@ -35,4 +35,4 @@ AutoUpdate=no
 TimeoutStopSec=30
 
 [Install]
-WantedBy=default.target
+# WantedBy=default.target  # arranque bajo demanda: systemctl --user start cognicode-python.service
