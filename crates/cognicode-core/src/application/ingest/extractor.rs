@@ -1,5 +1,5 @@
 //! Generic AST extractor — walks a tree-sitter AST using a `LanguageConfig`
-//! and produces `GraphNode`s + `ExtractionEdge`s (ADR-018).
+//! and produces `GraphNode`s + `ExtractionEdge`s.
 //!
 //! This replaces the match-arm-based extraction in `AnalysisService` with a
 //! single generic walker that consumes `LanguageConfig` data.
@@ -12,6 +12,7 @@ use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, Target
 use crate::domain::aggregates::{GraphNode, NodeId};
 use crate::domain::evidence_kernel::SymbolFqn;
 use crate::domain::value_objects::{DependencyType, NodeKind, Provenance, SymbolKind};
+use crate::infrastructure::parser::callee;
 use crate::infrastructure::parser::LanguageConfig;
 use cognicode_graph_algos::algorithms::Statement;
 
@@ -61,6 +62,12 @@ pub fn extract_file(
     let source_bytes = source.as_bytes();
     let source_path_str = path.to_string_lossy().into_owned();
 
+    // What this language declares: the node kinds that are functions, the
+    // ones that are classes, the ones that are calls, and the field that
+    // names a callee. The declaration lives in the domain, so the walker
+    // and every other reader of the same language cannot disagree about it.
+    let symbols = config.language.symbols();
+
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<ExtractionEdge> = Vec::new();
     let mut symbol_ids: Vec<(String, String)> = Vec::new();
@@ -88,7 +95,7 @@ pub fn extract_file(
         let node_type = node.kind();
 
         // ── Function nodes ─────────────────────────────────────────────
-        if config.function_types.contains(&node_type)
+        if symbols.function_types.contains(&node_type)
             && let Some(name) = extract_name(&node, source_bytes)
         {
             let (symbol_node, symbol_id) = make_symbol_node(
@@ -110,8 +117,7 @@ pub fn extract_file(
                 &node,
                 source_bytes,
                 &symbol_id,
-                config.call_types,
-                config.call_has_function_field,
+                &symbols,
                 &source_path_str,
                 &mut edges,
             );
@@ -126,9 +132,9 @@ pub fn extract_file(
                 &mut edges,
             );
 
-            // Extract statements from the function body (M5.1b).
-            // Wrap in catch_unwind per ADR-023: malformed body → empty Vec,
-            // rest of file proceeds.
+            // Extract statements from the function body. A malformed body
+            // yields an empty list of statements and the rest of the file
+            // proceeds: one broken function does not cost the file.
             let stmts: Vec<Statement> =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     extract_statements_from_node(&node, source_bytes)
@@ -141,7 +147,7 @@ pub fn extract_file(
         }
 
         // ── Class/type nodes ───────────────────────────────────────────
-        if config.class_types.contains(&node_type) {
+        if symbols.class_types.contains(&node_type) {
             let kind = classify_class_type(node_type);
             if let Some(name) = extract_name(&node, source_bytes) {
                 let (symbol_node, symbol_id) = make_symbol_node(
@@ -168,26 +174,31 @@ pub fn extract_file(
         }
 
         // ── Import nodes ───────────────────────────────────────────────
-        if config.import_types.contains(&node_type)
+        if symbols.import_types.contains(&node_type)
             && let Some(module_name) = extract_import_target(&node, source_bytes)
         {
-            edges.push(ExtractionEdge {
-                source: file_node_id.as_str().to_string(),
-                target_ref: TargetRef::Unresolved(module_name),
-                kind: format!("dependency.{}", DependencyType::Imports),
-                provenance: Provenance::Extracted,
-                confidence: 1.0,
-                line: Some(node.start_position().row as u32 + 1),
-            });
+            edges.push(import_edge(&file_node_id, module_name, node.start_position().row));
+        }
+
+        // A call that loads a dependency declares it. Publishing it as a
+        // call would say that the file calls a function named "require",
+        // and the dependency it really declares would go missing.
+        if symbols.call_types.contains(&node_type)
+            && let Some(callee_node) = callee::callee_node(&node, symbols.callee_fields)
+        {
+            let callee = callee::clean_callee_name(&node_text(&callee_node, source_bytes));
+            if symbols.import_callees.contains(&callee.as_str())
+                && let Some(dependency) = import_target_of_call(&node, source_bytes, &callee_node)
+            {
+                edges.push(import_edge(&file_node_id, dependency, node.start_position().row));
+            }
         }
 
         // ── Variable nodes (const / static / let) ──────────────────
-        // UAT 2026-08-10 DEFECT-5: variable_types was declared on the
-        // LanguageConfig but never visited in the DFS, so `const_item`,
-        // `static_item`, and `let_declaration` silently dropped out of
-        // the graph. They now flow through the same path as
-        // function_types and class_types.
-        if config.variable_types.contains(&node_type)
+        // A variable is a symbol like any other, and it flows through the
+        // same path as functions and classes: the walk visits it, names it
+        // and publishes it.
+        if symbols.variable_types.contains(&node_type)
             && let Some(name) = extract_name(&node, source_bytes)
         {
             let kind = match node_type {
@@ -207,14 +218,13 @@ pub fn extract_file(
 
         // Push children (dedup to avoid revisiting)
         //
-        // MEDIDO 2026-10-19. La clave era (start_byte, end_byte), y hay
-        // gramaticas —HCL entre ellas— donde un envoltorio contiene un
-        // unico hijo que ocupa EXACTAMENTE el mismo rango: en
-        // `config_file > body > block`, `body` y `block` comparten inicio
-        // y fin. Al insertar el hijo, la clave ya estaba vista y el nodo
-        // nunca se visitaba. MEDIDO: un `main.tf` con UN solo recurso
-        // producia cero simbolos; con dos producia cuatro. El mismo
-        // rango no es la misma identidad: el kind forma parte de ella.
+        // The key is the kind and the range of the node, and the range
+        // alone is not an identity: there are grammars where a wrapper
+        // contains a single child that occupies exactly the same range.
+        // In `config_file > body > block`, the body and the block share
+        // their start and their end, and a key made of the range alone
+        // would consider the block already visited and never read it. The
+        // same range is not the same node: the kind is part of it.
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let key = (child.kind(), child.start_byte(), child.end_byte());
@@ -232,7 +242,7 @@ pub fn extract_file(
         statements_map,
     );
 
-    // ── Semantic handler post-parse pass (ADR-024 / ADR-036) ────────────
+    // ── Semantic handler post-parse pass ──────────────────────────────
     // If a semantic handler is configured (e.g., Ansible, Terraform),
     // run it to enrich the result with domain-specific nodes and edges.
     if let Some(handler) = config.semantic_handler {
@@ -242,7 +252,7 @@ pub fn extract_file(
         }))
         .unwrap_or_else(|_| {
             // semantic_handler panicked — return the original result
-            // (error isolation per ADR-023)
+            // (a handler that fails does not cost the file its reading)
             result.clone()
         })
     } else {
@@ -257,16 +267,15 @@ pub fn extract_file(
 /// Extract the `name` field text from a node, falling back to the node's
 /// HEADER when no `name` field exists.
 ///
-/// MEDIDO 2026-10-19. El fallback anterior devolvia "el primer hijo que sea
-/// un identifier", lo cual para una gramatica de cabeceras no nombra nada:
-/// en HCL el nodo `block` es `identifier(string_lit|identifier)* block_start
-/// body? block_end` y NO tiene campo `name`, asi que el primer identifier es
-/// la palabra clave y solo la palabra clave. Sobre el fixture real
+/// El fallback anterior devolvia "el primer hijo que sea un identifier", lo
+/// cual para una gramatica de cabeceras no nombra nada: en HCL el nodo
+/// `block` es `identifier(string_lit|identifier)* block_start body? block_end`
+/// y NO tiene campo `name`, asi que el primer identifier es la palabra clave
+/// y solo la palabra clave. Sobre el fixture real
 /// `sandbox/fixtures/terraform-iac/main.tf` eso producia 144 etiquetas todas
 /// iguales a `"resource"`, destruyendo el tipo y el nombre antes de que
 /// `terraform_handler` los viera, haciendo que todos los bloques del fichero
-/// compartieran identidad y dejando el guardia `is_terraform_file` (que
-/// busca `"resource "` con espacio) sin cumplir.
+/// compartieran identidad.
 ///
 /// La regla general es la correcta y no es una excepcion de HCL: **un nodo
 /// sin campo `name` se nombra por su cabecera**. Se recorren los hijos
@@ -285,11 +294,19 @@ fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
     let mut header: Vec<String> = Vec::new();
     for i in 0..node.child_count() {
         let Some(child) = node.child(i) else { break };
+        // A keyword is not the end of the header: the PowerShell grammar
+        // puts the `function` keyword before the name it declares. The
+        // header ends at the first named child that is not a name.
         if !child.is_named() {
-            break;
+            continue;
         }
         match child.kind() {
-            "identifier" | "string_lit" => header.push(node_text(&child, source)),
+            // `function_name` and `simple_name` are how the PowerShell
+            // grammar names a function and a class; no other grammar
+            // produces them.
+            "identifier" | "string_lit" | "function_name" | "simple_name" => {
+                header.push(node_text(&child, source));
+            }
             _ => break,
         }
     }
@@ -300,36 +317,98 @@ fn extract_name(node: &Node, source: &[u8]) -> Option<String> {
     Some(header.join(" "))
 }
 
+/// The fields that can hold the name of an imported dependency.
+///
+/// Every grammar puts it somewhere else, and a reader that looks at one
+/// place misses the imports of every language that chose another. The
+/// order matters when a grammar offers more than one: the path of an
+/// import is the dependency, and its local name is only a name for it.
+const IMPORT_FIELDS: &[&str] = &[
+    "source",
+    "module_name",
+    "path",
+    "uri",
+    "package",
+    "module",
+    "name",
+    "argument",
+];
+
 /// Extract the imported module/package name from an import node.
 fn extract_import_target(node: &Node, source: &[u8]) -> Option<String> {
-    // Try the `source` field (JS/TS), `module_name` field (Python),
-    // or the `name` field (Rust use, Go import, Java import).
-    for field in &["source", "module_name", "name", "module"] {
+    for field in IMPORT_FIELDS {
         if let Some(child) = node.child_by_field_name(field) {
-            let text = node_text(&child, source);
-            // Strip quotes from string literals (JS/TS)
-            let cleaned = text
-                .trim_matches(|c| c == '"' || c == '\'' || c == '`')
-                .to_string();
+            let cleaned = clean_import_text(&node_text(&child, source));
             if !cleaned.is_empty() {
                 return Some(cleaned);
             }
         }
     }
-    // Fallback: first string literal child
+    // The grammar that has no field for it still names the dependency, and
+    // it does so with a node that says what it is.
+    first_name_like(node, source, None)
+}
+
+/// The dependency a loader call declares.
+///
+/// The name of the dependency is what the call is given, not the name of
+/// the loader: `require "json"` declares `json`. The callee's own node is
+/// left out, so the loader never becomes the dependency it loads.
+fn import_target_of_call(node: &Node, source: &[u8], callee: &Node) -> Option<String> {
+    first_name_like(node, source, Some(callee.id()))
+}
+
+/// The first descendant that names something, skipping one node.
+///
+/// A name is a node whose kind says so: an identifier, a qualified name, a
+/// string. A grammar that has no field for the imported name still has a
+/// node for it, and this is how it is found.
+fn first_name_like(node: &Node, source: &[u8], skip: Option<usize>) -> Option<String> {
     let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "string" || child.kind() == "string_content" {
-            let text = node_text(&child, source);
-            let cleaned = text
-                .trim_matches(|c| c == '"' || c == '\'' || c == '`')
-                .to_string();
+    for child in node.named_children(&mut cursor) {
+        if Some(child.id()) == skip {
+            continue;
+        }
+        if is_name_like(child.kind()) {
+            let cleaned = clean_import_text(&node_text(&child, source));
             if !cleaned.is_empty() {
                 return Some(cleaned);
             }
+        }
+        if let Some(found) = first_name_like(&child, source, skip) {
+            return Some(found);
         }
     }
     None
+}
+
+/// Whether a node kind names something.
+fn is_name_like(kind: &str) -> bool {
+    kind.ends_with("identifier")
+        || kind.ends_with("name")
+        || kind == "string"
+        || kind == "string_content"
+        || kind.ends_with("string")
+}
+
+/// The text of an imported name, without the quotes a literal carries.
+fn clean_import_text(raw: &str) -> String {
+    raw.trim()
+        .trim_matches(|c| c == '"' || c == '\'' || c == '`')
+        .trim()
+        .to_string()
+}
+
+/// The dependency edge of a file.
+fn import_edge(file_id: &NodeId, dependency: String, row: usize) -> ExtractionEdge {
+    ExtractionEdge {
+        source: file_id.as_str().to_string(),
+        target_ref: TargetRef::Unresolved(dependency),
+        kind: format!("dependency.{}", DependencyType::Imports),
+        provenance: Provenance::Extracted,
+        confidence: 1.0,
+        line: Some(row as u32 + 1),
+    }
 }
 
 /// Walk the subtree of a function node looking for call expressions.
@@ -337,8 +416,7 @@ fn extract_calls_from_node(
     func_node: &Node,
     source: &[u8],
     caller_id: &str,
-    call_types: &[&str],
-    call_has_function_field: bool,
+    symbols: &crate::domain::value_objects::language::LanguageSymbols,
     _source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
@@ -348,21 +426,14 @@ fn extract_calls_from_node(
 
     while let Some(node) = stack.pop() {
         let nt = node.kind();
-        if call_types.contains(&nt) {
-            let callee_name = if call_has_function_field {
-                node.child_by_field_name("function")
-                    .map(|n| node_text(&n, source))
-            } else {
-                // First named child is the callee
-                let mut cursor = node.walk();
-                node.children(&mut cursor)
-                    .next()
-                    .map(|n| node_text(&n, source))
-            };
+        if symbols.call_types.contains(&nt) {
+            let callee = callee::callee_name(&node, source, symbols.callee_fields);
 
-            if let Some(callee) = callee_name {
-                let callee_clean = clean_callee_name(&callee);
-                if !callee_clean.is_empty() {
+            if let Some(callee_clean) = callee {
+                // A call that loads a dependency declares it. It is not a
+                // call, and the file does not call a function named
+                // "require".
+                if !symbols.import_callees.contains(&callee_clean.as_str()) {
                     edges.push(ExtractionEdge {
                         source: caller_id.to_string(),
                         target_ref: TargetRef::Unresolved(callee_clean),
@@ -437,18 +508,6 @@ fn contains_edge(parent_id: &NodeId, child_id: &str, _source_path: &str) -> Extr
 
 /// Strip method-call syntax from a callee name.
 /// `obj.method` → `method`, `Foo::bar` → `bar`, `self.save` → `save`.
-fn clean_callee_name(raw: &str) -> String {
-    // Take the last segment after `.` or `::`
-    let cleaned = raw
-        .split("::")
-        .last()
-        .unwrap_or(raw)
-        .split('.')
-        .next_back()
-        .unwrap_or(raw);
-    cleaned.trim().to_string()
-}
-
 /// Get the UTF-8 text of a node from the source bytes.
 fn node_text(node: &Node, source: &[u8]) -> String {
     let start = node.start_byte();
@@ -820,7 +879,7 @@ fn sorted_unique(v: &[String]) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// Regression test for UAT 2026-08-10 DEFECT-5.
+    /// Regression test for the variables of a real file.
     /// A real production Rust file mixes top-level items with methods inside
     /// `impl` blocks, items inside `mod` modules, and module-level
     /// `const`/`static` declarations. We feed a small but structurally
@@ -1040,8 +1099,8 @@ static MY_STATIC: u32 = 0;
         );
     }
 
-    /// SCN-STMT-09: ADR-023 error isolation — a syntactically malformed function body
-    /// does not panic; that function gets empty statements and the rest proceeds.
+    /// Error isolation — a syntactically malformed function body does not
+    /// panic; that function gets empty statements and the rest proceeds.
     /// We test the catch_unwind path by feeding a function with a curly-brace
     /// mismatch inside the body (which tree-sitter should handle gracefully).
     #[test]

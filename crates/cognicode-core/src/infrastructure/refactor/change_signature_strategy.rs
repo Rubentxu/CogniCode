@@ -2,6 +2,7 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 #![allow(clippy::assertions_on_constants, clippy::needless_range_loop)]
 
+use crate::infrastructure::parser::callee;
 use crate::domain::aggregates::refactor::{Refactor, RefactorKind, RefactorParameters};
 use crate::domain::aggregates::symbol::FunctionSignature;
 use crate::domain::traits::refactor_strategy::{
@@ -101,38 +102,16 @@ impl ChangeSignatureStrategy {
         }
     }
 
-    /// Extracts the callee name from a call expression node
+    /// Extracts the callee name from a call expression node.
+    ///
+    /// The name is read from the field the grammar declares for it, so the
+    /// refactor strategies and the graph agree about who calls whom.
     fn extract_callee_name(
         &self,
         call_node: tree_sitter::Node,
         source_bytes: &[u8],
     ) -> Option<String> {
-        let language = self.parser.language();
-
-        // For languages where the function is a direct child (Python, JS/TS)
-        if language.call_has_function_field() {
-            for i in 0..call_node.child_count() {
-                if let Some(child) = call_node.child(i)
-                    && child.kind() == "function"
-                {
-                    return self.find_identifier_in_node(child, source_bytes);
-                }
-            }
-        }
-
-        // For Rust and other languages
-        for i in 0..call_node.child_count() {
-            if let Some(child) = call_node.child(i) {
-                if child.kind() == "arguments" || child.kind() == "type_arguments" {
-                    continue;
-                }
-                if let Some(name) = self.find_identifier_in_node(child, source_bytes) {
-                    return Some(name);
-                }
-            }
-        }
-
-        None
+        callee::callee_name(&call_node, source_bytes, self.parser.language().callee_fields())
     }
 
     /// Finds an identifier in a node (possibly recursively)
