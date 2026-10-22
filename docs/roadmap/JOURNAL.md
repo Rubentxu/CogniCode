@@ -23103,3 +23103,73 @@ the_graph_does_not_depend_on_the_directory_order` — **RED** with the old code
 - The comment above the sort in the other route was a specification nobody was
   holding to. It said the index must never depend on directory-walk order, and
   one of the two routes that build that index did exactly that.
+
+## Entry 81 — the cut v0.101.28: a repair that is not published is a repair nobody has
+
+**What**: a new cut of the product, `v0.101.28`, that carries into a published
+release the two repairs the previous cycle left in the repository only: the
+filtered graph folds its files in path order, and the lane that publishes a
+release asks the right question at the right moment.
+
+**Why**: the previous cycle closed both defects and then published `v0.101.27`
+from a tree that still had them. The graph still folded its files in the order
+the disk listed them, and the lane still could not pass on a correct tree. A
+repair that lives in the repository but not in the artifact is a repair nobody
+has: the person who installs the product does not get it.
+
+**What a cut touches, and why each one is there.** The workspace version is the
+one that decides which release is current; `Cargo.lock` follows it. The three
+product manifests —the product's own description of what it is— carry the
+version and the provenance of the tree they describe, and the provenance is
+the *base* of the cut: the release commit cannot contain its own SHA, so it
+names the commit the cut started from. The certification records the version
+its verdicts were measured against. The assurance export golden is the
+producer's byte-level promise to its consumer, and it is regenerated on the
+versioned tree —not on a tree that also carries the sandbox corpus, which is
+not part of the product. And then there are the surfaces that a generator
+does not produce: the README, which says which release is current, which tag
+carries it and which version the binaries report; `SECURITY.md`, which says
+which versions receive support; and the CHANGELOG, which says what the cut
+contains. Those three are not generated, and an unstamped one is a document
+that lies to whoever reads it.
+
+**The golden, measured.** Both envelopes were decoded and compared: the shape
+is the same —1024 entities, 1024 facts, 1024 anchors, 4 gaps— and the
+collections are still truncated at the consumer's cap. What changed is which
+entries survive that cap, because the versioned tree grew. And there is a
+second effect that is easy to mistake for a defect: the envelope carries
+*absolute* paths, by design, because the producer's contract asks that
+`--workspace .` and `--workspace /abs/path` produce the same bytes. The same
+tree in another directory therefore produces other bytes. The pin describes
+this tree in this directory, and the contract's failure message now says so
+before it accuses the encoding.
+
+**Where**:
+- `Cargo.toml`, `Cargo.lock` — the workspace version and its lock.
+- `product/product-manifest.json`, `product/platforms.json`, `product/languages.json` — version and provenance of the product's own description.
+- `docs/roadmap/production-ready/certifications/c6/cp2-cp4-cp5.json` — the version the certification's verdicts belong to.
+- `tests/fixtures/assurance_export_golden.cbor`, `scripts/ci/test_assurance_export_golden.py` — the golden and the pin that names it.
+- `README.md`, `SECURITY.md`, `CHANGELOG.md` — the surfaces that a generator does not produce.
+- `docs/roadmap/ROADMAP.md`, `docs/roadmap/CURRENT.md` — the agenda's state and the snapshot that reflects it.
+
+**Learned**:
+- The provenance of a cut is the commit it starts from, never the commit that
+  publishes it. A manifest that names the SHA of the commit that contains it
+  would have to name a SHA that does not exist yet.
+- The snapshot names an *ancestor* of the head, not the head. A snapshot that
+  described the commit writing it would be describing something that does not
+  exist when it is written; the ratchet accepts a small drift for exactly
+  that reason.
+- The ceiling on the ROADMAP's state paragraph is a condition, not a style:
+  the paragraph was already at its limit, so the mention of the new cut paid
+  for itself with a paragraph that said the same thing twice.
+- The golden is not portable across directories, and that is by design rather
+  than by accident. The lesson is not "fix the golden" but "say in the failure
+  message what the golden actually describes", so the next person does not
+  spend a cycle chasing an encoding drift that is a path difference.
+- The machine's identity policy refused the merge commit that the hosting had
+  signed on the account's behalf, so no local clone could advance
+  `origin/main`: the object arrived in the store and no ref could point at it.
+  The policy now admits the account's own hosting identity and the hosting's
+  notarial signature, and the agent identities are still refused —verified,
+  not assumed.

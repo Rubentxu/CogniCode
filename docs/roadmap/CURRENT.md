@@ -5,14 +5,14 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `86cce536f6d500169eb4f1e35cc66d3eed5ff735` (`origin/main` al
-> abrir este ciclo), rama `fix/the-filtered-graph-index-does-not-depend-on-the-walk`.
-> Versión del workspace: `0.101.27`. Última release publicada: `v0.101.27`
-> (2026-10-22, 8 assets).
+> **Snapshot**: 2026-10-22, sobre `d52ad6b2180aa315c8efbb1b15cac5a8367e64eb` (`origin/main` al
+> abrir este ciclo), rama `release/v0.101.28`.
+> Versión del workspace: `0.101.28`. Última release publicada: `v0.101.27`
+> (2026-10-22, 8 assets); el corte `v0.101.28` está en curso.
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: la última publicada es la v0.101.27
+## Release: la última publicada es la v0.101.27, y v0.101.28 está en corte
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -21,6 +21,7 @@
 | `v0.101.25` | tag, sin release | su gate de candidato murió en la última etapa por un comando de shell mal escrito |
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
 | `v0.101.27` | **publicada** (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
+| `v0.101.28` | en corte | el corte que lleva el orden del grafo filtrado y la lane de publicación reparada |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
@@ -28,8 +29,10 @@ y la lane de publicación, que tuvo que arreglar tres checks que no podían
 pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
 corte que lleva el filtro de recorrido arreglado.
 
-El siguiente corte, cuando se abra, será **`v0.101.28`**, y no moverá
-`v0.101.27`: un tag publicado no se mueve.
+El corte en curso es **`v0.101.28`**, y no moverá `v0.101.27`: un tag
+publicado no se mueve. Lleva lo que la anterior dejó fuera: el grafo filtrado
+plegado en orden de ruta, y una lane de publicación que puede volver a
+ejecutarse sin tropezar con sus tres comprobaciones.
 
 ## La regla que este ciclo destapó
 
@@ -141,13 +144,7 @@ temporales van a `/tmp`, la cuota puede matar la batería entera.
   publicado contra los manifiestos que la etapa siguiente sube, y descargaba
   los assets justo después de sustituirlos. Los tres están arreglados y
   medidos; la lane llegó a publicar y se ejecutó dos veces sobre el mismo
-  tag. Lo que queda es que la próxima publicación no vuelva a tropezar con
-  ellos.
-- **La etapa de contratos de `main` estaba en rojo**: cuatro contratos
-  construyen repositorios de laboratorio y fallaban por la configuración de
-  git de la máquina, no por el código. El arreglo —la suite deja de heredar
-  esa configuración— está en la rama en vuelo, con una guarda que falla si
-  alguien lo deshace.
+  tag. Este corte la vuelve a ejercitar.
 - **C8-R (CR-01)**: la firma *contractual* del operador sobre un clon limpio.
   La firma operativa está hecha; la contractual no. Las citas al dossier del
   programa cerrado (`docs/prf/`) son históricas por contrato y no se
