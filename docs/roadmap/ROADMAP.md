@@ -485,7 +485,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   analizado, y el gate comprueba el volumen antes de compilar.
 >
 >   `C14` cerró con `v0.101.27`; `v0.101.28` publicó el orden del grafo y
->   la lane reparada; `v0.101.29` publica las tres unidades nuevas de B1:
+>   la lane reparada; `v0.101.29` publicó las tres unidades nuevas de B1:
 >   el instalador que no termina el proceso, y el grafo vacío que no es completo.
 >
 >   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:

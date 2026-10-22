@@ -23445,3 +23445,56 @@ pueda leer.
 entonces este corte no se publica: un tag publicado no se mueve, y un tag
 que no llegó a publicarse no se arrastra hacia delante.
 
+## 2026-10-22 — La v0.101.29 publicada: verificada desde sus propios bytes
+
+**Qué es esto.** La `v0.101.29` está publicada en remoto: tag anotado
+`v0.101.29` (`a7f3fec7`, sobre `b555e736`), ocho assets, publicada el
+2026-10-22 a las 21:40:57Z. Es la primera release que lleva las tres
+unidades nuevas del bloque B1.
+
+**El camino que recorrió.** Gate de candidato sobre el clon limpio del tag —
+build release en frío, contratos de release, y el humo del MCP por stdio
+contra el binario construido—: **rc=0**. Lane de publicación: **rc=0**, con
+el conjunto de assets confirmado, la publicación, la redescarga de los bytes
+ya publicados, la comprobación de sus sumas y la instalación como lo haría
+un consumidor.
+
+**La comprobación que decide si esto sirve.** La UAT se hizo sobre los bytes
+descargados de GitHub, no sobre el árbol del repositorio:
+
+- `sha256sum -c SHA256SUMS` sobre los ocho assets: coinciden, 8 de 8.
+- Instalación en un HOME limpio, fuera del repositorio, con el `cogh` del
+  propio asset publicado: `cogh init` y `cogh install mcp-server` en verde.
+- Los shims instalados responden `cognicode 0.101.29` y
+  `cognicode-mcp 0.101.29`; `cogh doctor` dice healthy; el MCP por stdio
+  responde `initialize` y `tools/list` con veinte herramientas.
+- Y la garantía del corte, medida sobre el binario publicado y no sobre el
+  código: un directorio sin material analizable responde
+
+      {"success":true,"status":"unsupported","symbols_found":0,
+       "relationships_found":0,
+       "message":"... no produjo símbolos (sin material Rust analizable)",
+       "basis":{"complete":false, ...}}
+
+  Antes de este corte, el mismo directorio recibía
+  `{"success":true,"status":"complete","symbols_found":0}` desde el mismo
+  servidor MCP. La diferencia entre las dos respuestas es la diferencia
+  entre un producto que dice la verdad y uno que la adorna.
+
+**Dos cosas que el guion de aceptación se equivocó, y que no son defectos
+del producto.** La primera: el asset de `cogh` es un tarball con el binario
+dentro, no un ejecutable suelto, así que la instalación falló hasta que el
+guion extrajo el archivo. La segunda: la instalación deja los shims en
+`.cognicode/shims/` apuntando a `.cognicode/versions/<versión>/`, no en
+`.cognicode/bin/`. Ninguna de las dos es un defecto del producto: son
+suposiciones del guion que la aceptación paid.
+
+**Limpieza.** Los efímeros de esta aceptación —el directorio con los scripts
+y el HOME de prueba— se borran al cerrar; no queda ningún proceso MCP vivo
+ni ningún socket escuchando, comprobado al final.
+
+**Lo que este cierre no dice.** B2 a B6 siguen abiertos, y son bloques de
+varias sesiones: cada uno tiene su propio gate y su propio recibo, y ninguno
+puede heredarse de este.
+
+
