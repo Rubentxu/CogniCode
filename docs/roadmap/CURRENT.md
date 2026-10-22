@@ -5,11 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `50ba51d0ef390246f2bb4a51bece853ab5d96a71`
-> (`origin/main`, el corte `v0.101.26`), rama
-> `fix/fast-runs-the-touched-target`, `origin/main` = `50ba51d0`. Versión del
-> workspace: `0.101.26`. Última release publicada: `v0.101.23` (2026-10-18,
-> 8 assets). `main` va **40** commits por delante de ese tag.
+> **Snapshot**: 2026-10-22, sobre `f3ff3d52aacec8cb7716fc3db5aac9a192d709cd` (`origin/main`), rama
+> `fix/the-workspace-cannot-define-the-product`, `origin/main` = `f3ff3d52aacec8cb7716fc3db5aac9a192d709cd`.
+> Versión del workspace: `0.101.26`. Última release publicada: `v0.101.23`
+> (2026-10-18, 8 assets). `main` va **42** commits por delante de ese tag.
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
@@ -19,7 +18,7 @@
 |---|---|---|
 | `v0.101.23` | **publicada** (2026-10-18) | la última que un usuario puede instalar |
 | `v0.101.24` | tag, sin release | su gate de candidato encontró un defecto real del índice de símbolos |
-| `v0.101.25` | tag, sin release | corte en curso, nunca llegó a publicar |
+| `v0.101.25` | tag, sin release | su gate de candidato murió en la última etapa por un comando de shell mal escrito |
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
 
 Un tag que no llegó a publicarse no se mueve. El siguiente corte publicable
@@ -49,13 +48,17 @@ comprueba el motivo antes de tocar una línea.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **C31** | la autoridad de una herramienta no la decide el catálogo del proyecto analizado | `ROADMAP.md` §11 |
-| **C6** | el lazo de feedback ejecuta el test de integración que se toca | en esta rama, PR #414 |
+| **C31** | la autoridad de una herramienta no la decide el catálogo del proyecto analizado | en esta rama |
 | **C5** | la línea base vacía no obliga a reejecutar la suite en el gate completo | `ROADMAP.md` §11 |
 | **C7**, **C21**, **C8** | superficie E2E con carril, configuración que no cita documentos que ya no existen, procedencia de las citas | `ROADMAP.md` §11 |
 | **B3** (`C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**C6 está cerrado**: el lazo de feedback ejecutaba la biblioteca del crate y
+nunca el test de integración que se acababa de escribir. Ahora pide el binario
+que produce ese fichero —y sólo ese— sin convertir el modo rápido en la
+batería completa.
 
 ## La misión
 
@@ -64,12 +67,12 @@ evidencia —una ruta que existe— y un criterio de cierre observable. La cola
 está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques B1
 a B6), de mayor a menor prioridad.
 
-El primero que encadena ahora es **C31**: la autoridad con la que una
-herramienta MCP se ejecuta la lee hoy del catálogo que hay en el disco del
-proyecto analizado. Un proyecto que declara `write_file` como herramienta de
-solo lectura consigue que el modo de solo lectura la acepte. La autoridad de
-una herramienta es del producto, y el producto no es el proyecto que se
-analiza.
+El primero que encadenaba era **C31**, y es el que esta rama cierra: la
+autoridad con la que una herramienta MCP se ejecutaba la leía del catálogo
+que había en el disco del proyecto analizado. Un proyecto que declaraba
+`write_file` como herramienta de solo lectura conseguía que el modo de solo
+lectura la aceptase. La autoridad de una herramienta es del producto, y el
+producto no es el proyecto que se analiza.
 
 **C25, C20, C24, C18, C28 y C29 están cerrados.** C17 salió en la PR #404.
 C2, C3 y C4 salieron en las PR #400, #401 y #402.

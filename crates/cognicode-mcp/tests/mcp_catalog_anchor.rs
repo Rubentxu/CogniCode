@@ -1,5 +1,4 @@
-//! The tool catalogue must resolve from the **configured workspace**,
-//! not from whatever directory the process happened to inherit.
+//! The tool catalogue must never depend on where the server was launched.
 //!
 //! Regression: `tools/list` returned `{"tools":[]}` against a healthy
 //! server. The catalogue (`product/tools.json`) was located by walking
@@ -21,25 +20,17 @@
 //! healthy while advertising nothing. An agent integrating against it
 //! sees "this server has no tools" and concludes the product is empty.
 //!
-//! ## What closes it, and what each test is for
+//! ## What closes it
 //!
-//! Two independent layers now keep this true, and this file pins the
-//! **observable** one:
+//! The catalogue is the product's own: the copy compiled into the binary,
+//! or the one that ships next to it in its installation. Neither depends
+//! on where the process was launched, and neither can be influenced by the
+//! tree the server was pointed at. A catalogue that cannot be found is
+//! indistinguishable from a product with no tools, so the binary carries
+//! its own answer.
 //!
-//! 1. **Resolution** — the catalogue is located from the configured
-//!    workspace (`--cwd`), then the process CWD, then the executable.
-//!    Pinned by `a014_product_asset_resolution`, at the resolver's own
-//!    level, so a regression there is caught even though this test
-//!    would still pass.
-//! 2. **Embedding** — `product/tools.json` is compiled into the binary
-//!    by `include_str!`, so no install layout can lose it. This test
-//!    pins the consequence an operator actually sees.
-//!
-//! Keeping both is deliberate. Layer 1 alone leaves a packaged binary
-//! that has no product data on disk resolving empty; layer 2 alone
-//! leaves a binary that cannot be pointed at a checkout's catalogue.
-//! The wire test covers the symptom, the resolver test covers the
-//! mechanism, and neither can be deleted without losing the other.
+//! This file pins the observable consequence an operator sees: the
+//! advertised catalogue does not depend on the launch context.
 
 mod common;
 
@@ -74,9 +65,9 @@ async fn tools_list_is_not_empty_when_spawned_outside_the_repository() {
         !tools.is_empty(),
         "tools/list returned an empty catalogue when the server was \
          launched from outside the repository (process CWD={}, \
-         --cwd={}). The catalogue must resolve from the configured \
-         workspace, not from the inherited process CWD: an empty \
-         catalogue is indistinguishable from a product with no tools.",
+         --cwd={}). The catalogue belongs to the product, not to the \
+         launch context: an empty catalogue is indistinguishable from a \
+         product with no tools.",
         outside.path().display(),
         repo.display()
     );
@@ -84,7 +75,7 @@ async fn tools_list_is_not_empty_when_spawned_outside_the_repository() {
     assert!(
         tools.iter().any(|t| t == SENTINEL_TOOL),
         "expected `{SENTINEL_TOOL}` among the advertised tools when the \
-         catalogue resolves from the configured workspace; got {tools:?}"
+         catalogue resolves; got {tools:?}"
     );
 }
 

@@ -161,25 +161,14 @@ pub fn tool_feature_enabled(feature: &Option<String>) -> bool {
     }
 }
 
-/// Load the full catalog from disk, with feature filtering applied.
+/// Load the full catalog, with feature filtering applied.
 ///
 /// Equivalent to `load_tool_catalog()` filtered by
 /// [`tool_feature_enabled`]. Both the CLI `build_capabilities_doc`
 /// and the MCP `build_all_tools` are expected to consume this view
 /// so the parity test can compare them on equal footing.
 pub fn load_tool_catalog_active() -> Vec<ToolDescriptor> {
-    load_tool_catalog_active_from(None)
-}
-
-/// [`load_tool_catalog_active`], anchored on an explicitly configured root.
-///
-/// The MCP handler knows the workspace the operator configured with
-/// `--cwd`; the catalogue must resolve from that root rather than
-/// from whatever directory the process happened to inherit. See
-/// [`resolve_product_assets_root_from`] for why that distinction is
-/// the difference between a working server and an empty one.
-pub fn load_tool_catalog_active_from(anchor: Option<&Path>) -> Vec<ToolDescriptor> {
-    load_tool_catalog_from(anchor)
+    load_tool_catalog()
         .into_iter()
         .filter(|d| tool_feature_enabled(&d.feature))
         .collect()
@@ -213,15 +202,6 @@ pub fn embedded_tool_catalog() -> Vec<ToolDescriptor> {
     serde_json::from_str::<CatalogFile>(EMBEDDED_TOOLS)
         .map(|parsed| parsed.tools)
         .unwrap_or_default()
-}
-
-/// Load the tool catalog from `product/tools.json`, anchored on
-/// `anchor` when one is supplied.
-///
-/// Falls back to the catalogue compiled into the binary when no anchor
-/// carries one on disk.
-pub fn load_tool_catalog_from(anchor: Option<&Path>) -> Vec<ToolDescriptor> {
-    load_tool_catalog_report(anchor).tools
 }
 
 /// Where a loaded catalogue came from, and whether it is usable.
@@ -276,9 +256,9 @@ impl CatalogReport {
     }
 }
 
-/// [`load_tool_catalog_from`], reporting where the catalogue came from.
-pub fn load_tool_catalog_report(anchor: Option<&Path>) -> CatalogReport {
-    for path in catalog_candidate_paths(anchor) {
+/// [`load_tool_catalog`], reporting where the catalogue came from.
+pub fn load_tool_catalog_report() -> CatalogReport {
+    for path in catalog_candidate_paths() {
         if let Ok(text) = std::fs::read_to_string(&path)
             && let Ok(parsed) = serde_json::from_str::<CatalogFile>(&text)
         {
@@ -303,19 +283,29 @@ pub fn load_tool_catalog_report(anchor: Option<&Path>) -> CatalogReport {
     }
 }
 
-/// Load the tool catalog from `product/tools.json`.
+/// Load the tool catalog of the running product.
 ///
-/// Resolution is delegated to [`resolve_product_assets_root_from`],
-/// which is the **single** product-asset resolver for the whole
-/// workspace: the CLI capabilities document and the MCP `tools/list`
-/// catalogue must never be able to disagree about where the shipped
-/// data lives.
+/// The catalogue says which tools the product offers and, for each of them,
+/// whether it changes something. The read-only posture filters on that second
+/// answer, so the catalogue is what decides whether a mutating tool can run —
+/// and that makes it a security surface, not a convenience.
+///
+/// The catalogue is therefore the product's own: the copy that shipped inside
+/// this binary, or the one that sits next to this binary in its installation.
+/// It is never the copy that happens to sit in the tree the user asked us to
+/// analyse. A workspace is data the product reads; data does not get to
+/// redefine the product, and least of all to lower its posture.
+///
+/// Resolution is delegated to [`product_assets_root`], which is the
+/// **single** product-asset resolver for the whole workspace: the CLI
+/// capabilities document and the MCP `tools/list` catalogue must never be able
+/// to disagree about where the shipped data lives.
 ///
 /// Returns an empty vector when the file cannot be found or fails to
 /// deserialise; callers that need a fail-closed signal should log
 /// their own diagnostics.
 pub fn load_tool_catalog() -> Vec<ToolDescriptor> {
-    load_tool_catalog_from(None)
+    load_tool_catalog_report().tools
 }
 
 #[derive(Deserialize)]
@@ -323,41 +313,13 @@ struct CatalogFile {
     tools: Vec<ToolDescriptor>,
 }
 
-fn catalog_candidate_paths(anchor: Option<&Path>) -> Vec<PathBuf> {
-    resolve_product_assets_root_from(anchor)
+fn catalog_candidate_paths() -> Vec<PathBuf> {
+    product_assets_root()
         .map(|root| vec![root.join("product").join("tools.json")])
         .unwrap_or_default()
 }
 
-/// The workspace root the running server was configured with, published once
-/// at construction.
-///
-/// Why a process global instead of a parameter threaded through every call:
-/// the authority and dependency maps are `OnceLock`-cached for the lifetime of
-/// the process, so they cannot consult a per-call anchor. An MCP server has
-/// exactly one configured workspace per process (`--cwd`), which makes "the
-/// configured root" a genuine process-level fact rather than a workaround.
-/// Publishing it once lets every consumer — the catalogue, the authority map,
-/// the dependency map — agree without each of them inventing its own
-/// resolution.
-///
-/// First writer wins: a second handler in the same process keeps the first
-/// root, because two servers sharing a process cannot both own one global
-/// cache anyway. Returns `false` when a root was already published.
-pub fn configure_product_assets_root(root: PathBuf) -> bool {
-    CONFIGURED_ROOT.set(root).is_ok()
-}
-
-/// The root published by [`configure_product_assets_root`], if any.
-pub fn configured_product_assets_root() -> Option<&'static Path> {
-    CONFIGURED_ROOT.get().map(PathBuf::as_path)
-}
-
-/// The single cell both accessors above share. One static, not one per
-/// function: two `OnceLock`s would be two truths.
-static CONFIGURED_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-
-/// Resolve the directory that holds `product/tools.json`.
+/// Resolve the directory that holds the running product's own data.
 ///
 /// **This is the single source of truth for product-asset location.**
 /// `crate::interface::cli::commands::resolve_product_assets_root`
@@ -366,17 +328,21 @@ static CONFIGURED_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new(
 /// tool catalogue while the CLI works perfectly against the same
 /// binary.
 ///
-/// Anchors, in priority order:
+/// The anchor is the executable's own location: the tree this binary was
+/// installed into, where the product's data ships next to the product.
+/// That is the only anchor, and the absence of the others is the point.
 ///
-/// 1. `anchor` — a workspace passed explicitly by the caller.
-/// 2. The root the server published via [`configure_product_assets_root`]
-///    (`--cwd`). This outranks the process directory because a real MCP
-///    client launches the server with CWD set to the *user's project*.
-/// 3. The process current directory — development ergonomics; the
-///    checkout the developer is standing in.
-/// 4. The executable's own location — the anchor that still exists
-///    when the user has no checkout at all, which is the normal state
-///    of an installed deployment.
+/// It used to be resolved by walking up from the directory the server was
+/// pointed at, then from the process working directory. Both of those are
+/// the *workspace*: the tree the user opened. A workspace that ships a
+/// `product/` directory of its own was therefore able to state which tools
+/// the product has and which of them change something — and the read-only
+/// posture believed it. The tree under analysis is data. Data must not be
+/// able to lower a posture.
+///
+/// The copy compiled into the binary is the other source, and the one that
+/// always exists: a published binary cannot lose it, whatever the install
+/// layout looks like.
 ///
 /// `CARGO_MANIFEST_DIR` is deliberately **not** an anchor. It is a
 /// build-time constant: `cargo` sets it while compiling and while
@@ -385,7 +351,7 @@ static CONFIGURED_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new(
 /// test suite green while the deployed server has no catalogue at all
 /// — the exact shape of the regression this resolver exists to close,
 /// and the reason `a014_product_asset_resolution` forbids it.
-pub fn resolve_product_assets_root_from(anchor: Option<&Path>) -> Option<PathBuf> {
+pub fn product_assets_root() -> Option<PathBuf> {
     fn holds(root: &Path) -> bool {
         root.join("product").join("tools.json").is_file()
             || root.join("product").join("profiles.json").is_file()
@@ -408,36 +374,10 @@ pub fn resolve_product_assets_root_from(anchor: Option<&Path>) -> Option<PathBuf
         None
     }
 
-    // 1. Explicit argument.
-    if let Some(dir) = anchor
-        && let Some(found) = walk_up(dir)
-    {
-        return Some(found);
-    }
-
-    // 2. The workspace this process was configured with.
-    if let Some(dir) = configured_product_assets_root()
-        && let Some(found) = walk_up(dir)
-    {
-        return Some(found);
-    }
-
-    // 3. Process working directory.
-    if let Ok(cwd) = std::env::current_dir()
-        && let Some(found) = walk_up(&cwd)
-    {
-        return Some(found);
-    }
-
-    // 4. The executable's location — the installed-deployment anchor.
-    if let Some(exe) = std::env::current_exe().ok()
-        && let Some(parent) = exe.parent()
-        && let Some(found) = walk_up(parent)
-    {
-        return Some(found);
-    }
-
-    None
+    // The installation this binary belongs to.
+    let exe = std::env::current_exe().ok()?;
+    let parent = exe.parent()?;
+    walk_up(parent)
 }
 
 #[cfg(test)]
