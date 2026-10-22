@@ -479,14 +479,14 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   incremental que se come los errores y reconstruye el grafo entero es
 >   `C11`; los constructores que no comparten motor, `C16` y `C23`; el
 >   vocabulario por lenguaje, `C19`; y el coste de validación, `C6`, `C5` y
->   `C7`. De esos, `C6`, `C5`, `C21`, `C8` y `C7` ya están cerrados. La
->   auditoría del 2026-10-21 abrió **C31** y **C32**, y los dos están
->   cerrados con su recibo en el Journal: la autoridad de una herramienta ya
->   no se deriva del catálogo del proyecto analizado, y el gate comprueba el
->   volumen antes de compilar.
+>   `C7`, cerrados junto con `C21` y `C8`. La auditoría del 2026-10-21 abrió
+>   **C31** y **C32**, y los dos están cerrados con su recibo en el Journal:
+>   la autoridad de una herramienta ya no se deriva del catálogo del proyecto
+>   analizado, y el gate comprueba el volumen antes de compilar.
 >
->   `C14` se cerró el 2026-10-22 publicando `v0.101.27`: su gate de candidato
->   pasó sobre el clon limpio y la lane de publicación llegó hasta el final.
+>   `C14` se cerró el 2026-10-22 publicando `v0.101.27` —gate de candidato
+>   sobre el clon limpio y lane de publicación hasta el final—; `v0.101.28`
+>   publica el orden del grafo filtrado y las tres comprobaciones de la lane.
 >
 >   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag anotado. Una PR fusionada no es una release.
