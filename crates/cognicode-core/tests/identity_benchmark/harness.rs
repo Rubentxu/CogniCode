@@ -266,7 +266,7 @@ fn sources_under(root: &Path) -> Vec<(String, &'static LanguageConfig)> {
         .filter(|entry| entry.path().is_file())
         .filter_map(|entry| {
             let absolute = entry.path();
-            if walk_filter.matches_any_component(absolute) {
+            if walk_filter.matches_any_component(absolute, root) {
                 return None;
             }
             let rel = absolute

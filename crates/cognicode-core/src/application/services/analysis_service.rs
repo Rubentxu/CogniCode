@@ -703,7 +703,7 @@ impl AnalysisService {
 
         for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
             .into_iter()
-            .filter_entry(|e| !walk.matches_any_component(e.path()))
+            .filter_entry(|e| !walk.matches_any_component(e.path(), project_dir))
         {
             let entry = match entry {
                 Ok(entry) => entry,
@@ -1075,7 +1075,7 @@ impl AnalysisService {
                                 None
                             }
                         })
-                        .filter(|e| !walk_filter.matches_any_component(e.path()))
+                        .filter(|e| !walk_filter.matches_any_component(e.path(), &dir_path))
                         .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
                         .map(|e| {
                             let path = e.path().to_path_buf();
@@ -1919,7 +1919,7 @@ impl AnalysisService {
 
         for entry in crate::infrastructure::walk_policy::contained_walk(&params.project_dir)
             .into_iter()
-            .filter_entry(|e| !walk.matches_any_component(e.path()))
+            .filter_entry(|e| !walk.matches_any_component(e.path(), &params.project_dir))
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
