@@ -234,9 +234,11 @@ pipeline {
                 """.trimIndent())
             }
 
-            // MEDIDO 2026-10-22, en la publicacion de la v0.101.27. Esta stage
-            // vivia ANTES de `upload-manifests`, y por eso la primera
-            // publicacion de una release no podia pasar:
+            // El conjunto publicado se confirma DESPUES de subir los
+            // manifiestos, y no antes. La lista esperada es la completa —cinco
+            // payloads y tres manifiestos—, y compararla antes de la subida
+            // media un conjunto al que le faltaban siempre los mismos tres
+            // ficheros:
             //
             //     the uploaded asset set does not match the produced payload set
             //     1d0
@@ -245,21 +247,16 @@ pipeline {
             //     < release-inventory-0.101.27.json
             //     < SHA256SUMS
             //
-            // La lista esperada es la completa —cinco payloads y tres
-            // manifiestos— y la publicada en ese momento solo tenia los cinco
-            // payloads, porque los manifiestos los subia la stage siguiente.
             // El fallo era de orden, no de contenido, y no se podia rodear
             // reejecutando: la comparacion ocurre antes de la subida, asi que
-            // en toda primera publicacion faltaban siempre los mismos tres.
+            // en toda primera publicacion faltaban siempre los mismos tres, y
+            // el lane dejaba un draft con cinco de los ocho assets.
             //
-            // MEDIDO el mismo dia: la correccion de 2026-10-18 que anadio los
-            // tres manifiestos a la lista esperada —para que el gate fuera
-            // completo en una reejecucion— es la que hace fallar la primera
-            // publicacion. Las dos correcciones son correctas por separado y
-            // juntas son un callejon sin salida. La lista tiene que ser
-            // completa, y la comparacion tiene que ocurrir cuando el conjunto
-            // publicado ya esta completo: por eso esta stage va despues de
-            // `upload-manifests`, y no antes.
+            // Las dos mitades hacen falta juntas. Con la lista incompleta, una
+            // reejecucion del lane sobre un tag ya publicado fallaba; con la
+            // comparacion antes de la subida, la primera publicacion fallaba.
+            // La lista tiene que ser completa y la comparacion tiene que
+            // ocurrir cuando el conjunto publicado ya esta completo.
             stage("confirm-uploaded-set") {
                 sh("""
                     set -eo pipefail
