@@ -23103,3 +23103,67 @@ the_graph_does_not_depend_on_the_directory_order` — **RED** with the old code
 - The comment above the sort in the other route was a specification nobody was
   holding to. It said the index must never depend on directory-walk order, and
   one of the two routes that build that index did exactly that.
+## 2026-10-22 — El instalador que terminaba el proceso, y la señal que miraba donde no mira el grafo (B1.3, B1.4)
+
+**Qué es esta unidad.** Las dos unidades que quedaban del bloque B1 sin
+arrancar, y las dos son de la misma familia: una respuesta que llega a medias
+y una señal que mira un sitio distinto del que mira el consumidor.
+
+**B1.3 — una descarga que se rompe a mitad de camino.** El descargador leía el
+cuerpo de la respuesta con `unwrap()`. Un cuerpo que llega a medias —la
+conexión se cierra antes de lo que anuncia el `Content-Length`— era un panic:
+el proceso terminaba y no había transacción que deshacer. El error de red se
+tragaba y se convertía en la muerte del proceso, que es la forma más cara de
+no tener un error tipado.
+
+Ahora el cuerpo se lee **antes** de tocar el disco, y un fallo de red es un
+`InstallerError::Network` que la transacción sabe deshacer. El efecto que
+registra el archivo se anota antes de que los bytes landen: un archivo que
+existe y nunca fue anotado es un archivo que nadie borra.
+
+MEDIDO, con un servidor de loopback que anuncia 64 bytes y envía 4:
+
+- RED: el test cae en el `unwrap()` de la línea 471 — el proceso muere.
+- GREEN: la transacción falla con el error de red que la causó, el proceso
+  sigue vivo y el archivo a medio escribir no queda en disco.
+
+**El detalle que costó una medición.** El módulo del instalador vive en el
+binario `cogh`, no en la lib del crate: `src/lib.rs` publica `presenter`,
+`identity`, `lifecycle` y `skills`, y `src/cmd/` solo lo usa
+`src/bin/cogh.rs`. La primera medición corrió `cargo test --lib` con el
+nombre del test y devolvió `0 passed; 0 failed; 15 filtered out` —cero
+pruebas, verde y sin medir nada—. El filtro correcto es `--bin cogh`, y ahí
+el RED es el de arriba. Un filtro que no selecciona ninguna prueba no es un
+verde: es la ausencia de evidencia, y se lee como si fuera lo contrario.
+
+**B1.4 — la señal de material Rust.** La señal decidía si el workspace podía
+ofrecer el backend de grafo mirando solo el primer nivel: un `Cargo.toml` en
+la raíz, o un `.rs` al lado. El grafo, en cambio, recorre el árbol entero, así
+que los dos decían cosas distintas sobre el mismo proyecto.
+
+Las dos consecuencias medidas:
+
+- Un proyecto Rust con las fuentes en un subdirectorio se anunciaba como «sin
+  fuentes Rust», y se negaba una capacidad que el grafo sí iba a leer.
+- Un manifiesto sin fuentes se anunciaba como completo, y el grafo salía
+  vacío. Un grafo vacío no es un grafo.
+
+Ahora la señal usa el mismo recorrido que el grafo —los ficheros ocultos y los
+ignorados quedan fuera, los enlaces simbólicos no se siguen— y se detiene en la
+primera fuente que encuentra. MEDIDO: sin el arreglo, dos de los cuatro tests
+de caracterización caen —el proyecto anidado y el manifiesto sin fuentes—; con
+él, 7/7.
+
+**Lo que esta unidad no arregla, y por qué.** El cuarto caso que pedía la
+caracterización —un workspace sin parser— es inalcanzable hoy: `tree-sitter-rust`
+es una dependencia dura del crate, así que no existe un workspace Rust sin
+parser que se pueda construir. Se deja como hallazgo medido y no como arreglo:
+su sitio natural es la línea de la ontología por lenguaje, donde el registro
+de lenguajes es la autoridad, y no esta señal de disponibilidad.
+
+**Lo que el cambio cuesta.** La señal ya no es O(primer nivel): es un recorrido
+del árbol. Se detiene en la primera fuente que encuentra, así que en el caso
+normal —un proyecto con material Rust— paga poco; el caso caro es un
+workspace enorme sin material Rust, donde recorre todo antes de decir que no
+hay material. Es el mismo coste que paga el grafo, y es el precio de que los
+dos digan lo mismo.
