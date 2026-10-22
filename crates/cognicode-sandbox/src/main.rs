@@ -7611,10 +7611,18 @@ scenarios:
         std::fs::create_dir_all(&repo_dir).unwrap();
 
         // Init a Git repo with one commit and an origin remote
+        // The repository built here is a laboratory. It has to behave the
+        // same on every machine, so it does not read the git configuration of
+        // whoever is running the tests: their hooks, their identity rules and
+        // their global ignores would otherwise decide whether these commits
+        // happen at all. The configuration paths point at something that does
+        // not exist, which git reads as "there is no configuration".
         let run = |args: &[&str]| {
             Command::new("git")
                 .args(args)
                 .current_dir(&repo_dir)
+                .env("GIT_CONFIG_GLOBAL", repos_dir.join("no-git-configuration"))
+                .env("GIT_CONFIG_SYSTEM", repos_dir.join("no-git-configuration"))
                 .output()
                 .expect("git failed")
         };
@@ -7662,10 +7670,18 @@ scenarios:
         let repo_dir = repos_dir.join("myrepo");
         std::fs::create_dir_all(&repo_dir).unwrap();
 
+        // The repository built here is a laboratory. It has to behave the
+        // same on every machine, so it does not read the git configuration of
+        // whoever is running the tests: their hooks, their identity rules and
+        // their global ignores would otherwise decide whether these commits
+        // happen at all. The configuration paths point at something that does
+        // not exist, which git reads as "there is no configuration".
         let run = |args: &[&str]| {
             Command::new("git")
                 .args(args)
                 .current_dir(&repo_dir)
+                .env("GIT_CONFIG_GLOBAL", repos_dir.join("no-git-configuration"))
+                .env("GIT_CONFIG_SYSTEM", repos_dir.join("no-git-configuration"))
                 .output()
                 .expect("git failed")
         };
@@ -7711,6 +7727,14 @@ scenarios:
             Command::new("git")
                 .args(args)
                 .current_dir(&sneaky)
+                .env(
+                    "GIT_CONFIG_GLOBAL",
+                    outside.path().join("no-git-configuration"),
+                )
+                .env(
+                    "GIT_CONFIG_SYSTEM",
+                    outside.path().join("no-git-configuration"),
+                )
                 .output()
                 .expect("git failed")
         };

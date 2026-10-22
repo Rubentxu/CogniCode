@@ -247,9 +247,18 @@ mod tests {
 
     /// Runs git in `repo`, panicking with stderr on failure.
     fn run_git(repo: &Path, args: &[&str]) -> String {
+        // The repository is a laboratory: it has to behave the same on every
+        // machine, so it does not read the git configuration of whoever is
+        // running the tests —their hooks and their identity rules would
+        // otherwise decide whether these commits happen at all. The
+        // configuration paths point at something that does not exist, which
+        // git reads as "there is no configuration".
+        let no_configuration = repo.join("no-git-configuration");
         let output = Command::new("git")
             .args(args)
             .current_dir(repo)
+            .env("GIT_CONFIG_GLOBAL", &no_configuration)
+            .env("GIT_CONFIG_SYSTEM", &no_configuration)
             .output()
             .expect("git CLI is available for adapter tests");
         assert!(

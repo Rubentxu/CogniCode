@@ -10,5 +10,8 @@
 //! Public modules:
 //!
 //! - [`auth`] — M3.5 Bearer-token comparison (`check_bearer_token`).
+//! - [`exposure`] — the rules that decide whether the HTTP transport may
+//!   start, and on which address.
 
 pub mod auth;
+pub mod exposure;

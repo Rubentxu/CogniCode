@@ -447,6 +447,69 @@ def test_parallel_mode_keeps_the_failure_semantics() -> None:
         check("test_pasa" in done.stdout, f"{label} debe reportar el test que pasa")
 
 
+def test_the_suite_does_not_inherit_the_operator_git_configuration() -> None:
+    """Un contrato tiene que responder sobre el repositorio, no sobre la máquina.
+
+    MEDIDO 2026-10-22: cuatro contratos construyen repositorios de usar y tirar
+    y commitean dentro. En una máquina cuya configuración de git juzga quién
+    puede firmar un commit, esos commits se deniegan, el repositorio se queda
+    sin historial, y el contrato lee "0 commits" donde había dos. El gate falló
+    sobre un árbol correcto, y el fallo parecía un defecto del producto.
+
+    La primera comprobación dice que la neutralización está puesta, así que
+    quitarla falla aquí en cualquier máquina —también en una sin configuración
+    global, donde el fallo sería invisible. La segunda dice que funciona: un
+    repositorio construido aquí mismo puede commitear.
+    """
+    import os
+
+    def carries_no_configuration(path: str) -> bool:
+        """Si una ruta de configuración de git no lleva configuración ninguna."""
+        try:
+            return Path(path).stat().st_size == 0
+        except OSError:
+            return True  # una ruta que no existe no puede llevar configuración
+
+    for variable in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"):
+        value = os.environ.get(variable)
+        check(
+            value is not None and carries_no_configuration(value),
+            f"{variable} vale {value!r}: la suite corre con la configuración de "
+            "git de quien la ejecuta, así que su veredicto depende de la "
+            "máquina y no del repositorio",
+        )
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = Path(tmp) / "repo"
+        repo.mkdir()
+        init = subprocess.run(
+            ["git", "init", "-q", "-b", "main", str(repo)],
+            capture_output=True, text=True, check=False,
+        )
+        check(init.returncode == 0, f"git init falló: {init.stderr.strip()[:200]}")
+        (repo / "README.md").write_text("seed\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(repo), "add", "-A"],
+            capture_output=True, text=True, check=False,
+        )
+        commit = subprocess.run(
+            [
+                "git", "-C", str(repo),
+                "-c", "user.email=probe@example.invalid",
+                "-c", "user.name=probe",
+                "-c", "commit.gpgsign=false",
+                "commit", "-q", "-m", "chore: seed",
+            ],
+            capture_output=True, text=True, check=False,
+        )
+        check(
+            commit.returncode == 0,
+            "un repositorio construido por la suite no puede commitear, así que "
+            "la suite depende de las reglas de git de la máquina: "
+            f"{commit.stderr.strip()[:300]}",
+        )
+
+
 def test_parallel_mode_defaults_to_serial() -> None:
     """Sin `--jobs`, el runner es el de siempre: un solo proceso, mismo orden."""
     module = run_contract_tests_parse()

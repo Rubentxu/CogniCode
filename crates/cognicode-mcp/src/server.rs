@@ -4,16 +4,21 @@
 //! Designed for containerized deployment: PG + MCP in one image.
 //!
 //! Usage:
-//!   cognicode-mcp-server --listen 0.0.0.0:9847 [--postgres `<URL>`]
+//!   cognicode-mcp-server --listen 127.0.0.1:9847 [--postgres `<URL>`]
 //!
 //! OpenCode connects as remote MCP:
 //!   "cognicode": { "type": "remote", "url": "http://localhost:9847/mcp" }
 //!
-//! M3.5: Bearer-token auth middleware. Set `COGNICODE_MCP_AUTH_TOKEN` to
-//! require `Authorization: Bearer <token>` on `/mcp`. When unset, the
-//! auth layer passes all requests through (localhost dev mode).
-//! `/health`, `/ready`, `/metrics` are exempt by design so orchestrator
-//! probes and Prometheus scrapers do not need to hold a token.
+//! The server listens on loopback unless it is told otherwise. Serving an
+//! address other machines can reach requires a bearer token, and starting
+//! without one is refused rather than served in the clear: the tools it
+//! exposes include the ones that write.
+//!
+//! The bearer token is read from `COGNICODE_MCP_AUTH_TOKEN` once, at
+//! startup. `/health`, `/ready` and `/metrics` are exempt by design so
+//! orchestrator probes and Prometheus scrapers do not need to hold a
+//! token; everything else, including `/watch`, requires it when the
+//! server is exposed.
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -36,13 +41,14 @@ use opentelemetry_sdk::metrics::SdkMeterProvider;
 use prometheus::{Encoder, Registry};
 
 use cognicode_mcp::auth::check_bearer_token;
+use cognicode_mcp::exposure::{DEFAULT_LISTEN, configured_token, ensure_safe_exposure};
 
 #[derive(Debug, Parser)]
 #[command(name = "cognicode-mcp-server", version)]
 struct Args {
     #[arg(short, long, default_value = ".")]
     cwd: PathBuf,
-    #[arg(long, default_value = "0.0.0.0:9847")]
+    #[arg(long, default_value = DEFAULT_LISTEN)]
     listen: SocketAddr,
 }
 
@@ -126,29 +132,30 @@ async fn ready_handler(
     }
 }
 
-/// M3.5: Bearer-token auth middleware. Applied to `/mcp` only;
-/// `/health`, `/ready`, and `/metrics` remain public so orchestrator
-/// probes and Prometheus scrapers do not need a token.
+/// Bearer-token auth middleware. Applied to every route except the
+/// three that orchestrators and scrapers reach without a credential:
+/// `/health`, `/ready` and `/metrics`.
 ///
 /// Behaviour:
-/// - `COGNICODE_MCP_AUTH_TOKEN` unset or empty → pass through (dev mode).
-/// - `COGNICODE_MCP_AUTH_TOKEN` set to non-empty value → require a
-///   matching `Authorization: Bearer <token>` header; otherwise 401.
+/// - The server was started without a token → the address it listens on
+///   is loopback, so pass through. Nothing else can reach it.
+/// - The server was started with a token → require a matching
+///   `Authorization: Bearer <token>` header; otherwise 401.
 /// - Comparison uses `subtle::ConstantTimeEq` to avoid leaking length
 ///   or content timing.
 ///
-/// We read the env var on every request (instead of caching at startup)
-/// so an operator can rotate the token by restarting the container —
-/// no hot-reload semantics needed for v1.
+/// The token is the one read at startup, not one read per request: the
+/// rule that depends on it decides whether the server may be exposed at
+/// all, and a credential that appears halfway through the life of a
+/// server is a credential that was absent while it was exposed.
 async fn auth_middleware(
     State(_ctx): State<Arc<HandlerContext>>,
     request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
-    // No token configured → dev mode, pass through.
-    let expected_token = match std::env::var("COGNICODE_MCP_AUTH_TOKEN") {
-        Ok(t) if !t.is_empty() => t,
-        _ => return Ok(next.run(request).await),
+    // No token configured → the address is loopback, pass through.
+    let Some(expected_token) = configured_token() else {
+        return Ok(next.run(request).await);
     };
 
     // Read the Authorization header (if any) as a string slice.
@@ -170,15 +177,21 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Standalone in-memory handler");
 
-    // M3.5: surface whether the auth gate is active at startup. This
-    // makes the security posture obvious in container logs and is the
-    // same kind of "mode" line we already emit for PG.
-    match std::env::var("COGNICODE_MCP_AUTH_TOKEN") {
-        Ok(t) if !t.is_empty() => {
-            tracing::info!("Mode C: auth ENABLED (Bearer token required on /mcp)");
+    // The exposure rules decide whether this server may be reachable from
+    // outside this machine. They are checked before anything is bound, so
+    // an insecure configuration ends the process instead of serving.
+    let token = configured_token();
+    ensure_safe_exposure(&args.listen, token.as_deref())
+        .map_err(|message| anyhow::anyhow!(message))?;
+
+    // Surface the posture at startup: the mode line in the container log
+    // is the same kind of "mode" line we already emit for PG.
+    match token {
+        Some(_) => {
+            tracing::info!("Mode C: auth ENABLED (Bearer token required)");
         }
-        _ => {
-            tracing::info!("Mode C: auth DISABLED (no COGNICODE_MCP_AUTH_TOKEN set)");
+        None => {
+            tracing::info!("Mode C: auth DISABLED (loopback address only)");
         }
     }
 
@@ -305,22 +318,18 @@ async fn main() -> anyhow::Result<()> {
         config,
     );
 
-    // M3.5: split the router so the auth middleware applies to /mcp
-    // only. /health, /ready, /metrics are public — orchestrators and
-    // Prometheus scrapers must reach them without a token. We mount
-    // the middleware via `from_fn_with_state` so it shares the same
-    // `Arc<HandlerContext>` as the rest of the request pipeline. The
-    // middleware's local state (`Arc<HandlerContext>`) is independent
-    // of the global router state (the tuple below), which is why
-    // `auth_middleware` keeps its `State<Arc<HandlerContext>>`
-    // signature unchanged.
-    let api_routes =
-        Router::new()
-            .nest_service("/mcp", service)
-            .layer(middleware::from_fn_with_state(
-                shared_ctx.clone(),
-                auth_middleware,
-            ));
+    // The auth middleware covers every route that is not one of the three
+    // orchestrator and scraper endpoints. `/watch` lives here with the
+    // rest: it reports the workspace path and the watcher state, and a
+    // diagnostic that names the directory the server works on is not
+    // something to hand to whoever can reach the port.
+    let protected_routes = Router::new()
+        .nest_service("/mcp", service)
+        .route("/watch", get(watch_handler))
+        .layer(middleware::from_fn_with_state(
+            shared_ctx.clone(),
+            auth_middleware,
+        ));
 
     let public_routes = Router::new()
         .route("/health", get(health_handler))
@@ -328,9 +337,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/metrics", get(metrics_handler));
 
     let app = Router::new()
-        .merge(api_routes)
+        .merge(protected_routes)
         .merge(public_routes)
-        .route("/watch", get(watch_handler))
         .with_state((shared_ctx, prometheus_registry));
 
     tracing::info!("CogniCode MCP HTTP/SSE Server on {}", args.listen);

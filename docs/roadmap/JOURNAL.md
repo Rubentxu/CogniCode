@@ -22682,3 +22682,256 @@ Verde sobre este árbol: el contrato de convergencia de la release
 (`test_assurance_export_golden.py`), regenerado sobre el árbol versionado con
 la versión nueva, y el ratchet del roadmap
 (`test_roadmap_version_ratchet.py`).
+## 2026-10-22 — El servidor HTTP deja de servirse expuesto (B1.1)
+
+**Qué es esta unidad.** El primer punto del bloque de producto fiable: cerrar la
+exposición del servidor HTTP. El servidor MCP habla JSON-RPC por stdio, que es
+su forma normal, y por HTTP cuando arranca como `cognicode-mcp-server`. El
+transporte HTTP es el único al que pueden llegar otras máquinas, y expone las
+herramientas que escriben.
+
+**El hueco, medido.** Con el código de antes, el servidor arrancaba en
+`0.0.0.0:9847` —todas las interfaces— **sin credencial**, porque la
+autenticación era opcional: si la variable de entorno no estaba, el servidor
+servía en claro. Medido sobre el binario de antes:
+
+- el proceso arrancaba y **seguía vivo** escuchando en una dirección
+  alcanzable desde la red;
+- `/health` respondía `200` —eso es por diseño, los orquestadores lo consultan;
+- `/watch` respondía `200` **sin credencial**, y su cuerpo nombraba el
+  directorio de trabajo del servidor.
+
+Lo segundo importa más de lo que parece: `/watch` estaba montado fuera del
+router protegido por el middleware de autenticación. El middleware se aplicaba
+a `/mcp` y a nada más, y `/watch` se añadió al router después, sin que nadie
+notara que se había quedado fuera.
+
+**Lo que cambió.** Tres decisiones, en un solo sitio:
+
+1. **La dirección por defecto es loopback.** `127.0.0.1:9847`. Un servidor que
+   espera a que le digan que sea alcanzable no sorprende a nadie; uno que
+   espera a que le digan que no lo sea ya se ha expuesto.
+2. **Una dirección alcanzable sin credencial no arranca.** Si se pide una
+   dirección más amplia que el loopback y no hay token, el proceso termina
+   antes de enlazar nada, diciendo qué variable hay que poner. Falla cerrado:
+   la configuración insegura es un error de arranque, no un aviso.
+3. **`/watch` exige la credencial** cuando el servidor está protegido. Sigue
+   siendo público en loopback, donde nadie más llega.
+
+El token se lee **una vez, al arrancar**, y no en cada petición. Antes se
+leía en cada petición para poder rotarlo sin reiniciar; pero rotarlo exige
+reiniciar el contenedor de todas formas —cambiar una variable de entorno
+pide un reinicio—, así que leerlo en cada petición no daba ninguna
+flexibilidad y sí dejaba abierta la ventana en la que el servidor ya estaba
+expuesto y todavía no tenía credencial.
+
+**Lo que este cierre no cambia.** El transporte stdio, que es el normal, no se
+toca. La lista de herramientas, tampoco. Lo único que cambia es a qué
+dirección se escucha y qué se pide para escuchar a algo más que el loopback.
+
+**El control que lo acompaña.** Las reglas viven en la biblioteca, donde se
+leen y se prueban baratas: la dirección por defecto es loopback, el refuslo
+nombra la variable que lo arregla, y un token vacío es un token ausente. Y un
+contrato de integración levanta el **binario real** con una configuración que
+no puede arrancar y comprueba que se niega, y con una que puede arrancar y
+comprueba que no se niega por la exposición. Ese segundo contrato es el que
+importa: una regla escrita y nunca consultada se parece a una garantía, y
+solo el proceso real dice la verdad.
+
+**Lo que la medición encontró por el camino.** El modo HTTP del servidor MCP no
+está documentado en ninguna parte del repositorio: ni el puerto, ni la
+variable del token, ni la consecuencia de elegir una dirección amplia. Una
+superficie sin documentación que se puede configurar es una superficie que se
+configura por descuido.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo de la exposición
+(`crates/cognicode-mcp/tests/mcp_http_exposure_is_safe.rs`), con sus dos casos;
+los cinco casos de las reglas en la biblioteca
+(`crates/cognicode-mcp/src/exposure.rs`); el contrato de los contratos; y el
+estándar de comentarios, que este cierre mejora.
+
+El rojo se midió antes del arreglo, sobre el binario de antes: el proceso
+arrancaba y seguía vivo en una dirección alcanzable desde la red sin
+credencial, y `/watch` respondía `200` sin credencial nombrando el
+directorio de trabajo.
+
+## 2026-10-22 — El gate da el mismo resultado en cualquier máquina (C32)
+
+**Qué es esta unidad.** C32 es un candidato de la cola: «el gate tiene que dar
+el mismo resultado en una máquina limpia». Su enunciado era sobre el volumen
+donde el gate compila, y esa parte ya estaba: la regla de "cabe el build en
+este volumen" vive en un solo sitio y la comparten el preflight y el
+publicador. La parte que faltaba era la otra: que el gate dependiera de la
+configuración global de git de quien lo ejecutaba.
+
+**El hueco, medido.** Varias pruebas construyen un repositorio de laboratorio
+—un repo git temporal— para poder comprobar cosas de git. Los commits de esos
+repositorios se firmaban con la configuración global de git de la máquina, y
+en esta máquina hay una política que exige mensajes Conventional Commit y
+una identidad de la lista autorizada. Los commits del laboratorio se
+denegaban, los repositorios se quedaban sin historia, y las pruebas que
+dependían de esa historia caían. Medido en el árbol:
+
+  - tres pruebas del sandbox que resuelven la procedencia de un repositorio;
+  - cinco del guard que sigue los binarios por crate;
+  - una del análisis incremental que invalida la caché al cambiar de rama.
+
+Nueve pruebas en tres sitios. Ninguna fallaba por el producto: fallaban por
+la máquina.
+
+**Lo que cambió.** Los repositorios de laboratorio ya no leen la configuración
+global de git. Las rutas de configuración apuntan a algo que no existe, que
+git lee como "no hay configuración": sin hooks heredados, sin reglas de
+identidad heredadas, sin ignores globales heredados. La identidad la pone el
+propio test, que es lo que corresponde a un laboratorio.
+
+**Por qué así y no de otra manera.** La primera solución que se probó fue
+desactivar los hooks con `core.hooksPath`, y no funcionó: el hook de mensaje
+siguió ejecutándose. La segunda fue un escape que el envoltorio de git de la
+máquina anuncia, y tampoco: el envoltorio solo cubre la identidad, no la regla
+de mensajes. Lo que sí funciona es no leer configuración global, porque las
+dos reglas viven ahí. Y es la solución que además vale en una máquina que no
+tiene nada de eso: las variables de entorno que apuntan a una ruta
+inexistente no rompen a quien no las tiene.
+
+**Lo que este cierre no cambia.** El producto no toca la configuración de git
+del usuario: el adaptador de git sigue leyendo la configuración de los
+repositorios reales, que es lo que tiene que hacer. Solo los repositorios de
+laboratorio que crea una prueba dejan de heredar la máquina.
+
+**Lo que la medición encontró por el camino.** El mismo `git` del PATH es un
+envoltorio que decide la identidad según el destino del remoto. En un
+repositorio de laboratorio sin remoto conocido, esa política no tiene
+respuesta y bloquea. No es un defecto del envoltorio —es una política
+deliberada—: es un defecto de un harness que da por hecho que `git` significa
+`git`.
+
+### Gates
+
+Verde sobre este árbol: las nueve pruebas que caían —las tres del sandbox, las
+cinco del guard de binarios y la del análisis incremental—; el contrato de la
+exposición del servidor HTTP, con sus dos casos; y las cinco reglas de
+exposición en la biblioteca.
+
+El rojo se midió antes del arreglo: nueve pruebas en tres sitios, todas por la
+configuración global de git de la máquina.
+
+## 2026-10-22 — El contrato que construye repositorios tampoco hereda la máquina (C32)
+
+**Qué es esta unidad.** La continuación de la anterior, y la mitad que faltaba:
+el mismo defecto, en la otra mitad del harness. La entrada anterior lo midió en
+las pruebas de Rust; aquí está en los contratos.
+
+**El hueco, medido.** `main` no estaba verde, y la etapa de contratos del gate
+de merge era la que caía. Cuatro contratos construyen repositorios de
+laboratorio y commitean dentro:
+
+- el que comprueba que el aislador de compilación puede negarse;
+- el que envuelve los modos rápido y completo;
+- el que comprueba la referencia del clon del preflight;
+- el de la puerta de regresión, que construye un clon de profundidad uno y
+  comprueba que la puerta dice ERROR cuando no puede leer el diff.
+
+En esta máquina, esos commits se deniegan: la política de identidad que exige
+un mensaje Conventional Commit y un firmante de la lista juzga también los
+repositorios de laboratorio. Los repositorios se quedaban sin historial y los
+contratos leían «0 commits» donde había dos. El primero moría con una
+excepción al commitear; el último leía un clon que no existía.
+
+**Lo que cambió.** El motor de la suite deja de heredar la configuración de git
+de la máquina: la global y la del sistema apuntan a nada, que git lee como «no
+hay configuración». Es la misma razón por la que el preflight del clon ya lo
+hacía para sí mismo, y la misma que se aplicó a los laboratorios de las
+pruebas de Rust.
+
+**La guarda.** Un contrato comprueba que la neutralización está puesta —si
+alguien la quita, el contrato falla en cualquier máquina, también en una sin
+configuración global, donde el fallo sería invisible— y que funciona: un
+repositorio construido ahí mismo puede commitear. Se probó quitando la
+neutralización: el contrato se pone rojo y dice qué variable queda suelta.
+
+**Lo que este cierre no cambia.** El producto no toca la configuración de git
+del usuario. Solo los repositorios de laboratorio que una prueba crea.
+
+## 2026-10-22 — El snapshot operativo vuelve a leerse (marcadores de conflicto)
+
+**Qué es esta unidad.** `docs/roadmap/CURRENT.md` es el snapshot que dice cuál
+es el estado: qué release se puede instalar, qué unidades están abiertas, qué
+bloquea. Es un documento que se lee para saber qué hacer.
+
+**El hueco, medido.** El fichero llevaba **seis** bloques de marcadores de
+conflicto sin resolver, commitados en `main`. Un rebase dejó las dos caras del
+texto en el mismo fichero y el resultado se commiteó tal cual: las dos
+versiones del párrafo, una detrás de otra, con la línea de separación en
+medio. Para quien lo leía, el estado actual no era ninguno de los dos.
+
+Y nada lo miraba. El fichero es markdown, así que todo lo que lo leía leía las
+dos versiones; y ningún contrato buscaba marcadores, porque buscar marcadores
+no era el trabajo de ningún contrato que ya existía.
+
+**Lo que cambió.** Los seis bloques quedan resueltos, quedándose con la versión
+más completa en cinco y con la que faltaba en el sexto: la nota del registro
+que retiró una versión de una dependencia y la del volumen de compilación
+comprobado antes de empezar. El snapshot se refresca con el estado real: la
+versión del workspace, el número de commits por delante del último tag, las
+unidades abiertas y la publicación pendiente.
+
+**La guarda.** Un contrato recorre los ficheros versionados de texto y busca
+los tres marcadores que git deja al resolver un conflicto a medias. El
+separador solo cuenta cuando está entre un inicio y un fin de bloque, porque
+una línea de siete signos iguales es también un título de nivel uno en
+markdown. El contrato lleva su propio control: si no encuentra ficheros que
+mirar, lo dice en vez de dar un verde por no haber nada que comprobar.
+
+**Lo que la medición encontró por el camino.** El marcador más callado es el
+separador: el inicio y el fin no aparecen en ningún otro sitio del árbol, y el
+separador exacto tampoco. El riesgo de falso positivo estaba en el separador,
+y por eso se mide dentro del bloque y no suelto.
+
+## 2026-10-22 — La sonda de aislamiento deja de poder colgar al producto
+
+**Qué es esta unidad.** La sonda que pregunta al host si el runtime de aislamiento
+responde. La pregunta no tenía plazo: `podman info` se lanzaba y se esperaba a que
+terminara, sin límite.
+
+**El hueco, medido.** En esta máquina, la primera vez que se lanza `podman info`
+tarda entre 60 y 120 segundos (arranque en frío del almacenamiento del runtime);
+caliente, 0,2 segundos. La consecuencia no fue un fallo del runtime: fue un gate
+rojo sobre un árbol correcto.
+
+La etapa que compila la biblioteca del core con el feature del kernel de evidencia
+tardó 135 segundos y falló en `test_retrieve_and_verify_rust_file_verified`. Ese
+test compila un fichero Rust de una línea y comprueba que el producto lo reporta
+como verificado; el producto le da 10 segundos para esa compilación. Con la sonda
+de podman en medio —60 segundos dentro del candado global de las pruebas
+seriales— la máquina estaba ocupada, la compilación no llegó a tiempo y el
+fichero salió como «no comprobado». El gate cayó sobre un árbol correcto y el
+fallo parecía un defecto del producto.
+
+**Lo que cambió.** La sonda tiene presupuesto: 10 segundos, y el proceso que no
+responde se mata —matarlo también evita que siga reteniendo el cerrojo que
+espera. Cuando el plazo vence, el runtime se reporta como inalcanzable, que
+deja la capacidad de aislamiento **ausente** en vez de inventarla: el camino
+seguro es que la capacidad no exista.
+
+El test que comprobaba la sonda por defecto ya no la ejecuta. Su garantía era
+«la sonda por defecto no es nula», y medirla significaba preguntar a la
+máquina: una máquina cuyo runtime tarda un minuto en responder convertía la
+suite entera en lenta y dejaba a las demás pruebas sin la máquina que
+necesitaban. Ahora la identifica sin correrla, y una prueba nueva, con un
+comando que nunca responde, comprueba que la sonda se rinde por su cuenta.
+
+**Lo que esta unidad no cambia.** El comando que se lanza y el formato de la
+salida son los mismos. El tipo de discovery admite ahora `Debug` como
+supertrait, y sus dos implementadores ya lo derivaban: hace falta para
+distinguir una sonda de otra sin ejecutarla.
+
+**Evidencia.**
+- RED medido: la etapa del gate, 135 s, con el test de verificación en rojo y la
+  biblioteca con un fallo.
+- GREEN medido: la misma etapa, 2944/2944, y la biblioteca en 68 s.
+- El módulo de podman pasa de 60–120 s a 0,42 s (13/13).
+- Mutación: sin el límite, el test nuevo falla —tarda los 30 s del comando que no
+  responde— y con el límite pasa.
