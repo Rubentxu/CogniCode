@@ -5,14 +5,14 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `d52ad6b2180aa315c8efbb1b15cac5a8367e64eb` (`origin/main` al
-> abrir este ciclo), rama `release/v0.101.28`.
-> Versión del workspace: `0.101.28`. Última release publicada: `v0.101.27`
-> (2026-10-22, 8 assets); el corte `v0.101.28` está en curso.
+> **Snapshot**: 2026-10-22, sobre `1e8d4e53d4319b4d0b181b43d6f1a9ac835beecf` (`origin/main` al
+> abrir este ciclo), rama `docs/the-receipt-of-v0.101.28`.
+> Versión del workspace: `0.101.28`. Última release publicada: `v0.101.28`
+> (2026-10-22, 8 assets).
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: la última publicada es la v0.101.27, y v0.101.28 está en corte
+## Release: la última publicada es la v0.101.28
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -20,8 +20,8 @@
 | `v0.101.24` | tag, sin release | su gate de candidato encontró un defecto real del índice de símbolos |
 | `v0.101.25` | tag, sin release | su gate de candidato murió en la última etapa por un comando de shell mal escrito |
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
-| `v0.101.27` | **publicada** (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
-| `v0.101.28` | en corte | el corte que lleva el orden del grafo filtrado y la lane de publicación reparada |
+| `v0.101.27` | publicada (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
+| `v0.101.28` | **publicada** (2026-10-22, 8 assets) | lleva el orden del grafo filtrado y la lane de publicación reparada |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
@@ -29,10 +29,10 @@ y la lane de publicación, que tuvo que arreglar tres checks que no podían
 pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
 corte que lleva el filtro de recorrido arreglado.
 
-El corte en curso es **`v0.101.28`**, y no moverá `v0.101.27`: un tag
-publicado no se mueve. Lleva lo que la anterior dejó fuera: el grafo filtrado
-plegado en orden de ruta, y una lane de publicación que puede volver a
-ejecutarse sin tropezar con sus tres comprobaciones.
+**`v0.101.28` es la vigente**, y no movió `v0.101.27`: un tag publicado no se
+mueve. Lleva lo que la anterior dejó fuera: el grafo filtrado plegado en
+orden de ruta, y una lane de publicación que pudo ejecutarse sin tropezar con
+sus tres comprobaciones.
 
 ## La regla que este ciclo destapó
 
