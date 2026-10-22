@@ -431,7 +431,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   garantía. La fase completa ya no repite la batería del core con la
 >   línea base vacía, el modo rápido ya corre el target de integración que
 >   se tocó, y la configuración ejecutable ya no apunta a documentos
->   ausentes; queda que las superficies E2E sin carril se acumulan.
+>   ausentes; las superficies E2E sin carril siguen acumulándose.
 >
 >   **H24** — el producto tiene que decir la verdad. Lo que le queda abierto
 >   son tres contratos y una frontera:
@@ -449,8 +449,7 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-008-IAC-QUERY.md`. El
 >     tipo y el kind que el lector declaró; los metadatos reales de la
 >     arista, no una constante; `depth` como profundidad y no como tope de
->     resultados; y la ambigüedad declarada en vez de resuelta por
->     casualidad.
+>     resultados; y la ambigüedad declarada en vez de resuelta por casualidad.
 >   - **Un recurso de infraestructura no es un símbolo de programación** —
 >     `docs/roadmap/consumer-contracts/specs/SPEC-CU-009-ONTOLOGY.md`. La
 >     categoría del extractor genérico no puede contradecir la semántica
