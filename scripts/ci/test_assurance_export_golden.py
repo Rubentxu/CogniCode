@@ -114,7 +114,20 @@ def workspace_version() -> str:
 #   - 45fa782147e2fc25ba6cc7e564ccaf326aae8ecaaef7ae37104133769405ee35 (v0.101.9, integrate/v1015)
 # El consumer (pipelinek-assurance CogniCodeArtifactProvider) debe
 # actualizar su pin tras cada regeneracion.
-# Pin vigente: 9ea39cde36afe65a57183096e1899508862c60fc8f0294f8a43ba0b03c6f4588
+# Pin vigente: 9eaf10d1dec3d4f29005e98d130da97e844faf08d28c4abfadde64b133bf3e23
+# (v0.101.28, regenerate 2026-10-22 al bump 0.101.27 → 0.101.28; corte de release
+# de C14. 941691 bytes frente a 861786 del pin anterior. MEDIDO sobre los dos
+# envelopes decodificados: la forma es la misma —1024 entidades, 1024 hechos,
+# 1024 anclas, 4 gaps— y las colecciones siguen truncadas en la cota de 1024 del
+# consumidor. Lo que cambia es qué entradas sobreviven a esa cota, porque el
+# árbol versionado creció. Y hay un segundo efecto que conviene no confundir con
+# ninguno de los dos: el envelope lleva rutas ABSOLUTAS por diseño —el contrato
+# del producer exige que `--workspace .` y `--workspace /abs/path` produzcan los
+# mismos bytes—, de modo que el mismo árbol en otro directorio da otros bytes.
+# Este pin describe este árbol en este directorio. El consumer
+# (pipelinek-assurance) debe actualizar su pin tras esta regeneracion.)
+#
+# Pin anterior: 9ea39cde36afe65a57183096e1899508862c60fc8f0294f8a43ba0b03c6f4588
 # (v0.101.27, regenerate 2026-10-22 al bump 0.101.26 → 0.101.27; corte de release
 # de C14. 861786 bytes frente a 861549 del pin anterior: el binario declara otra
 # version y el arbol del workspace perdio unas pocas entidades del nucleo, que
@@ -123,7 +136,7 @@ def workspace_version() -> str:
 # es la version del producer y el contenido del arbol, no el encoding. El
 # consumer (pipelinek-assurance) debe actualizar su pin tras esta regeneracion.)
 #
-# Pin anterior: 671b6928432f95b3217188a55d5431d24c436152ee070f42c4d68eb4d55b37c7
+# Pin anterior: 671b6928432f95b3217188a55d543d24c436152ee070f42c4d68eb4d55b37c7
 # (v0.101.26, regenerate 2026-10-22 al bump 0.101.25 → 0.101.26; corte de release
 # de C14. 861549 bytes frente a 952972 del pin anterior. MEDIDO: el pin anterior
 # se genero sobre un workspace que ademas llevaba el corpus de fixtures del
@@ -135,7 +148,7 @@ def workspace_version() -> str:
 # no el encoding del producer. El consumer (pipelinek-assurance) debe actualizar
 # su pin tras esta regeneracion.)
 GOLDEN_SHA256 = (
-    "9ea39cde36afe65a57183096e1899508862c60fc8f0294f8a43ba0b03c6f4588"
+    "9eaf10d1dec3d4f29005e98d130da97e844faf08d28c4abfadde64b133bf3e23"
 )
 PRODUCER_VERSION = workspace_version()
 API_VERSION = "assurance-evidence/v1"
@@ -295,7 +308,10 @@ def test_golden_sha256_is_pinned() -> None:
         f"  actual:   {actual}\n"
         f"  Si el cambio es intencionado (refactor del encoding, "
         f"cambio de producer version), regenera con --update y coordina "
-        f"con el consumer (pipelinek-assurance) para que actualice su pin."
+        f"con el consumer (pipelinek-assurance) para que actualice su pin.\n"
+        f"  Antes de culpar al encoding: el envelope lleva rutas absolutas "
+        f"por diseno, asi que el mismo arbol regenerado en otro directorio "
+        f"da otros bytes. Compara el arbol antes que el formato."
     )
 
 
