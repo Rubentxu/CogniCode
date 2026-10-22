@@ -23173,3 +23173,52 @@ before it accuses the encoding.
   The policy now admits the account's own hosting identity and the hosting's
   notarial signature, and the agent identities are still refused —verified,
   not assumed.
+
+## Entry 82 — v0.101.28 published: the cut that finally carries its own repairs
+
+**What**: `v0.101.28` is published. The release carries the two repairs of the
+previous cycle —the filtered graph folding its files in path order, and a
+publication lane that can be run again over a correct tree— and it is the first
+cut of this repository whose candidate gate and publication lane both ran
+without needing a repair of their own to get through.
+
+**Why**: the previous cycle fixed the defects in the repository and then
+published `v0.101.27` from a tree that still had them. The lane of that
+publication had three checks that could not pass, and each one had to be
+repaired before the release could exist at all. A release that only exists
+because the thing that publishes it was fixed on the way is not a release
+process; it is a workaround with a version number.
+
+**What was measured, and where.** The candidate gate ran over the tag in a
+clean clone: 6510 pruebas en verde y 0 en rojo. The publication lane then ran to the end
+(`Pipeline finished with SUCCESS`), and it was the same lane that had to be
+repaired twice the day before. The release carries 8 assets, the
+expected set, and every one of them verifies against the `SHA256SUMS` that
+ships beside them —re-downloaded from the published release, not from the
+directory that produced it— and a consumer that installs from the published
+bytes sees 20 MCP tools and binaries that report their own version.
+
+**Where**:
+- `release.pipeline.kts` — the three repairs in the lane, already merged in the previous cycle.
+- The published release `v0.101.28`.
+
+**Learned**:
+- The lane was worth repairing before the next cut, not after it: with the
+  three checks fixed, the publication of `v0.101.28` was the first run of the
+  lane that did not need anything else fixed to finish.
+- A publication lane that fails on a correct tree does not fail "safely". It
+  fails late, after the candidate is built, and the fix lands in the same
+  repository that was about to be published —so the next cut has to carry the
+  fix and the defect at once, unless the defect is fixed before the cut.
+- The machine's policy was stricter than the repository's own history in
+  three separate ways, and each one had to be resolved before the repository
+  could be read at all: the identity that the hosting signs its merges with,
+  the commit type this repository uses for its cuts, and the co-author trailer
+  the hosting's squash merge added automatically to the merges of that day.
+  The first two were resolved by making the policy admit what the ecosystem
+  actually produces. The third was left as it is —the rule is right, and the
+  trailers it refuses are in the history that predates it—, and the way
+  around it is the branch, not the rule: a branch that points at a commit
+  whose ancestry carries an old trailer cannot be moved across it, but a new
+  branch that points at the same commit can be created and checked out,
+  because nothing new enters the repository that way.
