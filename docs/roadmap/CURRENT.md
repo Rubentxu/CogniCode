@@ -5,8 +5,8 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `370e49b8b247d12b284d44bc2e9615d69a0f4912` (`origin/main` al
-> abrir este ciclo), rama `fix/the-extractor-does-not-invent-classes`.
+> **Snapshot**: 2026-10-23, sobre `0b096482fd941e213896136e47e323ccac82db59` (`origin/main` al
+> cerrar este ciclo), rama `main`.
 > Versión del workspace: `0.101.29`. Última release publicada: `v0.101.29`
 > (2026-10-22, 8 assets).
 >
