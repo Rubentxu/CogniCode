@@ -22757,3 +22757,63 @@ arrancaba y seguía vivo en una dirección alcanzable desde la red sin
 credencial, y `/watch` respondía `200` sin credencial nombrando el
 directorio de trabajo.
 
+## 2026-10-22 — El gate da el mismo resultado en cualquier máquina (C32)
+
+**Qué es esta unidad.** C32 es un candidato de la cola: «el gate tiene que dar
+el mismo resultado en una máquina limpia». Su enunciado era sobre el volumen
+donde el gate compila, y esa parte ya estaba: la regla de "cabe el build en
+este volumen" vive en un solo sitio y la comparten el preflight y el
+publicador. La parte que faltaba era la otra: que el gate dependiera de la
+configuración global de git de quien lo ejecutaba.
+
+**El hueco, medido.** Varias pruebas construyen un repositorio de laboratorio
+—un repo git temporal— para poder comprobar cosas de git. Los commits de esos
+repositorios se firmaban con la configuración global de git de la máquina, y
+en esta máquina hay una política que exige mensajes Conventional Commit y
+una identidad de la lista autorizada. Los commits del laboratorio se
+denegaban, los repositorios se quedaban sin historia, y las pruebas que
+dependían de esa historia caían. Medido en el árbol:
+
+  - tres pruebas del sandbox que resuelven la procedencia de un repositorio;
+  - cinco del guard que sigue los binarios por crate;
+  - una del análisis incremental que invalida la caché al cambiar de rama.
+
+Nueve pruebas en tres sitios. Ninguna fallaba por el producto: fallaban por
+la máquina.
+
+**Lo que cambió.** Los repositorios de laboratorio ya no leen la configuración
+global de git. Las rutas de configuración apuntan a algo que no existe, que
+git lee como "no hay configuración": sin hooks heredados, sin reglas de
+identidad heredadas, sin ignores globales heredados. La identidad la pone el
+propio test, que es lo que corresponde a un laboratorio.
+
+**Por qué así y no de otra manera.** La primera solución que se probó fue
+desactivar los hooks con `core.hooksPath`, y no funcionó: el hook de mensaje
+siguió ejecutándose. La segunda fue un escape que el envoltorio de git de la
+máquina anuncia, y tampoco: el envoltorio solo cubre la identidad, no la regla
+de mensajes. Lo que sí funciona es no leer configuración global, porque las
+dos reglas viven ahí. Y es la solución que además vale en una máquina que no
+tiene nada de eso: las variables de entorno que apuntan a una ruta
+inexistente no rompen a quien no las tiene.
+
+**Lo que este cierre no cambia.** El producto no toca la configuración de git
+del usuario: el adaptador de git sigue leyendo la configuración de los
+repositorios reales, que es lo que tiene que hacer. Solo los repositorios de
+laboratorio que crea una prueba dejan de heredar la máquina.
+
+**Lo que la medición encontró por el camino.** El mismo `git` del PATH es un
+envoltorio que decide la identidad según el destino del remoto. En un
+repositorio de laboratorio sin remoto conocido, esa política no tiene
+respuesta y bloquea. No es un defecto del envoltorio —es una política
+deliberada—: es un defecto de un harness que da por hecho que `git` significa
+`git`.
+
+### Gates
+
+Verde sobre este árbol: las nueve pruebas que caían —las tres del sandbox, las
+cinco del guard de binarios y la del análisis incremental—; el contrato de la
+exposición del servidor HTTP, con sus dos casos; y las cinco reglas de
+exposición en la biblioteca.
+
+El rojo se midió antes del arreglo: nueve pruebas en tres sitios, todas por la
+configuración global de git de la máquina.
