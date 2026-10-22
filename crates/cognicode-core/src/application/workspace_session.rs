@@ -2078,9 +2078,7 @@ mod tests {
         let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
         let outcome = session.check_architecture(None).await;
 
-        let error = outcome
-            .err()
-            .expect("un workspace sin material no puede puntuarse");
+        let error = outcome.expect_err("un workspace sin material no puede puntuarse");
         assert!(
             error.to_string().contains("no produjo símbolos"),
             "el motivo tiene que nombrar la ausencia de material: {error}"

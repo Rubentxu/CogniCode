@@ -6641,8 +6641,7 @@ mod tests {
                  `complete`: no produjo símbolos"
             );
             let message = outcome
-                .err()
-                .expect("the refusal explains itself")
+                .expect_err("the refusal explains itself")
                 .to_string();
             assert!(
                 message.contains("no produjo símbolos"),

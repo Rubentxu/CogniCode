@@ -2756,7 +2756,9 @@ components:
                 );
             }
             Ok(other) => panic!("a download that breaks halfway must not succeed, got: {other:?}"),
-            Err(error) => panic!("a download that breaks halfway must fail the transaction, not escape it: {error:?}"),
+            Err(error) => panic!(
+                "a download that breaks halfway must fail the transaction, not escape it: {error:?}"
+            ),
         }
 
         let dest = home.cache().join("cognicode.tar.gz");

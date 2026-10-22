@@ -80,11 +80,7 @@ fn analyze_over_a_workspace_without_material_publishes_no_score() {
 #[test]
 fn analyze_over_a_workspace_with_code_still_publishes_a_score() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    std::fs::write(
-        tmp.path().join("lib.rs"),
-        "pub fn answer() -> u8 { 42 }\n",
-    )
-    .expect("write");
+    std::fs::write(tmp.path().join("lib.rs"), "pub fn answer() -> u8 { 42 }\n").expect("write");
 
     let out = run(&["analyze", tmp.path().to_str().unwrap()]);
     let stdout = stdout_of(&out);
