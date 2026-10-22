@@ -5,14 +5,14 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `1e8d4e53d4319b4d0b181b43d6f1a9ac835beecf` (`origin/main` al
-> abrir este ciclo), rama `docs/the-receipt-of-v0.101.28`.
-> Versión del workspace: `0.101.28`. Última release publicada: `v0.101.28`
-> (2026-10-22, 8 assets).
+> **Snapshot**: 2026-10-22, sobre `ccf56f6508b8d7a905be1f6367301d977b14112c` (`origin/main` al
+> abrir este ciclo), rama `release/v0.101.29`.
+> Versión del workspace: `0.101.29`. Última release publicada: `v0.101.28`
+> (2026-10-22, 8 assets); el corte `v0.101.29` está en curso.
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
-## Release: la última publicada es la v0.101.28
+## Release: la última publicada es la v0.101.28, y v0.101.29 está en corte
 
 | Tag | Estado | Por qué |
 |---|---|---|
@@ -22,6 +22,7 @@
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
 | `v0.101.27` | publicada (2026-10-22, 8 assets) | lleva los tres defectos que los gates anteriores encontraron |
 | `v0.101.28` | **publicada** (2026-10-22, 8 assets) | lleva el orden del grafo filtrado y la lane de publicación reparada |
+| `v0.101.29` | en corte | el corte que lleva las tres unidades nuevas del bloque B1 |
 
 Un tag que no llegó a publicarse no se mueve. `v0.101.27` sí se publicó, tras
 pasar su gate de candidato sobre el clon limpio —**6507 pruebas, 0 en rojo**—
@@ -29,10 +30,11 @@ y la lane de publicación, que tuvo que arreglar tres checks que no podían
 pasar antes de llegar a publicar. Lo que se puede instalar es, por fin, el
 corte que lleva el filtro de recorrido arreglado.
 
-**`v0.101.28` es la vigente**, y no movió `v0.101.27`: un tag publicado no se
-mueve. Lleva lo que la anterior dejó fuera: el grafo filtrado plegado en
-orden de ruta, y una lane de publicación que pudo ejecutarse sin tropezar con
-sus tres comprobaciones.
+**`v0.101.29` es el corte en curso**, y no moverá `v0.101.28`: un tag publicado
+no se mueve. Lleva las tres unidades nuevas del bloque B1: el instalador que
+ya no termina el proceso cuando la descarga se rompe, la señal de material
+Rust que mira donde mira el grafo, y el grafo vacío que ya no se presenta
+como un análisis completo.
 
 ## La regla que este ciclo destapó
 

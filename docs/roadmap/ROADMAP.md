@@ -484,9 +484,9 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   la autoridad de una herramienta ya no se deriva del catálogo del proyecto
 >   analizado, y el gate comprueba el volumen antes de compilar.
 >
->   `C14` se cerró el 2026-10-22 publicando `v0.101.27` —gate de candidato
->   sobre el clon limpio y lane de publicación hasta el final—; `v0.101.28`
->   publica el orden del grafo filtrado y las tres comprobaciones de la lane.
+>   `C14` cerró con `v0.101.27`; `v0.101.28` publicó el orden del grafo y
+>   la lane reparada; `v0.101.29` publica las tres unidades nuevas de B1:
+>   el instalador que no termina el proceso, y el grafo vacío que no es completo.
 >
 >   El **corte de release** se rige por `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag anotado. Una PR fusionada no es una release.

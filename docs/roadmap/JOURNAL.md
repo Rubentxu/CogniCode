@@ -23401,3 +23401,47 @@ seguidos son tres veces la espera para el mismo veredicto. La disciplina que
 se conserva es la que importa —un RED medido por arreglo, un recibo por
 unidad y un gate verde antes de fusionar—; lo que se agrupa es el gasto, no
 el criterio.
+
+## 2026-10-22 — El corte v0.101.29: las tres unidades de B1, llevadas al artefacto
+
+**Qué es este corte.** Las tres unidades nuevas del bloque B1 —el instalador
+que ya no termina el proceso, la señal que mira donde mira el grafo, y el
+grafo vacío que no se presenta como un análisis completo— están fusionadas
+en `main` (`ccf56f65`, por squash de la PR #429). Este corte las lleva al
+artefacto que un consumidor instala.
+
+**Por qué hace falta un corte.** Una corrección que vive en el repositorio y
+no en el binario publicado es una corrección que nadie tiene. Las tres
+unidades se midieron en rojo y se arreglaron; mientras no viajen en una
+release, el producto que se instala sigue siendo el que afirma un
+análisis completo de un directorio vacío.
+
+**Lo que se ejecutó, y lo que no.**
+
+- `bash scripts/test-fast.sh` sobre el árbol del núcleo: 2387 pruebas, 0 en
+  rojo, 2 ignoradas; y en verde, uno a uno, el filtro `build_graph` y los
+  cuatro tests que fijan el contrato de la reconstrucción.
+- `bash scripts/test-full.sh`: **rc=0** sobre el árbol del código (fmt,
+  clippy, suite del workspace, doc-tests, contratos y baseline).
+- `merge-gate`: **success**, publicado para `ba1eab3c`; la PR #429 quedó
+  `MERGEABLE`/`CLEAN` y se fusionó.
+- Contratos de la agenda tras reescribir su párrafo de estado: atribución de
+  autoridad y coherencia de unidades abiertas, los dos en verde.
+- **No ejecutado todavía**: el gate de candidato sobre el clon limpio del tag
+  y la lane de publicación. Se ejecutan sobre este mismo commit, y su
+  veredicto va en su propio recibo.
+
+**El golden.** El envelope de assurance se regenera sobre el árbol con la
+versión nueva —990.842 bytes frente a los 941.691 del pin anterior— porque
+su pin declara los bytes que el productor promete a su consumidor y esos
+bytes llevan la versión. Decodificados los dos envelopes, la forma es la
+misma: 1024 entidades, 1024 hechos, 1024 anclas y 4 gaps, con las
+colecciones truncadas en la cota del consumidor. Lo que cambia es la versión
+del producer y la composición del árbol versionado, que crece con las tres
+unidades. El pin anterior queda anotado junto al nuevo para que la deriva se
+pueda leer.
+
+**Lo que este corte no dice.** El gate de candidato puede encontrar algo, y
+entonces este corte no se publica: un tag publicado no se mueve, y un tag
+que no llegó a publicarse no se arrastra hacia delante.
+

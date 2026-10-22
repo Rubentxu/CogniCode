@@ -1,8 +1,8 @@
 {
   "schema_version": "cognicode.languages/v1",
   "product": "cognicode",
-  "version": "0.101.28",
-  "source_commit": "d52ad6b2180aa315c8efbb1b15cac5a8367e64eb",
+  "version": "0.101.29",
+  "source_commit": "ccf56f6508b8d7a905be1f6367301d977b14112c",
   "languages": [
     {
       "id": "bash",

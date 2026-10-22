@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.28`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.29`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.28`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.29`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -437,30 +437,30 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.28` — cut from this tree as `v0.101.28`.
+- **Current release:** `v0.101.29` — cut from this tree as `v0.101.29`.
   The release published from that tag is the one an unpinned `install.sh`
   serves. The previous published release is
-  [`v0.101.27`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.27);
+  [`v0.101.28`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.28);
   `v0.101.24`, `v0.101.25` and `v0.101.26` carry tags but never reached
   publication, and a tag that was never published does not move.
-  v0.101.28 carries the two defects that the gates of the last two cuts
-  found, both of them in the machinery that decides what this release
-  contains. The first is in the analysis itself: the project graph built
-  from a filtered walk folded its results in the order the filesystem
-  happened to return the directories, so the order in which the MCP
-  answered "where is this symbol" depended on the disk rather than on the
-  tree —the whole-project graph already sorted, and the filtered one did
-  not, so the same question had two answers depending on how the caller
-  asked it. The fold is now in path order, like its sibling. The second is
-  in the lane that publishes releases, and it had three faces: the lane
-  demanded a candidate directory that nothing writes any more, the lane
-  confirmed the uploaded asset set *before* uploading it, and the lane
-  asked GitHub for asset ids that its own upload had just replaced. Each
-  one was a gate failing on a correct tree, and each one was measured in
-  red before it was repaired —a gate that cannot fail on a broken tree is
-  a gate that cannot be trusted on a good one either.
-- **Binaries report:** `0.101.28` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.28`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.28).
+  v0.101.29 carries the three corrections that the audits of this release
+  found, and they share a shape: the product said one thing and did
+  another. The installer read the HTTP response with an `unwrap()`, so a
+  download that broke halfway through killed the process instead of
+  failing with a typed error; it now reads the body before touching disk
+  and recovers the transaction. The SDK decided whether a workspace held
+  Rust material by looking at the first level of the directory, while the
+  graph walks the whole tree, so the two signals disagreed about the same
+  project: a nested Rust project was announced as having no sources, and
+  an empty manifest was announced as complete. The signal now walks what
+  the graph walks. And the MCP server answered `complete` over a
+  directory with nothing to analyze —zero symbols, zero relationships,
+  one complete analysis— while the CLI and the SDK said there was no
+  material at all. All three now share one sentence, and the server
+  answers `unsupported` with the reason instead of claiming a complete
+  analysis over nothing.
+- **Binaries report:** `0.101.29` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.29`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.29).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
   `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` and
   `v0.101.26` exist and were never published. Each
