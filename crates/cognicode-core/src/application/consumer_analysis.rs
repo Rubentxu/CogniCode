@@ -201,20 +201,26 @@ impl<'a> ConsumerAnalysisFacade<'a> {
     }
 }
 
-/// Señal estructural barata: ¿hay algún `.rs` en el primer nivel del
-/// workspace (o un Cargo.toml que indique workspace Rust)? Sin
-/// recursión completa: la resolución de plan debe ser rápida incluso
-/// en workspaces enormes.
+/// Señal estructural: ¿hay material Rust en el workspace?
+///
+/// El grafo del proyecto recorre el árbol entero, así que la señal tiene que
+/// mirar donde el grafo mira. Un proyecto cuyas fuentes viven en un
+/// subdirectorio tiene material aunque en la raíz no haya nada, y un
+/// manifiesto sin fuentes no tiene ninguno: prometer un grafo que va a salir
+/// vacío es prometer un grafo que no existe.
+///
+/// El recorrido es el mismo que usa el grafo —los ficheros ocultos y los
+/// ignorados quedan fuera, los enlaces simbólicos no se siguen— y se detiene
+/// en la primera fuente que encuentra.
 fn workspace_has_rust_material(root: &Path) -> bool {
-    if root.join("Cargo.toml").exists() {
-        return true;
-    }
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return false;
-    };
-    entries
-        .filter_map(Result::ok)
-        .any(|e| e.path().extension().and_then(|s| s.to_str()) == Some("rs"))
+    crate::infrastructure::walk_policy::contained_ignore_walk(root)
+        .hidden(true)
+        .git_ignore(true)
+        .git_exclude(true)
+        .build()
+        .filter_map(|entry| entry.ok())
+        .filter(crate::infrastructure::walk_policy::ignore_is_real_file)
+        .any(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("rs"))
 }
 
 #[cfg(test)]
@@ -232,6 +238,74 @@ mod tests {
         let request = CapabilityRequest::for_graph(&basis);
         let plan = ConsumerAnalysisFacade::resolve(&request);
         assert!(matches!(plan, CapabilityPlan::Unsupported { .. }));
+    }
+
+    fn plan_for(root: &std::path::Path) -> CapabilityPlan {
+        let basis = AnalysisBasis::for_workspace(root.to_path_buf());
+        let request = CapabilityRequest::for_graph(&basis);
+        ConsumerAnalysisFacade::resolve(&request)
+    }
+
+    /// Un proyecto Rust con las fuentes en un subdirectorio tiene material:
+    /// el grafo lo va a leer igual, así que el plan no puede negarse a
+    /// ofrecer la capacidad.
+    #[test]
+    fn a_nested_rust_project_has_material() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        let backend = temp.path().join("backend");
+        std::fs::create_dir_all(backend.join("src")).expect("create the nested project");
+        std::fs::write(
+            backend.join("Cargo.toml"),
+            "[package]\nname = \"backend\"\n",
+        )
+        .expect("write the manifest");
+        std::fs::write(backend.join("src/main.rs"), "fn main() {}\n").expect("write the source");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            !matches!(plan, CapabilityPlan::Unsupported { .. }),
+            "un proyecto Rust anidado tiene material y el grafo lo lee: el plan no puede negarle la capacidad"
+        );
+    }
+
+    /// Un manifiesto sin fuentes no puede prometer un grafo: el grafo
+    /// saldría vacío, y un grafo vacío no es un grafo.
+    #[test]
+    fn a_manifest_without_sources_cannot_resolve_complete() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("Cargo.toml"), "").expect("write an empty manifest");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            !matches!(plan, CapabilityPlan::Complete { .. }),
+            "un manifiesto sin fuentes no puede resolver Complete: el grafo saldría vacío"
+        );
+    }
+
+    /// Un proyecto con fuentes Rust y sin manifiesto sí tiene material.
+    #[test]
+    fn rust_sources_without_a_manifest_have_material() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("main.rs"), "fn main() {}\n").expect("write the source");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            matches!(plan, CapabilityPlan::Complete { .. }),
+            "las fuentes Rust son material, tengan o no manifiesto"
+        );
+    }
+
+    /// Un workspace sin material Rust no puede servir el backend de grafo.
+    #[test]
+    fn a_workspace_without_rust_sources_is_unsupported() {
+        let temp = tempfile::TempDir::new().expect("temporary directory");
+        std::fs::write(temp.path().join("README.md"), "# nothing\n").expect("write a file");
+
+        let plan = plan_for(temp.path());
+        assert!(
+            matches!(plan, CapabilityPlan::Unsupported { .. }),
+            "sin material Rust el backend de grafo no se puede ofrecer"
+        );
     }
 }
 
