@@ -5,10 +5,10 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `f3ff3d52aacec8cb7716fc3db5aac9a192d709cd` (`origin/main`), rama
-> `fix/the-workspace-cannot-define-the-product`, `origin/main` = `f3ff3d52aacec8cb7716fc3db5aac9a192d709cd`.
+> **Snapshot**: 2026-10-22, sobre `46915ce564469779108a190b2401c0cd03731f00` (`origin/main`), rama
+> `fix/every-test-surface-has-a-lane`, `origin/main` = `46915ce564469779108a190b2401c0cd03731f00`.
 > Versión del workspace: `0.101.26`. Última release publicada: `v0.101.23`
-> (2026-10-18, 8 assets). `main` va **42** commits por delante de ese tag.
+> (2026-10-18, 8 assets). `main` va **47** commits por delante de ese tag.
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
@@ -22,9 +22,10 @@
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
 
 Un tag que no llegó a publicarse no se mueve. El siguiente corte publicable
-es **`v0.101.27`**, y necesita dos cosas antes de nada: el arreglo del filtro
-de recorrido (PR #413) y un gate de candidato que corra sobre un árbol cuyo
-nombre de directorio no esté en la lista de exclusión del recorrido.
+es **`v0.101.27`**, y ya tiene resuelta la primera de las dos condiciones: el
+filtro de recorrido que mataba el clon está arreglado y fusionado. Lo que
+queda es su gate de candidato, que tiene que correr sobre un `main` que lo
+incluya.
 
 ## La regla que este ciclo destapó
 
@@ -39,7 +40,13 @@ cuesta un ciclo entero:
 2. **Defecto real.** El filtro de recorrido excluía cualquier ruta que tuviera
    un directorio llamado `.cache` en cualquiera de sus componentes. El gate de
    candidato clona en `~/.cache/cognicode/gate/`, así que el clon se ciega a
-   sí mismo y el proyecto sale vacío. El arreglo va en la PR #413.
+   sí mismo y el proyecto sale vacío. **Arreglado y fusionado**: el filtro ya
+   no ciega al clon.
+3. **Carriles que se invalidan entre sí.** Dos gates de merge corriendo a la
+   vez sobre el mismo repositorio comparten el puntero de la última corrida, y
+   se invalidan mutuamente. El síntoma —«cookie file not created» con la
+   etapaunderlying en verde— no dice nada del código. Los gates pesados van
+   **en serie**, uno detrás de otro.
 
 Un gate que muere por cuota **no** dice nada del código que quiere probar. Se
 comprueba el motivo antes de tocar una línea.
@@ -48,17 +55,22 @@ comprueba el motivo antes de tocar una línea.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **C31** | la autoridad de una herramienta no la decide el catálogo del proyecto analizado | en esta rama |
-| **C5** | la línea base vacía no obliga a reejecutar la suite en el gate completo | `ROADMAP.md` §11 |
-| **C7**, **C21**, **C8** | superficie E2E con carril, configuración que no cita documentos que ya no existen, procedencia de las citas | `ROADMAP.md` §11 |
+| **C14** | publicar una release con las estabilizaciones posteriores a `v0.101.23` | `ROADMAP.md` §11 |
+| **C32** | el gate tiene que dar el mismo resultado en una máquina limpia | `ROADMAP.md` §11 |
 | **B3** (`C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
-**C6 está cerrado**: el lazo de feedback ejecutaba la biblioteca del crate y
-nunca el test de integración que se acababa de escribir. Ahora pide el binario
-que produce ese fichero —y sólo ese— sin convertir el modo rápido en la
-batería completa.
+**C6, C31, C5, C21, C8 y C7 están cerrados.** El lazo de feedback ejecutaba la
+biblioteca del crate y nunca el test de integración que se acababa de
+escribir: ahora pide el binario que produce ese fichero —y sólo ese— sin
+convertir el modo rápido en la batería completa. La autoridad de una
+herramienta dejó de derivarse del catálogo del proyecto analizado. La línea
+base vacía dejó de obligar a reejecutar la suite entera. La configuración
+ejecutable dejó de apuntar a documentos que no existen, el guard de
+procedencia pasó a gobernar el contrato del consumidor, y cada superficie de
+prueba tiene ahora un carril declarado o la razón escrita de por qué se
+queda sin él.
 
 ## La misión
 
@@ -67,12 +79,13 @@ evidencia —una ruta que existe— y un criterio de cierre observable. La cola
 está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques B1
 a B6), de mayor a menor prioridad.
 
-El primero que encadenaba era **C31**, y es el que esta rama cierra: la
-autoridad con la que una herramienta MCP se ejecutaba la leía del catálogo
-que había en el disco del proyecto analizado. Un proyecto que declaraba
-`write_file` como herramienta de solo lectura conseguía que el modo de solo
-lectura la aceptase. La autoridad de una herramienta es del producto, y el
-producto no es el proyecto que se analiza.
+El primero que encadenaba era **C31**, y está cerrado: la autoridad con la que
+una herramienta MCP se ejecutaba la leía del catálogo que había en el disco
+del proyecto analizado. Un proyecto que declaraba `write_file` como
+herramienta de solo lectura conseguía que el modo de solo lectura la
+aceptase. La autoridad de una herramienta es del producto, y el producto no
+es el proyecto que se analiza. Detrás de él vinieron **C5**, **C21**, **C8**
+y **C7**, también cerrados.
 
 **C25, C20, C24, C18, C28 y C29 están cerrados.** C17 salió en la PR #404.
 C2, C3 y C4 salieron en las PR #400, #401 y #402.
@@ -92,12 +105,9 @@ temporales van a `/tmp`, la cuota puede matar la batería entera.
 
 ## Bloqueos abiertos
 
-- **PR #413 sin verde**: el arreglo del filtro de recorrido está escrito y
-  medido en verde (2381 pruebas pasadas, 0 rojas), pero el gate que lo
-  evaluó murió por la cuota de `/tmp`, no por el código. Hay que repetirlo
-  con los temporales fuera del tmpfs.
-- **Publicación**: `main` lleva 40 commits sin publicar y las tres releases
-  con tag siguen sin existir para quien las quiera instalar.
+- **Publicación**: `main` lleva 47 commits sin publicar y las tres releases
+  con tag siguen sin existir para quien las quiera instalar. El corte
+  `v0.101.27` está preparado y esperando su gate de candidato.
 - **C8-R (CR-01)**: la firma *contractual* del operador sobre un clon limpio.
   La firma operativa está hecha; la contractual no. Las citas al dossier del
   programa cerrado (`docs/prf/`) son históricas por contrato y no se
