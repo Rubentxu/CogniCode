@@ -132,10 +132,10 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
         (
             "src/interface/catalog.rs",
             &[
-                "fn resolve_product_assets_root_from",
-                "fn load_tool_catalog_from",
+                "fn product_assets_root",
+                "fn load_tool_catalog()",
                 "fn catalog_candidate_paths",
-                "fn load_tool_catalog_active_from",
+                "fn load_tool_catalog_report()",
             ],
         ),
     ];
@@ -196,44 +196,36 @@ fn capabilities_resolution_does_not_read_cargo_manifest_dir_at_runtime() {
     }
 }
 
-/// The explicit anchor outranks everything the process can infer.
+/// The product's assets come from the installation, never from the workspace.
 ///
-/// An MCP client launches the server with CWD set to the *user's project* and
-/// passes the analysis workspace separately. When the two disagree — which is
-/// every real deployment — the configured workspace is the one that must win,
-/// because that is the only anchor the operator actually chose. This test
-/// pins that priority: the tempdir has the product data, the process CWD
-/// (inside the checkout) also has it, and the resolver must return the
-/// tempdir.
+/// The workspace is the tree the user asked us to analyse. It is data the
+/// product reads, and data must not be able to redefine the product: a
+/// workspace that ships a `product/` directory of its own would otherwise be
+/// able to say which tools the product offers and which of them change
+/// something — and the read-only posture would believe it.
+///
+/// The resolver therefore has exactly one anchor: the tree the running
+/// binary was installed into. The catalogue that comes with the binary is
+/// the other source, and no workspace can reach either one.
 #[test]
-fn explicit_anchor_outranks_the_inherited_working_directory() {
-    use cognicode_core::interface::catalog::resolve_product_assets_root_from;
+fn the_product_assets_come_from_the_installation_and_not_from_the_workspace() {
+    let exe = std::env::current_exe().expect("the running test binary");
 
-    let tmp = tempfile::tempdir().expect("create tempdir");
-    let product = tmp.path().join("product");
-    std::fs::create_dir_all(&product).expect("create product dir");
-    std::fs::write(
-        product.join("tools.json"),
-        r#"{"schema_version":"cognicode.tools/v1","tools":[]}"#,
-    )
-    .expect("write tools.json");
+    let Some(root) = cognicode_core::interface::catalog::product_assets_root() else {
+        // No installation tree carries product data, which is the normal state
+        // of a packaged install: the catalogue then comes from the copy
+        // compiled into the binary, and no workspace can influence that either.
+        return;
+    };
 
-    // Precondition: the process CWD does carry product data, so a resolver
-    // that ignored the anchor would return something *different* and fail.
-    // Without this assertion the test could pass for the wrong reason.
     assert!(
-        resolve_product_assets_root_from(None).is_some(),
-        "precondition: the test process CWD is inside the checkout and must \
-         resolve product data on its own, otherwise this test proves nothing \
-         about anchor priority"
-    );
-
-    let resolved = resolve_product_assets_root_from(Some(tmp.path()))
-        .expect("the explicit anchor carries product/tools.json");
-    assert_eq!(
-        resolved,
-        tmp.path(),
-        "the explicit anchor must outrank the inherited working directory"
+        exe.starts_with(&root),
+        "the product assets resolved to {}, which is not part of the \
+         installation the running binary belongs to ({}). The resolver must \
+         walk up from the executable, never from the workspace under \
+         analysis.",
+        root.display(),
+        exe.display()
     );
 }
 

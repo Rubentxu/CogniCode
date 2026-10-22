@@ -3032,8 +3032,8 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
 
 /// Resolve the root that carries `product/*.json` for the **running** binary.
 ///
-/// Thin wrapper over [`crate::interface::catalog::resolve_product_assets_root_from`],
-/// which owns the anchors and the reasoning behind them. The CLI and the MCP
+/// Thin wrapper over [`crate::interface::catalog::product_assets_root`],
+/// which owns the anchor and the reasoning behind it. The CLI and the MCP
 /// catalogue must resolve product assets the same way; the second copy of this
 /// logic is what let an installed server advertise an empty tool catalogue
 /// while the CLI worked perfectly against the same binary.
@@ -3053,7 +3053,7 @@ fn build_capabilities_doc(json_emission: bool) -> Value {
 /// absolute path there would only make the warning point at somewhere
 /// meaningless.
 fn resolve_product_assets_root() -> PathBuf {
-    crate::interface::catalog::resolve_product_assets_root_from(None)
+    crate::interface::catalog::product_assets_root()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")))
 }
 

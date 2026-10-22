@@ -22352,3 +22352,68 @@ un tag que existe no se mueve. La frontera de autoridad de las herramientas
 MCP —que un `product/tools.json` del proyecto analizado no pueda declarar una
 herramienta mutante como de lectura— sigue abierta y es la cabeza de la cola
 de la misión.
+
+## 2026-10-22 — El proyecto analizado no puede definir el producto (C31)
+
+**Qué es esta unidad.** C31 es el primer candidato de la cola: «la autoridad de
+una herramienta MCP no se deriva de un catálogo que controle el proyecto
+analizado». Lo que escondía era un agujero de seguridad con la forma más
+silenciosa posible: no da error, no sale un warning, y el servidor responde
+exactamente como si todo estuviera bien.
+
+**El hueco, medido.** El catálogo de herramientas —qué ofrece el producto y
+cuáles de ellas cambian algo— se localizaba subiendo desde el directorio al
+que el servidor apuntaba con `--cwd`. Ese directorio es el *espacio de
+trabajo*: el proyecto que el usuario abrió. Así que un proyecto que traía su
+propio `product/tools.json` podía declarar `write_file` como herramienta de
+solo lectura, y el modo de solo lectura la aceptaba.
+
+La consecuencia es que el árbol bajo análisis decidía la postura de seguridad
+del producto. El árbol es dato. El dato no puede bajar una postura.
+
+El RED se midió contra el binario real, con el protocolo real: un workspace
+con un `product/tools.json` copiado del producto y un único campo cambiado —la
+autoridad de `write_file` de `mutating` a `read`—, un servidor lanzado en modo
+solo lectura contra ese workspace, y la lista de herramientas que anuncia.
+Antes del arreglo, `write_file` estaba en la lista.
+
+**Lo que cambió.** El catálogo es ahora del producto: la copia compilada en el
+binario, o la que viaja junto al binario en su instalación. El resolutor tiene
+un solo ancla —el árbol de instalación al que pertenece el binario en
+ejecución— y ya no consulta el workspace ni el directorio de trabajo del
+proceso. Con eso desaparece de golpe la duplicación que hasta aquí obligaba a
+mantener sincronizadas la vista del CLI y la del MCP: los dos leen lo mismo,
+porque los dos leen lo mismo por la única razón que queda.
+
+De paso se va la maquinaria que sólo existía para sostener el error: el
+anclaje por llamada, la raíz global de producto publicada al construir el
+servidor, y la variante con prefijo `from` de los cargadores. El mapa de
+autoridades deja de ser un `OnceLock` que había que alimentar con cuidado
+—ya no hay de dónde malalimentarlo— y sigue siendo un `OnceLock` porque
+calcularlo cuesta.
+
+**Lo que este cierre no cambia.** El modo de solo lectura sigue ocultando las
+herramientas que cambian algo, el catálogo sigue anunciando las mismas
+herramientas que antes, y el documento de capacidades de la CLI sigue
+coincidiendo con lo que anuncia el MCP: eso lo pinan dos contratos que
+siguen verdes.
+
+**Por qué el catálogo del workspace no era una comodidad.** Se buscaba en
+disco para que un checkout se pudiera inspeccionar y editar sin recompilar.
+Pero `include_str!` hace que cargo recompile el crate cuando el fichero
+cambia: la copia dentro del binario está siempre al día. La comodidad era
+una ecuación que ya no cuadraba.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo del MCP
+(`crates/cognicode-mcp/tests/workspace_catalogue_cannot_define_the_product.rs`),
+con sus dos casos —el workspace no puede degradar una herramienta mutante, y
+la herramienta sigue ahí cuando la postura la permite—; el contrato de
+resolución de assets del producto
+(`crates/cognicode-core/tests/a014_product_asset_resolution.rs`); el contrato
+de paridad del catálogo (`b2_w2_catalog_parity`); el de consistencia entre
+catálogo y runtime (`a016_tools_runtime_consistency`); la auditoría de
+autoridad del MCP (`a010_tool_authority_audit`); el contrato del ancla del
+catálogo (`mcp_catalog_anchor`); y el documento de capacidades de la CLI
+(`a014_capabilities_json`), con sus diecisiete casos.

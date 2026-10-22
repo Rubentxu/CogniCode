@@ -135,7 +135,6 @@ impl CogniCodeHandler {
         store: Arc<dyn crate::domain::traits::GraphStore>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        crate::interface::catalog::configure_product_assets_root(project_root.clone());
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
@@ -157,7 +156,6 @@ impl CogniCodeHandler {
         iac_repo: Option<Arc<dyn crate::domain::traits::iac_repository::IacRepository>>,
     ) -> Self {
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        crate::interface::catalog::configure_product_assets_root(project_root.clone());
         let ctx = HandlerContext::builder()
             .with_working_dir(project_root)
             .with_graph_store_arc(store)
@@ -188,15 +186,12 @@ impl CogniCodeHandler {
         let canonical_root =
             std::fs::canonicalize(&project_root).unwrap_or_else(|_| project_root.clone());
 
-        // Publish the configured workspace before anything reads the
-        // catalogue. The authority and dependency maps are `OnceLock`-cached
-        // for the process lifetime, so they cannot consult a per-call anchor:
-        // whichever view they prime from becomes the server's answer for
-        // good. Priming them from the inherited process CWD is what made
-        // read-only mode advertise zero tools when the server was launched
-        // from outside the repository — the catalogue was empty, so every
-        // tool looked undeclared, and the fail-closed rule hid all of them.
-        crate::interface::catalog::configure_product_assets_root(canonical_root.clone());
+        // The workspace is where the analysis happens, not where the product
+        // lives. The catalogue that says which tools exist, and which of them
+        // change something, is the product's own — the copy inside this binary
+        // or the one next to it in its installation. Reading it from the
+        // workspace would let the tree under analysis declare a mutating tool
+        // read-only, and the read-only posture would believe it.
 
         // Create validator and FileOperationsService for shared use across handlers
         let validator = Arc::new(
@@ -508,24 +503,6 @@ pub fn lookup_tool_deps(tool_name: &str) -> Option<String> {
 /// Public so the A-012 contract suite can compare what the catalog advertises
 /// against what the derive produces. Read-only: it rebuilds the vector.
 pub fn build_all_tools() -> Vec<Tool> {
-    build_all_tools_from(None)
-}
-
-/// [`build_all_tools`], anchored on an explicitly configured workspace root.
-///
-/// `anchor` is the `--cwd` the operator (or the MCP client config) supplied.
-/// The server already treats it as the analysis workspace, so the catalogue
-/// must be read from the same place: an MCP client launches the process with
-/// CWD set to the *user's project*, which is not the checkout, and a catalogue
-/// resolved from the inherited CWD is empty. That is the difference between a
-/// server advertising 20 tools and one advertising none while looking perfectly
-/// healthy — exit 0, well-formed JSON-RPC, no diagnostic.
-///
-/// Same argument for `tool_authority_map` and `tool_graph_deps_map`: both
-/// are `OnceLock`-cached for the process lifetime, so they must be primed from
-/// the same anchored view or a server that starts in one workspace and is asked
-/// about another keeps answering with the first workspace's catalogue.
-pub fn build_all_tools_from(anchor: Option<&std::path::Path>) -> Vec<Tool> {
     // B2.W2: the catalog is the single source of truth. The previous
     // implementation was a 970-line inline `vec![Tool::new(...)...]`
     // that listed every tool in code; any drift between this list and
@@ -540,7 +517,7 @@ pub fn build_all_tools_from(anchor: Option<&std::path::Path>) -> Vec<Tool> {
     // feature-gated tool that slipped past the catalog filter would
     // still fail to dispatch — defence in depth, not a single point
     // of failure.
-    build_report_from(anchor)
+    build_report()
         .tools
         .into_iter()
         .map(descriptor_to_tool)
@@ -570,8 +547,8 @@ pub fn build_all_tools_from(anchor: Option<&std::path::Path>) -> Vec<Tool> {
 /// to JSON-RPC; an empty `tools/list` with no diagnostic is how this shipped
 /// broken in the first place, and nothing downstream can distinguish "the
 /// product has no tools" from "this build lost its catalogue".
-fn build_report_from(anchor: Option<&std::path::Path>) -> crate::interface::catalog::CatalogReport {
-    let report = crate::interface::catalog::load_tool_catalog_report(anchor);
+fn build_report() -> crate::interface::catalog::CatalogReport {
+    let report = crate::interface::catalog::load_tool_catalog_report();
     if let Some(message) = report.diagnostic() {
         eprintln!("cognicode-mcp: warning: {message}");
     }
@@ -689,7 +666,7 @@ impl ServerHandler for CogniCodeHandler {
             // from there is empty — a healthy-looking server advertising no
             // tools at all. Built once and shared with the cursor snapshot
             // below, so the two cannot disagree.
-            let visible_tools: Vec<Tool> = build_all_tools_from(Some(self.ctx.working_dir()))
+            let visible_tools: Vec<Tool> = build_all_tools()
                 .into_iter()
                 .filter(|t| !self.ctx.is_read_only() || !tool_is_mutating(&t.name))
                 .collect();
