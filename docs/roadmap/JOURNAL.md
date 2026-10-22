@@ -22201,3 +22201,157 @@ construir— cuando no están. Es la clase que `AGENTS.md` ya describe: un
 binario release ausente es un problema de infraestructura local, no una
 regresión, y se resuelve construyendo el release antes de relanzar el gate.
 
+
+## 2026-10-22 — El lazo de feedback ejecuta el test que se toca (C6)
+
+**Qué es esta unidad.** C6 es el siguiente candidato de B2 después del corte
+de release: «el modo fast ejecuta el target del test tocado». Lo que describe
+es corto y lo que escondía era un falso verde.
+
+**El hueco, medido.** `run_suite()` mapeaba las cinco suites a
+`cargo test -p <crate> --lib`. La consecuencia no era que faltara cobertura:
+era que la cobertura se declaraba y no se ejercía. Tocar
+`crates/<crate>/tests/<fichero>.rs` seleccionaba la suite correcta —el
+selector es preciso— y el runner ejecutaba la biblioteca del crate, que no
+contiene ese fichero. El developer acababa de escribir un test contractual, el
+lazo de feedback daba verde, y el test no se había ejecutado ni una vez.
+
+La cifra que la auditoría del 2026-10-20 dejó escrita era la de siempre: *el
+modo fast ejecuta 0 de 1.316 tests de integración*. Esa línea no se
+reescribe —un informe archivado cuenta lo que midió el día que lo midió—,
+pero lo que sí dice es que el hueco era real y estaba medido.
+
+**Por qué no se corren los 99 binarios de integración.** El propio selector
+dejaba la decisión escrita: *cerrar esa brecha es una decisión propia —correr
+65 binarios de test convierte `fast` en minutos—*. Y es cierto: `fast` existe
+para acortar el lazo de feedback, y convertirlo en la batería completa sería
+convertirlo en otra cosa.
+
+La vía que no cuesta minutos es más estrecha y más honesta. Un target de
+integración es un binario, y el nombre de ese binario es el del fichero que lo
+produce. Lo que se toca es un fichero, y por lo tanto un target. Se corre ese
+y solo ese: el que puede hablar del cambio, que es justamente el que el
+developer acaba de escribir. La biblioteca del crate se sigue corriendo
+entera; el target tocado se **añade**, no sustituye.
+
+**El RED, medido antes de tocar nada.** El contrato ejecuta el wrapper de
+verdad en un árbol de laboratorio —un repositorio git con lo mínimo y un
+`cargo` falso que anota los argumentos que recibe— y mira la lista. Con el
+código de antes, esa lista era:
+
+```
+test -p cognicode-core --lib
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+El target tocado no aparecía. Con el arreglo:
+
+```
+test -p cognicode-core --lib
+test -p cognicode-core --test prf_demo
+clippy --workspace --all-targets --quiet -- -D warnings
+```
+
+**Dos límites que el contrato fija porque son fáciles de no ver.**
+
+Un módulo compartido bajo `tests/` no es un target. `tests/common/mod.rs` no
+produce binario, porque cargo crea un target por cada fichero `.rs`
+*directamente* bajo `tests/`. Pedirle un binario llamado `common` hace que
+cargo falle, y ese fallo no habla del cambio: parece un fallo del repositorio
+y es una regla de nombres.
+
+Y un fichero borrado no es un target tampoco. Un test borrado sigue en el
+diff —`git diff --name-only` lo nombra aunque ya no esté en disco— y pedirlo
+haría que cargo fallara con *no test target named ...*. Se pide el binario
+sólo de lo que está en disco.
+
+**La derivación se contrasta con la verdad de cargo.** Derivar el nombre del
+target a mano es el tipo de regla que se desincroniza sin que nadie lo note:
+si un crate declarase un `[[test]]` con otro nombre, el lazo de feedback
+pediría un binario que no existe. El contrato contrasta la derivación
+entera —los 99 targets de `cognicode-core`, uno a uno— contra lo que
+`cargo metadata` declara, que es el mismo manifiesto que cargo usa para saber
+que un target existe. Hoy coinciden exactamente: ni uno falta, ni uno sobra.
+
+**Lo que este cierre no toca.** El gate completo —`bash scripts/test-full.sh`—
+sigue siendo el gate, y sigue corriendo los 1.316 tests de integración. `fast`
+es el lazo de feedback, no la evidencia: con un `--filter` encima, el propio
+script lo dice y desactiva la línea base, porque un subconjunto filtrado
+nunca reproduce el conjunto completo de fallos.
+
+### Gates
+
+Verde sobre este árbol: el contrato del wrapper de tests
+(`scripts/ci/test_fast_full_wrappers.py`), con sus cuatro casos —el target
+tocado se ejecuta, un módulo compartido no se pide, un fichero borrado no se
+pide, y la derivación entera coincide con la de cargo—; el contrato del
+selector (`scripts/ci/test_select_suites.py`); `bash -n` limpio sobre los dos
+scripts tocados; y shellcheck con menos avisos que antes, porque las cinco
+ramas de suite se funden en una sola.
+
+## 2026-10-22 — El corte de v0.101.27: el proyecto no es el nombre de su carpeta
+
+**Qué es esta unidad.** El corte de `v0.101.26` tenía el gate de candidato en
+rojo: 16 tests de 3.159, todos de la familia «el grafo tiene menos de lo que
+debería». Este corte lleva el arreglo que explica esos 16, y de paso el que
+hace que el gate se explique cuando vuelve a estar rojo.
+
+**El defecto, medido.** El filtro que decide qué ficheros se saltan al
+construir el grafo comparaba los componentes de la ruta **absoluta**. Un
+proyecto que estuviera bajo un directorio llamado `build/`, `dist/`,
+`target/`, `vendor/`, `env/` o `.cache/` se podaba entero: el inventario
+salia vacio, y el analisis respondia «este proyecto no tiene ficheros» para
+un proyecto que tiene miles.
+
+No era un caso limite. `~/build/` y `~/dist/` son nombres de carpeta de lo mas
+comun, y el gate de release corre su clon limpio bajo `~/.cache/`. Ahi, con el
+mismo commit que pasaba en cualquier otra parte, fallaron 16 tests. La
+asercion que lo decia era una linea: `symbol count differs: cli=10 mcp=0` — la
+CLI, que no usa ese filtro, veia los diez simbolos del corpus; el MCP, que si
+lo usa, no veia ninguno.
+
+**Como se cerro la diagnosi.** La primera reproduccion fue en `/tmp`, y ahi
+pasaba todo en verde. El dato que abrio la puerta fue el recuento de tests: el
+binario del core tiene 2.380 tests aislado y 3.162 en el build del workspace,
+y el preflight contaba 3.162. La diferencia no era de tests, era de **config**:
+el workspace activa features que el binario aislado no lleva. Y la diferencia
+que quedaba era de **entorno**: el clon del gate vive bajo `~/.cache/`, y el
+filtro salta `.cache`.
+
+La sonda que lo dijo fue una linea: el inventario del corpus, con el filtro,
+encontraba **0** ficheros, y el mismo recorrido sin filtro encontraba 12, 8 y
+55. El filtro no estaba decidiendo que se salta lo que hay *dentro* del arbol;
+estaba decidiendo que donde alguien guarda el proyecto cambia lo que el
+proyecto contiene.
+
+**El arreglo.** El filtro juzga ahora la ruta **relativa a la raiz analizada**.
+`src/main.rs` entra sea cual sea el nombre de la raiz, y `node_modules/x.js` se
+salta por el componente que tiene dentro del arbol. Los seis sitios que lo
+aplicaban pasan la raiz del proyecto que estan recorriendo.
+
+**Verificacion del arreglo, con el rojo medido antes.**
+
+- Un proyecto bajo `build/` inventario **0** ficheros donde tiene 1: la
+  asercion lo decia en una linea. Con el arreglo, uno; y `node_modules/` se
+  sigue saltando.
+- End-to-end en el clon que fallaba: tres vueltas seguidas de la suite del
+  core, todas verdes, donde antes fallaron ocho de doce.
+
+**El gate tambien se explica.** La salida del test vivia en el directorio de
+trabajo, que el trap borra al salir, y de lo que sobrevivia al log eran las
+ultimas 30 lineas: de 16 fallos se veía una asercion, y no era la que explicaba
+el resto. Ahora la salida completa sobrevive, y al log llegan las aserciones
+que fallaron. Un gate que falla sin decir por que es un gate que hay que
+volver a ejecutar para entender.
+
+### Gates
+
+Verde sobre este arbol: el contrato de la version y la release
+(`scripts/ci/test_release_truth_convergence.py`), que declara que el README,
+el CHANGELOG, SECURITY.md, los manifiestos de `product/` y la version del
+workspace son la misma version; los dos contratos nuevos del modo `fast`
+(`scripts/ci/test_fast_full_wrappers.py`); y el rojo medido y el verde medido
+del filtro de walk, con el end-to-end sobre el clon que fallaba.
+
+El gate de candidato de este corte se corre sobre el tag, en un clon limpio, y
+su veredicto va en la entrada siguiente.

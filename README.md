@@ -38,7 +38,7 @@ languages out of the box — 18 with full acceptance evidence, 12 experimental.
 curl -fsSL https://raw.githubusercontent.com/Rubentxu/CogniCode/main/install.sh | sh
 ```
 
-Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.26`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
+Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified against the official GitHub release). Pin a version with `COGNICODE_VERSION=v0.101.27`. Then run `cogh init && cogh install mcp-server --profile reviewer --ide opencode` to install the CLI, MCP daemon and portable skills. See [Distribution and installation](docs/distribution/INSTALL.md) for upgrade, rollback, uninstall, platform support and recovery.
 
 ### mise
 
@@ -46,7 +46,7 @@ Installs only the `cogh` executable to `~/.cognicode/bin` (checksum-verified aga
 mise install "github:Rubentxu/CogniCode[matching=cogh-]"
 ```
 
-Pin a version with `@v0.101.26`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
+Pin a version with `@v0.101.27`. Both channels install the same published release asset — see `docs/e87-mise-identity-receipt.md` for the digest identity proof. Ownership contract: when installed via mise, mise owns the Layer-0 `cogh` binary (upgrade with `mise upgrade`); `cogh` itself owns only the Layer-1 runtime (`~/.cognicode`).
 
 ### Published, pre-built binary (standalone fallback)
 
@@ -437,30 +437,35 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.101.26` — cut from this tree as `v0.101.26`.
+- **Current release:** `v0.101.27` — cut from this tree as `v0.101.27`.
   The last release with published assets is
-  [`v0.101.26`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.26),
-  which is what an unpinned `install.sh` serves today. v0.101.26 ships the
-  honest graph block (pending references published instead of discarded,
-  infrastructure queries answered with the edge that actually joins their
-  ends, MCP failures delivered as failures, and a cancellation that belongs
-  to its own request instead of poisoning the session), the CLI/MCP parity
-  fixes that make both surfaces answer from the same graph, the harness work
-  that makes the gates mean what they claim —`--filter` for the suite
-  selector, a `full` that already contains the `merge-gate`, a publication
-  lane that is idempotent and verifies the bytes it publishes— and the
-  x86_64-only TIER1 scoping that unblocks the release lane, restoring the
-  full asset set. It also carries the fix the previous cut's candidate gate
-  found: the symbol index no longer answers by the order the filesystem
-  returned a directory in, so an ambiguous name resolves to the same
-  definition on every disk. And it carries the fix the one before that found:
+  [`v0.101.27`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.27),
+  which is what an unpinned `install.sh` serves today. v0.101.27 ships the
+  fix the previous cut's candidate gate found: the filter that decides
+  which files the analysis skips now judges the tree relative to the
+  project being analysed, so a project that happens to live under a
+  directory named `build/`, `dist/`, `target/` or `~/.cache/` is analysed
+  as the project it is instead of as a project with no files in it. It
+  carries forward the honest graph block (pending references published
+  instead of discarded, infrastructure queries answered with the edge that
+  actually joins their ends, MCP failures delivered as failures, and a
+  cancellation that belongs to its own request instead of poisoning the
+  session), the CLI/MCP parity fixes that make both surfaces answer from the
+  same graph, the harness work that makes the gates mean what they claim
+  —`--filter` for the suite selector, a `full` that already contains the
+  `merge-gate`, a publication lane that is idempotent and verifies the bytes
+  it publishes— and the x86_64-only TIER1 scoping that unblocks the release
+  lane, restoring the full asset set. It also carries the fix the cut
+  before that found: the symbol index no longer answers by the order the
+  filesystem returned a directory in, so an ambiguous name resolves to the
+  same definition on every disk. And the fix the one before that found:
   the gate now gives the same result on a clean machine, because its build
   volume is checked and named before it starts instead of dying in the
   linker halfway through a temporary directory that was never going to fit.
-- **Binaries report:** `0.101.26` (`cogh`, `cognicode`, `cognicode-mcp`).
-- **Tag:** [`origin/v0.101.26`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.26).
+- **Binaries report:** `0.101.27` (`cogh`, `cognicode`, `cognicode-mcp`).
+- **Tag:** [`origin/v0.101.27`](https://github.com/Rubentxu/CogniCode/releases/tag/v0.101.27).
 - **Tags without a release:** `v0.99.2`, `v0.100.0`, `v0.101.6`, `v0.101.7`,
-  `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24` and `v0.101.25` exist and were never published. Each
+  `v0.101.8`, `v0.101.18`, `v0.101.19`, `v0.101.24`, `v0.101.25` and `v0.101.26` exist and were never published. Each
   has a changelog entry
   explaining why. `v0.101.6` was cut before the staging-root fix and the Release
   Truth gate repair landed; `v0.101.7` was cut before the candidate pipeline

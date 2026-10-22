@@ -10,6 +10,41 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.27] — 2026-10-22
+
+**Un proyecto no es lo que se llama la carpeta donde está.** El filtro que
+decide qué ficheros se saltan al construir el grafo comparaba los componentes
+de la ruta **absoluta**, así que un proyecto que estuviera bajo un directorio
+llamado `build/`, `dist/`, `target/`, `vendor/`, `env/` o `.cache/` se podaba
+entero: el inventario salía vacío y el análisis respondía «este proyecto no
+tiene ficheros» para un proyecto que tiene miles.
+
+No era una rareza ni un caso límite: `~/build/` y `~/dist/` son nombres de
+carpeta de lo más común, y el gate de release corre su clon limpio bajo
+`~/.cache/`. Ahí, con el mismo commit que pasaba en cualquier otra parte,
+16 tests fallaban. La aserción que lo decía era una línea: `symbol count
+differs: cli=10 mcp=0` — la CLI, que no usa ese filtro, veía los diez símbolos
+del corpus; el MCP, que sí lo usa, no veía ninguno. El veredicto dependía de
+dónde estuviera el checkout.
+
+El filtro existe para saltarse lo que está **dentro** del árbol —
+`node_modules/`, `target/`, `dist/`, `.git/` — y no para decidir que donde
+alguien guarda el proyecto cambia lo que el proyecto contiene. Ahora juzga la
+ruta **relativa a la raíz analizada**: `src/main.rs` entra sea cual sea el
+nombre de la raíz, y `node_modules/x.js` se salta por el componente que tiene
+dentro del árbol.
+
+Este corte también arregla el gate para que se explique cuando falla: la
+salida del test sobrevivía al directorio de trabajo que la guardaba y se
+perdía con él, así que de 16 fallos sólo se veía una aserción, y no era la
+que explicaba el resto. Un gate que falla sin decir por qué es un gate que hay
+que volver a ejecutar para entender.
+
+Verificación: un proyecto bajo `build/` inventory un fichero donde antes
+inventory cero (rojo medido antes del arreglo); tres vueltas seguidas de la
+suite del core en el clon que fallaba ocho de doce, todas verdes; y el gate
+de candidato en verde sobre el tag.
+
 ## [v0.101.26] — 2026-10-21
 
 **Un gate que da el mismo resultado en una máquina limpia vale más que un gate
