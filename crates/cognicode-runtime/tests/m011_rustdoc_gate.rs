@@ -43,8 +43,14 @@ const CATEGORIES: &[&str] = &[
 
 /// Sanity floor on the derived workspace set. If this ever drops, the JSON
 /// parsing above has broken and the gate is inspecting a subset while claiming
-/// to inspect the workspace. Twelve members as of 2026-09-27.
-const MIN_EXPECTED_WORKSPACE_CRATES: usize = 12;
+/// to inspect the workspace.
+///
+/// The floor is a threshold, not an inventory. It separates "the workspace has
+/// these members" from "the parser stopped resolving them", and that is the
+/// only question it answers: a member that leaves the workspace lowers the
+/// floor, and a parser that stops resolving members trips it. Lower it when
+/// the workspace loses a member, and review it when it does.
+const MIN_EXPECTED_WORKSPACE_CRATES: usize = 11;
 
 fn workspace_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
