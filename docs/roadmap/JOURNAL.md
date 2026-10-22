@@ -22935,3 +22935,71 @@ distinguir una sonda de otra sin ejecutarla.
 - El módulo de podman pasa de 60–120 s a 0,42 s (13/13).
 - Mutación: sin el límite, el test nuevo falla —tarda los 30 s del comando que no
   responde— y con el límite pasa.
+
+## 2026-10-22 — Un grafo vacío no es un análisis completo (B1.2)
+
+**Qué es esta unidad.** Corregir los fallos reales de resultado: que un
+análisis incompleto no se presente como un éxito, y que las superficies
+respondan lo mismo sobre el mismo proyecto.
+
+**Los dos candidatos que traía la lista, medidos.** La lista apuntaba a dos
+sitios concretos:
+
+1. `call_graph_projection.rs` fija `unresolved_edges: 0` en `from_call_graph`.
+   Medido: es un invariante documentado, y es honesto. `from_call_graph`
+   proyecta un grafo que ya viene resuelto —el camino legacy cuenta las
+   referencias no resueltas en su propio contador y las viaja en el
+   informe—, y el camino nuevo, `from_facts`, cuenta y descarta cada callee
+   no resuelta. No hay defecto ahí: hay dos caminos, cada uno con su
+   contador, y el que proyecta ya no tiene nada que contar.
+2. `store.add_dependency(...).ok()` traga el error de inserción de aristas.
+   Medido: `PetGraphStore::add_dependency` **no puede fallar** —devuelve
+   `Ok(())` siempre—, así que el `.ok()` es un riesgo latente, no un
+   defecto alcanzable. Y el tragar no es un accident del servicio: el
+   servicio **construye el adaptador** (`let mut store = PetGraphStore::new()`),
+   que es exactamente lo que la candidate `C9` ya tiene como sujeto. Son el
+   mismo defecto visto desde dos ángulos, y el ángulo que lo resuelve es el
+   que invierte la dependencia.
+
+**El defecto real, medido con el binario publicado.** La `v0.101.27` instalada
+en un HOME limpio responde de tres maneras distintas sobre el mismo
+directorio vacío:
+
+```
+$ cognicode analyze <dir vacío>
+  Score: 100.0/100            # y sale con 0
+
+$ cognicode graph full <dir vacío>
+Error: workspace ... no produjo símbolos (sin material Rust analizable)
+
+$ cognicode-mcp  →  tools/call build_graph
+{"success":true,"status":"complete","symbols_found":0,"relationships_found":0, ...}
+```
+
+Tres superficies, tres respuestas, y la del servidor MCP —la que lee un
+agente— es la que se equivoca: un grafo vacío umasí se anuncia como
+análisis completo. La regla que lo evita ya estaba escrita en el contrato
+(`SPEC-CU-001.5`: *nunca `Complete(empty_graph)`*) y la aplicaban el SDK y el
+CLI; el servidor MCP no la consultaba. Y al revés: el MCP **sí** era
+honesto en `check_architecture` —un grafo vacío no recibe arquitectura—,
+mientras que la sesión de la CLI puntuaba ese mismo grafo vacío con un 100.
+
+**El arreglo.** Una sola frase, escrita una vez, en la capa de aplicación
+(`application::services::analyze::no_material_reason`), y las tres
+superficies la usan:
+
+- El servidor MCP deja de responder `complete` sobre un grafo vacío, y
+  responde con el motivo.
+- La sesión deja de publicar una puntuación sobre nada: `check_architecture`
+  falla con el mismo motivo cuando no hay material.
+- La CLI `analyze` dice el motivo y **no** publica puntuación. Su código de
+  salida no cambia: un directorio válido sin material es una operación
+  realizada, y el contrato de propagación de códigos de salida —que ya
+  existe y ya tiene su propio test— lo fija en 0. Lo que cambia es la
+  afirmación: antes había un 100/100 sobre un proyecto que nadie miró.
+
+**Lo que este arreglo no toca.** La arista que se inserta con `.ok()` sigue
+tragándose, porque el adaptador no puede fallar y porque arreglarlo de verdad
+—que el servicio no construya su adaptador— es la candidate `C9`, no esta
+unidad. `unresolved_edges: 0` se queda donde está, con su invariante
+documentada y su contador honesto en el camino que sí lo tiene.
