@@ -473,6 +473,17 @@ log "Stage 5/7: cargo test --workspace (sin --include-ignored)"
 TEST_OUTPUT_FILE="$WORK_DIR/test-output.txt"
 if ! cargo test --workspace --locked -- \
      --skip ignored >>"$TEST_OUTPUT_FILE" 2>&1; then
+  # La evidencia tiene que sobrevivir al directorio de trabajo: el trap lo
+  # borra al salir, y un gate que falla sin decir por que es un gate que
+  # hay que volver a ejecutar para entender. MEDIDO 2026-10-22: con 16
+  # fallos, las ultimas 30 lineas mostraban una sola asercion de las
+  # dieciseis, y la que se veia no era la que explicaba el resto.
+  KEEP_OUTPUT="/tmp/preflight-test-output.${TIMESTAMP}.txt"
+  cp "$TEST_OUTPUT_FILE" "$KEEP_OUTPUT" 2>/dev/null || true
+  log "  → salida completa del test: $KEEP_OUTPUT"
+  log "  → aserciones que fallaron:"
+  awk '/^---- .* stdout ----$/{show=1} /^failures:$/{show=0} show' \
+    "$TEST_OUTPUT_FILE" | head -120 | tee -a "$LOG_FILE"
   log "  → tail del test output:"
   tail -30 "$TEST_OUTPUT_FILE" | tee -a "$LOG_FILE"
   fail "cargo test falló"
