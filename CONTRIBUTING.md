@@ -103,6 +103,37 @@ That is contention, not a broken doctest. Do not chase it in the code:
 TMPDIR=/var/tmp/your-own-dir cargo test --workspace --no-fail-fast
 ```
 
+**The gate isolates its build in a volume that has room, and it tells you
+before it starts.** The debug build of this workspace occupies about 25G, so a
+gate that compiles it inside a small `/tmp` dies in the linker with
+`Disk quota exceeded` — a symptom that says nothing about the cause. The
+release candidate clone and the `merge-gate` isolation directory therefore
+live outside `/tmp` by default, under `${XDG_CACHE_HOME:-$HOME/.cache}/cognicode/gate`,
+and the rule lives in one place: `scripts/ci/build-volume.sh`. Both the
+preflight and the `merge-gate` publisher ask it before they start, so a volume
+without room is reported in a second, naming the volume, the free bytes and
+what is needed:
+
+```
+FAIL: el volumen de trabajo no tiene sitio para el build.
+  volumen:   /var/home/you/.cache/cognicode/gate
+  libre:     21474836480 bytes
+  necesario: 32212254720 bytes
+```
+
+Move the work somewhere with room — you do not need to know where the script
+looks, and you do not need to edit it:
+
+```bash
+PREFLIGHT_WORK_DIR=/mnt/disk-with-space/gate bash scripts/ci/preflight-clean-clone.sh
+PREFLIGHT_WORK_DIR=/mnt/disk-with-space/gate bash scripts/ci/publish-merge-gate.sh
+```
+
+`PREFLIGHT_WORK_DIR` wins over `TMPDIR`, and `TMPDIR` wins over the default.
+If your workspace is genuinely smaller and the 30GiB minimum does not apply to
+it, lower it deliberately with `PREFLIGHT_MIN_FREE_BYTES`; a minimum that
+lowers itself is a minimum that watches nothing.
+
 **Count results after the test process exits, never from a log that is still
 being written.** A count taken mid-run silently under-reports, and two people
 counting the same run get two different totals. Aggregate once `cargo test`

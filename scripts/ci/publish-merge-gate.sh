@@ -112,7 +112,24 @@ mkdir -p "$(dirname "$PIPELINE_DB")"
 # caller has already done so.
 if [ -z "${CARGO_TARGET_DIR:-}" ]; then
     check_id="$(git rev-parse --show-toplevel | md5sum | cut -c1-12)"
-    export CARGO_TARGET_DIR="/tmp/cognicode-merge-gate-${check_id}/target"
+    # MEDIDO 2026-10-21: este aislamiento vivia clavado en `/tmp`, que en esta
+    # maquina es un tmpfs de 48G, y una corrida del gate murio en la etapa
+    # `cognicode-ladybug` con `Disk quota exceeded` — 32 de 56 etapas. El fallo
+    # no era del codigo: el build debug mas release no cabe en el tmpfs.
+    #
+    # La raiz del aislamiento es una decision, no un accident: por eso se
+    # comprueba antes de empezar y por eso se puede mover. La regla es la misma
+    # que usa el preflight del gate de candidato, y vive en un solo sitio.
+    #
+    # shellcheck source=scripts/ci/build-volume.sh
+    . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/build-volume.sh"
+    isolation_root="$(build_volume_root)"
+    mkdir -p "$isolation_root"
+    if ! require_build_volume "$isolation_root"; then
+        echo "    el volumen de compilacion no tiene sitio: la corrida no empieza" >&2
+        exit 2
+    fi
+    export CARGO_TARGET_DIR="${isolation_root}/cognicode-merge-gate-${check_id}/target"
     mkdir -p "$CARGO_TARGET_DIR"
     echo "    target dir: $CARGO_TARGET_DIR (per-checkout isolation)"
 fi

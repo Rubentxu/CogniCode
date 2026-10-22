@@ -10,7 +10,47 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 > tienen entradas aquí; el historial completo puede reconstruirse
 > desde `docs/roadmap/ROADMAP.md` (la autoridad de agenda).
 
+## [v0.101.26] — 2026-10-21
+
+**Un gate que da el mismo resultado en una máquina limpia vale más que un gate
+que pasa en la máquina de siempre.** `v0.101.25` pasó el `fast`, el `full` y
+el `merge-gate` —56 de 56 etapas— y se cortó con su tag anotado. Su gate de
+candidato, el que construye el candidato en un clon limpio y lo verifica
+antes de que nada salga a la red, lo dejó en rojo en la última etapa: el filtro
+del smoke de release se ejecutaba como comando, y el shell respondió
+`--: orden no encontrada` con código 127.
+
+El defecto era de una línea —una barra invertida de más en una cadena de
+Kotlin— pero la clase era más grande, y esa clase ya había cobrado dos veces
+en el mismo corte. La lane de release verificaba los tres binarios release
+*antes* de construirlos, de modo que sólo pasaba en una máquina cuyo
+directorio de destino ya tuviera los binarios de antes. Y el volumen de
+trabajo vivía en `/tmp`, que en esta máquina es un tmpfs de 48G, mientras el
+build debug del workspace ocupa 25G: un build de 25G en memoria es un
+`Disk quota exceeded` esperando su momento, con el enlazador muriendo y el
+mensillo hablando del enlazador.
+
+Este corte convierte el volumen en una decisión y no en un accidente.
+`PREFLIGHT_WORK_DIR` manda sobre `TMPDIR`, que a su vez manda sobre el
+default —el caché del usuario, que es disco de verdad—, la regla vive en un
+solo sitio (`scripts/ci/build-volume.sh`) y el gate comprueba el sitio antes
+de empezar: el fallo llega en un segundo y nombra el volumen, el espacio que
+falta y la manera de moverlo. La lane construye lo que necesita antes de
+verificarlo, y el smoke de release filtra sus binarios con el comando que es.
+
+Este corte es el mismo bloque B1 con esa corrección más dentro: la cobertura
+de relaciones, la consulta de infraestructura con los metadatos de su arista,
+el fallo de MCP que llega como fallo, la cancelación que pertenece a su
+propia petición, la paridad entre la CLI y el MCP y el índice de símbolos que
+responde igual en cualquier disco.
+
 ## [v0.101.25] — 2026-10-21
+
+**Este tag no se publicó.** Su gate de candidato falló en la última etapa: el
+filtro del smoke de release se ejecutaba como comando (`--: orden no
+encontrada`, código 127). Un tag que no llegó a publicarse no se mueve: el
+corte bueno es `v0.101.26`, que lleva el arreglo dentro. Lo que sigue
+describe lo que este corte pretendía publicar, y lo publica `v0.101.26`.
 
 **Un corte que no llega a publicarse también es un corte, y este lo
 encontró el gate.** `v0.101.24` pasó el `fast`, el `full` y el `merge-gate`
