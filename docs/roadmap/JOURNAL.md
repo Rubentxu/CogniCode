@@ -22935,3 +22935,119 @@ distinguir una sonda de otra sin ejecutarla.
 - El módulo de podman pasa de 60–120 s a 0,42 s (13/13).
 - Mutación: sin el límite, el test nuevo falla —tarda los 30 s del comando que no
   responde— y con el límite pasa.
+
+## 2026-10-22 — La v0.101.27 publicada, y el gate que casi lo impide (C14, B1.5)
+
+**Qué es esta unidad.** Publicar la release con las estabilizaciones del bloque
+B1 mergeadas. El tag es `v0.101.27`, anotado, en el remoto, y desreferencia a
+`86cce536` —el mismo commit que `main`. Los tags `v0.101.24`, `v0.101.25` y
+`v0.101.26` existen y ninguno llegó a publicarse; un tag que no se publica no
+se mueve, y el corte bueno es el siguiente.
+
+**Precondiciones, medidas.** `scripts/test-full.sh` en verde (rc=0) sobre
+`86cce536`, con los contratos portables verdes;
+`scripts/ci/release-tag-coherence.sh --from-version 0.101.27 86cce536` en OK; y
+el tag anotado y empujado antes de publicar, porque `create-draft` no pasa
+`--target` y sin tag en el remoto la lane ya fallaría con la release a medio
+crear.
+
+**El gate de candidato: verde.** `release-candidate.pipeline.kts` sobre el árbol
+del tag terminó en `SUCCESS` en unos 38 minutos. Lo que pesa ahí no es la
+ejecución: es que compila los tres binarios release en frío, con LTO, contra un
+directorio de destino propio, y después ejecuta los contratos de release sobre
+esos binarios, el `install-smoke` (instalación en un HOME temporal, `cogh
+doctor` con las cuatro comprobaciones en PASS) y la stage de procedencia.
+
+**El lane de publicación: un defecto real, medido, y por qué era inevitable.**
+La primera ejecución del `release.pipeline.kts` murió en `confirm-uploaded-set`:
+
+    the uploaded asset set does not match the produced payload set
+    1d0
+    < bundle-0.101.27-x86_64-unknown-linux-gnu.yaml
+    7,8d5
+    < release-inventory-0.101.27.json
+    < SHA256SUMS
+
+La lista esperada es la completa —cinco payloads y tres manifiestos— y la
+publicada en ese momento tenía solo los cinco payloads, porque **la stage que
+sube los manifiestos era la siguiente a la que compara**. El fallo es de orden,
+no de contenido, y no se podía rodear reejecutando: la comparación ocurre antes
+de la subida, así que en toda primera publicación faltaban siempre los mismos
+tres ficheros. El lane dejó un draft con 5 de los 8 assets.
+
+MEDIDO el mismo día: la corrección del 2026-10-18, que añadió los tres
+manifiestos a la lista esperada para que el gate fuera completo en una
+reejecución, es exactamente la que hace fallar la primera publicación. Las dos
+correcciones son correctas por separado y juntas son un callejón sin salida: la
+lista tiene que ser completa **y** la comparación tiene que ocurrir cuando el
+conjunto publicado ya está completo.
+
+**Lo que cambió.** `confirm-uploaded-set` va ahora después de
+`upload-manifests`, dentro del mismo grupo `draft`. La lista esperada no se
+tocó: sigue siendo la completa. Con las dos cosas a la vez, la primera
+publicación y la reejecución pasan las dos.
+
+El invariante tiene contrato, en `scripts/ci/test_release_lane_wiring.py`: la
+stage que confirma el conjunto publicado va después de la que sube los
+manifiestos. RED medido contra el árbol sin el arreglo —`5 pruebas, 1 FAIL`— y
+GREEN con él —`5 pruebas, 0 FAIL`—. Las hojas se leen con el parser del propio
+fichero y no con `text.index`: un nombre de stage puede aparecer en un
+comentario, y un comentario no es una stage. `pipelinek validate` sobre el
+fichero modificado: `VALIDATION SUCCESSFUL`, con el mismo único diagnóstico que
+tenía antes del cambio.
+
+**Cómo se publicó la v0.101.27 sin falsear el gate.** Los tres manifiestos se
+subieron al draft con el comando que usa la propia stage
+(`gh release upload … --clobber`), y después se reejecutó el lane entero. El
+lane confirmó el conjunto publicado de 8 assets, lo publicó, volvió a bajar los
+bytes ya publicados y comprobó sus sumas, los instaló como lo haría un
+consumidor y confirmó el conjunto de assets. La ejecución que publicó: 45
+segundos. Lo que queda de aquella maniobra no es un atajo: el gate que decidía
+la publicación se ejecutó después de la subida y pasó con el conjunto real.
+
+**Lo publicado.** 8 assets, `/releases/latest` resuelve a `v0.101.27`, fecha de
+publicación 2026-10-22T17:14:39Z, tag `v0.101.27` → `86cce536`.
+
+**El consumo, medido desde fuera.** La descarga de los 8 assets desde GitHub y
+`sha256sum -c SHA256SUMS`: las ocho sumas coinciden. La instalación con
+`cogh install mcp-server --version 0.101.27 --profile reviewer --ide opencode`
+en un HOME limpio, fuera del repositorio y sin `CARGO_MANIFEST_DIR` en el
+entorno: los shims `cognicode` y `cognicode-mcp` responden `0.101.27`, y
+`cogh doctor` da `overall: healthy` con sus cuatro comprobaciones en PASS. El
+MCP por stdio responde `initialize` y `tools/list` y anuncia la superficie
+real.
+
+**Un hallazgo medido, que no es un defecto del producto.** El transporte HTTP
+—`cognicode-mcp-server`— **no forma parte de la superficie publicada**: el
+paquete publicado `cognicode-mcp` trae el binario de stdio, y el servidor HTTP
+no está en ninguno de los tres componentes canónicos del contrato de release.
+Un usuario que instala la release publicada no tiene ningún servidor HTTP que
+exponer. La garantía de B1.1 sigue valiendo para el binario que se construye
+desde el árbol, y ahí se midió con el binario real del commit etiquetado:
+
+- `0.0.0.0` sin credencial: **se niega a arrancar** (rc=1, mensaje que nombra
+  `COGNICODE_MCP_AUTH_TOKEN`) y el puerto no queda escuchando.
+- Con credencial configurada: `/watch` y `/mcp` devuelven **401** sin token y
+  **401** con un token falso; con el token correcto `/watch` responde 200 y
+  `/mcp` deja de rechazar la petición.
+- `/health` y `/ready` son públicas por diseño; `/ready` devuelve 503 porque el
+  workspace vacío no tiene grafo, que es la respuesta honesta.
+- En loopback **sin** credencial configurada no se exige ninguna: solo esta
+  máquina alcanza el puerto. Es el diseño, no una excepción.
+
+El contrato permanente de esa mitad vive en
+`crates/cognicode-mcp/tests/mcp_http_exposure_is_safe.rs`, y el AAT de esta
+unidad lo repitió contra el binario real.
+
+**Limpieza.** El UAT y el AAT se ejecutaron en un directorio efímero fuera del
+repositorio, con sus procesos terminados por el propio script; después de la
+unidad no queda ningún socket escuchando en la familia `1984x` y no queda
+ningún proceso `cognicode-mcp-server` huérfano.
+
+**Lo que queda abierto.** `C14` queda cerrado: sus tres criterios de cierre —
+el candidato pasa el gate de release con los contratos y los assets
+verificados, los binarios instalados responden desde fuera del repositorio, y
+el tag anotado y la release existen con la superficie real anunciada— están
+medidos. Y el defecto que la publicación destapó —el orden de las dos stages
+del lane— queda corregido y con contrato, para que la siguiente publicación no
+dependa de una maniobra manual.

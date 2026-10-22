@@ -5,10 +5,11 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-22, sobre `635feabc5c949711284a4eccf00cedb1f6ebec5d` (`origin/main` al
-> abrir este ciclo), rama `fix/mcp-http-binds-loopback`.
-> Versión del workspace: `0.101.27`. Última release publicada: `v0.101.23`
-> (2026-10-18, 8 assets). `main` va **49** commits por delante de ese tag.
+> **Snapshot**: 2026-10-22, sobre `86cce536f6d500169eb4f1e35cc66d3eed5ff735` (`origin/main` al
+> abrir este ciclo), que es el commit que etiqueta `v0.101.27`.
+> Versión del workspace: `0.101.27`. Última release publicada: `v0.101.27`
+> (2026-10-22, 8 assets). `main` está en el commit etiquetado: no hay commits
+> sin publicar.
 >
 > **La historia vive en el Journal**; aquí sólo vive el estado.
 
@@ -20,13 +21,12 @@
 | `v0.101.24` | tag, sin release | su gate de candidato encontró un defecto real del índice de símbolos |
 | `v0.101.25` | tag, sin release | su gate de candidato murió en la última etapa por un comando de shell mal escrito |
 | `v0.101.26` | tag, sin release | su gate de candidato murió en `clean-clone` por un defecto real del filtro de recorrido |
-| `v0.101.27` | **este corte** | lleva los tres defectos que los gates anteriores encontraron |
+| `v0.101.27` | **publicada** (2026-10-22, 8 assets) | el corte que lleva la corrección de exposición HTTP; gates de candidato y de release verdes |
 
-Un tag que no llegó a publicarse no se mueve. El siguiente corte publicable
-es **`v0.101.27`**, y ya tiene resuelta la primera de las dos condiciones: el
-filtro de recorrido que mataba el clon está arreglado y fusionado. Lo que
-queda es su gate de candidato, que tiene que correr sobre un `main` que lo
-incluya.
+Un tag que no llegó a publicarse no se mueve. El corte publicable era
+**`v0.101.27`**, y ya está publicado: el tag anotado desreferencia a `86cce536`,
+los gates de candidato y de release pasaron, los ocho assets están en el remoto
+y `/releases/latest` resuelve a este tag.
 
 ## La regla que este ciclo destapó
 
@@ -65,12 +65,11 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **C14** | publicar una release con las estabilizaciones posteriores a `v0.101.23` | `ROADMAP.md` §11 |
 | **B3** (`C19`, `C30`, `C9`, `C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
-**C6, C31, C5, C21, C8, C7 y C32 están cerrados.** El lazo de feedback ejecutaba la
+**C6, C31, C5, C21, C8, C7, C32 y C14 están cerrados.** El lazo de feedback ejecutaba la
 biblioteca del crate y nunca el test de integración que se acababa de
 escribir: ahora pide el binario que produce ese fichero —y sólo ese— sin
 convertir el modo rápido en la batería completa. La autoridad de una
@@ -84,7 +83,7 @@ laboratorios de git ya no heredan las reglas de quien los ejecuta.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 14 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 13 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.
@@ -94,8 +93,8 @@ una herramienta MCP se ejecutaba la leía del catálogo que había en el disco
 del proyecto analizado. Un proyecto que declaraba `write_file` como
 herramienta de solo lectura conseguía que el modo de solo lectura la
 aceptase. La autoridad de una herramienta es del producto, y el producto no
-es el proyecto que se analiza. Detrás de él vinieron **C5**, **C21**, **C8**
-y **C7**, también cerrados.
+es el proyecto que se analiza. Detrás de él vinieron **C5**, **C21**, **C8**,
+**C7**, **C32** y **C14**, también cerrados.
 
 **C25, C20, C24, C18, C28 y C29 están cerrados.** C17 salió en la PR #404.
 C2, C3 y C4 salieron en las PR #400, #401 y #402.
@@ -115,14 +114,14 @@ temporales van a `/tmp`, la cuota puede matar la batería entera.
 
 ## Bloqueos abiertos
 
-- **Publicación**: `main` lleva 49 commits sin publicar y las tres releases
-  con tag siguen sin existir para quien las quiera instalar. El corte
-  `v0.101.27` está preparado y esperando su gate de candidato.
+- **Publicación**: resuelta. `v0.101.27` está publicada (2026-10-22, 8 assets),
+  `main` está en el commit que la etiqueta y no queda ningún commit sin
+  publicar. El corte siguiente llevará las unidades que siguen abiertas.
 - **La etapa de contratos de `main` estaba en rojo**: cuatro contratos
   construyen repositorios de laboratorio y fallaban por la configuración de
   git de la máquina, no por el código. El arreglo —la suite deja de heredar
-  esa configuración— está en la rama en vuelo, con una guarda que falla si
-  alguien lo deshace.
+  esa configuración— está mergeado, con una guarda que falla si alguien lo
+  deshace.
 - **C8-R (CR-01)**: la firma *contractual* del operador sobre un clon limpio.
   La firma operativa está hecha; la contractual no. Las citas al dossier del
   programa cerrado (`docs/prf/`) son históricas por contrato y no se

@@ -488,7 +488,8 @@ Seis bloques entregan v0.101.11..v0.101.16. Cada bloque termina con PR integrado
 >   El **corte de release** se rige por
 >   `docs/roadmap/consumer-contracts/specs/SPEC-CU-006-CONSUMER-RELEASE.md`:
 >   gates sobre un candidato concreto, binarios instalados verificados y tag
->   anotado. Una PR fusionada no es una release.
+>   anotado. Una PR fusionada no es una release. **`v0.101.27` está publicada**
+>   —8 assets, tag anotado `86cce536`, gates de candidato y de release verdes—.
 
 <!-- consumer-contracts:end -->
 

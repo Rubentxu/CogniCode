@@ -224,22 +224,50 @@ pipeline {
                 """.trimIndent())
             }
 
+            stage("upload-manifests") {
+                sh("""
+                    set -eo pipefail
+                    set -eo pipefail
+                    $cd || exit 1
+                    gh release upload "${'$'}RELEASE_TAG" \
+                        release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
+                """.trimIndent())
+            }
+
+            // MEDIDO 2026-10-22, en la publicacion de la v0.101.27. Esta stage
+            // vivia ANTES de `upload-manifests`, y por eso la primera
+            // publicacion de una release no podia pasar:
+            //
+            //     the uploaded asset set does not match the produced payload set
+            //     1d0
+            //     < bundle-0.101.27-x86_64-unknown-linux-gnu.yaml
+            //     7,8d5
+            //     < release-inventory-0.101.27.json
+            //     < SHA256SUMS
+            //
+            // La lista esperada es la completa —cinco payloads y tres
+            // manifiestos— y la publicada en ese momento solo tenia los cinco
+            // payloads, porque los manifiestos los subia la stage siguiente.
+            // El fallo era de orden, no de contenido, y no se podia rodear
+            // reejecutando: la comparacion ocurre antes de la subida, asi que
+            // en toda primera publicacion faltaban siempre los mismos tres.
+            //
+            // MEDIDO el mismo dia: la correccion de 2026-10-18 que anadio los
+            // tres manifiestos a la lista esperada —para que el gate fuera
+            // completo en una reejecucion— es la que hace fallar la primera
+            // publicacion. Las dos correcciones son correctas por separado y
+            // juntas son un callejon sin salida. La lista tiene que ser
+            // completa, y la comparacion tiene que ocurrir cuando el conjunto
+            // publicado ya esta completo: por eso esta stage va despues de
+            // `upload-manifests`, y no antes.
             stage("confirm-uploaded-set") {
                 sh("""
                     set -eo pipefail
                     set -eo pipefail
                     $cd || exit 1
-                    # MEDIDO 2026-10-18. Este stage comparaba `release/*.tar.gz`
-                    # contra el conjunto publicado COMPLETO. Los tres manifiestos
-                    # (bundle por plataforma, release-inventory, SHA256SUMS) los
-                    # sube `upload-manifests`, la etapa siguiente — asi que en una
-                    # primera publicacion la diferencia era 0 y el stage pasaba.
-                    # Al re-ejecutar el lane sobre un tag ya publicado, esos tres ya
-                    # estaban ahi y el stage caia: no se podia volver a pasar por
-                    # el lane sin republicar. La invariante real es "el conjunto
-                    # publicado es el que este lane produce", y eso incluye los
-                    # manifiestos. Un gate que solo se puede ejecutar una vez no es
-                    # un gate: es un rito.
+                    # La invariante es "el conjunto publicado es el que este lane
+                    # produce", y eso incluye los tres manifiestos. Un gate que
+                    # solo se puede ejecutar una vez no es un gate: es un rito.
                     expected=$(cd release && ls *.tar.gz bundle-*.yaml release-inventory-*.json SHA256SUMS | sort)
                     actual=$(gh release view "${'$'}RELEASE_TAG" --json assets -q '.assets[].name' | sort)
                     if [ "${'$'}expected" != "${'$'}actual" ]; then
@@ -248,16 +276,6 @@ pipeline {
                         exit 1
                     fi
                     echo "uploaded payload set confirmed ($(echo "${'$'}expected" | wc -l) artifacts)"
-                """.trimIndent())
-            }
-
-            stage("upload-manifests") {
-                sh("""
-                    set -eo pipefail
-                    set -eo pipefail
-                    $cd || exit 1
-                    gh release upload "${'$'}RELEASE_TAG" \
-                        release/bundle-*.yaml release/release-inventory-*.json release/SHA256SUMS --clobber
                 """.trimIndent())
             }
         }
