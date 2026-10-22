@@ -22043,3 +22043,67 @@ hay nada instalado desde él. El corte bueno es el siguiente, y lleva el
 arreglo dentro. `v0.101.24` queda documentado como tag sin release, con su
 entrada en el CHANGELOG, que es donde el repo cuenta esas historias.
 
+## 2026-10-21 — La auditoría del 21 entra en la agenda que ya existe (C31, C32)
+
+**Qué es esta entrada.** La segunda lectura de la auditoría del 2026-10-21 —la
+hecha sobre el remoto `0fca088a`— queda incorporada a la agenda que ya hay. No
+hay un roadmap nuevo: el orden de los bloques no se mueve, y los hallazgos que
+ya tenían dueño lo conservan.
+
+**Qué confirma.** El orden: seguridad y release primero, después la economía
+del testing, después la simplificación técnica, después la incrementalidad, y
+Kotlin al final. Es el orden que §11.1 ya lleva, y el informe lo dice.
+
+**Qué añade.** Dos candidatos, y los dos con una medición detrás.
+
+**C31 — la frontera de autorización de MCP.** La autoridad de ejecución de una
+herramienta sale del catálogo, y el catálogo se resuelve desde el `--cwd` del
+servidor antes que desde la copia compilada en el binario: `catalog.rs`
+resuelve el directorio de producto con el ancla, luego la raíz publicada, luego
+el directorio de proceso, y sólo al final la ubicación del ejecutable;
+`load_tool_catalog_report` da prioridad al `product/tools.json` de disco sobre
+`EMBEDDED_TOOLS`. `tool_authority_map` se construye desde ese catálogo, y
+`resolve_tool_authority` —que es lo que decide en el filtro de `list_tools` y
+en el rechazo previo a cualquier handler— lo consulta. Un proyecto analizado
+puede declarar `write_file` con autoridad `read` y el modo de sólo lectura lo
+aceptaría.
+
+La auditoría lo dice con honestidad: la cadena es verificable de forma
+estática, pero falta reproducirla en un MCP real. Ese es el RED que la unidad
+tiene que escribir antes de tocar el código, y por eso el candidato existe
+antes que el arreglo.
+
+No es la misma vía que cerró la Nota 1 del ROADMAP: aquella era el esquema de
+entrada (`SafeRefactorInput` con `deny_unknown_fields` y el token de
+autorización), y el modelo de postura sigue fallando cerrado ante una
+herramienta no declarada. Son dos caminos distintos, y por eso la Nota 3 del
+ROADMAP dice cuál es cuál.
+
+**C32 — el gate tiene que dar el mismo resultado en una máquina limpia.** La
+lectura señala la cuota de `/tmp` como señal de coste operativo, y el gate de
+candidato de este corte la midió tres veces, con la causa localizada línea a
+línea.
+
+**Quién conserva el resto.** El inventario incremental que se come los errores
+y reconstruye el grafo entero es `C11`, y su criterio de cierre crece con
+ello: el mismo `SourceInventory` que el inventario principal, con los errores
+de recorrido contados aparte, y una reconstrucción que se limita al fichero
+que cambió. Los constructores de grafo que no comparten motor son `C16` y
+`C23`, y `C16` crece con la vía filtrada, que no puede seguir descartando los
+errores del recorrido ni devolver un grafo sin informe de cobertura. El
+vocabulario por lenguaje es `C19`, y su criterio pasa de Bash a Bash, R,
+PowerShell y JSON: un comando no es una importación, un objeto JSON no es una
+clase y una cadena JSON no es una llamada. El coste de la validación es `C6`,
+`C5` y `C7`.
+
+**Qué no abre.** Ninguna especificación nueva, ningún bloque nuevo, ningún
+programa reabierto. `v0.101.24` no se reabre: es un tag sin release, con su
+entrada de CHANGELOG que cuenta por qué.
+
+### Gates
+
+Los contratos que vigilan la agenda, ejecutados sobre el árbol de esta
+entrada: `test_mission_declaration.py` (20 candidatos, prioridad 200..10),
+`test_roadmap_authority_attribution.py` (el bloque `>` de §11 sigue en 80
+líneas), `test_roadmap_open_units_coherence.py` (9 abiertas) y
+`test_roadmap_version_ratchet.py`. Los cuatro en verde.
