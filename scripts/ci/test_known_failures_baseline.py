@@ -55,6 +55,11 @@ BASELINE = REPO_ROOT / "scripts" / "known_failures.yaml"
 # una segunda fuente de verdad para la misma regla.
 ENTRY = re.compile(r"^\s*-\s+test:", re.MULTILINE)
 
+# Los hallazgos se acumulan aquí y `main()` los convierte en un código de
+# salida. Un contrato que informa de un fallo y sale con cero informa de un
+# verde, que es peor que no tener contrato.
+failures: list[str] = []
+
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8") if path.is_file() else ""
@@ -297,8 +302,14 @@ def test_the_shipped_baseline_is_readable() -> None:
     assert "entries:" in text, f"FAIL: {BASELINE} no declara entries:"
 
 
-if __name__ == "__main__":
-    failures: list[str] = []
+def main() -> int:
+    """Ejecuta las comprobaciones y devuelve 1 si alguna falla.
+
+    El contrato de los contratos exige esta forma: un fichero que acumula
+    sus hallazgos en una lista tiene que convertir esa lista en un código
+    de salida distinto de cero, o ejecutarlo a mano informaría de un
+    éxito que no ocurrió.
+    """
     for name, function in sorted(globals().items()):
         if not name.startswith("test_") or not callable(function):
             continue
@@ -311,7 +322,13 @@ if __name__ == "__main__":
         except Exception as error:  # noqa: BLE001 — el contrato informa, no aborta
             failures.append(f"ERROR: {name}: {error}")
             print(f"ERROR: {name}: {error}", file=sys.stderr)
+
     if failures:
         print(f"\n{len(failures)} contract(s) failed", file=sys.stderr)
-        raise SystemExit(1)
+        return 1
     print("\nall contracts passed")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
