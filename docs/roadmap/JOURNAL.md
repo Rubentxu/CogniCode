@@ -22855,3 +22855,37 @@ neutralización: el contrato se pone rojo y dice qué variable queda suelta.
 **Lo que este cierre no cambia.** El producto no toca la configuración de git
 del usuario. Solo los repositorios de laboratorio que una prueba crea.
 
+## 2026-10-22 — El snapshot operativo vuelve a leerse (marcadores de conflicto)
+
+**Qué es esta unidad.** `docs/roadmap/CURRENT.md` es el snapshot que dice cuál
+es el estado: qué release se puede instalar, qué unidades están abiertas, qué
+bloquea. Es un documento que se lee para saber qué hacer.
+
+**El hueco, medido.** El fichero llevaba **seis** bloques de marcadores de
+conflicto sin resolver, commitados en `main`. Un rebase dejó las dos caras del
+texto en el mismo fichero y el resultado se commiteó tal cual: las dos
+versiones del párrafo, una detrás de otra, con la línea de separación en
+medio. Para quien lo leía, el estado actual no era ninguno de los dos.
+
+Y nada lo miraba. El fichero es markdown, así que todo lo que lo leía leía las
+dos versiones; y ningún contrato buscaba marcadores, porque buscar marcadores
+no era el trabajo de ningún contrato que ya existía.
+
+**Lo que cambió.** Los seis bloques quedan resueltos, quedándose con la versión
+más completa en cinco y con la que faltaba en el sexto: la nota del registro
+que retiró una versión de una dependencia y la del volumen de compilación
+comprobado antes de empezar. El snapshot se refresca con el estado real: la
+versión del workspace, el número de commits por delante del último tag, las
+unidades abiertas y la publicación pendiente.
+
+**La guarda.** Un contrato recorre los ficheros versionados de texto y busca
+los tres marcadores que git deja al resolver un conflicto a medias. El
+separador solo cuenta cuando está entre un inicio y un fin de bloque, porque
+una línea de siete signos iguales es también un título de nivel uno en
+markdown. El contrato lleva su propio control: si no encuentra ficheros que
+mirar, lo dice en vez de dar un verde por no haber nada que comprobar.
+
+**Lo que la medición encontró por el camino.** El marcador más callado es el
+separador: el inicio y el fin no aparecen en ningún otro sitio del árbol, y el
+separador exacto tampoco. El riesgo de falso positivo estaba en el separador,
+y por eso se mide dentro del bloque y no suelto.
