@@ -23103,3 +23103,40 @@ the_graph_does_not_depend_on_the_directory_order` — **RED** with the old code
 - The comment above the sort in the other route was a specification nobody was
   holding to. It said the index must never depend on directory-walk order, and
   one of the two routes that build that index did exactly that.
+
+## 2026-10-22 — El orden de la lane, con contrato, y la cola que coincide con la agenda
+
+**Qué es esta unidad.** La publicación de la `v0.101.27` destapó que la lane
+de publicación comparaba el conjunto publicado **antes** de que la stage
+siguiente subiera los tres manifiestos. El arreglo ya está en `main`, y esta
+unidad le pone lo que le faltaba: el contrato que lo fija, y la coherencia
+entre las dos agendas.
+
+**El invariante, con su contrato.** La stage que confirma el conjunto
+publicado va **después** de la que sube los manifiestos. Sin ese orden, la
+primera publicación de cada release falla —le faltan siempre los mismos tres
+ficheros— y deja un draft a medio publicar; con la lista de esperados
+incompleta, la reejecución sobre un tag ya publicado falla. Las dos mitades
+hacen falta juntas.
+
+El contrato vive en `scripts/ci/test_release_lane_wiring.py`, junto a los
+otros tres que ya vigilaban esta lane. RED medido contra el árbol con el
+orden viejo: `5 pruebas, 1 FAIL`. GREEN contra el árbol de hoy: `5 pruebas,
+0 FAIL`. Las hojas se leen con el parser del propio fichero y no con
+`text.index`: un nombre de stage puede aparecer en un comentario, y un
+comentario no es una stage.
+
+**Dos agendas que no decían lo mismo.** El roadmap declaraba `C14` cerrado
+—la `v0.101.27` está publicada— y la cola de la misión lo seguía
+listando como candidato abierto. Dos fuentes de verdad sobre el mismo
+estado, y una de las dos equivocada. La cola de la misión se queda con los
+trece candidatos que siguen abiertos.
+
+**Lo que este cierre no dice.** La `v0.101.27` se publicó con una maniobra
+manual —subir los tres manifiestos con el comando de la propia stage y
+reejecutar el lane entero— porque el orden estaba roto. La maniobra dejó el
+gate de la publicación decidiendo de verdad: el lane confirmó el conjunto
+publicado de ocho assets, lo publicó, volvió a bajar los bytes ya
+publicados, comprobó sus sumas y los instaló como lo haría un consumidor.
+Con el orden arreglado y con contrato, la siguiente publicación no depende
+de esa maniobra.
