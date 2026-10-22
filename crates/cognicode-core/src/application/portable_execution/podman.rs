@@ -131,10 +131,49 @@ impl DiscoveryError {
 
 /// Capability discovery for podman. Implementors decide how to
 /// locate a runnable podman instance on the host.
-pub trait PodmanDiscovery: Send + Sync {
+///
+/// The bound on `Debug` is there so that a discovery can be told apart
+/// from another one without running it: telling them apart by running
+/// them means asking the host, and the answer then depends on the host.
+pub trait PodmanDiscovery: Send + Sync + std::fmt::Debug {
     /// Discover a podman endpoint. Returns `Ok(endpoint)` on
     /// success, or `Err(DiscoveryError)` on failure.
     fn discover(&self) -> Result<PodmanEndpoint, DiscoveryError>;
+}
+
+/// How long the probe waits for the isolation runtime to answer.
+///
+/// A host whose runtime never answers must not hold the caller forever:
+/// the capability is asked for at boot, and a boot that waits on an
+/// unresponsive runtime is a boot that never finishes. When the budget
+/// runs out the runtime is reported as unreachable, which leaves the
+/// isolation capability absent instead of pretending it is there.
+const PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Runs a probe command and waits for it, with a bound.
+///
+/// The command is spawned and watched rather than waited on, because the
+/// library's wait is a blocking call with no deadline of its own. A probe
+/// that runs out of time is killed: leaving it alive would keep holding
+/// the very lock it is waiting for.
+fn probe_with_timeout(
+    command: &mut Command,
+    limit: std::time::Duration,
+) -> Result<std::process::ExitStatus, DiscoveryError> {
+    let mut child = command
+        .spawn()
+        .map_err(|_| DiscoveryError::BinaryNotFound)?;
+    match super::native::wait_with_timeout(&mut child, limit) {
+        super::native::WaitOutcome::Exited(status) => Ok(status),
+        super::native::WaitOutcome::TimedOut => {
+            let _ = child.kill();
+            let _ = child.wait();
+            Err(DiscoveryError::RuntimeUnreachable(format!(
+                "the isolation runtime did not answer within {}s",
+                limit.as_secs()
+            )))
+        }
+    }
 }
 
 /// Probe discovery: `podman info` exits 0 ⇒ direct endpoint. This
@@ -149,22 +188,22 @@ impl PodmanDiscovery for ProbePodmanDiscovery {
         // avoid capturing output: we only care about exit status
         // for the fast path. A more thorough probe could inspect
         // the host field, but that's outside WU3's scope.
-        let probe = Command::new("podman")
+        let mut command = Command::new("podman");
+        command
             .arg("info")
             .arg("--format")
             .arg("{{.Host.OS}}")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .stdin(Stdio::null())
-            .output();
-        match probe {
-            Ok(out) if out.status.success() => Ok(PodmanEndpoint::direct()),
-            Ok(out) => Err(DiscoveryError::RuntimeUnreachable(format!(
-                "podman info exited {:?}: {}",
-                out.status.code(),
-                String::from_utf8_lossy(&out.stderr)
+            .stdin(Stdio::null());
+
+        match probe_with_timeout(&mut command, PROBE_TIMEOUT) {
+            Ok(status) if status.success() => Ok(PodmanEndpoint::direct()),
+            Ok(status) => Err(DiscoveryError::RuntimeUnreachable(format!(
+                "podman info exited {:?}",
+                status.code()
             ))),
-            Err(_) => Err(DiscoveryError::BinaryNotFound),
+            Err(error) => Err(error),
         }
     }
 }
@@ -802,8 +841,48 @@ mod tests {
         // We can't guarantee podman is on the test host, but we
         // can guarantee that `default_discovery()` returns a
         // non-null boxed discovery.
-        let d = default_discovery();
-        let _ = d.discover(); // result depends on host
+        //
+        // The probe is not run here on purpose. The guarantee this test
+        // carries is about the shape of the default discovery, not about
+        // the host: running the probe measured the host instead, and a
+        // host whose runtime takes a minute to answer turned the whole
+        // suite slow and left the other tests without the machine they
+        // needed. The probe's own behaviour has its own test below.
+        let discovery = default_discovery();
+        let described = format!("{:?}", discovery);
+        assert!(
+            described.contains("Probe"),
+            "the default discovery has to be the probe, got: {described}"
+        );
+        assert!(
+            !described.contains("Disabled"),
+            "the default discovery must not be the disabled one, got: {described}"
+        );
+    }
+
+    /// A probe whose runtime never answers has to give up on its own.
+    ///
+    /// The probe asks whether isolation is available, and it is asked at
+    /// boot. A probe that waits for an unresponsive runtime forever is a
+    /// product that never finishes booting, and a test suite that never
+    /// finishes either.
+    #[test]
+    fn a_probe_that_never_answers_gives_up_in_bounded_time() {
+        let mut command = Command::new("sleep");
+        command.arg("30");
+
+        let started = std::time::Instant::now();
+        let outcome = probe_with_timeout(&mut command, std::time::Duration::from_millis(200));
+        let elapsed = started.elapsed();
+
+        assert!(
+            outcome.is_err(),
+            "a probe that never answers must not be reported as a working runtime"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(10),
+            "the probe has to give up on its own, it took {elapsed:?}"
+        );
     }
 
     #[test]

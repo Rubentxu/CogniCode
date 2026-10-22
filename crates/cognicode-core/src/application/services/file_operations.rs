@@ -3233,7 +3233,11 @@ mod tests {
             "Should have 1 result, got total={}",
             output.total
         );
-        assert_eq!(output.verified_count, 1, "Should be verified");
+        assert_eq!(
+            output.verified_count, 1,
+            "Should be verified; the result says: status={:?}, error={:?}, reason={:?}",
+            output.results[0].status, output.results[0].error_snippet, output.results[0].reason,
+        );
         assert_eq!(output.rejected_count, 0, "Should have no rejected");
         assert_eq!(output.skipped_count, 0, "Should have no skipped");
         assert_eq!(

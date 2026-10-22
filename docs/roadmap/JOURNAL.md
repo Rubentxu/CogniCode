@@ -22889,3 +22889,49 @@ mirar, lo dice en vez de dar un verde por no haber nada que comprobar.
 separador: el inicio y el fin no aparecen en ningún otro sitio del árbol, y el
 separador exacto tampoco. El riesgo de falso positivo estaba en el separador,
 y por eso se mide dentro del bloque y no suelto.
+
+## 2026-10-22 — La sonda de aislamiento deja de poder colgar al producto
+
+**Qué es esta unidad.** La sonda que pregunta al host si el runtime de aislamiento
+responde. La pregunta no tenía plazo: `podman info` se lanzaba y se esperaba a que
+terminara, sin límite.
+
+**El hueco, medido.** En esta máquina, la primera vez que se lanza `podman info`
+tarda entre 60 y 120 segundos (arranque en frío del almacenamiento del runtime);
+caliente, 0,2 segundos. La consecuencia no fue un fallo del runtime: fue un gate
+rojo sobre un árbol correcto.
+
+La etapa que compila la biblioteca del core con el feature del kernel de evidencia
+tardó 135 segundos y falló en `test_retrieve_and_verify_rust_file_verified`. Ese
+test compila un fichero Rust de una línea y comprueba que el producto lo reporta
+como verificado; el producto le da 10 segundos para esa compilación. Con la sonda
+de podman en medio —60 segundos dentro del candado global de las pruebas
+seriales— la máquina estaba ocupada, la compilación no llegó a tiempo y el
+fichero salió como «no comprobado». El gate cayó sobre un árbol correcto y el
+fallo parecía un defecto del producto.
+
+**Lo que cambió.** La sonda tiene presupuesto: 10 segundos, y el proceso que no
+responde se mata —matarlo también evita que siga reteniendo el cerrojo que
+espera. Cuando el plazo vence, el runtime se reporta como inalcanzable, que
+deja la capacidad de aislamiento **ausente** en vez de inventarla: el camino
+seguro es que la capacidad no exista.
+
+El test que comprobaba la sonda por defecto ya no la ejecuta. Su garantía era
+«la sonda por defecto no es nula», y medirla significaba preguntar a la
+máquina: una máquina cuyo runtime tarda un minuto en responder convertía la
+suite entera en lenta y dejaba a las demás pruebas sin la máquina que
+necesitaban. Ahora la identifica sin correrla, y una prueba nueva, con un
+comando que nunca responde, comprueba que la sonda se rinde por su cuenta.
+
+**Lo que esta unidad no cambia.** El comando que se lanza y el formato de la
+salida son los mismos. El tipo de discovery admite ahora `Debug` como
+supertrait, y sus dos implementadores ya lo derivaban: hace falta para
+distinguir una sonda de otra sin ejecutarla.
+
+**Evidencia.**
+- RED medido: la etapa del gate, 135 s, con el test de verificación en rojo y la
+  biblioteca con un fallo.
+- GREEN medido: la misma etapa, 2944/2944, y la biblioteca en 68 s.
+- El módulo de podman pasa de 60–120 s a 0,42 s (13/13).
+- Mutación: sin el límite, el test nuevo falla —tarda los 30 s del comando que no
+  responde— y con el límite pasa.
