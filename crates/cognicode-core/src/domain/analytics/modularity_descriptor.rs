@@ -13,7 +13,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -237,8 +237,8 @@ impl AlgorithmExecute for ModularityDescriptor {
     async fn execute(
         &self,
         params: &serde_json::Value,
-        graph: &CallGraph,
         _limits: &PlanLimits,
+        projection: &dyn CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params.as_object().ok_or_else(|| {
             AnalyticsError::Internal("Modularity params must be a JSON object".into())
@@ -249,7 +249,6 @@ impl AlgorithmExecute for ModularityDescriptor {
             .and_then(|v| v.as_array())
             .ok_or_else(|| AnalyticsError::Internal("missing community_assignment".into()))?;
 
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_directed_adjacency();
 
         // Parse community_assignment from params

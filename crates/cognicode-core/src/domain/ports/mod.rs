@@ -55,8 +55,8 @@ pub mod generic_graph_projection;
 
 pub use adr_repository::{AdrError, AdrRepository, AdrStatus, AdrSummary};
 pub use call_graph_projection::{
-    CallGraphProjectionPort, ExplanationHop, ExplanationView, ProjectionError, SubgraphDirection,
-    SubgraphEdge, SubgraphView, project_call_graph,
+    CallGraphProjectionFactory, CallGraphProjectionPort, ExplanationHop, ExplanationView,
+    ProjectionError, SubgraphDirection, SubgraphEdge, SubgraphView,
 };
 pub use call_graph_store::{CallGraphError, CallGraphStore};
 pub use doc_repository::{DocError, DocRepository, DocSummary};

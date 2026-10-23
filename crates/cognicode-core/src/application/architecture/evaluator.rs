@@ -52,7 +52,7 @@ use crate::domain::architecture::{
     ArchitectureConstraint, ArchitectureConstraintKind, ArchitectureViolation,
     ForbiddenDependencyRule, LayerDependencyRule, NamespaceBoundaryRule, ViolationId,
 };
-use crate::domain::architecture::{LayerId, UseStatement};
+use crate::domain::architecture::{DependencyPath, LayerId};
 use crate::domain::findings::FindingKind;
 
 // ============================================================================
@@ -135,10 +135,10 @@ impl ArchitectureEvaluator {
         constraint: &ArchitectureConstraint,
         source: &ArchitectureSource,
     ) -> Result<EvaluationReport, ArchitectureEvaluatorError> {
-        let mut statements: Vec<UseStatement> = Vec::new();
+        let mut statements: Vec<DependencyPath> = Vec::new();
         for file in &source.files {
             let mut parsed =
-                crate::domain::architecture::parse_use_lines(&file.source, &file.file_path)
+                crate::domain::architecture::parse_dependency_paths(&file.source, &file.file_path)
                     .map_err(|e| ArchitectureEvaluatorError::ParseFailed(format!("{e:?}")))?;
             for stmt in &mut parsed {
                 stmt.module_path = file.module_path.clone();
@@ -172,8 +172,8 @@ impl ArchitectureEvaluator {
     fn find_layer_violations(
         &self,
         rule: &LayerDependencyRule,
-        statements: &[UseStatement],
-    ) -> Vec<UseStatement> {
+        statements: &[DependencyPath],
+    ) -> Vec<DependencyPath> {
         statements
             .iter()
             .filter(|stmt| {
@@ -191,8 +191,8 @@ impl ArchitectureEvaluator {
     fn find_forbidden_violations(
         &self,
         rule: &ForbiddenDependencyRule,
-        statements: &[UseStatement],
-    ) -> Vec<UseStatement> {
+        statements: &[DependencyPath],
+    ) -> Vec<DependencyPath> {
         statements
             .iter()
             .filter(|stmt| {
@@ -211,8 +211,8 @@ impl ArchitectureEvaluator {
     fn find_boundary_violations(
         &self,
         rule: &NamespaceBoundaryRule,
-        statements: &[UseStatement],
-    ) -> Vec<UseStatement> {
+        statements: &[DependencyPath],
+    ) -> Vec<DependencyPath> {
         statements
             .iter()
             .filter(|stmt| {
@@ -243,7 +243,7 @@ impl ArchitectureEvaluator {
     fn build_violation(
         &self,
         constraint: &ArchitectureConstraint,
-        stmt: &UseStatement,
+        stmt: &DependencyPath,
     ) -> Result<ArchitectureViolation, ArchitectureEvaluatorError> {
         let finding_kind = FindingKind::new(constraint.kind.finding_kind())
             .map_err(|_| ArchitectureEvaluatorError::BadConstraintId)?;
@@ -268,7 +268,7 @@ impl ArchitectureEvaluator {
 // Helpers
 // ============================================================================
 
-fn layer_of(stmt: &UseStatement) -> LayerId {
+fn layer_of(stmt: &DependencyPath) -> LayerId {
     if let Some(module) = &stmt.module_path {
         LayerId::from_module_path(module)
     } else {

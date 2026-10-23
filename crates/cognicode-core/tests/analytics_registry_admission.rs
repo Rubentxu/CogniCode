@@ -13,6 +13,7 @@ use cognicode_core::domain::analytics::{
     RunLineageFilter, RunLineageStore, RunOutput,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::infrastructure::graph::PetgraphProjectionFactory;
 
 // =============================================================================
 // Test fixtures
@@ -173,8 +174,8 @@ impl AlgorithmExecute for CompletePagerankDescriptor {
     async fn execute(
         &self,
         _params: &serde_json::Value,
-        _graph: &cognicode_core::domain::aggregates::CallGraph,
         _limits: &PlanLimits,
+        _projection: &dyn cognicode_core::domain::ports::call_graph_projection::CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         Ok(RunOutput::PageRank(serde_json::json!([])))
     }
@@ -238,8 +239,8 @@ impl AlgorithmExecute for IncompleteSchemaDescriptor {
     async fn execute(
         &self,
         _params: &serde_json::Value,
-        _graph: &cognicode_core::domain::aggregates::CallGraph,
         _limits: &PlanLimits,
+        _projection: &dyn cognicode_core::domain::ports::call_graph_projection::CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         Ok(RunOutput::PageRank(serde_json::json!([])))
     }
@@ -303,8 +304,8 @@ impl AlgorithmExecute for IncompleteLimitsDescriptor {
     async fn execute(
         &self,
         _params: &serde_json::Value,
-        _graph: &cognicode_core::domain::aggregates::CallGraph,
         _limits: &PlanLimits,
+        _projection: &dyn cognicode_core::domain::ports::call_graph_projection::CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         Ok(RunOutput::PageRank(serde_json::json!([])))
     }
@@ -358,7 +359,11 @@ impl RunLineageStore for NoopLineageStore {
 
 #[test]
 fn admits_complete_descriptor() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoopLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     let result = registry.admit(Box::new(CompletePagerankDescriptor));
     assert!(
         result.is_ok(),
@@ -370,7 +375,11 @@ fn admits_complete_descriptor() {
 
 #[test]
 fn rejects_incomplete_descriptor_missing_output_schema() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoopLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     let result = registry.admit(Box::new(IncompleteSchemaDescriptor));
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -386,7 +395,11 @@ fn rejects_incomplete_descriptor_missing_output_schema() {
 
 #[test]
 fn rejects_incomplete_descriptor_missing_limits() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoopLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     let result = registry.admit(Box::new(IncompleteLimitsDescriptor));
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -402,7 +415,11 @@ fn rejects_incomplete_descriptor_missing_limits() {
 
 #[test]
 fn rejects_duplicate_admission_same_version() {
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoopLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(CompletePagerankDescriptor))
         .expect("first admission should succeed");
@@ -416,7 +433,11 @@ fn rejects_duplicate_admission_same_version() {
 
 #[test]
 fn is_admitted_returns_false_for_non_admitted() {
-    let registry = AlgorithmRegistry::new(Arc::new(NoopLineageStore), None);
+    let registry = AlgorithmRegistry::new(
+        Arc::new(NoopLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     assert!(!registry.is_admitted(&AlgorithmId::from_static("nonexistent")));
     assert!(
         registry

@@ -17,6 +17,7 @@ use rmcp::model::{CallToolResult, Content};
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::adapters::project;
 use crate::mcp::envelope::{err_envelope, ok_envelope};
 use crate::mcp::handler::ToolHandler;
 use crate::mcp::{
@@ -148,7 +149,13 @@ impl ToolHandler for GraphSubgraphHandler {
 
         let max_depth = args.max_depth.unwrap_or(DEFAULT_SUBGRAPH_DEPTH);
         let svc = ImpactAnalysisService::new();
-        let dto = svc.subgraph(g, &SymbolId::new(root), direction, max_depth);
+        let projection = project(g);
+        let dto = svc.subgraph(
+            projection.as_ref(),
+            &SymbolId::new(root),
+            direction,
+            max_depth,
+        );
         ok_envelope(TOOL_GRAPH_SUBGRAPH, &dto)
     }
 }
@@ -206,7 +213,8 @@ impl ToolHandler for GraphClusterHandler {
         }
 
         let svc = ImpactAnalysisService::new();
-        let dto = svc.cluster_components(g, method);
+        let projection = project(g);
+        let dto = svc.cluster_components(projection.as_ref(), method);
         ok_envelope(TOOL_GRAPH_CLUSTER, &dto)
     }
 }
@@ -279,8 +287,13 @@ impl ToolHandler for GraphExplainHandler {
 
         let svc = ImpactAnalysisService::new();
         // Service guarantees Some (wraps None as found:false).
+        let projection = project(g);
         let dto = svc
-            .explain_path(g, &SymbolId::new(from), &SymbolId::new(to))
+            .explain_path(
+                projection.as_ref(),
+                &SymbolId::new(from),
+                &SymbolId::new(to),
+            )
             .expect("service.explain_path always returns Some");
         ok_envelope(TOOL_GRAPH_EXPLAIN, &dto)
     }

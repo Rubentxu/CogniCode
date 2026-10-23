@@ -165,11 +165,17 @@ pub async fn bootstrap_with_backend(
 
     // Analytics wiring: when lineage store is provided, construct the registry
     // automatically so analytics tools can execute (E28.4).
+    //
+    // The registry needs a projection factory to build the read-side
+    // projection the algorithms run over. The factory is the adapter's
+    // contract, so it is injected here, at the composition root, where the
+    // concrete implementation is chosen.
     let analytics_lineage_store = ports.analytics_lineage_store;
     let analytics_registry = analytics_lineage_store.as_ref().map(|lineage| {
         Arc::new(
             cognicode_core::application::services::graph_analytics::default_analytics_registry(
                 lineage.clone(),
+                Arc::new(cognicode_core::infrastructure::graph::PetgraphProjectionFactory),
             ),
         )
     });

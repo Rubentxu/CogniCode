@@ -7,6 +7,7 @@ use cognicode_core::domain::analytics::{
     AlgorithmDescriptor, AlgorithmId, AnalyticsMode, RunLineageStore,
 };
 use cognicode_core::domain::plan::limits::PlanLimits;
+use cognicode_core::infrastructure::graph::{PetgraphProjectionFactory, project_call_graph};
 
 /// A no-op lineage store for testing.
 struct NoOpLineageStore;
@@ -207,7 +208,11 @@ fn registry_admits_bounded_shortest_paths() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     let result = registry.admit(Box::new(BoundedShortestPathsDescriptor));
     assert!(result.is_ok());
 }
@@ -217,7 +222,11 @@ fn registry_returns_bounded_shortest_paths() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(BoundedShortestPathsDescriptor))
         .unwrap();
@@ -234,7 +243,11 @@ fn registry_get_returns_bounded_shortest_paths_descriptor() {
     use cognicode_core::application::services::graph_analytics::AlgorithmRegistry;
     use std::sync::Arc;
 
-    let mut registry = AlgorithmRegistry::new(Arc::new(NoOpLineageStore), None);
+    let mut registry = AlgorithmRegistry::new(
+        Arc::new(NoOpLineageStore),
+        None,
+        Arc::new(PetgraphProjectionFactory),
+    );
     registry
         .admit(Box::new(BoundedShortestPathsDescriptor))
         .unwrap();
@@ -285,7 +298,8 @@ fn all_simple_paths_single_hop() {
     let mut g = CallGraph::new();
     add_edge(&mut g, "A", "B");
 
-    let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("B"), 1);
+    let projection = project_call_graph(&g);
+    let paths = GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("B"), 1);
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0], vec![id("A"), id("B")]);
 }
@@ -301,7 +315,8 @@ fn all_simple_paths_multi_hop() {
     add_edge(&mut g, "B", "C");
     add_edge(&mut g, "C", "D");
 
-    let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 5);
+    let projection = project_call_graph(&g);
+    let paths = GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 5);
     assert_eq!(paths.len(), 1);
     assert_eq!(paths[0].len(), 4); // A, B, C, D
 }
@@ -317,7 +332,8 @@ fn all_simple_paths_max_hops_respected() {
     add_edge(&mut g, "B", "C");
     add_edge(&mut g, "C", "D");
 
-    let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 1);
+    let projection = project_call_graph(&g);
+    let paths = GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 1);
     assert!(paths.is_empty()); // No direct edge A→D
 }
 
@@ -334,7 +350,8 @@ fn all_simple_paths_empty_when_no_path_within_bound() {
     // Note: C is never connected
     add_edge(&mut g, "A", "B");
 
-    let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("C"), 5);
+    let projection = project_call_graph(&g);
+    let paths = GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("C"), 5);
     assert!(paths.is_empty());
 }
 
@@ -352,6 +369,7 @@ fn all_simple_paths_diamond_dag_three_paths() {
     add_edge(&mut g, "B", "D");
     add_edge(&mut g, "C", "D");
 
-    let paths = GraphAnalyticsService::all_simple_paths(&g, &id("A"), &id("D"), 5);
+    let projection = project_call_graph(&g);
+    let paths = GraphAnalyticsService::all_simple_paths(projection.as_ref(), &id("A"), &id("D"), 5);
     assert_eq!(paths.len(), 3); // Direct, via B, via C
 }

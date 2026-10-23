@@ -14,7 +14,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -232,8 +232,8 @@ impl AlgorithmExecute for PageRankDescriptor {
     async fn execute(
         &self,
         params: &serde_json::Value,
-        graph: &CallGraph,
         _limits: &PlanLimits,
+        projection: &dyn CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params.as_object().ok_or_else(|| {
             AnalyticsError::Internal("PageRank params must be a JSON object".into())
@@ -246,7 +246,6 @@ impl AlgorithmExecute for PageRankDescriptor {
             .map(|v| v as usize)
             .unwrap_or(100);
 
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let (in_neighbors, out_degree) = projection.build_adjacency();
         let n = projection.node_count();
 

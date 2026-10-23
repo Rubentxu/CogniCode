@@ -6,7 +6,7 @@
 use crate::application::services::graph_analytics::GraphAnalyticsService;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 
 /// A complete graph insights report.
@@ -89,9 +89,7 @@ impl GraphInsightsService {
     /// The algorithm is total: an empty graph returns a `health_score`
     /// of `100.0` (a vacuum has perfect architecture) and an empty
     /// `suggested_questions` list.
-    pub fn analyze(graph: &CallGraph) -> InsightsReport {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
-
+    pub fn analyze(graph: &CallGraph, projection: &dyn CallGraphProjectionPort) -> InsightsReport {
         // Summary
         let summary = GraphSummary {
             total_symbols: projection.node_count(),
@@ -102,7 +100,7 @@ impl GraphInsightsService {
         };
 
         // God nodes (top 10, p95)
-        let god_nodes = GraphAnalyticsService::god_nodes(graph, 0.95);
+        let god_nodes = GraphAnalyticsService::god_nodes(projection, 0.95);
         let god_nodes_top: Vec<_> = god_nodes.into_iter().take(10).collect();
 
         // Cycles (SCCs of size > 1 are non-trivial cycles)
@@ -113,7 +111,7 @@ impl GraphInsightsService {
         let symbols_in_cycles: usize = cycle_clusters.iter().map(|c| c.len()).sum();
 
         // Cycle breakers
-        let cycle_breakers = GraphAnalyticsService::feedback_arc_set(graph);
+        let cycle_breakers = GraphAnalyticsService::feedback_arc_set(projection);
         let cycle_breakers_top: Vec<_> = cycle_breakers.into_iter().take(10).collect();
 
         // Communities
@@ -238,13 +236,25 @@ impl GraphInsightsService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use crate::domain::aggregates::Symbol;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+
+    /// The read-side projection the service reads from.
+    ///
+    /// The service works over a projection rather than over the graph, and
+    /// these tests compare the service against that same projection, so
+    /// both sides read the real thing.
+    fn projection_of(graph: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+        crate::infrastructure::graph::project_call_graph(graph)
+    }
 
     #[test]
     fn test_empty_graph_insights() {
         let graph = CallGraph::new();
-        let report = GraphInsightsService::analyze(&graph);
+        let projection = projection_of(&graph);
+        let report = GraphInsightsService::analyze(&graph, projection.as_ref());
         assert_eq!(report.summary.total_symbols, 0);
         assert_eq!(report.summary.total_edges, 0);
         assert_eq!(report.summary.total_cycles, 0);
@@ -269,7 +279,8 @@ mod tests {
         ));
         let _ = graph.add_dependency(&a, &b, DependencyType::Calls);
 
-        let report = GraphInsightsService::analyze(&graph);
+        let projection = projection_of(&graph);
+        let report = GraphInsightsService::analyze(&graph, projection.as_ref());
         assert_eq!(report.summary.total_symbols, 2);
         assert_eq!(report.summary.total_edges, 1);
         assert_eq!(report.cycle_clusters.len(), 0); // No cycles in a->b
@@ -299,7 +310,8 @@ mod tests {
         let _ = graph.add_dependency(&a, &b, DependencyType::Calls);
         let _ = graph.add_dependency(&b, &a, DependencyType::Calls);
 
-        let report = GraphInsightsService::analyze(&graph);
+        let projection = projection_of(&graph);
+        let report = GraphInsightsService::analyze(&graph, projection.as_ref());
         assert!(report.summary.total_cycles > 0);
         assert!(!report.cycle_breakers.is_empty());
         assert!(report.health_score < 100.0);
@@ -330,7 +342,8 @@ mod tests {
             let next = (i + 1) % 5;
             let _ = graph.add_dependency(&ids[i], &ids[next], DependencyType::Calls);
         }
-        let report = GraphInsightsService::analyze(&graph);
+        let projection = projection_of(&graph);
+        let report = GraphInsightsService::analyze(&graph, projection.as_ref());
         assert!(report.health_score >= 0.0 && report.health_score <= 100.0);
     }
 
@@ -350,7 +363,8 @@ mod tests {
         let _ = graph.add_dependency(&a, &b, DependencyType::Calls);
         let _ = graph.add_dependency(&b, &a, DependencyType::Calls);
 
-        let report = GraphInsightsService::analyze(&graph);
+        let projection = projection_of(&graph);
+        let report = GraphInsightsService::analyze(&graph, projection.as_ref());
         // At least one question should be non-empty and not a placeholder.
         assert!(!report.suggested_questions.is_empty());
         for q in &report.suggested_questions {

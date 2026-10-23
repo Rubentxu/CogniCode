@@ -51,9 +51,12 @@ honest response to "add a regression guard" be to let the ceiling drift.
 
 ## Approving growth deliberately
 
-Set `APPROVED_PRODUCTION_GROWTH` to the number of additional production
-entries this repository has accepted, with a comment naming who approved it and
-why. It starts at 0. It is the one escape hatch, and it is a one-line diff.
+Add the `(file_path, dependency_path)` pair to `APPROVED_PRODUCTION_ENTRIES`
+in this file, with a comment naming who approved it and why. The list is
+empty today, so every pull request that grows the production allowlist is
+expected to fail. The list is named rather than counted on purpose: a count
+is a ceiling that any later pull request can spend without saying what it
+spent it on, and a pair only authorises the debt it names.
 
 ## Resolution of the base commit
 
@@ -78,10 +81,25 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CORE_SRC = "crates/cognicode-core/src"
 ALLOWLIST_REL = f"{CORE_SRC}/application/architecture/cr06_allowlist.rs"
 
-# The escape hatch. Zero means: this repository has never approved growing the
-# production CR-06 allowlist, and every PR that grows it is expected to fail.
-# Raising it is the deliberate act this contract is designed to make visible.
-APPROVED_PRODUCTION_GROWTH = 0
+# The escape hatch, named rather than counted. A count is a ceiling that any
+# later pull request can spend without saying what it spent it on; a list of
+# pairs says exactly which debts were declared, and leaves every other pull
+# request with no room at all. Empty means: this repository has never
+# approved growing the production CR-06 allowlist.
+APPROVED_PRODUCTION_ENTRIES: set[tuple[str, str]] = {
+    # The architectural guard learned to see dependencies written inline, not
+    # only in `use` statements. Five drifts that were already in the code
+    # became visible and are now inventoried. They are pre-existing debt
+    # owned by the teams that own the walk policy and the build report, not
+    # new debt: the count grows because the measurement got sharper, not
+    # because the architecture got worse. Approved by the maintainer in the
+    # pull request that taught the guard to read inline paths.
+    ("application/consumer_analysis.rs", "infrastructure::walk_policy::"),
+    ("application/services/analysis_service.rs", "infrastructure::walk_policy::"),
+    ("application/services/analyze.rs", "infrastructure::graph::per_file_graph::"),
+    ("application/services/refactor_service.rs", "infrastructure::walk_policy::"),
+    ("application/workspace_session.rs", "infrastructure::walk_policy::"),
+}
 
 # An inventory entry is a call to the local `ex(...)` helper that opens on its
 # own line at some indentation. Anchoring on the line start is what keeps the
@@ -297,22 +315,37 @@ def item_statements(text: str) -> list[tuple[int, str]]:
 def imported_in_production(file_text: str, dependency_path: str) -> bool:
     """Does the named dependency appear in this file outside `#[cfg(test)]`?
 
-    Matched on the final path segment, which is what a `use` statement names
-    (`use crate::infrastructure::parser::Language;`). A dependency path with no
-    `::` is matched whole.
-    """
-    leaves = dependency_leaves(dependency_path)
-    if not leaves:
-        return False
-    leaf = leaves[-1].rstrip(":")
-    if not leaf:
-        return False
+    Matched on the full path the dependency names, in either spelling: a
+    `use` statement (`use crate::infrastructure::parser::Language;`) or an
+    inline path (`crate::infrastructure::parser::Language::new(..)`). The
+    architectural guard reports both, so this classification has to read
+    both: a drift the guard calls production cannot be filed as test-only
+    here.
 
+    The path is matched whole rather than by its last segment, so that the
+    mirror and the Rust guard ask the same question. Matching by segment
+    alone reads `use crate::domain::aggregates::call_graph::SymbolId;` as
+    an import of `infrastructure::graph::`, because "graph" is a substring
+    of "call_graph" — a production import that never happened.
+
+    Comment lines are not hits: a path written in prose is not a
+    dependency.
+    """
+    needle = "crate::" + dependency_path
     test_lines = cfg_test_line_spans(file_text)
+
     for start, statement in item_statements(file_text):
         if start in test_lines:
             continue
-        if leaf in statement:
+        if needle in statement:
+            return True
+
+    for index, raw in enumerate(file_text.splitlines(), start=1):
+        if index in test_lines:
+            continue
+        if raw.strip().startswith("//"):
+            continue
+        if needle in raw:
             return True
     return False
 
@@ -612,14 +645,16 @@ def test_production_debt_did_not_grow() -> None:
         for e in M.added
     )
     check(
-        len(M.added) <= APPROVED_PRODUCTION_GROWTH,
+        all(
+            (e["file_path"], e["dependency_path"]) in APPROVED_PRODUCTION_ENTRIES
+            for e in M.added
+        ),
         f"CR-06 production debt grew from {len(M.base_production)} to "
         f"{len(M.head_production)} against base {M.base[:12]} "
-        f"({len(M.added)} added, {len(M.removed)} retired, "
-        f"{APPROVED_PRODUCTION_GROWTH} approved):\n{added}\n"
+        f"({len(M.added)} added, {len(M.removed)} retired):\n{added}\n"
         f"    ST-01..ST-05 retire these; they do not add them. If this growth "
-        f"was decided, set APPROVED_PRODUCTION_GROWTH in this file with a "
-        f"comment naming who approved it and why.",
+        f"was decided, add the pair to APPROVED_PRODUCTION_ENTRIES in this file "
+        f"with a comment naming who approved it and why.",
     )
 
 

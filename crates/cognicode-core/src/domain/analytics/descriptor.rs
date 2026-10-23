@@ -550,13 +550,16 @@ impl RunOutput {
 /// required for dynamic dispatch via `#[async_trait]`.
 #[async_trait::async_trait]
 pub trait AlgorithmExecute: AlgorithmDescriptor {
-    /// Execute the algorithm against the given call graph.
+    /// Execute the algorithm over the given projection.
     ///
     /// # Arguments
     ///
     /// - `params` — validated algorithm parameters (schema-validated before this call)
-    /// - `graph` — the call graph to run the algorithm on
     /// - `limits` — effective resource limits (already validated against descriptor maxima)
+    /// - `projection` — the read-side projection to run the algorithm
+    ///   over. The registry builds it with the injected factory, so the
+    ///   algorithm never constructs the adapter itself, and never sees
+    ///   the graph the projection was built from.
     ///
     /// # Returns
     ///
@@ -566,8 +569,8 @@ pub trait AlgorithmExecute: AlgorithmDescriptor {
     async fn execute(
         &self,
         params: &serde_json::Value,
-        graph: &crate::domain::aggregates::CallGraph,
         limits: &PlanLimits,
+        projection: &dyn crate::domain::ports::call_graph_projection::CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError>;
 }
 

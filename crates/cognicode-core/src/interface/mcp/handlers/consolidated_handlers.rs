@@ -481,7 +481,8 @@ pub async fn handle_project_insights(
     let graph = ctx.analysis_service.get_project_graph();
 
     // Analyze with real GraphInsightsService
-    let report = GraphInsightsService::analyze(&graph);
+    let projection = crate::infrastructure::graph::project_call_graph(&graph);
+    let report = GraphInsightsService::analyze(&graph, projection.as_ref());
 
     // Compute entry points and dead code from graph (not in InsightsReport)
     let entries = graph.roots().len();

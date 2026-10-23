@@ -2,7 +2,7 @@
 //!
 //! ## Contract
 //!
-//! `GraphInsightsService::analyze(&CallGraph)` MUST complete in
+//! `GraphInsightsService::analyze(&CallGraph, &projection)` MUST complete in
 //! `< BUDGET_MS` milliseconds for a Tier-2 fixture (1000 nodes,
 //! ~3000 edges). The fixture is deterministic (seeded RNG, fixed
 //! topology) so the test is reproducible across CI runs.
@@ -48,6 +48,7 @@ use cognicode_core::domain::aggregates::call_graph::CallGraph;
 use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::services::ExtractionContext;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+use cognicode_core::infrastructure::graph::project_call_graph;
 use std::time::Instant;
 
 /// Per-tier size knob.
@@ -184,7 +185,12 @@ fn measure_analyze(spec: TierSpec) -> (u128, usize) {
     let graph = build_stochastic_dense_graph(spec, 0xCAFE_F00D_DEAD_BEEF);
     let edge_count = graph.edge_count();
     let started = Instant::now();
-    let report = GraphInsightsService::analyze(&graph);
+    // The projection is built inside the measured region on purpose. The
+    // budget covers the whole "graph in, report out" path, because that is
+    // what the caller pays for; measuring only the analysis would let the
+    // budget drift upwards without anybody noticing.
+    let projection = project_call_graph(&graph);
+    let report = GraphInsightsService::analyze(&graph, projection.as_ref());
     let elapsed = started.elapsed();
     // Touch the report so a future compiler can't elide the call.
     // health_score is the cheapest field; we just need a use that

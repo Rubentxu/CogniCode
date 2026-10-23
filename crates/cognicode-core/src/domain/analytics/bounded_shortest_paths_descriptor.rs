@@ -13,7 +13,7 @@ use crate::domain::analytics::{
     FixtureGraph, Maturity, OutputField, OutputSchema, OutputType, ProjectionAssumption, RunOutput,
 };
 use crate::domain::plan::limits::PlanLimits;
-use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, project_call_graph};
+use crate::domain::ports::call_graph_projection::CallGraphProjectionPort;
 use cognicode_graph_algos::GraphBuilder;
 
 // =============================================================================
@@ -259,8 +259,8 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
     async fn execute(
         &self,
         params: &serde_json::Value,
-        graph: &CallGraph,
         limits: &PlanLimits,
+        projection: &dyn CallGraphProjectionPort,
     ) -> Result<RunOutput, AnalyticsError> {
         let obj = params
             .as_object()
@@ -286,7 +286,6 @@ impl AlgorithmExecute for BoundedShortestPathsDescriptor {
             .and_then(|v| v.as_u64())
             .map(|v| v as usize);
 
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let out_neighbors = projection.build_out_neighbors();
         let _n = projection.node_count();
 

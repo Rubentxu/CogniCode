@@ -2,11 +2,11 @@
 //! the canonical [`CallGraph`] aggregate.
 //!
 //! `ImpactAnalysisService` is a **stateless** coordinator: it holds no
-//! fields, exposes a `new()` constructor, and rebuilds a
-//! `CallGraphProjection` on every public call from the immutable
-//! `&CallGraph` reference passed by the caller. The projection is
+//! fields, exposes a `new()` constructor, and reads from a
+//! [`CallGraphProjectionPort`] the caller supplies. The projection is
 //! consumed read-only — neither the aggregate nor the projection is
-//! mutated.
+//! mutated. The caller owns the projection, so one projection can serve
+//! many queries without being rebuilt.
 //!
 //! ## Direction semantics
 //!
@@ -17,7 +17,7 @@
 //! [`ImpactAnalysisService::forward_radius`] follows the **successor** direction
 //! (forward BFS over outgoing edges). It answers the "what does X
 //! affect" question. The two methods are symmetric counterparts and
-//! must return identical sets when applied to the same `(graph, root,
+//! must return identical sets when applied to the same `(projection, root,
 //! max_depth)` triple on a graph where the edge direction is reversed
 //! (mirror graph).
 //!
@@ -37,18 +37,16 @@ use crate::application::dto::{
 };
 use crate::domain::aggregates::CallGraph;
 use crate::domain::aggregates::call_graph::SymbolId;
-use crate::domain::ports::call_graph_projection::{
-    CallGraphProjectionPort, SubgraphDirection, project_call_graph,
-};
+use crate::domain::ports::call_graph_projection::{CallGraphProjectionPort, SubgraphDirection};
 use cognicode_graph_algos::GraphBuilder;
 
 /// Application service for graph-aware impact analysis.
 ///
-/// Holds **no state**. Every public method rebuilds a
-/// `CallGraphProjection` from the supplied `&CallGraph`, then delegates
-/// to the projection algorithm that best fits the query. Because the
-/// projection is per-call and read-only, the service is safe to share
-/// across threads and is trivially constructible.
+/// Holds **no state**. Every public method reads from a
+/// [`CallGraphProjectionPort`] the caller supplies, and delegates to the
+/// projection operation that best fits the query. The caller owns the
+/// projection, so one projection can serve many queries without being
+/// rebuilt, and the service never has to know how a projection is built.
 pub struct ImpactAnalysisService;
 
 impl ImpactAnalysisService {
@@ -75,11 +73,10 @@ impl ImpactAnalysisService {
     /// unchanged.
     pub fn impact_radius(
         &self,
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         root: &SymbolId,
         max_depth: usize,
     ) -> Vec<SymbolId> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection.find_impact_radius(root, max_depth)
     }
 
@@ -92,8 +89,7 @@ impl ImpactAnalysisService {
     /// depth. The root itself is **not** included in the result.
     ///
     /// Symmetric counterpart of [`Self::impact_radius`]: delegates to
-    /// [`CallGraphProjectionPort::find_forward_reach`] after building a
-    /// fresh projection.
+    /// [`CallGraphProjectionPort::find_forward_reach`].
     ///
     /// Returns `vec![]` (no panic) when:
     /// - `root` is not present in the graph;
@@ -105,11 +101,10 @@ impl ImpactAnalysisService {
     /// unchanged.
     pub fn forward_radius(
         &self,
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         root: &SymbolId,
         max_depth: usize,
     ) -> Vec<SymbolId> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection.find_forward_reach(root, max_depth)
     }
 
@@ -118,8 +113,12 @@ impl ImpactAnalysisService {
     /// Returns `false` (no panic) when either id is missing from the
     /// graph. The trivial self-path `A -> A` returns `true` when `A` is
     /// present.
-    pub fn has_path(&self, graph: &CallGraph, from: &SymbolId, to: &SymbolId) -> bool {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn has_path(
+        &self,
+        projection: &dyn CallGraphProjectionPort,
+        from: &SymbolId,
+        to: &SymbolId,
+    ) -> bool {
         projection.has_path(from, to)
     }
 
@@ -132,11 +131,10 @@ impl ImpactAnalysisService {
     /// `A -> A` returns `Some(PathResultDto { path: [A], total_cost: 0.0, .. })`.
     pub fn shortest_path(
         &self,
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         from: &SymbolId,
         to: &SymbolId,
     ) -> Option<PathResultDto> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         projection
             .dijkstra(from, to)
             .map(|(path, cost)| PathResultDto::from_path(path, cost))
@@ -149,8 +147,7 @@ impl ImpactAnalysisService {
     /// `CycleDetector` convention: the result describes **mutual**
     /// dependencies, not isolated nodes whose only cycle is a
     /// degenerate self-loop. An empty graph returns `vec![]`.
-    pub fn detect_cycles(&self, graph: &CallGraph) -> Vec<Vec<SymbolId>> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn detect_cycles(&self, projection: &dyn CallGraphProjectionPort) -> Vec<Vec<SymbolId>> {
         projection
             .strongly_connected_components()
             .into_iter()
@@ -163,8 +160,11 @@ impl ImpactAnalysisService {
     /// Returns `None` (no panic) when `id` is not in the graph. An
     /// isolated node (no edges) is its own component and returns
     /// `Some(vec![id])`.
-    pub fn containing_component(&self, graph: &CallGraph, id: &SymbolId) -> Option<Vec<SymbolId>> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn containing_component(
+        &self,
+        projection: &dyn CallGraphProjectionPort,
+        id: &SymbolId,
+    ) -> Option<Vec<SymbolId>> {
         projection
             .connected_components()
             .into_iter()
@@ -184,12 +184,11 @@ impl ImpactAnalysisService {
     /// - Cycle reachable → `visited` set prevents infinite loop.
     pub fn subgraph(
         &self,
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         root: &SymbolId,
         direction: SubgraphDirection,
         max_depth: usize,
     ) -> SubgraphResultDto {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         SubgraphResultDto::from_view(projection.extract_subgraph(root, direction, max_depth))
     }
 
@@ -205,8 +204,11 @@ impl ImpactAnalysisService {
     /// by the underlying graph-algos algorithm. Callers wanting
     /// order-insensitive equality should sort by `ClusterDto::members`
     /// (string form).
-    pub fn cluster_components(&self, graph: &CallGraph, method: &str) -> ClusterResultDto {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
+    pub fn cluster_components(
+        &self,
+        projection: &dyn CallGraphProjectionPort,
+        method: &str,
+    ) -> ClusterResultDto {
         let (in_neighbors, _) = projection.build_adjacency();
         let out_neighbors = projection.build_out_neighbors();
         let n = projection.node_count();
@@ -246,11 +248,10 @@ impl ImpactAnalysisService {
     ///   (endpoint missing or unreachable).
     pub fn explain_path(
         &self,
-        graph: &CallGraph,
+        projection: &dyn CallGraphProjectionPort,
         from: &SymbolId,
         to: &SymbolId,
     ) -> Option<ExplainResultDto> {
-        let projection: std::sync::Arc<dyn CallGraphProjectionPort> = project_call_graph(graph);
         let view = projection.explain_path(from, to);
         Some(match view {
             Some(view) => ExplainResultDto::from_view(&view, true),
@@ -268,6 +269,8 @@ impl Default for ImpactAnalysisService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use crate::domain::aggregates::Symbol;
     use crate::domain::services::ExtractionContext;
     use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
@@ -296,6 +299,15 @@ mod tests {
         let mut g = CallGraph::new();
         builder(&mut g);
         g
+    }
+
+    /// The read-side projection the service reads from.
+    ///
+    /// The service works over a projection rather than over the graph, and
+    /// these tests compare the service against that same projection, so
+    /// both sides read the real thing.
+    fn projection_of(graph: &CallGraph) -> Arc<dyn CallGraphProjectionPort> {
+        crate::infrastructure::graph::project_call_graph(graph)
     }
 
     /// Add both endpoints and an outgoing edge `a -> b` with confidence
@@ -335,13 +347,14 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
         assert_eq!(
-            sorted_set(&svc.impact_radius(&g, &id("C"), 1)),
+            sorted_set(&svc.impact_radius(projection.as_ref(), &id("C"), 1)),
             sorted_set(&[id("A"), id("B")])
         );
         assert_eq!(
-            sorted_set(&svc.impact_radius(&g, &id("C"), 2)),
+            sorted_set(&svc.impact_radius(projection.as_ref(), &id("C"), 2)),
             sorted_set(&[id("A"), id("B"), id("D")])
         );
     }
@@ -353,8 +366,15 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.impact_radius(&g, &id("B"), 0).is_empty());
-        assert!(svc.impact_radius(&g, &id("A"), 0).is_empty());
+        let projection = projection_of(&g);
+        assert!(
+            svc.impact_radius(projection.as_ref(), &id("B"), 0)
+                .is_empty()
+        );
+        assert!(
+            svc.impact_radius(projection.as_ref(), &id("A"), 0)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -363,16 +383,21 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         // `m` is not in the projection — must not panic.
         let m = id("missing");
-        assert!(svc.impact_radius(&g, &m, 10).is_empty());
+        assert!(svc.impact_radius(projection.as_ref(), &m, 10).is_empty());
     }
 
     #[test]
     fn test_impact_radius_empty_graph() {
         let g = CallGraph::new();
         let svc = ImpactAnalysisService::new();
-        assert!(svc.impact_radius(&g, &id("anything"), 5).is_empty());
+        let projection = projection_of(&g);
+        assert!(
+            svc.impact_radius(projection.as_ref(), &id("anything"), 5)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -383,8 +408,9 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         assert_eq!(
-            sorted_set(&svc.impact_radius(&g, &id("C"), usize::MAX)),
+            sorted_set(&svc.impact_radius(projection.as_ref(), &id("C"), usize::MAX)),
             sorted_set(&[id("A"), id("B"), id("D")])
         );
     }
@@ -401,9 +427,10 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.has_path(&g, &id("A"), &id("B")));
-        assert!(svc.has_path(&g, &id("A"), &id("C")));
-        assert!(!svc.has_path(&g, &id("B"), &id("A")));
+        let projection = projection_of(&g);
+        assert!(svc.has_path(projection.as_ref(), &id("A"), &id("B")));
+        assert!(svc.has_path(projection.as_ref(), &id("A"), &id("C")));
+        assert!(!svc.has_path(projection.as_ref(), &id("B"), &id("A")));
     }
 
     #[test]
@@ -412,9 +439,10 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let m = id("missing");
-        assert!(!svc.has_path(&g, &id("A"), &m));
-        assert!(!svc.has_path(&g, &m, &id("A")));
+        assert!(!svc.has_path(projection.as_ref(), &id("A"), &m));
+        assert!(!svc.has_path(projection.as_ref(), &m, &id("A")));
     }
 
     #[test]
@@ -424,7 +452,8 @@ mod tests {
             g.add_symbol(sym("A"));
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.has_path(&g, &id("A"), &id("A")));
+        let projection = projection_of(&g);
+        assert!(svc.has_path(projection.as_ref(), &id("A"), &id("A")));
     }
 
     // ---------------------------------------------------------------------
@@ -464,9 +493,10 @@ mod tests {
             );
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
         let result = svc
-            .shortest_path(&g, &id("A"), &id("B"))
+            .shortest_path(projection.as_ref(), &id("A"), &id("B"))
             .expect("A -> B is reachable");
 
         assert_eq!(
@@ -488,7 +518,11 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.shortest_path(&g, &id("A"), &id("C")).is_none());
+        let projection = projection_of(&g);
+        assert!(
+            svc.shortest_path(projection.as_ref(), &id("A"), &id("C"))
+                .is_none()
+        );
     }
 
     #[test]
@@ -497,9 +531,16 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let m = id("missing");
-        assert!(svc.shortest_path(&g, &id("A"), &m).is_none());
-        assert!(svc.shortest_path(&g, &m, &id("A")).is_none());
+        assert!(
+            svc.shortest_path(projection.as_ref(), &id("A"), &m)
+                .is_none()
+        );
+        assert!(
+            svc.shortest_path(projection.as_ref(), &m, &id("A"))
+                .is_none()
+        );
     }
 
     #[test]
@@ -521,8 +562,9 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let result = svc
-            .shortest_path(&g, &id("A"), &id("B"))
+            .shortest_path(projection.as_ref(), &id("A"), &id("B"))
             .expect("A -> B reachable");
 
         assert!(result.total_cost.is_finite());
@@ -544,8 +586,9 @@ mod tests {
             g.add_symbol(sym("A"));
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let result = svc
-            .shortest_path(&g, &id("A"), &id("A"))
+            .shortest_path(projection.as_ref(), &id("A"), &id("A"))
             .expect("self-path must exist");
 
         assert_eq!(result.path, vec!["test.rs:A:1".to_string()]);
@@ -566,7 +609,8 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.detect_cycles(&g).is_empty());
+        let projection = projection_of(&g);
+        assert!(svc.detect_cycles(projection.as_ref()).is_empty());
     }
 
     #[test]
@@ -577,7 +621,8 @@ mod tests {
             add_edge(g, "B", "A", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let sccs = svc.detect_cycles(&g);
+        let projection = projection_of(&g);
+        let sccs = svc.detect_cycles(projection.as_ref());
         assert_eq!(sccs.len(), 1);
         assert_eq!(sorted_set(&sccs[0]), sorted_set(&[id("A"), id("B")]));
     }
@@ -594,7 +639,8 @@ mod tests {
             g.add_symbol(sym("A"));
         });
         let svc = ImpactAnalysisService::new();
-        assert!(svc.detect_cycles(&g).is_empty());
+        let projection = projection_of(&g);
+        assert!(svc.detect_cycles(projection.as_ref()).is_empty());
     }
 
     #[test]
@@ -607,7 +653,8 @@ mod tests {
             add_edge(g, "Y", "X", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let sccs = svc.detect_cycles(&g);
+        let projection = projection_of(&g);
+        let sccs = svc.detect_cycles(projection.as_ref());
         assert_eq!(sccs.len(), 2);
 
         // Order-insensitive membership check.
@@ -620,7 +667,8 @@ mod tests {
     fn test_detect_cycles_empty() {
         let g = CallGraph::new();
         let svc = ImpactAnalysisService::new();
-        assert!(svc.detect_cycles(&g).is_empty());
+        let projection = projection_of(&g);
+        assert!(svc.detect_cycles(projection.as_ref()).is_empty());
     }
 
     // ---------------------------------------------------------------------
@@ -643,8 +691,9 @@ mod tests {
             add_edge(g, "C", "D", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let comp = svc
-            .containing_component(&g, &id("A"))
+            .containing_component(projection.as_ref(), &id("A"))
             .expect("A is in the graph");
         assert_eq!(sorted_set(&comp), sorted_set(&[id("A"), id("B")]));
     }
@@ -655,8 +704,9 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let m = id("missing");
-        assert!(svc.containing_component(&g, &m).is_none());
+        assert!(svc.containing_component(projection.as_ref(), &m).is_none());
     }
 
     #[test]
@@ -666,8 +716,9 @@ mod tests {
             g.add_symbol(sym("A"));
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let comp = svc
-            .containing_component(&g, &id("A"))
+            .containing_component(projection.as_ref(), &id("A"))
             .expect("A is present");
         assert_eq!(comp, vec![id("A")]);
     }
@@ -682,17 +733,15 @@ mod tests {
     /// `forward_radius` is implemented.
     #[test]
     fn test_forward_radius_mirrors_find_forward_reach() {
-        use crate::domain::ports::call_graph_projection::project_call_graph;
-
         let g = make_graph(|g| {
             add_edge(g, "A", "B", DependencyType::Calls);
             add_edge(g, "B", "C", DependencyType::Calls);
             add_edge(g, "A", "D", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
-        let svc_result = svc.forward_radius(&g, &id("A"), 2);
-        let projection = project_call_graph(&g);
+        let svc_result = svc.forward_radius(projection.as_ref(), &id("A"), 2);
         let projection_result = projection.find_forward_reach(&id("A"), 2);
 
         assert_eq!(
@@ -711,7 +760,11 @@ mod tests {
     fn test_forward_radius_empty_graph_returns_empty() {
         let g = CallGraph::new();
         let svc = ImpactAnalysisService::new();
-        assert!(svc.forward_radius(&g, &id("anything"), 5).is_empty());
+        let projection = projection_of(&g);
+        assert!(
+            svc.forward_radius(projection.as_ref(), &id("anything"), 5)
+                .is_empty()
+        );
     }
 
     /// Missing root: must return empty, not panic.
@@ -721,8 +774,9 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
         let m = id("missing");
-        assert!(svc.forward_radius(&g, &m, 10).is_empty());
+        assert!(svc.forward_radius(projection.as_ref(), &m, 10).is_empty());
     }
 
     // ---------------------------------------------------------------------
@@ -786,13 +840,14 @@ mod tests {
         let symbols_before = g.symbol_count();
         let edges_before = g.edge_count();
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
         for _ in 0..100 {
-            let _ = svc.impact_radius(&g, &id("E"), 3);
-            let _ = svc.has_path(&g, &id("A"), &id("E"));
-            let _ = svc.shortest_path(&g, &id("A"), &id("E"));
-            let _ = svc.detect_cycles(&g);
-            let _ = svc.containing_component(&g, &id("A"));
+            let _ = svc.impact_radius(projection.as_ref(), &id("E"), 3);
+            let _ = svc.has_path(projection.as_ref(), &id("A"), &id("E"));
+            let _ = svc.shortest_path(projection.as_ref(), &id("A"), &id("E"));
+            let _ = svc.detect_cycles(projection.as_ref());
+            let _ = svc.containing_component(projection.as_ref(), &id("A"));
         }
 
         assert_eq!(g.symbol_count(), symbols_before);
@@ -816,12 +871,13 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
         let comp_a = svc
-            .containing_component(&g, &id("A"))
+            .containing_component(projection.as_ref(), &id("A"))
             .expect("A is present");
         let comp_c = svc
-            .containing_component(&g, &id("C"))
+            .containing_component(projection.as_ref(), &id("C"))
             .expect("C is present");
 
         assert_eq!(
@@ -834,7 +890,7 @@ mod tests {
         );
 
         // No cycle in the linear chain.
-        assert!(svc.detect_cycles(&g).is_empty());
+        assert!(svc.detect_cycles(projection.as_ref()).is_empty());
     }
 
     // ---------------------------------------------------------------------
@@ -866,8 +922,14 @@ mod tests {
             add_edge(g, "B", "C", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
+        let projection = projection_of(&g);
 
-        let dto: SubgraphResultDto = svc.subgraph(&g, &id("A"), SubgraphDirection::Outgoing, 2);
+        let dto: SubgraphResultDto = svc.subgraph(
+            projection.as_ref(),
+            &id("A"),
+            SubgraphDirection::Outgoing,
+            2,
+        );
 
         let mut nodes_sorted = dto.nodes.clone();
         nodes_sorted.sort();
@@ -890,7 +952,8 @@ mod tests {
             add_edge(g, "B", "A", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let dto: ClusterResultDto = svc.cluster_components(&g, "scc");
+        let projection = projection_of(&g);
+        let dto: ClusterResultDto = svc.cluster_components(projection.as_ref(), "scc");
         assert_eq!(dto.0.len(), 1, "exactly one SCC cluster");
         assert_eq!(dto.0[0].size, 2, "SCC cluster has 2 members");
     }
@@ -905,7 +968,8 @@ mod tests {
             add_edge(g, "C", "D", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let dto: ClusterResultDto = svc.cluster_components(&g, "connected");
+        let projection = projection_of(&g);
+        let dto: ClusterResultDto = svc.cluster_components(projection.as_ref(), "connected");
         // Two disjoint components: {A, B} and {C, D}.
         assert_eq!(dto.0.len(), 2, "two undirected components");
         let sizes: Vec<usize> = {
@@ -925,7 +989,9 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let result: Option<ExplainResultDto> = svc.explain_path(&g, &id("A"), &id("missing"));
+        let projection = projection_of(&g);
+        let result: Option<ExplainResultDto> =
+            svc.explain_path(projection.as_ref(), &id("A"), &id("missing"));
         let dto = result.expect("service must wrap None as Some(found:false)");
         assert!(!dto.found, "found must be false for missing endpoint");
         assert!(dto.hops.is_empty(), "no hops when no path");
@@ -940,7 +1006,9 @@ mod tests {
             add_edge(g, "A", "B", DependencyType::Calls);
         });
         let svc = ImpactAnalysisService::new();
-        let result: Option<ExplainResultDto> = svc.explain_path(&g, &id("A"), &id("B"));
+        let projection = projection_of(&g);
+        let result: Option<ExplainResultDto> =
+            svc.explain_path(projection.as_ref(), &id("A"), &id("B"));
         let dto = result.expect("A -> B is reachable");
         assert!(dto.found);
         assert_eq!(dto.hops.len(), 1);
