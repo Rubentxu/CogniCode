@@ -1,119 +1,45 @@
-//! Graph construction strategy trait and implementations
+//! Indexing strategies and the capabilities that belong to them.
 //!
-//! This module provides a unified interface for different graph construction
-//! strategies, allowing callers to choose the appropriate strategy based on
-//! their needs (speed vs. completeness).
+//! A strategy here indexes a project so its symbols can be found by
+//! name. The capabilities that answer deeper questions — the graph of a
+//! file, the hierarchy around a symbol, the graph of the project — live
+//! with the types that can honour them, and the graph of the project
+//! lives with the service that publishes its coverage report.
 
 use crate::domain::aggregates::call_graph::CallGraph;
-use crate::domain::traits::DependencyRepository;
 use crate::domain::value_objects::TraversalDirection;
 use crate::infrastructure::graph::lightweight_index::LightweightIndex;
 use crate::infrastructure::graph::on_demand_graph::{CallHierarchyResult, OnDemandGraphBuilder};
-use crate::infrastructure::graph::per_file_graph::{
-    GlobalSymbolIndex, PerFileGraphCache, TargetResolution,
-};
+use crate::infrastructure::graph::per_file_graph::PerFileGraphCache;
 use crate::infrastructure::graph::symbol_index::SymbolIndex;
-use crate::infrastructure::parser::TreeSitterParser;
 use std::path::Path;
 use std::sync::{Arc, RwLock};
 
-/// Per-file data captured during the pre-walk in `FullGraphStrategy::build_full_graph`.
+/// A strategy that indexes a project so its symbols can be found by name.
 ///
-/// `path` is the entry's file path (used for `GlobalSymbolIndex` lookups so
-/// cross-file edges resolve to the candidate at the caller's scope). `symbols`
-/// are the parsed top-level symbols; `rels` are the parsed call relationships.
-/// Owning the data behind a named struct keeps the call-site tuple types
-/// readable and silences the `clippy::type_complexity` lint.
-struct FileData {
-    path: std::path::PathBuf,
-    symbols: Vec<crate::domain::aggregates::symbol::Symbol>,
-    rels: Vec<(crate::domain::aggregates::symbol::Symbol, String)>,
-}
-
-/// Trait for graph construction strategies
+/// The trait carries the one capability that every strategy can honour
+/// without lying: build the index of a project, and answer questions
+/// about the symbols in it.
 ///
-/// This trait defines the interface for building graphs using different
-/// strategies. Each implementation can optimize for different use cases:
-/// - LightweightStrategy: Fast index-only queries
-/// - OnDemandStrategy: Lazy graph construction per query
-/// - PerFileStrategy: Modular file-by-file construction
-/// - FullGraphStrategy: Complete project graph
+/// Building the graph of the project is not a strategy concern. There is
+/// one way to build it, and it lives with the service that owns the
+/// coverage report. A strategy that could not build a graph faithfully
+/// used to answer `Complete` about a graph it had never measured, and
+/// the honest answer to "I did not measure this" is not to offer the
+/// capability at all.
 pub trait GraphStrategy: Send + Sync {
-    /// Builds a lightweight index (symbol name -> locations)
+    /// Builds the index of the project at `project_dir`.
     fn build_index(&mut self, project_dir: &Path) -> std::io::Result<()>;
 
-    /// Queries symbols by name, returning locations
+    /// The locations of the symbols named `symbol_name`.
+    ///
+    /// An empty name asks for every symbol of the index.
     fn query_symbols(
         &self,
         symbol_name: &str,
     ) -> Vec<crate::infrastructure::graph::lightweight_index::SymbolLocation>;
 
-    /// Builds a local graph for a single file, **with the references the
-    /// file states and nobody declared**.
-    ///
-    /// The graph alone does not say them. A file can be read and still
-    /// state a relation nobody ties to a declaration — the reference
-    /// names something the file does not declare, or names several
-    /// things and the build cannot tell which one it means. Those are
-    /// facts about what the file says, and a consumer that gets the
-    /// graph without them answers "this file states nothing" about a file
-    /// that states plenty.
-    ///
-    /// A strategy that does not measure the references returns an empty
-    /// list. That is not the same claim: the truth there is "we did not
-    /// look", not "there is nothing to look at". The strategies that do
-    /// measure it —the per-file one— return what they found.
-    fn build_local_graph(
-        &self,
-        file_path: &Path,
-    ) -> std::io::Result<(
-        CallGraph,
-        Vec<crate::domain::value_objects::PendingReference>,
-    )>;
-
-    /// Builds a subgraph centered on a symbol with given depth
-    fn build_subgraph(
-        &self,
-        symbol_name: &str,
-        depth: u32,
-        direction: TraversalDirection,
-    ) -> CallHierarchyResult;
-
-    /// Builds the full project call graph
-    fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph>;
-
-    /// Builds the full project call graph **with an honest coverage report**.
-    ///
-    /// The default implementation calls [`Self::build_full_graph`] and
-    /// wraps the result in a `BuildStatus::Complete` report. Strategies
-    /// that have a typed `_report` (FullGraphStrategy, PerFileStrategy)
-    /// override this to surface walk/read/parse failures via
-    /// [`BuildStatus::Partial`](crate::infrastructure::graph::per_file_graph::BuildStatus::Partial).
-    ///
-    /// H1.2 invariant: a `&dyn GraphStrategy` (the shape a generic
-    /// dispatcher has, e.g. the MCP/SDK path) can ask for the typed
-    /// status of the build, not just the `CallGraph`. The seven CLI
-    /// commands in `interface/cli/commands.rs` already do this against
-    /// the concrete type; this trait method makes it available to any
-    /// code that has only the trait object.
-    ///
-    /// H1.2 honesty contract: the default MUST NOT synthesise `Partial`.
-    /// A strategy that doesn't measure coverage (LightweightStrategy,
-    /// OnDemandStrategy) reports `Complete` — the truth is "we didn't
-    /// check", not "we checked and it was partial". A lie about
-    /// coverage is worse than a silent gap.
-    fn build_full_graph_report(
-        &self,
-        project_dir: &Path,
-    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
-        let graph = self.build_full_graph(project_dir)?;
-        Ok(crate::infrastructure::graph::per_file_graph::BuildReport {
-            graph,
-            status: crate::infrastructure::graph::per_file_graph::BuildStatus::Complete,
-        })
-    }
-
-    /// Returns the strategy name for debugging
+    /// The name this strategy answers to.
     fn name(&self) -> &'static str;
 }
 
@@ -157,50 +83,6 @@ impl GraphStrategy for LightweightStrategy {
         self.index.find_symbol(symbol_name).to_vec()
     }
 
-    fn build_local_graph(
-        &self,
-        _file_path: &Path,
-    ) -> std::io::Result<(
-        CallGraph,
-        Vec<crate::domain::value_objects::PendingReference>,
-    )> {
-        // Lightweight strategy doesn't build graphs
-        Ok((CallGraph::new(), Vec::new()))
-    }
-
-    fn build_subgraph(
-        &self,
-        symbol_name: &str,
-        _depth: u32,
-        _direction: TraversalDirection,
-    ) -> CallHierarchyResult {
-        // Return basic result from index
-        let locations = self.index.find_symbol(symbol_name);
-        let root_symbol = if let Some(loc) = locations.first() {
-            crate::domain::aggregates::symbol::Symbol::new(
-                symbol_name,
-                loc.symbol_kind,
-                crate::domain::value_objects::Location::new(&loc.file, loc.line, loc.column),
-            )
-        } else {
-            crate::domain::aggregates::symbol::Symbol::new(
-                symbol_name,
-                crate::domain::value_objects::SymbolKind::Unknown,
-                crate::domain::value_objects::Location::new("unknown", 0, 0),
-            )
-        };
-
-        CallHierarchyResult {
-            root_symbol,
-            entries: Vec::new(),
-        }
-    }
-
-    fn build_full_graph(&self, _project_dir: &Path) -> std::io::Result<CallGraph> {
-        // Lightweight strategy doesn't build full graphs
-        Ok(CallGraph::new())
-    }
-
     fn name(&self) -> &'static str {
         "LightweightStrategy"
     }
@@ -222,6 +104,20 @@ impl OnDemandStrategy {
             builder: OnDemandGraphBuilder::new(),
             index: Arc::new(RwLock::new(LightweightIndex::new())),
         }
+    }
+
+    /// The hierarchy around a symbol, built when it is asked for.
+    ///
+    /// The graph is not held ready: it is built for the symbol that is
+    /// asked about, at the depth that is asked for, and only then.
+    pub fn build_subgraph(
+        &self,
+        symbol_name: &str,
+        depth: u32,
+        direction: TraversalDirection,
+    ) -> CallHierarchyResult {
+        let mut builder = OnDemandGraphBuilder::with_index(self.index.clone());
+        builder.build_for_symbol(symbol_name, depth, direction)
     }
 }
 
@@ -246,85 +142,16 @@ impl GraphStrategy for OnDemandStrategy {
         self.index.read().unwrap().find_symbol(symbol_name).to_vec()
     }
 
-    fn build_local_graph(
-        &self,
-        file_path: &Path,
-    ) -> std::io::Result<(
-        CallGraph,
-        Vec<crate::domain::value_objects::PendingReference>,
-    )> {
-        let source = std::fs::read_to_string(file_path)?;
-        let file_path_str = file_path.to_string_lossy().to_string();
-
-        let language =
-            crate::infrastructure::parser::Language::from_extension(file_path.extension())
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unsupported file type")
-                })?;
-
-        let parser =
-            TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
-        let symbols = parser
-            .find_all_symbols_with_path(&source, &file_path_str)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let relationships = parser
-            .find_call_relationships(&source, &file_path_str)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-
-        let mut graph = CallGraph::new();
-        let mut name_to_id: std::collections::HashMap<
-            String,
-            crate::domain::aggregates::call_graph::SymbolId,
-        > = std::collections::HashMap::new();
-
-        for symbol in symbols {
-            let id = graph.add_symbol(symbol.clone());
-            name_to_id.insert(symbol.name().to_lowercase(), id);
-        }
-
-        for (caller, callee_name) in relationships {
-            let caller_id =
-                crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
-            if let Some(callee_id) = name_to_id.get(&callee_name.to_lowercase()).cloned() {
-                let _ = graph.add_dependency(
-                    &caller_id,
-                    &callee_id,
-                    crate::domain::value_objects::DependencyType::Calls,
-                );
-            }
-        }
-
-        // As in the on-demand strategy: this one does not measure the
-        // references the file states and nobody declared, so the list is
-        // empty because nothing was looked at.
-        Ok((graph, Vec::new()))
-    }
-
-    fn build_subgraph(
-        &self,
-        symbol_name: &str,
-        depth: u32,
-        direction: TraversalDirection,
-    ) -> CallHierarchyResult {
-        let mut builder = OnDemandGraphBuilder::with_index(self.index.clone());
-        builder.build_for_symbol(symbol_name, depth, direction)
-    }
-
-    fn build_full_graph(&self, _project_dir: &Path) -> std::io::Result<CallGraph> {
-        // On-demand strategy doesn't pre-build full graphs
-        // Return empty graph - use query methods instead
-        Ok(CallGraph::new())
-    }
-
     fn name(&self) -> &'static str {
         "OnDemandStrategy"
     }
 }
 
-/// Per-file strategy - builds and caches graph per file
+/// The strategy that builds and caches the graph of a file.
 ///
-/// This strategy builds the graph file-by-file and allows merging
-/// on demand. Good for incremental analysis.
+/// It builds the graph file-by-file and allows merging on demand. It
+/// is not an indexing strategy: a strategy that cannot index a project
+/// does not belong to the contract of the ones that do.
 pub struct PerFileStrategy {
     cache: Arc<PerFileGraphCache>,
 }
@@ -346,16 +173,42 @@ impl PerFileStrategy {
 
     /// Merge an explicit list of files and report what could not be read.
     ///
-    /// The honest counterpart of the trait's `build_full_graph`, for the
-    /// case where the caller named the files instead of a directory to
-    /// walk. It exists so [`PerFileGraphCache`] can stay private: the
-    /// cache is the strategy's own state, and a caller that needs an
-    /// explicit merge asks the strategy, not the cache behind it.
+    /// The honest counterpart of building a project graph, for the case
+    /// where the caller named the files instead of a directory to walk.
+    /// It exists so [`PerFileGraphCache`] can stay private: the cache is
+    /// the strategy's own state, and a caller that needs an explicit
+    /// merge asks the strategy, not the cache behind it.
     pub fn merge_files_with_report(
         &self,
         file_paths: &[&Path],
     ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
         self.cache.merge_with_report(file_paths)
+    }
+
+    /// The graph of one file, **with the references the file states and
+    /// nobody declared**.
+    ///
+    /// The graph alone does not say them. A file can be read and still
+    /// state a relation nobody ties to a declaration — the reference
+    /// names something the file does not declare, or names several
+    /// things and the build cannot tell which one it means. Those are
+    /// facts about what the file says, and a consumer that gets the graph
+    /// without them answers "this file states nothing" about a file that
+    /// states plenty.
+    ///
+    /// The cache keeps the references the file states and nobody
+    /// declared, and it keeps them on a cache hit too: serving the graph
+    /// without them would answer "this file states nothing" about a file
+    /// that states plenty.
+    pub fn build_local_graph(
+        &self,
+        file_path: &Path,
+    ) -> std::io::Result<(
+        CallGraph,
+        Vec<crate::domain::value_objects::PendingReference>,
+    )> {
+        let (graph, pending) = self.cache.get_or_build(file_path)?;
+        Ok((graph.as_ref().clone(), pending))
     }
 }
 
@@ -365,208 +218,12 @@ impl Default for PerFileStrategy {
     }
 }
 
-impl GraphStrategy for PerFileStrategy {
-    fn build_index(&mut self, _project_dir: &Path) -> std::io::Result<()> {
-        // Per-file strategy builds index lazily
-        Ok(())
-    }
-
-    fn query_symbols(
-        &self,
-        _symbol_name: &str,
-    ) -> Vec<crate::infrastructure::graph::lightweight_index::SymbolLocation> {
-        // Would need to query each file - not efficient for this strategy
-        Vec::new()
-    }
-
-    fn build_local_graph(
-        &self,
-        file_path: &Path,
-    ) -> std::io::Result<(
-        CallGraph,
-        Vec<crate::domain::value_objects::PendingReference>,
-    )> {
-        // The cache keeps the references the file states and nobody
-        // declared, and it keeps them on a cache hit too: serving the
-        // graph without them would answer "this file states nothing"
-        // about a file that states plenty.
-        let (graph, pending) = self.cache.get_or_build(file_path)?;
-        Ok((graph.as_ref().clone(), pending))
-    }
-
-    fn build_subgraph(
-        &self,
-        symbol_name: &str,
-        _depth: u32,
-        _direction: TraversalDirection,
-    ) -> CallHierarchyResult {
-        // Would need to build from file graphs - simplified version
-        CallHierarchyResult {
-            root_symbol: crate::domain::aggregates::symbol::Symbol::new(
-                symbol_name,
-                crate::domain::value_objects::SymbolKind::Unknown,
-                crate::domain::value_objects::Location::new("unknown", 0, 0),
-            ),
-            entries: Vec::new(),
-        }
-    }
-
-    fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
-        let mut paths: Vec<std::path::PathBuf> = Vec::new();
-
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            // K0: clasificación única compartida — el registro decide qué
-            // se analiza (la lista rígida `rs|py|js|ts` descartaba en
-            // silencio ~22 lenguajes registrados). Este método legacy no
-            // reporta: las exclusiones/gaps se observan por
-            // `build_full_graph_report`.
-            if crate::infrastructure::walk_policy::is_real_file(&entry)
-                && matches!(
-                    crate::infrastructure::graph::per_file_graph::classify_walk_extension(
-                        path.extension().and_then(|e| e.to_str())
-                    ),
-                    crate::infrastructure::graph::per_file_graph::WalkClassification::Analyze
-                )
-            {
-                paths.push(path.to_path_buf());
-            }
-        }
-
-        let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
-        Ok(self.cache.merge(&path_refs))
-    }
-
-    fn build_full_graph_report(
-        &self,
-        project_dir: &Path,
-    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
-        // Delegates to the inherent `build_full_graph_report` that
-        // already classifies via `WalkClassification` and surfaces
-        // `.kt`/`.kts` as `KnownUnsupportedGap` (H1.1 K0 honest gap).
-        // The trait method exists so a `&dyn GraphStrategy` (the
-        // shape a generic dispatcher has) can ask for the typed
-        // status without downcasting to the concrete type.
-        Ok(self.build_full_graph_report(project_dir))
-    }
-
-    fn name(&self) -> &'static str {
-        "PerFileStrategy"
-    }
-}
-
-impl PerFileStrategy {
-    /// Builds the full project call graph **with an honest coverage report**.
-    ///
-    /// This is the explicit counterpart of [`GraphStrategy::build_full_graph`].
-    /// Unlike the trait method, walk errors are NOT silently dropped
-    /// (`filter_map(|e| e.ok())` is replaced by a path that collects
-    /// skipped entries), and read/parse failures inside `merge_with_report`
-    /// are surfaced in [`BuildStatus::Partial`](crate::infrastructure::graph::per_file_graph::BuildStatus::Partial).
-    ///
-    /// Use this when the caller needs to know whether the resulting graph
-    /// represents complete coverage of the project directory or whether
-    /// some files were skipped. The legacy `build_full_graph` is kept
-    /// for backward compatibility with the seven CLI consumers in
-    /// `interface/cli/commands.rs`. The `merge_graphs` MCP tool has
-    /// already moved off it: that tool names its files rather than a
-    /// directory, so it goes through
-    /// [`PerFileStrategy::merge_files_with_report`] instead.
-    pub fn build_full_graph_report(
-        &self,
-        project_dir: &Path,
-    ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        use crate::infrastructure::graph::per_file_graph::{
-            SkipReason, SkippedFile, WalkClassification, classify_declined_entry,
-            classify_walk_extension,
-        };
-
-        let mut paths: Vec<std::path::PathBuf> = Vec::new();
-        let mut walk_skipped: Vec<SkippedFile> = Vec::new();
-
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir).into_iter() {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(err) => {
-                    walk_skipped.push(SkippedFile {
-                        path: err
-                            .path()
-                            .map(|p| p.to_string_lossy().to_string())
-                            .unwrap_or_else(|| project_dir.to_string_lossy().to_string()),
-                        reason: SkipReason::Read(err.to_string()),
-                    });
-                    continue;
-                }
-            };
-            let path = entry.path();
-            // K0: clasificación única compartida (ver
-            // `per_file_graph::classify_walk_extension`). Una fuente
-            // registrada que no llegue a parsearse queda en `skipped`
-            // con razón (la capa per-file ya emite
-            // `Read/Parse/UnsupportedExtension`); una extensión
-            // irrelevante (README.md) se excluye legítimamente sin gap;
-            // una conocida-sin-soporte (`kt`/`kts`) sí es gap.
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                // A symlink is declined, not forgotten: the coverage
-                // really is partial and the caller has to be told.
-                if let Some(reason) = classify_declined_entry(&entry) {
-                    walk_skipped.push(SkippedFile {
-                        path: path.to_string_lossy().to_string(),
-                        reason,
-                    });
-                }
-                continue;
-            }
-            match classify_walk_extension(path.extension().and_then(|e| e.to_str())) {
-                WalkClassification::Analyze => paths.push(path.to_path_buf()),
-                WalkClassification::KnownUnsupportedGap => walk_skipped.push(SkippedFile {
-                    path: path.to_string_lossy().to_string(),
-                    reason: SkipReason::UnsupportedExtension(
-                        path.extension()
-                            .map(|e| e.to_string_lossy().to_string())
-                            .unwrap_or_default(),
-                    ),
-                }),
-                WalkClassification::LegitExclusion => {}
-            }
-        }
-
-        let path_refs: Vec<&Path> = paths.iter().map(|p| p.as_path()).collect();
-        let mut report = self.cache.merge_with_report(&path_refs);
-
-        // Merge walk-level skips into the report's status.
-        if !walk_skipped.is_empty() {
-            report.status = match report.status {
-                crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                        skipped: walk_skipped,
-                        pending: Vec::new(),
-                    }
-                }
-                crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                    mut skipped,
-                    pending,
-                } => {
-                    skipped.extend(walk_skipped);
-                    crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                        skipped,
-                        pending,
-                    }
-                }
-            };
-        }
-
-        report
-    }
-}
-
-/// Full graph strategy - builds complete project graph
+/// The strategy the index tool offers as `full`.
 ///
-/// This strategy builds the complete project graph upfront.
-/// It's the most comprehensive but also the slowest.
+/// It indexes the whole project and answers symbol queries about it.
+/// The graph of the project is not its business: there is one way to
+/// build that graph, and it lives with the service that publishes the
+/// coverage report.
 pub struct FullGraphStrategy {
     symbol_index: Option<SymbolIndex>,
 }
@@ -575,199 +232,6 @@ impl FullGraphStrategy {
     /// Creates a new FullGraphStrategy
     pub fn new() -> Self {
         Self { symbol_index: None }
-    }
-
-    /// Builds the full project call graph **with an honest coverage report**.
-    ///
-    /// PRF audit H-02 (operator 2026-09-22): the legacy
-    /// [`Self::build_full_graph`] silently dropped walk errors via
-    /// `filter_map(|e| e.ok())` and read/parse failures via
-    /// `match Err(_) => continue`. This counterpart exposes every skip
-    /// as a [`SkippedFile`](crate::infrastructure::graph::per_file_graph::SkippedFile) with a classified [`SkipReason`](crate::infrastructure::graph::per_file_graph::SkipReason).
-    ///
-    /// Use this when the caller needs to know whether the resulting graph
-    /// represents complete coverage of the project directory.
-    pub fn build_full_graph_report(
-        &self,
-        project_dir: &Path,
-    ) -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        use crate::infrastructure::graph::per_file_graph::{
-            BuildStatus, SkipReason, SkippedFile, WalkClassification, classify_declined_entry,
-            classify_walk_extension,
-        };
-
-        let mut store = crate::infrastructure::graph::PetGraphStore::new();
-        let mut global_index = GlobalSymbolIndex::new();
-        let mut per_file_data: Vec<FileData> = Vec::new();
-        let mut walk_skipped: Vec<SkippedFile> = Vec::new();
-        let mut parse_skipped: Vec<SkippedFile> = Vec::new();
-
-        let iter = crate::infrastructure::walk_policy::contained_walk(project_dir).into_iter();
-
-        for entry in iter {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(err) => {
-                    // PRF H-02: capture walk error instead of `filter_map(|e| e.ok())`.
-                    let path = err
-                        .path()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .unwrap_or_else(|| project_dir.to_string_lossy().to_string());
-                    walk_skipped.push(SkippedFile {
-                        path,
-                        reason: SkipReason::Read(err.to_string()),
-                    });
-                    continue;
-                }
-            };
-
-            let path = entry.path();
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                // A symlink is declined, not forgotten: the coverage
-                // really is partial and the caller has to be told.
-                if let Some(reason) = classify_declined_entry(&entry) {
-                    walk_skipped.push(SkippedFile {
-                        path: entry.path().to_string_lossy().to_string(),
-                        reason,
-                    });
-                }
-                continue;
-            }
-
-            // K0: clasificación única compartida. El registro decide qué
-            // se analiza; una extensión irrelevante (README.md) es
-            // exclusión legítima y NO genera gap (antes H-02 la listaba
-            // como `UnsupportedExtension`, inflando el `Partial`); una
-            // conocida-sin-soporte (`kt`/`kts`) sí es gap tipado.
-            let language = match classify_walk_extension(path.extension().and_then(|e| e.to_str()))
-            {
-                WalkClassification::Analyze => {
-                    crate::infrastructure::parser::Language::from_extension(path.extension())
-                        .expect("classify_walk_extension::Analyze implica registro")
-                }
-                WalkClassification::KnownUnsupportedGap => {
-                    parse_skipped.push(SkippedFile {
-                        path: path.to_string_lossy().to_string(),
-                        reason: SkipReason::UnsupportedExtension(
-                            path.extension()
-                                .map(|e| e.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                        ),
-                    });
-                    continue;
-                }
-                WalkClassification::LegitExclusion => continue,
-            };
-
-            // Read error: report as Read (H-02).
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(e) => {
-                    parse_skipped.push(SkippedFile {
-                        path: path.to_string_lossy().to_string(),
-                        reason: SkipReason::Read(e.to_string()),
-                    });
-                    continue;
-                }
-            };
-
-            let file_path = path.to_string_lossy().to_string();
-            let parser = match TreeSitterParser::new(language) {
-                Ok(p) => p,
-                Err(e) => {
-                    parse_skipped.push(SkippedFile {
-                        path: file_path.clone(),
-                        reason: SkipReason::Other(format!("parser init: {e}")),
-                    });
-                    continue;
-                }
-            };
-
-            let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
-                Ok(syms) => syms,
-                Err(e) => {
-                    // PRF H-02: was `Err(_) => continue`; now reported.
-                    parse_skipped.push(SkippedFile {
-                        path: file_path.clone(),
-                        reason: SkipReason::Parse(e.to_string()),
-                    });
-                    continue;
-                }
-            };
-            for symbol in &symbols {
-                let sid = crate::domain::aggregates::call_graph::SymbolId::new(
-                    symbol.fully_qualified_name(),
-                );
-                global_index.insert(sid, path.to_path_buf(), symbol.name());
-            }
-            let rels = match parser.find_call_relationships(&source, &file_path) {
-                Ok(r) => r,
-                Err(e) => {
-                    // PRF H-02: was `Err(_) => continue`; now reported.
-                    parse_skipped.push(SkippedFile {
-                        path: file_path.clone(),
-                        reason: SkipReason::Parse(e.to_string()),
-                    });
-                    continue;
-                }
-            };
-            per_file_data.push(FileData {
-                path: path.to_path_buf(),
-                symbols,
-                rels,
-            });
-        }
-
-        // Add every symbol to the petgraph store and remember the mapping.
-        let mut id_to_node: std::collections::HashMap<
-            crate::domain::aggregates::call_graph::SymbolId,
-            petgraph::graph::NodeIndex,
-        > = std::collections::HashMap::new();
-        for entry in &per_file_data {
-            for symbol in &entry.symbols {
-                let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(
-                    symbol.fully_qualified_name(),
-                );
-                let n = store.add_symbol_with_location(&symbol_id, symbol.clone());
-                id_to_node.insert(symbol_id, n);
-            }
-        }
-
-        // Resolve edges through `GlobalSymbolIndex`.
-        for entry in &per_file_data {
-            for (caller, callee_name) in &entry.rels {
-                let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
-                    caller.fully_qualified_name(),
-                );
-                // Only `Resolved` names a target; an ambiguous or unknown
-                // name drops the edge rather than inventing a homonym.
-                if let TargetResolution::Resolved(callee_id) =
-                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()))
-                {
-                    store
-                        .add_dependency(
-                            &caller_id,
-                            &callee_id,
-                            crate::domain::value_objects::DependencyType::Calls,
-                        )
-                        .ok();
-                }
-            }
-        }
-
-        let graph = store.to_call_graph();
-        let status = if walk_skipped.is_empty() && parse_skipped.is_empty() {
-            BuildStatus::Complete
-        } else {
-            let mut skipped = walk_skipped;
-            skipped.extend(parse_skipped);
-            BuildStatus::Partial {
-                skipped,
-                pending: Vec::new(),
-            }
-        };
-
-        crate::infrastructure::graph::per_file_graph::BuildReport { graph, status }
     }
 }
 
@@ -795,980 +259,111 @@ impl GraphStrategy for FullGraphStrategy {
             .unwrap_or_default()
     }
 
-    fn build_local_graph(
-        &self,
-        file_path: &Path,
-    ) -> std::io::Result<(
-        CallGraph,
-        Vec<crate::domain::value_objects::PendingReference>,
-    )> {
-        let source = std::fs::read_to_string(file_path)?;
-        let file_path_str = file_path.to_string_lossy().to_string();
-
-        let language =
-            crate::infrastructure::parser::Language::from_extension(file_path.extension())
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "Unsupported file type")
-                })?;
-
-        let parser =
-            TreeSitterParser::new(language).map_err(|e| std::io::Error::other(e.to_string()))?;
-        let symbols = parser
-            .find_all_symbols_with_path(&source, &file_path_str)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-        let relationships = parser
-            .find_call_relationships(&source, &file_path_str)
-            .map_err(|e| std::io::Error::other(e.to_string()))?;
-
-        let mut graph = CallGraph::new();
-        let mut name_to_id: std::collections::HashMap<
-            String,
-            crate::domain::aggregates::call_graph::SymbolId,
-        > = std::collections::HashMap::new();
-
-        for symbol in symbols {
-            let id = graph.add_symbol(symbol.clone());
-            name_to_id.insert(symbol.name().to_lowercase(), id);
-        }
-
-        for (caller, callee_name) in relationships {
-            let caller_id =
-                crate::domain::aggregates::call_graph::SymbolId::new(caller.fully_qualified_name());
-            if let Some(callee_id) = name_to_id.get(&callee_name.to_lowercase()).cloned() {
-                let _ = graph.add_dependency(
-                    &caller_id,
-                    &callee_id,
-                    crate::domain::value_objects::DependencyType::Calls,
-                );
-            }
-        }
-
-        // This strategy builds the graph from the parser's own relations,
-        // which are calls inside the file. It does not measure the
-        // references the file states and nobody declared, so the list is
-        // empty because nothing was looked at, not because there is
-        // nothing to find.
-        Ok((graph, Vec::new()))
-    }
-
-    fn build_subgraph(
-        &self,
-        symbol_name: &str,
-        depth: u32,
-        direction: TraversalDirection,
-    ) -> CallHierarchyResult {
-        let mut builder = OnDemandGraphBuilder::new();
-        if let Some(ref idx) = self.symbol_index {
-            builder = OnDemandGraphBuilder::with_index(Arc::new(RwLock::new(
-                idx.underlying_index().clone(),
-            )));
-        }
-        builder.build_for_symbol(symbol_name, depth, direction)
-    }
-
-    fn build_full_graph(&self, project_dir: &Path) -> std::io::Result<CallGraph> {
-        let mut store = crate::infrastructure::graph::PetGraphStore::new();
-
-        // PRF F2.W5 — H-R4-2: pre-walk to build the global symbol
-        // index. We parse each source file once just for its symbols;
-        // edges are resolved in a second pass using `GlobalSymbolIndex`
-        // so cross-file calls reach the right `SymbolId`. The legacy
-        // implementation had a per-file `name → SymbolId` map and
-        // dropped every cross-file edge.
-        let mut files: Vec<std::path::PathBuf> = Vec::new();
-        let mut global_index = GlobalSymbolIndex::new();
-        let mut per_file_data: Vec<FileData> = Vec::new();
-
-        for entry in crate::infrastructure::walk_policy::contained_walk(project_dir)
-            .into_iter()
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            // No report channel here: this legacy method returns a bare
-            // `CallGraph`, so a declined symlink cannot be surfaced.
-            // That is a pre-existing limitation of the method, not of
-            // the walk — `build_full_graph_report` is the one that owes
-            // the caller an honest `BuildStatus`.
-            if !crate::infrastructure::walk_policy::is_real_file(&entry) {
-                continue;
-            }
-            let language =
-                match crate::infrastructure::parser::Language::from_extension(path.extension()) {
-                    Some(lang) => lang,
-                    None => continue,
-                };
-            let source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-            let file_path = path.to_string_lossy().to_string();
-            let parser = match TreeSitterParser::new(language) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            let symbols = match parser.find_all_symbols_with_path(&source, &file_path) {
-                Ok(syms) => syms,
-                Err(_) => continue,
-            };
-            for symbol in &symbols {
-                let sid = crate::domain::aggregates::call_graph::SymbolId::new(
-                    symbol.fully_qualified_name(),
-                );
-                global_index.insert(sid, path.to_path_buf(), symbol.name());
-            }
-            files.push(path.to_path_buf());
-            let rels = match parser.find_call_relationships(&source, &file_path) {
-                Ok(r) => r,
-                Err(_) => continue,
-            };
-            per_file_data.push(FileData {
-                path: path.to_path_buf(),
-                symbols,
-                rels,
-            });
-        }
-
-        // Add every symbol to the petgraph store and remember the
-        // mapping `SymbolId → NodeIndex` for edge insertion below.
-        let mut id_to_node: std::collections::HashMap<
-            crate::domain::aggregates::call_graph::SymbolId,
-            petgraph::graph::NodeIndex,
-        > = std::collections::HashMap::new();
-        for entry in &per_file_data {
-            for symbol in &entry.symbols {
-                let symbol_id = crate::domain::aggregates::call_graph::SymbolId::new(
-                    symbol.fully_qualified_name(),
-                );
-                let n = store.add_symbol_with_location(&symbol_id, symbol.clone());
-                id_to_node.insert(symbol_id, n);
-            }
-        }
-
-        // Resolve edges through `GlobalSymbolIndex`. When the global
-        // lookup returns `None` (no candidate, or ambiguous), we DO
-        // NOT invent an edge against a random homonym; we drop it.
-        for entry in &per_file_data {
-            for (caller, callee_name) in &entry.rels {
-                let caller_id = crate::domain::aggregates::call_graph::SymbolId::new(
-                    caller.fully_qualified_name(),
-                );
-                // Only `Resolved` names a target; an ambiguous or unknown
-                // name drops the edge rather than inventing a homonym.
-                if let TargetResolution::Resolved(callee_id) =
-                    global_index.resolve(&callee_name.to_lowercase(), Some(entry.path.as_path()))
-                {
-                    store
-                        .add_dependency(
-                            &caller_id,
-                            &callee_id,
-                            crate::domain::value_objects::DependencyType::Calls,
-                        )
-                        .ok();
-                }
-            }
-        }
-
-        Ok(store.to_call_graph())
-    }
-
-    fn build_full_graph_report(
-        &self,
-        project_dir: &Path,
-    ) -> std::io::Result<crate::infrastructure::graph::per_file_graph::BuildReport> {
-        // Delegates to the inherent `build_full_graph_report` (line
-        // 471, "PRF audit H-02"). The trait method exists so a
-        // `&dyn GraphStrategy` can ask for the typed `BuildReport`
-        // without downcasting — H1.2 propagation.
-        Ok(self.build_full_graph_report(project_dir))
-    }
-
     fn name(&self) -> &'static str {
         "FullGraphStrategy"
     }
 }
 
+/// A name that is not one of the strategies the index tool offers.
+///
+/// The refusal carries the names that do work, because a client that
+/// asked for something that does not exist needs to know what does.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownStrategy {
+    /// The name that was asked for.
+    pub requested: String,
+}
+
+impl std::fmt::Display for UnknownStrategy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "unknown strategy '{}'; the strategies that index a project are: {}",
+            self.requested,
+            GraphStrategyFactory::available_strategies().join(", ")
+        )
+    }
+}
+
+impl std::error::Error for UnknownStrategy {}
+
 /// Factory for creating graph strategies
 pub struct GraphStrategyFactory;
 
 impl GraphStrategyFactory {
-    /// Creates a strategy based on the name
-    pub fn create(strategy: &str) -> Box<dyn GraphStrategy> {
-        match strategy {
+    /// The strategy named `strategy`, if it is one that indexes.
+    ///
+    /// A name that is not offered is refused rather than answered with
+    /// something else: a caller that asked for a strategy deserves to
+    /// know that the strategy it asked for does not exist, not to be
+    /// handed a different one under the name it used.
+    pub fn create(strategy: &str) -> Result<Box<dyn GraphStrategy>, UnknownStrategy> {
+        let built: Box<dyn GraphStrategy> = match strategy {
             "lightweight" => Box::new(LightweightStrategy::new()),
             "on_demand" | "ondemand" => Box::new(OnDemandStrategy::new()),
-            "per_file" | "perfile" => Box::new(PerFileStrategy::new()),
             "full" | "full_graph" => Box::new(FullGraphStrategy::new()),
-            _ => Box::new(OnDemandStrategy::new()), // Default
-        }
+            _ => {
+                return Err(UnknownStrategy {
+                    requested: strategy.to_string(),
+                });
+            }
+        };
+        Ok(built)
     }
 
     /// Returns a list of available strategy names
     pub fn available_strategies() -> Vec<&'static str> {
-        vec!["lightweight", "on_demand", "per_file", "full"]
+        vec!["lightweight", "on_demand", "full"]
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{
+        FullGraphStrategy, GraphStrategy, GraphStrategyFactory, LightweightStrategy,
+        OnDemandStrategy,
+    };
 
     #[test]
-    fn test_lightweight_strategy() {
-        let strategy = LightweightStrategy::new();
-        assert_eq!(strategy.name(), "LightweightStrategy");
-    }
-
-    #[test]
-    fn test_on_demand_strategy() {
-        let strategy = OnDemandStrategy::new();
-        assert_eq!(strategy.name(), "OnDemandStrategy");
+    fn every_strategy_answers_to_its_name() {
+        assert_eq!(LightweightStrategy::new().name(), "LightweightStrategy");
+        assert_eq!(OnDemandStrategy::new().name(), "OnDemandStrategy");
+        assert_eq!(FullGraphStrategy::new().name(), "FullGraphStrategy");
     }
 
     #[test]
-    fn test_per_file_strategy() {
-        let strategy = PerFileStrategy::new();
-        assert_eq!(strategy.name(), "PerFileStrategy");
+    fn the_factory_answers_with_the_strategy_that_was_asked_for() {
+        let lightweight = GraphStrategyFactory::create("lightweight").expect("lightweight indexes");
+        assert_eq!(lightweight.name(), "LightweightStrategy");
+
+        let on_demand = GraphStrategyFactory::create("on_demand").expect("on_demand indexes");
+        assert_eq!(on_demand.name(), "OnDemandStrategy");
+
+        let full = GraphStrategyFactory::create("full").expect("full indexes");
+        assert_eq!(full.name(), "FullGraphStrategy");
     }
 
     #[test]
-    fn test_full_graph_strategy() {
-        let strategy = FullGraphStrategy::new();
-        assert_eq!(strategy.name(), "FullGraphStrategy");
-    }
-
-    #[test]
-    fn test_strategy_factory() {
-        let strategies = GraphStrategyFactory::available_strategies();
-        assert!(strategies.contains(&"lightweight"));
-        assert!(strategies.contains(&"on_demand"));
-        assert!(strategies.contains(&"per_file"));
-        assert!(strategies.contains(&"full"));
-    }
-
-    #[test]
-    fn test_strategy_factory_create() {
-        let s = GraphStrategyFactory::create("lightweight");
-        assert_eq!(s.name(), "LightweightStrategy");
-
-        let s = GraphStrategyFactory::create("on_demand");
-        assert_eq!(s.name(), "OnDemandStrategy");
-
-        let s = GraphStrategyFactory::create("per_file");
-        assert_eq!(s.name(), "PerFileStrategy");
-
-        let s = GraphStrategyFactory::create("full");
-        assert_eq!(s.name(), "FullGraphStrategy");
-    }
-
-    #[test]
-    fn test_strategy_factory_default() {
-        let s = GraphStrategyFactory::create("unknown");
-        assert_eq!(s.name(), "OnDemandStrategy"); // Default
-    }
-}
-
-#[cfg(test)]
-mod k0_honest_coverage_tests {
-    //! K0 — línea Kotlin, cobertura honesta: el walk de `PerFileStrategy`
-    //! no puede descartar en silencio fuentes de lenguajes registrados.
-    //!
-    //! Caracterización del defecto (RED antes del fix): el walk filtraba
-    //! `rs|py|js|ts` a mano mientras el registro `Language::from_extension`
-    //! resuelve ~25 lenguajes (go, java, c/cpp, tsx, rb, ...). Un proyecto
-    //! cuyo código estuviera fuera de esos cuatro producía un grafo
-    //! incompleto reportado como `Complete`, y ni siquiera
-    //! `build_full_graph_report` listaba las fuentes caídas en `skipped`.
-    //!
-    //! Contrato K0 (disyunción honesta): una fuente con lenguaje
-    //! registrado, o se analiza (sus símbolos aparecen), o queda en
-    //! `skipped` con razón — desaparecer en silencio es el defecto. Un
-    //! fichero de lenguaje NO registrado (README.md) se excluye
-    //! legítimamente y no genera gap.
-    use super::*;
-    use crate::infrastructure::graph::per_file_graph::BuildStatus;
-    use crate::infrastructure::parser::Language;
-    use std::io::Write as _;
-
-    fn write(path: &std::path::Path, content: &str) {
-        std::fs::File::create(path)
-            .unwrap()
-            .write_all(content.as_bytes())
-            .unwrap();
-    }
-
-    fn mixed_corpus() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        write(
-            &dir.path().join("main.rs"),
-            "fn main() {\n    helper();\n}\n\nfn helper() {}\n",
-        );
-        write(
-            &dir.path().join("util.go"),
-            "package main\n\nfunc Util() int {\n    return 1;\n}\n",
-        );
-        write(
-            &dir.path().join("Util.kt"),
-            "package corpus\n\nfun util(): Int = 1\n",
-        );
-        write(&dir.path().join("README.md"), "# corpus\n");
-        dir
-    }
-
-    fn simple_names(graph: &crate::domain::aggregates::call_graph::CallGraph) -> Vec<String> {
-        graph.symbols().map(|s| s.name().to_string()).collect()
-    }
-
-    /// La fuente Go del corpus está en el registro y su símbolo `Util`
-    /// debe existir tras el análisis. Hoy el walk la descarta en silencio
-    /// y este test cae: esa es la señal RED que caracteriza el defecto.
-    #[test]
-    fn k0_registered_source_symbols_reach_the_graph() {
-        // Precondición del corpus: `go` es un lenguaje registrado.
-        assert!(Language::from_extension(Some(std::ffi::OsStr::new("go"))).is_some());
-
-        let dir = mixed_corpus();
-        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
-
-        let names = simple_names(&report.graph);
-        assert!(
-            names.iter().any(|n| n == "Util"),
-            "la fuente registrada util.go desaparecio en silencio: \
-             simbolos = {:?}, status = {:?}",
-            names,
-            report.status
-        );
-    }
-
-    /// Disyunción por-fuente para `util.go` (registrada): o sus símbolos
-    /// están, o está listada en `skipped`. Y `Complete` global solo es
-    /// honesto si ninguna fuente registrada quedó sin procesar —
-    /// independiente de que Util.kt (gap conocido) degrade a `Partial`.
-    #[test]
-    fn k0_complete_requires_no_unprocessed_registered_sources() {
-        let dir = mixed_corpus();
-        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
-
-        let go_analyzed = simple_names(&report.graph).iter().any(|n| n == "Util");
-        let go_listed = match &report.status {
-            BuildStatus::Partial { skipped, .. } => {
-                skipped.iter().any(|s| s.path.ends_with("util.go"))
+    fn the_factory_refuses_a_name_that_does_not_index() {
+        let refused = match GraphStrategyFactory::create("per_file") {
+            Ok(_) => {
+                panic!("the per-file strategy does not index a project, and the factory built it")
             }
-            BuildStatus::Complete => false,
+            Err(refused) => refused.to_string(),
         };
         assert!(
-            go_analyzed || go_listed,
-            "util.go (registrada) ni analizada ni listada: desaparicion silenciosa; \
-             status = {:?}, simbolos = {:?}",
-            report.status,
-            simple_names(&report.graph)
+            refused.contains("lightweight"),
+            "the refusal does not name the strategies that do index: {refused}"
         );
+    }
 
-        if let BuildStatus::Partial { skipped, .. } = &report.status {
+    #[test]
+    fn the_factory_offers_only_strategies_that_it_can_build() {
+        for name in GraphStrategyFactory::available_strategies() {
             assert!(
-                !skipped.iter().any(|s| s.path.ends_with("README.md")),
-                "README.md es exclusion legitima (lenguaje no registrado), no un gap: {:?}",
-                skipped
+                GraphStrategyFactory::create(name).is_ok(),
+                "the factory offers '{name}' and then refuses to build it"
             );
-        }
-    }
-
-    /// Puente K0: `Util.kt` es un lenguaje conocido-sin-soporte, no una
-    /// exclusión legítima. El reporte debe degradar a `Partial`,
-    /// listarla con `UnsupportedExtension` y no declarar `Complete`
-    /// mientras exista una fuente Kotlin sin analizar.
-    #[test]
-    fn k0_known_unsupported_source_is_an_honest_gap() {
-        let dir = mixed_corpus();
-        let report = PerFileStrategy::new().build_full_graph_report(dir.path());
-
-        match &report.status {
-            BuildStatus::Complete => {
-                panic!(
-                    "Complete con Util.kt sin analizar: kotlin es un gap conocido, no una exclusion legitima"
-                );
-            }
-            BuildStatus::Partial { skipped, .. } => {
-                let kt = skipped
-                    .iter()
-                    .find(|s| s.path.ends_with("Util.kt"))
-                    .expect("Util.kt debe listar en skipped");
-                assert!(
-                    matches!(
-                        &kt.reason,
-                        crate::infrastructure::graph::per_file_graph::SkipReason::UnsupportedExtension(ext)
-                            if ext == "kt"
-                    ),
-                    "la razon de Util.kt debe ser UnsupportedExtension(\"kt\"), no {:?}",
-                    kt.reason
-                );
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod w3_equivalence_tests {
-    //! PRF F2.W3 — Equivalencia `full` vs `per_file` (R4).
-    //!
-    //! These tests **characterize** the divergence between
-    //! [`FullGraphStrategy`] and [`PerFileStrategy`] over the corpus
-    //! `crates/cognicode-core/testdata/equivalence_full_vs_perfile/`. They do NOT
-    //! force equivalence — the two strategies serve different
-    //! purposes — but they pin down the contract so that any future
-    //! regression is detected immediately.
-    //!
-    //! What they assert:
-    //!  1. Both strategies discover the **same set of symbols** (the
-    //!     order may differ, the count must match).
-    //!  2. Both strategies skip empty / comments-only files
-    //!     (no symbols from those files).
-    //!  3. `PerFileStrategy::build_full_graph_report` surfaces the
-    //!     broken-syntax file as a `SkippedFile` with `Parse` reason,
-    //!     while `FullGraphStrategy::build_full_graph` silently
-    //!     ignores it (this is documented as a real R3-equivalent
-    //!     bug in `FullGraphStrategy` and tracked as scope for F2.W4).
-    //!  4. The same `name` appearing in multiple files produces one
-    //!     symbol per file (qualified by the file path) — both
-    //!     strategies must agree on this count.
-    use super::*;
-    use crate::infrastructure::graph::GraphStrategy;
-    use std::collections::HashSet;
-    use std::path::PathBuf;
-
-    fn corpus() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("crates/cognicode-core/testdata/equivalence_full_vs_perfile")
-    }
-
-    fn symbol_set(graph: &crate::domain::aggregates::call_graph::CallGraph) -> HashSet<String> {
-        graph
-            .symbols()
-            .map(|s| s.fully_qualified_name().to_string())
-            .collect()
-    }
-
-    /// S1: both strategies find the same symbol set on a non-trivial
-    /// corpus. Order-independent: HashSet comparison.
-    #[test]
-    fn w3_full_and_per_file_discover_same_symbol_set() {
-        let p = corpus();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-
-        let full_set = symbol_set(&full);
-        let per_set = symbol_set(&per);
-
-        assert_eq!(
-            full_set.len(),
-            per_set.len(),
-            "full and per_file disagree on symbol count: full={}, per_file={}",
-            full_set.len(),
-            per_set.len()
-        );
-        let only_full: Vec<_> = full_set.difference(&per_set).collect();
-        let only_per: Vec<_> = per_set.difference(&full_set).collect();
-        assert!(
-            only_full.is_empty() && only_per.is_empty(),
-            "full-only: {:?}\nper-only: {:?}",
-            only_full,
-            only_per
-        );
-    }
-
-    /// S2: the corpus contains the named symbols at the expected
-    /// counts (1 unique simple, 2 cross-file `shared`, 2 cross-file
-    /// `compute`, 2 same-file `same_name` inside dup.rs, 1 deeply
-    /// nested, 1 cross-file call edge opportunity).
-    #[test]
-    fn w3_corpus_has_expected_symbol_inventory() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-        let names: Vec<String> = per.symbols().map(|s| s.name().to_string()).collect();
-
-        let count = |n: &str| names.iter().filter(|x| x.as_str() == n).count();
-        assert_eq!(count("hello"), 1, "expected 1 `hello`");
-        assert_eq!(count("shared"), 2, "expected 2 `shared` (lib + nested)");
-        assert_eq!(
-            count("compute"),
-            2,
-            "expected 2 `compute` (one in lib, one in nested)"
-        );
-        assert_eq!(
-            count("same_name"),
-            2,
-            "expected 2 `same_name` (dup.rs top + dup.rs::inner)"
-        );
-        assert_eq!(count("caller"), 1);
-        assert_eq!(count("callee"), 1);
-        assert_eq!(count("deep_symbol"), 1);
-
-        // Total expected: 1 + 2 + 2 + 2 + 1 + 1 + 1 = 10. Pinning the
-        // exact total is what makes this test useful as a regression
-        // detector: a future change that adds a phantom symbol (or
-        // drops one) flips this assertion.
-        assert_eq!(
-            names.len(),
-            10,
-            "expected exactly 10 symbols across the corpus, got {}: {:?}",
-            names.len(),
-            names
-        );
-        // empty.rs and comments_only.rs must produce no symbols.
-        assert_eq!(count("dummy_marker_to_make_file_non_empty"), 0);
-    }
-
-    /// S3: full and per_file agree on the **count** per name (a more
-    /// granular check than S1: same set, same multiplicities).
-    #[test]
-    fn w3_full_and_per_file_agree_on_per_name_counts() {
-        let p = corpus();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-
-        let count_per_name = |g: &crate::domain::aggregates::call_graph::CallGraph| {
-            let mut m = std::collections::BTreeMap::new();
-            for s in g.symbols() {
-                *m.entry(s.name().to_string()).or_insert(0usize) += 1;
-            }
-            m
-        };
-        let full_counts = count_per_name(&full);
-        let per_counts = count_per_name(&per);
-        assert_eq!(
-            full_counts, per_counts,
-            "per-name counts diverge: full={:?} per={:?}",
-            full_counts, per_counts
-        );
-    }
-
-    /// S4: per_file REPORT surfaces `broken.rs` as a `SkippedFile`
-    /// with reason `Parse`. `full` does not (documented R3-style
-    /// behaviour, scope of F2.W4 to fix).
-    #[test]
-    fn w3_per_file_report_marks_broken_syntax_as_skipped() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph_report(&p);
-        let report = per;
-
-        match &report.status {
-            crate::infrastructure::graph::per_file_graph::BuildStatus::Partial {
-                skipped, ..
-            } => {
-                let broken = skipped.iter().find(|s| s.path.ends_with("broken.rs"));
-                assert!(
-                    broken.is_some(),
-                    "expected broken.rs in SkippedFile list, got: {:?}",
-                    skipped
-                );
-                let reason = &broken.unwrap().reason;
-                assert!(
-                    matches!(
-                        reason,
-                        crate::infrastructure::graph::per_file_graph::SkipReason::Parse(_)
-                    ),
-                    "expected SkipReason::Parse for broken.rs, got: {:?}",
-                    reason
-                );
-            }
-            crate::infrastructure::graph::per_file_graph::BuildStatus::Complete => {
-                panic!(
-                    "BuildStatus::Complete is wrong: broken.rs has obvious syntax                      errors and MUST be reported as skipped"
-                );
-            }
-        }
-    }
-
-    /// S5 (characterization, NOT a bug we will fix in F2.W3):
-    /// `FullGraphStrategy` silently ignores broken.rs. This is
-    /// documented behaviour today; fixing it is scope of F2.W4.
-    /// This test pins down the current behaviour so that a future
-    /// "silent regression" of `per_file` does not slip in unnoticed.
-    #[test]
-    fn w3_full_strategy_silently_ignores_broken_syntax_today() {
-        let p = corpus();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-
-        // `full` does not have a "skipped" report; instead we assert
-        // that `oops` (the function name inside broken.rs) does NOT
-        // appear among its symbols. If a future change starts
-        // surfacing broken.rs symbols from `full`, this test will
-        // catch the regression even though `full` itself has no
-        // reporting API.
-        let has_oops = full
-            .symbols()
-            .any(|s| s.fully_qualified_name().ends_with(":oops:7"));
-        assert!(
-            !has_oops,
-            "FullGraphStrategy must NOT surface symbols from broken.rs              (it silently ignores parse errors today).              If this assertion fires, decide whether full now has R3              coverage — if yes, update this test and the F2.W4 plan."
-        );
-    }
-
-    // =========================================================================
-    // PRF F2.W5 — H-R4-2 (lookup global `name → SymbolId`).
-    //
-    // These tests characterise the behaviour that the resolver MUST honour
-    // for cross-file call edges (and MUST NOT invent edges when the callee
-    // is ambiguous):
-    //
-    //   1. Cross-file call (S6 of F2.W3 corpus) reaches the right SymbolId
-    //      even when the callee name appears in multiple files.
-    //   2. Intra-file duplicate name (S3 — `dup.rs::same_name` x2) does
-    //      NOT produce cross-file edges when the caller is in a different
-    //      file.
-    //   3. When the callee name is genuinely ambiguous (homonym across
-    //      files with no desambiguation rule that applies), the resolver
-    //      drops the edge instead of inventing one.
-    //   4. Both `full` and `per_file` agree on the resulting edge set.
-    //
-    // These tests are RED today (the lookup in `FullGraphStrategy::build_full_graph`
-    // and `PerFileStrategy::build_file_graph` is per-file and the per-file
-    // map silently drops cross-file edges or, when the same name appears
-    // in multiple files, picks the LAST inserted — which can be wrong).
-    // =========================================================================
-
-    use crate::domain::aggregates::call_graph::SymbolId;
-    use crate::domain::value_objects::DependencyType;
-
-    fn count_edges(
-        graph: &crate::domain::aggregates::call_graph::CallGraph,
-        caller: &SymbolId,
-        callee: &SymbolId,
-        kind: DependencyType,
-    ) -> usize {
-        graph
-            .all_dependencies()
-            .filter(|(c, t, k)| *c == caller && *t == callee && **k == kind)
-            .count()
-    }
-
-    /// S6 (PRF F2.W5): the cross-file call `caller → callee` reaches
-    /// the nested `callee` (NOT any other homonym). This is the basic
-    /// guarantee that the global lookup must satisfy.
-    #[test]
-    fn w5_cross_file_call_edge_resolves_to_correct_symbol() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-
-        let caller_id = per
-            .symbols()
-            .find(|s| s.name() == "caller")
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .expect("caller must be in the graph");
-        let callee_id = per
-            .symbols()
-            .find(|s| s.name() == "callee")
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .expect("callee must be in the graph");
-
-        let n = count_edges(&per, &caller_id, &callee_id, DependencyType::Calls);
-        assert!(
-            n >= 1,
-            "expected at least one `caller -> callee` edge in the per_file graph; got {} total edges",
-            per.edge_count()
-        );
-    }
-
-    #[test]
-    fn w5_cross_file_call_edge_also_present_in_full() {
-        let p = corpus();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-
-        let caller_id = full
-            .symbols()
-            .find(|s| s.name() == "caller")
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .expect("caller must be in the graph");
-        let callee_id = full
-            .symbols()
-            .find(|s| s.name() == "callee")
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .expect("callee must be in the graph");
-
-        let n = count_edges(&full, &caller_id, &callee_id, DependencyType::Calls);
-        assert!(
-            n >= 1,
-            "expected at least one `caller -> callee` edge in the full graph; got {} total edges",
-            full.edge_count()
-        );
-    }
-
-    /// S3 (PRF F2.W5): intra-file duplicate (`dup.rs::same_name` x2)
-    /// does NOT spawn cross-file edges. The resolver MUST treat the
-    /// two `same_name` instances as distinct (different FQN / different
-    /// module path) and not invent edges to them from `caller` (which
-    /// is in `lib.rs`).
-    #[test]
-    fn w5_intra_file_duplicate_does_not_invent_cross_file_edges() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-
-        let caller_id = per
-            .symbols()
-            .find(|s| s.name() == "caller" && s.location().file().ends_with("lib.rs"))
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .expect("caller in lib.rs must be in the graph");
-
-        let same_name_ids: Vec<_> = per
-            .symbols()
-            .filter(|s| s.name() == "same_name")
-            .map(|s| SymbolId::new(s.fully_qualified_name()))
-            .collect();
-        assert_eq!(
-            same_name_ids.len(),
-            2,
-            "expected exactly 2 `same_name` instances (dup.rs top + inner); got {}",
-            same_name_ids.len()
-        );
-
-        for sn in &same_name_ids {
-            let fake = count_edges(&per, &caller_id, sn, DependencyType::Calls);
-            assert!(
-                fake == 0,
-                "resolver must NOT invent edge caller -> {:?} (homonym in another file); got {} edges",
-                sn,
-                fake
-            );
-        }
-    }
-
-    /// S9 (PRF F2.W5): same name across files (overload semantics).
-    /// `compute` exists in `lib.rs` and in `nested/mod.rs` with
-    /// different signatures. Neither strategy should pretend it
-    /// resolved the call; the corpus does NOT include a call to
-    /// `compute`, so no edges are expected.
-    #[test]
-    fn w5_compute_overload_no_call_site_yields_no_invented_edges() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-
-        for (label, g) in [("per_file", &per), ("full", &full)] {
-            let compute_ids: Vec<_> = g
-                .symbols()
-                .filter(|s| s.name() == "compute")
-                .map(|s| SymbolId::new(s.fully_qualified_name()))
-                .collect();
-            assert_eq!(
-                compute_ids.len(),
-                2,
-                "[{}] expected exactly 2 `compute` instances (lib + nested); got {}",
-                label,
-                compute_ids.len()
-            );
-
-            // No call site references `compute` in the corpus, so
-            // there must be NO edges whose callee is any compute_id.
-            for c in &compute_ids {
-                let spurious = g.all_dependencies().filter(|(_, t, _)| *t == c).count();
-                assert_eq!(
-                    spurious, 0,
-                    "[{}] spurious edges to compute_id={:?}",
-                    label, c
-                );
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod w10_equivalence_tests {
-    //! PRF F2.W10 — Equivalencia de aristas y reproducibilidad.
-    //!
-    //! F2.W3 pineo equivalencia de símbolos cuando edges eran 0=0.
-    //! Desde F2.W5/W7 las aristas cross-file existen; aquí se pinea
-    //! que `FullGraphStrategy` y `PerFileStrategy` producen el mismo
-    //! conjunto de aristas (caller FQN → callee FQN) sobre el corpus,
-    //! y que dos builds consecutivos son reproducibles.
-
-    use super::*;
-    use crate::domain::aggregates::call_graph::CallGraph;
-    use crate::infrastructure::graph::GraphStrategy;
-    use std::collections::HashSet;
-    use std::path::PathBuf;
-
-    fn corpus() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .unwrap()
-            .parent()
-            .unwrap()
-            .join("crates/cognicode-core/testdata/equivalence_full_vs_perfile")
-    }
-
-    fn symbol_fqns(graph: &CallGraph) -> HashSet<String> {
-        graph
-            .symbols()
-            .map(|s| s.fully_qualified_name().to_string())
-            .collect()
-    }
-
-    /// Edge set as (caller_fqn, callee_fqn) pairs. Callee SymbolIds
-    /// only appear in the set if resolvable to a symbol in the graph;
-    /// otherwise the edge maps to "<unresolved>".
-    fn edge_set(graph: &CallGraph) -> HashSet<(String, String)> {
-        let id_to_fqn: std::collections::HashMap<&str, &str> = graph
-            .symbols()
-            .map(|s| (s.fully_qualified_name(), s.fully_qualified_name()))
-            .collect();
-        let id_lookup = |id: &crate::domain::aggregates::call_graph::SymbolId| -> String {
-            let f = id.as_str();
-            if id_to_fqn.contains_key(f) {
-                f.to_string()
-            } else {
-                format!("<unresolved:{f}>")
-            }
-        };
-        graph
-            .edges_with_metadata()
-            .map(|(src, dst, _, _, _)| (id_lookup(&src), id_lookup(&dst)))
-            .collect()
-    }
-
-    /// W10.1: full y per_file producen el MISMO conjunto de aristas
-    /// (caller fqn, callee fqn) sobre el corpus determinista.
-    #[test]
-    fn w10_full_and_per_file_agree_on_edge_set() {
-        let p = corpus();
-        let full = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-
-        let full_edges = edge_set(&full);
-        let per_edges = edge_set(&per);
-
-        let only_full: Vec<_> = full_edges.difference(&per_edges).collect();
-        let only_per: Vec<_> = per_edges.difference(&full_edges).collect();
-        assert!(
-            only_full.is_empty() && only_per.is_empty(),
-            "edge sets diverge. full-only: {only_full:?}\nper-only: {only_per:?}"
-        );
-    }
-
-    /// W10.2: el conjunto de aristas es NO vacío. El corpus tiene
-    /// `caller → crate::nested::callee()`; desde F2.W5/W7 debe haber
-    /// al menos una arista resuelta. Si esto vuelve a 0, H-R4-1
-    /// habría regresado.
-    #[test]
-    fn w10_edge_set_is_non_empty_on_cross_file_corpus() {
-        let p = corpus();
-        let per = PerFileStrategy::new().build_full_graph(&p).unwrap();
-        let per_edges = edge_set(&per);
-        assert!(
-            !per_edges.is_empty(),
-            "expected at least one resolved call edge on the corpus; got 0 (H-R4-1 regression?)"
-        );
-    }
-
-    /// W10.3: reproducibilidad — dos builds consecutivos con la
-    /// misma entrada producen exactamente el mismo grafo (símbolos
-    /// y aristas), sin importar orden del walk ni estado de cache.
-    #[test]
-    fn w10_repeated_builds_are_reproducible() {
-        let p = corpus();
-
-        let a = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-        let b = FullGraphStrategy::new().build_full_graph(&p).unwrap();
-        assert_eq!(
-            symbol_fqns(&a),
-            symbol_fqns(&b),
-            "full: symbol sets differ across runs"
-        );
-        assert_eq!(
-            edge_set(&a),
-            edge_set(&b),
-            "full: edge sets differ across runs"
-        );
-
-        let c = PerFileStrategy::new().build_full_graph(&p).unwrap();
-        let d = PerFileStrategy::new().build_full_graph(&p).unwrap();
-        assert_eq!(
-            symbol_fqns(&c),
-            symbol_fqns(&d),
-            "per_file: symbol sets differ across runs"
-        );
-        assert_eq!(
-            edge_set(&c),
-            edge_set(&d),
-            "per_file: edge sets differ across runs"
-        );
-    }
-}
-
-/// PRF audit H-02 (operator 2026-09-22) — `FullGraphStrategy::build_full_graph`
-/// silently drops walk errors via `filter_map(|e| e.ok())` and other parse
-/// errors via `match ... Err(_) => continue`. There is no way for a caller
-/// to know that the resulting graph represents only a subset of the project.
-///
-/// This test pins the requirement that the strategy **exposes** skipped
-/// files (via `build_full_graph_report`) so callers like `AnalysisService`
-/// can surface them as `BuildStatus::Partial` with classified `SkipReason`.
-///
-/// RED today: the report method does not exist on `FullGraphStrategy`. The
-/// test won't compile until we add it.
-mod h02_silent_errors_full_strategy_tests {
-    #![allow(unused_imports)]
-    use super::*;
-    use crate::infrastructure::graph::per_file_graph::{BuildStatus, SkipReason};
-    use std::os::unix::fs::PermissionsExt;
-
-    /// Build a temp corpus with one valid .rs file + one directory that
-    /// walkdir cannot enter (mode 0o000). The unreadable directory must
-    /// appear in the report as a `SkipReason::Read` entry; the valid
-    /// file must be parsed.
-    #[allow(dead_code)]
-    fn build_with_unreadable_dir() -> crate::infrastructure::graph::per_file_graph::BuildReport {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let src = tmp.path().join("src");
-        std::fs::create_dir_all(&src).expect("mkdir src");
-
-        let good = src.join("ok.rs");
-        std::fs::write(
-            &good,
-            "pub fn hello() -> i32 { 42 }\npub fn main() { hello(); }\n",
-        )
-        .expect("write ok.rs");
-
-        let bad = src.join("sealed");
-        std::fs::create_dir(&bad).expect("mkdir sealed");
-        std::fs::set_permissions(&bad, std::fs::Permissions::from_mode(0o000)).expect("chmod 000");
-
-        let strat = FullGraphStrategy::new();
-        strat.build_full_graph_report(tmp.path())
-    }
-
-    #[test]
-    fn h02_full_strategy_exposes_report_method() {
-        // Before the fix this fails to compile (RED).
-        let strat = FullGraphStrategy::new();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let report = strat.build_full_graph_report(tmp.path());
-        let _ = report.status;
-    }
-
-    #[test]
-    fn h02_unreadable_dir_surfaces_as_partial_with_skip_reason_read() {
-        let report = build_with_unreadable_dir();
-        match report.status {
-            BuildStatus::Complete => {
-                panic!("expected Partial because one directory is unreadable, got Complete")
-            }
-            BuildStatus::Partial { skipped, .. } => {
-                assert!(
-                    !skipped.is_empty(),
-                    "expected at least one skipped entry, got 0"
-                );
-                let has_read = skipped
-                    .iter()
-                    .any(|s| matches!(s.reason, SkipReason::Read(_)));
-                assert!(
-                    has_read,
-                    "expected at least one SkipReason::Read, got {:?}",
-                    skipped.iter().map(|s| &s.reason).collect::<Vec<_>>()
-                );
-            }
         }
     }
 }

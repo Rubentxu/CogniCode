@@ -5,8 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `6da10d558ce238beff2b6aed9b7903e38e183f4e` (`origin/main` al cerrar este
-> ciclo), rama `main`.
+> **Snapshot**: 2026-10-23, sobre `2677e4d0c8417305c050fdcda5310b5bf7bc5556` (cabeza de
+> la rama de la unidad que cierra la segunda puerta al grafo del proyecto),
+> rama `feature/one-door-to-the-project-graph`.
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -144,9 +145,25 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C16`, `C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
+
+**C16 está cerrado.** El grafo del proyecto tenía una segunda puerta, en las
+estrategias, que nadie usaba pero que seguía abierta: sus constructores se
+comían los errores del recorrido y su método por defecto declaraba
+`Complete` sobre un grafo que no había medido. La puerta del índice era la
+peor: el MCP ofrecía una estrategia que **no indexaba nada** y contestaba
+"tu proyecto no declara ningún símbolo", con un mensaje de éxito y 0 ms.
+Y la ruta que camina el proyecto completo declaraba `Complete` sobre un
+proyecto con una fuente rota, mientras la ruta por fichero la declaraba
+`Partial`. Ahora el trait de estrategias queda con lo que todas pueden
+cumplir sin mentir —indexar— y el grafo se construye en un solo sitio: el
+servicio. El lector examina el árbol antes de publicar sus símbolos, y como
+el árbol se analiza una vez y se lee dos veces, el cuidado sale más barato
+que antes. La ruta filtrada usa el mismo inventario y el mismo informe que
+la completa. La demostración está hecha: revirtiendo sólo las dos
+correcciones, cinco contratos se pusieron rojos.
 
 **C9 está cerrado.** El dominio construía su propio adaptador: el puerto de
 proyección montaba la implementación concreta de infraestructura en una
@@ -184,7 +201,7 @@ instalados arrancados fuera de cualquier repositorio.
 
 ## La misión
 
-Misión `cognicode` declarada (`goal-compass.json`), con 10 candidatos que
+Misión `cognicode` declarada (`goal-compass.json`), con 9 candidatos que
 llevan evidencia —una ruta que existe— y un criterio de cierre observable. La
 cola está escrita en el orden que fija la auditoría del 2026-10-21 (sus bloques
 B1 a B6), de mayor a menor prioridad.

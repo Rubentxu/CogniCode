@@ -549,7 +549,16 @@ impl PerFileGraphCache {
                     let new_target_id = crate::domain::aggregates::call_graph::SymbolId::new(
                         tgt.fully_qualified_name(),
                     );
-                    let _ = merged.add_dependency(&new_source_id, &new_target_id, *dep_type);
+                    // Both ends were added to the merged graph a moment
+                    // ago, so the edge is attachable. The assert keeps
+                    // the invariant under the test suite: a relation
+                    // that cannot be attached would be a relation the
+                    // graph lost in silence.
+                    let attached = merged.add_dependency(&new_source_id, &new_target_id, *dep_type);
+                    debug_assert!(
+                        attached.is_ok(),
+                        "the merged graph holds both ends of the edge: {attached:?}"
+                    );
                 }
             }
 
@@ -586,7 +595,13 @@ impl PerFileGraphCache {
             &global_index,
         );
         for (source_id, target_id, kind) in &resolution.proven {
-            merged.add_dependency(source_id, target_id, *kind).ok();
+            // The relation was proven against the index of the very
+            // files that were merged, so both ends are in the graph.
+            let attached = merged.add_dependency(source_id, target_id, *kind);
+            debug_assert!(
+                attached.is_ok(),
+                "the merged graph holds both ends of the proven relation: {attached:?}"
+            );
         }
 
         let status = if skipped.is_empty() && resolution.pending.is_empty() {
@@ -737,11 +752,11 @@ impl PerFileGraphCache {
         }
 
         let symbols = parser
-            .find_all_symbols_with_path(&source, file_path)
+            .find_all_symbols_in_tree(&tree, &source, file_path)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let relationships = parser
-            .find_call_relationships(&source, file_path)
+            .find_call_relationships_in_tree(&tree, &source, file_path)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 
         let mut graph = CallGraph::new();
@@ -806,7 +821,14 @@ impl PerFileGraphCache {
                 match candidates.as_slice() {
                     [] => {}
                     [callee_id] => {
-                        let _ = graph.add_dependency(&caller_id, callee_id, DependencyType::Calls);
+                        // The caller and the callee are symbols of this file, and
+                        // they are in the graph.
+                        let attached =
+                            graph.add_dependency(&caller_id, callee_id, DependencyType::Calls);
+                        debug_assert!(
+                            attached.is_ok(),
+                            "the file graph holds both ends of the edge: {attached:?}"
+                        );
                     }
                     _ => {
                         // Genuine local homonym (e.g. two symbols
@@ -1509,11 +1531,11 @@ mod tests {
     // described in CORPUS.md. The oracle (3 functions: top_level,
     // mid_level, leaf) was written by reading the .rs files directly.
     //
-    // This test exercises PerFileStrategy::build_full_graph end-to-end on
+    // This test exercises the per-file route end-to-end on
     // the corpus and asserts that nested subdirectories are walked.
     #[test]
-    fn test_per_file_strategy_build_full_graph_nested_corpus() {
-        use crate::infrastructure::graph::strategy::{GraphStrategy, PerFileStrategy};
+    fn test_the_per_file_route_reaches_the_nested_corpus() {
+        use crate::application::services::analysis_service::AnalysisService;
         use std::path::PathBuf;
 
         // Resolve corpus path relative to CARGO_MANIFEST_DIR so the test
@@ -1532,20 +1554,18 @@ mod tests {
             corpus_dir
         );
 
-        let mut strategy = PerFileStrategy::new();
-        strategy.build_index(&corpus_dir).expect("build_index");
+        let service = AnalysisService::new();
+        let report = service
+            .build_graph_per_file_with_report(&corpus_dir)
+            .expect("the per-file route builds");
 
-        let graph = strategy
-            .build_full_graph(&corpus_dir)
-            .expect("build_full_graph");
-
-        let symbol_count = graph.symbol_count();
+        let symbol_count = report.graph.symbol_count();
 
         // Oracle: 3 functions across 3 files in 2 nested subdirectories.
         // The strategy must reach every .rs file regardless of depth.
         assert!(
             symbol_count >= 3,
-            "PerFileStrategy::build_full_graph should reach all 3 \
+            "the per-file route should reach all 3 \
              nested .rs files. Got {} symbols (expected >= 3). If < 3, \
              the walk is not descending into subdirectories.",
             symbol_count

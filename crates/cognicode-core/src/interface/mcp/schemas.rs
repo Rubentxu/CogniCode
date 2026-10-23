@@ -746,7 +746,7 @@ pub struct BuildIndexInput {
     /// Directory to build the index for (default: current working directory)
     pub directory: Option<String>,
 
-    /// Strategy to use: lightweight, on_demand, per_file, full
+    /// Strategy to use: lightweight, on_demand, full
     #[serde(default = "default_strategy")]
     pub strategy: String,
 }

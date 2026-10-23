@@ -176,6 +176,20 @@ impl TreeSitterParser {
         file_path: &str,
     ) -> ParseResult<Vec<Symbol>> {
         let tree = self.parse_tree(source)?;
+        self.find_all_symbols_in_tree(&tree, source, file_path)
+    }
+
+    /// The symbols of a tree that has already been parsed.
+    ///
+    /// A caller that has to look at the tree anyway — to know whether it
+    /// is sound — asks here instead of paying a second parse to learn
+    /// what the first one already holds.
+    pub fn find_all_symbols_in_tree(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+    ) -> ParseResult<Vec<Symbol>> {
         let mut symbols = Vec::new();
 
         let function_type = self.language.function_node_type();
@@ -355,6 +369,19 @@ impl TreeSitterParser {
         file_path: &str,
     ) -> ParseResult<Vec<(Symbol, String)>> {
         let tree = self.parse_tree(source)?;
+        self.find_call_relationships_in_tree(&tree, source, file_path)
+    }
+
+    /// The calls of a tree that has already been parsed.
+    ///
+    /// The same reason as the symbols: a caller that already holds the
+    /// tree does not make the parser build it again.
+    pub fn find_call_relationships_in_tree(
+        &self,
+        tree: &tree_sitter::Tree,
+        source: &str,
+        file_path: &str,
+    ) -> ParseResult<Vec<(Symbol, String)>> {
         let mut relationships = Vec::new();
 
         // Find all function definitions

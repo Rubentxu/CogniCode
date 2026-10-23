@@ -23,10 +23,18 @@
 //! link) and a symlinked *directory* (caught only by the walker's
 //! link-following). The third test is the anti-vacuity guard: the fix
 //! must not degrade into "index nothing".
+//!
+//! ## The paths this file speaks about
+//!
+//! Only the paths a caller reaches. The whole-project route is the one
+//! the graph tool and the analysis service use; the per-file route is
+//! the one the per-file tools use. Both owe the caller the same
+//! confinement, and both owe it a report that says what they did not
+//! cover: a walk that declines a symlink and reports `Complete` is
+//! telling the same lie one layer down.
 
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::infrastructure::graph::per_file_graph::{BuildReport, BuildStatus, SkipReason};
-use cognicode_core::infrastructure::graph::{FullGraphStrategy, PerFileStrategy};
 
 /// The names of every symbol in `report`.
 ///
@@ -89,163 +97,6 @@ fn assert_only_inside(report: &BuildReport, root: &std::path::Path) {
     );
 }
 
-#[test]
-fn per_file_strategy_does_not_index_through_a_symlinked_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(outside.join("outside.rs"), root.join("src").join("link.rs"))
-        .unwrap();
-
-    let report = PerFileStrategy::new().build_full_graph_report(&root);
-    assert_only_inside(&report, &root);
-}
-
-#[test]
-fn per_file_strategy_does_not_descend_into_a_symlinked_directory() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
-
-    let report = PerFileStrategy::new().build_full_graph_report(&root);
-    assert_only_inside(&report, &root);
-}
-
-#[test]
-fn full_graph_strategy_does_not_index_through_a_symlinked_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(outside.join("outside.rs"), root.join("src").join("link.rs"))
-        .unwrap();
-
-    let report = FullGraphStrategy::new().build_full_graph_report(&root);
-    assert_only_inside(&report, &root);
-}
-
-#[test]
-fn full_graph_strategy_does_not_descend_into_a_symlinked_directory() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
-
-    let report = FullGraphStrategy::new().build_full_graph_report(&root);
-    assert_only_inside(&report, &root);
-}
-
-#[test]
-fn a_declined_symlink_degrades_the_report_from_complete_to_partial() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
-
-    let report = PerFileStrategy::new().build_full_graph_report(&root);
-
-    assert!(
-        matches!(report.status, BuildStatus::Partial { .. }),
-        "declining a symlink leaves the coverage partial; reporting Complete \
-         here would be the same lie the walk was fixed to stop telling, \
-         got {:?}",
-        report.status
-    );
-
-    let BuildStatus::Partial { skipped, .. } = &report.status else {
-        unreachable!("just asserted Partial")
-    };
-    assert!(
-        skipped
-            .iter()
-            .any(|s| matches!(s.reason, SkipReason::Symlink { .. })),
-        "the symlink must be named in `skipped`, not silently dropped; got {skipped:?}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// The paths MCP actually takes
-// ---------------------------------------------------------------------------
-//
-// The two strategies above are not the paths a caller reaches. MCP's
-// `handle_build_graph` lands on `AnalysisService::build_project_graph`,
-// which does *not* go through `strategy.rs`: it runs its own
-// `ignore::WalkBuilder` and filtered on `e.path().is_file()` — the
-// `fs::metadata` call, so it follows links. Making the strategies
-// refuse symlinks while this one still followed them would leave two
-// code paths over the same directory disagreeing about coverage, and
-// the disagreeing one would be the wired one.
-
-#[test]
-fn the_production_graph_path_does_not_read_through_a_symlinked_file() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(outside.join("outside.rs"), root.join("src").join("link.rs"))
-        .unwrap();
-
-    let service = AnalysisService::new();
-    service.build_project_graph(&root).unwrap();
-    let report = service
-        .get_last_build_report()
-        .expect("build_project_graph always records a report");
-
-    assert_only_inside(&report, &root);
-    assert_declined_the_symlink(&report);
-}
-
-#[test]
-fn the_production_graph_path_does_not_descend_into_a_symlinked_directory() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
-
-    let service = AnalysisService::new();
-    service.build_project_graph(&root).unwrap();
-    let report = service
-        .get_last_build_report()
-        .expect("build_project_graph always records a report");
-
-    assert_only_inside(&report, &root);
-    assert_declined_the_symlink(&report);
-}
-
-#[test]
-fn the_per_file_report_path_records_the_symlink_it_declined() {
-    let tmp = tempfile::tempdir().unwrap();
-    let outside = tmp.path().join("outside");
-    let root = tmp.path().join("root");
-    workspace_with_a_neighbour(&outside, &root);
-
-    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
-
-    // This method's whole contract is honest gap reporting — it exists
-    // so a caller can see what it did not cover. Dropping the symlink
-    // without recording it would return `Complete`, which is the same
-    // lie the walk was fixed to stop telling, one layer down.
-    let report = AnalysisService::new()
-        .build_graph_per_file_with_report(&root)
-        .expect("the fixture root is a readable Rust project");
-
-    assert_only_inside(&report, &root);
-    assert_declined_the_symlink(&report);
-}
-
 /// The report must say `Partial` **and** name the symlink. Either half
 /// alone is the defect this file exists to prevent: `Complete` with a
 /// gap, or `Partial` with no explanation of what was missed.
@@ -268,13 +119,118 @@ fn assert_declined_the_symlink(report: &BuildReport) {
     );
 }
 
+/// The graph the whole-project route builds, with the report it
+/// publishes about it.
+fn whole_project_route(root: &std::path::Path) -> BuildReport {
+    let service = AnalysisService::new();
+    service.build_project_graph(root).unwrap();
+    service
+        .get_last_build_report()
+        .expect("build_project_graph always records a report")
+}
+
+/// The graph the per-file route builds, with the report it publishes
+/// about it.
+fn per_file_route(root: &std::path::Path) -> BuildReport {
+    AnalysisService::new()
+        .build_graph_per_file_with_report(root)
+        .expect("the fixture root is a readable Rust project")
+}
+
+// ---------------------------------------------------------------------------
+// The whole-project route
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_production_graph_path_does_not_read_through_a_symlinked_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let root = tmp.path().join("root");
+    workspace_with_a_neighbour(&outside, &root);
+
+    std::os::unix::fs::symlink(outside.join("outside.rs"), root.join("src").join("link.rs"))
+        .unwrap();
+
+    let report = whole_project_route(&root);
+
+    assert_only_inside(&report, &root);
+    assert_declined_the_symlink(&report);
+}
+
+#[test]
+fn the_production_graph_path_does_not_descend_into_a_symlinked_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let root = tmp.path().join("root");
+    workspace_with_a_neighbour(&outside, &root);
+
+    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
+
+    let report = whole_project_route(&root);
+
+    assert_only_inside(&report, &root);
+    assert_declined_the_symlink(&report);
+}
+
+// ---------------------------------------------------------------------------
+// The per-file route
+// ---------------------------------------------------------------------------
+
+#[test]
+fn the_per_file_route_does_not_read_through_a_symlinked_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let root = tmp.path().join("root");
+    workspace_with_a_neighbour(&outside, &root);
+
+    std::os::unix::fs::symlink(outside.join("outside.rs"), root.join("src").join("link.rs"))
+        .unwrap();
+
+    let report = per_file_route(&root);
+
+    assert_only_inside(&report, &root);
+}
+
+#[test]
+fn the_per_file_route_does_not_descend_into_a_symlinked_directory() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let root = tmp.path().join("root");
+    workspace_with_a_neighbour(&outside, &root);
+
+    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
+
+    let report = per_file_route(&root);
+
+    assert_only_inside(&report, &root);
+}
+
+#[test]
+fn the_per_file_report_path_records_the_symlink_it_declined() {
+    let tmp = tempfile::tempdir().unwrap();
+    let outside = tmp.path().join("outside");
+    let root = tmp.path().join("root");
+    workspace_with_a_neighbour(&outside, &root);
+
+    std::os::unix::fs::symlink(&outside, root.join("linked")).unwrap();
+
+    // This method's whole contract is honest gap reporting — it exists
+    // so a caller can see what it did not cover. Dropping the symlink
+    // without recording it would return `Complete`, which is the same
+    // lie the walk was fixed to stop telling, one layer down.
+    let report = per_file_route(&root);
+
+    assert_only_inside(&report, &root);
+    assert_declined_the_symlink(&report);
+}
+
 #[test]
 fn a_real_file_inside_the_root_is_still_indexed() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path().join("root");
     workspace_with_a_neighbour(&tmp.path().join("outside"), &root);
 
-    let report = PerFileStrategy::new().build_full_graph_report(&root);
+    let report = per_file_route(&root);
     assert_only_inside(&report, &root);
 
     // And the report must claim the completeness it actually has.
