@@ -23645,3 +23645,140 @@ corrida en limpio, sin nada más construyendo, salió verde. Merece la pena
 decirlo porque el primer veredicto en rojo se publicó igual: el veredicto
 que se publica es el que el gate dio, y un gate que corre con la máquina
 ocupada mide la máquina, no el árbol.
+
+## 2026-10-23 — La cabecera de una fusión se juzga antes de que exista
+
+**Qué es esta unidad.** El squash de un pull request crea un commit, y su
+cabecera la compone la forja a partir del título del pull request y su
+número. Ese commit lo crea la forja, en su lado, así que nunca pasa por los
+hooks que juzgan los commits que hace esta máquina. La política de la casa
+veía esa cabecera por primera vez después de la fusión, cuando ya era
+pública —y cuando la historia de la rama, que no admite reescrituras, ya no
+se podía tocar.
+
+**El defecto, medido.** Una fusión por squash creó una cabecera de **105
+caracteres** donde la política admite 100. El commit existe en `main`
+publicado y es el que la máquina no podía seguir: el hook de transacción de
+referencias rechazó la actualización con un diagnóstico explícito —la cabecera
+es demasiado larga— y el clon entero quedó sin poder apuntar a la punta de su
+propia rama principal. No era un fallo de compilación ni un cambio de
+comportamiento: era una regla de la casa que el commit había infringido sin
+que nadie lo supiera hasta que la máquina intentó usarlo.
+
+**Lo que se midió antes de decidir.** Tres mediciones, porque las tres salidas
+posibles —enmendar, revertir y re-aplicar, o dejar el clon roto— merecían
+respuestas distintas:
+
+  - **Qué juzga el hook.** Juzga la punta de la referencia, y además los
+    commits que **entran** en la rama cuando el movimiento declara su valor
+    anterior: una referencia a un commit conforme pasa; una referencia al
+    commit de 105 caracteres no; y un avance rápido que lo atraviesa tampoco,
+    aunque la punta sea admisible. Es decir: la máquina puede volver a
+    seguir su rama cuando la punta es admisible, y para eso hay que mover la
+    referencia sin declarar el valor anterior.
+  - **Si la historia publicada se puede enmendar.** No: la protección de `main`
+    tiene `allow_force_pushes: false` y `enforce_admins: true`. Enmendar el
+    commit sería reescribir una rama publicada, y la rama lo rechaza.
+  - **Por tanto qué queda.** El commit que infringe la política se queda en la
+    historia publicada, para siempre. Lo único que se puede arreglar es la
+    punta y la causa.
+
+**Lo que cambió.** Un juez nuevo, `scripts/ci/check-merge-subject.sh`, lee el
+título del pull request, compone la cabecera que la fusión crearía y se la
+pregunta a la política de la casa a través de `git-control check --message`:
+la misma autoridad que juzga todos los commits que hace esta máquina. El
+script **no guarda copia del límite**: una copia sería una segunda verdad, y
+las dos verdades se separan hasta que una admite exactamente lo que la otra
+prohíbe.
+
+El publicador del gate consulta al juez **antes** de arrancar el pipeline. El
+juicio cuesta segundos y el gate cuesta minutos, y probar que el árbol está
+sano cuando la cabecera ya se sabe mala no compra nada: en la corrida real de
+esta unidad se vio, en este orden, la cabecera admitida y sólo después el
+pipeline empezando. El juez falla cerrado: sin autoridad, sin respuesta de la
+forja o sin pull request que leer, no admite nada.
+
+**Lo que encontró la medición, por el camino.** La primera versión del juez
+juzgaba el título, y al medir cómo compone la forja la cabecera se vio que
+añade la referencia del pull request al título. Juzgar el título era, por
+tanto, juzgar una cadena distinta de la que iba a caer: un título de
+noventa y cinco caracteres cabía en el límite y la cabecera de ciento tres no.
+El juez compone ahora la misma cadena que la forja y la juzga entera, y el
+título deja de llevar la referencia porque la forja la añade: una referencia
+en el título caería dos veces en la cabecera. Y la fusión deja de llevar
+asunto propio: la cabecera es la que la forja compone a partir del título, y
+el juez juzga exactamente esa cadena.
+
+**Los contratos.** Ocho pruebas. La que más dice es la de la delegación: con
+una autoridad de mentira que admite todo, una cabecera de doscientos
+veintitrés caracteres entra; con una autoridad de mentira que lo rechaza todo,
+una de veintiocho y uno sale. Si el script midiera por su cuenta, la primera se
+negaría y la segunda entraría. Las dos a la vez demuestran que quien juzga es
+la política y no un número copiado aquí. Las demás fijan el comportamiento: lo
+que la política rechaza se rechaza, lo que se juzga es la cabecera que la
+fusión crearía y no sólo el título, un título que ya lleva una referencia se
+rechaza, y un gate que empieza con una cabecera rechazada ni se ejecuta ni
+publica nada.
+
+**Lo que costó el arreglo, y que conviene que no se repita.** La máquina volvió
+a su punta, pero no por el camino que usa todo el mundo: un avance rápido que
+atraviesa el commit de 105 caracteres cae, y con él cae el `git pull`. La
+referencia local de `main` se movió por eso con una actualización
+incondicional —la punta, que es admisible— y a partir de ahí el flujo normal
+vuelve a funcionar, porque el rango de un `pull` futuro ya no contiene ese
+commit.
+
+Esa es la otra mitad del daño que causa una cabecera que la política rechaza:
+no es un commit raro, es un punto de la historia que ningún clon puede
+atravesar. Por eso el título de un pull request se juzga antes de la fusión y
+no después: después, la única salida que queda es una actualización
+incondicional, que es un rodeo y no un procedimiento.
+
+**Lo que este cierre no dice.** El commit de 105 caracteres sigue en `main`
+publicado: la rama no admite reescrituras y no hay nada que hacer con él
+salvo reconocerlo. El clon tampoco necesita apuntarlo; le basta con una
+punta admisible, que es lo que este cambio deja.
+
+Tampoco cierra el hueco de la composición: el juez compone la cabecera como
+la compone la forja, y si esa composición cambiara, el juez y la forja
+dejarían de mirar la misma cadena. La regla de la casa queda escrita —la
+fusión no lleva asunto propio: la cabecera es la que la forja compone— y
+documentada en `CONTRIBUTING.md` y en el checklist de cierre. Queda escrito
+como regla y no como mecanismo, y conviene decirlo con esas palabras.
+
+Y no se corta release en esta unidad. La orden de la misión pone el corte de
+release el último, después de la veracidad del grafo, y la cola abre ahora con
+la unidad que falta de la ontología: el campo que el consumidor lee distingue
+un símbolo de programación de una declaración de infraestructura. Cortar ahora
+publicaría la ontología en dos trozos —el extractor genérico hoy, las
+declaraciones el ciclo que viene— y dos cambios del formato publicado del
+grafo en dos cortes seguidos son dos cortes de más. El corte va con esa
+unidad, y el artefacto publicará la historia entera de una vez.
+
+**La siguiente unidad.** La que falta de la ontología: un recurso de
+Terraform y un play de Ansible dejan de publicarse como función y como
+módulo, y se publican como declaraciones con su tipo y su subtipo. El dominio
+ya tiene el valor `Declaration` y `NodeKind` ya tiene variantes que no son
+símbolos: la forma existe, lo que falta es el campo que el consumidor lee, y
+la consulta de infraestructura contesta hoy con una mentira sobre lo que el
+fichero dice.
+
+### Gates
+
+Verde sobre este árbol: el contrato nuevo del juez de la cabecera
+(`scripts/ci/test_merge_subject_is_judged_before_the_gate.py`), con sus ocho
+casos; la suite completa de contratos del producto, con 371 pruebas y ningún
+fallo; el estándar de comentarios, que este cambio respeta.
+
+Con la autoridad real, no con dobles: la cabecera de 105 caracteres se
+rechaza; un título corto que ya lleva la referencia se rechaza también; el
+título del pull request del cambio entra, con la cabecera que la forja
+compondría.
+
+El gate de fusión corrió sobre `9b81b375` —la cabeza exacta de la rama del
+cambio— y publicó `merge-gate=success` con su veredicto. El juez se ejecutó antes que el
+pipeline, en la misma corrida, y su cabecera admitida quedó a la vista en la
+salida del gate antes de que el pipeline arrancara.
+
+La PR se fusionó por squash como `2641ae84`, y `main` vuelve a tener una
+punta que la máquina puede referenciar.
