@@ -5,8 +5,9 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `d192701b79fb15ac007489247d3c766fc3925ebc` (`origin/main` al
-> cerrar este ciclo), rama `main`.
+> **Snapshot**: 2026-10-23, sobre `d4c8c35cc719c05fb503a91cf8ab6cfbc21a8f6b` (cabeza de
+> la rama de la unidad que lee la identidad en un solo sitio), rama
+> `feature/one-identity-grammar`.
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
 >
@@ -144,7 +145,7 @@ código o de la máquina.
 
 | Unidad | Qué es | Detalle |
 |---|---|---|
-| **B3** (`C10`, `C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
+| **B3** (`C26`, `C15`, `C27`, `C22`, `C23`) | ontología y arquitectura simplificadas | `ROADMAP.md` §11 |
 | **H5** (`C11`) | `SnapshotKey` e incrementalidad honesta | `consumer-contracts/specs/SPEC-CU-005-SNAPSHOT-INCREMENTAL.md` |
 | **H3** (`C12`), **H4.4** (`C13`) | navegación Kotlin sin JVM y sus relaciones con Java | `ROADMAP.md` §11 |
 
@@ -163,6 +164,21 @@ el árbol se analiza una vez y se lee dos veces, el cuidado sale más barato
 que antes. La ruta filtrada usa el mismo inventario y el mismo informe que
 la completa. La demostración está hecha: revirtiendo sólo las dos
 correcciones, cinco contratos se pusieron rojos.
+
+**C10 está cerrado.** El producto publicaba un trozo de la identidad de una
+cosa como si fuera su nombre. Para un símbolo pasaba por casualidad —el nombre
+está en el medio de la identidad—, pero para una declaración que un lector de
+infraestructura nombra, un recurso de Terraform o un play de Ansible, el trozo
+que sobrevivía era el fichero donde la cosa vive: el producto llegaba a decir
+que "main.tf" era el símbolo del que más depende el proyecto, y lo preguntaba
+en voz alta en las preguntas sugeridas. En el camino de hechos, cada lector
+respondía de otra manera: el hecho se descartaba, el fichero quedaba vacío, o
+el nombre salía como el fichero. Ahora el dominio declara la gramática de la
+identidad y la lee en un solo sitio, y los publicadores toman el nombre del
+símbolo que lo lleva. La identidad de una declaración no cambia de bytes: el
+recurso sigue siendo `tf:main.tf:aws_s3_bucket.app_bucket`. La demostración
+está hecha: revirtiendo el lector, o revirtiendo los publicadores, los
+contratos correspondientes se pusieron rojos.
 
 **C9 está cerrado.** El dominio construía su propio adaptador: el puerto de
 proyección montaba la implementación concreta de infraestructura en una

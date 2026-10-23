@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C10",
-      "title": "Una propiedad de identidad en vez de N tests de paridad",
-      "unit": "H24",
-      "objective": "Sustituir los tests de paridad por parejas por una propiedad: toda identidad que el producto produce la entiende `SymbolFqn::parse`.",
-      "whyNow": "MEDIDO: hay siete gramáticas de identidad y un solo parser, que exige que el ultimo segmento sea un `u32`: las gramaticas `tf:` y `ansible:` no parsean nunca, y los cuatro sitios que parsean degradan en silencio. Una propiedad sobre el conjunto habria encontrado, de una vez, esta divergencia, la del camino de la CLI y la fuga de `iac_query`. La auditoria del 2026-10-21 lo hace concreto: identidades semanticas como `tf:main.tf:aws_s3_bucket.app_bucket` no cumplen la gramatica, que exige una linea numerica al final.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/domain/evidence_kernel/symbol_fqn.rs"
-      ],
-      "doneWhen": [
-        "una property comprueba que toda identidad que el producto produce la entiende el parser de identidad",
-        "las gramaticas `tf:` y `ansible:` parsean, o el parser se declara tolerante con su forma",
-        "los cuatro sitios que degradan en silencio dejan de hacerlo"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 90,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C26",
       "title": "El fallo del lector especializado no se degrada a resultado generico",
       "unit": "H24",
