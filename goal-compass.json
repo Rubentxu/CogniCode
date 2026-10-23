@@ -8,25 +8,6 @@
   "driver": "plugin",
   "backlog": [
     {
-      "candidateId": "C15",
-      "title": "El vigilante y su estado dicen la misma verdad que el registro",
-      "unit": "H24",
-      "objective": "Que el conjunto de extensiones que el vigilante observa y el que el endpoint `/watch` publica se deriven de una sola regla, en vez de dos listas literales que ya no coinciden entre sí ni con el registro de lenguajes.",
-      "whyNow": "MEDIDO al cerrar el candidato del manifiesto: el vigilante decide con una lista literal de 30 extensiones (`is_watchable`), y el endpoint `/watch` publica otra de 21 que no es la misma. Las dos se han separado del registro de lenguajes, y una de ellas no es la que el servidor aplica. Con el manifiesto arreglado, esta lista ya no puede hacer que el producto mienta: sólo decide cuándo avisar, no qué es verdad. Sigue siendo una tercera fuente de verdad y una superficie que publica algo que no ocurre.",
-      "evidenceRefs": [
-        "crates/cognicode-core/src/application/ingest/watcher.rs"
-      ],
-      "doneWhen": [
-        "el endpoint `/watch` publica el conjunto de extensiones que el vigilante aplica de verdad",
-        "el vigilante decide con el registro de lenguajes, más las extensiones de documentación que decide seguir vigilando, y esa decisión está escrita en un solo sitio",
-        "un test que compare lo que `/watch` publica con lo que el vigilante acepta"
-      ],
-      "scope": "H24",
-      "risk": "medium",
-      "priority": 70,
-      "source": "roadmap"
-    },
-    {
       "candidateId": "C27",
       "title": "Una prueba metamorfica del grafo en vez de cuatro instantaneas",
       "unit": "H24",
