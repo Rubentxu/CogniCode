@@ -24358,3 +24358,44 @@ doc-tests de 20 crates, los **373 contratos** del producto y el baseline, con
 cero rojo. El ratchet: de 23 entradas de producción en la base a 28 en la
 rama, las cinco nuevas nombradas una a una. Y el estándar de comentarios: ni
 una línea de comentario nueva con referencias.
+
+## 2026-10-23 — El cierre verificado: la costura llega a `main` con su recibo
+
+**El resultado.** La unidad del puerto de proyección está cerrada y en
+remoto. `main` está en `6da10d55`, el squash de la PR #443, y el gate de
+fusión corrió sobre la cabeza exacta de esa rama —`acab2ad6`— y publicó
+`merge-gate=success` con **56 etapas en verde y ninguna en rojo**.
+
+**Lo que queda, para quien lo lea después.** El dominio ya no construye su
+adaptador. El puerto declara la fábrica, la infraestructura la implementa, la
+raíz de composición la inyecta, y el guard arquitectónico ve la dependencia
+escrita donde se usa. La demostración del ciclo está en el recibo anterior:
+reintroducir solo la construcción en el dominio volvió a poner el guard en
+rojo con el motivo exacto.
+
+**Lo que la fusión no cambia.** Ninguna respuesta del producto
+cambia: los mismos números, las mismas rutas, los mismos errores. Lo que
+cambia es de dónde sale la proyección y quién la decide.
+
+**La cabecera se juzgó antes de gastar el gate.** El squash crea un commit
+cuyo mensaje es el título del pull request más su referencia, y ese commit lo
+crea el servidor: no pasa por los hooks que juzgan los commits de esta
+máquina. Por eso el juez se consultó **antes** de publicar el gate, y
+admitió `refactor(core): la proyeccion la construye quien la compone (#443)`.
+
+**Lo que esta corrida midió.** El modo rápido: el selector eligió la suite
+del core —2390 pruebas de biblioteca y 9 del contrato de arquitectura— con
+clippy `-D warnings` limpio. El gate completo local sobre el árbol
+commiteado: fmt, clippy con `-D warnings`, **221 suites y 6552 pruebas**, los
+doc-tests de 20 crates, los **373 contratos** del producto y el baseline, con
+cero rojo. El `merge-gate`: **56 de 56 etapas**.
+
+**Lo que queda abierto, y es lo que este cierre no dice.** El puerto sigue
+exponiendo `petgraph::NodeIndex` en `symbol_index()`; sustituirlo es un
+cambio en el adaptador de grafo, no en la costura. Las cinco derivas de la
+capa de aplicación que el guard destapó están inventariadas con
+dueño y fecha, y las tienen que cerrar los trabajos que ponen la política de
+recorrido y el informe de construcción detrás de un puerto. Y el resto de la
+auditoría sigue en la cola: un solo constructor de grafo, la identidad y su
+prueba metamórfica, el vigilante coherente, la simplificación medida, la
+caché incremental, Kotlin sin JVM y las relaciones Kotlin–Java.
