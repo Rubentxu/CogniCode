@@ -65,6 +65,7 @@ impl SymbolKindDetail {
             SymbolKind::File => "File",
             SymbolKind::Namespace => "Namespace",
             SymbolKind::Package => "Package",
+            SymbolKind::Declaration => "Declaration",
             SymbolKind::Unknown => "Unknown",
         }
     }
@@ -94,6 +95,7 @@ impl SymbolKindDetail {
             "File" => Some(SymbolKind::File),
             "Namespace" => Some(SymbolKind::Namespace),
             "Package" => Some(SymbolKind::Package),
+            "Declaration" => Some(SymbolKind::Declaration),
             "Unknown" => Some(SymbolKind::Unknown),
             _ => None,
         }
@@ -131,6 +133,7 @@ mod tests {
             SymbolKind::File,
             SymbolKind::Namespace,
             SymbolKind::Package,
+            SymbolKind::Declaration,
             SymbolKind::Unknown,
         ];
         for kind in all {

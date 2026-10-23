@@ -10,6 +10,8 @@
 //! tied to a declaration. Both travel with the answer, and "complete" is
 //! only said when both are whole.
 
+mod fixtures;
+
 use cognicode_core::application::analysis_basis::{
     AnalysisBasis, AnalysisOp, Analyze, OutcomeState,
 };
@@ -20,33 +22,6 @@ use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };
 use cognicode_core::interface::mcp::schemas::PendingReason;
-use std::path::{Path, PathBuf};
-
-/// The real fixture, copied into a scratch directory so the repository
-/// stays clean. The content is the versioned one: these tests run against
-/// what the repository really holds, not against a toy.
-fn copy_fixture(dir: &Path, name: &str) -> PathBuf {
-    let source = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../sandbox/fixtures")
-        .join(name);
-    let target = dir.join(name);
-    copy_tree(&source, &target);
-    target
-}
-
-fn copy_tree(source: &Path, target: &Path) {
-    std::fs::create_dir_all(target).expect("mkdir");
-    for entry in std::fs::read_dir(source).expect("read fixture") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let destination = target.join(entry.file_name());
-        if path.is_dir() {
-            copy_tree(&path, &destination);
-        } else {
-            std::fs::copy(&path, &destination).expect("copy fixture");
-        }
-    }
-}
 
 /// The line the reference is written on, counted from one.
 fn line_of(source: &str, needle: &str) -> u32 {
@@ -63,8 +38,8 @@ const GHOST: &str = "aws_s3_bucket.no_existe.id";
 #[tokio::test]
 async fn a_reference_to_a_declaration_that_does_not_exist_is_declared_pending() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "terraform-iac");
-    let main = fixtures.join("main.tf");
+    let fixture = fixtures::copy_fixture(dir.path(), "terraform-iac");
+    let main = fixture.join("main.tf");
 
     let mut source = std::fs::read_to_string(&main).expect("the fixture is readable");
     source.push_str(
@@ -114,8 +89,8 @@ async fn a_reference_to_a_declaration_that_does_not_exist_is_declared_pending() 
 #[tokio::test]
 async fn a_reference_that_another_file_declares_is_a_relation_and_not_a_gap() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "terraform-iac");
-    let variables = fixtures.join("variables.tf");
+    let fixture = fixtures::copy_fixture(dir.path(), "terraform-iac");
+    let variables = fixture.join("variables.tf");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(dir.path())
@@ -153,7 +128,7 @@ async fn a_reference_that_another_file_declares_is_a_relation_and_not_a_gap() {
 #[tokio::test]
 async fn a_project_without_dangling_references_says_it_knows_everything() {
     let dir = tempfile::tempdir().expect("tempdir");
-    copy_fixture(dir.path(), "terraform-iac");
+    fixtures::copy_fixture(dir.path(), "terraform-iac");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(dir.path())
@@ -184,7 +159,7 @@ async fn a_project_without_dangling_references_says_it_knows_everything() {
 #[tokio::test]
 async fn a_module_of_the_language_is_not_a_gap() {
     let dir = tempfile::tempdir().expect("tempdir");
-    copy_fixture(dir.path(), "ansible-playbook");
+    fixtures::copy_fixture(dir.path(), "ansible-playbook");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(dir.path())
@@ -232,8 +207,8 @@ async fn a_module_of_the_language_is_not_a_gap() {
 #[tokio::test]
 async fn the_cli_does_not_say_complete_when_a_reference_is_pending() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "terraform-iac");
-    let main = fixtures.join("main.tf");
+    let fixture = fixtures::copy_fixture(dir.path(), "terraform-iac");
+    let main = fixture.join("main.tf");
 
     let mut source = std::fs::read_to_string(&main).expect("the fixture is readable");
     source.push_str(

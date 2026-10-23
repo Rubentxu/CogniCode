@@ -33,8 +33,13 @@ pub fn collect(builder: &mut FactBatchBuilder, result: &ExtractionResult) {
 
     // Definition records: every non-file symbol node asserts its identity.
     for node in &result.nodes {
-        let NodeKind::Symbol(kind) = node.kind else {
-            continue;
+        // A declaration is defined by its file just as a symbol is, and
+        // it says what it is: the fact names the kind it really has
+        // instead of dressing a resource up as a function.
+        let kind = match node.kind {
+            NodeKind::Symbol(kind) => kind,
+            NodeKind::Declaration => SymbolKind::Declaration,
+            _ => continue,
         };
         if kind == SymbolKind::File {
             continue; // files carry no defines fact (fact grammar, design D1)

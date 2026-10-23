@@ -23782,3 +23782,165 @@ salida del gate antes de que el pipeline arrancara.
 
 La PR se fusionó por squash como `2641ae84`, y `main` vuelve a tener una
 punta que la máquina puede referenciar.
+
+## 2026-10-23 — Un recurso de infraestructura deja de publicarse como función
+
+**Qué es esta unidad.** La última de la ontología: el campo que el
+consumidor lee tiene que distinguir un símbolo de programación de una
+declaración de infraestructura. El ciclo anterior cerró el extractor
+genérico —dejó de inventar categorías que no puede defender— y dejó
+abierta esta mitad: lo que el lector del dominio **sí** sabe, y lo que el
+grafo publicaba de todos modos.
+
+**El defecto, medido.** Con el árbol anterior, el lector de Terraform
+publicaba cada bloque `resource` como `symbol.function`, el de Ansible
+publicaba cada play como `symbol.module`, y el grafo llevaba ambas cosas
+como `SymbolKind::Function` y `SymbolKind::Module`. El consumidor del
+transporte leía, literalmente, la cadena `"function"` para un bucket de S3.
+
+La demostración es un experimento, no una afirmación: se revirtieron
+**sólo los dos lectores**, se dejaron intactos el dominio, la capa
+semántica y el transporte, y el contrato nuevo falló en cinco de sus seis
+pruebas. Lo que entonces se leyó fue `left: "symbol.function"` para el
+bucket, `left: "symbol.module"` para el play, `left: Function` en el grafo
+y `left: String("function")` en la respuesta del consumidor. Con los
+lectores restaurados, las seis vuelven a pasar. Eso es lo que distingue un
+contrato que mide de una prueba que está verde.
+
+**Lo que cambió.**
+
+  - **El dominio nombra la declaración.** `SymbolKind` gana la variante
+    `Declaration` y `NodeKind` la recibe como variante propia, no como un
+    símbolo más: una declaración no es una cosa de las que está hecho un
+    programa, por mucho que su forma se parezca a una función. El códec
+    de hechos, que es el único que escribe `kind=<SerdeName>`, la publica
+    y la vuelve a leer sin perderse.
+  - **Los lectores dejan de fingir una clase.** El parámetro `symbol_kind`
+    desapareció de los dos: un lector de dominio ya no tiene que decidir
+    qué clase de programación es un bloque de Terraform, porque no es
+    ninguna. No es un remiendo: es una firma que dice la verdad sobre lo
+    que el lector sabe.
+  - **La capa semántica lleva la declaración al grafo.** Antes descartaba
+    todo nodo que no fuera símbolo, y con el cambio anterior eso habría
+    significado que `iac_query` dejara de encontrar la infraestructura.
+    Ahora una declaración entra como lo que es, con su tipo y su subtipo.
+  - **El puente de hechos no pierde cobertura.** Una declaración sigue
+    afirmando `core:defines`, pero con el kind que de verdad tiene. Un
+    hecho que desaparece no es una cobertura que se corrige: es un hecho
+    que se pierde en silencio.
+  - **El transporte dice `declaration`.** El enum del wire gana una
+    variante, y con ella el valor `"declaration"`, que es lo que el
+    consumidor lee hoy para un recurso de infraestructura.
+
+**La ontología, en un solo sitio.** Esta es la parte que más código
+borra. El campo que el consumidor lee lo traducían **cuatro** tablas
+distintas —dos que leían una cadena y dos que traducian el enum del
+dominio— y cada una se equivocaba a su manera: una mapeaba `"type"` a
+`TypeAlias`, otra a `Interface`, y las dos publicaban `constant`,
+`constructor`, `parameter` e `interface` como `"variable"`. Ahora hay una
+sola conversión canónica en `dto_mapping.rs`, en las dos direcciones, y
+los cuatro consumidores la usan. Es lo que pedía el contrato de
+ontología: cada consumidor que publica una clase usa la misma definición.
+
+**Los contratos.** El de esta unidad es un solo fichero, y creció de tres
+pruebas a seis sin añadir una suite nueva: dos fijan lo que el lector
+publica, una fija que una lengua con lector propio no publica ningún
+símbolo de programación (con guarda anti-vacuidad: una regla que contara
+cero pasaría sin comprobar nada), una fija que el grafo lleva la
+declaración como declaración y con lo que declara, y una —la del
+consumidor— fija que lo que se lee es `"declaration"` y nunca
+`"function"`. El contrato del wire creció con dos: que el dominio y el
+transporte nombran la misma clase, y que una declaración se publica como
+una declaración.
+
+El experimento del principio es el que da valor a todo lo demás: sin él,
+las seis pruebas pasarían igual si la ontología no existiera.
+
+**El harness.** Cuatro contratos del core copiaban el mismo helper de
+fixtures —copiar el árbol de ficheros del repositorio a un directorio
+temporal— en veinte líneas cada uno, y cada copia podía derivar. Ahora
+viven en `tests/fixtures/mod.rs`, y el que escribe la prueba nueva usa el
+mismo camino que los otros cuatro. Menos líneas, una sola definición de
+"el proyecto real" y ninguna copia que pueda dejar de hablar del mismo
+proyecto que la de al lado.
+
+**Lo que cambia para el consumidor, dicho con sus palabras.**
+
+  - El valor `"declaration"` aparece en el campo `kind` de las respuestas
+    del transporte donde antes estaba `"function"` o `"module"`. Es un
+    valor nuevo, y es la razón del cambio.
+  - `get_entry_points` y `get_leaf_functions` publican ahora `constant`,
+    `constructor`, `parameter`, `interface` y `type_alias` con su propio
+    nombre; antes los publicaban como `"variable"`. `get_all_symbols`
+    publicaba ya `constant`, `constructor` y `parameter` con su nombre, y
+    publicaba un alias de tipo como `"variable"`; ahora lo publica como
+    `type_alias`. Una de las dos tablas mapeaba además `"type"` a
+    `TypeAlias` y la otra a `Interface`: ahora las dos dicen lo mismo.
+  - El explorador acepta `"declaration"` en el filtro `node_kinds`, y una
+    declaración **no** sale del comodín `"symbol"`. Es lo que dice la
+    ontología: una declaración no es un símbolo de programación. Un
+    consumidor que filtraba por `"symbol"` para encontrar infraestructura
+    filtra ahora por `"declaration"`.
+
+**Lo que este cierre no dice.**
+
+  - `Symbol.kind` sigue siendo `SymbolKind` y no `Option<SymbolKind>`:
+    hay 327 sitios que lo construyen y 50 que lo leen, y volverlo
+    opcional es otra unidad, no un apéndice de esta.
+  - El dominio tiene 23 clases de símbolo y el transporte nombra 15. Las
+    que el transporte no nombra —una propiedad, un import, un fichero— se
+    siguen publicando como `"variable"`, que es lo que el transporte
+    siempre dijo de ellas. Converger los dos vocabularios es la parte que
+    falta de este contrato, y queda escrita como deuda y no como cerrada.
+  - El `core:defines` de una declaración viaja con el FQN que le dio su
+    lector (`tf:{fichero}:{bloque}`), que es una gramática distinta de la
+    que el núcleo entiende como identidad canónica. La proyección del
+    grafo genérico lo acepta y lo muestra entero como nombre. Es lo que
+    ya pasaba y no se ha tocado aquí.
+
+**La siguiente unidad.** El corte de release, que la orden de la misión
+pone el último y que este cierre deja preparado: la ontología es un
+cambio del formato publicado del grafo, y un corte que lo publicaría en
+dos trozos —el extractor genérico en v0.101.29, las declaraciones en el
+siguiente— obliga a los consumidores a atravesar dos formatos. Va todo
+junto, en un corte.
+
+**Dos incidentes del ciclo, y lo que valen.** El primero: al medir si el
+contrato de atribución del ROADMAP toleraba el cambio de la agenda, se usó
+`git stash push -- <un fichero>` y `git stash pop` para dejar el fichero
+como estaba y devolverlo. El `push` falló en silencio —su error estaba
+oculto tras un `>/dev/null 2>&1`— y el `pop` que lo siguió consumió un
+stash que ya estaba en la pila desde otra rama: el que guardaba el
+`Cargo.lock` de la v0.101.18. El `Cargo.lock` quedó con los marcadores de
+conflicto y el gate local entero en rojo por un fichero que no era de este
+trabajo. Se restauró desde `HEAD`, el stash ajeno siguió en su sitio —lo
+confirma `git stash show`— y el gate volvió a verde. La lección no es
+sutil: un `pop` consume lo que haya en la cima, y si el `push` que lo
+precedió no llegó a apilar nada, la cima no es la que uno cree. Un cambio
+reversible de un fichero se hace guardando una copia y devolviéndola, no
+con la pila de stashes.
+
+El segundo: el gate local salió en rojo en un test de interfaz de
+`cognicode-macros`, que este cambio no toca. El error que se leía
+apuntaba a `cog-v28`, que es un worktree de este mismo repositorio. El
+binario de prueba venía de ahí, reutilizado desde el directorio de
+compilación compartido, con el `CARGO_MANIFEST_DIR` del otro checkout
+grabado dentro. Al recompilarlo en este checkout, el test pasa: el
+snapshot espera una ruta relativa y el error traía la absoluta del otro
+árbol. Es la clase de fallo que el `AGENTS.md` llama de infraestructura
+local, y la lección es la misma: un rojo que apunta a otro sitio no es un
+rojo de este trabajo, y se demuestra mirando el rojo, no suponiéndolo.
+
+### Gates
+
+Verde sobre este árbol: la suite completa del core, con 3083 pruebas en
+105 binarios y ningún fallo; las suites del explorador, de la CLI y del
+MCP, con 2020 pruebas en 74 binarios y ningún fallo; la suite completa de
+contratos del producto, con 371 pruebas y ningún fallo; `cargo clippy
+--workspace --all-targets -- -D warnings`; `cargo fmt --all`; y el
+estándar de comentarios, que este cambio respeta.
+
+Con el experimento, no con una afirmación: revirtiendo sólo los dos
+lectores, el contrato de esta unidad falla en cinco de sus seis pruebas
+con `left: "symbol.function"`, `left: "symbol.module"` y `left:
+String("function")`.

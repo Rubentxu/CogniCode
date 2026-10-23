@@ -18,6 +18,8 @@
 //! the difference between a measured value and a constant is exactly what
 //! this file is about.
 
+mod fixtures;
+
 use cognicode_core::domain::aggregates::CallGraph;
 use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::services::ExtractionContext;
@@ -35,35 +37,9 @@ use cognicode_core::interface::mcp::handlers::{
 };
 use serde_json::Value;
 
-/// The real fixture, copied into a scratch directory so the repository
-/// stays clean. The content is the versioned one: this test runs against
-/// what the repository really holds, not against a toy.
-fn copy_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../sandbox/fixtures")
-        .join(name);
-    let target = dir.join(name);
-    copy_tree(&source, &target);
-    target
-}
-
-fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
-    std::fs::create_dir_all(target).expect("mkdir");
-    for entry in std::fs::read_dir(source).expect("read fixture") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let destination = target.join(entry.file_name());
-        if path.is_dir() {
-            copy_tree(&path, &destination);
-        } else {
-            std::fs::copy(&path, &destination).expect("copy fixture");
-        }
-    }
-}
-
 /// The graph of a scratch directory that holds the given fixture.
 async fn graph_of(dir: &std::path::Path, fixture: &str) -> HandlerContext {
-    copy_fixture(dir, fixture);
+    fixtures::copy_fixture(dir, fixture);
     let ctx = HandlerContext::builder().with_working_dir(dir).build();
     handle_build_graph(&ctx, BuildGraphInput { directory: None })
         .await

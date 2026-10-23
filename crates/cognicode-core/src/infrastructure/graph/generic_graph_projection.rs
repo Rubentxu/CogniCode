@@ -169,7 +169,7 @@ pub(crate) fn build_generic_projection(facts: &[Fact]) -> GenericProjection {
                 .insert(id_string.clone());
             nodes.insert(
                 id_string.clone(),
-                (NodeKind::Symbol(kind), name, PathBuf::from(file)),
+                (NodeKind::of_symbol(kind), name, PathBuf::from(file)),
             );
         } else {
             let label = std::path::Path::new(id_string)

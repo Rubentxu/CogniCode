@@ -6,38 +6,105 @@
 //! gave for a block was a symbol whose name was the block's header —
 //! `resource "aws_s3_bucket" "app_bucket"` published as one function
 //! called "resource". The graph then said a thing about the project that
-//! the file did not say.
+//! the file did not say, and the analysis of code counted a bucket as a
+//! function of the project.
 //!
 //! The same is true of a playbook: a YAML document is data, and a mapping
 //! is not a class.
 //!
 //! ## What this file pins
 //!
-//! That the class a language publishes is the one its own reader publishes:
-//! a resource is a resource, a data source is a binding, a module is a
-//! module, and a play is a play. And that the generic walker, which has
-//! nothing to say about these languages, says nothing about them.
+//! That a block of a language with a reader of its own is published as the
+//! declaration it is — a resource is a resource of type `aws_s3_bucket`, a
+//! play is a play — and never as a symbol of programming. And that the
+//! generic walker, which has nothing to say about these languages, says
+//! nothing about them.
+//!
+//! The last part of the chain matters as much as the first: the kind a
+//! consumer reads is not the one the reader wrote down but the one the
+//! transport published. A declaration that the graph knows and the
+//! transport renames is still a lie the consumer reads.
+
+mod fixtures;
 
 use cognicode_core::application::ingest::extractor::extract_file;
 use cognicode_core::application::ingest::types::ExtractionResult;
-use cognicode_core::domain::value_objects::{Language, SymbolKind};
+use cognicode_core::domain::value_objects::{Declaration, Language, SymbolKind};
+use cognicode_core::infrastructure::graph::semantic_layer::semantic_facts;
 use cognicode_core::infrastructure::parser::language_config::{HCL_CONFIG, YAML_CONFIG};
-use std::collections::BTreeMap;
+use cognicode_core::interface::mcp::handlers::handle_get_all_symbols;
+use cognicode_core::interface::mcp::schemas::GetAllSymbolsInput;
 
-/// The published symbols of a file, by label.
-fn published(result: &ExtractionResult) -> BTreeMap<String, SymbolKind> {
+/// What the graph published for one node.
+#[derive(Debug, PartialEq)]
+struct Published {
+    /// The identifier the graph gave the node.
+    id: String,
+    /// The name the graph gave the node.
+    label: String,
+    /// The coarse kind of the node, as the graph publishes it.
+    kind: String,
+    /// The kind of the declaration the node carries, when it carries one.
+    declaration: Option<String>,
+    /// The type the declaration carries, when it carries one.
+    declaration_type: Option<String>,
+}
+
+/// What every node of the result published.
+fn published(result: &ExtractionResult) -> Vec<Published> {
     result
         .nodes
         .iter()
-        .filter_map(|node| {
-            let kind = match &node.kind {
-                cognicode_core::domain::value_objects::NodeKind::Symbol(kind) => Some(*kind),
-                _ => None,
-            }?;
-            Some((node.label.clone(), kind))
+        .map(|node| {
+            let properties = node.properties.as_object();
+            let text = |key: &str| {
+                properties
+                    .and_then(|properties| properties.get(key))
+                    .and_then(|value| value.as_str())
+                    .map(str::to_string)
+            };
+            Published {
+                id: node.id.as_str().to_string(),
+                label: node.label.clone(),
+                kind: node.kind.as_str(),
+                declaration: text(Declaration::KIND_PROPERTY),
+                declaration_type: text(Declaration::TYPE_PROPERTY),
+            }
         })
         .collect()
 }
+
+/// The labels every node published, for a diagnostic that says what is there.
+fn labels(nodes: &[Published]) -> Vec<&str> {
+    nodes.iter().map(|node| node.label.as_str()).collect()
+}
+
+/// The node published for a label.
+fn node_with_label<'a>(nodes: &'a [Published], label: &str) -> Option<&'a Published> {
+    nodes.iter().find(|node| node.label == label)
+}
+
+/// What each block of a Terraform configuration declares: the label it is
+/// published under, the kind of the declaration, and the type it carries
+/// when it carries one. A bucket is a resource of type `aws_s3_bucket`; a
+/// variable declares no type and is a variable.
+const TERRAFORM_DECLARATIONS: &[(&str, &str, Option<&str>)] = &[
+    (
+        "aws_s3_bucket.app_bucket",
+        "resource",
+        Some("aws_s3_bucket"),
+    ),
+    ("data.aws_ami.ubuntu", "data", Some("aws_ami")),
+    ("var.region", "variable", None),
+    ("module.network", "module", None),
+    ("output.bucket_arn", "output", None),
+];
+
+/// What each block of a playbook declares.
+const PLAYBOOK_DECLARATIONS: &[(&str, &str, Option<&str>)] = &[
+    ("configure the servers", "play", None),
+    ("install the package", "task", None),
+];
 
 const TERRAFORM: &str = r#"
 resource "aws_s3_bucket" "app_bucket" {
@@ -71,32 +138,104 @@ const PLAYBOOK: &str = r#"
         state: present
 "#;
 
+/// A block is published as the declaration it names, and as nothing else.
+fn assert_declares(nodes: &[Published], label: &str, kind: &str, resource_type: Option<&str>) {
+    let node = node_with_label(nodes, label)
+        .unwrap_or_else(|| panic!("`{label}` is published; the labels are {:?}", labels(nodes)));
+    assert_eq!(
+        node.kind, "declaration",
+        "the reader of this language publishes `{label}` as {}; a block of a \
+         language with a reader of its own is a declaration, not a symbol of \
+         programming",
+        node.kind,
+    );
+    assert_eq!(
+        node.declaration.as_deref(),
+        Some(kind),
+        "`{label}` does not declare what the file says it declares",
+    );
+    assert_eq!(
+        node.declaration_type.as_deref(),
+        resource_type,
+        "`{label}` does not carry the type the file gives it",
+    );
+}
+
 #[test]
-fn a_terraform_block_is_published_as_what_it_is() {
+fn a_terraform_block_is_published_as_the_declaration_it_is() {
     let result = extract_file(
         &HCL_CONFIG,
         std::path::Path::new("main.tf"),
         TERRAFORM,
         "terraform",
     );
-    let published = published(&result);
+    let nodes = published(&result);
 
-    let expected = [
-        ("aws_s3_bucket.app_bucket", SymbolKind::Function),
-        ("data.aws_ami.ubuntu", SymbolKind::Variable),
-        ("var.region", SymbolKind::Variable),
-        ("module.network", SymbolKind::Module),
-        ("output.bucket_arn", SymbolKind::Property),
-    ];
+    for (label, kind, resource_type) in TERRAFORM_DECLARATIONS {
+        assert_declares(&nodes, label, kind, *resource_type);
+    }
+}
 
-    for (label, kind) in expected {
+#[test]
+fn a_play_and_its_tasks_are_published_as_declarations() {
+    let result = extract_file(
+        &YAML_CONFIG,
+        std::path::Path::new("site.yml"),
+        PLAYBOOK,
+        "playbook",
+    );
+    let nodes = published(&result);
+
+    for (label, kind, resource_type) in PLAYBOOK_DECLARATIONS {
+        assert_declares(&nodes, label, kind, *resource_type);
+    }
+}
+
+#[test]
+fn a_language_with_a_reader_of_its_own_publishes_no_symbol_of_programming() {
+    // The file itself is a file, and that is the truth about it. Everything
+    // else the reader published is a declaration.
+    for (language, config, source, path, expected) in [
+        (
+            Language::Hcl,
+            &HCL_CONFIG,
+            TERRAFORM,
+            "main.tf",
+            TERRAFORM_DECLARATIONS.len(),
+        ),
+        (
+            Language::Yaml,
+            &YAML_CONFIG,
+            PLAYBOOK,
+            "site.yml",
+            PLAYBOOK_DECLARATIONS.len(),
+        ),
+    ] {
+        let result = extract_file(config, std::path::Path::new(path), source, "fixture");
+        let nodes = published(&result);
+
+        let declarations = nodes
+            .iter()
+            .filter(|node| node.declaration.is_some())
+            .count();
         assert_eq!(
-            published.get(label),
-            Some(&kind),
-            "the reader of this language publishes `{label}` as {kind:?}; \
-             it published {:?}",
-            published.get(label)
+            declarations, expected,
+            "{language:?} published {declarations} declarations and {expected} \
+             were expected; a rule that counts nothing would pass without \
+             checking anything",
         );
+
+        for node in &nodes {
+            if node.id == path {
+                continue;
+            }
+            assert_eq!(
+                node.kind, "declaration",
+                "{language:?} publishes `{}` as {}; a language with a reader of \
+                 its own publishes declarations, not symbols of programming",
+                node.label, node.kind,
+            );
+        }
     }
 }
 
@@ -119,31 +258,101 @@ fn the_generic_walker_has_nothing_to_say_about_a_configuration() {
     }
 }
 
+/// The graph carries the declaration as a declaration, and carries what it
+/// declares.
+///
+/// The graph is what the tools ask. A declaration that the reader named
+/// reaches it whole: the kind the reader gave and the type the file
+/// carries, both of them.
 #[test]
-fn a_play_is_published_as_a_play_and_its_tasks_as_tasks() {
-    let result = extract_file(
-        &YAML_CONFIG,
-        std::path::Path::new("site.yml"),
-        PLAYBOOK,
-        "playbook",
-    );
-    let published = published(&result);
+fn the_graph_carries_a_declaration_as_a_declaration() {
+    let facts = semantic_facts(Language::Hcl, TERRAFORM, "main.tf")
+        .expect("the reader of this language says something about it");
 
-    let plays: Vec<&String> = published
-        .keys()
-        .filter(|l| l.contains("configure the servers"))
-        .collect();
-    assert!(
-        !plays.is_empty(),
-        "the play is published; the labels are {published:?}"
-    );
+    for (label, kind, resource_type) in TERRAFORM_DECLARATIONS {
+        let symbol = facts
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name() == *label)
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{label}` is in the graph; the names are {:?}",
+                    facts
+                        .symbols
+                        .iter()
+                        .map(|symbol| symbol.name())
+                        .collect::<Vec<_>>()
+                )
+            });
 
-    let tasks: Vec<&String> = published
-        .keys()
-        .filter(|l| l.contains("install the package"))
-        .collect();
-    assert!(
-        !tasks.is_empty(),
-        "the task is published; the labels are {published:?}"
-    );
+        assert_eq!(
+            *symbol.kind(),
+            SymbolKind::Declaration,
+            "the graph carries `{label}` as {}; a declaration of infrastructure \
+             is not a symbol of programming",
+            symbol.kind().name(),
+        );
+
+        let declaration = symbol
+            .declaration()
+            .unwrap_or_else(|| panic!("`{label}` declares nothing"));
+        assert_eq!(
+            declaration.kind(),
+            *kind,
+            "the graph does not carry the kind the reader gave `{label}`"
+        );
+        assert_eq!(
+            declaration.resource_type(),
+            *resource_type,
+            "the graph does not carry the type the file gives `{label}`"
+        );
+    }
+}
+
+/// The consumer reads a declaration, and never a function.
+///
+/// This is the last link of the chain: the reader names what the block
+/// declares, the graph carries it, and the transport publishes the kind
+/// the consumer reads. A consumer that asks about a bucket has to be told
+/// that the bucket is a bucket and not a function of the project.
+#[tokio::test]
+async fn the_consumer_reads_a_declaration_and_never_a_function() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("main.tf"), TERRAFORM).expect("the configuration is written");
+    let ctx = fixtures::graph_of_dir(dir.path()).await;
+
+    let answer = handle_get_all_symbols(
+        &ctx,
+        GetAllSymbolsInput {
+            limit: Some(100),
+            offset: None,
+        },
+    )
+    .await
+    .expect("the consumer reads the symbols");
+
+    for (label, _, _) in TERRAFORM_DECLARATIONS {
+        let symbol = answer
+            .symbols
+            .iter()
+            .find(|symbol| symbol.name == *label)
+            .unwrap_or_else(|| {
+                panic!(
+                    "`{label}` is in the answer; the names are {:?}",
+                    answer
+                        .symbols
+                        .iter()
+                        .map(|symbol| symbol.name.as_str())
+                        .collect::<Vec<_>>()
+                )
+            });
+
+        let published = serde_json::to_value(&symbol.kind).expect("the kind is published");
+        assert_eq!(
+            published,
+            serde_json::json!("declaration"),
+            "the consumer reads `{label}` as {published}; a declaration of \
+             infrastructure is not a symbol of programming"
+        );
+    }
 }

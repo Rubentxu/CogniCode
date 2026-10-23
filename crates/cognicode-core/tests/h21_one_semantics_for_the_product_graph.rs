@@ -18,6 +18,8 @@
 //! reader named it, that the real consumer finds it there, and that both
 //! paths name it the same way.
 
+mod fixtures;
+
 use cognicode_core::application::services::analysis_service::AnalysisService;
 use cognicode_core::domain::aggregates::call_graph::SymbolId;
 use cognicode_core::infrastructure::graph::per_file_graph::PerFileGraphCache;
@@ -27,32 +29,6 @@ use cognicode_core::interface::mcp::handlers::consolidated_handlers::{
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };
-
-/// The real fixtures, copied into a scratch directory so the repository
-/// stays clean. The content is the versioned one: these tests run against
-/// what the repository really holds, not against a toy.
-fn copy_fixture(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
-    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../sandbox/fixtures")
-        .join(name);
-    let target = dir.join(name);
-    copy_tree(&source, &target);
-    target
-}
-
-fn copy_tree(source: &std::path::Path, target: &std::path::Path) {
-    std::fs::create_dir_all(target).expect("mkdir");
-    for entry in std::fs::read_dir(source).expect("read fixture") {
-        let entry = entry.expect("entry");
-        let path = entry.path();
-        let destination = target.join(entry.file_name());
-        if path.is_dir() {
-            copy_tree(&path, &destination);
-        } else {
-            std::fs::copy(&path, &destination).expect("copy fixture");
-        }
-    }
-}
 
 fn every_file(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     let mut found = Vec::new();
@@ -75,8 +51,8 @@ fn collect_files(dir: &std::path::Path, found: &mut Vec<std::path::PathBuf>) {
 #[tokio::test]
 async fn the_consumer_finds_a_terraform_resource_the_way_it_is_named() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "terraform-iac");
-    let main = fixtures.join("main.tf");
+    let fixture = fixtures::copy_fixture(dir.path(), "terraform-iac");
+    let main = fixture.join("main.tf");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(dir.path())
@@ -106,8 +82,8 @@ async fn the_consumer_finds_a_terraform_resource_the_way_it_is_named() {
 #[tokio::test]
 async fn the_consumer_finds_an_ansible_play_the_way_it_is_named() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "ansible-playbook");
-    let site = fixtures.join("site.yml");
+    let fixture = fixtures::copy_fixture(dir.path(), "ansible-playbook");
+    let site = fixture.join("site.yml");
 
     let ctx = HandlerContext::builder()
         .with_working_dir(dir.path())
@@ -137,8 +113,8 @@ async fn the_consumer_finds_an_ansible_play_the_way_it_is_named() {
 #[test]
 fn both_paths_name_the_same_declaration_the_same_way() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let fixtures = copy_fixture(dir.path(), "terraform-iac");
-    let main = fixtures.join("main.tf");
+    let fixture = fixtures::copy_fixture(dir.path(), "terraform-iac");
+    let main = fixture.join("main.tf");
 
     // The builder the product walks.
     let service = AnalysisService::new();
@@ -149,7 +125,7 @@ fn both_paths_name_the_same_declaration_the_same_way() {
 
     // The per-file cache, over the same files.
     let cache = PerFileGraphCache::with_project_dir(dir.path().to_string_lossy().into_owned());
-    let paths = every_file(&fixtures);
+    let paths = every_file(&fixture);
     let borrowed: Vec<&std::path::Path> = paths.iter().map(|p| p.as_path()).collect();
     let per_file = cache.merge_with_report(&borrowed).graph;
 

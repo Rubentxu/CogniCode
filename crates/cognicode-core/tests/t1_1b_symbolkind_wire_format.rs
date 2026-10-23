@@ -1,7 +1,7 @@
 //! T1-1b — Wire format contract for `McpSymbolKind` (schemas::SymbolKind).
 //!
 //! Estado pre-T1-1b:
-//!   - `schemas::SymbolKind` existe con `#[serde(rename_all = "lowercase")]`
+//!   - `schemas::SymbolKind` existe con `#[serde(rename_all = "snake_case")]`
 //!     y 15 variantes. La conversión `McpSymbolKind -> SymbolKind`
 //!     (canónico) está en `dto_mapping.rs:186`. Pero el contrato
 //!     **NO estaba pineado por test** — un cambio accidental en el
@@ -46,6 +46,7 @@ const EXPECTED_WIRE_FORMAT: &[(McpSymbolKind, &str)] = &[
     (McpSymbolKind::Interface, "interface"),
     (McpSymbolKind::TypeAlias, "type_alias"),
     (McpSymbolKind::Parameter, "parameter"),
+    (McpSymbolKind::Declaration, "declaration"),
 ];
 
 #[test]
@@ -134,5 +135,48 @@ fn mcp_symbolkind_does_not_serialize_as_snake_case_for_compound_names() {
     assert_eq!(
         json, "\"type_alias\"",
         "MCP SymbolKind::TypeAlias must serialize as \"type_alias\" (snake_case compound), got: {json}"
+    );
+}
+
+/// The wire and the domain name the same kind the same way.
+///
+/// The transport is a projection of the domain's taxonomy, and the
+/// projection goes one way only: the domain decides what a thing is and
+/// the wire says it in the vocabulary the transport speaks. A kind that
+/// comes back different after the round trip means two vocabularies
+/// disagree about the same thing.
+#[test]
+fn the_canonical_mapping_agrees_with_its_inverse() {
+    for (variant, wire) in EXPECTED_WIRE_FORMAT {
+        let domain: CanonicalSymbolKind = variant.clone().into();
+        let back: McpSymbolKind = domain.into();
+        let json = serde_json::to_string(&back).expect("SymbolKind must serialize");
+        assert_eq!(
+            json,
+            format!("\"{}\"", *wire),
+            "the domain and the wire disagree about the kind they name"
+        );
+    }
+}
+
+/// A declaration of infrastructure is published as a declaration.
+///
+/// A resource of Terraform is not a function, and the transport says so
+/// instead of naming it one. A consumer that reads a bucket as a function
+/// reads a thing the project never said.
+#[test]
+fn a_declaration_is_published_as_a_declaration() {
+    let published: McpSymbolKind = CanonicalSymbolKind::Declaration.into();
+    assert_eq!(
+        serde_json::to_string(&published).expect("SymbolKind must serialize"),
+        "\"declaration\"",
+        "a declaration of infrastructure is published as a declaration"
+    );
+
+    let domain: CanonicalSymbolKind = published.into();
+    assert_eq!(
+        domain,
+        CanonicalSymbolKind::Declaration,
+        "the wire and the domain agree on what a declaration is"
     );
 }

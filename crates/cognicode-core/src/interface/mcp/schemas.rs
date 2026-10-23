@@ -163,6 +163,10 @@ pub enum SymbolKind {
     Interface,
     TypeAlias,
     Parameter,
+    /// A declaration of infrastructure: a Terraform resource, an Ansible
+    /// play. It is not a symbol of programming, and the transport says so
+    /// instead of naming it a function.
+    Declaration,
 }
 
 // ============================================================================

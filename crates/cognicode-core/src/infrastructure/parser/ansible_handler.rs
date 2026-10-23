@@ -34,7 +34,7 @@
 
 use crate::application::ingest::types::{ExtractionEdge, ExtractionResult, TargetRef};
 use crate::domain::aggregates::{GraphNode, NodeId};
-use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance, SymbolKind};
+use crate::domain::value_objects::{Declaration, DependencyType, NodeKind, Provenance};
 use std::collections::BTreeMap;
 use tree_sitter::Node;
 
@@ -232,13 +232,7 @@ impl<'a> World<'a> {
         let ordinal = self.plays;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "play");
-        let id = self.declaration(
-            "play",
-            &identity.slug,
-            &identity.label,
-            SymbolKind::Module,
-            mapping.line(),
-        );
+        let id = self.declaration("play", &identity.slug, &identity.label, mapping.line());
         self.edge(
             container,
             DependencyType::Contains,
@@ -288,13 +282,7 @@ impl<'a> World<'a> {
         let ordinal = self.tasks;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "task");
-        let id = self.declaration(
-            "task",
-            &identity.slug,
-            &identity.label,
-            SymbolKind::Function,
-            mapping.line(),
-        );
+        let id = self.declaration("task", &identity.slug, &identity.label, mapping.line());
         self.edge(
             container,
             DependencyType::Contains,
@@ -334,13 +322,7 @@ impl<'a> World<'a> {
         let ordinal = self.handlers;
         let name = mapping.text("name");
         let identity = self.names.of(name.as_deref(), ordinal, "handler");
-        let id = self.declaration(
-            "handler",
-            &identity.slug,
-            &identity.label,
-            SymbolKind::Function,
-            mapping.line(),
-        );
+        let id = self.declaration("handler", &identity.slug, &identity.label, mapping.line());
         self.edge(
             container,
             DependencyType::Contains,
@@ -387,17 +369,10 @@ impl<'a> World<'a> {
     /// says what kind of thing this is, and the node says the same thing
     /// to the graph, so that whoever asks about the declaration hears the
     /// reader's own name and not the name of the type that holds it.
-    fn declaration(
-        &mut self,
-        kind: &str,
-        slug: &str,
-        label: &str,
-        symbol_kind: SymbolKind,
-        line: u32,
-    ) -> String {
+    fn declaration(&mut self, kind: &str, slug: &str, label: &str, line: u32) -> String {
         let id = self.id(kind, slug);
         self.nodes.push(
-            GraphNode::builder(NodeId::new(&id), NodeKind::Symbol(symbol_kind))
+            GraphNode::builder(NodeId::new(&id), NodeKind::Declaration)
                 .label(label.to_string())
                 .source_path(std::path::PathBuf::from(self.source_path))
                 .property("line".to_string(), line.to_string())

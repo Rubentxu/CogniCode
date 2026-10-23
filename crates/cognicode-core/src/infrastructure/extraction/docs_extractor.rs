@@ -707,6 +707,10 @@ fn kind_prefix(kind: &NodeKind) -> &'static str {
         NodeKind::System => "system",
         // e15.5 — API route ingestion produces these nodes.
         NodeKind::Route => "route",
+        // A declaration of infrastructure is not a node of the knowledge
+        // layer, but the prefix names it like any other kind so that a
+        // node that carries one keeps a stable identity.
+        NodeKind::Declaration => "declaration",
         NodeKind::Symbol(_) => "symbol",
     }
 }

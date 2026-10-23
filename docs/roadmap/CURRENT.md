@@ -92,6 +92,19 @@ Y una que encontró el propio squash de este ciclo:
    pull`. Ahora el título se juzga antes de la fusión, y el publicador del
    gate consulta el juez antes de gastar sus minutos.
 
+Y otra que encontró la ontología, que es de la misma familia:
+
+10. **Un contrato que no se ha visto rojo no mide nada.** Las seis pruebas
+    del contrato de la ontología pasaron en verde el día que se escribieron,
+    y eso no decía nada: un contrato que no puede fallar puede estar
+    midiendo una cosa que no es la que dice medir. La demostración es un
+    experimento reversible —revertir sólo los dos lectores y volver a
+    leer— y lo que entonces se leyó fue `"function"` para un bucket de S3 y
+    `"symbol.module"` para un play de Ansible. Es el mismo cuidado que se
+    tuvo con la autoridad de mentira del juez de la cabecera, aplicado al
+    otro lado: no basta con que el contrato pase, hay que haberlo visto
+    fallar.
+
 Un rojo de gate se lee primero: qué etapa, qué error, y si el error es del
 código o de la máquina.
 
