@@ -481,7 +481,10 @@ fn cr06_synthetic_drift_domain_reaches_infrastructure_inline_is_detected() {
         "architecture.domain_no_infrastructure"
     );
     assert_eq!(v.from_layer, LayerId::Domain);
-    assert_eq!(v.line, 2, "the violation must point at the line that names the path");
+    assert_eq!(
+        v.line, 2,
+        "the violation must point at the line that names the path"
+    );
 }
 
 /// The same rule holds one layer up: an application module that reaches

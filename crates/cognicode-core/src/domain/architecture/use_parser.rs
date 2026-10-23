@@ -144,7 +144,7 @@ pub fn parse_dependency_paths(
         if line.trim().is_empty() {
             continue;
         }
-        if let Some(path) = parse_use_line(&line) {
+        if let Some(path) = parse_use_line(line) {
             out.push(DependencyPath {
                 path,
                 file_path: file_path.clone(),
@@ -156,7 +156,7 @@ pub fn parse_dependency_paths(
             // second time.
             continue;
         }
-        for path in parse_inline_paths(&line) {
+        for path in parse_inline_paths(line) {
             out.push(DependencyPath {
                 path,
                 file_path: file_path.clone(),
