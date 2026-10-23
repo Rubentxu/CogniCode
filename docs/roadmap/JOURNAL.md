@@ -24009,3 +24009,45 @@ creer que el corte quitó cosas del árbol, y no quitó ninguna.
 **Lo que este cierre no dice.** El gate de candidato puede encontrar algo, y
 entonces este corte no se publica: un tag publicado no se mueve, y un tag
 que no llegó a publicarse no se arrastra hacia delante.
+
+## 2026-10-23 — La v0.101.30 publicada: verificada desde sus propios bytes
+
+**Qué es esto.** La `v0.101.30` está publicada en remoto: tag anotado
+`v0.101.30` sobre `18ad4f2f`, ocho assets, publicada el 2026-10-23.
+
+**El camino entero, en verde.** El gate de candidato, sobre el clon limpio
+del tag: clon en `18ad4f2f`, árbol limpio, `cargo check` del workspace,
+build release del workspace, fixtures tier-1 verificados por SHA, y
+**6539 pruebas, 0 en rojo** —1027 más que el baseline, con la diferencia de
+ignorados dentro del margen que el gate tolera—. Después la lane de
+publicación: la re-verificación del candidato, las dos pruebas negativas
+sobre una copia, el draft, la subida, la confirmación del conjunto publicado
+y la verificación como consumidor.
+
+**La comprobación que decide.** No se hizo sobre el árbol del repositorio.
+Se bajaron los assets publicados y se comprobaron sus sumas: los siete
+checksums del `SHA256SUMS` publicado coinciden, uno a uno, con los bytes
+descargados. Y se preguntó al servidor MCP **publicado** por un directorio
+con un solo `main.tf` de Terraform. La respuesta fue: **19 símbolos, 19
+`declaration`, 0 `function`**.
+
+Eso es lo que cierra la unidad. Un recurso de Terraform ya no se le como
+una función en el artefacto que un consumidor instala, que es donde la
+mentira dolía: el repositorio decía una cosa y el binario publicado
+decía otra.
+
+**Un corte que casi se queda sin disco.** El volumen de compilación de esta
+máquina estaba al 97% cuando empezó el gate de candidato, y la regla que
+vigila eso —comprobar el volumen antes de empezar— pasó porque había sitio
+justo. La build release del candidato lo consumió: el clon limpio creció
+hasta 26G y el espacio libre bajó a 30G. Se reclamó la caché de build del
+merge gate de este mismo checkout —39G de estado derivado, reproducible— y
+el corte siguió. La lección no es nueva, pero esta vez se midió: el
+volumen no cabe es una condición que se comprueba en un segundo, y
+comprobada dice la causa y la salida.
+
+**Lo que este cierre no dice.** El valor `"declaration"` es nuevo en el
+campo `kind` del transporte, y un consumidor que compare contra una lista
+cerrada de clases tiene que añadirlo. Es el precio honesto de que el
+grafo deje de mentir, y está declarado en el CHANGELOG y en el README de
+esta versión, no escondido en un cambio de formato.
