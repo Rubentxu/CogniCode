@@ -24581,3 +24581,32 @@ documentada en su contrato. Y el resto de la auditoría sigue en la cola:
 la identidad y su prueba metamórfica, el vigilante coherente, la
 simplificación medida, la caché incremental, Kotlin sin JVM y las
 relaciones Kotlin–Java.
+
+
+## 2026-10-23 — Una corrección al recibo de la puerta única
+
+**Qué se corrige.** El recibo de esta unidad mide el código neto del cambio
+en **-1548 líneas**. La cifra correcta es **-1276 líneas** para el código y
+sus pruebas: +774 añadidas y -2050 borradas, sobre el rango que llegó a
+`main`. Con la documentación y el backlog, el cambio completo mide **-1146
+líneas**: +928 y -2074.
+
+**Por qué la primera cifra no era la buena.** Se tomó antes de que los dos
+contratos nuevos —el del índice y el de las rutas— estuvieran versionados, y
+`git diff` no cuenta lo que todavía no está en el índice: 267 líneas de
+pruebas que sí están en el cambio. Reconstruir el árbol exacto del momento
+de la medida ya no es posible desde el registro, así que la corrección
+declara la cifra final medida sobre el rango que llegó a `main`, y no una
+reconstrucción de la medida antigua. No fue un cálculo erróneo, fue una
+medida tomada a mitad del trabajo sobre un árbol que todavía no estaba
+entero.
+
+**Por qué se corrige aquí y no en su sitio.** Un journal que se reescribe a
+sí mismo pierde la única propiedad que lo hace útil: que se pueda leer como
+registro de lo que se midió y cuándo. La corrección se añade al final, y la
+entrada anterior se queda como estaba, con su cifra y con la fecha en que se
+tomó.
+
+**Lo que no cambia.** La afirmación de fondo sigue siendo la misma: el
+cambio quitó más código del que añadió, y lo que se fueron fueron dos
+puertas con sus contratos y sus pruebas. Sólo cambia el número.
