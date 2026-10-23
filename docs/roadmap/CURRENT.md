@@ -5,8 +5,8 @@
 > de estado: donde este documento y el ROADMAP diverjan, manda el ROADMAP y
 > este snapshot se considera obsoleto hasta su próxima regeneración.
 >
-> **Snapshot**: 2026-10-23, sobre `8b7eb1511b77523652e0efdeca3cc6d1eb80fe24` (la
-> cabeza de la rama de la unidad que hace que el producto observe un conjunto
+> **Snapshot**: 2026-10-24, sobre `34c2b75030a62c0735408a7cad6e0be6be45d959` (el
+> `main` ya fusionado de la unidad que hace que el producto observe un conjunto
 > de ficheros, y lo diga).
 > Versión del workspace: `0.101.30`. Última release publicada: `v0.101.30`
 > (2026-10-23, 8 assets).
